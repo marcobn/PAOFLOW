@@ -29,7 +29,7 @@ import cmath
 import sys
 import re
 sys.path.append('/home/marco/Programs/AflowPI_TB/')
-import AflowPI_TB_lib as API
+import AflowPI_TB_lib_fft as API
 sys.path.append('./')
  
 #units
@@ -38,7 +38,7 @@ Ry2eV      = 13.60569193
 input_file = sys.argv[1]
 
 read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
-	do_bands, do_dos, delta, nfft1, nfft2, nfft3 = API.read_input(input_file)
+	do_bands, nfft1, nfft2, nfft3 = API.read_input(input_file)
 
 if (not read_S):
 	U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -128,48 +128,31 @@ for i in range(nk1):
 					SRaux[i,j,:,:,:] = FFT.ifftn(Skaux[i,j,:,:,:])
 
 if double_grid:
-	# Fourier interpolation on extended grid (zero padding)
-	nk1p = nfft1+nk1
-	nk2p = nfft2+nk2
-	nk3p = nfft3+nk3
+	# Fourier interpolation on double grid
+	nk1p = nfft1*nk1
+	nk2p = nfft2*nk2
+	nk3p = nfft3*nk3
 	nktotp= nk1p*nk2p*nk3p
-	print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
+	print('Number of k vectors for extended Fourier interpolation ',nktotp)
 
-	# Extended R to k (with zero padding)
-	HRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-	SRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p),dtype=complex)
+	# Extended R to k (zero padding)
 	Hksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
 	Sksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p),dtype=complex)
-	aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 			
 	for ispin in range(nspin):
         	for i in range(nawf):
                 	for j in range(nawf):
-				aux = HRaux[i,j,:,:,:,ispin]
-				HRauxp[i,j,:,:,:,ispin] = API.zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3)
-                        	Hksp[i,j,:,:,:,ispin] = FFT.fftn(HRauxp[i,j,:,:,:,ispin])
+                        	Hksp[i,j,:,:,:,ispin] = FFT.fftn(HRaux[i,j,:,:,:,ispin])
                         	if read_S and ispin == 0:
-					aux = HRaux[i,j,:,:,:,ispin]
-					SRauxp = API.zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3)
-                                	Sksp[i,j,:,:,:] = FFT.fftn(SRauxp[i,j,:,:,:])
+                                	Sksp[i,j,:,:,:] = FFT.fftn(SRaux[i,j,:,:,:])
 
 	nk1 = nk1p
 	nk2 = nk2p
 	nk3 = nk3p
+	Hkaux  = None # release memory
+	Skaux  = None # release memory
 	HRaux  = None # release memory
-	SRaux  = None 
-	aux = None
-else:
-	# Extended R to k 
-        Hksp  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-        Sksp  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-
-        for ispin in range(nspin):
-                for i in range(nawf):
-                        for j in range(nawf):
-                                Hksp[i,j,:,:,:,ispin] = FFT.fftn(HRaux[i,j,:,:,:,ispin])
-                                if read_S and ispin == 0:
-                                        Sksp[i,j,:,:,:] = FFT.fftn(SRaux[i,j,:,:,:])
+	SRaux  = None # release memory
 
 if do_bands:
 	# FFT interpolation along symmetry directions
@@ -195,8 +178,6 @@ if do_bands:
 								Skaux[i,j,nL] = Sksp[i,j,ik1,ik2,ik3]
 							nL += 1
 
-	#print(Hkaux[0,0,:,0])
-
 	# zero padding interpolation
 	# k to R
 	npad = 500
@@ -221,30 +202,13 @@ if do_bands:
                 	for j in range(nawf):
 				HRauxp[i,j,:(nL/2),ispin]=HRaux[i,j,:(nL/2),ispin]
 				HRauxp[i,j,(npad+nL/2):,ispin]=HRaux[i,j,(nL/2):,ispin]
+
                         	Hkaux[i,j,:,ispin] = FFT.fft(HRauxp[i,j,:,ispin])
                         	if read_S and ispin == 0:
-					SRauxp[i,j,:(nL/2)]=SRaux[i,j,:(nL/2)]
-					SRauxp[i,j,(npad+nL/2):]=SRaux[i,j,(nL/2):]
                                 	Skaux[i,j,:] = FFT.fft(SRauxp[i,j,:])
 
 
 	# Print TB eigenvalues on interpolated mesh
-	#API.print_TB_eigs(Hkaux,Skaux,read_S)
+	#API.calc_TB_eigs(Hkaux,Skaux,read_S)
 	API.plot_TB_eigs(Hkaux,Skaux,read_S)
 
-if do_dos:
-	# DOS calculation with gaussian smearing
-	eig,ndos = API.calc_TB_eigs(Hkaux,Skaux,read_S)
-	emin = np.min(eig)
-	emax = np.max(eig)-shift/2
-	de = (emax-emin)/1000
-	ene = np.arange(emin,emax,de,dtype=float)
-	dos = np.zeros((ene.size),dtype=float)
-
-	for ne in range(ene.size):
-		for nei in range(eig.size):
-			x = (ene[ne]-eig[nei])/delta
-			dos[ne] += 1.0/np.sqrt(np.pi)*np.exp(-x**2)/delta
-
-        for ne in range(ene.size):
-                print("%.5f" % ene[ne], "%.5f" % dos[ne])

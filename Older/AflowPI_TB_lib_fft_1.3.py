@@ -43,10 +43,9 @@ def read_input(input_file):
         do_comparison = False
         double_grid = False
         do_bands = False
-        do_dos = False
-	nfft1 = 0
-	nfft2 = 0
-	nfft3 = 0
+	#bnd        = 1
+        #nbnds_norm = 1
+        #bnd_g      = 1
 
 	f = open(input_file)
 	lines=f.readlines()
@@ -84,16 +83,9 @@ def read_input(input_file):
 				do_bands = (1 == 2)
  			else:
 				do_bands = (1 == 1)
-    		if re.search('do_dos',line):
-       			p = line.split()
-       			do_dos = p[1]
-                        if do_dos == 'False':
-				do_dos = (1 == 2)
- 			else:
-				do_dos = (1 == 1)
-    		if re.search('delta',line):
-       			p = line.split()
-       			delta = float(p[1])
+    		#if re.search('nbnds_norm',line):
+       		#	p = line.split()
+       		#	nbnds_norm = int(p[1])
     		if re.search('shift_type',line):
        			p = line.split()
        			shift_type = int(p[1])
@@ -103,16 +95,23 @@ def read_input(input_file):
     		if re.search('pthr',line):
        			p = line.split()
        			pthr = float(p[1])
-    		if re.search('nfft123',line):
+    		if re.search('nfft1',line):
        			p = line.split()
        			nfft1 = int(p[1])
-       			nfft2 = int(p[2])
-       			nfft3 = int(p[3])
+    		if re.search('nfft2',line):
+       			p = line.split()
+       			nfft2 = int(p[1])
+    		if re.search('nfft3',line):
+       			p = line.split()
+       			nfft3 = int(p[1])
+    		#if re.search('bnd_g',line):
+       		#	p = line.split()
+       		#	bnd_g = int(p[1])
 	if fpath == '':
 		sys.exit('missing path to _.save')
 
 	return(read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-		do_bands, do_dos, delta, nfft1, nfft2, nfft3) 
+		do_bands, nfft1, nfft2, nfft3) 
 
 
 def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
@@ -282,6 +281,32 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
 	
 	return(R,R_wght,nrtot,idx)
 
+def get_R_grid_fft_padding(nk1i,nk2i,nk3i,nk1f,nk2f,nk3f,a_vectors):
+	nrtot = nk1f*nk2f*nk3f
+	R = np.zeros((nrtot,3),dtype=float)
+	R_wght = np.ones((nrtot),dtype=float)
+	idx = np.zeros((nk1f,nk2f,nk3f),dtype=int)
+
+	for i in range(nk1i,nk1f):
+		for j in range(nk2i,nk2f):
+        	        for k in range(nk3i,nk3f):
+                	        n = k + j*nk3f + i*nk2f*nk3f + nk1i*nk2i*nk3i
+                        	Rx = float(i)/float(nk1f)
+                        	Ry = float(j)/float(nk1f)
+                        	Rz = float(k)/float(nk1f)
+                        	if Rx >= 0.5: Rx=Rx-1.0
+                        	if Ry >= 0.5: Ry=Ry-1.0
+                        	if Rz >= 0.5: Rz=Rz-1.0
+                        	Rx -= int(Rx)
+                        	Ry -= int(Ry)
+                        	Rz -= int(Rz)
+                        	R[n,:] = Rx*nk1f*a_vectors[0,:]+Ry*nk2f*a_vectors[1,:]+Rz*nk3f*a_vectors[2,:]
+                        	#R[n,:] = Rx*a_vectors[0,:]+Ry*a_vectors[1,:]+Rz*a_vectors[2,:]
+				idx[i,j,k]=n
+	                       	#print("%.5f" % R[n,0],"%.5f" % R[n,1],"%.5f" % R[n,2])
+	
+	return(R,R_wght,nrtot,idx)
+
 def get_K_grid_fft(nk1,nk2,nk3,b_vectors, print_kgrid):
 	nktot = nk1*nk2*nk3
 	Kint = np.zeros((nktot,3),dtype=float)
@@ -296,15 +321,23 @@ def get_K_grid_fft(nk1,nk2,nk3,b_vectors, print_kgrid):
                         	Rx = float(i)/float(nk1)
                         	Ry = float(j)/float(nk1)
                         	Rz = float(k)/float(nk1)
-                        	if Rx >= 0.5: Rx=Rx-1.0
-                        	if Ry >= 0.5: Ry=Ry-1.0
-                        	if Rz >= 0.5: Rz=Rz-1.0
-                        	Rx -= int(Rx)
-                        	Ry -= int(Ry)
-                        	Rz -= int(Rz)
+                        	#if Rx >= 0.5: Rx=Rx-1.0
+                        	#if Ry >= 0.5: Ry=Ry-1.0
+                        	#if Rz >= 0.5: Rz=Rz-1.0
+                        	#Rx -= int(Rx)
+                        	#Ry -= int(Ry)
+                        	#Rz -= int(Rz)
 				idk[i,j,k]=n
+	                       	#Kint[n,:] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
 	                       	Kint[n,:] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
                       
+	if print_kgrid:
+		print('FFT grid of k-points for nscf ',nk1,nk2,nk3)
+		print(nktot)
+		for n in range(nktot):
+			print("%.5f" % float(Kint[n,0]),"%.5f" % float(Kint[n,1]),"%.5f" % float(Kint[n,2]),"%.5f" % float(K_wght[n]))
+		quit()
+
 	return(Kint,K_wght,nktot,idk)
 
 def kpnts_interpolation_mesh():
@@ -347,26 +380,6 @@ def kpnts_interpolation_mesh():
                 	kmod[nkpi]=1+np.sqrt(2)-np.sqrt(np.absolute(np.dot(k[:,ik],k[:,ik])))
 		nkpi += 1
 	return (k,kmod,nkpi)
-
-def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
-	# zero padding for FFT interpolation in 3D
-        nk1p = nfft1+nk1
-        nk2p = nfft2+nk2
-        nk3p = nfft3+nk3
-	# first dimension
-	auxp1 = np.zeros((nk1,nk2,nk3p),dtype=complex)
-	auxp1[:,:,:(nk3/2)]=aux[:,:,:(nk3/2)]
-        auxp1[:,:,(nfft3+nk3/2):]=aux[:,:,(nk3/2):]
-	# second dimension
-	auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=complex)
-	auxp2[:,:(nk2/2),:]=auxp1[:,:(nk2/2),:]
-        auxp2[:,(nfft2+nk2/2):,:]=auxp1[:,(nk2/2):,:]
-	# third dimension
-	auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=complex)
-	auxp3[:(nk1/2),:,:]=auxp2[:(nk1/2),:,:]
-        auxp3[(nfft1+nk1/2):,:,:]=auxp2[(nk1/2):,:,:]
-
-	return(auxp3)
 
 def read_QE_output_xml(fpath,read_S):
  atomic_proj = fpath+'/atomic_proj.xml'
@@ -586,7 +599,7 @@ def plot_TB_eigs(Hks,Sks,read_S):
     plt.savefig('interpolation.pdf',format='pdf')
     #os.system('open comparison.pdf') #for macs
 
-def print_TB_eigs(Hks,Sks,read_S):
+def calc_TB_eigs(Hks,Sks,read_S):
     import matplotlib.pyplot as plt
     import os
 
@@ -605,35 +618,7 @@ def print_TB_eigs(Hks,Sks,read_S):
     for ik in range(nkpnts/2+1):
 	for nb in range(nawf):
 		print("%3d" % ik, "%.5f" % E_k[nb,ik,ispin])
-
-def calc_TB_eigs(Hks,Sks,read_S):
-    import matplotlib.pyplot as plt
-    import os
-
-    nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
-    nbnds_tb = nawf
-    E_k = np.zeros((nbnds_tb,nk1*nk2*nk3,nspin))
-    eall = np.zeros((nbnds_tb*nk1*nk2*nk3))
-
-    ispin = 0 #plots only 1 spin channel
-    #for ispin in range(nspin):
-    nk=0
-    for ik1 in range(nk1):
-    	for ik2 in range(nk2):
-    		for ik3 in range(nk3):
-    		    	if read_S:
-				eigval,_ = LA.eigh(Hks[:,:,ik1,ik2,ik3,ispin],Sks[:,:,ik1,ik2,ik3])
-			else:	
-				eigval,_ = LAN.eigh(Hks[:,:,ik1,ik2,ik3,ispin],UPLO='U')
-        		E_k[:,nk,ispin] = np.sort(np.real(eigval))
-			nk += 1
-    nall=0
-    for n in range(nk):
-	for m in range(nawf):
-		eall[nall]=E_k[m,n,ispin]
-		nall += 1
-
-    return(eall,nall) 
+    
 
 
 def plot_grid(x,y,z):

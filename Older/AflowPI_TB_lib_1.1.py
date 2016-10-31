@@ -42,11 +42,6 @@ def read_input(input_file):
         pthr       = 0.9
         do_comparison = False
         double_grid = False
-        do_bands = False
-        do_dos = False
-	nfft1 = 0
-	nfft2 = 0
-	nfft3 = 0
 
 	f = open(input_file)
 	lines=f.readlines()
@@ -77,23 +72,6 @@ def read_input(input_file):
 				double_grid = (1 == 2)
  			else:
 				double_grid = (1 == 1)
-    		if re.search('do_bands',line):
-       			p = line.split()
-       			do_bands = p[1]
-                        if do_bands == 'False':
-				do_bands = (1 == 2)
- 			else:
-				do_bands = (1 == 1)
-    		if re.search('do_dos',line):
-       			p = line.split()
-       			do_dos = p[1]
-                        if do_dos == 'False':
-				do_dos = (1 == 2)
- 			else:
-				do_dos = (1 == 1)
-    		if re.search('delta',line):
-       			p = line.split()
-       			delta = float(p[1])
     		if re.search('shift_type',line):
        			p = line.split()
        			shift_type = int(p[1])
@@ -103,16 +81,10 @@ def read_input(input_file):
     		if re.search('pthr',line):
        			p = line.split()
        			pthr = float(p[1])
-    		if re.search('nfft123',line):
-       			p = line.split()
-       			nfft1 = int(p[1])
-       			nfft2 = int(p[2])
-       			nfft3 = int(p[3])
 	if fpath == '':
 		sys.exit('missing path to _.save')
 
-	return(read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-		do_bands, do_dos, delta, nfft1, nfft2, nfft3) 
+	return(read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid)
 
 
 def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
@@ -162,100 +134,6 @@ def build_Pn(nawf,nbnds,nkpnts,nspin,U):
             Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts
     return Pn
 
-def get_R_grid_WanT(nk1,nk2,nk3,a_vectors):
-	# Generate a regular grid in real space (crystal coordinates)
-	# This is the algorithm in WanT
-	nr = 0
-        nrtot = 100000
-	R = np.zeros((nrtot,3),dtype=float)
-	R_wght = np.zeros((nrtot),dtype=float)
-	for i in range(nk1):
-        	for j in range(nk2):
-                	for k in range(nk3):
-				ri=i-int((nk1+1)/2)
-				rj=j-int((nk2+1)/2)
-				rk=k-int((nk3+1)/2)
-                        	#R[nr,:] = np.array([ri,rj,rk]) #ri*a_vectors[0,:]+rj*a_vectors[1,:]+rk*a_vectors[2,:]
-                        	R[nr,:] = ri*a_vectors[0,:]+rj*a_vectors[1,:]+rk*a_vectors[2,:]
- 				R_wght[nr] = 1.0
-                        	nr += 1
-	nrtot = nr
-	# Check that -R is always present
-	for ir in range(nrtot):
-		for ir2 in range(nrtot):
-			test_opp = all(R[ir2,:] == -R[ir,:])
-			if test_opp == True:
-				break
-		if test_opp == False:
-			nr=nr+1
-			R[nr,:] = -R[ir,:]
-			R_wght[nr] = R_wght[ir]/2.0
-			R_wght[ir] = R_wght[ir]/2.0
-	nrtot = nr
-	return(R,R_wght,nrtot)
-
-def get_R_grid_q(nk1,nk2,nk3,a_vectors):
-        # Generate a regular grid in real space (crystal coordinates)
-        # No -R
-        nr = 0
-        nrtot = nk1*nk2*nk3
-        R = np.zeros((nrtot,3),dtype=float)
-	idx = np.zeros((nk1,nk2,nk3),dtype=int)
-        R_wght = np.ones((nrtot),dtype=float)
-        for k in range(nk3):
-                for j in range(nk2):
-                        for i in range(nk1):
-                                ri=i
-                                rj=j
-                                rk=k
-                                R[nr,:] = ri*a_vectors[0,:]+rj*a_vectors[1,:]+rk*a_vectors[2,:]
-				idx[i,j,k]=nr
-                                nr += 1
-        nrtot = nr
-        return(R,R_wght,nrtot,idx)
-
-def get_R_grid_WS(nk1,nk2,nk3,a_vectors):
-	# Generate a regular grid of points that fall inside and on the surface of the Wigner-Seitz
-	# cell centered in the origin of the lattice (as in Wannier90)
-
-	nrtot=100000
-        R = np.zeros((nrtot,3),dtype=float)
-        R_wght = np.zeros((nrtot),dtype=float)
-	
-	# Define metric in real space
-	metric = np.zeros((3,3),dtype=float)
-	metric = a_vectors.T.dot(a_vectors)
-	nrtot=0
-	nR=2
-	nRn=(2*nR+1)**3
-	for n1 in range(-nk1,nk1+1):
-		for n2 in range(-nk2,nk2+1):
-			for n3 in range(-nk3,nk3+1):
-			# loop over the 125 points R. R=0 corresponds to i1=i2=i3=0
-				icnt=0
-				dist = np.zeros((nRn),dtype=float)
-				for i1 in range(-nR,nR+1):
-					for i2 in range(-nR,nR+1):
-						for i3 in range(-nR,nR+1):
-							ndiff = np.zeros((3),dtype=float)
-							if i1==i2==i3==0: i0=icnt
-							# calculate the distance squared
-							ndiff[0]=n1-i1*nk1		
-							ndiff[1]=n2-i2*nk2		
-							ndiff[2]=n3-i3*nk3		
-							dist[icnt] += ndiff.T.dot(metric).dot(ndiff)
-							icnt += 1
-				dist_min = min(dist)
-				if abs(dist[i0] - dist_min) < 1.0e-7:
-					nrtot += 1
-					degen=0.0
-					for i in range(nRn):
-						if abs(dist[i]-dist_min) < 1.0e-7: 
-							degen += 1.0
-					R[nrtot,:] = n1*a_vectors[0,:]+n2*a_vectors[1,:]+n3*a_vectors[2,:]
-					R_wght[nrtot] = 1.0/float(degen)	
-	return(R,R_wght,nrtot)
-
 def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
 	nrtot = nk1*nk2*nk3
 	R = np.zeros((nrtot,3),dtype=float)
@@ -281,31 +159,6 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
 	                       	#print("%.5f" % R[n,0],"%.5f" % R[n,1],"%.5f" % R[n,2])
 	
 	return(R,R_wght,nrtot,idx)
-
-def get_K_grid_fft(nk1,nk2,nk3,b_vectors, print_kgrid):
-	nktot = nk1*nk2*nk3
-	Kint = np.zeros((nktot,3),dtype=float)
-	K_wght = np.ones((nktot),dtype=float)
-	K_wght /= nktot
-	idk = np.zeros((nk1,nk2,nk3),dtype=int)
-
-	for i in range(nk1):
-		for j in range(nk2):
-        	        for k in range(nk3):
-                	        n = k + j*nk3 + i*nk2*nk3
-                        	Rx = float(i)/float(nk1)
-                        	Ry = float(j)/float(nk1)
-                        	Rz = float(k)/float(nk1)
-                        	if Rx >= 0.5: Rx=Rx-1.0
-                        	if Ry >= 0.5: Ry=Ry-1.0
-                        	if Rz >= 0.5: Rz=Rz-1.0
-                        	Rx -= int(Rx)
-                        	Ry -= int(Ry)
-                        	Rz -= int(Rz)
-				idk[i,j,k]=n
-	                       	Kint[n,:] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
-                      
-	return(Kint,K_wght,nktot,idk)
 
 def kpnts_interpolation_mesh():
 	# To be made general reading boundary points from input. For now:
@@ -347,26 +200,6 @@ def kpnts_interpolation_mesh():
                 	kmod[nkpi]=1+np.sqrt(2)-np.sqrt(np.absolute(np.dot(k[:,ik],k[:,ik])))
 		nkpi += 1
 	return (k,kmod,nkpi)
-
-def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
-	# zero padding for FFT interpolation in 3D
-        nk1p = nfft1+nk1
-        nk2p = nfft2+nk2
-        nk3p = nfft3+nk3
-	# first dimension
-	auxp1 = np.zeros((nk1,nk2,nk3p),dtype=complex)
-	auxp1[:,:,:(nk3/2)]=aux[:,:,:(nk3/2)]
-        auxp1[:,:,(nfft3+nk3/2):]=aux[:,:,(nk3/2):]
-	# second dimension
-	auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=complex)
-	auxp2[:,:(nk2/2),:]=auxp1[:,:(nk2/2),:]
-        auxp2[:,(nfft2+nk2/2):,:]=auxp1[:,(nk2/2):,:]
-	# third dimension
-	auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=complex)
-	auxp3[:(nk1/2),:,:]=auxp2[:(nk1/2),:,:]
-        auxp3[(nfft1+nk1/2):,:,:]=auxp2[(nk1/2):,:,:]
-
-	return(auxp3)
 
 def read_QE_output_xml(fpath,read_S):
  atomic_proj = fpath+'/atomic_proj.xml'
@@ -506,11 +339,11 @@ def read_QE_output_xml(fpath,read_S):
      aux = aux.reshape((nawf**2,2))
      ovlp_vector = aux[:,0]+1j*aux[:,1]
      Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
-   return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-		nk1, nk2, nk3)
+   return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf,\
+		nk1,nk2,nk3)
  else:
    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-		nk1, nk2, nk3)
+		nk1,nk2,nk3)
 
 def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     import matplotlib.pyplot as plt
@@ -553,7 +386,8 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     plt.savefig('comparison.pdf',format='pdf')
     #os.system('open comparison.pdf') #for macs
 
-def plot_TB_eigs(Hks,Sks,read_S):
+
+def plot_TB_eigs(Hks,Sks,kmod,read_S):
     import matplotlib.pyplot as plt
     import os
 
@@ -573,6 +407,7 @@ def plot_TB_eigs(Hks,Sks,read_S):
     fig=plt.figure
 
     for i in range(nbnds_tb):
+        xx = kmod[i]
         yy = E_k[i,:,ispin]
         if i==0:
           plt.plot(yy,'ok',markersize=2,markeredgecolor='None',label='TB')
@@ -585,56 +420,6 @@ def plot_TB_eigs(Hks,Sks,read_S):
     plt.title('TB eigenvalues')
     plt.savefig('interpolation.pdf',format='pdf')
     #os.system('open comparison.pdf') #for macs
-
-def print_TB_eigs(Hks,Sks,read_S):
-    import matplotlib.pyplot as plt
-    import os
-
-    nawf,nawf,nkpnts,nspin = Hks.shape
-    nbnds_tb = nawf
-    E_k = np.zeros((nbnds_tb,nkpnts,nspin))
-
-    ispin = 0 #plots only 1 spin channel
-    #for ispin in range(nspin):
-    for ik in range(nkpnts):
-        if read_S:
-		eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
-	else:	
-		eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
-        E_k[:,ik,ispin] = np.sort(np.real(eigval))
-    for ik in range(nkpnts/2+1):
-	for nb in range(nawf):
-		print("%3d" % ik, "%.5f" % E_k[nb,ik,ispin])
-
-def calc_TB_eigs(Hks,Sks,read_S):
-    import matplotlib.pyplot as plt
-    import os
-
-    nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
-    nbnds_tb = nawf
-    E_k = np.zeros((nbnds_tb,nk1*nk2*nk3,nspin))
-    eall = np.zeros((nbnds_tb*nk1*nk2*nk3))
-
-    ispin = 0 #plots only 1 spin channel
-    #for ispin in range(nspin):
-    nk=0
-    for ik1 in range(nk1):
-    	for ik2 in range(nk2):
-    		for ik3 in range(nk3):
-    		    	if read_S:
-				eigval,_ = LA.eigh(Hks[:,:,ik1,ik2,ik3,ispin],Sks[:,:,ik1,ik2,ik3])
-			else:	
-				eigval,_ = LAN.eigh(Hks[:,:,ik1,ik2,ik3,ispin],UPLO='U')
-        		E_k[:,nk,ispin] = np.sort(np.real(eigval))
-			nk += 1
-    nall=0
-    for n in range(nk):
-	for m in range(nawf):
-		eall[nall]=E_k[m,n,ispin]
-		nall += 1
-
-    return(eall,nall) 
-
 
 def plot_grid(x,y,z):
 
