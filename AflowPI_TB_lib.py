@@ -382,13 +382,13 @@ def read_QE_output_xml(fpath,read_S):
  print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
  aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a1")[0].text.split()
- a1=[float(i) for i in aux]
+ a1=np.array(aux,dtype="float32")
 
  aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a2")[0].text.split()
- a2=[float(i) for i in aux]
+ a2=np.array(aux,dtype="float32")
 
  aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a3")[0].text.split()
- a3=[float(i) for i in aux]
+ a3=np.array(aux,dtype="float32")
 
  a_vectors = np.array([a1,a2,a3])/alat #in units of alat
 # print(a_vectors.shape)
@@ -427,7 +427,7 @@ def read_QE_output_xml(fpath,read_S):
  print('Units for the kpoints: {0:s}'.format(kunits))
 
  aux = root.findall("./K-POINTS")[0].text.split()
- kpnts  = np.array([float(i) for i in aux]).reshape((nkpnts,3))
+ kpnts  = np.array(aux,dtype="float32").reshape((nkpnts,3))
  print('Read the kpoints')
 
  aux = root.findall("./WEIGHT_OF_K-POINTS")[0].text.split()
@@ -510,6 +510,7 @@ def read_QE_output_xml(fpath,read_S):
 		nk1, nk2, nk3)
  else:
    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
+		nk1, nk2, nk3)
 def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     import matplotlib.pyplot as plt
     import os
