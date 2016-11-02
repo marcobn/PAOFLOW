@@ -25,7 +25,7 @@ from __future__ import print_function
 from scipy import linalg as LA
 from numpy import linalg as LAN
 import numpy as np
-import xml.etree.cElementTree as ET
+import xml.etree.ElementTree as ET
 import sys
 import re
 from mpl_toolkits.mplot3d import axes3d
@@ -382,25 +382,25 @@ def read_QE_output_xml(fpath,read_S):
  print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
  aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a1")[0].text.split()
- a1=np.array(aux,dtype="float32")
+ a1=[float(i) for i in aux]
 
  aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a2")[0].text.split()
- a2=np.array(aux,dtype="float32")
+ a2=[float(i) for i in aux]
 
  aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a3")[0].text.split()
- a3=np.array(aux,dtype="float32")
+ a3=[float(i) for i in aux]
 
  a_vectors = np.array([a1,a2,a3])/alat #in units of alat
 # print(a_vectors.shape)
 # print(a_vectors)
  aux=root.findall("./CELL/RECIPROCAL_LATTICE_VECTORS/b1")[0].text.split()
- b1=np.array(aux,dtype='float32')
+ b1=[float(i) for i in aux]
 
  aux=root.findall("./CELL/RECIPROCAL_LATTICE_VECTORS/b2")[0].text.split()
- b2=np.array(aux,dtype='float32')
+ b2=[float(i) for i in aux]
 
  aux=root.findall("./CELL/RECIPROCAL_LATTICE_VECTORS/b3")[0].text.split()
- b3=np.array(aux,dtype='float32')
+ b3=[float(i) for i in aux]
 
  b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
 
@@ -427,11 +427,11 @@ def read_QE_output_xml(fpath,read_S):
  print('Units for the kpoints: {0:s}'.format(kunits))
 
  aux = root.findall("./K-POINTS")[0].text.split()
- kpnts  = np.array(aux,dtype="float32").reshape((nkpnts,3))
+ kpnts  = np.array([float(i) for i in aux]).reshape((nkpnts,3))
  print('Read the kpoints')
 
  aux = root.findall("./WEIGHT_OF_K-POINTS")[0].text.split()
- kpnts_wght  = np.array(aux,dtype='float32')
+ kpnts_wght  = np.array([float(i) for i in aux])
 
  if kpnts_wght.shape[0] != nkpnts:
  	sys.exit('Error in size of the kpnts_wght vector')
@@ -465,9 +465,9 @@ def read_QE_output_xml(fpath,read_S):
      if eigk_type != 'real':
        sys.exit('Reading eigenvalues that are not real numbers')
      if nspin==1:
-       eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].text.split(),dtype='float32')
+       eigk_file=np.array([float(i) for i in root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].text.split()])
      else:
-       eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].text.split().split(),dtype='float32')
+       eigk_file=np.array([float(i) for i in root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].text.split().split()])
      my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
      #Reading projections
@@ -479,7 +479,7 @@ def read_QE_output_xml(fpath,read_S):
          wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,iin+1))[0].attrib['type']
          aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].text
 
-       aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+       aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
 
        if wfc_type=='real':
          wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
@@ -496,7 +496,7 @@ def read_QE_output_xml(fpath,read_S):
      #There will be nawf projections. Each projector of size nbnds x 1
      ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
      aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
-     aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+     aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
 
      if ovlp_type !='complex':
        sys.exit('the overlaps are assumed to be complex numbers')
@@ -511,6 +511,7 @@ def read_QE_output_xml(fpath,read_S):
  else:
    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
 		nk1, nk2, nk3)
+
 def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     import matplotlib.pyplot as plt
     import os
