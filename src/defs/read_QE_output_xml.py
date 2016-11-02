@@ -29,145 +29,199 @@ import re
 Ry2eV   = 13.60569193
 
 def read_QE_output_xml(fpath,read_S):
- atomic_proj = fpath+'/atomic_proj.xml'
- data_file   = fpath+'/data-file.xml'
+    atomic_proj = fpath+'/atomic_proj.xml'
+    data_file   = fpath+'/data-file.xml'
 
- # Reading data-file.xml
- print('...reading data-file.xml')
- tree  = ET.parse(data_file)
- root  = tree.getroot()
 
- alatunits  = root.findall("./CELL/LATTICE_PARAMETER")[0].attrib['UNITS']
- alat   = float(root.findall("./CELL/LATTICE_PARAMETER")[0].text.split()[0])
+    # Reading data-file.xml
 
- #print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
+    for event,elem in ET.iterparse(data_file,events=('start','end')):
+        if event == 'end':
+            if elem.tag == "CELL":
+                alatunits  = elem.findall("LATTICE_PARAMETER")[0].attrib['UNITS']
+                alat   = float(elem.findall("LATTICE_PARAMETER")[0].text.split()[0])
+                print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
- aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a1")[0].text.split()
- a1=[float(i) for i in aux]
+                aux=elem.findall("DIRECT_LATTICE_VECTORS/a1")[0].text.split()     
+                a1=np.array(aux,dtype="float32")
+                                                                                         
+                aux=elem.findall("DIRECT_LATTICE_VECTORS/a2")[0].text.split()
+                a2=np.array(aux,dtype="float32")
+                                                                                         
+                aux=elem.findall("DIRECT_LATTICE_VECTORS/a3")[0].text.split()
+                a3=np.array(aux,dtype="float32")
+                                                                                         
+                a_vectors = np.array([a1,a2,a3])/alat #in units of alat
+                print(a_vectors.shape)
+                print(a_vectors)
+                aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b1")[0].text.split()
+                b1=np.array(aux,dtype='float32')
+                                                                                         
+                aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b2")[0].text.split()
+                b2=np.array(aux,dtype='float32')
+                                                                                         
+                aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b3")[0].text.split()
+                b3=np.array(aux,dtype='float32')
+                                                                                         
+                b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
 
- aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a2")[0].text.split()
- a2=[float(i) for i in aux]
+                elem.clear()
 
- aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a3")[0].text.split()
- a3=[float(i) for i in aux]
+            if elem.tag == 'BRILLOUIN_ZONE':
+                # Monkhorst&Pack grid
+                nk1=int(elem.findall("MONKHORST_PACK_GRID")[0].attrib['nk1'])
+                nk2=int(elem.findall("MONKHORST_PACK_GRID")[0].attrib['nk2'])
+                nk3=int(elem.findall("MONKHORST_PACK_GRID")[0].attrib['nk3'])
+                k1=int(elem.findall("MONKHORST_PACK_OFFSET")[0].attrib['k1'])
+                k2=int(elem.findall("MONKHORST_PACK_OFFSET")[0].attrib['k2'])
+                k3=int(elem.findall("MONKHORST_PACK_OFFSET")[0].attrib['k3'])
+                elem.clear()
 
- a_vectors = np.array([a1,a2,a3])/alat #in units of alat
-# print(a_vectors.shape)
-# print(a_vectors)
- aux=root.findall("./CELL/RECIPROCAL_LATTICE_VECTORS/b1")[0].text.split()
- b1=[float(i) for i in aux]
+                print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
+    
 
- aux=root.findall("./CELL/RECIPROCAL_LATTICE_VECTORS/b2")[0].text.split()
- b2=[float(i) for i in aux]
+    # Reading atomic_proj.xml
 
- aux=root.findall("./CELL/RECIPROCAL_LATTICE_VECTORS/b3")[0].text.split()
- b3=[float(i) for i in aux]
+    group_nesting = 0 
+    readEigVals = False; readProj = False
+    for event,elem in ET.iterparse(atomic_proj,events=('start','end')):
+        if event == 'end' and  elem.tag == "HEADER":
+                nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
+                print('Number of kpoints: {0:d}'.format(nkpnts))                                    
+                                                                                                    
+                nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
+                print('Number of spin components: {0:d}'.format(nspin))
+                                                                                                    
+                kunits = elem.findall("UNITS_FOR_K-POINTS")[0].attrib['UNITS']
+                print('Units for the kpoints: {0:s}'.format(kunits))
+                                                                                                    
+                nbnds  = int(elem.findall("NUMBER_OF_BANDS")[0].text.split()[0])
+                print('Number of bands: {0:d}'.format(nbnds))
+                                                                                                    
+                aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
+                print('The units for energy are {0:s}'.format(aux))
+                                                                                                    
+                Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
+                print('Fermi energy: {0:f} eV '.format(Efermi))
+                                                                                                    
+                nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
+                print('Number of atomic wavefunctions: {0:d}'.format(nawf))
 
- b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
+                U = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
+                my_eigsmat = np.zeros((nbnds,nkpnts,nspin))
 
- # Monkhorst&Pack grid
- nk1=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_GRID")[0].attrib['nk1'])
- nk2=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_GRID")[0].attrib['nk2'])
- nk3=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_GRID")[0].attrib['nk3'])
- k1=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k1'])
- k2=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k2'])
- k3=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k3'])
- print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
+                elem.clear()
 
- # Reading atomic_proj.xml
- print('...reading atomic-proj.xml')
- tree  = ET.parse(atomic_proj)
- root  = tree.getroot()
+        if event == 'end' and elem.tag =="K-POINTS":
+            kpnts  = np.array(elem.text.split(),dtype="float32").reshape((nkpnts,3))
+            print('Read the kpoints')
+            elem.clear()
 
- nkpnts = int(root.findall("./HEADER/NUMBER_OF_K-POINTS")[0].text.strip())
- #print('Number of kpoints: {0:d}'.format(nkpnts))
+        if event == 'end' and elem.tag =="WEIGHT_OF_K-POINTS":
+            kpnts_wght  = np.array(elem.text.split(),dtype='float32')
+                                                                       
+            if kpnts_wght.shape[0] != nkpnts:
+                sys.exit('Error in size of the kpnts_wght vector')
+            else:
+                print('Read the weight of the kpoints')
+            elem.clear()
 
- nspin  = int(root.findall("./HEADER/NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
- #print('Number of spin components: {0:d}'.format(nspin))
+        #Read eigenvalues and projections
 
- kunits = root.findall("./HEADER/UNITS_FOR_K-POINTS")[0].attrib['UNITS']
- #print('Units for the kpoints: {0:s}'.format(kunits))
 
- aux = root.findall("./K-POINTS")[0].text.split()
- kpnts  = np.array([float(i) for i in aux]).reshape((nkpnts,3))
- #print('Read the kpoints')
+        if event == 'start':
+            if elem.tag == "EIGENVALUES":
+                group_nesting += 1
+                readEigVals = True
+                elem.clear()
+            if elem.tag == "PROJECTIONS":
+                group_nesting += 1
+                ispin = 0
+                readProj = True
+                elem.clear()
+            if "K-POINT" in elem.tag and readProj:
+                ik = int(float(elem.tag.split('.')[-1]))-1
+                group_nesting += 1
+                elem.clear()
+            if elem.tag == "OVERLAPS":
+                Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+                group_nesting += 1
+                elem.clear()
+            if 'SPIN' in elem.tag and group_nesting ==2:    #PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}
+                ispin = int(float(elem.tag.split('.')[-1]))-1
+                group_nesting += 1
+                elem.clear()
 
- aux = root.findall("./WEIGHT_OF_K-POINTS")[0].text.split()
- kpnts_wght  = np.array([float(i) for i in aux])
+        if event == 'end':
+            #Read eigen values for each k-point
+            if "K-POINT" in elem.tag and group_nesting == 1 and readEigVals: # EIGENVALUES/K-POINT.{0:d}
+                ik = int(float(elem.tag.split('.')[-1]))-1
+                if nspin ==1:
+                    ispin = 0
+                    eigk_type=elem.findall("EIG")[0].attrib['type']
+                    eigk_file=np.array(elem.findall("EIG")[0].text.split(),dtype='float32')
+                    my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
- if kpnts_wght.shape[0] != nkpnts:
- 	sys.exit('Error in size of the kpnts_wght vector')
+                else:
+                    for ispin in range(nspin):
+                        eigk_type=elem.findall("EIG.{1:d}".format(ispin+1))[0].attrib['type']
+                        eigk_file=np.array(elem.findall("EIG.{1:d}".format(ispin+1))[0].text.split().split(),dtype='float32')
+                        my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
+                elem.clear()
 
- nbnds  = int(root.findall("./HEADER/NUMBER_OF_BANDS")[0].text.split()[0])
- print('Number of bands: {0:d}'.format(nbnds))
 
- aux    = root.findall("./HEADER/UNITS_FOR_ENERGY")[0].attrib['UNITS']
- #print('The units for energy are {0:s}'.format(aux))
+            #Finish reading eigen values
+            if elem.tag == "EIGENVALUES":
+                if group_nesting == 1:
+                    elem.clear()
+                    readEigVals = False
+                    group_nesting = 0
+                    ik = 0
+                    ispin = 0
+            if 'ATMWFC' in elem.tag and readProj : #PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d} || PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}
+                if group_nesting ==2 : ispin == 0
+                iin = int(float(elem.tag.split('.')[-1]))-1
+                wfc_type=elem.attrib['type']
+                aux     =elem.text
+                aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
 
- Efermi = float(root.findall("./HEADER/FERMI_ENERGY")[0].text.split()[0])*Ry2eV
- print('Fermi energy: {0:f} eV '.format(Efermi))
+                if wfc_type=='real':
+                    wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
+                    U[:,iin,ik,ispin] = wfc[:,0]
+                elif wfc_type=='complex':
+                    wfc = aux.reshape((nbnds,2))
+                    U[:,iin,ik,ispin] = wfc[:,0]+1j*wfc[:,1]
+                else:
+                    sys.exit('neither real nor complex??')
 
- nawf   =int(root.findall("./HEADER/NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
- print('Number of atomic wavefunctions: {0:d}'.format(nawf))
+                elem.clear()
+            
+            #Finish reading projections
+            if elem.tag == "PROJECTIONS":
+                if group_nesting == 2 or group_nesting ==3:
+                    elem.clear()
+                    readProj = False
+                    group_nesting = 0
+                    ik = 0
+                    ispin = 0
 
- #Read eigenvalues and projections
+            if elem.tag == 'OVERLAP.1':
+                if group_nesting == 2:      #OVERLAPS/K-POINT.{0:d}/OVERLAP.1
+                    ovlp_type = elem.attrib['type']
+                    aux = elem.text
+                    aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
 
- U = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
- my_eigsmat = np.zeros((nbnds,nkpnts,nspin))
- for ispin in range(nspin):
-   for ik in range(nkpnts):
-     #Reading eigenvalues
-     if nspin==1:
-         eigk_type=root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].attrib['type']
-     else:
-         eigk_type=root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].attrib['type']
-     if eigk_type != 'real':
-       sys.exit('Reading eigenvalues that are not real numbers')
-     if nspin==1:
-       eigk_file=np.array([float(i) for i in root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].text.split()])
-     else:
-       eigk_file=np.array([float(i) for i in root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].text.split().split()])
-     my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
-
-     #Reading projections
-     for iin in range(nawf): #There will be nawf projections. Each projector of size nbnds x 1
-       if nspin==1:
-         wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].attrib['type']
-         aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].text
-       else:
-         wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,iin+1))[0].attrib['type']
-         aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].text
-
-       aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
-
-       if wfc_type=='real':
-         wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
-         U[:,iin,ik,ispin] = wfc[:,0]
-       elif wfc_type=='complex':
-         wfc = aux.reshape((nbnds,2))
-         U[:,iin,ik,ispin] = wfc[:,0]+1j*wfc[:,1]
-       else:
-         sys.exit('neither real nor complex??')
-
- if read_S:
-   Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-   for ik in range(nkpnts):
-     #There will be nawf projections. Each projector of size nbnds x 1
-     ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
-     aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
-     aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
-
-     if ovlp_type !='complex':
-       sys.exit('the overlaps are assumed to be complex numbers')
-     if len(aux) != nawf**2*2:
-       sys.exit('wrong number of elements when reading the S matrix')
-
-     aux = aux.reshape((nawf**2,2))
-     ovlp_vector = aux[:,0]+1j*aux[:,1]
-     Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
-   return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-		nk1, nk2, nk3)
- else:
-   return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-		nk1, nk2, nk3)
+                    if ovlp_type !='complex':                                          
+                        sys.exit('the overlaps are assumed to be complex numbers')
+                    if len(aux) != nawf**2*2:
+                        sys.exit('wrong number of elements when reading the S matrix')
+                                                                                       
+                    aux = aux.reshape((nawf**2,2))
+                    ovlp_vector = aux[:,0]+1j*aux[:,1]
+                    Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
+                    elem.clear()
+    if read_S:
+        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf,nk1, nk2, nk3)
+    else:
+        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
 
