@@ -52,7 +52,7 @@ size=comm.Get_size()
 if size > 1:
 	rank = comm.Get_rank()
 	if rank == 0: print('parallel execution on ',size,' processors')
-	from read_QE_output_xml import read_QE_output_xml
+	from read_QE_output_xml import *
 else:
 	rank=0
 	from read_QE_output_xml_parse import read_QE_output_xml
