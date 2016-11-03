@@ -35,6 +35,7 @@ def read_input(input_file):
         do_bands = False
 	onedim = False
         do_dos = False
+	do_spin_orbit = False
 	nfft1 = 0
 	nfft2 = 0
 	nfft3 = 0
@@ -92,6 +93,13 @@ def read_input(input_file):
     		if re.search('delta',line):
        			p = line.split()
        			delta = float(p[1])
+    		if re.search('do_spin_orbit',line):
+       			p = line.split()
+       			do_spin_orbit = p[1]
+                        if do_spin_orbit == 'False':
+				do_spin_orbit = (1 == 2)
+ 			else:
+				do_spin_orbit = (1 == 1)
     		if re.search('shift_type',line):
        			p = line.split()
        			shift_type = int(p[1])
@@ -110,4 +118,4 @@ def read_input(input_file):
 		sys.exit('missing path to _.save')
 
 	return(read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-		do_bands, onedim, do_dos, delta, nfft1, nfft2, nfft3) 
+		do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3) 

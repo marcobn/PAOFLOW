@@ -53,9 +53,17 @@ def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S):
 	Hks_aux1  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # receiving data arrays
 	Sks_aux1  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
 
-        local_nk = nkpi/size
-        ini_ik = rank*local_nk
-        end_ik = ini_ik + local_nk
+        # Load balancing
+        ini_i = np.zeros((size),dtype=int)
+        end_i = np.zeros((size),dtype=int)
+
+        splitsize = 1.0/size*nkpi
+        for i in range(size):
+                ini_i[i] = int(round(i*splitsize))
+                end_i[i] = int(round((i+1)*splitsize))
+
+        ini_ik = ini_i[rank]
+        end_ik = end_i[rank]
 
 	Hks_aux[:,:,:,:,0] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
 	

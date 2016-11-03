@@ -48,9 +48,17 @@ def do_dos_calc(Hksp,Sksp,read_S,shift,delta):
 	dosaux = np.zeros((ene.size,1),dtype=float)
 	dosaux1 = np.zeros((ene.size,1),dtype=float)
 
-        local_ne = ene.size/size
-        ini_ie = rank*local_ne
-        end_ie = ini_ie + local_ne
+        # Load balancing
+        ini_i = np.zeros((size),dtype=int)
+        end_i = np.zeros((size),dtype=int)
+
+        splitsize = 1.0/size*ene.size
+        for i in range(size):
+                ini_i[i] = int(round(i*splitsize))
+                end_i[i] = int(round((i+1)*splitsize))
+
+        ini_ie = ini_i[rank]
+        end_ie = end_i[rank]
 
 	dosaux[:,0] = dos_loop(ini_ie,end_ie,ene,eig,delta)
 

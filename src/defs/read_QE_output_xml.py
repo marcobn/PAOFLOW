@@ -127,9 +127,17 @@ def read_QE_output_xml(fpath,read_S):
         Uaux1 = np.zeros((nbnds,nawf,nkpnts,nspin,1),dtype=complex) # receiving data array
         my_eigsmataux1 = np.zeros((nbnds,nkpnts,nspin,1))
 
-	local_nk = nkpnts/size
-        ini_ik = rank*local_nk
-        end_ik = ini_ik + local_nk
+	# Load balancing
+	ini_i = np.zeros((size),dtype=int)
+	end_i = np.zeros((size),dtype=int)
+
+	splitsize = 1.0/size*nkpnts
+	for i in range(size):
+        	ini_i[i] = int(round(i*splitsize))
+        	end_i[i] = int(round((i+1)*splitsize))
+
+	ini_ik = ini_i[rank]
+	end_ik = end_i[rank]
 
 	Uaux[:,:,:,:,0] = read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi)
 
