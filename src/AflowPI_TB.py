@@ -33,7 +33,6 @@ sys.path.append('./')
 sys.path.append('/home/marco/Programs/AflowPI_TB/src/defs')
 # Import TB specific functions
 from read_input import read_input
-from read_QE_output_xml import read_QE_output_xml
 from build_Pn import build_Pn
 from build_Hks import build_Hks
 from do_non_ortho import do_non_ortho
@@ -53,8 +52,11 @@ size=comm.Get_size()
 if size > 1:
 	rank = comm.Get_rank()
 	if rank == 0: print('parallel execution on ',size,' processors')
+	from read_QE_output_xml import read_QE_output_xml
 else:
 	rank=0
+	from read_QE_output_xml_parse import read_QE_output_xml
+
 
 input_file = sys.argv[1]
 
