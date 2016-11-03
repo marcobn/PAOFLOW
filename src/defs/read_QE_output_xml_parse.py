@@ -52,8 +52,6 @@ def read_QE_output_xml(fpath,read_S):
                 a3=np.array(aux,dtype="float32")
                                                                                          
                 a_vectors = np.array([a1,a2,a3])/alat #in units of alat
-                print(a_vectors.shape)
-                print(a_vectors)
                 aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b1")[0].text.split()
                 b1=np.array(aux,dtype='float32')
                                                                                          
@@ -93,13 +91,11 @@ def read_QE_output_xml(fpath,read_S):
                 print('Number of spin components: {0:d}'.format(nspin))
                                                                                                     
                 kunits = elem.findall("UNITS_FOR_K-POINTS")[0].attrib['UNITS']
-                print('Units for the kpoints: {0:s}'.format(kunits))
                                                                                                     
                 nbnds  = int(elem.findall("NUMBER_OF_BANDS")[0].text.split()[0])
                 print('Number of bands: {0:d}'.format(nbnds))
                                                                                                     
                 aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
-                print('The units for energy are {0:s}'.format(aux))
                                                                                                     
                 Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
                 print('Fermi energy: {0:f} eV '.format(Efermi))
@@ -114,7 +110,6 @@ def read_QE_output_xml(fpath,read_S):
 
         if event == 'end' and elem.tag =="K-POINTS":
             kpnts  = np.array(elem.text.split(),dtype="float32").reshape((nkpnts,3))
-            print('Read the kpoints')
             elem.clear()
 
         if event == 'end' and elem.tag =="WEIGHT_OF_K-POINTS":
@@ -122,8 +117,6 @@ def read_QE_output_xml(fpath,read_S):
                                                                        
             if kpnts_wght.shape[0] != nkpnts:
                 sys.exit('Error in size of the kpnts_wght vector')
-            else:
-                print('Read the weight of the kpoints')
             elem.clear()
 
         #Read eigenvalues and projections

@@ -24,9 +24,15 @@ import numpy as np
 import cmath
 import sys, time
 
-sys.path.append('./')
+from mpi4py import MPI
+from mpi4py.MPI import ANY_SOURCE
 
 from calc_TB_eigs import calc_TB_eigs
+
+# initialize parallel execution
+comm=MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
  
 def do_dos_calc(Hksp,Sksp,read_S,shift,delta):
 	# DOS calculation with gaussian smearing
@@ -36,16 +42,41 @@ def do_dos_calc(Hksp,Sksp,read_S,shift,delta):
 	emax = np.max(eig)-shift/2.0
 	de = (emax-emin)/1000
 	ene = np.arange(emin,emax,de,dtype=float)
-	dos = np.zeros((ene.size),dtype=float)
 	dosvec = np.zeros((eig.size),dtype=float)
 
-	for ne in range(ene.size):
-		dosvec = 1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-eig)/delta)**2)/delta
-		dos[ne] = np.sum(dosvec)
+	dos = np.zeros((ene.size),dtype=float)
+	dosaux = np.zeros((ene.size,1),dtype=float)
+	dosaux1 = np.zeros((ene.size,1),dtype=float)
 
-	f=open('dos.dat','w')
-        for ne in range(ene.size):
-                f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
-	f.close()
+        local_ne = ene.size/size
+        ini_ie = rank*local_ne
+        end_ie = ini_ie + local_ne
+
+	dosaux[:,0] = dos_loop(ini_ie,end_ie,ene,eig,delta)
+
+        if rank == 0:
+                dos[:]=dosaux[:,0]
+                for i in range(1,size):
+                        comm.Recv(dosaux1,ANY_SOURCE)
+                        dos[:] += dosaux1[:,0]
+        else:
+                comm.Send(dosaux)
+        dos = comm.bcast(dos)
+
+	if rank == 0:
+		f=open('dos.dat','w')
+        	for ne in range(ene.size):
+                	f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
+		f.close()
 
 	return()
+
+def dos_loop(ini_ie,end_ie,ene,eig,delta):
+
+	aux = np.zeros((ene.size),dtype=float)
+
+        for ne in range(ini_ie,end_ie):
+                dosvec = 1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-eig)/delta)**2)/delta
+                aux[ne] = np.sum(dosvec)
+
+	return(aux)
