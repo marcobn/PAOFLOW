@@ -31,7 +31,6 @@ from write_TB_eigs import write_TB_eigs
 
 def do_bands_calc_1D(Hkaux,Skaux,read_S):
 	# FFT interpolation along a single directions in the BZ
-	print('... computing bands along a line')
 
 	nawf = Hksp.shape[0]
 	nk1 = Hksp.shape[2]

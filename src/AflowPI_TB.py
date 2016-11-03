@@ -27,6 +27,7 @@ from scipy import fftpack as FFT
 import xml.etree.ElementTree as ET
 import numpy as np
 import sys, time
+from mpi4py import MPI
 # Define paths
 sys.path.append('./')
 sys.path.append('/home/marco/Programs/AflowPI_TB/src/defs')
@@ -46,6 +47,15 @@ from do_dos_calc import do_dos_calc
 #units
 Ry2eV      = 13.60569193
 
+# initialize parallel execution
+comm=MPI.COMM_WORLD
+size=comm.Get_size()
+if size > 1:
+	rank = comm.Get_rank()
+	if rank == 0: print('parallel execution on ',size,' processors')
+else:
+	rank=0
+
 input_file = sys.argv[1]
 
 read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
@@ -60,16 +70,16 @@ if (not read_S):
 	kpnts_wght /= sumk
 	for ik in range(nkpnts):
         	Sks[:,:,ik]=np.identity(nawf)
-	print('...using orthogonal algorithm')
+        if rank == 0: print('...using orthogonal algorithm')
 else:
 	U,Sks, my_eigsmat, alat, a_vectors, b_vectors, \
 	nkpnts, nspin, kpnts, kpnts_wght, \
 	nbnds, Efermi, nawf, nk1, nk2, nk3 =  read_QE_output_xml(fpath,read_S)
 	sumk = np.sum(kpnts_wght)
 	kpnts_wght /= sumk
-	print('...using non-orthogonal algorithm')
+        if rank == 0: print('...using non-orthogonal algorithm')
 
-print('reading in ',time.clock(),' sec')
+if rank == 0: print('reading in ',time.clock(),' sec')
 reset=time.clock()
 
 # Get grid of k-vectors in the fft order for the nscf calculation
@@ -79,7 +89,7 @@ reset=time.clock()
 # Building the Projectability
 Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
 
-print('Projectability vector ',Pn)
+if rank == 0: print('Projectability vector ',Pn)
 
 # Check projectability and decide bnd
 
@@ -87,13 +97,13 @@ bnd = 0
 for n in range(nbnds):
    if Pn[n] > pthr:
       bnd += 1
-print('# of bands with good projectability (>',pthr,') = ',bnd)
+if rank == 0: print('# of bands with good projectability (>',pthr,') = ',bnd)
  
 # Building the TB Hamiltonian 
 nbnds_norm = nawf
 Hks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
 
-print('building Hks in ',time.clock()-reset,' sec')
+if rank == 0: print('building Hks in ',time.clock()-reset,' sec')
 reset=time.clock()
 
 # Take care of non-orthogonality, if needed
@@ -130,21 +140,21 @@ for i in range(nk1):
 				if read_S and ispin == 0:
 					SRaux[i,j,:,:,:] = FFT.ifftn(Skaux[i,j,:,:,:])
 
-print('k -> R in ',time.clock()-reset,' sec')
+if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
 
 if do_bands and not(onedim):
 	# Compute bands on a selected path in the BZ
 	do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S)
 
-        print('bands in ',time.clock()-reset,' sec')
+	if rank == 0: print('bands in ',time.clock()-reset,' sec')
         reset=time.clock()
 
 if double_grid:
 	# Fourier interpolation on extended grid (zero padding)
 	Hksp,Sksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRaux,SRaux,read_S)
 
-	print('R -> k zero padding in ',time.clock()-reset,' sec')
+	if rank ==0: print('R -> k zero padding in ',time.clock()-reset,' sec')
 	reset=time.clock()
 else:
 	Hksp = Hkaux
@@ -152,19 +162,19 @@ else:
 
 if do_bands and onedim:
 	# FFT interpolation along a single directions in the BZ
-	print('... computing bands along a line')
+	if rank == 0: print('... computing bands along a line')
 	do_bands_calc_1D(Hkaux,Skaux,read_S)
 
-        print('bands in ',time.clock()-reset,' sec')
+        if rank ==0: print('bands in ',time.clock()-reset,' sec')
         reset=time.clock()
 
 if do_dos:
 	# DOS calculation with gaussian smearing on double_grid Hksp
 	do_dos_calc(Hksp,Sksp,read_S,shift,delta)
 
-        print('dos in ',time.clock()-reset,' sec')
+        if rank ==0: print('dos in ',time.clock()-reset,' sec')
         reset=time.clock()
 
 # Timing
-print('Total CPU time =', time.clock(),' sec')
+if rank ==0: print('Total CPU time =', time.clock(),' sec')
 

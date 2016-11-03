@@ -30,7 +30,7 @@ from calc_TB_eigs import calc_TB_eigs
  
 def do_dos_calc(Hksp,Sksp,read_S,shift,delta):
 	# DOS calculation with gaussian smearing
-	print('... computing DOS')
+
 	eig,ndos = calc_TB_eigs(Hksp,Sksp,read_S)
 	emin = np.min(eig)-1.0
 	emax = np.max(eig)-shift/2.0

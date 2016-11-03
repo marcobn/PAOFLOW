@@ -24,10 +24,14 @@ from scipy import fftpack as FFT
 import numpy as np
 import cmath
 import sys, time
+from mpi4py import MPI
 
 sys.path.append('./')
 
 from zero_pad import zero_pad
+
+comm=MPI.COMM_WORLD
+rank = comm.Get_rank()
  
 def do_double_grid(nfft1,nfft2,nfft3,HRaux,SRaux,read_S):
 	# Fourier interpolation on extended grid (zero padding)
@@ -40,7 +44,7 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,SRaux,read_S):
 	nk2p = nfft2+nk2
 	nk3p = nfft3+nk3
 	nktotp= nk1p*nk2p*nk3p
-	print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
+	if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
 
 	# Extended R to k (with zero padding)
 	HRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)

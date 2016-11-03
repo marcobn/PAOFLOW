@@ -32,8 +32,6 @@ from kpnts_interpolation_mesh import kpnts_interpolation_mesh
  
 def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S):
 	# Compute bands on a selected path in the BZ
-	print('... computing bands')
-
 	# Define k-point mesh for bands interpolation
 	kq,kmod,nkpi = kpnts_interpolation_mesh()
 
