@@ -32,16 +32,17 @@ from mpi4py import MPI
 sys.path.append('./')
 sys.path.append('/home/marco/Programs/AflowPI_TB/src/defs')
 # Import TB specific functions
-from read_input import read_input
-from build_Pn import build_Pn
-from build_Hks import build_Hks
-from do_non_ortho import do_non_ortho
-from plot_compare_TB_DFT_eigs import plot_compare_TB_DFT_eigs
-from get_R_grid_fft import get_R_grid_fft
-from do_bands_calc import do_bands_calc
-from do_bands_calc_1D import do_bands_calc_1D
-from do_double_grid import do_double_grid
-from do_dos_calc import do_dos_calc
+from read_input import *
+from build_Pn import *
+from build_Hks import *
+from do_non_ortho import *
+from plot_compare_TB_DFT_eigs import *
+from get_R_grid_fft import *
+from do_bands_calc import *
+from do_bands_calc_1D import *
+from do_double_grid import *
+from do_dos_calc import *
+from do_spin_orbit import *
  
 #units
 Ry2eV      = 13.60569193
@@ -61,7 +62,7 @@ else:
 input_file = sys.argv[1]
 
 read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
-	do_bands, onedim, do_dos, delta, nfft1, nfft2, nfft3 = read_input(input_file)
+	do_bands, onedim, do_dos, delta, do_spin_orbit,nfft1, nfft2, nfft3 = read_input(input_file)
 
 if (not read_S):
 	U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -144,6 +145,11 @@ for i in range(nk1):
 
 if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
+
+if do_spin_orbit and not(read_S):
+	do_spin_orbit()
+elif do_spin_orbit and read_S:
+	sys.exit('spin orbit interaction only with orthogonal basis')
 
 if do_bands and not(onedim):
 	# Compute bands on a selected path in the BZ
