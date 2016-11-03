@@ -27,11 +27,6 @@ import sys,time
 import re
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-sys.path.append('./')
-sys.path.append('/home/marco/Programs/codes_py/MPI')
-
-from read_eig import read_eig
-from read_proj import read_proj
 
 #units
 Ry2eV   = 13.60569193
@@ -183,3 +178,53 @@ def read_QE_output_xml(fpath,read_S):
           	return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
 	       	nk1, nk2, nk3)
 
+def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
+
+        my_eigsmat_p = np.zeros((nbnds,nkpnts,nspin))
+
+        for ik in range(ini_ik,end_ik):
+                for ispin in range(nspin):
+                #Reading eigenvalues
+                        if nspin==1:
+                                eigk_type=root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].attrib['type']
+                        else:
+                                eigk_type=root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].attrib['type']
+                        if eigk_type != 'real':
+                                sys.exit('Reading eigenvalues that are not real numbers')
+                        if nspin==1:
+                                eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].text.split(),dtype='float32')
+                        else:
+                                eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1)) \
+                                        [0].text.split().split(),dtype='float32')
+                        my_eigsmat_p[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
+
+	return(my_eigsmat_p)
+
+
+def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
+
+        U_p = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
+        my_eigsmat_p = np.zeros((nbnds,nkpnts,nspin))
+
+        for ik in range(ini_ik,end_ik):
+                for ispin in range(nspin):
+                        #Reading projections
+                        for iin in range(nawf): #There will be nawf projections. Each projector of size nbnds x 1
+                                if nspin==1:
+                                        wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].attrib['type']
+                                        aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].text
+                                else:
+                                        wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,iin+1))[0].attrib['type']
+                                        aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].text
+
+                                aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+
+                                if wfc_type=='real':
+                                        wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
+                                        U_p[:,iin,ik,ispin] = wfc[:,0]
+                                elif wfc_type=='complex':
+                                        wfc = aux.reshape((nbnds,2))
+                                        U_p[:,iin,ik,ispin] = wfc[:,0]+1j*wfc[:,1]
+                                else:
+                                        sys.exit('neither real nor complex??')
+	return(U_p)
