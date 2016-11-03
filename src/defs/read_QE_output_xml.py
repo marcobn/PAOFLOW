@@ -204,7 +204,6 @@ def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
         U_p = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
-        my_eigsmat_p = np.zeros((nbnds,nkpnts,nspin))
 
         for ik in range(ini_ik,end_ik):
                 for ispin in range(nspin):
