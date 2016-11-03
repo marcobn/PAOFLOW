@@ -20,6 +20,7 @@
 # Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
+#
 from scipy import fftpack as FFT
 import numpy as np
 import cmath
@@ -34,6 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 def do_spin_orbit():
+    Pn = 0.0
 
 
 	return()
