@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -42,25 +42,25 @@ def read_QE_output_xml(fpath,read_S):
                 alat   = float(elem.findall("LATTICE_PARAMETER")[0].text.split()[0])
                 print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
-                aux=elem.findall("DIRECT_LATTICE_VECTORS/a1")[0].text.split()     
+                aux=elem.findall("DIRECT_LATTICE_VECTORS/a1")[0].text.split()
                 a1=np.array(aux,dtype="float32")
-                                                                                         
+
                 aux=elem.findall("DIRECT_LATTICE_VECTORS/a2")[0].text.split()
                 a2=np.array(aux,dtype="float32")
-                                                                                         
+
                 aux=elem.findall("DIRECT_LATTICE_VECTORS/a3")[0].text.split()
                 a3=np.array(aux,dtype="float32")
-                                                                                         
+
                 a_vectors = np.array([a1,a2,a3])/alat #in units of alat
                 aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b1")[0].text.split()
                 b1=np.array(aux,dtype='float32')
-                                                                                         
+
                 aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b2")[0].text.split()
                 b2=np.array(aux,dtype='float32')
-                                                                                         
+
                 aux=elem.findall("RECIPROCAL_LATTICE_VECTORS/b3")[0].text.split()
                 b3=np.array(aux,dtype='float32')
-                                                                                         
+
                 b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
 
                 elem.clear()
@@ -76,37 +76,37 @@ def read_QE_output_xml(fpath,read_S):
                 elem.clear()
 
                 print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
-    
+
 
     # Reading atomic_proj.xml
 
-    group_nesting = 0 
+    group_nesting = 0
     readEigVals = False; readProj = False
     for event,elem in ET.iterparse(atomic_proj,events=('start','end')):
         if event == 'end' and  elem.tag == "HEADER":
-                nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
-                print('Number of kpoints: {0:d}'.format(nkpnts))                                    
-                                                                                                    
-                nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
-                print('Number of spin components: {0:d}'.format(nspin))
-                                                                                                    
-                kunits = elem.findall("UNITS_FOR_K-POINTS")[0].attrib['UNITS']
-                                                                                                    
-                nbnds  = int(elem.findall("NUMBER_OF_BANDS")[0].text.split()[0])
-                print('Number of bands: {0:d}'.format(nbnds))
-                                                                                                    
-                aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
-                                                                                                    
-                Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
-                print('Fermi energy: {0:f} eV '.format(Efermi))
-                                                                                                    
-                nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
-                print('Number of atomic wavefunctions: {0:d}'.format(nawf))
+            nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
+            print('Number of kpoints: {0:d}'.format(nkpnts))
 
-                U = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
-                my_eigsmat = np.zeros((nbnds,nkpnts,nspin))
+            nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
+            print('Number of spin components: {0:d}'.format(nspin))
 
-                elem.clear()
+            kunits = elem.findall("UNITS_FOR_K-POINTS")[0].attrib['UNITS']
+
+            nbnds  = int(elem.findall("NUMBER_OF_BANDS")[0].text.split()[0])
+            print('Number of bands: {0:d}'.format(nbnds))
+
+            aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
+
+            Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
+            print('Fermi energy: {0:f} eV '.format(Efermi))
+
+            nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
+            print('Number of atomic wavefunctions: {0:d}'.format(nawf))
+
+            U = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
+            my_eigsmat = np.zeros((nbnds,nkpnts,nspin))
+
+            elem.clear()
 
         if event == 'end' and elem.tag =="K-POINTS":
             kpnts  = np.array(elem.text.split(),dtype="float32").reshape((nkpnts,3))
@@ -114,7 +114,7 @@ def read_QE_output_xml(fpath,read_S):
 
         if event == 'end' and elem.tag =="WEIGHT_OF_K-POINTS":
             kpnts_wght  = np.array(elem.text.split(),dtype='float32')
-                                                                       
+
             if kpnts_wght.shape[0] != nkpnts:
                 sys.exit('Error in size of the kpnts_wght vector')
             elem.clear()
@@ -188,7 +188,7 @@ def read_QE_output_xml(fpath,read_S):
                     sys.exit('neither real nor complex??')
 
                 elem.clear()
-            
+
             #Finish reading projections
             if elem.tag == "PROJECTIONS":
                 if group_nesting == 2 or group_nesting ==3:
@@ -204,11 +204,11 @@ def read_QE_output_xml(fpath,read_S):
                     aux = elem.text
                     aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
 
-                    if ovlp_type !='complex':                                          
+                    if ovlp_type !='complex':
                         sys.exit('the overlaps are assumed to be complex numbers')
                     if len(aux) != nawf**2*2:
                         sys.exit('wrong number of elements when reading the S matrix')
-                                                                                       
+
                     aux = aux.reshape((nawf**2,2))
                     ovlp_vector = aux[:,0]+1j*aux[:,1]
                     Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
@@ -217,4 +217,3 @@ def read_QE_output_xml(fpath,read_S):
         return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf,nk1, nk2, nk3)
     else:
         return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
-
