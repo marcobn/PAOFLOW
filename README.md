@@ -1,4 +1,4 @@
-# AflowPI_TB
+# AFLOWpi_TB
 
  AFLOWpi_TB
 
