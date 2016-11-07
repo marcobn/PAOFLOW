@@ -35,7 +35,7 @@ from mpi4py import MPI
 
 # Define paths
 sys.path.append('./')
-sys.path.append('/home/marco/Programs/AflowPI_TB/src/defs')
+sys.path.append('/home/marco/Programs/AFLOWpi_TB/src/defs')
 # Import TB specific functions
 from read_input import *
 from build_Pn import *
@@ -141,14 +141,12 @@ for i in range(nk1):
             if (read_S):
                 Skaux[:,:,i,j,k] = Sks[:,:,idx[i,j,k]]
 
-    HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    SRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-    for ispin in range(nspin):
-        for i in range(nawf):
-            for j in range(nawf):
-                HRaux[i,j,:,:,:,ispin] = FFT.ifftn(Hkaux[i,j,:,:,:,ispin])
-                if read_S and ispin == 0:
-                    SRaux[i,j,:,:,:] = FFT.ifftn(Skaux[i,j,:,:,:])
+HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+SRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+
+HRaux[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+if read_S and ispin == 0:
+    SRaux[:,:,:,:,:] = FFT.ifftn(Skaux[:,:,:,:,:],axes=[2,3,4])
 
 if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
