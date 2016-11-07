@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -39,9 +39,9 @@ def plot_TB_eigs(Hks,Sks,read_S):
     #for ispin in range(nspin):
     for ik in range(nkpnts):
         if read_S:
-		eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
-	else:	
-		eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
+        else:
+            eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
     fig=plt.figure
@@ -49,9 +49,9 @@ def plot_TB_eigs(Hks,Sks,read_S):
     for i in range(nbnds_tb):
         yy = E_k[i,:,ispin]
         if i==0:
-          plt.plot(yy,'ok',markersize=2,markeredgecolor='None',label='TB')
+            plt.plot(yy,'ok',markersize=2,markeredgecolor='None',label='TB')
         else:
-          plt.plot(yy,'ok',markersize=2,markeredgecolor='None')
+            plt.plot(yy,'ok',markersize=2,markeredgecolor='None')
 
     plt.xlabel('k-points')
     plt.ylabel('Energy - E$_F$ (eV)')
@@ -59,4 +59,3 @@ def plot_TB_eigs(Hks,Sks,read_S):
     plt.title('TB eigenvalues')
     plt.savefig('interpolation.pdf',format='pdf')
     return()
-

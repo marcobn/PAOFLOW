@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -29,4 +29,3 @@ def build_Pn(nawf,nbnds,nkpnts,nspin,U):
             UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
             Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts
     return Pn
-

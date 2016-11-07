@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -36,4 +36,4 @@ rank = comm.Get_rank()
 def do_spin_orbit():
 
 
-	return()
+    return()
