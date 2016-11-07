@@ -203,8 +203,7 @@ def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
             if nspin==1:
                 eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].text.split(),dtype='float32')
             else:
-                eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1)) \
-                        [0].text.split().split(),dtype='float32')
+                eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].text.split(),dtype='float32')
             my_eigsmat_p[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
     return(my_eigsmat_p)
@@ -222,7 +221,7 @@ def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
                     wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].attrib['type']
                     aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].text
                 else:
-                    wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,iin+1))[0].attrib['type']
+                    wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].attrib['type']
                     aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].text
 
                 aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
@@ -236,3 +235,6 @@ def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
                 else:
                     sys.exit('neither real nor complex??')
     return(U_p)
+
+if __name__ == '__main__':
+    read_QE_output_xml('./',False)

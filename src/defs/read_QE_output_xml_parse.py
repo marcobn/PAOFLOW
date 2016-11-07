@@ -81,7 +81,7 @@ def read_QE_output_xml(fpath,read_S):
     # Reading atomic_proj.xml
 
     group_nesting = 0
-    readEigVals = False; readProj = False
+    readEigVals = False; readProj = False; readOvlps = False;
     for event,elem in ET.iterparse(atomic_proj,events=('start','end')):
         if event == 'end' and  elem.tag == "HEADER":
             nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
@@ -103,8 +103,6 @@ def read_QE_output_xml(fpath,read_S):
             nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
             print('Number of atomic wavefunctions: {0:d}'.format(nawf))
 
-            U = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
-            my_eigsmat = np.zeros((nbnds,nkpnts,nspin))
 
             elem.clear()
 
@@ -126,19 +124,23 @@ def read_QE_output_xml(fpath,read_S):
             if elem.tag == "EIGENVALUES":
                 group_nesting += 1
                 readEigVals = True
+                U = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
+                my_eigsmat = np.zeros((nbnds,nkpnts,nspin))
                 elem.clear()
             if elem.tag == "PROJECTIONS":
                 group_nesting += 1
                 ispin = 0
                 readProj = True
                 elem.clear()
-            if "K-POINT" in elem.tag and readProj:
-                ik = int(float(elem.tag.split('.')[-1]))-1
-                group_nesting += 1
-                elem.clear()
+            if "K-POINT" in elem.tag:
+                if readProj or readOvlps:
+                    ik = int(float(elem.tag.split('.')[-1]))-1
+                    group_nesting += 1
+                    elem.clear()
             if elem.tag == "OVERLAPS":
                 Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                 group_nesting += 1
+                readOvlps = True
                 elem.clear()
             if 'SPIN' in elem.tag and group_nesting ==2:    #PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}
                 ispin = int(float(elem.tag.split('.')[-1]))-1
@@ -157,20 +159,12 @@ def read_QE_output_xml(fpath,read_S):
 
                 else:
                     for ispin in range(nspin):
-                        eigk_type=elem.findall("EIG.{1:d}".format(ispin+1))[0].attrib['type']
-                        eigk_file=np.array(elem.findall("EIG.{1:d}".format(ispin+1))[0].text.split().split(),dtype='float32')
+                        eigk_type=elem.findall("EIG.%d"%(ispin+1))[0].attrib['type']
+                        eigk_file=np.array(elem.findall("EIG.%d"%(ispin+1))[0].text.split(),dtype='float32')
                         my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
                 elem.clear()
 
 
-            #Finish reading eigen values
-            if elem.tag == "EIGENVALUES":
-                if group_nesting == 1:
-                    elem.clear()
-                    readEigVals = False
-                    group_nesting = 0
-                    ik = 0
-                    ispin = 0
             if 'ATMWFC' in elem.tag and readProj : #PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d} || PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}
                 if group_nesting ==2 : ispin == 0
                 iin = int(float(elem.tag.split('.')[-1]))-1
@@ -188,7 +182,14 @@ def read_QE_output_xml(fpath,read_S):
                     sys.exit('neither real nor complex??')
 
                 elem.clear()
-
+            #Finish reading eigen values
+            if elem.tag == "EIGENVALUES":
+                if group_nesting == 1:
+                    elem.clear()
+                    readEigVals = False
+                    group_nesting = 0
+                    ik = 0
+                    ispin = 0
             #Finish reading projections
             if elem.tag == "PROJECTIONS":
                 if group_nesting == 2 or group_nesting ==3:
@@ -197,6 +198,7 @@ def read_QE_output_xml(fpath,read_S):
                     group_nesting = 0
                     ik = 0
                     ispin = 0
+
 
             if elem.tag == 'OVERLAP.1':
                 if group_nesting == 2:      #OVERLAPS/K-POINT.{0:d}/OVERLAP.1
@@ -217,3 +219,5 @@ def read_QE_output_xml(fpath,read_S):
         return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf,nk1, nk2, nk3)
     else:
         return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
+if __name__ == '__main__':
+    read_QE_output_xml('./',True)
