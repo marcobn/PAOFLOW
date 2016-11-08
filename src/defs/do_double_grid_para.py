@@ -127,9 +127,9 @@ def do_fft3d_H(ini_in,end_in,HRauxp,nspin):
 
     Hksaux  = np.zeros((nwx,nk1p,nk2p,nk3p,nspin),dtype=complex)
 
-    for n in range(ini_in,end_in):
-        for ispin in range(nspin):
-            Hksaux[n,:,:,:,ispin] = FFT.fftn(HRauxp[n,:,:,:,ispin])
+#   for n in range(ini_in,end_in):
+#       for ispin in range(nspin):
+    Hksaux[ini_in:end_in,:,:,:,:] = FFT.fftn(HRauxp[ini_in:end_in,:,:,:,:],axes=[1,2,3])
 
     return(Hksaux)
 

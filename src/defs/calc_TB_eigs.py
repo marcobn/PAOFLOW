@@ -33,21 +33,18 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def calc_TB_eigs(Hks,Sks,read_S,ispin):
+def calc_TB_eigs(Hks,ispin):
 
     nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
     eall = np.zeros((nawf*nk1*nk2*nk3))
 
     aux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-    saux = np.zeros((nawf,nawf,nk1*nk2*nk3),dtype=complex)
 
     for i in range(nk1):
         for j in range(nk2):
             for k in range(nk3):
                 n = k + j*nk3 + i*nk2*nk3
                 aux[:,:,n,ispin] = Hks[:,:,i,j,k,ispin]
-                if read_S:
-                    saux[:,:,n] = Sks[:,:,i,j,k]
 
     E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
     E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
@@ -63,7 +60,7 @@ def calc_TB_eigs(Hks,Sks,read_S,ispin):
     ini_ik = ini_i[rank]
     end_ik = end_i[rank]
 
-    E_kaux[:,:,:,0] = diago(ini_ik,end_ik,aux,saux,read_S,ispin)
+    E_kaux[:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
 
     if rank == 0:
         E_k[:,:,:]=E_kaux[:,:,:,0]
@@ -80,9 +77,9 @@ def calc_TB_eigs(Hks,Sks,read_S,ispin):
             eall[nall]=E_k[m,n,ispin]
             nall += 1
 
-    return(eall)
+    return(eall,E_k)
 
-def diago(ini_ik,end_ik,aux,saux,read_S,ispin):
+def diago(ini_ik,end_ik,aux,ispin):
 
     nawf = aux.shape[0]
     nk = aux.shape[2]
@@ -90,10 +87,7 @@ def diago(ini_ik,end_ik,aux,saux,read_S,ispin):
     ekp = np.zeros((nawf,nk,nspin))
 
     for n in range(ini_ik,end_ik):
-        if read_S:
-            eigval,_ = LA.eigh(aux[:,:,n,ispin],saux[:,:,n])
-        else:
-            eigval,_ = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
+        eigval,_ = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
         ekp[:,n,ispin] = np.sort(np.real(eigval))
 
     return(ekp)

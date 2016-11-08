@@ -36,7 +36,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def read_QE_output_xml(fpath,read_S):
+def read_QE_output_xml(fpath):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
@@ -164,28 +164,8 @@ def read_QE_output_xml(fpath,read_S):
     if rank == 0: print('reading eigenvalues and projections in ',time.clock()-reset,' sec')
     reset=time.clock()
 
-    if read_S:
-        Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-        for ik in range(nkpnts):
-            #There will be nawf projections. Each projector of size nbnds x 1
-            ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
-            aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
-            aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
-
-            if ovlp_type !='complex':
-                sys.exit('the overlaps are assumed to be complex numbers')
-            if len(aux) != nawf**2*2:
-                sys.exit('wrong number of elements when reading the S matrix')
-
-            aux = aux.reshape((nawf**2,2))
-            ovlp_vector = aux[:,0]+1j*aux[:,1]
-            Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
-
-        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-        nk1, nk2, nk3)
-    else:
-        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-        nk1, nk2, nk3)
+    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
+    nk1, nk2, nk3)
 
 def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
@@ -203,8 +183,7 @@ def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
             if nspin==1:
                 eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].text.split(),dtype='float32')
             else:
-                eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1)) \
-                        [0].text.split().split(),dtype='float32')
+                eigk_file=np.array(root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG.{1:d}".format(ik+1,ispin+1))[0].text.split(),dtype='float32')
             my_eigsmat_p[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
     return(my_eigsmat_p)
@@ -222,7 +201,7 @@ def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
                     wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].attrib['type']
                     aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].text
                 else:
-                    wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,iin+1))[0].attrib['type']
+                    wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].attrib['type']
                     aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}/ATMWFC.{2:d}".format(ik+1,ispin+1,iin+1))[0].text
 
                 aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
@@ -236,3 +215,6 @@ def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
                 else:
                     sys.exit('neither real nor complex??')
     return(U_p)
+
+if __name__ == '__main__':
+    read_QE_output_xml('./',False)

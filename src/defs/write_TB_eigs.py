@@ -25,17 +25,14 @@ from numpy import linalg as LAN
 import numpy as np
 import os
 
-def write_TB_eigs(Hks,Sks,read_S,ispin):
+def write_TB_eigs(Hks,ispin):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
     E_k = np.zeros((nbnds_tb,nkpnts,nspin))
 
     for ik in range(nkpnts):
-        if read_S:
-            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
-        else:
-            eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
     f=open('bands_'+str(ispin)+'.dat','w')

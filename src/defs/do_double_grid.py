@@ -33,69 +33,71 @@ from zero_pad import zero_pad
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_double_grid(nfft1,nfft2,nfft3,HRaux,SRaux,read_S):
+def do_double_grid(nfft1,nfft2,nfft3,HRaux):
     # Fourier interpolation on extended grid (zero padding)
-    nawf = HRaux.shape[0]
-    nk1 = HRaux.shape[2]
-    nk2 = HRaux.shape[3]
-    nk3 = HRaux.shape[4]
-    nspin = HRaux.shape[5]
-    nk1p = nfft1+nk1
-    nk2p = nfft2+nk2
-    nk3p = nfft3+nk3
-    nktotp= nk1p*nk2p*nk3p
-    if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
+    if HRaux.shape[0] != 3 and HRaux.shape[1] == HRaux.shape[0]:
+        nawf = HRaux.shape[0]
+        nk1 = HRaux.shape[2]
+        nk2 = HRaux.shape[3]
+        nk3 = HRaux.shape[4]
+        nspin = HRaux.shape[5]
+        nk1p = nfft1+nk1
+        nk2p = nfft2+nk2
+        nk3p = nfft3+nk3
+        nktotp= nk1p*nk2p*nk3p
+        #if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
 
-    # Extended R to k (with zero padding)
-    HRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-    SRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p),dtype=complex)
-    Hksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-    Sksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p),dtype=complex)
-    aux = np.zeros((nk1,nk2,nk3),dtype=complex)
+        # Extended R to k (with zero padding)
+        HRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
+        Hksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
+        aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-    for ispin in range(nspin):
-        for i in range(nawf):
-            aux = HRaux[i,i,:,:,:,ispin]
-            Hksp[i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-            if read_S and ispin == 0:
-                aux = SRaux[i,i,:,:,:]
-                Sksp[i,i,:,:,:] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+        for ispin in range(nspin):
+            for i in range(nawf):
+                aux = HRaux[i,i,:,:,:,ispin]
+                Hksp[i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
-    for ispin in range(nspin):
-        for i in range(0,nawf-1):
-            for j in range(i,nawf):
-                aux = HRaux[i,j,:,:,:,ispin]
-                Hksp[i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-                if read_S and ispin == 0:
-                    aux = SRaux[i,j,:,:,:]
-                    Sksp[i,j,:,:,:] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+        for ispin in range(nspin):
+            for i in range(0,nawf-1):
+                for j in range(i,nawf):
+                    aux = HRaux[i,j,:,:,:,ispin]
+                    Hksp[i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+    elif HRaux.shape[0] == 3:
+        # This works for the momentum tensor
+        nawf = HRaux.shape[1]
+        nk1 = HRaux.shape[3]
+        nk2 = HRaux.shape[4]
+        nk3 = HRaux.shape[5]
+        nspin = HRaux.shape[6]
+        nk1p = nfft1+nk1
+        nk2p = nfft2+nk2
+        nk3p = nfft3+nk3
+        nktotp= nk1p*nk2p*nk3p
+        #if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
+
+        # Extended R to k (with zero padding)
+        HRauxp  = np.zeros((3,nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
+        Hksp  = np.zeros((3,nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
+        aux = np.zeros((nk1,nk2,nk3),dtype=complex)
+
+        for l in range(3):
+            for ispin in range(nspin):
+                for i in range(nawf):
+                    aux = HRaux[l,i,i,:,:,:,ispin]
+                    Hksp[l,i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+
+            for ispin in range(nspin):
+                for i in range(0,nawf-1):
+                    for j in range(i,nawf):
+                        aux = HRaux[l,i,j,:,:,:,ispin]
+                        Hksp[l,i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+    
+    else: 
+        sys.exit('wrong dimensions in input array')
 
     nk1 = nk1p
     nk2 = nk2p
     nk3 = nk3p
     aux = None
-    return(Hksp,Sksp,nk1,nk2,nk3)
+    return(Hksp,nk1,nk2,nk3)
 
-    # Extended R to k (with zero padding)
-#   HRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-#   SRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p),dtype=complex)
-#   Hksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-#   Sksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p),dtype=complex)
-#   aux = np.zeros((nk1,nk2,nk3),dtype=complex)
-
-#   for ispin in range(nspin):
-#       for i in range(nawf):
-#           for j in range(nawf):
-#               aux = HRaux[i,j,:,:,:,ispin]
-#               HRauxp[i,j,:,:,:,ispin] = zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3)
-#               Hksp[i,j,:,:,:,ispin] = FFT.fftn(HRauxp[i,j,:,:,:,ispin])
-#               if read_S and ispin == 0:
-#                   aux = SRaux[i,j,:,:,:]
-#                   SRauxp[i,j,:,:,:] = zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3)
-#                   Sksp[i,j,:,:,:] = FFT.fftn(SRauxp[i,j,:,:,:])
-
-#   nk1 = nk1p
-#   nk2 = nk2p
-#   nk3 = nk3p
-#   aux = None
-#   return(Hksp,Sksp,nk1,nk2,nk3)

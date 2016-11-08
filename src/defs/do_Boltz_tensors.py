@@ -20,6 +20,11 @@
 # Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
+# Pino D'Amico, Luis Agapito, Alessandra Catellani, Alice Ruini, Stefano Curtarolo, Marco Fornari, Marco Buongiorno Nardelli, 
+# and Arrigo Calzolari, Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and 
+# optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
+# 
+
 import numpy as np
 import cmath
 import sys, time
@@ -28,22 +33,19 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 from calc_TB_eigs import calc_TB_eigs
-from do_non_ortho import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(Hksp,shift,delta,ispin):
-    # DOS calculation with gaussian smearing
+def do_Boltz_tensors(E_k,velkp,temp,ispin):
+    # Compute the L_alpha tensors for Boltzmann transport
 
-    eig,E_k = calc_TB_eigs(Hksp,ispin)
-    emin = np.min(eig)-1.0
-    emax = np.max(eig)-shift/2.0
-    de = (emax-emin)/1000
+    emin = -2.0 # To be read in input
+    emax = 2.0
+    de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
-    dosvec = np.zeros((eig.size),dtype=float)
 
     # Load balancing
     ini_i = np.zeros((size),dtype=int)
@@ -55,35 +57,35 @@ def do_dos_calc(Hksp,shift,delta,ispin):
     ini_ie = ini_i[rank]
     end_ie = end_i[rank]
 
-    dos = np.zeros((ene.size),dtype=float)
-    dosaux = np.zeros((ene.size,1),dtype=float)
-    dosaux1 = np.zeros((ene.size,1),dtype=float)
+    L0 = np.zeros((3,3),dtype=float)
+    L0aux = np.zeros((3,3,1),dtype=float)
+    L0aux1 = np.zeros((3,3,1),dtype=float)
 
-    dosaux[:,0] = dos_loop(ini_ie,end_ie,ene,eig,delta)
+    L0aux[:,:,0] = L_loop(ini_ie,end_ie,ene,E_k,velkp,temp,ispin,0)
 
     if rank == 0:
-        dos[:]=dosaux[:,0]
+        L0[:,:]=L0aux[:,:,0]
         for i in range(1,size):
-            comm.Recv(dosaux1,ANY_SOURCE)
-            dos[:] += dosaux1[:,0]
+            comm.Recv(L0aux1,ANY_SOURCE)
+            L0[:,:] += L0aux1[:,:,0]
     else:
-        comm.Send(dosaux,0)
-    dos = comm.bcast(dos)
+        comm.Send(L0aux,0)
+    L0 = comm.bcast(L0)
 
-    if rank == 0:
-        f=open('dos_'+str(ispin)+'.dat','w')
-        for ne in range(ene.size):
-            f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
-        f.close()
+    return(L0)
 
-    return(E_k)
+def L_loop(ini_ie,end_ie,ene,E_k,velkp,temp,ispin,alpha):
 
-def dos_loop(ini_ie,end_ie,ene,eig,delta):
+    # We assume tau=1 in the constant relaxation time approximation
 
-    aux = np.zeros((ene.size),dtype=float)
+    L = np.zeros((3,3),dtype=float)
+    aux = np.zeros((3,3,velkp.shape[1],velkp.shape[2]),dtype=float)
 
     for ne in range(ini_ie,end_ie):
-        dosvec = 1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-eig)/delta)**2)/delta
-        aux[ne] = np.sum(dosvec)
+        for n in range(velkp.shape[1]):
+            for nk in range(velkp.shape[2]):
+                aux[:,:,n,nk] = 1.0/temp * np.outer(velkp[:,n,nk,ispin], velkp[:,n,nk,ispin]) * \
+                1.0/2.0 * 1.0/(1.0+np.cosh(E_k[n,nk,ispin]-ene[ne])) * (E_k[n,nk,ispin]-ene[ne])**alpha
+    L = np.sum(aux,axis=(2,3))
 
-    return(aux)
+    return(L)
