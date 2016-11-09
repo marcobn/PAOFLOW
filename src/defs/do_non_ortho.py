@@ -31,7 +31,7 @@ sys.path.append('./')
 def do_non_ortho(Hks,Sks):
     # Take care of non-orthogonality, if needed
     # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to apply a basis change to Hks as
-    # Hks -> Sks^(1/2)*Hks*Sks^(1/2)+
+    # Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
 
     if len(Hks.shape) > 4:
 
@@ -61,7 +61,7 @@ def do_non_ortho(Hks,Sks):
         Hks_no = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
         for ispin in range(nspin):
             for ik in range(nkpnts):
-                Hks_no[:,:,ik,ispin] = S2k[:,:,ik].dot(aux[:,:,ik,ispin]).dot(np.conj(S2k[:,:,ik]).T)
+                Hks_no[:,:,ik,ispin] = (np.conj(S2k[:,:,ik]).T).dot(aux[:,:,ik,ispin]).dot(S2k[:,:,ik])
 
         aux = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
         for i in range(nk1):
@@ -84,5 +84,5 @@ def do_non_ortho(Hks,Sks):
         Hks_no = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
         for ispin in range(nspin):
             for ik in range(nkpnts):
-                Hks_no[:,:,ik,ispin] = S2k[:,:,ik].dot(Hks[:,:,ik,ispin]).dot(np.conj(S2k[:,:,ik]).T)
+                Hks_no[:,:,ik,ispin] = (np.conj(S2k[:,:,ik]).T).dot(aux[:,:,ik,ispin]).dot(S2k[:,:,ik])
         return(Hks_no)

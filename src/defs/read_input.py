@@ -26,7 +26,7 @@ import re
 
 def read_input(input_file):
 
-    read_S     = False
+    non_ortho  = False
     shift_type = 2
     shift      = 20
     pthr       = 0.9
@@ -41,6 +41,8 @@ def read_input(input_file):
     nfft3 = 0
     ibrav = 0
     dkres = 0.1
+    Boltzmann = False
+    epsilon = False
 
     f = open(input_file)
     lines=f.readlines()
@@ -50,13 +52,13 @@ def read_input(input_file):
         if re.search('fpath',line):
             p = line.split()
             fpath = p[1]
-        if re.search('read_S',line):
+        if re.search('non_ortho',line):
             p = line.split()
-            read_S = p[1]
-            if read_S == 'False':
-                read_S = (1 == 2)
+            non_ortho = p[1]
+            if non_ortho == 'False':
+                non_ortho = (1 == 2)
             else:
-                read_S = (1 == 1)
+                non_ortho = (1 == 1)
         if re.search('do_comparison',line):
             p = line.split()
             do_comparison = p[1]
@@ -122,8 +124,23 @@ def read_input(input_file):
         if re.search('dkres',line):
             p = line.split()
             dkres = float(p[1])
+        if re.search('Boltzmann',line):
+            p = line.split()
+            Boltzmann = p[1]
+            if Boltzmann == 'False':
+                Boltzmann = (1 == 2)
+            else:
+                Boltzmann = (1 == 1)
+        if re.search('epsilon',line):
+            p = line.split()
+            Boltzmann = p[1]
+            if epsilon == 'False':
+                epsilon = (1 == 2)
+            else:
+                epsilon = (1 == 1)
     if fpath == '':
         sys.exit('missing path to _.save')
 
-    return(read_S, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-            do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, ibrav, dkres)
+    return(non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
+            do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
+            ibrav, dkres, Boltzmann, epsilon)

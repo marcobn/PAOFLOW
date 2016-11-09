@@ -60,4 +60,4 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
                 Hks[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
             else:
                 sys.exit('shift_type not recognized')
-    return Hks
+    return(Hks)

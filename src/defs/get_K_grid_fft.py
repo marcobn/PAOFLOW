@@ -22,7 +22,7 @@
 #
 import numpy as np
 
-def get_K_grid_fft(nk1,nk2,nk3,b_vectors, print_kgrid):
+def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
     nktot = nk1*nk2*nk3
     Kint = np.zeros((nktot,3),dtype=float)
     K_wght = np.ones((nktot),dtype=float)

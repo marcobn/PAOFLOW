@@ -36,7 +36,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def read_QE_output_xml(fpath,read_S):
+def read_QE_output_xml(fpath):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
@@ -164,28 +164,8 @@ def read_QE_output_xml(fpath,read_S):
     if rank == 0: print('reading eigenvalues and projections in ',time.clock()-reset,' sec')
     reset=time.clock()
 
-    if read_S:
-        Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-        for ik in range(nkpnts):
-            #There will be nawf projections. Each projector of size nbnds x 1
-            ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
-            aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
-            aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
-
-            if ovlp_type !='complex':
-                sys.exit('the overlaps are assumed to be complex numbers')
-            if len(aux) != nawf**2*2:
-                sys.exit('wrong number of elements when reading the S matrix')
-
-            aux = aux.reshape((nawf**2,2))
-            ovlp_vector = aux[:,0]+1j*aux[:,1]
-            Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
-
-        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-        nk1, nk2, nk3)
-    else:
-        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-        nk1, nk2, nk3)
+    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
+    nk1, nk2, nk3)
 
 def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
