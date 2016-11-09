@@ -28,10 +28,10 @@ import re
 #units
 Ry2eV   = 13.60569193
 
-def read_QE_output_xml(fpath,read_S):
+def read_QE_output_xml(fpath):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
-
+    read_S = False
 
     # Reading data-file.xml
 
@@ -81,7 +81,7 @@ def read_QE_output_xml(fpath,read_S):
     # Reading atomic_proj.xml
 
     group_nesting = 0
-    readEigVals = False; readProj = False; readOvlps = False;
+    readEigVals = False; readProj = False
     for event,elem in ET.iterparse(atomic_proj,events=('start','end')):
         if event == 'end' and  elem.tag == "HEADER":
             nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
@@ -137,11 +137,6 @@ def read_QE_output_xml(fpath,read_S):
                     ik = int(float(elem.tag.split('.')[-1]))-1
                     group_nesting += 1
                     elem.clear()
-            if elem.tag == "OVERLAPS":
-                Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-                group_nesting += 1
-                readOvlps = True
-                elem.clear()
             if 'SPIN' in elem.tag and group_nesting ==2:    #PROJECTIONS/K-POINT.{0:d}/SPIN.{1:d}
                 ispin = int(float(elem.tag.split('.')[-1]))-1
                 group_nesting += 1
@@ -200,24 +195,4 @@ def read_QE_output_xml(fpath,read_S):
                     ispin = 0
 
 
-            if elem.tag == 'OVERLAP.1':
-                if group_nesting == 2:      #OVERLAPS/K-POINT.{0:d}/OVERLAP.1
-                    ovlp_type = elem.attrib['type']
-                    aux = elem.text
-                    aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
-
-                    if ovlp_type !='complex':
-                        sys.exit('the overlaps are assumed to be complex numbers')
-                    if len(aux) != nawf**2*2:
-                        sys.exit('wrong number of elements when reading the S matrix')
-
-                    aux = aux.reshape((nawf**2,2))
-                    ovlp_vector = aux[:,0]+1j*aux[:,1]
-                    Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
-                    elem.clear()
-    if read_S:
-        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf,nk1, nk2, nk3)
-    else:
-        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
-if __name__ == '__main__':
-    read_QE_output_xml('./',True)
+    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)

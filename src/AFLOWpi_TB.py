@@ -47,9 +47,7 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_dos_calc import *
 from do_spin_orbit import *
-
-#units
-Ry2eV      = 13.60569193
+from constants import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -60,7 +58,7 @@ if size > 1:
     from read_QE_output_xml import *
 else:
     rank=0
-    from read_QE_output_xml_parse import read_QE_output_xml
+    from read_QE_output_xml_parse import *
 
 input_file = sys.argv[1]
 
@@ -156,13 +154,15 @@ if Boltzmann or epsilon:
     pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)  # REM: this is only 'U'
 
     # Compute velocities for Boltzmann transport
-    velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
     for n in range(nawf):
         nkb = 0 
         for i in range (nk1):
             for j in range(nk2):
                 for k in range(nk3):
-                    velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
+                    velkp[:,n,nkb,:] = np.real(pks[:,n,n,i,j,k,:])
+                    if rank == 0 and nkb == 73:
+                        for l in range(3): print(velkp[l,n,nkb,:],l,n,nkb)
                     nkb += 1
 
 if rank == 0: print('Boltzmann in ',time.clock()-reset,' sec')
@@ -213,14 +213,24 @@ if do_dos:
 if do_dos and Boltzmann:
     # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
     from do_Boltz_tensors import *
-    temp = 300.0  # set room temperature
+    temp = 0.025852  # set room temperature in eV
     for ispin in range(nspin):
-        L0 = do_Boltz_tensors(E_k,velkp,temp,ispin)
-else: 
-    sys.exit('missing eigenvalues - compute dos!')
+        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,temp,ispin)
+    # Correct units
+    L0 *= ELECTRONVOLT_SI**2 / ( 4.0 * np.pi**3 )  * \
+          ( ELECTRONVOLT_SI / ( H_OVER_TPI**2 * BOHR_RADIUS_SI ) )
+    if rank == 0:
+        for ispin in range(nspin):
+            f=open('sigma_'+str(ispin)+'.dat','w')
+            for n in range(ene.size):
+                f.write('%.5f %.5f %.5f %.5f %.5f %.5f %.5f \n' \
+                        %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
+            f.close()
 
-    if rank ==0: print('Boltzmann in ',time.clock()-reset,' sec')
+    if rank ==0: print('transport in ',time.clock()-reset,' sec')
     reset=time.clock()
+else:
+    sys.exit('missing eigenvalues - compute dos!')
 
 # Timing
 if rank ==0: print('Total CPU time =', time.clock(),' sec')
