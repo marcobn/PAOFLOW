@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -25,24 +25,18 @@ from numpy import linalg as LAN
 import numpy as np
 import os
 
-def write_TB_eigs(Hks,Sks,read_S):
+def write_TB_eigs(Hks,ispin):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
     E_k = np.zeros((nbnds_tb,nkpnts,nspin))
 
-    ispin = 0 #plots only 1 spin channel
-    #for ispin in range(nspin):
     for ik in range(nkpnts):
-        if read_S:
-		eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
-	else:	
-		eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
-    f=open('bands.dat','w')
+    f=open('bands_'+str(ispin)+'.dat','w')
     for ik in range(nkpnts):
-	for nb in range(nawf):
-                f.write('%3d  %.5f \n' %(ik,E_k[nb,ik,ispin]))
+        for nb in range(nawf):
+            f.write('%3d  %.5f \n' %(ik,E_k[nb,ik,ispin]))
     return()
-

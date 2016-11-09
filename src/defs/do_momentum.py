@@ -20,12 +20,42 @@
 # Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
-import numpy as np
+# Pino D'Amico, Luis Agapito, Alessandra Catellani, Alice Ruini, Stefano Curtarolo, Marco Fornari, Marco Buongiorno Nardelli, 
+# and Arrigo Calzolari, Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and 
+# optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
+# 
 
-def build_Pn(nawf,nbnds,nkpnts,nspin,U):
-    Pn = 0.0
+import numpy as np
+import cmath
+import sys, time
+
+from mpi4py import MPI
+from mpi4py.MPI import ANY_SOURCE
+
+from do_non_ortho import *
+
+# initialize parallel execution
+comm=MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+def do_momentum(Hksp,dHksp):
+    # calculate momentum vector
+
+    nawf = Hksp.shape[0]
+    nk1 = Hksp.shape[2]
+    nk2 = Hksp.shape[3]
+    nk3 = Hksp.shape[4]
+    nspin = Hksp.shape[5]
+
+    pks = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+
     for ispin in range(nspin):
-        for ik in range(nkpnts):
-            UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
-            Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts
-    return Pn
+        for l in range(3):
+            for i in range(nk1):
+                for j in range(nk2):
+                    for k in range(nk3):
+                        eig, vec = LAN.eigh(Hksp[:,:,i,j,k,ispin],UPLO='U')
+                        pks[l,:,:,i,j,k,ispin] = np.conj(vec.T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec)
+
+    return(pks)

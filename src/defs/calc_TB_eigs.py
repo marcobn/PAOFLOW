@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -25,30 +25,69 @@ from numpy import linalg as LAN
 import numpy as np
 import os
 
-def calc_TB_eigs(Hks,Sks,read_S):
+from mpi4py import MPI
+from mpi4py.MPI import ANY_SOURCE
+
+# initialize parallel execution
+comm=MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+def calc_TB_eigs(Hks,ispin):
 
     nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
-    nbnds_tb = nawf
-    E_k = np.zeros((nbnds_tb,nk1*nk2*nk3,nspin))
-    eall = np.zeros((nbnds_tb*nk1*nk2*nk3))
+    eall = np.zeros((nawf*nk1*nk2*nk3))
 
-    ispin = 0 #plots only 1 spin channel
-    #for ispin in range(nspin):
-    nk=0
-    for ik1 in range(nk1):
-    	for ik2 in range(nk2):
-    		for ik3 in range(nk3):
-    		    	if read_S:
-				eigval,_ = LA.eigh(Hks[:,:,ik1,ik2,ik3,ispin],Sks[:,:,ik1,ik2,ik3])
-			else:	
-				eigval,_ = LAN.eigh(Hks[:,:,ik1,ik2,ik3,ispin],UPLO='U')
-        		E_k[:,nk,ispin] = np.sort(np.real(eigval))
-			nk += 1
+    aux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
+                n = k + j*nk3 + i*nk2*nk3
+                aux[:,:,n,ispin] = Hks[:,:,i,j,k,ispin]
+
+    E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
+    E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+    E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+
+    # Load balancing
+    ini_i = np.zeros((size),dtype=int)
+    end_i = np.zeros((size),dtype=int)
+    splitsize = 1.0/size*(nk1*nk2*nk3)
+    for i in range(size):
+        ini_i[i] = int(round(i*splitsize))
+        end_i[i] = int(round((i+1)*splitsize))
+    ini_ik = ini_i[rank]
+    end_ik = end_i[rank]
+
+    E_kaux[:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
+
+    if rank == 0:
+        E_k[:,:,:]=E_kaux[:,:,:,0]
+        for i in range(1,size):
+            comm.Recv(E_kaux1,ANY_SOURCE)
+            E_k[:,:,:] += E_kaux1[:,:,:,0]
+    else:
+        comm.Send(E_kaux,0)
+    E_k = comm.bcast(E_k)
+
     nall=0
-    for n in range(nk):
-	for m in range(nawf):
-		eall[nall]=E_k[m,n,ispin]
-		nall += 1
+    for n in range(nk1*nk2*nk3):
+        for m in range(nawf):
+            eall[nall]=E_k[m,n,ispin]
+            nall += 1
 
-    return(eall,nall) 
+    return(eall,E_k)
 
+def diago(ini_ik,end_ik,aux,ispin):
+
+    nawf = aux.shape[0]
+    nk = aux.shape[2]
+    nspin = aux.shape[3]
+    ekp = np.zeros((nawf,nk,nspin))
+
+    for n in range(ini_ik,end_ik):
+        eigval,_ = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
+        ekp[:,n,ispin] = np.sort(np.real(eigval))
+
+    return(ekp)

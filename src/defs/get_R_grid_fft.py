@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -23,28 +23,27 @@
 import numpy as np
 
 def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
-	nrtot = nk1*nk2*nk3
-	R = np.zeros((nrtot,3),dtype=float)
-	R_wght = np.ones((nrtot),dtype=float)
-	idx = np.zeros((nk1,nk2,nk3),dtype=int)
+    nrtot = nk1*nk2*nk3
+    R = np.zeros((nrtot,3),dtype=float)
+    R_wght = np.ones((nrtot),dtype=float)
+    idx = np.zeros((nk1,nk2,nk3),dtype=int)
 
-	for i in range(nk1):
-		for j in range(nk2):
-        	        for k in range(nk3):
-                	        n = k + j*nk3 + i*nk2*nk3
-                        	Rx = float(i)/float(nk1)
-                        	Ry = float(j)/float(nk1)
-                        	Rz = float(k)/float(nk1)
-                        	if Rx >= 0.5: Rx=Rx-1.0
-                        	if Ry >= 0.5: Ry=Ry-1.0
-                        	if Rz >= 0.5: Rz=Rz-1.0
-                        	Rx -= int(Rx)
-                        	Ry -= int(Ry)
-                        	Rz -= int(Rz)
-                        	R[n,:] = Rx*nk1*a_vectors[0,:]+Ry*nk2*a_vectors[1,:]+Rz*nk3*a_vectors[2,:]
-                        	#R[n,:] = Rx*a_vectors[0,:]+Ry*a_vectors[1,:]+Rz*a_vectors[2,:]
-				idx[i,j,k]=n
-	                       	#print("%.5f" % R[n,0],"%.5f" % R[n,1],"%.5f" % R[n,2])
-	
-	return(R,R_wght,nrtot,idx)
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
+                n = k + j*nk3 + i*nk2*nk3
+                Rx = float(i)/float(nk1)
+                Ry = float(j)/float(nk1)
+                Rz = float(k)/float(nk1)
+                if Rx >= 0.5: Rx=Rx-1.0
+                if Ry >= 0.5: Ry=Ry-1.0
+                if Rz >= 0.5: Rz=Rz-1.0
+                Rx -= int(Rx)
+                Ry -= int(Ry)
+                Rz -= int(Rz)
+                R[n,:] = Rx*nk1*a_vectors[0,:]+Ry*nk2*a_vectors[1,:]+Rz*nk3*a_vectors[2,:]
+                #R[n,:] = Rx*a_vectors[0,:]+Ry*a_vectors[1,:]+Rz*a_vectors[2,:]
+                idx[i,j,k]=n
+                #print("%.5f" % R[n,0],"%.5f" % R[n,1],"%.5f" % R[n,2])
 
+    return(R,R_wght,nrtot,idx)

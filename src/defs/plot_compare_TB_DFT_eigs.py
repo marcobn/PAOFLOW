@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -24,12 +24,16 @@ from scipy import linalg as LA
 from numpy import linalg as LAN
 import numpy as np
 import os
+import PySide
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 
 #units
 Ry2eV   = 13.60569193
 
-def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
+def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
@@ -38,10 +42,7 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     ispin = 0 #plots only 1 spin channel
     #for ispin in range(nspin):
     for ik in range(nkpnts):
-        if read_S:
-		eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
-	else:	
-		eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
     fig=plt.figure
@@ -50,16 +51,16 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
         #print("{0:d}".format(i))
         yy = my_eigsmat[i,:,ispin]
         if i==0:
-          plt.plot(yy,'ok',markersize=3,markeredgecolor='lime',markerfacecolor='lime',label='DFT')
+            plt.plot(yy,'ok',markersize=3,markeredgecolor='lime',markerfacecolor='lime',label='DFT')
         else:
-          plt.plot(yy,'ok',markersize=3,markeredgecolor='lime',markerfacecolor='lime')
+            plt.plot(yy,'ok',markersize=3,markeredgecolor='lime',markerfacecolor='lime')
 
     for i in range(nbnds_tb):
         yy = E_k[i,:,ispin]
         if i==0:
-          plt.plot(yy,'ok',markersize=2,markeredgecolor='None',label='TB')
+            plt.plot(yy,'ok',markersize=2,markeredgecolor='None',label='TB')
         else:
-          plt.plot(yy,'ok',markersize=2,markeredgecolor='None')
+            plt.plot(yy,'ok',markersize=2,markeredgecolor='None')
 
     plt.xlabel('k-points')
     plt.ylabel('Energy - E$_F$ (eV)')
@@ -67,4 +68,3 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     plt.title('Comparison of TB vs. DFT eigenvalues')
     plt.savefig('comparison.pdf',format='pdf')
     return()
-

@@ -1,5 +1,5 @@
 #
-# AflowPI_TB
+# AFLOWpi_TB
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -26,72 +26,58 @@ import cmath
 import sys
 
 sys.path.append('./')
- 
+
 from write_TB_eigs import write_TB_eigs
 
-def do_bands_calc_1D(Hkaux,Skaux,read_S):
-	# FFT interpolation along a single directions in the BZ
+def do_bands_calc_1D(Hkaux):
+    # FFT interpolation along a single directions in the BZ
 
-	nawf = Hksp.shape[0]
-	nk1 = Hksp.shape[2]
-	nk2 = Hksp.shape[3]
-	nk3 = Hksp.shape[4]
-	nspin = Hksp.shape[5]
-	
-	# Count points along symmetry direction
-	nL = 0
-	for ik1 in range(nk1):
-		for ik2 in range(nk2):
-			for ik3 in range(nk3):
-				nL += 1
-	
-	Hkaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
-	Skaux  = np.zeros((nawf,nawf,nL),dtype=complex)
-	for ispin in range(nspin):
-        	for i in range(nawf):
-                	for j in range(nawf):
-				nL=0
-				for ik1 in range(nk1):
-					for ik2 in range(nk2):
-						for ik3 in range(nk3):
-							Hkaux[i,j,nL,ispin]=Hksp[i,j,ik1,ik2,ik3,ispin]	
-							if (read_S and ispin == 0):
-								Skaux[i,j,nL] = Sksp[i,j,ik1,ik2,ik3]
-							nL += 1
+    nawf = Hksp.shape[0]
+    nk1 = Hksp.shape[2]
+    nk2 = Hksp.shape[3]
+    nk3 = Hksp.shape[4]
+    nspin = Hksp.shape[5]
 
-	# zero padding interpolation
-	# k to R
-	npad = 500
-	HRaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
-	SRaux  = np.zeros((nawf,nawf,nL),dtype=complex)
-	for ispin in range(nspin):
-		for i in range(nawf):
-			for j in range(nawf):
-				HRaux[i,j,:,ispin] = FFT.ifft(Hkaux[i,j,:,ispin])
-				if read_S and ispin == 0:
-					SRaux[i,j,:] = FFT.ifft(Skaux[i,j,:])
+    # Count points along symmetry direction
+    nL = 0
+    for ik1 in range(nk1):
+        for ik2 in range(nk2):
+            for ik3 in range(nk3):
+                nL += 1
 
-	Hkaux = None
-	Skaux = None
-	Hkaux  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
-	Skaux  = np.zeros((nawf,nawf,npad+nL),dtype=complex)
-	HRauxp  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
-	SRauxp  = np.zeros((nawf,nawf,npad+nL),dtype=complex)
+    Hkaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
+    for ispin in range(nspin):
+        for i in range(nawf):
+            for j in range(nawf):
+                nL=0
+                for ik1 in range(nk1):
+                    for ik2 in range(nk2):
+                        for ik3 in range(nk3):
+                            Hkaux[i,j,nL,ispin]=Hksp[i,j,ik1,ik2,ik3,ispin]
+                            nL += 1
 
-	for ispin in range(nspin):
-        	for i in range(nawf):
-                	for j in range(nawf):
-				HRauxp[i,j,:(nL/2),ispin]=HRaux[i,j,:(nL/2),ispin]
-				HRauxp[i,j,(npad+nL/2):,ispin]=HRaux[i,j,(nL/2):,ispin]
-                        	Hkaux[i,j,:,ispin] = FFT.fft(HRauxp[i,j,:,ispin])
-                        	if read_S and ispin == 0:
-					SRauxp[i,j,:(nL/2)]=SRaux[i,j,:(nL/2)]
-					SRauxp[i,j,(npad+nL/2):]=SRaux[i,j,(nL/2):]
-                                	Skaux[i,j,:] = FFT.fft(SRauxp[i,j,:])
+    # zero padding interpolation
+    # k to R
+    npad = 500
+    HRaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
+    for ispin in range(nspin):
+        for i in range(nawf):
+            for j in range(nawf):
+                HRaux[i,j,:,ispin] = FFT.ifft(Hkaux[i,j,:,ispin])
 
+    Hkaux = None
+    Hkaux  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
+    HRauxp  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
 
-	# Print TB eigenvalues on interpolated mesh
-	write_TB_eigs(Hkaux,Skaux,read_S)
+    for ispin in range(nspin):
+        for i in range(nawf):
+            for j in range(nawf):
+                HRauxp[i,j,:(nL/2),ispin]=HRaux[i,j,:(nL/2),ispin]
+                HRauxp[i,j,(npad+nL/2):,ispin]=HRaux[i,j,(nL/2):,ispin]
+                Hkaux[i,j,:,ispin] = FFT.fft(HRauxp[i,j,:,ispin])
 
-	return()
+    # Print TB eigenvalues on interpolated mesh
+    for ispin in range(nspin):
+        write_TB_eigs(Hkaux,ispin)
 
+    return()
