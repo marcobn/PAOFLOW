@@ -28,7 +28,7 @@ import re
 #units
 Ry2eV   = 13.60569193
 
-def read_QE_output_xml(fpath,read_S):
+def read_QE_output_xml(fpath):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
@@ -215,9 +215,4 @@ def read_QE_output_xml(fpath,read_S):
                     ovlp_vector = aux[:,0]+1j*aux[:,1]
                     Sks[:,:,ik] = ovlp_vector.reshape((nawf,nawf))
                     elem.clear()
-    if read_S:
-        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf,nk1, nk2, nk3)
-    else:
-        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
-if __name__ == '__main__':
-    read_QE_output_xml('./',True)
+    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
