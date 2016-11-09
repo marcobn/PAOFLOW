@@ -27,6 +27,7 @@
 
 import numpy as np
 import cmath
+from math import cosh
 import sys, time
 
 from mpi4py import MPI
@@ -44,48 +45,81 @@ def do_Boltz_tensors(E_k,velkp,temp,ispin):
 
     emin = -2.0 # To be read in input
     emax = 2.0
-    de = (emax-emin)/500
+    de = (emax-emin)/100
     ene = np.arange(emin,emax,de,dtype=float)
 
     # Load balancing
     ini_i = np.zeros((size),dtype=int)
     end_i = np.zeros((size),dtype=int)
-    splitsize = 1.0/size*ene.size
+    splitsize = 1.0/size*velkp.shape[2]
     for i in range(size):
         ini_i[i] = int(round(i*splitsize))
         end_i[i] = int(round((i+1)*splitsize))
-    ini_ie = ini_i[rank]
-    end_ie = end_i[rank]
+    ini_ik = ini_i[rank]
+    end_ik = end_i[rank]
 
-    L0 = np.zeros((3,3),dtype=float)
-    L0aux = np.zeros((3,3,1),dtype=float)
-    L0aux1 = np.zeros((3,3,1),dtype=float)
+    L0 = np.zeros((3,3,ene.size),dtype=float)
+    L0aux = np.zeros((3,3,ene.size,1),dtype=float)
+    L0aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
-    L0aux[:,:,0] = L_loop(ini_ie,end_ie,ene,E_k,velkp,temp,ispin,0)
+    L0aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,0)
 
     if rank == 0:
-        L0[:,:]=L0aux[:,:,0]
+        L0[:,:,:]=L0aux[:,:,:,0]
         for i in range(1,size):
             comm.Recv(L0aux1,ANY_SOURCE)
-            L0[:,:] += L0aux1[:,:,0]
+            L0[:,:,:] += L0aux1[:,:,:,0]
     else:
         comm.Send(L0aux,0)
+    L0 /= velkp.shape[2]
     L0 = comm.bcast(L0)
 
-    return(L0)
+    L1 = np.zeros((3,3,ene.size),dtype=float)
+    L1aux = np.zeros((3,3,ene.size,1),dtype=float)
+    L1aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
-def L_loop(ini_ie,end_ie,ene,E_k,velkp,temp,ispin,alpha):
+    L1aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,1)
+
+    if rank == 0:
+        L1[:,:,:]=L1aux[:,:,:,0]
+        for i in range(1,size):
+            comm.Recv(L1aux1,ANY_SOURCE)
+            L1[:,:,:] += L1aux1[:,:,:,0]
+    else:
+        comm.Send(L1aux,0)
+    L1 /= velkp.shape[2]
+    L1 = comm.bcast(L1)
+
+    L2 = np.zeros((3,3,ene.size),dtype=float)
+    L2aux = np.zeros((3,3,ene.size,1),dtype=float)
+    L2aux1 = np.zeros((3,3,ene.size,1),dtype=float)
+
+    L2aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,2)
+
+    if rank == 0:
+        L2[:,:,:]=L2aux[:,:,:,0]
+        for i in range(1,size):
+            comm.Recv(L2aux1,ANY_SOURCE)
+            L2[:,:,:] += L2aux1[:,:,:,0]
+    else:
+        comm.Send(L2aux,0)
+    L2 = L2/velkp.shape[2]
+    L2 = comm.bcast(L2)
+
+    return(ene,L0,L1,L2)
+
+def L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,alpha):
 
     # We assume tau=1 in the constant relaxation time approximation
 
-    L = np.zeros((3,3),dtype=float)
+    L = np.zeros((3,3,ene.size),dtype=float)
     aux = np.zeros((3,3,velkp.shape[1],velkp.shape[2]),dtype=float)
 
-    for ne in range(ini_ie,end_ie):
-        for n in range(velkp.shape[1]):
-            for nk in range(velkp.shape[2]):
-                aux[:,:,n,nk] = 1.0/temp * np.outer(velkp[:,n,nk,ispin], velkp[:,n,nk,ispin]) * \
-                1.0/2.0 * 1.0/(1.0+np.cosh(E_k[n,nk,ispin]-ene[ne])) * (E_k[n,nk,ispin]-ene[ne])**alpha
-    L = np.sum(aux,axis=(2,3))
+    for ne in range(ene.size):
+        for nk in range(ini_ik,end_ik):
+            for n in range(velkp.shape[1]):
+                aux[:,:,n,nk] = 1.0/temp * velkp[:,n,nk,ispin] * velkp[:,n,nk,ispin] * \
+                1.0/2.0 * 1.0/(1.0+np.cosh(E_k[n,nk,ispin]-ene[ne])) * pow((E_k[n,nk,ispin]-ene[ne]),alpha)
+        L[:,:,ne] = np.sum(aux,axis=(2,3))
 
     return(L)
