@@ -28,6 +28,8 @@
 # import general modules
 from __future__ import print_function
 from scipy import fftpack as FFT
+from scipy import linalg as LA
+from numpy import linalg as LAN
 import xml.etree.ElementTree as ET
 import numpy as np
 import sys, time
@@ -58,7 +60,8 @@ if size > 1:
     from read_QE_output_xml import *
 else:
     rank=0
-    from read_QE_output_xml_parse import *
+    #from read_QE_output_xml_parse import *
+    from read_QE_output_xml import *
 
 input_file = sys.argv[1]
 
@@ -135,6 +138,8 @@ HRaux[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
 # Naming convention (from here): 
 # Hks = k-space Hamiltonian on original MP grid
 # HRs = R-space Hamiltonian on original MP grid
+if Boltzmann or epsilon:
+    Hks_long = Hks
 Hks = None
 Hks = Hkaux
 HRs = HRaux
@@ -145,13 +150,35 @@ reset=time.clock()
 if Boltzmann or epsilon:
     # Compute the gradient of the k-space Hamiltonian
     from do_gradient import *
-    dHks = do_gradient(HRs,R_wght,R,idx,b_vectors)
+    from get_R_grid_regular import *
+
+    Rreg,Rreg_wght,nrreg = get_R_grid_regular(nk1,nk2,nk3,a_vectors)
+
+    dHks = do_gradient(Hks_long,Rreg_wght,Rreg,b_vectors,nk1,nk2,nk3,alat)
+
+    #kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+    #nq=0
+    #for i in range (nk1):
+    #    for j in range(nk2):
+    #        for k in range(nk3):
+    #            np.set_printoptions(precision=5, suppress=True, formatter={'complex': '{: 0.5f : 0.5f}'.format})
+    #            if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
+    #            for l in range(3):
+    #                if rank == 0: print(dHks[l,:,:,i,j,k,0])
+    #                if rank == 0: print('   ')
+    #            #if rank == 0: print(Hks[:,:,i,j,k,0])
+    #            if rank == 0: print('======')
+    #            nq += 1
+
     # Compute the momentum operator p_n,m(k) and interpolate on extended grid
     from do_momentum import *
-    pks = do_momentum(Hks,dHks)
-    pRs = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    pRs[:,:,:,:,:,:,:] = FFT.ifftn(pks[:,:,:,:,:,:,:],axes=[3,4,5])
-    pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)  # REM: this is only 'U'
+    pks,E_k = do_momentum(Hks,dHks)
+    if double_grid:
+        pRs = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        pRs[:,:,:,:,:,:,:] = FFT.ifftn(pks[:,:,:,:,:,:,:],axes=[3,4,5])
+        pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)  # REM: this is only 'U'
+    else:
+        pksp = pks
 
     # Compute velocities for Boltzmann transport
     velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
@@ -160,10 +187,16 @@ if Boltzmann or epsilon:
         for i in range (nk1):
             for j in range(nk2):
                 for k in range(nk3):
-                    velkp[:,n,nkb,:] = np.real(pks[:,n,n,i,j,k,:])
-                    if rank == 0 and nkb == 73:
-                        for l in range(3): print(velkp[l,n,nkb,:],l,n,nkb)
+                    velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
                     nkb += 1
+
+    #for nq in range (nkb):
+    #    if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
+    #    for l in range(3):
+    #        for n in range(nawf):
+    #            if rank == 0: print(velkp[l,n,nq,:])
+    #        if rank == 0: print('   ')
+    #if rank == 0: print('======') 
 
 if rank == 0: print('Boltzmann in ',time.clock()-reset,' sec')
 reset=time.clock()
@@ -197,6 +230,8 @@ if double_grid:
     # Hksp = k-space Hamiltonian on interpolated grid
     if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nk1*nk2*nk3),
 
+    kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+
     if rank ==0: print('R -> k zero padding in ',time.clock()-reset,' sec')
     reset=time.clock()
 else:
@@ -205,26 +240,66 @@ else:
 if do_dos:
     # DOS calculation with gaussian smearing on double_grid Hksp
     for ispin in range(nspin):
-        E_k = do_dos_calc(Hksp,shift,delta,ispin)
+        E_k = do_dos_calc(Hksp,shift,delta,ispin,kq_wght)
 
     if rank ==0: print('dos in ',time.clock()-reset,' sec')
     reset=time.clock()
 
-if do_dos and Boltzmann:
+if Boltzmann and do_dos:
     # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
+
     for ispin in range(nspin):
-        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,temp,ispin)
-    # Correct units
-    L0 *= ELECTRONVOLT_SI**2 / ( 4.0 * np.pi**3 )  * \
-          ( ELECTRONVOLT_SI / ( H_OVER_TPI**2 * BOHR_RADIUS_SI ) )
-    if rank == 0:
-        for ispin in range(nspin):
+        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
+
+        #----------------------
+        # Conductivity
+        #----------------------
+
+        L0 *= ELECTRONVOLT_SI**2/(4.0*np.pi**3)* \
+              (ELECTRONVOLT_SI/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+        if rank == 0:
             f=open('sigma_'+str(ispin)+'.dat','w')
             for n in range(ene.size):
-                f.write('%.5f %.5f %.5f %.5f %.5f %.5f %.5f \n' \
-                        %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
+                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                    %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
+            f.close()
+
+        #----------------------
+        # Seebeck
+        #----------------------
+
+        S = np.zeros((3,3,ene.size),dtype=float)
+
+        L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+
+        for n in range(ene.size):
+            S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))
+
+        if rank == 0:
+            f=open('Seebeck_'+str(ispin)+'.dat','w')
+            for n in range(ene.size):
+                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                        %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
+            f.close()
+
+        #----------------------
+        # Electron thermal conductivity
+        #----------------------
+
+        kappa = np.zeros((3,3,ene.size),dtype=float)
+
+        L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+
+        for n in range(ene.size):
+            kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))
+
+        if rank == 0:
+            f=open('kappa_'+str(ispin)+'.dat','w')
+            for n in range(ene.size):
+                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                        %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
             f.close()
 
     if rank ==0: print('transport in ',time.clock()-reset,' sec')

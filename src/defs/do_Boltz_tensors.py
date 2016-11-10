@@ -40,12 +40,12 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Boltz_tensors(E_k,velkp,temp,ispin):
+def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin):
     # Compute the L_alpha tensors for Boltzmann transport
 
     emin = -2.0 # To be read in input
     emax = 2.0
-    de = (emax-emin)/100
+    de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
     # Load balancing
@@ -62,7 +62,7 @@ def do_Boltz_tensors(E_k,velkp,temp,ispin):
     L0aux = np.zeros((3,3,ene.size,1),dtype=float)
     L0aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
-    L0aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,0)
+    L0aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,0)
 
     if rank == 0:
         L0[:,:,:]=L0aux[:,:,:,0]
@@ -71,14 +71,13 @@ def do_Boltz_tensors(E_k,velkp,temp,ispin):
             L0[:,:,:] += L0aux1[:,:,:,0]
     else:
         comm.Send(L0aux,0)
-    L0 /= velkp.shape[2]
     L0 = comm.bcast(L0)
 
     L1 = np.zeros((3,3,ene.size),dtype=float)
     L1aux = np.zeros((3,3,ene.size,1),dtype=float)
     L1aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
-    L1aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,1)
+    L1aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,1)
 
     if rank == 0:
         L1[:,:,:]=L1aux[:,:,:,0]
@@ -87,14 +86,13 @@ def do_Boltz_tensors(E_k,velkp,temp,ispin):
             L1[:,:,:] += L1aux1[:,:,:,0]
     else:
         comm.Send(L1aux,0)
-    L1 /= velkp.shape[2]
     L1 = comm.bcast(L1)
 
     L2 = np.zeros((3,3,ene.size),dtype=float)
     L2aux = np.zeros((3,3,ene.size,1),dtype=float)
     L2aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
-    L2aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,2)
+    L2aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,2)
 
     if rank == 0:
         L2[:,:,:]=L2aux[:,:,:,0]
@@ -103,23 +101,21 @@ def do_Boltz_tensors(E_k,velkp,temp,ispin):
             L2[:,:,:] += L2aux1[:,:,:,0]
     else:
         comm.Send(L2aux,0)
-    L2 = L2/velkp.shape[2]
     L2 = comm.bcast(L2)
 
     return(ene,L0,L1,L2)
 
-def L_loop(ini_ik,end_ik,ene,E_k,velkp,temp,ispin,alpha):
+def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
 
     # We assume tau=1 in the constant relaxation time approximation
 
     L = np.zeros((3,3,ene.size),dtype=float)
-    aux = np.zeros((3,3,velkp.shape[1],velkp.shape[2]),dtype=float)
 
-    for ne in range(ene.size):
-        for nk in range(ini_ik,end_ik):
-            for n in range(velkp.shape[1]):
-                aux[:,:,n,nk] = 1.0/temp * velkp[:,n,nk,ispin] * velkp[:,n,nk,ispin] * \
-                1.0/2.0 * 1.0/(1.0+np.cosh(E_k[n,nk,ispin]-ene[ne])) * pow((E_k[n,nk,ispin]-ene[ne]),alpha)
-        L[:,:,ne] = np.sum(aux,axis=(2,3))
+    for nk in range(ini_ik,end_ik):
+        for n in range(velkp.shape[1]):
+            for i in range(3):
+                for j in range(3):
+                    L[i,j,:] += 1.0/temp * kq_wght[nk]*velkp[i,n,nk,ispin]*velkp[j,n,nk,ispin] * \
+                    1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,ispin]-ene[:])/temp)) * pow((E_k[n,nk,ispin]-ene[:]),alpha)
 
     return(L)

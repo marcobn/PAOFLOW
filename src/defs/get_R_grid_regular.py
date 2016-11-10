@@ -26,39 +26,43 @@
 # 
 
 import numpy as np
-import cmath
-import sys, time
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
+def get_R_grid_regular(nk1,nk2,nk3,a_vectors):
 
-from do_non_ortho import *
+    # Generate a regular grid in real space (crystal coordinates)
+    # This is the algorithm in WanT
+    nr = 0
+    nrtot = 100000
+    R = np.zeros((nrtot,3),dtype=float)
+    R_wght = np.zeros((nrtot),dtype=float)
+    for i in range(1,nk1+1):
+        for j in range(1,nk2+1):
+            for k in range(1,nk3+1):
+                ri=i-((nk1+1)/2)
+                rj=j-((nk2+1)/2)
+                rk=k-((nk3+1)/2)
+                R[nr,:] = ri*a_vectors[0,:]+rj*a_vectors[1,:]+rk*a_vectors[2,:]
+                R_wght[nr] = 1.0
+                nr += 1
+    nrtot = nr-1
+    counter = nr-1
+    # Check that -R is always present
+    for ir in range(0,nrtot+1):
+        found = False
+        for ir2 in range(0,nrtot+1):
+            test_opp = all(R[ir2,:] == -R[ir,:])
+            if test_opp == True:
+                found = True
+                break
+        if found == False:
+            counter += 1
+            R[counter,:] = -R[ir,:]
+            R_wght[counter] = R_wght[ir]/2.0
+            R_wght[ir] = R_wght[ir]/2.0
+    nrtot = counter+1
+    Rreg = np.zeros((nrtot,3),dtype=float)
+    Rreg_wght = np.zeros((nrtot),dtype=float)
+    Rreg = R[:nrtot,:]
+    Rreg_wght = R_wght[:nrtot]
 
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-
-def do_momentum(Hksp,dHksp):
-    # calculate momentum vector
-
-    nawf = Hksp.shape[0]
-    nk1 = Hksp.shape[2]
-    nk2 = Hksp.shape[3]
-    nk3 = Hksp.shape[4]
-    nspin = Hksp.shape[5]
-
-    pks = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
-
-    for ispin in range(nspin):
-        for l in range(3):
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        n = k + j*nk3 + i*nk2*nk3
-                        eig, vec = LAN.eigh(Hksp[:,:,i,j,k,ispin],UPLO='U')
-                        pks[l,:,:,i,j,k,ispin] = np.conj(vec.T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec)
-                        E_k[:,n,ispin]=eig
-
-    return(pks,E_k)
+    return(Rreg,Rreg_wght,nrtot)

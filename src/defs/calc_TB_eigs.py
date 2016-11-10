@@ -88,6 +88,6 @@ def diago(ini_ik,end_ik,aux,ispin):
 
     for n in range(ini_ik,end_ik):
         eigval,_ = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
-        ekp[:,n,ispin] = np.sort(np.real(eigval))
+        ekp[:,n,ispin] = np.real(eigval) #np.sort(np.real(eigval))
 
     return(ekp)

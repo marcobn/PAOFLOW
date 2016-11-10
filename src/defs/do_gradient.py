@@ -42,19 +42,54 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_gradient(HRaux,R_wght,R,idx,b_vectors):
+def do_gradient(Hks_long,R_wght,R,b_vectors,nk1,nk2,nk3,alat):
 
-    nawf = HRaux.shape[0]
-    nk1 = HRaux.shape[2]
-    nk2 = HRaux.shape[3]
-    nk3 = HRaux.shape[4]
-    nspin = HRaux.shape[5]
+    nawf = Hks_long.shape[0]
+    nktot = Hks_long.shape[2]
+    nspin = Hks_long.shape[3]
 
-    kq,_,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+    nrtot = R_wght.size
 
-    Hks_int  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex) # final data arrays
-    Hks_aux  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex) # read data arrays from tasks
-    Hks_aux1  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex) # receiving data arrays
+    kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+
+    # ---------------------------------
+    # Compute HRs on the regular R grid
+    # ---------------------------------
+
+    HRs  = np.zeros((nawf,nawf,nrtot,nspin),dtype=complex)
+    HRsaux  = np.zeros((nawf,nawf,nrtot,nspin,1),dtype=complex)
+    HRsaux1 = np.zeros((nawf,nawf,nrtot,nspin,1),dtype=complex)
+
+    # Load balancing
+    ini_r = np.zeros((size),dtype=int)
+    end_r = np.zeros((size),dtype=int)
+
+    splitsize = 1.0/size*nrtot
+    for i in range(size):
+        ini_r[i] = int(round(i*splitsize))
+        end_r[i] = int(round((i+1)*splitsize))
+
+    ini_nr = ini_r[rank]
+    end_nr = end_r[rank]
+
+    HRsaux[:,:,:,:,0] = HR_regular_loop(ini_nr,end_nr,Hks_long,kq_wght,kq,R,nspin)
+
+    if rank == 0:
+        HRs[:,:,:,:]=HRsaux[:,:,:,:,0]
+        for i in range(1,size):
+            comm.Recv(HRsaux1,ANY_SOURCE)
+            HRs[:,:,:,:] += HRsaux1[:,:,:,:,0]
+    else:
+        comm.Send(HRsaux,0)
+    HRs = comm.bcast(HRs)
+
+    # ---------------------------------
+    # Compute the gradient of Hks
+    # ---------------------------------
+
+    dHksi  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex) # final data arrays
+    dHksaux  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex) # read data arrays from tasks
+    dHksaux1  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex) # receiving data arrays
 
     # Load balancing
     ini_i = np.zeros((size),dtype=int)
@@ -68,38 +103,50 @@ def do_gradient(HRaux,R_wght,R,idx,b_vectors):
     ini_ik = ini_i[rank]
     end_ik = end_i[rank]
 
-    Hks_aux[:,:,:,:,:,0] = grad_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx)
+    dHksaux[:,:,:,:,:,0] = grad_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRs,R_wght,kq,R,alat)
 
     if rank == 0:
-        Hks_int[::,:,:,:]=Hks_aux[:,:,:,:,:,0]
+        dHksi[:,:,:,:]=dHksaux[:,:,:,:,:,0]
         for i in range(1,size):
-            comm.Recv(Hks_aux1,ANY_SOURCE)
-            Hks_int[:,:,:,:,:] += Hks_aux1[:,:,:,:,:,0]
+            comm.Recv(dHksaux1,ANY_SOURCE)
+            dHksi[:,:,:,:,:] += dHksaux1[:,:,:,:,:,0]
     else:
-        comm.Send(Hks_aux,0)
-    Hks_int = comm.bcast(Hks_int)
+        comm.Send(dHksaux,0)
+    dHksi = comm.bcast(dHksi)
 
     dHks = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
     for i in range(nk1):
         for j in range(nk2):
             for k in range(nk3):
-                dHks[:,:,:,i,j,k,:]=Hks_int[:,:,:,idk[i,j,k],:]
+                dHks[:,:,:,i,j,k,:]=dHksi[:,:,:,idk[i,j,k],:]
 
     return(dHks)
 
-def grad_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
+def grad_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRs,R_wght,kq,R,alat):
 
     auxh = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    phase = np.zeros((3),dtype=complex)
+    nrtot = R_wght.size
 
     for ik in range(ini_ik,end_ik):
         for ispin in range(nspin):
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        phase=1.0j*R[idx[i,j,k],:]*R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[ik,:].dot(R[idx[i,j,k],:])*1j)
-                        auxh[0,:,:,ik,ispin] += HRaux[:,:,i,j,k,ispin]*phase[0]
-                        auxh[1,:,:,ik,ispin] += HRaux[:,:,i,j,k,ispin]*phase[1]
-                        auxh[2,:,:,ik,ispin] += HRaux[:,:,i,j,k,ispin]*phase[2]
+            for nr in range(nrtot):
+                phase=1.0j*R[nr,:]*alat*R_wght[nr]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[nr,:])*1j)
+                auxh[0,:,:,ik,ispin] += HRs[:,:,nr,ispin]*phase[0]
+                auxh[1,:,:,ik,ispin] += HRs[:,:,nr,ispin]*phase[1]
+                auxh[2,:,:,ik,ispin] += HRs[:,:,nr,ispin]*phase[2]
 
     return(auxh)
 
+def HR_regular_loop(ini_nr,end_nr,Hks_long,kq_wght,kq,R,nspin):
+
+    nawf = Hks_long.shape[0]
+    nrtot = R.shape[0]
+    HRs  = np.zeros((nawf,nawf,nrtot,nspin),dtype=complex)
+
+    for nr in range(ini_nr,end_nr):
+        for ik in range(kq_wght.size):
+            for ispin in range(nspin):
+                HRs[:,:,nr,ispin] += Hks_long[:,:,ik,ispin]*kq_wght[ik]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[nr,:])*(-1j))
+
+    return(HRs) 
