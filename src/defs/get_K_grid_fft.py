@@ -24,7 +24,7 @@ import numpy as np
 
 def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
     nktot = nk1*nk2*nk3
-    Kint = np.zeros((nktot,3),dtype=float)
+    Kint = np.zeros((3,nktot),dtype=float)
     K_wght = np.ones((nktot),dtype=float)
     K_wght /= nktot
     idk = np.zeros((nk1,nk2,nk3),dtype=int)
@@ -43,6 +43,6 @@ def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
                 Ry -= int(Ry)
                 Rz -= int(Rz)
                 idk[i,j,k]=n
-                Kint[n,:] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
+                Kint[:,n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
 
     return(Kint,K_wght,nktot,idk)

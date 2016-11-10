@@ -31,7 +31,7 @@ Ry2eV   = 13.60569193
 def read_QE_output_xml(fpath):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
-
+    read_S = False
 
     # Reading data-file.xml
 

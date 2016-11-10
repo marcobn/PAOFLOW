@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(Hksp,shift,delta,ispin):
+def do_dos_calc(Hksp,shift,delta,ispin,kq_wght):
     # DOS calculation with gaussian smearing
 
     eig,E_k = calc_TB_eigs(Hksp,ispin)
@@ -68,6 +68,7 @@ def do_dos_calc(Hksp,shift,delta,ispin):
             dos[:] += dosaux1[:,0]
     else:
         comm.Send(dosaux,0)
+    dos /= kq_wght.size
     dos = comm.bcast(dos)
 
     if rank == 0:
