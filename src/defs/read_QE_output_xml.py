@@ -27,6 +27,7 @@ import sys,time
 import re
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
+from load_balancing import *
 
 #units
 Ry2eV   = 13.60569193
@@ -128,16 +129,7 @@ def read_QE_output_xml(fpath):
     my_eigsmataux1 = np.zeros((nbnds,nkpnts,nspin,1))
 
     # Load balancing
-    ini_i = np.zeros((size),dtype=int)
-    end_i = np.zeros((size),dtype=int)
-
-    splitsize = 1.0/size*nkpnts
-    for i in range(size):
-        ini_i[i] = int(round(i*splitsize))
-        end_i[i] = int(round((i+1)*splitsize))
-
-    ini_ik = ini_i[rank]
-    end_ik = end_i[rank]
+    ini_ik, end_ik = load_balancing(size,rank,nkpnts)
 
     Uaux[:,:,:,:,0] = read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi)
 

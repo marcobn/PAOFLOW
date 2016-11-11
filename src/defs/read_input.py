@@ -43,6 +43,7 @@ def read_input(input_file):
     dkres = 0.1
     Boltzmann = False
     epsilon = False
+    eff_mass = False
 
     f = open(input_file)
     lines=f.readlines()
@@ -133,14 +134,21 @@ def read_input(input_file):
                 Boltzmann = (1 == 1)
         if re.search('epsilon',line):
             p = line.split()
-            Boltzmann = p[1]
+            epsilon = p[1]
             if epsilon == 'False':
                 epsilon = (1 == 2)
             else:
                 epsilon = (1 == 1)
+        if re.search('eff_mass',line):
+            p = line.split()
+            eff_mass = p[1]
+            if eff_mass == 'False':
+                eff_mass = (1 == 2)
+            else:
+                eff_mass = (1 == 1)
     if fpath == '':
         sys.exit('missing path to _.save')
 
     return(non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon)
+            ibrav, dkres, Boltzmann, epsilon, eff_mass)

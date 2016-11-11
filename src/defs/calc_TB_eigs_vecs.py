@@ -34,7 +34,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def calc_TB_eigs(Hks,ispin):
+def calc_TB_eigs_vecs(Hks,ispin):
 
     nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
     eall = np.zeros((nawf*nk1*nk2*nk3,nspin),dtype=float)
@@ -51,10 +51,14 @@ def calc_TB_eigs(Hks,ispin):
     E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
     E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
 
+    v_k = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=float)
+    v_kaux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+    v_kaux1 = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
 
-    E_kaux[:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
+    E_kaux[:,:,:,0], v_kaux[:,:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
 
     if rank == 0:
         E_k[:,:,:]=E_kaux[:,:,:,0]
@@ -65,23 +69,34 @@ def calc_TB_eigs(Hks,ispin):
         comm.Send(E_kaux,0)
     E_k = comm.bcast(E_k)
 
+    if rank == 0:
+        v_k[:,:,:,:]=v_kaux[:,:,:,:,0]
+        for i in range(1,size):
+            comm.Recv(v_kaux1,ANY_SOURCE)
+            v_k[:,:,:,:] += v_kaux1[:,:,:,:,0]
+    else:
+        comm.Send(v_kaux,0)
+    v_k = comm.bcast(v_k)
+
     nall=0
     for n in range(nk1*nk2*nk3):
         for m in range(nawf):
             eall[nall,ispin]=E_k[m,n,ispin]
             nall += 1
 
-    return(eall,E_k)
+    return(eall,E_k,v_k)
 
 def diago(ini_ik,end_ik,aux,ispin):
 
     nawf = aux.shape[0]
     nk = aux.shape[2]
     nspin = aux.shape[3]
-    ekp = np.zeros((nawf,nk,nspin))
+    ekp = np.zeros((nawf,nk,nspin),dtype=float)
+    ekv = np.zeros((nawf,nawf,nk,nspin),dtype=complex)
 
     for n in range(ini_ik,end_ik):
-        eigval,_ = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
+        eigval,eigvec = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
         ekp[:,n,ispin] = np.real(eigval) 
+        ekv[:,:,n,ispin] = eigvec
 
-    return(ekp)
+    return(ekp,ekv)
