@@ -37,6 +37,8 @@ def write_TB_eigs(Hks,ispin):
 
     f=open('bands_'+str(ispin)+'.dat','w')
     for ik in range(nkpnts):
-        for nb in range(nawf):
-            f.write('%3d  %.5f \n' %(ik,E_k[nb,ik,ispin]))
+        s="%d\t"%ik 
+        for  j in E_k[:,ik,ispin]:s += "%3.5f\t"%j
+        s+="\n"
+        f.write(s)
     return()
