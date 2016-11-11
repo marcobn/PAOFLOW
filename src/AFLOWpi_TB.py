@@ -35,7 +35,7 @@ from mpi4py import MPI
 
 # Define paths
 sys.path.append('./')
-sys.path.append('/home/marco/Programs/AFLOWpi_TB/src/defs')
+sys.path.append('/Volumes/LINUX/projects/want/soc-implementation/AflowPI_TB/src/defs')
 # Import TB specific functions
 from read_input import *
 from build_Pn import *
@@ -58,18 +58,20 @@ if size > 1:
     from read_QE_output_xml import *
 else:
     rank=0
-    from read_QE_output_xml_parse import *
+    #from read_QE_output_xml_parse import *
+    from read_QE_output_xml import *
 
 input_file = sys.argv[1]
 
 non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos, delta, do_spin_orbit,nfft1, nfft2, \
-        nfft3, ibrav, dkres, Boltzmann, epsilon = read_input(input_file)
+        nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
+        lambda_p, lambda_d = read_input(input_file)
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3 =  read_QE_output_xml(fpath)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -169,7 +171,12 @@ if rank == 0: print('Boltzmann in ',time.clock()-reset,' sec')
 reset=time.clock()
 
 if do_spin_orbit:
-    do_spin_orbit()
+    socStrengh = np.zeros((natoms,2),dtype=float) 
+    socStrengh [:,0] =  lambda_p[:]
+    socStrengh [:,1] =  lambda_d[:]
+
+    HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
+    nawf=2*nawf
 
 if do_bands and not(onedim):
     # Compute bands on a selected path in the BZ
