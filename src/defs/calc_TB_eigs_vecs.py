@@ -51,9 +51,9 @@ def calc_TB_eigs_vecs(Hks,ispin):
     E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
     E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
 
-    v_k = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=float)
-    v_kaux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=float)
-    v_kaux1 = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+    v_k = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    v_kaux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
+    v_kaux1 = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
@@ -84,7 +84,7 @@ def calc_TB_eigs_vecs(Hks,ispin):
             eall[nall,ispin]=E_k[m,n,ispin]
             nall += 1
 
-    return(eall,E_k,v_k)
+    return(E_k,v_k)
 
 def diago(ini_ik,end_ik,aux,ispin):
 
