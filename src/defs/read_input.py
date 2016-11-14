@@ -23,6 +23,7 @@
 import numpy as np
 import sys
 import re
+from constants import *
 
 def read_input(input_file):
 
@@ -35,7 +36,6 @@ def read_input(input_file):
     do_bands = False
     onedim = False
     do_dos = False
-    do_spin_orbit = False
     nfft1 = 0
     nfft2 = 0
     nfft3 = 0
@@ -43,7 +43,11 @@ def read_input(input_file):
     dkres = 0.1
     Boltzmann = False
     epsilon = False
-    eff_mass = False
+    do_spin_orbit = False
+    theta = 0.0 
+    phi = 0.0
+    lambda_p = 0.0
+    lambda_d = 0.0
 
     f = open(input_file)
     lines=f.readlines()
@@ -105,6 +109,20 @@ def read_input(input_file):
                 do_spin_orbit = (1 == 2)
             else:
                 do_spin_orbit = (1 == 1)
+        if re.search('theta',line):
+            p = line.split()
+            theta = float(p[1])
+            theta=theta*DEGTORAD
+        if re.search('phi',line):
+            p = line.split()
+            phi = float(p[1])
+            phi=phi*DEGTORAD
+        if re.search('lambda_p',line):
+            p = line.split('#')[0].split()
+            lambda_p = np.array(p[1:],dtype='float') 
+        if re.search('lambda_d',line):
+            p = line.split('#')[0].split()
+            lambda_d = np.array(p[1:],dtype='float') 
         if re.search('shift_type',line):
             p = line.split()
             shift_type = int(p[1])
@@ -151,4 +169,4 @@ def read_input(input_file):
 
     return(non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon, eff_mass)
+            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d)

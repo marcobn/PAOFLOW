@@ -71,6 +71,9 @@ def read_QE_output_xml(fpath):
 
     b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
 
+    # numbor of atoms
+    natoms=int(float(root.findall("./IONS/NUMBER_OF_ATOMS")       [0].text.split()[0]))
+
     # Monkhorst&Pack grid
     nk1=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_GRID")[0].attrib['nk1'])
     nk2=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_GRID")[0].attrib['nk2'])
@@ -157,7 +160,7 @@ def read_QE_output_xml(fpath):
     reset=time.clock()
 
     return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, \
-    nk1, nk2, nk3)
+    nk1, nk2, nk3,natoms)
 
 def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 

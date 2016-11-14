@@ -73,12 +73,13 @@ input_file = sys.argv[1]
 
 non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos, delta, do_spin_orbit,nfft1, nfft2, \
-        nfft3, ibrav, dkres, Boltzmann, epsilon, eff_mass = read_input(input_file)
+        nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
+        lambda_p, lambda_d = read_input(input_file)
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3 =  read_QE_output_xml(fpath)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -159,7 +160,7 @@ HRs = HRaux
 if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
 
-if Boltzmann or epsilon or eff_mass:
+if Boltzmann or epsilon:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -172,12 +173,6 @@ if Boltzmann or epsilon or eff_mass:
 
     if rank == 0: print('gradient in ',time.clock()-reset,' sec')
     reset=time.clock()
-
-    if eff_mass:
-        #----------------------
-        # Compute the second gradient of the k-space Hamiltonian
-        #----------------------
-        print('code!')
 
     #kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
     #nq=0
@@ -230,7 +225,12 @@ if Boltzmann or epsilon or eff_mass:
     #if rank == 0: print('======') 
 
 if do_spin_orbit:
-    do_spin_orbit()
+    socStrengh = np.zeros((natoms,2),dtype=float) 
+    socStrengh [:,0] =  lambda_p[:]
+    socStrengh [:,1] =  lambda_d[:]
+
+    HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
+    nawf=2*nawf
 
 if do_bands and not(onedim):
     #----------------------

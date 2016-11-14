@@ -133,7 +133,7 @@ def read_QE_output_xml(fpath):
                 readProj = True
                 elem.clear()
             if "K-POINT" in elem.tag:
-                if readProj or readOvlps:
+                if readProj :
                     ik = int(float(elem.tag.split('.')[-1]))-1
                     group_nesting += 1
                     elem.clear()
