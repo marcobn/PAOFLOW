@@ -201,7 +201,7 @@ if Boltzmann or epsilon or eff_mass:
     if double_grid:
         pRs = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
         pRs[:,:,:,:,:,:,:] = FFT.ifftn(pks[:,:,:,:,:,:,:],axes=[3,4,5])
-        pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)  # REM: this is only 'U'
+        pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)
     else:
         pksp = pks
 
@@ -269,6 +269,7 @@ if double_grid:
     if rank ==0: print('R -> k zero padding in ',time.clock()-reset,' sec')
     reset=time.clock()
 else:
+    kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
     Hksp = Hks
 
 if do_dos or Boltzmann or epsilon:
@@ -358,6 +359,7 @@ if epsilon:
     temp = 0.025852  # set room temperature in eV
     # Symmetrize pksp and build long vector on k-points
     pksp_long = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     for ispin in range(nspin):
         for l in range(3):
@@ -365,10 +367,9 @@ if epsilon:
                 for j in range(nk2):
                     for k in range(nk3):
                         n = k + j*nk3 + i*nk2*nk3
-                        pksp_long[l,:,:,idk[i,j,k],ispin] = pksp[l,:,:,i,j,k,ispin] + \
-                                np.conj(pksp[l,:,:,i,j,k,ispin].T) - np.diag(pksp[l,:,:,i,j,k,ispin])
+                        pksp_long[l,:,:,n,ispin] = pksp[l,:,:,i,j,k,ispin]
 
-        ene, epsi = do_epsilon(E_k,pksp_long,kq_wght,delta,temp,ispin)
+        ene, epsi, epsr = do_epsilon(E_k,pksp_long,kq_wght,omega,delta,temp,ispin)
 
         if rank == 0:
             f=open('epsi_'+str(ispin)+'.dat','w')
@@ -376,11 +377,11 @@ if epsilon:
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                         %(ene[n],epsi[0,0,n],epsi[1,1,n],epsi[2,2,n],epsi[0,1,n],epsi[0,2,n],epsi[1,2,n]))
             f.close()
-            #f=open('epsr_'+str(ispin)+'.dat','w')
-            #for n in range(ene.size):
-            #    f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-            #            %(ene[n],epsr[0,0,n],epsr[1,1,n],epsr[2,2,n],epsr[0,1,n],epsr[0,2,n],epsr[1,2,n]))
-            #f.close()
+            f=open('epsr_'+str(ispin)+'.dat','w')
+            for n in range(ene.size):
+                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                        %(ene[n],epsr[0,0,n],epsr[1,1,n],epsr[2,2,n],epsr[0,1,n],epsr[0,2,n],epsr[1,2,n]))
+            f.close()
 
 
     if rank ==0: print('epsilon in ',time.clock()-reset,' sec')
