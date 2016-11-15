@@ -76,10 +76,13 @@ non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
         lambda_p, lambda_d = read_input(input_file)
 
+if do_spin_orbit:
+    non_ortho = True
+
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -87,8 +90,10 @@ if (not non_ortho):
         Sks[:,:,ik]=np.identity(nawf)
     if rank == 0: print('...using orthogonal algorithm')
 else:
+    U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
+    nkpnts, nspin, kpnts, kpnts_wght, \
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
     if rank == 0: print('...using non-orthogonal algorithm')
-    sys.exit('must read overlap matrix from file')
 
 if rank == 0: print('reading in ',time.clock(),' sec')
 reset=time.clock()
@@ -118,10 +123,15 @@ if rank == 0: print('building Hks in ',time.clock()-reset,' sec')
 reset=time.clock()
 
 # Take care of non-orthogonality, if needed
-# Hks from projwfc is orthogonal. If non-orthogonality is required, we have to read a non orthogonal Hks and
+# Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
 # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
-if non_ortho:
-    Hks = do_non_ortho(Hks,Sks)
+# non_ortho flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
+# non_ortho flag == 1 - makes H orthogonal (rotated basis) 
+#    Hks = do_non_ortho(Hks,Sks,0)
+#    Hks = do_non_ortho(Hks,Sks,1)
+
+if do_spin_orbit:
+    Hks = do_non_ortho(Hks,Sks,0)
 
 # Plot the TB and DFT eigevalues. Writes to comparison.pdf
 if do_comparison:
@@ -139,23 +149,37 @@ R,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 # Original k grid to R grid
 reset=time.clock()
 Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+if non_ortho: 
+    Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
 for i in range(nk1):
     for j in range(nk2):
         for k in range(nk3):
             Hkaux[:,:,i,j,k,:] = Hks[:,:,idx[i,j,k],:]
+            if non_ortho and ispin == 0:
+                Skaux[:,:,i,j,k] = Sks[:,:,idx[i,j,k]]
 
 HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
 HRaux[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+if non_ortho:
+    SRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+    SRaux[:,:,:,:,:] = FFT.ifftn(Skaux[:,:,:,:,:],axes=[2,3,4])
 
 # Naming convention (from here): 
 # Hks = k-space Hamiltonian on original MP grid
 # HRs = R-space Hamiltonian on original MP grid
+# Sks = k-space overlaps on original MP grid
+# SRs = R-space overlaps on original MP grid
 if Boltzmann or epsilon:
     Hks_long = Hks
 Hks = None
 Hks = Hkaux
 HRs = HRaux
+if non_ortho:
+    if Boltzmann or epsilon:
+        Sks_long = Sks
+    Sks = None
+    Sks = Skaux
+    SRs = SRaux
 
 if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
@@ -173,20 +197,6 @@ if Boltzmann or epsilon:
 
     if rank == 0: print('gradient in ',time.clock()-reset,' sec')
     reset=time.clock()
-
-    #kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-    #nq=0
-    #for i in range (nk1):
-    #    for j in range(nk2):
-    #        for k in range(nk3):
-    #            np.set_printoptions(precision=5, suppress=True, formatter={'complex': '{: 0.5f : 0.5f}'.format})
-    #            if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
-    #            for l in range(3):
-    #                if rank == 0: print(dHks[l,:,:,i,j,k,0])
-    #                if rank == 0: print('   ')
-    #            #if rank == 0: print(Hks[:,:,i,j,k,0])
-    #            if rank == 0: print('======')
-    #            nq += 1
 
     #----------------------
     # Compute the momentum operator p_n,m(k) and interpolate on extended grid
@@ -216,20 +226,20 @@ if Boltzmann or epsilon:
                         velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
                         nkb += 1
 
-    #for nq in range (nkb):
-    #    if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
-    #    for l in range(3):
-    #        for n in range(nawf):
-    #            if rank == 0: print(velkp[l,n,nq,:])
-    #        if rank == 0: print('   ')
-    #if rank == 0: print('======') 
-
 if do_spin_orbit:
-    socStrengh = np.zeros((natoms,2),dtype=float) 
+    #----------------------
+    # Compute bands with spin-orbit coupling
+    #----------------------
+    # NOTE: HRs is now in the original non-orthogonal basis of the PAOs
+    # it must be orthogonalized 
+
+    socStrengh = np.zeros((natoms,2),dtype=float)
     socStrengh [:,0] =  lambda_p[:]
     socStrengh [:,1] =  lambda_d[:]
 
     HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
+    SRs = LA.block_diag(SRs,SRs)
+    HRs = do_non_ortho(HRs,SRs,1)
     nawf=2*nawf
 
 if do_bands and not(onedim):

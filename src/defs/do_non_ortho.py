@@ -28,7 +28,7 @@ from numpy import linalg as LAN
 
 sys.path.append('./')
 
-def do_non_ortho(Hks,Sks):
+def do_non_ortho(Hks,Sks,flag):
     # Take care of non-orthogonality, if needed
     # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to apply a basis change to Hks as
     # Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
@@ -55,7 +55,9 @@ def do_non_ortho(Hks,Sks):
         S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
         for ik in range(nkpnts):
             w, v = LAN.eigh(saux[:,:,ik],UPLO='U')
-            w = np.sqrt(w)
+            #w = np.sqrt(w)
+            if flag == 0: w = np.sqrt(w)
+            if flag == 1: w = 1.0/np.sqrt(w)
             S2k[:,:,ik] = v*w
 
         Hks_no = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
@@ -78,11 +80,13 @@ def do_non_ortho(Hks,Sks):
         S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
         for ik in range(nkpnts):
             w, v = LAN.eigh(Sks[:,:,ik],UPLO='U')
-            w = np.sqrt(w)
+            if flag == 0: w = np.sqrt(w)
+            if flag == 1: w = 1.0/np.sqrt(w)
             S2k[:,:,ik] = v*w
 
         Hks_no = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
         for ispin in range(nspin):
             for ik in range(nkpnts):
-                Hks_no[:,:,ik,ispin] = (np.conj(S2k[:,:,ik]).T).dot(aux[:,:,ik,ispin]).dot(S2k[:,:,ik])
+                Hks_no[:,:,ik,ispin] = (np.conj(S2k[:,:,ik]).T).dot(Hks[:,:,ik,ispin]).dot(S2k[:,:,ik])
+
         return(Hks_no)
