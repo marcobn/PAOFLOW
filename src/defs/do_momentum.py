@@ -28,11 +28,12 @@
 import numpy as np
 import cmath
 import sys, time
+import scipy.linalg.lapack as lapack
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-from do_non_ortho import *
+from calc_TB_eigs_vecs import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -50,15 +51,23 @@ def do_momentum(Hksp,dHksp):
 
     pks = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
     E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
+    eig = np.zeros((nawf),dtype=float)
+    vec = np.zeros((nawf,nawf),dtype=complex)
 
     for ispin in range(nspin):
+
+        E_k, vec = calc_TB_eigs_vecs(Hksp,ispin)
+
         for l in range(3):
             for i in range(nk1):
                 for j in range(nk2):
                     for k in range(nk3):
                         n = k + j*nk3 + i*nk2*nk3
-                        eig, vec = LAN.eigh(Hksp[:,:,i,j,k,ispin],UPLO='U')
-                        pks[l,:,:,i,j,k,ispin] = np.conj(vec.T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec)
-                        E_k[:,n,ispin]=eig
+                        #eig, vec = LAN.eigh(Hksp[:,:,i,j,k,ispin],UPLO='U')
+                        #aux = lapack.zheev(Hksp[:,:,i,j,k,ispin],1)
+                        #eig = aux[0]
+                        #vec = aux[1]
+                        pks[l,:,:,i,j,k,ispin] = np.conj(vec[:,:,n,ispin].T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec[:,:,n,ispin])
+                        #E_k[:,n,ispin]=eig
 
     return(pks,E_k)

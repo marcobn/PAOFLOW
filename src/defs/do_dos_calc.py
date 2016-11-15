@@ -26,6 +26,7 @@ import sys, time
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
+from load_balancing import *
 
 from calc_TB_eigs import calc_TB_eigs
 from do_non_ortho import *
@@ -35,10 +36,9 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(Hksp,shift,delta,ispin,kq_wght):
+def do_dos_calc(eig,shift,delta,ispin,kq_wght):
     # DOS calculation with gaussian smearing
 
-    eig,E_k = calc_TB_eigs(Hksp,ispin)
     emin = np.min(eig)-1.0
     emax = np.max(eig)-shift/2.0
     de = (emax-emin)/1000
@@ -46,14 +46,7 @@ def do_dos_calc(Hksp,shift,delta,ispin,kq_wght):
     dosvec = np.zeros((eig.size),dtype=float)
 
     # Load balancing
-    ini_i = np.zeros((size),dtype=int)
-    end_i = np.zeros((size),dtype=int)
-    splitsize = 1.0/size*ene.size
-    for i in range(size):
-        ini_i[i] = int(round(i*splitsize))
-        end_i[i] = int(round((i+1)*splitsize))
-    ini_ie = ini_i[rank]
-    end_ie = end_i[rank]
+    ini_ie, end_ie = load_balancing(size,rank,ene.size)
 
     dos = np.zeros((ene.size),dtype=float)
     dosaux = np.zeros((ene.size,1),dtype=float)
@@ -77,7 +70,7 @@ def do_dos_calc(Hksp,shift,delta,ispin,kq_wght):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 
-    return(E_k)
+    return
 
 def dos_loop(ini_ie,end_ie,ene,eig,delta):
 

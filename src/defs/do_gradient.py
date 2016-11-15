@@ -32,6 +32,7 @@ import sys
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
+from load_balancing import *
 
 from write_TB_eigs import write_TB_eigs
 #from kpnts_interpolation_mesh import *
@@ -61,16 +62,7 @@ def do_gradient(Hks_long,R_wght,R,b_vectors,nk1,nk2,nk3,alat):
     HRsaux1 = np.zeros((nawf,nawf,nrtot,nspin,1),dtype=complex)
 
     # Load balancing
-    ini_r = np.zeros((size),dtype=int)
-    end_r = np.zeros((size),dtype=int)
-
-    splitsize = 1.0/size*nrtot
-    for i in range(size):
-        ini_r[i] = int(round(i*splitsize))
-        end_r[i] = int(round((i+1)*splitsize))
-
-    ini_nr = ini_r[rank]
-    end_nr = end_r[rank]
+    ini_nr, end_nr = load_balancing(size,rank,nrtot)
 
     HRsaux[:,:,:,:,0] = HR_regular_loop(ini_nr,end_nr,Hks_long,kq_wght,kq,R,nspin)
 
@@ -92,16 +84,7 @@ def do_gradient(Hks_long,R_wght,R,b_vectors,nk1,nk2,nk3,alat):
     dHksaux1  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex) # receiving data arrays
 
     # Load balancing
-    ini_i = np.zeros((size),dtype=int)
-    end_i = np.zeros((size),dtype=int)
-
-    splitsize = 1.0/size*nk1*nk2*nk3
-    for i in range(size):
-        ini_i[i] = int(round(i*splitsize))
-        end_i[i] = int(round((i+1)*splitsize))
-
-    ini_ik = ini_i[rank]
-    end_ik = end_i[rank]
+    ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
 
     dHksaux[:,:,:,:,:,0] = grad_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRs,R_wght,kq,R,alat)
 

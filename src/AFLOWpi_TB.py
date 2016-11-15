@@ -44,6 +44,7 @@ from build_Pn import *
 from build_Hks import *
 from do_non_ortho import *
 from get_R_grid_fft import *
+from get_K_grid_fft import *
 from do_bands_calc import *
 from do_bands_calc_1D import *
 from do_double_grid import *
@@ -51,7 +52,9 @@ from do_dos_calc import *
 from do_spin_orbit import *
 from constants import *
 
+#----------------------
 # initialize parallel execution
+#----------------------
 comm=MPI.COMM_WORLD
 size=comm.Get_size()
 if size > 1:
@@ -63,16 +66,20 @@ else:
     #from read_QE_output_xml_parse import *
     from read_QE_output_xml import *
 
+#----------------------
+# Read input and DFT data
+#----------------------
 input_file = sys.argv[1]
 
 non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos, delta, do_spin_orbit,nfft1, nfft2, \
-        nfft3, ibrav, dkres, Boltzmann, epsilon = read_input(input_file)
+        nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
+        lambda_p, lambda_d = read_input(input_file)
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3 =  read_QE_output_xml(fpath)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -86,7 +93,9 @@ else:
 if rank == 0: print('reading in ',time.clock(),' sec')
 reset=time.clock()
 
+#----------------------
 # Building the Projectability
+#----------------------
 Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
 
 if rank == 0: print('Projectability vector ',Pn)
@@ -99,7 +108,9 @@ for n in range(nbnds):
         bnd += 1
 if rank == 0: print('# of bands with good projectability (>',pthr,') = ',bnd)
 
+#----------------------
 # Building the TB Hamiltonian
+#----------------------
 nbnds_norm = nawf
 Hks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
 
@@ -118,7 +129,9 @@ if do_comparison:
     plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat)
     quit()
 
+#----------------------
 # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
+#----------------------
 
 # Define real space lattice vectors for FFT ordering of Hks
 R,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
@@ -148,13 +161,18 @@ if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
 
 if Boltzmann or epsilon:
+    #----------------------
     # Compute the gradient of the k-space Hamiltonian
+    #----------------------
     from do_gradient import *
     from get_R_grid_regular import *
 
     Rreg,Rreg_wght,nrreg = get_R_grid_regular(nk1,nk2,nk3,a_vectors)
 
     dHks = do_gradient(Hks_long,Rreg_wght,Rreg,b_vectors,nk1,nk2,nk3,alat)
+
+    if rank == 0: print('gradient in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
     #kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
     #nq=0
@@ -170,25 +188,33 @@ if Boltzmann or epsilon:
     #            if rank == 0: print('======')
     #            nq += 1
 
+    #----------------------
     # Compute the momentum operator p_n,m(k) and interpolate on extended grid
+    #----------------------
     from do_momentum import *
     pks,E_k = do_momentum(Hks,dHks)
     if double_grid:
         pRs = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
         pRs[:,:,:,:,:,:,:] = FFT.ifftn(pks[:,:,:,:,:,:,:],axes=[3,4,5])
-        pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)  # REM: this is only 'U'
+        pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)
     else:
         pksp = pks
 
-    # Compute velocities for Boltzmann transport
-    velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
-    for n in range(nawf):
-        nkb = 0 
-        for i in range (nk1):
-            for j in range(nk2):
-                for k in range(nk3):
-                    velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
-                    nkb += 1
+    if rank == 0: print('momenta in ',time.clock()-reset,' sec')
+    reset=time.clock()
+
+    if Boltzmann:
+        #----------------------
+        # Compute velocities for Boltzmann transport
+        #----------------------
+        velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
+        for n in range(nawf):
+            nkb = 0
+            for i in range (nk1):
+                for j in range(nk2):
+                    for k in range(nk3):
+                        velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
+                        nkb += 1
 
     #for nq in range (nkb):
     #    if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
@@ -198,14 +224,18 @@ if Boltzmann or epsilon:
     #        if rank == 0: print('   ')
     #if rank == 0: print('======') 
 
-if rank == 0: print('Boltzmann in ',time.clock()-reset,' sec')
-reset=time.clock()
-
 if do_spin_orbit:
-    do_spin_orbit()
+    socStrengh = np.zeros((natoms,2),dtype=float) 
+    socStrengh [:,0] =  lambda_p[:]
+    socStrengh [:,1] =  lambda_d[:]
+
+    HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
+    nawf=2*nawf
 
 if do_bands and not(onedim):
+    #----------------------
     # Compute bands on a selected path in the BZ
+    #----------------------
     alat *= 0.529177
     do_bands_calc(HRs,R_wght,R,idx,ibrav,alat,a_vectors,b_vectors,dkres)
 
@@ -213,7 +243,9 @@ if do_bands and not(onedim):
     reset=time.clock()
 
 elif do_bands and onedim:
+    #----------------------
     # FFT interpolation along a single directions in the BZ
+    #----------------------
     if rank == 0: print('... computing bands along a line')
     do_bands_calc_1D(Hks)
 
@@ -221,7 +253,9 @@ elif do_bands and onedim:
     reset=time.clock()
 
 if double_grid:
+    #----------------------
     # Fourier interpolation on extended grid (zero padding)
+    #----------------------
     # Returns only the U(pper) triangle of the Hermitian matrices. If the whole matrix is needed add L
     # def symmetrize(Hksp):
     #     return Hksp + Hksp.getH() - np.diag(Hksp.diagonal())
@@ -230,23 +264,36 @@ if double_grid:
     # Hksp = k-space Hamiltonian on interpolated grid
     if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nk1*nk2*nk3),
 
-    kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+    kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
 
     if rank ==0: print('R -> k zero padding in ',time.clock()-reset,' sec')
     reset=time.clock()
 else:
+    kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
     Hksp = Hks
 
-if do_dos:
-    # DOS calculation with gaussian smearing on double_grid Hksp
+if do_dos or Boltzmann or epsilon:
+    #----------------------
+    # Compute eigenvalues of the interpolated Hamiltonian
+    #----------------------
+    eig = np.zeros((nawf*nk1*nk2*nk3,nspin))
     for ispin in range(nspin):
-        E_k = do_dos_calc(Hksp,shift,delta,ispin,kq_wght)
+        eig, E_k = calc_TB_eigs(Hksp,ispin)
+
+if do_dos:
+    #----------------------
+    # DOS calculation with gaussian smearing on double_grid Hksp
+    #----------------------
+    for ispin in range(nspin):
+        do_dos_calc(eig[:,ispin],shift,delta,ispin,kq_wght)
 
     if rank ==0: print('dos in ',time.clock()-reset,' sec')
     reset=time.clock()
 
-if Boltzmann and do_dos:
+if Boltzmann:
+    #----------------------
     # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
+    #----------------------
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
 
@@ -254,11 +301,11 @@ if Boltzmann and do_dos:
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
 
         #----------------------
-        # Conductivity
+        # Conductivity (in units of 1.e21/Ohm/m/s)
         #----------------------
 
         L0 *= ELECTRONVOLT_SI**2/(4.0*np.pi**3)* \
-              (ELECTRONVOLT_SI/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+              (ELECTRONVOLT_SI/(H_OVER_TPI**2*BOHR_RADIUS_SI))*1.0e-21
         if rank == 0:
             f=open('sigma_'+str(ispin)+'.dat','w')
             for n in range(ene.size):
@@ -267,15 +314,16 @@ if Boltzmann and do_dos:
             f.close()
 
         #----------------------
-        # Seebeck
+        # Seebeck (in units of 1.e-4 V/K)
         #----------------------
 
         S = np.zeros((3,3,ene.size),dtype=float)
 
+        L0 *= 1.0e21
         L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
         for n in range(ene.size):
-            S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))
+            S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
 
         if rank == 0:
             f=open('Seebeck_'+str(ispin)+'.dat','w')
@@ -285,7 +333,7 @@ if Boltzmann and do_dos:
             f.close()
 
         #----------------------
-        # Electron thermal conductivity
+        # Electron thermal conductivity ((in units of 1.e15 W/m/K/s)
         #----------------------
 
         kappa = np.zeros((3,3,ene.size),dtype=float)
@@ -293,7 +341,7 @@ if Boltzmann and do_dos:
         L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
         for n in range(ene.size):
-            kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))
+            kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
 
         if rank == 0:
             f=open('kappa_'+str(ispin)+'.dat','w')
@@ -304,8 +352,40 @@ if Boltzmann and do_dos:
 
     if rank ==0: print('transport in ',time.clock()-reset,' sec')
     reset=time.clock()
-else:
-    sys.exit('missing eigenvalues - compute dos!')
+
+if epsilon:
+    from do_epsilon import *
+
+    temp = 0.025852  # set room temperature in eV
+    # Symmetrize pksp and build long vector on k-points
+    pksp_long = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+
+    for ispin in range(nspin):
+        for l in range(3):
+            for i in range(nk1):
+                for j in range(nk2):
+                    for k in range(nk3):
+                        n = k + j*nk3 + i*nk2*nk3
+                        pksp_long[l,:,:,n,ispin] = pksp[l,:,:,i,j,k,ispin]
+
+        ene, epsi, epsr = do_epsilon(E_k,pksp_long,kq_wght,omega,delta,temp,ispin)
+
+        if rank == 0:
+            f=open('epsi_'+str(ispin)+'.dat','w')
+            for n in range(ene.size):
+                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                        %(ene[n],epsi[0,0,n],epsi[1,1,n],epsi[2,2,n],epsi[0,1,n],epsi[0,2,n],epsi[1,2,n]))
+            f.close()
+            f=open('epsr_'+str(ispin)+'.dat','w')
+            for n in range(ene.size):
+                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                        %(ene[n],epsr[0,0,n],epsr[1,1,n],epsr[2,2,n],epsr[0,1,n],epsr[0,2,n],epsr[1,2,n]))
+            f.close()
+
+
+    if rank ==0: print('epsilon in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
 # Timing
 if rank ==0: print('Total CPU time =', time.clock(),' sec')

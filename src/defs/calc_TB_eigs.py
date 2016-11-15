@@ -27,6 +27,7 @@ import os
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
+from load_balancing import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -36,7 +37,7 @@ size = comm.Get_size()
 def calc_TB_eigs(Hks,ispin):
 
     nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
-    eall = np.zeros((nawf*nk1*nk2*nk3))
+    eall = np.zeros((nawf*nk1*nk2*nk3,nspin),dtype=float)
 
     aux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
 
@@ -51,14 +52,7 @@ def calc_TB_eigs(Hks,ispin):
     E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
 
     # Load balancing
-    ini_i = np.zeros((size),dtype=int)
-    end_i = np.zeros((size),dtype=int)
-    splitsize = 1.0/size*(nk1*nk2*nk3)
-    for i in range(size):
-        ini_i[i] = int(round(i*splitsize))
-        end_i[i] = int(round((i+1)*splitsize))
-    ini_ik = ini_i[rank]
-    end_ik = end_i[rank]
+    ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
 
     E_kaux[:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
 
@@ -74,7 +68,7 @@ def calc_TB_eigs(Hks,ispin):
     nall=0
     for n in range(nk1*nk2*nk3):
         for m in range(nawf):
-            eall[nall]=E_k[m,n,ispin]
+            eall[nall,ispin]=E_k[m,n,ispin]
             nall += 1
 
     return(eall,E_k)
@@ -88,6 +82,6 @@ def diago(ini_ik,end_ik,aux,ispin):
 
     for n in range(ini_ik,end_ik):
         eigval,_ = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
-        ekp[:,n,ispin] = np.real(eigval) #np.sort(np.real(eigval))
+        ekp[:,n,ispin] = np.real(eigval) 
 
     return(ekp)

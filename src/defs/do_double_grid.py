@@ -87,8 +87,8 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
                     Hksp[l,i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
             for ispin in range(nspin):
-                for i in range(0,nawf-1):
-                    for j in range(i,nawf):
+                for i in range(nawf):
+                    for j in range(nawf):
                         aux = HRaux[l,i,j,:,:,:,ispin]
                         Hksp[l,i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
     

@@ -27,6 +27,7 @@ import sys
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
+from load_balancing import *
 
 from write_TB_eigs import write_TB_eigs
 #from kpnts_interpolation_mesh import *
@@ -56,16 +57,7 @@ def do_bands_calc(HRaux,R_wght,R,idx,ibrav,alat,a_vectors,b_vectors,dkres):
     Hks_aux1  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # receiving data arrays
 
     # Load balancing
-    ini_i = np.zeros((size),dtype=int)
-    end_i = np.zeros((size),dtype=int)
-
-    splitsize = 1.0/size*nkpi
-    for i in range(size):
-        ini_i[i] = int(round(i*splitsize))
-        end_i[i] = int(round((i+1)*splitsize))
-
-    ini_ik = ini_i[rank]
-    end_ik = end_i[rank]
+    ini_ik, end_ik = load_balancing(size,rank,nkpi)
 
     Hks_aux[:,:,:,:,0] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
 
