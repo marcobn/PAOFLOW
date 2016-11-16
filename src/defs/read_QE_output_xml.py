@@ -165,7 +165,8 @@ def read_QE_output_xml(fpath,non_ortho):
             #There will be nawf projections. Each projector of size nbnds x 1
             ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
             aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
-            aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+            #aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+            aux = np.array([float(i) for i in re.split(',|\n',aux.strip())])
 
             if ovlp_type !='complex':
                 sys.exit('the overlaps are assumed to be complex numbers')

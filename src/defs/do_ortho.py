@@ -57,7 +57,7 @@ def do_non_ortho(Hks,Sks):
         for ik in range(nkpnts):
             #w, v = LAN.eigh(saux[:,:,ik],UPLO='U')
             w, v = LA.eigh(saux[:,:,ik])
-            w = np.sqrt(w)
+            w = 1.0/np.sqrt(w)
             for j in range(nawf):
                 for i in range(nawf):
                     S2k[i,j,ik] = v[i,j]*w[j]
@@ -84,7 +84,7 @@ def do_non_ortho(Hks,Sks):
         for ik in range(nkpnts):
             w, v = LAN.eigh(Sks[:,:,ik],UPLO='U')
             #w, v = LA.eigh(Sks[:,:,ik])
-            w = np.sqrt(w)
+            w = 1.0/np.sqrt(w)
             for j in range(nawf):
                 for i in range(nawf):
                     S2k[i,j,ik] = v[i,j]*w[j]

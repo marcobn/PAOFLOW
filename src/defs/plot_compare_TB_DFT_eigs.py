@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 #units
 Ry2eV   = 13.60569193
 
-def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat):
+def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
@@ -42,7 +42,10 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat):
     ispin = 0 #plots only 1 spin channel
     #for ispin in range(nspin):
     for ik in range(nkpnts):
-        eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        if read_S:
+            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
+        else:
+            eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
     fig=plt.figure
