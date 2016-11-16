@@ -46,7 +46,7 @@ from do_non_ortho import *
 from do_ortho import *
 from get_R_grid_fft import *
 from get_K_grid_fft import *
-from do_bands_calc_S import *
+from do_bands_calc import *
 from do_bands_calc_1D import *
 from do_double_grid import *
 from do_dos_calc import *
