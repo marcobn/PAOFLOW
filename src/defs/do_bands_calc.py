@@ -28,7 +28,7 @@ import sys
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-from write_TB_eigs_S import write_TB_eigs
+from write_TB_eigs import write_TB_eigs
 #from kpnts_interpolation_mesh import *
 from kpnts_interpolation_mesh import *
 from do_non_ortho import *
