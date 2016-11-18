@@ -24,14 +24,8 @@ from scipy import fftpack as FFT
 import numpy as np
 import cmath
 import sys, time
-from mpi4py import MPI
 
 sys.path.append('./')
-
-from zero_pad import zero_pad
-
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
 
 def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
 

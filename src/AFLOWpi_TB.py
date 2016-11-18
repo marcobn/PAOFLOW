@@ -43,6 +43,7 @@ from read_input import *
 from build_Pn import *
 from build_Hks import *
 from do_non_ortho import *
+from do_ortho import *
 from get_R_grid_fft import *
 from get_K_grid_fft import *
 from do_bands_calc import *
@@ -79,7 +80,7 @@ non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -87,8 +88,10 @@ if (not non_ortho):
         Sks[:,:,ik]=np.identity(nawf)
     if rank == 0: print('...using orthogonal algorithm')
 else:
+    U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
+    nkpnts, nspin, kpnts, kpnts_wght, \
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
     if rank == 0: print('...using non-orthogonal algorithm')
-    sys.exit('must read overlap matrix from file')
 
 if rank == 0: print('reading in ',time.clock(),' sec')
 reset=time.clock()
@@ -117,16 +120,23 @@ Hks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_ty
 if rank == 0: print('building Hks in ',time.clock()-reset,' sec')
 reset=time.clock()
 
-# Take care of non-orthogonality, if needed
-# Hks from projwfc is orthogonal. If non-orthogonality is required, we have to read a non orthogonal Hks and
+# NOTE: Take care of non-orthogonality, if needed
+# Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
 # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
+# non_ortho flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
+# non_ortho flag == 1 - makes H orthogonal (rotated basis) 
+#    Hks = do_non_ortho(Hks,Sks)
+#    Hks = do_ortho(Hks,Sks)
+
 if non_ortho:
     Hks = do_non_ortho(Hks,Sks)
 
+#----------------------
 # Plot the TB and DFT eigevalues. Writes to comparison.pdf
+#----------------------
 if do_comparison:
     from plot_compare_TB_DFT_eigs import *
-    plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat)
+    plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,non_ortho)
     quit()
 
 #----------------------
@@ -144,18 +154,28 @@ for i in range(nk1):
     for j in range(nk2):
         for k in range(nk3):
             Hkaux[:,:,i,j,k,:] = Hks[:,:,idx[i,j,k],:]
+            if (non_ortho):
+                Skaux[:,:,i,j,k] = Sks[:,:,idx[i,j,k]]
 
 HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-HRaux[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+SRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
 
-# Naming convention (from here): 
+HRaux[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+if non_ortho:
+    SRaux[:,:,:,:,:] = FFT.ifftn(Skaux[:,:,:,:,:],axes=[2,3,4])
+
+# NOTE: Naming convention (from here):
 # Hks = k-space Hamiltonian on original MP grid
 # HRs = R-space Hamiltonian on original MP grid
-if Boltzmann or epsilon:
-    Hks_long = Hks
+if non_ortho:
+    if Boltzmann or epsilon:
+        Sks_long = Sks
 Hks = None
+Sks = None
 Hks = Hkaux
+Sks = Skaux
 HRs = HRaux
+SRs = SRaux
 
 if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
@@ -166,6 +186,10 @@ if Boltzmann or epsilon:
     #----------------------
     from do_gradient import *
     from get_R_grid_regular import *
+    from do_ortho import *
+
+    if non_ortho:
+        sys.exit('H must be orthogonal')
 
     Rreg,Rreg_wght,nrreg = get_R_grid_regular(nk1,nk2,nk3,a_vectors)
 
@@ -173,20 +197,6 @@ if Boltzmann or epsilon:
 
     if rank == 0: print('gradient in ',time.clock()-reset,' sec')
     reset=time.clock()
-
-    #kq,kq_wght,_,_ = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-    #nq=0
-    #for i in range (nk1):
-    #    for j in range(nk2):
-    #        for k in range(nk3):
-    #            np.set_printoptions(precision=5, suppress=True, formatter={'complex': '{: 0.5f : 0.5f}'.format})
-    #            if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
-    #            for l in range(3):
-    #                if rank == 0: print(dHks[l,:,:,i,j,k,0])
-    #                if rank == 0: print('   ')
-    #            #if rank == 0: print(Hks[:,:,i,j,k,0])
-    #            if rank == 0: print('======')
-    #            nq += 1
 
     #----------------------
     # Compute the momentum operator p_n,m(k) and interpolate on extended grid
@@ -216,28 +226,36 @@ if Boltzmann or epsilon:
                         velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
                         nkb += 1
 
-    #for nq in range (nkb):
-    #    if rank == 0: print(nq,kq[:,nq],kq_wght[nq])
-    #    for l in range(3):
-    #        for n in range(nawf):
-    #            if rank == 0: print(velkp[l,n,nq,:])
-    #        if rank == 0: print('   ')
-    #if rank == 0: print('======') 
-
 if do_spin_orbit:
-    socStrengh = np.zeros((natoms,2),dtype=float) 
+    #----------------------
+    # Compute bands with spin-orbit coupling
+    #----------------------
+
+    # NOTE: HRs is now in the original non-orthogonal basis of the PAOs
+
+    socStrengh = np.zeros((natoms,2),dtype=float)
     socStrengh [:,0] =  lambda_p[:]
     socStrengh [:,1] =  lambda_d[:]
 
     HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
+
     nawf=2*nawf
+    SRaux = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype= complex)
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
+                SRaux[:,:,i,j,k] = LA.block_diag(SRs[:,:,i,j,k],SRs[:,:,i,j,k])
+
+    SRs = None
+    SRs = SRaux
 
 if do_bands and not(onedim):
     #----------------------
     # Compute bands on a selected path in the BZ
     #----------------------
     alat *= 0.529177
-    do_bands_calc(HRs,R_wght,R,idx,ibrav,alat,a_vectors,b_vectors,dkres)
+
+    do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
 
     if rank == 0: print('bands in ',time.clock()-reset,' sec')
     reset=time.clock()
@@ -253,6 +271,10 @@ elif do_bands and onedim:
     reset=time.clock()
 
 if double_grid:
+
+    if non_ortho:
+        sys.exit('H must be orthogonal')
+
     #----------------------
     # Fourier interpolation on extended grid (zero padding)
     #----------------------
@@ -281,6 +303,10 @@ if do_dos or Boltzmann or epsilon:
         eig, E_k = calc_TB_eigs(Hksp,ispin)
 
 if do_dos:
+
+    if non_ortho:
+        sys.exit('H must be orthogonal')
+
     #----------------------
     # DOS calculation with gaussian smearing on double_grid Hksp
     #----------------------
@@ -296,6 +322,9 @@ if Boltzmann:
     #----------------------
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
+
+    if non_ortho:
+        sys.exit('H must be orthogonal')
 
     for ispin in range(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
@@ -355,6 +384,9 @@ if Boltzmann:
 
 if epsilon:
     from do_epsilon import *
+
+    if non_ortho:
+            sys.exit('H must be orthogonal')
 
     temp = 0.025852  # set room temperature in eV
     # Symmetrize pksp and build long vector on k-points

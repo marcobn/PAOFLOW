@@ -20,12 +20,28 @@
 # Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
+from scipy import linalg as LA
+from numpy import linalg as LAN
 import numpy as np
+import os
 
-def build_Pn(nawf,nbnds,nkpnts,nspin,U):
-    Pn = 0.0
-    for ispin in range(nspin):
-        for ik in range(nkpnts):
-            UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
-            Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
-    return Pn
+def write_TB_eigs(Hks,Sks,read_S,ispin):
+
+    nawf,nawf,nkpnts,nspin = Hks.shape
+    nbnds_tb = nawf
+    E_k = np.zeros((nbnds_tb,nkpnts,nspin))
+
+    for ik in range(nkpnts):
+        if read_S:
+            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
+        else:
+            eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        E_k[:,ik,ispin] = np.sort(np.real(eigval))
+
+    f=open('bands_'+str(ispin)+'.dat','w')
+    for ik in range(nkpnts):
+        s="%d\t"%ik
+        for  j in E_k[:,ik,ispin]:s += "%3.5f\t"%j
+        s+="\n"
+        f.write(s)
+    return()

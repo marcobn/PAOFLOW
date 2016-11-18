@@ -63,11 +63,6 @@ def do_momentum(Hksp,dHksp):
                 for j in range(nk2):
                     for k in range(nk3):
                         n = k + j*nk3 + i*nk2*nk3
-                        #eig, vec = LAN.eigh(Hksp[:,:,i,j,k,ispin],UPLO='U')
-                        #aux = lapack.zheev(Hksp[:,:,i,j,k,ispin],1)
-                        #eig = aux[0]
-                        #vec = aux[1]
                         pks[l,:,:,i,j,k,ispin] = np.conj(vec[:,:,n,ispin].T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec[:,:,n,ispin])
-                        #E_k[:,n,ispin]=eig
 
     return(pks,E_k)
