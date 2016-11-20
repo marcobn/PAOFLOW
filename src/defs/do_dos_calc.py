@@ -28,7 +28,6 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
 
-from calc_TB_eigs import calc_TB_eigs
 from do_non_ortho import *
 
 # initialize parallel execution

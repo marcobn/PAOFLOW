@@ -40,12 +40,7 @@ def calc_TB_eigs_vecs(Hks,ispin):
     eall = np.zeros((nawf*nk1*nk2*nk3,nspin),dtype=float)
 
     aux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-
-    for i in range(nk1):
-        for j in range(nk2):
-            for k in range(nk3):
-                n = k + j*nk3 + i*nk2*nk3
-                aux[:,:,n,ispin] = Hks[:,:,i,j,k,ispin]
+    aux[:,:,:,ispin] = np.reshape(Hks[:,:,:,:,:,ispin],(nawf,nawf,nk1*nk2*nk3),order='C')
 
     E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
     E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
@@ -84,7 +79,7 @@ def calc_TB_eigs_vecs(Hks,ispin):
             eall[nall,ispin]=E_k[m,n,ispin]
             nall += 1
 
-    return(E_k,v_k)
+    return(eall,E_k,v_k)
 
 def diago(ini_ik,end_ik,aux,ispin):
 

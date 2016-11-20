@@ -33,30 +33,23 @@ import scipy.linalg.lapack as lapack
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-from calc_TB_eigs_vecs import *
-
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_momentum(Hksp,dHksp):
+def do_momentum(vec,dHksp):
     # calculate momentum vector
 
-    nawf = Hksp.shape[0]
-    nk1 = Hksp.shape[2]
-    nk2 = Hksp.shape[3]
-    nk3 = Hksp.shape[4]
-    nspin = Hksp.shape[5]
+    nawf = dHksp.shape[1]
+    nk1 = dHksp.shape[3]
+    nk2 = dHksp.shape[4]
+    nk3 = dHksp.shape[5]
+    nspin = dHksp.shape[6]
 
     pks = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
-    eig = np.zeros((nawf),dtype=float)
-    vec = np.zeros((nawf,nawf),dtype=complex)
 
     for ispin in range(nspin):
-
-        E_k, vec = calc_TB_eigs_vecs(Hksp,ispin)
 
         for l in range(3):
             for i in range(nk1):
@@ -65,4 +58,4 @@ def do_momentum(Hksp,dHksp):
                         n = k + j*nk3 + i*nk2*nk3
                         pks[l,:,:,i,j,k,ispin] = np.conj(vec[:,:,n,ispin].T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec[:,:,n,ispin])
 
-    return(pks,E_k)
+    return(pks)

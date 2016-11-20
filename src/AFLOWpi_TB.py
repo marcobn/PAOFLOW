@@ -51,6 +51,7 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_dos_calc import *
 from do_spin_orbit import *
+from calc_TB_eigs_vecs import *
 from constants import *
 
 #----------------------
@@ -210,7 +211,8 @@ if do_bands and not(onedim):
     #----------------------
     # Compute bands on a selected path in the BZ
     #----------------------
-    alat *= 0.529177
+
+    alat /= ANGSTROM_AU
 
     if non_ortho:
         # now we orthogonalize the Hamiltonian again
@@ -227,6 +229,8 @@ if do_bands and not(onedim):
     R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
     do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+
+    alat *= ANGSTROM_AU
 
     if rank == 0: print('bands in ',time.clock()-reset,' sec')
     reset=time.clock()
@@ -288,7 +292,7 @@ if do_dos or Boltzmann or epsilon:
 
     eig = np.zeros((nawf*nk1*nk2*nk3,nspin))
     for ispin in range(nspin):
-        eig, E_k = calc_TB_eigs(Hksp,ispin)
+        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin)
 
 if do_dos:
 
@@ -344,7 +348,7 @@ if Boltzmann or epsilon:
     # Compute the momentum operator p_n,m(k)
     #----------------------
     from do_momentum import *
-    pksp,_ = do_momentum(Hksp,dHksp)
+    pksp = do_momentum(v_k,dHksp)
 
     if rank == 0: print('momenta in ',time.clock()-reset,' sec')
     reset=time.clock()

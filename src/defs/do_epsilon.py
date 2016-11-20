@@ -35,7 +35,6 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
 
-from calc_TB_eigs import calc_TB_eigs
 from constants import *
 
 # initialize parallel execution
