@@ -331,7 +331,7 @@ if Boltzmann or epsilon:
             for j in range(nk2):
                 for k in range(nk3):
                     for l in range(3):
-                        dHRaux[l,:,:,i,j,k,ispin] = alat*Rfft[i,j,k,l]*HRaux[:,:,i,j,k,ispin]
+                        dHRaux[l,:,:,i,j,k,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[:,:,i,j,k,ispin]
 
     # Compute dH(k)/dk
     dHksp  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
@@ -341,7 +341,7 @@ if Boltzmann or epsilon:
     reset=time.clock()
 
     #----------------------
-    # Compute the momentum operator p_n,m(k) and interpolate on extended grid
+    # Compute the momentum operator p_n,m(k)
     #----------------------
     from do_momentum import *
     pksp,_ = do_momentum(Hksp,dHksp)
@@ -355,11 +355,6 @@ if Boltzmann or epsilon:
         #----------------------
         velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
         for n in range(nawf):
-            #for i in range (nk1):
-            #  for j in range(nk2):
-            #       for k in range(nk3):
-            #           nk = k + j*nk3 + i*nk2*nk3
-            #           velkp[:,n,nk,:] = np.real(pksp[:,n,n,i,j,k,:])
             velkp[:,n,:,:] = np.reshape(np.real(pksp[:,n,n,:,:,:,:]),(3,nk1*nk2*nk3,nspin),order='C')
 
 
@@ -438,6 +433,9 @@ if Boltzmann:
     reset=time.clock()
 
 if epsilon:
+    #----------------------
+    # Compute dielectric tensor (Re and Im epsilon)
+    #----------------------
     from do_epsilon import *
 
     if non_ortho:
