@@ -170,6 +170,7 @@ if non_ortho:
 if non_ortho:
     if Boltzmann or epsilon:
         Sks_long = Sks
+Hks_long = Hks
 Hks = None
 Sks = None
 Hks = Hkaux
