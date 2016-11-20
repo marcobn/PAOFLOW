@@ -35,7 +35,6 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
 
-from calc_TB_eigs import calc_TB_eigs
 from constants import *
 
 # initialize parallel execution
@@ -140,13 +139,8 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi):
     for ie in range(ini_ie,end_ie):
         for i in range(3):
             for j in range(3):
-    #            for ie2 in range(1,ie-1):
-    #                epsr[i,j,ie] += 2.0/np.pi * ene[ie2]*de*epsi[i,j,ie2]/(ene[ie2]**2-ene[ie]**2) 
-    #            for ie2 in range(ie+1,ene.size):
-    #                epsr[i,j,ie] += 2.0/np.pi * ene[ie2]*de*epsi[i,j,ie2]/(ene[ie2]**2-ene[ie]**2) 
                 epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
                                np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
-    #    epsr += 1.0
 
     return(epsr)
 

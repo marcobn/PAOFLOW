@@ -25,20 +25,33 @@ from numpy import linalg as LAN
 import numpy as np
 import os
 
-def write_TB_eigs(Hks,ispin):
+def write_TB_eigs(Hks,Sks,read_S,ispin):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
     E_k = np.zeros((nbnds_tb,nkpnts,nspin))
 
     for ik in range(nkpnts):
-        eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        if read_S:
+            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
+        else:
+            eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
-    f=open('bands_'+str(ispin)+'.dat','w')
-    for ik in range(nkpnts):
-        s="%d\t"%ik 
-        for  j in E_k[:,ik,ispin]:s += "%3.5f\t"%j
-        s+="\n"
-        f.write(s)
+    ipad = False
+    if ipad:
+        f=open('bands_'+str(ispin)+'.dat','w')
+        for ik in range(nkpnts):
+            for nb in range(nawf):
+                f.write('%3d  %.5f \n' %(ik,E_k[nb,ik,ispin]))
+        f.close()
+    else:
+        f=open('bands_'+str(ispin)+'.dat','w')
+        for ik in range(nkpnts):
+            s="%d\t"%ik
+            for  j in E_k[:,ik,ispin]:s += "%3.5f\t"%j
+            s+="\n"
+            f.write(s)
+        f.close()
+
     return()

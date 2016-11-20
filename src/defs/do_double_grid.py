@@ -21,6 +21,7 @@
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 from scipy import fftpack as FFT
+from numpy import fft as NFFT
 import numpy as np
 import cmath
 import sys, time
@@ -28,7 +29,7 @@ from mpi4py import MPI
 
 sys.path.append('./')
 
-from zero_pad import zero_pad
+from zero_pad import *
 
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -52,17 +53,19 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
         Hksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-        for ispin in range(nspin):
-            for i in range(nawf):
-                aux = HRaux[i,i,:,:,:,ispin]
-                Hksp[i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+        #for ispin in range(nspin):
+        #    for i in range(nawf):
+        #        aux = HRaux[i,i,:,:,:,ispin]
+        #        Hksp[i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
         for ispin in range(nspin):
-            for i in range(0,nawf-1):
-                for j in range(i,nawf):
+            #for i in range(0,nawf-1):
+            #    for j in range(i,nawf):
+            for i in range(nawf):
+                for j in range(nawf):
                     aux = HRaux[i,j,:,:,:,ispin]
                     Hksp[i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-    elif HRaux.shape[0] == 3:
+    elif HRaux.shape[0] == 3 and HRaux.shape[1] != HRaux.shape[0]:
         # This works for the momentum tensor
         nawf = HRaux.shape[1]
         nk1 = HRaux.shape[3]
@@ -83,16 +86,36 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
         for l in range(3):
             for ispin in range(nspin):
                 for i in range(nawf):
-                    aux = HRaux[l,i,i,:,:,:,ispin]
-                    Hksp[l,i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-
-            for ispin in range(nspin):
-                for i in range(nawf):
                     for j in range(nawf):
                         aux = HRaux[l,i,j,:,:,:,ispin]
                         Hksp[l,i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-    
-    else: 
+
+    elif HRaux.shape[0] == HRaux.shape[1] == 3:
+        # This works for the dielectric tensor
+        ne = HRaux.shape[2]
+        nk1 = HRaux.shape[3]
+        nk2 = HRaux.shape[4]
+        nk3 = HRaux.shape[5]
+        nspin = HRaux.shape[6]
+        nk1p = nfft1+nk1
+        nk2p = nfft2+nk2
+        nk3p = nfft3+nk3
+        nktotp= nk1p*nk2p*nk3p
+        #if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
+
+        # Extended R to k (with zero padding)
+        HRauxp  = np.zeros((3,3,ne,nk1p,nk2p,nk3p,nspin),dtype=float)
+        Hksp  = np.zeros((3,3,ne,nk1p,nk2p,nk3p,nspin),dtype=float)
+        aux = np.zeros((nk1,nk2,nk3),dtype=float)
+
+        for ispin in range(nspin):
+            for i in range(3):
+                for j in range(3):
+                    for ie in range(ne):
+                        aux = HRaux[i,j,ie,:,:,:,ispin]
+                        Hksp[i,j,ie,:,:,:,ispin] = np.real(FFT.fftn(zero_pad_float(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3)))
+
+    else:
         sys.exit('wrong dimensions in input array')
 
     nk1 = nk1p
