@@ -55,8 +55,8 @@ def do_non_ortho(Hks,Sks):
 
         S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
         for ik in range(nkpnts):
-            #w, v = LAN.eigh(saux[:,:,ik],UPLO='U')
-            w, v = LA.eigh(saux[:,:,ik])
+            w, v = LAN.eigh(saux[:,:,ik],UPLO='U')
+            #w, v = LA.eigh(saux[:,:,ik])
             w = np.sqrt(w)
             for j in range(nawf):
                 for i in range(nawf):

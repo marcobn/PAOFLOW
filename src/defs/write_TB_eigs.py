@@ -38,7 +38,7 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
             eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
 
-    ipad = True
+    ipad = False
     if ipad:
         f=open('bands_'+str(ispin)+'.dat','w')
         for ik in range(nkpnts):

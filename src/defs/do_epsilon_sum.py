@@ -43,7 +43,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
+def do_epsilon_sum(epsik,nkpnts,ispin):
     # Compute the dielectric tensor
 
     emin = 0.1 # To be read in input
@@ -56,13 +56,13 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
     #=======================
 
     # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,kq_wght.size)
+    ini_ik, end_ik = load_balancing(size,rank,nkpnts)
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
     epsi_aux = np.zeros((3,3,ene.size,1),dtype=float)
     epsi_aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
-    epsi_aux[:,:,:,0] = epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin)
+    epsi_aux[:,:,:,0] = epsi_loop_sum(ini_ik,end_ik,ene,epsik,ispin)
 
     if rank == 0:
         epsi[:,:,:]=epsi_aux[:,:,:,0]
@@ -99,36 +99,14 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
 
     return(ene,epsi,epsr)
 
-def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin):
+def epsi_loop_sum(ini_ik,end_ik,ene,epsik,ispin):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
 
-    arg = np.zeros((ene.size),dtype=float)
-    raux = np.zeros((ene.size),dtype=float)
-
     for nk in range(ini_ik,end_ik):
-        for n in range(pksp.shape[1]):
-            arg2 = E_k[n,nk,ispin]/temp
-            raux2 = 1.0/(np.exp(arg2)+1)
-            for m in range(pksp.shape[1]):
-                arg3 = E_k[m,nk,ispin]/temp
-                raux3 = 1.0/(np.exp(arg3)+1)
-                arg[:] = (ene[:] - ((E_k[m,nk,ispin]-E_k[n,nk,ispin])))/delta
-                raux[:] = 1.0/np.sqrt(np.pi)*np.exp(-arg[:]**2)
-                if n != m:
-                    for i in range(3):
-                        for j in range(3):
-                            epsi[i,j,:] += 1.0/(ene[:]**2+delta**2) * \
-                                    kq_wght[nk] /delta * raux[:] * (raux2 - raux3) * \
-                                    abs(pksp[i,n,m,nk,ispin] * pksp[j,m,n,nk,ispin])
-                else:
-                    for i in range(3):
-                        for j in range(3):
-                            epsi[i,j,:] += 1.0/ene[:] * kq_wght[nk] * raux[:]/delta *  \
-                                    1.0/2.0 * 1.0/(1.0+np.cosh((arg2)))/temp *    \
-                                    abs(pksp[i,n,m,nk,ispin] * pksp[j,m,n,nk,ispin])
-
-    epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
+        for i in range(3):
+            for j in range(3):
+                epsi[i,j,:] += epsik[i,j,:,nk,ispin]
 
     return(epsi)
 
@@ -140,13 +118,8 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi):
     for ie in range(ini_ie,end_ie):
         for i in range(3):
             for j in range(3):
-    #            for ie2 in range(1,ie-1):
-    #                epsr[i,j,ie] += 2.0/np.pi * ene[ie2]*de*epsi[i,j,ie2]/(ene[ie2]**2-ene[ie]**2) 
-    #            for ie2 in range(ie+1,ene.size):
-    #                epsr[i,j,ie] += 2.0/np.pi * ene[ie2]*de*epsi[i,j,ie2]/(ene[ie2]**2-ene[ie]**2) 
                 epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
                                np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
-    #    epsr += 1.0
 
     return(epsr)
 
