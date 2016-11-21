@@ -33,7 +33,7 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-from calc_TB_eigs import calc_TB_eigs
+from load_balancing import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD

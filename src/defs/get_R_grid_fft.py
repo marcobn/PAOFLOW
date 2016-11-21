@@ -21,10 +21,12 @@
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 import numpy as np
+from scipy import fftpack as FFT
 
 def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
     nrtot = nk1*nk2*nk3
     R = np.zeros((nrtot,3),dtype=float)
+    Rfft = np.zeros((nk1,nk2,nk3,3),dtype=float)
     R_wght = np.ones((nrtot),dtype=float)
     idx = np.zeros((nk1,nk2,nk3),dtype=int)
 
@@ -42,8 +44,9 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
                 Ry -= int(Ry)
                 Rz -= int(Rz)
                 R[n,:] = Rx*nk1*a_vectors[0,:]+Ry*nk2*a_vectors[1,:]+Rz*nk3*a_vectors[2,:]
-                #R[n,:] = Rx*a_vectors[0,:]+Ry*a_vectors[1,:]+Rz*a_vectors[2,:]
+                Rfft[i,j,k,:] = R[n,:]
                 idx[i,j,k]=n
-                #print("%.5f" % R[n,0],"%.5f" % R[n,1],"%.5f" % R[n,2])
 
-    return(R,R_wght,nrtot,idx)
+    Rfft = FFT.fftshift(Rfft,axes=(0,1,2))
+
+    return(R,Rfft,R_wght,nrtot,idx)

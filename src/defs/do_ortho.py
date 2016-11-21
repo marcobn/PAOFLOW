@@ -29,7 +29,7 @@ from scipy import linalg as LA
 
 sys.path.append('./')
 
-def do_non_ortho(Hks,Sks):
+def do_ortho(Hks,Sks):
     # Take care of non-orthogonality, if needed
     # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to apply a basis change to Hks as
     # Hks -> Sks^(1/2)*Hks*Sks^(1/2)+

@@ -51,6 +51,7 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_dos_calc import *
 from do_spin_orbit import *
+from calc_TB_eigs_vecs import *
 from constants import *
 
 #----------------------
@@ -143,19 +144,14 @@ if do_comparison:
 # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
 #----------------------
 
-# Define real space lattice vectors for FFT ordering of Hks
-R,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-
 # Original k grid to R grid
 reset=time.clock()
 Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
 Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-for i in range(nk1):
-    for j in range(nk2):
-        for k in range(nk3):
-            Hkaux[:,:,i,j,k,:] = Hks[:,:,idx[i,j,k],:]
-            if (non_ortho):
-                Skaux[:,:,i,j,k] = Sks[:,:,idx[i,j,k]]
+
+Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+if non_ortho:
+    Skaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3),order='C')
 
 HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
 SRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
@@ -170,6 +166,7 @@ if non_ortho:
 if non_ortho:
     if Boltzmann or epsilon:
         Sks_long = Sks
+Hks_long = Hks
 Hks = None
 Sks = None
 Hks = Hkaux
@@ -180,82 +177,60 @@ SRs = SRaux
 if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
 reset=time.clock()
 
-if Boltzmann or epsilon:
-    #----------------------
-    # Compute the gradient of the k-space Hamiltonian
-    #----------------------
-    from do_gradient import *
-    from get_R_grid_regular import *
-    from do_ortho import *
-
-    if non_ortho:
-        sys.exit('H must be orthogonal')
-
-    Rreg,Rreg_wght,nrreg = get_R_grid_regular(nk1,nk2,nk3,a_vectors)
-
-    dHks = do_gradient(Hks_long,Rreg_wght,Rreg,b_vectors,nk1,nk2,nk3,alat)
-
-    if rank == 0: print('gradient in ',time.clock()-reset,' sec')
-    reset=time.clock()
-
-    #----------------------
-    # Compute the momentum operator p_n,m(k) and interpolate on extended grid
-    #----------------------
-    from do_momentum import *
-    pks,E_k = do_momentum(Hks,dHks)
-    if double_grid:
-        pRs = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-        pRs[:,:,:,:,:,:,:] = FFT.ifftn(pks[:,:,:,:,:,:,:],axes=[3,4,5])
-        pksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,pRs)
-    else:
-        pksp = pks
-
-    if rank == 0: print('momenta in ',time.clock()-reset,' sec')
-    reset=time.clock()
-
-    if Boltzmann:
-        #----------------------
-        # Compute velocities for Boltzmann transport
-        #----------------------
-        velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
-        for n in range(nawf):
-            nkb = 0
-            for i in range (nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        velkp[:,n,nkb,:] = np.real(pksp[:,n,n,i,j,k,:])
-                        nkb += 1
-
 if do_spin_orbit:
     #----------------------
     # Compute bands with spin-orbit coupling
     #----------------------
-
-    # NOTE: HRs is now in the original non-orthogonal basis of the PAOs
 
     socStrengh = np.zeros((natoms,2),dtype=float)
     socStrengh [:,0] =  lambda_p[:]
     socStrengh [:,1] =  lambda_d[:]
 
     HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
-
     nawf=2*nawf
-    SRaux = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype= complex)
-    for i in range(nk1):
-        for j in range(nk2):
-            for k in range(nk3):
-                SRaux[:,:,i,j,k] = LA.block_diag(SRs[:,:,i,j,k],SRs[:,:,i,j,k])
 
-    SRs = None
-    SRs = SRaux
+    if non_ortho:
+        SRaux = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype= complex)
+        for i in range(nk1):
+            for j in range(nk2):
+                for k in range(nk3):
+                    SRaux[:,:,i,j,k] = LA.block_diag(SRs[:,:,i,j,k],SRs[:,:,i,j,k])
+
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRaux[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        Srs = SRaux
+        non_ortho = False
 
 if do_bands and not(onedim):
     #----------------------
     # Compute bands on a selected path in the BZ
     #----------------------
-    alat *= 0.529177
+
+    alat /= ANGSTROM_AU
+
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
+
+    # Define real space lattice vectors
+    R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
     do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+
+    alat *= ANGSTROM_AU
 
     if rank == 0: print('bands in ',time.clock()-reset,' sec')
     reset=time.clock()
@@ -273,14 +248,19 @@ elif do_bands and onedim:
 if double_grid:
 
     if non_ortho:
-        sys.exit('H must be orthogonal')
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
 
     #----------------------
     # Fourier interpolation on extended grid (zero padding)
     #----------------------
-    # Returns only the U(pper) triangle of the Hermitian matrices. If the whole matrix is needed add L
-    # def symmetrize(Hksp):
-    #     return Hksp + Hksp.getH() - np.diag(Hksp.diagonal())
     Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
     # Naming convention (from here): 
     # Hksp = k-space Hamiltonian on interpolated grid
@@ -298,14 +278,23 @@ if do_dos or Boltzmann or epsilon:
     #----------------------
     # Compute eigenvalues of the interpolated Hamiltonian
     #----------------------
-    eig = np.zeros((nawf*nk1*nk2*nk3,nspin))
-    for ispin in range(nspin):
-        eig, E_k = calc_TB_eigs(Hksp,ispin)
-
-if do_dos:
 
     if non_ortho:
-        sys.exit('H must be orthogonal')
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
+
+    eig = np.zeros((nawf*nk1*nk2*nk3,nspin))
+    for ispin in range(nspin):
+        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin)
+
+if do_dos:
 
     #----------------------
     # DOS calculation with gaussian smearing on double_grid Hksp
@@ -316,6 +305,63 @@ if do_dos:
     if rank ==0: print('dos in ',time.clock()-reset,' sec')
     reset=time.clock()
 
+if Boltzmann or epsilon:
+    #----------------------
+    # Compute the gradient of the k-space Hamiltonian
+    #----------------------
+
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
+
+    # fft grid in R shifted to have (0,0,0) in the center
+    _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+
+    HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[2,3,4])
+    HRaux = FFT.fftshift(HRaux,axes=(2,3,4))
+
+    # Compute R*H(R)
+    dHRaux  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    for ispin in range(nspin):
+        for i in range(nk1):
+            for j in range(nk2):
+                for k in range(nk3):
+                    for l in range(3):
+                        dHRaux[l,:,:,i,j,k,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[:,:,i,j,k,ispin]
+
+    # Compute dH(k)/dk
+    dHksp  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[3,4,5])
+
+    if rank == 0: print('gradient in ',time.clock()-reset,' sec')
+    reset=time.clock()
+
+    #----------------------
+    # Compute the momentum operator p_n,m(k)
+    #----------------------
+    from do_momentum import *
+    pksp = do_momentum(v_k,dHksp)
+
+    if rank == 0: print('momenta in ',time.clock()-reset,' sec')
+    reset=time.clock()
+
+    if Boltzmann:
+        #----------------------
+        # Compute velocities for Boltzmann transport
+        #----------------------
+        velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
+        for n in range(nawf):
+            velkp[:,n,:,:] = np.reshape(np.real(pksp[:,n,n,:,:,:,:]),(3,nk1*nk2*nk3,nspin),order='C')
+
+
 if Boltzmann:
     #----------------------
     # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
@@ -324,7 +370,15 @@ if Boltzmann:
     temp = 0.025852  # set room temperature in eV
 
     if non_ortho:
-        sys.exit('H must be orthogonal')
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
 
     for ispin in range(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
@@ -383,23 +437,30 @@ if Boltzmann:
     reset=time.clock()
 
 if epsilon:
+    #----------------------
+    # Compute dielectric tensor (Re and Im epsilon)
+    #----------------------
     from do_epsilon import *
 
     if non_ortho:
-            sys.exit('H must be orthogonal')
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
 
     temp = 0.025852  # set room temperature in eV
-    # Symmetrize pksp and build long vector on k-points
+
     pksp_long = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     for ispin in range(nspin):
-        for l in range(3):
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        n = k + j*nk3 + i*nk2*nk3
-                        pksp_long[l,:,:,n,ispin] = pksp[l,:,:,i,j,k,ispin]
+
+        pksp_long = np.reshape(pksp,(3,nawf,nawf,nk1*nk2*nk3,nspin),order='C')
 
         ene, epsi, epsr = do_epsilon(E_k,pksp_long,kq_wght,omega,delta,temp,ispin)
 
