@@ -62,3 +62,7 @@ EVTORY           = 1.0/13.6058e0   # conversion from eV to Ry
 AMCONV           = 1.66042e-24/9.1095e-28*0.5e0  # mass conversion: a.m.u to a.u. (Ry)
 UAKBAR           = 147105.e0  # pressure conversion from Ry/(a.u)^3 to K
 DEGTORAD         = (3.14159265358979323846)/(180)  # Degrees to radians
+CM1TOEV          = 1.23981e-4  # cm^-1 to eV
+EVTOCM1          = 1.0/1.23981e-4  # eV to cm^-1
+
+E2               = 2.0 # e^2

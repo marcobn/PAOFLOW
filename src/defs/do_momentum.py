@@ -33,6 +33,8 @@ import scipy.linalg.lapack as lapack
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
+from load_balancing import *
+
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -41,21 +43,17 @@ size = comm.Get_size()
 def do_momentum(vec,dHksp):
     # calculate momentum vector
 
-    nawf = dHksp.shape[1]
-    nk1 = dHksp.shape[3]
-    nk2 = dHksp.shape[4]
-    nk3 = dHksp.shape[5]
-    nspin = dHksp.shape[6]
+    _,nawf,nawf,nk1,nk2,nk3,nspin = dHksp.shape
+    dHksp = np.reshape(dHksp,(3,nawf,nawf,nk1*nk2*nk3,nspin),order='C')
 
-    pks = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    pks = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
 
-    for ispin in range(nspin):
+    for ik in range(nk1*nk2*nk3):
+        for ispin in range(nspin):
+            for l in range(3):
+                pks[l,:,:,ik,ispin] = np.conj(vec[:,:,ik,ispin].T).dot \
+                            (dHksp[l,:,:,ik,ispin]).dot(vec[:,:,ik,ispin])
 
-        for l in range(3):
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        n = k + j*nk3 + i*nk2*nk3
-                        pks[l,:,:,i,j,k,ispin] = np.conj(vec[:,:,n,ispin].T).dot(dHksp[l,:,:,i,j,k,ispin]).dot(vec[:,:,n,ispin])
+    pks = np.reshape(pks,(3,nawf,nawf,nk1,nk2,nk3,nspin),order='C')
 
     return(pks)

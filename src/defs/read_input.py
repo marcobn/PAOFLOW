@@ -48,6 +48,7 @@ def read_input(input_file):
     phi = 0.0
     lambda_p = 0.0
     lambda_d = 0.0
+    Berry = False
 
     f = open(input_file)
     lines=f.readlines()
@@ -157,16 +158,16 @@ def read_input(input_file):
                 epsilon = (1 == 2)
             else:
                 epsilon = (1 == 1)
-        if re.search('eff_mass',line):
+        if re.search('Berry',line):
             p = line.split()
-            eff_mass = p[1]
-            if eff_mass == 'False':
-                eff_mass = (1 == 2)
+            Berry = p[1]
+            if Berry == 'False':
+                Berry = (1 == 2)
             else:
-                eff_mass = (1 == 1)
+                Berry = (1 == 1)
     if fpath == '':
         sys.exit('missing path to _.save')
 
     return(non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d)
+            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry)
