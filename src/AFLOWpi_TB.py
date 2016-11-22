@@ -51,7 +51,6 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_dos_calc import *
 from do_spin_orbit import *
-from calc_TB_eigs_vecs import *
 from constants import *
 
 #----------------------
@@ -76,7 +75,7 @@ input_file = sys.argv[1]
 non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
-        lambda_p, lambda_d = read_input(input_file)
+        lambda_p, lambda_d, Berry = read_input(input_file)
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -228,7 +227,7 @@ if do_bands and not(onedim):
     # Define real space lattice vectors
     R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-    do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+    E_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
 
     alat *= ANGSTROM_AU
 
@@ -274,10 +273,11 @@ else:
     kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
     Hksp = Hks
 
-if do_dos or Boltzmann or epsilon:
+if do_dos or Boltzmann or epsilon or Berry:
     #----------------------
     # Compute eigenvalues of the interpolated Hamiltonian
     #----------------------
+    from calc_TB_eigs_vecs import *
 
     if non_ortho:
         # now we orthogonalize the Hamiltonian again
@@ -294,6 +294,9 @@ if do_dos or Boltzmann or epsilon:
     for ispin in range(nspin):
         eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin)
 
+    if rank ==0: print('eigenvalues in ',time.clock()-reset,' sec')
+    reset=time.clock()
+
 if do_dos:
 
     #----------------------
@@ -305,7 +308,7 @@ if do_dos:
     if rank ==0: print('dos in ',time.clock()-reset,' sec')
     reset=time.clock()
 
-if Boltzmann or epsilon:
+if Boltzmann or epsilon or Berry:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -361,6 +364,35 @@ if Boltzmann or epsilon:
         for n in range(nawf):
             velkp[:,n,:,:] = np.reshape(np.real(pksp[:,n,n,:,:,:,:]),(3,nk1*nk2*nk3,nspin),order='C')
 
+    if Berry:
+        #----------------------
+        # Compute Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
+        #----------------------
+        from do_Berry_curvature import *
+
+        temp = 0.025852  # set room temperature in eV
+        alat /= ANGSTROM_AU
+
+        if do_bands:
+            #----------------------
+            # ...on a path in the BZ or...
+            #----------------------
+            Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
+            Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0)
+        else:
+            #----------------------
+            # ...in the full BZ
+            #----------------------
+            Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
+            Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1)
+
+        alat *= ANGSTROM_AU
+
+        if rank == 0:
+            print(' Anomalous Hall conductivity sigma_xy = ',ahc)
+
+        if rank == 0: print('Berry curvature in ',time.clock()-reset,' sec')
+        reset=time.clock()
 
 if Boltzmann:
     #----------------------

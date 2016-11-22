@@ -30,6 +30,7 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
     E_k = np.zeros((nbnds_tb,nkpnts,nspin))
+    E_kaux = np.zeros((nbnds_tb,nkpnts,nspin))
 
     for ik in range(nkpnts):
         if read_S:

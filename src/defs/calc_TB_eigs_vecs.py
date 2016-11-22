@@ -38,22 +38,20 @@ def calc_TB_eigs_vecs(Hks,ispin):
 
     nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
     eall = np.zeros((nawf*nk1*nk2*nk3,nspin),dtype=float)
-
-    aux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-    aux[:,:,:,ispin] = np.reshape(Hks[:,:,:,:,:,ispin],(nawf,nawf,nk1*nk2*nk3),order='C')
-
     E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
-    E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
-    E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
-
     v_k = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-    v_kaux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
-    v_kaux1 = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
 
-    E_kaux[:,:,:,0], v_kaux[:,:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
+    E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+    E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
+
+    v_kaux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
+    v_kaux1 = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
+
+    E_kaux[:,ini_ik:end_ik,ispin,0], v_kaux[:,:,ini_ik:end_ik,ispin,0] = diago(ini_ik,end_ik, \
+            np.reshape(Hks[:,:,:,:,:,ispin],(nawf,nawf,nk1*nk2*nk3),order='C'))
 
     if rank == 0:
         E_k[:,:,:]=E_kaux[:,:,:,0]
@@ -63,6 +61,8 @@ def calc_TB_eigs_vecs(Hks,ispin):
     else:
         comm.Send(E_kaux,0)
     E_k = comm.bcast(E_k)
+    E_kaux = None
+    E_kaux1 = None
 
     if rank == 0:
         v_k[:,:,:,:]=v_kaux[:,:,:,:,0]
@@ -73,6 +73,9 @@ def calc_TB_eigs_vecs(Hks,ispin):
         comm.Send(v_kaux,0)
     v_k = comm.bcast(v_k)
 
+    v_kaux = None
+    v_kaux1 = None
+
     nall=0
     for n in range(nk1*nk2*nk3):
         for m in range(nawf):
@@ -81,17 +84,16 @@ def calc_TB_eigs_vecs(Hks,ispin):
 
     return(eall,E_k,v_k)
 
-def diago(ini_ik,end_ik,aux,ispin):
+def diago(ini_ik,end_ik,aux):
 
     nawf = aux.shape[0]
-    nk = aux.shape[2]
-    nspin = aux.shape[3]
-    ekp = np.zeros((nawf,nk,nspin),dtype=float)
-    ekv = np.zeros((nawf,nawf,nk,nspin),dtype=complex)
+    nk = end_ik-ini_ik
+    ekp = np.zeros((nawf,nk),dtype=float)
+    ekv = np.zeros((nawf,nawf,nk),dtype=complex)
 
-    for n in range(ini_ik,end_ik):
-        eigval,eigvec = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
-        ekp[:,n,ispin] = np.real(eigval) 
-        ekv[:,:,n,ispin] = eigvec
+    for n in range(nk):
+        eigval,eigvec = LAN.eigh(aux[:,:,ini_ik+n],UPLO='U')
+        ekp[:,n] = np.real(eigval)
+        ekv[:,:,n] = eigvec
 
     return(ekp,ekv)
