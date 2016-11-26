@@ -34,9 +34,6 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import sys, time
 from mpi4py import MPI
-import pyfftw
-import pyfftw.interfaces.scipy_fftpack as sciFFTW
-import multiprocessing
 
 # Define paths
 sys.path.append('./')
@@ -52,6 +49,7 @@ from get_K_grid_fft import *
 from do_bands_calc import *
 from do_bands_calc_1D import *
 from do_double_grid import *
+from do_dos_calc import *
 from do_spin_orbit import *
 from constants import *
 
@@ -62,6 +60,7 @@ comm=MPI.COMM_WORLD
 size=comm.Get_size()
 if size > 1:
     rank = comm.Get_rank()
+    if rank == 0: print('parallel execution on ',size,' processors')
     from read_QE_output_xml import *
 else:
     rank=0
@@ -69,21 +68,14 @@ else:
     from read_QE_output_xml import *
 
 #----------------------
-# Initialize n. of threads for multiprocessing (FFTW)
-#----------------------
-nthread = size
-
-#----------------------
 # Read input and DFT data
 #----------------------
 input_file = sys.argv[1]
 
 non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
-        do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
+        do_bands, onedim, do_dos, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
-        lambda_p, lambda_d, Berry, npool = read_input(input_file)
-
-if rank == 0: print('parallel execution on ',size,' processors and ',npool,' pools')
+        lambda_p, lambda_d, Berry = read_input(input_file)
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -101,8 +93,8 @@ else:
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
     if rank == 0: print('...using non-orthogonal algorithm')
 
-if rank == 0: print('reading in ',time.time(),' sec')
-reset=time.time()
+if rank == 0: print('reading in ',time.clock(),' sec')
+reset=time.clock()
 
 #----------------------
 # Building the Projectability
@@ -125,8 +117,8 @@ if rank == 0: print('# of bands with good projectability (>',pthr,') = ',bnd)
 nbnds_norm = nawf
 Hks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
 
-if rank == 0: print('building Hks in ',time.time()-reset,' sec')
-reset=time.time()
+if rank == 0: print('building Hks in ',time.clock()-reset,' sec')
+reset=time.clock()
 
 # NOTE: Take care of non-orthogonality, if needed
 # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
@@ -151,8 +143,19 @@ if do_comparison:
 # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
 #----------------------
 
+# Temporary fix to eliminate the core states from the TB Hamiltonian
+
+ncore = 8
+aux = np.zeros((nawf-ncore,nawf-ncore,nk1*nk2*nk3,nspin),dtype=complex)
+aux[:,:,:,:] = Hks[(nawf-ncore):,(nawf-ncore):,:,:]
+Hks = None
+Hks = np.zeros((nawf-ncore,nawf-ncore,nk1*nk2*nk3,nspin),dtype=complex)
+Hks = aux
+aux = None
+nawf -= ncore
+
 # Original k grid to R grid
-reset=time.time()
+reset=time.clock()
 Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
 Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
 
@@ -160,12 +163,12 @@ Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
 if non_ortho:
     Skaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3),order='C')
 
-HRaux = np.zeros_like(Hks)
-SRaux = np.zeros_like(Sks)
+HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+SRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
 
-HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
+HRaux[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
 if non_ortho:
-    SRaux = FFT.ifftn(Skaux,axes=[2,3,4])
+    SRaux[:,:,:,:,:] = FFT.ifftn(Skaux[:,:,:,:,:],axes=[2,3,4])
 
 # NOTE: Naming convention (from here):
 # Hks = k-space Hamiltonian on original MP grid
@@ -185,8 +188,8 @@ Skaux = None
 HRaux = None
 SRaux = None
 
-if rank == 0: print('k -> R in ',time.time()-reset,' sec')
-reset=time.time()
+if rank == 0: print('k -> R in ',time.clock()-reset,' sec')
+reset=time.clock()
 
 if do_spin_orbit:
     #----------------------
@@ -199,6 +202,24 @@ if do_spin_orbit:
 
     HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
     nawf=2*nawf
+
+    if non_ortho:
+        SRaux = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype= complex)
+        for i in range(nk1):
+            for j in range(nk2):
+                for k in range(nk3):
+                    SRaux[:,:,i,j,k] = LA.block_diag(SRs[:,:,i,j,k],SRs[:,:,i,j,k])
+
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRaux[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        Srs = SRaux
+        non_ortho = False
 
 if do_bands and not(onedim):
     #----------------------
@@ -225,8 +246,8 @@ if do_bands and not(onedim):
 
     alat *= ANGSTROM_AU
 
-    if rank == 0: print('bands in ',time.time()-reset,' sec')
-    reset=time.time()
+    if rank == 0: print('bands in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
 elif do_bands and onedim:
     #----------------------
@@ -235,43 +256,39 @@ elif do_bands and onedim:
     if rank == 0: print('... computing bands along a line')
     do_bands_calc_1D(Hks)
 
-    if rank ==0: print('bands in ',time.time()-reset,' sec')
-    reset=time.time()
+    if rank ==0: print('bands in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
-#----------------------
-# Start master-slaves communication
-#----------------------
+if double_grid:
 
-Hksp = None
-if rank == 0:
-    if double_grid:
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
 
-        if non_ortho:
-            # now we orthogonalize the Hamiltonian again
-            Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-            Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
-            Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-            Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
-            Hkaux = do_ortho(Hkaux,Skaux)
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
 
-            HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
-            non_ortho = False
+    #----------------------
+    # Fourier interpolation on extended grid (zero padding)
+    #----------------------
+    Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
+    # Naming convention (from here): 
+    # Hksp = k-space Hamiltonian on interpolated grid
+    if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nk1*nk2*nk3),
 
-        #----------------------
-        # Fourier interpolation on extended grid (zero padding)
-        #----------------------
-        Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
-        # Naming convention (from here): 
-        # Hksp = k-space Hamiltonian on interpolated grid
-        if rank == 0: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
+    kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
 
-        kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+    if rank ==0: print('R -> k zero padding in ',time.clock()-reset,' sec')
+    reset=time.clock()
+else:
+    kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+    Hksp = Hks
 
-        if rank ==0: print('R -> k zero padding in ',time.time()-reset,' sec')
-        reset=time.time()
-    else:
-        kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-        Hksp = Hks
+
 
 if do_dos or Boltzmann or epsilon or Berry:
     #----------------------
@@ -279,61 +296,64 @@ if do_dos or Boltzmann or epsilon or Berry:
     #----------------------
     from calc_TB_eigs_vecs import *
 
-    eig = None
-    E_k = None
-    v_k = None
-    for ispin in range(nspin):
-        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
 
-    if rank ==0: print('eigenvalues in ',time.time()-reset,' sec')
-    reset=time.time()
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
+
+    eig = np.zeros((nawf*nk1*nk2*nk3,nspin))
+    for ispin in range(nspin):
+        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin)
+
+    if rank ==0: print('eigenvalues in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
 if do_dos:
+
     #----------------------
     # DOS calculation with gaussian smearing on double_grid Hksp
     #----------------------
-    from do_dos_calc import *
-
-    index = None
-    if rank == 0:
-        index = {'eigtot':eig.shape[0]}
-    index = comm.bcast(index,root=0)
-    eigtot = index['eigtot']
-
-    if rank != 0: eig = np.zeros((eigtot,nspin),dtype=float)
-    comm.Bcast(eig,root=0)
-    kq_wght = np.zeros((eigtot),dtype=float)
-
     for ispin in range(nspin):
-        do_dos_calc(eig[:,ispin],emin,emax,delta,eigtot,ispin)
+        do_dos_calc(eig[:,ispin],shift,delta,ispin,kq_wght)
 
-    if rank ==0: print('dos in ',time.time()-reset,' sec')
-    reset=time.time()
+    if rank ==0: print('dos in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
-pksp = None
-if rank == 0:
-    if Boltzmann or epsilon or Berry:
-        #----------------------
-        # Compute the gradient of the k-space Hamiltonian
-        #----------------------
+if Boltzmann or epsilon or Berry:
+    #----------------------
+    # Compute the gradient of the k-space Hamiltonian
+    #----------------------
 
-        pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
+
+    pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    if rank == 0:
 
         # fft grid in R shifted to have (0,0,0) in the center
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        HRaux  = np.zeros_like(Hksp)
-        for ispin in range(nspin):
-            for n in range(nawf):
-                for m in range(nawf):
-                    fft = pyfftw.FFTW(Hksp[n,m,:,:,:,ispin],HRaux[n,m,:,:,:,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
-                          flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                    HRaux[n,m,:,:,:,ispin] = fft()
+        HRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[2,3,4],overwrite_x=True)
         HRaux = FFT.fftshift(HRaux,axes=(2,3,4))
 
         Hksp = None
-
         dHksp  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+
         for l in range(3):
             # Compute R*H(R)
             dHRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
@@ -344,18 +364,13 @@ if rank == 0:
                             dHRaux[:,:,i,j,k,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[:,:,i,j,k,ispin]
 
             # Compute dH(k)/dk
-            for ispin in range(nspin):
-                for n in range(nawf):
-                    for m in range(nawf):
-                        fft = pyfftw.FFTW(dHRaux[n,m,:,:,:,ispin],dHksp[l,n,m,:,:,:,ispin],axes=(0,1,2), \
-                        direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                        dHksp[l,n,m,:,:,:,ispin] = fft()
+            dHksp[l,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:],axes=[2,3,4],overwrite_x=True)
             dHRaux = None
 
         HRaux = None
 
-        if rank == 0: print('gradient in ',time.time()-reset,' sec')
-        reset=time.time()
+        if rank == 0: print('gradient in ',time.clock()-reset,' sec')
+        reset=time.clock()
 
         #----------------------
         # Compute the momentum operator p_n,m(k)
@@ -365,11 +380,11 @@ if rank == 0:
 
         dHksp = None
 
-        if rank == 0: print('momenta in ',time.time()-reset,' sec')
-        reset=time.time()
+    comm.Bcast(pksp,root=0)
 
-velkp = None
-if rank == 0:
+    if rank == 0: print('momenta in ',time.clock()-reset,' sec')
+    reset=time.clock()
+
     if Boltzmann:
         #----------------------
         # Compute velocities for Boltzmann transport
@@ -405,23 +420,8 @@ if rank == 0:
         if rank == 0:
             print(' Anomalous Hall conductivity sigma_xy = ',ahc)
 
-        if rank == 0: print('Berry curvature in ',time.time()-reset,' sec')
-        reset=time.time()
-
-if Boltzmann or epsilon:
-
-    index = None
-    if rank == 0:
-        index = {'nawf':velkp.shape[1],'nktot':velkp.shape[2]}
-    index = comm.bcast(index,root=0)
-    nawf = index['nawf']
-    nktot = index['nktot']
-
-    if rank != 0: E_k = np.zeros((nktot,nawf,nspin),dtype=float) 
-    comm.Bcast(E_k,root=0)
-
-    kq_wght = np.ones((nktot),dtype=float)
-    kq_wght /= float(nktot)
+        if rank == 0: print('Berry curvature in ',time.clock()-reset,' sec')
+        reset=time.clock()
 
 if Boltzmann:
     #----------------------
@@ -430,8 +430,16 @@ if Boltzmann:
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
 
-    if rank != 0: velkp = np.zeros((3,nawf,nktot,nspin),dtype=float) 
-    comm.Bcast(velkp,root=0)
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
 
     for ispin in range(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
@@ -493,26 +501,25 @@ if Boltzmann:
     S = None
     kappa = None
 
-    if rank ==0: print('transport in ',time.time()-reset,' sec')
-    reset=time.time()
+    if rank ==0: print('transport in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
 if epsilon:
-
-    index = None
-    if rank == 0:
-        index = {'nk1':pksp.shape[3],'nk2':pksp.shape[4],'nk3':pksp.shape[5]}
-    index = comm.bcast(index,root=0)
-    nk1 = index['nk1']
-    nk2 = index['nk2']
-    nk3 = index['nk3']
-
-    if rank != 0: pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    comm.Bcast(pksp,root=0)
-
     #----------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #----------------------
     from do_epsilon import *
+
+    if non_ortho:
+        # now we orthogonalize the Hamiltonian again
+        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = do_ortho(Hkaux,Skaux)
+
+        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        non_ortho = False
 
     temp = 0.025852  # set room temperature in eV
 
@@ -540,7 +547,8 @@ if epsilon:
             f.close()
 
 
-    if rank ==0: print('epsilon in ',time.time()-reset,' sec')
+    if rank ==0: print('epsilon in ',time.clock()-reset,' sec')
+    reset=time.clock()
 
 # Timing
-if rank ==0: print('Total CPU time =', time.time(),' sec')
+if rank ==0: print('Total CPU time =', time.clock(),' sec')

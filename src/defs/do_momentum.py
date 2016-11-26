@@ -51,8 +51,8 @@ def do_momentum(vec,dHksp):
     for ik in range(nk1*nk2*nk3):
         for ispin in range(nspin):
             for l in range(3):
-                pks[l,:,:,ik,ispin] = np.conj(vec[:,:,ik,ispin].T).dot \
-                            (dHksp[l,:,:,ik,ispin]).dot(vec[:,:,ik,ispin])
+                pks[l,:,:,ik,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
+                            (dHksp[l,:,:,ik,ispin]).dot(vec[ik,:,:,ispin])
 
     pks = np.reshape(pks,(3,nawf,nawf,nk1,nk2,nk3,nspin),order='C')
 

@@ -47,44 +47,23 @@ def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S,ibrav,alat,a_vectors,b_vectors
     for n in range(nkpi):
         kq [:,n]=kq[:,n].dot(b_vectors)
 
-    nawf = HRaux.shape[0]
-    nk1 = HRaux.shape[2]
-    nk2 = HRaux.shape[3]
-    nk3 = HRaux.shape[4]
-    nspin = HRaux.shape[5]
-    Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
-    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # read data arrays from tasks
-    Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
-    Hks_aux1  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # receiving data arrays
-    Sks_aux1  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
-
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nkpi)
 
+    nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
+    Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
+    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # read data arrays from tasks
+
     Hks_aux[:,:,:,:,0] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
 
-    if rank == 0:
-        Hks_int[:,:,:,:]=Hks_aux[:,:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(Hks_aux1,ANY_SOURCE)
-            Hks_int[:,:,:,:] += Hks_aux1[:,:,:,:,0]
-    else:
-        comm.Send(Hks_aux,0)
-    Hks_int = comm.bcast(Hks_int)
+    comm.Allreduce(Hks_aux,Hks_int,op=MPI.SUM)
 
+    Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
     if read_S:
+        Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
         Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
 
-        if rank == 0:
-            Sks_int[:,:,:]=Sks_aux[:,:,:,0]
-            for i in range(1,size):
-                comm.Recv(Sks_aux1,ANY_SOURCE)
-                Sks_int[:,:,:] += Sks_aux1[:,:,:,0]
-        else:
-            comm.Send(Sks_aux,0)
-        Sks_int = comm.bcast(Sks_int)
-        #Hks_int = do_non_ortho(Hks_int,Sks_int)
+        comm.Allreduce(Sks_aux,Sks_int,op=MPI.SUM)
 
     if rank ==0:
         for ispin in range(nspin):

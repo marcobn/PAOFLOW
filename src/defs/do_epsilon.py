@@ -59,18 +59,10 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
     epsi_aux = np.zeros((3,3,ene.size,1),dtype=float)
-    epsi_aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
     epsi_aux[:,:,:,0] = epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin)
 
-    if rank == 0:
-        epsi[:,:,:]=epsi_aux[:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(epsi_aux1,ANY_SOURCE)
-            epsi[:,:,:] += epsi_aux1[:,:,:,0]
-    else:
-        comm.Send(epsi_aux,0)
-    epsi = comm.bcast(epsi)
+    comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
 
     #=======================
     # Re
@@ -81,18 +73,10 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
 
     epsr = np.zeros((3,3,ene.size),dtype=float)
     epsr_aux = np.zeros((3,3,ene.size,1),dtype=float)
-    epsr_aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
     epsr_aux[:,:,:,0] = epsr_kramkron(ini_ie,end_ie,ene,epsi)
 
-    if rank == 0:
-        epsr[:,:,:]=epsr_aux[:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(epsr_aux1,ANY_SOURCE)
-            epsr[:,:,:] += epsr_aux1[:,:,:,0]
-    else:
-        comm.Send(epsr_aux,0)
-    epsr = comm.bcast(epsr)
+    comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
 
     epsr += 1.0
 
@@ -107,12 +91,12 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin):
 
     for nk in range(ini_ik,end_ik):
         for n in range(pksp.shape[1]):
-            arg2 = E_k[n,nk,ispin]/temp
+            arg2 = E_k[nk,n,ispin]/temp
             raux2 = 1.0/(np.exp(arg2)+1)
             for m in range(pksp.shape[1]):
-                arg3 = E_k[m,nk,ispin]/temp
+                arg3 = E_k[nk,m,ispin]/temp
                 raux3 = 1.0/(np.exp(arg3)+1)
-                arg[:] = (ene[:] - ((E_k[m,nk,ispin]-E_k[n,nk,ispin])))/delta
+                arg[:] = (ene[:] - ((E_k[nk,m,ispin]-E_k[nk,n,ispin])))/delta
                 raux[:] = 1.0/np.sqrt(np.pi)*np.exp(-arg[:]**2)
                 if n != m:
                     for i in range(3):

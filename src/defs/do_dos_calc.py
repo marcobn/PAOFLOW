@@ -35,11 +35,13 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(eig,shift,delta,ispin,kq_wght):
+def do_dos_calc(eig,emin,emax,delta,nktot,ispin):
     # DOS calculation with gaussian smearing
 
-    emin = np.min(eig)-1.0
-    emax = np.max(eig)-shift/2.0
+    #emin = np.min(eig)-1.0
+    #emax = np.max(eig)-shift/2.0
+    emin = float(emin)
+    emax = float(emax)
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
     dosvec = np.zeros((eig.size),dtype=float)
@@ -48,20 +50,12 @@ def do_dos_calc(eig,shift,delta,ispin,kq_wght):
     ini_ie, end_ie = load_balancing(size,rank,ene.size)
 
     dos = np.zeros((ene.size),dtype=float)
-    dosaux = np.zeros((ene.size,1),dtype=float)
-    dosaux1 = np.zeros((ene.size,1),dtype=float)
+    dosaux = np.zeros((ene.size),dtype=float)
 
-    dosaux[:,0] = dos_loop(ini_ie,end_ie,ene,eig,delta)
+    dosaux = dos_loop(ini_ie,end_ie,ene,eig,delta)
 
-    if rank == 0:
-        dos[:]=dosaux[:,0]
-        for i in range(1,size):
-            comm.Recv(dosaux1,ANY_SOURCE)
-            dos[:] += dosaux1[:,0]
-    else:
-        comm.Send(dosaux,0)
-    dos /= kq_wght.size
-    dos = comm.bcast(dos)
+    comm.Allreduce(dosaux,dos,op=MPI.SUM)
+    dos = dos*size/float(nktot)
 
     if rank == 0:
         f=open('dos_'+str(ispin)+'.dat','w')

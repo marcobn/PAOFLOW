@@ -36,6 +36,8 @@ def read_input(input_file):
     do_bands = False
     onedim = False
     do_dos = False
+    emin = -10.
+    emax = 2
     nfft1 = 0
     nfft2 = 0
     nfft3 = 0
@@ -49,6 +51,7 @@ def read_input(input_file):
     lambda_p = 0.0
     lambda_d = 0.0
     Berry = False
+    npool = 1
 
     f = open(input_file)
     lines=f.readlines()
@@ -100,6 +103,8 @@ def read_input(input_file):
                 do_dos = (1 == 2)
             else:
                 do_dos = (1 == 1)
+            emin = p[2]
+            emax = p[3]
         if re.search('delta',line):
             p = line.split()
             delta = float(p[1])
@@ -165,9 +170,12 @@ def read_input(input_file):
                 Berry = (1 == 2)
             else:
                 Berry = (1 == 1)
+        if re.search('npool',line):
+            p = line.split()
+            npool = int(p[1])
     if fpath == '':
         sys.exit('missing path to _.save')
 
     return(non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-            do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry)
+            do_bands, onedim, do_dos, emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
+            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool)

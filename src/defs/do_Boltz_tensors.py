@@ -53,48 +53,24 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin):
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size,1),dtype=float)
-    L0aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
     L0aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,0)
 
-    if rank == 0:
-        L0[:,:,:]=L0aux[:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(L0aux1,ANY_SOURCE)
-            L0[:,:,:] += L0aux1[:,:,:,0]
-    else:
-        comm.Send(L0aux,0)
-    L0 = comm.bcast(L0)
+    comm.Allreduce(L0aux,L0,op=MPI.SUM)
 
     L1 = np.zeros((3,3,ene.size),dtype=float)
     L1aux = np.zeros((3,3,ene.size,1),dtype=float)
-    L1aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
     L1aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,1)
 
-    if rank == 0:
-        L1[:,:,:]=L1aux[:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(L1aux1,ANY_SOURCE)
-            L1[:,:,:] += L1aux1[:,:,:,0]
-    else:
-        comm.Send(L1aux,0)
-    L1 = comm.bcast(L1)
+    comm.Allreduce(L1aux,L1,op=MPI.SUM)
 
     L2 = np.zeros((3,3,ene.size),dtype=float)
     L2aux = np.zeros((3,3,ene.size,1),dtype=float)
-    L2aux1 = np.zeros((3,3,ene.size,1),dtype=float)
 
     L2aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,2)
 
-    if rank == 0:
-        L2[:,:,:]=L2aux[:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(L2aux1,ANY_SOURCE)
-            L2[:,:,:] += L2aux1[:,:,:,0]
-    else:
-        comm.Send(L2aux,0)
-    L2 = comm.bcast(L2)
+    comm.Allreduce(L2aux,L2,op=MPI.SUM)
 
     return(ene,L0,L1,L2)
 
@@ -109,6 +85,6 @@ def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
             for i in range(3):
                 for j in range(3):
                     L[i,j,:] += 1.0/temp * kq_wght[nk]*velkp[i,n,nk,ispin]*velkp[j,n,nk,ispin] * \
-                    1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,ispin]-ene[:])/temp)) * pow((E_k[n,nk,ispin]-ene[:]),alpha)
+                    1.0/2.0 * 1.0/(1.0+np.cosh((E_k[nk,n,ispin]-ene[:])/temp)) * pow((E_k[nk,n,ispin]-ene[:]),alpha)
 
     return(L)
