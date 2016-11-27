@@ -69,8 +69,14 @@ else:
     from read_QE_output_xml import *
 
 #----------------------
+# initialize time
+#----------------------
+if rank == 0: start = time.time()
+
+#----------------------
 # Initialize n. of threads for multiprocessing (FFTW)
 #----------------------
+#nthread = multiprocessing.cpu_count()
 nthread = size
 
 #----------------------
@@ -83,7 +89,7 @@ non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
         lambda_p, lambda_d, Berry, npool = read_input(input_file)
 
-if rank == 0: print('parallel execution on ',size,' processors and ',npool,' pools')
+if rank == 0: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -300,12 +306,19 @@ if do_dos:
     index = comm.bcast(index,root=0)
     eigtot = index['eigtot']
 
-    if rank != 0: eig = np.zeros((eigtot,nspin),dtype=float)
-    comm.Bcast(eig,root=0)
-    kq_wght = np.zeros((eigtot),dtype=float)
+    #if rank != 0: eig = np.zeros((eigtot,nspin),dtype=float)
+    #comm.Bcast(eig,root=0)
+    eigup = None
+    eigdw = None
 
-    for ispin in range(nspin):
-        do_dos_calc(eig[:,ispin],emin,emax,delta,eigtot,ispin)
+    if nspin == 1 or nspin == 2: 
+        if rank == 0: eigup = eig[:,0]
+        do_dos_calc(eigup,emin,emax,delta,eigtot,nawf,0)
+        eigup = None
+    if nspin == 2:
+        if rank == 0: eigdw = eig[:,1]
+        do_dos_calc(eigdw,emin,emax,delta,eigtot,nawf,1)
+        eigdw = None
 
     if rank ==0: print('dos in ',time.time()-reset,' sec')
     reset=time.time()
@@ -543,4 +556,4 @@ if epsilon:
     if rank ==0: print('epsilon in ',time.time()-reset,' sec')
 
 # Timing
-if rank ==0: print('Total CPU time =', time.time(),' sec')
+if rank ==0: print('Total CPU time =', time.time()-start,' sec')

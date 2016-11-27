@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(eig,emin,emax,delta,nktot,ispin):
+def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
     # DOS calculation with gaussian smearing
 
     #emin = np.min(eig)-1.0
@@ -44,18 +44,27 @@ def do_dos_calc(eig,emin,emax,delta,nktot,ispin):
     emax = float(emax)
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
-    dosvec = np.zeros((eig.size),dtype=float)
 
     # Load balancing
-    ini_ie, end_ie = load_balancing(size,rank,ene.size)
+    ini_ie, end_ie = load_balancing(size,rank,netot)
+
+    nsize = end_ie-ini_ie
 
     dos = np.zeros((ene.size),dtype=float)
-    dosaux = np.zeros((ene.size),dtype=float)
 
-    dosaux = dos_loop(ini_ie,end_ie,ene,eig,delta)
+    for ne in range(ene.size):
 
-    comm.Allreduce(dosaux,dos,op=MPI.SUM)
-    dos = dos*size/float(nktot)
+        dossum = np.zeros(1,dtype=float)
+        aux = np.zeros(nsize,dtype=float)
+
+        comm.Barrier()
+        comm.Scatter(eig,aux,root=0)
+
+        dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/delta)**2)/delta)
+
+        comm.Barrier()
+        comm.Reduce(dosaux,dossum,op=MPI.SUM)
+        dos[ne] = dossum*float(nawf)/float(netot)
 
     if rank == 0:
         f=open('dos_'+str(ispin)+'.dat','w')
@@ -64,13 +73,3 @@ def do_dos_calc(eig,emin,emax,delta,nktot,ispin):
         f.close()
 
     return
-
-def dos_loop(ini_ie,end_ie,ene,eig,delta):
-
-    aux = np.zeros((ene.size),dtype=float)
-
-    for ne in range(ini_ie,end_ie):
-        dosvec = 1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-eig)/delta)**2)/delta
-        aux[ne] = np.sum(dosvec)
-
-    return(aux)
