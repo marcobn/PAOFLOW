@@ -73,6 +73,23 @@ else:
 #----------------------
 if rank == 0: start = time.time()
 
+
+#----------------------
+# Print header
+#----------------------
+if rank == 0:
+    print('          ')
+    print('#############################################################################################')
+    print('#                                                                                           #')
+    print('#                                        AFLOWpi_TB                                         #')
+    print('#                                                                                           #')
+    print('#                 Utility to construct and operate on TB Hamiltonians from                  #')
+    print('#               the projections of DFT wfc on the pseudoatomic orbital basis                #')
+    print('#                                                                                           #')
+    print('#                   Copyright (C) 2016 ERMES group (http://ermes.unt.edu)                   #')
+    print('#############################################################################################')
+    print('          ')
+
 #----------------------
 # Initialize n. of threads for multiprocessing (FFTW)
 #----------------------
@@ -306,8 +323,6 @@ if do_dos:
     index = comm.bcast(index,root=0)
     eigtot = index['eigtot']
 
-    #if rank != 0: eig = np.zeros((eigtot,nspin),dtype=float)
-    #comm.Bcast(eig,root=0)
     eigup = None
     eigdw = None
 
@@ -346,23 +361,25 @@ if rank == 0:
 
         Hksp = None
 
-        dHksp  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+        HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
         for l in range(3):
             # Compute R*H(R)
-            dHRaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+            dHRaux  = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
             for ispin in range(nspin):
-                for i in range(nk1):
-                    for j in range(nk2):
-                        for k in range(nk3):
-                            dHRaux[:,:,i,j,k,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[:,:,i,j,k,ispin]
+                for n in range(nawf):
+                    for m in range(nawf):
+                        dHRaux[n,m,:,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[n,m,:,ispin]
+            dHRaux = np.reshape(dHRaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
 
             # Compute dH(k)/dk
             for ispin in range(nspin):
                 for n in range(nawf):
                     for m in range(nawf):
-                        fft = pyfftw.FFTW(dHRaux[n,m,:,:,:,ispin],dHksp[l,n,m,:,:,:,ispin],axes=(0,1,2), \
+                        fft = pyfftw.FFTW(dHRaux[n,m,:,:,:,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
                         direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                        dHksp[l,n,m,:,:,:,ispin] = fft()
+                        dHksp[:,:,:,l,n,m,ispin] = fft()
             dHRaux = None
 
         HRaux = None
@@ -370,16 +387,21 @@ if rank == 0:
         if rank == 0: print('gradient in ',time.time()-reset,' sec')
         reset=time.time()
 
-        #----------------------
-        # Compute the momentum operator p_n,m(k)
-        #----------------------
-        from do_momentum import *
-        pksp = do_momentum(v_k,dHksp)
+if Boltzmann or epsilon or Berry:
+    #----------------------
+    # Compute the momentum operator p_n,m(k)
+    #----------------------
+    from do_momentum import *
 
+    if rank != 0:
+        v_k = None
         dHksp = None
+    pksp = do_momentum(v_k,dHksp)
 
-        if rank == 0: print('momenta in ',time.time()-reset,' sec')
-        reset=time.time()
+    dHksp = None
+
+    if rank == 0: print('momenta in ',time.time()-reset,' sec')
+    reset=time.time()
 
 velkp = None
 if rank == 0:

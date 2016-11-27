@@ -43,17 +43,56 @@ size = comm.Get_size()
 def do_momentum(vec,dHksp):
     # calculate momentum vector
 
-    _,nawf,nawf,nk1,nk2,nk3,nspin = dHksp.shape
-    dHksp = np.reshape(dHksp,(3,nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+    index = None
 
-    pks = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    if rank == 0:
+        nk1,nk2,nk3,_,nawf,nawf,nspin = dHksp.shape
+        index = {'nawf':nawf,'nk1':nk1,'nk2':nk2,'nk3':nk3,'nspin':nspin}
 
-    for ik in range(nk1*nk2*nk3):
+    index = comm.bcast(index,root=0)
+
+    nk1 = index['nk1']
+    nk2 = index['nk2']
+    nk3 = index['nk3']
+    nawf = index['nawf']
+    nspin = index['nspin']
+
+    if rank == 0:
+        dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
+        pks = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+    else:
+        dHksp = None
+        pks = None
+
+    # Load balancing
+    ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
+    nsize = end_ik-ini_ik
+
+    dHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
+    pksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
+    vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
+
+    comm.Barrier()
+    comm.Scatter(dHksp,dHkaux,root=0)
+    comm.Scatter(pks,pksaux,root=0)
+    comm.Scatter(vec,vecaux,root=0)
+
+    for ik in range(nsize):
         for ispin in range(nspin):
             for l in range(3):
-                pks[l,:,:,ik,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
-                            (dHksp[l,:,:,ik,ispin]).dot(vec[ik,:,:,ispin])
+                pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
+                            (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
-    pks = np.reshape(pks,(3,nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+    comm.Barrier()
+    comm.Gather(pksaux,pks,root=0)
 
-    return(pks)
+    pksrep = None
+    if rank == 0:
+        pks = np.reshape(pks,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+        pksrep = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        for i in range(nk1):
+            for j in range(nk2):
+                for k in range(nk3):
+                    pksrep[:,:,:,i,j,k,:] = pks[i,j,k,:,:,:,:]
+
+    return(pksrep)

@@ -52,18 +52,18 @@ def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S,ibrav,alat,a_vectors,b_vectors
 
     nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
     Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # read data arrays from tasks
+    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
 
-    Hks_aux[:,:,:,:,0] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
+    Hks_aux[:,:,:,:] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
 
-    comm.Allreduce(Hks_aux,Hks_int,op=MPI.SUM)
+    comm.Reduce(Hks_aux,Hks_int,op=MPI.SUM)
 
     Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
     if read_S:
         Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
         Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
 
-        comm.Allreduce(Sks_aux,Sks_int,op=MPI.SUM)
+        comm.Reduce(Sks_aux,Sks_int,op=MPI.SUM)
 
     if rank ==0:
         for ispin in range(nspin):
