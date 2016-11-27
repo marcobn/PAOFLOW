@@ -86,13 +86,7 @@ def do_momentum(vec,dHksp):
     comm.Barrier()
     comm.Gather(pksaux,pks,root=0)
 
-    pksrep = None
     if rank == 0:
         pks = np.reshape(pks,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
-        pksrep = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-        for i in range(nk1):
-            for j in range(nk2):
-                for k in range(nk3):
-                    pksrep[:,:,:,i,j,k,:] = pks[i,j,k,:,:,:,:]
 
-    return(pksrep)
+    return(pks)

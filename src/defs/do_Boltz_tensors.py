@@ -49,7 +49,7 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin):
     ene = np.arange(emin,emax,de,dtype=float)
 
     # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,velkp.shape[2])
+    ini_ik, end_ik = load_balancing(size,rank,velkp.shape[0])
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size,1),dtype=float)
@@ -81,10 +81,10 @@ def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
     L = np.zeros((3,3,ene.size),dtype=float)
 
     for nk in range(ini_ik,end_ik):
-        for n in range(velkp.shape[1]):
+        for n in range(velkp.shape[2]):
             for i in range(3):
                 for j in range(3):
-                    L[i,j,:] += 1.0/temp * kq_wght[nk]*velkp[i,n,nk,ispin]*velkp[j,n,nk,ispin] * \
+                    L[i,j,:] += 1.0/temp * kq_wght[nk]*velkp[nk,i,n,ispin]*velkp[nk,j,n,ispin] * \
                     1.0/2.0 * 1.0/(1.0+np.cosh((E_k[nk,n,ispin]-ene[:])/temp)) * pow((E_k[nk,n,ispin]-ene[:]),alpha)
 
     return(L)

@@ -90,10 +90,10 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin):
     raux = np.zeros((ene.size),dtype=float)
 
     for nk in range(ini_ik,end_ik):
-        for n in range(pksp.shape[1]):
+        for n in range(pksp.shape[2]):
             arg2 = E_k[nk,n,ispin]/temp
             raux2 = 1.0/(np.exp(arg2)+1)
-            for m in range(pksp.shape[1]):
+            for m in range(pksp.shape[2]):
                 arg3 = E_k[nk,m,ispin]/temp
                 raux3 = 1.0/(np.exp(arg3)+1)
                 arg[:] = (ene[:] - ((E_k[nk,m,ispin]-E_k[nk,n,ispin])))/delta
@@ -103,13 +103,13 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin):
                         for j in range(3):
                             epsi[i,j,:] += 1.0/(ene[:]**2+delta**2) * \
                                     kq_wght[nk] /delta * raux[:] * (raux2 - raux3) * \
-                                    abs(pksp[i,n,m,nk,ispin] * pksp[j,m,n,nk,ispin])
+                                    abs(pksp[nk,i,n,m,ispin] * pksp[nk,j,m,n,ispin])
                 else:
                     for i in range(3):
                         for j in range(3):
                             epsi[i,j,:] += 1.0/ene[:] * kq_wght[nk] * raux[:]/delta *  \
                                     1.0/2.0 * 1.0/(1.0+np.cosh((arg2)))/temp *    \
-                                    abs(pksp[i,n,m,nk,ispin] * pksp[j,m,n,nk,ispin])
+                                    abs(pksp[nk,i,n,m,ispin] * pksp[nk,j,m,n,ispin])
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 

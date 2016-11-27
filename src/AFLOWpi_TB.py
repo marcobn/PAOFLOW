@@ -1,3 +1,4 @@
+# -*- coding: latin  -*-
 #
 # AFLOWpi_TB
 #
@@ -78,15 +79,22 @@ if rank == 0: start = time.time()
 # Print header
 #----------------------
 if rank == 0:
+    AFLOW = 'AFLOW'
+    p = u"\u03C0" 
+    pp = p.encode('utf8')
+    TB = '_TB'
+    AFLOWpiTB = str(AFLOW)+str(pp)+str(TB)
+    c = u"\u00A9"
+    cc = c.encode('utf8')
     print('          ')
     print('#############################################################################################')
     print('#                                                                                           #')
-    print('#                                        AFLOWpi_TB                                         #')
+    print('#                                       ',AFLOWpiTB,'                                         #')
     print('#                                                                                           #')
     print('#                 Utility to construct and operate on TB Hamiltonians from                  #')
     print('#               the projections of DFT wfc on the pseudoatomic orbital basis                #')
     print('#                                                                                           #')
-    print('#                   Copyright (C) 2016 ERMES group (http://ermes.unt.edu)                   #')
+    print('#                        ',str('%1s' %cc),'2016 ERMES group (http://ermes.unt.edu)                         #')
     print('#############################################################################################')
     print('          ')
 
@@ -106,7 +114,15 @@ non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
         lambda_p, lambda_d, Berry, npool = read_input(input_file)
 
-if rank == 0: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
+if size >  1:
+    if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
+    if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
+else:
+    if rank == 0: print('serial execution')
+if rank == 0: print('   ')
+
+verbose = None
+verbose == False
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -117,14 +133,14 @@ if (not non_ortho):
     kpnts_wght /= sumk
     for ik in range(nkpnts):
         Sks[:,:,ik]=np.identity(nawf)
-    if rank == 0: print('...using orthogonal algorithm')
+    if rank == 0 and verbose == True: print('...using orthogonal algorithm')
 else:
     U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
-    if rank == 0: print('...using non-orthogonal algorithm')
+    if rank == 0 and verbose == True: print('...using non-orthogonal algorithm')
 
-if rank == 0: print('reading in ',time.time(),' sec')
+if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
 reset=time.time()
 
 #----------------------
@@ -132,7 +148,7 @@ reset=time.time()
 #----------------------
 Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
 
-if rank == 0: print('Projectability vector ',Pn)
+if rank == 0 and verbose == True: print('Projectability vector ',Pn)
 
 # Check projectability and decide bnd
 
@@ -140,7 +156,7 @@ bnd = 0
 for n in range(nbnds):
     if Pn[n] > pthr:
         bnd += 1
-if rank == 0: print('# of bands with good projectability (>',pthr,') = ',bnd)
+if rank == 0 and verbose == True: print('# of bands with good projectability (>',pthr,') = ',bnd)
 
 #----------------------
 # Building the TB Hamiltonian
@@ -148,7 +164,7 @@ if rank == 0: print('# of bands with good projectability (>',pthr,') = ',bnd)
 nbnds_norm = nawf
 Hks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
 
-if rank == 0: print('building Hks in ',time.time()-reset,' sec')
+if rank == 0: print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 reset=time.time()
 
 # NOTE: Take care of non-orthogonality, if needed
@@ -208,7 +224,7 @@ Skaux = None
 HRaux = None
 SRaux = None
 
-if rank == 0: print('k -> R in ',time.time()-reset,' sec')
+if rank == 0: print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 reset=time.time()
 
 if do_spin_orbit:
@@ -248,17 +264,17 @@ if do_bands and not(onedim):
 
     alat *= ANGSTROM_AU
 
-    if rank == 0: print('bands in ',time.time()-reset,' sec')
+    if rank == 0: print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 elif do_bands and onedim:
     #----------------------
     # FFT interpolation along a single directions in the BZ
     #----------------------
-    if rank == 0: print('... computing bands along a line')
+    if rank == 0 and verbose == True: print('... computing bands along a line')
     do_bands_calc_1D(Hks)
 
-    if rank ==0: print('bands in ',time.time()-reset,' sec')
+    if rank ==0: print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 #----------------------
@@ -286,11 +302,11 @@ if rank == 0:
         Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
         # Naming convention (from here): 
         # Hksp = k-space Hamiltonian on interpolated grid
-        if rank == 0: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
+        if rank == 0 and verbose == True: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
 
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
 
-        if rank ==0: print('R -> k zero padding in ',time.time()-reset,' sec')
+        if rank ==0: print('R -> k zero padding in           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
     else:
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
@@ -308,7 +324,7 @@ if do_dos or Boltzmann or epsilon or Berry:
     for ispin in range(nspin):
         eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
 
-    if rank ==0: print('eigenvalues in ',time.time()-reset,' sec')
+    if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if do_dos:
@@ -335,7 +351,7 @@ if do_dos:
         do_dos_calc(eigdw,emin,emax,delta,eigtot,nawf,1)
         eigdw = None
 
-    if rank ==0: print('dos in ',time.time()-reset,' sec')
+    if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 pksp = None
@@ -384,7 +400,7 @@ if rank == 0:
 
         HRaux = None
 
-        if rank == 0: print('gradient in ',time.time()-reset,' sec')
+        if rank == 0: print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
 if Boltzmann or epsilon or Berry:
@@ -400,7 +416,7 @@ if Boltzmann or epsilon or Berry:
 
     dHksp = None
 
-    if rank == 0: print('momenta in ',time.time()-reset,' sec')
+    if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 velkp = None
@@ -409,9 +425,9 @@ if rank == 0:
         #----------------------
         # Compute velocities for Boltzmann transport
         #----------------------
-        velkp = np.zeros((3,nawf,nk1*nk2*nk3,nspin),dtype=float)
+        velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
         for n in range(nawf):
-            velkp[:,n,:,:] = np.reshape(np.real(pksp[:,n,n,:,:,:,:]),(3,nk1*nk2*nk3,nspin),order='C')
+            velkp[:,:,n,:] = np.reshape(np.real(pksp[:,:,:,:,n,n,:]),(nk1*nk2*nk3,3,nspin),order='C')
 
     if Berry:
         #----------------------
@@ -440,14 +456,14 @@ if rank == 0:
         if rank == 0:
             print(' Anomalous Hall conductivity sigma_xy = ',ahc)
 
-        if rank == 0: print('Berry curvature in ',time.time()-reset,' sec')
+        if rank == 0: print('Berry curvature in               %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
 if Boltzmann or epsilon:
 
     index = None
     if rank == 0:
-        index = {'nawf':velkp.shape[1],'nktot':velkp.shape[2]}
+        index = {'nawf':velkp.shape[2],'nktot':velkp.shape[0]}
     index = comm.bcast(index,root=0)
     nawf = index['nawf']
     nktot = index['nktot']
@@ -465,7 +481,7 @@ if Boltzmann:
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
 
-    if rank != 0: velkp = np.zeros((3,nawf,nktot,nspin),dtype=float) 
+    if rank != 0: velkp = np.zeros((nktot,3,nawf,nspin),dtype=float) 
     comm.Bcast(velkp,root=0)
 
     for ispin in range(nspin):
@@ -528,20 +544,20 @@ if Boltzmann:
     S = None
     kappa = None
 
-    if rank ==0: print('transport in ',time.time()-reset,' sec')
+    if rank ==0: print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if epsilon:
 
     index = None
     if rank == 0:
-        index = {'nk1':pksp.shape[3],'nk2':pksp.shape[4],'nk3':pksp.shape[5]}
+        index = {'nk1':pksp.shape[0],'nk2':pksp.shape[1],'nk3':pksp.shape[2]}
     index = comm.bcast(index,root=0)
     nk1 = index['nk1']
     nk2 = index['nk2']
     nk3 = index['nk3']
 
-    if rank != 0: pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    if rank != 0: pksp = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
     comm.Bcast(pksp,root=0)
 
     #----------------------
@@ -551,12 +567,12 @@ if epsilon:
 
     temp = 0.025852  # set room temperature in eV
 
-    pksp_long = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    pksp_long = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     for ispin in range(nspin):
 
-        pksp_long = np.reshape(pksp,(3,nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+        pksp_long = np.reshape(pksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
 
         pksp = None
 
@@ -575,7 +591,8 @@ if epsilon:
             f.close()
 
 
-    if rank ==0: print('epsilon in ',time.time()-reset,' sec')
+    if rank ==0: print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 
 # Timing
-if rank ==0: print('Total CPU time =', time.time()-start,' sec')
+if rank ==0: print('   ')
+if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))

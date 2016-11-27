@@ -41,6 +41,9 @@ def read_QE_output_xml(fpath,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
+    verbose = None
+    verbose == False
+
 # Reading data-file.xml
     tree  = ET.parse(data_file)
     root  = tree.getroot()
@@ -48,7 +51,7 @@ def read_QE_output_xml(fpath,non_ortho):
     alatunits  = root.findall("./CELL/LATTICE_PARAMETER")[0].attrib['UNITS']
     alat   = float(root.findall("./CELL/LATTICE_PARAMETER")[0].text.split()[0])
 
-    if rank == 0: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
+    if rank == 0 and verbose == True: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
     aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a1")[0].text.split()
     a1=np.array(aux,dtype="float32")
@@ -81,9 +84,9 @@ def read_QE_output_xml(fpath,non_ortho):
     k1=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k1'])
     k2=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k2'])
     k3=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k3'])
-    if rank == 0: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
+    if rank == 0 and  verbose == True: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
 
-    if rank == 0: print('reading data-file.xml in ',time.clock(),' sec')
+    if rank == 0 and  verbose == True: print('reading data-file.xml in ',time.clock(),' sec')
     reset=time.clock()
 
     # Reading atomic_proj.xml
@@ -111,16 +114,16 @@ def read_QE_output_xml(fpath,non_ortho):
 
 
     nbnds  = int(root.findall("./HEADER/NUMBER_OF_BANDS")[0].text.split()[0])
-    if rank == 0: print('Number of bands: {0:d}'.format(nbnds))
+    if rank == 0 and  verbose == True: print('Number of bands: {0:d}'.format(nbnds))
 
     aux    = root.findall("./HEADER/UNITS_FOR_ENERGY")[0].attrib['UNITS']
     #if rank == 0: print('The units for energy are {0:s}'.format(aux))
 
     Efermi = float(root.findall("./HEADER/FERMI_ENERGY")[0].text.split()[0])*Ry2eV
-    if rank == 0: print('Fermi energy: {0:f} eV '.format(Efermi))
+    if rank == 0 and  verbose == True: print('Fermi energy: {0:f} eV '.format(Efermi))
 
     nawf   =int(root.findall("./HEADER/NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
-    if rank == 0: print('Number of atomic wavefunctions: {0:d}'.format(nawf))
+    if rank == 0 and  verbose == True: print('Number of atomic wavefunctions: {0:d}'.format(nawf))
 
     #Read eigenvalues and projections
 
@@ -156,7 +159,7 @@ def read_QE_output_xml(fpath,non_ortho):
         comm.Send(my_eigsmataux,0)
     my_eigsmat = comm.bcast(my_eigsmat)
 
-    if rank == 0: print('reading eigenvalues and projections in ',time.clock()-reset,' sec')
+    if rank == 0 and  verbose == True: print('reading eigenvalues and projections in ',time.clock()-reset,' sec')
     reset=time.clock()
 
     if non_ortho:
