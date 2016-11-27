@@ -45,17 +45,17 @@ def do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,
     # Compute Berry curvature on a selected path in the BZ
     #----------------------
 
-    _,nawf,nawf,nk1,nk2,nk3,_ = pksp.shape
+    nk1,nk2,nk3,_,nawf,nawf,_ = pksp.shape
 
     # Compute only Omega_z(k)
 
-    Om_znk = np.zeros((nawf,nk1*nk2*nk3),dtype=float)
+    Om_znk = np.zeros((nk1*nk2*nk3,nawf),dtype=float)
 
     for n in range(nawf):
         for m in range(nawf):
             if n!= m:
-                Om_znk[n,:] += -2.0*np.imag(np.reshape(pksp[0,n,m,:,:,:,0],nk1*nk2*nk3,order='C')* \
-                np.reshape(pksp[1,m,n,:,:,:,0],nk1*nk2*nk3,order='C')) / \
+                Om_znk[:,n] += -2.0*np.imag(np.reshape(pksp[:,:,:,0,n,m,0],nk1*nk2*nk3,order='C')* \
+                np.reshape(pksp[:,:,:,1,m,n,0],nk1*nk2*nk3,order='C')) / \
                 (E_k[:,n,0]**2 - E_k[:,m,0]**2 + delta**2)
 
 
@@ -63,7 +63,7 @@ def do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,
     for nk in range(nk1*nk2*nk3):
         for n in range(nawf):
             if E_k[nk,n,0] <= 0.0:
-                Om_zk[nk] += Om_znk[n,nk] #* 1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,0]/temp)))/temp
+                Om_zk[nk] += Om_znk[nk,n] #* 1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,0]/temp)))/temp
 
     ahc = E2*np.sum(Om_zk)/float(nk1*nk2*nk3)
 
