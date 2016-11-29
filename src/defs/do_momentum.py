@@ -27,7 +27,7 @@
 
 import numpy as np
 import cmath
-import sys, time
+import os, sys
 import scipy.linalg.lapack as lapack
 
 from mpi4py import MPI
@@ -40,53 +40,64 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_momentum(vec,dHksp):
+def do_momentum(vec,dHksp,npool):
     # calculate momentum vector
 
     index = None
 
     if rank == 0:
-        nk1,nk2,nk3,_,nawf,nawf,nspin = dHksp.shape
-        index = {'nawf':nawf,'nk1':nk1,'nk2':nk2,'nk3':nk3,'nspin':nspin}
+        nktot,_,nawf,nawf,nspin = dHksp.shape
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
 
     index = comm.bcast(index,root=0)
 
-    nk1 = index['nk1']
-    nk2 = index['nk2']
-    nk3 = index['nk3']
+    nktot = index['nktot']
     nawf = index['nawf']
     nspin = index['nspin']
 
     if rank == 0:
-        dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-        pks = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+        pksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
     else:
         dHksp = None
-        pks = None
+        pksp = None
 
-    # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
-    nsize = end_ik-ini_ik
+    for pool in range(npool):
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        nkpool = nktot/npool
 
-    dHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-    pksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-    vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
+        if rank == 0:
+            dHksp_split = np.array_split(dHksp,npool,axis=0)[pool]
+            pks_split = np.array_split(pksp,npool,axis=0)[pool]
+            vec_split = np.array_split(vec,npool,axis=0)[pool]
+        else:
+            dHksp_split = None
+            pks_split = None
+            vec_split = None
 
-    comm.Barrier()
-    comm.Scatter(dHksp,dHkaux,root=0)
-    comm.Scatter(pks,pksaux,root=0)
-    comm.Scatter(vec,vecaux,root=0)
+        # Load balancing
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik-ini_ik
+        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
 
-    for ik in range(nsize):
-        for ispin in range(nspin):
-            for l in range(3):
-                pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
-                            (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
+        dHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
+        pksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
+        vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
 
-    comm.Barrier()
-    comm.Gather(pksaux,pks,root=0)
+        comm.Barrier()
+        comm.Scatter(dHksp_split,dHkaux,root=0)
+        comm.Scatter(pks_split,pksaux,root=0)
+        comm.Scatter(vec_split,vecaux,root=0)
 
-    if rank == 0:
-        pks = np.reshape(pks,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+        for ik in range(nsize):
+            for ispin in range(nspin):
+                for l in range(3):
+                    pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
+                                (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
-    return(pks)
+        comm.Barrier()
+        comm.Gather(pksaux,pks_split,root=0)
+
+        if rank == 0:
+            pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]
+
+    return(pksp)

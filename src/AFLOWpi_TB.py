@@ -1,4 +1,3 @@
-# -*- coding: latin  -*-
 #
 # AFLOWpi_TB
 #
@@ -100,7 +99,7 @@ nthread = size
 #----------------------
 # Read input and DFT data
 #----------------------
-input_file = sys.argv[1]
+input_file = str(sys.argv[1])
 
 non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
@@ -314,8 +313,21 @@ if do_dos or Boltzmann or epsilon or Berry:
     eig = None
     E_k = None
     v_k = None
+    if rank == 0:
+        Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
     for ispin in range(nspin):
         eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
+    if rank == 0:
+        Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
+
+    index = None
+    if rank == 0:
+        nk1,nk2,nk3,_,_,_ = Hksp.shape
+        index = {'nk1':nk1,'nk2':nk2,'nk3':nk3}
+    index = comm.bcast(index,root=0)
+    nk1 = index['nk1']
+    nk2 = index['nk2']
+    nk3 = index['nk3']
 
     if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
@@ -361,30 +373,30 @@ if rank == 0:
         for ispin in range(nspin):
             for n in range(nawf):
                 for m in range(nawf):
-                    fft = pyfftw.FFTW(Hksp[n,m,:,:,:,ispin],HRaux[n,m,:,:,:,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
+                    fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
                           flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                    HRaux[n,m,:,:,:,ispin] = fft()
-        HRaux = FFT.fftshift(HRaux,axes=(2,3,4))
+                    HRaux[:,:,:,n,m,ispin] = fft()
+        HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
 
         Hksp = None
 
         dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
         Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-        HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+        HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
         for l in range(3):
             # Compute R*H(R)
-            dHRaux  = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+            dHRaux  = np.zeros_like(HRaux)
             for ispin in range(nspin):
                 for n in range(nawf):
                     for m in range(nawf):
-                        dHRaux[n,m,:,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[n,m,:,ispin]
-            dHRaux = np.reshape(dHRaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+                        dHRaux[:,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
+            dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
 
             # Compute dH(k)/dk
             for ispin in range(nspin):
                 for n in range(nawf):
                     for m in range(nawf):
-                        fft = pyfftw.FFTW(dHRaux[n,m,:,:,:,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
+                        fft = pyfftw.FFTW(dHRaux[:,:,:,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
                         direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         dHksp[:,:,:,l,n,m,ispin] = fft()
             dHRaux = None
@@ -398,15 +410,20 @@ if Boltzmann or epsilon or Berry:
     #----------------------
     # Compute the momentum operator p_n,m(k)
     #----------------------
-    from do_momentum_new import *
+    from do_momentum import *
 
-    if rank == 0:
-        pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    else:
-        v_k = None
+    #if rank == 0:
+    #    pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    #else:
+    if rank != 0: 
         dHksp = None
+        v_k = None
         pksp = None
+    if rank == 0:
+        dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
     pksp = do_momentum(v_k,dHksp,npool)
+    #if rank == 0:
+    #    pksp = np.reshape(pksp,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
 
     dHksp = None
 
@@ -420,9 +437,6 @@ if Boltzmann or epsilon or Berry:
     nawf = index['nawf']
     nktot = index['nktot']
 
-#    if rank != 0: E_k = np.zeros((nktot,nawf,nspin),dtype=float)
-#    comm.Bcast(E_k,root=0)
-
     kq_wght = np.ones((nktot),dtype=float)
     kq_wght /= float(nktot)
 
@@ -434,13 +448,14 @@ if rank == 0:
         #----------------------
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
         for n in range(nawf):
-            velkp[:,:,n,:] = np.reshape(np.real(pksp[:,:,:,:,n,n,:]),(nk1*nk2*nk3,3,nspin),order='C')
+            velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
+            #velkp[:,:,n,:] = np.reshape(np.real(pksp[:,:,:,:,n,n,:]),(nk1*nk2*nk3,3,nspin),order='C')
 
 if Berry:
     #----------------------
     # Compute Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
     #----------------------
-    from do_Berry_curvature_new import *
+    from do_Berry_curvature import *
 
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
@@ -450,13 +465,13 @@ if Berry:
         # ...on a path in the BZ or...
         #----------------------
         #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-        Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0,nthread,npool)
+        Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0,nthread,npool)
     else:
         #----------------------
         # ...in the full BZ
         #----------------------
         #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-        Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
+        Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
 
     alat *= ANGSTROM_AU
 
@@ -478,6 +493,9 @@ if Boltzmann:
 
     if rank != 0: velkp = np.zeros((nktot,3,nawf,nspin),dtype=float) 
     comm.Bcast(velkp,root=0)
+    if rank != 0: E_k = np.zeros((nktot,nawf,nspin),dtype=float)
+    comm.Bcast(E_k,root=0)
+
 
     for ispin in range(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
@@ -546,13 +564,11 @@ if epsilon:
 
     index = None
     if rank == 0:
-        index = {'nk1':pksp.shape[0],'nk2':pksp.shape[1],'nk3':pksp.shape[2]}
+        index = {'nktot':pksp.shape[0]}
     index = comm.bcast(index,root=0)
-    nk1 = index['nk1']
-    nk2 = index['nk2']
-    nk3 = index['nk3']
+    nktot = index['nktot']
 
-    if rank != 0: pksp = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+    if rank != 0: pksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
     comm.Bcast(pksp,root=0)
 
     #----------------------
@@ -562,16 +578,11 @@ if epsilon:
 
     temp = 0.025852  # set room temperature in eV
 
-    pksp_long = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     for ispin in range(nspin):
 
-        pksp_long = np.reshape(pksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-
-        pksp = None
-
-        ene, epsi, epsr = do_epsilon(E_k,pksp_long,kq_wght,omega,delta,temp,ispin)
+        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin)
 
         if rank == 0:
             f=open('epsi_'+str(ispin)+'.dat','w')

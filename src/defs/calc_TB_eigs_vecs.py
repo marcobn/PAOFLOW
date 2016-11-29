@@ -34,48 +34,39 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def calc_TB_eigs_vecs(Hks,ispin,npool):
+def calc_TB_eigs_vecs(Hksp,ispin,npool):
 
     index = None
 
     if rank == 0:
-        nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
-        index = {'nawf':nawf,'nk1':nk1,'nk2':nk2,'nk3':nk3,'nspin':nspin}
+        nktot,nawf,nawf,nspin = Hksp.shape
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
 
     index = comm.bcast(index,root=0)
 
-    nk1 = index['nk1']
-    nk2 = index['nk2']
-    nk3 = index['nk3']
+    nktot = index['nktot']
     nawf = index['nawf']
     nspin = index['nspin']
 
     if rank == 0:
-        eall = np.zeros((nawf*nk1*nk2*nk3,nspin),dtype=float)
-        E_k = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
-        v_k = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin),dtype=complex)
-        Hks = np.reshape(Hks[:,:,:,:,:,ispin],(nawf,nawf,nk1*nk2*nk3),order='C')
-        Hksaux = np.zeros((nk1*nk2*nk3,nawf,nawf),dtype=complex)
-        for n in range(nawf):
-            for m in range(nawf):
-                Hksaux[:,n,m] = Hks[n,m,:]
-        Hks = None
+        eall = np.zeros((nawf*nktot,nspin),dtype=float)
+        E_k = np.zeros((nktot,nawf,nspin),dtype=float)
+        v_k = np.zeros((nktot,nawf,nawf,nspin),dtype=complex)
     else:
         eall = None
         E_k = None
         v_k = None
-        Hksaux = None
         Hks_split = None
         E_k_split = None
         v_k_split = None
 
     for pool in range (npool):
-        if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nk1*nk2*nk3/npool
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        nkpool = nktot/npool
         #if rank == 0: print('running on ',npool,' pools for nkpool = ',nkpool)
 
         if rank == 0:
-            Hks_split = np.array_split(Hksaux,npool,axis=0)[pool]
+            Hks_split = np.array_split(Hksp,npool,axis=0)[pool]
             E_k_split = np.array_split(E_k,npool,axis=0)[pool]
             v_k_split = np.array_split(v_k,npool,axis=0)[pool]
 
@@ -105,7 +96,7 @@ def calc_TB_eigs_vecs(Hks,ispin,npool):
     if rank == 0:
         #f=open('eig_'+str(ispin)+'.dat','w')
         nall=0
-        for n in range(nk1*nk2*nk3):
+        for n in range(nktot):
             for m in range(nawf):
                 eall[nall,ispin]=E_k[n,m,ispin]
                 #f.write('%.5f  %.5f \n' %(n,E_k[n,m,ispin]))
