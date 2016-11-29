@@ -66,8 +66,8 @@ if size > 1:
     from read_QE_output_xml import *
 else:
     rank=0
-    #from read_QE_output_xml_parse import *
-    from read_QE_output_xml import *
+    from read_QE_output_xml_parse import *
+    #from read_QE_output_xml import *
 
 #----------------------
 # initialize time
@@ -79,22 +79,15 @@ if rank == 0: start = time.time()
 # Print header
 #----------------------
 if rank == 0:
-    AFLOW = 'AFLOW'
-    p = u"\u03C0" 
-    pp = p.encode('utf8')
-    TB = '_TB'
-    AFLOWpiTB = str(AFLOW)+str(pp)+str(TB)
-    c = u"\u00A9"
-    cc = c.encode('utf8')
     print('          ')
     print('#############################################################################################')
     print('#                                                                                           #')
-    print('#                                       ',AFLOWpiTB,'                                         #')
+    print('#                                       ',AFLOWPITB,'                                         #')
     print('#                                                                                           #')
     print('#                 Utility to construct and operate on TB Hamiltonians from                  #')
     print('#               the projections of DFT wfc on the pseudoatomic orbital basis                #')
     print('#                                                                                           #')
-    print('#                        ',str('%1s' %cc),'2016 ERMES group (http://ermes.unt.edu)                         #')
+    print('#                        ',str('%1s' %CC),'2016 ERMES group (http://ermes.unt.edu)                         #')
     print('#############################################################################################')
     print('          ')
 
@@ -361,8 +354,6 @@ if rank == 0:
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
 
-        pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-
         # fft grid in R shifted to have (0,0,0) in the center
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
@@ -400,24 +391,40 @@ if rank == 0:
 
         HRaux = None
 
-        if rank == 0: print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
 if Boltzmann or epsilon or Berry:
     #----------------------
     # Compute the momentum operator p_n,m(k)
     #----------------------
-    from do_momentum import *
+    from do_momentum_new import *
 
-    if rank != 0:
+    if rank == 0:
+        pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    else:
         v_k = None
         dHksp = None
-    pksp = do_momentum(v_k,dHksp)
+        pksp = None
+    pksp = do_momentum(v_k,dHksp,npool)
 
     dHksp = None
 
     if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
+
+    index = None
+    if rank == 0:
+        index = {'nawf':E_k.shape[1],'nktot':E_k.shape[0]}
+    index = comm.bcast(index,root=0)
+    nawf = index['nawf']
+    nktot = index['nktot']
+
+#    if rank != 0: E_k = np.zeros((nktot,nawf,nspin),dtype=float)
+#    comm.Bcast(E_k,root=0)
+
+    kq_wght = np.ones((nktot),dtype=float)
+    kq_wght /= float(nktot)
 
 velkp = None
 if rank == 0:
@@ -429,50 +436,38 @@ if rank == 0:
         for n in range(nawf):
             velkp[:,:,n,:] = np.reshape(np.real(pksp[:,:,:,:,n,n,:]),(nk1*nk2*nk3,3,nspin),order='C')
 
-    if Berry:
+if Berry:
+    #----------------------
+    # Compute Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
+    #----------------------
+    from do_Berry_curvature_new import *
+
+    temp = 0.025852  # set room temperature in eV
+    alat /= ANGSTROM_AU
+
+    if do_bands:
         #----------------------
-        # Compute Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
+        # ...on a path in the BZ or...
         #----------------------
-        from do_Berry_curvature import *
+        #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
+        Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0,nthread,npool)
+    else:
+        #----------------------
+        # ...in the full BZ
+        #----------------------
+        #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
+        Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
 
-        temp = 0.025852  # set room temperature in eV
-        alat /= ANGSTROM_AU
+    alat *= ANGSTROM_AU
 
-        if do_bands:
-            #----------------------
-            # ...on a path in the BZ or...
-            #----------------------
-            Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-            Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0)
-        else:
-            #----------------------
-            # ...in the full BZ
-            #----------------------
-            Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-            Om_zk,ahc = do_Berry_curvature(E_k,pksp,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1)
-
-        alat *= ANGSTROM_AU
-
-        if rank == 0:
-            print(' Anomalous Hall conductivity sigma_xy = ',ahc)
-
-        if rank == 0: print('Berry curvature in               %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-        reset=time.time()
-
-if Boltzmann or epsilon:
-
-    index = None
     if rank == 0:
-        index = {'nawf':velkp.shape[2],'nktot':velkp.shape[0]}
-    index = comm.bcast(index,root=0)
-    nawf = index['nawf']
-    nktot = index['nktot']
+        f=open('ahc.dat','w')
+        ahc = -ahc*EVTORY*AU_TO_OHMCMM1
+        f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
+        f.close()
 
-    if rank != 0: E_k = np.zeros((nktot,nawf,nspin),dtype=float) 
-    comm.Bcast(E_k,root=0)
-
-    kq_wght = np.ones((nktot),dtype=float)
-    kq_wght /= float(nktot)
+    if rank == 0: print('Berry curvature in               %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
 
 if Boltzmann:
     #----------------------

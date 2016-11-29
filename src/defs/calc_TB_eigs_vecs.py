@@ -23,7 +23,7 @@
 from scipy import linalg as LA
 from numpy import linalg as LAN
 import numpy as np
-import os
+import os, sys
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE

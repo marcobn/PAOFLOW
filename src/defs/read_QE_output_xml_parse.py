@@ -28,7 +28,7 @@ import re
 #units
 Ry2eV   = 13.60569193
 
-def read_QE_output_xml(fpath):
+def read_QE_output_xml(fpath,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
     read_S = False
@@ -40,7 +40,7 @@ def read_QE_output_xml(fpath):
             if elem.tag == "CELL":
                 alatunits  = elem.findall("LATTICE_PARAMETER")[0].attrib['UNITS']
                 alat   = float(elem.findall("LATTICE_PARAMETER")[0].text.split()[0])
-                print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
+                #print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
                 aux=elem.findall("DIRECT_LATTICE_VECTORS/a1")[0].text.split()
                 a1=np.array(aux,dtype="float32")
@@ -75,7 +75,7 @@ def read_QE_output_xml(fpath):
                 k3=int(elem.findall("MONKHORST_PACK_OFFSET")[0].attrib['k3'])
                 elem.clear()
 
-                print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
+                #print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
 
 
     # Reading atomic_proj.xml
@@ -85,23 +85,23 @@ def read_QE_output_xml(fpath):
     for event,elem in ET.iterparse(atomic_proj,events=('start','end')):
         if event == 'end' and  elem.tag == "HEADER":
             nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
-            print('Number of kpoints: {0:d}'.format(nkpnts))
+            #print('Number of kpoints: {0:d}'.format(nkpnts))
 
             nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
-            print('Number of spin components: {0:d}'.format(nspin))
+            #print('Number of spin components: {0:d}'.format(nspin))
 
             kunits = elem.findall("UNITS_FOR_K-POINTS")[0].attrib['UNITS']
 
             nbnds  = int(elem.findall("NUMBER_OF_BANDS")[0].text.split()[0])
-            print('Number of bands: {0:d}'.format(nbnds))
+            #print('Number of bands: {0:d}'.format(nbnds))
 
             aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
 
             Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
-            print('Fermi energy: {0:f} eV '.format(Efermi))
+            #print('Fermi energy: {0:f} eV '.format(Efermi))
 
             nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
-            print('Number of atomic wavefunctions: {0:d}'.format(nawf))
+            #print('Number of atomic wavefunctions: {0:d}'.format(nawf))
 
 
             elem.clear()
@@ -195,4 +195,4 @@ def read_QE_output_xml(fpath):
                     ispin = 0
 
 
-    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3)
+    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
