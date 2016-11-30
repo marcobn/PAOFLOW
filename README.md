@@ -1,6 +1,6 @@
-# AFLOWpi_TB
+# AFLOWπ(TB)
 
- AFLOWpi_TB
+ AFLOWπ(TB)
 
  Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 
@@ -12,6 +12,7 @@
 
 
  References:
+
  Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
  Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
 
