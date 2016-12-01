@@ -62,7 +62,7 @@ comm=MPI.COMM_WORLD
 size=comm.Get_size()
 if size > 1:
     rank = comm.Get_rank()
-    from read_QE_output_xml import *
+    from read_QE_output_xml_parse import *
 else:
     rank=0
     from read_QE_output_xml_parse import *

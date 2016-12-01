@@ -39,7 +39,7 @@ from load_balancing import *
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-@profile
+
 def do_momentum(vec,dHksp,npool):
     # calculate momentum vector
 

@@ -41,7 +41,7 @@ from constants import *
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-@profile
+
 def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,iswitch,nthread,npool):
     #----------------------
     # Compute Berry curvature on a selected path in the BZ
@@ -71,12 +71,10 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         nkpool = nk1*nk2*nk3/npool
 
         if rank == 0:
-            pksp_split = np.array_split(pksp,npool,axis=0)[pool]
-            E_k_split = np.array_split(E_k,npool,axis=0)[pool]
+            pksp = np.array_split(pksp,npool,axis=0)[pool]
+            E_k= np.array_split(E_k,npool,axis=0)[pool]
             Om_znk_split = np.array_split(Om_znk,npool,axis=0)[pool]
         else:
-            pksp_split = None
-            E_k_split = None
             Om_znk_split = None
 
         # Load balancing
@@ -89,8 +87,8 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
 
         comm.Barrier()
-        comm.Scatter(pksp_split,pksaux,root=0)
-        comm.Scatter(E_k_split,E_kaux,root=0)
+        comm.Scatter(pksp,pksaux,root=0)
+        comm.Scatter(E_k,E_kaux,root=0)
 
         for nk in range(nsize):
             for n in range(nawf):
@@ -104,6 +102,9 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         if rank == 0:
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
 
+    if rank == 0:
+        pksp = np.concatenate(pksp)
+        E_k = np.concatenate(E_k)
     if rank == 0:
         Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
     else:
@@ -126,7 +127,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     for nk in range(nsize):
         for n in range(nawf):
             if E_kaux[nk,n,0] <= 0.0:
-                Om_zkaux[nk] += Om_znkaux[nk,n] #* 1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,0]/temp)))/temp
+                Om_zkaux[nk] = Om_znkaux[nk,n] #* 1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,0]/temp)))/temp
 
     comm.Barrier()
     comm.Gather(Om_zkaux,Om_zk,root=0)
@@ -152,16 +153,9 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
             fft = pyfftw.FFTW(Om_zk,Om_zRc,axes=(0,1,2), direction='FFTW_BACKWARD',\
                         flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
             Om_zRc = fft()
-
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        n = k + j*nk3 + i*nk2*nk3
-                        Om_zR[n] = np.real(Om_zRc[i,j,k])
-
+            Om_zR = np.real(np.reshape(Om_zRc,nk1*nk2*nk3,order='C'))
             R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
             Om_zk_disp = np.zeros((nkpi),dtype=float)
-
         else:
             Om_zR = None
             R = None

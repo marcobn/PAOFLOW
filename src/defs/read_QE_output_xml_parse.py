@@ -75,6 +75,10 @@ def read_QE_output_xml(fpath,non_ortho):
                 k3=int(elem.findall("MONKHORST_PACK_OFFSET")[0].attrib['k3'])
                 elem.clear()
 
+            # number of atoms
+            if elem.tag == 'IONS':
+                natoms=int(float(elem.findall("NUMBER_OF_ATOMS")       [0].text.split()[0]))
+
                 #print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
 
 
@@ -195,4 +199,5 @@ def read_QE_output_xml(fpath,non_ortho):
                     ispin = 0
 
 
-    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
+    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, \
+            kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
