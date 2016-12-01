@@ -1,5 +1,5 @@
 #
-# AFLOWpi_TB
+# AFLOWpi(TB)
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
 #
@@ -81,7 +81,7 @@ if rank == 0:
     print('          ')
     print('#############################################################################################')
     print('#                                                                                           #')
-    print('#                                       ',AFLOWPITB,'                                         #')
+    print('#                                       ',AFLOWPITB,'                                        #')
     print('#                                                                                           #')
     print('#                 Utility to construct and operate on TB Hamiltonians from                  #')
     print('#               the projections of DFT wfc on the pseudoatomic orbital basis                #')
@@ -491,12 +491,6 @@ if Boltzmann:
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
 
-    if rank != 0: velkp = np.zeros((nktot,3,nawf,nspin),dtype=float) 
-    comm.Bcast(velkp,root=0)
-    if rank != 0: E_k = np.zeros((nktot,nawf,nspin),dtype=float)
-    comm.Bcast(E_k,root=0)
-
-
     for ispin in range(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
 
@@ -522,10 +516,10 @@ if Boltzmann:
         L0 *= 1.0e21
         L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
-        for n in range(ene.size):
-            S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
-
         if rank == 0:
+            for n in range(ene.size):
+                S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
+
             f=open('Seebeck_'+str(ispin)+'.dat','w')
             for n in range(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
@@ -540,10 +534,10 @@ if Boltzmann:
 
         L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
-        for n in range(ene.size):
-            kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
-
         if rank == 0:
+            for n in range(ene.size):
+                kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
+
             f=open('kappa_'+str(ispin)+'.dat','w')
             for n in range(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
@@ -561,15 +555,6 @@ if Boltzmann:
     reset=time.time()
 
 if epsilon:
-
-    index = None
-    if rank == 0:
-        index = {'nktot':pksp.shape[0]}
-    index = comm.bcast(index,root=0)
-    nktot = index['nktot']
-
-    if rank != 0: pksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
-    comm.Bcast(pksp,root=0)
 
     #----------------------
     # Compute dielectric tensor (Re and Im epsilon)

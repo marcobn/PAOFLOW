@@ -50,20 +50,44 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
+    index = None
+
+    if rank == 0:
+        nktot,_,nawf,_,nspin = pksp.shape
+        index = {'nktot':nktot,'nawf':nawf,'nspin':nspin}
+
+    index = comm.bcast(index,root=0)
+
+    nktot = index['nktot']
+    nawf = index['nawf']
+    nspin = index['nspin']
+
+    # Load balancing
+    ini_ik, end_ik = load_balancing(size,rank,nktot)
+    nsize = end_ik-ini_ik
+
+    kq_wghtaux = np.zeros(nsize,dtype=float)
+    pkspaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype=complex)
+    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+
+    comm.Barrier()
+    comm.Scatter(pksp,pkspaux,root=0)
+    comm.Scatter(E_k,E_kaux,root=0)
+    comm.Scatter(kq_wght,kq_wghtaux,root=0)
+
     #=======================
     # Im
     #=======================
-
-    # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,kq_wght.size)
+    if rank == 0: reset = time.time()
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
-    epsi_aux = np.zeros((3,3,ene.size,1),dtype=float)
+    epsi_aux = np.zeros((3,3,ene.size),dtype=float)
 
-    epsi_aux[:,:,:,0] = epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin)
+    epsi_aux[:,:,:] = epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin)
 
     comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
-
+    if rank == 0: print('Im epsilon',time.time()-reset)
+    if rank == 0: reset = time.time()
     #=======================
     # Re
     #=======================
@@ -80,35 +104,35 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
 
     epsr += 1.0
 
+    if rank == 0: print('Re epsilon',time.time()-reset)
     return(ene,epsi,epsr)
 
-def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,omega,delta,temp,ispin):
+def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
 
     arg = np.zeros((ene.size),dtype=float)
     raux = np.zeros((ene.size),dtype=float)
 
-    for nk in range(ini_ik,end_ik):
-        for n in range(pksp.shape[2]):
+    for nk in range(end_ik-ini_ik):
+        for n in range(nawf):
             arg2 = E_k[nk,n,ispin]/temp
             raux2 = 1.0/(np.exp(arg2)+1)
-            for m in range(pksp.shape[2]):
-                arg3 = E_k[nk,m,ispin]/temp
-                raux3 = 1.0/(np.exp(arg3)+1)
-                arg[:] = (ene[:] - ((E_k[nk,m,ispin]-E_k[nk,n,ispin])))/delta
-                raux[:] = 1.0/np.sqrt(np.pi)*np.exp(-arg[:]**2)
-                if n != m:
+            for i in range(3):
+                for j in range(3):
+                    epsi[i,j,:] += 1.0/ene[:] * kq_wght[nk] * raux[:]/delta *  \
+                            1.0/2.0 * 1.0/(1.0+np.cosh((arg2)))/temp *    \
+                            abs(pksp[nk,i,n,n,ispin] * pksp[nk,j,n,n,ispin])
+            for m in range(nawf):
+                if m != n:
+                    arg3 = E_k[nk,m,ispin]/temp
+                    raux3 = 1.0/(np.exp(arg3)+1)
+                    arg[:] = (ene[:] - ((E_k[nk,m,ispin]-E_k[nk,n,ispin])))/delta
+                    raux[:] = 1.0/np.sqrt(np.pi)*np.exp(-arg[:]**2)
                     for i in range(3):
                         for j in range(3):
                             epsi[i,j,:] += 1.0/(ene[:]**2+delta**2) * \
                                     kq_wght[nk] /delta * raux[:] * (raux2 - raux3) * \
-                                    abs(pksp[nk,i,n,m,ispin] * pksp[nk,j,m,n,ispin])
-                else:
-                    for i in range(3):
-                        for j in range(3):
-                            epsi[i,j,:] += 1.0/ene[:] * kq_wght[nk] * raux[:]/delta *  \
-                                    1.0/2.0 * 1.0/(1.0+np.cosh((arg2)))/temp *    \
                                     abs(pksp[nk,i,n,m,ispin] * pksp[nk,j,m,n,ispin])
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)

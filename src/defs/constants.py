@@ -71,7 +71,7 @@ E2               = 2.0 # e^2
 AFLOW = 'AFLOW'
 p = u"\u03C0"
 pp = p.encode('utf8')
-TB = '_TB'
+TB = '(TB)'
 AFLOWPITB = str(AFLOW)+str(pp)+str(TB)
 
 C = u"\u00A9"

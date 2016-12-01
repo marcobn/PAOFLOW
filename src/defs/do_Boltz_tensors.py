@@ -48,27 +48,49 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin):
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
+    index = None
+
+    if rank == 0:
+        nktot,_,nawf,nspin = velkp.shape
+        index = {'nktot':nktot,'nawf':nawf,'nspin':nspin}
+
+    index = comm.bcast(index,root=0)
+
+    nktot = index['nktot']
+    nawf = index['nawf']
+    nspin = index['nspin']
+
     # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,velkp.shape[0])
+    ini_ik, end_ik = load_balancing(size,rank,nktot)
+    nsize = end_ik-ini_ik
+
+    kq_wghtaux = np.zeros(nsize,dtype=float)
+    velkpaux = np.zeros((nsize,3,nawf,nspin),dtype=float)
+    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+
+    comm.Barrier()
+    comm.Scatter(velkp,velkpaux,root=0)
+    comm.Scatter(E_k,E_kaux,root=0)
+    comm.Scatter(kq_wght,kq_wghtaux,root=0)
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
-    L0aux = np.zeros((3,3,ene.size,1),dtype=float)
+    L0aux = np.zeros((3,3,ene.size),dtype=float)
 
-    L0aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,0)
+    L0aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,0)
 
     comm.Allreduce(L0aux,L0,op=MPI.SUM)
 
     L1 = np.zeros((3,3,ene.size),dtype=float)
-    L1aux = np.zeros((3,3,ene.size,1),dtype=float)
+    L1aux = np.zeros((3,3,ene.size),dtype=float)
 
-    L1aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,1)
+    L1aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,1)
 
     comm.Allreduce(L1aux,L1,op=MPI.SUM)
 
     L2 = np.zeros((3,3,ene.size),dtype=float)
-    L2aux = np.zeros((3,3,ene.size,1),dtype=float)
+    L2aux = np.zeros((3,3,ene.size),dtype=float)
 
-    L2aux[:,:,:,0] = L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,2)
+    L2aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,2)
 
     comm.Allreduce(L2aux,L2,op=MPI.SUM)
 
@@ -80,7 +102,7 @@ def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
 
     L = np.zeros((3,3,ene.size),dtype=float)
 
-    for nk in range(ini_ik,end_ik):
+    for nk in range(end_ik-ini_ik):
         for n in range(velkp.shape[2]):
             for i in range(3):
                 for j in range(3):
