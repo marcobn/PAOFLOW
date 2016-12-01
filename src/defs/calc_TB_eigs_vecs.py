@@ -78,30 +78,30 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
 
         E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
         v_kaux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
-        aux = np.zeros((nsize,nawf,nawf),dtype=complex)
+        aux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
 
         comm.barrier()
         comm.Scatter(Hks_split,aux,root=0)
 
-        E_kaux, v_kaux = diago(nsize,aux) 
+        E_kaux, v_kaux = diago(nsize,aux[:,:,:,ispin])
 
         comm.barrier()
         comm.Gather(E_kaux,E_k_split,root=0)
         comm.Gather(v_kaux,v_k_split,root=0)
 
         if rank == 0:
-            E_k[pool*nkpool:(pool+1)*nkpool,:] = E_k_split[:,:]
-            v_k[pool*nkpool:(pool+1)*nkpool,:,:] = v_k_split[:,:,:]
+            E_k[pool*nkpool:(pool+1)*nkpool,:,:] = E_k_split[:,:,:]
+            v_k[pool*nkpool:(pool+1)*nkpool,:,:,:] = v_k_split[:,:,:,:]
 
     if rank == 0:
-        #f=open('eig_'+str(ispin)+'.dat','w')
+        f=open('eig_'+str(ispin)+'.dat','w')
         nall=0
         for n in range(nktot):
             for m in range(nawf):
                 eall[nall,ispin]=E_k[n,m,ispin]
-                #f.write('%.5f  %.5f \n' %(n,E_k[n,m,ispin]))
+                f.write('%7d  %.5f \n' %(n,E_k[n,m,ispin]))
                 nall += 1
-        #f.close()
+        f.close()
 
     return(eall,E_k,v_k)
 

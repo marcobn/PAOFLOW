@@ -56,12 +56,17 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
         for ispin in range(nspin):
+            #for i in range(nawf):
+            #    for j in range(nawf):
+            #        aux = HRaux[i,j,:,:,:,ispin]
+            #        fft = pyfftw.FFTW(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3),Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
+            #                    flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+            #        Hksp[:,:,:,i,j,ispin] = fft()
             for i in range(nawf):
                 for j in range(nawf):
                     aux = HRaux[i,j,:,:,:,ispin]
-                    fft = pyfftw.FFTW(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3),Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
-                                flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                    Hksp[:,:,:,i,j,ispin] = fft()
+                    Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+
     else:
         sys.exit('wrong dimensions in input array')
 
