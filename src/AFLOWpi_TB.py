@@ -366,59 +366,72 @@ if rank == 0:
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
 
-        # fft grid in R shifted to have (0,0,0) in the center
-        _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+        scipy = True
+        if scipy :
+            # fft grid in R shifted to have (0,0,0) in the center
+            _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
-        HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
-        HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+            HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+            HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
+            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+            # Compute R*H(R)
+            dHRaux  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+            HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+            dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+            for l in range(3):
+                # Compute R*H(R)
+                for ispin in range(nspin):
+                    for n in range(nawf):
+                        for m in range(nawf):
+                            dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
+            dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+    #       for ispin in range(nspin):
+    #           for i in range(nk1):
+    #               for j in range(nk2):
+    #                   for k in range(nk3):
+    #                       for l in range(3):
+    #                           dHRaux[i,j,k,l,:,:,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[i,j,k,:,:,ispin]
+            # Compute dH(k)/dk
+            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[0,1,2])
+            dHraux = None
+        else:
+            # fft grid in R shifted to have (0,0,0) in the center
+            _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        # Compute R*H(R)
-        dHRaux  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-        for ispin in range(nspin):
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        for l in range(3):
-                            dHRaux[i,j,k,l,:,:,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[i,j,k,:,:,ispin]
+            HRaux  = np.zeros_like(Hksp)
+            for ispin in range(nspin):
+                for n in range(nawf):
+                    for m in range(nawf):
+                        fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
+                              flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+                        HRaux[:,:,:,n,m,ispin] = fft()
+            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+            Hksp = None
 
-        # Compute dH(k)/dk
-        dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-        dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[0,1,2])
+            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+            HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+            for l in range(3):
+                # Compute R*H(R)
+                dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+                for ispin in range(nspin):
+                    for n in range(nawf):
+                        for m in range(nawf):
+                            dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
+                dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
 
-        #HRaux  = np.zeros_like(Hksp)
-        #for ispin in range(nspin):
-        #    for n in range(nawf):
-        #        for m in range(nawf):
-        #            fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
-        #                  flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-        #            HRaux[:,:,:,n,m,ispin] = fft()
-        #HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+                # Compute dH(k)/dk
+                for ispin in range(nspin):
+                    for n in range(nawf):
+                        for m in range(nawf):
+                            fft = pyfftw.FFTW(dHRaux[:,:,:,l,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
+                            direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+                            dHksp[:,:,:,l,n,m,ispin] = fft()
+                dHRaux = None
 
-        #Hksp = None
-
-        #dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-        #Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-        #HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-        #for l in range(3):
-        #    # Compute R*H(R)
-        #    dHRaux  = np.zeros_like(HRaux)
-        #    for ispin in range(nspin):
-        #        for n in range(nawf):
-        #            for m in range(nawf):
-        #                dHRaux[:,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
-        #    dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
-#
-#            # Compute dH(k)/dk
-#            for ispin in range(nspin):
-#                for n in range(nawf):
-#                    for m in range(nawf):
-#                        fft = pyfftw.FFTW(dHRaux[:,:,:,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
-#                        direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-#                        dHksp[:,:,:,l,n,m,ispin] = fft()
-#            dHRaux = None
-#
-#        HRaux = None
+        HRaux = None
 
         print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
@@ -432,7 +445,7 @@ if Boltzmann or epsilon or Berry:
     #if rank == 0:
     #    pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
     #else:
-    if rank != 0: 
+    if rank != 0:
         dHksp = None
         v_k = None
         pksp = None
@@ -570,6 +583,7 @@ if Boltzmann:
 
     if rank ==0: print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
+
 
 if epsilon:
 

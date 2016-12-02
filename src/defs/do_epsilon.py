@@ -78,7 +78,6 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
     #=======================
     # Im
     #=======================
-
     epsi = np.zeros((3,3,ene.size),dtype=float)
     epsi_aux = np.zeros((3,3,ene.size),dtype=float)
 
@@ -101,6 +100,8 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
     comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
 
     epsr += 1.0
+
+    return(ene,epsi,epsr)
 
 def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
 

@@ -147,15 +147,23 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
 
         if rank == 0:
             # Compute Om_zR
-            Om_zR = np.zeros((nk1*nk2*nk3),dtype=float)
-            Om_zRc = np.zeros((nk1,nk2,nk3),dtype=complex)
-            Om_zk = np.reshape(Om_zk,(nk1,nk2,nk3),order='C')+1.j
-            fft = pyfftw.FFTW(Om_zk,Om_zRc,axes=(0,1,2), direction='FFTW_BACKWARD',\
+            scipy = True
+            if not scipy:
+                Om_zR = np.zeros((nk1*nk2*nk3),dtype=float)
+                Om_zRc = np.zeros((nk1,nk2,nk3),dtype=complex)
+                Om_zk = np.reshape(Om_zk,(nk1,nk2,nk3),order='C')+1.j
+                fft = pyfftw.FFTW(Om_zk,Om_zRc,axes=(0,1,2), direction='FFTW_BACKWARD',\
                         flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-            Om_zRc = fft()
-            Om_zR = np.real(np.reshape(Om_zRc,nk1*nk2*nk3,order='C'))
-            R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-            Om_zk_disp = np.zeros((nkpi),dtype=float)
+                Om_zRc = fft()
+                Om_zR = np.real(np.reshape(Om_zRc,nk1*nk2*nk3,order='C'))
+                R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+                Om_zk_disp = np.zeros((nkpi),dtype=float)
+            else:
+                Om_zR = np.zeros((nk1,nk2*nk3),dtype=float)
+                Om_zR = FFT.ifftn(np.reshape(Om_zk,(nk1,nk2,nk3),order='C'))
+                Om_zR = (np.reshape(np.real(Om_zR),(nk1*nk2*nk3),order='C'))
+                R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+                Om_zk_disp = np.zeros((nkpi),dtype=float)
         else:
             Om_zR = None
             R = None
@@ -172,6 +180,9 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
             R_aux = np.zeros((nsize,3),dtype=float)
             Om_zk_sum = np.zeros(1,dtype=float)
             auxsum = np.zeros(1,dtype=float)
+
+            if rank == 0: Om_zR = np.asarray(Om_zR, order='C')
+            #Om_zRaux = np.asarray(Om_zRaux, order='C')
 
             comm.Barrier()
             comm.Scatter(R,R_aux,root=0)
