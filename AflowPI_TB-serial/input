@@ -1,0 +1,11 @@
+	fpath       	./silicon.save
+	read_S      	False 			# Projections are read orthogonal, If non-orthogonality is required, read overlaps
+	shift_type  	1			# Shifting algorithm: 0 = 2013, 1 = 2016, 2 = no shift
+	shift       	10			# Shift amount (in eV)
+	pthr        	0.9			# Projectability threshold
+	do_comparison 	False			# compare original and filtered eigenvalues (input mesh)
+	double_grid	True			# dense grid from fft interpolation
+	do_bands	False			# compute bands
+	do_dos		True			# compute dos
+	delta		0.150			# gaussian spreading for dos calculation
+	nfft123		120 120 120		# zero padding dimensions
