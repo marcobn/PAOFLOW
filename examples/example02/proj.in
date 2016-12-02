@@ -1,0 +1,13 @@
+ &projwfc
+    prefix='al'
+    outdir='./'
+    filpdos='./al'
+    lwrite_overlaps = .true.
+    lbinary_data  = .false.
+    !
+    degauss = 0.01
+    ngauss = 0   ! gaussian broad
+    emin = -10.0
+    emax = +20.0
+    deltaE = 0.025
+ /
