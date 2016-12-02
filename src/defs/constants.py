@@ -66,3 +66,13 @@ CM1TOEV          = 1.23981e-4  # cm^-1 to eV
 EVTOCM1          = 1.0/1.23981e-4  # eV to cm^-1
 
 E2               = 2.0 # e^2
+
+# Logos
+AFLOW = 'AFLOW'
+p = u"\u03C0"
+pp = p.encode('utf8')
+TB = '(TB)'
+AFLOWPITB = str(AFLOW)+str(pp)+str(TB)
+
+C = u"\u00A9"
+CC = C.encode('utf8')

@@ -26,94 +26,48 @@ import numpy as np
 import cmath
 import sys, time
 from mpi4py import MPI
+import pyfftw
+import multiprocessing
 
 sys.path.append('./')
 
 from zero_pad import *
 
 comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
+size = comm.Get_size()
+
+nthread = size
 
 def do_double_grid(nfft1,nfft2,nfft3,HRaux):
     # Fourier interpolation on extended grid (zero padding)
     if HRaux.shape[0] != 3 and HRaux.shape[1] == HRaux.shape[0]:
-        nawf = HRaux.shape[0]
-        nk1 = HRaux.shape[2]
-        nk2 = HRaux.shape[3]
-        nk3 = HRaux.shape[4]
-        nspin = HRaux.shape[5]
-        nk1p = nfft1+nk1
-        nk2p = nfft2+nk2
-        nk3p = nfft3+nk3
+        nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
+        nk1p = nfft1
+        nk2p = nfft2
+        nk3p = nfft3
+        nfft1 = nfft1-nk1
+        nfft2 = nfft2-nk2
+        nfft3 = nfft3-nk3
         nktotp= nk1p*nk2p*nk3p
-        #if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
 
         # Extended R to k (with zero padding)
-        HRauxp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-        Hksp  = np.zeros((nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
+        Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf,nawf,nspin),dtype=complex)
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-        #for ispin in range(nspin):
-        #    for i in range(nawf):
-        #        aux = HRaux[i,i,:,:,:,ispin]
-        #        Hksp[i,i,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-
+        scipy = True
         for ispin in range(nspin):
-            #for i in range(0,nawf-1):
-            #    for j in range(i,nawf):
-            for i in range(nawf):
-                for j in range(nawf):
-                    aux = HRaux[i,j,:,:,:,ispin]
-                    Hksp[i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-    elif HRaux.shape[0] == 3 and HRaux.shape[1] != HRaux.shape[0]:
-        # This works for the momentum tensor
-        nawf = HRaux.shape[1]
-        nk1 = HRaux.shape[3]
-        nk2 = HRaux.shape[4]
-        nk3 = HRaux.shape[5]
-        nspin = HRaux.shape[6]
-        nk1p = nfft1+nk1
-        nk2p = nfft2+nk2
-        nk3p = nfft3+nk3
-        nktotp= nk1p*nk2p*nk3p
-        #if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
-
-        # Extended R to k (with zero padding)
-        HRauxp  = np.zeros((3,nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-        Hksp  = np.zeros((3,nawf,nawf,nk1p,nk2p,nk3p,nspin),dtype=complex)
-        aux = np.zeros((nk1,nk2,nk3),dtype=complex)
-
-        for l in range(3):
-            for ispin in range(nspin):
+            if not scipy:
                 for i in range(nawf):
                     for j in range(nawf):
-                        aux = HRaux[l,i,j,:,:,:,ispin]
-                        Hksp[l,i,j,:,:,:,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-
-    elif HRaux.shape[0] == HRaux.shape[1] == 3:
-        # This works for the dielectric tensor
-        ne = HRaux.shape[2]
-        nk1 = HRaux.shape[3]
-        nk2 = HRaux.shape[4]
-        nk3 = HRaux.shape[5]
-        nspin = HRaux.shape[6]
-        nk1p = nfft1+nk1
-        nk2p = nfft2+nk2
-        nk3p = nfft3+nk3
-        nktotp= nk1p*nk2p*nk3p
-        #if rank == 0: print('Number of k vectors for zero padding Fourier interpolation ',nktotp)
-
-        # Extended R to k (with zero padding)
-        HRauxp  = np.zeros((3,3,ne,nk1p,nk2p,nk3p,nspin),dtype=float)
-        Hksp  = np.zeros((3,3,ne,nk1p,nk2p,nk3p,nspin),dtype=float)
-        aux = np.zeros((nk1,nk2,nk3),dtype=float)
-
-        for ispin in range(nspin):
-            for i in range(3):
-                for j in range(3):
-                    for ie in range(ne):
-                        aux = HRaux[i,j,ie,:,:,:,ispin]
-                        Hksp[i,j,ie,:,:,:,ispin] = np.real(FFT.fftn(zero_pad_float(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3)))
+                        aux = HRaux[i,j,:,:,:,ispin]
+                        fft = pyfftw.FFTW(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3),Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
+                                flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+                        Hksp[:,:,:,i,j,ispin] = fft()
+            else:
+                for i in range(nawf):
+                    for j in range(nawf):
+                        aux = HRaux[i,j,:,:,:,ispin]
+                        Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
     else:
         sys.exit('wrong dimensions in input array')
