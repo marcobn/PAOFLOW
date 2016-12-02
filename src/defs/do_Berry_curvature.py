@@ -71,11 +71,13 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         nkpool = nk1*nk2*nk3/npool
 
         if rank == 0:
-            pksp = np.array_split(pksp,npool,axis=0)[pool]
-            E_k= np.array_split(E_k,npool,axis=0)[pool]
+            pksp_long = np.array_split(pksp,npool,axis=0)[pool]
+            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
             Om_znk_split = np.array_split(Om_znk,npool,axis=0)[pool]
         else:
             Om_znk_split = None
+            pksp_long = None
+            E_k_long = None
 
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
@@ -87,8 +89,8 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
 
         comm.Barrier()
-        comm.Scatter(pksp,pksaux,root=0)
-        comm.Scatter(E_k,E_kaux,root=0)
+        comm.Scatter(pksp_long,pksaux,root=0)
+        comm.Scatter(E_k_long,E_kaux,root=0)
 
         for nk in range(nsize):
             for n in range(nawf):
@@ -103,13 +105,13 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
 
     if rank == 0:
-        pksp = np.concatenate(pksp)
-        E_k = np.concatenate(E_k)
-    if rank == 0:
         Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
     else:
         Om_znk = None
         Om_zk = None
+
+    pksp_long = None
+    E_k_long = None
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
