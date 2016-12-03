@@ -113,8 +113,7 @@ else:
     if rank == 0: print('serial execution')
 if rank == 0: print('   ')
 
-verbose = None
-verbose == False
+verbose = False
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -125,12 +124,12 @@ if (not non_ortho):
     kpnts_wght /= sumk
     for ik in range(nkpnts):
         Sks[:,:,ik]=np.identity(nawf)
-    if rank == 0 and verbose == True: print('...using orthogonal algorithm')
+    if rank == 0 and verbose: print('...using orthogonal algorithm')
 else:
     U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
-    if rank == 0 and verbose == True: print('...using non-orthogonal algorithm')
+    if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
 if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
 reset=time.time()
@@ -140,7 +139,7 @@ reset=time.time()
 #----------------------
 Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
 
-if rank == 0 and verbose == True: print('Projectability vector ',Pn)
+if rank == 0 and verbose: print('Projectability vector ',Pn)
 
 # Check projectability and decide bnd
 
@@ -148,7 +147,8 @@ bnd = 0
 for n in range(nbnds):
     if Pn[n] > pthr:
         bnd += 1
-if rank == 0 and verbose == True: print('# of bands with good projectability (>',pthr,') = ',bnd)
+if rank == 0 and verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
+if rank == 0 and verbose: print('Range of suggested shift ',min(my_eigsmat[bnd,:,:]),' , ',max(my_eigsmat[bnd,:,:]))
 
 #----------------------
 # Building the TB Hamiltonian
@@ -263,7 +263,7 @@ elif do_bands and onedim:
     #----------------------
     # FFT interpolation along a single directions in the BZ
     #----------------------
-    if rank == 0 and verbose == True: print('... computing bands along a line')
+    if rank == 0 and verbose: print('... computing bands along a line')
     do_bands_calc_1D(Hks)
 
     if rank ==0: print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -294,7 +294,7 @@ if rank == 0:
         Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
         # Naming convention (from here): 
         # Hksp = k-space Hamiltonian on interpolated grid
-        if rank == 0 and verbose == True: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
+        if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
 
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
 
@@ -366,7 +366,7 @@ if rank == 0:
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
 
-        scipy = True
+        scipy = False
         if scipy :
             # fft grid in R shifted to have (0,0,0) in the center
             _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
@@ -507,7 +507,7 @@ if Berry:
 
     if rank == 0:
         f=open('ahc.dat','w')
-        ahc = -ahc*EVTORY*AU_TO_OHMCMM1
+        ahc *= EVTORY*AU_TO_OHMCMM1
         f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
         f.close()
 

@@ -127,9 +127,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     comm.Scatter(E_k,E_kaux,root= 0)
 
     for nk in range(nsize):
-        for n in range(nawf):
-            if E_kaux[nk,n,0] <= 0.0:
-                Om_zkaux[nk] = Om_znkaux[nk,n] #* 1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,0]/temp)))/temp
+        Om_zkaux[nk] = np.sum(Om_znkaux[nk,:]*(0.5 * (-np.sign(E_kaux[nk,:,0]) + 1)))  # T=0.0K
 
     comm.Barrier()
     comm.Gather(Om_zkaux,Om_zk,root=0)
@@ -149,7 +147,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
 
         if rank == 0:
             # Compute Om_zR
-            scipy = True
+            scipy = False
             if not scipy:
                 Om_zR = np.zeros((nk1*nk2*nk3),dtype=float)
                 Om_zRc = np.zeros((nk1,nk2,nk3),dtype=complex)
@@ -191,9 +189,10 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
             comm.Scatter(R_wght,R_wghtaux,root=0)
             comm.Scatter(Om_zR,Om_zRaux,root=0)
 
-            for nk in range(nsize):
-                phase=R_wghtaux[nk]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R_aux[nk,:])*1j)
-                auxsum += np.real(Om_zRaux[nk]*phase)
+            auxsum=np.sum(np.real(Om_zRaux[:]*np.exp(2.0*np.pi*kq[:,ik].dot(R_aux[:,:].T)*1j)))
+            #for nk in range(nsize):
+            #    phase=R_wghtaux[nk]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R_aux[nk,:])*1j)
+            #    auxsum += np.real(Om_zRaux[nk]*phase)
 
             comm.Barrier()
             comm.Reduce(auxsum,Om_zk_sum,op=MPI.SUM)
