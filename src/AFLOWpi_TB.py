@@ -94,7 +94,8 @@ if rank == 0:
 # Initialize n. of threads for multiprocessing (FFTW)
 #----------------------
 #nthread = multiprocessing.cpu_count()
-nthread = size
+#nthread = size
+nthread = 36
 
 #----------------------
 # Read input and DFT data
