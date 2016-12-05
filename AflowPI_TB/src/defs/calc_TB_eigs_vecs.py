@@ -52,14 +52,15 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
         eall = np.zeros((nawf*nktot,nspin),dtype=float)
         E_k = np.zeros((nktot,nawf,nspin),dtype=float)
         v_k = np.zeros((nktot,nawf,nawf,nspin),dtype=complex)
+        v_kall = np.zeros((nktot*nawf,nawf,nspin),dtype=complex)
     else:
         eall = None
         E_k = None
         v_k = None
+        v_kall = None
         Hks_split = None
         E_k_split = None
         v_k_split = None
-
     for pool in range (npool):
         if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
         nkpool = nktot/npool
@@ -99,11 +100,12 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
         for n in range(nktot):
             for m in range(nawf):
                 eall[nall,ispin]=E_k[n,m,ispin]
+                v_kall[nall,nawf,ispin]=v_k[n,m,:,ispin]
                 f.write('%7d  %.5f \n' %(n,E_k[n,m,ispin]))
                 nall += 1
         f.close()
 
-    return(eall,E_k,v_k)
+    return(eall,E_k,v_k,v_kall)
 
 def diago(nsize,aux):
 
