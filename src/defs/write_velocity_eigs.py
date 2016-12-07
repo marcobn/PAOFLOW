@@ -25,46 +25,35 @@ from numpy import linalg as LAN
 import numpy as np
 import os
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-
-def write_TB_eigs(Hks,Sks,read_S,ispin):
+def write_velocity_eigs(Hks,ipol,ispin,index):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     nbnds_tb = nawf
-    E_k = np.zeros((nkpnts,nbnds_tb),dtype=float)
-    v_k = np.zeros((nkpnts,nbnds_tb,nbnds_tb),dtype=complex)
+    E_k = np.zeros((nkpnts,nbnds_tb,nspin))
+    v_k = np.zeros((nkpnts,nbnds_tb,nbnds_tb,nspin),dtype=complex)
     E_kaux = np.zeros((nbnds_tb,nkpnts,nspin))
 
     for ik in range(nkpnts):
-        if read_S:
-            eigval,eigvec = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
-        else:
-            eigval,eigvec = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
-        E_k[ik,:] = np.real(eigval)
-        v_k[ik,:,:] = eigvec
-        E_kaux[:,ik,ispin] = np.sort(np.real(eigval))
+        eigval,eigvec = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
+        E_k[ik,:,ispin] = np.real(eigval)
+        v_k[ik,:,:,ispin] = eigvec
+        for n in range(nawf):
+            E_kaux[n,ik,ispin] = E_k[ik,index[n,ik,ispin],ispin]
 
-    if rank == 0:
-        ipad = False
-        if ipad:
-            f=open('bands_'+str(ispin)+'.dat','w')
-            for ik in range(nkpnts):
-                for nb in range(nawf):
-                    f.write('%3d  %.5f \n' %(ik,E_kaux[nb,ik,ispin]))
-            f.close()
-        else:
-            f=open('bands_'+str(ispin)+'.dat','w')
-            for ik in range(nkpnts):
-                s="%d\t"%ik
-                for  j in E_kaux[:,ik,ispin]:s += "%3.5f\t"%j
-                s+="\n"
-                f.write(s)
-            f.close()
+    ipad = False
+    if ipad:
+        f=open('velocity_'+str(ipol)+'_'+str(ispin)+'.dat','w')
+        for ik in range(nkpnts):
+            for nb in range(nawf):
+                f.write('%3d  %.5f \n' %(ik,E_kaux[nb,ik,ispin]))
+        f.close()
+    else:
+        f=open('velocity_'+str(ipol)+'_'+str(ispin)+'.dat','w')
+        for ik in range(nkpnts):
+            s="%d\t"%ik
+            for  j in E_kaux[:,ik,ispin]:s += "%3.5f\t"%j
+            s+="\n"
+            f.write(s)
+        f.close()
 
     return(E_k,v_k)

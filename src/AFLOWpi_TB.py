@@ -251,9 +251,49 @@ if do_bands and not(onedim):
         non_ortho = False
 
     # Define real space lattice vectors
-    R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+    R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-    E_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
+    nkpi=kq.shape[1]
+    E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
+    v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+    E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+
+    Berry_topology = False
+    if Berry_topology:
+        # Compute the velocity and momentum operators along the path in the IBZ
+        from do_velocity_calc import *
+        # Compute R*H(R)
+        HRs = FFT.fftshift(HRs,axes=(2,3,4))
+        dHRs  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+        HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+        dHRs  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+        for l in range(3):
+            for ispin in range(nspin):
+                for n in range(nawf):
+                    for m in range(nawf):
+                        dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
+        # Compute dH(k)/dk on the path
+        pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
+        pks = do_velocity_calc(dHRs[:,:,:,:,:],v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres)
+
+        if rank == 0:
+            velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
+            for n in range(nawf):
+                velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
+            for ispin in range(nspin):
+                for l in range(3):
+                    f=open('velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
+                    for ik in range(nkpi):
+                        s="%d\t"%ik
+                        for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
+                        s+="\n"
+                        f.write(s)
+                    f.close()
+
+        HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+        HRs = FFT.ifftshift(HRs,axes=(2,3,4))
 
     alat *= ANGSTROM_AU
 
@@ -348,7 +388,7 @@ if do_dos:
     eigup = None
     eigdw = None
 
-    if nspin == 1 or nspin == 2: 
+    if nspin == 1 or nspin == 2:
         if rank == 0: eigup = eig[:,0]
         do_dos_calc(eigup,emin,emax,delta,eigtot,nawf,0)
         eigup = None
@@ -381,18 +421,11 @@ if rank == 0:
             HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
             dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
             for l in range(3):
-                # Compute R*H(R)
                 for ispin in range(nspin):
                     for n in range(nawf):
                         for m in range(nawf):
                             dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
             dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
-    #       for ispin in range(nspin):
-    #           for i in range(nk1):
-    #               for j in range(nk2):
-    #                   for k in range(nk3):
-    #                       for l in range(3):
-    #                           dHRaux[i,j,k,l,:,:,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[i,j,k,:,:,ispin]
             # Compute dH(k)/dk
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[0,1,2])
@@ -443,9 +476,6 @@ if Boltzmann or epsilon or Berry:
     #----------------------
     from do_momentum import *
 
-    #if rank == 0:
-    #    pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    #else:
     if rank != 0:
         dHksp = None
         v_k = None
@@ -453,8 +483,6 @@ if Boltzmann or epsilon or Berry:
     if rank == 0:
         dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
     pksp = do_momentum(v_k,dHksp,npool)
-    #if rank == 0:
-    #    pksp = np.reshape(pksp,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
 
     dHksp = None
 
@@ -480,7 +508,6 @@ if rank == 0:
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
         for n in range(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
-            #velkp[:,:,n,:] = np.reshape(np.real(pksp[:,:,:,:,n,n,:]),(nk1*nk2*nk3,3,nspin),order='C')
 
 if Berry:
     #----------------------
@@ -491,18 +518,7 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    if do_bands:
-        #----------------------
-        # ...on a path in the BZ or...
-        #----------------------
-        #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-        Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0,nthread,npool)
-    else:
-        #----------------------
-        # ...in the full BZ
-        #----------------------
-        #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-        Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
+    Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
 
     alat *= ANGSTROM_AU
 

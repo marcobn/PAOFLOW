@@ -135,7 +135,8 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     ahc = None
     if rank == 0: ahc = -E2*np.sum(Om_zk)/float(nk1*nk2*nk3)
 
-    if iswitch == 0:
+    iswitch = 1
+    if iswitch == 0:  # BAD WAY! - interpolating Om_zk usin Fourier transform on a path
 
         # Define k-point mesh for bands interpolation
 
