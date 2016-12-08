@@ -65,7 +65,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         Om_znk = np.zeros((nk1*nk2*nk3,nawf),dtype=float)
     else:
         Om_znk = None
-i
+
     for pool in range(npool):
         if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
         nkpool = nk1*nk2*nk3/npool
