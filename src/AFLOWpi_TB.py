@@ -259,8 +259,8 @@ if do_bands and not(onedim):
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
     E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
 
-    Berry_topology = True
-    if Berry_topology:
+    band_topology = True
+    if band_topology:
         # Compute the velocity and momentum operators along the path in the IBZ
         from do_velocity_calc import *
         # Compute R*H(R)
