@@ -94,7 +94,8 @@ if rank == 0:
 # Initialize n. of threads for multiprocessing (FFTW)
 #----------------------
 #nthread = multiprocessing.cpu_count()
-nthread = size
+#nthread = size
+nthread = 36
 
 #----------------------
 # Read input and DFT data
@@ -113,8 +114,7 @@ else:
     if rank == 0: print('serial execution')
 if rank == 0: print('   ')
 
-verbose = None
-verbose == False
+verbose = False
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -125,12 +125,12 @@ if (not non_ortho):
     kpnts_wght /= sumk
     for ik in range(nkpnts):
         Sks[:,:,ik]=np.identity(nawf)
-    if rank == 0 and verbose == True: print('...using orthogonal algorithm')
+    if rank == 0 and verbose: print('...using orthogonal algorithm')
 else:
     U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
-    if rank == 0 and verbose == True: print('...using non-orthogonal algorithm')
+    if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
 if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
 reset=time.time()
@@ -140,7 +140,7 @@ reset=time.time()
 #----------------------
 Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
 
-if rank == 0 and verbose == True: print('Projectability vector ',Pn)
+if rank == 0 and verbose: print('Projectability vector ',Pn)
 
 # Check projectability and decide bnd
 
@@ -148,7 +148,8 @@ bnd = 0
 for n in range(nbnds):
     if Pn[n] > pthr:
         bnd += 1
-if rank == 0 and verbose == True: print('# of bands with good projectability (>',pthr,') = ',bnd)
+if rank == 0 and verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
+if rank == 0 and verbose: print('Range of suggested shift ',min(my_eigsmat[bnd,:,:]),' , ',max(my_eigsmat[bnd,:,:]))
 
 #----------------------
 # Building the TB Hamiltonian
@@ -250,9 +251,49 @@ if do_bands and not(onedim):
         non_ortho = False
 
     # Define real space lattice vectors
-    R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+    R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-    E_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
+    nkpi=kq.shape[1]
+    E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
+    v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+    E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+
+    band_topology = True
+    if band_topology:
+        # Compute the velocity and momentum operators along the path in the IBZ
+        from do_velocity_calc import *
+        # Compute R*H(R)
+        HRs = FFT.fftshift(HRs,axes=(2,3,4))
+        dHRs  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+        HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+        dHRs  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+        for l in range(3):
+            for ispin in range(nspin):
+                for n in range(nawf):
+                    for m in range(nawf):
+                        dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
+        # Compute dH(k)/dk on the path
+        pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
+        pks = do_velocity_calc(dHRs[:,:,:,:,:],E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres)
+
+        if rank == 0:
+            velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
+            for n in range(nawf):
+                velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
+            for ispin in range(nspin):
+                for l in range(3):
+                    f=open('velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
+                    for ik in range(nkpi):
+                        s="%d\t"%ik
+                        for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
+                        s+="\n"
+                        f.write(s)
+                    f.close()
+
+        HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+        HRs = FFT.ifftshift(HRs,axes=(2,3,4))
 
     alat *= ANGSTROM_AU
 
@@ -263,7 +304,7 @@ elif do_bands and onedim:
     #----------------------
     # FFT interpolation along a single directions in the BZ
     #----------------------
-    if rank == 0 and verbose == True: print('... computing bands along a line')
+    if rank == 0 and verbose: print('... computing bands along a line')
     do_bands_calc_1D(Hks)
 
     if rank ==0: print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -294,7 +335,7 @@ if rank == 0:
         Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
         # Naming convention (from here): 
         # Hksp = k-space Hamiltonian on interpolated grid
-        if rank == 0 and verbose == True: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
+        if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
 
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
 
@@ -347,7 +388,7 @@ if do_dos:
     eigup = None
     eigdw = None
 
-    if nspin == 1 or nspin == 2: 
+    if nspin == 1 or nspin == 2:
         if rank == 0: eigup = eig[:,0]
         do_dos_calc(eigup,emin,emax,delta,eigtot,nawf,0)
         eigup = None
@@ -366,7 +407,7 @@ if rank == 0:
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
 
-        scipy = True
+        scipy = False
         if scipy :
             # fft grid in R shifted to have (0,0,0) in the center
             _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
@@ -380,18 +421,11 @@ if rank == 0:
             HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
             dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
             for l in range(3):
-                # Compute R*H(R)
                 for ispin in range(nspin):
                     for n in range(nawf):
                         for m in range(nawf):
                             dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
             dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
-    #       for ispin in range(nspin):
-    #           for i in range(nk1):
-    #               for j in range(nk2):
-    #                   for k in range(nk3):
-    #                       for l in range(3):
-    #                           dHRaux[i,j,k,l,:,:,ispin] = 1.0j*alat*Rfft[i,j,k,l]*HRaux[i,j,k,:,:,ispin]
             # Compute dH(k)/dk
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[0,1,2])
@@ -442,9 +476,6 @@ if Boltzmann or epsilon or Berry:
     #----------------------
     from do_momentum import *
 
-    #if rank == 0:
-    #    pksp = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    #else:
     if rank != 0:
         dHksp = None
         v_k = None
@@ -452,8 +483,6 @@ if Boltzmann or epsilon or Berry:
     if rank == 0:
         dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
     pksp = do_momentum(v_k,dHksp,npool)
-    #if rank == 0:
-    #    pksp = np.reshape(pksp,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
 
     dHksp = None
 
@@ -479,7 +508,6 @@ if rank == 0:
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
         for n in range(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
-            #velkp[:,:,n,:] = np.reshape(np.real(pksp[:,:,:,:,n,n,:]),(nk1*nk2*nk3,3,nspin),order='C')
 
 if Berry:
     #----------------------
@@ -490,24 +518,13 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    if do_bands:
-        #----------------------
-        # ...on a path in the BZ or...
-        #----------------------
-        #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-        Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,0,nthread,npool)
-    else:
-        #----------------------
-        # ...in the full BZ
-        #----------------------
-        #Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
-        Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
+    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,nthread,npool)
 
     alat *= ANGSTROM_AU
 
     if rank == 0:
         f=open('ahc.dat','w')
-        ahc = -ahc*EVTORY*AU_TO_OHMCMM1
+        ahc *= EVTORY*AU_TO_OHMCMM1
         f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
         f.close()
 

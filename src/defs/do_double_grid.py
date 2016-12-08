@@ -54,7 +54,7 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
         Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf,nawf,nspin),dtype=complex)
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-        scipy = True
+        scipy = False
         for ispin in range(nspin):
             if not scipy:
                 for i in range(nawf):

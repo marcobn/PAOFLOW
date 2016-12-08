@@ -42,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,iswitch,nthread,npool):
+def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,nthread,npool):
     #----------------------
     # Compute Berry curvature on a selected path in the BZ
     #----------------------
@@ -65,7 +65,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         Om_znk = np.zeros((nk1*nk2*nk3,nawf),dtype=float)
     else:
         Om_znk = None
-
+i
     for pool in range(npool):
         if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
         nkpool = nk1*nk2*nk3/npool
@@ -92,12 +92,14 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         comm.Scatter(pksp_long,pksaux,root=0)
         comm.Scatter(E_k_long,E_kaux,root=0)
 
+        ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
+        deltap = 0.01
         for nk in range(nsize):
             for n in range(nawf):
                 for m in range(nawf):
-                    if n!= m:
-                        Om_znkaux[nk,n] += -2.0*np.imag(pksaux[nk,0,n,m,0]*pksaux[nk,1,m,n,0]) / \
-                        (E_kaux[nk,n,0]**2 - E_kaux[nk,m,0]**2 + delta**2)
+                    if m!= n:
+                        Om_znkaux[nk,n] += -2.0*np.imag(pksaux[nk,2,n,m,0]*pksaux[nk,1,m,n,0]- pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]) / \
+                        ((E_kaux[nk,m,0] - E_kaux[nk,n,0])**2 + deltap**2)
         comm.Barrier()
         comm.Gather(Om_znkaux,Om_znk_split,root=0)
 
@@ -127,9 +129,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     comm.Scatter(E_k,E_kaux,root= 0)
 
     for nk in range(nsize):
-        for n in range(nawf):
-            if E_kaux[nk,n,0] <= 0.0:
-                Om_zkaux[nk] = Om_znkaux[nk,n] #* 1.0/2.0 * 1.0/(1.0+np.cosh((E_k[n,nk,0]/temp)))/temp
+        Om_zkaux[nk] = np.sum(Om_znkaux[nk,:]*(0.5 * (-np.sign(E_kaux[nk,:,0]) + 1)))  # T=0.0K
 
     comm.Barrier()
     comm.Gather(Om_zkaux,Om_zk,root=0)
@@ -137,72 +137,4 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     ahc = None
     if rank == 0: ahc = -E2*np.sum(Om_zk)/float(nk1*nk2*nk3)
 
-    if iswitch == 0:
-
-        # Define k-point mesh for bands interpolation
-
-        kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
-        nkpi=kq.shape[1]
-        for n in range(nkpi):
-            kq [:,n]=kq[:,n].dot(b_vectors)
-
-
-        if rank == 0:
-            # Compute Om_zR
-            scipy = True
-            if not scipy:
-                Om_zR = np.zeros((nk1*nk2*nk3),dtype=float)
-                Om_zRc = np.zeros((nk1,nk2,nk3),dtype=complex)
-                Om_zk = np.reshape(Om_zk,(nk1,nk2,nk3),order='C')+1.j
-                fft = pyfftw.FFTW(Om_zk,Om_zRc,axes=(0,1,2), direction='FFTW_BACKWARD',\
-                        flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                Om_zRc = fft()
-                Om_zR = np.real(np.reshape(Om_zRc,nk1*nk2*nk3,order='C'))
-                R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-                Om_zk_disp = np.zeros((nkpi),dtype=float)
-            else:
-                Om_zR = np.zeros((nk1,nk2*nk3),dtype=float)
-                Om_zR = FFT.ifftn(np.reshape(Om_zk,(nk1,nk2,nk3),order='C'))
-                Om_zR = (np.reshape(np.real(Om_zR),(nk1*nk2*nk3),order='C'))
-                R,_,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-                Om_zk_disp = np.zeros((nkpi),dtype=float)
-        else:
-            Om_zR = None
-            R = None
-            R_wght = None
-
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
-        nsize = end_ik-ini_ik
-
-        for ik in range(nkpi):
-
-            Om_zRaux = np.zeros(nsize,dtype=float)
-            R_wghtaux = np.zeros(nsize,dtype=float)
-            R_aux = np.zeros((nsize,3),dtype=float)
-            Om_zk_sum = np.zeros(1,dtype=float)
-            auxsum = np.zeros(1,dtype=float)
-
-            if rank == 0: Om_zR = np.asarray(Om_zR, order='C')
-            #Om_zRaux = np.asarray(Om_zRaux, order='C')
-
-            comm.Barrier()
-            comm.Scatter(R,R_aux,root=0)
-            comm.Scatter(R_wght,R_wghtaux,root=0)
-            comm.Scatter(Om_zR,Om_zRaux,root=0)
-
-            for nk in range(nsize):
-                phase=R_wghtaux[nk]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R_aux[nk,:])*1j)
-                auxsum += np.real(Om_zRaux[nk]*phase)
-
-            comm.Barrier()
-            comm.Reduce(auxsum,Om_zk_sum,op=MPI.SUM)
-            if rank == 0: Om_zk_disp[ik] = Om_zk_sum
-
-        if rank == 0:
-            f=open('Omega_z'+'.dat','w')
-            for ik in range(nkpi):
-                f.write('%3d  %.5f \n' %(ik,-Om_zk_disp[ik]))
-            f.close()
-
-    return(Om_zk,ahc)
+    return(ahc)
