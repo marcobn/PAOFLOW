@@ -183,7 +183,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         special_points = {
             'gG'  : [0, 0, 0],
             'H'   : [0.5, -0.5, 0.5],
+            'Hp'   : [0.5, 0.5, -0.5],
             'P'   : [0.25, 0.25, 0.25],
+            'Np'   : [0.5, 0.0, 0.0],
             'N'   : [0.0, 0.0, 0.5]
             }
 
@@ -200,7 +202,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             second = qe_conv.dot(first)
             special_points[k]=tuple(second.tolist())
 
-        default_band_path = 'gG-H-N-gG-P-H|P-N'
+
+        #default_band_path = 'gG-H-N-gG-P-H|P-N'
+        default_band_path = 'gG-H-P-N-gG-Hp-Np-gG'
         band_path = default_band_path
         return special_points, band_path
 

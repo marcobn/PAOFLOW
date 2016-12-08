@@ -276,7 +276,7 @@ if do_bands and not(onedim):
                         dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
         # Compute dH(k)/dk on the path
         pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-        pks = do_velocity_calc(dHRs[:,:,:,:,:],E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,delta,bnd)
+        pks = do_velocity_calc(dHRs[:,:,:,:,:],E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres)
 
         if rank == 0:
             velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)

@@ -92,11 +92,12 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         comm.Scatter(pksp_long,pksaux,root=0)
         comm.Scatter(E_k_long,E_kaux,root=0)
 
+        ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
         for nk in range(nsize):
             for n in range(nawf):
                 for m in range(nawf):
                     if m!= n:
-                        Om_znkaux[nk,n] += -2.0*np.imag(pksaux[nk,0,n,m,0]*pksaux[nk,1,m,n,0]) / \
+                        Om_znkaux[nk,n] += -2.0*np.imag(pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]- pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]) / \
                         ((E_kaux[nk,m,0] - E_kaux[nk,n,0])**2 + delta**2)
         comm.Barrier()
         comm.Gather(Om_znkaux,Om_znk_split,root=0)
