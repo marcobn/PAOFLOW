@@ -518,7 +518,7 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    Om_zk,ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,1,nthread,npool)
+    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,nthread,npool)
 
     alat *= ANGSTROM_AU
 
