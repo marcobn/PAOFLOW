@@ -39,7 +39,7 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
     nbnds_tb = nawf
     E_k = np.zeros((nkpnts,nbnds_tb),dtype=float)
     v_k = np.zeros((nkpnts,nbnds_tb,nbnds_tb),dtype=complex)
-    E_kaux = np.zeros((nbnds_tb,nkpnts,nspin))
+    index = np.zeros((nkpnts,nbnds_tb),dtype=int)
 
     for ik in range(nkpnts):
         if read_S:
@@ -48,7 +48,6 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
             eigval,eigvec = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[ik,:] = np.real(eigval)
         v_k[ik,:,:] = eigvec
-        E_kaux[:,ik,ispin] = np.sort(np.real(eigval))
 
     if rank == 0:
         ipad = False
@@ -56,13 +55,13 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
             f=open('bands_'+str(ispin)+'.dat','w')
             for ik in range(nkpnts):
                 for nb in range(nawf):
-                    f.write('%3d  %.5f \n' %(ik,E_kaux[nb,ik,ispin]))
+                    f.write('%3d  %.5f \n' %(ik,E_k[ik,nb]))
             f.close()
         else:
             f=open('bands_'+str(ispin)+'.dat','w')
             for ik in range(nkpnts):
                 s="%d\t"%ik
-                for  j in E_kaux[:,ik,ispin]:s += "%3.5f\t"%j
+                for  j in E_k[ik,:]:s += "%3.5f\t"%j
                 s+="\n"
                 f.write(s)
             f.close()
