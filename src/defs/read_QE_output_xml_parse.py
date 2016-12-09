@@ -36,8 +36,7 @@ size = comm.Get_size()
 #units
 Ry2eV   = 13.60569193
 
-verbose = False
-def read_QE_output_xml(fpath,non_ortho):
+def read_QE_output_xml(fpath,verbose,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
     read_S = False

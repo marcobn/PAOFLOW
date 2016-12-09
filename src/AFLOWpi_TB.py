@@ -93,19 +93,18 @@ if rank == 0:
 #----------------------
 # Initialize n. of threads for multiprocessing (FFTW)
 #----------------------
-#nthread = multiprocessing.cpu_count()
+nthread = multiprocessing.cpu_count()
 #nthread = size
-nthread = 36
 
 #----------------------
 # Read input and DFT data
 #----------------------
 input_file = str(sys.argv[1])
 
-non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
+verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
-        lambda_p, lambda_d, Berry, npool = read_input(input_file)
+        lambda_p, lambda_d, Berry, npool, band_topology= read_input(input_file)
 
 if size >  1:
     if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
@@ -114,12 +113,10 @@ else:
     if rank == 0: print('serial execution')
 if rank == 0: print('   ')
 
-verbose = False
-
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath, verbose, non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -259,7 +256,6 @@ if do_bands and not(onedim):
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
     E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
 
-    band_topology = True
     if band_topology:
         # Compute the velocity and momentum operators along the path in the IBZ
         from do_velocity_calc import *
@@ -524,7 +520,7 @@ if Berry:
 
     if rank == 0:
         f=open('ahc.dat','w')
-        ahc *= EVTORY*AU_TO_OHMCMM1
+        ahc *= AU_TO_OHMCMM1
         f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
         f.close()
 
