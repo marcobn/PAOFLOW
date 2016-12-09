@@ -39,8 +39,8 @@ import pyfftw.interfaces.scipy_fftpack as sciFFTW
 import multiprocessing
 
 # Define paths
-sys.path.append('./')
-sys.path.append('/home/marco/Programs/AFLOWpi_TB/src/defs')
+sys.path.append(sys.path[0]+'/defs')
+
 # Import TB specific functions
 from read_input import *
 from build_Pn import *
