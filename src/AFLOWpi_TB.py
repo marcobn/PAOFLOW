@@ -522,7 +522,7 @@ if Berry:
     if rank == 0:
         f=open('ahc.dat','w')
         #ahc *= AU_TO_OHMCMM1
-        ahc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
         f.close()
 
