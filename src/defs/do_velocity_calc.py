@@ -74,13 +74,15 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
 
     # Compute Berry curvature
     ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
-    deltab = 0.01
+    deltab = 0.05
     Om_znk = np.zeros((nkpi,nawf),dtype=float)
     Om_zk = np.zeros((nkpi),dtype=float)
     for ik in range(nkpi):
         for n in range(nawf):
             for m in range(nawf):
                 if m!= n:
+                    #Om_znk[ik,n] += -2.0*np.imag(pks[ik,2,n,m,0]*pks[ik,1,m,n,0]) / \
+                    #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                     Om_znk[ik,n] += -2.0*np.imag(pks[ik,2,n,m,0]*pks[ik,1,m,n,0]-pks[ik,1,n,m,0]*pks[ik,2,m,n,0]) / \
                     ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
         Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K

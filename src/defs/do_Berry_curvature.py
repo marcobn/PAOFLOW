@@ -44,7 +44,7 @@ size = comm.Get_size()
 
 def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,nthread,npool):
     #----------------------
-    # Compute Berry curvature on a selected path in the BZ
+    # Compute Berry curvature
     #----------------------
 
     index = None
@@ -93,12 +93,13 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         comm.Scatter(E_k_long,E_kaux,root=0)
 
         ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
-        deltap = 0.01
+        ########     Here we enforce explicitly the antisymmetry of the conductivity tensor to minimize convergence errors.
+        deltap = 0.05
         for nk in range(nsize):
             for n in range(nawf):
                 for m in range(nawf):
                     if m!= n:
-                        Om_znkaux[nk,n] += -2.0*np.imag(pksaux[nk,2,n,m,0]*pksaux[nk,1,m,n,0]- pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]) / \
+                        Om_znkaux[nk,n] += -1.0*np.imag(pksaux[nk,2,n,m,0]*pksaux[nk,1,m,n,0]- pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]) / \
                         ((E_kaux[nk,m,0] - E_kaux[nk,n,0])**2 + deltap**2)
         comm.Barrier()
         comm.Gather(Om_znkaux,Om_znk_split,root=0)
