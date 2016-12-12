@@ -55,17 +55,17 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
         scipy = False
-        for ispin in range(nspin):
+        for ispin in xrange(nspin):
             if not scipy:
-                for i in range(nawf):
-                    for j in range(nawf):
+                for i in xrange(nawf):
+                    for j in xrange(nawf):
                         aux = HRaux[i,j,:,:,:,ispin]
                         fft = pyfftw.FFTW(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3),Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
                                 flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         Hksp[:,:,:,i,j,ispin] = fft()
             else:
-                for i in range(nawf):
-                    for j in range(nawf):
+                for i in xrange(nawf):
+                    for j in xrange(nawf):
                         aux = HRaux[i,j,:,:,:,ispin]
                         Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 

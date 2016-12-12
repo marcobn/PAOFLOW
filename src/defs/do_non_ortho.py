@@ -45,33 +45,33 @@ def do_non_ortho(Hks,Sks):
         saux = np.zeros((nawf,nawf,nk1*nk2*nk3),dtype=complex)
         idk = np.zeros((nk1,nk2,nk3),dtype=int)
         nkpnts = 0
-        for i in range(nk1):
-            for j in range(nk2):
-                for k in range(nk3):
+        for i in xrange(nk1):
+            for j in xrange(nk2):
+                for k in xrange(nk3):
                     aux[:,:,nkpnts,:] = Hks[:,:,i,j,k,:]
                     saux[:,:,nkpnts] = Sks[:,:,i,j,k]
                     idk[i,j,k] = nkpnts
                     nkpnts += 1
 
         S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-        for ik in range(nkpnts):
+        for ik in xrange(nkpnts):
             w, v = LAN.eigh(saux[:,:,ik],UPLO='U')
             #w, v = LA.eigh(saux[:,:,ik])
             w = np.sqrt(w)
-            for j in range(nawf):
-                for i in range(nawf):
+            for j in xrange(nawf):
+                for i in xrange(nawf):
                     S2k[i,j,ik] = v[i,j]*w[j]
             S2k[:,:,ik] = S2k[:,:,ik].dot(np.conj(v).T)
 
         Hks_no = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
-        for ispin in range(nspin):
-            for ik in range(nkpnts):
+        for ispin in xrange(nspin):
+            for ik in xrange(nkpnts):
                 Hks_no[:,:,ik,ispin] = S2k[:,:,ik].dot(aux[:,:,ik,ispin]).dot(S2k[:,:,ik])
 
         aux = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-        for i in range(nk1):
-            for j in range(nk2):
-                for k in range(nk3):
+        for i in xrange(nk1):
+            for j in xrange(nk2):
+                for k in xrange(nk3):
                     aux[:,:,i,j,k,:]=Hks_no[:,:,idk[i,j,k],:]
         return(aux)
 
@@ -81,17 +81,17 @@ def do_non_ortho(Hks,Sks):
         nkpnts = Hks.shape[2]
         nspin = Hks.shape[3]
         S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-        for ik in range(nkpnts):
+        for ik in xrange(nkpnts):
             w, v = LAN.eigh(Sks[:,:,ik],UPLO='U')
             #w, v = LA.eigh(Sks[:,:,ik])
             w = np.sqrt(w)
-            for j in range(nawf):
-                for i in range(nawf):
+            for j in xrange(nawf):
+                for i in xrange(nawf):
                     S2k[i,j,ik] = v[i,j]*w[j]
             S2k[:,:,ik] = S2k[:,:,ik].dot(np.conj(v).T)
 
         Hks_no = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
-        for ispin in range(nspin):
-            for ik in range(nkpnts):
+        for ispin in xrange(nspin):
+            for ik in xrange(nkpnts):
                 Hks_no[:,:,ik,ispin] = S2k[:,:,ik].dot(Hks[:,:,ik,ispin]).dot(S2k[:,:,ik])
         return(Hks_no)

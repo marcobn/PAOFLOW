@@ -29,9 +29,9 @@ def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
     K_wght /= nktot
     idk = np.zeros((nk1,nk2,nk3),dtype=int)
 
-    for i in range(nk1):
-        for j in range(nk2):
-            for k in range(nk3):
+    for i in xrange(nk1):
+        for j in xrange(nk2):
+            for k in xrange(nk3):
                 n = k + j*nk3 + i*nk2*nk3
                 Rx = float(i)/float(nk1)
                 Ry = float(j)/float(nk1)

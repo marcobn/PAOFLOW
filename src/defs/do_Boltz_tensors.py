@@ -102,18 +102,18 @@ def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
 
     L = np.zeros((3,3,ene.size),dtype=float)
 
-    for n in range(velkp.shape[2]):
+    for n in xrange(velkp.shape[2]):
         Eaux = (E_k[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - ene
-        for i in range(3):
-            for j in range(3):
+        for i in xrange(3):
+            for j in xrange(3):
                 L[i,j,:] += np.sum((1.0/temp * kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
                 1.0/2.0 * (1.0/(1.0+np.cosh(Eaux[:,:]/temp)) * np.power(Eaux[:,:],alpha)).T),axis=1)
 
 #   # Old way of doing loops
-#   for nk in range(end_ik-ini_ik):
-#       for n in range(velkp.shape[2]):
-#           for i in range(3):
-#               for j in range(3):
+#   for nk in xrange(end_ik-ini_ik):
+#       for n in xrange(velkp.shape[2]):
+#           for i in xrange(3):
+#               for j in xrange(3):
 #                   L[i,j,:] += 1.0/temp * kq_wght[0]*velkp[nk,i,n,ispin]*velkp[nk,j,n,ispin] * \
 #                   1.0/2.0 * 1.0/(1.0+np.cosh((E_k[nk,n,ispin]-ene[:])/temp)) * pow((E_k[nk,n,ispin]-ene[:]),alpha)
 

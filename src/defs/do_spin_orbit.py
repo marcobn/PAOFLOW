@@ -52,7 +52,7 @@ def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
 
     M=9
     nt=natoms
-    for n in range(nt):
+    for n in xrange(nt):
         i=n*M
         j=(n+1)*M
         # Up-Up

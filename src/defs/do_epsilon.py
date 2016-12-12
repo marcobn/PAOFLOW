@@ -110,14 +110,14 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
 
     # Collapsing the sum over k points - FASTEST
-    for n in range(nawf):
+    for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        for m in range(nawf):
+        for m in xrange(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
                 np.exp(-((((E_k[:,n,ispin]-E_k[:,m,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T + ene)/delta)**2)
-            for j in range(3):
-                for i in range(3):
+            for j in xrange(3):
+                for i in xrange(3):
                     epsi[i,j,:] += np.sum(((1.0/(ene**2+delta**2) * \
                                    kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
                                    abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])),axis=1)
@@ -129,24 +129,24 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
 #   deigen = eigen - np.transpose(eigen,axes=(2,1,0))
 #   dfunc = 1.0/np.sqrt(np.pi)* \
 #       np.exp(-(((deigen*np.ones((nawf,end_ik-ini_ik,nawf,ene.size),dtype=float).T).T + ene)/delta)**2)
-#   for j in range(3):
-#       for i in range(3):
+#   for j in xrange(3):
+#       for i in xrange(3):
 #           epsi[i,j,:] = np.sum(((1.0/(ene**2+delta**2) * \
 #                          kq_wght[0] /delta * dfunc * (dfermi*np.ones((nawf,end_ik-ini_ik,nawf,ene.size),dtype=float).T).T).T* \
 #                          np.transpose(abs(pksp[:,i,:,:,ispin] * np.transpose(pksp[:,j,:,:,ispin],axes=(0,2,1))),axes=(1,0,2))),axis=(1,2,3))
 
 #   # Old way to do loops - AS IN WanT, SLOOOOOOW
-#   for nk in range(end_ik-ini_ik):
-#       for n in range(nawf):
+#   for nk in xrange(end_ik-ini_ik):
+#       for n in xrange(nawf):
 #           arg2 = E_k[nk,n,ispin]/temp
 #           raux2 = 1.0/(np.exp(arg2)+1)
-#           for m in range(nawf):
+#           for m in xrange(nawf):
 #               arg3 = E_k[nk,m,ispin]/temp
 #               raux3 = 1.0/(np.exp(arg3)+1)
 #               arg[:] = (ene[:] - ((E_k[nk,m,ispin]-E_k[nk,n,ispin])))/delta
 #               raux[:] = 1.0/np.sqrt(np.pi)*np.exp(-arg[:]**2)
-#               for j in range(3):
-#                   for i in range(3):
+#               for j in xrange(3):
+#                   for i in xrange(3):
 #                       epsi[i,j,:] += 1.0/(ene[:]**2+delta**2) * \
 #                               kq_wght[nk] /delta * raux[:] * (raux2 - raux3) * \
 #                               abs(pksp[nk,i,n,m,ispin] * pksp[nk,j,m,n,ispin])
@@ -160,9 +160,9 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi):
     epsr = np.zeros((3,3,ene.size),dtype=float)
     de = ene[1]-ene[0]
 
-    for ie in range(ini_ie,end_ie):
-        for i in range(3):
-            for j in range(3):
+    for ie in xrange(ini_ie,end_ie):
+        for i in xrange(3):
+            for j in xrange(3):
                 epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
                                np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
 

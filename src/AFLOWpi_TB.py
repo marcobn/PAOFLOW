@@ -32,6 +32,8 @@ from scipy import linalg as LA
 from numpy import linalg as LAN
 import xml.etree.ElementTree as ET
 import numpy as np
+#import numexpr as ne
+import mkl
 import sys, time
 from mpi4py import MPI
 import pyfftw
@@ -94,7 +96,7 @@ if rank == 0:
 # Initialize n. of threads for multiprocessing (FFTW)
 #----------------------
 nthread = multiprocessing.cpu_count()
-#nthread = size
+#ne.set_num_threads(nthread)
 
 #----------------------
 # Read input and DFT data
@@ -120,7 +122,7 @@ if (not non_ortho):
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
-    for ik in range(nkpnts):
+    for ik in xrange(nkpnts):
         Sks[:,:,ik]=np.identity(nawf)
     if rank == 0 and verbose: print('...using orthogonal algorithm')
 else:
@@ -142,7 +144,7 @@ if rank == 0 and verbose: print('Projectability vector ',Pn)
 # Check projectability and decide bnd
 
 bnd = 0
-for n in range(nbnds):
+for n in xrange(nbnds):
     if Pn[n] > pthr:
         bnd += 1
 if rank == 0 and verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
@@ -265,10 +267,10 @@ if do_bands and not(onedim):
         Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
         HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
         dHRs  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-        for l in range(3):
-            for ispin in range(nspin):
-                for n in range(nawf):
-                    for m in range(nawf):
+        for l in xrange(3):
+            for ispin in xrange(nspin):
+                for n in xrange(nawf):
+                    for m in xrange(nawf):
                         dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
         # Compute dH(k)/dk on the path
         pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
@@ -276,12 +278,12 @@ if do_bands and not(onedim):
 
         if rank == 0:
             velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
-            for n in range(nawf):
+            for n in xrange(nawf):
                 velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
-            for ispin in range(nspin):
-                for l in range(3):
+            for ispin in xrange(nspin):
+                for l in xrange(3):
                     f=open('velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
-                    for ik in range(nkpi):
+                    for ik in xrange(nkpi):
                         s="%d\t"%ik
                         for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
                         s+="\n"
@@ -352,7 +354,7 @@ if do_dos or Boltzmann or epsilon or Berry:
     v_k = None
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-    for ispin in range(nspin):
+    for ispin in xrange(nspin):
         eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
@@ -416,10 +418,10 @@ if rank == 0:
             Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
             HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
             dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
-            for l in range(3):
-                for ispin in range(nspin):
-                    for n in range(nawf):
-                        for m in range(nawf):
+            for l in xrange(3):
+                for ispin in xrange(nspin):
+                    for n in xrange(nawf):
+                        for m in xrange(nawf):
                             dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
             dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
             # Compute dH(k)/dk
@@ -431,9 +433,9 @@ if rank == 0:
             _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
             HRaux  = np.zeros_like(Hksp)
-            for ispin in range(nspin):
-                for n in range(nawf):
-                    for m in range(nawf):
+            for ispin in xrange(nspin):
+                for n in xrange(nawf):
+                    for m in xrange(nawf):
                         fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
                               flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         HRaux[:,:,:,n,m,ispin] = fft()
@@ -443,19 +445,24 @@ if rank == 0:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
             HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-            for l in range(3):
+            for l in xrange(3):
+                #aux1 = np.zeros(nk1*nk2*nk3,dtype=float)
+                #aux1 = Rfft[:,l]
                 # Compute R*H(R)
                 dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
-                for ispin in range(nspin):
-                    for n in range(nawf):
-                        for m in range(nawf):
+                for ispin in xrange(nspin):
+                    for n in xrange(nawf):
+                        for m in xrange(nawf):
+                            #aux2 = np.zeros(nk1*nk2*nk3,dtype=complex)
+                            #aux2 = HRaux[:,n,m,ispin]
+                            #dHRaux[:,l,n,m,ispin] = ne.evaluate('1.0j*alat*aux1*aux2')
                             dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
                 dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
 
                 # Compute dH(k)/dk
-                for ispin in range(nspin):
-                    for n in range(nawf):
-                        for m in range(nawf):
+                for ispin in xrange(nspin):
+                    for n in xrange(nawf):
+                        for m in xrange(nawf):
                             fft = pyfftw.FFTW(dHRaux[:,:,:,l,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
                             direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                             dHksp[:,:,:,l,n,m,ispin] = fft()
@@ -502,7 +509,7 @@ if rank == 0:
         # Compute velocities for Boltzmann transport
         #----------------------
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
-        for n in range(nawf):
+        for n in xrange(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
 if Berry:
@@ -536,7 +543,7 @@ if Boltzmann:
     from do_Boltz_tensors import *
     temp = 0.025852  # set room temperature in eV
 
-    for ispin in range(nspin):
+    for ispin in xrange(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
 
         #----------------------
@@ -547,7 +554,7 @@ if Boltzmann:
               (ELECTRONVOLT_SI/(H_OVER_TPI**2*BOHR_RADIUS_SI))*1.0e-21
         if rank == 0:
             f=open('sigma_'+str(ispin)+'.dat','w')
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                     %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
             f.close()
@@ -562,11 +569,11 @@ if Boltzmann:
         L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
         if rank == 0:
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
 
             f=open('Seebeck_'+str(ispin)+'.dat','w')
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                         %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
             f.close()
@@ -580,11 +587,11 @@ if Boltzmann:
         L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
         if rank == 0:
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
 
             f=open('kappa_'+str(ispin)+'.dat','w')
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                         %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
             f.close()
@@ -611,18 +618,18 @@ if epsilon:
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-    for ispin in range(nspin):
+    for ispin in xrange(nspin):
 
         ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin)
 
         if rank == 0:
             f=open('epsi_'+str(ispin)+'.dat','w')
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                         %(ene[n],epsi[0,0,n],epsi[1,1,n],epsi[2,2,n],epsi[0,1,n],epsi[0,2,n],epsi[1,2,n]))
             f.close()
             f=open('epsr_'+str(ispin)+'.dat','w')
-            for n in range(ene.size):
+            for n in xrange(ene.size):
                 f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                         %(ene[n],epsr[0,0,n],epsr[1,1,n],epsr[2,2,n],epsr[0,1,n],epsr[0,2,n],epsr[1,2,n]))
             f.close()

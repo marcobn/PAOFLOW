@@ -52,7 +52,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
 
     dos = np.zeros((ene.size),dtype=float)
 
-    for ne in range(ene.size):
+    for ne in xrange(ene.size):
 
         dossum = np.zeros(1,dtype=float)
         aux = np.zeros(nsize,dtype=float)
@@ -68,7 +68,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
 
     if rank == 0:
         f=open('dos_'+str(ispin)+'.dat','w')
-        for ne in range(ene.size):
+        for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 

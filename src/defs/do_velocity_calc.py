@@ -50,7 +50,7 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
     nkpi=kq.shape[1]
-    for n in range(nkpi):
+    for n in xrange(nkpi):
         kq[:,n]=kq[:,n].dot(b_vectors)
 
     # Load balancing
@@ -66,9 +66,9 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
 
     # Compute momenta
     pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-    for ik in range(nkpi):
-        for ispin in range(nspin):
-            for l in range(3):
+    for ik in xrange(nkpi):
+        for ispin in xrange(nspin):
+            for l in xrange(3):
                 pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
                             (dHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
 
@@ -77,9 +77,9 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
     deltab = 0.05
     Om_znk = np.zeros((nkpi,nawf),dtype=float)
     Om_zk = np.zeros((nkpi),dtype=float)
-    for ik in range(nkpi):
-        for n in range(nawf):
-            for m in range(nawf):
+    for ik in xrange(nkpi):
+        for n in xrange(nawf):
+            for m in xrange(nawf):
                 if m!= n:
                     #Om_znk[ik,n] += -2.0*np.imag(pks[ik,2,n,m,0]*pks[ik,1,m,n,0]) / \
                     #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
@@ -89,7 +89,7 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
 
     if rank == 0:
         f=open('Omega_z'+'.dat','w')
-        for ik in range(nkpi):
+        for ik in xrange(nkpi):
             f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
         f.close()
 
@@ -99,9 +99,9 @@ def band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R):
 
     auxh = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
 
-    for ik in range(ini_ik,end_ik):
-        for ispin in range(nspin):
-            for l in range(3):
+    for ik in xrange(ini_ik,end_ik):
+        for ispin in xrange(nspin):
+            for l in xrange(3):
                 auxh[l,:,:,ik,ispin] = np.sum(dHRaux[l,:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)

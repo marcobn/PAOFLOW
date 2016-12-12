@@ -163,7 +163,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
                     my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
                 else:
-                    for ispin in range(nspin):
+                    for ispin in xrange(nspin):
                         eigk_type=elem.findall("EIG.%d"%(ispin+1))[0].attrib['type']
                         eigk_file=np.array(elem.findall("EIG.%d"%(ispin+1))[0].text.split(),dtype='float32')
                         my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef

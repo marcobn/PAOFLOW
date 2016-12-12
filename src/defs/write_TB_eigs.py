@@ -41,7 +41,7 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
     v_k = np.zeros((nkpnts,nbnds_tb,nbnds_tb),dtype=complex)
     index = np.zeros((nkpnts,nbnds_tb),dtype=int)
 
-    for ik in range(nkpnts):
+    for ik in xrange(nkpnts):
         if read_S:
             eigval,eigvec = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
         else:
@@ -53,13 +53,13 @@ def write_TB_eigs(Hks,Sks,read_S,ispin):
         ipad = False
         if ipad:
             f=open('bands_'+str(ispin)+'.dat','w')
-            for ik in range(nkpnts):
-                for nb in range(nawf):
+            for ik in xrange(nkpnts):
+                for nb in xrange(nawf):
                     f.write('%3d  %.5f \n' %(ik,E_k[ik,nb]))
             f.close()
         else:
             f=open('bands_'+str(ispin)+'.dat','w')
-            for ik in range(nkpnts):
+            for ik in xrange(nkpnts):
                 s="%d\t"%ik
                 for  j in E_k[ik,:]:s += "%3.5f\t"%j
                 s+="\n"

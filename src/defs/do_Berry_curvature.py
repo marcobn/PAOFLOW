@@ -66,7 +66,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     else:
         Om_znk = None
 
-    for pool in range(npool):
+    for pool in xrange(npool):
         if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
         nkpool = nk1*nk2*nk3/npool
 
@@ -95,9 +95,9 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
         ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
         ########     Here we enforce explicitly the antisymmetry of the conductivity tensor to minimize convergence errors.
         deltap = 0.05
-        for nk in range(nsize):
-            for n in range(nawf):
-                for m in range(nawf):
+        for nk in xrange(nsize):
+            for n in xrange(nawf):
+                for m in xrange(nawf):
                     if m!= n:
                         Om_znkaux[nk,n] += -1.0*np.imag(pksaux[nk,2,n,m,0]*pksaux[nk,1,m,n,0]- pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]) / \
                         ((E_kaux[nk,m,0] - E_kaux[nk,n,0])**2 + deltap**2)
@@ -129,7 +129,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_ve
     comm.Scatter(Om_zk,Om_zkaux,root= 0)
     comm.Scatter(E_k,E_kaux,root= 0)
 
-    for nk in range(nsize):
+    for nk in xrange(nsize):
         Om_zkaux[nk] = np.sum(Om_znkaux[nk,:]*(0.5 * (-np.sign(E_kaux[nk,:,0]) + 1)))  # T=0.0K
 
     comm.Barrier()

@@ -25,8 +25,8 @@ import numpy as np
 
 def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
     Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
-    for ispin in range(nspin):
-        for ik in range(nkpnts):
+    for ispin in xrange(nspin):
+        for ik in xrange(nkpnts):
             my_eigs=my_eigsmat[:,ik,ispin]
             #Building the Hamiltonian matrix
             E = np.diag(my_eigs)
@@ -36,10 +36,10 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
             eta=shift
             # Choose only the eigenvalues that are below the energy shift
             bnd_ik=0
-            for n in range(bnd):
+            for n in xrange(bnd):
                 if my_eigs[n] <= eta:
                     bnd_ik += 1
-            if bnd_ik == 0: sys.exit('no eigenvalues in selected energy range')
+            if bnd_ik == 0: sys.exit('no eigenvalues in selected energy xrange')
             ac = UU[:,:bnd_ik]  # filtering: bnd is defined by the projectabilities
             ee1 = E[:bnd_ik,:bnd_ik]
             #if bnd == nbnds:

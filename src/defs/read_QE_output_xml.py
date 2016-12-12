@@ -141,7 +141,7 @@ def read_QE_output_xml(fpath,non_ortho):
 
     if rank == 0:
         U[:,:,:,:]=Uaux[:,:,:,:,0]
-        for i in range(1,size):
+        for i in xrange(1,size):
             comm.Recv(Uaux1,ANY_SOURCE)
             U[:,:,:,:] += Uaux1[:,:,:,:,0]
     else:
@@ -152,7 +152,7 @@ def read_QE_output_xml(fpath,non_ortho):
 
     if rank == 0:
         my_eigsmat[:,:,:]=my_eigsmataux[:,:,:,0]
-        for i in range(1,size):
+        for i in xrange(1,size):
             comm.Recv(my_eigsmataux1,ANY_SOURCE)
             my_eigsmat[:,:,:] += my_eigsmataux1[:,:,:,0]
     else:
@@ -164,7 +164,7 @@ def read_QE_output_xml(fpath,non_ortho):
 
     if non_ortho:
         Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-        for ik in range(nkpnts):
+        for ik in xrange(nkpnts):
             #There will be nawf projections. Each projector of size nbnds x 1
             ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
             aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
@@ -191,8 +191,8 @@ def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
     my_eigsmat_p = np.zeros((nbnds,nkpnts,nspin))
 
-    for ik in range(ini_ik,end_ik):
-        for ispin in range(nspin):
+    for ik in xrange(ini_ik,end_ik):
+        for ispin in xrange(nspin):
         #Reading eigenvalues
             if nspin==1:
                 eigk_type=root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].attrib['type']
@@ -213,10 +213,10 @@ def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
     U_p = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
 
-    for ik in range(ini_ik,end_ik):
-        for ispin in range(nspin):
+    for ik in xrange(ini_ik,end_ik):
+        for ispin in xrange(nspin):
             #Reading projections
-            for iin in range(nawf): #There will be nawf projections. Each projector of size nbnds x 1
+            for iin in xrange(nawf): #There will be nawf projections. Each projector of size nbnds x 1
                 if nspin==1:
                     wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].attrib['type']
                     aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].text

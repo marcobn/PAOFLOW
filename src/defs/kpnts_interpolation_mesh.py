@@ -94,7 +94,7 @@ def free2abc(cellparamatrix,cosine=True,degrees=True,string=True,bohr=False):
         paramArray = [a,b,c,cosBC,cosAC,cosAB]
 
         param_list=[]
-        for v in range(len(paramArray)):
+        for v in xrange(len(paramArray)):
             param_list.append(float('%10.5e'%np.around(paramArray[v],decimals=5)))
         paramArray=tuple(param_list)
 
@@ -109,7 +109,7 @@ def free2abc(cellparamatrix,cosine=True,degrees=True,string=True,bohr=False):
         paramArray = (a,b,c,alpha,beta,gamma)
 
         param_list=[]
-        for v in range(len(paramArray)):
+        for v in xrange(len(paramArray)):
             param_list.append(float('%10.5e'%np.around(paramArray[v],decimals=5)))
         paramArray=tuple(param_list)
 
@@ -983,7 +983,7 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,dk):
         point1 = None
         point2 = None
 
-        for index2 in range(len(a)-1):
+        for index2 in xrange(len(a)-1):
             try:
                 point1 = a[index2]
                 point2 = a[index2+1]

@@ -61,7 +61,7 @@ def do_momentum(vec,dHksp,npool):
         dHksp = None
         pksp = None
 
-    for pool in range(npool):
+    for pool in xrange(npool):
         if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
         nkpool = nktot/npool
 
@@ -88,9 +88,9 @@ def do_momentum(vec,dHksp,npool):
         comm.Scatter(pks_split,pksaux,root=0)
         comm.Scatter(vec_split,vecaux,root=0)
 
-        for ik in range(nsize):
-            for ispin in range(nspin):
-                for l in range(3):
+        for ik in xrange(nsize):
+            for ispin in xrange(nspin):
+                for l in xrange(3):
                     pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                 (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
