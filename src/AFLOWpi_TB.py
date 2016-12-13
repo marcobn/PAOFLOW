@@ -517,23 +517,34 @@ if Berry:
     # Compute Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
     #----------------------
     from do_Berry_curvature import *
+    from do_Berry_conductivity import *
 
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,nthread,npool)
+    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool)
+    ene,sigxy = do_Berry_conductivity(E_k,pksp,kq_wght,delta,temp,ispin)
 
     alat *= ANGSTROM_AU
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     if rank == 0:
         f=open('ahc.dat','w')
-        #ahc *= AU_TO_OHMCMM1
         ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
         f.close()
 
-    if rank == 0: print('Berry curvature in               %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f=open('sigxyi.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n])))
+        f.close()
+        f=open('sigxyr.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
+        f.close()
+
+    if rank == 0: print('Berry module in               %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if Boltzmann:

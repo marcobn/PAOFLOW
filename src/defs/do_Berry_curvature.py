@@ -42,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,delta,temp,ibrav,alat,a_vectors,b_vectors,dkres,nthread,npool):
+def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool):
     #----------------------
     # Compute Berry curvature
     #----------------------
