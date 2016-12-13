@@ -522,8 +522,9 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool)
-    ene,sigxy = do_Berry_conductivity(E_k,pksp,kq_wght,delta,temp,ispin)
+    #ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool)
+    ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool)
+    ahc = np.real(sigxy[0])
 
     alat *= ANGSTROM_AU
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))

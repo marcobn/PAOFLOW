@@ -42,10 +42,10 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_conductivity(E_k,pksp,kq_wght,delta,temp,ispin):
-    # Compute the optcal conductivity tensor sigma_xy(ene)
+def do_Berry_conductivity(E_k,pksp,temp,ispin,npool):
+    # Compute the optical conductivity tensor sigma_xy(ene)
 
-    emin = 0.1 # To be read in input
+    emin = 0.0 # To be read in input
     emax = 10.0
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
@@ -62,32 +62,43 @@ def do_Berry_conductivity(E_k,pksp,kq_wght,delta,temp,ispin):
     nawf = index['nawf']
     nspin = index['nspin']
 
-    # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,nktot)
-    nsize = end_ik-ini_ik
-
-    kq_wghtaux = np.zeros(nsize,dtype=float)
-    pkspaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype=complex)
-    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
-
-    comm.Barrier()
-    comm.Scatter(pksp,pkspaux,root=0)
-    comm.Scatter(E_k,E_kaux,root=0)
-    comm.Scatter(kq_wght,kq_wghtaux,root=0)
-
-    #=======================
-    # Im
-    #=======================
     sigxy = np.zeros((ene.size),dtype=complex)
-    sigxy_aux = np.zeros((ene.size),dtype=complex)
+    sigxy_sum = np.zeros((ene.size),dtype=complex)
 
-    sigxy_aux[:] = sigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,delta,temp,ispin)
+    for pool in xrange(npool):
 
-    comm.Allreduce(sigxy_aux,sigxy,op=MPI.SUM)
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        nkpool = nktot/npool
+
+        if rank == 0:
+            pksp_long = np.array_split(pksp,npool,axis=0)[pool]
+            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
+        else:
+            pksp_long = None
+            E_k_long = None
+
+        # Load balancing
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik-ini_ik
+
+        pkspaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype=complex)
+        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+        sigxy_aux = np.zeros((ene.size),dtype=complex)
+
+        comm.Barrier()
+        comm.Scatter(pksp_long,pkspaux,root=0)
+        comm.Scatter(E_k_long,E_kaux,root=0)
+
+        sigxy_aux[:] = sigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin)
+
+        comm.Allreduce(sigxy_aux,sigxy_sum,op=MPI.SUM)
+        sigxy += sigxy_sum
+
+    sigxy /= float(nktot)
 
     return(ene,sigxy)
 
-def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,delta,temp,ispin):
+def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin):
 
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
@@ -100,7 +111,7 @@ def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,delta,temp,ispin):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
             sigxy[:] += np.sum(((1.0/func * \
-                        kq_wght[0] * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
+                        ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
                         np.imag(pksp[:,2,n,m,0]*pksp[:,1,m,n,0]-pksp[:,1,n,m,0]*pksp[:,2,m,n,0])
                         ),axis=1)
 
