@@ -1,5 +1,5 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
 # Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO 
 #
@@ -69,10 +69,12 @@ E2               = 2.0 # e^2
 
 # Logos
 AFLOW = 'AFLOW'
+PAO = 'PAO'
 p = u"\u03C0"
 pp = p.encode('utf8')
 TB = '(TB)'
 AFLOWPITB = str(AFLOW)+str(pp)+str(TB)
+PAOPY = str(PAO)+str(pp)
 
 C = u"\u00A9"
 CC = C.encode('utf8')

@@ -1,7 +1,7 @@
 #
-# AFLOWpi(TB)
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital basis (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -83,10 +83,10 @@ if rank == 0:
     print('          ')
     print('#############################################################################################')
     print('#                                                                                           #')
-    print('#                                       ',AFLOWPITB,'                                        #')
+    print('#                                          ',PAOPY,'                                           #')
     print('#                                                                                           #')
-    print('#                 Utility to construct and operate on TB Hamiltonians from                  #')
-    print('#               the projections of DFT wfc on the pseudoatomic orbital basis                #')
+    print('#                  Utility to construct and operate on Hamiltonians from                    #')
+    print('#                 the Projections of DFT wfc on Atomic Orbital basis (PAO)                  #')
     print('#                                                                                           #')
     print('#                        ',str('%1s' %CC),'2016 ERMES group (http://ermes.unt.edu)                         #')
     print('#############################################################################################')
@@ -256,47 +256,21 @@ if do_bands and not(onedim):
     nkpi=kq.shape[1]
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+    # Compute the bands along the path in the IBZ
     E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
-
-    if band_topology:
-        # Compute the velocity and momentum operators along the path in the IBZ
-        from do_velocity_calc import *
-        # Compute R*H(R)
-        HRs = FFT.fftshift(HRs,axes=(2,3,4))
-        dHRs  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-        HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-        dHRs  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-        for l in xrange(3):
-            for ispin in xrange(nspin):
-                for n in xrange(nawf):
-                    for m in xrange(nawf):
-                        dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
-        # Compute dH(k)/dk on the path
-        pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-        pks = do_velocity_calc(dHRs[:,:,:,:,:],E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres)
-
-        if rank == 0:
-            velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
-            for n in xrange(nawf):
-                velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
-            for ispin in xrange(nspin):
-                for l in xrange(3):
-                    f=open('velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
-                    for ik in xrange(nkpi):
-                        s="%d\t"%ik
-                        for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
-                        s+="\n"
-                        f.write(s)
-                    f.close()
-
-        HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
-        HRs = FFT.ifftshift(HRs,axes=(2,3,4))
-
-    alat *= ANGSTROM_AU
 
     if rank == 0: print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
+
+    if band_topology:
+        # Compute the velocity, momentum and Berry curvature operators along the path in the IBZ
+        from do_velocity_calc import *
+        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd)
+        if rank == 0: print('band topology in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
+
+
+    alat *= ANGSTROM_AU
 
 elif do_bands and onedim:
     #----------------------
@@ -343,7 +317,7 @@ if rank == 0:
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
         Hksp = Hks
 
-if do_dos or Boltzmann or epsilon or Berry:
+if do_dos or Boltzmann or epsilon or Berry or band_topology:
     #----------------------
     # Compute eigenvalues of the interpolated Hamiltonian
     #----------------------
@@ -399,81 +373,17 @@ if do_dos:
     reset=time.time()
 
 pksp = None
-if rank == 0:
-    if Boltzmann or epsilon or Berry:
+if Boltzmann or epsilon or Berry or band_topology:
+    if rank == 0:
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
-
-        scipy = False
-        if scipy :
-            # fft grid in R shifted to have (0,0,0) in the center
-            _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-
-            HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
-            HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            # Compute R*H(R)
-            dHRaux  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-            Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-            HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-            dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
-            for l in xrange(3):
-                for ispin in xrange(nspin):
-                    for n in xrange(nawf):
-                        for m in xrange(nawf):
-                            dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
-            dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
-            # Compute dH(k)/dk
-            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-            dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[0,1,2])
-            dHraux = None
-        else:
-            # fft grid in R shifted to have (0,0,0) in the center
-            _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-
-            HRaux  = np.zeros_like(Hksp)
-            for ispin in xrange(nspin):
-                for n in xrange(nawf):
-                    for m in xrange(nawf):
-                        fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
-                              flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                        HRaux[:,:,:,n,m,ispin] = fft()
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
-
-            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-            Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-            HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-            for l in xrange(3):
-                #aux1 = np.zeros(nk1*nk2*nk3,dtype=float)
-                #aux1 = Rfft[:,l]
-                # Compute R*H(R)
-                dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
-                for ispin in xrange(nspin):
-                    for n in xrange(nawf):
-                        for m in xrange(nawf):
-                            #aux2 = np.zeros(nk1*nk2*nk3,dtype=complex)
-                            #aux2 = HRaux[:,n,m,ispin]
-                            #dHRaux[:,l,n,m,ispin] = ne.evaluate('1.0j*alat*aux1*aux2')
-                            dHRaux[:,l,n,m,ispin] = 1.0j*alat*Rfft[:,l]*HRaux[:,n,m,ispin]
-                dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
-
-                # Compute dH(k)/dk
-                for ispin in xrange(nspin):
-                    for n in xrange(nawf):
-                        for m in xrange(nawf):
-                            fft = pyfftw.FFTW(dHRaux[:,:,:,l,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
-                            direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                            dHksp[:,:,:,l,n,m,ispin] = fft()
-                dHRaux = None
-
-        HRaux = None
+        from do_gradient import *
+        dHksp = do_gradient(Hksp,a_vectors,alat,nthread)
 
         print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
-if Boltzmann or epsilon or Berry:
     #----------------------
     # Compute the momentum operator p_n,m(k)
     #----------------------
@@ -504,13 +414,27 @@ if Boltzmann or epsilon or Berry:
 
 velkp = None
 if rank == 0:
-    if Boltzmann:
+    if Boltzmann or band_topology:
         #----------------------
         # Compute velocities for Boltzmann transport
         #----------------------
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
         for n in xrange(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
+
+        if band_topology:
+            #----------------------
+            # Find critical points (grad(E_kn)=0)
+            #----------------------
+            f=open('critical_points.dat','w')
+            for ik in xrange(nk1*nk2*nk3):
+                for n in xrange(bnd):
+                    for ipin in xrange(nspin):
+                        if  np.abs(velkp[ik,0,n,ispin]) < 1.e-2 and \
+                            np.abs(velkp[ik,1,n,ispin]) < 1.e-2 and \
+                            np.abs(velkp[ik,2,n,ispin]) < 1.e-2:
+                            f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
+            f.close()
 
 if Berry:
     #----------------------
@@ -545,7 +469,7 @@ if Berry:
             f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
         f.close()
 
-    if rank == 0: print('Berry module in               %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if Boltzmann:

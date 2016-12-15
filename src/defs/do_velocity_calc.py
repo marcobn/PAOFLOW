@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital basis (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -39,13 +39,14 @@ from kpnts_interpolation_mesh import *
 from do_non_ortho import *
 from do_momentum import *
 from load_balancing import *
+from constants import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
+def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd):
     # Compute bands on a selected path in the BZ
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
@@ -53,14 +54,28 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
     for n in xrange(nkpi):
         kq[:,n]=kq[:,n].dot(b_vectors)
 
+    nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
+    # Compute R*H(R)
+    HRs = FFT.fftshift(HRs,axes=(2,3,4))
+    dHRs  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+    HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+    dHRs  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    for l in xrange(3):
+        for ispin in xrange(nspin):
+            for n in xrange(nawf):
+                for m in xrange(nawf):
+                    dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
+
+    # Compute dH(k)/dk on the path
+
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nkpi)
 
-    _,nawf,nawf,nktot,nspin = dHRaux.shape
     dHks  = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
     Hks_aux  = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
 
-    Hks_aux[:,:,:,:,:] = band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R)
+    Hks_aux[:,:,:,:,:] = band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRs,kq,Rfft)
 
     comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
 
@@ -93,7 +108,21 @@ def do_velocity_calc(dHRaux,E_k,v_kp,R,ibrav,alat,a_vectors,b_vectors,dkres):
             f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
         f.close()
 
-    return(pks)
+    if rank == 0:
+        velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
+        for n in xrange(nawf):
+            velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
+        for ispin in xrange(nspin):
+            for l in xrange(3):
+                f=open('velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
+                for ik in xrange(nkpi):
+                    s="%d\t"%ik
+                    for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
+                    s+="\n"
+                    f.write(s)
+                f.close()
+
+    return()
 
 def band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R):
 
