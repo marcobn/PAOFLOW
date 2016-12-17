@@ -175,6 +175,8 @@ def read_input(input_file):
         if re.search('Berry',line):
             p = line.split()
             Berry = p[1]
+            ipol = int(p[2])
+            jpol = int(p[3])
             if Berry == 'False':
                 Berry = False
             else:
@@ -185,6 +187,8 @@ def read_input(input_file):
         if re.search('band_topology',line):
             p = line.split()
             band_topology = p[1]
+            ipol = int(p[2])
+            jpol = int(p[3])
             if band_topology == 'False':
                 band_topology = False
             else:
@@ -194,4 +198,4 @@ def read_input(input_file):
 
     return(verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology)
+            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, ipol,jpol)

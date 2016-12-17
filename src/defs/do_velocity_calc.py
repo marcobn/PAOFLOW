@@ -33,8 +33,6 @@ import sys
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-from write_velocity_eigs import write_velocity_eigs
-#from kpnts_interpolation_mesh import *
 from kpnts_interpolation_mesh import *
 from do_non_ortho import *
 from do_momentum import *
@@ -46,7 +44,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd):
+def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol):
     # Compute bands on a selected path in the BZ
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
@@ -98,7 +96,7 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd)
                 if m!= n:
                     #Om_znk[ik,n] += -2.0*np.imag(pks[ik,2,n,m,0]*pks[ik,1,m,n,0]) / \
                     #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
-                    Om_znk[ik,n] += -2.0*np.imag(pks[ik,2,n,m,0]*pks[ik,1,m,n,0]-pks[ik,1,n,m,0]*pks[ik,2,m,n,0]) / \
+                    Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
                     ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
         Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
 

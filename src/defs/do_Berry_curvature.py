@@ -42,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool):
+def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
     #----------------------
     # Compute Berry curvature
     #----------------------
@@ -99,7 +99,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool):
             for n in xrange(nawf):
                 for m in xrange(nawf):
                     if m!= n:
-                        Om_znkaux[nk,n] += -1.0*np.imag(pksaux[nk,2,n,m,0]*pksaux[nk,1,m,n,0]- pksaux[nk,1,n,m,0]*pksaux[nk,2,m,n,0]) / \
+                        Om_znkaux[nk,n] += -1.0*np.imag(pksaux[nk,jpol,n,m,0]*pksaux[nk,ipol,m,n,0]- pksaux[nk,ipol,n,m,0]*pksaux[nk,jpol,m,n,0]) / \
                         ((E_kaux[nk,m,0] - E_kaux[nk,n,0])**2 + deltap**2)
         comm.Barrier()
         comm.Gather(Om_znkaux,Om_znk_split,root=0)

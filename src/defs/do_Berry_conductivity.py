@@ -42,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_conductivity(E_k,pksp,temp,ispin,npool):
+def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol):
     # Compute the optical conductivity tensor sigma_xy(ene)
 
     emin = 0.0 # To be read in input
@@ -89,7 +89,7 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool):
         comm.Scatter(pksp_long,pkspaux,root=0)
         comm.Scatter(E_k_long,E_kaux,root=0)
 
-        sigxy_aux[:] = sigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin)
+        sigxy_aux[:] = sigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol)
 
         comm.Allreduce(sigxy_aux,sigxy_sum,op=MPI.SUM)
         sigxy += sigxy_sum
@@ -98,7 +98,7 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool):
 
     return(ene,sigxy)
 
-def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin):
+def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol):
 
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
@@ -112,7 +112,7 @@ def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin):
             func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
             sigxy[:] += np.sum(((1.0/func * \
                         ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
-                        np.imag(pksp[:,2,n,m,0]*pksp[:,1,m,n,0]-pksp[:,1,n,m,0]*pksp[:,2,m,n,0])
+                        np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-pksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])
                         ),axis=1)
 
     return(sigxy)

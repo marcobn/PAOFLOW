@@ -203,8 +203,8 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             special_points[k]=tuple(second.tolist())
 
 
-        #default_band_path = 'gG-H-N-gG-P-H|P-N'
-        default_band_path = 'gG-H-P-N-gG-Hp-Np-gG'
+        default_band_path = 'gG-H-N-gG-P-H|P-N'
+        #default_band_path = 'gG-H-P-N-gG-Hp-Np-gG'
         band_path = default_band_path
         return special_points, band_path
 
