@@ -64,11 +64,11 @@ comm=MPI.COMM_WORLD
 size=comm.Get_size()
 if size > 1:
     rank = comm.Get_rank()
-    from read_QE_output_xml_parse import *
+    from read_QE_output_xml import *
 else:
     rank=0
-    from read_QE_output_xml_parse import *
-    #from read_QE_output_xml import *
+    from read_QE_output_xml import *
+    #from read_QE_output_xml_parse import *
 
 #----------------------
 # initialize time
@@ -86,7 +86,7 @@ if rank == 0:
     print('#                                          ',PAOPY,'                                           #')
     print('#                                                                                           #')
     print('#                  Utility to construct and operate on Hamiltonians from                    #')
-    print('#                 the Projections of DFT wfc on Atomic Orbital basis (PAO)                  #')
+    print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
     print('#                                                                                           #')
     print('#                        ',str('%1s' %CC),'2016 ERMES group (http://ermes.unt.edu)                         #')
     print('#############################################################################################')
@@ -148,7 +148,8 @@ for n in xrange(nbnds):
     if Pn[n] > pthr:
         bnd += 1
 if rank == 0 and verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
-if rank == 0 and verbose: print('Range of suggested shift ',min(my_eigsmat[bnd,:,:]),' , ',max(my_eigsmat[bnd,:,:]))
+if rank == 0 and verbose: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
+                                np.amax(my_eigsmat[bnd,:,:]))
 
 #----------------------
 # Building the TB Hamiltonian
