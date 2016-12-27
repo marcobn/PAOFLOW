@@ -37,12 +37,9 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def read_QE_output_xml(fpath,non_ortho):
+def read_QE_output_xml(fpath,verbose,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
-
-    verbose = None
-    verbose == False
 
 # Reading data-file.xml
     tree  = ET.parse(data_file)

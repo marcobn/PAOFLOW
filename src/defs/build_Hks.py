@@ -22,6 +22,7 @@
 #
 from scipy import linalg as LA
 import numpy as np
+import sys
 
 def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
     Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
@@ -39,7 +40,7 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
             for n in xrange(bnd):
                 if my_eigs[n] <= eta:
                     bnd_ik += 1
-            if bnd_ik == 0: sys.exit('no eigenvalues in selected energy xrange')
+            if bnd_ik == 0: sys.exit('no eigenvalues in selected energy range')
             ac = UU[:,:bnd_ik]  # filtering: bnd is defined by the projectabilities
             ee1 = E[:bnd_ik,:bnd_ik]
             #if bnd == nbnds:
