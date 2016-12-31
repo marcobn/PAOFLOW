@@ -98,8 +98,8 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
             for l in xrange(3):
                 for n in range(0,nawf,2):
                     for m in range(0,nawf,2):
-                        jdHks[l,n:(n+1),m:(m+1),ik,ispin] = \
-                            0.5*(np.dot(sz,dHks[l,n:(n+1),m:(m+1),ik,ispin])+np.dot(dHks[l,n:(n+1),m:(m+1),ik,ispin],sz))
+                        jdHks[l,n:(n+2),m:(m+2),ik,ispin] = \
+                            0.5*(np.dot(sz,dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sz))
 
     jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
     for ik in xrange(nkpi):
