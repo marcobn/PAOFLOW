@@ -87,11 +87,10 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
 
     # Compute spin current matrix elements
     spin_current = False
-    # Pauli matrices
-    sx = np.array([[0.0,1.0],[1.0,0.0]])
-    sy = np.array([[0.0,-1.0j],[1.0j,0.0]])
-    sz = np.array([[1.0,0.0],[0.0,-1.0]])
+    # Pauli matrices (x,y,z)
+    sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
 
+    spol = 2
     jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
     for ik in xrange(nkpi):
         for ispin in xrange(nspin):
@@ -99,7 +98,7 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                 for n in range(0,nawf,2):
                     for m in range(0,nawf,2):
                         jdHks[l,n:(n+2),m:(m+2),ik,ispin] = \
-                            0.5*(np.dot(sz,dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sz))
+                            0.5*(np.dot(sP[spol],dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sP[spol]))
 
     jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
     for ik in xrange(nkpi):
@@ -134,7 +133,7 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
         f.close()
         f=open('Omegaj_z'+'.dat','w')
         for ik in xrange(nkpi):
-            f.write('%3d  %.5f \n' %(ik,-Omj_zk[ik]))
+            f.write('%3d  %.5f \n' %(ik,Omj_zk[ik]))
         f.close()
 
     if rank == 0:
