@@ -64,7 +64,7 @@ comm=MPI.COMM_WORLD
 size=comm.Get_size()
 if size > 1:
     rank = comm.Get_rank()
-    from read_QE_output_xml import *
+    from read_QE_output_xml_parse import *
 else:
     rank=0
     from read_QE_output_xml import *
@@ -106,7 +106,8 @@ input_file = str(sys.argv[1])
 verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
-        lambda_p, lambda_d, Berry, npool, band_topology, ipol, jpol= read_input(input_file)
+        lambda_p, lambda_d, Berry, npool, band_topology, ipol, jpol, \
+        spin_Hall, spol = read_input(input_file)
 
 if size >  1:
     if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
@@ -266,7 +267,7 @@ if do_bands and not(onedim):
     if band_topology:
         # Compute the velocity, momentum and Berry curvature operators along the path in the IBZ
         from do_velocity_calc import *
-        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol)
+        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
@@ -374,7 +375,8 @@ if do_dos:
     reset=time.time()
 
 pksp = None
-if Boltzmann or epsilon or Berry or band_topology:
+jksp = None
+if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
     if rank == 0:
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
@@ -397,6 +399,13 @@ if Boltzmann or epsilon or Berry or band_topology:
     if rank == 0:
         dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
     pksp = do_momentum(v_k,dHksp,npool)
+
+    if spin_Hall:
+        #----------------------
+        # Compute the spin current operator j^l_n,m(k)
+        #----------------------
+        from do_spin_current import *
+        jksp = do_spin_current(v_k,dHksp,spol,npool)
 
     dHksp = None
 
@@ -471,6 +480,40 @@ if Berry:
         f.close()
 
     if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
+
+if spin_Hall:
+    #----------------------
+    # Compute spin Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
+    #----------------------
+    from do_spin_Hall_conductivity import *
+
+    temp = 0.025852  # set room temperature in eV
+    alat /= ANGSTROM_AU
+
+    ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
+    shc = np.real(sigxy[0])
+
+    alat *= ANGSTROM_AU
+    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+
+    if rank == 0:
+        f=open('shc.dat','w')
+        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f.write(' spin Hall conductivity sigma^z_xy = %.6f\n' %shc)
+        f.close()
+
+        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f=open('jsigxyi.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+        f.close()
+        f=open('jsigxyr.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
+        f.close()
+
+    if rank == 0: print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if Boltzmann:

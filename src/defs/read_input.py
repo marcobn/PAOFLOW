@@ -54,6 +54,10 @@ def read_input(input_file):
     Berry = False
     npool = 1
     band_topology = False
+    ipol = 0
+    jpol = 1
+    spin_Hall = False
+    spol = 2
 
     f = open(input_file)
     lines=f.readlines()
@@ -193,9 +197,18 @@ def read_input(input_file):
                 band_topology = False
             else:
                 band_topology = True
+        if re.search('spin_Hall',line):
+            p = line.split()
+            spin_Hall = p[1]
+            spol = int(p[2])
+            if spin_Hall == 'False':
+                spin_Hall = False
+            else:
+                spin_Hall = True
     if fpath == '':
         sys.exit('missing path to _.save')
 
     return(verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, ipol,jpol)
+            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, \
+            ipol,jpol,spin_Hall,spol)

@@ -44,7 +44,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol):
+def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol):
     # Compute bands on a selected path in the BZ
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
@@ -85,27 +85,29 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                 pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
                             (dHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
 
-    # Compute spin current matrix elements
-    spin_current = False
-    # Pauli matrices (x,y,z)
-    sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+    if spin_Hall:
+        # Compute spin current matrix elements
+        # Pauli matrices (x,y,z)
+        sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
 
-    spol = 2
-    jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
-    for ik in xrange(nkpi):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
-                for n in range(0,nawf,2):
-                    for m in range(0,nawf,2):
-                        jdHks[l,n:(n+2),m:(m+2),ik,ispin] = \
-                            0.5*(np.dot(sP[spol],dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sP[spol]))
+        jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
+        for ik in xrange(nkpi):
+            for ispin in xrange(nspin):
+                for l in xrange(3):
+                    for n in range(0,nawf,2):
+                        for m in range(0,nawf,2):
+                            jdHks[l,n:(n+2),m:(m+2),ik,ispin] = \
+                                0.25*(np.dot(sP[spol],dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sP[spol]))
 
-    jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-    for ik in xrange(nkpi):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
-                jks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                            (jdHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
+        jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
+        for ik in xrange(nkpi):
+            for ispin in xrange(nspin):
+                for l in xrange(3):
+                    jks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
+                                (jdHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
+
+        Omj_znk = np.zeros((nkpi,nawf),dtype=float)
+        Omj_zk = np.zeros((nkpi),dtype=float)
 
 
     # Compute Berry curvature
@@ -113,28 +115,28 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
     deltab = 0.05
     Om_znk = np.zeros((nkpi,nawf),dtype=float)
     Om_zk = np.zeros((nkpi),dtype=float)
-    Omj_znk = np.zeros((nkpi,nawf),dtype=float)
-    Omj_zk = np.zeros((nkpi),dtype=float)
     for ik in xrange(nkpi):
         for n in xrange(nawf):
             for m in xrange(nawf):
                 if m!= n:
                     Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
                     ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
-                    Omj_znk[ik,n] += -1.0*np.imag(jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                    ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+                    if spin_Hall:
+                        Omj_znk[ik,n] += -1.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]-pks[ik,ipol,m,n,0]*jks[ik,jpol,n,m,0]) / \
+                        ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
         Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
-        Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
+        if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
 
     if rank == 0:
         f=open('Omega_z'+'.dat','w')
         for ik in xrange(nkpi):
             f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
         f.close()
-        f=open('Omegaj_z'+'.dat','w')
-        for ik in xrange(nkpi):
-            f.write('%3d  %.5f \n' %(ik,Omj_zk[ik]))
-        f.close()
+        if spin_Hall:
+            f=open('Omegaj_z'+'.dat','w')
+            for ik in xrange(nkpi):
+                f.write('%3d  %.5f \n' %(ik,Omj_zk[ik]))
+            f.close()
 
     if rank == 0:
         velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
