@@ -271,6 +271,8 @@ if do_bands and not(onedim):
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
+    if double_grid == False: sys.exit()
+
 
     alat *= ANGSTROM_AU
 

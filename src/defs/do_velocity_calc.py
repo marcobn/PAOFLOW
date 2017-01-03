@@ -94,10 +94,10 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
         for ik in xrange(nkpi):
             for ispin in xrange(nspin):
                 for l in xrange(3):
-                    for n in range(0,nawf,2):
-                        for m in range(0,nawf,2):
+                    for n in xrange(0,nawf,2):
+                        for m in xrange(0,nawf,2):
                             jdHks[l,n:(n+2),m:(m+2),ik,ispin] = \
-                                0.25*(np.dot(sP[spol],dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sP[spol]))
+                                0.5*(np.dot(sP[spol],dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sP[spol]))
 
         jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
         for ik in xrange(nkpi):
@@ -108,7 +108,6 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
 
         Omj_znk = np.zeros((nkpi,nawf),dtype=float)
         Omj_zk = np.zeros((nkpi),dtype=float)
-
 
     # Compute Berry curvature
     ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
@@ -122,7 +121,9 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                     Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
                     ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                     if spin_Hall:
-                        Omj_znk[ik,n] += -1.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]-pks[ik,ipol,m,n,0]*jks[ik,jpol,n,m,0]) / \
+                        #Omj_znk[ik,n] += -1.0*np.imag(jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
+                        #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+                        Omj_znk[ik,n] += -2.0*np.imag(jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]) / \
                         ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
         Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
         if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K

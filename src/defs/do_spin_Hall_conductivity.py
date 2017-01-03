@@ -116,8 +116,9 @@ def jsigma_loop(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol):
             func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
             sigxy[:] += np.sum(((1.0/func * \
                         ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
-                        np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])
-                        ),axis=1)
+                        np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
+                        #np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])
+                        #),axis=1)
 
     return(sigxy)
 
