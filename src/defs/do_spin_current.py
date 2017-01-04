@@ -90,6 +90,7 @@ def do_spin_current(vec,dHksp,spol,npool):
 
         comm.Barrier()
         comm.Scatter(dHksp_split,dHkaux,root=0)
+        comm.Scatter(jdHksp_split,jdHkaux,root=0)
         comm.Scatter(vec_split,vecaux,root=0)
 
         for ik in xrange(nsize):
@@ -98,7 +99,7 @@ def do_spin_current(vec,dHksp,spol,npool):
                     for n in range(0,nawf,2):
                         for m in range(0,nawf,2):
                             jdHkaux[ik,l,n:(n+2),m:(m+2),ispin] = \
-                                0.5*(np.dot(sP[spol],dHkaux[ik,l,n:(n+2),m:(m+2),ispin])+ \
+                                0.25*(np.dot(sP[spol],dHkaux[ik,l,n:(n+2),m:(m+2),ispin])+ \
                                 np.dot(dHkaux[ik,l,n:(n+2),m:(m+2),ispin],sP[spol]))
 
         comm.Barrier()
@@ -107,7 +108,11 @@ def do_spin_current(vec,dHksp,spol,npool):
         if rank == 0:
             jdHksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jdHksp_split[:,:,:,:,:,]
 
-        comm.Barrier()
+    comm.Barrier()
+
+    for pool in xrange(npool):
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        nkpool = nktot/npool
 
         if rank == 0:
             jdHksp_split = np.array_split(jdHksp,npool,axis=0)[pool]
@@ -142,6 +147,6 @@ def do_spin_current(vec,dHksp,spol,npool):
         comm.Gather(jksaux,jks_split,root=0)
 
         if rank == 0:
-            jksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jks_split[:,:,:,:,:,]
+            jksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jks_split[:,:,:,:,:]
 
     return(jksp)

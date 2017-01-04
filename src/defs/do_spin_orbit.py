@@ -64,6 +64,21 @@ def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
         # Down-Up
         HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               + socStrengh[n,0]*HR_soc_p[9:18,0:9]
 
+        reordering = False
+        if reordering:
+            # Reordering of the Hamiltonian in 2D spinors for spin Hall calculations
+            aux = np.zeros((2*nawf,2*nawf,nk1,nk2,nk3),dtype=complex)
+            perm = np.zeros((2*nawf),dtype=int)
+            for n in xrange(0,2*nawf,2):
+                perm[n] = n/2
+                perm[n+1] = nawf+n/2
+            ip = np.argsort(perm)
+            for i in xrange(nk1):
+                for j in xrange(nk2):
+                    for k in range(nk3):
+                        aux[:,:,i,j,k] = HR_double[:,ip,i,j,k,0]
+                        HR_double[:,:,i,j,k,0] = aux[ip,:,i,j,k]
+
     return(HR_double)
 
 

@@ -88,7 +88,7 @@ if rank == 0:
     print('#                  Utility to construct and operate on Hamiltonians from                    #')
     print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
     print('#                                                                                           #')
-    print('#                        ',str('%1s' %CC),'2016 ERMES group (http://ermes.unt.edu)                         #')
+    print('#                     ',str('%1s' %CC),'2016,2017 ERMES group (http://ermes.unt.edu)                       #')
     print('#############################################################################################')
     print('          ')
 
@@ -271,7 +271,10 @@ if do_bands and not(onedim):
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
-    if double_grid == False: sys.exit()
+    if double_grid == False:
+        if rank ==0: print('   ')
+        if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+        sys.exit()
 
 
     alat *= ANGSTROM_AU
@@ -402,6 +405,9 @@ if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
         dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
     pksp = do_momentum(v_k,dHksp,npool)
 
+    if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
+
     if spin_Hall:
         #----------------------
         # Compute the spin current operator j^l_n,m(k)
@@ -409,10 +415,10 @@ if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
         from do_spin_current import *
         jksp = do_spin_current(v_k,dHksp,spol,npool)
 
-    dHksp = None
+        if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
-    if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    dHksp = None
 
     index = None
     if rank == 0:

@@ -45,8 +45,8 @@ size = comm.Get_size()
 def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol):
     # Compute the spin Hall conductivity tensor sigma_xy(ene)
 
-    emin = 0.0 # To be read in input
-    emax = 10.0
+    emin = -10.0 # To be read in input
+    emax = 5.0
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
@@ -72,7 +72,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol):
 
         if rank == 0:
             pksp_long = np.array_split(pksp,npool,axis=0)[pool]
-            jksp_long = np.array_split(pksp,npool,axis=0)[pool]
+            jksp_long = np.array_split(jksp,npool,axis=0)[pool]
             E_k_long= np.array_split(E_k,npool,axis=0)[pool]
         else:
             pksp_long = None
@@ -93,7 +93,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol):
         comm.Scatter(jksp_long,jkspaux,root=0)
         comm.Scatter(E_k_long,E_kaux,root=0)
 
-        sigxy_aux[:] = jsigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,jkspaux,nawf,temp,ispin,ipol,jpol)
+        sigxy_aux[:] = jsigma_loop(ini_ik,end_ik,ene,E_kaux,jkspaux,pkspaux,nawf,temp,ispin,ipol,jpol)
 
         comm.Allreduce(sigxy_aux,sigxy_sum,op=MPI.SUM)
         sigxy += sigxy_sum
@@ -114,11 +114,10 @@ def jsigma_loop(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol):
         for m in xrange(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
-            sigxy[:] += np.sum(((1.0/func * \
+            sigxy[:] += np.sum(((-1.0/func * \
                         ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
-                        np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
-                        #np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])
-                        #),axis=1)
+                        #2.0*np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
+                        np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-pksp[:,ipol,n,m,0]*jksp[:,jpol,m,n,0])),axis=1)
 
     return(sigxy)
 
