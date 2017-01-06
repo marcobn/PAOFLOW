@@ -88,16 +88,19 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
     if spin_Hall:
         # Compute spin current matrix elements
         # Pauli matrices (x,y,z)
-        sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+        # sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+        # Spin operator matrix - z only for now...
+        sP = np.zeros((nawf,nawf),dtype=complex)
+        diag = np.array([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5])
+        for n in xrange(nawf):
+            sP[n,n] = diag[n]
 
         jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
         for ik in xrange(nkpi):
             for ispin in xrange(nspin):
                 for l in xrange(3):
-                    for n in xrange(0,nawf,2):
-                        for m in xrange(0,nawf,2):
-                            jdHks[l,n:(n+2),m:(m+2),ik,ispin] = \
-                                0.25*(np.dot(sP[spol],dHks[l,n:(n+2),m:(m+2),ik,ispin])+np.dot(dHks[l,n:(n+2),m:(m+2),ik,ispin],sP[spol]))
+                        jdHks[l,:,:,ik,ispin] = \
+                            0.5*(np.dot(sP,dHks[l,:,:,ik,ispin])+np.dot(dHks[l,:,:,ik,ispin],sP))
 
         jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
         for ik in xrange(nkpi):
@@ -121,9 +124,9 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                     Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
                     ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                     if spin_Hall:
-                        #Omj_znk[ik,n] += -1.0*np.imag(jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*jks[ik,jpol,m,n,0]) / \
+                        #Omj_znk[ik,n] += -1.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]-jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]) / \
                         #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
-                        Omj_znk[ik,n] += -2.0*np.imag(jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]) / \
+                        Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
                         ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
         Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
         if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K

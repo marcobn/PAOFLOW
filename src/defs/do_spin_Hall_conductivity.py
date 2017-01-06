@@ -45,10 +45,11 @@ size = comm.Get_size()
 def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol):
     # Compute the spin Hall conductivity tensor sigma_xy(ene)
 
-    emin = -10.0 # To be read in input
-    emax = 5.0
-    de = (emax-emin)/500
-    ene = np.arange(emin,emax,de,dtype=float)
+    # emin = 0.0 # To be read in input
+    # emax = 0.0
+    # de = (emax-emin)/1
+    # ene = np.arange(emin,emax,de,dtype=float)
+    ene = np.zeros(1,dtype=float)
 
     index = None
 
@@ -116,8 +117,8 @@ def jsigma_loop(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol):
             func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
             sigxy[:] += np.sum(((-1.0/func * \
                         ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
-                        #2.0*np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
-                        np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-pksp[:,ipol,n,m,0]*jksp[:,jpol,m,n,0])),axis=1)
+                        2.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])),axis=1)
+                        #np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-pksp[:,ipol,n,m,0]*jksp[:,jpol,m,n,0])),axis=1)
 
     return(sigxy)
 

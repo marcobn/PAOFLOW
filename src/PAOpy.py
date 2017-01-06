@@ -507,18 +507,8 @@ if spin_Hall:
 
     if rank == 0:
         f=open('shc.dat','w')
-        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega/np.sqrt(E2)
         f.write(' spin Hall conductivity sigma^z_xy = %.6f\n' %shc)
-        f.close()
-
-        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f=open('jsigxyi.dat','w')
-        for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-        f.close()
-        f=open('jsigxyr.dat','w')
-        for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
         f.close()
 
     if rank == 0: print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
