@@ -113,12 +113,12 @@ def jsigma_loop(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol):
     for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
         for m in xrange(nawf):
-            fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
-            func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
-            sigxy[:] += np.sum(((-1.0/func * \
+            if n != m:
+                fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
+                func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
+                sigxy[:] += np.sum(((-1.0/func * \
                         ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
-                        2.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])),axis=1)
-                        #np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-pksp[:,ipol,n,m,0]*jksp[:,jpol,m,n,0])),axis=1)
+                        1.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])),axis=1)
 
     return(sigxy)
 

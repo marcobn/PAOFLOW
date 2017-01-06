@@ -507,7 +507,7 @@ if spin_Hall:
 
     if rank == 0:
         f=open('shc.dat','w')
-        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega/np.sqrt(E2)
+        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         f.write(' spin Hall conductivity sigma^z_xy = %.6f\n' %shc)
         f.close()
 

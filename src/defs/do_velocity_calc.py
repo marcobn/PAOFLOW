@@ -88,19 +88,26 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
     if spin_Hall:
         # Compute spin current matrix elements
         # Pauli matrices (x,y,z)
-        # sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-        # Spin operator matrix - z only for now...
-        sP = np.zeros((nawf,nawf),dtype=complex)
-        diag = np.array([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5])
-        for n in xrange(nawf):
-            sP[n,n] = diag[n]
+        sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+        # Spin operator matrix 
+        Sj = np.zeros((nawf,nawf),dtype=complex)
+        for i in xrange(nawf/2):
+            Sj[i,i] = sP[spol][0,0]
+            Sj[i,i+1] = sP[spol][0,1]
+        for i in xrange(nawf/2,nawf):
+            Sj[i,i-1] = sP[spol][1,0]
+            Sj[i,i] = sP[spol][1,1]
+        # NOTE: The above works if spin_orbit == True
+        #diag = np.array([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5])
+        #for n in xrange(nawf):
+        #    sP[n,n] = diag[n]
 
         jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
         for ik in xrange(nkpi):
             for ispin in xrange(nspin):
                 for l in xrange(3):
                         jdHks[l,:,:,ik,ispin] = \
-                            0.5*(np.dot(sP,dHks[l,:,:,ik,ispin])+np.dot(dHks[l,:,:,ik,ispin],sP))
+                            0.5*(np.dot(Sj,dHks[l,:,:,ik,ispin])+np.dot(dHks[l,:,:,ik,ispin],Sj))
 
         jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
         for ik in xrange(nkpi):

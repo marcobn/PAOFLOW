@@ -56,12 +56,19 @@ def do_spin_current(vec,dHksp,spol,npool):
     nspin = index['nspin']
 
     # Pauli matrices (x,y,z)
-    # sP=np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    # Spin operator - z only for now
-    sP = np.zeros((nawf,nawf),dtype=complex)
-    diag = np.array([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5])
-    for n in xrange(nawf):
-        sP[n,n] = diag[n]
+    sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+    # Spin operator matrix
+    Sj = np.zeros((nawf,nawf),dtype=complex)
+    for i in xrange(nawf/2):
+        Sj[i,i] = sP[spol][0,0]
+        Sj[i,i+1] = sP[spol][0,1]
+    for i in xrange(nawf/2,nawf):
+        Sj[i,i-1] = sP[spol][1,0]
+        Sj[i,i] = sP[spol][1,1]
+    # NOTE: The above works if spin_orbit == True
+    #diag = np.array([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5])
+    #for n in xrange(nawf):
+    #    sP[n,n] = diag[n]
 
     if rank == 0:
         jksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
@@ -102,8 +109,8 @@ def do_spin_current(vec,dHksp,spol,npool):
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     jdHkaux[ik,l,:,:,ispin] = \
-                        0.5*(np.dot(sP,dHkaux[ik,l,:,:,ispin])+ \
-                        np.dot(dHkaux[ik,l,:,:,ispin],sP))
+                        0.5*(np.dot(Sj,dHkaux[ik,l,:,:,ispin])+ \
+                        np.dot(dHkaux[ik,l,:,:,ispin],Sj))
 
         comm.Barrier()
         comm.Gather(jdHkaux,jdHksp_split,root=0)
