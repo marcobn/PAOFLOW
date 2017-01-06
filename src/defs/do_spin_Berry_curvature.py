@@ -42,9 +42,9 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
+def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol):
     #----------------------
-    # Compute Berry curvature
+    # Compute spin Berry curvature
     #----------------------
 
     index = None
@@ -72,11 +72,13 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
 
         if rank == 0:
             pksp_long = np.array_split(pksp,npool,axis=0)[pool]
+            jksp_long = np.array_split(jksp,npool,axis=0)[pool]
             E_k_long= np.array_split(E_k,npool,axis=0)[pool]
             Om_znk_split = np.array_split(Om_znk,npool,axis=0)[pool]
         else:
             Om_znk_split = None
             pksp_long = None
+            jksp_long = None
             E_k_long = None
 
         # Load balancing
@@ -85,11 +87,13 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
         if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
 
         pksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
+        jksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
         E_kaux = np.zeros((nsize,nawf,nspin),dtype = float)
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
 
         comm.Barrier()
         comm.Scatter(pksp_long,pksaux,root=0)
+        comm.Scatter(jksp_long,jksaux,root=0)
         comm.Scatter(E_k_long,E_kaux,root=0)
 
         ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
@@ -98,7 +102,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
         for n in xrange(nawf):
             for m in xrange(nawf):
                 if m!= n:
-                    Om_znkaux[:,n] += -1.0*np.imag(pksaux[:,jpol,n,m,0]*pksaux[:,ipol,m,n,0]- pksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
+                    Om_znkaux[:,n] += -2.0*np.imag(jksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
                     ((E_kaux[:,m,0] - E_kaux[:,n,0])**2 + deltap**2)
         comm.Barrier()
         comm.Gather(Om_znkaux,Om_znk_split,root=0)
@@ -133,7 +137,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
     comm.Barrier()
     comm.Gather(Om_zkaux,Om_zk,root=0)
 
-    ahc = None
-    if rank == 0: ahc = -E2*np.sum(Om_zk)/float(nk1*nk2*nk3)
+    shc = None
+    if rank == 0: shc = np.sum(Om_zk)/float(nk1*nk2*nk3)
 
-    return(ahc)
+    return(shc)

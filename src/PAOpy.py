@@ -464,9 +464,10 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    #ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol)
-    ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
-    ahc = np.real(sigxy[0])
+    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol)
+    ac_cond = False
+    if ac_cond: ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
+    ahc0 = np.real(sigxy[0])
 
     alat *= ANGSTROM_AU
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
@@ -474,7 +475,8 @@ if Berry:
     if rank == 0:
         f=open('ahc.dat','w')
         ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f.write(' Anomalous Hall conductivity sigma_xy = %.6f\n' %ahc)
+        ahc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f.write(' Anomalous Hall conductivity sigma_xy = %.6f (%.6f)\n' %(ahc,ahc0))
         f.close()
 
         sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
@@ -492,15 +494,18 @@ if Berry:
 
 if spin_Hall:
     #----------------------
-    # Compute spin Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
+    # Compute spin Berry curvature... 
     #----------------------
+    from do_spin_Berry_curvature import *
     from do_spin_Hall_conductivity import *
 
     temp = 0.025852  # set room temperature in eV
     alat /= ANGSTROM_AU
 
-    ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
-    shc = np.real(sigxy[0])
+    shc = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol)
+    ac_cond = False
+    if ac_cond: ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
+    shc0 = np.real(sigxy[0])
 
     alat *= ANGSTROM_AU
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
@@ -508,7 +513,8 @@ if spin_Hall:
     if rank == 0:
         f=open('shc.dat','w')
         shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f.write(' spin Hall conductivity sigma^z_xy = %.6f\n' %shc)
+        shc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f.write(' spin Hall conductivity sigma^z_xy = %.6f (%.6f)\n' %(shc,shc0))
         f.close()
 
     if rank == 0: print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))

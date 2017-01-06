@@ -45,11 +45,10 @@ size = comm.Get_size()
 def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol):
     # Compute the spin Hall conductivity tensor sigma_xy(ene)
 
-    # emin = 0.0 # To be read in input
-    # emax = 0.0
-    # de = (emax-emin)/1
-    # ene = np.arange(emin,emax,de,dtype=float)
-    ene = np.zeros(1,dtype=float)
+    emin = 0.0 # To be read in input
+    emax = 10.0
+    de = (emax-emin)/500
+    ene = np.arange(emin,emax,de,dtype=float)
 
     index = None
 
