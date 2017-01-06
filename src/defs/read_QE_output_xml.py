@@ -94,6 +94,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
     #if rank == 0: print('Number of kpoints: {0:d}'.format(nkpnts))
 
     nspin  = int(root.findall("./HEADER/NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
+    if nspin == 4: nspin = 1
     #if rank == 0: print('Number of spin components: {0:d}'.format(nspin))
 
     kunits = root.findall("./HEADER/UNITS_FOR_K-POINTS")[0].attrib['UNITS']
