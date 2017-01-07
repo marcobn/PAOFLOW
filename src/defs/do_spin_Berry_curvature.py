@@ -110,8 +110,14 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol):
         if rank == 0:
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
 
+    emin = -7.0 # To be read in input
+    emax = 4.0
+    de = (emax-emin)/500
+    ene = np.arange(emin,emax,de,dtype=float)
+    #ene=np.array([-1.0])
+
     if rank == 0:
-        Om_zk = np.zeros((nk1*nk2*nk3),dtype=float)
+        Om_zk = np.zeros((nk1*nk2*nk3,ene.size),dtype=float)
     else:
         Om_znk = None
         Om_zk = None
@@ -124,20 +130,21 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol):
     nsize = end_ik-ini_ik
 
     Om_znkaux = np.zeros((nsize,nawf),dtype=float)
-    Om_zkaux = np.zeros((nsize),dtype=float)
-    E_kaux = np.zeros((nsize,nawf,nspin),dtype = float)
+    Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
+    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
 
     comm.Barrier()
     comm.Scatter(Om_znk,Om_znkaux,root= 0)
     comm.Scatter(Om_zk,Om_zkaux,root= 0)
     comm.Scatter(E_k,E_kaux,root= 0)
 
-    Om_zkaux[:] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]) + 1)),axis=1)  # T=0.0K
+    for i in xrange(ene.size):
+        Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)  # T=0.0K
 
     comm.Barrier()
     comm.Gather(Om_zkaux,Om_zk,root=0)
 
     shc = None
-    if rank == 0: shc = np.sum(Om_zk)/float(nk1*nk2*nk3)
+    if rank == 0: shc = E2*np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
 
-    return(shc)
+    return(ene,shc)

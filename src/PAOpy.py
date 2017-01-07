@@ -462,24 +462,29 @@ if Berry:
     from do_Berry_conductivity import *
 
     temp = 0.025852  # set room temperature in eV
-    alat /= ANGSTROM_AU
 
     ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol)
     ac_cond = False
-    if ac_cond: ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
-    ahc0 = np.real(sigxy[0])
+    if ac_cond: 
+        ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
+        sigxy *= E2
+        ahc0 = np.real(sigxy[0])
 
-    alat *= ANGSTROM_AU
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     if rank == 0:
         f=open('ahc.dat','w')
-        ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        ahc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f.write(' Anomalous Hall conductivity sigma_xy = %.6f (%.6f)\n' %(ahc,ahc0))
+        #################CHECK UNITS - IS ANGSTROM_AU NEEDED? MISSING E2 IN SIGMA???############
+        #ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        ahc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        if ac_cond:
+            ahc0 *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            f.write(' Anomalous Hall conductivity sigma_xy = %.6f (%.6f)\n' %(ahc,ahc0))
+        else:
+            f.write(' Anomalous Hall conductivity sigma_xy = %.6f \n' %ahc)
         f.close()
 
-        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        sigxy *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         f=open('sigxyi.dat','w')
         for n in xrange(ene.size):
             f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
@@ -500,21 +505,30 @@ if spin_Hall:
     from do_spin_Hall_conductivity import *
 
     temp = 0.025852  # set room temperature in eV
-    alat /= ANGSTROM_AU
 
-    shc = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol)
+    ene,shc = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol)
     ac_cond = False
-    if ac_cond: ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
-    shc0 = np.real(sigxy[0])
+    if ac_cond:
+        ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
+        sigxy *= E2
+        shc0 = np.real(sigxy[0])
 
-    alat *= ANGSTROM_AU
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-    if rank == 0:
+    if rank == 0 and ene.size == 1:
         f=open('shc.dat','w')
-        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        shc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f.write(' spin Hall conductivity sigma^z_xy = %.6f (%.6f)\n' %(shc,shc0))
+        shc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        if ac_cond:
+            shc0 *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            f.write(' spin Hall conductivity sigma^z_xy = %.6f (%.6f)\n' %(shc,shc0))
+        else:
+            f.write(' spin Hall conductivity sigma^z_xy = %.6f \n' %shc)
+        f.close()
+    elif rank == 0:
+        shc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f=open('shcEf.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
         f.close()
 
     if rank == 0: print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
