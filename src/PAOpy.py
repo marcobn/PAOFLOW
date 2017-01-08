@@ -464,7 +464,7 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
 
     ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol)
-    ac_cond = False
+    ac_cond = True
     if ac_cond: 
         ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
         sigxy *= E2
@@ -508,7 +508,7 @@ if spin_Hall:
     temp = 0.025852  # set room temperature in eV
 
     ene,shc = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol)
-    ac_cond = False
+    ac_cond = True
     if ac_cond:
         ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
         sigxy *= E2
