@@ -98,7 +98,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
         for n in xrange(nawf):
             for m in xrange(nawf):
                 if m!= n:
-                    Om_znkaux[:,n] += -1.0*np.imag(pksaux[:,jpol,n,m,0]*pksaux[:,ipol,m,n,0]- pksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
+                    Om_znkaux[:,n] += -2.0*np.imag(pksaux[:,jpol,n,m,0]*pksaux[:,ipol,m,n,0]- pksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
                     ((E_kaux[:,m,0] - E_kaux[:,n,0])**2 + deltap**2)
         comm.Barrier()
         comm.Gather(Om_znkaux,Om_znk_split,root=0)
