@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -23,7 +23,7 @@
 from scipy import linalg as LA
 from numpy import linalg as LAN
 import numpy as np
-import os
+import os, sys
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -34,64 +34,86 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def calc_TB_eigs_vecs(Hks,ispin):
+def calc_TB_eigs_vecs(Hksp,ispin,npool):
 
-    nawf,nawf,nk1,nk2,nk3,nspin = Hks.shape
-    eall = np.zeros((nawf*nk1*nk2*nk3,nspin),dtype=float)
-
-    aux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-    aux[:,:,:,ispin] = np.reshape(Hks[:,:,:,:,:,ispin],(nawf,nawf,nk1*nk2*nk3),order='C')
-
-    E_k = np.zeros((nawf,nk1*nk2*nk3,nspin),dtype=float)
-    E_kaux = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
-    E_kaux1 = np.zeros((nawf,nk1*nk2*nk3,nspin,1),dtype=float)
-
-    v_k = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-    v_kaux = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
-    v_kaux1 = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin,1),dtype=complex)
-
-    # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
-
-    E_kaux[:,:,:,0], v_kaux[:,:,:,:,0] = diago(ini_ik,end_ik,aux,ispin)
+    index = None
 
     if rank == 0:
-        E_k[:,:,:]=E_kaux[:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(E_kaux1,ANY_SOURCE)
-            E_k[:,:,:] += E_kaux1[:,:,:,0]
-    else:
-        comm.Send(E_kaux,0)
-    E_k = comm.bcast(E_k)
+        nktot,nawf,nawf,nspin = Hksp.shape
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
+
+    index = comm.bcast(index,root=0)
+
+    nktot = index['nktot']
+    nawf = index['nawf']
+    nspin = index['nspin']
 
     if rank == 0:
-        v_k[:,:,:,:]=v_kaux[:,:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(v_kaux1,ANY_SOURCE)
-            v_k[:,:,:,:] += v_kaux1[:,:,:,:,0]
+        eall = np.zeros((nawf*nktot,nspin),dtype=float)
+        E_k = np.zeros((nktot,nawf,nspin),dtype=float)
+        v_k = np.zeros((nktot,nawf,nawf,nspin),dtype=complex)
     else:
-        comm.Send(v_kaux,0)
-    v_k = comm.bcast(v_k)
+        eall = None
+        E_k = None
+        v_k = None
+        Hks_split = None
+        E_k_split = None
+        v_k_split = None
 
-    nall=0
-    for n in range(nk1*nk2*nk3):
-        for m in range(nawf):
-            eall[nall,ispin]=E_k[m,n,ispin]
-            nall += 1
+    for pool in xrange (npool):
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        nkpool = nktot/npool
+        #if rank == 0: print('running on ',npool,' pools for nkpool = ',nkpool)
+
+        if rank == 0:
+            Hks_split = np.array_split(Hksp,npool,axis=0)[pool]
+            E_k_split = np.array_split(E_k,npool,axis=0)[pool]
+            v_k_split = np.array_split(v_k,npool,axis=0)[pool]
+
+        # Load balancing
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+
+        nsize = end_ik-ini_ik
+        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
+
+        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+        v_kaux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
+        aux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
+
+        comm.barrier()
+        comm.Scatter(Hks_split,aux,root=0)
+
+        E_kaux, v_kaux = diago(nsize,aux[:,:,:,ispin])
+
+        comm.barrier()
+        comm.Gather(E_kaux,E_k_split,root=0)
+        comm.Gather(v_kaux,v_k_split,root=0)
+
+        if rank == 0:
+            E_k[pool*nkpool:(pool+1)*nkpool,:,:] = E_k_split[:,:,:]
+            v_k[pool*nkpool:(pool+1)*nkpool,:,:,:] = v_k_split[:,:,:,:]
+
+    if rank == 0:
+        #f=open('eig_'+str(ispin)+'.dat','w')
+        nall=0
+        for n in xrange(nktot):
+            for m in xrange(nawf):
+                eall[nall,ispin]=E_k[n,m,ispin]
+                #f.write('%7d  %.5f \n' %(n,E_k[n,m,ispin]))
+                nall += 1
+        #f.close()
 
     return(eall,E_k,v_k)
 
-def diago(ini_ik,end_ik,aux,ispin):
+def diago(nsize,aux):
 
-    nawf = aux.shape[0]
-    nk = aux.shape[2]
-    nspin = aux.shape[3]
-    ekp = np.zeros((nawf,nk,nspin),dtype=float)
-    ekv = np.zeros((nawf,nawf,nk,nspin),dtype=complex)
+    nawf = aux.shape[1]
+    ekp = np.zeros((nsize,nawf),dtype=float)
+    ekv = np.zeros((nsize,nawf,nawf),dtype=complex)
 
-    for n in range(ini_ik,end_ik):
-        eigval,eigvec = LAN.eigh(aux[:,:,n,ispin],UPLO='U')
-        ekp[:,n,ispin] = np.real(eigval) 
-        ekv[:,:,n,ispin] = eigvec
+    for n in xrange(nsize):
+        eigval,eigvec = LAN.eigh(aux[n,:,:],UPLO='U')
+        ekp[n,:] = np.real(eigval)
+        ekv[n,:,:] = eigvec
 
     return(ekp,ekv)

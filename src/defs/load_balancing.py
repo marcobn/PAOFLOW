@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -33,7 +33,7 @@ def load_balancing(size,rank,n):
     ini = np.zeros((size),dtype=int)
     end = np.zeros((size),dtype=int)
     splitsize = 1.0/size*n
-    for i in range(size):
+    for i in xrange(size):
         ini[i] = int(round(i*splitsize))
         end[i] = int(round((i+1)*splitsize))
     start = ini[rank]

@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -40,8 +40,8 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     E_k = np.zeros((nbnds_tb,nkpnts,nspin))
 
     ispin = 0 #plots only 1 spin channel
-    #for ispin in range(nspin):
-    for ik in range(nkpnts):
+    #for ispin in xrange(nspin):
+    for ik in xrange(nkpnts):
         if read_S:
             eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
         else:
@@ -50,7 +50,7 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
 
     fig=plt.figure
     nbnds_dft,_,_=my_eigsmat.shape
-    for i in range(nbnds_dft):
+    for i in xrange(nbnds_dft):
         #print("{0:d}".format(i))
         yy = my_eigsmat[i,:,ispin]
         if i==0:
@@ -58,7 +58,7 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
         else:
             plt.plot(yy,'ok',markersize=3,markeredgecolor='lime',markerfacecolor='lime')
 
-    for i in range(nbnds_tb):
+    for i in xrange(nbnds_tb):
         yy = E_k[i,:,ispin]
         if i==0:
             plt.plot(yy,'ok',markersize=2,markeredgecolor='None',label='TB')

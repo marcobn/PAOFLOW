@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -27,6 +27,7 @@ from constants import *
 
 def read_input(input_file):
 
+    verbose = False
     non_ortho  = False
     shift_type = 2
     shift      = 20
@@ -36,6 +37,8 @@ def read_input(input_file):
     do_bands = False
     onedim = False
     do_dos = False
+    emin = -10.
+    emax = 2
     nfft1 = 0
     nfft2 = 0
     nfft3 = 0
@@ -44,10 +47,17 @@ def read_input(input_file):
     Boltzmann = False
     epsilon = False
     do_spin_orbit = False
-    theta = 0.0 
+    theta = 0.0
     phi = 0.0
     lambda_p = 0.0
     lambda_d = 0.0
+    Berry = False
+    npool = 1
+    band_topology = False
+    ipol = 0
+    jpol = 1
+    spin_Hall = False
+    spol = 2
 
     f = open(input_file)
     lines=f.readlines()
@@ -57,48 +67,57 @@ def read_input(input_file):
         if re.search('fpath',line):
             p = line.split()
             fpath = p[1]
+        if re.search('verbose',line):
+            p = line.split()
+            verbose = p[1]
+            if verbose == 'False':
+                verbose = False
+            else:
+                verbose = True
         if re.search('non_ortho',line):
             p = line.split()
             non_ortho = p[1]
             if non_ortho == 'False':
-                non_ortho = (1 == 2)
+                non_ortho = False
             else:
-                non_ortho = (1 == 1)
+                non_ortho = True
         if re.search('do_comparison',line):
             p = line.split()
             do_comparison = p[1]
             if do_comparison == 'False':
-                do_comparison = (1 == 2)
+                do_comparison = False
             else:
-                do_comparison = (1 == 1)
+                do_comparison = True
         if re.search('double_grid',line):
             p = line.split()
             double_grid = p[1]
             if double_grid == 'False':
-                double_grid = (1 == 2)
+                double_grid = False
             else:
-                double_grid = (1 == 1)
+                double_grid = True
         if re.search('do_bands',line):
             p = line.split()
             do_bands = p[1]
             if do_bands == 'False':
-                do_bands = (1 == 2)
+                do_bands = False
             else:
-                do_bands = (1 == 1)
+                do_bands = True
         if re.search('onedim',line):
             p = line.split()
             onedim = p[1]
             if onedim == 'False':
-                onedim = (1 == 2)
+                onedim = False
             else:
-                onedim = (1 == 1)
+                onedim = True
         if re.search('do_dos',line):
             p = line.split()
             do_dos = p[1]
             if do_dos == 'False':
-                do_dos = (1 == 2)
+                do_dos = False
             else:
-                do_dos = (1 == 1)
+                do_dos = True
+            emin = p[2]
+            emax = p[3]
         if re.search('delta',line):
             p = line.split()
             delta = float(p[1])
@@ -106,9 +125,9 @@ def read_input(input_file):
             p = line.split()
             do_spin_orbit = p[1]
             if do_spin_orbit == 'False':
-                do_spin_orbit = (1 == 2)
+                do_spin_orbit = False
             else:
-                do_spin_orbit = (1 == 1)
+                do_spin_orbit = True
         if re.search('theta',line):
             p = line.split()
             theta = float(p[1])
@@ -147,26 +166,49 @@ def read_input(input_file):
             p = line.split()
             Boltzmann = p[1]
             if Boltzmann == 'False':
-                Boltzmann = (1 == 2)
+                Boltzmann = False
             else:
-                Boltzmann = (1 == 1)
+                Boltzmann = True
         if re.search('epsilon',line):
             p = line.split()
             epsilon = p[1]
             if epsilon == 'False':
-                epsilon = (1 == 2)
+                epsilon = False
             else:
-                epsilon = (1 == 1)
-        if re.search('eff_mass',line):
+                epsilon = True
+        if re.search('Berry',line):
             p = line.split()
-            eff_mass = p[1]
-            if eff_mass == 'False':
-                eff_mass = (1 == 2)
+            Berry = p[1]
+            ipol = int(p[2])
+            jpol = int(p[3])
+            if Berry == 'False':
+                Berry = False
             else:
-                eff_mass = (1 == 1)
+                Berry = True
+        if re.search('npool',line):
+            p = line.split()
+            npool = int(p[1])
+        if re.search('band_topology',line):
+            p = line.split()
+            band_topology = p[1]
+            ipol = int(p[2])
+            jpol = int(p[3])
+            if band_topology == 'False':
+                band_topology = False
+            else:
+                band_topology = True
+        if re.search('spin_Hall',line):
+            p = line.split()
+            spin_Hall = p[1]
+            spol = int(p[2])
+            if spin_Hall == 'False':
+                spin_Hall = False
+            else:
+                spin_Hall = True
     if fpath == '':
         sys.exit('missing path to _.save')
 
-    return(non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-            do_bands, onedim, do_dos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
-            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d)
+    return(verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
+            do_bands, onedim, do_dos, emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
+            ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, \
+            ipol,jpol,spin_Hall,spol)

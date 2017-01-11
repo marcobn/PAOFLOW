@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -48,21 +48,36 @@ def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
         HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] 	       	       =  HRaux[0:nawf,0:nawf,:,:,:,1]
 
     HR_soc_p =  soc_p(theta,phi)
-    #HR_soc_d =  soc_d(theta,phi)
+    HR_soc_d =  soc_d(theta,phi)
 
     M=9
     nt=natoms
-    for n in range(nt):
+    for n in xrange(nt):
         i=n*M
         j=(n+1)*M
         # Up-Up
-        HR_double[i:j,i:j,0,0,0,0]                             = HR_double[i:j,i:j,0,0,0,0]                             + socStrengh[n,0]*HR_soc_p[0:9,0:9]
+        HR_double[i:j,i:j,0,0,0,0]                             = HR_double[i:j,i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[0:9,0:9] + socStrengh[n,1]*HR_soc_d[0:9,0:9]
         # Down-Down
-        HR_double[(i+nt*M):(j+nt*M),(i+nt*M):(j+nt*M),0,0,0,0] = HR_double[(i+nt*M):(j+nt*M),(i+nt*M):(j+nt*M),0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,9:18]
+        HR_double[(i+nt*M):(j+nt*M),(i+nt*M):(j+nt*M),0,0,0,0] = HR_double[(i+nt*M):(j+nt*M),(i+nt*M):(j+nt*M),0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,9:18]  + socStrengh[n,1]*HR_soc_d[9:18,9:18]
         # Up-Down
-        HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0]               = HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0]               + socStrengh[n,0]*HR_soc_p[0:9,9:18]
+        HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0]               = HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0] + socStrengh[n,0]*HR_soc_p[0:9,9:18] + socStrengh[n,1]*HR_soc_d[0:9,9:18]
         # Down-Up
-        HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               + socStrengh[n,0]*HR_soc_p[9:18,0:9]
+        HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,0:9] + socStrengh[n,1]*HR_soc_d[9:18,0:9]
+
+        reordering = False
+        if reordering:
+            # Reordering of the Hamiltonian in 2D spinors for spin Hall calculations
+            aux = np.zeros((2*nawf,2*nawf,nk1,nk2,nk3),dtype=complex)
+            perm = np.zeros((2*nawf),dtype=int)
+            for n in xrange(0,2*nawf,2):
+                perm[n] = n/2
+                perm[n+1] = nawf+n/2
+            ip = np.argsort(perm)
+            for i in xrange(nk1):
+                for j in xrange(nk2):
+                    for k in range(nk3):
+                        aux[:,:,i,j,k] = HR_double[:,ip,i,j,k,0]
+                        HR_double[:,:,i,j,k,0] = aux[ip,:,i,j,k]
 
     return(HR_double)
 
@@ -101,4 +116,70 @@ def soc_p(theta,phi):
         HR_soc[12,2]=np.conjugate(HR_soc[2,12])
         HR_soc[10,3]=np.conjugate(HR_soc[3,10])
         HR_soc[11,3]=np.conjugate(HR_soc[3,11])
+	return(HR_soc)
+def soc_d(theta,phi):
+
+    # Hardcoded to s,p,d. This must change latter.
+        HR_soc = np.zeros((18,18),dtype=complex) 
+
+        sTheta=cmath.sin(theta)
+        cTheta=cmath.cos(theta)
+
+        sPhi=cmath.sin(phi)
+        cPhi=cmath.cos(phi)
+
+        s3 = cmath.sqrt(3.0)
+
+	#Spin Up - Spin Up  part of the d-satets Hamiltonian
+        HR_soc[4,5] = -s3*0.5*np.complex(0.0,sTheta*sPhi)
+        HR_soc[4,6] =  s3*0.5*np.complex(0.0,sTheta*cPhi)
+        HR_soc[5,6] =  -0.5*np.complex(0.0,cTheta)
+        HR_soc[5,7] =  -0.5*np.complex(0.0,sTheta*sPhi)
+        HR_soc[5,8] =   0.5*np.complex(0.0,sTheta*cPhi)
+        HR_soc[6,7] =  -0.5*np.complex(0.0,sTheta*cPhi)
+        HR_soc[6,8] =  -0.5*np.complex(0.0,sTheta*sPhi)
+        HR_soc[7,8] =  -1.0*np.complex(0.0,cTheta)
+        HR_soc[5,4] = np.conjugate(HR_soc[4,5])
+        HR_soc[6,4] = np.conjugate(HR_soc[4,6])
+        HR_soc[6,5] = np.conjugate(HR_soc[5,6])
+        HR_soc[7,5] = np.conjugate(HR_soc[5,7])
+        HR_soc[8,5] = np.conjugate(HR_soc[5,8])
+        HR_soc[7,6] = np.conjugate(HR_soc[6,7])
+        HR_soc[8,6] = np.conjugate(HR_soc[6,8])
+
+	#Spin Down - Spin Down  part of the p-satets Hamiltonian
+        HR_soc[13:18,13:18] = - HR_soc[4:9,4:9] 
+    #Spin Up - Spin Down  part of the p-satets Hamiltonian
+        HR_soc[4,14] = -s3*0.5*( np.complex(cPhi,0.0) + np.complex(0.0,cTheta*sPhi))
+        HR_soc[4,15] = -s3*0.5*( np.complex(sPhi,0.0) - np.complex(0.0,cTheta*cPhi))
+        HR_soc[5,15] =     0.5*( np.complex(0.0,sTheta))
+        HR_soc[5,16] =    -0.5*( np.complex(cPhi,0.0) + np.complex(0.0,cTheta*sPhi))
+        HR_soc[5,17] =    -0.5*( np.complex(sPhi,0.0) - np.complex(0.0,cTheta*cPhi))
+        HR_soc[6,16] =     0.5*( np.complex(sPhi,0.0) - np.complex(0.0,cTheta*cPhi))
+        HR_soc[6,17] =    -0.5*( np.complex(cPhi,0.0) + np.complex(0.0,cTheta*sPhi))
+        HR_soc[7,17] =     1.0*( np.complex(0.0,sTheta))
+        HR_soc[5,13] =  -HR_soc[4,14] 
+        HR_soc[6,13] =  -HR_soc[4,15] 
+        HR_soc[6,14] =  -HR_soc[5,15]
+        HR_soc[7,14] =  -HR_soc[5,16] 
+        HR_soc[8,14] =  -HR_soc[5,17] 
+        HR_soc[7,15] =  -HR_soc[6,16] 
+        HR_soc[8,15] =  -HR_soc[6,17] 
+        HR_soc[8,16] =  -HR_soc[7,17] 
+    #Spin Down - Spin Up  part of the p-satets Hamiltonian
+        HR_soc[14,4] = np.conjugate(HR_soc[4,14]) 
+        HR_soc[15,4] = np.conjugate(HR_soc[4,15])
+        HR_soc[15,5] = np.conjugate(HR_soc[5,15])   
+        HR_soc[16,5] = np.conjugate(HR_soc[5,16])   
+        HR_soc[17,5] = np.conjugate(HR_soc[5,17])   
+        HR_soc[16,6] = np.conjugate(HR_soc[6,16]) 
+        HR_soc[17,6] = np.conjugate(HR_soc[6,17])    
+        HR_soc[17,7] = np.conjugate(HR_soc[7,17])    
+        HR_soc[13,5] = np.conjugate(HR_soc[5,13])
+        HR_soc[13,6] = np.conjugate(HR_soc[6,13])
+        HR_soc[14,6] = np.conjugate(HR_soc[6,14])
+        HR_soc[14,7] = np.conjugate(HR_soc[7,14])
+        HR_soc[14,8] = np.conjugate(HR_soc[8,14])
+        HR_soc[15,7] = np.conjugate(HR_soc[7,15])
+        HR_soc[15,8] = np.conjugate(HR_soc[8,15])
 	return(HR_soc)

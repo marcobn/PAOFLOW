@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -35,48 +35,41 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(eig,shift,delta,ispin,kq_wght):
+def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
     # DOS calculation with gaussian smearing
 
-    emin = np.min(eig)-1.0
-    emax = np.max(eig)-shift/2.0
+    #emin = np.min(eig)-1.0
+    #emax = np.max(eig)-shift/2.0
+    emin = float(emin)
+    emax = float(emax)
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
-    dosvec = np.zeros((eig.size),dtype=float)
 
     # Load balancing
-    ini_ie, end_ie = load_balancing(size,rank,ene.size)
+    ini_ie, end_ie = load_balancing(size,rank,netot)
+
+    nsize = end_ie-ini_ie
 
     dos = np.zeros((ene.size),dtype=float)
-    dosaux = np.zeros((ene.size,1),dtype=float)
-    dosaux1 = np.zeros((ene.size,1),dtype=float)
 
-    dosaux[:,0] = dos_loop(ini_ie,end_ie,ene,eig,delta)
+    for ne in xrange(ene.size):
 
-    if rank == 0:
-        dos[:]=dosaux[:,0]
-        for i in range(1,size):
-            comm.Recv(dosaux1,ANY_SOURCE)
-            dos[:] += dosaux1[:,0]
-    else:
-        comm.Send(dosaux,0)
-    dos /= kq_wght.size
-    dos = comm.bcast(dos)
+        dossum = np.zeros(1,dtype=float)
+        aux = np.zeros(nsize,dtype=float)
+
+        comm.Barrier()
+        comm.Scatter(eig,aux,root=0)
+
+        dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/delta)**2)/delta)
+
+        comm.Barrier()
+        comm.Reduce(dosaux,dossum,op=MPI.SUM)
+        dos[ne] = dossum*float(nawf)/float(netot)
 
     if rank == 0:
         f=open('dos_'+str(ispin)+'.dat','w')
-        for ne in range(ene.size):
+        for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 
     return
-
-def dos_loop(ini_ie,end_ie,ene,eig,delta):
-
-    aux = np.zeros((ene.size),dtype=float)
-
-    for ne in range(ini_ie,end_ie):
-        dosvec = 1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-eig)/delta)**2)/delta
-        aux[ne] = np.sum(dosvec)
-
-    return(aux)
