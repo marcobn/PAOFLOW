@@ -229,12 +229,12 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
                     ik = 0
                     ispin = 0
 
-    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, \
-            kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
+#    return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, \
+#            kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
 
 
 
-#if __name__ == "__main__":
-#	fpath="./fe.save"
-#	read_QE_output_xml(fpath,True,True)
+if __name__ == "__main__":
+	fpath="./fe.save"
+	read_QE_output_xml(fpath,True,True)
 
