@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -40,19 +40,19 @@ def do_bands_calc_1D(Hkaux):
 
     # Count points along symmetry direction
     nL = 0
-    for ik1 in range(nk1):
-        for ik2 in range(nk2):
-            for ik3 in range(nk3):
+    for ik1 in xrange(nk1):
+        for ik2 in xrange(nk2):
+            for ik3 in xrange(nk3):
                 nL += 1
 
     Hkaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
-    for ispin in range(nspin):
-        for i in range(nawf):
-            for j in range(nawf):
+    for ispin in xrange(nspin):
+        for i in xrange(nawf):
+            for j in xrange(nawf):
                 nL=0
-                for ik1 in range(nk1):
-                    for ik2 in range(nk2):
-                        for ik3 in range(nk3):
+                for ik1 in xrange(nk1):
+                    for ik2 in xrange(nk2):
+                        for ik3 in xrange(nk3):
                             Hkaux[i,j,nL,ispin]=Hksp[i,j,ik1,ik2,ik3,ispin]
                             nL += 1
 
@@ -60,24 +60,24 @@ def do_bands_calc_1D(Hkaux):
     # k to R
     npad = 500
     HRaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
-    for ispin in range(nspin):
-        for i in range(nawf):
-            for j in range(nawf):
+    for ispin in xrange(nspin):
+        for i in xrange(nawf):
+            for j in xrange(nawf):
                 HRaux[i,j,:,ispin] = FFT.ifft(Hkaux[i,j,:,ispin])
 
     Hkaux = None
     Hkaux  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
     HRauxp  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
 
-    for ispin in range(nspin):
-        for i in range(nawf):
-            for j in range(nawf):
+    for ispin in xrange(nspin):
+        for i in xrange(nawf):
+            for j in xrange(nawf):
                 HRauxp[i,j,:(nL/2),ispin]=HRaux[i,j,:(nL/2),ispin]
                 HRauxp[i,j,(npad+nL/2):,ispin]=HRaux[i,j,(nL/2):,ispin]
                 Hkaux[i,j,:,ispin] = FFT.fft(HRauxp[i,j,:,ispin])
 
     # Print TB eigenvalues on interpolated mesh
-    for ispin in range(nspin):
+    for ispin in xrange(nspin):
         write_TB_eigs(Hkaux,ispin)
 
     return()

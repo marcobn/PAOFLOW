@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -22,11 +22,12 @@
 #
 from scipy import linalg as LA
 import numpy as np
+import sys
 
 def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
     Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
-    for ispin in range(nspin):
-        for ik in range(nkpnts):
+    for ispin in xrange(nspin):
+        for ik in xrange(nkpnts):
             my_eigs=my_eigsmat[:,ik,ispin]
             #Building the Hamiltonian matrix
             E = np.diag(my_eigs)
@@ -36,7 +37,7 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
             eta=shift
             # Choose only the eigenvalues that are below the energy shift
             bnd_ik=0
-            for n in range(bnd):
+            for n in xrange(bnd):
                 if my_eigs[n] <= eta:
                     bnd_ik += 1
             if bnd_ik == 0: sys.exit('no eigenvalues in selected energy range')
@@ -60,4 +61,13 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
                 Hks[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
             else:
                 sys.exit('shift_type not recognized')
+
+            reordering = False
+            if reordering:
+                # Reordering of the Hamiltonian in 2D spinors for spin-orbit calculations - SYSTEM DEPENDENT!!!
+                aux = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
+                perm = np.array([0,1,2,3,5,6,4,7,9,10,8,11,14,15,13,16,12,17])
+                i = np.argsort(perm)
+                aux[:,:,ik,ispin] = Hks[:,i,ik,ispin]
+                Hks[:,:,ik,ispin] = aux[i,:,ik,ispin]
     return(Hks)

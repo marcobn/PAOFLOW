@@ -1,1 +1,4 @@
-example04 : Bi-bcc bandstructure calculation with spin-orbit included in the TB Hamiltonian.
+example01 : Si with spd pseudpotential
+example02 : Al with spd pseudpotential
+example03 : Bi-bcc bandstructure calculation with spin-orbit included in the TB Hamiltonian.
+example04 : Fe non collinear with spin orbit

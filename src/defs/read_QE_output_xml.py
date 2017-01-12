@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -37,7 +37,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def read_QE_output_xml(fpath,non_ortho):
+def read_QE_output_xml(fpath,verbose,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
@@ -48,7 +48,7 @@ def read_QE_output_xml(fpath,non_ortho):
     alatunits  = root.findall("./CELL/LATTICE_PARAMETER")[0].attrib['UNITS']
     alat   = float(root.findall("./CELL/LATTICE_PARAMETER")[0].text.split()[0])
 
-    if rank == 0: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
+    if rank == 0 and verbose == True: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
     aux=root.findall("./CELL/DIRECT_LATTICE_VECTORS/a1")[0].text.split()
     a1=np.array(aux,dtype="float32")
@@ -81,9 +81,9 @@ def read_QE_output_xml(fpath,non_ortho):
     k1=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k1'])
     k2=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k2'])
     k3=int(root.findall("./BRILLOUIN_ZONE/MONKHORST_PACK_OFFSET")[0].attrib['k3'])
-    if rank == 0: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
+    if rank == 0 and  verbose == True: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
 
-    if rank == 0: print('reading data-file.xml in ',time.clock(),' sec')
+    if rank == 0 and  verbose == True: print('reading data-file.xml in ',time.clock(),' sec')
     reset=time.clock()
 
     # Reading atomic_proj.xml
@@ -94,6 +94,7 @@ def read_QE_output_xml(fpath,non_ortho):
     #if rank == 0: print('Number of kpoints: {0:d}'.format(nkpnts))
 
     nspin  = int(root.findall("./HEADER/NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
+    if nspin == 4: nspin = 1
     #if rank == 0: print('Number of spin components: {0:d}'.format(nspin))
 
     kunits = root.findall("./HEADER/UNITS_FOR_K-POINTS")[0].attrib['UNITS']
@@ -111,16 +112,16 @@ def read_QE_output_xml(fpath,non_ortho):
 
 
     nbnds  = int(root.findall("./HEADER/NUMBER_OF_BANDS")[0].text.split()[0])
-    if rank == 0: print('Number of bands: {0:d}'.format(nbnds))
+    if rank == 0 and  verbose == True: print('Number of bands: {0:d}'.format(nbnds))
 
     aux    = root.findall("./HEADER/UNITS_FOR_ENERGY")[0].attrib['UNITS']
     #if rank == 0: print('The units for energy are {0:s}'.format(aux))
 
     Efermi = float(root.findall("./HEADER/FERMI_ENERGY")[0].text.split()[0])*Ry2eV
-    if rank == 0: print('Fermi energy: {0:f} eV '.format(Efermi))
+    if rank == 0 and  verbose == True: print('Fermi energy: {0:f} eV '.format(Efermi))
 
     nawf   =int(root.findall("./HEADER/NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
-    if rank == 0: print('Number of atomic wavefunctions: {0:d}'.format(nawf))
+    if rank == 0 and  verbose == True: print('Number of atomic wavefunctions: {0:d}'.format(nawf))
 
     #Read eigenvalues and projections
 
@@ -138,7 +139,7 @@ def read_QE_output_xml(fpath,non_ortho):
 
     if rank == 0:
         U[:,:,:,:]=Uaux[:,:,:,:,0]
-        for i in range(1,size):
+        for i in xrange(1,size):
             comm.Recv(Uaux1,ANY_SOURCE)
             U[:,:,:,:] += Uaux1[:,:,:,:,0]
     else:
@@ -149,19 +150,19 @@ def read_QE_output_xml(fpath,non_ortho):
 
     if rank == 0:
         my_eigsmat[:,:,:]=my_eigsmataux[:,:,:,0]
-        for i in range(1,size):
+        for i in xrange(1,size):
             comm.Recv(my_eigsmataux1,ANY_SOURCE)
             my_eigsmat[:,:,:] += my_eigsmataux1[:,:,:,0]
     else:
         comm.Send(my_eigsmataux,0)
     my_eigsmat = comm.bcast(my_eigsmat)
 
-    if rank == 0: print('reading eigenvalues and projections in ',time.clock()-reset,' sec')
+    if rank == 0 and  verbose == True: print('reading eigenvalues and projections in ',time.clock()-reset,' sec')
     reset=time.clock()
 
     if non_ortho:
         Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-        for ik in range(nkpnts):
+        for ik in xrange(nkpnts):
             #There will be nawf projections. Each projector of size nbnds x 1
             ovlp_type = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].attrib['type']
             aux = root.findall("./OVERLAPS/K-POINT.{0:d}/OVERLAP.1".format(ik+1))[0].text
@@ -188,8 +189,8 @@ def read_eig(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
     my_eigsmat_p = np.zeros((nbnds,nkpnts,nspin))
 
-    for ik in range(ini_ik,end_ik):
-        for ispin in range(nspin):
+    for ik in xrange(ini_ik,end_ik):
+        for ispin in xrange(nspin):
         #Reading eigenvalues
             if nspin==1:
                 eigk_type=root.findall("./EIGENVALUES/K-POINT.{0:d}/EIG".format(ik+1))[0].attrib['type']
@@ -210,10 +211,10 @@ def read_proj(ini_ik,end_ik,root,nbnds,nawf,nkpnts,nspin,Efermi):
 
     U_p = np.zeros((nbnds,nawf,nkpnts,nspin),dtype=complex)
 
-    for ik in range(ini_ik,end_ik):
-        for ispin in range(nspin):
+    for ik in xrange(ini_ik,end_ik):
+        for ispin in xrange(nspin):
             #Reading projections
-            for iin in range(nawf): #There will be nawf projections. Each projector of size nbnds x 1
+            for iin in xrange(nawf): #There will be nawf projections. Each projector of size nbnds x 1
                 if nspin==1:
                     wfc_type=root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].attrib['type']
                     aux     =root.findall("./PROJECTIONS/K-POINT.{0:d}/ATMWFC.{1:d}".format(ik+1,iin+1))[0].text

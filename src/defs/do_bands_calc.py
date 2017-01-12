@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -28,7 +28,7 @@ import sys
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-from write_TB_eigs import write_TB_eigs
+from write_TB_eigs import *
 #from kpnts_interpolation_mesh import *
 from kpnts_interpolation_mesh import *
 from do_non_ortho import *
@@ -44,64 +44,43 @@ def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S,ibrav,alat,a_vectors,b_vectors
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
     nkpi=kq.shape[1]
-    for n in range(nkpi):
+    for n in xrange(nkpi):
         kq [:,n]=kq[:,n].dot(b_vectors)
-
-    nawf = HRaux.shape[0]
-    nk1 = HRaux.shape[2]
-    nk2 = HRaux.shape[3]
-    nk3 = HRaux.shape[4]
-    nspin = HRaux.shape[5]
-    Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
-    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # read data arrays from tasks
-    Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
-    Hks_aux1  = np.zeros((nawf,nawf,nkpi,nspin,1),dtype=complex) # receiving data arrays
-    Sks_aux1  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nkpi)
 
-    Hks_aux[:,:,:,:,0] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
+    nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
+    Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
+    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
 
-    if rank == 0:
-        Hks_int[:,:,:,:]=Hks_aux[:,:,:,:,0]
-        for i in range(1,size):
-            comm.Recv(Hks_aux1,ANY_SOURCE)
-            Hks_int[:,:,:,:] += Hks_aux1[:,:,:,:,0]
-    else:
-        comm.Send(Hks_aux,0)
-    Hks_int = comm.bcast(Hks_int)
+    Hks_aux[:,:,:,:] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
 
+    comm.Allreduce(Hks_aux,Hks_int,op=MPI.SUM)
+
+    Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
     if read_S:
+        Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
         Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
 
-        if rank == 0:
-            Sks_int[:,:,:]=Sks_aux[:,:,:,0]
-            for i in range(1,size):
-                comm.Recv(Sks_aux1,ANY_SOURCE)
-                Sks_int[:,:,:] += Sks_aux1[:,:,:,0]
-        else:
-            comm.Send(Sks_aux,0)
-        Sks_int = comm.bcast(Sks_int)
-        #Hks_int = do_non_ortho(Hks_int,Sks_int)
+        comm.Allreduce(Sks_aux,Sks_int,op=MPI.SUM)
 
-    if rank ==0:
-        for ispin in range(nspin):
-            write_TB_eigs(Hks_int,Sks_int,read_S,ispin)
-    return()
+    E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
+    v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+
+    for ispin in xrange(nspin):
+        E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_TB_eigs(Hks_int,Sks_int,read_S,ispin)
+
+    return(E_kp,v_kp)
 
 def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx):
 
     auxh = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex)
+    HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
 
-    for ik in range(ini_ik,end_ik):
-        for ispin in range(nspin):
-            for i in range(nk1):
-                for j in range(nk2):
-                    for k in range(nk3):
-                        phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[idx[i,j,k],:])*1j)
-                        auxh[:,:,ik,ispin] += HRaux[:,:,i,j,k,ispin]*phase
+    for ik in xrange(ini_ik,end_ik):
+        for ispin in xrange(nspin):
+             auxh[:,:,ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)
 
@@ -109,10 +88,10 @@ def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
 
     auxs = np.zeros((nawf,nawf,nkpi),dtype=complex)
 
-    for ik in range(ini_ik,end_ik):
-        for i in range(nk1):
-            for j in range(nk2):
-                for k in range(nk3):
+    for ik in xrange(ini_ik,end_ik):
+        for i in xrange(nk1):
+            for j in xrange(nk2):
+                for k in xrange(nk3):
                     phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[idx[i,j,k],:])*1j)
                     auxs[:,:,ik] += SRaux[:,:,i,j,k]*phase
 

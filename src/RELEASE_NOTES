@@ -1,0 +1,6 @@
+11/26/2016
+
+- nfft(x) is now the dimension of the MP grid (not the sero pad dimension)
+- dos reads emax and emin energy range
+- master/slaves redesign of parallel processing
+- added support for large MP array via serial pools

@@ -1,7 +1,7 @@
 #
-# AFLOWpi_TB
+# PAOpy
 #
-# Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
 # Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
 # This file is distributed under the terms of the
@@ -94,7 +94,7 @@ def free2abc(cellparamatrix,cosine=True,degrees=True,string=True,bohr=False):
         paramArray = [a,b,c,cosBC,cosAC,cosAB]
 
         param_list=[]
-        for v in range(len(paramArray)):
+        for v in xrange(len(paramArray)):
             param_list.append(float('%10.5e'%np.around(paramArray[v],decimals=5)))
         paramArray=tuple(param_list)
 
@@ -109,7 +109,7 @@ def free2abc(cellparamatrix,cosine=True,degrees=True,string=True,bohr=False):
         paramArray = (a,b,c,alpha,beta,gamma)
 
         param_list=[]
-        for v in range(len(paramArray)):
+        for v in xrange(len(paramArray)):
             param_list.append(float('%10.5e'%np.around(paramArray[v],decimals=5)))
         paramArray=tuple(param_list)
 
@@ -183,7 +183,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         special_points = {
             'gG'  : [0, 0, 0],
             'H'   : [0.5, -0.5, 0.5],
+            'Hp'   : [0.5, 0.5, -0.5],
             'P'   : [0.25, 0.25, 0.25],
+            'Np'   : [0.5, 0.0, 0.0],
             'N'   : [0.0, 0.0, 0.5]
             }
 
@@ -200,7 +202,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             second = qe_conv.dot(first)
             special_points[k]=tuple(second.tolist())
 
-        default_band_path = 'gG-H-N-gG-P-H|P-N'
+
+        #default_band_path = 'gG-H-N-gG-P-H|P-N'
+        default_band_path = 'gG-H-P-N-gG-Hp-Np-gG'
         band_path = default_band_path
         return special_points, band_path
 
@@ -979,7 +983,7 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,dk):
         point1 = None
         point2 = None
 
-        for index2 in range(len(a)-1):
+        for index2 in xrange(len(a)-1):
             try:
                 point1 = a[index2]
                 point2 = a[index2+1]

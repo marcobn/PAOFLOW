@@ -1,8 +1,8 @@
-# AFLOWpi_TB
+# PAOπ
 
- AFLOWpi_TB
+ PAOπ
 
- Utility to construct and operate on TB Hamiltonians from the projections of DFT wfc on the pseudoatomic orbital basis (PAO)
+ Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 
  Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
  This file is distributed under the terms of the
@@ -12,6 +12,7 @@
 
 
  References:
+
  Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
  Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
 
