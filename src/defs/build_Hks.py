@@ -62,12 +62,4 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
             else:
                 sys.exit('shift_type not recognized')
 
-            reordering = False
-            if reordering:
-                # Reordering of the Hamiltonian in 2D spinors for spin-orbit calculations - SYSTEM DEPENDENT!!!
-                aux = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
-                perm = np.array([0,1,2,3,5,6,4,7,9,10,8,11,14,15,13,16,12,17])
-                i = np.argsort(perm)
-                aux[:,:,ik,ispin] = Hks[:,i,ik,ispin]
-                Hks[:,:,ik,ispin] = aux[i,:,ik,ispin]
     return(Hks)

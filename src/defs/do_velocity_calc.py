@@ -38,6 +38,7 @@ from do_non_ortho import *
 from do_momentum import *
 from load_balancing import *
 from constants import *
+from clebsch_gordan import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -101,10 +102,7 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                 # NOTE: The above works if spin_orbit == True
         else:
             # Testing on S_z
-            Sj = np.zeros((nawf,nawf),dtype=complex)
-            diag = 0.5*np.array([1,-1,1,-1,1,1,-1,-1,1,1,-1,-1,1,1,1,-1,-1,-1])
-            for n in xrange(nawf):
-                Sj[n,n] = diag[n]
+            Sj = clebsch_gordan()
 
         jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
         for ik in xrange(nkpi):
