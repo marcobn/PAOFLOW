@@ -33,6 +33,8 @@ import scipy.linalg.lapack as lapack
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
+from clebsch_gordan import *
+
 from load_balancing import *
 
 # initialize parallel execution
@@ -40,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_current(vec,dHksp,spol,npool):
+def do_spin_current(vec,dHksp,spol,npool,spin_orbit):
     # calculate spin_current operator
 
     index = None
@@ -55,20 +57,21 @@ def do_spin_current(vec,dHksp,spol,npool):
     nawf = index['nawf']
     nspin = index['nspin']
 
+    # Compute spin current matrix elements
     # Pauli matrices (x,y,z)
     sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    # Spin operator matrix
-    Sj = np.zeros((nawf,nawf),dtype=complex)
-    for i in xrange(nawf/2):
-        Sj[i,i] = sP[spol][0,0]
-        Sj[i,i+1] = sP[spol][0,1]
-    for i in xrange(nawf/2,nawf):
-        Sj[i,i-1] = sP[spol][1,0]
-        Sj[i,i] = sP[spol][1,1]
-    # NOTE: The above works if spin_orbit == True
-    #diag = np.array([0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5,-0.5])
-    #for n in xrange(nawf):
-    #    sP[n,n] = diag[n]
+    if spin_orbit:
+        # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
+        Sj = np.zeros((nawf,nawf),dtype=complex)
+        for i in xrange(nawf/2):
+            Sj[i,i] = sP[spol][0,0]
+            Sj[i,i+1] = sP[spol][0,1]
+        for i in xrange(nawf/2,nawf):
+            Sj[i,i-1] = sP[spol][1,0]
+            Sj[i,i] = sP[spol][1,1]
+    else:
+        # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
+        Sj = clebsch_gordan()
 
     if rank == 0:
         jksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)

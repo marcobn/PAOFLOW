@@ -267,7 +267,7 @@ if do_bands and not(onedim):
     if band_topology:
         # Compute the velocity, momentum and Berry curvature operators along the path in the IBZ
         from do_velocity_calc import *
-        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol)
+        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,do_spin_orbit)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
@@ -413,7 +413,7 @@ if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
         # Compute the spin current operator j^l_n,m(k)
         #----------------------
         from do_spin_current import *
-        jksp = do_spin_current(v_k,dHksp,spol,npool)
+        jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit)
 
         if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()

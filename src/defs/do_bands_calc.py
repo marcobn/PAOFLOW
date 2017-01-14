@@ -28,6 +28,8 @@ import sys
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
+import matplotlib.pyplot as plt
+
 from write_TB_eigs import *
 #from kpnts_interpolation_mesh import *
 from kpnts_interpolation_mesh import *
@@ -70,6 +72,13 @@ def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S,ibrav,alat,a_vectors,b_vectors
 
     for ispin in xrange(nspin):
         E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_TB_eigs(Hks_int,Sks_int,read_S,ispin)
+
+#    if rank == 0:
+#        plt.matshow(abs(Hks_int[:,:,1445,0]))
+#        plt.colorbar()
+#        plt.show()
+#
+#        np.save('Hks_noSO0',Hks_int[:,:,0,0])
 
     return(E_kp,v_kp)
 

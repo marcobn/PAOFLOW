@@ -45,7 +45,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol):
+def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,spin_orbit):
     # Compute bands on a selected path in the BZ
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
@@ -78,6 +78,11 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
 
     comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
 
+    #if rank == 0: 
+    #    plt.matshow(abs(dHks[0,:,:,1445,0]))
+    #    plt.colorbar()
+    #    plt.show()
+
     # Compute momenta
     pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
     for ik in xrange(nkpi):
@@ -85,13 +90,18 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
             for l in xrange(3):
                 pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
                             (dHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
-    spin_orbit = False
+
+    #if rank == 0: 
+    #    plt.matshow(abs(pks[1445,0,:,:,0]))
+    #    plt.colorbar()
+    #    plt.show()
+
     if spin_Hall:
         # Compute spin current matrix elements
         # Pauli matrices (x,y,z)
         sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
         if spin_orbit:
-            # Spin operator matrix 
+            # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
             Sj = np.zeros((nawf,nawf),dtype=complex)
             for i in xrange(nawf/2):
                 Sj[i,i] = sP[spol][0,0]
@@ -99,9 +109,8 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
             for i in xrange(nawf/2,nawf):
                 Sj[i,i-1] = sP[spol][1,0]
                 Sj[i,i] = sP[spol][1,1]
-                # NOTE: The above works if spin_orbit == True
         else:
-            # Testing on S_z
+            # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
             Sj = clebsch_gordan()
 
         jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
@@ -121,6 +130,11 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
         Omj_znk = np.zeros((nkpi,nawf),dtype=float)
         Omj_zk = np.zeros((nkpi),dtype=float)
 
+    #if rank == 0: 
+    #    plt.matshow(abs(jks[1445,0,:,:,0]))
+    #    plt.colorbar()
+    #    plt.show()
+
     # Compute Berry curvature
     ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
     deltab = 0.05
@@ -133,10 +147,10 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                     Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
                     ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                     if spin_Hall:
-                        #Omj_znk[ik,n] += -1.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]-jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]) / \
-                        #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
-                        Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
+                        Omj_znk[ik,n] += -1.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]-jks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]) / \
                         ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+                        #Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
+                        #((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
         Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
         if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
 
@@ -152,6 +166,7 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
             f.close()
 
     if rank == 0:
+        if spin_orbit: bnd *= 2
         velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
         for n in xrange(nawf):
             velk[:,:,n,:] = np.real(pks[:,:,n,n,:])

@@ -22,6 +22,7 @@
 #
 from scipy import linalg as LA
 import numpy as np
+from numpy import linalg as LAN
 import sys
 
 def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
@@ -61,5 +62,10 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
                 Hks[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
             else:
                 sys.exit('shift_type not recognized')
+
+    #Uj = np.load('Uj.npy')
+    #for ispin in xrange(nspin):
+    #    for ik in range(nkpnts):
+    #        Hks[:,:,ik,ispin] = np.dot(Uj,Hks[:,:,ik,ispin]).dot(LAN.inv(Uj))
 
     return(Hks)
