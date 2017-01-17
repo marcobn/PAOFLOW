@@ -25,89 +25,133 @@
 # optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
 # 
 
-from __future__ import print_function
+import cmath
+import sys
+
 import numpy as np
-from mpi4py import MPI
+from numpy import linalg as LAN
+from scipy import linalg as LA
+import matplotlib.pyplot as plt
 
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
 
-def clebsch_gordan():
-    U0 = np.array([[0,1],
-                   [1,0]])
+def spinor(l,j,m,spin):
+# This function calculates the numerical Clebsch-Gordan coefficients of a spinor
+# with orbital angular momentum l, total angular momentum j, 
+# projection along z of the total angular momentum m+-1/2. Spin selects
+# the up (spin=0) or down (spin=1) coefficient.
 
-    Sz0 = 0.5*np.array([[1, 0],
-                        [0,-1]])
+    if spin != 0 and spin != 1: sys.exit('spinor - spin direction unknown')
+    if m < -l-1 or m > l: sys.exit('spinor - m not allowed')
 
-    sq13 = np.sqrt(1./3.)
-    sq23 = np.sqrt(2./3.)
-    U1 = np.array([[sq23,0,    0,-sq13,0,    0],
-                   [   0,0, sq13,    0,0,-sq23],
-                   [   0,1,    0,    0,0,    0],
-                   [sq13,0,    0, sq23,0,    0],
-                   [   0,0, sq23,    0,0, sq13],
-                   [   0,0,    0,    0,1,    0]])
-    #U1 = np.array([[0,0   ,    0,sq13,-sq23,0],
-    #               [0,sq23,-sq13,   0,    0,0],
-    #               [0,   0,    0,   0,    0,1],
-    #               [0,   0,    0,sq23, sq13,0],
-    #               [0,sq13, sq23,   0,    0,0],
-    #               [1,   0,    0,   0,    0,0]])
-    Sz1 = 0.5*np.array([[1, 0, 0, 0, 0, 0],
-                        [0,-1, 0, 0, 0, 0],
-                        [0, 0, 1, 0, 0, 0],
-                        [0, 0, 0,-1, 0, 0],
-                        [0, 0, 0, 0, 1, 0],
-                        [0, 0, 0, 0, 0,-1]])
+    denom=1./(2.*l+1.)
+    if (abs(j-l-0.5) < 1.e-8):
+        if spin == 0: spinor = np.sqrt((l+m+1.)*denom)
+        if spin == 1: spinor = np.sqrt((l-m)*denom)
+    elif abs(j-l+0.5) < 1.e-8:
+        if m < -l+1:
+            spinor=0.
+        else:
+            if spin == 0: spinor = np.sqrt((l-m+1.)*denom)
+            if spin == 1: spinor = -np.sqrt((l+m)*denom)
 
-    sq15 = np.sqrt(1./5.)
-    sq25 = np.sqrt(2./5.)
-    sq35 = np.sqrt(3./5.)
-    sq45 = np.sqrt(4./5.)
+    else:
+        sys.exit('spinor - j and l not compatible')
 
-    U2 = np.array([[sq45,   0,    0,-sq15,    0,    0,    0,    0,    0,    0],
-                   [   0,   0, sq35,    0,    0,-sq25,    0,    0,    0,    0],
-                   [   0,   0,    0,    0, sq25,    0,    0,-sq35,    0,    0],
-                   [   0,   0,    0,    0,    0,    0, sq15,    0,    0,-sq45],
-                   [   0,   1,    0,    0,    0,    0,    0,    0,    0,    0],
-                   [sq15,   0,    0, sq45,    0,    0,    0,    0,    0,    0],
-                   [   0,   0, sq25,    0,    0, sq35,    0,    0,    0,    0],
-                   [   0,   0,    0,    0, sq35,    0,    0, sq25,    0,    0],
-                   [   0,   0,    0,    0,    0,    0, sq45,    0,    0, sq15],
-                   [   0,   0,    0,    0,    0,    0,    0,    0,    1,    0]])
-    #U2 = np.array([[0,   0,    0,   0,    0,   0,    0,sq15,-sq45, 0],
-    #               [0,   0,    0,   0,    0,sq25,-sq35,   0,    0, 0],
-    #               [0,   0,    0,sq35,-sq25,   0,    0,   0,    0, 0],
-    #               [0,sq45,-sq15,   0,    0,   0,    0,   0,    0, 0],
-    #               [0,   0,    0,   0,    0,   0,    0,   0,    0, 1],
-    #               [0,   0,    0,   0,    0,   0,    0,sq45, sq15, 0],
-    #               [0,   0,    0,   0,    0,sq35, sq25,   0,    0, 0],
-    #               [0,   0,    0,sq25, sq35,   0,    0,   0,    0, 0],
-    #               [0,sq15, sq45,   0,    0,   0,    0,   0,    0, 0],
-    #               [1,   0,    0,   0,    0,   0,    0,   0,    0, 0]])
+    return(spinor)
 
-    Sz2 = 0.5*np.array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                        [0,-1, 0, 0, 0, 0, 0, 0, 0, 0],
-                        [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-                        [0, 0, 0,-1, 0, 0, 0, 0, 0, 0],
-                        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-                        [0, 0, 0, 0, 0,-1, 0, 0, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0,-1, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
-                        [0, 0, 0, 0, 0, 0, 0, 0, 0,-1]])
+def clebsch_gordan(nawf,nl,spol):
+    #
+    # Transformation matrices from the | l m s s_z > basis to the
+    # | j mj l s > basis in the l-subspace
+    #
+    l = 0
+    Ul0 = np.zeros((2*(2*l+1),2*(2*l+1)),dtype=float)
+    Ul0[0,1] = 1
+    Ul0[1,0] = 1
 
-    Sz = np.zeros((18,18),dtype=float)
-    U = np.zeros((18,18),dtype=float)
+    l = 1
+    Ul1 = np.zeros((2*(2*l+1),2*(2*l+1)),dtype=float)
+    j = l - 0.5
+    for m1 in range(1,2*l+1):
+        m = m1 - l
+        Ul1[m1-1,2*(m1-1)+1-1] = spinor(l,j,m,0)
+        Ul1[m1-1,2*(m1-1)+4-1] = spinor(l,j,m,1)
+    j = l + 0.5
+    for m1 in xrange (1,2*l+2+1):
+        m = m1 - l - 2
+        if (m1 == 1):
+           Ul1[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
+        elif (m1==2*l+2):
+           Ul1[m1+2*l-1,2*(m1-1)-1-1] = spinor(l,j,m,0)
+        else:
+           Ul1[m1+2*l-1,2*(m1-1)-1-1] = spinor(l,j,m,0)
+           Ul1[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
 
-    Sz[:2,:2] = -Sz0
-    Sz[2:8,2:8] = -Sz1
-    Sz[8:18,8:18] = -Sz2
+    l = 2
+    Ul2 = np.zeros((2*(2*l+1),2*(2*l+1)),dtype=float)
+    j = l - 0.5
+    for m1 in range(1,2*l+1):
+        m = m1 - l
+        Ul2[m1-1,2*(m1-1)+1-1] = spinor(l,j,m,0)
+        Ul2[m1-1,2*(m1-1)+4-1] = spinor(l,j,m,1)
+    j = l + 0.5
+    for m1 in xrange (1,2*l+2+1):
+        m = m1 - l - 2
+        if (m1 == 1):
+           Ul2[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
+        elif (m1==2*l+2):
+           Ul2[m1+2*l-1,2*(m1-1)-1-1] = spinor(l,j,m,0)
+        else:
+           Ul2[m1+2*l-1,2*(m1-1)-1-1] = spinor(l,j,m,0)
+           Ul2[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
 
-    U[:2,:2] = np.dot(U0,Sz0).dot(U0.T)
-    U[2:8,2:8] = np.dot(U1,Sz1).dot(U1.T)
-    U[8:18,8:18] = np.dot(U2,Sz2).dot(U2.T)
+    l = 3
+    Ul3 = np.zeros((2*(2*l+1),2*(2*l+1)),dtype=float)
+    j = l - 0.5
+    for m1 in range(1,2*l+1):
+        m = m1 - l
+        Ul3[m1-1,2*(m1-1)+1-1] = spinor(l,j,m,0)
+        Ul3[m1-1,2*(m1-1)+4-1] = spinor(l,j,m,1)
+    j = l + 0.5
+    for m1 in xrange (1,2*l+2+1):
+        m = m1 - l - 2
+        if (m1 == 1):
+           Ul3[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
+        elif (m1==2*l+2):
+           Ul3[m1+2*l-1,2*(m1-1)-1-1] = spinor(l,j,m,0)
+        else:
+           Ul3[m1+2*l-1,2*(m1-1)-1-1] = spinor(l,j,m,0)
+           Ul3[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
 
-    #SzU = np.dot(U,Sz).dot(U.T)
+    Ul = [Ul0,Ul1,Ul2,Ul3]
 
-    return(U)
+    # Build the full transformation matrix
+
+    occ = [2,6,10,14]
+
+    ntot = np.dot(nl,occ)
+    if ntot != nawf: sys.exit('wrong number of shells in reading')
+    Tn = np.zeros((ntot,ntot),dtype=float)
+
+    n = 0
+    for l in range(4):
+        for i in range(nl[l]):
+            Tn[n:n+occ[l],n:n+occ[l]] = Ul[l]
+            n += occ[l]
+
+    # Pauli matrices (x,y,z) 
+    sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+
+    # Spin operator matrix  in the basis of |l,m,s,s_z>
+    Sl = np.zeros((nawf,nawf),dtype=complex)
+    for i in xrange(0,nawf,2):
+        Sl[i,i] = sP[spol][0,0]
+        Sl[i,i+1] = sP[spol][0,1]
+        Sl[i+1,i] = sP[spol][1,0]
+        Sl[i+1,i+1] = sP[spol][1,1]
+
+    # Spin operator matrix  in the basis of |j,m_j,l,s>
+    Sj = np.zeros((nawf,nawf),dtype=complex)
+    Sj = np.dot(Tn,Sl).dot(Tn.T)
+
+    return(Sj)

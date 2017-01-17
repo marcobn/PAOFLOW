@@ -42,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_current(vec,dHksp,spol,npool,spin_orbit):
+def do_spin_current(vec,dHksp,spol,npool,spin_orbit,nl):
     # calculate spin_current operator
 
     index = None
@@ -71,7 +71,7 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit):
             Sj[i,i] = sP[spol][1,1]
     else:
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-        Sj = clebsch_gordan()
+        Sj = clebsch_gordan(nawf,nl,spol)
 
     if rank == 0:
         jksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
