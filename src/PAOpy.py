@@ -107,7 +107,7 @@ verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
         lambda_p, lambda_d, Berry, npool, band_topology, ipol, jpol, \
-        spin_Hall, spol = read_input(input_file)
+        spin_Hall, spol, nshell = read_input(input_file)
 
 if size >  1:
     if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
@@ -267,8 +267,7 @@ if do_bands and not(onedim):
     if band_topology:
         # Compute the velocity, momentum and Berry curvature operators along the path in the IBZ
         from do_velocity_calc import *
-        nl = [1,1,1,0]
-        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,do_spin_orbit,nl)
+        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,do_spin_orbit,nshell)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
@@ -414,7 +413,7 @@ if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
         # Compute the spin current operator j^l_n,m(k)
         #----------------------
         from do_spin_current import *
-        jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,nl)
+        jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,nshell)
 
         if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
