@@ -29,6 +29,7 @@ def read_input(input_file):
 
     verbose = False
     non_ortho  = False
+    write2file = False
     shift_type = 2
     shift      = 20
     pthr       = 0.9
@@ -39,6 +40,7 @@ def read_input(input_file):
     do_dos = False
     emin = -10.
     emax = 2
+    delta = 0.01
     nfft1 = 0
     nfft2 = 0
     nfft3 = 0
@@ -82,6 +84,13 @@ def read_input(input_file):
                 non_ortho = False
             else:
                 non_ortho = True
+        if re.search('write2file',line):
+            p = line.split()
+            write2file = p[1]
+            if write2file == 'False':
+                write2file = False
+            else:
+                write2file = True
         if re.search('do_comparison',line):
             p = line.split()
             do_comparison = p[1]
@@ -213,7 +222,7 @@ def read_input(input_file):
     if fpath == '':
         sys.exit('missing path to _.save')
 
-    return(verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
+    return(verbose, non_ortho, write2file, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
             ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, \
             ipol,jpol,spin_Hall,spol,nshell)

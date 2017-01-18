@@ -25,10 +25,10 @@ import numpy as np
 from numpy import linalg as LAN
 import sys
 
-def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U):
+def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks):
     Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
-    for ispin in xrange(nspin):
-        for ik in xrange(nkpnts):
+    for ik in xrange(nkpnts):
+        for ispin in xrange(nspin):
             my_eigs=my_eigsmat[:,ik,ispin]
             #Building the Hamiltonian matrix
             E = np.diag(my_eigs)
@@ -63,9 +63,8 @@ def build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type
             else:
                 sys.exit('shift_type not recognized')
 
-    #Uj = np.load('Uj.npy')
-    #for ispin in xrange(nspin):
-    #    for ik in range(nkpnts):
-    #        Hks[:,:,ik,ispin] = np.dot(Uj,Hks[:,:,ik,ispin]).dot(LAN.inv(Uj))
+        # This is needed for consistency of the ordering of the matrix elements (see "transposition" above)
+        # Important in ACBN0 file writing
+        Sks[:,:,ik] = Sks[:,:,ik].T
 
-    return(Hks)
+    return(Hks,Sks)

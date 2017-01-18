@@ -103,7 +103,7 @@ nthread = multiprocessing.cpu_count()
 #----------------------
 input_file = str(sys.argv[1])
 
-verbose, non_ortho, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
+verbose, non_ortho, write2file, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
         do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
         lambda_p, lambda_d, Berry, npool, band_topology, ipol, jpol, \
@@ -129,7 +129,7 @@ if (not non_ortho):
 else:
     U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,non_ortho)
+    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
 if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
@@ -156,7 +156,7 @@ if rank == 0 and verbose: print('Range of suggested shift ',np.amin(my_eigsmat[b
 # Building the TB Hamiltonian
 #----------------------
 nbnds_norm = nawf
-Hks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
+Hks,Sks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
 
 if rank == 0: print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 reset=time.time()
@@ -171,6 +171,33 @@ reset=time.time()
 
 if non_ortho:
     Hks = do_non_ortho(Hks,Sks)
+
+if write2file:
+    #----------------------
+    # write to file Hks,Sks,kpnts,kpnts_wght
+    #----------------------
+    f=open('kham.txt','w')
+    for ik in xrange(nkpnts):
+        for i in xrange(nawf):
+            for j in xrange(nawf):
+                f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
+    f.close()
+    f=open('kovp.txt','w')
+    for ik in xrange(nkpnts):
+        for i in xrange(nawf):
+            for j in xrange(nawf):
+                f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
+    f.close()
+    f=open('k.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
+    f.close()
+    f=open('wk.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f \n' %(kpnts_wght[ik]))
+    f.close()
+    if rank == 0: print('H(k),S(k),k,wk written to file')
+    if not(do_comparison): sys.exit()
 
 #----------------------
 # Plot the TB and DFT eigevalues. Writes to comparison.pdf

@@ -26,12 +26,7 @@ import numpy as np
 import os
 import PySide
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-
-#units
-Ry2eV   = 13.60569193
 
 def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
 
@@ -43,7 +38,7 @@ def plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     #for ispin in xrange(nspin):
     for ik in xrange(nkpnts):
         if read_S:
-            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
+            eigval,_ = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik],lower=False)
         else:
             eigval,_ = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[:,ik,ispin] = np.sort(np.real(eigval))
