@@ -1,0 +1,14 @@
+	fpath       	./fe.save
+	non_ortho      	False 			# Projections are read orthogonal, If non-orthogonality is required, read overlaps
+	shift_type  	1	    		# Shifting algorithm: 0 = 2013, 1 = 2016, 2 = no shift
+	shift       	5.0		    	# Shift amount (in eV)
+	pthr        	0.9			    # Projectability threshold
+	do_comparison 	False			# compare original and filtered eigenvalues (input mesh)
+	double_grid	    True			# dense grid from fft interpolation
+	do_bands	    True			# compute bands
+	onedim		    False			# bands along a single line in the BZ
+	do_dos		    False 		# compute dos
+	delta		    0.100			# gaussian spreading for dos calculation
+	nfft123		    100 100 100   		# zero padding dimensions
+	ibrav		    1	    		# Bravais lattice identifier (from QE) - for bands path
+	dkres		    0.01	    	# k resolution along the bands path
