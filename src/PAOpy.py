@@ -273,8 +273,11 @@ if do_bands and not(onedim):
         Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
         Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
         Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+        Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+        Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
         Hkaux = do_ortho(Hkaux,Skaux)
-
+        Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+        Skaux = np.reshape(Skaux,(nawf,nawf,nk1,nk2,nk3),order='C')
         HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
         non_ortho = False
 
@@ -330,8 +333,11 @@ if rank == 0:
             Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
             Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
             Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+            Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+            Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
             Hkaux = do_ortho(Hkaux,Skaux)
-
+            Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+            Skaux = np.reshape(Skaux,(nawf,nawf,nk1,nk2,nk3),order='C')
             HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
             non_ortho = False
 
