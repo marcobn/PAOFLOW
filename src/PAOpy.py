@@ -56,25 +56,18 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_spin_orbit import *
 from constants import *
+from read_QE_output_xml_parse import *
 
 #----------------------
 # initialize parallel execution
 #----------------------
 comm=MPI.COMM_WORLD
 size=comm.Get_size()
-if size > 1:
-    rank = comm.Get_rank()
-    from read_QE_output_xml_parse import *
-else:
-    rank=0
-    from read_QE_output_xml import *
-    #from read_QE_output_xml_parse import *
 
 #----------------------
 # initialize time
 #----------------------
 if rank == 0: start = time.time()
-
 
 #----------------------
 # Print header
