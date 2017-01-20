@@ -142,7 +142,7 @@ for n in xrange(nbnds):
     if Pn[n] > pthr:
         bnd += 1
 if rank == 0 and verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
-if rank == 0 and verbose: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
+if rank == 0 and verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
                                 np.amax(my_eigsmat[bnd,:,:]))
 
 #----------------------
