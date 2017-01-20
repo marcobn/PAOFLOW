@@ -1,0 +1,4 @@
+acbn0 uses isome modules and the cints library from PyQuante (http://pyquante.sourceforge.net/).
+In order to run the program properly, in clib run the shell script 
+install.sh (check the $PATH to the include files in your python distribution).
+

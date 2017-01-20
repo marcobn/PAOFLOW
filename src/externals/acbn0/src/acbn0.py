@@ -26,7 +26,6 @@ import logging
 import integs
 import time
 
-sys.path.append('/usr/lib64/python2.7/site-packages/PyQuante')
 
 try:
     from cints import contr_coulomb_v3 as ccc
