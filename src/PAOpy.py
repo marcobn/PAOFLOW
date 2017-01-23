@@ -437,11 +437,11 @@ if do_pdos:
 
     if nspin == 1 or nspin == 2:
         if rank == 0: eigup = eig[:,0]
-        do_pdos_calc(E_k,emin,emax,delta,eigtot,v_k,nk1,nk2,nk3,nawf,0)
+        do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,0)
         eigup = None
     if nspin == 2:
         if rank == 0: eigdw = eig[:,1]
-        do_pdos_calc(E_k,emin,emax,delta,eigtot,v_k,nk1,nk2,nk3,nawf,1)
+        do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,1)
         eigdw = None
 
     if rank ==0: print('pdos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
