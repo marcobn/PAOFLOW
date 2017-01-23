@@ -97,7 +97,7 @@ nthread = multiprocessing.cpu_count()
 input_file = str(sys.argv[1])
 
 verbose, non_ortho, write2file, shift_type, fpath, shift, pthr, do_comparison, double_grid,\
-        do_bands, onedim, do_dos,emin,emax, delta, do_spin_orbit,nfft1, nfft2, \
+        do_bands, onedim, do_dos,emin,emax,do_pdos, delta, do_spin_orbit,nfft1, nfft2, \
         nfft3, ibrav, dkres, Boltzmann, epsilon, theta, phi,        \
         lambda_p, lambda_d, Berry, npool, band_topology, ipol, jpol, \
         spin_Hall, spol, nshell = read_input(input_file)
@@ -378,7 +378,7 @@ if do_dos or Boltzmann or epsilon or Berry or band_topology:
     if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
-if do_dos:
+if do_dos or do_pdos:
     #----------------------
     # DOS calculation with gaussian smearing on double_grid Hksp
     #----------------------
@@ -401,6 +401,21 @@ if do_dos:
         if rank == 0: eigdw = eig[:,1]
         do_dos_calc(eigdw,emin,emax,delta,eigtot,nawf,1)
         eigdw = None
+
+    if do_pdos:
+        #----------------------
+        # PDOS calculation
+        #----------------------
+        from do_pdos_calc import *
+
+        if nspin == 1 or nspin == 2:
+            if rank == 0: eigup = E_k[:,:,0]
+            do_pdos_calc(eigup,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,0)
+            eigup = None
+        if nspin == 2:
+            if rank == 0: eigdw = E_k[:,:,1]
+            do_pdos_calc(eigdw,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,1)
+            eigdw = None
 
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
