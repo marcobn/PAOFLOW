@@ -350,7 +350,7 @@ if rank == 0:
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
         Hksp = Hks
 
-if do_dos or Boltzmann or epsilon or Berry or band_topology:
+if do_dos or do_pdos or Boltzmann or epsilon or Berry or band_topology:
     #----------------------
     # Compute eigenvalues of the interpolated Hamiltonian
     #----------------------
@@ -418,6 +418,33 @@ if do_dos or do_pdos:
             eigdw = None
 
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
+
+if do_pdos:
+    #----------------------
+    # PDOS calculation with gaussian smearing on double_grid Hksp
+    #----------------------
+    from do_pdos_calc import *
+
+    index = None
+    if rank == 0:
+        index = {'eigtot':eig.shape[0]}
+    index = comm.bcast(index,root=0)
+    eigtot = index['eigtot']
+
+    eigup = None
+    eigdw = None
+
+    if nspin == 1 or nspin == 2:
+        if rank == 0: eigup = eig[:,0]
+        do_pdos_calc(E_k,emin,emax,delta,eigtot,v_k,nk1,nk2,nk3,nawf,0)
+        eigup = None
+    if nspin == 2:
+        if rank == 0: eigdw = eig[:,1]
+        do_pdos_calc(E_k,emin,emax,delta,eigtot,v_k,nk1,nk2,nk3,nawf,1)
+        eigdw = None
+
+    if rank ==0: print('pdos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 pksp = None
