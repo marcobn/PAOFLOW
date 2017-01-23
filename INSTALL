@@ -1,0 +1,14 @@
+Instruction to install the python packages needed by PAOpy
+
+
+ wget https://repo.continuum.io/archive/Anaconda2-4.2.0-Linux-x86_64.sh
+ bash Anaconda2-4.2.0-Linux-x86_64.sh
+ conda install mpi4py
+ conda install pip
+ pip install multiprocessing
+
+ export DYLD_LIBRARY_PATH=$MKLROOT/include/fftw
+ export LDFLAGS="-L/$MKLROOT/include/fftw
+ export CFLAGS="-I/$MKLROOT/include/fftw
+ conda install --channel https://conda.anaconda.org/conda-forge pyfftw
+
