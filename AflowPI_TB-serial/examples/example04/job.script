@@ -1,9 +1,0 @@
-#!/bin/bash
-#$ -V
-#$ -cwd
-#$ -q nardelli.q
-#$ -pe openmpi_16 32
-#$ -l exclusive_job=1
-#$ -m abe
-#BSUB -M hw0163@unt.edu
-python AflowPI_TB.py 
