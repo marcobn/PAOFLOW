@@ -1,0 +1,70 @@
+MgO FCC
+&control
+    calculation = 'nscf',
+    restart_mode = "from_scratch",
+    prefix = "mgo",
+    wf_collect=.true.
+    PSEUDO_DIR ="./"
+ /
+ &system
+    lda_plus_u = .true.,
+    Hubbard_U(1) = 0.010000,
+    Hubbard_U(2) = 0.010000,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    occupations = "fixed",
+    ecutwfc = 100,
+    ecutrho = 400,
+    ibrav = 0,
+    nat=2,
+    ntyp=2,
+    celldm(1) = 8.0379167413,
+    nosym = .t.
+    noinv =.t.
+  /  
+&electrons
+    mixing_mode = "plain"
+    mixing_beta = 0.5
+    conv_thr =  1.0d-8
+    electron_maxstep = 200 
+ /
+K_POINTS automatic
+4 4 4 1 1 1  
+ATOMIC_SPECIES 
+ Mg  58.93  Mg.pbe-n-nc.UPF
+ O   15.99  O.pbe-n-nc.UPF
+CELL_PARAMETERS alat 
+0.0 0.5 0.5
+0.5 0.0 0.5
+0.5 0.5 0.0
+ATOMIC_POSITIONS crystal 
+Mg   0.00000000000000   0.00000000000000   0.00000000000000  ! // Mg 
+O    0.50000000000000   0.50000000000000   0.50000000000000  ! // O 
+
