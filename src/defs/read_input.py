@@ -38,6 +38,7 @@ def read_input(input_file):
     do_bands = False
     onedim = False
     do_dos = False
+    do_pdos = False
     emin = -10.
     emax = 2
     delta = 0.01
@@ -128,6 +129,18 @@ def read_input(input_file):
                 do_dos = True
             emin = p[2]
             emax = p[3]
+<<<<<<< HEAD
+=======
+        if re.search('do_pdos',line):
+            p = line.split()
+            do_pdos = p[1]
+            if do_pdos == 'False':
+                do_pdos = False
+            else:
+                do_pdos = True
+            emin = p[2]
+            emax = p[3]
+>>>>>>> PDOS
         if re.search('delta',line):
             p = line.split()
             delta = float(p[1])
@@ -223,6 +236,6 @@ def read_input(input_file):
         sys.exit('missing path to _.save')
 
     return(verbose, non_ortho, write2file, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
-            do_bands, onedim, do_dos, emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
+            do_bands, onedim, do_dos, do_pdos,emin, emax, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
             ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, \
             ipol,jpol,spin_Hall,spol,nshell)
