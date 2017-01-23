@@ -37,7 +37,6 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
     # PDOS calculation with gaussian smearing
     emin = float(emin)
     emax = float(emax)
-    emax = float(emax) 
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
     nktot = nk1*nk2*nk3
