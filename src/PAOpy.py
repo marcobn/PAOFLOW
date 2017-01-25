@@ -33,7 +33,6 @@ from numpy import linalg as LAN
 import xml.etree.ElementTree as ET
 import numpy as np
 #import numexpr as ne
-import mkl
 import sys, time
 from mpi4py import MPI
 import pyfftw
@@ -277,10 +276,6 @@ if do_bands and not(onedim):
     # Define real space lattice vectors
     R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
-    nkpi=kq.shape[1]
-    E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
-    v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
     # Compute the bands along the path in the IBZ
     E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
 

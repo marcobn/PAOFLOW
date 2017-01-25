@@ -31,8 +31,8 @@ from mpi4py.MPI import ANY_SOURCE
 import matplotlib.pyplot as plt
 
 from write_TB_eigs import *
-#from kpnts_interpolation_mesh import *
 from kpnts_interpolation_mesh import *
+#from new_kpoint_interpolation import *
 from do_non_ortho import *
 from load_balancing import *
 
@@ -47,7 +47,7 @@ def do_bands_calc(HRaux,SRaux,R_wght,R,idx,read_S,ibrav,alat,a_vectors,b_vectors
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
     nkpi=kq.shape[1]
     for n in xrange(nkpi):
-        kq [:,n]=kq[:,n].dot(b_vectors)
+        kq[:,n]=np.dot(kq[:,n],b_vectors)
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nkpi)

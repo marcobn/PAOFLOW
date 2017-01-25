@@ -1,33 +1,30 @@
-#
-# PAOpy
-#
-# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
-#
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
-# This file is distributed under the terms of the
-# GNU General Public License. See the file `License'
-# in the root directory of the present distribution,
-# or http://www.gnu.org/copyleft/gpl.txt .
-#
-#
-# References:
-# Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
-#
-# Luis A. Agapito, Sohrab Ismail-Beigi, Stefano Curtarolo, Marco Fornari and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets, Phys. Rev. B 93, 035104 (2016).
-#
-# Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
-#
 
-# This module from AFLOWpi
-
-import numpy as np
-import sys
+import os
+import datetime
+import cPickle
+import logging
+import re
+import numpy
 import copy
+import traceback
+import sys
+import decimal
+import contextlib
+import cStringIO
+
+@contextlib.contextmanager
+def nostdout():
+    save_stdout = sys.stdout
+    sys.stdout = cStringIO.StringIO()
+    yield
+    sys.stdout = save_stdout
 
 
+##############################################################################################################################
+##############################################################################################################################
+## auto k point
+##############################################################################################################################
+##############################################################################################################################
 def _getHighSymPoints(ibrav,alat,cellOld):
     '''
     Searching for the ibrav number in the input file for the calculation
@@ -66,18 +63,19 @@ def _getHighSymPoints(ibrav,alat,cellOld):
           'X'    : (0.5, 0.0, 0.5)
         }
 
-        aflow_conv = np.asarray([[ 0.0, 1.0, 1.0,],
-                                    [ 1.0, 0.0, 1.0,],
-                                    [ 1.0, 1.0, 0.0,],])/2.0
-        qe_conv    = np.asarray([[-1.0, 0.0, 1.0,],
-                                    [ 0.0, 1.0, 1.0],
-                                    [-1.0, 1.0, 0.0],])/2.0
+        aflow_conv = numpy.matrix([[ 0.0, 1.0, 1.0,],
+                                   [ 1.0, 0.0, 1.0,],
+                                   [ 1.0, 1.0, 0.0,],])/2.0
+        qe_conv    = numpy.matrix([[-1.0, 0.0, 1.0,],
+                                   [ 0.0, 1.0, 1.0 ],
+                                   [-1.0, 1.0, 0.0 ],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
 
+
+        special_points_copy=copy.deepcopy(special_points)
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
 
 
         default_band_path = 'gG-X-W-K-gG-L-U-W-L-K|U-X'
@@ -88,28 +86,24 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         special_points = {
             'gG'  : [0, 0, 0],
             'H'   : [0.5, -0.5, 0.5],
-            'Hp'   : [0.5, 0.5, -0.5],
             'P'   : [0.25, 0.25, 0.25],
-            'Np'   : [0.5, 0.0, 0.0],
             'N'   : [0.0, 0.0, 0.5]
             }
 
         #convert HSP from aflow to qe convention brillouin zones
-        aflow_conv = np.asarray([[-1.0, 1.0, 1.0,],
+        aflow_conv = numpy.asarray([[-1.0, 1.0, 1.0,],
                                     [ 1.0,-1.0, 1.0],
                                     [ 1.0, 1.0,-1.0],])/2.0
-        qe_conv    = np.asarray([[ 1.0, 1.0, 1.0,],
+        qe_conv    = numpy.asarray([[ 1.0, 1.0, 1.0,],
                                     [-1.0, 1.0, 1.0],
                                     [-1.0,-1.0, 1.0],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
 
 
-        #default_band_path = 'gG-H-N-gG-P-H|P-N'
-        default_band_path = 'gG-H-P-N-gG-Hp-Np-gG'
+        default_band_path = 'gG-H-N-gG-P-H|P-N'
         band_path = default_band_path
         return special_points, band_path
 
@@ -134,9 +128,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         tx = cellOld[0][0]
         c = (((tx**2)*2)-1.0)
         c = -c
-        alpha = np.arccos(c)
-        eta1 = 1.0 + 4.0*np.cos(alpha)
-        eta2 = 2.0 + 4.0*np.cos(alpha)
+        alpha = numpy.arccos(c)
+        eta1 = 1.0 + 4.0*numpy.cos(alpha)
+        eta2 = 2.0 + 4.0*numpy.cos(alpha)
         eta = eta1/eta2
         nu = 0.75 - eta/2.0
         special_points = {
@@ -162,8 +156,8 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         tx = cellOld[0][0]
         c = (((tx**2)*2)-1.0)
         c = -c
-        alpha = np.arccos(c)
-        eta = 1.0/(2*np.tan(alpha/2.0)**2)
+        alpha = numpy.arccos(c)
+        eta = 1.0/(2*numpy.tan(alpha/2.0)**2)
         nu = 0.75 - eta/2.0
 
         special_points = {
@@ -215,17 +209,17 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             'Z1'    : (-eta, 1.0-eta, eta)
           }
 
-        aflow_conv = np.asarray([[-1.0, 1.0, 1.0,],
+        aflow_conv = numpy.asarray([[-1.0, 1.0, 1.0,],
                                     [ 1.0,-1.0, 1.0],
                                     [ 1.0, 1.0,-1.0],])/2.0
-        qe_conv    = np.asarray([[-1.0, 1.0, 1.0,],
+        qe_conv    = numpy.asarray([[-1.0, 1.0, 1.0,],
                                     [ 1.0, 1.0, 1.0],
                                     [-1.0,-1.0, 1.0],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
+
 
         default_band_path = 'gG-X-M-gG-Z-P-N-Z1-M|X-P'
         band_path = default_band_path
@@ -253,25 +247,22 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             'Z'    : (0.5, 0.5, -0.5)
           }
 
-        aflow_conv = np.asarray([[-1.0, 1.0, 1.0,],
-                                 [ 1.0,-1.0, 1.0],
-                                 [ 1.0, 1.0,-1.0],])/2.0
-        qe_conv    = np.asarray([[-1.0, 1.0, 1.0,],
-                                 [ 1.0, 1.0, 1.0],
-                                 [-1.0,-1.0, 1.0],])/2.0
-
-#        special_points_copy=copy.deepcopy(special_points)
-#        for k,v in special_points_copy.iteritems():
-#            second = (aflow_conv*np.linalg.inv(qe_conv))*np.matrix(v).T
-#            #first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-#            #second = qe_conv.dot(first)
-#            special_points[k]=tuple(second.flatten().tolist()[0])
-
-#        print(special_points)
+        aflow_conv = numpy.asarray([[-1.0, 1.0, 1.0,],
+                                    [ 1.0,-1.0, 1.0],
+                                    [ 1.0, 1.0,-1.0],])/2.0
+        qe_conv    = numpy.asarray([[-1.0, 1.0, 1.0,],
+                                    [ 1.0, 1.0, 1.0],
+                                    [-1.0,-1.0, 1.0],])/2.0
 
 
-        #default_band_path = 'gG-X-Y-gS-gG-Z-gS1-N-P-Y1-Z|X-P'
-        default_band_path = 'gG-gS-N-gS1-Z-gG-X'
+        special_points_copy=copy.deepcopy(special_points)
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
+
+
+
+        default_band_path = 'gG-X-Y-gS-gG-Z-gS1-N-P-Y1-Z|X-P'
         band_path = default_band_path
         return special_points, band_path
 
@@ -321,17 +312,16 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 
 
-        aflow_conv = np.asarray([[ 0.0, 1.0, 1.0,],
+        aflow_conv = numpy.asarray([[ 0.0, 1.0, 1.0,],
                                     [ 1.0, 0.0, 1.0,],
                                     [ 1.0, 1.0, 0.0,],])/2.0
-        qe_conv    = np.asarray([[ 1.0, 0.0, 1.0,],
+        qe_conv    = numpy.asarray([[ 1.0, 0.0, 1.0,],
                                     [ 1.0, 1.0, 0.0],
                                     [ 0.0, 1.0, 1.0],])/2.0
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
 
 
         default_band_path = 'gG-Y-T-Z-gG-X-A1-Y|T-X1|X-A-Z|L-gG'
@@ -367,18 +357,19 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             'Z'    : (0.5, 0.5, 0.0),
             }
 
-        aflow_conv = np.asarray([[ 0.0, 1.0, 1.0,],
+        aflow_conv = numpy.asarray([[ 0.0, 1.0, 1.0,],
                                     [ 1.0, 0.0, 1.0,],
                                     [ 1.0, 1.0, 0.0,],])/2.0
-        qe_conv    = np.asarray([[ 1.0, 0.0, 1.0,],
+        qe_conv    = numpy.asarray([[ 1.0, 0.0, 1.0,],
                                     [ 1.0, 1.0, 0.0],
                                     [ 0.0, 1.0, 1.0],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
-#           print( k,special_points[k])
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
+
+
+
         default_band_path = 'gG-Y-C-D-X-gG-Z-D1-H-C|C1-Z|X-H1|H-Y|L-gG'
         band_path = default_band_path
         return special_points, band_path
@@ -410,17 +401,19 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             'Z'    : (0.5, 0.5, 0.0)
             }
 
-        aflow_conv = np.asarray([[ 0.0, 1.0, 1.0,],
+        aflow_conv = numpy.asarray([[ 0.0, 1.0, 1.0,],
                                     [ 1.0, 0.0, 1.0,],
                                     [ 1.0, 1.0, 0.0,],])/2.0
-        qe_conv    = np.asarray([[ 1.0, 0.0, 1.0,],
+        qe_conv    = numpy.asarray([[ 1.0, 0.0, 1.0,],
                                     [ 1.0, 1.0, 0.0],
                                     [ 0.0, 1.0, 1.0],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
+
+
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
+
 
         default_band_path = 'gG-Y-T-Z-gG-X-A1-Y|X-A-Z|L-R'
         band_path = default_band_path
@@ -428,7 +421,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 
     def ORCC(cellOld):
-
+        print cellOld
         try:
             cellOld=cellOld.getA()
         except:
@@ -457,18 +450,17 @@ def _getHighSymPoints(ibrav,alat,cellOld):
             'Z'    : (0.0, 0.0, 0.5)
           }
 
-        aflow_conv = np.asarray([[ 1.0,-1.0, 0.0,],
+        aflow_conv = numpy.asarray([[ 1.0,-1.0, 0.0,],
                                     [ 1.0, 1.0, 0.0,],
                                     [ 0.0, 0.0, 2.0,],])/2.0
-        qe_conv    = np.asarray([[ 1.0, 1.0, 0.0,],
+        qe_conv    = numpy.asarray([[ 1.0, 1.0, 0.0,],
                                     [-1.0, 1.0, 0.0],
                                     [ 0.0, 0.0, 2.0],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
 
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
 
         default_band_path = 'gG-X-S-R-A-Z-gG-Y-X1-A1-T-Y|Z-T'
         band_path = default_band_path
@@ -490,7 +482,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         myList.remove(a)
         myList.remove(c)
         b = myList[0]
-        print(abs(a-b),abs(a-c),abs(c-b))
+        print abs(a-b),abs(a-c),abs(c-b)
         if abs(1.0-a/b)<0.01:
             if abs(1.0-a/c)<0.01:
 
@@ -542,17 +534,18 @@ def _getHighSymPoints(ibrav,alat,cellOld):
           'Z'    : (0.5, 0.5, -0.5)
         }
 
-        aflow_conv = np.asarray([[-1.0, 1.0, 1.0,],
+        aflow_conv = numpy.asarray([[-1.0, 1.0, 1.0,],
                                     [ 1.0,-1.0, 1.0],
                                     [ 1.0, 1.0,-1.0],])/2.0
-        qe_conv    = np.asarray([[ 1.0, 1.0, 1.0,],
+        qe_conv    = numpy.asarray([[ 1.0, 1.0, 1.0,],
                                     [-1.0, 1.0, 1.0],
                                     [-1.0,-1.0, 1.0],])/2.0
 
-        for k,v in special_points.iteritems():
-            first  = np.array(v).dot(np.linalg.inv(aflow_conv))
-            second = qe_conv.dot(first)
-            special_points[k]=tuple(second.tolist())
+
+        for k,v in special_points_copy.iteritems():
+            second = (aflow_conv*numpy.linalg.inv(qe_conv))*numpy.matrix(v).T
+            special_points[k]=tuple(second.flatten().tolist()[0])
+
 
         default_band_path = 'gG-X-L-T-W-R-X1-Z-gG-Y-S-W|L1-Y|Y1-Z'
         band_path = default_band_path
@@ -565,9 +558,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         except:
             pass
 
-        a,b,c,cos_alpha,cos_beta_cos_gamma = free2abc(cellparamatrix,cosine=True,degrees=False,string=False,bohr=False)
+        a,b,c,cos_alpha,cos_beta_cos_gamma = AFLOW.pi.retr.free2abc(cellparamatrix,cosine=True,degrees=False,string=False,bohr=False)
 
-        sin_gamma = np.sin(np.arccos(cos_gamma))
+        sin_gamma = numpy.sin(numpy.arccos(cos_gamma))
 
         mu        = (1+(b/a)**2.0)/4.0
         delta     = b*c*cos_gamma/(2.0*a**2.0)
@@ -587,7 +580,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
        a1 = cellOld[0][0]
        b1 = (cellOld[1][0]**2 + cellOld[1][1]**2)**(0.5)
        c1 = cellOld[2][2]
-       gamma = np.arctan(cellOld[1][1]/cellOld[1][0])
+       gamma = numpy.arctan(cellOld[1][1]/cellOld[1][0])
        myList = [a1, b1, c1]
        c = max(myList)
        a = min(myList)
@@ -596,8 +589,8 @@ def _getHighSymPoints(ibrav,alat,cellOld):
        b = myList[0]
        alpha = gamma
 
-       eta = (1 - b*np.cos(alpha)/c)/(2*np.sin(alpha)**2)
-       nu = 0.5 - eta*c*np.cos(alpha)/b
+       eta = (1 - b*numpy.cos(alpha)/c)/(2*numpy.sin(alpha)**2)
+       nu = 0.5 - eta*c*numpy.cos(alpha)/b
        special_points = {
            'gG'    : (0.0, 0.0, 0.0),
            'A'    : (0.5, 0.5, 0.0),
@@ -717,14 +710,14 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 
 
-            alpha=np.arccos(c)
+            alpha=numpy.arccos(c)
 
 
-            if alpha < np.pi/2.0:
+            if alpha < numpy.pi/2.0:
                 var1, var2 = RHL1(cellOld)
                 return var1, var2
 
-            elif alpha > np.pi/2.0:
+            elif alpha > numpy.pi/2.0:
                 var1, var2 = RHL2(cellOld)
                 return var1, var2
 
@@ -822,9 +815,9 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         '''
 #######################################################################
     if ibrav==0:
-        sys.exit('IBRAV = 0 not permitted')
+        return
     if ibrav < 0:
-        print('Lattice type %s is not implemented' % ibrav)
+        print 'Lattice type %s is not implemented' % ibrav
         logging.error('The ibrav value from expresso has not yet been implemented to the framework')
         raise Exception
 
@@ -843,19 +836,24 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,dk):
 
     Arguments:
           dk (float): distance between points
+          oneCalc (dict): a dictionary containing properties about the AFLOWpi calculation
+
+
+    Keyword Arguments:
+          ID (str): ID string for the particular calculation and step
+          points (bool): Give the path as points or in aflow convention
 
     Returns:
-          kpoints : array of arrays kx,ky,kz
-          numK    : Total no. of k-points
+          numPointStr (str): path between HSP
 
     '''
 
     def kdistance(hs, p1, p2):
-        g = np.dot(hs.T, hs)
-        p1, p2 = np.array(p1), np.array(p2)
+        g = numpy.dot(hs.T, hs)
+        p1, p2 = numpy.array(p1), numpy.array(p2)
         d = p1 - p2
-        dist2 = np.dot(d.T, np.dot(g, d).T)
-        return np.sqrt(dist2)
+        dist2 = numpy.dot(d.T, numpy.dot(g, d).T)
+        return numpy.sqrt(dist2)
 
     def getSegments(path):
         segments = path.split('|')
@@ -872,52 +870,59 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,dk):
         return numPts
 
     if ibrav==0:
-        sys.exit('IBRAV = 0 not permitted')
+        return
     if ibrav<0:
-        print('Lattice type %s is not implemented') % ibrav
-        logging.error('The ibrav value from QE has not yet been implemented')
+        print 'Lattice type %s is not implemented' % ibrav
+        logging.error('The ibrav value from expresso has not yet been implemented to the framework')
         raise Exception
 
     totalK=0
     special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
-    hs = 2*np.pi*np.linalg.inv(cell)  # reciprocal lattice
-    #hs = 2*np.pi*bcell
+    hs = 2*numpy.pi*numpy.linalg.inv(cell)  # reciprocal lattice
     segs = getSegments(band_path)
 
-    kx = np.array([])
-    ky = np.array([])
-    kz = np.array([])
+    points = True
+    numPointsStr = str(getNumPoints(band_path)) + '\n' #starts the string we need to make
+    if points==True:
+        numPointsStr=''
+
+    path_points=''
+
+    kx = numpy.array([])
+    ky = numpy.array([])
+    kz = numpy.array([])
 
     for index in segs:
 
-        a = getPoints(index) #gets the points in each segment of path separated by |
+        a = getPoints(index) #gets the points in each segment of path spereated by |
         point1 = None
         point2 = None
 
-        for index2 in xrange(len(a)-1):
+        for index2 in range(len(a)-1):
             try:
                 point1 = a[index2]
                 point2 = a[index2+1]
                 p1 = special_points[point1]
                 p2 = special_points[point2]
 
-                newDK = (2*np.pi/alat)*dk
-                numK = int(np.ceil((kdistance(hs, p1, p2)/newDK)))
+                newDK = (2*numpy.pi/alat)*dk
+                numK = int(numpy.ceil((kdistance(hs, p1, p2)/newDK)))
                 totalK+=numK
 
                 numK = str(numK)
 
-                a0 = np.linspace(p1[0],p2[0],numK).astype(np.float16)
-                a1 = np.linspace(p1[1],p2[1],numK).astype(np.float16)
-                a2 = np.linspace(p1[2],p2[2],numK).astype(np.float16)
+                if points==True:
+                    a0 = numpy.linspace(p1[0],p2[0],numK).astype(numpy.float16)
+                    a1 = numpy.linspace(p1[1],p2[1],numK).astype(numpy.float16)
+                    a2 = numpy.linspace(p1[2],p2[2],numK).astype(numpy.float16)
 
-                kx = np.concatenate((kx,a0))
-                ky = np.concatenate((ky,a1))
-                kz = np.concatenate((kz,a2))
+                    kx = numpy.concatenate((kx,a0))
+                    ky = numpy.concatenate((ky,a1))
+                    kz = numpy.concatenate((kz,a2))
 
             except Exception as e:
                 print(e)
 
-        kpoints = np.array([kx,ky,kz])
+        kpoints = numpy.array([kx,ky,kz])
 
     return (kpoints)
