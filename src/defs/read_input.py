@@ -217,10 +217,6 @@ def read_input(input_file):
             p = line.split()
             spin_Hall = p[1]
             spol = int(p[2])
-            nshell[0] = int(p[3])
-            nshell[1] = int(p[4])
-            nshell[2] = int(p[5])
-            nshell[3] = int(p[6])
             if spin_Hall == 'False':
                 spin_Hall = False
             else:
@@ -231,4 +227,4 @@ def read_input(input_file):
     return(verbose, non_ortho, write2file, shift_type, fpath, shift, pthr, do_comparison, double_grid, \
             do_bands, onedim, do_dos, emin, emax, do_pdos, delta, do_spin_orbit, nfft1, nfft2, nfft3, \
             ibrav, dkres, Boltzmann, epsilon,theta,phi,lambda_p,lambda_d, Berry,npool,band_topology, \
-            ipol,jpol,spin_Hall,spol,nshell)
+            ipol,jpol,spin_Hall,spol)

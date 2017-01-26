@@ -256,7 +256,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         aflow_conv = np.asarray([[-1.0, 1.0, 1.0,],
                                  [ 1.0,-1.0, 1.0],
                                  [ 1.0, 1.0,-1.0],])/2.0
-        qe_conv    = np.asarray([[-1.0, 1.0, 1.0,],
+        qe_conv    = np.asarray([[ 1.0,-1.0, 1.0,],
                                  [ 1.0, 1.0, 1.0],
                                  [-1.0,-1.0, 1.0],])/2.0
 

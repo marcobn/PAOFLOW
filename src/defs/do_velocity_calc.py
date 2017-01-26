@@ -45,7 +45,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,spin_orbit,nl):
+def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
     # Compute bands on a selected path in the BZ
     # Define k-point mesh for bands interpolation
     kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
@@ -111,7 +111,7 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
                 Sj[i,i] = sP[spol][1,1]
         else:
             # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-            Sj = clebsch_gordan(nawf,nl,spol)
+            Sj = clebsch_gordan(nawf,sh,nl,spol)
 
         jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
         for ik in xrange(nkpi):

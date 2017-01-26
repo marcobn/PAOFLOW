@@ -29,6 +29,8 @@ sys.path.append('./')
 
 def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
 
+    # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
+
     nawf = HRaux.shape[0]
     nk1 = HRaux.shape[2]
     nk2 = HRaux.shape[3]

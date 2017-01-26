@@ -32,6 +32,7 @@ import numpy as np
 from numpy import linalg as LAN
 from scipy import linalg as LA
 import matplotlib.pyplot as plt
+from nlshell import *
 
 
 def spinor(l,j,m,spin):
@@ -59,11 +60,12 @@ def spinor(l,j,m,spin):
 
     return(spinor)
 
-def clebsch_gordan(nawf,nl,spol):
+def clebsch_gordan(nawf,sh,nl,spol):
     #
     # Transformation matrices from the | l m s s_z > basis to the
     # | j mj l s > basis in the l-subspace
     #
+
     l = 0
     Ul0 = np.zeros((2*(2*l+1),2*(2*l+1)),dtype=float)
     Ul0[0,1] = 1
@@ -129,15 +131,20 @@ def clebsch_gordan(nawf,nl,spol):
 
     occ = [2,6,10,14]
 
-    ntot = np.dot(nl,occ)
+    sh = np.asarray(sh)
+    nl = np.asarray(nl)
+
+    ntot = 0
+    for n in xrange(len(sh)):
+        ntot += nl[n]*occ[sh[n]]
     if ntot != nawf: sys.exit('wrong number of shells in reading')
     Tn = np.zeros((ntot,ntot),dtype=float)
 
     n = 0
-    for l in range(4):
-        for i in range(nl[l]):
-            Tn[n:n+occ[l],n:n+occ[l]] = Ul[l]
-            n += occ[l]
+    for l in xrange(len(sh)):
+        for i in xrange(nl[l]):
+            Tn[n:n+occ[sh[l]],n:n+occ[sh[l]]] = Ul[sh[l]]
+            n += occ[sh[l]]
 
     # Pauli matrices (x,y,z) 
     sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
