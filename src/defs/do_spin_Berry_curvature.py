@@ -145,6 +145,6 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol):
     comm.Gather(Om_zkaux,Om_zk,root=0)
 
     shc = None
-    if rank == 0: shc = E2*np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
+    if rank == 0: shc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
 
     return(ene,shc)

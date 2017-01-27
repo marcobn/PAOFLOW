@@ -78,8 +78,10 @@ band_topology = False
 Berry = False
 ipol = 0
 jpol = 1
+ac_cond_Berry = False
 # Spin Berry curvature and SHC
 spin_Hall = False
 spol = 2
 sh = [0,1,2]    # order of shells with l angular momentum
 nl = [1,1,1]    # multiplicity of each l shell
+ac_cond_spin = False

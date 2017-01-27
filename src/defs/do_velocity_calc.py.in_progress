@@ -71,12 +71,12 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nkpi)
 
-    dHks  = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    Hks_aux  = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
+    dHks  = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex) # final data arrays
+    Hks_aux  = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex) # read data arrays from tasks
 
     Hks_aux[:,:,:,:,:] = band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRs,kq,Rfft)
 
-    comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
+    comm.Allreduce(Hks_aux,dHks,op=MPI.SUM)
 
     #if rank == 0: 
     #    plt.matshow(abs(dHks[0,:,:,1445,0]))
@@ -85,11 +85,13 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
 
     # Compute momenta
     pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-    for ik in xrange(nkpi):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
-                pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                            (dHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
+#    pks_aux = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
+#    for ik in xrange(ini_ik,end_ik):
+    for ispin in xrange(nspin):
+        for l in xrange(3):
+            pks[:,l,:,:,ispin] = np.matmul(np.matmul(np.conj(np.transpose(v_kp[:,:,:,ispin],(0,2,1))), \
+                    dHks[:,l,:,:,ispin]),v_kp[:,:,:,ispin])
+#    comm.Allreduce(pks_aux,pks,op=MPI.SUM)
 
     #if rank == 0: 
     #    plt.matshow(abs(pks[1445,0,:,:,0]))
@@ -115,11 +117,13 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
 
         #jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
         jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-        for ik in xrange(nkpi):
+        jks_aux = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
+        for ik in xrange(ini_ik,end_ik):
             for ispin in xrange(nspin):
                 for l in xrange(3):
-                    jks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
+                    jks_aux[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
                                 (0.5*(np.dot(Sj,dHks[l,:,:,ik,ispin])+np.dot(dHks[l,:,:,ik,ispin],Sj))).dot(v_kp[ik,:,:,ispin])
+        comm.Allreduce(jks_aux,jks,op=MPI.SUM)
 
         Omj_znk = np.zeros((nkpi,nawf),dtype=float)
         Omj_zk = np.zeros((nkpi),dtype=float)
@@ -172,12 +176,12 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
 
 def band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R):
 
-    auxh = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
+    auxh = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
 
     for ik in xrange(ini_ik,end_ik):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                auxh[l,:,:,ik,ispin] = np.sum(dHRaux[l,:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
+                auxh[ik,l,:,:,ispin] = np.sum(dHRaux[l,:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)
 

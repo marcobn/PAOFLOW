@@ -91,7 +91,7 @@ nthread = multiprocessing.cpu_count()
 #ne.set_num_threads(nthread)
 
 #----------------------
-# Read input and DFT data
+# Read input
 #----------------------
 from input_default import *
 try:
@@ -107,6 +107,29 @@ if size >  1:
 else:
     if rank == 0: print('serial execution')
 if rank == 0: print('   ')
+
+#----------------------
+# Do dimension checks
+#----------------------
+
+nktot=nfft1*nfft2*nfft3
+if nktot%npool != 0: 
+    if rank == 0 : print('npool not compatible with MP mesh',nktot,npool)
+    sys.exit()
+nkpool = nktot/npool
+ini_ik, end_ik = load_balancing(size,rank,nkpool)
+nsize = end_ik-ini_ik
+if nkpool%nsize != 0: 
+    if rank == 0 : print('npool not compatible with nsize',nkpool,nsize)
+    sys.exit()
+
+#----------------------
+# Do memory checks - TO BE ADDED!!!
+#----------------------
+
+#----------------------
+# Read DFT data
+#----------------------
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
@@ -285,7 +308,7 @@ if do_bands and not(onedim):
     if band_topology:
         # Compute the velocity, momentum and Berry curvature operators along the path in the IBZ
         from do_velocity_calc import *
-        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
+        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
@@ -527,28 +550,26 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
 
     ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol)
-    ac_cond = True
-    if ac_cond: 
+
+    if ac_cond_Berry:
         ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
-        sigxy *= E2
+        #sigxy *= E2
         ahc0 = np.real(sigxy[0])
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     if rank == 0:
         f=open('ahc.dat','w')
-        #################CHECK UNITS - IS ANGSTROM_AU NEEDED? MISSING E2 IN SIGMA???############
-        #ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        ahc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         if ac_cond:
-            ahc0 *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            ahc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
             f.write(' Anomalous Hall conductivity sigma_xy = %.6f (%.6f)\n' %(ahc,ahc0))
         else:
             f.write(' Anomalous Hall conductivity sigma_xy = %.6f \n' %ahc)
         f.close()
 
         if ac_cond:
-            sigxy *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
             f=open('sigxyi.dat','w')
             for n in xrange(ene.size):
                 f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
@@ -571,25 +592,25 @@ if spin_Hall:
     temp = 0.025852  # set room temperature in eV
 
     ene,shc = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol)
-    ac_cond = False
-    if ac_cond:
+
+    if ac_cond_spin:
         ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
-        sigxy *= E2
+        #sigxy *= E2
         shc0 = np.real(sigxy[0])
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     if rank == 0 and ene.size == 1:
         f=open('shc.dat','w')
-        shc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         if ac_cond:
-            shc0 *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            shc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
             f.write(' spin Hall conductivity sigma^z_xy = %.6f (%.6f)\n' %(shc,shc0))
         else:
             f.write(' spin Hall conductivity sigma^z_xy = %.6f \n' %shc)
         f.close()
     elif rank == 0:
-        shc *= 1.0e8*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         f=open('shcEf.dat','w')
         for n in xrange(ene.size):
             f.write('%.5f %9.5e \n' %(ene[n],shc[n]))

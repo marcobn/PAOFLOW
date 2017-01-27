@@ -32,7 +32,6 @@ import numpy as np
 from numpy import linalg as LAN
 from scipy import linalg as LA
 import matplotlib.pyplot as plt
-from nlshell import *
 
 
 def spinor(l,j,m,spin):

@@ -134,6 +134,6 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol):
     comm.Gather(Om_zkaux,Om_zk,root=0)
 
     ahc = None
-    if rank == 0: ahc = -E2*np.sum(Om_zk)/float(nk1*nk2*nk3)
+    if rank == 0: ahc = -np.sum(Om_zk)/float(nk1*nk2*nk3)
 
     return(ahc)
