@@ -106,7 +106,6 @@ if size >  1:
     if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
 else:
     if rank == 0: print('serial execution')
-if rank == 0: print('   ')
 
 #----------------------
 # Do dimension checks
@@ -122,10 +121,6 @@ nsize = end_ik-ini_ik
 if nkpool%nsize != 0: 
     if rank == 0 : print('npool not compatible with nsize',nkpool,nsize)
     sys.exit()
-
-#----------------------
-# Do memory checks - TO BE ADDED!!!
-#----------------------
 
 #----------------------
 # Read DFT data
@@ -146,6 +141,14 @@ else:
     nkpnts, nspin, kpnts, kpnts_wght, \
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
+
+#----------------------
+# Do memory checks 
+#----------------------
+
+gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*64/16./1.e9
+if rank == 0: print('estimated minimum memory requirement: %5.2f GBytes' %(gbyte))
+if rank == 0: print('   ')
 
 if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
 reset=time.time()
@@ -723,3 +726,4 @@ if epsilon:
 # Timing
 if rank ==0: print('   ')
 if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+quit()
