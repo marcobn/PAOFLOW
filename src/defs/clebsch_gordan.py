@@ -31,7 +31,7 @@ import sys
 import numpy as np
 from numpy import linalg as LAN
 from scipy import linalg as LA
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 
 def spinor(l,j,m,spin):

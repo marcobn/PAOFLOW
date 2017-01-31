@@ -96,6 +96,8 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         comm.Scatter(jksp_long,jksaux,root=0)
         comm.Scatter(E_k_long,E_kaux,root=0)
 
+        ########NOTE The indeces of the polarizations (x,y,z) should be changed according to the direction of the magnetization
+        ########     Here we enforce explicitly the antisymmetry of the conductivity tensor to minimize convergence errors.
         deltap = 0.05
         for n in xrange(nawf):
             for m in xrange(nawf):
@@ -108,50 +110,39 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         if rank == 0:
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
 
+    #eminSH = -7.0 # To be read in input
+    #emaxSH = 4.0
     de = (emaxSH-eminSH)/500
     ene = np.arange(eminSH,emaxSH,de,dtype=float)
+    #ene=np.array([-1.0])
 
     if rank == 0:
         Om_zk = np.zeros((nk1*nk2*nk3,ene.size),dtype=float)
     else:
+        Om_znk = None
         Om_zk = None
 
     pksp_long = None
     E_k_long = None
 
-    for pool in xrange(npool):
-        if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nk1*nk2*nk3/npool
+    # Load balancing
+    ini_ik, end_ik = load_balancing(size,rank,nk1*nk2*nk3)
+    nsize = end_ik-ini_ik
 
-        if rank == 0:
-            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
-            Om_znk_long = np.array_split(Om_znk,npool,axis=0)[pool]
-            Om_zk_split = np.array_split(Om_zk,npool,axis=0)[pool]
-        else:
-            Om_znk_long = None
-            Om_zk_split = None
-            E_k_long = None
+    Om_znkaux = np.zeros((nsize,nawf),dtype=float)
+    Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
+    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
+    comm.Barrier()
+    comm.Scatter(Om_znk,Om_znkaux,root= 0)
+    comm.Scatter(Om_zk,Om_zkaux,root= 0)
+    comm.Scatter(E_k,E_kaux,root= 0)
 
-        Om_znkaux = np.zeros((nsize,nawf),dtype=float)
-        Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
-        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+    for i in xrange(ene.size):
+        Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)  # T=0.0K
 
-        comm.Barrier()
-        comm.Scatter(Om_znk_long,Om_znkaux,root= 0)
-        comm.Scatter(E_k_long,E_kaux,root= 0)
-
-        for i in xrange(ene.size):
-            Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)  # T=0.0K
-
-        comm.Barrier()
-        comm.Gather(Om_zkaux,Om_zk_split,root=0)
-
-        if rank == 0:
-            Om_zk[pool*nkpool:(pool+1)*nkpool,:] = Om_zk_split[:,:]
+    comm.Barrier()
+    comm.Gather(Om_zkaux,Om_zk,root=0)
 
     shc = None
     if rank == 0: shc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)

@@ -146,8 +146,8 @@ else:
 # Do memory checks 
 #----------------------
 
-gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*64/16./1.e9
-if rank == 0: print('estimated minimum memory requirement: %5.2f GBytes' %(gbyte))
+gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.e9
+if rank == 0: print('estimated maximum array size: %5.2f GBytes' %(gbyte))
 if rank == 0: print('   ')
 
 if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
@@ -371,33 +371,32 @@ if rank == 0:
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
         Hksp = Hks
 
-if do_dos or do_pdos or Boltzmann or epsilon or Berry or band_topology:
-    #----------------------
-    # Compute eigenvalues of the interpolated Hamiltonian
-    #----------------------
-    from calc_TB_eigs_vecs import *
+#----------------------
+# Compute eigenvalues of the interpolated Hamiltonian
+#----------------------
+from calc_TB_eigs_vecs import *
 
-    eig = None
-    E_k = None
-    v_k = None
-    if rank == 0:
-        Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-    for ispin in xrange(nspin):
-        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
-    if rank == 0:
-        Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
+eig = None
+E_k = None
+v_k = None
+if rank == 0:
+    Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+for ispin in xrange(nspin):
+    eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
+if rank == 0:
+    Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
 
-    index = None
-    if rank == 0:
-        nk1,nk2,nk3,_,_,_ = Hksp.shape
-        index = {'nk1':nk1,'nk2':nk2,'nk3':nk3}
-    index = comm.bcast(index,root=0)
-    nk1 = index['nk1']
-    nk2 = index['nk2']
-    nk3 = index['nk3']
+index = None
+if rank == 0:
+    nk1,nk2,nk3,_,_,_ = Hksp.shape
+    index = {'nk1':nk1,'nk2':nk2,'nk3':nk3}
+index = comm.bcast(index,root=0)
+nk1 = index['nk1']
+nk2 = index['nk2']
+nk3 = index['nk3']
 
-    if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+reset=time.time()
 
 if do_dos or do_pdos:
     #----------------------

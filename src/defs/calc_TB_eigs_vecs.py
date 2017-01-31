@@ -61,7 +61,7 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
         v_k_split = None
 
     for pool in xrange (npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - calc_TB_eigs_vecs')
         nkpool = nktot/npool
         #if rank == 0: print('running on ',npool,' pools for nkpool = ',nkpool)
 

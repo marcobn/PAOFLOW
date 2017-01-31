@@ -62,7 +62,7 @@ def do_momentum(vec,dHksp,npool):
         pksp = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_momentum')
         nkpool = nktot/npool
 
         if rank == 0:
