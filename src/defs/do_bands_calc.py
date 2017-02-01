@@ -28,7 +28,7 @@ import sys
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from write_TB_eigs import *
 from kpnts_interpolation_mesh import *

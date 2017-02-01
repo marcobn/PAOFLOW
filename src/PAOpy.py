@@ -470,13 +470,13 @@ if do_pdos:
 pksp = None
 jksp = None
 if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
-    if rank == 0:
-        #----------------------
-        # Compute the gradient of the k-space Hamiltonian
-        #----------------------
-        from do_gradient import *
-        dHksp = do_gradient(Hksp,a_vectors,alat,nthread)
+    #----------------------
+    # Compute the gradient of the k-space Hamiltonian
+    #----------------------
+    from do_gradient import *
+    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool)
 
+    if rank == 0:
         print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
