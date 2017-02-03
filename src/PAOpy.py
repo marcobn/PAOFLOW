@@ -35,8 +35,6 @@ import numpy as np
 #import numexpr as ne
 import sys, time
 from mpi4py import MPI
-import pyfftw
-import pyfftw.interfaces.scipy_fftpack as sciFFTW
 import multiprocessing
 
 # Define paths
@@ -89,6 +87,16 @@ if rank == 0:
 #----------------------
 nthread = multiprocessing.cpu_count()
 #ne.set_num_threads(nthread)
+
+#----------------------
+# Check for fftw libraries
+#----------------------
+scipyfft = False
+try:
+    import pyfftw
+except:
+    if rank == 0: print('using scipy FFT')
+    scipyfft = True
 
 #----------------------
 # Read input
@@ -238,8 +246,8 @@ Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
 if non_ortho:
     Skaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3),order='C')
 
-HRaux = np.zeros_like(Hks)
-SRaux = np.zeros_like(Sks)
+HRaux = np.zeros_like(Hkaux)
+SRaux = np.zeros_like(Skaux)
 
 HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
 if non_ortho:
@@ -358,7 +366,7 @@ if rank == 0:
         #----------------------
         # Fourier interpolation on extended grid (zero padding)
         #----------------------
-        Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs)
+        Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs,nthread,scipyfft)
         # Naming convention (from here): 
         # Hksp = k-space Hamiltonian on interpolated grid
         if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
@@ -440,33 +448,6 @@ if do_dos or do_pdos:
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
-if do_pdos:
-    #----------------------
-    # PDOS calculation with gaussian smearing on double_grid Hksp
-    #----------------------
-    from do_pdos_calc import *
-
-    index = None
-    if rank == 0:
-        index = {'eigtot':eig.shape[0]}
-    index = comm.bcast(index,root=0)
-    eigtot = index['eigtot']
-
-    eigup = None
-    eigdw = None
-
-    if nspin == 1 or nspin == 2:
-        if rank == 0: eigup = eig[:,0]
-        do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,0)
-        eigup = None
-    if nspin == 2:
-        if rank == 0: eigdw = eig[:,1]
-        do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,1)
-        eigdw = None
-
-    if rank ==0: print('pdos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
-
 pksp = None
 jksp = None
 if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
@@ -474,7 +455,7 @@ if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
     from do_gradient import *
-    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool)
+    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 
     if rank == 0:
         print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))

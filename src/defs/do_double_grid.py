@@ -20,16 +20,17 @@
 # Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
-from scipy import fftpack as FFT
-from numpy import fft as NFFT
+#from numpy import fft as NFFT
 import numpy as np
 import cmath
 import sys, time
 from mpi4py import MPI
-import pyfftw
 import multiprocessing
 
-sys.path.append('./')
+try:
+    import pyfftw
+except:
+    from scipy import fftpack as FFT
 
 from zero_pad import *
 
@@ -38,7 +39,7 @@ size = comm.Get_size()
 
 nthread = size
 
-def do_double_grid(nfft1,nfft2,nfft3,HRaux):
+def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,scipyfft):
     # Fourier interpolation on extended grid (zero padding)
     if HRaux.shape[0] != 3 and HRaux.shape[1] == HRaux.shape[0]:
         nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
@@ -54,13 +55,12 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux):
         Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf,nawf,nspin),dtype=complex)
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-        scipy = False
         for ispin in xrange(nspin):
-            if not scipy:
+            if not scipyfft:
                 for i in xrange(nawf):
                     for j in xrange(nawf):
-                        aux = HRaux[i,j,:,:,:,ispin]
-                        fft = pyfftw.FFTW(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3),Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
+                        aux = zero_pad(HRaux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
+                        fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
                                 flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         Hksp[:,:,:,i,j,ispin] = fft()
             else:
