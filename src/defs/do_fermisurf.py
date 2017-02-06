@@ -51,5 +51,4 @@ def do_fermisurf(E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
     x0 = np.zeros(3,dtype=float)   
 
     write2bxsf(eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
-    write3D(eigband[:,:,:,0],nk1,nk2,nk3,alat,x0,b_vectors,'test.xsf') 
     return()
