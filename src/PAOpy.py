@@ -448,6 +448,26 @@ if do_dos or do_pdos:
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
+if do_fermisurf:
+    #----------------------
+    # Fermi surface calculation
+    #----------------------
+    from do_fermisurf import *
+
+    if nspin == 1 or nspin == 2:
+        if rank == 0:
+            eigup = E_k[:,:,0]
+            do_fermisurf(eigup,alat,a_vectors,nk1,nk2,nk3,nawf,0)
+        eigup = None
+    if nspin == 2:
+        if rank == 0:
+            eigdw = E_k[:,:,1]
+            do_fermisurf(eigdw,alat,a_vectors,nk1,nk2,nk3,nawf,0)
+        eigdw = None
+
+    if rank ==0: print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
+
 pksp = None
 jksp = None
 if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
