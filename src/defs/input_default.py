@@ -66,6 +66,9 @@ emin = -10.
 emax = 2
 delta = 0.01
 
+# Plot Fermi Surface
+do_fermisurf = False
+
 # Boltzmann transport calculation
 Boltzmann = False
 
