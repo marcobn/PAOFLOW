@@ -24,7 +24,7 @@ import numpy as np
 import cmath
 import sys, time
 
-def write2bxsf(bands, nx, ny, nz, nbnd, ind_plot, Efermi, x0, B1, B2, B3, filename):
+def write2bxsf(bands, nx, ny, nz, nbnd, ind_plot, Efermi, alat,x0, b_vectors, filename):
     with open ('{0}'.format(filename),'w') as f:
         f.write('\nBEGIN_INFO\n  Fermi Energy: {:15.9f}\nEND_INFO\n'.format(Efermi))
         # BXSF scalar-field header
@@ -35,11 +35,11 @@ def write2bxsf(bands, nx, ny, nz, nbnd, ind_plot, Efermi, x0, B1, B2, B3, filena
         # origin (should be zero, if I understan correctly)
         f.write('  {}\n'.format(''.join('%10.6f'%F for F in x0 )))
         # 1st spanning (=lattice) vector
-        f.write('  {}\n'.format(''.join('%10.6f'%F for F in B1 )))
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in b_vectors[0]*2*np.pi/alat )))
         # 2nd spanning (=lattice) vector
-        f.write('  {}\n'.format(''.join('%10.6f'%F for F in B2 )))
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in b_vectors[1]*2*np.pi/alat )))
         # 3rd spanning (=lattice) vector
-        f.write('  {}\n'.format(''.join('%10.6f'%F for F in B3 )))
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in b_vectors[2]*2*np.pi/alat )))
         
         for ib in range(nbnd):
             f.write('  BAND: {:5d}\n'.format(int(ind_plot[ib])))

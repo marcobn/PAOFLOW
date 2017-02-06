@@ -19,36 +19,32 @@
 #
 # Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
-#
+
+
+
+
 import numpy as np
 import cmath
 import sys, time
 
-from write2bxsf import *
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-from write3Ddatagrid import *
-def do_fermisurf(E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
-    #maximum number of bands crossing fermi surface
+def write3D( data,nx, ny, nz, alat,x0,B, filename):
+    with open ('{0}'.format(filename),'w') as f:
+        # BXSF scalar-field header
+        f.write('\nBEGIN_BLOCK_DATAGRID_3D\n3D_PAOPI\nDATAGRID_3D_UNKNOWN\n')
+        # number of points in each direction
+        f.write('{:12d}{:12d}{:12d}\n'.format(nx,ny,nz))
+        # origin (should be zero, if I understan correctly)
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in x0 )))
+        # 1st spanning (=lattice) vector
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in B[0]*2*np.pi/alat )))
+        # 2nd spanning (=lattice) vector
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in B[1]*2*np.pi/alat )))
+        # 3rd spanning (=lattice) vector
+        f.write('  {}\n'.format(''.join('%10.6f'%F for F in B[2]*2*np.pi/alat )))
 
-    nbndx_plot = 5
-    nktot = nk1*nk2*nk3
-    
-#    vkpt_int_cry = np.zeros((3,nktot), dtype=float)
-    eigband = np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float)
-    ind_plot = np.zeros(nbndx_plot)
-    E_K = np.reshape(E_k,(nk1,nk2,nk3,nawf))
-    Efermi = 0.0
-    
-    #collect the interpolated eignvalues
-    icount = 0
-    for ib in range(nawf):
-        if (np.amin(E_k[:,ib]) < Efermi and np.amax(E_k[:,ib] > Efermi)):
-            if ( icount > nbndx_plot ): sys.exit("too many bands contributing")
-            eigband[:,:,:,icount] = E_K[:,:,:,ib]
-            ind_plot[icount] = ib
-            icount +=1
-    x0 = np.zeros(3,dtype=float)   
-
-    write2bxsf(eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
+        for ix in range(nx):
+            for iy in range(ny):
+                f.write('    {}\n'.format(''.join('%15.9f'%F for F in data[ix,iy,:] )))
+        f.write('END_DATAGRID_3D\nEND_BLOCK_DATAGRID_3D\n')
     return()
+
