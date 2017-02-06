@@ -27,11 +27,9 @@ import sys, time
 from write2bxsf import *
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-def do_fermisurf(E_k,alat,A,nk1,nk2,nk3,nawf,ispin):
+from write3Ddatagrid import *
+def do_fermisurf(E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
     #maximum number of bands crossing fermi surface
-    A1 = A[0]*alat
-    A2 = A[1]*alat
-    A3 = A[2]*alat
 
     nbndx_plot = 5
     nktot = nk1*nk2*nk3
@@ -50,11 +48,8 @@ def do_fermisurf(E_k,alat,A,nk1,nk2,nk3,nawf,ispin):
             eigband[:,:,:,icount] = E_K[:,:,:,ib]
             ind_plot[icount] = ib
             icount +=1
-    B1= 2*np.pi*np.cross(A2,A3)/(np.dot(A1,np.cross(A2,A3)))
-    B2= 2*np.pi*np.cross(A1,A3)/(np.dot(A2,np.cross(A1,A3)))
-    B3= 2*np.pi*np.cross(A1,A2)/(np.dot(A3,np.cross(A1,A2)))
     x0 = np.zeros(3,dtype=float)   
 
-    write2bxsf(eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, x0, B1, B2, B3, 'FermiSurf_'+str(ispin)+'.bxsf')   
-    
+    write2bxsf(eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
+    write3D(eigband[:,:,:,0],nk1,nk2,nk3,alat,x0,b_vectors,'test.xsf') 
     return()

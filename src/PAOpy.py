@@ -54,7 +54,7 @@ from do_double_grid import *
 from do_spin_orbit import *
 from constants import *
 from read_QE_output_xml_parse import *
-
+from write3Ddatagrid import *
 #----------------------
 # initialize parallel execution
 #----------------------
@@ -453,16 +453,16 @@ if do_fermisurf:
     # Fermi surface calculation
     #----------------------
     from do_fermisurf import *
-
+    
     if nspin == 1 or nspin == 2:
         if rank == 0:
             eigup = E_k[:,:,0]
-            do_fermisurf(eigup,alat,a_vectors,nk1,nk2,nk3,nawf,0)
+            do_fermisurf(eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0)
         eigup = None
     if nspin == 2:
         if rank == 0:
             eigdw = E_k[:,:,1]
-            do_fermisurf(eigdw,alat,a_vectors,nk1,nk2,nk3,nawf,0)
+            do_fermisurf(eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0)
         eigdw = None
 
     if rank ==0: print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
