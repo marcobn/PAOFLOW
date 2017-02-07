@@ -222,8 +222,7 @@ if rank == 0 and write2file:
     for ik in xrange(nkpnts):
         f.write('%20.13f \n' %(kpnts_wght[ik]))
     f.close()
-    if rank == 0: print('H(k),S(k),k,wk written to file')
-    if not(do_comparison): sys.exit()
+    print('H(k),S(k),k,wk written to file')
 
 #----------------------
 # Plot the TB and DFT eigevalues. Writes to comparison.pdf
