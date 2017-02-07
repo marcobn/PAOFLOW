@@ -29,7 +29,7 @@ import sys, time
 
 def write3D( data,nx, ny, nz, alat,x0,B, filename):
     with open ('{0}'.format(filename),'w') as f:
-        # BXSF scalar-field header
+        # XSF scalar-field header
         f.write('\nBEGIN_BLOCK_DATAGRID_3D\n3D_PAOPI\nDATAGRID_3D_UNKNOWN\n')
         # number of points in each direction
         f.write('{:12d}{:12d}{:12d}\n'.format(nx,ny,nz))

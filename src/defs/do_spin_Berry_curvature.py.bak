@@ -27,6 +27,7 @@ import sys
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
+import pyfftw
 import multiprocessing
 
 from write_TB_eigs import write_TB_eigs
@@ -155,12 +156,11 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
     shc = None
     if rank == 0: shc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
 
-    Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
     if rank == 0:
-        a = np.sort(abs(ene))[0]
-        for i in xrange(ene.size):
-            if ene[i] == a:
-                n = i
-        Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
+		a = np.sort(abs(ene))[0] 
+		for i in xrange(ene.size):
+			if ene[i] == a:
+				n = i
+		Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
 
     return(ene,shc,Om_k[:,:,:,n])

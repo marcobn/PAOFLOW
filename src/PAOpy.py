@@ -594,7 +594,14 @@ if spin_Hall:
 
     temp = 0.025852  # set room temperature in eV
 
-    ene,shc = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH)
+    Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
+    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH)
+
+    if rank == 0 and write2file:
+        from write2bxsf import *
+        x0 = np.zeros(3,dtype=float)
+        ind_plot = np.zeros(1)
+        write2bxsf(Om_k,nk1,nk2,nk3,1,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry.bxsf')
 
     if ac_cond_spin:
         ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
