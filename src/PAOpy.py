@@ -198,7 +198,7 @@ reset=time.time()
 if non_ortho:
     Hks = do_non_ortho(Hks,Sks)
 
-if write2file:
+if rank == 0 and write2file:
     #----------------------
     # write to file Hks,Sks,kpnts,kpnts_wght
     #----------------------
@@ -597,7 +597,7 @@ if spin_Hall:
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
     ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH)
 
-    if rank == 0 and write2file:
+    if rank == 0 and writedata:
         from write2bxsf import *
         x0 = np.zeros(3,dtype=float)
         ind_plot = np.zeros(1)

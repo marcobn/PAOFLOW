@@ -90,4 +90,4 @@ emaxSH = 1.0
 sh = [0,1,2]    # order of shells with l angular momentum
 nl = [1,1,1]    # multiplicity of each l shell
 ac_cond_spin = False
-write2file = False
+writedata = True
