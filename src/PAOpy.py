@@ -563,14 +563,14 @@ if Berry:
     if rank == 0:
         f=open('ahc.dat','w')
         ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        if ac_cond:
+        if ac_cond_Berry:
             ahc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
             f.write(' Anomalous Hall conductivity sigma_xy = %.6f (%.6f)\n' %(ahc,ahc0))
         else:
             f.write(' Anomalous Hall conductivity sigma_xy = %.6f \n' %ahc)
         f.close()
 
-        if ac_cond:
+        if ac_cond_Berry:
             sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
             f=open('sigxyi.dat','w')
             for n in xrange(ene.size):
@@ -612,7 +612,7 @@ if spin_Hall:
     if rank == 0 and ene.size == 1:
         f=open('shc.dat','w')
         shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        if ac_cond:
+        if ac_cond_spin:
             shc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
             f.write(' spin Hall conductivity sigma^z_xy = %.6f (%.6f)\n' %(shc,shc0))
         else:
