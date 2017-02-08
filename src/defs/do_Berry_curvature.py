@@ -27,7 +27,6 @@ import sys
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-import pyfftw
 import multiprocessing
 
 from write_TB_eigs import write_TB_eigs
