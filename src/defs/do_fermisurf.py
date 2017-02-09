@@ -28,10 +28,10 @@ from write2bxsf import *
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from write3Ddatagrid import *
-def do_fermisurf(E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
+def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
     #maximum number of bands crossing fermi surface
 
-    nbndx_plot = 5
+    nbndx_plot = 10
     nktot = nk1*nk2*nk3
     
 #    vkpt_int_cry = np.zeros((3,nktot), dtype=float)
@@ -43,12 +43,14 @@ def do_fermisurf(E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
     #collect the interpolated eignvalues
     icount = 0
     for ib in range(nawf):
-        if (np.amin(E_k[:,ib]) < Efermi and np.amax(E_k[:,ib] > Efermi)):
+        if ((np.amin(E_k[:,ib]) < fermi_up and np.amax(E_k[:,ib]) > fermi_up) or \
+            (np.amin(E_k[:,ib]) < fermi_dw and np.amax(E_k[:,ib]) > fermi_dw) or \
+            (np.amin(E_k[:,ib]) > fermi_dw and np.amax(E_k[:,ib]) < fermi_up)):
             if ( icount > nbndx_plot ): sys.exit("too many bands contributing")
             eigband[:,:,:,icount] = E_K[:,:,:,ib]
             ind_plot[icount] = ib
             icount +=1
     x0 = np.zeros(3,dtype=float)   
 
-    write2bxsf(eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
+    write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
     return()
