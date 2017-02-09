@@ -68,7 +68,8 @@ delta = 0.01
 
 # Plot Fermi Surface
 do_fermisurf = False
-
+fermi_up = 0.1
+fermi_dw = -0.1
 # Boltzmann transport calculation
 Boltzmann = False
 

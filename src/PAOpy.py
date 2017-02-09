@@ -456,12 +456,12 @@ if do_fermisurf:
     if nspin == 1 or nspin == 2:
         if rank == 0:
             eigup = E_k[:,:,0]
-            do_fermisurf(eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0)
+            do_fermisurf(fermi_dw,fermi_up,eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0)
         eigup = None
     if nspin == 2:
         if rank == 0:
             eigdw = E_k[:,:,1]
-            do_fermisurf(eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0)
+            do_fermisurf(fermi_dw,fermi_up,eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0)
         eigdw = None
 
     if rank ==0: print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
