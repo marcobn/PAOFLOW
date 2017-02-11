@@ -41,7 +41,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH):
+def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,ebase):
     #----------------------
     # Compute spin Berry curvature
     #----------------------
@@ -157,9 +157,8 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
 
     Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
     if rank == 0:
-        a = np.sort(abs(ene))[0]
-        for i in xrange(ene.size):
-            if ene[i] == a:
+        for i in xrange(ene.size-1):
+            if ene[i] <= ebase and ene[i+1] >= ebase:
                 n = i
         Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
 

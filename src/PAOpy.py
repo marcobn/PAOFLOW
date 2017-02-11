@@ -551,16 +551,22 @@ if Berry:
 
     temp = 0.025852  # set room temperature in eV
 
-    ahc = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol)
+    Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
+    ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,ebase)
+
+    if rank == 0 and writedata:
+        from write2bxsf import *
+        x0 = np.zeros(3,dtype=float)
+        ind_plot = np.zeros(1)
+        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,1,ind_plot,0.0,alat,x0,b_vectors,'Berry.bxsf')
 
     if ac_cond_Berry:
         ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
-        #sigxy *= E2
         ahc0 = np.real(sigxy[0])
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-    if rank == 0:
+    if rank == 0 and ene.size == 1:
         f=open('ahc.dat','w')
         ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         if ac_cond_Berry:
@@ -569,17 +575,23 @@ if Berry:
         else:
             f.write(' Anomalous Hall conductivity sigma_xy = %.6f \n' %ahc)
         f.close()
+    elif rank == 0:
+        ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f=open('ahcEf.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
+        f.close()
 
-        if ac_cond_Berry:
-            sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-            f=open('sigxyi.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-            f.close()
-            f=open('sigxyr.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
-            f.close()
+    if rank == 0 and ac_cond_Berry:
+        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+        f=open('sigxyi.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+        f.close()
+        f=open('sigxyr.dat','w')
+        for n in xrange(ene.size):
+            f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
+        f.close()
 
     if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
@@ -594,13 +606,13 @@ if spin_Hall:
     temp = 0.025852  # set room temperature in eV
 
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH)
+    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,ebase)
 
     if rank == 0 and writedata:
         from write2bxsf import *
         x0 = np.zeros(3,dtype=float)
         ind_plot = np.zeros(1)
-        write2bxsf(Om_k,nk1,nk2,nk3,1,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry.bxsf')
+        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,1,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry.bxsf')
 
     if ac_cond_spin:
         ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
