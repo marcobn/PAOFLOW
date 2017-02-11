@@ -552,7 +552,7 @@ if Berry:
     temp = 0.025852  # set room temperature in eV
 
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,ebase)
+    ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
 
     if rank == 0 and writedata:
         from write2bxsf import *
@@ -606,7 +606,7 @@ if spin_Hall:
     temp = 0.025852  # set room temperature in eV
 
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,ebase)
+    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
 
     if rank == 0 and writedata:
         from write2bxsf import *
