@@ -557,8 +557,9 @@ if Berry:
     if rank == 0 and writedata:
         from write2bxsf import *
         x0 = np.zeros(3,dtype=float)
-        ind_plot = np.zeros(1)
-        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,1,ind_plot,0.0,alat,x0,b_vectors,'Berry.bxsf')
+        ind_plot = np.zeros(2)
+        Om_k[:,:,:,1] = Om_k[:,:,:,0]
+        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
 
     if ac_cond_Berry:
         ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
@@ -577,7 +578,7 @@ if Berry:
         f.close()
     elif rank == 0:
         ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f=open('ahcEf.dat','w')
+        f=open('ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
         for n in xrange(ene.size):
             f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
         f.close()
@@ -611,12 +612,12 @@ if spin_Hall:
     if rank == 0 and writedata:
         from write2bxsf import *
         x0 = np.zeros(3,dtype=float)
-        ind_plot = np.zeros(1)
-        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,1,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry.bxsf')
+        ind_plot = np.zeros(2)
+        Om_k[:,:,:,1] = Om_k[:,:,:,0]
+        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
 
     if ac_cond_spin:
         ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
-        #sigxy *= E2
         shc0 = np.real(sigxy[0])
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
@@ -632,7 +633,7 @@ if spin_Hall:
         f.close()
     elif rank == 0:
         shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f=open('shcEf.dat','w')
+        f=open('shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
         for n in xrange(ene.size):
             f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
         f.close()

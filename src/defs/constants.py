@@ -77,3 +77,5 @@ PAOPY = str(PAO)+str(pp)
 
 C = u"\u00A9"
 CC = C.encode('utf8')
+
+LL = ['x','y','z']
