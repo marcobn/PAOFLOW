@@ -42,13 +42,12 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
+def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,emin,emax):
     # Compute the dielectric tensor
 
-    emin = 0.1 # To be read in input
-    emax = 10.0
-    de = (emax-emin)/500
+    de = (emax-emin)/float(ne)
     ene = np.arange(emin,emax,de,dtype=float)
+    if ene[0]==0.0: ene[0]=0.00001
 
     index = None
 
@@ -81,7 +80,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
     epsi = np.zeros((3,3,ene.size),dtype=float)
     epsi_aux = np.zeros((3,3,ene.size),dtype=float)
 
-    epsi_aux[:,:,:] = epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin)
+    epsi_aux[:,:,:] = epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal)
 
     comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
 
@@ -99,11 +98,14 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin):
 
     comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
 
+    #epsr = np.zeros((3,3,ene.size),dtype=float)
+    #epsr[:,:,:] = epsr_kramkron(0,500,ene,epsi)
+
     epsr += 1.0
 
     return(ene,epsi,epsr)
 
-def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
+def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
 
@@ -112,6 +114,7 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
     # Collapsing the sum over k points - FASTEST
     for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
+        fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
         for m in xrange(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
@@ -121,6 +124,10 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin):
                     epsi[i,j,:] += np.sum(((1.0/(ene**2+delta**2) * \
                                    kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
                                    abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])),axis=1)
+                    if metal and n == m:
+                        epsi[i,j,:] += np.sum(((1.0/ene * \
+                                       kq_wght[0] /delta * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
+                                       abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])),axis=1)
 
 #   # Collapsing the sums over n,m and k points - MUCH SLOWER!!!
 #   fermi = (1.0/(np.exp(E_k[:,:,ispin]/temp)+1))*np.transpose(np.ones((end_ik-ini_ik,nawf,nawf),dtype=float),axes=(1,0,2))

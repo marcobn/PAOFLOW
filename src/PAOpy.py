@@ -549,8 +549,6 @@ if Berry:
     from do_Berry_curvature import *
     from do_Berry_conductivity import *
 
-    temp = 0.025852  # set room temperature in eV
-
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
     ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
 
@@ -604,8 +602,6 @@ if spin_Hall:
     from do_spin_Berry_curvature import *
     from do_spin_Hall_conductivity import *
 
-    temp = 0.025852  # set room temperature in eV
-
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
     ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
 
@@ -646,7 +642,6 @@ if Boltzmann:
     # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
     #----------------------
     from do_Boltz_tensors import *
-    temp = 0.025852  # set room temperature in eV
 
     for ispin in xrange(nspin):
         ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
@@ -719,13 +714,11 @@ if epsilon:
     #----------------------
     from do_epsilon import *
 
-    temp = 0.025852  # set room temperature in eV
-
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
     for ispin in xrange(nspin):
 
-        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin)
+        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,epsmin,epsmax)
 
         if rank == 0:
             f=open('epsi_'+str(ispin)+'.dat','w')

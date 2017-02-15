@@ -71,11 +71,18 @@ do_fermisurf = False
 fermi_up = 0.1
 fermi_dw = -0.1
 
+# Set temperature in eV
+temp = 0.025852  # room temperature
+
 # Boltzmann transport calculation
 Boltzmann = False
 
 # Dielectric function calculation
 epsilon = False
+metal = False
+epsmin=0.0
+epsmax=10.0
+ne = 500
 
 # Band topology analysis (also in do_bands_calc)
 band_topology = False
