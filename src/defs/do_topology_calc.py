@@ -39,21 +39,81 @@ from do_momentum import *
 from load_balancing import *
 from constants import *
 from clebsch_gordan import *
+from do_eigh_calc import *
+
+import pfaffian as pf
+
+import matplotlib.pyplot as plt
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
-    # Compute bands on a selected path in the BZ
-    # Define k-point mesh for bands interpolation
-    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
-    nkpi=kq.shape[1]
-    for n in xrange(nkpi):
-        kq[:,n]=kq[:,n].dot(b_vectors)
+def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
+    # Compute Z2 invariant and topological properties on a selected path in the BZ
 
+    nkpi=kq.shape[1]
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
+
+    # Compute Z2 according to Fu, Kane and Mele (2007) - crystals with inversion symmetry
+    # Define TRIM points in 3D
+    if nspin == 1:
+        nktrim = 16
+        ktrim = np.zeros((nktrim,3),dtype=float)
+        ktrim[0] = np.zeros(3,dtype=float)                                  #0 0 0 0
+        ktrim[1] = b_vectors[0,:]/2.0                                       #1 1 0 0
+        ktrim[2] = b_vectors[1,:]/2.0                                       #2 0 1 0
+        ktrim[3] = b_vectors[0,:]/2.0+b_vectors[1,:]/2.0                    #3 1 1 0
+        ktrim[4] = b_vectors[2,:]/2.0                                       #4 0 0 1
+        ktrim[5] = b_vectors[1,:]/2.0+b_vectors[2,:]/2.0                    #5 0 1 1
+        ktrim[6] = b_vectors[2,:]/2.0+b_vectors[0,:]/2.0                    #6 1 0 1
+        ktrim[7] = b_vectors[0,:]/2.0+b_vectors[1,:]/2.0+b_vectors[2,:]/2.0 #7 1 1 1
+        ktrim[8:16] = -ktrim[:8]
+        # Compute eigenfunctions at the TRIM points
+        E_ktrim,v_ktrim = do_eigh_calc(HRs,SRs,ktrim,R_wght,R,idx,non_ortho)
+        # Define time reversal operator
+        theta = -1.0j*clebsch_gordan(nawf,sh,nl,1)
+        wl = np.zeros((nktrim/2,nawf,nawf),dtype=complex)
+        for ik in xrange(nktrim/2):
+            wl[ik,:,:] = np.conj(v_ktrim[ik,:,:,0].T).dot(theta).dot(np.conj(v_ktrim[ik+nktrim/2,:,:,0]))
+            wl[ik,:,:] = wl[ik,:,:]-wl[ik,:,:].T  # enforce skew symmetry
+        delta_ik = np.zeros(nktrim/2,dtype=complex)
+        for ik in xrange(nktrim/2):
+            delta_ik[ik] = pf.pfaffian(wl[ik,:,:])/np.sqrt(LAN.det(wl[ik,:,:]))
+
+        f=open('Z2'+'.dat','w')
+        p2D = np.real(np.prod(delta_ik[:4]))
+        if p2D+1.0 < 1.e-5:
+            v0 = 1
+        elif p2D-1.0 < 1.e-5:
+            v0 = 0
+        f.write('2D case: v0 = %1d \n' %(v0))
+        p3D = np.real(np.prod(delta_ik))
+        if p3D+1.0 < 1.e-5:
+            v0 = 1
+        elif p3D-1.0 < 1.e-5:
+            v0 = 0
+        p3D = delta_ik[1]*delta_ik[3]*delta_ik[6]*delta_ik[7]
+        if p3D+1.0 < 1.e-5:
+            v1 = 1
+        elif p3D-1.0 < 1.e-5:
+            v1 = 0
+        p3D = delta_ik[2]*delta_ik[3]*delta_ik[5]*delta_ik[7]
+        if p3D+1.0 < 1.e-5:
+            v2 = 1
+        elif p3D-1.0 < 1.e-5:
+            v2 = 0
+        p3D = delta_ik[4]*delta_ik[6]*delta_ik[5]*delta_ik[7]
+        if p3D+1.0 < 1.e-5:
+            v3 = 1
+        elif p3D-1.0 < 1.e-5:
+            v3 = 0
+        f.write('3D case: v0;v1,v2,v3 = %1d;%1d,%1d,%1d \n' %(v0,v1,v2,v3))
+        f.close()
+
+    # Compute momenta
+
     # Compute R*H(R)
     HRs = FFT.fftshift(HRs,axes=(2,3,4))
     dHRs  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
@@ -143,10 +203,11 @@ def do_velocity_calc(HRs,E_k,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,
             if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
 
     if rank == 0:
-        f=open('Omega_z'+'.dat','w')
-        for ik in xrange(nkpi):
-            f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
-        f.close()
+        if Berry:
+            f=open('Omega_z'+'.dat','w')
+            for ik in xrange(nkpi):
+                f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
+            f.close()
         if spin_Hall:
             f=open('Omegaj_z'+'.dat','w')
             for ik in xrange(nkpi):

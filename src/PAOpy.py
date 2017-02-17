@@ -309,16 +309,22 @@ if do_bands and not(onedim):
     # Define real space lattice vectors
     R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
+    # Define k-point mesh for bands interpolation
+    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
+    nkpi=kq.shape[1]
+    for n in xrange(nkpi):
+        kq[:,n]=np.dot(kq[:,n],b_vectors)
+
     # Compute the bands along the path in the IBZ
-    E_kp,v_kp = do_bands_calc(HRs,SRs,R_wght,R,idx,non_ortho,ibrav,alat,a_vectors,b_vectors,dkres)
+    E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho)
 
     if rank == 0: print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
     if band_topology:
-        # Compute the velocity, momentum and Berry curvature operators along the path in the IBZ
-        from do_velocity_calc import *
-        do_velocity_calc(HRs,E_kp,v_kp,Rfft,ibrav,alat,a_vectors,b_vectors,dkres,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
+        # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
+        from do_topology_calc import *
+        do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
