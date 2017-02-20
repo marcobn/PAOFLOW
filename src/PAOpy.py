@@ -136,7 +136,7 @@ if nkpool%nsize != 0:
 
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
-    nkpnts, nspin, kpnts, kpnts_wght, \
+    nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath, verbose, non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
@@ -146,7 +146,7 @@ if (not non_ortho):
     if rank == 0 and verbose: print('...using orthogonal algorithm')
 else:
     U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
-    nkpnts, nspin, kpnts, kpnts_wght, \
+    nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
@@ -453,12 +453,12 @@ if do_dos or do_pdos:
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
-if do_fermisurf:
+if do_fermisurf or do_spintexture:
     #----------------------
     # Fermi surface calculation
     #----------------------
     from do_fermisurf import *
-    
+
     if nspin == 1 or nspin == 2:
         if rank == 0:
             eigup = E_k[:,:,0]
@@ -469,6 +469,9 @@ if do_fermisurf:
             eigdw = E_k[:,:,1]
             do_fermisurf(fermi_dw,fermi_up,eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0)
         eigdw = None
+    if do_spintexture and nspin == 1:
+        from do_spin_texture import *
+        do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool)
 
     if rank ==0: print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
@@ -526,7 +529,7 @@ if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
 
 velkp = None
 if rank == 0:
-    if Boltzmann or band_topology:
+    if Boltzmann or critical_points:
         #----------------------
         # Compute velocities for Boltzmann transport
         #----------------------
@@ -534,7 +537,7 @@ if rank == 0:
         for n in xrange(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
-        if band_topology:
+        if critical_points:
             #----------------------
             # Find critical points (grad(E_kn)=0)
             #----------------------
@@ -564,6 +567,8 @@ if Berry:
         ind_plot = np.zeros(2)
         Om_k[:,:,:,1] = Om_k[:,:,:,0]
         write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+
+        np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
 
     if ac_cond_Berry:
         ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)

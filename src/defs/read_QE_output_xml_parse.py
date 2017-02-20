@@ -99,7 +99,10 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
             if rank == 0 and verbose: print('Number of kpoints: {0:d}'.format(nkpnts))
 
             nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
-            if nspin == 4: nspin = 1
+            dftSO = False
+            if nspin == 4: 
+                nspin = 1
+                dftSO = True
             if rank == 0 and verbose: print('Number of spin components: {0:d}'.format(nspin))
 
             kunits = elem.findall("UNITS_FOR_K-POINTS")[0].attrib['UNITS']
@@ -258,10 +261,10 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
                     ik = 0
 
     if non_ortho:
-        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, \
+        return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
             kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
     else:
-        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, kpnts, \
+        return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
             kpnts_wght, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
 
 

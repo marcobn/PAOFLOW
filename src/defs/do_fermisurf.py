@@ -53,4 +53,7 @@ def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
     x0 = np.zeros(3,dtype=float)   
 
     write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
+
+    for ib in xrange(icount):
+        np.savez('Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
     return()

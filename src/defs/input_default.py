@@ -52,6 +52,8 @@ onedim = False
 do_bands = False
 ibrav = 0
 dkres = 0.1
+# Band topology analysis (also in do_bands_calc)
+band_topology = False
 
 # Hamiltonian interpolation on finer MP mesh
 double_grid = False
@@ -66,10 +68,11 @@ emin = -10.
 emax = 2
 delta = 0.01
 
-# Plot Fermi Surface
+# Plot Fermi Surface (spin texture)
 do_fermisurf = False
 fermi_up = 0.1
 fermi_dw = -0.1
+do_spintexture = False
 
 # Set temperature in eV
 temp = 0.025852  # room temperature
@@ -84,8 +87,9 @@ epsmin=0.0
 epsmax=10.0
 ne = 500
 
-# Band topology analysis (also in do_bands_calc)
-band_topology = False
+# Critical points
+critical_points = False
+
 # Berry curvature and AHC
 Berry = False
 ipol = 0
