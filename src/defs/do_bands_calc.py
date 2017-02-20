@@ -54,14 +54,20 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
 
     Hks_aux[:,:,:,:] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
 
-    comm.Allreduce(Hks_aux,Hks_int,op=MPI.SUM)
+    if size != 1:
+        comm.Allreduce(Hks_aux,Hks_int,op=MPI.SUM)
+    elif size == 1:
+        Hks_int = Hks_aux
 
     Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
     if read_S:
         Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
         Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
 
-        comm.Allreduce(Sks_aux,Sks_int,op=MPI.SUM)
+        if size != 1:
+            comm.Allreduce(Sks_aux,Sks_int,op=MPI.SUM)
+        elif size == 1:
+            Sks_int = Sks_aux
 
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)

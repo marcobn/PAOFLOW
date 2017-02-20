@@ -56,8 +56,8 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     nkpi=kq.shape[1]
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
 
-    # Compute Z2 according to Fu, Kane and Mele (2007) - crystals with inversion symmetry
-    # Define TRIM points in 3D
+    # Compute Z2 according to Fu, Kane and Mele (2007)
+    # Define TRIM points in 2(0-3)/3D(0-7)
     if nspin == 1:
         nktrim = 16
         ktrim = np.zeros((nktrim,3),dtype=float)
