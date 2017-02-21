@@ -150,6 +150,9 @@ else:
     nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
+if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
+    if rank == 0: print('CAUTION! nk1 or nk2 or nk3 not even!')
+
 #----------------------
 # Do memory checks 
 #----------------------
