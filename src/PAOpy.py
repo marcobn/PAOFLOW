@@ -230,7 +230,7 @@ if rank == 0 and write2file:
 #----------------------
 # Plot the TB and DFT eigevalues. Writes to comparison.pdf
 #----------------------
-if do_comparison:
+if rank == 0 and do_comparison:
     from plot_compare_TB_DFT_eigs import *
     plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,non_ortho)
     quit()
@@ -481,7 +481,7 @@ if do_fermisurf or do_spintexture:
 
 pksp = None
 jksp = None
-if Boltzmann or epsilon or Berry or band_topology or spin_Hall:
+if Boltzmann or epsilon or Berry or spin_Hall:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
