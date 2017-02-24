@@ -204,12 +204,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
     if rank == 0:
         if Berry:
-            f=open('Omega_z'+'.dat','w')
+            f=open('Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
             f.close()
         if spin_Hall:
-            f=open('Omegaj_z'+'.dat','w')
+            f=open('Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,Omj_zk[ik]))
             f.close()
