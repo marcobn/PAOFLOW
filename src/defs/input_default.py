@@ -26,6 +26,7 @@
 # Control 
 
 fpath = 'dir.save'
+restart = False
 verbose = False
 non_ortho  = False
 write2file = False

@@ -350,12 +350,25 @@ elif do_bands and onedim:
     reset=time.time()
 
 #----------------------
+# Initialize Read/Write restart data
+#----------------------
+checkpoint = 0
+if rank == 0:
+    if restart:
+        try:
+            datadump = np.load(fpath+'PAOdump.npz')
+            checkpoint = datadump['checkpoint']
+        except:
+            pass
+checkpoint = comm.bcast(checkpoint,root=0)
+
+#----------------------
 # Start master-slaves communication
 #----------------------
 
 Hksp = None
 if rank == 0:
-    if double_grid:
+    if double_grid and checkpoint == 0:
 
         if non_ortho:
             # now we orthogonalize the Hamiltonian again
@@ -388,31 +401,94 @@ if rank == 0:
         Hksp = Hks
 
 #----------------------
+# Read/Write restart data
+#----------------------
+if rank == 0:
+    if restart:
+        if checkpoint == 0:
+            checkpoint += 1
+            np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3)
+        elif checkpoint > 0:
+            Hksp = datadump['Hksp']
+            kq = datadump['kq']
+            kq_wght = datadump['kq_wght']
+            idk = datadump['idk']
+            nk1 = datadump['nk1']
+            nk2 = datadump['nk2']
+            nk3 = datadump['nk3']
+else:
+    Hksp = None
+    kq = None
+    kq_wght = None
+    idk = None
+    nk1 = None
+    nk2 = None
+    nk3 = None
+checkpoint = comm.bcast(checkpoint,root=0)
+
+#----------------------
 # Compute eigenvalues of the interpolated Hamiltonian
 #----------------------
-from calc_TB_eigs_vecs import *
+if checkpoint < 2:
+    from calc_TB_eigs_vecs import *
 
-eig = None
-E_k = None
-v_k = None
-if rank == 0:
-    Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-for ispin in xrange(nspin):
-    eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
-if rank == 0:
-    Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
+    eig = None
+    E_k = None
+    v_k = None
+    if rank == 0:
+        Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+    for ispin in xrange(nspin):
+        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
+    if rank == 0:
+        Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
 
-index = None
-if rank == 0:
-    nk1,nk2,nk3,_,_,_ = Hksp.shape
-    index = {'nk1':nk1,'nk2':nk2,'nk3':nk3}
-index = comm.bcast(index,root=0)
-nk1 = index['nk1']
-nk2 = index['nk2']
-nk3 = index['nk3']
+    index = None
+    if rank == 0:
+        nk1,nk2,nk3,_,_,_ = Hksp.shape
+        index = {'nk1':nk1,'nk2':nk2,'nk3':nk3}
+    index = comm.bcast(index,root=0)
+    nk1 = index['nk1']
+    nk2 = index['nk2']
+    nk3 = index['nk3']
 
-if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-reset=time.time()
+    if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
+
+#----------------------
+# Read/Write restart data
+#----------------------
+if rank == 0:
+    if restart:
+        if checkpoint == 1:
+            checkpoint += 1
+            np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                    eig=eig,E_k=E_k,v_k=v_k)
+        elif checkpoint > 1:
+            Hksp = datadump['Hksp']
+            kq = datadump['kq']
+            kq_wght = datadump['kq_wght']
+            idk = datadump['idk']
+            nk1 = datadump['nk1']
+            nk2 = datadump['nk2']
+            nk3 = datadump['nk3']
+            eig = datadump['eig']
+            E_k = datadump['E_k']
+            v_k = datadump['v_k']
+else:
+    Hksp = None
+    kq = None
+    kq_wght = None
+    idk = None
+    nk1 = None
+    nk2 = None
+    nk3 = None
+    eig = None
+    E_k = None
+    v_k = None
+checkpoint = comm.bcast(checkpoint,root=0)
+nk1 = comm.bcast(nk1,root=0)
+nk2 = comm.bcast(nk2,root=0)
+nk3 = comm.bcast(nk3,root=0)
 
 if do_dos or do_pdos:
     #----------------------
@@ -482,41 +558,130 @@ if do_fermisurf or do_spintexture:
 pksp = None
 jksp = None
 if Boltzmann or epsilon or Berry or spin_Hall:
-    #----------------------
-    # Compute the gradient of the k-space Hamiltonian
-    #----------------------
-    from do_gradient import *
-    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
+    if checkpoint < 3:
+        #----------------------
+        # Compute the gradient of the k-space Hamiltonian
+        #----------------------
+        from do_gradient import *
+        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 
+        if rank == 0:
+            print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+            reset=time.time()
+
+    #----------------------
+    # Read/Write restart data
+    #----------------------
     if rank == 0:
-        print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        if restart:
+            if checkpoint == 2:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                        eig=eig,E_k=E_k,v_k=v_k,dHksp=dHksp)
+            elif checkpoint > 2:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+                eig = datadump['eig']
+                E_k = datadump['E_k']
+                v_k = datadump['v_k']
+                dHksp = datadump['dHksp']
+    else:
+        Hksp = None
+        kq = None
+        kq_wght = None
+        idk = None
+        nk1 = None
+        nk2 = None
+        nk3 = None
+        eig = None
+        E_k = None
+        v_k = None
+        dHksp = None
+    checkpoint = comm.bcast(checkpoint,root=0)
+
+    if checkpoint < 4:
+        #----------------------
+        # Compute the momentum operator p_n,m(k)
+        #----------------------
+        from do_momentum import *
+
+        if rank != 0:
+            dHksp = None
+            v_k = None
+            pksp = None
+        if rank == 0:
+            dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
+        pksp = do_momentum(v_k,dHksp,npool)
+
+        if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
     #----------------------
-    # Compute the momentum operator p_n,m(k)
+    # Read/Write restart data
     #----------------------
-    from do_momentum import *
-
-    if rank != 0:
-        dHksp = None
-        v_k = None
-        pksp = None
     if rank == 0:
-        dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-    pksp = do_momentum(v_k,dHksp,npool)
-
-    if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+        if restart:
+            if checkpoint == 3:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                        eig=eig,E_k=E_k,v_k=v_k,dHksp=dHksp,pksp=pksp)
+            elif checkpoint > 3:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+                eig = datadump['eig']
+                E_k = datadump['E_k']
+                v_k = datadump['v_k']
+                dHksp = datadump['dHksp']
+                pksp = datadump['pksp']
+    else:
+        Hksp = None
+        kq = None
+        kq_wght = None
+        idk = None
+        nk1 = None
+        nk2 = None
+        nk3 = None
+        eig = None
+        E_k = None
+        v_k = None
+        dHksp = None
+        pksp = None
+    checkpoint = comm.bcast(checkpoint,root=0)
+    nk1 = comm.bcast(nk1,root=0)
+    nk2 = comm.bcast(nk2,root=0)
+    nk3 = comm.bcast(nk3,root=0)
 
     if spin_Hall:
         #----------------------
         # Compute the spin current operator j^l_n,m(k)
         #----------------------
-        from do_spin_current import *
-        jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
-
-        if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-        reset=time.time()
+        jksp = None
+        spincheck = 0
+        if rank == 0:
+            try:
+                spindump = np.load(fpath+'PAOspin'+str(spol)+'.npz')
+                jksp = spindump['jksp']
+                spincheck += 1
+            except:
+                pass
+        spincheck=comm.bcast(spincheck,root=0)
+        if spincheck == 0:
+            from do_spin_current import *
+            jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
+            if restart and rank == 0:
+                np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
+            if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+            reset=time.time()
 
     dHksp = None
 
