@@ -358,6 +358,7 @@ if rank == 0:
         try:
             datadump = np.load(fpath+'PAOdump.npz')
             checkpoint = datadump['checkpoint']
+            print('reading data from dump at checkpoint ',checkpoint)
         except:
             pass
 checkpoint = comm.bcast(checkpoint,root=0)
@@ -672,6 +673,7 @@ if Boltzmann or epsilon or Berry or spin_Hall:
                 spindump = np.load(fpath+'PAOspin'+str(spol)+'.npz')
                 jksp = spindump['jksp']
                 spincheck += 1
+                print('reading spin current for polarization ',spol)
             except:
                 pass
         spincheck=comm.bcast(spincheck,root=0)
