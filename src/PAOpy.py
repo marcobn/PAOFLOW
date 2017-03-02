@@ -668,7 +668,7 @@ if Boltzmann or epsilon or Berry or spin_Hall:
         #----------------------
         jksp = None
         spincheck = 0
-        if rank == 0:
+        if restart and rank == 0:
             try:
                 spindump = np.load(fpath+'PAOspin'+str(spol)+'.npz')
                 jksp = spindump['jksp']
