@@ -139,7 +139,8 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         # Compute dH(k)/dk
         if scipyfft:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-            dHksp[:,:,:,:,:,:,:] = FFT.fftn(dHRaux[:,:,:,:,:,:,:],axes=[0,1,2])
+            for l in xrange(3):
+                dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
             dHraux = None
         else:
             for l in xrange(3):
