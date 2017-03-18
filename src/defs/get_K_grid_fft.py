@@ -34,8 +34,8 @@ def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
             for k in xrange(nk3):
                 n = k + j*nk3 + i*nk2*nk3
                 Rx = float(i)/float(nk1)
-                Ry = float(j)/float(nk1)
-                Rz = float(k)/float(nk1)
+                Ry = float(j)/float(nk2)
+                Rz = float(k)/float(nk3)
                 if Rx >= 0.5: Rx=Rx-1.0
                 if Ry >= 0.5: Ry=Ry-1.0
                 if Rz >= 0.5: Rz=Rz-1.0
