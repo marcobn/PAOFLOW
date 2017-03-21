@@ -30,8 +30,9 @@ restart = False
 verbose = False
 non_ortho  = False
 write2file = False
+writedata = False
 shift_type = 1
-shift      = 5.0
+shift      = 'auto' # if 'auto' shift is selected automatically; else, give numerical value 
 pthr       = 0.95
 npool = 1
 
@@ -53,7 +54,7 @@ onedim = False
 do_bands = False
 ibrav = 0
 dkres = 0.1
-# Band topology analysis (also in do_bands_calc)
+# Band topology analysis
 band_topology = False
 
 # Hamiltonian interpolation on finer MP mesh
@@ -75,6 +76,15 @@ fermi_up = 0.1
 fermi_dw = -0.1
 do_spintexture = False
 
+# Tensor components
+spol = 0  # spin
+ipol = 0
+jpol = 0
+
+# Shell order and degeneracy for SO
+sh = [0,1,2,0,1,2]    # order of shells with l angular momentum
+nl = [2,1,1,1,1,1]    # multiplicity of each l shell
+
 # Set temperature in eV
 temp = 0.025852  # room temperature
 
@@ -93,15 +103,10 @@ critical_points = False
 
 # Berry curvature and AHC
 Berry = False
-ipol = 0
-jpol = 1
 ac_cond_Berry = False
+
 # Spin Berry curvature and SHC
 spin_Hall = False
-spol = 2
 eminSH = -1.0
 emaxSH = 1.0
-sh = [0,1,2]    # order of shells with l angular momentum
-nl = [1,1,1]    # multiplicity of each l shell
 ac_cond_spin = False
-writedata = True
