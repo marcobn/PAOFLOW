@@ -137,7 +137,7 @@ if nkpool%nsize != 0:
 if (not non_ortho):
     U, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath, verbose, non_ortho)
+    nelec, nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath, verbose, non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -147,7 +147,7 @@ if (not non_ortho):
 else:
     U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
     nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
-    nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
+    nelec, nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
 if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
@@ -328,7 +328,7 @@ if do_bands and not(onedim):
     if band_topology:
         # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
         from do_topology_calc import *
-        do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
+        do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 

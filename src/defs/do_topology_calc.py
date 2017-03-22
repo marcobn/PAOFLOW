@@ -50,7 +50,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
+def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
     # Compute Z2 invariant and topological properties on a selected path in the BZ
 
     nkpi=kq.shape[1]
@@ -80,7 +80,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
             wl[ik,:,:] = wl[ik,:,:]-wl[ik,:,:].T  # enforce skew symmetry
         delta_ik = np.zeros(nktrim/2,dtype=complex)
         for ik in xrange(nktrim/2):
-            delta_ik[ik] = pf.pfaffian(wl[ik,:,:])/np.sqrt(LAN.det(wl[ik,:,:]))
+            delta_ik[ik] = pf.pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
         f=open('Z2'+'.dat','w')
         p2D = np.real(np.prod(delta_ik[:4]))
