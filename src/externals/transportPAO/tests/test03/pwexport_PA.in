@@ -1,0 +1,7 @@
+&inputpp
+  prefix='poly_pa'
+  outdir='./SCRATCH'
+  pseudo_dir='../pseudo/'
+  psfile(1)='C.pw-mt_fhi.UPF'
+  psfile(2)='H.pz-vbc.UPF'
+/

@@ -1,0 +1,34 @@
+
+==============================================================================
+@title@   Ballistic phonon transport: poly-acethylene
+==============================================================================
+
+  DESCRIPTION:
+
+  This test shows how to perform a phonon transport calculation
+  on a 1-dimensional polymer (poly-acethylene).
+  This test is meant to show how to combine the Phonon and WanT 
+  to compute phonon transport.
+
+  JOB SEQUENCE:
+  pw.x < cnhn.scf.in 
+  	run pw.x 
+  ph.x < cnhn.ph.in
+    	run ph.x
+  q2trans.x < cnhn.q2trans.in
+  	extract the matrix of the interatomic force constants, 
+        and writes it in the format for conductor.x (ext.ham)
+  conductor.x < cnhn.cond.in
+  	computes the phonon transmittance
+	
+NOTE: the input parameters (ecutwfc etc.) or q-grid are somewhat under 
+converged for the sake of fast execution (CAVEAT: this test takes a 
+LONG time to run on a workstation). For the testing of the transport 
+part we have saved the dynamical and IFC matrices in reference/.
+
+NOTE2: for accurate phonon calculations on these systems, ecutrho=20*ecuwfc, 
+else instabilities appear in the long wavelength acoustic modes.
+  
+
+
+

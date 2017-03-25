@@ -1,0 +1,6 @@
+&projwfc
+  prefix='gold4'
+  outdir='./SCRATCH'
+  filpdos='./SCRATCH/gold4'
+  lwrite_overlaps = .TRUE.
+/

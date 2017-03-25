@@ -1,0 +1,22 @@
+
+  &INPUT_CONDUCTOR
+    postfix='_Au8_PROJ'
+    work_dir = './SCRATCH'
+    dimC = 72
+    calculation_type = 'bulk'
+    ne = 800  
+    emin = -12.0
+    emax =   4.0 
+    datafile_C = "./SCRATCH/gold8.save/atomic_proj.xml"
+    transport_dir = 3
+    delta = 0.0001
+    do_orthoovp    = .TRUE.
+  /
+
+<HAMILTONIAN_DATA>
+
+   <H00_C  cols="1-72" rows="1-72" />
+   <H_CR   cols="1-72" rows="1-72" />
+
+</HAMILTONIAN_DATA>
+

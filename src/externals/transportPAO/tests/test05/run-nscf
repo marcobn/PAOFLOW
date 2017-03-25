@@ -1,0 +1,153 @@
+#!/bin/sh
+
+# run from directory where this script is
+cd `echo $0 | sed 's/\(.*\)\/.*/\1/'` # extract pathname
+EXAMPLE_DIR=`pwd`
+
+# check whether echo has the -e option
+if test "`echo -e`" = "-e" ; then ECHO=echo ; else ECHO="echo -e" ; fi
+
+$ECHO
+$ECHO "$EXAMPLE_DIR : starting"
+$ECHO
+$ECHO "This example shows how to use bands.x to check the band symmetry"
+$ECHO "of Si "
+
+# set the needed environment variables
+#. ../../../../environment_variables
+. /home/mcosta/compiling-composer_xe_2013.5.192/qe-6.0/environment_variables 
+
+# required executables and pseudopotentials
+BIN_LIST="pw.x bands.x"
+#PSEUDO_LIST="Cu.pz-dn-rrkjus_psl.0.2.UPF"
+PSEUDO_LIST="Fe.pbe-n-kjpaw_psl.1.0.0.UPF"
+
+TMP_DIR="./"
+
+$ECHO
+$ECHO "  executables directory: $BIN_DIR"
+$ECHO "  pseudo directory:      $PSEUDO_DIR"
+$ECHO "  temporary directory:   $TMP_DIR"
+$ECHO
+$ECHO "  checking that needed directories and files exist...\c"
+
+# check for directories
+for DIR in "$BIN_DIR" "$PSEUDO_DIR" ; do
+    if test ! -d $DIR ; then
+        $ECHO
+        $ECHO "ERROR: $DIR not existent or not a directory"
+        $ECHO "Aborting"
+        exit 1
+    fi
+done
+
+
+# check for executables
+for FILE in $BIN_LIST ; do
+    if test ! -x $BIN_DIR/$FILE ; then
+        $ECHO
+        $ECHO "ERROR: $BIN_DIR/$FILE not existent or not executable"
+        $ECHO "Aborting"
+        exit 1
+    fi
+done
+
+# check for pseudopotentials
+for FILE in $PSEUDO_LIST ; do
+    if test ! -r $PSEUDO_DIR/$FILE ; then
+       $ECHO
+       $ECHO "Downloading $FILE to $PSEUDO_DIR...\c"
+            $WGET $PSEUDO_DIR/$FILE $NETWORK_PSEUDO/$FILE 2> /dev/null
+    fi
+    if test $? != 0; then
+        $ECHO
+        $ECHO "ERROR: $PSEUDO_DIR/$FILE not existent or not readable"
+        $ECHO "Aborting"
+        exit 1
+    fi
+done
+$ECHO " done"
+
+# how to run executables
+PW_COMMAND="$PARA_PREFIX $BIN_DIR/pw.x $PARA_POSTFIX"
+BANDS_COMMAND="$PARA_PREFIX $BIN_DIR/bands.x $PARA_POSTFIX"
+PROJWFC_COMMAND="$PARA_PREFIX $BIN_DIR/projwfc.x $PARA_POSTFIX"
+$ECHO
+$ECHO "  running pw.x as: $PW_COMMAND"
+$ECHO "  running bands.x as: $BANDS_COMMAND"
+$ECHO
+
+
+# DEFINITONS
+
+prefix="fe"
+
+for i in   0.00000   0.00263   0.00526   0.00790   0.01053   0.01316   0.01579   0.01842   0.02106   0.02368   0.02632   0.02895   0.03159   0.03421   0.03683   0.03946   0.04211   0.04474   0.04736   0.04999   0.05264   0.05527   0.05789   0.06052   0.06317   0.06580   0.06842   0.07104   0.07367   0.07629   0.07892   0.08160   0.08423   0.08685   0.08948   0.09210   0.09473   0.09735   0.09998   0.10266   0.10529   0.10791   0.11053   0.11316   0.11578   0.11841   0.12103   0.12366   0.12634   0.12891   0.13159   0.13416   0.13684   0.13953   0.14209   0.14478   0.14734   0.15002   0.15259   0.15527   0.15784   0.16052   0.16321   0.16577   0.16846   0.17102   0.17371   0.17627   0.17896   0.18152   0.18420   0.18689   0.18945   0.19214   0.19470   0.19739   0.19995   0.20264   0.20532   0.20789   0.21057   0.21313   0.21582   0.21838   0.22107   0.22363   0.22632   0.22900   0.23157   0.23425   0.23682   0.23950   0.24207   0.24475   0.24731   0.25000   0.25269   0.25537   0.25781   0.26050   0.26318   0.26587   0.26831   0.27100   0.27368   0.27637   0.27905   0.28149   0.28418   0.28687   0.28955   0.29199   0.29468   0.29736   0.30005   0.30273   0.30518   0.30786   0.31055   0.31323   0.31567   0.31836   0.32104   0.32373   0.32642   0.32886   0.33154   0.33423   0.33691   0.33936   0.34204   0.34473   0.34741   0.35010   0.35254   0.35522   0.35791   0.36060   0.36304   0.36572   0.36841   0.37109   0.37378   0.37622   0.37891   0.38159   0.38428   0.38696   0.38940   0.39209   0.39478   0.39746   0.39990   0.40259   0.40527   0.40796   0.41064   0.41309   0.41577   0.41846   0.42114   0.42358   0.42627   0.42896   0.43164   0.43433   0.43677   0.43945   0.44214   0.44482   0.44727   0.44995   0.45264   0.45532   0.45801   0.46045   0.46313   0.46582   0.46851   0.47095   0.47363   0.47632   0.47900   0.48169   0.48413   0.48682   0.48950   0.49219   0.49463   0.49731   0.50000
+
+do
+
+mkdir nscf-$i
+cd  nscf-$i
+cp -r ../../../scf/$prefix.* .
+
+
+cat > $prefix.nscf.in << EOF
+ &control
+    calculation = 'nscf'
+    restart_mode='from_scratch',
+    prefix='fe',
+    tprnfor = .true.
+    pseudo_dir = '/home/mcosta/compiling-composer_xe_2013.5.192/qe-6.0/pseudo'
+    outdir='./'
+    verbosity = "high"
+ /
+ &system
+    ibrav=  0, nat=  2, ntyp= 1,
+    ecutwfc =45.0,
+    ecutrho =300.0,
+    occupations='smearing', smearing='methfessel-paxton', degauss=0.02
+    noinv = .TRUE.
+    nosym = .TRUE.
+    nbnd = 20
+/
+ &electrons
+    mixing_mode = 'plain'
+    mixing_beta = 0.7
+    conv_thr =  1.0d-8
+ /
+ATOMIC_SPECIES
+ Fe  0.0 Fe.pbe-n-kjpaw_psl.1.0.0.UPF 
+ATOMIC_POSITIONS crystal 
+Fe 0.00000000  0.00000000  0.00000000
+Fe 0.50000000  0.50000000  0.50000000
+CELL_PARAMETERS (angstrom)
+        2.8608000278         0.0000000000         0.0000000000
+        0.0000000000         2.8608000278         0.0000000000
+        0.0000000000         0.0000000000         2.8608000278  
+K_POINTS crystal
+4
+0.000000 $i 0.000000 1.0
+0.000000 $i 0.250000 1.0
+0.000000 $i 0.500000 1.0
+0.000000 $i 0.750000 1.0
+EOF
+
+$ECHO "  running the non-scf calculation for $prefix...\c"
+$PW_COMMAND < $prefix.nscf.in > $prefix.nscf.out
+check_failure $?
+$ECHO " done"
+
+
+################# PROJECTIONS #####################
+cat > $prefix.proj.in << EOF
+ &projwfc
+    prefix='$prefix'
+    outdir='./'
+    filpdos='./$prefix'
+    lwrite_overlaps = .false.
+    lbinary_data  = .false.
+ /
+EOF
+$PROJWFC_COMMAND < $prefix.proj.in > $prefix.proj.out
+cd ..
+done

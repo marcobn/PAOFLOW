@@ -1,0 +1,4 @@
+&INPUT
+   measure  = "norm2"
+   work_dir = "./"
+/

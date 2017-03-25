@@ -1,0 +1,102 @@
+# make.sys.  Generated from make.sys.in by configure.
+
+# -----------------------------
+# compilation rules
+
+.SUFFIXES :
+.SUFFIXES : .o .c .f .f90
+
+.f90.o:
+	$(MPIF90) $(F90FLAGS) -c $<
+
+.f.o:
+	$(F77) $(FFLAGS) -c $<
+
+.c.o:
+	$(CC) $(CFLAGS) -c $<
+
+# -----------------------------
+# compiler definitions
+
+
+CC                  = cc
+CFLAGS              = -O3 $(DFLAGS) $(IFLAGS)
+CPP                 = cpp
+CPPFLAGS            = -P -traditional $(DFLAGS) $(IFLAGS)
+F90                 = gfortran
+MPIF90              = mpif90
+F90FLAGS            = $(FFLAGS) -x f95-cpp-input $(FDFLAGS) $(IFLAGS) $(MODFLAGS)
+F77                 = gfortran
+FFLAGS              = -O2 -g
+FFLAGS_NOOPT        = -O0 -g
+LD                  = mpif90
+LDFLAGS             = -g
+AR                  = ar
+ARFLAGS             = ruv
+RANLIB              = ranlib
+
+#
+# MOD_FLAGS = flag used by f90 compiler to locate modules
+MOD_FLAG            = -I
+
+
+# -----------------------------
+# libraries
+
+TOPDIR              = /home/marco/Programs/transport
+
+BLAS_LIBS           =  -lblas 
+BLAS_LIBS_SWITCH    = external
+#
+LAPACK_LIBS         =  -llapack  -lblas 
+LAPACK_LIBS_SWITCH  = external
+#
+IOTK_LIBS           = -L/home/marco/Programs/transport/extlibs/iotk/lib -liotk
+IOTK_LIBS_SWITCH    = internal
+IOTK_INCLUDE        = -I/home/marco/Programs/transport/extlibs/iotk/include
+#
+FFT_LIBS            =  -lfftw3 
+MPI_LIBS            = 
+MASS_LIBS           = 
+#
+ETSF_IO_LIBS        = 
+ETSF_IO_LIBS_SWITCH = 
+ETSF_IO_INCLUDE     = 
+#
+NETCDF_LIBS         = 
+NETCDF_LIBS_SWITCH  = 
+NETCDF_INCLUDE      = 
+#
+PHIGEMM_LIBS        = 
+PHIGEMM_LIBS_SWITCH = 
+PHIGEMM_INCLUDE     = 
+#
+MAGMA_LIBS          = 
+MAGMA_LIBS_SWITCH   = 
+MAGMA_INCLUDE       = 
+#
+CUDA_LIBS           = 
+CUDA_LIBS_SWITCH    = 
+CUDA_INCLUDE        = 
+NVCC                = 
+NVCCFLAGS           = 
+
+
+# -----------------------------
+# application-specific settings
+
+# See include/defs.h.README for a list of precompilation options
+# (possible arguments to -D or -U) and their meaning
+DFLAGS         =  -D__GFORTRAN -D__STD_F95 -D__FFTW3 -D__MPI -D__PARA
+FDFLAGS        = $(DFLAGS)
+IFLAGS         = -I/home/marco/Programs/transport/include  
+MODFLAGS       = -I. -I/home/marco/Programs/transport/extlibs/iotk/include   \
+                 -I../baselib -I../transport 
+
+LIBOBJS        = ../baselib/libbase.a ../clib/libclib.a
+
+# LIBS must contain the location of all needed external libraries
+LIBS           = $(LAPACK_LIBS) $(BLAS_LIBS) $(IOTK_LIBS) $(FFT_LIBS) $(MPI_LIBS) \
+                 $(MASS_LIBS) $(ETSF_IO_LIBS) $(NETCDF_LIBS) \
+                 $(MAGMA_LIBS) $(PHIGEMM_LIBS) $(CUDA_LIBS)
+

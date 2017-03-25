@@ -1,0 +1,21 @@
+
+==============================================================================
+@title@   CP2K and ATMPROJ Hamiltonians
+==============================================================================
+
+  DESCRIPTION:
+
+  This test shows how to use CP2K and ATMPROJ Hamiltonians to interpolate
+  the electronic structure of few selected systems. Bands, dos, and transmittance
+  are computed and compared with direct calculations.
+
+  A number of systems are tested: bulk Silicon, poly-acethylene chains, gold chains,
+  and the benzene molecule.
+  The geometry of polyacetylene is taken from van Faassen et al, PRL 88 186401 (2002),
+  corresponding to a HF relaxation.
+  (results for the same PA system obtained using the crystal code are given in test13)
+
+  RESULTS discussion:
+
+
+

@@ -1,0 +1,37 @@
+&CONTROL
+    prefix='poly_pa'
+    calculation='nscf',
+    restart_mode='from_scratch',
+    pseudo_dir='../pseudo/',
+    outdir='./SCRATCH',
+    wf_collect=.TRUE.
+/
+&SYSTEM
+        ibrav = 8,
+     celldm(1)=30, celldm(2) = 1.0000,
+    celldm(3) = 0.155566,
+          nat = 4,
+         ntyp = 2,
+      ecutwfc = 40.0 ,
+         nbnd = 30
+        nosym = .TRUE.
+        noinv = .TRUE.
+    input_dft = 'PZ'
+/
+&ELECTRONS
+    electron_maxstep = 50,
+    mixing_mode = 'plain',
+    mixing_beta = 0.3,
+    conv_thr =  1.0d-8,
+/
+ATOMIC_SPECIES                                       
+    C    1.00000  C.pw-mt_fhi.UPF
+    H    1.00000  H.pz-vbc.UPF
+ATOMIC_POSITIONS bohr
+C      0.000000000     0.000000000    -1.106970000
+C      1.225187328     0.000000000     1.106976303
+H     -2.035217982     0.000000000    -1.115497550
+H      3.260405310     0.000000000     1.115503853
+K_POINTS automatic
+1 1 30 0 0 0
+

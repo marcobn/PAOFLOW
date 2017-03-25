@@ -1,0 +1,27 @@
+--------------------------------------------------------------------
+WanT can take advantage of several optimized numerical libraries
+(essl, fftw, mkl...).  This configure script attempts to find them,
+but may fail if they have been installed in non-standard locations.
+
+The following libraries have been found:
+
+  @blas_line@
+  @lapack_line@
+  @fft_line@
+  @iotk_line@
+  @mpi_line@
+  @mass_line@
+  @etsf_io_line@
+  @netcdf_line@
+  @cuda_line@
+  @phigemm_line@
+  @magma_line@
+
+Please check if that is correct.
+
+If any libraries are missing, you may specify a list of directories
+to search and retry, as follows:
+  ./configure LIBDIRS="list of directories, separated by spaces"
+
+For more info, read the WanT Manual (docs/want_manual.pdf).
+--------------------------------------------------------------------

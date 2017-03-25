@@ -1,0 +1,7 @@
+&projwfc
+  prefix='poly_pa'
+  outdir='./SCRATCH'
+  filpdos='./SCRATCH/poly_pa'
+  lwrite_overlaps = .TRUE.
+  lbinary_data = .TRUE.
+/

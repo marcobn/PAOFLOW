@@ -1,0 +1,37 @@
+#//////////////////////////////////////////////////////////////////////////////
+#   -- MAGMA (version 1.1) --
+#      Univ. of Tennessee, Knoxville
+#      Univ. of California, Berkeley
+#      Univ. of	Colorado, Denver
+#      November 2011
+#//////////////////////////////////////////////////////////////////////////////
+
+#
+# GPU_TARGET specifies for which GPU you want to compile MAGMA
+#      0: Tesla family
+#      1: Fermi Family
+#
+GPU_TARGET = @magma_gpu_target@
+
+CC        = @cc@
+NVCC      = @nvcc@
+FORT      = @f90@
+
+ARCH      = @ar@
+ARCHFLAGS = cr
+RANLIB    = @ranlib@
+
+OPTS      = -O3 -DADD_
+FOPTS     = -O3 -DADD_ -cpp
+NVOPTS    = --compiler-options -fno-strict-aliasing -DUNIX -O3 -DADD_
+LDOPTS    = -fPIC -nofor_main -Xlinker -zmuldefs
+
+LIB      = @ld_libs@
+
+CUDADIR   = @cuda_path@
+
+LIBDIR    = 
+INC       = @cuda_include@
+
+#LIBMAGMA     = ../lib/libmagma.a
+#LIBMAGMABLAS = ../lib/libmagmablas.a

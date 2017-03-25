@@ -1,0 +1,8 @@
+#
+# MKL 12.1, 
+#
+# as suggested by the MKL configurator.
+# This file is meant to be just a quick reminder for all those occasions when 
+# the MKL path and libs have to be spicified by hand.
+#
+ -Wl,--start-group  $(MKLROOT)/lib/intel64/libmkl_intel_lp64.a $(MKLROOT)/lib/intel64/libmkl_intel_thread.a $(MKLROOT)/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm

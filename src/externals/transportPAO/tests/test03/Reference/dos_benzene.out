@@ -1,0 +1,237 @@
+
+  ======================================================================
+              =                                            =
+              =     *** WanT *** Wannier Transport Code    =
+              =        (www.wannier-transport.org)         =
+              =      Ultra Soft Pseudopotential Implem.    =
+              =                                            =
+  ======================================================================
+
+
+  Program <dos>  v. 2.5.0alpha2  starts ...
+  Date 17Apr2014 at 20:37:12 
+
+     Number of MPI processes:       6
+
+
+
+          BUILT :    Thu 17 Apr 2014 06:13:20 PM CEST
+           HOST :    x86_64-unknown-linux-gnu
+           ARCH :    x86_64
+             CC :    icc
+            CPP :    cpp
+            F90 :    mpif90
+            F77 :    ifort
+         DFLAGS :    -D__INTEL -D__FFTW -D__MPI -D__PARA
+      BLAS LIBS :    -L/home/ferretti/want/install -lmkl_em64t_nothread
+    LAPACK LIBS :    
+       FFT LIBS :    
+      MASS LIBS :    
+
+
+  checking for fmt internal... no
+  checking for fmt wannier90... no
+  checking for fmt crystal... no
+  checking for fmt qexml... ok
+
+  DFT-data fmt automaticaly detected: qexml
+
+  ======================================================================
+  =  INPUT Summary                                                     =
+  ======================================================================
+
+                      fileout :     dos_benzene.dat
+                         type :     lorentzian
+               spin component :     all
+                        delta :     0.05000 eV
+                           nk :      1   1   1
+                            s :      0   0   0
+                        nktot :          1
+                         emin :    -20.000
+                         emax :      5.000
+                           ne :     1000
+                        shift :      0.000
+                        scale :      1.000
+                       nprint :       50
+              compute projdos :     FALSE
+           compute fermi surf :     FALSE
+                 DFT datafile :     ./SCRATCH/benzene.save/atomic_proj.xml
+              use ortho basis :     TRUE
+                atmproj shift :         5.000000
+                 atmproj nbnd :         0
+                  atmproj thr :         0.900000
+                   have sigma :     FALSE
+
+  ======================================================================
+  =  Post Processing Init                                              =
+  ======================================================================
+
+   file fmt: atmproj
+   ATMPROJ conversion to be done using: 
+     atmproj_nbnd :     60
+     atmproj_thr  :      0.900000
+     atmproj_sh   :      5.000000
+
+  ./SCRATCH/benzene.save/atomic_proj.xml converted to internal fmt
+  WARNING from routine kpoints_allocate:
+  too many CPU used
+
+  WARNING from routine kpoints_allocate:
+  too many CPU used
+
+  DFT-data read from file: benzene.save/data-file.xml
+
+      Windows data read from file: benzene_WanT.space
+     Subspace data read from file: benzene_WanT.space
+  Hamiltonian data read from file: benzene_WanT.ham
+
+
+
+  ======================================================================
+  =  DFT data                                                          =
+  ======================================================================
+
+ <LATTICE>
+  Alat  =      30.0000000 (Bohr)
+  Alat  =      15.8753100 (Ang )
+  Omega =   27000.0000000 (Bohr^3)
+  Omega =    4000.9824260 (Ang^3 )
+
+  Crystal axes:
+                in Bohr units                           in Alat units
+    a(1) = (   30.00000    0.00000    0.00000 )    (    1.00000    0.00000    0.00000 )
+    a(2) = (    0.00000   30.00000    0.00000 )    (    0.00000    1.00000    0.00000 )
+    a(3) = (    0.00000    0.00000   30.00000 )    (    0.00000    0.00000    1.00000 )
+                in Ang units
+    a(1) = (   15.87531    0.00000    0.00000 )
+    a(2) = (    0.00000   15.87531    0.00000 )
+    a(3) = (    0.00000    0.00000   15.87531 )
+
+   Reciprocal lattice vectors:
+                in Bohr^-1 units                        in 2Pi/Alat units
+    b(1) = (    0.20944    0.00000    0.00000 )    (    1.00000    0.00000    0.00000 )
+    b(2) = (    0.00000    0.20944    0.00000 )    (    0.00000    1.00000    0.00000 )
+    b(3) = (    0.00000    0.00000    0.20944 )    (    0.00000    0.00000    1.00000 )
+ </LATTICE>
+
+ <K-POINTS>
+         nproc =     6   (Parallelism over kpts)
+  global nkpts =     1
+   local nkpts =     1
+  Monkhorst-Pack grid:      nk = (   1   1   1 ),      shift = (   0   0   0 )
+
+  K-point grid: (cart. coord. in Bohr^-1)
+    k (    1) =    (    0.0000000   0.0000000   0.0000000 ),   weight =      1.0000000
+ </K-POINTS>
+
+ <R-GRID>
+         nrtot =     1
+  R-grid generators:      nr = (   1   1   1 )
+
+  R-grid vectors:         (crystal units)
+    R (    1) =    (       0      0      0 ),   wr =      1.0000000
+ </R-GRID>
+
+
+  ======================================================================
+  =  DOS computation using Wannier Functions                           =
+  ======================================================================
+
+  nktot =     1
+  Monkhorst-Pack grid:      nk = (   1   1   1 ),      shift = (   0   0   0 )
+  Generated kpt mesh: (cart. coord. in Bohr^-1)
+
+    k (    1) =    (   0.00000  0.00000  0.00000 ),    weight =   1.0000000
+
+
+  ======================================================================
+  =  Loop over energies                                                =
+  ======================================================================
+
+  Computing E(     1 ) =    -20.00000 eV
+                              Total time spent up to now :     0.28 secs
+
+  Computing E(    50 ) =    -18.77377 eV
+                              Total time spent up to now :     0.28 secs
+
+  Computing E(   100 ) =    -17.52252 eV
+                              Total time spent up to now :     0.28 secs
+
+  Computing E(   150 ) =    -16.27127 eV
+                              Total time spent up to now :     0.28 secs
+
+  Computing E(   200 ) =    -15.02002 eV
+                              Total time spent up to now :     0.28 secs
+
+  Computing E(   250 ) =    -13.76877 eV
+                              Total time spent up to now :     0.28 secs
+
+  Computing E(   300 ) =    -12.51752 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   350 ) =    -11.26627 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   400 ) =    -10.01502 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   450 ) =     -8.76376 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   500 ) =     -7.51251 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   550 ) =     -6.26126 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   600 ) =     -5.01001 eV
+                              Total time spent up to now :     0.29 secs
+
+  Computing E(   650 ) =     -3.75876 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(   700 ) =     -2.50751 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(   750 ) =     -1.25626 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(   800 ) =     -0.00501 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(   850 ) =      1.24625 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(   900 ) =      2.49750 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(   950 ) =      3.74875 eV
+                              Total time spent up to now :     0.30 secs
+
+  Computing E(  1000 ) =      5.00000 eV
+                              Total time spent up to now :     0.31 secs
+
+
+  Total DOS written on file:    dos_benzene.dat
+
+  ======================================================================
+
+   <global routines>
+             clock number :    13
+
+                      dos :     0.00s CPU 
+
+                dos_input :     0.09s CPU
+           datafiles_init :     0.12s CPU
+      atmproj_to_internal :     0.09s CPU
+             compute_rham :     0.00s CPU
+            postproc_init :     0.07s CPU
+             want_dftread :     0.02s CPU
+                want_init :     0.00s CPU
+       para_get_poolindex :     0.00s CPU
+             windows_read :     0.05s CPU
+            subspace_read :     0.00s CPU
+                   do_dos :     0.05s CPU
+             compute_kham :     0.00s CPU
+
+

@@ -1,0 +1,5 @@
+&projwfc
+  prefix='benzene_US'
+  outdir='./SCRATCH'
+  filpdos='./SCRATCH/benzene_US'
+/

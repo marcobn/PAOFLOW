@@ -1,0 +1,22 @@
+
+  &INPUT_CONDUCTOR
+    postfix='_Au16_cell1'
+    work_dir = './SCRATCH'
+    dimC = 25
+    calculation_type = 'bulk'
+    ne = 1000  
+    emin = -20.0
+    emax =   5.0 
+    datafile_C = "./data/matrices_Au16.dat"
+    transport_dir = 3
+    delta = 0.001
+    do_orthoovp = .TRUE.
+  /
+
+<HAMILTONIAN_DATA>
+
+   <H00_C  rows="101-125"   cols="101-125"  />
+   <H_CR   rows="101-125"   cols="126-150"  ivr="0" />
+
+</HAMILTONIAN_DATA>
+

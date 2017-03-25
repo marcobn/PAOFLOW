@@ -1,0 +1,68 @@
+
+==============================================================================
+
+                  ********* code: current.x  **********
+
+==============================================================================
+
+INPUT file layout
+-----------------------------------
+
+&INPUT
+   ...
+/
+
+-----------------------------------
+
+==============================================================================
+
+NAMELIST &INPUT_CONDUCTOR
+
+prefix      STRING
+            first part of the naming scheme for I/O files.
+            DEFAULT: ''
+                                                                                                     
+postfix     STRING
+            first part of the naming scheme for I/O files.
+            DEFAULT: ''
+
+work_dir    STRING
+            the scratch directory where the data files are read and written
+            DEFAULT: "./"
+
+filein      STRING
+            the name of the input file containing the conductance.
+            DEFAULT: $WORK_DIR // $PREFIX // "cond" // $POSTFIX //'.dat'
+
+fileout     STRING
+            the name of the output file containing the I-V curve.
+            DEFAULT: $WORK_DIR // $PREFIX // "current" // $POSTFIX //'.dat'
+
+nV          INTEGER
+            the number of different voltage V values for which the current has to be computed.
+            DEFAULT: 1000
+
+Vmin, Vmax  REAL
+            minimum and maximum vales [eV] for the Voltage grid. 
+            DEFAULT: Vmin = -1.0 V, Vmax = 1.0 V
+
+mu_L, mu_R  REAL
+            Left and right *normalized* chemical potentials.
+            Note that these values are NOT the acutal chemical potentials.
+            The normalisazion is defined as: 
+                mu_R - mu_L = 1
+            These parameters define the unbalance of resistance drop between the left
+            and the right contact.
+            The true chemical potentials (depending on the actual bias value) 
+            are given by: 
+                mu_R(V) = V * mu_R
+                mu_L(V) = V * mu_L
+            DEFAULT: mu_R = 0.5, mu_L = -0.5
+
+sigma       REAL
+            thermal broadening parameter [eV].
+            DEFAULT: 0.1 eV
+            
+
+==============================================================================
+

@@ -1,0 +1,31 @@
+ &control
+    calculation = 'scf'
+    restart_mode='from_scratch',
+    prefix='fe',
+    tprnfor = .true.
+    pseudo_dir = '/home/mcosta/compiling-composer_xe_2013.5.192/qe-6.0/pseudo'
+    outdir='./'
+    verbosity = "high"
+ /
+ &system
+    ibrav=  0, nat=  2, ntyp= 1,
+    ecutwfc =45.0,
+    ecutrho =300.0,
+    occupations='smearing', smearing='methfessel-paxton', degauss=0.02
+ /
+ &electrons
+    mixing_mode = 'plain'
+    mixing_beta = 0.7
+    conv_thr =  1.0d-8
+ /
+ATOMIC_SPECIES
+ Fe  0.0 Fe.pbe-n-kjpaw_psl.1.0.0.UPF 
+ATOMIC_POSITIONS crystal 
+Fe 0.00000000  0.00000000  0.00000000
+Fe 0.50000000  0.50000000  0.50000000
+CELL_PARAMETERS (angstrom)
+        2.8608000278         0.0000000000         0.0000000000
+        0.0000000000         2.8608000278         0.0000000000
+        0.0000000000         0.0000000000         2.8608000278  
+K_POINTS (automatic)
+  6 6 6  0 0 0

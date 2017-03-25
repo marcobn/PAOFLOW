@@ -1,0 +1,50 @@
+Infinite Gold Chain
+8 atom/cell, Lattice Parameter = 2.5 Ang
+   &CONTROL
+      calculation = 'nscf',
+      restart_mode='from_scratch',
+      verbosity='default',
+      prefix='gold8',
+      nstep=100,
+      tstress = .false.,
+      tprnfor = .true.,
+      pseudo_dir = '../pseudo',
+      outdir = './SCRATCH/'
+      wf_collect = .TRUE.
+   /
+   &SYSTEM
+      ibrav=8, 
+      celldm(1)=20.0, 
+      celldm(2)=1.0,
+      celldm(3)=1.88972687777435527243
+      nat=8, 
+      ntyp=1,
+      ecutwfc=50.0,
+      ecutrho=200.0,
+      occupations='smearing',
+      smearing='gaussian',
+      degauss=0.01,
+      nbnd = 80
+      noinv = .TRUE.
+      nosym = .TRUE.
+   /
+   &ELECTRONS
+      electron_maxstep = 100,
+      mixing_mode = 'plain',
+      mixing_beta = 0.3,
+      conv_thr =  1.0d-8,
+   /
+ATOMIC_SPECIES
+  Au   196.9665   Au11pw91.mt.UPF
+ATOMIC_POSITIONS {angstrom}
+Au   0.0  0.0 0.0
+Au   0.0  0.0 2.5
+Au   0.0  0.0 5.0
+Au   0.0  0.0 7.5
+Au   0.0  0.0 10.0
+Au   0.0  0.0 12.5
+Au   0.0  0.0 15.0
+Au   0.0  0.0 17.5
+K_POINTS automatic
+1 1 4 0 0 0
+

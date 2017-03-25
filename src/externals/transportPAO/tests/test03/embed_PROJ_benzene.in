@@ -1,0 +1,27 @@
+
+  &INPUT
+    postfix='_PROJ_benzene'
+    work_dir = './'
+    dim_emb = 9
+    dim_tot = 30
+    ne = 1000  
+    emin = -20.0
+    emax =   5.0 
+    datafile_tot = "./SCRATCH/benzene.save/atomic_proj.xml"
+    datafile_emb = "./ham_tmp.dat"
+    datafile_sgm_emb = "./sgm_tmp.dat"
+    transport_dir = 1
+    delta = 0.100
+    do_orthoovp = .FALSE.
+  /
+
+<HAMILTONIAN_DATA>
+
+   <H_T    rows="1-30"    cols="1-30"  />
+   <H_E    rows="1-9"     cols="1-9"   />
+   <H_B    rows="10-30"   cols="10-30" />
+   <H_EB   rows="1-9"     cols="10-30" />
+   <H_BE   rows="10-30"   cols="1-9"   />
+
+</HAMILTONIAN_DATA>
+

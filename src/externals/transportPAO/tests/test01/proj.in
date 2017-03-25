@@ -1,0 +1,8 @@
+   &PROJWFC
+      prefix='al5',
+      outdir = './'
+      filpdos='./al5'
+      lwrite_overlaps = .TRUE.
+   /
+
+

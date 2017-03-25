@@ -1,0 +1,10 @@
+MKL="-L$MKLROOT/lib/intel64 -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl"
+export DFLAGS="-D__INTEL -D__FFTW3 -D__MPI -D__PARA"
+export BLAS_LIBS=$MKL
+export LAPACK_LIBS=$MKL
+export FFT_LIBS=$MKL
+export IFLAGS="-I../include -I$MKLROOT/include/fftw"
+./configure --with-scalapack=yes --enable-parallel 
+
+
+

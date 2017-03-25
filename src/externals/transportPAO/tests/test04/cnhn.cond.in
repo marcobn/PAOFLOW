@@ -1,0 +1,21 @@
+
+  &INPUT_CONDUCTOR
+    postfix='_CnHn'
+    work_dir = './'
+    dimC = 48
+    calculation_type = 'bulk'
+    carriers= 'phonons'
+    ne = 3000
+    emin = 0.0
+    emax =  3100.0
+    datafile_C = "./ext.ham"
+    transport_dir = 1
+    delta = 1.0d-8
+  /
+
+<HAMILTONIAN_DATA>
+
+   <H00_C  cols="ALL" rows="ALL" />
+   <H_CR   cols="ALL" rows="ALL" />
+
+</HAMILTONIAN_DATA>

@@ -1,0 +1,11 @@
+
+&INPUT
+   filein   = './cond_lcr.dat'
+   fileout  = './current.dat'
+   Vmin     = -1.0
+   Vmax     =  1.0
+   nV       =  1500
+   sigma    =  0.05
+   mu_L     =  -0.5
+   mu_R     =   0.5
+/
