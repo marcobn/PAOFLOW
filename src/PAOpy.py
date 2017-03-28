@@ -205,28 +205,37 @@ if non_ortho:
 if rank == 0 and write2file:
     #----------------------
     # write to file Hks,Sks,kpnts,kpnts_wght
-    #----------------------
-    f=open('kham.txt','w')
-    for ik in xrange(nkpnts):
-        for i in xrange(nawf):
-            for j in xrange(nawf):
-                f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
-    f.close()
-    f=open('kovp.txt','w')
-    for ik in xrange(nkpnts):
-        for i in xrange(nawf):
-            for j in xrange(nawf):
-                f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
-    f.close()
-    f=open('k.txt','w')
-    for ik in xrange(nkpnts):
-        f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
-    f.close()
-    f=open('wk.txt','w')
-    for ik in xrange(nkpnts):
-        f.write('%20.13f \n' %(kpnts_wght[ik]))
-    f.close()
+    #----------------------                                                                                                                           
+    if write_binary:# or whatever you want to call it            
+        if nspin==1:#postfix .npy just to make it clear what they are
+            np.save('kham.npy',np.ravel(Hks[...,0],order='C'))
+        if nspin==2:
+            np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
+            np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
+        np.save('kovp.npy',np.ravel(Sks,order='C'))
+    else:
+        f=open('kham.txt','w')
+        for ik in xrange(nkpnts):
+            for i in xrange(nawf):
+                for j in xrange(nawf):
+                    f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
+        f.close()
+        f=open('kovp.txt','w')
+        for ik in xrange(nkpnts):
+            for i in xrange(nawf):
+                for j in xrange(nawf):
+                    f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
+        f.close()
+        f=open('k.txt','w')
+        for ik in xrange(nkpnts):
+            f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
+        f.close()
+        f=open('wk.txt','w')
+        for ik in xrange(nkpnts):
+            f.write('%20.13f \n' %(kpnts_wght[ik]))
+        f.close()
     print('H(k),S(k),k,wk written to file')
+
 
 #----------------------
 # Plot the TB and DFT eigevalues. Writes to comparison.pdf

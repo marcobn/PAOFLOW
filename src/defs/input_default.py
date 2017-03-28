@@ -30,6 +30,7 @@ restart = False
 verbose = False
 non_ortho  = False
 write2file = False
+write_binary = False
 writedata = False
 shift_type = 1
 shift      = 'auto' # if 'auto' shift is selected automatically; else, give numerical value 
