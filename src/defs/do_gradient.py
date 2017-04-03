@@ -27,128 +27,123 @@
 
 import numpy as np
 import sys, time
-import multiprocessing
 
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
+from scipy import fftpack as FFT
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-
+from Gatherv_Scatterv_wrappers import *
 from load_balancing import *
 from get_R_grid_fft import *
+
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-
-def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
+np.set_printoptions(precision=3, threshold=200, edgeitems=200, linewidth=250, suppress=False)
+def do_gradient_para(Hksp,a_vectors,alat,nthread,scipyfft):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
-
-    index = None
-
+    scipyfft=True
+    index=None
     if rank == 0:
         nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
         nktot = nk1*nk2*nk3
-        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin,"nk1":nk1,"nk2":nk2,"nk3":nk3}
 
     index = comm.bcast(index,root=0)
 
     nktot = index['nktot']
     nawf = index['nawf']
     nspin = index['nspin']
+    nk1=index["nk1"]
+    nk2=index["nk2"]
+    nk3=index["nk3"]
 
-    if rank == 0:
-        # fft grid in R shifted to have (0,0,0) in the center
-        _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-
-        if scipyfft:
-            HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
-            HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
-        else:
-            HRaux  = np.zeros_like(Hksp)
-            for ispin in xrange(nspin):
-                for n in xrange(nawf):
-                    for m in xrange(nawf):
-                        fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
-                              flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                        HRaux[:,:,:,n,m,ispin] = fft()
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
-
-        dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-        HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-        dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+    #############################################################################################
+    #############################################################################################
+    #############################################################################################
+    if rank==0:
+        #roll the axes so nawf,nawf are first
+        #only needed because we're splitting 
+        #between procs on the first indice
+        Hksp =  np.rollaxis(Hksp,3,0)
+        Hksp =  np.rollaxis(Hksp,4,1)
+        #have flattened H(k) as first indice
+        Hksp =  np.ascontiguousarray(np.reshape(Hksp,(nawf*nawf,nk1,nk2,nk3,nspin)))
     else:
-        dHksp  = None
-        Rfft = None
-        HRaux = None
-        dHRaux  = None
+        Hksp=None
 
-    for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_gradient')
-        nkpool = nktot/npool
+    Hkaux_tri  = Scatterv_wrap(Hksp)
 
-        if rank == 0:
-            HRaux_split = np.array_split(HRaux,npool,axis=0)[pool]
-            dHRaux_split = np.array_split(dHRaux,npool,axis=0)[pool]
-            Rfft_split = np.array_split(Rfft,npool,axis=0)[pool]
-        else:
-            HRaux_split = None
-            dHRaux_split = None
-            Rfft_split = None
+    #real space 
+    HRaux_tri  = np.zeros_like(Hkaux_tri)
+    #set scipy fft for now
+    scipyfft=True
+    #receiving slice of array
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize - do_gradient')
+    if scipyfft:
+        HRaux_tri = FFT.ifftn(Hkaux_tri,axes=(1,2,3))
 
-        dHRaux1 = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        HRaux1 = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
-        Rfftaux = np.zeros((nsize,3),dtype = float)
+    HRaux_tri = FFT.fftshift(HRaux_tri,axes=(1,2,3))           
 
-        comm.Barrier()
-        comm.Scatter(dHRaux_split,dHRaux1,root=0)
-        comm.Scatter(HRaux_split,HRaux1,root=0)
-        comm.Scatter(Rfft_split,Rfftaux,root=0)
+    #############################################################################################
+    #############################################################################################
+    #############################################################################################
 
-        # Compute R*H(R)
+    # fft grid in R shifted to have (0,0,0) in the center
+    _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+    #reshape R grid and each proc's piece of Hr
+    Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+
+    H_parts=HRaux_tri.shape[0]
+    #reshape Hr for multiplying by the three parts of Rfft grid
+    HRaux_tri=np.reshape(HRaux_tri,(H_parts,nk1*nk2*nk3,nspin),order='C')
+    dHRaux_tri = np.zeros((H_parts,3,nk1*nk2*nk3,nspin),dtype=np.complex128,order='C')
+    # Compute R*H(R)
+    for ispin in xrange(nspin):
         for l in xrange(3):
-            for ispin in xrange(nspin):
-                for n in xrange(nawf):
-                    for m in xrange(nawf):
-                        dHRaux1[:,l,n,m,ispin] = 1.0j*alat*Rfftaux[:,l]*HRaux1[:,n,m,ispin]
+            dHRaux_tri[:,l,:,ispin] = 1.0j*alat*Rfft[:,l]*HRaux_tri[...,ispin]
 
-        comm.Barrier()
-        comm.Gather(dHRaux1,dHRaux_split,root=0)
+    Rfft=None
+    HRaux_tri=None
+    #reshape for fft
+    dHRaux_tri = np.reshape(dHRaux_tri,(H_parts,3,nk1,nk2,nk3,nspin),order='C')
+    # Compute dH(k)/dk
+    dHkaux_tri  = np.zeros_like(dHRaux_tri)
+    if scipyfft:
+        dHkaux_tri = FFT.fftn(dHRaux_tri,axes=(2,3,4))
+    dHraux_tri = None
+    #############################################################################################
+    #############################################################################################
+    #############################################################################################
 
-        if rank == 0:
-            dHRaux[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = dHRaux_split[:,:,:,:,:,]
 
-    if rank == 0: dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+    #gather the arrays into flattened dHk
+    dHksp_tri = Gatherv_wrap(dHkaux_tri)
 
-    if rank == 0:
-        # Compute dH(k)/dk
-        if scipyfft:
-            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-            for l in xrange(3):
-                dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
-            dHraux = None
-        else:
-            for l in xrange(3):
-                for ispin in xrange(nspin):
-                    for n in xrange(nawf):
-                        for m in xrange(nawf):
-                            fft = pyfftw.FFTW(dHRaux[:,:,:,l,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
-                            direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                            dHksp[:,:,:,l,n,m,ispin] = fft()
+    if rank!=0:
+        dHksp_tri=None
 
-    return(dHksp)
+    dHkaux_tri = None
+
+    if rank==0:
+        #reshape dHksp 
+        dHksp = np.reshape(dHksp_tri,(nawf,nawf,3,nk1,nk2,nk3,nspin),order='C')
+    dHksp_tri=None
+
+    if rank==0:
+        #roll back the axes
+        #second nawf
+        dHksp =  np.rollaxis(dHksp,1,6)
+        #first nawf
+        dHksp =  np.rollaxis(dHksp,0,5) 
+        #3 components of the gradient
+        dHksp =  np.rollaxis(dHksp,0,4) 
+        #num entried for the dHksp is 3 times Hksp
+        return  np.ascontiguousarray(np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C'),dtype=np.complex128)
+
+
+
