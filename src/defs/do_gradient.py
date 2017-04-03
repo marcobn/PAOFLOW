@@ -85,7 +85,7 @@ def do_gradient(Hksp,a_vectors,alat):
     #receiving slice of array
 
     if scipyfft:
-        HRaux_tri = FFT.ifftn(Hkaux_tri,axes=(1,2,3))
+        HRaux_tri[:,:,:,:,:] = FFT.ifftn(Hkaux_tri[:,:,:,:,:],axes=(1,2,3))
 
     HRaux_tri = FFT.fftshift(HRaux_tri,axes=(1,2,3))           
 
@@ -114,7 +114,7 @@ def do_gradient(Hksp,a_vectors,alat):
     # Compute dH(k)/dk
     dHkaux_tri  = np.zeros_like(dHRaux_tri)
     if scipyfft:
-        dHkaux_tri = FFT.fftn(dHRaux_tri,axes=(2,3,4))
+        dHkaux_tri[:,:,:,:,:,:] = FFT.fftn(dHRaux_tri[:,:,:,:,:,:],axes=(2,3,4))
     dHraux_tri = None
     #############################################################################################
     #############################################################################################
