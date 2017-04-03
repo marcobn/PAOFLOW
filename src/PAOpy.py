@@ -574,7 +574,7 @@ if Boltzmann or epsilon or Berry or spin_Hall:
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
         from do_gradient import *
-        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
+        dHksp = do_gradient(Hksp,a_vectors,alat)
 
         if rank == 0:
             print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -627,7 +627,7 @@ if Boltzmann or epsilon or Berry or spin_Hall:
             pksp = None
         if rank == 0:
             dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-        pksp = do_momentum(v_k,dHksp,npool)
+        pksp = do_momentum(v_k,dHksp)
 
         if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()

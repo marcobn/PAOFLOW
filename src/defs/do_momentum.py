@@ -40,7 +40,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_momentum_para(vec,dHksp):
+def do_momentum(vec,dHksp):
     # calculate momentum vector
     index = None
     if rank == 0:

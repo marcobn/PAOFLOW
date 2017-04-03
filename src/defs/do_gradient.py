@@ -42,7 +42,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 np.set_printoptions(precision=3, threshold=200, edgeitems=200, linewidth=250, suppress=False)
-def do_gradient_para(Hksp,a_vectors,alat,nthread,scipyfft):
+def do_gradient(Hksp,a_vectors,alat):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
