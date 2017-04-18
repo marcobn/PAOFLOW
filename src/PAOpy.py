@@ -568,7 +568,7 @@ if do_fermisurf or do_spintexture:
 
 pksp = None
 jksp = None
-if Boltzmann or epsilon or Berry or spin_Hall:
+if Boltzmann or epsilon or Berry or spin_Hall or critical_points:
     if checkpoint < 3:
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
@@ -714,8 +714,15 @@ if rank == 0:
         # Compute velocities for Boltzmann transport
         #----------------------
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
+        deltakp = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
+        dk = LAN.norm(kq[:,0]-kq[:,1])
+        afac = 1.
         for n in xrange(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
+            deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
+
+        if restart:
+            np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp)
 
         if critical_points:
             #----------------------
