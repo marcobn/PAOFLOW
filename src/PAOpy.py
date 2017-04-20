@@ -568,7 +568,7 @@ if do_fermisurf or do_spintexture:
 
 pksp = None
 jksp = None
-if Boltzmann or epsilon or Berry or spin_Hall or critical_points:
+if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != None:
     if checkpoint < 3:
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
@@ -707,6 +707,27 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points:
     kq_wght = np.ones((nktot),dtype=float)
     kq_wght /= float(nktot)
 
+deltakp = None
+if rank == 0:
+    if smearing != None:
+        #----------------------
+        # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
+        #----------------------
+        deltakp = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
+        omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+        dk = (8.*np.pi**3/omega/(nk1*nk2*nk3))**(1./3.)
+        if smearing == 'gauss':
+            afac = 0.7
+        elif smearing == 'm-p':
+            afac = 1.0
+
+        for n in xrange(nawf):
+            deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
+        deltakp = np.reshape(deltakp,(nk1*nk2*nk3*nawf,nspin),order='C')
+
+        if restart:
+            np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp)
+
 velkp = None
 if rank == 0:
     if Boltzmann or critical_points:
@@ -714,15 +735,8 @@ if rank == 0:
         # Compute velocities for Boltzmann transport
         #----------------------
         velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
-        deltakp = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
-        dk = LAN.norm(kq[:,0]-kq[:,1])
-        afac = 1.
         for n in xrange(nawf):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
-            deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
-
-        if restart:
-            np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp)
 
         if critical_points:
             #----------------------
@@ -737,6 +751,38 @@ if rank == 0:
                             np.abs(velkp[ik,2,n,ispin]) < 1.e-2:
                             f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
             f.close()
+
+if do_dos and smearing != None:
+    #----------------------
+    # DOS calculation with adaptive gaussian smearing on double_grid Hksp - TESTING
+    #----------------------
+    from do_dos_calc_adaptive import *
+
+    index = None
+    if rank == 0:
+        index = {'eigtot':eig.shape[0]}
+    index = comm.bcast(index,root=0)
+    eigtot = index['eigtot']
+
+    eigup = None
+    eigdw = None
+    deltakpup = None
+    deltakpdw = None
+
+    if nspin == 1 or nspin == 2:
+        if rank == 0:
+            eigup = eig[:,0]
+            deltakpup = deltakp[:,0]
+        do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,nawf,0,smearing)
+        eigup = None
+        deltakpup = None
+    if nspin == 2:
+        if rank == 0:
+            eigdw = eig[:,1]
+            deltakpdw = deltakp[:,1]
+        do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,nawf,1,smearing)
+        eigdw = None
+        deltakpdw = None
 
 if Berry:
     #----------------------

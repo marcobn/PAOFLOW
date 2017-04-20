@@ -21,6 +21,7 @@
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 from scipy import fftpack as FFT
+import scipy.special as SPECIAL
 import numpy as np
 import cmath
 import sys
@@ -118,6 +119,8 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
     pksp_long = None
     E_k_long = None
 
+    delta = 0.05
+
     for pool in xrange(npool):
         if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
         nkpool = nk1*nk2*nk3/npool
@@ -144,7 +147,8 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         comm.Scatter(E_k_long,E_kaux,root= 0)
 
         for i in xrange(ene.size):
-            Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)  # T=0.0K
+            #Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)  # T=0.0K
+            Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*0.5*(1-SPECIAL.erf((E_kaux[:,:,0]-ene[i])/delta)),axis=1)
 
         comm.Barrier()
         comm.Gather(Om_zkaux,Om_zk_split,root=0)

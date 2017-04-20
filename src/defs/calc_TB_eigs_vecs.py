@@ -94,14 +94,7 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
             v_k[pool*nkpool:(pool+1)*nkpool,:,:,:] = v_k_split[:,:,:,:]
 
     if rank == 0:
-        #f=open('eig_'+str(ispin)+'.dat','w')
-        nall=0
-        for n in xrange(nktot):
-            for m in xrange(nawf):
-                eall[nall,ispin]=E_k[n,m,ispin]
-                #f.write('%7d  %.5f \n' %(n,E_k[n,m,ispin]))
-                nall += 1
-        #f.close()
+        eall = np.reshape(E_k,(nktot*nawf,nspin),order='C')
 
     return(eall,E_k,v_k)
 

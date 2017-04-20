@@ -71,6 +71,9 @@ emin = -10.
 emax = 2
 delta = 0.01
 
+# Adaptive smearing
+smearing = 'gauss' # other available values are None or 'm-p'
+
 # Plot Fermi Surface (spin texture)
 do_fermisurf = False
 fermi_up = 0.1
