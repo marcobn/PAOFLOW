@@ -58,7 +58,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
     # Compute Z2 according to Fu, Kane and Mele (2007)
     # Define TRIM points in 2(0-3)/3D(0-7)
-    if nspin == 1:
+    if nspin == 1 and spin_Hall:
         nktrim = 16
         ktrim = np.zeros((nktrim,3),dtype=float)
         ktrim[0] = np.zeros(3,dtype=float)                                  #0 0 0 0
