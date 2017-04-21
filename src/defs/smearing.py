@@ -59,7 +59,9 @@ def intmetpax(eig,ene,delta):
     # Methfessel and Paxton correction to the Fermi-Dirac distribution
     nh = 5
     coeff = np.zeros(2*nh)
-    coeff[0] = 1.
+    coeff[0] = 0.
     for n in xrange(2,2*nh,2):
         m = n/2
-        coeff[n] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
+        coeff[n-1] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
+
+    return(0.5*(1-SPECIAL.erf((eig-ene)/delta)) + HERMITE.hermval((eig-ene)/delta,coeff)*np.exp(-((eig-ene)/delta)**2)/np.sqrt(np.pi))

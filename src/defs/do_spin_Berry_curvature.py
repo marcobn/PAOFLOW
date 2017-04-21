@@ -152,8 +152,8 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         for i in xrange(ene.size):
             if smearing == 'gauss':
                 Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intgaussian(E_kaux[:,:,0],ene[i],deltakaux[:,:,0]),axis=1)
-            elif spearing == 'm-p':
-                Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*0.5*(1-SPECIAL.erf((E_kaux[:,:,0]-ene[i])/deltakaux[:,:,0])),axis=1)
+            elif smearing == 'm-p':
+                Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intmetpax(E_kaux[:,:,0],ene[i],deltakaux[:,:,0]),axis=1)
             else:
                 Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)
 
