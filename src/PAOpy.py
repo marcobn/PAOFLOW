@@ -847,7 +847,8 @@ if spin_Hall:
     from do_spin_Hall_conductivity import *
 
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
+    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3,nawf,nspin),order='C')
+    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
 
     if rank == 0 and writedata:
         from write2bxsf import *

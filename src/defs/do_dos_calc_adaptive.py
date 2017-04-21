@@ -21,13 +21,13 @@
 # Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 import numpy as np
-import numpy.polynomial.hermite as HERMITE
 import math, cmath
 import sys, time
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
+from smearing import *
 
 from do_non_ortho import *
 
@@ -37,10 +37,8 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
-    # DOS calculation with gaussian smearing
+    # DOS calculation with adaptive smearing
 
-    #emin = np.min(eig)-1.0
-    #emax = np.max(eig)-shift/2.0
     emin = float(emin)
     emax = float(emax)
     de = (emax-emin)/1000
@@ -53,14 +51,6 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
 
     dos = np.zeros((ene.size),dtype=float)
 
-    # for Methfessel and Paxton smearing
-    nh = 5
-    coeff = np.zeros(2*nh)
-    coeff[0] = 1.
-    for n in xrange(2,2*nh,2):
-        m = n/2
-        coeff[n] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
-
     for ne in xrange(ene.size):
 
         dossum = np.zeros(1,dtype=float)
@@ -72,11 +62,11 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
         comm.Scatter(delta,auxd,root=0)
 
         if smearing == 'gauss':
-            # simple Gaussian smearing
-            dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/auxd)**2)/auxd)
+            # adaptive Gaussian smearing
+            dosaux = np.sum(gaussian(ene[ne],aux,auxd))
         elif smearing == 'm-p':
-            # Methfessel and Paxton smearing
-            dosaux = np.sum(HERMITE.hermval((ene[ne]-aux)/auxd,coeff)*np.exp(-((ene[ne]-aux)/auxd)**2)/auxd/np.sqrt(np.pi))
+            # adaptive Methfessel and Paxton smearing
+            dosaux = np.sum(metpax(ene[ne],aux,auxd))
 
         comm.Barrier()
         comm.Reduce(dosaux,dossum,op=MPI.SUM)
