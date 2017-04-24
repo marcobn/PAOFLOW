@@ -708,12 +708,14 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
     kq_wght /= float(nktot)
 
 deltakp = None
+deltakp2 = None
 if rank == 0:
     if smearing != None:
         #----------------------
         # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
         #----------------------
         deltakp = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
+        deltakp2 = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin),dtype=float)
         omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
         dk = (8.*np.pi**3/omega/(nk1*nk2*nk3))**(1./3.)
         if smearing == 'gauss':
@@ -723,10 +725,11 @@ if rank == 0:
 
         for n in xrange(nawf):
             deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
-        deltakp = np.reshape(deltakp,(nk1*nk2*nk3*nawf,nspin),order='C')
+            for m in xrange(nawf):
+                deltakp2[:,n,m,:] = afac*LAN.norm(np.real(np.absolute(pksp[:,:,n,n,:]-pksp[:,:,m,m,:])),axis=1)*dk
 
         if restart:
-            np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp)
+            np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
 
 velkp = None
 if rank == 0:
@@ -769,6 +772,8 @@ if do_dos and smearing != None:
     deltakpup = None
     deltakpdw = None
 
+    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3*nawf,nspin),order='C')
+
     if nspin == 1 or nspin == 2:
         if rank == 0:
             eigup = eig[:,0]
@@ -783,6 +788,7 @@ if do_dos and smearing != None:
         do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,nawf,1,smearing)
         eigdw = None
         deltakpdw = None
+    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3,nawf,nspin),order='C')
 
 if Berry:
     #----------------------
@@ -804,7 +810,7 @@ if Berry:
         np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
 
     if ac_cond_Berry:
-        ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
+        ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,deltakp,deltakp2,smearing)
         ahc0 = np.real(sigxy[0])
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
@@ -829,7 +835,7 @@ if Berry:
         sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         f=open('sigxyi.dat','w')
         for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
         f.close()
         f=open('sigxyr.dat','w')
         for n in xrange(ene.size):
@@ -847,7 +853,6 @@ if spin_Hall:
     from do_spin_Hall_conductivity import *
 
     Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3,nawf,nspin),order='C')
     ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
 
     if rank == 0 and writedata:
