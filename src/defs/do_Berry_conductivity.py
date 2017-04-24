@@ -100,6 +100,7 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,deltak,deltak2,sme
 
         if smearing != None:
             sigxy_aux[:] = smear_sigma_loop2(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)
+            #sigxy_aux[:] = alt_sigma_loop2(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)
         else:
             sigxy_aux[:] = sigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)
 
@@ -167,7 +168,8 @@ def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smear
                             (ene+1.0j*(deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T)**2
                 sigxy[:] += np.sum(((1.0/func * \
                             ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
-                            np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0]-pksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0])
+                            np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
                             ),axis=1)
 
     return(sigxy)
+
