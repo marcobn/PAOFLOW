@@ -968,7 +968,7 @@ if epsilon:
 
     for ispin in xrange(nspin):
 
-        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,epsmin,epsmax)
+        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
 
         if rank == 0:
             f=open('epsi_'+str(ispin)+'.dat','w')

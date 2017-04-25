@@ -36,13 +36,14 @@ from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
 
 from constants import *
+from smearing import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,emin,emax):
+def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,emin,emax,deltak,deltak2,smearing):
     # Compute the dielectric tensor
 
     de = (emax-emin)/float(ne)
@@ -68,11 +69,15 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,emin,emax):
     kq_wghtaux = np.zeros(nsize,dtype=float)
     pkspaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype=complex)
     E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+    deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
+    deltak2aux = np.zeros((nsize,nawf,nawf,nspin),dtype = float)
 
     comm.Barrier()
     comm.Scatter(pksp,pkspaux,root=0)
     comm.Scatter(E_k,E_kaux,root=0)
     comm.Scatter(kq_wght,kq_wghtaux,root=0)
+    comm.Scatter(deltak,deltakaux,root=0)
+    comm.Scatter(deltak2,deltak2aux,root=0)
 
     #=======================
     # Im
@@ -80,7 +85,10 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,emin,emax):
     epsi = np.zeros((3,3,ene.size),dtype=float)
     epsi_aux = np.zeros((3,3,ene.size),dtype=float)
 
-    epsi_aux[:,:,:] = epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal)
+    if smearing == None:
+        epsi_aux[:,:,:] = epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal)
+    else:
+        epsi_aux[:,:,:] = smear_epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal,deltakaux,deltak2aux,smearing)
 
     comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
 
@@ -111,7 +119,6 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,met
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
 
-    # Collapsing the sum over k points - FASTEST
     for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
         fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
@@ -129,34 +136,33 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,met
                                        kq_wght[0] /delta * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
                                        abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])),axis=1)
 
-#   # Collapsing the sums over n,m and k points - MUCH SLOWER!!!
-#   fermi = (1.0/(np.exp(E_k[:,:,ispin]/temp)+1))*np.transpose(np.ones((end_ik-ini_ik,nawf,nawf),dtype=float),axes=(1,0,2))
-#   dfermi = fermi - np.transpose(fermi,axes=(2,1,0))
-#   eigen = E_k[:,:,ispin]*np.transpose(np.ones((end_ik-ini_ik,nawf,nawf),dtype=float),axes=(1,0,2))
-#   deigen = eigen - np.transpose(eigen,axes=(2,1,0))
-#   dfunc = 1.0/np.sqrt(np.pi)* \
-#       np.exp(-(((deigen*np.ones((nawf,end_ik-ini_ik,nawf,ene.size),dtype=float).T).T + ene)/delta)**2)
-#   for j in xrange(3):
-#       for i in xrange(3):
-#           epsi[i,j,:] = np.sum(((1.0/(ene**2+delta**2) * \
-#                          kq_wght[0] /delta * dfunc * (dfermi*np.ones((nawf,end_ik-ini_ik,nawf,ene.size),dtype=float).T).T).T* \
-#                          np.transpose(abs(pksp[:,i,:,:,ispin] * np.transpose(pksp[:,j,:,:,ispin],axes=(0,2,1))),axes=(1,0,2))),axis=(1,2,3))
+    epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
-#   # Old way to do loops - AS IN WanT, SLOOOOOOW
-#   for nk in xrange(end_ik-ini_ik):
-#       for n in xrange(nawf):
-#           arg2 = E_k[nk,n,ispin]/temp
-#           raux2 = 1.0/(np.exp(arg2)+1)
-#           for m in xrange(nawf):
-#               arg3 = E_k[nk,m,ispin]/temp
-#               raux3 = 1.0/(np.exp(arg3)+1)
-#               arg[:] = (ene[:] - ((E_k[nk,m,ispin]-E_k[nk,n,ispin])))/delta
-#               raux[:] = 1.0/np.sqrt(np.pi)*np.exp(-arg[:]**2)
-#               for j in xrange(3):
-#                   for i in xrange(3):
-#                       epsi[i,j,:] += 1.0/(ene[:]**2+delta**2) * \
-#                               kq_wght[nk] /delta * raux[:] * (raux2 - raux3) * \
-#                               abs(pksp[nk,i,n,m,ispin] * pksp[nk,j,m,n,ispin])
+    return(epsi)
+
+def smear_epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
+
+    epsi = np.zeros((3,3,ene.size),dtype=float)
+
+    dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
+
+    for n in xrange(nawf):
+        fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
+        fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
+        for m in xrange(nawf):
+            fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
+            for l in xrange(ene.size):
+                if m != n:
+                    dfunc[:,l] = gaussian(E_k[:,m,ispin]-E_k[:,n,ispin],ene[l],deltak2[:,n,m,ispin])
+                for j in xrange(1):
+                    for i in xrange(1):
+                        epsi[i,j,l] += np.sum((1.0/(ene[l]**2+delta**2) * \
+                                       kq_wght[0] * dfunc[:,l] * (fn - fm) * \
+                                       abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])))
+                        if metal and n == m:
+                            epsi[i,j,l] += np.sum((1.0/ene[l] * \
+                                           kq_wght[0] * dfunc[:,l] * fnF/temp * \
+                                           abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])))
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
