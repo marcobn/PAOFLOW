@@ -894,7 +894,7 @@ if Boltzmann:
     from do_Boltz_tensors import *
 
     for ispin in xrange(nspin):
-        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
+        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)

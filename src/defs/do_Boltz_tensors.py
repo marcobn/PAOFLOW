@@ -34,13 +34,14 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
+from smearing import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin):
+def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing):
     # Compute the L_alpha tensors for Boltzmann transport
 
     emin = -2.0 # To be read in input
@@ -67,36 +68,40 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin):
     kq_wghtaux = np.zeros(nsize,dtype=float)
     velkpaux = np.zeros((nsize,3,nawf,nspin),dtype=float)
     E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
+    deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
+
 
     comm.Barrier()
     comm.Scatter(velkp,velkpaux,root=0)
     comm.Scatter(E_k,E_kaux,root=0)
     comm.Scatter(kq_wght,kq_wghtaux,root=0)
+    if smearing != None:
+        comm.Scatter(deltak,deltakaux,root=0)
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)
 
-    L0aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,0)
+    L0aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,0,deltakaux,smearing)
 
     comm.Allreduce(L0aux,L0,op=MPI.SUM)
 
     L1 = np.zeros((3,3,ene.size),dtype=float)
     L1aux = np.zeros((3,3,ene.size),dtype=float)
 
-    L1aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,1)
+    L1aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,1,deltakaux,smearing)
 
     comm.Allreduce(L1aux,L1,op=MPI.SUM)
 
     L2 = np.zeros((3,3,ene.size),dtype=float)
     L2aux = np.zeros((3,3,ene.size),dtype=float)
 
-    L2aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,2)
+    L2aux[:,:,:] = L_loop(ini_ik,end_ik,ene,E_kaux,velkpaux,kq_wghtaux,temp,ispin,2,deltakaux,smearing)
 
     comm.Allreduce(L2aux,L2,op=MPI.SUM)
 
     return(ene,L0,L1,L2)
 
-def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
+def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing):
 
     # We assume tau=1 in the constant relaxation time approximation
 
@@ -106,15 +111,22 @@ def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha):
         Eaux = (E_k[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - ene
         for i in xrange(3):
             for j in xrange(3):
-                L[i,j,:] += np.sum((1.0/temp * kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
-                1.0/2.0 * (1.0/(1.0+np.cosh(Eaux[:,:]/temp)) * np.power(Eaux[:,:],alpha)).T),axis=1)
-
-#   # Old way of doing loops
-#   for nk in xrange(end_ik-ini_ik):
-#       for n in xrange(velkp.shape[2]):
-#           for i in xrange(3):
-#               for j in xrange(3):
-#                   L[i,j,:] += 1.0/temp * kq_wght[0]*velkp[nk,i,n,ispin]*velkp[nk,j,n,ispin] * \
-#                   1.0/2.0 * 1.0/(1.0+np.cosh((E_k[nk,n,ispin]-ene[:])/temp)) * pow((E_k[nk,n,ispin]-ene[:]),alpha)
+                if smearing == None:
+                    L[i,j,:] += np.sum((1.0/temp * kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
+                                1.0/2.0 * (1.0/(1.0+np.cosh(Eaux[:,:]/temp)) * np.power(Eaux[:,:],alpha)).T),axis=1)
+                elif smearing == 'gauss':
+                    eig = (E_k[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                    om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
+                    delk = (deltak[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                    L[i,j,:] += np.sum((kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
+                                (gaussian(eig,om,delk) * np.power(Eaux[:,:],alpha)).T),axis=1)
+                elif smearing == 'm-p':
+                    eig = (E_k[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                    om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
+                    delk = (deltak[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                    L[i,j,:] += np.sum((kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
+                                (metpax(eig,om,delk) * np.power(Eaux[:,:],alpha)).T),axis=1)
+                else:
+                    sys.exit('smearing not implemented')
 
     return(L)
