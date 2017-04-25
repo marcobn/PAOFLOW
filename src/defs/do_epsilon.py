@@ -88,7 +88,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,emin,emax,deltak
     if smearing == None:
         epsi_aux[:,:,:] = epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal)
     else:
-        epsi_aux[:,:,:] = smear_epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal,deltakaux,deltak2aux,smearing)
+        epsi_aux[:,:,:] = alt_smear_epsi_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal,deltakaux,deltak2aux,smearing)
 
     comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
 
@@ -140,6 +140,35 @@ def epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,met
 
     return(epsi)
 
+def alt_smear_epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
+
+    epsi = np.zeros((3,3,ene.size),dtype=float)
+
+    dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
+
+    for n in xrange(nawf):
+        fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
+        fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
+        for m in xrange(nawf):
+            fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
+            if m != n:
+                eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
+                del2 = (deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                dfunc[:,:] = gaussian(eig,om,del2)
+            for j in xrange(1):
+                for i in xrange(1):
+                    epsi[i,j,:] += np.sum(((1.0/(ene**2+delta**2) * \
+                                   kq_wght[0] * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
+                                   abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])),axis=1)
+                    if metal and n == m:
+                        epsi[i,j,:] += np.sum(((1.0/ene * \
+                                       kq_wght[0] * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
+                                       abs(pksp[:,i,n,m,ispin] * pksp[:,j,m,n,ispin])),axis=1)
+
+    epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
+
+    return(epsi)
 def smear_epsi_loop(ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
