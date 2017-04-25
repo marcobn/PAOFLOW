@@ -968,18 +968,18 @@ if epsilon:
 
     for ispin in xrange(nspin):
 
-        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
+        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
 
         if rank == 0:
-            f=open('epsi_'+str(ispin)+'.dat','w')
+            f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
             for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],epsi[0,0,n],epsi[1,1,n],epsi[2,2,n],epsi[0,1,n],epsi[0,2,n],epsi[1,2,n]))
+                f.write('%.5f %9.5e \n' \
+                        %(ene[n],epsi[ipol,jpol,n]))
             f.close()
-            f=open('epsr_'+str(ispin)+'.dat','w')
+            f=open('epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
             for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],epsr[0,0,n],epsr[1,1,n],epsr[2,2,n],epsr[0,1,n],epsr[0,2,n],epsr[1,2,n]))
+                f.write('%.5f %9.5e \n' \
+                        %(ene[n],epsr[ipol,jpol,n]))
             f.close()
 
 

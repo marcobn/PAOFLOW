@@ -114,3 +114,4 @@ spin_Hall = False
 eminSH = -1.0
 emaxSH = 1.0
 ac_cond_spin = False
+writedata = False
