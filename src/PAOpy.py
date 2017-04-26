@@ -894,7 +894,11 @@ if Boltzmann:
     from do_Boltz_tensors import *
 
     for ispin in xrange(nspin):
-        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing)
+
+        if smearing == None:
+            ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor)
+        else:
+            ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -909,42 +913,43 @@ if Boltzmann:
                     %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
             f.close()
 
-        #----------------------
-        # Seebeck (in units of 1.e-4 V/K)
-        #----------------------
+        if smearing == None:
+            #----------------------
+            # Seebeck (in units of 1.e-4 V/K)
+            #----------------------
 
-        S = np.zeros((3,3,ene.size),dtype=float)
+            S = np.zeros((3,3,ene.size),dtype=float)
 
-        L0 *= 1.0e21
-        L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+            L0 *= 1.0e21
+            L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
-        if rank == 0:
-            for n in xrange(ene.size):
-                S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
+            if rank == 0:
+                for n in xrange(ene.size):
+                    S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
 
-            f=open('Seebeck_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
-            f.close()
+                f=open('Seebeck_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                            %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
+                f.close()
 
-        #----------------------
-        # Electron thermal conductivity ((in units of 1.e15 W/m/K/s)
-        #----------------------
+            #----------------------
+            # Electron thermal conductivity ((in units of 1.e15 W/m/K/s)
+            #----------------------
 
-        kappa = np.zeros((3,3,ene.size),dtype=float)
+            kappa = np.zeros((3,3,ene.size),dtype=float)
 
-        L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+            L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
-        if rank == 0:
-            for n in xrange(ene.size):
-                kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
+            if rank == 0:
+                for n in xrange(ene.size):
+                    kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
 
-            f=open('kappa_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
-            f.close()
+                f=open('kappa_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                            %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
+                f.close()
 
     velkp = None
     L0 = None
