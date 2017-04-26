@@ -25,6 +25,8 @@
 
 # Control 
 
+import numpy as np
+
 fpath = 'dir.save'
 restart = False
 verbose = False
@@ -81,6 +83,17 @@ fermi_dw = -0.1
 do_spintexture = False
 
 # Tensor components
+# Dielectric function
+d_tensor = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])
+# Boltzmann transport
+t_tensor = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])
+# Berry curvature
+a_tensor = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])
+# Spin Berry curvature
+s_tensor = np.array([[0,0,0],[0,1,0],[0,2,0],[1,0,0],[1,1,0],[1,2,0],[2,0,0],[2,1,0],[2,2,0], \
+                     [0,0,1],[0,1,1],[0,2,1],[1,0,1],[1,1,1],[1,2,1],[2,0,1],[2,1,1],[2,2,1], \
+                     [0,0,2],[0,1,2],[0,2,2],[1,0,2],[1,1,2],[1,2,2],[2,0,2],[2,1,2],[2,2,2]])
+
 spol = 0  # spin
 ipol = 0
 jpol = 0

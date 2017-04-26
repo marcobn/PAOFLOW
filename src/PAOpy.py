@@ -966,21 +966,24 @@ if epsilon:
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-    for ispin in xrange(nspin):
+    for n in xrange(d_tensor.shape[0]):
+        ipol = d_tensor[n][0]
+        jpol = d_tensor[n][1]
+        for ispin in xrange(nspin):
 
-        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
+            ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
 
-        if rank == 0:
-            f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e \n' \
-                        %(ene[n],epsi[ipol,jpol,n]))
-            f.close()
-            f=open('epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e \n' \
-                        %(ene[n],epsr[ipol,jpol,n]))
-            f.close()
+            if rank == 0:
+                f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e \n' \
+                            %(ene[n],epsi[ipol,jpol,n]))
+                f.close()
+                f=open('epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e \n' \
+                            %(ene[n],epsr[ipol,jpol,n]))
+                f.close()
 
 
     if rank ==0: print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
