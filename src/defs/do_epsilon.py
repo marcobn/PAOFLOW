@@ -151,6 +151,7 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
                 eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
                 del2 = (1.8*deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                # the factor 1.8 is an adjustment of the afac factor in the adaptive smearing
                 if smearing == 'gauss':
                     dfunc[:,:] = gaussian(eig,om,del2)
                 elif smearing == 'm-p':
