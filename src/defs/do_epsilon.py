@@ -107,9 +107,6 @@ def do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ipol,jpol,ispin,metal,ne,emin,e
 
     comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
 
-    #epsr = np.zeros((3,3,ene.size),dtype=float)
-    #epsr[:,:,:] = epsr_kramkron(0,500,ene,epsi)
-
     epsr += 1.0
 
     return(ene,epsi,epsr)
@@ -153,7 +150,7 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
             if m != n:
                 eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
-                del2 = (deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                del2 = (1.8*deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 if smearing == 'gauss':
                     dfunc[:,:] = gaussian(eig,om,del2)
                 elif smearing == 'm-p':
@@ -173,7 +170,7 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
                     dfunc[:,:] = metpax(eig,om,del2)
                 else:
                     sys.exit('smearing not implemented')
-                epsi[ipol,jpol,:] += np.sum(((1.0/(ene+delta**2) * \
+                epsi[ipol,jpol,:] += np.sum(((1.0/ene * \
                                kq_wght[0] * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
                                abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
 

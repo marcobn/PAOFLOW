@@ -726,6 +726,10 @@ if rank == 0:
         for n in xrange(nawf):
             deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
             for m in xrange(nawf):
+                if smearing == 'gauss':
+                    afac = 0.7
+                elif smearing == 'm-p':
+                    afac = 1.0
                 deltakp2[:,n,m,:] = afac*LAN.norm(np.real(np.absolute(pksp[:,:,n,n,:]-pksp[:,:,m,m,:])),axis=1)*dk
 
         if restart:
