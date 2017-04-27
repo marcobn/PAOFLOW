@@ -164,7 +164,16 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
                                kq_wght[0] * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
                                abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
             if metal and n == m:
-                epsi[ipol,jpol,:] += np.sum(((1.0/ene * \
+                eig = (np.zeros((end_ik-ini_ik,ene.size),dtype=float).T).T
+                om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
+                del2 = (deltak[:,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                if smearing == 'gauss':
+                    dfunc[:,:] = gaussian(eig,om,del2)
+                elif smearing == 'm-p':
+                    dfunc[:,:] = metpax(eig,om,del2)
+                else:
+                    sys.exit('smearing not implemented')
+                epsi[ipol,jpol,:] += np.sum(((1.0/(ene+delta**2) * \
                                kq_wght[0] * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
                                abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
 
