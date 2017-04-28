@@ -29,7 +29,7 @@ import numpy as np
 import cmath
 from math import cosh
 import sys, time
-import scipy.integrate
+from scipy.integrate import quad
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -141,17 +141,33 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
     epsi = np.zeros((3,3,ene.size),dtype=float)
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
+    Ef = 0.0
 
     for n in xrange(nawf):
-        fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
+        if smearing == 'gauss':
+            fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+            fnF = gaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+        elif smearing == 'm-p':
+            fn = intmetpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+            fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+        else:
+            sys.exit('smearing not implemented')
         for m in xrange(nawf):
-            fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
+            if smearing == 'gauss':
+                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
+            elif smearing == 'm-p':
+                fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
+            else:
+                sys.exit('smearing not implemented')
             if m != n:
                 eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
-                del2 = (1.8*deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
-                # the factor 1.8 is an adjustment of the afac factor in the adaptive smearing
+                # the factor afac is an adjustment of the factor in the adaptive smearing: afac > 1 improves convergence in metals
+                if metal:
+                    afac = 2.2
+                else:
+                    afac = 1.0
+                del2 = (afac*deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 if smearing == 'gauss':
                     dfunc[:,:] = gaussian(eig,om,del2)
                 elif smearing == 'm-p':
@@ -172,7 +188,7 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
                 else:
                     sys.exit('smearing not implemented')
                 epsi[ipol,jpol,:] += np.sum(((1.0/ene * \
-                               kq_wght[0] * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
+                               kq_wght[0] * dfunc * (fnF*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
                                abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
