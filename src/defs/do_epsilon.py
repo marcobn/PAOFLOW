@@ -29,7 +29,7 @@ import numpy as np
 import cmath
 from math import cosh
 import sys, time
-from scipy.integrate import quad
+import scipy.integrate as tgr
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -200,11 +200,15 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi):
     epsr = np.zeros((3,3,ene.size),dtype=float)
     de = ene[1]-ene[0]
 
+    if ini_ie == 0: ini_ie = 3
+    if end_ie == ene.size: end_ie = ene.size-1
     for ie in xrange(ini_ie,end_ie):
         for i in xrange(3):
             for j in xrange(3):
-                epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
-                               np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
+                #epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
+                #               np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
+                epsr[i,j,ie] = 2.0/np.pi * ( tgr.simps(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
+                               tgr.simps(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
 
     return(epsr)
 
