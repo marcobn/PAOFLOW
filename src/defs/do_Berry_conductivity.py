@@ -43,11 +43,11 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,deltak,deltak2,smearing):
+def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
     # Compute the optical conductivity tensor sigma_xy(ene)
 
-    emin = 0.0 # To be read in input
-    emax = 10.0
+    emin = 0.0 
+    emax = shift
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 

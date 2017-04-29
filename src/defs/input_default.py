@@ -59,6 +59,10 @@ ibrav = 0
 dkres = 0.1
 # Band topology analysis
 band_topology = False
+spol = 0  # spin
+ipol = 0
+jpol = 0
+
 
 # Hamiltonian interpolation on finer MP mesh
 double_grid = False
@@ -94,10 +98,6 @@ s_tensor = np.array([[0,0,0],[0,1,0],[0,2,0],[1,0,0],[1,1,0],[1,2,0],[2,0,0],[2,
                      [0,0,1],[0,1,1],[0,2,1],[1,0,1],[1,1,1],[1,2,1],[2,0,1],[2,1,1],[2,2,1], \
                      [0,0,2],[0,1,2],[0,2,2],[1,0,2],[1,1,2],[1,2,2],[2,0,2],[2,1,2],[2,2,2]])
 
-spol = 0  # spin
-ipol = 0
-jpol = 0
-
 # Shell order and degeneracy for SO
 sh = [0,1,2,0,1,2]    # order of shells with l angular momentum
 nl = [2,1,1,1,1,1]    # multiplicity of each l shell
@@ -120,6 +120,8 @@ critical_points = False
 
 # Berry curvature and AHC
 Berry = False
+eminAH = -1.0
+emaxAH = 1.0
 ac_cond_Berry = False
 
 # Spin Berry curvature and SHC
