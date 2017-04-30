@@ -958,7 +958,10 @@ if Boltzmann:
 
             if rank == 0:
                 for n in xrange(ene.size):
-                    S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
+                    try:
+                        S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
+                    except:
+                        sys.exit('check t_tensor components - matrix cannot be singular')
 
                 f=open('Seebeck_'+str(ispin)+'.dat','w')
                 for n in xrange(ene.size):
