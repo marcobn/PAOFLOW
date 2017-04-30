@@ -34,7 +34,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def calc_TB_eigs_vecs(Hksp,ispin,npool):
+def calc_TB_eigs_vecs(Hksp,npool):
 
     index = None
 
@@ -63,7 +63,6 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
     for pool in xrange (npool):
         if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - calc_TB_eigs_vecs')
         nkpool = nktot/npool
-        #if rank == 0: print('running on ',npool,' pools for nkpool = ',nkpool)
 
         if rank == 0:
             Hks_split = np.array_split(Hksp,npool,axis=0)[pool]
@@ -83,7 +82,8 @@ def calc_TB_eigs_vecs(Hksp,ispin,npool):
         comm.barrier()
         comm.Scatter(Hks_split,aux,root=0)
 
-        E_kaux, v_kaux = diago(nsize,aux[:,:,:,ispin])
+        for ispin in xrange(nspin):
+            E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(nsize,aux[:,:,:,ispin])
 
         comm.barrier()
         comm.Gather(E_kaux,E_k_split,root=0)

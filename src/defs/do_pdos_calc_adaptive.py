@@ -48,7 +48,7 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
     pdos = np.zeros((nawf,ene.size),dtype=float)
     for m in range(nawf):
 
-        v_kaux = np.zeros((nsize,nawf,nawf,ispin+1),dtype=complex)
+        v_kaux = np.zeros((nsize,nawf,nawf),dtype=complex)
         E_kaux = np.zeros((nsize,nawf),dtype=float)
         auxd = np.zeros((nsize,nawf),dtype=float)
 
@@ -63,10 +63,10 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
             for i in range(nawf):
                 if smearing == 'gauss':
                     # adaptive Gaussian smearing
-                    pdosaux[i,:] += gaussian(ene,E_kaux[n,m],auxd[n,m])*(np.abs(v_kaux[n,i,m,ispin])**2)
+                    pdosaux[i,:] += gaussian(ene,E_kaux[n,m],auxd[n,m])*(np.abs(v_kaux[n,i,m])**2)
                 elif smearing == 'm-p':
                     # adaptive Methfessel and Paxton smearing
-                    pdosaux[i,:] += metpax(ene,E_kaux[n,m],auxd[n,m])*(np.abs(v_kaux[n,i,m,ispin])**2)
+                    pdosaux[i,:] += metpax(ene,E_kaux[n,m],auxd[n,m])*(np.abs(v_kaux[n,i,m])**2)
 
         comm.Barrier()
         comm.Reduce(pdosaux,pdossum,op=MPI.SUM)
@@ -82,7 +82,7 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
             for ne in range(ene.size):
                 f.write('%.5f  %.5f \n' %(ene[ne],pdos[m,ne]))
             f.close()
-        f=open('pdosdk_sum'+str(ispin)+'.dat','w')
+        f=open('pdosdk_sum_'+str(ispin)+'.dat','w')
         for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()

@@ -448,8 +448,7 @@ if checkpoint < 2:
     v_k = None
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-    for ispin in xrange(nspin):
-        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
+    eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,npool)
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
 
@@ -513,15 +512,14 @@ if (do_dos or do_pdos) and smearing == None:
     index = comm.bcast(index,root=0)
     eigtot = index['eigtot']
 
-    eigup = None
-    eigdw = None
+    eigup = eigdw = None
 
     if nspin == 1 or nspin == 2:
-        if rank == 0: eigup = eig[:,0]
+        if rank == 0: eigup = np.array(eig[:,0])
         do_dos_calc(eigup,emin,emax,delta,eigtot,nawf,0)
         eigup = None
     if nspin == 2:
-        if rank == 0: eigdw = eig[:,1]
+        if rank == 0: eigdw = np.array(eig[:,1])
         do_dos_calc(eigdw,emin,emax,delta,eigtot,nawf,1)
         eigdw = None
 
@@ -531,14 +529,21 @@ if (do_dos or do_pdos) and smearing == None:
         #----------------------
         from do_pdos_calc import *
 
+        v_kup = v_kdw = None
         if nspin == 1 or nspin == 2:
-            if rank == 0: eigup = E_k[:,:,0]
-            do_pdos_calc(eigup,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,0)
+            if rank == 0:
+                eigup = np.array(E_k[:,:,0])
+                v_kup = np.array(v_k[:,:,:,0])
+            do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0)
             eigup = None
+            v_kup = None
         if nspin == 2:
-            if rank == 0: eigdw = E_k[:,:,1]
-            do_pdos_calc(eigdw,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,1)
+            if rank == 0:
+                eigdw = np.array(E_k[:,:,1])
+                v_kdw = np.array(v_k[:,:,:,1])
+            do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1)
             eigdw = None
+            v_kdw = None
 
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
@@ -755,15 +760,15 @@ if (do_dos or do_pdos) and smearing != None:
 
     if nspin == 1 or nspin == 2:
         if rank == 0:
-            eigup = eig[:,0]
-            deltakpup = deltakp[:,0]
+            eigup = np.array(eig[:,0])
+            deltakpup = np.array(deltakp[:,0])
         do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,nawf,0,smearing)
         eigup = None
         deltakpup = None
     if nspin == 2:
         if rank == 0:
-            eigdw = eig[:,1]
-            deltakpdw = deltakp[:,1]
+            eigdw = np.array(eig[:,1])
+            deltakpdw = np.array(deltakp[:,1])
         do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,nawf,1,smearing)
         eigdw = None
         deltakpdw = None
@@ -771,6 +776,7 @@ if (do_dos or do_pdos) and smearing != None:
     if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3,nawf,nspin),order='C')
 
     if do_pdos:
+        v_kup = v_kdw = None
         #----------------------
         # PDOS calculation
         #----------------------
@@ -778,15 +784,17 @@ if (do_dos or do_pdos) and smearing != None:
 
         if nspin == 1 or nspin == 2:
             if rank == 0:
-                eigup = E_k[:,:,0]
-                deltakpup = deltakp[:,:,0]
-            do_pdos_calc_adaptive(eigup,emin,emax,deltakpup,v_k,nk1,nk2,nk3,nawf,0,smearing)
+                eigup = np.array(E_k[:,:,0])
+                deltakpup = np.array(deltakp[:,:,0])
+                v_kup = np.array(v_k[:,:,:,0])
+            do_pdos_calc_adaptive(eigup,emin,emax,deltakpup,v_kup,nk1,nk2,nk3,nawf,0,smearing)
             eigup = None
         if nspin == 2:
             if rank == 0:
-                eigdw = E_k[:,:,1]
-                deltakpdw = deltakp[:,:,0]
-            do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_k,nk1,nk2,nk3,nawf,1,smearing)
+                eigdw = np.array(E_k[:,:,1])
+                deltakpdw = np.array(deltakp[:,:,1])
+                v_kdw = np.array(v_k[:,:,:,1])
+            do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_kdw,nk1,nk2,nk3,nawf,1,smearing)
             eigdw = None
 
     if rank ==0: print('dos (adaptive smearing) in       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))

@@ -47,7 +47,7 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
     pdos = np.zeros((nawf,ene.size),dtype=float)
     for m in range(nawf):
 
-        v_kaux = np.zeros((nsize,nawf,nawf,ispin+1),dtype=complex)
+        v_kaux = np.zeros((nsize,nawf,nawf),dtype=complex)
         E_kaux = np.zeros((nsize,nawf),dtype=float)
 
         comm.Barrier()
@@ -58,7 +58,7 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
         pdossum = np.zeros((nawf,ene.size),dtype=float)
         for n in range (nsize):
             for i in range(nawf):
-                pdosaux[i,:] += 1.0/np.sqrt(np.pi)*np.exp(-((ene[:]-E_kaux[n,m])/delta)**2)/delta*(np.abs(v_kaux[n,i,m,ispin])**2)
+                pdosaux[i,:] += 1.0/np.sqrt(np.pi)*np.exp(-((ene[:]-E_kaux[n,m])/delta)**2)/delta*(np.abs(v_kaux[n,i,m])**2)
 
         comm.Barrier()
         comm.Reduce(pdosaux,pdossum,op=MPI.SUM)
@@ -74,7 +74,7 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
             for ne in range(ene.size):
                 f.write('%.5f  %.5f \n' %(ene[ne],pdos[m,ne]))
             f.close()
-        f=open('pdos_sum'+str(ispin)+'.dat','w')
+        f=open('pdos_sum_'+str(ispin)+'.dat','w')
         for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()
