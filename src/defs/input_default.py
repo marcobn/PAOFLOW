@@ -31,9 +31,9 @@ fpath = 'dir.save'
 restart = False
 verbose = False
 non_ortho  = False
-write2file = False
-write_binary = False
-writedata = False
+write2file = False # write data formatted for acbn0 calculations
+write_binary = False # write data formatted for acbn0 calculations in AFLOWpi
+writedata = False  # write 3D Berry curvature and spin Berry curvature to file
 shift_type = 1
 shift      = 'auto' # if 'auto' shift is selected automatically; else, give numerical value 
 pthr       = 0.95
@@ -44,12 +44,16 @@ npool = 1
 # Compare PAO bands with original DFT bands on the original MP mesh
 do_comparison = False
 
-# Construct TB spin-orbit Hamiltonian
-do_spin_orbit = False
-theta = 0.0
-phi = 0.0
-lambda_p = 0.0
-lambda_d = 0.0
+# Dimensions of the atomic basis for each atom (order must be the same as in the output of projwfc.x)
+naw=np.array([0,0]) # naw.shape[0] = natom
+
+# Shell order and degeneracy for SO (order must be the same as in the output of projwfc.x)
+sh = [0,1,2,0,1,2]    # order of shells with l angular momentum
+nl = [2,1,1,1,1,1]    # multiplicity of each l shell
+
+# External (static) electric (eV) and magnetic (T) fields
+Efield = np.array([0,0,0])
+Bfield = np.array([0,0,0])
 
 # Bands interpolation along a path from a 1D string of k points
 onedim = False
@@ -63,6 +67,12 @@ spol = 0  # spin
 ipol = 0
 jpol = 0
 
+# Construct TB spin-orbit Hamiltonian
+do_spin_orbit = False
+theta = 0.0
+phi = 0.0
+lambda_p = 0.0
+lambda_d = 0.0
 
 # Hamiltonian interpolation on finer MP mesh
 double_grid = False
@@ -98,10 +108,6 @@ s_tensor = np.array([[0,0,0],[0,1,0],[0,2,0],[1,0,0],[1,1,0],[1,2,0],[2,0,0],[2,
                      [0,0,1],[0,1,1],[0,2,1],[1,0,1],[1,1,1],[1,2,1],[2,0,1],[2,1,1],[2,2,1], \
                      [0,0,2],[0,1,2],[0,2,2],[1,0,2],[1,1,2],[1,2,2],[2,0,2],[2,1,2],[2,2,2]])
 
-# Shell order and degeneracy for SO
-sh = [0,1,2,0,1,2]    # order of shells with l angular momentum
-nl = [2,1,1,1,1,1]    # multiplicity of each l shell
-
 # Set temperature in eV
 temp = 0.025852  # room temperature
 
@@ -129,4 +135,3 @@ spin_Hall = False
 eminSH = -1.0
 emaxSH = 1.0
 ac_cond_spin = False
-writedata = False
