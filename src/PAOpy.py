@@ -135,9 +135,9 @@ if nkpool%nsize != 0:
 #----------------------
 
 if (not non_ortho):
-    U, my_eigsmat, alat, a_vectors, b_vectors, \
-    nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
-    nelec, nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath, verbose, non_ortho)
+    U,my_eigsmat,alat,a_vectors,b_vectors, \
+    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -145,9 +145,9 @@ if (not non_ortho):
         Sks[:,:,ik]=np.identity(nawf)
     if rank == 0 and verbose: print('...using orthogonal algorithm')
 else:
-    U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
-    nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
-    nelec, nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
+    U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
+    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
 if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
@@ -801,6 +801,8 @@ if (do_dos or do_pdos) and smearing != None:
     reset=time.time()
 
 if spin_Hall:
+    if dftSO == False: sys.exit('full relativistic calculation with SO needed')
+
     from do_spin_Berry_curvature import *
     from do_spin_Hall_conductivity import *
     from do_spin_current import *
@@ -875,6 +877,8 @@ if Berry:
     #----------------------
     # Compute Berry curvature and AHC
     #----------------------
+    if dftSO == False: sys.exit('full relativistic calculation with SO needed')
+
     from do_Berry_curvature import *
     from do_Berry_conductivity import *
 

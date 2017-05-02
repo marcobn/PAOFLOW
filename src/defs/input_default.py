@@ -3,27 +3,20 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu) 
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-#
-# References:
-# Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
-#
-# Luis A. Agapito, Sohrab Ismail-Beigi, Stefano Curtarolo, Marco Fornari and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets, Phys. Rev. B 93, 035104 (2016).
-#
-# Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
-#
 
-############################INPUT variables########################
+#######################################################################
+############################INPUT variables############################
+#######################################################################
 
+#################
 # Control 
+#################
 
 import numpy as np
 
@@ -35,11 +28,13 @@ write2file = False # write data formatted for acbn0 calculations
 write_binary = False # write data formatted for acbn0 calculations in AFLOWpi
 writedata = False  # write 3D Berry curvature and spin Berry curvature to file
 shift_type = 1
-shift      = 'auto' # if 'auto' shift is selected automatically; else, give numerical value 
+shift      = 'auto' # if 'auto' shift is selected automatically; else, give numerical value (eV)
 pthr       = 0.95
 npool = 1
 
+#################
 # Calculations 
+#################
 
 # Compare PAO bands with original DFT bands on the original MP mesh
 do_comparison = False

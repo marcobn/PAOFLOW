@@ -88,6 +88,12 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
             if elem.tag == 'IONS':
                 natoms=int(float(elem.findall("NUMBER_OF_ATOMS")       [0].text.split()[0]))
 
+                tau = np.zeros((natoms,3),dtype=float)
+                for n in xrange(natoms):
+                    string="ATOM."+str(n+1)
+                    aux = elem.findall(string)[0].attrib['tau'].split()
+                    tau[n,:]=np.array(aux,dtype="float32")
+
     # Reading atomic_proj.xml
 
     group_nesting = 0
@@ -100,7 +106,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
 
             nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
             dftSO = False
-            if nspin == 4: 
+            if nspin == 4:
                 nspin = 1
                 dftSO = True
             if rank == 0 and verbose: print('Number of spin components: {0:d}'.format(nspin))
@@ -265,13 +271,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
 
     if non_ortho:
         return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
-            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
+            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)
     else:
         return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
-            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
-
-
-
-#if __name__ == "__main__":
-#       fpath="./fe.save"
-#       read_QE_output_xml(fpath,True,True)
+            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)
