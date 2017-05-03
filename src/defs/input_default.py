@@ -62,7 +62,7 @@ spol = 0  # spin
 ipol = 0
 jpol = 0
 
-# Construct TB spin-orbit Hamiltonian
+# Construct PAO spin-orbit Hamiltonian
 do_spin_orbit = False
 theta = 0.0
 phi = 0.0

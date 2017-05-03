@@ -11,10 +11,6 @@
 #
 import numpy as np
 
-def build_Pn(nawf,nbnds,nkpnts,nspin,U):
-    Pn = 0.0
-    for ispin in xrange(nspin):
-        for ik in xrange(nkpnts):
-            UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
-            Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
-    return Pn
+def add_ext_field(HRs,tau_wf,R,Efield,Bfield):
+
+    return(HRs)
