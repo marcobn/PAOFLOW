@@ -46,9 +46,11 @@ naw=np.array([0,0]) # naw.shape[0] = natom
 sh = [0,1,2,0,1,2]    # order of shells with l angular momentum
 nl = [2,1,1,1,1,1]    # multiplicity of each l shell
 
-# External (static) electric (eV) and magnetic (T) fields
-Efield = np.array([0,0,0])
-Bfield = np.array([0,0,0])
+# External fields
+Efield = np.array([0,0,0]) # static electric field (eV)
+Bfield = np.array([0,0,0]) # static magnetic firld placeholder: magnetic supercell not implemented!
+HubbardU = np.zeros(32,dtype=float) # non scf ACBN0 calculation
+HubbardU[1:4] = 0.0
 
 # Bands interpolation along a path from a 1D string of k points
 onedim = False

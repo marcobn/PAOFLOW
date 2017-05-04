@@ -271,8 +271,8 @@ SRaux = None
 if rank == 0: print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 reset=time.time()
 
-if Efield.any() != 0.0 or Bfield.any() != 0.0:
-    # Add static electric and magnetic fields
+if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
+    # Add external fields or non scf ACBN0 correction
     tau_wf = np.zeros((nawf,3),dtype=float)
     l=0
     for n in xrange(natoms):
@@ -283,7 +283,7 @@ if Efield.any() != 0.0 or Bfield.any() != 0.0:
     # Define real space lattice vectors
     R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-    HRs = add_ext_field(HRs,tau_wf,R,Efield,Bfield)
+    HRs = add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU)
 
 if do_spin_orbit:
     #----------------------

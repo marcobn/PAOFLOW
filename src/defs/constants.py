@@ -28,6 +28,7 @@ ELECTRONVOLT_SI  = 1.6021892e-19      # J
 UMA_SI           = 1.66057e-27        # Kg
 DEBYE_SI         = 3.33564e-30        # Coulomb meter
 DEBYE_AU         = 0.393427228        # e * Bohr
+AU_TO_VMM1       = 36.3609*10e10      # V/m
 ANGSTROM_AU      = 1.889727e0         # au
 AU_TO_OHMCMM1    = 46000.0e0          # (ohm cm)^-1
 AU_KB            = 294210.0e0         # Kbar
