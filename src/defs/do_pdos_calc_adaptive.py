@@ -16,13 +16,14 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
+from smearing import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
+def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearing):
     # PDOS calculation with gaussian smearing
     emin = float(emin)
     emax = float(emax)
@@ -38,16 +39,23 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
 
         v_kaux = np.zeros((nsize,nawf,nawf),dtype=complex)
         E_kaux = np.zeros((nsize,nawf),dtype=float)
+        auxd = np.zeros((nsize,nawf),dtype=float)
 
         comm.Barrier()
         comm.Scatter(E_k,E_kaux,root=0)
         comm.Scatter(v_k,v_kaux,root=0)
+        comm.Scatter(delta,auxd,root=0)
 
         pdosaux = np.zeros((nawf,ene.size),dtype=float)
         pdossum = np.zeros((nawf,ene.size),dtype=float)
         for n in range (nsize):
             for i in range(nawf):
-                pdosaux[i,:] += 1.0/np.sqrt(np.pi)*np.exp(-((ene[:]-E_kaux[n,m])/delta)**2)/delta*(np.abs(v_kaux[n,i,m])**2)
+                if smearing == 'gauss':
+                    # adaptive Gaussian smearing
+                    pdosaux[i,:] += gaussian(ene,E_kaux[n,m],auxd[n,m])*(np.abs(v_kaux[n,i,m])**2)
+                elif smearing == 'm-p':
+                    # adaptive Methfessel and Paxton smearing
+                    pdosaux[i,:] += metpax(ene,E_kaux[n,m],auxd[n,m])*(np.abs(v_kaux[n,i,m])**2)
 
         comm.Barrier()
         comm.Reduce(pdosaux,pdossum,op=MPI.SUM)
@@ -59,11 +67,11 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
         pdos_sum = np.zeros(ene.size,dtype=float)
         for m in range(nawf):
             pdos_sum += pdos[m]
-            f=open(str(m)+'_pdos_'+str(ispin)+'.dat','w')
+            f=open(str(m)+'_pdosdk_'+str(ispin)+'.dat','w')
             for ne in range(ene.size):
                 f.write('%.5f  %.5f \n' %(ene[ne],pdos[m,ne]))
             f.close()
-        f=open('pdos_sum_'+str(ispin)+'.dat','w')
+        f=open('pdosdk_sum_'+str(ispin)+'.dat','w')
         for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()

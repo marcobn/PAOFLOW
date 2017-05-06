@@ -3,22 +3,11 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
-#
-# References:
-# Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
-#
-# Luis A. Agapito, Sohrab Ismail-Beigi, Stefano Curtarolo, Marco Fornari and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets, Phys. Rev. B 93, 035104 (2016).
-#
-# Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 from scipy import linalg as LA
 from numpy import linalg as LAN
@@ -33,13 +22,12 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def write_TB_eigs(Hks,Sks,read_S,ispin):
+def write_PAO_eigs(Hks,Sks,read_S,ispin):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
-    nbnds_tb = nawf
-    E_k = np.zeros((nkpnts,nbnds_tb),dtype=float)
-    v_k = np.zeros((nkpnts,nbnds_tb,nbnds_tb),dtype=complex)
-    index = np.zeros((nkpnts,nbnds_tb),dtype=int)
+    E_k = np.zeros((nkpnts,nawf),dtype=float)
+    v_k = np.zeros((nkpnts,nawf,nawf),dtype=complex)
+    index = np.zeros((nkpnts,nawf),dtype=int)
 
     for ik in xrange(nkpnts):
         if read_S:

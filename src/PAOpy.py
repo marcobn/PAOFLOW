@@ -3,26 +3,11 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
-#
-# References:
-# Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
-#
-# Luis A. Agapito, Sohrab Ismail-Beigi, Stefano Curtarolo, Marco Fornari and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets, Phys. Rev. B 93, 035104 (2016).
-#
-# Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
-#
-# Pino D'Amico, Luis Agapito, Alessandra Catellani, Alice Ruini, Stefano Curtarolo, Marco Fornari, Marco Buongiorno Nardelli,
-# and Arrigo Calzolari, Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and
-# optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
 #
 
 # import general modules
@@ -40,12 +25,12 @@ import multiprocessing
 # Define paths
 sys.path.append(sys.path[0]+'/defs')
 
-# Import TB specific functions
-from read_input import *
+# Import PAO specific functions
 from build_Pn import *
 from build_Hks import *
 from do_non_ortho import *
 from do_ortho import *
+from add_ext_field import *
 from get_R_grid_fft import *
 from get_K_grid_fft import *
 from do_bands_calc import *
@@ -135,9 +120,9 @@ if nkpool%nsize != 0:
 #----------------------
 
 if (not non_ortho):
-    U, my_eigsmat, alat, a_vectors, b_vectors, \
-    nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
-    nelec, nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath, verbose, non_ortho)
+    U,my_eigsmat,alat,a_vectors,b_vectors, \
+    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
     Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     sumk = np.sum(kpnts_wght)
     kpnts_wght /= sumk
@@ -145,9 +130,9 @@ if (not non_ortho):
         Sks[:,:,ik]=np.identity(nawf)
     if rank == 0 and verbose: print('...using orthogonal algorithm')
 else:
-    U, Sks, my_eigsmat, alat, a_vectors, b_vectors, \
-    nkpnts, nspin, dftSO, kpnts, kpnts_wght, \
-    nelec, nbnds, Efermi, nawf, nk1, nk2, nk3,natoms  =  read_QE_output_xml(fpath,verbose,non_ortho)
+    U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
+    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath,verbose,non_ortho)
     if rank == 0 and verbose: print('...using non-orthogonal algorithm')
 
 if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
@@ -183,7 +168,7 @@ if rank == 0 and verbose and bnd < nbnds: print('Range of suggested shift ',np.a
 if shift == 'auto': shift = np.amin(my_eigsmat[bnd,:,:])
 
 #----------------------
-# Building the TB Hamiltonian
+# Building the PAO Hamiltonian
 #----------------------
 nbnds_norm = nawf
 Hks,Sks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
@@ -238,11 +223,11 @@ if rank == 0 and write2file:
 
 
 #----------------------
-# Plot the TB and DFT eigevalues. Writes to comparison.pdf
+# Plot the PAO and DFT eigevalues. Writes to comparison.pdf
 #----------------------
 if rank == 0 and do_comparison:
-    from plot_compare_TB_DFT_eigs import *
-    plot_compare_TB_DFT_eigs(Hks,Sks,my_eigsmat,non_ortho)
+    from plot_compare_PAO_DFT_eigs import *
+    plot_compare_PAO_DFT_eigs(Hks,Sks,my_eigsmat,non_ortho)
     quit()
 
 #----------------------
@@ -285,6 +270,20 @@ SRaux = None
 
 if rank == 0: print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 reset=time.time()
+
+if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
+    # Add external fields or non scf ACBN0 correction
+    tau_wf = np.zeros((nawf,3),dtype=float)
+    l=0
+    for n in xrange(natoms):
+        for i in xrange(naw[n]):
+            tau_wf[l,:] = tau[n,:]
+            l += 1
+
+    # Define real space lattice vectors
+    R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+
+    HRs = add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU)
 
 if do_spin_orbit:
     #----------------------
@@ -441,15 +440,14 @@ checkpoint = comm.bcast(checkpoint,root=0)
 # Compute eigenvalues of the interpolated Hamiltonian
 #----------------------
 if checkpoint < 2:
-    from calc_TB_eigs_vecs import *
+    from calc_PAO_eigs_vecs import *
 
     eig = None
     E_k = None
     v_k = None
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-    for ispin in xrange(nspin):
-        eig, E_k, v_k = calc_TB_eigs_vecs(Hksp,ispin,npool)
+    eig, E_k, v_k = calc_PAO_eigs_vecs(Hksp,npool)
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
 
@@ -501,7 +499,7 @@ nk1 = comm.bcast(nk1,root=0)
 nk2 = comm.bcast(nk2,root=0)
 nk3 = comm.bcast(nk3,root=0)
 
-if do_dos or do_pdos:
+if (do_dos or do_pdos) and smearing == None:
     #----------------------
     # DOS calculation with gaussian smearing on double_grid Hksp
     #----------------------
@@ -513,15 +511,14 @@ if do_dos or do_pdos:
     index = comm.bcast(index,root=0)
     eigtot = index['eigtot']
 
-    eigup = None
-    eigdw = None
+    eigup = eigdw = None
 
     if nspin == 1 or nspin == 2:
-        if rank == 0: eigup = eig[:,0]
+        if rank == 0: eigup = np.array(eig[:,0])
         do_dos_calc(eigup,emin,emax,delta,eigtot,nawf,0)
         eigup = None
     if nspin == 2:
-        if rank == 0: eigdw = eig[:,1]
+        if rank == 0: eigdw = np.array(eig[:,1])
         do_dos_calc(eigdw,emin,emax,delta,eigtot,nawf,1)
         eigdw = None
 
@@ -531,14 +528,21 @@ if do_dos or do_pdos:
         #----------------------
         from do_pdos_calc import *
 
+        v_kup = v_kdw = None
         if nspin == 1 or nspin == 2:
-            if rank == 0: eigup = E_k[:,:,0]
-            do_pdos_calc(eigup,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,0)
+            if rank == 0:
+                eigup = np.array(E_k[:,:,0])
+                v_kup = np.array(v_k[:,:,:,0])
+            do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0)
             eigup = None
+            v_kup = None
         if nspin == 2:
-            if rank == 0: eigdw = E_k[:,:,1]
-            do_pdos_calc(eigdw,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,1)
+            if rank == 0:
+                eigdw = np.array(E_k[:,:,1])
+                v_kdw = np.array(v_k[:,:,:,1])
+            do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1)
             eigdw = None
+            v_kdw = None
 
     if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
@@ -568,7 +572,7 @@ if do_fermisurf or do_spintexture:
 
 pksp = None
 jksp = None
-if Boltzmann or epsilon or Berry or spin_Hall:
+if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != None:
     if checkpoint < 3:
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
@@ -672,31 +676,6 @@ if Boltzmann or epsilon or Berry or spin_Hall:
     nk2 = comm.bcast(nk2,root=0)
     nk3 = comm.bcast(nk3,root=0)
 
-    if spin_Hall:
-        #----------------------
-        # Compute the spin current operator j^l_n,m(k)
-        #----------------------
-        jksp = None
-        spincheck = 0
-        if restart and rank == 0:
-            try:
-                spindump = np.load(fpath+'PAOspin'+str(spol)+'.npz')
-                jksp = spindump['jksp']
-                spincheck += 1
-                print('reading spin current for polarization ',spol)
-            except:
-                pass
-        spincheck=comm.bcast(spincheck,root=0)
-        if spincheck == 0:
-            from do_spin_current import *
-            jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
-            if restart and rank == 0:
-                np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
-            if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-            reset=time.time()
-
-    dHksp = None
-
     index = None
     if rank == 0:
         index = {'nawf':E_k.shape[1],'nktot':E_k.shape[0]}
@@ -706,6 +685,34 @@ if Boltzmann or epsilon or Berry or spin_Hall:
 
     kq_wght = np.ones((nktot),dtype=float)
     kq_wght /= float(nktot)
+
+deltakp = None
+deltakp2 = None
+if rank == 0:
+    if smearing != None:
+        #----------------------
+        # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
+        #----------------------
+        deltakp = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
+        deltakp2 = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin),dtype=float)
+        omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+        dk = (8.*np.pi**3/omega/(nk1*nk2*nk3))**(1./3.)
+        if smearing == 'gauss':
+            afac = 0.7
+        elif smearing == 'm-p':
+            afac = 1.0
+
+        for n in xrange(nawf):
+            deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
+            for m in xrange(nawf):
+                if smearing == 'gauss':
+                    afac = 0.7
+                elif smearing == 'm-p':
+                    afac = 1.0
+                deltakp2[:,n,m,:] = afac*LAN.norm(np.real(np.absolute(pksp[:,:,n,n,:]-pksp[:,:,m,m,:])),axis=1)*dk
+
+        if restart:
+            np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
 
 velkp = None
 if rank == 0:
@@ -731,101 +738,189 @@ if rank == 0:
                             f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
             f.close()
 
-if Berry:
+if (do_dos or do_pdos) and smearing != None:
     #----------------------
-    # Compute Berry curvature... (only the z component for now - Anomalous Hall Conductivity (AHC))
+    # DOS calculation with adaptive smearing on double_grid Hksp
     #----------------------
-    from do_Berry_curvature import *
-    from do_Berry_conductivity import *
+    from do_dos_calc_adaptive import *
 
-    Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
+    index = None
+    if rank == 0:
+        index = {'eigtot':eig.shape[0]}
+    index = comm.bcast(index,root=0)
+    eigtot = index['eigtot']
 
-    if rank == 0 and writedata:
-        from write2bxsf import *
-        x0 = np.zeros(3,dtype=float)
-        ind_plot = np.zeros(2)
-        Om_k[:,:,:,1] = Om_k[:,:,:,0]
-        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+    eigup = None
+    eigdw = None
+    deltakpup = None
+    deltakpdw = None
 
-        np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
+    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3*nawf,nspin),order='C')
 
-    if ac_cond_Berry:
-        ene,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol)
-        ahc0 = np.real(sigxy[0])
+    if nspin == 1 or nspin == 2:
+        if rank == 0:
+            eigup = np.array(eig[:,0])
+            deltakpup = np.array(deltakp[:,0])
+        do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,nawf,0,smearing)
+        eigup = None
+        deltakpup = None
+    if nspin == 2:
+        if rank == 0:
+            eigdw = np.array(eig[:,1])
+            deltakpdw = np.array(deltakp[:,1])
+        do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,nawf,1,smearing)
+        eigdw = None
+        deltakpdw = None
 
-    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3,nawf,nspin),order='C')
 
-    if rank == 0 and ene.size == 1:
-        f=open('ahc.dat','w')
-        ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        if ac_cond_Berry:
-            ahc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-            f.write(' Anomalous Hall conductivity sigma_xy = %.6f (%.6f)\n' %(ahc,ahc0))
-        else:
-            f.write(' Anomalous Hall conductivity sigma_xy = %.6f \n' %ahc)
-        f.close()
-    elif rank == 0:
-        ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f=open('ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
-        for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
-        f.close()
+    if do_pdos:
+        v_kup = v_kdw = None
+        #----------------------
+        # PDOS calculation
+        #----------------------
+        from do_pdos_calc_adaptive import *
 
-    if rank == 0 and ac_cond_Berry:
-        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f=open('sigxyi.dat','w')
-        for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene[n],np.imag(ene[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-        f.close()
-        f=open('sigxyr.dat','w')
-        for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene[n],np.real(sigxy[n])))
-        f.close()
+        if nspin == 1 or nspin == 2:
+            if rank == 0:
+                eigup = np.array(E_k[:,:,0])
+                deltakpup = np.array(deltakp[:,:,0])
+                v_kup = np.array(v_k[:,:,:,0])
+            do_pdos_calc_adaptive(eigup,emin,emax,deltakpup,v_kup,nk1,nk2,nk3,nawf,0,smearing)
+            eigup = None
+        if nspin == 2:
+            if rank == 0:
+                eigdw = np.array(E_k[:,:,1])
+                deltakpdw = np.array(deltakp[:,:,1])
+                v_kdw = np.array(v_k[:,:,:,1])
+            do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_kdw,nk1,nk2,nk3,nawf,1,smearing)
+            eigdw = None
 
-    if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    if rank ==0: print('dos (adaptive smearing) in       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if spin_Hall:
-    #----------------------
-    # Compute spin Berry curvature... 
-    #----------------------
+    if dftSO == False: sys.exit('full relativistic calculation with SO needed')
+
     from do_spin_Berry_curvature import *
     from do_spin_Hall_conductivity import *
+    from do_spin_current import *
 
-    Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-    ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up)
+    for n in xrange(s_tensor.shape[0]):
+        ipol = s_tensor[n][0]
+        jpol = s_tensor[n][1]
+        spol = s_tensor[n][2]
+        #----------------------
+        # Compute the spin current operator j^l_n,m(k)
+        #----------------------
+        jksp = None
+        spincheck = 0
+        if restart and rank == 0:
+            try:
+                spindump = np.load(fpath+'PAOspin'+str(spol)+'.npz')
+                jksp = spindump['jksp']
+                spincheck += 1
+                print('reading spin current for polarization ',spol)
+            except:
+                pass
+        spincheck=comm.bcast(spincheck,root=0)
+        if spincheck == 0:
+            jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
+            if restart and rank == 0:
+                np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
+            if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+            reset=time.time()
+        #----------------------
+        # Compute spin Berry curvature... 
+        #----------------------
+        Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
+        ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
 
-    if rank == 0 and writedata:
-        from write2bxsf import *
-        x0 = np.zeros(3,dtype=float)
-        ind_plot = np.zeros(2)
-        Om_k[:,:,:,1] = Om_k[:,:,:,0]
-        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+        if rank == 0 and writedata:
+            from write2bxsf import *
+            x0 = np.zeros(3,dtype=float)
+            ind_plot = np.zeros(2)
+            Om_k[:,:,:,1] = Om_k[:,:,:,0]
+            write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
 
-    if ac_cond_spin:
-        ene,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol)
-        shc0 = np.real(sigxy[0])
-
-    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-
-    if rank == 0 and ene.size == 1:
-        f=open('shc.dat','w')
-        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
         if ac_cond_spin:
-            shc0 *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-            f.write(' spin Hall conductivity sigma^z_xy = %.6f (%.6f)\n' %(shc,shc0))
-        else:
-            f.write(' spin Hall conductivity sigma^z_xy = %.6f \n' %shc)
-        f.close()
-    elif rank == 0:
-        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-        f=open('shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
-        for n in xrange(ene.size):
-            f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
-        f.close()
+            ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
+            shc0 = np.real(sigxy[0])
+
+        omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+
+        if rank == 0:
+            shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            f=open('shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            for n in xrange(ene.size):
+                f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
+            f.close()
+
+        if rank == 0 and ac_cond_spin:
+            sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            f=open('SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            for n in xrange(ene.size):
+                f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+            f.close()
+            f=open('SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            for n in xrange(ene.size):
+                f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+            f.close()
 
     if rank == 0: print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
+
+dHksp = None
+
+if Berry:
+    #----------------------
+    # Compute Berry curvature and AHC
+    #----------------------
+    if dftSO == False: sys.exit('full relativistic calculation with SO needed')
+
+    from do_Berry_curvature import *
+    from do_Berry_conductivity import *
+
+    for n in xrange(a_tensor.shape[0]):
+        ipol = a_tensor[n][0]
+        jpol = a_tensor[n][1]
+        Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
+        ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
+
+        if rank == 0 and writedata:
+            from write2bxsf import *
+            x0 = np.zeros(3,dtype=float)
+            ind_plot = np.zeros(2)
+            Om_k[:,:,:,1] = Om_k[:,:,:,0]
+            write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+
+            np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
+
+        if ac_cond_Berry:
+            ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
+            ahc0 = np.real(sigxy[0])
+
+        omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+
+        if rank == 0:
+            ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            f=open('ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            for n in xrange(ene.size):
+                f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
+            f.close()
+
+        if rank == 0 and ac_cond_Berry:
+            sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+            f=open('MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            for n in xrange(ene.size):
+                f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+            f.close()
+            f=open('MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            for n in xrange(ene.size):
+                f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+            f.close()
+
+    if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
 if Boltzmann:
@@ -835,7 +930,11 @@ if Boltzmann:
     from do_Boltz_tensors import *
 
     for ispin in xrange(nspin):
-        ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin)
+
+        if smearing == None:
+            ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor)
+        else:
+            ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -850,42 +949,46 @@ if Boltzmann:
                     %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
             f.close()
 
-        #----------------------
-        # Seebeck (in units of 1.e-4 V/K)
-        #----------------------
+        if smearing == None:
+            #----------------------
+            # Seebeck (in units of 1.e-4 V/K)
+            #----------------------
 
-        S = np.zeros((3,3,ene.size),dtype=float)
+            S = np.zeros((3,3,ene.size),dtype=float)
 
-        L0 *= 1.0e21
-        L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+            L0 *= 1.0e21
+            L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
-        if rank == 0:
-            for n in xrange(ene.size):
-                S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
+            if rank == 0:
+                for n in xrange(ene.size):
+                    try:
+                        S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
+                    except:
+                        sys.exit('check t_tensor components - matrix cannot be singular')
 
-            f=open('Seebeck_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
-            f.close()
+                f=open('Seebeck_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                            %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
+                f.close()
 
-        #----------------------
-        # Electron thermal conductivity ((in units of 1.e15 W/m/K/s)
-        #----------------------
+            #----------------------
+            # Electron thermal conductivity ((in units of 1.e15 W/m/K/s)
+            #----------------------
 
-        kappa = np.zeros((3,3,ene.size),dtype=float)
+            kappa = np.zeros((3,3,ene.size),dtype=float)
 
-        L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
+            L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
 
-        if rank == 0:
-            for n in xrange(ene.size):
-                kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
+            if rank == 0:
+                for n in xrange(ene.size):
+                    kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
 
-            f=open('kappa_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
-            f.close()
+                f=open('kappa_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
+                            %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
+                f.close()
 
     velkp = None
     L0 = None
@@ -907,21 +1010,24 @@ if epsilon:
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-    for ispin in xrange(nspin):
+    for n in xrange(d_tensor.shape[0]):
+        ipol = d_tensor[n][0]
+        jpol = d_tensor[n][1]
+        for ispin in xrange(nspin):
 
-        ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ispin,metal,ne,epsmin,epsmax)
+            ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
 
-        if rank == 0:
-            f=open('epsi_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],epsi[0,0,n],epsi[1,1,n],epsi[2,2,n],epsi[0,1,n],epsi[0,2,n],epsi[1,2,n]))
-            f.close()
-            f=open('epsr_'+str(ispin)+'.dat','w')
-            for n in xrange(ene.size):
-                f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
-                        %(ene[n],epsr[0,0,n],epsr[1,1,n],epsr[2,2,n],epsr[0,1,n],epsr[0,2,n],epsr[1,2,n]))
-            f.close()
+            if rank == 0:
+                f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e \n' \
+                            %(ene[n],epsi[ipol,jpol,n]))
+                f.close()
+                f=open('epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e \n' \
+                            %(ene[n],epsr[ipol,jpol,n]))
+                f.close()
 
 
     if rank ==0: print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))

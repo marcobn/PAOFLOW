@@ -3,22 +3,11 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
-#
-# References:
-# Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
-#
-# Luis A. Agapito, Sohrab Ismail-Beigi, Stefano Curtarolo, Marco Fornari and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets, Phys. Rev. B 93, 035104 (2016).
-#
-# Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 from __future__ import print_function
 import numpy as np
@@ -88,6 +77,12 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
             if elem.tag == 'IONS':
                 natoms=int(float(elem.findall("NUMBER_OF_ATOMS")       [0].text.split()[0]))
 
+                tau = np.zeros((natoms,3),dtype=float)
+                for n in xrange(natoms):
+                    string="ATOM."+str(n+1)
+                    aux = elem.findall(string)[0].attrib['tau'].split()
+                    tau[n,:]=np.array(aux,dtype="float32")
+
     # Reading atomic_proj.xml
 
     group_nesting = 0
@@ -100,7 +95,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
 
             nspin  = int(elem.findall("NUMBER_OF_SPIN_COMPONENTS")[0].text.split()[0])
             dftSO = False
-            if nspin == 4: 
+            if nspin == 4:
                 nspin = 1
                 dftSO = True
             if rank == 0 and verbose: print('Number of spin components: {0:d}'.format(nspin))
@@ -265,13 +260,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
 
     if non_ortho:
         return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
-            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
+            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)
     else:
         return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
-            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms)
-
-
-
-#if __name__ == "__main__":
-#       fpath="./fe.save"
-#       read_QE_output_xml(fpath,True,True)
+            kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)

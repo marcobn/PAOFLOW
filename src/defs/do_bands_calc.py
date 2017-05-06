@@ -3,22 +3,11 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
-#
-# References:
-# Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
-#
-# Luis A. Agapito, Sohrab Ismail-Beigi, Stefano Curtarolo, Marco Fornari and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets, Phys. Rev. B 93, 035104 (2016).
-#
-# Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
-# Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 #
 from scipy import fftpack as FFT
 import numpy as np
@@ -30,7 +19,7 @@ from mpi4py.MPI import ANY_SOURCE
 
 #import matplotlib.pyplot as plt
 
-from write_TB_eigs import *
+from write_PAO_eigs import *
 from kpnts_interpolation_mesh import *
 #from new_kpoint_interpolation import *
 from do_non_ortho import *
@@ -73,7 +62,7 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
 
     for ispin in xrange(nspin):
-        E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_TB_eigs(Hks_int,Sks_int,read_S,ispin)
+        E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
 
 #    if rank == 0:
 #        plt.matshow(abs(Hks_int[:,:,1445,0]))
