@@ -41,23 +41,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_momentum(vec,dHksp,npool):
-    # calculate momentum vector
-    index = None
-    if rank == 0:
-        nktot,_,nawf,nawf,nspin = dHksp.shape
-        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin,}
-    index = comm.bcast(index,root=0)
-    nktot = index['nktot']
-    nawf = index['nawf']
-    nspin = index['nspin']
-
-    if rank==0:
-        #get number of them for load balancing
-        num_entries=nktot
-    else:
-        Hksp=None
-        vec=None
-    
     
     #scatter dHksp and eigenvecs by k
     dHkaux = Scatterv_wrap(dHksp)
@@ -66,7 +49,7 @@ def do_momentum(vec,dHksp,npool):
     pksaux = np.zeros_like(dHkaux,order='C')
 
     #perform dot products
-    for ispin in xrange(nspin):
+    for ispin in xrange(pksaux.shape[-1]):
         for l in xrange(3):
             for ik in xrange(pksaux.shape[0]):
                 pksaux[ik,l,:,:,ispin] = (np.conj(vecaux[ik,:,:,ispin]).T)\
