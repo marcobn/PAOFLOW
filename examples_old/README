@@ -1,0 +1,6 @@
+example01 : Si with spd pseudpotential
+example02 : Al with spd pseudpotential
+example03 : Pt with lsda (nspin = 2)
+example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
+example05 : Pt non collinear with spin orbit - Spin Hall conductivity
+example06 : AlP with non self consistent ACBN0
