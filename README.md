@@ -8,20 +8,39 @@
 
  This file is part of AFLOW software.
 
- AFLOW is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
+ AFLOW is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
+ This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
- PAOFLOW 
+ PAOFLOW current capabilities:
+
+ - Construction of PAO Hamiltonians from the DFT wavefunctions onto pseudo atomic orbitals
+ - Hamiltonian data for further processing (ACBN0, PAOtransport, etc.)
+ - External fields and non scf ACBN0 correction
+ - Spin orbit correction of non SO calculations
+ - Bands along standard paths in the BZ
+ - Interpolation of Hamiltonians on arbitrary Monkhorst and Pack k-meshes
+ - Adaptive smearing for BZ and Fermi surface integration
+ - Density of states (and projected DOS)
+ - Fermi surfaces and spin textures
+ - Boltzmann transport (conductivity, Seebeck coefficient, electronic contribution to thermal conductivity
+ - dielectric function (absorption coefficients and EELS)
+ - Berry curvature and anomalous Hall conductivity (including magnetic circular dichroism spectra)
+ - spin Berry curvature and spin Hall conductivity (including spin circular dichroism spectra) 
+ - Band topology (Z2 invariants, Berry and spin Berry curvature along standard paths in BZ, critical points
+ - save and restart for interrupted runs
+
+ PAOFLOW is integrated in AFLOW𝛑:
+
+ A.R. Supka, T.E. Lyons, L. Liyanage, P. D'Amico, R. Al Rahal Al Orabi, S. Mahatara, P. Gopal, C. Toher, 
+ D. Ceresoli, A. Calzolari, S. Curtarolo, M. Buongiorno Nardelli, and M. Fornari,
+ AFLOW𝛑: A minimalist approach to high-throughput ab initio calculations including the generation 
+ of tight-binding hamiltonians, Computational Materials Science, 136 (2017) 76-84. doi:10.1016/j.commatsci.2017.03.055
+ also at www.aflow.org/aflowpi
 
  References:
 
