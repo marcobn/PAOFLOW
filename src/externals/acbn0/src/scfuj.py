@@ -9,14 +9,14 @@ def get_exeCmd(prefix, engine, calcType,inputFile):
     execPrefix = "mpirun -np 32"
     execPostfix = " " 
     QE_path = "/home/marco/Programs/qe-6.0/bin/"
-    PAO_path = "python /home/marco/Programs/PAOpy/src/"
+    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
 
     if engine=='espresso':
         execDict={'scf':'pw.x -npool 8','nscf':'pw.x -npool 8','pdos':'projwfc.x -npool 8'}
 	exeDir = QE_path
 
     if engine=='PAO':
-        execDict={'PAO':'PAOpy.py'}
+        execDict={'PAO':'PAOFLOW.py'}
         exeDir = PAO_path
 
     executable = execDict[calcType]

@@ -1,14 +1,69 @@
-Instruction to install the python packages needed by PAOpy
+Instruction to install the python packages needed by PAOFLOW
 
+wget https://repo.continuum.io/archive/Anaconda2-4.2.0-Linux-x86_64.sh
+bash Anaconda2-4.2.0-Linux-x86_64.sh
+conda install mpi4py
+conda install pip
+pip install multiprocessing
 
- wget https://repo.continuum.io/archive/Anaconda2-4.2.0-Linux-x86_64.sh
- bash Anaconda2-4.2.0-Linux-x86_64.sh
- conda install mpi4py
- conda install pip
- pip install multiprocessing
+This below only if you know exactly what you are doing and you trust the installation of FFTW (see notes below):
+export DYLD_LIBRARY_PATH=$MKLROOT/include/fftw
+export LDFLAGS="-L/$MKLROOT/include/fftw
+export CFLAGS="-I/$MKLROOT/include/fftw
+conda install --channel https://conda.anaconda.org/conda-forge pyfftw
 
- export DYLD_LIBRARY_PATH=$MKLROOT/include/fftw
- export LDFLAGS="-L/$MKLROOT/include/fftw
- export CFLAGS="-I/$MKLROOT/include/fftw
- conda install --channel https://conda.anaconda.org/conda-forge pyfftw
+-----------------------------------------------------------------------------------
+GENERAL NOTES ON INSTALLATION, USAGE and TODO of PAOFLOW (updated on March 7, 2017)
+-----------------------------------------------------------------------------------
+
+Instruction to install the python packages needed by PAOFLOW and to run the code:
+
+Python + MPI:
+
+wget https://repo.continuum.io/archive/Anaconda2-4.2.0-Linux-x86_64.sh
+bash Anaconda2-4.2.0-Linux-x86_64.sh
+conda install mpi4py
+
+fft + scipy.fftpack + FFTW + pyfftw:
+
+!!!!!!WARNING!!!! the installation of pyfftw is easily faulted if the compilation of the 
+FFTW is not on par with the modules loaded by anaconda. USE AT YOUR OWN RISK and always
+check against reference data that your fft gives the reults that you are looking for
+
+export DYLD_LIBRARY_PATH=$MKLROOT/include/fftw
+export LDFLAGS="-L/$MKLROOT/include/fftw
+export CFLAGS="-I/$MKLROOT/include/fftw
+conda install --channel https://conda.anaconda.org/conda-forge pyfftw
+
+If pyfftw is absent, PAOFLOW will use scipy.fftpack. 
+
+TODO: we need to understand how to use mpiFFT4py module for effective paralellization of the fft
+protocol. See http://arxiv.org/pdf/1602.03638v1.pdf and https://github.com/spectralDNS/mpiFFT4py
+
+Intel Distribution for python:
+
+I was able to gain at least an order of magnitude in performance boost by installing
+the Intel distribution for python on my local DELL PowerEdge T630: 
+https://software.intel.com/en-us/articles/using-intel-distribution-for-python-with-anaconda
+The same installation does not seem to improve the performance of python on Stampede (UTexas)
+or Talon2 (UNT).
+
+Save and Restart:
+
+PAOFLOW can save data and restart from data at selected checkpoints. However, it uses the numpy.savez 
+protocol, which needs a TMP directory to store intermediate arrays. To make it work, define a TMP 
+directory (export TMPDIR=local_dir) with enough space (typically you need to have at least 2 x dimension 
+of the largest array as written in the output).
+
+Parallelization:
+
+TODO: undestand how to work with the Gtherv and Scatterv protovol of MPI, where one can exchange 
+packets of different size. This is important for the parallelization of the bands calculation and 
+in general for pooling more efficiently
+
+TODO: Parallelize over pools of k-points. The pooling is already in place, but now it is used 
+just as a way to divide packets in sized taht can be handled by MPI (<2^31 elements)
+
+TODO: extension to other codes - projections on VASP, see for instance: 
+https://sourceforge.net/p/pyprocar/PyPROCAR/HEAD/tree/PyPROCAR/
 

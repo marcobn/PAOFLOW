@@ -1,5 +1,5 @@
 #
-# PAOpy
+# PAOFLOW
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
@@ -21,7 +21,7 @@ def get_exeCmd(engine, calcType,inputFile):
     execPrefix = "mpirun -np 32"
     execPostfix = " "
     QE_path = "/home/marco/Programs/qe-6.0/bin/"
-    PAO_path = "python /home/marco/Programs/PAOpy/src/"
+    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
 
     if engine=='qe':
         execDict={'scf':'pw.x -npool 8 ','nscf':'pw.x -npool 8 ','proj':'projwfc.x -npool 8 '}
@@ -30,7 +30,7 @@ def get_exeCmd(engine, calcType,inputFile):
 ################ DO NOT MODIFY BELOW THIS POINT #################
 
     if engine=='PAO':
-        execDict={'PAO':'PAOpy.py'}
+        execDict={'PAO':'PAOFLOW.py'}
         exeDir = PAO_path
 
     executable = execDict[calcType]

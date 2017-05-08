@@ -1,6 +1,6 @@
 # *************************************************************************************
 # *                                                                                   *
-# *   PAOpy *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2017        *
+# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2017      *
 # *                                                                                   *
 # *************************************************************************************
 #
@@ -71,7 +71,7 @@ if rank == 0:
     print('          ')
     print('#############################################################################################')
     print('#                                                                                           #')
-    print('#                                          ',PAOPY,'                                           #')
+    print('#                                          PAOFLOW                                          #')
     print('#                                                                                           #')
     print('#                  Utility to construct and operate on Hamiltonians from                    #')
     print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
