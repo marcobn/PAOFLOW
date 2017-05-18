@@ -348,7 +348,8 @@ if do_bands and not(onedim):
 
     if band_topology:
         # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
-        from do_topology_calc import *
+        #from do_topology_calc import *
+        from do_topology_calc_new import *
         do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
@@ -590,8 +591,8 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
-        from do_gradient import *
-        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
+        from do_gradient_new import *
+        dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 
         if rank == 0:
             print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -634,17 +635,19 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
 
     if checkpoint < 4:
         #----------------------
-        # Compute the momentum operator p_n,m(k)
+        # Compute the momentum operator p_n,m(k) and kinetic energy operator
         #----------------------
-        from do_momentum import *
+        from do_momentum_new import *
 
         if rank != 0:
             dHksp = None
             v_k = None
             pksp = None
+            tksp = None
         if rank == 0:
             dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-        pksp = do_momentum(v_k,dHksp,npool)
+            d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
+        pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
 
         if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
@@ -726,6 +729,33 @@ if rank == 0:
 
         if restart:
             np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
+
+#if rank == 0:
+#    from smearing import *
+#    nawf = bnd
+#    Ef = 0.0
+#    effterm = np.zeros((nk1*nk2*nk3,nawf),dtype=complex)
+#    for n in xrange(nawf):
+#        for m in xrange(nawf):
+#            if m != n:
+#                fm = intgaussian(E_k[:,m,0],Ef,deltakp[:,m,0])
+#                effterm[:,n] += 1.0/(E_k[:,m,0]-E_k[:,n,0] + 1.0j*deltakp2[:,n,m,0]) * \
+#                                (pksp[:,ipol,n,m,0] * pksp[:,jpol,m,n,0] + pksp[:,jpol,n,m,0] * pksp[:,ipol,m,n,0])
+#
+#    f=open('Tnn'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+#    for n in xrange(nawf):
+#        f.write('%.5f %9.5e %9.5e \n' \
+#                %(n,np.sum(np.real(kq_wght[:]*tksp[:,ipol,jpol,n,n,0])), np.sum(np.real(kq_wght[:]*effterm[:,n]))))
+#    f.close()
+#
+#    Tsum = 0.0
+#    Psum = 0.0
+#    for n in xrange(nawf):
+#        fn = intgaussian(E_k[:,n,0],Ef,deltakp[:,n,0])
+#        Tsum += np.sum(np.real(kq_wght[:]*tksp[:,ipol,jpol,n,n,0])*fn)
+#        Psum += np.sum(np.real(kq_wght[:]*effterm[:,n])*fn)
+#    print (Tsum, Psum)
+#quit()
 
 velkp = None
 if rank == 0:
@@ -1019,7 +1049,7 @@ if epsilon:
     #----------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #----------------------
-    from do_epsilon import *
+    from do_epsilon_new import *
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
@@ -1028,7 +1058,7 @@ if epsilon:
         jpol = d_tensor[n][1]
         for ispin in xrange(nspin):
 
-            ene, epsi, epsr = do_epsilon(E_k,pksp,kq_wght,omega,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing)
+            ene, epsi, epsr = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,bnd,deltakp,deltakp2,smearing,kramerskronig)
 
             if rank == 0:
                 f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
