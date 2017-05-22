@@ -71,15 +71,18 @@ def do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,meta
     # Im
     #=======================
     epsi = np.zeros((3,3,ene.size),dtype=float)
+    jdos = np.zeros((ene.size),dtype=float)
     epsi_aux = np.zeros((3,3,ene.size),dtype=float)
+    jdos_aux = np.zeros((ene.size),dtype=float)
 
     if smearing == None:
-        epsi_aux[:,:,:] = epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,ispin,metal)
+        epsi_aux[:,:,:],jdos_aux[:] = epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,ispin,metal)
     else:
-        epsi_aux[:,:,:] = smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,\
+        epsi_aux[:,:,:],jdos_aux[:] = smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,\
                           ispin,metal,deltakaux,deltak2aux,smearing)
 
     comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
+    comm.Allreduce(jdos_aux,jdos,op=MPI.SUM)
 
     #=======================
     # Re
@@ -112,17 +115,21 @@ def do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,meta
 
     epsr += 1.0
 
-    return(ene,epsi,epsr)
+    return(ene,epsi,epsr,jdos)
 
 def epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
+    jdos = np.zeros((ene.size),dtype=float)
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
 
     for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
+        try:
+            fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
+        except:
+            fnF = 1.0e8*np.ones(end_ik-ini_ik,dtype=float)
         for m in xrange(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
@@ -130,6 +137,9 @@ def epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp
             epsi[ipol,jpol,:] += np.sum(((1.0/(ene**2+delta**2) * \
                            kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
                            abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
+            jdos[:] += np.sum((( \
+                           kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
+                           1.0),axis=1)
             if metal and n == m:
                 epsi[ipol,jpol,:] += np.sum(((1.0/ene * \
                                kq_wght[0] /delta * dfunc * ((fnF/temp)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
@@ -137,7 +147,7 @@ def epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
-    return(epsi)
+    return(epsi,jdos)
 
 def smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,tksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
 
@@ -165,11 +175,7 @@ def smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,tksp,kq_wght,nawf,omega
                 sys.exit('smearing not implemented')
             eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
             om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
-            if metal:
-                afac = 2.2
-            else:
-                afac = 1.0
-            del2 = (afac*deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+            del2 = (deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
             dfunc = 1.0/(eig - om + 1.0j*del2)
             if n != m:
                 epsr[ipol,jpol,:] += np.real(np.sum((1.0/(eig**2+1.0j*delta**2) * \
@@ -207,14 +213,17 @@ def smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,tksp,kq_wght,nawf,omega
 def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
+    jdos = np.zeros((ene.size),dtype=float)
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
     Ef = 0.0
+    deltat = 0.001
 
     for n in xrange(nawf):
         if smearing == 'gauss':
             fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
-            fnF = gaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+            fnF = gaussian(E_k[:,n,ispin],Ef,0.03*deltak[:,n,ispin])
+            #fnF = gaussian(E_k[:,n,ispin],Ef,0.1)
         elif smearing == 'm-p':
             fn = intmetpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
             fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
@@ -222,20 +231,15 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
             sys.exit('smearing not implemented')
         for m in xrange(nawf):
             if smearing == 'gauss':
-                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
+                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
             elif smearing == 'm-p':
-                fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
+                fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
             else:
                 sys.exit('smearing not implemented')
             if m != n:
                 eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
-                # the factor afac is an adjustment of the factor in the adaptive smearing: afac > 1 improves convergence in metals
-                if metal:
-                    afac = 2.2
-                else:
-                    afac = 1.0
-                del2 = (afac*deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
+                del2 = (deltak2[:,m,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 if smearing == 'gauss':
                     dfunc[:,:] = gaussian(eig,om,del2)
                 elif smearing == 'm-p':
@@ -244,7 +248,10 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
                     sys.exit('smearing not implemented')
                 epsi[ipol,jpol,:] += np.sum(((1.0/(ene**2+delta**2) * \
                                kq_wght[0] * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
-                               abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
+                               np.real(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
+                jdos[:] += np.sum(((\
+                           kq_wght[0] * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
+                           1.0 ),axis=1)
             if metal and n == m:
                 eig = (np.zeros((end_ik-ini_ik,ene.size),dtype=float).T).T
                 om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
@@ -257,11 +264,11 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
                     sys.exit('smearing not implemented')
                 epsi[ipol,jpol,:] += np.sum((1.0/ene * \
                                kq_wght[0] * dfunc * (fnF*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T * \
-                               abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin]),axis=1)
+                               np.real(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin]),axis=1)
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
-    return(epsi)
+    return(epsi,jdos)
 
 def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
 
@@ -270,8 +277,7 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
 
     if ini_ie == 0: ini_ie = 3
     if end_ie == ene.size: end_ie = ene.size-1
-    f_ene = intmetpax(ene,shift,0.01)
-    epsi[i,j,:] *= f_ene[:]
+    f_ene = intmetpax(ene,shift,1.0)
     for ie in xrange(ini_ie,end_ie):
         #epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
         #               np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )

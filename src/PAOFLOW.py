@@ -1058,7 +1058,7 @@ if epsilon:
         jpol = d_tensor[n][1]
         for ispin in xrange(nspin):
 
-            ene, epsi, epsr = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,bnd,deltakp,deltakp2,smearing,kramerskronig)
+            ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,bnd,deltakp,deltakp2,smearing,kramerskronig)
 
             if rank == 0:
                 f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
@@ -1070,6 +1070,11 @@ if epsilon:
                 for n in xrange(ene.size):
                     f.write('%.5f %9.5e \n' \
                             %(ene[n],epsr[ipol,jpol,n]))
+                f.close()
+                f=open('jdos_'+str(ispin)+'.dat','w')
+                for n in xrange(ene.size):
+                    f.write('%.5f %9.5e \n' \
+                            %(ene[n],jdos[n]))
                 f.close()
 
 
