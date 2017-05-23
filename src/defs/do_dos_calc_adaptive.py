@@ -30,7 +30,7 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
 
     emin = float(emin)
     emax = float(emax)
-    de = (emax-emin)/1000
+    de = (emax-emin)/1001
     ene = np.arange(emin,emax,de,dtype=float)
 
     # Load balancing
