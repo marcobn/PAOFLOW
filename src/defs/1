@@ -133,7 +133,7 @@ def epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp
         for m in xrange(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
-            np.exp(-((((E_k[:,n,ispin]-E_k[:,m,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T + ene)/delta)**2)
+                np.exp(-((((E_k[:,n,ispin]-E_k[:,m,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T + ene)/delta)**2)
             epsi[ipol,jpol,:] += np.sum(((1.0/(ene**2+delta**2) * \
                            kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
                            abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
@@ -168,9 +168,9 @@ def smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,tksp,kq_wght,nawf,omega
             sys.exit('smearing not implemented')
         for m in xrange(nawf):
             if smearing == 'gauss':
-                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
+                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
             elif smearing == 'm-p':
-                fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
+                fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
             else:
                 sys.exit('smearing not implemented')
             eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
@@ -217,31 +217,34 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
     Ef = 0.0
-    deltat = 0.001
+    deltat = 0.1
 
     for n in xrange(nawf):
         if smearing == 'gauss':
-            fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
-            fnF = gaussian(E_k[:,n,ispin],Ef,0.03*deltak[:,n,ispin])
-            #fnF = gaussian(E_k[:,n,ispin],Ef,0.1)
+            #fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+            fn = np.zeros(end_ik-ini_ik,dtype=float)
+            if n <= 4: fn = 1.0
+            if metal: fnF = gaussian(E_k[:,n,ispin],Ef,0.03*deltak[:,n,ispin])
         elif smearing == 'm-p':
             fn = intmetpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
-            fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+            if metal: fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
         else:
             sys.exit('smearing not implemented')
         for m in xrange(nawf):
             if smearing == 'gauss':
-                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
+                #fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
+                fm = np.zeros(end_ik-ini_ik,dtype=float)
+                if m <= 4: fm = 1.0
             elif smearing == 'm-p':
                 fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
             else:
                 sys.exit('smearing not implemented')
-            if m != n:
+            if m > n:
                 eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 om = ((ene*np.ones((end_ik-ini_ik,ene.size),dtype=float)).T).T
                 del2 = (deltak2[:,m,n,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T
                 if smearing == 'gauss':
-                    dfunc[:,:] = gaussian(eig,om,del2)
+                    dfunc[:,:] = gaussian(eig,om,deltat)
                 elif smearing == 'm-p':
                     dfunc[:,:] = metpax(eig,om,del2)
                 else:

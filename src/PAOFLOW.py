@@ -269,7 +269,6 @@ if non_ortho:
 if non_ortho:
     if Boltzmann or epsilon:
         Sks_long = Sks
-Hks_long = Hks
 Hks = None
 Sks = None
 Hks = Hkaux
@@ -354,10 +353,10 @@ if do_bands and not(onedim):
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
-    if double_grid == False:
-        if rank ==0: print('   ')
-        if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
-        sys.exit()
+#    if double_grid == False:
+#        if rank ==0: print('   ')
+#        if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+#        sys.exit()
 
 
     alat *= ANGSTROM_AU
@@ -422,7 +421,8 @@ if rank == 0:
         reset=time.time()
     else:
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-        Hksp = Hks
+        Hksp = np.moveaxis(Hks,(0,1),(3,4))
+        Hksp = Hksp.copy(order='C')
 
 #----------------------
 # Read/Write restart data
@@ -591,8 +591,10 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
         #----------------------
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
-        from do_gradient_new import *
-        dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
+        from do_gradient import *
+        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
+        #from do_gradient_d2 import *
+        #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 
         if rank == 0:
             print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -635,9 +637,10 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
 
     if checkpoint < 4:
         #----------------------
-        # Compute the momentum operator p_n,m(k) and kinetic energy operator
+        # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
         #----------------------
-        from do_momentum_new import *
+        from do_momentum import *
+        #from do_momentum_d2 import *
 
         if rank != 0:
             dHksp = None
@@ -646,8 +649,10 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
             tksp = None
         if rank == 0:
             dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-            d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
-        pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
+        pksp = do_momentum(v_k,dHksp,npool)
+        #if rank == 0:
+        #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
+        #pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
 
         if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
@@ -1049,7 +1054,8 @@ if epsilon:
     #----------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #----------------------
-    from do_epsilon_new import *
+    from do_epsilon import *
+    #from do_epsilon_d2 import *
 
     omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
@@ -1058,7 +1064,8 @@ if epsilon:
         jpol = d_tensor[n][1]
         for ispin in xrange(nspin):
 
-            ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,bnd,deltakp,deltakp2,smearing,kramerskronig)
+            ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,bnd,deltakp,deltakp2,smearing,kramerskronig)
+            #ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,bnd,deltakp,deltakp2,smearing,kramerskronig)
 
             if rank == 0:
                 f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')

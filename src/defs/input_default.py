@@ -114,7 +114,7 @@ Boltzmann = False
 # Dielectric function calculation
 epsilon = False
 metal = False
-kramerskronig = False
+kramerskronig = True
 epsmin=0.0
 epsmax=10.0
 ne = 500
