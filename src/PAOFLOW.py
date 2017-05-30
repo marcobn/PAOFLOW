@@ -118,14 +118,14 @@ else:
 #----------------------
 
 nktot=nfft1*nfft2*nfft3
-if nktot%npool != 0: 
+if nktot%npool != 0:
     if rank == 0 : print('npool not compatible with MP mesh',nktot,npool)
     sys.exit()
 nkpool = nktot/npool
 ini_ik, end_ik = load_balancing(size,rank,nkpool)
 nsize = end_ik-ini_ik
-if nkpool%nsize != 0: 
-    if rank == 0 : print('npool not compatible with nsize',nkpool,nsize)
+if nkpool%nsize != 0:
+    if rank == 0 : print('nkpool not compatible with number of cores',nkpool,nsize)
     sys.exit()
 
 #----------------------
@@ -461,9 +461,13 @@ if checkpoint < 2:
     v_k = None
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-    eig, E_k, v_k = calc_PAO_eigs_vecs(Hksp,npool)
+    eig, E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
     if rank == 0:
         Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
+
+    if rank == 0 and HubbardU.any() != 0.0:
+        eig -= np.amax(E_k[:,bval,:])
+        E_k -= np.amax(E_k[:,bval,:])
 
     index = None
     if rank == 0:
@@ -529,11 +533,11 @@ if (do_dos or do_pdos) and smearing == None:
 
     if nspin == 1 or nspin == 2:
         if rank == 0: eigup = np.array(eig[:,0])
-        do_dos_calc(eigup,emin,emax,delta,eigtot,nawf,0)
+        do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0)
         eigup = None
     if nspin == 2:
         if rank == 0: eigdw = np.array(eig[:,1])
-        do_dos_calc(eigdw,emin,emax,delta,eigtot,nawf,1)
+        do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1)
         eigdw = None
 
     if do_pdos:
@@ -735,6 +739,11 @@ if rank == 0:
         if restart:
             np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
 
+        print('adaptive smearing in             %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
+
+
+# to test formula 23 in the Graf & Vogl paper...
 #if rank == 0:
 #    from smearing import *
 #    nawf = bnd
@@ -768,8 +777,8 @@ if rank == 0:
         #----------------------
         # Compute velocities for Boltzmann transport
         #----------------------
-        velkp = np.zeros((nk1*nk2*nk3,3,nawf,nspin),dtype=float)
-        for n in xrange(nawf):
+        velkp = np.zeros((nk1*nk2*nk3,3,bnd,nspin),dtype=float)
+        for n in xrange(bnd):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
         if critical_points:
@@ -803,20 +812,18 @@ if (do_dos or do_pdos) and smearing != None:
     deltakpup = None
     deltakpdw = None
 
-    if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3*nawf,nspin),order='C')
-
     if nspin == 1 or nspin == 2:
         if rank == 0:
             eigup = np.array(eig[:,0])
-            deltakpup = np.array(deltakp[:,0])
-        do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,nawf,0,smearing)
+            deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
+        do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing)
         eigup = None
         deltakpup = None
     if nspin == 2:
         if rank == 0:
             eigdw = np.array(eig[:,1])
-            deltakpdw = np.array(deltakp[:,1])
-        do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,nawf,1,smearing)
+            deltakpdw = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,1])
+        do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing)
         eigdw = None
         deltakpdw = None
 
@@ -847,6 +854,20 @@ if (do_dos or do_pdos) and smearing != None:
     if rank ==0: print('dos (adaptive smearing) in       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
+#----------------------
+# Memory reduction
+#----------------------
+# Reduce memory requirements and improve performance by reducing nawf to bnd (states with good projectability)
+
+if rank == 0:
+    pksp = np.delete(np.delete(pksp,np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
+    E_k = np.delete(E_k,np.s_[bnd:],axis=1)
+    deltakp = np.delete(deltakp,np.s_[bnd:],axis=1)
+    deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
+
+#----------------------
+# Spin Hall calculation
+#----------------------
 if spin_Hall:
     if dftSO == False: sys.exit('full relativistic calculation with SO needed')
 
@@ -873,7 +894,7 @@ if spin_Hall:
                 pass
         spincheck=comm.bcast(spincheck,root=0)
         if spincheck == 0:
-            jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
+            jksp = np.delete(np.delete(do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl),np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
             if restart and rank == 0:
                 np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
             if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -920,10 +941,10 @@ if spin_Hall:
 
 dHksp = None
 
+#----------------------
+# Compute Berry curvature and AHC
+#----------------------
 if Berry:
-    #----------------------
-    # Compute Berry curvature and AHC
-    #----------------------
     if dftSO == False: sys.exit('full relativistic calculation with SO needed')
 
     from do_Berry_curvature import *
@@ -971,10 +992,10 @@ if Berry:
     if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
+#----------------------
+# Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
+#----------------------
 if Boltzmann:
-    #----------------------
-    # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
-    #----------------------
     from do_Boltz_tensors import *
 
     for ispin in xrange(nspin):
@@ -1048,12 +1069,10 @@ if Boltzmann:
     if rank ==0: print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
-
+#----------------------
+# Compute dielectric tensor (Re and Im epsilon)
+#----------------------
 if epsilon:
-
-    #----------------------
-    # Compute dielectric tensor (Re and Im epsilon)
-    #----------------------
     from do_epsilon import *
     #from do_epsilon_d2 import *
 

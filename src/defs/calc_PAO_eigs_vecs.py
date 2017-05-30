@@ -23,7 +23,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def calc_PAO_eigs_vecs(Hksp,npool):
+def calc_PAO_eigs_vecs(Hksp,bnd,npool):
 
     index = None
 
@@ -38,7 +38,7 @@ def calc_PAO_eigs_vecs(Hksp,npool):
     nspin = index['nspin']
 
     if rank == 0:
-        eall = np.zeros((nawf*nktot,nspin),dtype=float)
+        eall = np.zeros((bnd*nktot,nspin),dtype=float)
         E_k = np.zeros((nktot,nawf,nspin),dtype=float)
         v_k = np.zeros((nktot,nawf,nawf,nspin),dtype=complex)
     else:
@@ -83,7 +83,7 @@ def calc_PAO_eigs_vecs(Hksp,npool):
             v_k[pool*nkpool:(pool+1)*nkpool,:,:,:] = v_k_split[:,:,:,:]
 
     if rank == 0:
-        eall = np.reshape(E_k,(nktot*nawf,nspin),order='C')
+        eall = np.reshape(np.delete(E_k,np.s_[bnd:],axis=1),(nktot*bnd,nspin),order='C')
 
     return(eall,E_k,v_k)
 

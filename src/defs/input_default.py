@@ -51,6 +51,7 @@ Efield = np.array([0,0,0]) # static electric field (eV)
 Bfield = np.array([0,0,0]) # static magnetic firld placeholder: magnetic supercell not implemented!
 HubbardU = np.zeros(32,dtype=float) # non scf ACBN0 calculation
 HubbardU[1:4] = 0.0
+bval = 0 # top valence band number (nelec/2) to correctly shift eigenvalues
 
 # Bands interpolation along a path from a 1D string of k points
 onedim = False
