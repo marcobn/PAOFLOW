@@ -28,7 +28,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,emin,emax,bnd,deltak,deltak2,smearing,kramerskronig):
+def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,emin,emax,deltak,deltak2,smearing,kramerskronig):
     # Compute the dielectric tensor
 
     de = (emax-emin)/float(ne)
@@ -74,9 +74,9 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     jdos_aux = np.zeros((ene.size),dtype=float)
 
     if smearing == None:
-        epsi_aux[:,:,:],jdos_aux[:] = epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,ispin,metal)
+        epsi_aux[:,:,:],jdos_aux[:] = epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal)
     else:
-        epsi_aux[:,:,:],jdos_aux[:] = smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,\
+        epsi_aux[:,:,:],jdos_aux[:] = smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,\
                           ispin,metal,deltakaux,deltak2aux,smearing)
 
     comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
@@ -106,7 +106,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
         if smearing == None:
             sys.exit('fixed smearing not implemented')
         else:
-            epsr_aux[:,:,:] = smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,bnd,omega,delta,temp,\
+            epsr_aux[:,:,:] = smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,\
                               ispin,metal,deltakaux,deltak2aux,smearing)
 
         comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
