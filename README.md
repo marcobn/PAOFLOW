@@ -40,7 +40,7 @@
  D. Ceresoli, A. Calzolari, S. Curtarolo, M. Buongiorno Nardelli, and M. Fornari,
  AFLOW𝛑: A minimalist approach to high-throughput ab initio calculations including the generation 
  of tight-binding hamiltonians, Computational Materials Science, 136 (2017) 76-84. doi:10.1016/j.commatsci.2017.03.055
- also at www.aflow.org/aflowpi
+ also at www.aflow.org/src/aflowpi
 
  References:
 
