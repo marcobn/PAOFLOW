@@ -117,47 +117,87 @@ else:
 # Do dimension checks
 #----------------------
 
-nktot=nfft1*nfft2*nfft3
-if nktot%npool != 0:
-    if rank == 0 : print('npool not compatible with MP mesh',nktot,npool)
-    sys.exit()
-nkpool = nktot/npool
-ini_ik, end_ik = load_balancing(size,rank,nkpool)
-nsize = end_ik-ini_ik
-if nkpool%nsize != 0:
-    if rank == 0 : print('nkpool not compatible with number of cores',nkpool,nsize)
-    sys.exit()
+if rank == 0:
+    nktot=nfft1*nfft2*nfft3
+    if nktot%npool != 0:
+        print('npool not compatible with MP mesh',nktot,npool)
+        sys.exit()
+    nkpool = nktot/npool
+    ini_ik, end_ik = load_balancing(size,rank,nkpool)
+    nsize = end_ik-ini_ik
+    if nkpool%nsize != 0:
+        print('nkpool not compatible with number of cores',nkpool,nsize)
+        sys.exit()
 
 #----------------------
 # Read DFT data
 #----------------------
 
-if (not non_ortho):
-    U,my_eigsmat,alat,a_vectors,b_vectors, \
-    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
-    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
-    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-    sumk = np.sum(kpnts_wght)
-    kpnts_wght /= sumk
-    for ik in xrange(nkpnts):
-        Sks[:,:,ik]=np.identity(nawf)
-    if rank == 0 and verbose: print('...using orthogonal algorithm')
-else:
-    U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
-    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
-    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath,verbose,non_ortho)
-    if rank == 0 and verbose: print('...using non-orthogonal algorithm')
+# Initialize variables
+U = None
+my_eigsmat = None
+alat = None
+a_vectors = b_vectors = None
+nkpnts = None
+nspin = None
+dftSO = None
+kpnts_wght = None
+nelec = None
+nbnd = None
+Efermi = None
+nawf = None
+nk1 = nk2 = nk3 = None
+natoms = None
+tau = None
+Sks = None
 
-if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
-    if rank == 0: print('CAUTION! nk1 or nk2 or nk3 not even!')
+if rank == 0:
+
+    if (not non_ortho):
+        U,my_eigsmat,alat,a_vectors,b_vectors, \
+        nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+        nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
+        Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+        sumk = np.sum(kpnts_wght)
+        kpnts_wght /= sumk
+        for ik in xrange(nkpnts):
+            Sks[:,:,ik]=np.identity(nawf)
+        if verbose: print('...using orthogonal algorithm')
+    else:
+        U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
+        nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+        nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath,verbose,non_ortho)
+        if verbose: print('...using non-orthogonal algorithm')
+
+    if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
+        print('CAUTION! nk1 or nk2 or nk3 not even!')
+
+# Broadcast data
+alat = comm.bcast(alat,root=0)
+a_vectors = comm.bcast(a_vectors,root=0)
+b_vectors = comm.bcast(b_vectors,root=0)
+nkpnts = comm.bcast(nkpnts,root=0)
+nspin = comm.bcast(nspin,root=0)
+dftSO = comm.bcast(dftSO,root=0)
+kpnts_wght = comm.bcast(kpnts_wght,root=0)
+nelec = comm.bcast(nelec,root=0)
+nbnd = comm.bcast(nbnd,root=0)
+Efermi = comm.bcast(Efermi,root=0)
+nawf = comm.bcast(nawf,root=0)
+nk1 = comm.bcast(nk1,root=0)
+nk2 = comm.bcast(nk2,root=0)
+nk3 = comm.bcast(nk3,root=0)
+natoms = comm.bcast(natoms,root=0)
+tau = comm.bcast(tau,root=0)
 
 #----------------------
 # Do memory checks 
 #----------------------
 
-gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.e9
-if rank == 0: print('estimated maximum array size: %5.2f GBytes' %(gbyte))
-if rank == 0: print('   ')
+if rank == 0:
+    gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.e9
+    print('estimated maximum array size: %5.2f GBytes' %(gbyte))
+    print('   ')
 
 if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
 reset=time.time()
@@ -165,28 +205,39 @@ reset=time.time()
 #----------------------
 # Building the Projectability
 #----------------------
-Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
+bnd = None
+if rank != 0: shift = None
+if rank == 0:
+    Pn = build_Pn(nawf,nbnds,nkpnts,nspin,U)
 
-if rank == 0 and verbose: print('Projectability vector ',Pn)
+    if verbose: print('Projectability vector ',Pn)
 
-# Check projectability and decide bnd
+    # Check projectability and decide bnd
 
-bnd = 0
-for n in xrange(nbnds):
-    if Pn[n] > pthr:
-        bnd += 1
-if rank == 0 and verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
-if rank == 0 and verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
-                                np.amax(my_eigsmat[bnd,:,:]))
-if shift == 'auto': shift = np.amin(my_eigsmat[bnd,:,:])
+    bnd = 0
+    for n in xrange(nbnds):
+        if Pn[n] > pthr:
+            bnd += 1
+    if verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
+    if verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
+                                    np.amax(my_eigsmat[bnd,:,:]))
+    if shift == 'auto': shift = np.amin(my_eigsmat[bnd,:,:])
+
+# Broadcast 
+bnd = comm.bcast(bnd,root=0)
+shift = comm.bcast(shift,root=0)
 
 #----------------------
 # Building the PAO Hamiltonian
 #----------------------
-nbnds_norm = nawf
-Hks,Sks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
 
-if rank == 0: print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+Hks = None
+if rank == 0:
+    nbnds_norm = nawf
+    Hks,Sks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
+
+    print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+
 reset=time.time()
 
 # NOTE: Take care of non-orthogonality, if needed
@@ -197,7 +248,7 @@ reset=time.time()
 #    Hks = do_non_ortho(Hks,Sks)
 #    Hks = do_ortho(Hks,Sks)
 
-if non_ortho:
+if rank == 0 and non_ortho:
     Hks = do_non_ortho(Hks,Sks)
 
 if rank == 0 and write2file:
@@ -247,43 +298,45 @@ if rank == 0 and do_comparison:
 # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
 #----------------------
 
-# Original k grid to R grid
+HRs = SRs = None
+if rank ==0:
+    # Original k grid to R grid
+    reset=time.time()
+    Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+    Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+
+    Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+    if non_ortho:
+        Skaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3),order='C')
+
+    HRaux = np.zeros_like(Hkaux)
+    SRaux = np.zeros_like(Skaux)
+
+    HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
+    if non_ortho:
+        SRaux = FFT.ifftn(Skaux,axes=[2,3,4])
+
+    # NOTE: Naming convention (from here):
+    # Hks = k-space Hamiltonian on original MP grid
+    # HRs = R-space Hamiltonian on original MP grid
+    if non_ortho:
+        if Boltzmann or epsilon:
+            Sks_long = Sks
+    Hks = None
+    Sks = None
+    Hks = Hkaux
+    Sks = Skaux
+    HRs = HRaux
+    SRs = SRaux
+    Hkaux = None
+    Skaux = None
+    HRaux = None
+    SRaux = None
+
+    print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 reset=time.time()
-Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
 
-Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
-if non_ortho:
-    Skaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3),order='C')
-
-HRaux = np.zeros_like(Hkaux)
-SRaux = np.zeros_like(Skaux)
-
-HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
-if non_ortho:
-    SRaux = FFT.ifftn(Skaux,axes=[2,3,4])
-
-# NOTE: Naming convention (from here):
-# Hks = k-space Hamiltonian on original MP grid
-# HRs = R-space Hamiltonian on original MP grid
-if non_ortho:
-    if Boltzmann or epsilon:
-        Sks_long = Sks
-Hks = None
-Sks = None
-Hks = Hkaux
-Sks = Skaux
-HRs = HRaux
-SRs = SRaux
-Hkaux = None
-Skaux = None
-HRaux = None
-SRaux = None
-
-if rank == 0: print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-reset=time.time()
-
-if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
+if rank == 0 and (Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0):
     # Add external fields or non scf ACBN0 correction
     tau_wf = np.zeros((nawf,3),dtype=float)
     l=0
@@ -297,7 +350,7 @@ if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
 
     HRs = add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU)
 
-if do_spin_orbit:
+if rank == 0 and do_spin_orbit:
     #----------------------
     # Compute bands with spin-orbit coupling
     #----------------------
@@ -316,7 +369,7 @@ if do_bands and not(onedim):
 
     alat /= ANGSTROM_AU
 
-    if non_ortho:
+    if rank == 0 and non_ortho:
         # now we orthogonalize the Hamiltonian again
         Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
         Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
@@ -330,6 +383,10 @@ if do_bands and not(onedim):
         HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
         non_ortho = False
 
+    # Broadcast HRs and SRs
+    HRs = comm.bcast(HRs,root=0)
+    if non_ortho: SRs = comm.bcast(SRs,root=0)
+
     # Define real space lattice vectors
     R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
@@ -340,6 +397,7 @@ if do_bands and not(onedim):
         kq[:,n]=np.dot(kq[:,n],b_vectors)
 
     # Compute the bands along the path in the IBZ
+    E_kp = v_kp = None
     E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho)
 
     if rank == 0: print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -353,12 +411,6 @@ if do_bands and not(onedim):
         if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 
-#    if double_grid == False:
-#        if rank ==0: print('   ')
-#        if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
-#        sys.exit()
-
-
     alat *= ANGSTROM_AU
 
 elif do_bands and onedim:
@@ -366,7 +418,7 @@ elif do_bands and onedim:
     # FFT interpolation along a single directions in the BZ
     #----------------------
     if rank == 0 and verbose: print('... computing bands along a line')
-    do_bands_calc_1D(Hks)
+    if rank == 0: do_bands_calc_1D(Hks)
 
     if rank ==0: print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
