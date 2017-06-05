@@ -1,0 +1,37 @@
+ &input
+   title='C',
+   zed=6.,
+   rel=1,
+   config='[He] 2s2 2p2 3s0 3p0 3d0',
+   iswitch=3,
+   dft='PBE'
+ /
+ &inputp
+   lpaw=.true.,
+   pseudotype=3,
+   file_pseudopw='C.pbe-n-kjpaw_ext.UPF',
+   author='ADC',
+   lloc=-1,
+   rcloc=0.9
+   which_augfun='PSQ',
+   rmatch_augfun_nc=.true.,
+   nlcc=.true.,
+   new_core_ps=.true.,
+   rcore=0.7,
+   tm=.true.
+   lgipaw_reconstruction = .true. !add for extended basis
+   use_paw_as_gipaw=.false.       !add for extended basis
+ /
+4
+2S  1  0  2.00  0.00  1.00  1.20  0.0
+2S  1  0  0.00  3.00  1.00  1.20  0.0
+2P  2  1  2.00  0.00  0.90  1.40  0.0
+2P  2  1  0.00  0.05  0.90  1.40  0.0
+&test
+/
+5
+2S  1  0  2.00  0.00  1.00  1.20  0.0
+3S  2  0  0.00  1.00  1.00  1.20  0.0
+2P  2  1  2.00  0.00  0.90  1.40  0.0
+3P  3  1  0.00  1.55  0.90  1.40  0.0
+3D  3  2  0.00  2.05  0.90  1.40  0.0
