@@ -17,9 +17,9 @@ import numpy as np
 def verifyData ( subdir ):
 
     ########## User Defined Variables ##########
-    showFileResult = False  # Show PASS or FAIL for each file
-    showAbsoluteErrors =  False  # Flag to print out error values
-    tolerance = 0.02  # Percentage that error can deviate from average to pass tests
+    showFileResult = True  # Show PASS or FAIL for each file
+    showAbsoluteErrors = True  # Flag to print out error values
+    tolerance = 0.01  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
 
     # Get new data files and existing reference data files
