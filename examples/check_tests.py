@@ -17,9 +17,9 @@ import numpy as np
 def verifyData ( subdir ):
 
     ########## User Defined Variables ##########
-    showFileResult = True  # Show PASS or FAIL for each file
-    showAbsoluteErrors = True  # Flag to print out error values
-    tolerance = 0.01  # Percentage that error can deviate from average to pass tests
+    showFileResult = False  # Show PASS or FAIL for each file
+    showAbsoluteErrors = False  # Flag to print out error values
+    tolerance = 0.005  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
 
     # Get new data files and existing reference data files
@@ -38,6 +38,9 @@ def verifyData ( subdir ):
     # Compare data files
     maxError = -1.  # Will store maximum error value
     maxErrorIndex = -1  # Will store file index of maximum error value
+    maxRelError = -1.
+    maxRelErrorIndex = -1
+
     allDataResult = 'PASS'  # Stores status of the entire example calculation
     for i in range(len(datFiles)):
         
@@ -53,9 +56,13 @@ def verifyData ( subdir ):
         nRow = len(dl[0])
 
         # Compute absolute error and averages excluding the first column
-        absoluteError = np.sum(np.abs(np.abs(dl[1:nCol, :]) - np.abs(rl[1:nCol, :])), axis=1) / nRow
+        absoluteDifference = abs(dl[1:nCol, :] - rl[1:nCol, :])
+        absoluteError = np.sum(absoluteDifference, axis=1) / nRow
         average = np.sum(dl[1:nCol, :], axis=1) / nRow
-        errorPercentage = []
+        dataRange = np.amax(np.amax(dl[1:nCol, :], axis=1), axis=0) - np.amin(np.amin(dl[1:nCol, :], axis=1), axis=0)
+        relativeErrors = []
+
+#        errorPercentage = []
 
         # Compare computed error against data average
         validData = True
@@ -65,13 +72,21 @@ def verifyData ( subdir ):
                 maxError = absoluteError[j]
                 maxErrorIndex = i
 
-            if average[j] == 0.:
-                errorPercentage.append(0.)
-            else:
-                perc = np.abs(absoluteError[j]/average[j])
-                errorPercentage.append(perc)
-                if perc > tolerance:
-                    validData = False
+            relError = absoluteError[j]/dataRange
+            relativeErrors.append(relError)
+            if relError > maxRelError:
+                maxRelError = relError
+                maxRelErrorIndex = i
+            if relError > tolerance:
+                validData = False
+
+#            if average[j] == 0.:
+#                errorPercentage.append(0.)
+#            else:
+#                perc = np.abs(absoluteError[j]/average[j])
+#                errorPercentage.append(perc)
+#                if perc > tolerance:
+#                    validData = False
 
         if validData:
             result = 'PASS'
@@ -79,12 +94,14 @@ def verifyData ( subdir ):
             allDataResult = result = 'FAIL'
 
         if showAbsoluteErrors:
-            print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tAverage Values: %s\n\t\tError Percentages of Averages: %s\n' % (datFiles[i], absoluteError, average, errorPercentage))
+            print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s\n\t\tAverage Values: %s\n' % (datFiles[i], absoluteError, relativeErrors, average))
         if showFileResult:
             print('\t%s ---------- [%s]\n' % (datFiles[i], result))
 
     if showAbsoluteErrors:
         print('The maximum absolute error in %s was %E in %s\n' % (subdir, maxError, datFiles[maxErrorIndex]))
+        print('The maximum relative error in %s was %E in %s\n' % (subdir, maxRelError, datFiles[maxRelErrorIndex]))
+
     print('%s ---------- [%s]\n' % (subdir, allDataResult))
 
 
