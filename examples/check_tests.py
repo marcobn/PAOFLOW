@@ -54,9 +54,8 @@ def verifyData ( subdir ):
         nCol = len(dl)
         nRow = len(dl[0])
 
-        # Compute absolute error and averages excluding the first column
+        # Compute absolute error and data range excluding the first column
         absoluteError = np.sum(abs(abs(dl[1:nCol, :]) - abs(rl[1:nCol, :])), axis=1) / nRow
-        average = np.sum(dl[1:nCol, :], axis=1) / nRow
         dataRange = np.amax(np.amax(dl[1:nCol, :], axis=1), axis=0) - np.amin(np.amin(dl[1:nCol, :], axis=1), axis=0)
         relativeErrors = []
 
@@ -84,7 +83,7 @@ def verifyData ( subdir ):
             allDataResult = result = 'FAIL'
 
         if showAbsoluteErrors:
-            print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s\n\t\tAverage Values: %s\n' % (datFiles[i], absoluteError, relativeErrors, average))
+            print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s\n' % (datFiles[i], absoluteError, relativeErrors))
         if showFileResult:
             print('\t%s ---------- [%s]\n' % (datFiles[i], result))
 
