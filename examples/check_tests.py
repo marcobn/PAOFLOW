@@ -18,7 +18,7 @@ def verifyData ( subdir ):
 
     ########## User Defined Variables ##########
     showFileResult = False  # Show PASS or FAIL for each file
-    showAbsoluteErrors = False  # Flag to print out error values
+    showErrors = False  # Flag to print out error values
     tolerance = 0.005  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
 
@@ -63,17 +63,21 @@ def verifyData ( subdir ):
         validData = True
         for j in xrange(nCol-1):
 
+            # Store maximum absolute error
             if absoluteError[j] > maxError:
                 maxError = absoluteError[j]
                 maxErrorIndex = i
 
+            # Compute relative error
             relError = absoluteError[j]/dataRange
             relativeErrors.append(relError)
 
+            # Store maximum relative error
             if relError > maxRelError:
                 maxRelError = relError
                 maxRelErrorIndex = i
 
+            # Ensure that relative error is less than user defined tolerance
             if relError > tolerance:
                 validData = False
 
@@ -82,12 +86,12 @@ def verifyData ( subdir ):
         else:
             allDataResult = result = 'FAIL'
 
-        if showAbsoluteErrors:
+        if showErrors:
             print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s\n' % (datFiles[i], absoluteError, relativeErrors))
         if showFileResult:
             print('\t%s ---------- [%s]\n' % (datFiles[i], result))
 
-    if showAbsoluteErrors:
+    if showErrors:
         print('The maximum absolute error in %s was %E in %s\n' % (subdir, maxError, datFiles[maxErrorIndex]))
         print('The maximum relative error in %s was %E in %s\n' % (subdir, maxRelError, datFiles[maxRelErrorIndex]))
 
