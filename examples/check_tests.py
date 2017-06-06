@@ -38,9 +38,8 @@ def verifyData ( subdir ):
     # Compare data files
     maxError = -1.  # Will store maximum error value
     maxErrorIndex = -1  # Will store file index of maximum error value
-    maxRelError = -1.
-    maxRelErrorIndex = -1
-
+    maxRelError = -1.  # Store maximum relative error
+    maxRelErrorIndex = -1  # Store file index of maximum relative error value
     allDataResult = 'PASS'  # Stores status of the entire example calculation
     for i in range(len(datFiles)):
         
@@ -56,13 +55,10 @@ def verifyData ( subdir ):
         nRow = len(dl[0])
 
         # Compute absolute error and averages excluding the first column
-        absoluteDifference = abs(dl[1:nCol, :] - rl[1:nCol, :])
-        absoluteError = np.sum(absoluteDifference, axis=1) / nRow
+        absoluteError = np.sum(abs(abs(dl[1:nCol, :]) - abs(rl[1:nCol, :])), axis=1) / nRow
         average = np.sum(dl[1:nCol, :], axis=1) / nRow
         dataRange = np.amax(np.amax(dl[1:nCol, :], axis=1), axis=0) - np.amin(np.amin(dl[1:nCol, :], axis=1), axis=0)
         relativeErrors = []
-
-#        errorPercentage = []
 
         # Compare computed error against data average
         validData = True
@@ -74,19 +70,13 @@ def verifyData ( subdir ):
 
             relError = absoluteError[j]/dataRange
             relativeErrors.append(relError)
+
             if relError > maxRelError:
                 maxRelError = relError
                 maxRelErrorIndex = i
+
             if relError > tolerance:
                 validData = False
-
-#            if average[j] == 0.:
-#                errorPercentage.append(0.)
-#            else:
-#                perc = np.abs(absoluteError[j]/average[j])
-#                errorPercentage.append(perc)
-#                if perc > tolerance:
-#                    validData = False
 
         if validData:
             result = 'PASS'
