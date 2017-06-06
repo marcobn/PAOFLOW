@@ -117,17 +117,19 @@ else:
 # Do dimension checks
 #----------------------
 
+wrongdim = False
 if rank == 0:
     nktot=nfft1*nfft2*nfft3
     if nktot%npool != 0:
         print('npool not compatible with MP mesh',nktot,npool)
-        sys.exit()
+        wrongdim = True
     nkpool = nktot/npool
     ini_ik, end_ik = load_balancing(size,rank,nkpool)
     nsize = end_ik-ini_ik
     if nkpool%nsize != 0:
         print('nkpool not compatible with number of cores',nkpool,nsize)
-        sys.exit()
+        wrongdim = True
+if wrongdim: quit()
 
 #----------------------
 # Read DFT data
