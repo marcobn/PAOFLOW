@@ -21,10 +21,8 @@ def get_exeCmd(engine, calcType,inputFile):
 #################### User defined parameters ####################
     execPrefix = "mpirun -np 32"
     execPostfix = " "
-    QE_path = "~/qe-6.1/bin/"
-    PAO_path = "python ~/PAOFLOW/src/"
-#    QE_path = "/home/marco/Programs/qe-6.0/bin/"
-#    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
+    QE_path = "/home/marco/Programs/qe-6.0/bin/"
+    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
 
     if engine=='qe':
         execDict={'scf':'pw.x -npool 8 ','nscf':'pw.x -npool 8 ','proj':'projwfc.x -npool 8 '}
