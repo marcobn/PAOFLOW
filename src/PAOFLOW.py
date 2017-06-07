@@ -129,6 +129,7 @@ if rank == 0:
     if nkpool%nsize != 0:
         print('nkpool not compatible with number of cores',nkpool,nsize)
         wrongdim = True
+comm.bcast(wrongdim,root=0)
 if wrongdim: quit()
 
 #----------------------
