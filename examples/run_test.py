@@ -14,6 +14,7 @@ import os,sys,time
 import re,glob
 import numpy
 import subprocess
+from check_test import verifyData
 
 def get_exeCmd(engine, calcType,inputFile):
 
@@ -66,6 +67,7 @@ def oneRun(subdir):
             print "######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e)
             raise SystemExit
 
+    verifyData(subdir)
     return
 
 def main():
