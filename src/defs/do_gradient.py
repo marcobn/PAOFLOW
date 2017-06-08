@@ -125,7 +125,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             for l in xrange(3):
                 dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
-            dHraux = None
+            dHRaux = None
         else:
             for l in xrange(3):
                 for ispin in xrange(nspin):
