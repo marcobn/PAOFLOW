@@ -30,7 +30,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
+def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft,use_cuda):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
