@@ -23,6 +23,7 @@ from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
 from get_R_grid_fft import *
+from gpu_fft import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -33,6 +34,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
+
+    # User flag to run FFTs on GPU
+    fft_use_gpu = True
 
     index = None
 
@@ -51,11 +55,14 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         # fft grid in R shifted to have (0,0,0) in the center
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        if scipyfft:
+        if fft_use_gpu:
+            HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+            HRaux[:,:,:,:,:,:] = gpu_ifftn(Hksp[:,:,:,:,:,:])
+
+        elif scipyfft:
             HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
             HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
+
         else:
             HRaux  = np.zeros_like(Hksp)
             for ispin in xrange(nspin):
@@ -64,8 +71,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                         fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
                               flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         HRaux[:,:,:,n,m,ispin] = fft()
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
+
+        HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+        Hksp = None
 
         dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
         Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
@@ -121,11 +129,14 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
 
     if rank == 0:
         # Compute dH(k)/dk
-        if scipyfft:
+        if fft_use_gpu:
+            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            dHksp[:,:,:,:,:,:,:] = gpu_fftn(dHRaux[:,:,:,:,:,:,:])
+
+        elif scipyfft:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             for l in xrange(3):
                 dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
-            dHraux = None
         else:
             for l in xrange(3):
                 for ispin in xrange(nspin):
@@ -135,4 +146,5 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                             direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                             dHksp[:,:,:,l,n,m,ispin] = fft()
 
+        dHRaux = None
     return(dHksp)
