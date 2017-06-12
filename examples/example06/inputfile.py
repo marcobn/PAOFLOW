@@ -12,6 +12,7 @@ verbose = False
 restart = False
 non_ortho  = False
 write2file = False
+use_cuda = True
 shift_type = 1
 shift      = 'auto'
 pthr       = 0.95

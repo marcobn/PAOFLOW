@@ -35,9 +35,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
 
-    # User flag to run FFTs on GPU
-    fft_use_gpu = True
-
     index = None
 
     if rank == 0:
@@ -55,7 +52,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         # fft grid in R shifted to have (0,0,0) in the center
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        if fft_use_gpu:
+        if use_cuda:
             HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
             HRaux[:,:,:,:,:,:] = gpu_ifftn(Hksp[:,:,:,:,:,:])
 
@@ -129,7 +126,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
 
     if rank == 0:
         # Compute dH(k)/dk
-        if fft_use_gpu:
+        if use_cuda:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             dHksp[:,:,:,:,:,:,:] = gpu_fftn(dHRaux[:,:,:,:,:,:,:])
 
@@ -137,6 +134,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             for l in xrange(3):
                 dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
+
         else:
             for l in xrange(3):
                 for ispin in xrange(nspin):
