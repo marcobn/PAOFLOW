@@ -23,7 +23,7 @@ from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
 from get_R_grid_fft import *
-#from gpu_fft import *
+from gpu_fft import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -38,7 +38,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft,use_cuda):
     index = None
 
     if rank == 0:
-        from gpu_fft import *
         nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
         nktot = nk1*nk2*nk3
         index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
