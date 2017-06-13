@@ -650,7 +650,7 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
         from do_gradient import *
-        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft,use_cuda)
+        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
         #from do_gradient_d2 import *
         #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 

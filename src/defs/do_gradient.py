@@ -13,24 +13,34 @@ import numpy as np
 import sys, time
 import multiprocessing
 
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
-
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
 from get_R_grid_fft import *
-from gpu_fft import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft,use_cuda):
+if rank == 0:
+    using_cuda = False
+    try:
+        import inputfile
+        using_cuda = inputfile.use_cuda
+    except:
+        pass
+
+    if using_cuda:
+        from cuda_fft import *
+    else:
+        try:
+            import pyfftw
+        except:
+            from scipy import fftpack as FFT
+
+def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -52,11 +62,13 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft,use_cuda):
         # fft grid in R shifted to have (0,0,0) in the center
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        if use_cuda:
+        if using_cuda:
+            print 'using_cuda'
             HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
-            HRaux[:,:,:,:,:,:] = gpu_ifftn(Hksp[:,:,:,:,:,:])
+            HRaux[:,:,:,:,:,:] = cuda_ifftn(Hksp[:,:,:,:,:,:])
 
         elif scipyfft:
+            print 'using_scipy'
             HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
             HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
 
@@ -126,9 +138,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft,use_cuda):
 
     if rank == 0:
         # Compute dH(k)/dk
-        if use_cuda:
+        if using_cuda:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
-            dHksp[:,:,:,:,:,:,:] = gpu_fftn(dHRaux[:,:,:,:,:,:,:])
+            dHksp[:,:,:,:,:,:,:] = cuda_fftn(dHRaux[:,:,:,:,:,:,:])
 
         elif scipyfft:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
