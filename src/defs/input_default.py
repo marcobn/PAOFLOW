@@ -27,6 +27,7 @@ non_ortho  = False
 write2file = False # write data formatted for acbn0 calculations
 write_binary = False # write data formatted for acbn0 calculations in AFLOWpi
 writedata = False  # write 3D Berry curvature and spin Berry curvature to file
+use_cuda = False # Use GPU to perform FFTs
 shift_type = 1
 shift      = 'auto' # if 'auto' shift is selected automatically; else, give numerical value (eV)
 pthr       = 0.95

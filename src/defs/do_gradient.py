@@ -13,11 +13,6 @@ import numpy as np
 import sys, time
 import multiprocessing
 
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
-
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
@@ -28,6 +23,22 @@ from get_R_grid_fft import *
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
+
+if rank == 0:
+    using_cuda = False
+    try:
+        import inputfile
+        using_cuda = inputfile.use_cuda
+    except:
+        pass
+
+    if using_cuda:
+        from cuda_fft import *
+    else:
+        try:
+            import pyfftw
+        except:
+            from scipy import fftpack as FFT
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
     #----------------------
@@ -51,11 +62,14 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         # fft grid in R shifted to have (0,0,0) in the center
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
-        if scipyfft:
+        if using_cuda:
+            HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+            HRaux[:,:,:,:,:,:] = cuda_ifftn(Hksp[:,:,:,:,:,:])
+
+        elif scipyfft:
             HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
             HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
+
         else:
             HRaux  = np.zeros_like(Hksp)
             for ispin in xrange(nspin):
@@ -64,8 +78,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                         fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
                               flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         HRaux[:,:,:,n,m,ispin] = fft()
-            HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
-            Hksp = None
+
+        HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+        Hksp = None
 
         dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
         Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
@@ -121,11 +136,15 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
 
     if rank == 0:
         # Compute dH(k)/dk
-        if scipyfft:
+        if using_cuda:
+            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            dHksp[:,:,:,:,:,:,:] = cuda_fftn(dHRaux[:,:,:,:,:,:,:])
+
+        elif scipyfft:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             for l in xrange(3):
                 dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
-            dHRaux = None
+                
         else:
             for l in xrange(3):
                 for ispin in xrange(nspin):
@@ -135,4 +154,5 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                             direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                             dHksp[:,:,:,l,n,m,ispin] = fft()
 
+        dHRaux = None
     return(dHksp)

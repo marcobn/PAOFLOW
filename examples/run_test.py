@@ -47,8 +47,12 @@ def get_exeCmd(engine, calcType,inputFile):
 
 def oneRun(subdir):
 
-    calcList = ['scf','nscf','proj','PAO']
-    fileList = ['scf.in','nscf.in','proj.in','inputfile.py']
+    if len(glob.glob('*.save')) == 0:
+        calcList = ['scf','nscf','proj','PAO']
+        fileList = ['scf.in','nscf.in','proj.in','inputfile.py']
+    else: 
+        calcList = ['PAO']
+        fileList = ['inputfile.py']
 
     engine = {'scf':'qe',
               'nscf':'qe',
@@ -71,9 +75,12 @@ def oneRun(subdir):
     return
 
 def main():
-
+    
     start = reset = time.time()
-    alldir = glob.glob('example*')
+    if sys.argv[1] != None:
+        alldir = glob.glob(sys.argv[1])
+    else:
+        alldir = glob.glob('example*')
     for n in xrange(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
