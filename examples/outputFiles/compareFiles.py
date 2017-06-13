@@ -24,16 +24,18 @@ def main():
             if len(strings) > 0:
                 if strings[0] == 'gradient':
                     gradTimes.append(np.float(strings[len(strings)-2]))
-#                    print('\tGradient Time: '+strings[len(strings)-2])
                 if  strings[0] == 'Total':
                     totalTimes.append(np.float(strings[len(strings)-2]))
-#                    print('\tTotal Time: '+strings[len(strings)-2])
         f.close()
 
     cpu_grad_times = np.array(gradTimes[:len(gradTimes)/2])
     gpu_grad_times = np.array(gradTimes[len(gradTimes)/2:])
 
-    print("Speedup: %s" % (cpu_grad_times/gpu_grad_times))
+    cpu_times = np.array(totalTimes[:len(totalTimes)/2])
+    gpu_times = np.array(totalTimes[len(totalTimes)/2:])
+
+    print("Gradient Speedup: %s" % (cpu_grad_times/gpu_grad_times))
+    print("Total Speedup: %s" % (cpu_times/gpu_times))
 
 if __name__ == "__main__":
-    main()
+    main():
