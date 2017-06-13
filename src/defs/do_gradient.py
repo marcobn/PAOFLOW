@@ -63,12 +63,10 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
         if using_cuda:
-            print 'using_cuda'
             HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
             HRaux[:,:,:,:,:,:] = cuda_ifftn(Hksp[:,:,:,:,:,:])
 
         elif scipyfft:
-            print 'using_scipy'
             HRaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
             HRaux[:,:,:,:,:,:] = FFT.ifftn(Hksp[:,:,:,:,:,:],axes=[0,1,2])
 
