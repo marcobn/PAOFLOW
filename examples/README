@@ -5,15 +5,22 @@ example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
 example05 : Pt non collinear with spin orbit - Spin Hall conductivity
 example06 : AlP with non self consistent ACBN0
 
-run all the tests: 
+Simply run all the tests: 
 python run_test.py
 
-Tests are verified with 'check_test.py' automatically.
+This is equivalent to:
+python run_test.py 'example*' 'Reference'
 
-'check_test.py' can also be run independently with:
-python check_test.py [example directory pattern] [reference directory pattern]
+Specify pattern for selecting directories containing independent examples or tests:
+python run_test.py [example directory pattern] [reference directory pattern]
 
 [example directory pattern] and [reference directory pattern] are optional
 arguments and have respective default values: 'example*' and 'Reference'
 
 The reference directory must be located inside the directory containing inputfile.py.
+
+
+Tests are verified with 'check_test.py' automatically.
+
+'check_test.py' can be run independently with:
+python check_test.py [example directory pattern] [reference directory pattern]
