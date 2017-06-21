@@ -13,4 +13,4 @@ Tests are verified with 'check_test.py' automatically.
 python check_test.py [example directory pattern] [reference directory pattern]
 
 [example directory pattern] and [reference directory pattern] are optional
-arguments and have respective default values example* and ./Reference/
+arguments and have respective default values: example* and ./Reference/
