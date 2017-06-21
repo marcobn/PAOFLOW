@@ -24,7 +24,7 @@ import numpy as np
 ##
 ##########################################################
 
-def verifyData ( subdir ):
+def verifyData ( subdir, refPattern ):
 
     ########## User Defined Variables ##########
     showFileResult = False  # Show PASS or FAIL for each file
@@ -36,17 +36,9 @@ def verifyData ( subdir ):
 
     # Get new data files and existing reference data files
     datFiles = glob.glob('*.dat')
-    refFiles = None
-    refPattern = './Reference/'
-    if len(sys.argv) > 2:
-        refPattern = sys.argv[2]
-        if refPattern[0] != '.' and refPattern[0] != '/':
-            refPattern = './'+refPattern
-        if refPattern[len(refPattern)-1] != '/':
-            refPattern += '/'
     refFiles = glob.glob(refPattern+'*.dat')
 
-    print refPattern
+    # Verify that .dat files exist in reference directory
     if len(refFiles) == 0:
         print('\tReference directory is empty or does not exist.')
         return
@@ -128,15 +120,26 @@ def verifyData ( subdir ):
 
 def main():
 
+    # Look for test directory pattern argument
     if len(sys.argv) > 1:
         alldir = glob.glob(sys.argv[1])
     else:
         alldir = glob.glob('example*')
 
+    # Assign default reference directory pattern, then look for argument
+    refPattern = './Reference/'
+    if len(sys.argv) > 2:
+        refPattern = sys.argv[2]
+        if refPattern[0] != '.' and refPattern[0] != '/' and refPattern != '~':
+            refPattern = './'+refPattern
+        if refPattern[len(refPattern)-1] != '/':
+            refPattern += '/'
+
+    # Verify data for each test matching the input or default pattern
     for n in xrange(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
-        verifyData(subdir)
+        verifyData(subdir, refPattern)
         os.chdir('../')
 
 
