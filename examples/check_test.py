@@ -40,7 +40,16 @@ def verifyData ( subdir ):
     refPattern = './Reference/'
     if len(sys.argv) > 2:
         refPattern = sys.argv[2]
+        if refPattern[0] != '.' and refPattern[0] != '/':
+            refPattern = './'+refPattern
+        if refPattern[len(refPattern)-1] != '/':
+            refPattern += '/'
     refFiles = glob.glob(refPattern+'*.dat')
+
+    print refPattern
+    if len(refFiles) == 0:
+        print('\tReference directory is empty or does not exist.')
+        return
 
     # Sort the lists of files
     datFiles.sort()
