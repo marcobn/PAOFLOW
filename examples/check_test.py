@@ -13,7 +13,17 @@
 import os, sys
 import glob
 import numpy as np
-        
+
+
+############# Verifies the output of PAOFLOW #############
+## Usage:
+##  "python check_test.py [test_directory_pattern] [reference_directory_pattern]"
+##
+## Default:
+##  "python check_test.py example* ./Reference/"
+##
+##########################################################
+
 def verifyData ( subdir ):
 
     ########## User Defined Variables ##########
@@ -26,14 +36,18 @@ def verifyData ( subdir ):
 
     # Get new data files and existing reference data files
     datFiles = glob.glob('*.dat')
-    refFiles = glob.glob('./Reference/*.dat')
+    refFiles = None
+    refPattern = './Reference/'
+    if len(sys.argv) > 2:
+        refPattern = sys.argv[2]
+    refFiles = glob.glob(refPattern+'*.dat')
 
     # Sort the lists of files
     datFiles.sort()
     refFiles.sort()
 
     # Ensure that the lists are identical
-    if datFiles != [r.replace('./Reference/', '') for r in refFiles]:
+    if datFiles != [r.replace(refPattern, '') for r in refFiles]:
         print('\tList of calculated .dat files does not match reference files.')
         return
 
@@ -104,7 +118,12 @@ def verifyData ( subdir ):
 
 
 def main():
-    alldir = glob.glob('example*')
+
+    if len(sys.argv) > 1:
+        alldir = glob.glob(sys.argv[1])
+    else:
+        alldir = glob.glob('example*')
+
     for n in xrange(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
