@@ -26,6 +26,7 @@ size = comm.Get_size()
 
 if rank == 0:
     using_cuda = False
+    scipyfft = False
     try:
         import inputfile
         using_cuda = inputfile.use_cuda
@@ -39,8 +40,9 @@ if rank == 0:
             import pyfftw
         except:
             from scipy import fftpack as FFT
+            scipyfft = True
 
-def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
+def do_gradient(Hksp,a_vectors,alat,nthread,npool):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
