@@ -83,7 +83,7 @@ def main():
     refPattern = './Reference/'
     if len(sys.argv) > 2:
         refPattern = sys.argv[2]
-        if refPattern[0] != '.' and refPattern[0] != '/':
+        if refPattern[0] != '.' and refPattern[0] != '/' and refPattern[0] != '~':
             refPattern = './'+refPattern
         if refPattern[len(refPattern)-1] != '/':
             refPattern += '/'
