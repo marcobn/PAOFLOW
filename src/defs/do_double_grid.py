@@ -16,19 +16,31 @@ import sys, time
 from mpi4py import MPI
 import multiprocessing
 
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
-
 from zero_pad import *
+
+using_cuda = False
+scipyfft = False
+try:
+    import inputfile
+    using_cuda = inputfile.use_cuda
+except:
+    pass
+
+if using_cuda:
+    from cuda_fft import *
+else:
+    try:
+        import pyfftw
+    except:
+        from scipy import fftpack as FFT
+        scipyfft = True
 
 comm=MPI.COMM_WORLD
 size = comm.Get_size()
 
 nthread = size
 
-def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,scipyfft):
+def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread):
     # Fourier interpolation on extended grid (zero padding)
     if HRaux.shape[0] != 3 and HRaux.shape[1] == HRaux.shape[0]:
         nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
@@ -44,19 +56,26 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,scipyfft):
         Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf,nawf,nspin),dtype=complex)
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-        for ispin in xrange(nspin):
-            if not scipyfft:
-                for i in xrange(nawf):
-                    for j in xrange(nawf):
-                        aux = zero_pad(HRaux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
-                        fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
-                                flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                        Hksp[:,:,:,i,j,ispin] = fft()
-            else:
+        if using_cuda:
+            for ispin in xrange(nspin):
                 for i in xrange(nawf):
                     for j in xrange(nawf):
                         aux = HRaux[i,j,:,:,:,ispin]
-                        Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+                        Hksp[:,:,:,i,j,ispin] = cuda_fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+        else:
+            for ispin in xrange(nspin):
+                if not scipyfft:
+                    for i in xrange(nawf):
+                        for j in xrange(nawf):
+                            aux = zero_pad(HRaux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
+                            fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
+                                flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+                            Hksp[:,:,:,i,j,ispin] = fft()
+                else:
+                    for i in xrange(nawf):
+                        for j in xrange(nawf):
+                            aux = HRaux[i,j,:,:,:,ispin]
+                            Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
     else:
         sys.exit('wrong dimensions in input array')

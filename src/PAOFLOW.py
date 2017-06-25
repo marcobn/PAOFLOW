@@ -87,16 +87,6 @@ nthread = multiprocessing.cpu_count()
 #ne.set_num_threads(nthread)
 
 #----------------------
-# Check for fftw libraries
-#----------------------
-scipyfft = False
-try:
-    import pyfftw
-except:
-    if rank == 0: print('using scipy FFT')
-    scipyfft = True
-
-#----------------------
 # Read input
 #----------------------
 from input_default import *
@@ -106,6 +96,22 @@ except:
     if rank == 0: print('missing inputfile.py ...')
     if rank == 0: print('using default input module')
     pass
+
+#----------------------
+# Check for fftw libraries
+#----------------------
+scipyfft = False
+if rank == 0:
+    if use_cuda:
+        from cuda_fft import *
+        print('using skcuda FFT')
+    else:
+        try:
+            import pyfftw
+            print('using pyFFTW')
+        except:
+            print('using scipy FFT')
+            scipyfft = True
 
 if size >  1:
     if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
@@ -315,9 +321,16 @@ if rank ==0:
     HRaux = np.zeros_like(Hkaux)
     SRaux = np.zeros_like(Skaux)
 
-    HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
+    if use_cuda:
+        HRaux = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+    else:
+        HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
+
     if non_ortho:
-        SRaux = FFT.ifftn(Skaux,axes=[2,3,4])
+        if use_cuda:
+            SRaux = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+        else:
+            SRaux = FFT.ifftn(Skaux,axes=[2,3,4])
 
     # NOTE: Naming convention (from here):
     # Hks = k-space Hamiltonian on original MP grid
@@ -374,16 +387,28 @@ if do_bands and not(onedim):
 
     if rank == 0 and non_ortho:
         # now we orthogonalize the Hamiltonian again
-        Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-        Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
-        Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-        Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
-        Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-        Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
+        if use_cuda:
+            Hkaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+            Hkaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(HRs,[0,1],[3,4]),axes=[0,1,2])
+            Skaux  = np.zeros((nk1,nk2,nk3,nawf,nawf),dtype=complex)
+            Skaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(SRs,[0,1],[3,4]),axes=[0,1,2])
+            Hkaux = np.reshape(np.moveaxis(Hkaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+            Skaux = np.reshape(np.moveaxis(Skaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3),order='C')
+        else:
+            Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+            Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+            Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+            Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+            Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+            Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
+
         Hkaux = do_ortho(Hkaux,Skaux)
         Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
         Skaux = np.reshape(Skaux,(nawf,nawf,nk1,nk2,nk3),order='C')
-        HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+        if use_cuda:
+            HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+        else:
+            HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
         non_ortho = False
 
     # Broadcast HRs and SRs
@@ -450,22 +475,34 @@ if rank == 0:
 
         if non_ortho:
             # now we orthogonalize the Hamiltonian again
-            Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
-            Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
-            Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-            Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
-            Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-            Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
+            if use_cuda:
+                Hkaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+                Hkaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(HRs,[0,1],[3,4]),axes=[0,1,2])
+                Skaux  = np.zeros((nk1,nk2,nk3,nawf,nawf),dtype=complex)
+                Skaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(SRs,[0,1],[3,4]),axes=[0,1,2])
+                Hkaux = np.reshape(np.moveaxis(Hkaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+                Skaux = np.reshape(np.moveaxis(Skaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3),order='C')
+            else:
+                Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+                Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
+                Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
+                Skaux[:,:,:,:,:] = FFT.fftn(SRs[:,:,:,:,:],axes=[2,3,4])
+                Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+                Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
+
             Hkaux = do_ortho(Hkaux,Skaux)
             Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
             Skaux = np.reshape(Skaux,(nawf,nawf,nk1,nk2,nk3),order='C')
-            HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
+            if use_cuda:
+                HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+            else:
+                HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
             non_ortho = False
 
         #----------------------
         # Fourier interpolation on extended grid (zero padding)
         #----------------------
-        Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs,nthread,scipyfft)
+        Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs,nthread)
         # Naming convention (from here): 
         # Hksp = k-space Hamiltonian on interpolated grid
         if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
@@ -651,7 +688,7 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
         # Compute the gradient of the k-space Hamiltonian
         #----------------------
         from do_gradient import *
-        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
+        dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool)
         #from do_gradient_d2 import *
         #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 

@@ -70,21 +70,29 @@ def oneRun(subdir):
         except subprocess.CalledProcessError as e:
             print "######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e)
             raise SystemExit
-
-    verifyData(subdir)
     return
 
 def main():
     
     start = reset = time.time()
-    if sys.argv[1] != None:
+    if len(sys.argv[1]) > 1:
         alldir = glob.glob(sys.argv[1])
     else:
         alldir = glob.glob('example*')
+
+    refPattern = './Reference/'
+    if len(sys.argv) > 2:
+        refPattern = sys.argv[2]
+        if refPattern[0] != '.' and refPattern[0] != '/' and refPattern[0] != '~':
+            refPattern = './'+refPattern
+        if refPattern[len(refPattern)-1] != '/':
+            refPattern += '/'
+
     for n in xrange(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         oneRun(subdir)
+        verifyData(subdir, refPattern)
         os.chdir('../')
         print('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
