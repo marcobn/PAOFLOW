@@ -9,7 +9,7 @@ def get_exeCmd(prefix, engine, calcType,inputFile):
     execPrefix = "mpirun -np 32"
     execPostfix = " " 
     QE_path = "/home/marco/Programs/qe-6.0/bin/"
-    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
+    PAO_path = "mpirun -np 32 python /home/marco/Programs/PAOFLOW/src/"
 
     if engine=='espresso':
         execDict={'scf':'pw.x -npool 8','nscf':'pw.x -npool 8','pdos':'projwfc.x -npool 8'}
@@ -26,7 +26,7 @@ def get_exeCmd(prefix, engine, calcType,inputFile):
     if engine=='espresso':
         command  = '%s %s < %s %s >  %s' % ( execPrefix, os.path.join(exeDir, executable),inputFile, execPostfix, outputFile )
     else:
-        command  = '%s %s %s >  %s' % ( os.path.join(exeDir, executable),inputFile, execPostfix, outputFile )
+        command  = '%s %s >  %s' % ( os.path.join(exeDir, executable),execPostfix, outputFile )
 
     return command
 

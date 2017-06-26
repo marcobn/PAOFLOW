@@ -292,6 +292,7 @@ if rank == 0 and write2file:
             f.write('%20.13f \n' %(kpnts_wght[ik]))
         f.close()
     print('H(k),S(k),k,wk written to file')
+if write2file: quit()
 
 
 #----------------------

@@ -8,8 +8,12 @@ MgO FCC
  /
  &system
     lda_plus_u = .true.,
-    Hubbard_U(1) = 0.010000,
-    Hubbard_U(2) = 0.010000,
+    Hubbard_U(1) = 0.269210,
+    Hubbard_U(2) = 8.276253,
+
+
+
+
 
 
 
@@ -48,6 +52,7 @@ MgO FCC
     celldm(1) = 8.0379167413,
     nosym = .t.
     noinv =.t.
+    nbnd = 20
   /  
 &electrons
     mixing_mode = "plain"
