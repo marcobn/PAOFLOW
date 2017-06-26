@@ -242,8 +242,7 @@ shift = comm.bcast(shift,root=0)
 
 Hks = None
 if rank == 0:
-    nbnds_norm = nawf
-    Hks,Sks = build_Hks(nawf,bnd,nbnds,nbnds_norm,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
+    Hks,Sks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
 
     print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 
