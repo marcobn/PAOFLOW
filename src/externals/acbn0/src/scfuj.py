@@ -373,7 +373,7 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 			calcList = ['scf','nscf','pdos','PAO_bands','acbn0']
 			
 		elif nspin == 2:
-			calcList = ['scf','nscf','pdos','PAO_bands_up','PAO_bands_down']
+			calcList = ['scf','nscf','pdos','PAO_bands_up','PAO_bands_down','acbn0']
 
 		print "List of calculations for each ACBN0 iteration ", str(calcList).strip('[]')
 
