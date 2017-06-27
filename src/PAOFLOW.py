@@ -271,12 +271,26 @@ if rank == 0 and write2file:
             np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
         np.save('kovp.npy',np.ravel(Sks,order='C'))
     else:
-        f=open('kham.txt','w')
-        for ik in xrange(nkpnts):
-            for i in xrange(nawf):
-                for j in xrange(nawf):
-                    f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
-        f.close()
+        if nspin == 1:
+            f=open('kham.txt','w')
+            for ik in xrange(nkpnts):
+                for i in xrange(nawf):
+                    for j in xrange(nawf):
+                        f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
+            f.close()
+        elif nspin == 2:
+            f=open('kham_up.txt','w')
+            for ik in xrange(nkpnts):
+                for i in xrange(nawf):
+                    for j in xrange(nawf):
+                        f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
+            f.close()
+            f=open('kham_dw.txt','w')
+            for ik in xrange(nkpnts):
+                for i in xrange(nawf):
+                    for j in xrange(nawf):
+                        f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
+            f.close()
         f=open('kovp.txt','w')
         for ik in xrange(nkpnts):
             for i in xrange(nawf):
