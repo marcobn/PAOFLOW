@@ -285,7 +285,7 @@ if rank == 0 and write2file:
                     for j in xrange(nawf):
                         f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
             f.close()
-            f=open('kham_dw.txt','w')
+            f=open('kham_down.txt','w')
             for ik in xrange(nkpnts):
                 for i in xrange(nawf):
                     for j in xrange(nawf):
