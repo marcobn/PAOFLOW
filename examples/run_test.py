@@ -75,7 +75,7 @@ def oneRun(subdir):
 def main():
     
     start = reset = time.time()
-    if len(sys.argv[1]) > 1:
+    if len(sys.argv) > 1:
         alldir = glob.glob(sys.argv[1])
     else:
         alldir = glob.glob('example*')
