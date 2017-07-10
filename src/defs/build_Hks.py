@@ -47,6 +47,33 @@ def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
             # Enforce Hermiticity (just in case...)
             Hks[:,:,ik,ispin] = 0.5*(Hks[:,:,ik,ispin] + np.conj(Hks[:,:,ik,ispin].T))
 
+            minimal = True
+            if minimal and ik == 1:
+                Sbd = np.zeros((nawf,nawf),dtype=complex)
+                Sbdi = np.zeros((nawf,nawf),dtype=complex)
+                S = np.zeros((nawf,nawf),dtype=complex)
+                sv = np.zeros((nawf,nawf),dtype=complex)
+                print(Hks[:,:,ik,ispin])
+
+                e,S = LAN.eigh(Hks[:,:,ik,ispin])
+                S11 = S[:bnd,:bnd]
+                S21 = S[:bnd,bnd:]
+                S12 = S[bnd:,:bnd]
+                S22 = S[bnd:,bnd:]
+                S22 = S22 + S21.T.dot(np.dot(LA.inv(S11),S12.T))
+                Sbd[:bnd,:bnd] = S11
+                Sbd[bnd:,bnd:] = S22
+                Sbdi = LA.inv(np.dot(Sbd,np.conj(Sbd.T)))
+                se,sv = LAN.eigh(Sbdi)
+                print(Sbdi)
+                print(se)
+                se = np.sqrt(se)*np.identity(nawf,dtype=complex)
+                Sbdi = sv.dot(se).dot(np.conj(sv).T)
+                T = S.dot(np.conj(Sbd.T)).dot(Sbdi)
+                Hbd = np.conj(T.T).dot(np.dot(Hks[:,:,ik,ispin],T))
+                Hks[:,:,ik,ispin] = Hbd
+                quit()
+
         # This is needed for consistency of the ordering of the matrix elements (see "transposition" above)
         # Important in ACBN0 file writing
         Sks[:,:,ik] = Sks[:,:,ik].T
