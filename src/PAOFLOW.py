@@ -246,6 +246,9 @@ if rank == 0:
 
     print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 
+    nawf = Hks.shape[0]
+    print(nawf)
+
 reset=time.time()
 
 # NOTE: Take care of non-orthogonality, if needed
