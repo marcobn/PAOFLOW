@@ -19,6 +19,7 @@ import scipy.integrate
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
+from communication import scatter_array
 
 from constants import *
 from smearing import *
@@ -71,17 +72,13 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
 
-        pkspaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype=complex)
-        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
         sigxy_aux = np.zeros((ene.size),dtype=complex)
-        deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
-        deltak2aux = np.zeros((nsize,nawf,nawf,nspin),dtype = float)
 
         comm.Barrier()
-        comm.Scatter(pksp_long,pkspaux,root=0)
-        comm.Scatter(E_k_long,E_kaux,root=0)
-        comm.Scatter(deltak_long,deltakaux,root=0)
-        comm.Scatter(deltak2_long,deltak2aux,root=0)
+        pkspaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
+        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
+        deltakaux = scatter_array(deltak_long, (nktot,nawf,nspin), float, 0)
+        deltak2aux = scatter_array(deltak2_long, (nktot,nawf,nawf,nspin), float, 0)
 
         if smearing != None:
             sigxy_aux[:] = smear_sigma_loop2(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)

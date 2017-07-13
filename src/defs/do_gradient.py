@@ -17,6 +17,8 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
+from communication import *
+
 from get_R_grid_fft import *
 
 # initialize parallel execution
@@ -110,16 +112,11 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize - do_gradient')
-
-        dHRaux1 = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        HRaux1 = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
-        Rfftaux = np.zeros((nsize,3),dtype = float)
 
         comm.Barrier()
-        comm.Scatter(dHRaux_split,dHRaux1,root=0)
-        comm.Scatter(HRaux_split,HRaux1,root=0)
-        comm.Scatter(Rfft_split,Rfftaux,root=0)
+        dHRaux1 = scatter_array(dHRaux_split, (nktot,3,nawf,nawf,nspin), complex, 0)
+        HRaux1 = scatter_array(HRaux_split, (nktot,nawf,nawf,nspin), complex, 0)
+        Rfftaux = scatter_array(Rfft_split, (nktot,3), float, 0)
 
         # Compute R*H(R)
         for l in xrange(3):
@@ -129,7 +126,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
                         dHRaux1[:,l,n,m,ispin] = 1.0j*alat*Rfftaux[:,l]*HRaux1[:,n,m,ispin]
 
         comm.Barrier()
-        comm.Gather(dHRaux1,dHRaux_split,root=0)
+        gather_array(dHRaux_split, dHRaux1, complex, 0)
 
         if rank == 0:
             dHRaux[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = dHRaux_split[:,:,:,:,:,]

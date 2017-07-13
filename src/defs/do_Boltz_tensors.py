@@ -19,6 +19,8 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
+from communication import scatter_array
+
 from smearing import *
 
 # initialize parallel execution
@@ -50,18 +52,12 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
     ini_ik, end_ik = load_balancing(size,rank,nktot)
     nsize = end_ik-ini_ik
 
-    kq_wghtaux = np.zeros(nsize,dtype=float)
-    velkpaux = np.zeros((nsize,3,nawf,nspin),dtype=float)
-    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
-    deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
-
-
     comm.Barrier()
-    comm.Scatter(velkp,velkpaux,root=0)
-    comm.Scatter(E_k,E_kaux,root=0)
-    comm.Scatter(kq_wght,kq_wghtaux,root=0)
+    kq_wghtaux = scatter_array(kq_wght, (nktot,), float, 0)
+    velkpaux = scatter_array(velkp, (nktot,3,nawf,nspin), float, 0)
+    E_kaux = scatter_array(E_k, (nktot,nawf,nspin), float, 0)
     if smearing != None:
-        comm.Scatter(deltak,deltakaux,root=0)
+        deltakaux = scatter_array(deltak, (nktot,nawf,nspin), float, 0)
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)

@@ -129,12 +129,12 @@ if rank == 0:
     if nktot%npool != 0:
         print('npool not compatible with MP mesh',nktot,npool)
         wrongdim = True
-    nkpool = nktot/npool
-    ini_ik, end_ik = load_balancing(size,rank,nkpool)
-    nsize = end_ik-ini_ik
-    if nkpool%nsize != 0:
-        print('nkpool not compatible with number of cores',nkpool,nsize)
-        wrongdim = True
+#    nkpool = nktot/npool
+#    ini_ik, end_ik = load_balancing(size,rank,nkpool)
+#    nsize = end_ik-ini_ik
+#    if nkpool%nsize != 0:
+#        print('nkpool not compatible with number of cores',nkpool,nsize)
+#        wrongdim = True
 comm.bcast(wrongdim,root=0)
 if wrongdim: quit()
 

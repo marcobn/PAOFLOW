@@ -16,6 +16,7 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
+from communication import scatter_array
 
 from do_non_ortho import *
 
@@ -44,10 +45,9 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
     for ne in xrange(ene.size):
 
         dossum = np.zeros(1,dtype=float)
-        aux = np.zeros(nsize,dtype=float)
 
         comm.Barrier()
-        comm.Scatter(eig,aux,root=0)
+        aux = scatter_array(eig, (nktot,), float, 0)
 
         dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/delta)**2)/delta)
 

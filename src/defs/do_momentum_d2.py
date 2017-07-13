@@ -19,6 +19,7 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 from load_balancing import *
+from communication import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -68,20 +69,13 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
-
-        dHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        d2Hkaux = np.zeros((nsize,3,3,nawf,nawf,nspin),dtype = complex)
-        pksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        tksaux = np.zeros((nsize,3,3,nawf,nawf,nspin),dtype = complex)
-        vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
 
         comm.Barrier()
-        comm.Scatter(dHksp_split,dHkaux,root=0)
-        comm.Scatter(d2Hksp_split,d2Hkaux,root=0)
-        comm.Scatter(pks_split,pksaux,root=0)
-        comm.Scatter(tks_split,tksaux,root=0)
-        comm.Scatter(vec_split,vecaux,root=0)
+        dHkaux = scatter_array(dHksp_split, (nktot,3,nawf,nawf,nspin), complex, 0)
+        d2Hkaux = scatter_array(d2Hksp_split, (nktot,3,3,nawf,nawf,nspin), complex, 0)
+        pksaux = scatter_array(pks_split, (nktot,3,nawf,nawf,nspin), complex, 0)
+        tksaux = scatter_array(tks_split, (nktot,3,3,nawf,nawf,nspin), complex, 0)
+        vecaux = scatter_array(vec_split, (nktot,nawf,nawf,nspin), complex, 0)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -93,8 +87,8 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
                                     (d2Hkaux[ik,l,lp,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        comm.Gather(pksaux,pks_split,root=0)
-        comm.Gather(tksaux,tks_split,root=0)
+        gather_array(pks_split, pksaux, complex, 0)
+        gather_array(tks_split, tksaux, complex, 0)
 
         if rank == 0:
             pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]

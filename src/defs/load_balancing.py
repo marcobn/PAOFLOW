@@ -15,13 +15,18 @@ import numpy as np
 def load_balancing(size,rank,n):
 
     # Load balancing
-    ini = np.zeros((size),dtype=int)
-    end = np.zeros((size),dtype=int)
+    splitsize = 1.0/size*n
+    start = int(round(rank*splitsize))
+    stop = int(round((rank+1)*splitsize))
+    return(start,stop)
+
+def load_sizes(size,n,dim):
+    sizes = np.empty((size,3),dtype=int)
     splitsize = 1.0/size*n
     for i in xrange(size):
-        ini[i] = int(round(i*splitsize))
-        end[i] = int(round((i+1)*splitsize))
-    start = ini[rank]
-    stop = end[rank]
-
-    return(start,stop)
+        start = int(round(i*splitsize))
+        stop = int(round((i+1)*splitsize))
+        sizes[i][0] = dim*(stop-start)
+        sizes[i][1] = dim*start
+        sizes[i][2] = stop-start
+    return sizes
