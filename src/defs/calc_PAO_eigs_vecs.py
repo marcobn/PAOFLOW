@@ -17,6 +17,7 @@ import os, sys
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
+from communication import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -62,21 +63,19 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
 
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
 
         E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
         v_kaux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
-        aux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
 
-        comm.barrier()
-        comm.Scatter(Hks_split,aux,root=0)
+        comm.Barrier()
+        aux = scatter_array(Hks_split, (nktot,nawf,nawf,nspin), complex, 0)
 
         for ispin in xrange(nspin):
             E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(nsize,aux[:,:,:,ispin])
 
         comm.barrier()
-        comm.Gather(E_kaux,E_k_split,root=0)
-        comm.Gather(v_kaux,v_k_split,root=0)
+        gather_array(E_k_split, E_kaux, float, 0)
+        gather_array(v_k_split, v_kaux, complex, 0)
 
         if rank == 0:
             E_k[pool*nkpool:(pool+1)*nkpool,:,:] = E_k_split[:,:,:]
