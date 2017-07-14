@@ -25,7 +25,7 @@ def scatter_array ( arr, auxshape, pydtype, sroot ):
     lsizes = np.empty((size,3), dtype=int)
     if rank == 0:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
-    comm.Bcast([lsizes, MPI.INT], root=0)
+    comm.Bcast([lsizes, MPI.INT], root=sroot)
 
     # Change the first dimension of auxshape to the correct size for scatter
     auxshape = list(auxshape)
@@ -48,7 +48,7 @@ def gather_array ( arr, arraux, pydtype, sroot ):
     lsizes = np.empty((size,3), dtype=int)
     if rank == 0:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
-    comm.Bcast([lsizes, MPI.INT], root=0)
+    comm.Bcast([lsizes, MPI.INT], root=sroot)
 
     # Get the datatype for the MPI transfer
     mpidtype = MPI._typedict[np.dtype(pydtype).char]
