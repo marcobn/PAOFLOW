@@ -35,11 +35,6 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
 
-    # Load balancing
-    ini_ie, end_ie = load_balancing(size,rank,netot)
-
-    nsize = end_ie-ini_ie
-
     dos = np.zeros((ene.size),dtype=float)
 
     for ne in xrange(ene.size):

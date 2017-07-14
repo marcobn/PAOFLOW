@@ -68,17 +68,15 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
             deltak_long= None
             deltak2_long= None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
-        sigxy_aux = np.zeros((ene.size),dtype=complex)
-
         comm.Barrier()
         pkspaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
         E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
         deltakaux = scatter_array(deltak_long, (nktot,nawf,nspin), float, 0)
         deltak2aux = scatter_array(deltak2_long, (nktot,nawf,nawf,nspin), float, 0)
+
+        # Load balancing
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        sigxy_aux = np.zeros((ene.size),dtype=complex)
 
         if smearing != None:
             sigxy_aux[:] = smear_sigma_loop2(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)

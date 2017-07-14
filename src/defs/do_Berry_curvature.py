@@ -69,15 +69,15 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             pksp_long = None
             E_k_long = None
 
+        comm.Barrier()
+        pksaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
+        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
+
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
 
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
-
-        comm.Barrier()
-        pksaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
-        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
 
         deltap = 0.05
         for n in xrange(nawf):
@@ -117,19 +117,16 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             E_k_long = None
             deltak_long = None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
-        Om_znkaux = np.zeros((nsize,nawf),dtype=float)
-        Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
-        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
-        deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
-
         comm.Barrier()
         Om_znkaux = scatter_array(Om_znk_long, (nktot,nawf), float, 0)
         E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
         deltakaux = scatter_array(deltak_long, (nktot,nawf,nspin), float, 0)
+
+        # Load balancing
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik-ini_ik
+
+        Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
 
         for i in xrange(ene.size):
             if smearing == 'gauss':

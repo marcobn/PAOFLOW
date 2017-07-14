@@ -109,10 +109,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
             dHRaux_split = None
             Rfft_split = None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
         comm.Barrier()
         dHRaux1 = scatter_array(dHRaux_split, (nktot,3,nawf,nawf,nspin), complex, 0)
         HRaux1 = scatter_array(HRaux_split, (nktot,nawf,nawf,nspin), complex, 0)

@@ -50,7 +50,6 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nktot)
-    nsize = end_ik-ini_ik
 
     comm.Barrier()
     kq_wghtaux = scatter_array(kq_wght, (nktot,), float, 0)

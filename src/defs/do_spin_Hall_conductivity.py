@@ -72,7 +72,6 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
 
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
 
         sigxy_aux = np.zeros((ene.size),dtype=complex)
 

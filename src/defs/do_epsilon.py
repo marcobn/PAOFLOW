@@ -50,7 +50,6 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nktot)
-    nsize = end_ik-ini_ik
 
     comm.Barrier()
     pkspaux = scatter_array(pksp, (nktot,3,nawf,nawf,nspin), complex, 0)
