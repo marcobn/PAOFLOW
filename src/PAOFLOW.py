@@ -297,14 +297,15 @@ if rank == 0 and write2file:
                 for j in xrange(nawf):
                     f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
         f.close()
-        f=open('k.txt','w')
-        for ik in xrange(nkpnts):
-            f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
-        f.close()
-        f=open('wk.txt','w')
-        for ik in xrange(nkpnts):
-            f.write('%20.13f \n' %(kpnts_wght[ik]))
-        f.close()
+    f=open('k.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
+    f.close()
+    f=open('wk.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f \n' %(kpnts_wght[ik]))
+    f.close()
+
     print('H(k),S(k),k,wk written to file')
 if write2file: quit()
 
