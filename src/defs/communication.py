@@ -23,7 +23,7 @@ size = comm.Get_size()
 def scatter_array ( arr, auxshape, pydtype, sroot ):
     # An array to store the size and dimensions of scattered arrays
     lsizes = np.empty((size,3), dtype=int)
-    if rank == 0:
+    if rank == sroot:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
     comm.Bcast([lsizes, MPI.INT], root=sroot)
 
@@ -46,7 +46,7 @@ def scatter_array ( arr, auxshape, pydtype, sroot ):
 def gather_array ( arr, arraux, pydtype, sroot ):
     # An array to store the size and dimensions of gathered arrays
     lsizes = np.empty((size,3), dtype=int)
-    if rank == 0:
+    if rank == sroot:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
     comm.Bcast([lsizes, MPI.INT], root=sroot)
 
