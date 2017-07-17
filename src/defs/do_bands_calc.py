@@ -65,6 +65,9 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
         for ispin in xrange(nspin):
             E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
 
+    comm.Bcast(E_kp,root=0)
+    comm.Bcast(v_kp,root=0)
+
 #    if rank == 0:
 #        plt.matshow(abs(Hks_int[:,:,1445,0]))
 #        plt.colorbar()
