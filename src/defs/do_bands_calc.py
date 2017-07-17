@@ -61,8 +61,12 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
 
-    for ispin in xrange(nspin):
-        E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
+    if rank == 0:
+        for ispin in xrange(nspin):
+            E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
+
+    comm.Bcast(E_kp,root=0)
+    comm.Bcast(v_kp,root=0)
 
 #    if rank == 0:
 #        plt.matshow(abs(Hks_int[:,:,1445,0]))
