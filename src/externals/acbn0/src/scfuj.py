@@ -372,9 +372,9 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 		fileList = {'scf':"%s_scf.in"%prefix, 
 			    'nscf':"%s_nscf.in"%prefix,
 			    'pdos':"%s_pdos.in"%prefix,
-			    'PAO_bands':"%s_PAO.in"%prefix,
-			    'PAO_bands_up':"%s_PAO.in"%prefix, 
-			    'PAO_bands_down':"%s_PAO.in"%prefix, }
+			    'PAO_bands':"%s_PAO_bands.in"%prefix,
+			    'PAO_bands_up':"%s_PAO_bands_up.in"%prefix, 
+			    'PAO_bands_down':"%s_PAO_bands_down.in"%prefix, }
 		
 		if nspin != 2 :
 			calcList = ['scf','nscf','pdos','PAO_bands','acbn0']
