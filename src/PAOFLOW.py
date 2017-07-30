@@ -291,14 +291,15 @@ if rank == 0 and write2file:
                 for j in xrange(nawf):
                     f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
         f.close()
-        f=open('k.txt','w')
-        for ik in xrange(nkpnts):
-            f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
-        f.close()
-        f=open('wk.txt','w')
-        for ik in xrange(nkpnts):
-            f.write('%20.13f \n' %(kpnts_wght[ik]))
-        f.close()
+    f=open('k.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
+    f.close()
+    f=open('wk.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f \n' %(kpnts_wght[ik]))
+    f.close()
+
     print('H(k),S(k),k,wk written to file')
 if write2file: quit()
 
@@ -330,13 +331,13 @@ if rank ==0:
     SRaux = np.zeros_like(Skaux)
 
     if use_cuda:
-        HRaux = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+        HRaux = cuda_ifftn(Hkaux,axes=[2,3,4])
     else:
         HRaux = FFT.ifftn(Hkaux,axes=[2,3,4])
 
     if non_ortho:
         if use_cuda:
-            SRaux = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+            SRaux = cuda_ifftn(Hkaux,axes=[2,3,4])
         else:
             SRaux = FFT.ifftn(Skaux,axes=[2,3,4])
 
@@ -397,11 +398,11 @@ if do_bands and not(onedim):
         # now we orthogonalize the Hamiltonian again
         if use_cuda:
             Hkaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
-            Hkaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(HRs,[0,1],[3,4]),axes=[0,1,2])
+            Hkaux[:,:,:,:,:,:] = cuda_fftn(HRs,axes=[2,3,4])
             Skaux  = np.zeros((nk1,nk2,nk3,nawf,nawf),dtype=complex)
-            Skaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(SRs,[0,1],[3,4]),axes=[0,1,2])
-            Hkaux = np.reshape(np.moveaxis(Hkaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-            Skaux = np.reshape(np.moveaxis(Skaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3),order='C')
+            Skaux[:,:,:,:,:,:] = cuda_fftn(SRs,axes=[2,3,4])
+            Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+            Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
         else:
             Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
             Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
@@ -414,7 +415,7 @@ if do_bands and not(onedim):
         Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
         Skaux = np.reshape(Skaux,(nawf,nawf,nk1,nk2,nk3),order='C')
         if use_cuda:
-            HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+            HRs = cuda_ifftn(Hkaux,axes=[2,3,4])
         else:
             HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
         non_ortho = False
@@ -485,11 +486,11 @@ if rank == 0:
             # now we orthogonalize the Hamiltonian again
             if use_cuda:
                 Hkaux  = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
-                Hkaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(HRs,[0,1],[3,4]),axes=[0,1,2])
+                Hkaux[:,:,:,:,:,:] = cuda_fftn(HRs,axes=[2,3,4])
                 Skaux  = np.zeros((nk1,nk2,nk3,nawf,nawf),dtype=complex)
-                Skaux[:,:,:,:,:,:] = cuda_fftn(np.moveaxis(SRs,[0,1],[3,4]),axes=[0,1,2])
-                Hkaux = np.reshape(np.moveaxis(Hkaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-                Skaux = np.reshape(np.moveaxis(Skaux,[3,4],[0,1]),(nawf,nawf,nk1*nk2*nk3),order='C')
+                Skaux[:,:,:,:,:,:] = cuda_fftn(SRs,axes=[2,3,4])
+                Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+                Skaux = np.reshape(Skaux,(nawf,nawf,nk1*nk2*nk3),order='C')
             else:
                 Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
                 Hkaux[:,:,:,:,:,:] = FFT.fftn(HRs[:,:,:,:,:,:],axes=[2,3,4])
@@ -502,7 +503,7 @@ if rank == 0:
             Hkaux = np.reshape(Hkaux,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
             Skaux = np.reshape(Skaux,(nawf,nawf,nk1,nk2,nk3),order='C')
             if use_cuda:
-                HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
+                HRs = cuda_ifftn(Hkaux,axes=[2,3,4])
             else:
                 HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
             non_ortho = False
