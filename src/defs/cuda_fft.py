@@ -11,87 +11,58 @@
 #
 import numpy as np
 import sys, time
-import multiprocessing
 
 import pycuda.autoinit
 import pycuda.gpuarray as gpuarray
 import skcuda.fft as skfft
 
-
 # Perform an inverse FFT on 'axes' of 'Hk'
 # Restriction: len(Hk) >= len(axes)
 # Restriction: 'axes' must be a list of unique, monotonically increasing integers
 def cuda_ifftn ( Hk, axes=[0,1,2] ):
-
-    hkShape = Hk.shape
-    hkDim = len(hkShape)
-    fftDim = len(axes)
-
-    # Reshape 'axes' to be the array's end dimensions and ensure contiguity
-    Hk = np.ascontiguousarray(np.moveaxis(Hk, axes, np.arange(hkDim-fftDim, hkDim, 1)))
-    newShape = Hk.shape
-
-    # Calculate number of batches
-    batchSize = 1
-    for i in range(hkDim-fftDim):
-        batchSize *= Hk.shape[i]
-
-    # Reshape to accomodate batching
-    batchShape = [None for _ in np.arange(fftDim+1)]
-    batchShape[0] = batchSize
-    for i in np.arange(0, fftDim, 1):
-        batchShape[i+1] = newShape[hkDim-(fftDim-i)]
-
-    Hk = np.reshape(Hk, batchShape)
-
-    # Pass array to the GPU and perform iFFT on each batch
-    Hk_gpu = gpuarray.to_gpu(Hk)
-    plan = skfft.Plan(Hk_gpu.shape[1:fftDim+1], Hk.dtype, Hk.dtype, Hk_gpu.shape[0])
-    skfft.ifft(Hk_gpu, Hk_gpu, plan, True)
-
-    # Reshape to original dimensions
-    #Hk = np.moveaxis(Hk_gpu.get(), 0, fftDim)
-    Hk = np.reshape(Hk_gpu.get(), newShape)
-    Hk = np.moveaxis(Hk, np.arange(hkDim-fftDim, hkDim, 1), axes)
-
-    return Hk
-
+    return cuda_efftn(Hk, axes, False)
 
 # Perform a FFT on 'axes' of 'Hr'
 # Restriction: len(Hr) >= len(axes)
 # Restriction: 'axes' must be a list of unique, monotonically increasing integers
 def cuda_fftn ( Hr, axes=[0,1,2] ):
+    return cuda_efftn(Hr, axes, True)
 
-    hrShape = Hr.shape
-    hrDim = len(hrShape)
+# Handle array shaping and FFT planning
+def cuda_efftn ( H, axes, forward ):
+
+    hShape = H.shape
+    hDim = len(hShape)
     fftDim = len(axes)
 
     # Reshape 'axes' to be the array's end dimensions and ensure contiguity
-    Hr = np.ascontiguousarray(np.moveaxis(Hr, axes, np.arange(hrDim-fftDim, hrDim, 1)))
-    newShape = Hr.shape
+    H = np.ascontiguousarray(np.moveaxis(H, axes, np.arange(hDim-fftDim, hDim, 1)))
+    newShape = H.shape
 
     # Calculate number of batches
     batchSize = 1
-    for i in range(hrDim-fftDim):
-        batchSize *= Hr.shape[i]
+    for i in range(hDim-fftDim):
+        batchSize *= H.shape[i]
 
     # Reshape to accomodate batching
     batchShape = [None for _ in np.arange(fftDim+1)]
     batchShape[0] = batchSize
     for i in np.arange(0, fftDim, 1):
-        batchShape[i+1] = newShape[hrDim-(fftDim-i)]
+        batchShape[i+1] = newShape[hDim-(fftDim-i)]
 
-    Hr = np.reshape(Hr, batchShape)
+    H = np.reshape(H, batchShape)
 
-    # Pass array to the GPU and perform FFT on each batch
-    Hr_gpu = gpuarray.to_gpu(Hr)
-    plan = skfft.Plan(Hr_gpu.shape[1:fftDim+1], Hr.dtype, Hr.dtype, Hr_gpu.shape[0])
-    skfft.fft(Hr_gpu, Hr_gpu, plan)
+    # Pass array to the GPU and perform iFFT on each batch
+    H_gpu = gpuarray.to_gpu(H)
+    plan = skfft.Plan(H_gpu.shape[1:fftDim+1], H.dtype, H.dtype, H_gpu.shape[0])
+
+    if forward:
+        skfft.fft(H_gpu, H_gpu, plan)
+    else:
+        skfft.ifft(H_gpu, H_gpu, plan, True)
 
     # Reshape to original dimensions
-    #Hr = np.moveaxis(Hr_gpu.get(), 0, fftDim)
-    Hr = np.reshape(Hr_gpu.get(), newShape)
-    Hr = np.moveaxis(Hr, np.arange(hrDim-fftDim, hrDim, 1), axes)
+    H = np.reshape(H_gpu.get(), newShape)
+    H = np.moveaxis(H, np.arange(hDim-fftDim, hDim, 1), axes)
 
-
-    return Hr
+    return H
