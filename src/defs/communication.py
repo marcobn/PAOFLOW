@@ -16,8 +16,6 @@ from mpi4py import MPI
 from load_balancing import *
 
 comm = MPI.COMM_WORLD
-#rank = comm.Get_rank()
-#size = comm.Get_size()
 
 # Scatters first dimension of an array of arbitrary length
 def scatter_array ( arr, auxshape, pydtype, sroot, gcomm=comm ):

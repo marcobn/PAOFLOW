@@ -24,7 +24,7 @@ driver.init()
 nGPU = driver.Device.count()
 
 def cuda_ifftn ( Hk, axes=[0,1,2], sroot=0 ):
-    return cuda_efftn(Hk, axes, False, comm, sroot)
+    return cuda_efftn(Hk, axes, False, sroot)
 
 def cuda_fftn ( Hr, axes=[0,1,2], sroot=0 ):
     return cuda_efftn(Hr, axes, True, sroot)
