@@ -16,16 +16,19 @@ from mpi4py import MPI
 from load_balancing import *
 
 comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
+#rank = comm.Get_rank()
+#size = comm.Get_size()
 
 # Scatters first dimension of an array of arbitrary length
-def scatter_array ( arr, auxshape, pydtype, sroot ):
-    # An array to store the size and dimensions of scattered arrays
+def scatter_array ( arr, auxshape, pydtype, sroot, gcomm=comm ):
+    rank = gcomm.Get_rank()
+    size = gcomm.Get_size() 
+
+   # An array to store the size and dimensions of scattered arrays
     lsizes = np.empty((size,3), dtype=int)
     if rank == sroot:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
-    comm.Bcast([lsizes, MPI.INT], root=sroot)
+    gcomm.Bcast([lsizes, MPI.INT], root=sroot)
 
     # Change the first dimension of auxshape to the correct size for scatter
     auxshape = list(auxshape)
@@ -38,21 +41,24 @@ def scatter_array ( arr, auxshape, pydtype, sroot ):
     mpidtype = MPI._typedict[np.dtype(pydtype).char]
 
     # Scatter the data according to load_sizes
-    comm.Scatterv([arr, lsizes[:,0], lsizes[:,1], mpidtype], [arraux, mpidtype], root=sroot)
+    gcomm.Scatterv([arr, lsizes[:,0], lsizes[:,1], mpidtype], [arraux, mpidtype], root=sroot)
 
     return arraux
 
 # Scatters first dimension of an array of arbitrary length
-def gather_array ( arr, arraux, pydtype, sroot ):
+def gather_array ( arr, arraux, pydtype, sroot, gcomm=comm ):
+    rank = gcomm.Get_rank()
+    size = gcomm.Get_size()
+
     # An array to store the size and dimensions of gathered arrays
     lsizes = np.empty((size,3), dtype=int)
     if rank == sroot:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
-    comm.Bcast([lsizes, MPI.INT], root=sroot)
+    gcomm.Bcast([lsizes, MPI.INT], root=sroot)
 
     # Get the datatype for the MPI transfer
     mpidtype = MPI._typedict[np.dtype(pydtype).char]
 
 
     # Gather the data according to load_sizes
-    comm.Gatherv([arraux, mpidtype], [arr, lsizes[:,0], lsizes[:,1], mpidtype], root=sroot)
+    gcomm.Gatherv([arraux, mpidtype], [arr, lsizes[:,0], lsizes[:,1], mpidtype], root=sroot)

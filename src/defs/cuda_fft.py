@@ -11,58 +11,88 @@
 #
 import numpy as np
 import sys, time
+from mpi4py import MPI
+from communication import *
 
-import pycuda.autoinit
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+import pycuda.driver as driver
 import pycuda.gpuarray as gpuarray
 import skcuda.fft as skfft
+driver.init()
+nGPU = driver.Device.count()
+
+def cuda_ifftn ( Hk, axes=[0,1,2], sroot=0 ):
+    return cuda_efftn(Hk, axes, False, comm, sroot)
+
+def cuda_fftn ( Hr, axes=[0,1,2], sroot=0 ):
+    return cuda_efftn(Hr, axes, True, sroot)
 
 # Perform an inverse FFT on 'axes' of 'Hk'
 # Restriction: len(Hk) >= len(axes)
 # Restriction: 'axes' must be a list of unique, monotonically increasing integers
-def cuda_ifftn ( Hk, axes=[0,1,2] ):
-    return cuda_efftn(Hk, axes, False)
+#@profile
+def cuda_efftn ( Haux, axes, forward, sroot ): 
+    group = comm.Get_group()
+    cgroup = group.Incl(np.arange(0,nGPU,1))
+    gcomm = comm.Create(cgroup)
 
-# Perform a FFT on 'axes' of 'Hr'
-# Restriction: len(Hr) >= len(axes)
-# Restriction: 'axes' must be a list of unique, monotonically increasing integers
-def cuda_fftn ( Hr, axes=[0,1,2] ):
-    return cuda_efftn(Hr, axes, True)
+    if rank < nGPU:
 
-# Handle array shaping and FFT planning
-def cuda_efftn ( H, axes, forward ):
+        if rank == sroot:
+            hShape = Haux.shape
+        else:
+            hShape = None
+        hShape = gcomm.bcast(hShape, root=sroot)
 
-    hShape = H.shape
-    hDim = len(hShape)
-    fftDim = len(axes)
+        H = scatter_array(Haux, hShape, complex, sroot, gcomm=gcomm)
 
-    # Reshape 'axes' to be the array's end dimensions and ensure contiguity
-    H = np.ascontiguousarray(np.moveaxis(H, axes, np.arange(hDim-fftDim, hDim, 1)))
-    newShape = H.shape
+        hShape = H.shape
+        hDim = len(hShape)
+        fftDim = len(axes)
 
-    # Calculate number of batches
-    batchSize = 1
-    for i in range(hDim-fftDim):
-        batchSize *= H.shape[i]
+        # Reshape 'axes' to be the array's end dimensions and ensure contiguity
+        H = np.ascontiguousarray(np.moveaxis(H, axes, np.arange(hDim-fftDim, hDim, 1)))
+        newShape = H.shape
 
-    # Reshape to accomodate batching
-    batchShape = [None for _ in np.arange(fftDim+1)]
-    batchShape[0] = batchSize
-    for i in np.arange(0, fftDim, 1):
-        batchShape[i+1] = newShape[hDim-(fftDim-i)]
+        # Calculate number of batches
+        batchSize = 1
+        for i in range(hDim-fftDim):
+            batchSize *= H.shape[i]
 
-    H = np.reshape(H, batchShape)
+        # Reshape to accomodate batching
+        batchShape = [None for _ in np.arange(fftDim+1)]
+        batchShape[0] = batchSize
+        for i in np.arange(0, fftDim, 1):
+            batchShape[i+1] = newShape[hDim-(fftDim-i)]
 
-    # Pass array to the GPU and perform iFFT on each batch
-    H_gpu = gpuarray.to_gpu(H)
-    plan = skfft.Plan(H_gpu.shape[1:fftDim+1], H.dtype, H.dtype, H_gpu.shape[0])
+        H = np.reshape(H, batchShape)
 
-    if forward:
-        skfft.fft(H_gpu, H_gpu, plan)
-    else:
-        skfft.ifft(H_gpu, H_gpu, plan, True)
+        # Create Device and Context
+        context = driver.Device(rank).make_context()
 
-    # Reshape to original dimensions
-    H = np.reshape(H_gpu.get(), newShape)
-    H = np.moveaxis(H, np.arange(hDim-fftDim, hDim, 1), axes)
+        # Pass array to the GPU and perform iFFT on each batch
+        H_gpu = gpuarray.to_gpu(H)
+        plan = skfft.Plan(H_gpu.shape[1:fftDim+1], H.dtype, H.dtype, H_gpu.shape[0])
 
-    return H
+        if forward:
+            skfft.fft(H_gpu, H_gpu, plan)
+        else:
+            skfft.ifft(H_gpu, H_gpu, plan, True)
+
+        # Reshape to original dimensions
+        H = np.reshape(H_gpu.get(), newShape)
+        H = np.ascontiguousarray(np.moveaxis(H, np.arange(hDim-fftDim, hDim, 1), axes))
+
+        # Pop Context
+        context.pop()
+
+        gather_array(Haux, H, complex, sroot, gcomm=gcomm)
+
+        H = None
+
+    comm.Barrier()
+    cgroup.Free()
+
+    return Haux
