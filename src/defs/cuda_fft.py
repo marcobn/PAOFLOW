@@ -15,6 +15,7 @@ from mpi4py import MPI
 from communication import *
 
 comm = MPI.COMM_WORLD
+size = comm.Get_size()
 rank = comm.Get_rank()
 
 import pycuda.driver as driver
@@ -34,12 +35,15 @@ def cuda_fftn ( Hr, axes=[0,1,2], sroot=0 ):
 # Restriction: 'axes' must be a list of unique, monotonically increasing integers
 #@profile
 def cuda_efftn ( Haux, axes, forward, sroot ): 
-    group = comm.Get_group()
-    cgroup = group.Incl(np.arange(0,nGPU,1))
-    gcomm = comm.Create(cgroup)
+
+    if size >= nGPU:
+        group = comm.Get_group()
+        cgroup = group.Incl(np.arange(0,nGPU,1))
+        gcomm = comm.Create(cgroup)
+    else:
+        gcomm = comm
 
     if rank < nGPU:
-
         if rank == sroot:
             hShape = Haux.shape
         else:
@@ -93,6 +97,8 @@ def cuda_efftn ( Haux, axes, forward, sroot ):
         H = None
 
     comm.Barrier()
-    cgroup.Free()
+
+    if size >= nGPU:
+        cgroup.Free()
 
     return Haux

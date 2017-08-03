@@ -22,7 +22,7 @@ def scatter_array ( arr, auxshape, pydtype, sroot, gcomm=comm ):
     rank = gcomm.Get_rank()
     size = gcomm.Get_size() 
 
-   # An array to store the size and dimensions of scattered arrays
+    # An array to store the size and dimensions of scattered arrays
     lsizes = np.empty((size,3), dtype=int)
     if rank == sroot:
         lsizes = load_sizes(size, arr.shape[0], arr[0].size)
