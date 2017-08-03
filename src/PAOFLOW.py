@@ -380,13 +380,14 @@ if rank == 0 and do_spin_orbit:
     # Compute bands with spin-orbit coupling
     #----------------------
 
-    socStrengh = np.zeros((natoms,2),dtype=float)
+    socStrengh = np.zeros((naw.shape[0],2),dtype=float)
     socStrengh [:,0] =  lambda_p[:]
     socStrengh [:,1] =  lambda_d[:]
 
-    HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
+    HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh,naw,orb_pseudo)
     nawf=2*nawf
-
+    Hks  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
+   
 if do_bands and not(onedim):
     #----------------------
     # Compute bands on a selected path in the BZ
@@ -439,7 +440,7 @@ if do_bands and not(onedim):
 
     if rank == 0: print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
-
+    
     if band_topology:
         # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
         #from do_topology_calc import *
@@ -477,7 +478,6 @@ checkpoint = comm.bcast(checkpoint,root=0)
 #----------------------
 # Start master-slaves communication
 #----------------------
-
 Hksp = None
 if rank == 0:
     if double_grid and checkpoint == 0:
