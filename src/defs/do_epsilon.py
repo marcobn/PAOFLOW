@@ -18,7 +18,8 @@ import scipy.integrate as tgr
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-from load_balancing import load_balancing
+from load_balancing import *
+from communication import scatter_array
 
 from constants import *
 from smearing import *
@@ -49,21 +50,14 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
 
     # Load balancing
     ini_ik, end_ik = load_balancing(size,rank,nktot)
-    nsize = end_ik-ini_ik
-
-    kq_wghtaux = np.zeros(nsize,dtype=float)
-    pkspaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype=complex)
-    E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
-    deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
-    deltak2aux = np.zeros((nsize,nawf,nawf,nspin),dtype = float)
 
     comm.Barrier()
-    comm.Scatter(pksp,pkspaux,root=0)
-    comm.Scatter(E_k,E_kaux,root=0)
-    comm.Scatter(kq_wght,kq_wghtaux,root=0)
+    pkspaux = scatter_array(pksp, (nktot,3,nawf,nawf,nspin), complex, 0)
+    E_kaux = scatter_array(E_k, (nktot,nawf,nspin), float, 0)
+    kq_wghtaux = scatter_array(kq_wght, (nktot,), float, 0)
     if smearing != None:
-        comm.Scatter(deltak,deltakaux,root=0)
-        comm.Scatter(deltak2,deltak2aux,root=0)
+        deltakaux = scatter_array(deltak, (nktot,nawf,nspin), float, 0)
+        deltak2aux = scatter_array(deltak2, (nktot,nawf,nawf,nspin), float, 0)
 
     #=======================
     # Im

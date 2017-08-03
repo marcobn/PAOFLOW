@@ -129,12 +129,6 @@ if rank == 0:
     if nktot%npool != 0:
         print('npool not compatible with MP mesh',nktot,npool)
         wrongdim = True
-    nkpool = nktot/npool
-    ini_ik, end_ik = load_balancing(size,rank,nkpool)
-    nsize = end_ik-ini_ik
-    if nkpool%nsize != 0:
-        print('nkpool not compatible with number of cores',nkpool,nsize)
-        wrongdim = True
 comm.bcast(wrongdim,root=0)
 if wrongdim: quit()
 
@@ -300,14 +294,15 @@ if rank == 0 and write2file:
                 for j in xrange(nawf):
                     f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
         f.close()
-        f=open('k.txt','w')
-        for ik in xrange(nkpnts):
-            f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
-        f.close()
-        f=open('wk.txt','w')
-        for ik in xrange(nkpnts):
-            f.write('%20.13f \n' %(kpnts_wght[ik]))
-        f.close()
+    f=open('k.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
+    f.close()
+    f=open('wk.txt','w')
+    for ik in xrange(nkpnts):
+        f.write('%20.13f \n' %(kpnts_wght[ik]))
+    f.close()
+
     print('H(k),S(k),k,wk written to file')
 if write2file: quit()
 

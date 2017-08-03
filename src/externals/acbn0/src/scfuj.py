@@ -59,8 +59,15 @@ def chkSpinCalc(outfile):
         fin = file(outfile,'r')
 	lines = fin.read()
         regex = re.compile(r"(spin.*)\n",re.MULTILINE)
-        if len(regex.findall(lines)) != 0: return 2
-        else: return 1
+        nspin = regex.findall(lines)
+        if len(nspin) == 0:
+            return 1
+        else:
+            nspin = str(nspin)
+            for c in nspin:
+                if not c.isdigit():
+                    nspin = nspin.replace(c,'')
+            return int(nspin)
 
 def acbn0(prefix):
 
@@ -365,9 +372,9 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 		fileList = {'scf':"%s_scf.in"%prefix, 
 			    'nscf':"%s_nscf.in"%prefix,
 			    'pdos':"%s_pdos.in"%prefix,
-			    'PAO_bands':"%s_PAO.in"%prefix,
-			    'PAO_bands_up':"%s_PAO.in"%prefix, 
-			    'PAO_bands_down':"%s_PAO.in"%prefix, }
+			    'PAO_bands':"%s_PAO_bands.in"%prefix,
+			    'PAO_bands_up':"%s_PAO_bands_up.in"%prefix, 
+			    'PAO_bands_down':"%s_PAO_bands_down.in"%prefix, }
 		
 		if nspin != 2 :
 			calcList = ['scf','nscf','pdos','PAO_bands','acbn0']
