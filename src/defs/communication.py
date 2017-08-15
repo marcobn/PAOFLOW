@@ -42,7 +42,7 @@ def scatter_array ( arr, auxshape, pydtype, sroot ):
 
     return arraux
 
-# Scatters first dimension of an array of arbitrary length
+# Gathers first dimension of an array of arbitrary length
 def gather_array ( arr, arraux, pydtype, sroot ):
     # An array to store the size and dimensions of gathered arrays
     lsizes = np.empty((size,3), dtype=int)
@@ -52,7 +52,6 @@ def gather_array ( arr, arraux, pydtype, sroot ):
 
     # Get the datatype for the MPI transfer
     mpidtype = MPI._typedict[np.dtype(pydtype).char]
-
 
     # Gather the data according to load_sizes
     comm.Gatherv([arraux, mpidtype], [arr, lsizes[:,0], lsizes[:,1], mpidtype], root=sroot)
