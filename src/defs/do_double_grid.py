@@ -18,22 +18,12 @@ import multiprocessing
 
 from zero_pad import *
 
-using_cuda = False
 scipyfft = False
 try:
-    import inputfile
-    using_cuda = inputfile.use_cuda
+    import pyfftw
 except:
-    pass
-
-if using_cuda:
-    from cuda_fft import *
-else:
-    try:
-        import pyfftw
-    except:
-        from scipy import fftpack as FFT
-        scipyfft = True
+    from scipy import fftpack as FFT
+    scipyfft = True
 
 comm=MPI.COMM_WORLD
 size = comm.Get_size()
