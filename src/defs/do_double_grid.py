@@ -56,26 +56,19 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread):
         Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf,nawf,nspin),dtype=complex)
         aux = np.zeros((nk1,nk2,nk3),dtype=complex)
 
-        if using_cuda:
-            for ispin in xrange(nspin):
+        for ispin in xrange(nspin):
+            if not scipyfft:
+                for i in xrange(nawf):
+                    for j in xrange(nawf):
+                        aux = zero_pad(HRaux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
+                        fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
+                            flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+                        Hksp[:,:,:,i,j,ispin] = fft()
+            else:
                 for i in xrange(nawf):
                     for j in xrange(nawf):
                         aux = HRaux[i,j,:,:,:,ispin]
-                        Hksp[:,:,:,i,j,ispin] = cuda_fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
-        else:
-            for ispin in xrange(nspin):
-                if not scipyfft:
-                    for i in xrange(nawf):
-                        for j in xrange(nawf):
-                            aux = zero_pad(HRaux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
-                            fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
-                                flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                            Hksp[:,:,:,i,j,ispin] = fft()
-                else:
-                    for i in xrange(nawf):
-                        for j in xrange(nawf):
-                            aux = HRaux[i,j,:,:,:,ispin]
-                            Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+                        Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
     else:
         sys.exit('wrong dimensions in input array')
