@@ -242,7 +242,8 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
     epsr = np.zeros((3,3,ene.size),dtype=float)
     de = ene[1]-ene[0]
 
-    if ini_ie == 0: ini_ie = 3
+    if end_ie == ini_ie: return
+    if ini_ie < 3: ini_ie = 3
     if end_ie == ene.size: end_ie = ene.size-1
     f_ene = intmetpax(ene,shift,1.0)
     for ie in xrange(ini_ie,end_ie):
