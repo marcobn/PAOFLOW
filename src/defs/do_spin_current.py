@@ -85,9 +85,9 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         nsize = end_ik-ini_ik
 
         comm.Barrier()
-        dHkaux = scatter_array(dHksp_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        jdHkaux = scatter_array(jdHksp_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        vecaux = scatter_array(vec_split, (nktot,nawf,nawf,nspin), complex, 0)
+        dHkaux = scatter_array(dHksp_split)
+        jdHkaux = scatter_array(jdHksp_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -97,7 +97,7 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
                         np.dot(dHkaux[ik,l,:,:,ispin],Sj))
 
         comm.Barrier()
-        gather_array(jdHksp_split, jdHkaux, complex, 0)
+        gather_array(jdHksp_split, jdHkaux)
 
         if rank == 0:
             jdHksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jdHksp_split[:,:,:,:,:,]
@@ -122,9 +122,9 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         nsize = end_ik-ini_ik
 
         comm.Barrier()
-        jdHkaux = scatter_array(jdHksp_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        jksaux = scatter_array(jks_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        vecaux = scatter_array(vec_split, (nktot,nawf,nawf,nspin), complex, 0)
+        jdHkaux = scatter_array(jdHksp_split)
+        jksaux = scatter_array(jks_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -133,7 +133,7 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
                                 (jdHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        gather_array(jks_split, jksaux, complex, 0)
+        gather_array(jks_split, jksaux)
 
         if rank == 0:
             jksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jks_split[:,:,:,:,:]

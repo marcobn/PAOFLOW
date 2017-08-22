@@ -68,14 +68,14 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
         v_kaux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
 
         comm.Barrier()
-        aux = scatter_array(Hks_split, (nktot,nawf,nawf,nspin), complex, 0)
+        aux = scatter_array(Hks_split)
 
         for ispin in xrange(nspin):
             E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(nsize,aux[:,:,:,ispin])
 
         comm.barrier()
-        gather_array(E_k_split, E_kaux, float, 0)
-        gather_array(v_k_split, v_kaux, complex, 0)
+        gather_array(E_k_split, E_kaux)
+        gather_array(v_k_split, v_kaux)
 
         if rank == 0:
             E_k[pool*nkpool:(pool+1)*nkpool,:,:] = E_k_split[:,:,:]

@@ -41,8 +41,8 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
         dossum = np.zeros(1,dtype=float)
 
         comm.Barrier()
-        aux = scatter_array(eig, (netot,), float, 0)
-        auxd = scatter_array(delta, (netot,), float, 0)
+        aux = scatter_array(eig)
+        auxd = scatter_array(delta)
 
         if smearing == 'gauss':
             # adaptive Gaussian smearing
