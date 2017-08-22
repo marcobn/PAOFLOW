@@ -71,11 +71,11 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         nsize = end_ik-ini_ik
 
         comm.Barrier()
-        dHkaux = scatter_array(dHksp_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        d2Hkaux = scatter_array(d2Hksp_split, (nktot,3,3,nawf,nawf,nspin), complex, 0)
-        pksaux = scatter_array(pks_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        tksaux = scatter_array(tks_split, (nktot,3,3,nawf,nawf,nspin), complex, 0)
-        vecaux = scatter_array(vec_split, (nktot,nawf,nawf,nspin), complex, 0)
+        dHkaux = scatter_array(dHksp_split)
+        d2Hkaux = scatter_array(d2Hksp_split)
+        pksaux = scatter_array(pks_split)
+        tksaux = scatter_array(tks_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -87,8 +87,8 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
                                     (d2Hkaux[ik,l,lp,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        gather_array(pks_split, pksaux, complex, 0)
-        gather_array(tks_split, tksaux, complex, 0)
+        gather_array(pks_split, pksaux)
+        gather_array(tks_split, tksaux)
 
         if rank == 0:
             pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]

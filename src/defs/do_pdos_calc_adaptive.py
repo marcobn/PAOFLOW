@@ -39,9 +39,9 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
     for m in range(nawf):
 
         comm.Barrier()
-        E_kaux = scatter_array(E_k, (nktot,nawf), float, 0)
-        v_kaux = scatter_array(v_k, (nktot,nawf,nawf), complex, 0)
-        auxd = scatter_array(delta, (nktot,nawf), float, 0)
+        E_kaux = scatter_array(E_k)
+        v_kaux = scatter_array(v_k)
+        auxd = scatter_array(delta)
 
         pdosaux = np.zeros((nawf,ene.size),dtype=float)
         pdossum = np.zeros((nawf,ene.size),dtype=float)

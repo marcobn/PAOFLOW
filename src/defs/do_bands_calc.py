@@ -51,7 +51,7 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
 
     # Gather segments of Hks
     Hks_aux = np.ascontiguousarray(np.moveaxis(Hks_aux, 2, 0))
-    gather_array(Hks_int, Hks_aux, complex, 0)
+    gather_array(Hks_int, Hks_aux)
     if rank == 0:
         Hks_int = np.moveaxis(Hks_int, 0, 2)
 
@@ -63,7 +63,7 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
 
         # Gather segments of Sks
         Sks_aux = np.ascontiguousarray(np.moveaxis(Sks_aux, 2, 0))
-        gather_array(Sks_int, Sks_aux, complex, 0)
+        gather_array(Sks_int, Sks_aux)
         if rank == 0:
             Sks_int = np.moveaxis(Sks_int, 0, 2)
 

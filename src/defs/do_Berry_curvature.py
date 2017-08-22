@@ -70,8 +70,8 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             E_k_long = None
 
         comm.Barrier()
-        pksaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
-        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
+        pksaux = scatter_array(pksp_long)
+        E_kaux = scatter_array(E_k_long)
 
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
@@ -86,7 +86,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
                     Om_znkaux[:,n] += -2.0*np.imag(pksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
                     ((E_kaux[:,m,0] - E_kaux[:,n,0])**2 + deltap**2)
         comm.Barrier()
-        gather_array(Om_znk_split, Om_znkaux, float, 0)
+        gather_array(Om_znk_split, Om_znkaux)
 
         if rank == 0:
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
@@ -118,9 +118,9 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             deltak_long = None
 
         comm.Barrier()
-        Om_znkaux = scatter_array(Om_znk_long, (nktot,nawf), float, 0)
-        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
-        deltakaux = scatter_array(deltak_long, (nktot,nawf,nspin), float, 0)
+        Om_znkaux = scatter_array(Om_znk_long)
+        E_kaux = scatter_array(E_k_long)
+        deltakaux = scatter_array(deltak_long)
 
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
@@ -137,7 +137,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
                 Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)
 
         comm.Barrier()
-        gather_array(Om_zk_split, Om_zkaux, float, 0)
+        gather_array(Om_zk_split, Om_zkaux)
 
         if rank == 0:
             Om_zk[pool*nkpool:(pool+1)*nkpool,:] = Om_zk_split[:,:]
