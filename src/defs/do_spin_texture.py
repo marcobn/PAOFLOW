@@ -82,8 +82,8 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
         nsize = end_ik-ini_ik
 
         comm.Barrier()
-        sktxtaux = scatter_array(sktxt_split, (nktot,3,nawf,nawf), complex, 0)
-        vecaux = scatter_array(vec_split, (nktot,nawf,nawf,nspin), complex, 0)
+        sktxtaux = scatter_array(sktxt_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -92,7 +92,7 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
                                 (Sj[l,:,:]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        gather_array(sktxt_split, sktxtaux, complex, 0)
+        gather_array(sktxt_split, sktxtaux)
 
         if rank == 0:
             sktxt[pool*nkpool:(pool+1)*nkpool,:,:,:] = sktxt_split[:,:,:,:]

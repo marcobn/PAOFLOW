@@ -69,10 +69,10 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
             deltak2_long= None
 
         comm.Barrier()
-        pkspaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
-        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
-        deltakaux = scatter_array(deltak_long, (nktot,nawf,nspin), float, 0)
-        deltak2aux = scatter_array(deltak2_long, (nktot,nawf,nawf,nspin), float, 0)
+        pkspaux = scatter_array(pksp_long)
+        E_kaux = scatter_array(E_k_long)
+        deltakaux = scatter_array(deltak_long)
+        deltak2aux = scatter_array(deltak2_long)
 
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
