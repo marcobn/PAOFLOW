@@ -57,6 +57,8 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
     E_kaux = scatter_array(E_k, (nktot,nawf,nspin), float, 0)
     if smearing != None:
         deltakaux = scatter_array(deltak, (nktot,nawf,nspin), float, 0)
+    else:
+        deltakaux = None
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)

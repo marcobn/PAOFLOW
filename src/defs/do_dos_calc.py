@@ -42,7 +42,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
         dossum = np.zeros(1,dtype=float)
 
         comm.Barrier()
-        aux = scatter_array(eig, (nktot,), float, 0)
+        aux = scatter_array(eig, (netot,), float, 0)
 
         dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/delta)**2)/delta)
 
