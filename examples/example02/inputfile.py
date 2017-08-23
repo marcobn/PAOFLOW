@@ -23,7 +23,7 @@ onedim = False
 # Bands interpolation on a path from the original MP mesh 
 do_bands = False
 ibrav = 2
-dkres = 0.01
+nk = 2000
 
 # Hamiltonian interpolation on finer MP mesh
 double_grid = True
