@@ -24,6 +24,7 @@ from kpnts_interpolation_mesh import *
 #from new_kpoint_interpolation import *
 from do_non_ortho import *
 from load_balancing import *
+from communication import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -36,33 +37,45 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     # Load balancing
     nkpi=kq.shape[1]
     ini_ik, end_ik = load_balancing(size,rank,nkpi)
+    nsize = end_ik - ini_ik
 
     nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
-    Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    Hks_aux  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
+    if rank == 0:
+        Hks_int  = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex) # final data arrays
+    else:
+        Hks_int = None
 
-    Hks_aux[:,:,:,:] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
+    # Band loop on Hks
+    Hks_aux  = np.zeros((nawf,nawf,nsize,nspin),dtype=complex) # read data arrays from tasks
+    Hks_aux[:,:,:,:] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx)
 
-    if size != 1:
-        comm.Allreduce(Hks_aux,Hks_int,op=MPI.SUM)
-    elif size == 1:
-        Hks_int = Hks_aux
+    # Gather segments of Hks
+    Hks_aux = np.ascontiguousarray(np.moveaxis(Hks_aux, 2, 0))
+    gather_array(Hks_int, Hks_aux)
+    if rank == 0:
+        Hks_int = np.moveaxis(Hks_int, 0, 2)
 
-    Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
+    Sks_int  = np.zeros((nkpi,nawf,nawf),dtype=complex)
     if read_S:
-        Sks_aux  = np.zeros((nawf,nawf,nkpi,1),dtype=complex)
-        Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
+        # Band loop on Sks
+        Sks_aux  = np.zeros((nawf,nawf,nsize,1),dtype=complex)
+        Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx)
 
-        if size != 1:
-            comm.Allreduce(Sks_aux,Sks_int,op=MPI.SUM)
-        elif size == 1:
-            Sks_int = Sks_aux
+        # Gather segments of Sks
+        Sks_aux = np.ascontiguousarray(np.moveaxis(Sks_aux, 2, 0))
+        gather_array(Sks_int, Sks_aux)
+        if rank == 0:
+            Sks_int = np.moveaxis(Sks_int, 0, 2)
 
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
 
-    for ispin in xrange(nspin):
-        E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
+    if rank == 0:
+        for ispin in xrange(nspin):
+            E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
+
+    comm.Bcast(E_kp,root=0)
+    comm.Bcast(v_kp,root=0)
 
 #    if rank == 0:
 #        plt.matshow(abs(Hks_int[:,:,1445,0]))
@@ -73,26 +86,28 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
 
     return(E_kp,v_kp)
 
-def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx):
+def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
 
-    auxh = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex)
+    nsize = end_ik - ini_ik
+    auxh = np.zeros((nawf,nawf,nsize,nspin),dtype=complex)
     HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
 
     for ik in xrange(ini_ik,end_ik):
         for ispin in xrange(nspin):
-             auxh[:,:,ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
+             auxh[:,:,ik-ini_ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)
 
-def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx):
+def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
 
-    auxs = np.zeros((nawf,nawf,nkpi),dtype=complex)
+    nsize = end_ik - ini_ik
+    auxs = np.zeros((nawf,nawf,nsize),dtype=complex)
 
     for ik in xrange(ini_ik,end_ik):
         for i in xrange(nk1):
             for j in xrange(nk2):
                 for k in xrange(nk3):
                     phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[idx[i,j,k],:])*1j)
-                    auxs[:,:,ik] += SRaux[:,:,i,j,k]*phase
+                    auxs[:,:,ik-ini_ik] += SRaux[:,:,i,j,k]*phase
 
     return(auxs)

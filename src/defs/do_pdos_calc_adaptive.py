@@ -16,6 +16,7 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
+from communication import scatter_array
 from smearing import *
 
 # initialize parallel execution
@@ -37,14 +38,10 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
     pdos = np.zeros((nawf,ene.size),dtype=float)
     for m in range(nawf):
 
-        v_kaux = np.zeros((nsize,nawf,nawf),dtype=complex)
-        E_kaux = np.zeros((nsize,nawf),dtype=float)
-        auxd = np.zeros((nsize,nawf),dtype=float)
-
         comm.Barrier()
-        comm.Scatter(E_k,E_kaux,root=0)
-        comm.Scatter(v_k,v_kaux,root=0)
-        comm.Scatter(delta,auxd,root=0)
+        E_kaux = scatter_array(E_k)
+        v_kaux = scatter_array(v_k)
+        auxd = scatter_array(delta)
 
         pdosaux = np.zeros((nawf,ene.size),dtype=float)
         pdossum = np.zeros((nawf,ene.size),dtype=float)

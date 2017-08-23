@@ -21,6 +21,7 @@ from mpi4py.MPI import ANY_SOURCE
 from clebsch_gordan import *
 
 from load_balancing import *
+from communication import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -82,16 +83,11 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
-
-        dHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        jdHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
 
         comm.Barrier()
-        comm.Scatter(dHksp_split,dHkaux,root=0)
-        comm.Scatter(jdHksp_split,jdHkaux,root=0)
-        comm.Scatter(vec_split,vecaux,root=0)
+        dHkaux = scatter_array(dHksp_split)
+        jdHkaux = scatter_array(jdHksp_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -101,7 +97,7 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
                         np.dot(dHkaux[ik,l,:,:,ispin],Sj))
 
         comm.Barrier()
-        comm.Gather(jdHkaux,jdHksp_split,root=0)
+        gather_array(jdHksp_split, jdHkaux)
 
         if rank == 0:
             jdHksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jdHksp_split[:,:,:,:,:,]
@@ -124,16 +120,11 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
-
-        jdHkaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        jksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
 
         comm.Barrier()
-        comm.Scatter(jdHksp_split,jdHkaux,root=0)
-        comm.Scatter(jks_split,jksaux,root=0)
-        comm.Scatter(vec_split,vecaux,root=0)
+        jdHkaux = scatter_array(jdHksp_split)
+        jksaux = scatter_array(jks_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -142,7 +133,7 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
                                 (jdHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        comm.Gather(jksaux,jks_split,root=0)
+        gather_array(jks_split, jksaux)
 
         if rank == 0:
             jksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jks_split[:,:,:,:,:]

@@ -19,6 +19,7 @@ from mpi4py.MPI import ANY_SOURCE
 from write3Ddatagrid import *
 from clebsch_gordan import *
 from load_balancing import *
+from communication import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -79,14 +80,10 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
-
-        sktxtaux = np.zeros((nsize,3,nawf,nawf),dtype = complex)
-        vecaux = np.zeros((nsize,nawf,nawf,nspin),dtype = complex)
 
         comm.Barrier()
-        comm.Scatter(sktxt_split,sktxtaux,root=0)
-        comm.Scatter(vec_split,vecaux,root=0)
+        sktxtaux = scatter_array(sktxt_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -95,7 +92,7 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
                                 (Sj[l,:,:]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        comm.Gather(sktxtaux,sktxt_split,root=0)
+        gather_array(sktxt_split, sktxtaux)
 
         if rank == 0:
             sktxt[pool*nkpool:(pool+1)*nkpool,:,:,:] = sktxt_split[:,:,:,:]

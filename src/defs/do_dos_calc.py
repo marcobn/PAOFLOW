@@ -16,6 +16,7 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
+from communication import scatter_array
 
 from do_non_ortho import *
 
@@ -34,20 +35,14 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
 
-    # Load balancing
-    ini_ie, end_ie = load_balancing(size,rank,netot)
-
-    nsize = end_ie-ini_ie
-
     dos = np.zeros((ene.size),dtype=float)
 
     for ne in xrange(ene.size):
 
         dossum = np.zeros(1,dtype=float)
-        aux = np.zeros(nsize,dtype=float)
 
         comm.Barrier()
-        comm.Scatter(eig,aux,root=0)
+        aux = scatter_array(eig)
 
         dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/delta)**2)/delta)
 

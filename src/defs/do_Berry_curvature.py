@@ -23,6 +23,7 @@ from get_R_grid_fft import *
 from kpnts_interpolation_mesh import *
 from do_non_ortho import *
 from load_balancing import *
+from communication import *
 from constants import *
 from smearing import *
 
@@ -68,18 +69,15 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             pksp_long = None
             E_k_long = None
 
+        comm.Barrier()
+        pksaux = scatter_array(pksp_long)
+        E_kaux = scatter_array(E_k_long)
+
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
-        if nkpool%nsize != 0: sys.exit('npool not compatible with nsize')
 
-        pksaux = np.zeros((nsize,3,nawf,nawf,nspin),dtype = complex)
-        E_kaux = np.zeros((nsize,nawf,nspin),dtype = float)
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
-
-        comm.Barrier()
-        comm.Scatter(pksp_long,pksaux,root=0)
-        comm.Scatter(E_k_long,E_kaux,root=0)
 
         deltap = 0.05
         for n in xrange(nawf):
@@ -88,7 +86,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
                     Om_znkaux[:,n] += -2.0*np.imag(pksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
                     ((E_kaux[:,m,0] - E_kaux[:,n,0])**2 + deltap**2)
         comm.Barrier()
-        comm.Gather(Om_znkaux,Om_znk_split,root=0)
+        gather_array(Om_znk_split, Om_znkaux)
 
         if rank == 0:
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
@@ -119,19 +117,16 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             E_k_long = None
             deltak_long = None
 
+        comm.Barrier()
+        Om_znkaux = scatter_array(Om_znk_long)
+        E_kaux = scatter_array(E_k_long)
+        deltakaux = scatter_array(deltak_long)
+
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
 
-        Om_znkaux = np.zeros((nsize,nawf),dtype=float)
         Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
-        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
-        deltakaux = np.zeros((nsize,nawf,nspin),dtype = float)
-
-        comm.Barrier()
-        comm.Scatter(Om_znk_long,Om_znkaux,root= 0)
-        comm.Scatter(E_k_long,E_kaux,root= 0)
-        comm.Scatter(deltak_long,deltakaux,root=0)
 
         for i in xrange(ene.size):
             if smearing == 'gauss':
@@ -142,7 +137,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
                 Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)
 
         comm.Barrier()
-        comm.Gather(Om_zkaux,Om_zk_split,root=0)
+        gather_array(Om_zk_split, Om_zkaux)
 
         if rank == 0:
             Om_zk[pool*nkpool:(pool+1)*nkpool,:] = Om_zk_split[:,:]
