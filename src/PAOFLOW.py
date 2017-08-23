@@ -430,7 +430,7 @@ if do_bands and not(onedim):
     R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
 
     # Define k-point mesh for bands interpolation
-    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,dkres)
+    kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk)
     nkpi=kq.shape[1]
     for n in xrange(nkpi):
         kq[:,n]=np.dot(kq[:,n],b_vectors)

@@ -29,7 +29,7 @@ nl = [1,1,1]    # multiplicity of each l shell
 # Bands interpolation on a path from the original MP mesh 
 do_bands = False
 ibrav = 2
-dkres = 0.01
+nk = 2000
 # Band topology analysis 
 band_topology = True
 ipol = 0
