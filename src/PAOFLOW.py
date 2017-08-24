@@ -132,6 +132,8 @@ if rank == 0:
 comm.bcast(wrongdim,root=0)
 if wrongdim: quit()
 
+comm.Barrier()
+
 #----------------------
 # Read DFT data
 #----------------------
@@ -202,8 +204,10 @@ if rank == 0:
     print('estimated maximum array size: %5.2f GBytes' %(gbyte))
     print('   ')
 
-if rank == 0: print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
-reset=time.time()
+comm.Barrier()
+if rank == 0:
+    print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+    reset=time.time()
 
 #----------------------
 # Building the Projectability
@@ -238,11 +242,12 @@ Hks = None
 if rank == 0:
     Hks,Sks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
 
+comm.Barrier()
+if rank == 0:
     print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-
+    reset=time.time()
     nawf = Hks.shape[0]
 
-reset=time.time()
 
 # NOTE: Take care of non-orthogonality, if needed
 # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
@@ -360,8 +365,10 @@ if rank ==0:
     HRaux = None
     SRaux = None
 
+comm.Barrier()
+if rank == 0:
     print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-reset=time.time()
+    reset=time.time()
 
 if rank == 0 and (Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0):
     # Add external fields or non scf ACBN0 correction
@@ -439,6 +446,7 @@ if do_bands and not(onedim):
     E_kp = v_kp = None
     E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho)
 
+    comm.Barrier()
     if rank == 0: print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
@@ -447,8 +455,11 @@ if do_bands and not(onedim):
         #from do_topology_calc import *
         from do_topology_calc_new import *
         do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
-        if rank == 0: print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-        reset=time.time()
+
+        comm.Barrier()
+        if rank == 0:
+            print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+            reset=time.time()
 
     alat *= ANGSTROM_AU
 
@@ -459,8 +470,10 @@ elif do_bands and onedim:
     if rank == 0 and verbose: print('... computing bands along a line')
     if rank == 0: do_bands_calc_1D(Hks)
 
-    if rank ==0: print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank ==0:
+        print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 #----------------------
 # Initialize Read/Write restart data
@@ -517,15 +530,17 @@ if rank == 0:
         # Naming convention (from here): 
         # Hksp = k-space Hamiltonian on interpolated grid
         if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
-
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
 
-        if rank ==0: print('R -> k zero padding in           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-        reset=time.time()
     else:
         kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
         Hksp = np.moveaxis(Hks,(0,1),(3,4))
         Hksp = Hksp.copy(order='C')
+
+comm.Barrier()
+if rank ==0:
+    print('R -> k zero padding in           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
 
 #----------------------
 # Read/Write restart data
@@ -581,6 +596,7 @@ if checkpoint < 2:
     nk2 = index['nk2']
     nk3 = index['nk3']
 
+    comm.Barrier()
     if rank ==0: print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
     reset=time.time()
 
@@ -665,8 +681,10 @@ if (do_dos or do_pdos) and smearing == None:
             eigdw = None
             v_kdw = None
 
-    if rank ==0: print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank ==0:
+        print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 if do_fermisurf or do_spintexture:
     #----------------------
@@ -688,8 +706,10 @@ if do_fermisurf or do_spintexture:
         from do_spin_texture import *
         do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool)
 
-    if rank ==0: print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank ==0:
+        print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 pksp = None
 jksp = None
@@ -703,6 +723,7 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
         #from do_gradient_d2 import *
         #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 
+        comm.Barrier()
         if rank == 0:
             print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
@@ -761,8 +782,10 @@ if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != 
         #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
         #pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
 
-        if rank == 0: print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-        reset=time.time()
+        comm.Barrier()
+        if rank == 0:
+            print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+            reset=time.time()
 
     #----------------------
     # Read/Write restart data
@@ -842,8 +865,10 @@ if rank == 0:
         if restart:
             np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
 
-        print('adaptive smearing in             %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-        reset=time.time()
+comm.Barrier()
+if rank == 0 and smearing != None:
+    print('adaptive smearing in             %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    reset=time.time()
 
 
 # to test formula 23 in the Graf & Vogl paper...
@@ -954,8 +979,10 @@ if (do_dos or do_pdos) and smearing != None:
             do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_kdw,nk1,nk2,nk3,nawf,1,smearing)
             eigdw = None
 
-    if rank ==0: print('dos (adaptive smearing) in       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank ==0:
+        print('dos (adaptive smearing) in       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 #----------------------
 # Memory reduction
@@ -1000,8 +1027,11 @@ if spin_Hall:
             jksp = np.delete(np.delete(do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl),np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
             if restart and rank == 0:
                 np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
-            if rank == 0: print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-            reset=time.time()
+
+            comm.Barrier()
+            if rank == 0:
+                print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                reset=time.time()
         #----------------------
         # Compute spin Berry curvature... 
         #----------------------
@@ -1039,8 +1069,10 @@ if spin_Hall:
                 f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
             f.close()
 
-    if rank == 0: print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank == 0:
+        print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 dHksp = None
 
@@ -1092,8 +1124,10 @@ if Berry:
                 f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
             f.close()
 
-    if rank == 0: print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank == 0:
+        print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 #----------------------
 # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
@@ -1169,8 +1203,10 @@ if Boltzmann:
     S = None
     kappa = None
 
-    if rank ==0: print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-    reset=time.time()
+    comm.Barrier()
+    if rank ==0:
+        print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        reset=time.time()
 
 #----------------------
 # Compute dielectric tensor (Re and Im epsilon)
@@ -1206,10 +1242,12 @@ if epsilon:
                             %(ene[n],jdos[n]))
                 f.close()
 
-
-    if rank ==0: print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+    comm.Barrier()
+    if rank ==0:
+        print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 
 # Timing
-if rank ==0: print('   ')
-if rank ==0: print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+if rank ==0:
+    print('   ')
+    print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
 quit()
