@@ -1042,7 +1042,7 @@ try:
         index = comm.bcast(index,root=0)
         eigtot = index['eigtot']
     
-        if rank == 0: eigup = None
+        eigup = None
         eigdw = None
         deltakpup = None
         deltakpdw = None
