@@ -91,7 +91,11 @@ def main():
     for n in xrange(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
-        oneRun(subdir)
+        try:
+            oneRun(subdir)
+        except:
+            print('Exception in %s'%subdir)
+            quit()
         verifyData(subdir, refPattern)
         os.chdir('../')
         print('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
