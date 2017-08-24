@@ -97,10 +97,10 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
             Rfft_split = None
 
         comm.Barrier()
-        dHRaux1 = scatter_array(dHRaux_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        d2HRaux1 = scatter_array(d2HRaux_split, (nktot,3,3,nawf,nawf,nspin), complex, 0)
-        HRaux1 = scatter_array(HRaux_split, (nktot,nawf,nawf,nspin), complex, 0)
-        Rfftaux = scatter_array(Rfft_split, (nktot,3), float, 0)
+        dHRaux1 = scatter_array(dHRaux_split)
+        d2HRaux1 = scatter_array(d2HRaux_split)
+        HRaux1 = scatter_array(HRaux_split)
+        Rfftaux = scatter_array(Rfft_split)
 
         # Compute R*H(R)
         for l in xrange(3):
@@ -112,8 +112,8 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                             d2HRaux1[:,l,lp,n,m,ispin] = -1.0*alat**2*Rfftaux[:,l]*Rfftaux[:,lp]*HRaux1[:,n,m,ispin]
 
         comm.Barrier()
-        gather_array(dHRaux_split, dHRaux1, complex, 0)
-        gather_array(d2HRaux_split, d2HRaux1, complex, 0)
+        gather_array(dHRaux_split, dHRaux1)
+        gather_array(d2HRaux_split, d2HRaux1)
 
         if rank == 0:
             dHRaux[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = dHRaux_split[:,:,:,:,:,]

@@ -52,12 +52,12 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     ini_ik, end_ik = load_balancing(size,rank,nktot)
 
     comm.Barrier()
-    pkspaux = scatter_array(pksp, (nktot,3,nawf,nawf,nspin), complex, 0)
-    E_kaux = scatter_array(E_k, (nktot,nawf,nspin), float, 0)
-    kq_wghtaux = scatter_array(kq_wght, (nktot,), float, 0)
+    pkspaux = scatter_array(pksp)
+    E_kaux = scatter_array(E_k)
+    kq_wghtaux = scatter_array(kq_wght)
     if smearing != None:
-        deltakaux = scatter_array(deltak, (nktot,nawf,nspin), float, 0)
-        deltak2aux = scatter_array(deltak2, (nktot,nawf,nawf,nspin), float, 0)
+        deltakaux = scatter_array(deltak)
+        deltak2aux = scatter_array(deltak2)
 
     #=======================
     # Im
@@ -242,7 +242,8 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
     epsr = np.zeros((3,3,ene.size),dtype=float)
     de = ene[1]-ene[0]
 
-    if ini_ie == 0: ini_ie = 3
+    if end_ie == ini_ie: return
+    if ini_ie < 3: ini_ie = 3
     if end_ie == ene.size: end_ie = ene.size-1
     f_ene = intmetpax(ene,shift,1.0)
     for ie in xrange(ini_ie,end_ie):

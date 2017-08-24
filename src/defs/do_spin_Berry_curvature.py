@@ -78,9 +78,9 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
 
         comm.Barrier()
-        pksaux = scatter_array(pksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
-        jksaux = scatter_array(jksp_long, (nktot,3,nawf,nawf,nspin), complex, 0)
-        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
+        pksaux = scatter_array(pksp_long)
+        jksaux = scatter_array(jksp_long)
+        E_kaux = scatter_array(E_k_long)
 
         deltap = 0.05
         for n in xrange(nawf):
@@ -90,7 +90,7 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
                     ((E_kaux[:,m,0] - E_kaux[:,n,0])**2 + deltap**2)
 
         comm.Barrier()
-        gather_array(Om_znk_split, Om_znkaux, float, 0)
+        gather_array(Om_znk_split, Om_znkaux)
 
         if rank == 0:
             Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
@@ -128,9 +128,9 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
 
         comm.Barrier()
-        Om_znkaux = scatter_array(Om_znk_long, (nktot,nawf), float, 0)
-        E_kaux = scatter_array(E_k_long, (nktot,nawf,nspin), float, 0)
-        deltakaux = scatter_array(deltak_long, (nktot,nawf,nspin), float, 0)
+        Om_znkaux = scatter_array(Om_znk_long)
+        E_kaux = scatter_array(E_k_long)
+        deltakaux = scatter_array(deltak_long)
 
         for i in xrange(ene.size):
             if smearing == 'gauss':
@@ -141,7 +141,7 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
                 Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)
 
         comm.Barrier()
-        gather_array(Om_zk_split, Om_zkaux, float, 0)
+        gather_array(Om_zk_split, Om_zkaux)
 
         if rank == 0:
             Om_zk[pool*nkpool:(pool+1)*nkpool,:] = Om_zk_split[:,:]

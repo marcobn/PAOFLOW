@@ -65,9 +65,9 @@ def do_momentum(vec,dHksp,npool):
         nsize = end_ik-ini_ik
 
         comm.Barrier()
-        dHkaux = scatter_array(dHksp_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        pksaux = scatter_array(pks_split, (nktot,3,nawf,nawf,nspin), complex, 0)
-        vecaux = scatter_array(vec_split, (nktot,nawf,nawf,nspin), complex, 0)
+        dHkaux = scatter_array(dHksp_split)
+        pksaux = scatter_array(pks_split)
+        vecaux = scatter_array(vec_split)
 
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
@@ -76,7 +76,7 @@ def do_momentum(vec,dHksp,npool):
                                 (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        gather_array(pks_split, pksaux, complex, 0)
+        gather_array(pks_split, pksaux)
 
         if rank == 0:
             pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]

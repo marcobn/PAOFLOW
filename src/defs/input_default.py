@@ -60,6 +60,7 @@ onedim = False
 do_bands = False
 ibrav = 0
 dkres = 0.1
+nk    = 2000
 # Band topology analysis
 band_topology = False
 spol = 0  # spin

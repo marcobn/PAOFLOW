@@ -52,11 +52,13 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
     ini_ik, end_ik = load_balancing(size,rank,nktot)
 
     comm.Barrier()
-    kq_wghtaux = scatter_array(kq_wght, (nktot,), float, 0)
-    velkpaux = scatter_array(velkp, (nktot,3,nawf,nspin), float, 0)
-    E_kaux = scatter_array(E_k, (nktot,nawf,nspin), float, 0)
+    kq_wghtaux = scatter_array(kq_wght)
+    velkpaux = scatter_array(velkp)
+    E_kaux = scatter_array(E_k)
     if smearing != None:
-        deltakaux = scatter_array(deltak, (nktot,nawf,nspin), float, 0)
+        deltakaux = scatter_array(deltak)
+    else:
+        deltakaux = None
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)
