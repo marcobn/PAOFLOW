@@ -1156,12 +1156,12 @@ try:
             Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
             ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
 
-        if rank == 0 and writedata:
-            from write2bxsf import *
-            x0 = np.zeros(3,dtype=float)
-            ind_plot = np.zeros(2)
-            Om_k[:,:,:,1] = Om_k[:,:,:,0]
-            write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+            if rank == 0 and writedata:
+                from write2bxsf import *
+                x0 = np.zeros(3,dtype=float)
+                ind_plot = np.zeros(2)
+                Om_k[:,:,:,1] = Om_k[:,:,:,0]
+                write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
 
             if ac_cond_spin:
                 ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
