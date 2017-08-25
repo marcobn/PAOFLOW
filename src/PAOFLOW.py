@@ -23,43 +23,51 @@
 #
 # *************************************************************************************
 
-# import general modules
+# future imports
 from __future__ import print_function
-from scipy import fftpack as FFT
-from scipy import linalg as LA
-from numpy import linalg as LAN
-import xml.etree.ElementTree as ET
-import numpy as np
-#import numexpr as ne
-import sys, time
-from mpi4py import MPI
-import multiprocessing
-
-# Define paths
-sys.path.append(sys.path[0]+'/defs')
-
-# Import PAO specific functions
-from build_Pn import *
-from build_Hks import *
-from do_non_ortho import *
-from do_ortho import *
-from add_ext_field import *
-from get_R_grid_fft import *
-from get_K_grid_fft import *
-from do_bands_calc import *
-from do_bands_calc_1D import *
-from do_double_grid import *
-from do_spin_orbit import *
-from constants import *
-from read_QE_output_xml_parse import *
-from write3Ddatagrid import *
-#----------------------
-# initialize parallel execution
-#----------------------
-comm=MPI.COMM_WORLD
-size=comm.Get_size()
 
 try:
+    # import general modules
+    from scipy import fftpack as FFT
+    from scipy import linalg as LA
+    from numpy import linalg as LAN
+    import xml.etree.ElementTree as ET
+    import numpy as np
+    #import numexpr as ne
+    import sys, time
+    from mpi4py import MPI
+    import multiprocessing
+
+    # Define paths
+    sys.path.append(sys.path[0]+'/defs')
+
+    # Import PAO specific functions
+    from build_Pn import *
+    from build_Hks import *
+    from do_non_ortho import *
+    from do_ortho import *
+    from add_ext_field import *
+    from get_R_grid_fft import *
+    from get_K_grid_fft import *
+    from do_bands_calc import *
+    from do_bands_calc_1D import *
+    from do_double_grid import *
+    from do_spin_orbit import *
+    from constants import *
+    from read_QE_output_xml_parse import *
+    from write3Ddatagrid import *
+except Exception as e:
+    print('Exception in Imports')
+    print(e)
+    quit()
+
+try:
+    #----------------------
+    # initialize parallel execution
+    #----------------------
+    comm=MPI.COMM_WORLD
+    size=comm.Get_size()
+
     #----------------------
     # initialize time
     #----------------------
@@ -87,58 +95,64 @@ try:
     nthread = multiprocessing.cpu_count()
     #ne.set_num_threads(nthread)
 except Exception as e:
-    print('Exception in Initialization')
+    print('Rank %d: Exception in Initialization'%rank)
     print(e)
     comm.Abort()
     raise Exception
 
-#----------------------
-# Read input
-#----------------------
-from input_default import *
 try:
-    from inputfile import *
-except:
-    if rank == 0: print('missing inputfile.py ...')
-    if rank == 0: print('using default input module')
-    pass
+    #----------------------
+    # Read input
+    #----------------------
+    from input_default import *
+    try:
+        from inputfile import *
+    except:
+        if rank == 0: print('missing inputfile.py ...')
+        if rank == 0: print('using default input module')
+        pass
 
-#----------------------
-# Check for fftw libraries
-#----------------------
-scipyfft = False
-if rank == 0:
-    if use_cuda:
-        from cuda_fft import *
-        print('using skcuda FFT')
+    #----------------------
+    # Check for fftw libraries
+    #----------------------
+    scipyfft = False
+    if rank == 0:
+        if use_cuda:
+            from cuda_fft import *
+            print('using skcuda FFT')
+        else:
+            try:
+                import pyfftw
+                print('using pyFFTW')
+            except:
+                print('using scipy FFT')
+                scipyfft = True
+
+    if size >  1:
+        if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
+        if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
     else:
-        try:
-            import pyfftw
-            print('using pyFFTW')
-        except:
-            print('using scipy FFT')
-            scipyfft = True
+        if rank == 0: print('serial execution')
 
-if size >  1:
-    if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
-    if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
-else:
-    if rank == 0: print('serial execution')
+    #----------------------
+    # Do dimension checks
+    #----------------------
 
-#----------------------
-# Do dimension checks
-#----------------------
+    wrongdim = False
+    if rank == 0:
+        nktot=nfft1*nfft2*nfft3
+        if nktot%npool != 0:
+            print('npool not compatible with MP mesh',nktot,npool)
+            wrongdim = True
+    comm.bcast(wrongdim,root=0)
+    if wrongdim: quit()
 
-wrongdim = False
-if rank == 0:
-    nktot=nfft1*nfft2*nfft3
-    if nktot%npool != 0:
-        print('npool not compatible with MP mesh',nktot,npool)
-        wrongdim = True
-comm.bcast(wrongdim,root=0)
-if wrongdim: quit()
-
-comm.Barrier()
+    comm.Barrier()
+except Exception as e:
+    print('Rank %d: Exception in FFT Library or Dimension Check'%rank)
+    print(e)
+    comm.Abort()
+    raise Exception
 
 try:
     #----------------------
@@ -216,7 +230,7 @@ try:
         print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
         reset=time.time()
 except Exception as e:
-    print('Exception in Reading DFT Data')
+    print('Rank %d: Exception in Reading DFT Data'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -247,7 +261,7 @@ try:
     bnd = comm.bcast(bnd,root=0)
     shift = comm.bcast(shift,root=0)
 except Exception as e:
-    print('Exception in Building Projectability')
+    print('Rank %d: Exception in Building Projectability'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -267,7 +281,7 @@ try:
         reset=time.time()
         nawf = Hks.shape[0]
 except Exception as e:
-    print('Exception in Building PAO Hamiltonian')
+    print('Rank %d: Exception in Building PAO Hamiltonian'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -284,7 +298,7 @@ try:
     if rank == 0 and non_ortho:
         Hks = do_non_ortho(Hks,Sks)
 except Exception as e:
-    print('Exception in Orthogonality')
+    print('Rank %d: Exception in Orthogonality'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -340,7 +354,7 @@ try:
         print('H(k),S(k),k,wk written to file')
     if write2file: quit()
 except Exception as e:
-    print('Exception in Write to File')
+    print('Rank %d: Exception in Write to File'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -354,7 +368,7 @@ try:
         plot_compare_PAO_DFT_eigs(Hks,Sks,my_eigsmat,non_ortho)
         quit()
 except Exception as e:
-    print('Exception in Do Comparison')
+    print('Rank %d: Exception in Do Comparison'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -410,7 +424,7 @@ try:
         print('k -> R in                        %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 except Exception as e:
-    print('Exception in k->R')
+    print('Rank %d: Exception in k->R'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -430,7 +444,7 @@ try:
 
         HRs = add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU)
 except Exception as e:
-    print('Exception in Adding External Fields')
+    print('Rank %d: Exception in Adding External Fields'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -448,7 +462,7 @@ try:
         HRs = do_spin_orbit_calc(HRs,natoms,theta,phi,socStrengh)
         nawf=2*nawf
 except Exception as e:
-    print('Exception in Do Spin Orbit')
+    print('Rank %d: Exception in Do Spin Orbit'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -534,30 +548,35 @@ try:
             print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
 except Exception as e:
-    print('Exception in Do Bands or Band Topology')
+    print('Rank %d: Exception in Do Bands or Band Topology'%rank)
     print(e)
     comm.Abort()
     raise Exception
 
-#----------------------
-# Initialize Read/Write restart data
-#----------------------
-checkpoint = 0
-if rank == 0:
-    if restart:
-        try:
-            datadump = np.load(fpath+'PAOdump.npz')
-            checkpoint = datadump['checkpoint']
-            print('reading data from dump at checkpoint ',checkpoint)
-        except:
-            pass
-checkpoint = comm.bcast(checkpoint,root=0)
-
-#----------------------
-# Start master-slaves communication
-#----------------------
+try:
+    #----------------------
+    # Initialize Read/Write restart data
+    #----------------------
+    checkpoint = 0
+    if rank == 0:
+        if restart:
+            try:
+                datadump = np.load(fpath+'PAOdump.npz')
+                checkpoint = datadump['checkpoint']
+                print('reading data from dump at checkpoint ',checkpoint)
+            except:
+                pass
+    checkpoint = comm.bcast(checkpoint,root=0)
+except Exception as e:
+    print('Rank %d: Exception in Checkpoint Initialization'%rank)
+    print(e)
+    comm.Abort()
+    raise Exception
 
 try:
+    #----------------------
+    # Start master-slaves communication
+    #----------------------
     Hksp = None
     if rank == 0:
         if double_grid and checkpoint == 0:
@@ -606,37 +625,37 @@ try:
     if rank ==0:
         print('R -> k zero padding in           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
+
+    #----------------------
+    # Read/Write restart data
+    #----------------------
+    if rank == 0:
+        if restart:
+            if checkpoint == 0:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3)
+            elif checkpoint > 0:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+    else:
+        Hksp = None
+        kq = None
+        kq_wght = None
+        idk = None
+        nk1 = None
+        nk2 = None
+        nk3 = None
+    checkpoint = comm.bcast(checkpoint,root=0)
 except Exception as e:
-    print('Exception in Do Double Grid')
+    print('Rank %d: Exception in Do Double Grid'%rank)
     print(e)
     comm.Abort()
     raise Exception
-
-#----------------------
-# Read/Write restart data
-#----------------------
-if rank == 0:
-    if restart:
-        if checkpoint == 0:
-            checkpoint += 1
-            np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3)
-        elif checkpoint > 0:
-            Hksp = datadump['Hksp']
-            kq = datadump['kq']
-            kq_wght = datadump['kq_wght']
-            idk = datadump['idk']
-            nk1 = datadump['nk1']
-            nk2 = datadump['nk2']
-            nk3 = datadump['nk3']
-else:
-    Hksp = None
-    kq = None
-    kq_wght = None
-    idk = None
-    nk1 = None
-    nk2 = None
-    nk3 = None
-checkpoint = comm.bcast(checkpoint,root=0)
 
 try:
     #----------------------
@@ -671,47 +690,47 @@ try:
         if rank ==0:
             print('eigenvalues in                   %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
+
+    #----------------------
+    # Read/Write restart data
+    #----------------------
+    if rank == 0:
+        if restart:
+            if checkpoint == 1:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                        eig=eig,E_k=E_k,v_k=v_k)
+            elif checkpoint > 1:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+                eig = datadump['eig']
+                E_k = datadump['E_k']
+                v_k = datadump['v_k']
+    else:
+        Hksp = None
+        kq = None
+        kq_wght = None
+        idk = None
+        nk1 = None
+        nk2 = None
+        nk3 = None
+        eig = None
+        E_k = None
+        v_k = None
+    checkpoint = comm.bcast(checkpoint,root=0)
+    nk1 = comm.bcast(nk1,root=0)
+    nk2 = comm.bcast(nk2,root=0)
+    nk3 = comm.bcast(nk3,root=0)
 except Exception as e:
-    print('Exception in Eigenvalues')
+    print('Rank %d: Exception in Eigenvalues'%rank)
     print(e)
     comm.Abort()
     raise Exception
-
-#----------------------
-# Read/Write restart data
-#----------------------
-if rank == 0:
-    if restart:
-        if checkpoint == 1:
-            checkpoint += 1
-            np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
-                    eig=eig,E_k=E_k,v_k=v_k)
-        elif checkpoint > 1:
-            Hksp = datadump['Hksp']
-            kq = datadump['kq']
-            kq_wght = datadump['kq_wght']
-            idk = datadump['idk']
-            nk1 = datadump['nk1']
-            nk2 = datadump['nk2']
-            nk3 = datadump['nk3']
-            eig = datadump['eig']
-            E_k = datadump['E_k']
-            v_k = datadump['v_k']
-else:
-    Hksp = None
-    kq = None
-    kq_wght = None
-    idk = None
-    nk1 = None
-    nk2 = None
-    nk3 = None
-    eig = None
-    E_k = None
-    v_k = None
-checkpoint = comm.bcast(checkpoint,root=0)
-nk1 = comm.bcast(nk1,root=0)
-nk2 = comm.bcast(nk2,root=0)
-nk3 = comm.bcast(nk3,root=0)
 
 try:
     if (do_dos or do_pdos) and smearing == None:
@@ -764,7 +783,7 @@ try:
             print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
 except Exception as e:
-    print('Exception in DOS Calculation')
+    print('Rank %d: Exception in DOS Calculation'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -795,7 +814,7 @@ try:
             print('FermiSurf in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
 except Exception as e:
-    print('Exception in Fermi Surface')
+    print('Rank %d: Exception in Fermi Surface'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -927,7 +946,7 @@ try:
     kq_wght = np.ones((nktot),dtype=float)
     kq_wght /= float(nktot)
 except Exception as e:
-    print('Exception in Gradient or Momenta')
+    print('Rank %d: Exception in Gradient or Momenta'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -966,7 +985,7 @@ try:
         print('adaptive smearing in             %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
         reset=time.time()
 except Exception as e:
-    print('Exception in Adaptive Smearing')
+    print('Rank %d: Exception in Adaptive Smearing'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -1024,7 +1043,7 @@ try:
                                 f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
                 f.close()
 except Exception as e:
-    print('Exception computing velocities for Boltzmann Transport')
+    print('Rank %d: Exception computing velocities for Boltzmann Transport'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -1091,7 +1110,7 @@ try:
             print('dos (adaptive smearing) in       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
 except Exception as e:
-    print('Exception in DOS (Adaptive Smearing)')
+    print('Rank %d: Exception in DOS (Adaptive Smearing)'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -1107,7 +1126,7 @@ try:
         deltakp = np.delete(deltakp,np.s_[bnd:],axis=1)
         deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
 except Exception as e:
-    print('Exception in Memory Reduction')
+    print('Rank %d: Exception in Memory Reduction'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -1191,13 +1210,13 @@ try:
         if rank == 0:
             print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
+
+    dHksp = None
 except Exception as e:
-    print('Exception in Spin Hall Module')
+    print('Rank %d: Exception in Spin Hall Module'%rank)
     print(e)
     comm.Abort()
     raise Exception
-
-dHksp = None
 
 try:
     #----------------------
@@ -1253,7 +1272,7 @@ try:
             print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
 except Exception as e:
-    print('Exception in Berry Module')
+    print('Rank %d: Exception in Berry Module'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -1338,7 +1357,7 @@ try:
             print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
 except Exception as e:
-    print('Exception in Transport')
+    print('Rank %d: Exception in Transport'%rank)
     print(e)
     comm.Abort()
     raise Exception
@@ -1382,13 +1401,19 @@ try:
         if rank ==0:
             print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 except Exception as e:
-    print('Exception in Epsilon')
+    print('Rank %d: Exception in Epsilon'%rank)
     print(e)
     comm.Abort()
     raise Exception
 
-# Timing
-if rank ==0:
-    print('   ')
-    print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
-quit()
+try:
+    # Timing
+    if rank ==0:
+        print('   ')
+        print('Total CPU time =                 %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+    quit()
+except Exception as e:
+    print('Rank %d: Exception in Total Time'%rank)
+    print(e)
+    comm.Abort()
+    raise Exception

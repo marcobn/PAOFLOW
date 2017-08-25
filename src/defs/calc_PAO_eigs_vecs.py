@@ -25,7 +25,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def calc_PAO_eigs_vecs(Hksp,bnd,npool):
-
+  try:
     index = None
 
     if rank == 0:
@@ -85,9 +85,11 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
         eall = np.reshape(np.delete(E_k,np.s_[bnd:],axis=1),(nktot*bnd,nspin),order='C')
 
     return(eall,E_k,v_k)
+  except Exception as e:
+    raise e
 
 def diago(nsize,aux):
-
+  try:
     nawf = aux.shape[1]
     ekp = np.zeros((nsize,nawf),dtype=float)
     ekv = np.zeros((nsize,nawf,nawf),dtype=complex)
@@ -98,3 +100,5 @@ def diago(nsize,aux):
         ekv[n,:,:] = eigvec
 
     return(ekp,ekv)
+  except Exception as e:
+    raise e
