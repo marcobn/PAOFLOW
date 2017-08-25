@@ -34,7 +34,7 @@ try:
     import xml.etree.ElementTree as ET
     import numpy as np
     #import numexpr as ne
-    import sys, time
+    import sys, traceback, time
     from mpi4py import MPI
     import multiprocessing
 
@@ -58,7 +58,7 @@ try:
     from write3Ddatagrid import *
 except Exception as e:
     print('Exception in Imports')
-    print(e)
+    traceback.print_exc()
     quit()
 
 try:
@@ -96,7 +96,7 @@ try:
     #ne.set_num_threads(nthread)
 except Exception as e:
     print('Rank %d: Exception in Initialization'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -150,7 +150,7 @@ try:
     comm.Barrier()
 except Exception as e:
     print('Rank %d: Exception in FFT Library or Dimension Check'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -231,7 +231,7 @@ try:
         reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in Reading DFT Data'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -262,7 +262,7 @@ try:
     shift = comm.bcast(shift,root=0)
 except Exception as e:
     print('Rank %d: Exception in Building Projectability'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -282,7 +282,7 @@ try:
         nawf = Hks.shape[0]
 except Exception as e:
     print('Rank %d: Exception in Building PAO Hamiltonian'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -299,7 +299,7 @@ try:
         Hks = do_non_ortho(Hks,Sks)
 except Exception as e:
     print('Rank %d: Exception in Orthogonality'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -355,7 +355,7 @@ try:
     if write2file: quit()
 except Exception as e:
     print('Rank %d: Exception in Write to File'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -369,7 +369,7 @@ try:
         quit()
 except Exception as e:
     print('Rank %d: Exception in Do Comparison'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -425,7 +425,7 @@ try:
         reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in k->R'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -445,7 +445,7 @@ try:
         HRs = add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU)
 except Exception as e:
     print('Rank %d: Exception in Adding External Fields'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -463,7 +463,7 @@ try:
         nawf=2*nawf
 except Exception as e:
     print('Rank %d: Exception in Do Spin Orbit'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -549,7 +549,7 @@ try:
             reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in Do Bands or Band Topology'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -569,7 +569,7 @@ try:
     checkpoint = comm.bcast(checkpoint,root=0)
 except Exception as e:
     print('Rank %d: Exception in Checkpoint Initialization'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -653,7 +653,7 @@ try:
     checkpoint = comm.bcast(checkpoint,root=0)
 except Exception as e:
     print('Rank %d: Exception in Do Double Grid'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -728,7 +728,7 @@ try:
     nk3 = comm.bcast(nk3,root=0)
 except Exception as e:
     print('Rank %d: Exception in Eigenvalues'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -784,7 +784,7 @@ try:
             reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in DOS Calculation'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -815,7 +815,7 @@ try:
             reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in Fermi Surface'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -947,7 +947,7 @@ try:
     kq_wght /= float(nktot)
 except Exception as e:
     print('Rank %d: Exception in Gradient or Momenta'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -986,7 +986,7 @@ try:
         reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in Adaptive Smearing'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1044,7 +1044,7 @@ try:
                 f.close()
 except Exception as e:
     print('Rank %d: Exception computing velocities for Boltzmann Transport'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1111,7 +1111,7 @@ try:
             reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in DOS (Adaptive Smearing)'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1127,7 +1127,7 @@ try:
         deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
 except Exception as e:
     print('Rank %d: Exception in Memory Reduction'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1214,7 +1214,7 @@ try:
     dHksp = None
 except Exception as e:
     print('Rank %d: Exception in Spin Hall Module'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1273,7 +1273,7 @@ try:
             reset=time.time()
 except Exception as e:
     print('Rank %d: Exception in Berry Module'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1357,9 +1357,9 @@ try:
         if rank ==0:
             print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
             reset=time.time()
-except Exception as e:
+except:
     print('Rank %d: Exception in Transport'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1403,7 +1403,7 @@ try:
             print('epsilon in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
 except Exception as e:
     print('Rank %d: Exception in Epsilon'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
 
@@ -1415,6 +1415,6 @@ try:
     quit()
 except Exception as e:
     print('Rank %d: Exception in Total Time'%rank)
-    print(e)
+    traceback.print_exc()
     comm.Abort()
     raise Exception
