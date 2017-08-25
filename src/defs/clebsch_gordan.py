@@ -24,7 +24,6 @@ def spinor(l,j,m,spin):
 # projection along z of the total angular momentum m+-1/2. Spin selects
 # the up (spin=0) or down (spin=1) coefficient.
 
-  try:
     if spin != 0 and spin != 1: sys.exit('spinor - spin direction unknown')
     if m < -l-1 or m > l: sys.exit('spinor - m not allowed')
 
@@ -43,8 +42,6 @@ def spinor(l,j,m,spin):
         sys.exit('spinor - j and l not compatible')
 
     return(spinor)
- except Exception as e:
-    raise e
 
 def clebsch_gordan(nawf,sh,nl,spol):
     #
@@ -52,7 +49,6 @@ def clebsch_gordan(nawf,sh,nl,spol):
     # | j mj l s > basis in the l-subspace
     #
 
-  try:
     l = 0
     Ul0 = np.zeros((2*(2*l+1),2*(2*l+1)),dtype=float)
     Ul0[0,1] = 1
@@ -149,5 +145,3 @@ def clebsch_gordan(nawf,sh,nl,spol):
     Sj = np.dot(Tn,Sl).dot(Tn.T)
 
     return(Sj)
-  except Exception as e:
-    raise e
