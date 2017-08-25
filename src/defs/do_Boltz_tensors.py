@@ -29,6 +29,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
+  try:
     # Compute the L_alpha tensors for Boltzmann transport
 
     emin = -2.0 # To be read in input
@@ -88,9 +89,11 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
     else:
 
         return(ene,L0)
+  except Exception as e:
+    raise e
 
 def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
-
+  try:
     # We assume tau=1 in the constant relaxation time approximation
 
     L = np.zeros((3,3,ene.size),dtype=float)
@@ -120,3 +123,5 @@ def L_loop(ini_ik,end_ik,ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,
                 sys.exit('smearing not implemented')
 
     return(L)
+  except Exception as e:
+    raise e

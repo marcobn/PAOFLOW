@@ -21,7 +21,7 @@ size = comm.Get_size()
 
 # Scatters first dimension of an array of arbitrary length
 def scatter_array ( arr, sroot=0 ):
-
+  try:
     # Compute data type and shape of the scattered array on this process
     pydtype = None
     auxlen = None
@@ -62,10 +62,12 @@ def scatter_array ( arr, sroot=0 ):
     comm.Scatterv([arr, lsizes[:,0], lsizes[:,1], mpidtype], [arraux, mpidtype], root=sroot)
 
     return arraux
+  except Exception as e:
+    raise e
 
 # Gathers first dimension of an array of arbitrary length
 def gather_array ( arr, arraux, sroot=0 ):
-
+  try:
     # Data type of the scattered array on this process
     pydtype = None
 
@@ -84,3 +86,5 @@ def gather_array ( arr, arraux, sroot=0 ):
 
     # Gather the data according to load_sizes
     comm.Gatherv([arraux, mpidtype], [arr, lsizes[:,0], lsizes[:,1], mpidtype], root=sroot)
+  except Exception as e:
+    raise e

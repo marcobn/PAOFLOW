@@ -16,6 +16,7 @@ import numpy.random as rd
 import sys
 
 def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
+  try:
     minimal = False
     Hksaux = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
     if minimal:
@@ -82,3 +83,5 @@ def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
         Sks[:,:,ik] = Sks[:,:,ik].T
 
     return(Hks,Sks)
+  except Exception as e:
+    raise e

@@ -23,7 +23,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def write_PAO_eigs(Hks,Sks,read_S,ispin):
-
+  try:
     nawf,nawf,nkpnts,nspin = Hks.shape
     E_k = np.zeros((nkpnts,nawf),dtype=float)
     v_k = np.zeros((nkpnts,nawf,nawf),dtype=complex)
@@ -55,3 +55,5 @@ def write_PAO_eigs(Hks,Sks,read_S,ispin):
             f.close()
 
     return(E_k,v_k)
+  except Exception as e:
+    raise e
