@@ -27,6 +27,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_orbit,npool):
+  try:
     nktot = nk1*nk2*nk3
     ind_plot = np.zeros(nawf,dtype=int)
 
@@ -103,3 +104,5 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
             np.savez('spin_text_band_'+str(ib), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     return()
+  except Exception as e:
+    raise e

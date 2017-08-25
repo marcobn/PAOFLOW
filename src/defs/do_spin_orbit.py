@@ -17,7 +17,7 @@ import sys, time
 sys.path.append('./')
 
 def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
-
+  try:
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 
     nawf = HRaux.shape[0]
@@ -56,10 +56,11 @@ def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
         HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,0:9] + socStrengh[n,1]*HR_soc_d[9:18,0:9]
 
     return(HR_double)
-
+  except Exception as e:
+    raise e
 
 def soc_p(theta,phi):
-
+  try:
     # Hardcoded to s,p,d. This must change latter.
         HR_soc = np.zeros((18,18),dtype=complex) 
 
@@ -93,8 +94,11 @@ def soc_p(theta,phi):
         HR_soc[10,3]=np.conjugate(HR_soc[3,10])
         HR_soc[11,3]=np.conjugate(HR_soc[3,11])
 	return(HR_soc)
-def soc_d(theta,phi):
+  except Exception as e:
+    raise e
 
+def soc_d(theta,phi):
+  try:
     # Hardcoded to s,p,d. This must change latter.
         HR_soc = np.zeros((18,18),dtype=complex) 
 
@@ -159,3 +163,5 @@ def soc_d(theta,phi):
         HR_soc[15,7] = np.conjugate(HR_soc[7,15])
         HR_soc[15,8] = np.conjugate(HR_soc[8,15])
 	return(HR_soc)
+  except Exception as e:
+    raise e

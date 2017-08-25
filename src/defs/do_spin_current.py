@@ -29,6 +29,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
+  try:
     # calculate spin_current operator
 
     index = None
@@ -139,3 +140,5 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
             jksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jks_split[:,:,:,:,:]
 
     return(jksp)
+  except Exception as e:
+    raise e
