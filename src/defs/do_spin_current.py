@@ -29,7 +29,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
-  try:
     # calculate spin_current operator
 
     index = None
@@ -85,6 +84,9 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         jdHkaux = scatter_array(jdHksp_split)
         vecaux = scatter_array(vec_split)
 
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik - ini_ik
+
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
                 for l in xrange(3):
@@ -116,6 +118,9 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         jksaux = scatter_array(jks_split)
         vecaux = scatter_array(vec_split)
 
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik - ini_ik
+
         for ik in xrange(nsize):
             for ispin in xrange(nspin):
                 for l in xrange(3):
@@ -128,5 +133,3 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
             jksp[ini_ip:end_ip,:,:,:,:] = jks_split[:,:,:,:,:]
 
     return(jksp)
-  except Exception as e:
-    raise e

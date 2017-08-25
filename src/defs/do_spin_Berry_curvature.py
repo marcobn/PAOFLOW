@@ -72,6 +72,9 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
             jksp_long = None
             E_k_long = None
 
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik - ini_ik
+
         Om_znkaux = np.zeros((nsize,nawf),dtype=float)
 
         pksaux = scatter_array(pksp_long)
