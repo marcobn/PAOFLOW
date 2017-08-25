@@ -54,22 +54,20 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     sigxy_sum = np.zeros((ene.size),dtype=complex)
 
     for pool in xrange(npool):
-
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            pksp_long = np.array_split(pksp,npool,axis=0)[pool]
-            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
-            deltak_long= np.array_split(deltak,npool,axis=0)[pool]
-            deltak2_long= np.array_split(deltak2,npool,axis=0)[pool]
+            pksp_long = pksp[ini_ip:end_ip]
+            E_k_long= E_k[ini_ip:end_ip]
+            deltak_long= deltak[ini_ip:end_ip]
+            deltak2_long= deltak2[ini_ip:end_ip]
         else:
             pksp_long = None
             E_k_long = None
             deltak_long= None
             deltak2_long= None
 
-        comm.Barrier()
         pkspaux = scatter_array(pksp_long)
         E_kaux = scatter_array(E_k_long)
         deltakaux = scatter_array(deltak_long)

@@ -69,23 +69,18 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         jksp = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            dHksp_split = np.array_split(dHksp,npool,axis=0)[pool]
-            jdHksp_split = np.array_split(jdHksp,npool,axis=0)[pool]
-            vec_split = np.array_split(vec,npool,axis=0)[pool]
+            dHksp_split = dHksp[ini_ip:end_ip]
+            jdHksp_split = jdHksp[ini_ip:end_ip]
+            vec_split = vec[ini_ip:end_ip]
         else:
             dHksp_split = None
             jdHksp_split = None
             vec_split = None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
-        comm.Barrier()
         dHkaux = scatter_array(dHksp_split)
         jdHkaux = scatter_array(jdHksp_split)
         vecaux = scatter_array(vec_split)
@@ -97,32 +92,26 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
                         0.5*(np.dot(Sj,dHkaux[ik,l,:,:,ispin])+ \
                         np.dot(dHkaux[ik,l,:,:,ispin],Sj))
 
-        comm.Barrier()
         gather_array(jdHksp_split, jdHkaux)
 
         if rank == 0:
-            jdHksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jdHksp_split[:,:,:,:,:,]
+            jdHksp[ini_ip:end_ip,:,:,:,:] = jdHksp_split[:,:,:,:,:]
 
     comm.Barrier()
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            jdHksp_split = np.array_split(jdHksp,npool,axis=0)[pool]
-            jks_split = np.array_split(jksp,npool,axis=0)[pool]
-            vec_split = np.array_split(vec,npool,axis=0)[pool]
+            jdHksp_split = jdHksp[ini_ip:end_ip]
+            jks_split = jksp[ini_ip:end_ip]
+            vec_split = vec[ini_ip:end_ip]
         else:
             jdHksp_split = None
             jks_split = None
             vec_split = None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
-        comm.Barrier()
         jdHkaux = scatter_array(jdHksp_split)
         jksaux = scatter_array(jks_split)
         vecaux = scatter_array(vec_split)
@@ -133,11 +122,10 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
                     jksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                 (jdHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
-        comm.Barrier()
         gather_array(jks_split, jksaux)
 
         if rank == 0:
-            jksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = jks_split[:,:,:,:,:]
+            jksp[ini_ip:end_ip,:,:,:,:] = jks_split[:,:,:,:,:]
 
     return(jksp)
   except Exception as e:

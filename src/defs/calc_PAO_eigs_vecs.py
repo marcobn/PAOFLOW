@@ -51,35 +51,31 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
         v_k_split = None
 
     for pool in xrange (npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - calc_PAO_eigs_vecs')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            Hks_split = np.array_split(Hksp,npool,axis=0)[pool]
-            E_k_split = np.array_split(E_k,npool,axis=0)[pool]
-            v_k_split = np.array_split(v_k,npool,axis=0)[pool]
+            Hks_split = Hksp[ini_ip:end_ip]
+            E_k_split = E_k[ini_ip:end_ip]
+            v_k_split = v_k[ini_ip:end_ip]
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-
-        nsize = end_ik-ini_ik
+        ini_ik, end_ik = load_balancing(size, rank, nkpool)
+        nsize = end_ik - ini_ik
 
         E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
         v_kaux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
 
-        comm.Barrier()
         aux = scatter_array(Hks_split)
 
         for ispin in xrange(nspin):
             E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(nsize,aux[:,:,:,ispin])
 
-        comm.barrier()
         gather_array(E_k_split, E_kaux)
         gather_array(v_k_split, v_kaux)
 
         if rank == 0:
-            E_k[pool*nkpool:(pool+1)*nkpool,:,:] = E_k_split[:,:,:]
-            v_k[pool*nkpool:(pool+1)*nkpool,:,:,:] = v_k_split[:,:,:,:]
+            E_k[ini_ip:end_ip,:,:] = E_k_split[:,:,:]
+            v_k[ini_ip:end_ip,:,:,:] = v_k_split[:,:,:,:]
 
     if rank == 0:
         eall = np.reshape(np.delete(E_k,np.s_[bnd:],axis=1),(nktot*bnd,nspin),order='C')

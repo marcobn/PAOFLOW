@@ -51,15 +51,15 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         tksp = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_momentum')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool, pool, nktot)
+        nkpool = end_ip - ini_ip 
 
         if rank == 0:
-            dHksp_split = np.array_split(dHksp,npool,axis=0)[pool]
-            d2Hksp_split = np.array_split(d2Hksp,npool,axis=0)[pool]
-            pks_split = np.array_split(pksp,npool,axis=0)[pool]
-            tks_split = np.array_split(tksp,npool,axis=0)[pool]
-            vec_split = np.array_split(vec,npool,axis=0)[pool]
+            dHksp_split = dHksp[ini_ip:end_ip]
+            d2Hksp_split = d2Hksp[ini_ip:end_ip]
+            pks_split = pksp[ini_ip:end_ip]
+            tks_split = tksp[ini_ip:end_ip]
+            vec_split = vec[ini_ip:end_ip]
         else:
             dHksp_split = None
             d2Hksp_split = None
@@ -67,11 +67,6 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
             tks_split = None
             vec_split = None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
-        comm.Barrier()
         dHkaux = scatter_array(dHksp_split)
         d2Hkaux = scatter_array(d2Hksp_split)
         pksaux = scatter_array(pks_split)
@@ -87,13 +82,12 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
                         tksaux[ik,l,lp,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                     (d2Hkaux[ik,l,lp,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
-        comm.Barrier()
         gather_array(pks_split, pksaux)
         gather_array(tks_split, tksaux)
 
         if rank == 0:
-            pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]
-            tksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:,:] = tks_split[:,:,:,:,:,:,]
+            pksp[ini_ip:end_ip,:,:,:,:] = pks_split[:,:,:,:,:,]
+            tksp[ini_ip:end_ip,:,:,:,:,:] = tks_split[:,:,:,:,:,:]
 
     return(pksp,tksp)
   except Exception as e:

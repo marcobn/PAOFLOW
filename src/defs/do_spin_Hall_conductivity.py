@@ -54,16 +54,15 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     sigxy_sum = np.zeros((ene.size),dtype=complex)
 
     for pool in xrange(npool):
-
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            pksp_long = np.array_split(pksp,npool,axis=0)[pool]
-            jksp_long = np.array_split(jksp,npool,axis=0)[pool]
-            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
-            deltak_long= np.array_split(deltak,npool,axis=0)[pool]
-            deltak2_long= np.array_split(deltak2,npool,axis=0)[pool]
+            pksp_long = pksp[ini_ip:end_ip]
+            jksp_long = jksp[ini_ip:end_ip]
+            E_k_long= E_k[ini_ip:end_ip]
+            deltak_long= deltak[ini_ip:end_ip]
+            deltak2_long= deltak2[ini_ip:end_ip]
         else:
             pksp_long = None
             jksp_long = None
@@ -73,10 +72,8 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
 
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
-
         sigxy_aux = np.zeros((ene.size),dtype=complex)
 
-        comm.Barrier()
         pkspaux = scatter_array(pksp_long)
         jkspaux = scatter_array(jksp_long)
         E_kaux = scatter_array(E_k_long)

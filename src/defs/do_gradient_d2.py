@@ -83,21 +83,20 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         d2HRaux  = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_gradient')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            HRaux_split = np.array_split(HRaux,npool,axis=0)[pool]
-            dHRaux_split = np.array_split(dHRaux,npool,axis=0)[pool]
-            d2HRaux_split = np.array_split(d2HRaux,npool,axis=0)[pool]
-            Rfft_split = np.array_split(Rfft,npool,axis=0)[pool]
+            HRaux_split = HRaux[ini_ip:end_ip]
+            dHRaux_split = dHRaux[ini_ip:end_ip]
+            d2HRaux_split = d2HRaux[ini_ip:end_ip]
+            Rfft_split = Rfft[ini_ip:end_ip]
         else:
             HRaux_split = None
             dHRaux_split = None
             d2HRaux_split = None
             Rfft_split = None
 
-        comm.Barrier()
         dHRaux1 = scatter_array(dHRaux_split)
         d2HRaux1 = scatter_array(d2HRaux_split)
         HRaux1 = scatter_array(HRaux_split)
@@ -112,13 +111,12 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                         for lp in xrange(3):
                             d2HRaux1[:,l,lp,n,m,ispin] = -1.0*alat**2*Rfftaux[:,l]*Rfftaux[:,lp]*HRaux1[:,n,m,ispin]
 
-        comm.Barrier()
         gather_array(dHRaux_split, dHRaux1)
         gather_array(d2HRaux_split, d2HRaux1)
 
         if rank == 0:
-            dHRaux[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = dHRaux_split[:,:,:,:,:,]
-            d2HRaux[pool*nkpool:(pool+1)*nkpool,:,:,:,:,:] = d2HRaux_split[:,:,:,:,:,:,]
+            dHRaux[ini_ip:end_ip,:,:,:,:] = dHRaux_split[:,:,:,:,:,]
+            d2HRaux[ini_ip:end_ip,:,:,:,:,:] = d2HRaux_split[:,:,:,:,:,:,]
 
     if rank == 0:
         dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')

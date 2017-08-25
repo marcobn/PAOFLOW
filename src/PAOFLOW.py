@@ -138,15 +138,6 @@ try:
     # Do dimension checks
     #----------------------
 
-    wrongdim = False
-    if rank == 0:
-        nktot=nfft1*nfft2*nfft3
-        if nktot%npool != 0:
-            print('npool not compatible with MP mesh',nktot,npool)
-            wrongdim = True
-    comm.bcast(wrongdim,root=0)
-    if wrongdim: quit()
-
     comm.Barrier()
 except Exception as e:
     print('Rank %d: Exception in FFT Library or Dimension Check'%rank)

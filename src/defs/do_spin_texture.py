@@ -68,21 +68,16 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
         sktxt = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            sktxt_split = np.array_split(sktxt,npool,axis=0)[pool]
-            vec_split = np.array_split(vec,npool,axis=0)[pool]
+            sktxt_split = sktxt[ini_ip:end_ip]
+            vec_split = vec[ini_ip:end_ip]
         else:
             sktxt_split = None
             vec_split = None
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
-        comm.Barrier()
         sktxtaux = scatter_array(sktxt_split)
         vecaux = scatter_array(vec_split)
 
@@ -92,11 +87,10 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
                     sktxtaux[ik,l,:,:] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                 (Sj[l,:,:]).dot(vecaux[ik,:,:,ispin])
 
-        comm.Barrier()
         gather_array(sktxt_split, sktxtaux)
 
         if rank == 0:
-            sktxt[pool*nkpool:(pool+1)*nkpool,:,:,:] = sktxt_split[:,:,:,:]
+            sktxt[ini_ip:end_ip,:,:,:] = sktxt_split[:,:,:,:]
 
     if rank == 0:
         sktxt = np.reshape(sktxt,(nk1,nk2,nk3,3,nawf,nawf),order='C')
