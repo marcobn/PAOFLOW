@@ -13,6 +13,7 @@ import numpy as np
 from scipy import fftpack as FFT
 
 def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
+  try:
     nrtot = nk1*nk2*nk3
     R = np.zeros((nrtot,3),dtype=float)
     Rfft = np.zeros((nk1,nk2,nk3,3),dtype=float)
@@ -39,3 +40,5 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
     Rfft = FFT.fftshift(Rfft,axes=(0,1,2))
 
     return(R,Rfft,R_wght,nrtot,idx)
+  except Exception as e:
+    raise e

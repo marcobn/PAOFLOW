@@ -33,6 +33,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
+  try:
     #----------------------
     # Compute spin Berry curvature
     #----------------------
@@ -160,3 +161,5 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
         Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
 
     return(ene,shc,Om_k[:,:,:,n]-Om_k[:,:,:,n0])
+  except Exception as e:
+    raise e

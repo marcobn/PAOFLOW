@@ -19,7 +19,7 @@ def do_non_ortho(Hks,Sks):
     # Take care of non-orthogonality, if needed
     # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to apply a basis change to Hks as
     # Hks -> Sks^(1/2)*Hks*Sks^(1/2)
-
+  try:
     nawf,_,nkpnts,nspin = Hks.shape
     S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     for ik in xrange(nkpnts):
@@ -31,3 +31,5 @@ def do_non_ortho(Hks,Sks):
             Hks_no[:,:,ik,ispin] = np.dot(S2k[:,:,ik],Hks[:,:,ik,ispin]).dot(S2k[:,:,ik])
 
     return(Hks_no)
+  except Exception as e:
+    raise e

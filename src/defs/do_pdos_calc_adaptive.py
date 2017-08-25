@@ -25,6 +25,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearing):
+  try:
     # PDOS calculation with gaussian smearing
     emin = float(emin)
     emax = float(emax)
@@ -73,6 +74,6 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()
 
-
-
     return
+  except Exception as e:
+    raise e

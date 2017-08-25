@@ -19,6 +19,7 @@ sys.path.append('./')
 from write_PAO_eigs import *
 
 def do_bands_calc_1D(Hkaux):
+  try:
     # FFT interpolation along a single directions in the BZ
 
     nawf = Hksp.shape[0]
@@ -70,3 +71,5 @@ def do_bands_calc_1D(Hkaux):
         write_PAO_eigs(Hkaux,ispin)
 
     return()
+  except Exception as e:
+    raise e

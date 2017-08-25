@@ -31,6 +31,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
+  try:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -147,3 +148,5 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
                                 d2Hksp[:,:,:,l,lp,n,m,ispin] = fft()
 
     return(dHksp,d2Hksp)
+  except Exception as e:
+    raise e
