@@ -27,7 +27,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_momentum(vec,dHksp,npool):
-  try:
     # calculate momentum vector
 
     index = None
@@ -81,5 +80,3 @@ def do_momentum(vec,dHksp,npool):
             pksp[ini_ip:end_ip,:,:,:,:] = pks_split[:,:,:,:,:]
 
     return(pksp)
-  except Exception as e:
-    raise e

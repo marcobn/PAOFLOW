@@ -45,7 +45,6 @@ if rank == 0:
             scipyfft = True
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
-  try:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -150,5 +149,3 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
 
         dHRaux = None
     return(dHksp)
-  except Exception as e:
-    raise e

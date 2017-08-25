@@ -23,23 +23,17 @@ import skcuda.fft as skfft
 # Restriction: 'axes' must be a list of unique, monotonically increasing, integers
 #               beginning with 0.
 def cuda_ifftn ( Hk, axes=[0,1,2] ):
-  try:
     return cuda_efftn(Hk, axes, False)
-  except Exception as e:
-    raise e
 
 # Perform an FFT on 'axes' of 'Hr'
 # Restriction: len(Hr) >= len(axes)
 # Restriction: 'axes' must be a list of unique, monotonically increasing, integers
 #               beginning with 0.
 def cuda_fftn ( Hr, axes=[0,1,2] ):
-  try:
     return cuda_efftn(Hr, axes, True)
-  except Exception as e:
-    raise e
+
 
 def cuda_efftn(H, axes, forward):
-  try:
     hShape = H.shape
     hDim = len(hShape)
     fftDim = len(axes)
@@ -69,5 +63,3 @@ def cuda_efftn(H, axes, forward):
     H = np.reshape(H, hShape)
 
     return H
-  except Exception as e:
-    raise e

@@ -12,7 +12,6 @@
 import numpy as np
 
 def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
-  try:
     nktot = nk1*nk2*nk3
     Kint = np.zeros((3,nktot),dtype=float)
     K_wght = np.ones((nktot),dtype=float)
@@ -36,5 +35,3 @@ def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
                 Kint[:,n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
 
     return(Kint,K_wght,nktot,idk)
-  except Exception as e:
-    raise e

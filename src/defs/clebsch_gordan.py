@@ -43,7 +43,7 @@ def spinor(l,j,m,spin):
         sys.exit('spinor - j and l not compatible')
 
     return(spinor)
-  except Exception as e:
+ except Exception as e:
     raise e
 
 def clebsch_gordan(nawf,sh,nl,spol):

@@ -27,7 +27,6 @@ size = comm.Get_size()
 Ry2eV   = 13.60569193
 
 def read_QE_output_xml(fpath,verbose,non_ortho):
-  try:
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
@@ -265,5 +264,3 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
     else:
         return(U, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
             kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)
-  except Exception as e:
-    raise e
