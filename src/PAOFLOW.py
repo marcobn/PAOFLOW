@@ -1319,7 +1319,7 @@ try:
                         try:
                             S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
                         except:
-                            print 'check t_tensor components - matrix cannot be singular'
+                            print('check t_tensor components - matrix cannot be singular')
                             raise ValueError
 
                     f=open('Seebeck_'+str(ispin)+'.dat','w')
