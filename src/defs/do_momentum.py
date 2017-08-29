@@ -28,6 +28,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_momentum(vec,dHksp,npool):
+  try:
     # calculate momentum vector
 
     index = None
@@ -50,6 +51,8 @@ def do_momentum(vec,dHksp,npool):
         end_ik = 0
         
         pksp = np.zeros((nktot,3,nawf,nawf,nspin),order="C",dtype=complex)
+    else:
+      pksp=None
 
     dHksp = None
     vec   = None
@@ -95,5 +98,9 @@ def do_momentum(vec,dHksp,npool):
         dHkaux=None
         pksaux=None
 
-    if rank == 0:
-        return pksp
+
+
+    return(pksp)
+  except Exception as e:
+    raise e
+

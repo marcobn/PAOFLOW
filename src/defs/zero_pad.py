@@ -12,6 +12,7 @@
 import numpy as np
 
 def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
+  try:
     # zero padding for FFT interpolation in 3D
     nk1p = nfft1+nk1
     nk2p = nfft2+nk2
@@ -30,8 +31,11 @@ def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
     auxp3[(nfft1+nk1/2):,:,:]=auxp2[(nk1/2):,:,:]
 
     return(auxp3)
+  except Exception as e:
+    raise e
 
 def zero_pad_float(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
+  try:
     # zero padding for FFT interpolation in 3D
     nk1p = nfft1+nk1
     nk2p = nfft2+nk2
@@ -50,3 +54,5 @@ def zero_pad_float(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
     auxp3[(nfft1+nk1/2):,:,:]=auxp2[(nk1/2):,:,:]
 
     return(auxp3)
+  except Exception as e:
+    raise e

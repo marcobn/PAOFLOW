@@ -13,17 +13,21 @@
 import numpy as np
 
 def load_balancing(size,rank,n):
+  try:
     # Load balancing
     splitsize = 1.0/size*n
     start = int(round(rank*splitsize))
     stop = int(round((rank+1)*splitsize))
     return(start,stop)
+  except Exception as e:
+    raise e
 
 # For each processor calculate 3 values:
 # 0 - Total number of items to be scattered/gathered on this processor
 # 1 - Index in complete array where the subarray begins
 # 2 - Dimension of the subarray on this processor
 def load_sizes(size,n,dim):
+  try:
     sizes = np.empty((size,3),dtype=int)
     splitsize = 1.0/size*n
     for i in xrange(size):
@@ -33,3 +37,5 @@ def load_sizes(size,n,dim):
         sizes[i][1] = dim*start
         sizes[i][2] = stop-start
     return sizes
+  except Exception as e:
+    raise e

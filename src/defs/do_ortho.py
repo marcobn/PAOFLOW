@@ -18,7 +18,7 @@ from scipy import linalg as LA
 def do_ortho(Hks,Sks):
     # If orthogonality is required, we have to apply a basis change to Hks as
     # Hks -> Sks^(-1/2)*Hks*Sks^(-1/2)
-
+  try:
     nawf,_,nkpnts,nspin = Hks.shape
     S2k  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
     for ik in xrange(nkpnts):
@@ -30,3 +30,5 @@ def do_ortho(Hks,Sks):
             Hks_o[:,:,ik,ispin] = np.dot(S2k[:,:,ik],Hks[:,:,ik,ispin]).dot(S2k[:,:,ik])
 
     return(Hks_o)
+  except Exception as e:
+    raise e

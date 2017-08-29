@@ -14,6 +14,7 @@ import cmath
 import sys, time
 
 def write3D( data,nx, ny, nz, alat,x0,B, filename):
+  try:
     with open ('{0}'.format(filename),'w') as f:
         # XSF scalar-field header
         f.write('\nBEGIN_BLOCK_DATAGRID_3D\n3D_PAOPI\nDATAGRID_3D_UNKNOWN\n')
@@ -33,4 +34,5 @@ def write3D( data,nx, ny, nz, alat,x0,B, filename):
                 f.write('    {}\n'.format(''.join('%15.9f'%F for F in data[ix,iy,:] )))
         f.write('END_DATAGRID_3D\nEND_BLOCK_DATAGRID_3D\n')
     return()
-
+  except Exception as e:
+    raise e

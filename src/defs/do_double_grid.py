@@ -31,6 +31,7 @@ size = comm.Get_size()
 nthread = size
 
 def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread):
+  try:
     # Fourier interpolation on extended grid (zero padding)
     if HRaux.shape[0] != 3 and HRaux.shape[1] == HRaux.shape[0]:
         nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
@@ -68,4 +69,5 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread):
     nk3 = nk3p
     aux = None
     return(Hksp,nk1,nk2,nk3)
-
+  except Exception as e:
+    raise e

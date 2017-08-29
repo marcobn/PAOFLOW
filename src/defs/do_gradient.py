@@ -61,10 +61,10 @@ if rank == 0:
 
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
+  try:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
-    scipyfft=True
     index=None
     if rank == 0:
         nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
@@ -203,9 +203,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
     if rank!=0:
         dHksp_tri=None
 
-    if rank==0:
-        return  dHksp.reshape((nk1*nk2*nk3,3,nawf,nawf,nspin),order="C")
 
-
-
+        dHRaux = None
+    return(dHksp)
+  except Exception as e:
+    raise e
 

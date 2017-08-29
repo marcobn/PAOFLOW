@@ -30,6 +30,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
+  try:
     # Compute the optical conductivity tensor sigma_xy(ene)
 
     emin = 0.0
@@ -93,9 +94,11 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     sigxy /= float(nktot)
 
     return(ene,sigxy)
+  except Exception as e:
+    raise e
 
 def sigma_loop(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
-
+  try:
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
     delta = 0.05
@@ -123,9 +126,11 @@ def sigma_loop(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearin
                         ),axis=1)
 
     return(sigxy)
+  except Exception as e:
+    raise e
 
 def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
-
+  try:
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
     delta = 0.05
@@ -155,4 +160,5 @@ def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,
                             ),axis=1)
 
     return(sigxy)
-
+  except Exception as e:
+    raise e

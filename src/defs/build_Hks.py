@@ -12,10 +12,17 @@
 from scipy import linalg as LA
 import numpy as np
 from numpy import linalg as LAN
+import numpy.random as rd
 import sys
 
 def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
-    Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
+  try:
+    minimal = False
+    Hksaux = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
+    if minimal:
+        Hks = np.zeros((bnd,bnd,nkpnts,nspin),dtype=complex)
+    else:
+        Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
     for ik in xrange(nkpnts):
         for ispin in xrange(nspin):
             my_eigs=my_eigsmat[:,ik,ispin]
@@ -34,21 +41,47 @@ def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
             ee1 = E[:bnd_ik,:bnd_ik]
             if shift_type ==0:
                 #option 1 (PRB 2013)
-                Hks[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(np.conj(ac).T))
+                Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(np.conj(ac).T))
             elif shift_type==1:
                 #option 2 (PRB 2016)
                 aux_p=LA.inv(np.dot(np.conj(ac).T,ac))
-                Hks[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(aux_p).dot(np.conj(ac).T))
+                Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(aux_p).dot(np.conj(ac).T))
             elif shift_type==2:
                 # no shift
-                Hks[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
+                Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
             else:
                 sys.exit('shift_type not recognized')
             # Enforce Hermiticity (just in case...)
-            Hks[:,:,ik,ispin] = 0.5*(Hks[:,:,ik,ispin] + np.conj(Hks[:,:,ik,ispin].T))
+            Hksaux[:,:,ik,ispin] = 0.5*(Hksaux[:,:,ik,ispin] + np.conj(Hksaux[:,:,ik,ispin].T))
+
+            if minimal:
+                Sbd = np.zeros((nawf,nawf),dtype=complex)
+                Sbdi = np.zeros((nawf,nawf),dtype=complex)
+                S = sv = np.zeros((nawf,nawf),dtype=complex)
+                e = se = np.zeros(nawf,dtype=float)
+
+                e,S = LAN.eigh(Hksaux[:,:,ik,ispin])
+                S11 = S[:bnd,:bnd] + 1.0*rd.random(bnd)/10000.
+                S21 = S[:bnd,bnd:] + 1.0*rd.random(nawf-bnd)/10000.
+                S12 = S21.T
+                S22 = S[bnd:,bnd:] + 1.0*rd.random(nawf-bnd)/10000.
+                S22 = S22 + S21.T.dot(np.dot(LA.inv(S11),S12.T))
+                Sbd[:bnd,:bnd] = 0.5*(S11+np.conj(S11.T))
+                Sbd[bnd:,bnd:] = 0.5*(S22+np.conj(S22.T))
+                Sbdi = LA.inv(np.dot(Sbd,np.conj(Sbd.T)))
+                se,sv = LAN.eigh(Sbdi)
+                se = np.sqrt(se+0.0j)*np.identity(nawf,dtype=complex)
+                Sbdi = sv.dot(se).dot(np.conj(sv).T)
+                T = S.dot(np.conj(Sbd.T)).dot(Sbdi)
+                Hbd = np.conj(T.T).dot(np.dot(Hksaux[:,:,ik,ispin],T))
+                Hks[:,:,ik,ispin] = 0.5*(Hbd[:bnd,:bnd]+np.conj(Hbd[:bnd,:bnd].T))
+            else:
+                Hks = Hksaux
 
         # This is needed for consistency of the ordering of the matrix elements (see "transposition" above)
         # Important in ACBN0 file writing
         Sks[:,:,ik] = Sks[:,:,ik].T
 
     return(Hks,Sks)
+  except Exception as e:
+    raise e
