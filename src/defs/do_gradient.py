@@ -41,23 +41,23 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-if rank == 0:
-    using_cuda = False
-    scipyfft = False
-    try:
-        import inputfile
-        using_cuda = inputfile.use_cuda
-    except:
-        pass
 
-    if using_cuda:
-        from cuda_fft import *
-    else:
-        try:
-            import pyfftw
-        except:
-            from scipy import fftpack as FFT
-            scipyfft = True
+using_cuda = False
+scipyfft = False
+try:
+    import inputfile
+    using_cuda = inputfile.use_cuda
+except:
+    pass
+
+if using_cuda:
+    from cuda_fft import *
+else:
+    try:
+        import pyfftw
+    except:
+        from scipy import fftpack as FFT
+        scipyfft = True
 
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
@@ -97,10 +97,10 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
         start_n = 0
         end_n   = 0
         dHksp = np.zeros((nk1*nk2*nk3,3,nawf*nawf,nspin),order="C",dtype=complex)
-        
-
     else:
         Hksp=None
+        dHksp=None
+
     #does npool separate splits of the TB hamiltonian matrix
     for pool in xrange(npool):        
         if rank==0:
