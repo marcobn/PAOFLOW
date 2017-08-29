@@ -45,17 +45,20 @@ def do_momentum(vec,dHksp,npool):
 
     if rank == 0:
         dHksp_split = deque(np.array_split(dHksp,npool,axis=0))
+        dHksp = None
         vec_split   = deque(np.array_split(vec,npool,axis=0))
+        vec   = None
 
         ini_ik = 0
         end_ik = 0
         
         pksp = np.zeros((nktot,3,nawf,nawf,nspin),order="C",dtype=complex)
     else:
-      pksp=None
+      vec   = None
+      pksp  = None
+      dHksp = None
 
-    dHksp = None
-    vec   = None
+
 
 
 
