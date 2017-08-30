@@ -22,12 +22,13 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def write_PAO_eigs(Hks,Sks,read_S,ispin):
+def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     E_k = np.zeros((nkpnts,nawf),dtype=float)
-    v_k = np.zeros((nkpnts,nawf,nawf),dtype=complex)
-    index = np.zeros((nkpnts,nawf),dtype=int)
+    v_k = None
+    if evecs:
+        v_k = np.zeros((nkpnts,nawf,nawf),dtype=complex)
 
     for ik in xrange(nkpnts):
         if read_S:
@@ -35,7 +36,8 @@ def write_PAO_eigs(Hks,Sks,read_S,ispin):
         else:
             eigval,eigvec = LAN.eigh(Hks[:,:,ik,ispin],UPLO='U')
         E_k[ik,:] = np.real(eigval)
-        v_k[ik,:,:] = eigvec
+        if evecs:
+            v_k[ik,:,:] = eigvec
 
     if rank == 0:
         ipad = False
