@@ -38,7 +38,6 @@ rank = comm.Get_rank()
 
 
 def _getHighSymPoints(ibrav,alat,cellOld):
-  try: 
     '''
     Searching for the ibrav number in the input file for the calculation
     to determine the path for the band structure calculation
@@ -58,6 +57,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 ###############################################################################
 ###############################################################################
+
     #get a,b,c of QE convention conventional cell from primitive lattice vecs
     if ibrav == 1:
         a=np.abs(cellOld[0][0])*2.0
@@ -453,12 +453,13 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         special_points[k]=tuple((second).tolist())
 
 
+
+
     return special_points, band_path
-  except Exception as e:
-    raise e
+
+
 
 def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk):
-  try:
     '''
     Get path between HSP
     Arguments:
@@ -487,104 +488,86 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk):
             pfo.write(path_file)
 
     return points
-  except Exception as e:
-    raise e
 
 def get_path(ibrav,alat,cell,dk):
 
     def kdistance(hs, p1, p2):
-      try:
         g = np.dot(hs.T, hs)
         p1, p2 = np.array(p1), np.array(p2)
         d = p1 - p2
         dist2 = np.dot(d.T, np.dot(g, d).T)
         return np.sqrt(dist2)
-      except Exception as e:
-        raise e
 
     def getSegments(path):
-      try:
         segments = path.split('|')
         return segments
-      except Exception as e:
-        raise e
 
     def getPoints(pathSegment):
-      try:
         pointsList = pathSegment.split('-')
         return pointsList
-      except Exception as e:
-        raise e
-
     def getNumPoints(path):
-      try:
         list1 = getSegments(path)
         numPts = 0
         for index in (list1):
             numPts += len(getPoints(index))
         return numPts
-      except Exception as e:
-        raise e
 
-    try:
-        if ibrav==0:
-            sys.exit('IBRAV = 0 not permitted')
-        if ibrav<0:
-            print('Lattice type %s is not implemented') % ibrav
-            logging.error('The ibrav value from QE has not yet been implemented')
-            raise Exception
+    if ibrav==0:
+        sys.exit('IBRAV = 0 not permitted')
+    if ibrav<0:
+        print('Lattice type %s is not implemented') % ibrav
+        logging.error('The ibrav value from QE has not yet been implemented')
+        raise Exception
 
-        totalK=0
-        special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
+    totalK=0
+    special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
 
-        hs = np.linalg.inv(cell)  # reciprocal lattice
-        #hs = 2*np.pi*bcell
-        segs = getSegments(band_path)
+    hs = np.linalg.inv(cell)  # reciprocal lattice
+    #hs = 2*np.pi*bcell
+    segs = getSegments(band_path)
 
-        kx = np.array([])
-        ky = np.array([])
-        kz = np.array([])
+    kx = np.array([])
+    ky = np.array([])
+    kz = np.array([])
 
-        path_file = ""
+    path_file = ""
 
-        for index in segs:
+    for index in segs:
 
-            a = getPoints(index) #gets the points in each segment of path separated by |
-            point1 = None
-            point2 = None
+        a = getPoints(index) #gets the points in each segment of path separated by |
+        point1 = None
+        point2 = None
 
-            for index2 in xrange(len(a)-1):
-                try:
-                    point1 = a[index2]
-                    point2 = a[index2+1]
-                    p1 = special_points[point1]
-                    p2 = special_points[point2]
+        for index2 in xrange(len(a)-1):
+            try:
+                point1 = a[index2]
+                point2 = a[index2+1]
+                p1 = special_points[point1]
+                p2 = special_points[point2]
 
-                    newDK = (2.0*np.pi/alat)*dk
-                    numK = int(np.ceil((kdistance(hs, p1, p2)/newDK)))
-                    totalK+=numK
+                newDK = (2.0*np.pi/alat)*dk
+                numK = int(np.ceil((kdistance(hs, p1, p2)/newDK)))
+                totalK+=numK
 
-                    path_file+="%s %s\n"%(point1,numK)
+                path_file+="%s %s\n"%(point1,numK)
                 
-                    numK = str(numK)
+                numK = str(numK)
 
-                    a0 = np.linspace(p1[0],p2[0],numK).astype(np.float16)
-                    a1 = np.linspace(p1[1],p2[1],numK).astype(np.float16)
-                    a2 = np.linspace(p1[2],p2[2],numK).astype(np.float16)
+                a0 = np.linspace(p1[0],p2[0],numK).astype(np.float16)
+                a1 = np.linspace(p1[1],p2[1],numK).astype(np.float16)
+                a2 = np.linspace(p1[2],p2[2],numK).astype(np.float16)
 
-                    kx = np.concatenate((kx,a0))
-                    ky = np.concatenate((ky,a1))
-                    kz = np.concatenate((kz,a2))
+                kx = np.concatenate((kx,a0))
+                ky = np.concatenate((ky,a1))
+                kz = np.concatenate((kz,a2))
 
-                except Exception as e:
-                    raise e
+            except Exception as e:
+                print(e)
 
 
-            path_file+="%s %s\n"%(a[-1],0)
+        path_file+="%s %s\n"%(a[-1],0)
 
-        path_file+="\n"
-        kpoints = np.array([kx,ky,kz])
+    path_file+="\n"
+    kpoints = np.array([kx,ky,kz])
         
-        return kpoints,path_file
-    except Exception as e:
-        raise e
+    return kpoints,path_file

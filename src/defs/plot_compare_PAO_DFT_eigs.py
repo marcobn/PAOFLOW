@@ -18,7 +18,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 def plot_compare_PAO_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
-  try:
+
     nawf,nawf,nkpnts,nspin = Hks.shape
     E_k = np.zeros((nawf,nkpnts,nspin))
 
@@ -54,5 +54,3 @@ def plot_compare_PAO_DFT_eigs(Hks,Sks,my_eigsmat,read_S):
     plt.title('Comparison of PAO vs. DFT eigenvalues')
     plt.savefig('comparison.pdf',format='pdf')
     return()
-  except Exception as e:
-    raise e

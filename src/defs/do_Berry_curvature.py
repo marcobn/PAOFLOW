@@ -33,7 +33,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
-  try:
     #----------------------
     # Compute spin Berry curvature
     #----------------------
@@ -58,19 +57,18 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
         Om_znk = None
 
     for pool in xrange(npool):
-        if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nk1*nk2*nk3/npool
+        ini_ip, end_ip = load_balancing(npool, pool, nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            pksp_long = np.array_split(pksp,npool,axis=0)[pool]
-            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
-            Om_znk_split = np.array_split(Om_znk,npool,axis=0)[pool]
+            pksp_long = pksp[ini_ip:end_ip]
+            E_k_long= E_k[ini_ip:end_ip]
+            Om_znk_split = Om_znk[ini_ip:end_ip]
         else:
             Om_znk_split = None
             pksp_long = None
             E_k_long = None
 
-        comm.Barrier()
         pksaux = scatter_array(pksp_long)
         E_kaux = scatter_array(E_k_long)
 
@@ -86,11 +84,11 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
                 if m!= n:
                     Om_znkaux[:,n] += -2.0*np.imag(pksaux[:,ipol,n,m,0]*pksaux[:,jpol,m,n,0]) / \
                     ((E_kaux[:,m,0] - E_kaux[:,n,0])**2 + deltap**2)
-        comm.Barrier()
+
         gather_array(Om_znk_split, Om_znkaux)
 
         if rank == 0:
-            Om_znk[pool*nkpool:(pool+1)*nkpool,:] = Om_znk_split[:,:]
+            Om_znk[ini_ip:end_ip,:] = Om_znk_split[:,:]
 
     de = (emaxSH-eminSH)/500
     ene = np.arange(eminSH,emaxSH,de,dtype=float)
@@ -104,30 +102,29 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
     E_k_long = None
 
     for pool in xrange(npool):
-        if nk1*nk2*nk3%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nk1*nk2*nk3/npool
+        ini_ip, end_ip = load_balancing(npool, pool, nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
-            Om_znk_long = np.array_split(Om_znk,npool,axis=0)[pool]
-            Om_zk_split = np.array_split(Om_zk,npool,axis=0)[pool]
-            deltak_long= np.array_split(deltak,npool,axis=0)[pool]
+            E_k_long = E_k[ini_ip:end_ip]
+            Om_znk_long = Om_znk[ini_ip:end_ip]
+            Om_zk_split = Om_zk[ini_ip:end_ip]
+            deltak_long= deltak[ini_ip:end_ip]
         else:
             Om_znk_long = None
             Om_zk_split = None
             E_k_long = None
             deltak_long = None
 
-        comm.Barrier()
-        Om_znkaux = scatter_array(Om_znk_long)
-        E_kaux = scatter_array(E_k_long)
-        deltakaux = scatter_array(deltak_long)
-
         # Load balancing
         ini_ik, end_ik = load_balancing(size,rank,nkpool)
         nsize = end_ik-ini_ik
 
         Om_zkaux = np.zeros((nsize,ene.size),dtype=float)
+
+        Om_znkaux = scatter_array(Om_znk_long)
+        E_kaux = scatter_array(E_k_long)
+        deltakaux = scatter_array(deltak_long)
 
         for i in xrange(ene.size):
             if smearing == 'gauss':
@@ -137,11 +134,10 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
             else:
                 Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_kaux[:,:,0]-ene[i]) + 1)),axis=1)
 
-        comm.Barrier()
         gather_array(Om_zk_split, Om_zkaux)
 
         if rank == 0:
-            Om_zk[pool*nkpool:(pool+1)*nkpool,:] = Om_zk_split[:,:]
+            Om_zk[ini_ip:end_ip,:] = Om_zk_split[:,:]
 
     ahc = None
     if rank == 0: ahc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
@@ -158,5 +154,3 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
         Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
 
     return(ene,ahc,Om_k[:,:,:,n]-Om_k[:,:,:,n0])
-  except Exception as e:
-    raise e

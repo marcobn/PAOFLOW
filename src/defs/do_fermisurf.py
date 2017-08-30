@@ -18,7 +18,6 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from write3Ddatagrid import *
 def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
-  try:
     #maximum number of bands crossing fermi surface
 
     nbndx_plot = 10
@@ -47,5 +46,3 @@ def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
     for ib in xrange(icount):
         np.savez('Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
     return()
-  except Exception as e:
-    raise e

@@ -26,7 +26,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
-  try:
     # DOS calculation with gaussian smearing
 
     #emin = np.min(eig)-1.0
@@ -58,5 +57,3 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
         f.close()
 
     return
-  except Exception as e:
-    raise e

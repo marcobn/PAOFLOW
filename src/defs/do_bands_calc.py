@@ -11,6 +11,7 @@
 #
 from scipy import fftpack as FFT
 import numpy as np
+import psutil
 import cmath
 import sys
 
@@ -32,7 +33,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
-  try:
     # Compute bands on a selected path in the BZ
 
     # Load balancing
@@ -50,6 +50,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     Hks_aux  = np.zeros((nawf,nawf,nsize,nspin),dtype=complex) # read data arrays from tasks
     Hks_aux[:,:,:,:] = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx)
 
+    comm.Barrier()
+
     # Gather segments of Hks
     Hks_aux = np.ascontiguousarray(np.moveaxis(Hks_aux, 2, 0))
     gather_array(Hks_int, Hks_aux)
@@ -62,6 +64,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
         Sks_aux  = np.zeros((nawf,nawf,nsize,1),dtype=complex)
         Sks_aux[:,:,:,0] = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx)
 
+        comm.Barrier()
+
         # Gather segments of Sks
         Sks_aux = np.ascontiguousarray(np.moveaxis(Sks_aux, 2, 0))
         gather_array(Sks_int, Sks_aux)
@@ -69,14 +73,22 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
             Sks_int = np.moveaxis(Sks_int, 0, 2)
 
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
-    v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+    v_kp = None
+    evecs = False
+    if nkpi*nawf*nawf*nspin*size*16. < psutil.virtual_memory().total/2.:
+        v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+        evecs = True
 
     if rank == 0:
         for ispin in xrange(nspin):
-            E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin)
+            if evecs:
+                E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin,evecs)
+            else:
+                E_kp[:,:,ispin],v_kp = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin,evecs)
 
     comm.Bcast(E_kp,root=0)
-    comm.Bcast(v_kp,root=0)
+    if evecs:
+        comm.Bcast(v_kp,root=0)
 
 #    if rank == 0:
 #        plt.matshow(abs(Hks_int[:,:,1445,0]))
@@ -86,11 +98,9 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
 #        np.save('Hks_noSO0',Hks_int[:,:,0,0])
 
     return(E_kp,v_kp)
-  except Exception as e:
-    raise e
 
 def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
-  try:
+
     nsize = end_ik - ini_ik
     auxh = np.zeros((nawf,nawf,nsize,nspin),dtype=complex)
     HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
@@ -100,11 +110,9 @@ def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
              auxh[:,:,ik-ini_ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)
-  except Exception as e:
-    raise e
 
 def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
-  try:
+
     nsize = end_ik - ini_ik
     auxs = np.zeros((nawf,nawf,nsize),dtype=complex)
 
@@ -116,5 +124,3 @@ def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
                     auxs[:,:,ik-ini_ik] += SRaux[:,:,i,j,k]*phase
 
     return(auxs)
-  except Exception as e:
-    raise e
