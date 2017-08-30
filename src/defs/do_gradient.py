@@ -45,7 +45,6 @@ if rank == 0:
             scipyfft = True
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
-  try:
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -98,19 +97,18 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
         dHRaux  = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_gradient')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            HRaux_split = np.array_split(HRaux,npool,axis=0)[pool]
-            dHRaux_split = np.array_split(dHRaux,npool,axis=0)[pool]
-            Rfft_split = np.array_split(Rfft,npool,axis=0)[pool]
+            HRaux_split = HRaux[ini_ip:end_ip]
+            dHRaux_split = dHRaux[ini_ip:end_ip]
+            Rfft_split = Rfft[ini_ip:end_ip]
         else:
             HRaux_split = None
             dHRaux_split = None
             Rfft_split = None
 
-        comm.Barrier()
         dHRaux1 = scatter_array(dHRaux_split)
         HRaux1 = scatter_array(HRaux_split)
         Rfftaux = scatter_array(Rfft_split)
@@ -122,15 +120,14 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
                     for m in xrange(nawf):
                         dHRaux1[:,l,n,m,ispin] = 1.0j*alat*Rfftaux[:,l]*HRaux1[:,n,m,ispin]
 
-        comm.Barrier()
         gather_array(dHRaux_split, dHRaux1)
 
         if rank == 0:
-            dHRaux[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = dHRaux_split[:,:,:,:,:,]
-
-    if rank == 0: dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+            dHRaux[ini_ip:end_ip,:,:,:,:] = dHRaux_split[:,:,:,:,:]
 
     if rank == 0:
+        dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+
         # Compute dH(k)/dk
         if using_cuda:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
@@ -152,5 +149,3 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
 
         dHRaux = None
     return(dHksp)
-  except Exception as e:
-    raise e

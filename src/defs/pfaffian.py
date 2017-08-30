@@ -25,14 +25,14 @@ import scipy.sparse as sp
 import math, cmath
 
 def householder_real(x):
-  """(v, tau, alpha) = householder_real(x)
+    """(v, tau, alpha) = householder_real(x)
 
-  Compute a Householder transformation such that
-  (1-tau v v^T) x = alpha e_1
-  where x and v a real vectors, tau is 0 or 2, and
-  alpha a real number (e_1 is the first unit vector)
-  """
-  try:
+    Compute a Householder transformation such that
+    (1-tau v v^T) x = alpha e_1
+    where x and v a real vectors, tau is 0 or 2, and
+    alpha a real number (e_1 is the first unit vector)
+    """
+
     assert x.shape[0]>0
 
     sigma=np.dot(x[1:],x[1:])
@@ -56,18 +56,15 @@ def householder_real(x):
         v/=np.linalg.norm(v)
 
         return (v, 2, alpha)
-  except Exception as e:
-    raise e
 
 def householder_complex(x):
-  """(v, tau, alpha) = householder_real(x)
+    """(v, tau, alpha) = householder_real(x)
 
-  Compute a Householder transformation such that
-  (1-tau v v^T) x = alpha e_1
-  where x and v a complex vectors, tau is 0 or 2, and
-  alpha a complex number (e_1 is the first unit vector)
-  """
-  try:
+    Compute a Householder transformation such that
+    (1-tau v v^T) x = alpha e_1
+    where x and v a complex vectors, tau is 0 or 2, and
+    alpha a complex number (e_1 is the first unit vector)
+    """
     assert x.shape[0]>0
 
     sigma=np.dot(np.conj(x[1:]), x[1:])
@@ -86,26 +83,24 @@ def householder_complex(x):
         v/=np.linalg.norm(v)
 
     return (v, 2, -phase*norm_x)
-  except Exception as e:
-    raise e
 
 def skew_tridiagonalize(A, overwrite_a=False, calc_q=True):
-  """ T, Q = skew_tridiagonalize(A, overwrite_a, calc_q=True)
+    """ T, Q = skew_tridiagonalize(A, overwrite_a, calc_q=True)
 
-  or
+    or
 
-  T = skew_tridiagonalize(A, overwrite_a, calc_q=False)
+    T = skew_tridiagonalize(A, overwrite_a, calc_q=False)
 
-  Bring a real or complex skew-symmetric matrix (A=-A^T) into
-  tridiagonal form T (with zero diagonal) with a orthogonal
-  (real case) or unitary (complex case) matrix U such that
-  A = Q T Q^T
-  (Note that Q^T and *not* Q^dagger also in the complex case)
+    Bring a real or complex skew-symmetric matrix (A=-A^T) into
+    tridiagonal form T (with zero diagonal) with a orthogonal
+    (real case) or unitary (complex case) matrix U such that
+    A = Q T Q^T
+    (Note that Q^T and *not* Q^dagger also in the complex case)
 
-  A is overwritten if overwrite_a=True (default: False), and
-  Q only calculated if calc_q=True (default: True)
-  """
-  try:
+    A is overwritten if overwrite_a=True (default: False), and
+    Q only calculated if calc_q=True (default: True)
+    """
+
     #Check if matrix is square
     assert A.shape[0] == A.shape[1] > 0
     #Check if it's skew-symmetric
@@ -151,22 +146,20 @@ def skew_tridiagonalize(A, overwrite_a=False, calc_q=True):
         return (np.asmatrix(A), np.asmatrix(Q))
     else:
         return np.asmatrix(A)
-  except Exception as e:
-    raise e
 
 def skew_LTL(A, overwrite_a=False, calc_L=True, calc_P=True):
-  """ T, L, P = skew_LTL(A, overwrite_a, calc_q=True)
+    """ T, L, P = skew_LTL(A, overwrite_a, calc_q=True)
 
-  Bring a real or complex skew-symmetric matrix (A=-A^T) into
-  tridiagonal form T (with zero diagonal) with a lower unit
-  triangular matrix L such that
-  P A P^T= L T L^T
+    Bring a real or complex skew-symmetric matrix (A=-A^T) into
+    tridiagonal form T (with zero diagonal) with a lower unit
+    triangular matrix L such that
+    P A P^T= L T L^T
 
-  A is overwritten if overwrite_a=True (default: False),
-  L and P only calculated if calc_L=True or calc_P=True,
-  respectively (default: True).
-  """
-  try:
+    A is overwritten if overwrite_a=True (default: False),
+    L and P only calculated if calc_L=True or calc_P=True,
+    respectively (default: True).
+    """
+
     #Check if matrix is square
     assert A.shape[0] == A.shape[1] > 0
     #Check if it's skew-symmetric
@@ -243,19 +236,16 @@ def skew_LTL(A, overwrite_a=False, calc_L=True, calc_P=True):
             return (np.asmatrix(A), P)
         else:
             return np.asmatrix(A)
-  except Exception as e:
-    raise e
 
 def pfaffian(A, overwrite_a=False, method='P'):
-  """ pfaffian(A, overwrite_a=False, method='P')
+    """ pfaffian(A, overwrite_a=False, method='P')
 
-  Compute the Pfaffian of a real or complex skew-symmetric
-  matrix A (A=-A^T). If overwrite_a=True, the matrix A
-  is overwritten in the process. This function uses
-  either the Parlett-Reid algorithm (method='P', default),
-  or the Householder tridiagonalization (method='H')
-  """
-  try:
+    Compute the Pfaffian of a real or complex skew-symmetric
+    matrix A (A=-A^T). If overwrite_a=True, the matrix A
+    is overwritten in the process. This function uses
+    either the Parlett-Reid algorithm (method='P', default),
+    or the Householder tridiagonalization (method='H')
+    """
     #Check if matrix is square
     assert A.shape[0] == A.shape[1] > 0
     #Check if it's skew-symmetric
@@ -271,18 +261,15 @@ def pfaffian(A, overwrite_a=False, method='P'):
         return pfaffian_LTL(A, overwrite_a)
     else:
         return pfaffian_householder(A, overwrite_a)
-  except Exception as e:
-    raise e
 
 def pfaffian_LTL(A, overwrite_a=False):
-  """ pfaffian_LTL(A, overwrite_a=False)
+    """ pfaffian_LTL(A, overwrite_a=False)
 
-  Compute the Pfaffian of a real or complex skew-symmetric
-  matrix A (A=-A^T). If overwrite_a=True, the matrix A
-  is overwritten in the process. This function uses
-  the Parlett-Reid algorithm.
-  """
-  try:
+    Compute the Pfaffian of a real or complex skew-symmetric
+    matrix A (A=-A^T). If overwrite_a=True, the matrix A
+    is overwritten in the process. This function uses
+    the Parlett-Reid algorithm.
+    """
     #Check if matrix is square
     assert A.shape[0] == A.shape[1] > 0
     #Check if it's skew-symmetric
@@ -337,22 +324,21 @@ def pfaffian_LTL(A, overwrite_a=False):
             return 0.0
 
     return pfaffian_val
-  except Exception as e:
-    raise e
+
 
 def pfaffian_householder(A, overwrite_a=False):
-  """ pfaffian(A, overwrite_a=False)
+    """ pfaffian(A, overwrite_a=False)
 
-  Compute the Pfaffian of a real or complex skew-symmetric
-  matrix A (A=-A^T). If overwrite_a=True, the matrix A
-  is overwritten in the process. This function uses the
-  Householder tridiagonalization.
+    Compute the Pfaffian of a real or complex skew-symmetric
+    matrix A (A=-A^T). If overwrite_a=True, the matrix A
+    is overwritten in the process. This function uses the
+    Householder tridiagonalization.
 
-  Note that the function pfaffian_schur() can also be used in the
-  real case. That function does not make use of the skew-symmetry
-  and is only slightly slower than pfaffian_householder().
-  """
-  try:
+    Note that the function pfaffian_schur() can also be used in the
+    real case. That function does not make use of the skew-symmetry
+    and is only slightly slower than pfaffian_householder().
+    """
+
     #Check if matrix is square
     assert A.shape[0] == A.shape[1] > 0
     #Check if it's skew-symmetric
@@ -399,20 +385,18 @@ def pfaffian_householder(A, overwrite_a=False):
     pfaffian_val *= A[n-2,n-1]
 
     return pfaffian_val
-  except Exception as e:
-    raise e
 
 def pfaffian_schur(A, overwrite_a=False):
-  """Calculate Pfaffian of a real antisymmetric matrix using
-  the Schur decomposition. (Hessenberg would in principle be faster,
-  but scipy-0.8 messed up the performance for scipy.linalg.hessenberg()).
+    """Calculate Pfaffian of a real antisymmetric matrix using
+    the Schur decomposition. (Hessenberg would in principle be faster,
+    but scipy-0.8 messed up the performance for scipy.linalg.hessenberg()).
 
-  This function does not make use of the skew-symmetry of the matrix A,
-  but uses a LAPACK routine that is coded in FORTRAN and hence faster
-  than python. As a consequence, pfaffian_schur is only slightly slower
-  than pfaffian().
-  """
-  try:
+    This function does not make use of the skew-symmetry of the matrix A,
+    but uses a LAPACK routine that is coded in FORTRAN and hence faster
+    than python. As a consequence, pfaffian_schur is only slightly slower
+    than pfaffian().
+    """
+
     assert np.issubdtype(A.dtype, np.number) and not np.issubdtype(A.dtype, np.complexfloating)
 
     assert A.shape[0] == A.shape[1] > 0
@@ -426,5 +410,3 @@ def pfaffian_schur(A, overwrite_a=False):
     (t, z) = la.schur(A, output='real', overwrite_a=overwrite_a)
     l = np.diag(t, 1)
     return np.prod(l[::2]) * la.det(z)
-  except Exception as e:
-    raise e

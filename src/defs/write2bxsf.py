@@ -14,7 +14,6 @@ import cmath
 import sys, time
 
 def write2bxsf(fermi_dw,fermi_up,bands, nx, ny, nz, nbnd, ind_plot, Efermi, alat,x0, b_vectors, filename):
-  try:
     with open ('{0}'.format(filename),'w') as f:
         f.write('\nBEGIN_INFO\n  Fermi Energy: {:15.9f}\n  Shift Range: {:12.9f}eV to{:12.9f}eV\nEND_INFO\n'.format(Efermi,fermi_dw,fermi_up))
         # BXSF scalar-field header
@@ -47,5 +46,4 @@ def write2bxsf(fermi_dw,fermi_up,bands, nx, ny, nz, nbnd, ind_plot, Efermi, alat
         f.write('END_BANDGRID_3D\nEND_BLOCK_BANDGRID_3d\n')
             
     return()
-  except Exception as e:
-    raise e
+

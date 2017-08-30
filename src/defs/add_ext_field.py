@@ -21,33 +21,30 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
-    try:
-        nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
-        HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+    nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
+    HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
 
-        tau_wf /= ANGSTROM_AU
-        alat /= ANGSTROM_AU
+    tau_wf /= ANGSTROM_AU
+    alat /= ANGSTROM_AU
 
-        if Efield.any() != 0.0:
-            # Electric field
-            for n in xrange(nawf):
-                HRs[n,n,0,:] -= Efield.dot(tau_wf[n,:])
+    if Efield.any() != 0.0:
+        # Electric field
+        for n in xrange(nawf):
+            HRs[n,n,0,:] -= Efield.dot(tau_wf[n,:])
 
-        if Bfield.any() != 0.0:
-            if rank == 0: print('calculation in magnetic supercell not implemented')
-            pass
-        # Magnetic field in units of magnetic flux quantum (hc/e)
-        #for i in xrange(nk1*nk2*nk3):
-        #    for n in xrange(nawf):
-        #        for m in xrange(nawf):
-        #            arg = 0.5*np.dot((np.cross(Bfield,alat*R[i,:]+tau_wf[m,:])+np.cross(Bfield,tau_wf[n,:])),(alat*R[i,:]+tau_wf[m,:]-tau_wf[n,:]))
-        #            HRs[n,m,i,:] *= np.exp(-np.pi*arg*1.j)
+    if Bfield.any() != 0.0:
+        if rank == 0: print('calculation in magnetic supercell not implemented')
+        pass
+    # Magnetic field in units of magnetic flux quantum (hc/e)
+    #for i in xrange(nk1*nk2*nk3):
+    #    for n in xrange(nawf):
+    #        for m in xrange(nawf):
+    #            arg = 0.5*np.dot((np.cross(Bfield,alat*R[i,:]+tau_wf[m,:])+np.cross(Bfield,tau_wf[n,:])),(alat*R[i,:]+tau_wf[m,:]-tau_wf[n,:]))
+    #            HRs[n,m,i,:] *= np.exp(-np.pi*arg*1.j)
 
-        if HubbardU.any() != 0:
-            for n in xrange(nawf):
-                HRs[n,n,0,:] -= HubbardU[n]/2.0
+    if HubbardU.any() != 0:
+        for n in xrange(nawf):
+            HRs[n,n,0,:] -= HubbardU[n]/2.0
 
-        HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
-        return(HRs)
-    except Exception as e:
-        raise e
+    HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+    return(HRs)
