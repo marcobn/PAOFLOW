@@ -14,7 +14,6 @@ import numpy as np
 import cmath
 import os, sys
 import scipy.linalg.lapack as lapack
-from collections import deque
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -44,66 +43,45 @@ def do_momentum(vec,dHksp,npool):
     nspin = index['nspin']
 
     if rank == 0:
-        dHksp_split = deque(np.array_split(dHksp,npool,axis=0))
-        dHksp = None
-        vec_split   = deque(np.array_split(vec,npool,axis=0))
-        vec   = None
-
-        ini_ik = 0
-        end_ik = 0
-        
-        pksp = np.zeros((nktot,3,nawf,nawf,nspin),order="C",dtype=complex)
+        pksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
     else:
-      vec   = None
-      pksp  = None
-      dHksp = None
-
-
-
-
+        dHksp = None
+        pksp = None
 
     for pool in xrange(npool):
+        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_momentum')
+        nkpool = nktot/npool
+
+        if rank == 0:
+            dHksp_split = np.array_split(dHksp,npool,axis=0)[pool]
+            pks_split = np.array_split(pksp,npool,axis=0)[pool]
+            vec_split = np.array_split(vec,npool,axis=0)[pool]
+        else:
+            dHksp_split = None
+            pks_split = None
+            vec_split = None
 
         # Load balancing
-        if rank==0:
-            nentry = dHksp_split[0].shape[0]
-            dHkaux = scatter_array(dHksp_split.popleft())
-        else:
-            dHkaux = scatter_array(None)
+        ini_ik, end_ik = load_balancing(size,rank,nkpool)
+        nsize = end_ik-ini_ik
 
-        if rank==0:
-            vecaux = scatter_array(vec_split.popleft())
-        else:
-            vecaux = scatter_array(None)
-        
-        pksaux = np.zeros((vecaux.shape[0],3,nawf,nawf,nspin),order="C",dtype=complex)
+        comm.Barrier()
+        dHkaux = scatter_array(dHksp_split)
+        pksaux = scatter_array(pks_split)
+        vecaux = scatter_array(vec_split)
 
-        for ik in xrange(pksaux.shape[0]):
+        for ik in xrange(nsize):
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                 (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
         comm.Barrier()
-        if rank==0:
-            pks_split = np.zeros((nentry,3,nawf,nawf,nspin),order="C",dtype=complex)
-            gather_array(pks_split, pksaux)
+        gather_array(pks_split, pksaux)
 
-            end_ik += nentry
-            pksp[ini_ik:end_ik]  = np.copy(pks_split)
-            ini_ik += nentry
-
-            pks_split=None
-        else:
-            gather_array(None, pksaux)
-
-        vecaux=None
-        dHkaux=None
-        pksaux=None
-
-
+        if rank == 0:
+            pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]
 
     return(pksp)
   except Exception as e:
     raise e
-
