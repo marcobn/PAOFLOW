@@ -34,7 +34,7 @@ try:
     import xml.etree.ElementTree as ET
     import numpy as np
     #import numexpr as ne
-    import sys, traceback, time
+    import sys, psutil, traceback, time
     from mpi4py import MPI
     import multiprocessing
 
@@ -211,10 +211,16 @@ try:
     # Do memory checks 
     #----------------------
 
+    byte = nawf**2*nfft1*nfft2*nfft3*3*2*16.
     if rank == 0:
-        gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.e9
+        gbyte = byte/1.e9
         print('estimated maximum array size: %5.2f GBytes' %(gbyte))
         print('   ')
+
+    if byte*4 >= psutil.virtual_memory().total:
+        if rank == 0:
+            print('Aborting: Array sizes will exceed system memory.')
+        quit()
 
     comm.Barrier()
     if rank == 0:
