@@ -27,7 +27,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_momentum(vec,dHksp,npool):
-  try:
+#  try:
     # calculate momentum vector
 
     index = None
@@ -49,39 +49,53 @@ def do_momentum(vec,dHksp,npool):
         pksp = None
 
     for pool in xrange(npool):
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh - do_momentum')
-        nkpool = nktot/npool
-
-        if rank == 0:
-            dHksp_split = np.array_split(dHksp,npool,axis=0)[pool]
-            pks_split = np.array_split(pksp,npool,axis=0)[pool]
-            vec_split = np.array_split(vec,npool,axis=0)[pool]
-        else:
-            dHksp_split = None
-            pks_split = None
-            vec_split = None
 
         # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
-
+        ini_ik, end_ik = load_balancing(npool,pool,nktot)
+        
+        if rank==0:
+          dHkaux = scatter_array(dHksp[ini_ik:end_ik])
+        else:
+          dHkaux = scatter_array(None)
         comm.Barrier()
-        dHkaux = scatter_array(dHksp_split)
-        pksaux = scatter_array(pks_split)
-        vecaux = scatter_array(vec_split)
 
-        for ik in xrange(nsize):
+        if rank==0:
+          vecaux = scatter_array(vec[ini_ik:end_ik])
+        else:
+          vecaux = scatter_array(None)
+        comm.Barrier()
+
+        ####################
+        ### dummy dHkaux ###
+        ####################
+        for ik in xrange(dHkaux.shape[0]):
             for ispin in xrange(nspin):
                 for l in xrange(3):
-                    pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
-                                (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
+                    dHkaux[ik,l,:,:,ispin] = dHkaux[ik,l,:,:,ispin].dot(vecaux[ik,:,:,ispin])
 
-        comm.Barrier()
-        gather_array(pks_split, pksaux)
+        ####################
+        ### dummy vecaux ###
+        ####################                
+        vecaux = np.ascontiguousarray(np.conj(np.swapaxes(vecaux,1,2)))
+
+        for ik in xrange(dHkaux.shape[0]):
+            for ispin in xrange(nspin):
+                for l in xrange(3):
+                    dHkaux[ik,l,:,:,ispin] = vecaux[ik,:,:,ispin].dot(dHkaux[ik,l,:,:,ispin])
+
 
         if rank == 0:
-            pksp[pool*nkpool:(pool+1)*nkpool,:,:,:,:] = pks_split[:,:,:,:,:,]
+            gather_array(pksp[ini_ik:end_ik], dHkaux)
+        else:
+            gather_array(None, dHkaux)
+
+        comm.Barrier()
+        vec_dagger=None
+        pks_split=None
+        vecaux=None
+        pksaux=None
+        dHkaux=None
 
     return(pksp)
-  except Exception as e:
-    raise e
+#  except Exception as e:
+#    raise e
