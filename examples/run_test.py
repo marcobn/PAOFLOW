@@ -31,7 +31,7 @@ def get_exeCmd(engine, calcType,inputFile):
 ################ DO NOT MODIFY BELOW THIS POINT #################
 
     if engine=='PAO':
-        execDict={'PAO':'PAOFLOW.py'}
+        execDict={'PAO':'main.py ./'}
         exeDir = PAO_path
 
     executable = execDict[calcType]

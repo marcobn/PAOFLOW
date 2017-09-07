@@ -33,6 +33,8 @@ shift      = 'auto' # if 'auto' shift is selected automatically; else, give nume
 pthr       = 0.95
 npool = 1
 
+out_vals = []
+
 #################
 # Calculations 
 #################
