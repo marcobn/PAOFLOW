@@ -27,7 +27,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors):
+def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors,nelec):
 #  try:
     # DOS calculation with adaptive smearing
 
@@ -57,6 +57,9 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
         comm.Reduce(dosaux,dossum,op=MPI.SUM)
         dos[ne] = dossum*float(nawf)/float(netot)
 
+#    aux=None
+#    auxd=None
+#    dosaux=None
     if rank == 0:
         f=open('dosdk_'+str(ispin)+'.dat','w')
         for ne in xrange(ene.size):
@@ -68,15 +71,18 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
       vol_cm3 = (0.529177*alat)**3*np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))*\
                  (1.0e-8)**3
 
-      temp = 300#0.025852
+    
 
       en_k_sort  = np.sort(eig)
 
       nstates = int(np.around((eig.shape[0]/nawf)*(nelec/2.0),decimals=0))            
-      e_fermi = 0.0
+      e_fermi = en_k_sort[nstates-1]
+
+
       dk = 1.0/float(eig.shape[0]/nawf)
 
       #isolate dos above fermi level 
+
       enec = ene[np.where(ene>e_fermi)]
       dosc = dos[np.where(ene>e_fermi)]
 
@@ -85,19 +91,50 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
 
       
       eig_cond=eig[np.where(np.logical_and(eig<top_cb,eig>e_fermi))]
+      eig_cond_shape = eig_cond.shape[0]
+
       
-      conc = 0.0
+      conc = np.zeros((240),order="C")
 
-      k_B = 8.6173303e-5
+    else:
+        conc=None
+        eig_cond=None
+        dk=None
+        e_fermi=None
+        eig_cond_shape=None
 
-      conc = np.sum(1.0/(1.0+np.exp(eig_cond/(k_B*temp))))*dk
+    dk = comm.bcast(dk)
+    e_fermi = comm.bcast(e_fermi)
+    eig_cond_shape = comm.bcast(eig_cond_shape)
 
+    conc_aux = np.zeros((240),order="C")
 
-      print "valence band top (eV)  =",np.around(top_cb,decimals=3)
-      print "states per unit cell   =",conc
-      #scale to cm^-3
-      conc /= vol_cm3
-      print "carrrier conc (cm^-3)  =",conc
+    k_B = 8.6173303e-5
+
+    temp = np.linspace(5,1200,240,endpoint=True)
+
+    if eig_cond_shape!=0:
+        eig_cond = scatter_array(eig_cond)
+
+        for T in xrange(temp.shape[0]):
+            conc_aux[T] = np.sum(1.0/(1.0+np.exp((eig_cond-e_fermi)/(k_B*temp[T]))))*dk
+
+        comm.Reduce(conc_aux,conc)
+
+    if rank == 0:
+        #scale to cm^-3
+        conc /= vol_cm3
+
+        f=open('carrier_conc_'+str(ispin)+'.dat','w')
+        for T in xrange(temp.shape[0]):
+            f.write('% .5f  %.5e \n' %(temp[T],conc[T]))
+        f.close()
+
+      # print "valence band top (eV)  =",np.around(top_cb,decimals=3)
+      # print "states per unit cell   =",conc
+      # 
+      
+      # print "carrrier conc (cm^-3)  =",conc
 
 
     return

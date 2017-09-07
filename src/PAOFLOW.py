@@ -828,7 +828,9 @@ try:
             # Compute the gradient of the k-space Hamiltonian
             #----------------------
             from do_gradient import *
+
             dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool)
+
             #from do_gradient_d2 import *
             #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
 
@@ -886,7 +888,9 @@ try:
             tksp = None
         if rank == 0:
             dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
+
         pksp = do_momentum(v_k,dHksp,npool)
+
         #if rank == 0:
         #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
         #pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
@@ -1054,6 +1058,7 @@ try:
         # DOS calculation with adaptive smearing on double_grid Hksp
         #----------------------
         from do_dos_calc_adaptive import *
+        from do_carrier_conc import *
 
         index = None
         if rank == 0:
@@ -1071,6 +1076,7 @@ try:
                 eigup = np.array(eig[:,0])
                 deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
             do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing)
+            do_carrier_conc(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,alat,a_vectors,nelec)
             eigup = None
             deltakpup = None
         if nspin == 2:
@@ -1217,6 +1223,9 @@ except Exception as e:
     traceback.print_exc()
     comm.Abort()
     raise Exception
+
+if rank==0:
+    print("Max total memory usage:  %6.4f GB"%(all_mem/1024.0**2))
 
 try:
     #----------------------
@@ -1406,6 +1415,16 @@ except Exception as e:
     traceback.print_exc()
     comm.Abort()
     raise Exception
+
+
+
+import resource
+mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+all_mem=np.copy(mem)
+comm.Reduce(mem,all_mem)
+if rank==0:
+    print("Max total memory usage:  %6.4f GB"%(all_mem/1024.0**2))
+
 
 try:
     # Timing
