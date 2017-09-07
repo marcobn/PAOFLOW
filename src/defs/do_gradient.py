@@ -61,7 +61,95 @@ else:
 
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
-#  try:
+    if using_cuda:
+        return do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool)
+    else:
+        return do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool)
+
+def do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool):
+    #----------------------
+    # Compute the gradient of the k-space Hamiltonian
+    #----------------------
+
+    index = None
+
+    if rank == 0:
+        nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
+        nktot = nk1*nk2*nk3
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
+
+    index = comm.bcast(index,root=0)
+
+    nktot = index['nktot']
+    nawf = index['nawf']
+    nspin = index['nspin']
+
+    if rank == 0:
+        # fft grid in R shifted to have (0,0,0) in the center
+        _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+
+        if using_cuda:
+            HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+            HRaux[:,:,:,:,:,:] = cuda_ifftn(Hksp[:,:,:,:,:,:])
+
+        HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+        Hksp = None
+
+        dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+        HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+        dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+    else:
+        dHksp  = None
+        Rfft = None
+        HRaux = None
+        dHRaux  = None
+
+    for pool in xrange(npool):
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
+
+        if rank == 0:
+            HRaux_split = HRaux[ini_ip:end_ip]
+            dHRaux_split = dHRaux[ini_ip:end_ip]
+            Rfft_split = Rfft[ini_ip:end_ip]
+        else:
+            HRaux_split = None
+            dHRaux_split = None
+            Rfft_split = None
+
+        dHRaux1 = scatter_array(dHRaux_split)
+        HRaux1 = scatter_array(HRaux_split)
+        Rfftaux = scatter_array(Rfft_split)
+
+        # Compute R*H(R)
+        for l in xrange(3):
+            for ispin in xrange(nspin):
+                for n in xrange(nawf):
+                    for m in xrange(nawf):
+                        dHRaux1[:,l,n,m,ispin] = 1.0j*alat*Rfftaux[:,l]*HRaux1[:,n,m,ispin]
+
+        gather_array(dHRaux_split, dHRaux1)
+
+        if rank == 0:
+            dHRaux[ini_ip:end_ip,:,:,:,:] = dHRaux_split[:,:,:,:,:]
+
+    if rank == 0:
+        dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+
+        # Compute dH(k)/dk
+        if using_cuda:
+            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            dHksp[:,:,:,:,:,:,:] = cuda_fftn(dHRaux[:,:,:,:,:,:,:])
+
+
+
+        dHRaux = None
+    return(dHksp)
+
+
+def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
+
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -194,6 +282,5 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
         dH_aux=None
 
     return(dHksp)
-#  except Exception as e:
-#    raise e
+
 
