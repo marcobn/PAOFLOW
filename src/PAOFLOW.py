@@ -1224,8 +1224,6 @@ except Exception as e:
     comm.Abort()
     raise Exception
 
-if rank==0:
-    print("Max total memory usage:  %6.4f GB"%(all_mem/1024.0**2))
 
 try:
     #----------------------
