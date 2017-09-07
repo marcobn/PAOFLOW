@@ -34,7 +34,7 @@ try:
     import xml.etree.ElementTree as ET
     import numpy as np
     #import numexpr as ne
-    import sys, traceback, time
+    import sys, psutil, traceback, time
     from mpi4py import MPI
     import multiprocessing
 
@@ -138,15 +138,6 @@ try:
     # Do dimension checks
     #----------------------
 
-    wrongdim = False
-    if rank == 0:
-        nktot=nfft1*nfft2*nfft3
-        if nktot%npool != 0:
-            print('npool not compatible with MP mesh',nktot,npool)
-            wrongdim = True
-    comm.bcast(wrongdim,root=0)
-    if wrongdim: quit()
-
     comm.Barrier()
 except Exception as e:
     print('Rank %d: Exception in FFT Library or Dimension Check'%rank)
@@ -220,10 +211,16 @@ try:
     # Do memory checks 
     #----------------------
 
+    byte = nawf**2*nfft1*nfft2*nfft3*3*2*16.
     if rank == 0:
-        gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.e9
+        gbyte = byte/1.e9
         print('estimated maximum array size: %5.2f GBytes' %(gbyte))
         print('   ')
+
+    if byte*4 >= psutil.virtual_memory().total:
+        if rank == 0:
+            print('Aborting: Array sizes will exceed system memory.')
+        quit()
 
     comm.Barrier()
     if rank == 0:
@@ -524,15 +521,18 @@ try:
             reset=time.time()
 
         if band_topology:
-            # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
-            #from do_topology_calc import *
-            from do_topology_calc_new import *
-            do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
+            if v_kp is None:
+                print('Band Topology currently cannot be calculated for a system this large.')
+            else:
+                # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
+                #from do_topology_calc import *
+                from do_topology_calc_new import *
+                do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
 
-            comm.Barrier()
-            if rank == 0:
-                print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-                reset=time.time()
+                comm.Barrier()
+                if rank == 0:
+                    print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                    reset=time.time()
 
         alat *= ANGSTROM_AU
 

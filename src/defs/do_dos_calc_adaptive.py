@@ -27,7 +27,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
-  try:
     # DOS calculation with adaptive smearing
 
     emin = float(emin)
@@ -63,5 +62,3 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
         f.close()
 
     return
-  except Exception as e:
-    raise e

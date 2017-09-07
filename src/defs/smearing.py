@@ -18,14 +18,12 @@ import sys, time
 
 
 def gaussian(eig,ene,delta):
-  try:
+
     # gaussian smearing
     return (1.0/np.sqrt(np.pi)*np.exp(-((ene-eig)/delta)**2)/delta)
-  except Exception as e:
-    raise e
 
 def metpax(eig,ene,delta):
-  try:
+
     # Methfessel and Paxton smearing
     nh = 5
     coeff = np.zeros(2*nh)
@@ -35,18 +33,14 @@ def metpax(eig,ene,delta):
         coeff[n] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
 
     return (HERMITE.hermval((ene-eig)/delta,coeff)*np.exp(-((ene-eig)/delta)**2)/delta/np.sqrt(np.pi))
-  except Exception as e:
-    raise e
 
 def intgaussian(eig,ene,delta):
-  try:
+
     # integral of the gaussian function as approximation of the Fermi-Dirac distribution 
     return(0.5*(1-SPECIAL.erf((eig-ene)/delta)))
-  except Exception as e:
-    raise e
 
 def intmetpax(eig,ene,delta):
-  try:
+
     # Methfessel and Paxton correction to the Fermi-Dirac distribution
     nh = 5
     coeff = np.zeros(2*nh)
@@ -56,5 +50,3 @@ def intmetpax(eig,ene,delta):
         coeff[n-1] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
 
     return(0.5*(1-SPECIAL.erf((eig-ene)/delta)) + HERMITE.hermval((eig-ene)/delta,coeff)*np.exp(-((eig-ene)/delta)**2)/np.sqrt(np.pi))
-  except Exception as e:
-    raise e

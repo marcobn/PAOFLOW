@@ -66,6 +66,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
     else:
         return do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool)
 
+
 def do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
@@ -282,5 +283,3 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
         dH_aux=None
 
     return(dHksp)
-
-
