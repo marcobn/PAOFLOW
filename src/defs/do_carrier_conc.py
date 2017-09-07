@@ -30,7 +30,10 @@ size = comm.Get_size()
 def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors,nelec):
 #  try:
     # DOS calculation with adaptive smearing
-
+    emin=-1.0
+    if rank==0:
+        emax=np.amax(eig)
+    emax=comm.bcast(emax)
     emin = float(emin)
     emax = float(emax)
     de = (emax-emin)/1001
@@ -66,6 +69,9 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 
+
+    if nawf>=nelec:
+        nelec*=2
     if rank == 0:
 
       vol_cm3 = (0.529177*alat)**3*np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))*\
@@ -86,9 +92,11 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
       enec = ene[np.where(ene>e_fermi)]
       dosc = dos[np.where(ene>e_fermi)]
 
-      #find lowest energy above fermi level with zero dos (states)
-      top_cb =  np.amin(enec[np.where(dosc<dk)])
-
+      try:
+          #find lowest energy above fermi level with zero dos (states)
+          top_cb =  np.amin(enec[np.where(dosc<dk)])
+      except:
+          top_cb=np.amax(eig)
       
       eig_cond=eig[np.where(np.logical_and(eig<top_cb,eig>e_fermi))]
       eig_cond_shape = eig_cond.shape[0]
@@ -117,7 +125,9 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
         eig_cond = scatter_array(eig_cond)
 
         for T in xrange(temp.shape[0]):
-            conc_aux[T] = np.sum(1.0/(1.0+np.exp((eig_cond-e_fermi)/(k_B*temp[T]))))*dk
+#            conc_aux[T] = np.sum(np.exp((eig_cond-e_fermi)/(k_B*temp[T]))/ \
+#                                     (k_B*temp[T]*(1.0+np.exp((eig_cond-e_fermi)/(k_B*temp[T])))**2))*dk
+            conc_aux[T] = np.sum(1.0/(-2.0*k_B*temp[T]*(1.0+np.cosh((eig_cond-e_fermi)/k_B*temp[T]))))*dk
 
         comm.Reduce(conc_aux,conc)
 
