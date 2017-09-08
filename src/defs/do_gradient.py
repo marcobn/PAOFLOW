@@ -60,9 +60,6 @@ else:
 
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
-<<<<<<< HEAD
-#  try:
-=======
     if using_cuda:
         return do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool)
     else:
