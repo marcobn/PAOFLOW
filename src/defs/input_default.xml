@@ -25,7 +25,7 @@
     <do_comparison type="logical" size="1">F</do_comparison>
 
     <!-- Dimensions of the atomic basis for each atom (order must be the same as in the output of projwfc.x) -->
-    <naw type="integer" size="2">0 0</naw>
+    <naw><a type="integer" size="2">0 0</a></naw>
 
     <!-- Shell order and degeneracy for SO (order must be the same as in the output of projwfc.x) -->
     <sh><a type="integer" size="6">0 1 2 0 1 2</a></sh><!-- Calculations -->
