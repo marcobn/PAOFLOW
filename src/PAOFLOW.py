@@ -1003,6 +1003,10 @@ except Exception as e:
 #    print (Tsum, Psum)
 #quit()
 
+
+    if not spin_Hall:
+        dHksp=None
+
 try:
     velkp = None
     if rank == 0:
@@ -1149,6 +1153,8 @@ try:
             spincheck=comm.bcast(spincheck,root=0)
             if spincheck == 0:
                 jksp = np.delete(np.delete(do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl),np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
+                if rank==0:
+                    print(jksp.shape)
                 if restart and rank == 0:
                     np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
  
