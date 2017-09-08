@@ -127,8 +127,9 @@ def do_carrier_conc(eig,emin,emax,delta,netot,nawf,ispin,smearing,alat,a_vectors
         for T in xrange(temp.shape[0]):
 #            conc_aux[T] = np.sum(np.exp((eig_cond-e_fermi)/(k_B*temp[T]))/ \
 #                                     (k_B*temp[T]*(1.0+np.exp((eig_cond-e_fermi)/(k_B*temp[T])))**2))*dk
-            conc_aux[T] = np.sum(1.0/(-2.0*k_B*temp[T]*(1.0+np.cosh((eig_cond-e_fermi)/k_B*temp[T]))))*dk
-
+#            conc_aux[T] = np.sum(1.0/(2.0*k_B*temp[T]*(1.0+np.cosh((eig_cond-e_fermi)/k_B*temp[T]))))*dk
+            conc_aux[T] = np.sum(1.0/(temp[T]*k_B)/(1.0+np.cosh((eig_cond-e_fermi)/(temp[T]*k_B))))*0.5*dk
+                            
         comm.Reduce(conc_aux,conc)
 
     if rank == 0:

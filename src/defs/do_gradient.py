@@ -233,13 +233,13 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
 
         #reshape Hr for multiplying by the three parts of Rfft grid
         H_aux  = np.reshape(H_aux,(num_n,nk1*nk2*nk3,nspin),order='C')
-        dH_aux = np.zeros((num_n,3,nk1*nk2*nk3,nspin),dtype=complex,order='C')
+        dH_aux = np.zeros((num_n,nk1*nk2*nk3,3,nspin),dtype=complex,order='C')
 
 
         # Compute R*H(R)
         for ispin in xrange(nspin):
             for l in xrange(3):
-                dH_aux[:,l,:,ispin] = 1.0j*alat*Rfft[:,l]*H_aux[...,ispin]
+                dH_aux[:,:,l,ispin] = 1.0j*alat*Rfft[:,l]*H_aux[...,ispin]
 
 
         H_aux=None
@@ -247,21 +247,21 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
 
 
         #reshape for fft
-        dH_aux = np.reshape(dH_aux,(num_n,3,nk1,nk2,nk3,nspin),order='C')
+        dH_aux = np.reshape(dH_aux,(num_n,nk1,nk2,nk3,3,nspin),order='C')
         # Compute dH(k)/dk
 
         if scipyfft:
             for n in xrange(dH_aux.shape[0]):
-                for l in xrange(dH_aux.shape[1]):
+                for l in xrange(dH_aux.shape[4]):
                     for ispin in xrange(dH_aux.shape[5]):
-                        FFT.fftn(dH_aux[n,l,:,:,:,ispin],axes=(0,1,2),overwrite_x=True)
+                        FFT.fftn(dH_aux[n,:,:,:,l,ispin],axes=(0,1,2),overwrite_x=True)
                                  
         else:
             for n in xrange(dH_aux.shape[0]):
-                for l in xrange(dH_aux.shape[1]):
+                for l in xrange(dH_aux.shape[4]):
                     for ispin in xrange(dH_aux.shape[5]):
-                        fft = pyfftw.FFTW(dH_aux[n,l,:,:,:,ispin]
-                                          ,dH_aux[n,l,:,:,:,ispin],axes=(0,1,2),
+                        fft = pyfftw.FFTW(dH_aux[n,:,:,:,l,ispin]
+                                          ,dH_aux[n,:,:,:,l,ispin],axes=(0,1,2),
 
                                           direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ),
                                           threads=nthread, planning_timelimit=None )
@@ -275,14 +275,12 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
 
         #gather the arrays into flattened dHk
         if rank==0:
-            temp = np.zeros((end_n-start_n,3,nk1,nk2,nk3,nspin),order="C",dtype=complex)
-
+#            temp = np.zeros((end_n-start_n,3,nk1,nk2,nk3,nspin),order="C",dtype=complex)
+            temp = np.zeros((end_n-start_n,nk1,nk2,nk3,3,nspin),order="C",dtype=complex)
             gather_array(temp,dH_aux)
 
             temp  = np.rollaxis(temp,0,5)    
-            temp  = np.rollaxis(temp,0,4) 
-            temp  = temp.reshape(nk1*nk2*nk3,3,end_n-start_n,nspin)
-
+            temp = temp.reshape(nk1*nk2*nk3,3,end_n-start_n,nspin)
             dHksp[:,:,start_n:end_n,:] = np.copy(temp)
             temp = None
         else:
