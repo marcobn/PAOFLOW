@@ -32,7 +32,7 @@ from PAOFLOW import *
 
 def main():
     outDict = paoflow(sys.argv[1])
-    if len(outDict) > 0:
+    if len(outDict) > 0 and not 'None' in outDict:
         print('\noutDict keys:')
         for k in outDict.keys():
             print('\''+k+'\'')
