@@ -27,13 +27,13 @@
 from __future__ import absolute_import, print_function
 
 # import general modules
+import sys, traceback, psutil, time
 from scipy import fftpack as FFT
 from scipy import linalg as LA
 from numpy import linalg as LAN
 import xml.etree.ElementTree as ET
 import numpy as np
 #import numexpr as ne
-import sys, psutil, traceback, time
 from mpi4py import MPI
 import multiprocessing
 
@@ -53,6 +53,7 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_spin_orbit import *
 from constants import *
+from read_inputfile_xml_parse import *
 from read_QE_output_xml_parse import *
 from write3Ddatagrid import *
 from plot_compare_PAO_DFT_eigs import *
@@ -75,7 +76,6 @@ from do_Berry_conductivity import *
 from write2bxsf import *
 from do_Boltz_tensors import *
 from do_epsilon import *
-from input_default import *
 
 def paoflow(inputpath):
     try:
@@ -121,20 +121,21 @@ def paoflow(inputpath):
         #----------------------
         # Read input
         #----------------------
-        sys.path.append(inputpath)
-        from input_default import *
-        try:
-            from inputfile import *
-        except:
-            if rank == 0: print('missing inputfile.py ...')
-            if rank == 0: print('using default input module')
-            pass
-        fpath = inputpath+fpath
+#        sys.path.append(inputpath)
+        fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
+        shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
+        ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
+        double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,do_fermisurf, \
+        fermi_up,fermi_dw,do_spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
+        epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml()
+
+        fpath = inputpath + fpath
 
         #----------------------
         # initialize return dictionary
         #----------------------
-        if rank == 0:
+        if rank == 0 and out_vals is not None:
             outDict = {}
             if len(out_vals) > 0:
                 for i in out_vals:
@@ -144,17 +145,8 @@ def paoflow(inputpath):
         # Check for fftw libraries
         #----------------------
         scipyfft = True
-#        if rank == 0:
-#            if use_cuda:
-#                from cuda_fft import cuda_fft
-#                print('using skcuda FFT')
-#            else:
-#                try:
-#                    from pyfftw import pyfftw
-#                    print('using pyFFTW')
-#                except:
-#                    print('using scipy FFT')
-#                    scipyfft = True
+        if use_cuda:
+            scipyfft = False
     
         if size >  1:
             if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
@@ -195,7 +187,7 @@ def paoflow(inputpath):
         natoms = None
         tau = None
         Sks = None
-    
+
         if rank == 0:
     
             if (not non_ortho):
@@ -239,16 +231,10 @@ def paoflow(inputpath):
         # Do memory checks 
         #----------------------
     
-        byte = nawf**2*nfft1*nfft2*nfft3*3*2*16.
         if rank == 0:
-            gbyte = byte/1.e9
+            gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.E9
             print('estimated maximum array size: %5.2f GBytes' %(gbyte))
             print('   ')
-    
-        if byte*4 >= psutil.virtual_memory().total:
-            if rank == 0:
-                print('Aborting: Array sizes will exceed system memory.')
-            quit()
     
         comm.Barrier()
         if rank == 0:
@@ -1131,7 +1117,7 @@ def paoflow(inputpath):
         traceback.print_exc()
         comm.Abort()
         raise Exception
-    
+
     #----------------------
     # Memory reduction
     #----------------------
@@ -1158,7 +1144,6 @@ def paoflow(inputpath):
         #----------------------
         if spin_Hall:
             if dftSO == False: sys.exit('full relativistic calculation with SO needed')
-    
             for n in xrange(s_tensor.shape[0]):
                 ipol = s_tensor[n][0]
                 jpol = s_tensor[n][1]
@@ -1240,7 +1225,7 @@ def paoflow(inputpath):
         #----------------------
         if Berry:
             if dftSO == False: sys.exit('full relativistic calculation with SO needed')
-    
+ 
             for n in xrange(a_tensor.shape[0]):
                 ipol = a_tensor[n][0]
                 jpol = a_tensor[n][1]
@@ -1440,6 +1425,7 @@ def paoflow(inputpath):
             outDict['nk2'] = nk2
         if 'nk3' in outDict:
             outDict['nk3'] = nk3
+        print(outDict)
         return outDict
     else:
         return

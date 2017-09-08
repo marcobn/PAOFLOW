@@ -32,7 +32,7 @@ from PAOFLOW import *
 
 def main():
     outDict = paoflow(sys.argv[1])
-    if rank == 0:
+    if rank == 0 and len(outDict) > 0:
         for i in outDict:
             if type(outDict[i]).__module__ == np.__name__:
                 print(i, outDict[i].shape)
