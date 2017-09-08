@@ -1424,7 +1424,9 @@ def paoflow(inputpath):
             outDict['nk2'] = nk2
         if 'nk3' in outDict:
             outDict['nk3'] = nk3
-        print(outDict)
+        print('\noutDict keys:')
+        for k in outDict.keys():
+            print('\''+k+'\'')
         return outDict
     else:
         return
