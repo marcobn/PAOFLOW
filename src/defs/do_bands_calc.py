@@ -11,7 +11,10 @@
 #
 from scipy import fftpack as FFT
 import numpy as np
-import psutil
+try:
+    import psutil
+except: pass
+
 import cmath
 import sys
 
@@ -75,9 +78,12 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
     v_kp = None
     evecs = False
-    if nkpi*nawf*nawf*nspin*size*16. < psutil.virtual_memory().total/2.:
-        v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
-        evecs = True
+    try:
+        if nkpi*nawf*nawf*nspin*size*16. < psutil.virtual_memory().total/2.:
+            v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+            evecs = True
+    except: pass
+        
 
     if rank == 0:
         for ispin in xrange(nspin):

@@ -28,13 +28,18 @@ from __future__ import print_function
 
 try:
     # import general modules
+    import traceback
+    try:
+        psutil
+    except: pass 
+
     from scipy import fftpack as FFT
     from scipy import linalg as LA
     from numpy import linalg as LAN
     import xml.etree.ElementTree as ET
     import numpy as np
     #import numexpr as ne
-    import sys, psutil, traceback, time
+    import sys, time
     from mpi4py import MPI
     import multiprocessing
 
@@ -217,10 +222,13 @@ try:
         print('estimated maximum array size: %5.2f GBytes' %(gbyte))
         print('   ')
 
-    if byte*4 >= psutil.virtual_memory().total:
-        if rank == 0:
-            print('Aborting: Array sizes will exceed system memory.')
-        quit()
+    try:
+        if byte*4 >= psutil.virtual_memory().total:
+            if rank == 0:
+                print('Aborting: Array sizes will exceed system memory.')
+            quit()
+    except: 
+        print("Warning: Failed to import psutil. Skipping initial maximum allocatable memory check")
 
     comm.Barrier()
     if rank == 0:
