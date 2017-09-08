@@ -196,8 +196,6 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
         if rank==0:            
             #scatter first entry
             start_n,end_n=load_balancing(npool,pool,Hksp.shape[0])
-
-
             H_aux  = scatter_array(Hksp[start_n:end_n])
         else:
             H_aux  = scatter_array(None)
@@ -214,10 +212,9 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
                     H_aux[n,:,:,:,ispin] = FFT.fftshift(H_aux[n,:,:,:,ispin],axes=(0,1,2))
 
         else:
-            Hkaux_tri = np.copy(H_aux)
             for n in xrange(H_aux.shape[0]):
                 for ispin in xrange(H_aux.shape[4]):
-                    fft = pyfftw.FFTW(Hkaux_tri[n,:,:,:,ispin],H_aux[n,:,:,:,ispin],axes=(0,1,2),
+                    fft = pyfftw.FFTW(H_aux[n,:,:,:,ispin],H_aux[n,:,:,:,ispin],axes=(0,1,2),
                                       direction='FFTW_BACKWARD',flags=('FFTW_MEASURE', ),
                                       threads=nthread, planning_timelimit=None )
 
@@ -262,11 +259,10 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
                     for ispin in xrange(dH_aux.shape[5]):
                         fft = pyfftw.FFTW(dH_aux[n,:,:,:,l,ispin]
                                           ,dH_aux[n,:,:,:,l,ispin],axes=(0,1,2),
-
                                           direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ),
                                           threads=nthread, planning_timelimit=None )
 
-                        dH_aux[n,l,:,:,:,ispin] = fft()
+                        dH_aux[n,:,:,:,l,ispin] = fft()
 
 
         #############################################################################################
@@ -275,7 +271,6 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
 
         #gather the arrays into flattened dHk
         if rank==0:
-#            temp = np.zeros((end_n-start_n,3,nk1,nk2,nk3,nspin),order="C",dtype=complex)
             temp = np.zeros((end_n-start_n,nk1,nk2,nk3,3,nspin),order="C",dtype=complex)
             gather_array(temp,dH_aux)
 
@@ -284,7 +279,6 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
             dHksp[:,:,start_n:end_n,:] = np.copy(temp)
             temp = None
         else:
-
             gather_array(None,dH_aux)
         
         dH_aux=None
