@@ -1043,7 +1043,7 @@ try:
         # DOS calculation with adaptive smearing on double_grid Hksp
         #----------------------
         from do_dos_calc_adaptive import *
-        from do_carrier_conc import *
+        #from do_carrier_conc import *
 
         index = None
         if rank == 0:
@@ -1061,7 +1061,7 @@ try:
                 eigup = np.array(eig[:,0])
                 deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
             do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing)
-            do_carrier_conc(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,alat,a_vectors,nelec)
+            #do_carrier_conc(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,alat,a_vectors,nelec)
             eigup = None
             deltakpup = None
         if nspin == 2:
