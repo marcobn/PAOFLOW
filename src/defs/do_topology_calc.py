@@ -36,7 +36,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
-  try:
     # Compute Z2 invariant and topological properties on a selected path in the BZ
 
     nkpi=kq.shape[1]
@@ -217,11 +216,9 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                 f.close()
 
     return()
-  except Exception as e:
-    raise e
 
 def band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R):
-  try:
+
     auxh = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
 
     for ik in xrange(ini_ik,end_ik):
@@ -230,5 +227,4 @@ def band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R):
                 auxh[l,:,:,ik,ispin] = np.sum(dHRaux[l,:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)
-  except Exception as e:
-    raise e
+

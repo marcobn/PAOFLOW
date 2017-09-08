@@ -30,7 +30,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,emin,emax,bnd,deltak,deltak2,smearing,kramerskronig):
-  try:
     # Compute the dielectric tensor
 
     de = (emax-emin)/float(ne)
@@ -141,11 +140,9 @@ def epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
     return(epsi,jdos)
-  except Exception as e:
-    raise e
 
 def smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,tksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
-  try:
+
     epsr = np.zeros((3,3,ene.size),dtype=float)
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
@@ -204,11 +201,9 @@ def smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,tksp,kq_wght,nawf,omega
     epsr *= 4.0/(EPS0 * EVTORY * omega)
 
     return(epsr)
-  except Exception as e:
-    raise e
 
 def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
-  try:
+
     epsi = np.zeros((3,3,ene.size),dtype=float)
     jdos = np.zeros((ene.size),dtype=float)
 
@@ -265,11 +260,9 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
     return(epsi,jdos)
-  except Exception as e:
-    raise e
 
 def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
-  try:
+
     epsr = np.zeros((3,3,ene.size),dtype=float)
     de = ene[1]-ene[0]
 
@@ -283,5 +276,4 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
                        tgr.simps(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]*f_ene[(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
 
     return(epsr)
-  except Exception as e:
-    raise e
+

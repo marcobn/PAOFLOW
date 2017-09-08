@@ -30,7 +30,6 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
-  try:
     # Compute the optical conductivity tensor sigma_xy(ene)
 
     emin = 0.0 
@@ -54,22 +53,20 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     sigxy_sum = np.zeros((ene.size),dtype=complex)
 
     for pool in xrange(npool):
-
-        if nktot%npool != 0: sys.exit('npool not compatible with MP mesh')
-        nkpool = nktot/npool
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
 
         if rank == 0:
-            pksp_long = np.array_split(pksp,npool,axis=0)[pool]
-            E_k_long= np.array_split(E_k,npool,axis=0)[pool]
-            deltak_long= np.array_split(deltak,npool,axis=0)[pool]
-            deltak2_long= np.array_split(deltak2,npool,axis=0)[pool]
+            pksp_long = pksp[ini_ip:end_ip]
+            E_k_long= E_k[ini_ip:end_ip]
+            deltak_long= deltak[ini_ip:end_ip]
+            deltak2_long= deltak2[ini_ip:end_ip]
         else:
             pksp_long = None
             E_k_long = None
             deltak_long= None
             deltak2_long= None
 
-        comm.Barrier()
         pkspaux = scatter_array(pksp_long)
         E_kaux = scatter_array(E_k_long)
         deltakaux = scatter_array(deltak_long)
@@ -90,11 +87,9 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     sigxy /= float(nktot)
 
     return(ene,sigxy)
-  except Exception as e:
-    raise e
 
 def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
-  try:
+
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
     delta = 0.05
@@ -122,11 +117,9 @@ def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,del
                         ),axis=1)
 
     return(sigxy)
-  except Exception as e:
-    raise e
 
 def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
-  try:
+
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
     delta = 0.05
@@ -156,5 +149,4 @@ def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smear
                             ),axis=1)
 
     return(sigxy)
-  except Exception as e:
-    raise e
+

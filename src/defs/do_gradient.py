@@ -61,7 +61,100 @@ else:
 
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool):
+<<<<<<< HEAD
 #  try:
+=======
+    if using_cuda:
+        return do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool)
+    else:
+        return do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool)
+
+
+def do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool):
+    #----------------------
+    # Compute the gradient of the k-space Hamiltonian
+    #----------------------
+
+    index = None
+
+    if rank == 0:
+        nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
+        nktot = nk1*nk2*nk3
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
+
+    index = comm.bcast(index,root=0)
+
+    nktot = index['nktot']
+    nawf = index['nawf']
+    nspin = index['nspin']
+
+    if rank == 0:
+        # fft grid in R shifted to have (0,0,0) in the center
+        _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+
+        if using_cuda:
+            HRaux = np.zeros((nk1,nk2,nk3,nawf,nawf,nspin),dtype=complex)
+            HRaux[:,:,:,:,:,:] = cuda_ifftn(Hksp[:,:,:,:,:,:])
+
+        HRaux = FFT.fftshift(HRaux,axes=(0,1,2))
+        Hksp = None
+
+        dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+        Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+        HRaux = np.reshape(HRaux,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+        dHRaux  = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)
+    else:
+        dHksp  = None
+        Rfft = None
+        HRaux = None
+        dHRaux  = None
+
+    for pool in xrange(npool):
+        ini_ip, end_ip = load_balancing(npool,pool,nktot)
+        nkpool = end_ip - ini_ip
+
+        if rank == 0:
+            HRaux_split = HRaux[ini_ip:end_ip]
+            dHRaux_split = dHRaux[ini_ip:end_ip]
+            Rfft_split = Rfft[ini_ip:end_ip]
+        else:
+            HRaux_split = None
+            dHRaux_split = None
+            Rfft_split = None
+
+        dHRaux1 = scatter_array(dHRaux_split)
+        HRaux1 = scatter_array(HRaux_split)
+        Rfftaux = scatter_array(Rfft_split)
+
+        # Compute R*H(R)
+        for l in xrange(3):
+            for ispin in xrange(nspin):
+                for n in xrange(nawf):
+                    for m in xrange(nawf):
+                        dHRaux1[:,l,n,m,ispin] = 1.0j*alat*Rfftaux[:,l]*HRaux1[:,n,m,ispin]
+
+        gather_array(dHRaux_split, dHRaux1)
+
+        if rank == 0:
+            dHRaux[ini_ip:end_ip,:,:,:,:] = dHRaux_split[:,:,:,:,:]
+
+    if rank == 0:
+        dHRaux = np.reshape(dHRaux,(nk1,nk2,nk3,3,nawf,nawf,nspin),order='C')
+
+        # Compute dH(k)/dk
+        if using_cuda:
+            dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
+            dHksp[:,:,:,:,:,:,:] = cuda_fftn(dHRaux[:,:,:,:,:,:,:])
+
+
+
+        dHRaux = None
+    return(dHksp)
+
+
+def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
+
+
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
@@ -108,75 +201,78 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
             #scatter first entry
             start_n,end_n=load_balancing(npool,pool,Hksp.shape[0])
 
-            HRaux_tri  = scatter_array(Hksp[start_n:end_n])
+
+            H_aux  = scatter_array(Hksp[start_n:end_n])
         else:
-            HRaux_tri  = scatter_array(None)
+            H_aux  = scatter_array(None)
+
 
         ########################################
         ### real space grid replaces k space ###
         ########################################
         if scipyfft:
-            for n in xrange(HRaux_tri.shape[0]):
-                for ispin in xrange(HRaux_tri.shape[4]):
-                    FFT.ifftn(HRaux_tri[n,:,:,:,ispin],axes=(0,1,2),overwrite_x=True)
-                    HRaux_tri[n,:,:,:,ispin] = FFT.fftshift(HRaux_tri[n,:,:,:,ispin],axes=(0,1,2))
+
+            for n in xrange(H_aux.shape[0]):
+                for ispin in xrange(H_aux.shape[4]):
+                    FFT.ifftn(H_aux[n,:,:,:,ispin],axes=(0,1,2),overwrite_x=True)
+                    H_aux[n,:,:,:,ispin] = FFT.fftshift(H_aux[n,:,:,:,ispin],axes=(0,1,2))
 
         else:
-            Hkaux_tri = np.copy(HRaux_tri)
-            for n in xrange(HRaux_tri.shape[0]):
-                for ispin in xrange(HRaux_tri.shape[4]):
-                    fft = pyfftw.FFTW(Hkaux_tri[n,:,:,:,ispin],HRaux_tri[n,:,:,:,ispin],axes=(0,1,2),
+            Hkaux_tri = np.copy(H_aux)
+            for n in xrange(H_aux.shape[0]):
+                for ispin in xrange(H_aux.shape[4]):
+                    fft = pyfftw.FFTW(Hkaux_tri[n,:,:,:,ispin],H_aux[n,:,:,:,ispin],axes=(0,1,2),
                                       direction='FFTW_BACKWARD',flags=('FFTW_MEASURE', ),
                                       threads=nthread, planning_timelimit=None )
 
-                    HRaux_tri[n,:,:,:,ispin] = fft()
-                    HRaux_tri[n,:,:,:,ispin] = FFT.fftshift(HRaux_tri[n,:,:,:,ispin],axes=(0,1,2))
-
-        Hkaux_tri=None
+                    H_aux[n,:,:,:,ispin] = fft()
+                    H_aux[n,:,:,:,ispin] = FFT.fftshift(H_aux[n,:,:,:,ispin],axes=(0,1,2))
 
         #############################################################################################
         #############################################################################################
         #############################################################################################
 
-        num_n = HRaux_tri.shape[0]
+
+        num_n = H_aux.shape[0]
 
         #reshape Hr for multiplying by the three parts of Rfft grid
-        HRaux_tri  = np.reshape(HRaux_tri,(num_n,nk1*nk2*nk3,nspin),order='C')
-        dHRaux_tri = np.zeros((num_n,3,nk1*nk2*nk3,nspin),dtype=complex,order='C')
+        H_aux  = np.reshape(H_aux,(num_n,nk1*nk2*nk3,nspin),order='C')
+        dH_aux = np.zeros((num_n,3,nk1*nk2*nk3,nspin),dtype=complex,order='C')
+
 
         # Compute R*H(R)
         for ispin in xrange(nspin):
             for l in xrange(3):
-                dHRaux_tri[:,l,:,ispin] = 1.0j*alat*Rfft[:,l]*HRaux_tri[...,ispin]
+                dH_aux[:,l,:,ispin] = 1.0j*alat*Rfft[:,l]*H_aux[...,ispin]
 
 
+        H_aux=None
 
-        HRaux_tri=None
 
 
         #reshape for fft
-        dHRaux_tri = np.reshape(dHRaux_tri,(num_n,3,nk1,nk2,nk3,nspin),order='C')
+        dH_aux = np.reshape(dH_aux,(num_n,3,nk1,nk2,nk3,nspin),order='C')
         # Compute dH(k)/dk
 
         if scipyfft:
-            for n in xrange(dHRaux_tri.shape[0]):
-                for l in xrange(dHRaux_tri.shape[1]):
-                    for ispin in xrange(dHRaux_tri.shape[5]):
-                        FFT.fftn(dHRaux_tri[n,l,:,:,:,ispin],axes=(0,1,2),overwrite_x=True)
+            for n in xrange(dH_aux.shape[0]):
+                for l in xrange(dH_aux.shape[1]):
+                    for ispin in xrange(dH_aux.shape[5]):
+                        FFT.fftn(dH_aux[n,l,:,:,:,ispin],axes=(0,1,2),overwrite_x=True)
                                  
         else:
-            dHkaux_tri = np.copy(dHRaux_tri)
-            for n in xrange(dHkaux_tri.shape[0]):
-                for l in xrange(dHkaux_tri.shape[1]):
-                    for ispin in xrange(dHkaux_tri.shape[5]):
-                        fft = pyfftw.FFTW(dHkaux_tri[n,l,:,:,:,ispin]
-                                          ,dHRaux_tri[n,l,:,:,:,ispin],axes=(0,1,2),
+            for n in xrange(dH_aux.shape[0]):
+                for l in xrange(dH_aux.shape[1]):
+                    for ispin in xrange(dH_aux.shape[5]):
+                        fft = pyfftw.FFTW(dH_aux[n,l,:,:,:,ispin]
+                                          ,dH_aux[n,l,:,:,:,ispin],axes=(0,1,2),
+
                                           direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ),
                                           threads=nthread, planning_timelimit=None )
 
-                        dHkaux_tri[n,l,:,:,:,ispin] = fft()
+                        dH_aux[n,l,:,:,:,ispin] = fft()
 
-        dHraux_tri = None
+
         #############################################################################################
         #############################################################################################
         #############################################################################################
@@ -184,7 +280,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
         #gather the arrays into flattened dHk
         if rank==0:
             temp = np.zeros((end_n-start_n,3,nk1,nk2,nk3,nspin),order="C",dtype=complex)
-            gather_array(temp,dHRaux_tri)
+
+            gather_array(temp,dH_aux)
+
             temp  = np.rollaxis(temp,0,5)    
             temp  = np.rollaxis(temp,0,4) 
             temp  = temp.reshape(nk1*nk2*nk3,3,end_n-start_n,nspin)
@@ -192,16 +290,10 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool):
             dHksp[:,:,start_n:end_n,:] = np.copy(temp)
             temp = None
         else:
-            gather_array(None,dHRaux_tri)
-        
-    dHkaux_tri = None
-    dHksp_tri=None
 
-    if rank!=0:
-        dHksp_tri=None
-        dHRaux = None
+            gather_array(None,dH_aux)
+        
+        dH_aux=None
 
     return(dHksp)
-#  except Exception as e:
-#    raise e
 
