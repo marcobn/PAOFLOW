@@ -228,7 +228,8 @@ try:
                 print('Aborting: Array sizes will exceed system memory.')
             quit()
     except: 
-        print("Warning: Failed to import psutil. Skipping initial maximum allocatable memory check")
+        if rank==0:
+            print("Warning: Failed to import psutil. Skipping initial maximum allocatable memory check\n")
 
     comm.Barrier()
     if rank == 0:
