@@ -833,7 +833,7 @@ def paoflow(inputpath):
                 #----------------------
                 # Compute the gradient of the k-space Hamiltonian
                 #----------------------
-                dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool)
+                dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
                 #from do_gradient_d2 
                 #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
     
