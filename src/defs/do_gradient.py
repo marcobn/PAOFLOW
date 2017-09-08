@@ -237,7 +237,6 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
                 dH_aux[:,l,:,ispin] = 1.0j*alat*Rfft[:,l]*H_aux[...,ispin]
 
 
-
         H_aux=None
 
 

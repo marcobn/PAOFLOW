@@ -217,10 +217,10 @@ try:
         print('estimated maximum array size: %5.2f GBytes' %(gbyte))
         print('   ')
 
-    if byte*4 >= psutil.virtual_memory().total:
-        if rank == 0:
-            print('Aborting: Array sizes will exceed system memory.')
-        quit()
+#    if byte*4 >= psutil.virtual_memory().total:
+#        if rank == 0:
+#            print('Aborting: Array sizes will exceed system memory.')
+#        quit()
 
     comm.Barrier()
     if rank == 0:
