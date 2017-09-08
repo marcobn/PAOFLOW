@@ -8,14 +8,14 @@ import numpy as np
 # Control 
 
 fpath = './silicon.save/'
-verbose = True
+verbose = False
 restart = False
 non_ortho  = False
 write2file = False
 shift_type = 1
 shift      = 'auto'
 pthr       = 0.95
-npool = 6
+npool = 1
 
 # Calculations 
 
@@ -25,19 +25,19 @@ do_comparison = False
 # Bands interpolation along a path from a 1D string of k points
 onedim = False
 # Bands interpolation on a path from the original MP mesh 
-do_bands = False
+do_bands = True
 ibrav = 2
 nk = 2000
 
 # Hamiltonian interpolation on finer MP mesh
 double_grid = True
-nfft1 = 128
-nfft2 = 128
-nfft3 = 128
+nfft1 = 24
+nfft2 = 24
+nfft3 = 24
 
 # DOS(PDOS) calculation
-do_dos = False
-do_pdos = False
+do_dos = True
+do_pdos = True
 emin = -12.
 emax = 2.2
 delta = 0.1
@@ -63,7 +63,7 @@ Boltzmann = True
 temp = 0.025852  # room temperature
 
 # Dielectric function calculation
-epsilon =False
+epsilon =True
 metal = False
 epsmin=0.0
 epsmax=6.0
