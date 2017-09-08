@@ -17,7 +17,7 @@
     <!-- A space separated list of variables for PAOFLOW to return to main -->
     <!-- Current acceptable values are: -->
     <!-- Hksp E_k v_k kq deltakp nk1 nk2 nk3 -->
-    <out_vals><a type="character" size="1"></a></out_vals>
+    <out_vals type="character" size="1"></out_vals>
 
     <!-- Calculations -->
     
