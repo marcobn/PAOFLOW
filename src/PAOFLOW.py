@@ -1004,8 +1004,8 @@ except Exception as e:
 #quit()
 
 
-    if not spin_Hall:
-        dHksp=None
+if not spin_Hall:
+    dHksp=None
 
 try:
     velkp = None
