@@ -263,4 +263,4 @@ def read_inputfile_xml ( ):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,do_fermisurf, \
         fermi_up,fermi_dw,do_spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals.split()
