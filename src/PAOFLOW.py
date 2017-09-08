@@ -213,14 +213,14 @@ try:
 
     byte = nawf**2*nfft1*nfft2*nfft3*3*2*16.
     if rank == 0:
-        gbyte = byte/1.e9
+        gbyte = byte/(1024.0**3)
         print('estimated maximum array size: %5.2f GBytes' %(gbyte))
         print('   ')
 
-#    if byte*4 >= psutil.virtual_memory().total:
-#        if rank == 0:
-#            print('Aborting: Array sizes will exceed system memory.')
-#        quit()
+    if byte*4 >= psutil.virtual_memory().total:
+        if rank == 0:
+            print('Aborting: Array sizes will exceed system memory.')
+        quit()
 
     comm.Barrier()
     if rank == 0:
