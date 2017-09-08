@@ -121,7 +121,6 @@ def paoflow(inputpath):
         #----------------------
         # Read input
         #----------------------
-#        sys.path.append(inputpath)
         fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
         shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
         ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
