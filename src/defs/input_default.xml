@@ -14,6 +14,9 @@
     <npool type="integer" size="1">1</npool>
 
     <!-- Return Requests -->
+    <!-- A space separated list of variables for PAOFLOW to return to main -->
+    <!-- Current acceptable values are: -->
+    <!-- Hksp E_k v_k kq deltakp nk1 nk2 nk3 -->
     <out_vals type="character" size="0"></out_vals>
 
     <!-- Calculations -->
