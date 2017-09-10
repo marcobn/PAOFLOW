@@ -49,10 +49,10 @@ def oneRun(subdir):
 
     if len(glob.glob('*.save')) == 0:
         calcList = ['scf','nscf','proj','PAO']
-        fileList = ['scf.in','nscf.in','proj.in','inputfile.py']
+        fileList = ['scf.in','nscf.in','proj.in','inputfile.xml']
     else: 
         calcList = ['PAO']
-        fileList = ['inputfile.py']
+        fileList = ['inputfile.xml']
 
     engine = {'scf':'qe',
               'nscf':'qe',
