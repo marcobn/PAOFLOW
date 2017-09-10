@@ -32,9 +32,10 @@ from PAOFLOW import *
 
 def main():
     outDict = paoflow(sys.argv[1])
-    print('\noutDict keys:')
-    for k in outDict.keys():
-        print('\''+k+'\'')
+    if outDict is not None:
+        print('\noutDict keys:')
+        for k in outDict.keys():
+            print('\''+k+'\'')
 
 if __name__== "__main__":
     main()
