@@ -26,8 +26,12 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-from cuda_fft import *
 scipyfft = True
+try:
+    from cuda_fft import *
+except:
+    scipyfft = True
+    pass
 try:
     import pyfftw
     scipyfft = False
@@ -40,6 +44,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     #----------------------
 
     index = None
+
+    if using_cuda:
+        scipyfft = False
 
     if rank == 0:
         nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
