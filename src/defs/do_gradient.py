@@ -45,9 +45,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
 
     index = None
 
-    if using_cuda:
-        scipyfft = False
-
     if rank == 0:
         nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
         nktot = nk1*nk2*nk3
