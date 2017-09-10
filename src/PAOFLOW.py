@@ -27,7 +27,7 @@
 from __future__ import absolute_import, print_function
 
 # import general modules
-import sys, traceback, psutil, time
+import os, sys, traceback, psutil, time
 from scipy import fftpack as FFT
 from scipy import linalg as LA
 from numpy import linalg as LAN
@@ -129,7 +129,7 @@ def paoflow(inputpath):
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml()
 
-        fpath = inputpath + fpath
+        fpath = os.path.join(inputpath, fpath)
 
         #----------------------
         # initialize return dictionary
