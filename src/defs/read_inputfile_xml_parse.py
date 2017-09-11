@@ -11,7 +11,7 @@
 #
 
 from __future__ import print_function
-import sys, traceback
+import os, sys, traceback
 import xml.etree.cElementTree as ET
 import numpy as np
 import re
@@ -52,9 +52,10 @@ def read_attribute ( aroot, default_value, attr, atype, alen=1 ):
     else:
         return default_value
 
-def read_inputfile_xml ( ):
-  
-    inputfile = 'inputfile.xml'
+def read_inputfile_xml ( fpath ):
+
+    fname = 'inputfile.xml'
+    inputfile = os.path.join(fpath,fname)
 
     # Control
     fpath = None
