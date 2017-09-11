@@ -31,7 +31,11 @@ import numpy as np
 from PAOFLOW import *
 
 def main():
-    outDict = paoflow(sys.argv[1])
+    arg1 = './'
+    if len(sys.argv) > 1:
+        arg1 = sys.argv[1]
+
+    outDict = paoflow(arg1)
     if outDict is not None:
         print('\noutDict keys:')
         for k in outDict.keys():

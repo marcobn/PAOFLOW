@@ -327,36 +327,36 @@ def paoflow(inputpath):
                 np.save('kovp.npy',np.ravel(Sks,order='C'))
             else:
                 if nspin == 1:
-                    f=open('kham.txt','w')
+                    f=open(inputpath+'kham.txt','w')
                     for ik in xrange(nkpnts):
                         for i in xrange(nawf):
                             for j in xrange(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
                     f.close()
                 elif nspin == 2:
-                    f=open('kham_up.txt','w')
+                    f=open(inputpath+'kham_up.txt','w')
                     for ik in xrange(nkpnts):
                         for i in xrange(nawf):
                             for j in xrange(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
                     f.close()
-                    f=open('kham_down.txt','w')
+                    f=open(inputpath+'kham_down.txt','w')
                     for ik in xrange(nkpnts):
                         for i in xrange(nawf):
                             for j in xrange(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
                     f.close()
-                f=open('kovp.txt','w')
+                f=open(inputpath+'kovp.txt','w')
                 for ik in xrange(nkpnts):
                     for i in xrange(nawf):
                         for j in xrange(nawf):
                             f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
                 f.close()
-            f=open('k.txt','w')
+            f=open(inputpath+'k.txt','w')
             for ik in xrange(nkpnts):
                 f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
             f.close()
-            f=open('wk.txt','w')
+            f=open(inputpath+'wk.txt','w')
             for ik in xrange(nkpnts):
                 f.write('%20.13f \n' %(kpnts_wght[ik]))
             f.close()
@@ -1007,7 +1007,7 @@ def paoflow(inputpath):
     #                effterm[:,n] += 1.0/(E_k[:,m,0]-E_k[:,n,0] + 1.0j*deltakp2[:,n,m,0]) * \
     #                                (pksp[:,ipol,n,m,0] * pksp[:,jpol,m,n,0] + pksp[:,jpol,n,m,0] * pksp[:,ipol,m,n,0])
     #
-    #    f=open('Tnn'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+    #    f=open(inputpath+'Tnn'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
     #    for n in xrange(nawf):
     #        f.write('%.5f %9.5e %9.5e \n' \
     #                %(n,np.sum(np.real(kq_wght[:]*tksp[:,ipol,jpol,n,n,0])), np.sum(np.real(kq_wght[:]*effterm[:,n]))))
@@ -1037,7 +1037,7 @@ def paoflow(inputpath):
                     #----------------------
                     # Find critical points (grad(E_kn)=0)
                     #----------------------
-                    f=open('critical_points.dat','w')
+                    f=open(inputpath+'critical_points.dat','w')
                     for ik in xrange(nk1*nk2*nk3):
                         for n in xrange(bnd):
                             for ipin in xrange(nspin):
@@ -1190,18 +1190,18 @@ def paoflow(inputpath):
     
                 if rank == 0:
                     shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open('shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                    f=open(inputpath+'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
                     f.close()
     
                 if rank == 0 and ac_cond_spin:
                     sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open('SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                    f=open(inputpath+'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
                     f.close()
-                    f=open('SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                    f=open(inputpath+'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
                     f.close()
@@ -1247,18 +1247,18 @@ def paoflow(inputpath):
     
                 if rank == 0:
                     ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open('ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                    f=open(inputpath+'ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
                     f.close()
     
                 if rank == 0 and ac_cond_Berry:
                     sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open('MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                    f=open(inputpath+'MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
                     f.close()
-                    f=open('MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                    f=open(inputpath+'MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
                     f.close()
@@ -1292,7 +1292,7 @@ def paoflow(inputpath):
                 L0 *= ELECTRONVOLT_SI**2/(4.0*np.pi**3)* \
                       (ELECTRONVOLT_SI/(H_OVER_TPI**2*BOHR_RADIUS_SI))*1.0e-21
                 if rank == 0:
-                    f=open('sigma_'+str(ispin)+'.dat','w')
+                    f=open(inputpath+'sigma_'+str(ispin)+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                             %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
@@ -1316,7 +1316,7 @@ def paoflow(inputpath):
                                 print('check t_tensor components - matrix cannot be singular')
                                 raise ValueError
     
-                        f=open('Seebeck_'+str(ispin)+'.dat','w')
+                        f=open(inputpath+'Seebeck_'+str(ispin)+'.dat','w')
                         for n in xrange(ene.size):
                             f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                                     %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
@@ -1334,7 +1334,7 @@ def paoflow(inputpath):
                         for n in xrange(ene.size):
                             kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
     
-                        f=open('kappa_'+str(ispin)+'.dat','w')
+                        f=open(inputpath+'kappa_'+str(ispin)+'.dat','w')
                         for n in xrange(ene.size):
                             f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                                     %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
@@ -1375,17 +1375,17 @@ def paoflow(inputpath):
                     #ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing,kramerskronig)
     
                     if rank == 0:
-                        f=open('epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                        f=open(inputpath+'epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
                         for n in xrange(ene.size):
                             f.write('%.5f %9.5e \n' \
                                     %(ene[n],epsi[ipol,jpol,n]))
                         f.close()
-                        f=open('epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                        f=open(inputpath+'epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
                         for n in xrange(ene.size):
                             f.write('%.5f %9.5e \n' \
                                     %(ene[n],epsr[ipol,jpol,n]))
                         f.close()
-                        f=open('jdos_'+str(ispin)+'.dat','w')
+                        f=open(inputpath+'jdos_'+str(ispin)+'.dat','w')
                         for n in xrange(ene.size):
                             f.write('%.5f %9.5e \n' \
                                     %(ene[n],jdos[n]))
