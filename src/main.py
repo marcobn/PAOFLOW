@@ -31,11 +31,15 @@ import numpy as np
 from PAOFLOW import *
 
 def main():
+
     arg1 = './'
     if len(sys.argv) > 1:
         arg1 = sys.argv[1]
 
+    # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.
     outDict = paoflow(arg1)
+
+    # Check for output dictionary and print the keys.
     if outDict is not None:
         print('\noutDict keys:')
         for k in outDict.keys():

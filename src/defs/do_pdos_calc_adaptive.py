@@ -24,7 +24,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearing):
+def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearing,inputpath):
     # PDOS calculation with gaussian smearing
     emin = float(emin)
     emax = float(emax)
@@ -64,11 +64,11 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
         pdos_sum = np.zeros(ene.size,dtype=float)
         for m in range(nawf):
             pdos_sum += pdos[m]
-            f=open(str(m)+'_pdosdk_'+str(ispin)+'.dat','w')
+            f=open(inputpath+str(m)+'_pdosdk_'+str(ispin)+'.dat','w')
             for ne in range(ene.size):
                 f.write('%.5f  %.5f \n' %(ene[ne],pdos[m,ne]))
             f.close()
-        f=open('pdosdk_sum_'+str(ispin)+'.dat','w')
+        f=open(inputpath+'pdosdk_sum_'+str(ispin)+'.dat','w')
         for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()

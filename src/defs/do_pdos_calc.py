@@ -57,11 +57,11 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin):
         pdos_sum = np.zeros(ene.size,dtype=float)
         for m in range(nawf):
             pdos_sum += pdos[m]
-            f=open(str(m)+'_pdos_'+str(ispin)+'.dat','w')
+            f=open(inputpath+str(m)+'_pdos_'+str(ispin)+'.dat','w')
             for ne in range(ene.size):
                 f.write('%.5f  %.5f \n' %(ene[ne],pdos[m,ne]))
             f.close()
-        f=open('pdos_sum_'+str(ispin)+'.dat','w')
+        f=open(inputpath+'pdos_sum_'+str(ispin)+'.dat','w')
         for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()

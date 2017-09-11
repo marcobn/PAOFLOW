@@ -32,7 +32,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
+def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
     # Compute bands on a selected path in the BZ
 
     # Load balancing
@@ -82,9 +82,9 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     if rank == 0:
         for ispin in xrange(nspin):
             if evecs:
-                E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin,evecs)
+                E_kp[:,:,ispin],v_kp[:,:,:,ispin] = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin,evecs,inputpath)
             else:
-                E_kp[:,:,ispin],v_kp = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin,evecs)
+                E_kp[:,:,ispin],v_kp = write_PAO_eigs(Hks_int,Sks_int,read_S,ispin,evecs,inputpath)
 
     comm.Bcast(E_kp,root=0)
     if evecs:

@@ -518,14 +518,14 @@ def paoflow(inputpath):
             R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
     
             # Define k-point mesh for bands interpolation
-            kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk)
+            kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk,inputpath)
             nkpi=kq.shape[1]
             for n in xrange(nkpi):
                 kq[:,n]=np.dot(kq[:,n],b_vectors)
     
             # Compute the bands along the path in the IBZ
             E_kp = v_kp = None
-            E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho)
+            E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho,inputpath)
     
             comm.Barrier()
             if rank == 0:
@@ -538,7 +538,7 @@ def paoflow(inputpath):
                 else:
                     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry curvature operators along the path in the IBZ
                     #from do_topology_calc 
-                    do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl)
+                    do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,inputpath)
     
                     comm.Barrier()
                     if rank == 0:
@@ -552,7 +552,7 @@ def paoflow(inputpath):
             # FFT interpolation along a single directions in the BZ
             #----------------------
             if rank == 0 and verbose: print('... computing bands along a line')
-            if rank == 0: do_bands_calc_1D(Hks)
+            if rank == 0: do_bands_calc_1D(Hks,inputpath)
     
             comm.Barrier()
             if rank ==0:
@@ -758,11 +758,11 @@ def paoflow(inputpath):
     
             if nspin == 1 or nspin == 2:
                 if rank == 0: eigup = np.array(eig[:,0])
-                do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0)
+                do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0,inputpath)
                 eigup = None
             if nspin == 2:
                 if rank == 0: eigdw = np.array(eig[:,1])
-                do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1)
+                do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1,inputpath)
                 eigdw = None
     
             if do_pdos:
@@ -1073,14 +1073,14 @@ def paoflow(inputpath):
                 if rank == 0:
                     eigup = np.array(eig[:,0])
                     deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
-                do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing)
+                do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,inputpath)
                 eigup = None
                 deltakpup = None
             if nspin == 2:
                 if rank == 0:
                     eigdw = np.array(eig[:,1])
                     deltakpdw = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,1])
-                do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing)
+                do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing,inputpath)
                 eigdw = None
                 deltakpdw = None
         
@@ -1097,14 +1097,14 @@ def paoflow(inputpath):
                         eigup = np.array(E_k[:,:,0])
                         deltakpup = np.array(deltakp[:,:,0])
                         v_kup = np.array(v_k[:,:,:,0])
-                    do_pdos_calc_adaptive(eigup,emin,emax,deltakpup,v_kup,nk1,nk2,nk3,nawf,0,smearing)
+                    do_pdos_calc_adaptive(eigup,emin,emax,deltakpup,v_kup,nk1,nk2,nk3,nawf,0,smearing,inputpath)
                     eigup = None
                 if nspin == 2:
                     if rank == 0:
                         eigdw = np.array(E_k[:,:,1])
                         deltakpdw = np.array(deltakp[:,:,1])
                         v_kdw = np.array(v_k[:,:,:,1])
-                    do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_kdw,nk1,nk2,nk3,nawf,1,smearing)
+                    do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_kdw,nk1,nk2,nk3,nawf,1,smearing,inputpath)
                     eigdw = None
      
             comm.Barrier()
@@ -1180,7 +1180,7 @@ def paoflow(inputpath):
                     x0 = np.zeros(3,dtype=float)
                     ind_plot = np.zeros(2)
                     Om_k[:,:,:,1] = Om_k[:,:,:,0]
-                    write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+                    write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
     
                 if ac_cond_spin:
                     ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
@@ -1235,7 +1235,7 @@ def paoflow(inputpath):
                     x0 = np.zeros(3,dtype=float)
                     ind_plot = np.zeros(2)
                     Om_k[:,:,:,1] = Om_k[:,:,:,0]
-                    write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf')
+                    write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
     
                     np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
     
