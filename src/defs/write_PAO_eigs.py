@@ -22,7 +22,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs):
+def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs,inputpath):
 
     nawf,nawf,nkpnts,nspin = Hks.shape
     E_k = np.zeros((nkpnts,nawf),dtype=float)
@@ -42,13 +42,13 @@ def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs):
     if rank == 0:
         ipad = False
         if ipad:
-            f=open('bands_'+str(ispin)+'.dat','w')
+            f=open(inputpath+'bands_'+str(ispin)+'.dat','w')
             for ik in xrange(nkpnts):
                 for nb in xrange(nawf):
                     f.write('%3d  %.5f \n' %(ik,E_k[ik,nb]))
             f.close()
         else:
-            f=open('bands_'+str(ispin)+'.dat','w')
+            f=open(inputpath+'bands_'+str(ispin)+'.dat','w')
             for ik in xrange(nkpnts):
                 s="%d\t"%ik
                 for  j in E_k[ik,:]:s += "%3.5f\t"%j

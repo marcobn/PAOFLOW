@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl):
+def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath):
     # Compute Z2 invariant and topological properties on a selected path in the BZ
 
     nkpi=kq.shape[1]
@@ -67,7 +67,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         for ik in xrange(nktrim/2):
             delta_ik[ik] = pf.pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
-        f=open('Z2'+'.dat','w')
+        f=open(inputpath+'Z2'+'.dat','w')
         p2D = np.real(np.prod(delta_ik[:4]))
         if p2D+1.0 < 1.e-5:
             v0 = 1
@@ -176,7 +176,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         #mkm1 *= ELECTRONVOLT_SI**2/H_OVER_TPI**2*ELECTRONMASS_SI
         if rank == 0:
             for ispin in xrange(nspin):
-                f=open('effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                f=open(inputpath+'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
                 for ik in xrange(nkpi):
                     s="%d\t"%ik
                     for  j in np.real(mkm1[:bnd,ipol,jpol,ik,ispin]):s += "%3.5f\t"%j
@@ -233,12 +233,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
     if rank == 0:
         if Berry:
-            f=open('Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            f=open(inputpath+'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
             f.close()
         if spin_Hall:
-            f=open('Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            f=open(inputpath+'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,Omj_zk[ik]))
             f.close()
@@ -250,7 +250,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
             velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
         for ispin in xrange(nspin):
             for l in xrange(3):
-                f=open('velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
+                f=open(inputpath+'velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
                 for ik in xrange(nkpi):
                     s="%d\t"%ik
                     for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j

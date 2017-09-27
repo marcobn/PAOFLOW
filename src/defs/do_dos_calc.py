@@ -25,7 +25,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
+def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath):
     # DOS calculation with gaussian smearing
 
     #emin = np.min(eig)-1.0
@@ -51,7 +51,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin):
         dos[ne] = dossum*float(nawf)/float(netot)
 
     if rank == 0:
-        f=open('dos_'+str(ispin)+'.dat','w')
+        f=open(inputpath+'dos_'+str(ispin)+'.dat','w')
         for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()

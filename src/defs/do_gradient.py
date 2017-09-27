@@ -26,25 +26,19 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-if rank == 0:
-    using_cuda = False
+scipyfft = True
+try:
+    from cuda_fft import *
+except:
+    scipyfft = True
+    pass
+try:
+    import pyfftw
     scipyfft = False
-    try:
-        import inputfile
-        using_cuda = inputfile.use_cuda
-    except:
-        pass
+except:
+    from scipy import fftpack as FFT
 
-    if using_cuda:
-        from cuda_fft import *
-    else:
-        try:
-            import pyfftw
-        except:
-            from scipy import fftpack as FFT
-            scipyfft = True
-
-def do_gradient(Hksp,a_vectors,alat,nthread,npool):
+def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------

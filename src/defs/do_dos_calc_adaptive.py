@@ -26,7 +26,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
+def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath):
     # DOS calculation with adaptive smearing
 
     emin = float(emin)
@@ -56,7 +56,7 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing):
         dos[ne] = dossum*float(nawf)/float(netot)
 
     if rank == 0:
-        f=open('dosdk_'+str(ispin)+'.dat','w')
+        f=open(inputpath+'dosdk_'+str(ispin)+'.dat','w')
         for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
