@@ -36,8 +36,12 @@ def main():
     if len(sys.argv) > 1:
         arg1 = sys.argv[1]
 
+    arg2 = 'inputfile.xml'
+    if len(sys.argv) > 2:
+        arg2 = sys.argv[2]
+
     # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.
-    outDict = paoflow(arg1)
+    outDict = paoflow(inputpath=arg1,inputfile=arg2)
 
     # Check for output dictionary and print the keys.
     if outDict is not None:

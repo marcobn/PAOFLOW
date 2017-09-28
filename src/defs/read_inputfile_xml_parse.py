@@ -52,9 +52,9 @@ def read_attribute ( aroot, default_value, attr, atype, alen=1 ):
     else:
         return default_value
 
-def read_inputfile_xml ( fpath ):
+def read_inputfile_xml ( fpath, inputfile ):
 
-    fname = 'inputfile.xml'
+    fname = inputfile
     inputfile = os.path.join(fpath,fname)
 
     # Control
