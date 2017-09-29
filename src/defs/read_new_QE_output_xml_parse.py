@@ -86,7 +86,6 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
 			
 			
 			
-			
     # Reading atomic_proj.xml
 
     group_nesting = 0
