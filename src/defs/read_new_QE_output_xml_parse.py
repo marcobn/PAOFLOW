@@ -61,9 +61,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
 
                 b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
 
- #               elem.clear()
 
- #           if elem.tag == 'BRILLOUIN_ZONE':
                 # Monkhorst&Pack grid
                 nk1=int(elem.findall(".//monkhorst_pack")[0].attrib['nk1'])
                 nk2=int(elem.findall(".//monkhorst_pack")[0].attrib['nk2'])
@@ -72,17 +70,18 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 k2=int(elem.findall(".//monkhorst_pack")[0].attrib['k2'])
                 k3=int(elem.findall(".//monkhorst_pack")[0].attrib['k3'])
                 if rank == 0 and verbose: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
-#                elem.clear()
 
-            # number of atoms
-#            if elem.tag == 'IONS':
+
+               # Atomic Positions
                 natoms=int(float(elem.findall("atomic_structure")[0].attrib['nat']))
-
                 tau = np.zeros((natoms,3),dtype=float)
                 for n in xrange(natoms):
-#                    string="ATOM."+str(n+1)
                     aux = elem.findall("atomic_structure/atomic_positions/atom")[n].text.split()
                     tau[n,:]=np.array(aux,dtype="float32")
+			
+			
+			
+			
     # Reading atomic_proj.xml
 
     group_nesting = 0
