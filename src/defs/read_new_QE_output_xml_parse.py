@@ -30,7 +30,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file = fpath+'/data-file-schema.xml'
 
-    # Reading data-file.xml
+    # Reading data-file-schema.xml
 
     for event,elem in ET.iterparse(data_file,events=('start','end')):
         if event == 'end':
