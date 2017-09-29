@@ -25,7 +25,7 @@ size = comm.Get_size()
 
 #units
 Ry2eV   = 13.60569193
-
+Hatree2eV = 27.2114
 def read_new_QE_output_xml(fpath,verbose,non_ortho):
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file = fpath+'/data-file-schema.xml'
@@ -71,6 +71,10 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 k3=int(elem.findall(".//monkhorst_pack")[0].attrib['k3'])
                 if rank == 0 and verbose: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
 
+                try:
+                    hstoccu = float(elem.findall("band_structure/highestOccupiedLevel")[0].text)*Hatree2eV
+                except:
+    		    pass
 
                # Atomic Positions
                 natoms=int(float(elem.findall("atomic_structure")[0].attrib['nat']))
@@ -110,6 +114,8 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
 
             Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
+            try: Efermi = hstoccu 
+	    except: pass
             if rank == 0 and verbose: print('Fermi energy: {0:f} eV '.format(Efermi))
 
             nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
