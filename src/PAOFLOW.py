@@ -55,6 +55,7 @@ from do_spin_orbit import *
 from constants import *
 from read_inputfile_xml_parse import *
 from read_QE_output_xml_parse import *
+from read_new_QE_output_xml_parse import *
 from write3Ddatagrid import *
 from plot_compare_PAO_DFT_eigs import *
 from do_topology_calc_new import *
@@ -187,23 +188,40 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         tau = None
         Sks = None
 
-        if rank == 0:
-    
-            if (not non_ortho):
-                U,my_eigsmat,alat,a_vectors,b_vectors, \
-                nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
-                nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
-                Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
-                sumk = np.sum(kpnts_wght)
-                kpnts_wght /= sumk
-                for ik in xrange(nkpnts):
-                    Sks[:,:,ik]=np.identity(nawf)
-                if verbose: print('...using orthogonal algorithm')
-            else:
-                U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
-                nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
-                nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath,verbose,non_ortho)
-                if verbose: print('...using non-orthogonal algorithm')
+        if rank == 0 :
+
+            if os.path.exists(fpath+'/data-file.xml'):
+                if (not non_ortho):
+                    U,my_eigsmat,alat,a_vectors,b_vectors, \
+                    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+                    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
+                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+                    sumk = np.sum(kpnts_wght)
+                    kpnts_wght /= sumk
+                    for ik in xrange(nkpnts):
+                        Sks[:,:,ik]=np.identity(nawf)
+                    if verbose: print('...using orthogonal algorithm')
+                else:
+                    U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
+                    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+                    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath,verbose,non_ortho)
+                    if verbose: print('...using non-orthogonal algorithm')
+            elif os.path.exists(fpath+'/data-file-schema.xml'):
+                if (not non_ortho):
+                    U,my_eigsmat,alat,a_vectors,b_vectors, \
+                    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+                    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath, verbose, non_ortho)
+                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+                    sumk = np.sum(kpnts_wght)
+                    kpnts_wght /= sumk
+                    for ik in xrange(nkpnts):
+                        Sks[:,:,ik]=np.identity(nawf)
+                    if verbose: print('...using orthogonal algorithm')
+                else:
+                    U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
+                    nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
+                    nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath,verbose,non_ortho)
+                    if verbose: print('...using non-orthogonal algorithm')
     
             if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
                 print('CAUTION! nk1 or nk2 or nk3 not even!')
