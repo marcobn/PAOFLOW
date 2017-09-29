@@ -70,7 +70,8 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 k2=int(elem.findall(".//monkhorst_pack")[0].attrib['k2'])
                 k3=int(elem.findall(".//monkhorst_pack")[0].attrib['k3'])
                 if rank == 0 and verbose: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
-
+               
+	        # Get hightest occupied level for non-metals
                 try:
                     hstoccu = float(elem.findall("band_structure/highestOccupiedLevel")[0].text)*Hatree2eV
                 except:
@@ -113,9 +114,12 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
 
             aux    = elem.findall("UNITS_FOR_ENERGY")[0].attrib['UNITS']
 
+	    # Get Fermi energy(Hightest occupied level for non-metals)
             Efermi = float(elem.findall("FERMI_ENERGY")[0].text.split()[0])*Ry2eV
-            try: Efermi = hstoccu 
-	    except: pass
+            try:
+		Efermi = hstoccu 
+	    except:
+		pass
             if rank == 0 and verbose: print('Fermi energy: {0:f} eV '.format(Efermi))
 
             nawf   =int(elem.findall("NUMBER_OF_ATOMIC_WFC")[0].text.split()[0])
