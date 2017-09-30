@@ -13,7 +13,7 @@ from scipy import linalg as LA
 from numpy import linalg as LAN
 import numpy as np
 import os
-import PySide
+
 import matplotlib
 import matplotlib.pyplot as plt
 
