@@ -82,3 +82,68 @@ def gather_array ( arr, arraux, sroot=0 ):
 
     # Gather the data according to load_sizes
     comm.Gatherv([arraux, mpidtype], [arr, lsizes[:,0], lsizes[:,1], mpidtype], root=sroot)
+
+
+
+
+
+def scatter_full(arr,npool):
+
+    if rank==0:
+        nsizes = comm.bcast(arr.shape)
+    else:
+        nsizes = comm.bcast(None)
+
+    comm.Barrier()
+
+    nsize=nsizes[0]
+    start_tot,end_tot   = load_balancing(size,rank,nsize)
+
+    per_proc_shape = np.concatenate((np.array([end_tot-start_tot]),nsizes[1:]))
+
+    temp = np.zeros(per_proc_shape,order="C",dtype=complex)
+
+    nchunks = nsize/size+1
+    
+    for pool in xrange(npool):
+
+        chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
+        if chunk_end-chunk_start!=0:
+            if rank==0:
+                temp[chunk_start:chunk_end] = scatter_array(arr[(chunk_start*size):(chunk_end*size)])
+            else:
+                temp[chunk_start:chunk_end] = scatter_array(None)
+        
+    return temp
+
+
+def gather_full(arr,npool):
+
+
+    first_ind_per_proc = np.array([arr.shape[0]])
+    nsize              = np.zeros_like(first_ind_per_proc)
+
+    comm.Barrier()
+    comm.Allreduce(first_ind_per_proc,nsize)
+
+    per_proc_shape = np.concatenate((nsize,arr.shape[1:]))
+
+    nsize=nsize[0]
+
+    if rank==0:
+        temp = np.zeros(per_proc_shape,order="C",dtype=complex)
+    else: temp = None
+
+    nchunks = nsize/size+1
+
+    
+    for pool in xrange(npool):
+
+        chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
+        if chunk_end-chunk_start!=0:
+            if rank==0:
+                 gather_array(temp[(chunk_start*size):(chunk_end*size)],arr[chunk_start:chunk_end])
+            else:
+                 gather_array(None,arr[chunk_start:chunk_end])
+
+    return temp
