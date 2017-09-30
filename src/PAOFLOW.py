@@ -906,9 +906,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             #from do_momentum_d2 
     
             if rank != 0:
-                dHksp = None
-                v_k = None
-                pksp = None
                 tksp = None
             if rank == 0:
                 dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
@@ -960,11 +957,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             nk1 = None
             nk2 = None
             nk3 = None
-            eig = None
-            E_k = None
-            v_k = None
-            dHksp = None
-            pksp = None
+
+
+
+
+
         checkpoint = comm.bcast(checkpoint,root=0)
         nk1 = comm.bcast(nk1,root=0)
         nk2 = comm.bcast(nk2,root=0)
@@ -991,31 +988,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     try:
         deltakp = None
         deltakp2 = None
-        if rank == 0:
-            if smearing != None:
-                #----------------------
-                # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
-                #----------------------
-                deltakp = np.zeros((nk1*nk2*nk3,nawf,nspin),dtype=float)
-                deltakp2 = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin),dtype=float)
-                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-                dk = (8.*np.pi**3/omega/(nk1*nk2*nk3))**(1./3.)
-                if smearing == 'gauss':
-                    afac = 0.7
-                elif smearing == 'm-p':
-                    afac = 1.0
+
+        if smearing != None:
+            from do_adaptive_smearing import *
+            deltakp,deltakp2 = do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing)
     
-                for n in xrange(nawf):
-                    deltakp[:,n,:] = afac*LAN.norm(np.real(pksp[:,:,n,n,:]),axis=1)*dk
-                    for m in xrange(nawf):
-                        if smearing == 'gauss':
-                            afac = 0.7
-                        elif smearing == 'm-p':
-                            afac = 1.0
-                        deltakp2[:,n,m,:] = afac*LAN.norm(np.real(np.absolute(pksp[:,:,n,n,:]-pksp[:,:,m,m,:])),axis=1)*dk
-    
-                if restart:
-                    np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
+            if restart:
+                np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
     
         comm.Barrier()
         if rank == 0 and smearing != None:
