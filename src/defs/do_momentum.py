@@ -48,11 +48,9 @@ def do_momentum(vec,dHksp,npool):
             for l in xrange(3):
                 pksp[ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(pksp[ik,l,:,:,ispin])
 
-
-
     comm.Barrier()
 
-    raise SystemExit
+
     return(pksp)
 #  except Exception as e:
 #    raise e
