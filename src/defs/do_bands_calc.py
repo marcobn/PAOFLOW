@@ -123,18 +123,6 @@ def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
     return auxh
 
 
-# def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
-
-#     nsize = end_ik - ini_ik
-#     auxh = np.zeros((nawf,nawf,nsize,nspin),dtype=complex)
-#     HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-
-#     for ik in xrange(ini_ik,end_ik):
-#         for ispin in xrange(nspin):
-#              auxh[:,:,ik-ini_ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
-
-#     return(auxh)
-
 def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
 
     nsize = end_ik - ini_ik
