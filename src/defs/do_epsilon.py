@@ -38,26 +38,13 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
 
     index = None
 
-    if rank == 0:
-        nktot,_,nawf,_,nspin = pksp.shape
-        index = {'nktot':nktot,'nawf':nawf,'nspin':nspin}
 
-    index = comm.bcast(index,root=0)
-
-    nktot = index['nktot']
-    nawf = index['nawf']
-    nspin = index['nspin']
-
+    nktot,_,nawf,_,nspin = pksp.shape
+    
     # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,nktot)
+    ini_ik, end_ik = load_balancing(1,0,pksp.shape[0])
 
-    comm.Barrier()
-    pkspaux = scatter_array(pksp)
-    E_kaux = scatter_array(E_k)
-    kq_wghtaux = scatter_array(kq_wght)
-    if smearing != None:
-        deltakaux = scatter_array(deltak)
-        deltak2aux = scatter_array(deltak2)
+
 
     #=======================
     # Im
@@ -68,13 +55,13 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     jdos_aux = np.zeros((ene.size),dtype=float)
 
     if smearing == None:
-        epsi_aux[:,:,:],jdos_aux[:] = epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,ispin,metal)
+        epsi_aux[:,:,:],jdos_aux[:] = epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal)
     else:
-        epsi_aux[:,:,:],jdos_aux[:] = smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,\
-                          ispin,metal,deltakaux,deltak2aux,smearing)
+        epsi_aux[:,:,:],jdos_aux[:] = smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,\
+                          ispin,metal,deltak,deltak2,smearing)
 
-    comm.Allreduce(epsi_aux,epsi,op=MPI.SUM)
-    comm.Allreduce(jdos_aux,jdos,op=MPI.SUM)
+    comm.Reduce(epsi_aux,epsi,op=MPI.SUM)
+    comm.Reduce(jdos_aux,jdos,op=MPI.SUM)
 
     #=======================
     # Re
@@ -89,7 +76,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
 
         epsr_aux[:,:,:] = epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,ipol,jpol)
 
-        comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
+        comm.Reduce(epsr_aux,epsr,op=MPI.SUM)
 
     else:
         if metal: print('CAUTION: direct calculation of epsr in metals is not working!!!!!')
@@ -103,7 +90,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
             epsr_aux[:,:,:] = smear_epsr_loop(ipol,jpol,ini_ik,end_ik,ene,E_kaux,pkspaux,kq_wghtaux,nawf,omega,delta,temp,\
                               ispin,metal,deltakaux,deltak2aux,smearing)
 
-        comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
+        comm.Reduce(epsr_aux,epsr,op=MPI.SUM)
 
     epsr += 1.0
 

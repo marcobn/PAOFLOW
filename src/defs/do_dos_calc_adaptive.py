@@ -31,34 +31,31 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath
 
     emin = float(emin)
     emax = float(emax)
-    de = (emax-emin)/1001
+    de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
 
     dos = np.zeros((ene.size),dtype=float)
+    dosaux = np.zeros((ene.size),dtype=float)
 
     for ne in xrange(ene.size):
-
-        dossum = np.zeros(1,dtype=float)
-
-        comm.Barrier()
-        aux = scatter_array(eig)
-        auxd = scatter_array(delta)
-
         if smearing == 'gauss':
             # adaptive Gaussian smearing
-            dosaux = np.sum(gaussian(ene[ne],aux,auxd))
+            dosaux[ne] = np.sum(gaussian(ene[ne],eig,delta))
         elif smearing == 'm-p':
             # adaptive Methfessel and Paxton smearing
-            dosaux = np.sum(metpax(ene[ne],aux,auxd))
+            dosaux[ne] = np.sum(metpax(ene[ne],eig,delta))
 
-        comm.Barrier()
-        comm.Reduce(dosaux,dossum,op=MPI.SUM)
-        dos[ne] = dossum*float(nawf)/float(netot)
+
+    comm.Reduce(dosaux,dos,op=MPI.SUM)
+
 
     if rank == 0:
-        f=open(inputpath+'dosdk_'+str(ispin)+'.dat','w')
+        dos *= float(nawf)/float(netot)
+        f=open(inputpath+'/dosdk_'+str(ispin)+'.dat','w')
         for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 
+
+    comm.Barrier()
     return

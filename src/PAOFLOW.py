@@ -915,9 +915,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             ################DISTRIBUTE ARRAYS ON KPOINTS#################
             #############################################################
             dHksp = scatter_full(dHksp,npool)
-            E_k = scatter_full(E_k,npool)
+            E_k = np.real(scatter_full(E_k,npool))
             v_k = scatter_full(v_k,npool)
-            eig = scatter_full(eig,npool)
+            eig = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
 
             pksp = do_momentum(v_k,dHksp,npool)
 
@@ -1131,11 +1131,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     # Reduce memory requirements and improve performance by reducing nawf to bnd (states with good projectability)
     try:
         pksp = np.delete(np.delete(pksp,np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
-        if 'E_k' in outDict:
-            outDict['E_k'] = E_k
+        if rank==0:
+            if 'E_k' in outDict:
+                outDict['E_k'] = E_k
+            if 'deltakp' in outDict:
+                outDict['deltakp'] = deltakp
+
         E_k = np.delete(E_k,np.s_[bnd:],axis=1)
-        if 'deltakp' in outDict:
-            outDict['deltakp'] = deltakp
         deltakp = np.delete(deltakp,np.s_[bnd:],axis=1)
         deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
 
@@ -1358,7 +1360,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             comm.Barrier()
             if rank ==0:
                 print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-                raise SystemExit
+
                 reset=time.time()
     except:
         print('Rank %d: Exception in Transport'%rank)
