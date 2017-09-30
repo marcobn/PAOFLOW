@@ -893,10 +893,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             nk1 = None
             nk2 = None
             nk3 = None
-            eig = None
-            E_k = None
-            v_k = None
-            dHksp = None
+
+
+
+
         checkpoint = comm.bcast(checkpoint,root=0)
     
         if checkpoint < 4:
@@ -915,9 +915,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             ################DISTRIBUTE ARRAYS ON KPOINTS#################
             #############################################################
             dHksp = scatter_full(dHksp,npool)
-            v_k   = scatter_full(v_k,npool)
+            E_k = scatter_full(E_k,npool)
+            v_k = scatter_full(v_k,npool)
+            eig = scatter_full(eig,npool)
 
             pksp = do_momentum(v_k,dHksp,npool)
+
             #if rank == 0:
             #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
             #pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
@@ -992,7 +995,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if smearing != None:
             from do_adaptive_smearing import *
             deltakp,deltakp2 = do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing)
-    
+
             if restart:
                 np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
     
@@ -1036,15 +1039,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
     try:
         velkp = None
-        if rank == 0:
-            if Boltzmann or critical_points:
-                #----------------------
-                # Compute velocities for Boltzmann transport
-                #----------------------
-                velkp = np.zeros((nk1*nk2*nk3,3,bnd,nspin),dtype=float)
-                for n in xrange(bnd):
-                    velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
-    
+        if Boltzmann or critical_points:
+            #----------------------
+            # Compute velocities for Boltzmann transport
+            #----------------------
+            velkp = np.zeros((pksp.shape[0],3,bnd,nspin),dtype=float)
+            for n in xrange(bnd):
+                velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
+
+            if rank == 0:
                 if critical_points:
                     #----------------------
                     # Find critical points (grad(E_kn)=0)
@@ -1080,44 +1083,37 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             eigdw = None
             deltakpup = None
             deltakpdw = None
+            if do_dos:
+                if nspin == 1 or nspin == 2:
+    #                if rank == 0:
+    #                    eigup = np.array(eig[:,0])
+    #                    deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
+                    deltakpup = np.ravel(deltakp[:,:bnd,0],order='C')
+                    eigup = eig[:,0]
+                    do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,inputpath)
+                    eigup = None
+                    deltakpup = None
+                if nspin == 2:
+    #                if rank == 0:
+    #                    eigdw = np.array(eig[:,1])
+    #                    deltakpdw = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,1])
+                    deltakpup = np.ravel(deltakp[:,:bnd,0],order='C')
+                    eigup = eig[:,1]
+                    do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing,inputpath)
+                    eigdw = None
+                    deltakpdw = None
         
-            if nspin == 1 or nspin == 2:
-                if rank == 0:
-                    eigup = np.array(eig[:,0])
-                    deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
-                do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,inputpath)
-                eigup = None
-                deltakpup = None
-            if nspin == 2:
-                if rank == 0:
-                    eigdw = np.array(eig[:,1])
-                    deltakpdw = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,1])
-                do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing,inputpath)
-                eigdw = None
-                deltakpdw = None
-        
-            if rank == 0: deltakp = np.reshape(deltakp,(nk1*nk2*nk3,nawf,nspin),order='C')
+
         
             if do_pdos:
                 v_kup = v_kdw = None
                 #----------------------
                 # PDOS calculation
-                #----------------------
-    
-                if nspin == 1 or nspin == 2:
-                    if rank == 0:
-                        eigup = np.array(E_k[:,:,0])
-                        deltakpup = np.array(deltakp[:,:,0])
-                        v_kup = np.array(v_k[:,:,:,0])
-                    do_pdos_calc_adaptive(eigup,emin,emax,deltakpup,v_kup,nk1,nk2,nk3,nawf,0,smearing,inputpath)
-                    eigup = None
-                if nspin == 2:
-                    if rank == 0:
-                        eigdw = np.array(E_k[:,:,1])
-                        deltakpdw = np.array(deltakp[:,:,1])
-                        v_kdw = np.array(v_k[:,:,:,1])
-                    do_pdos_calc_adaptive(eigdw,emin,emax,deltakpdw,v_kdw,nk1,nk2,nk3,nawf,1,smearing,inputpath)
-                    eigdw = None
+                #----------------------    
+                for ispin in xrange(nspin):
+                    do_pdos_calc_adaptive(E_k[:,:,ispin],emin,emax,deltakp[:,:,ispin],v_k[:,:,:,ispin],
+                                          nk1,nk2,nk3,nawf,ispin,smearing,inputpath)
+
      
             comm.Barrier()
             if rank ==0:
@@ -1134,15 +1130,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     #----------------------
     # Reduce memory requirements and improve performance by reducing nawf to bnd (states with good projectability)
     try:
-        if rank == 0:
-            pksp = np.delete(np.delete(pksp,np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
-            if 'E_k' in outDict:
-                outDict['E_k'] = E_k
-            E_k = np.delete(E_k,np.s_[bnd:],axis=1)
-            if 'deltakp' in outDict:
-                outDict['deltakp'] = deltakp
-            deltakp = np.delete(deltakp,np.s_[bnd:],axis=1)
-            deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
+        pksp = np.delete(np.delete(pksp,np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
+        if 'E_k' in outDict:
+            outDict['E_k'] = E_k
+        E_k = np.delete(E_k,np.s_[bnd:],axis=1)
+        if 'deltakp' in outDict:
+            outDict['deltakp'] = deltakp
+        deltakp = np.delete(deltakp,np.s_[bnd:],axis=1)
+        deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
+
     except Exception as e:
         print('Rank %d: Exception in Memory Reduction'%rank)
         traceback.print_exc()
@@ -1362,6 +1358,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             comm.Barrier()
             if rank ==0:
                 print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                raise SystemExit
                 reset=time.time()
     except:
         print('Rank %d: Exception in Transport'%rank)
