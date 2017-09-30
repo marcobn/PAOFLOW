@@ -863,7 +863,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if rank == 0:
                     print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                     reset=time.time()
-    
+        
         #----------------------
         # Read/Write restart data
         #----------------------
@@ -912,6 +912,14 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 tksp = None
             if rank == 0:
                 dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
+
+
+            #############################################################
+            ################DISTRIBUTE ARRAYS ON KPOINTS#################
+            #############################################################
+            dHksp = scatter_full(dHksp,npool)
+            v_k   = scatter_full(v_k,npool)
+
             pksp = do_momentum(v_k,dHksp,npool)
             #if rank == 0:
             #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
@@ -976,7 +984,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
-    
+
+
+
+
     try:
         deltakp = None
         deltakp2 = None

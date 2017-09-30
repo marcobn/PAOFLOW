@@ -27,56 +27,32 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def do_momentum(vec,dHksp,npool):
+
     # calculate momentum vector
+    nktot,_,nawf,nawf,nspin = dHksp.shape
 
-    index = None
+    pksp = np.zeros_like(dHksp)
 
-    if rank == 0:
-        nktot,_,nawf,nawf,nspin = dHksp.shape
-        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
 
-    index = comm.bcast(index,root=0)
 
-    nktot = index['nktot']
-    nawf = index['nawf']
-    nspin = index['nspin']
+    for ik in xrange(dHksp.shape[0]):
+        for ispin in xrange(nspin):
+            for l in xrange(3):
+                pksp[ik,l,:,:,ispin] = dHksp[ik,l,:,:,ispin].dot(vec[ik,:,:,ispin])
 
-    if rank == 0:
-        pksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
-    else:
-        dHksp = None
-        pksp = None
 
-    for pool in xrange(npool):
-        ini_ip, end_ip = load_balancing(npool,pool,nktot)
-        nkpool = end_ip - ini_ip
+    vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(vec,1,2)))
 
-        if rank == 0:
-            dHksp_split = dHksp[ini_ip:end_ip]
-            pks_split = pksp[ini_ip:end_ip]
-            vec_split = vec[ini_ip:end_ip]
-        else:
-            dHksp_split = None
-            pks_split = None
-            vec_split = None
+    for ik in xrange(dHksp.shape[0]):
+        for ispin in xrange(nspin):
+            for l in xrange(3):
+                pksp[ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(pksp[ik,l,:,:,ispin])
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik-ini_ik
 
-        dHkaux = scatter_array(dHksp_split)
-        pksaux = scatter_array(pks_split)
-        vecaux = scatter_array(vec_split)
 
-        for ik in xrange(nsize):
-            for ispin in xrange(nspin):
-                for l in xrange(3):
-                    pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
-                                (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
+    comm.Barrier()
 
-        gather_array(pks_split, pksaux)
-
-        if rank == 0:
-            pksp[ini_ip:end_ip,:,:,:,:] = pks_split[:,:,:,:,:]
-
+    raise SystemExit
     return(pksp)
+#  except Exception as e:
+#    raise e
