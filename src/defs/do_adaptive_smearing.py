@@ -46,8 +46,8 @@ def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
 
         pksaux= pksp[:,:,diag[0],diag[1]]
 
-        deltakpaux = np.zeros((pksaux.shape[0],nawf,nspin),dtype=float)
-        np.power(np.sum(np.power(np.real(pksaux),2.0,order="C"),axis=1),0.5,order="C",out=deltakpaux)
+        deltakp = np.zeros((pksaux.shape[0],nawf,nspin),dtype=float)
+        np.power(np.sum(np.power(np.real(pksaux),2.0,order="C"),axis=1),0.5,order="C",out=deltakp)
 
         deltakp2aux = np.zeros((pksaux.shape[0],3,nawf,nawf,nspin),dtype=float)
         for ispin in xrange(pksaux.shape[3]):
@@ -57,7 +57,7 @@ def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
 
         deltakp2 = np.zeros((pksp.shape[0],nawf,nawf,nspin),dtype=float)
         deltakp2 = np.power(np.sum(np.power(deltakp2aux,2.0,order="C"),axis=1),0.5,order="C") 
-        comm.Barrier()
+
 
 
 
@@ -67,6 +67,6 @@ def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
     deltakp*=afac*dk
     deltakp2*=afac*dk
 
-    raise SystemExit
+    comm.Barrier()
 
     return deltakp,deltakp2
