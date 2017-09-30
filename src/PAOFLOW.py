@@ -636,25 +636,29 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
                     non_ortho = False
     
-                #----------------------
-                # Fourier interpolation on extended grid (zero padding)
-                #----------------------
-                Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs,nthread)
-                # Naming convention (from here): 
-                # Hksp = k-space Hamiltonian on interpolated grid
-                if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
-                kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-    
-            else:
-                kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-                Hksp = np.moveaxis(Hks,(0,1),(3,4))
-                Hksp = Hksp.copy(order='C')
+
     
         comm.Barrier()
-        if rank ==0:
-            print('R -> k zero padding in           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-            reset=time.time()
-    
+
+
+        if double_grid:
+            #----------------------
+            # Fourier interpolation on extended grid (zero padding)
+            #----------------------
+            Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs,nthread,npool)
+            # Naming convention (from here): 
+            # Hksp = k-space Hamiltonian on interpolated grid
+            if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
+            kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+            if rank ==0:
+                print('R -> k zero padding in           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                reset=time.time()    
+        else:
+            kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
+            Hksp = np.moveaxis(Hks,(0,1),(3,4))
+            Hksp = Hksp.copy(order='C')    
+
+
         #----------------------
         # Read/Write restart data
         #----------------------

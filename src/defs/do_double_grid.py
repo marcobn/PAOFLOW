@@ -25,26 +25,57 @@ except:
     from scipy import fftpack as FFT
     scipyfft = True
 
+
+from communication import *
+from load_balancing import *
+
 comm=MPI.COMM_WORLD
 size = comm.Get_size()
+rank = comm.Get_rank()
 
 nthread = size
 
-def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread):
+def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
     # Fourier interpolation on extended grid (zero padding)
-    if HRaux.shape[0] != 3 and HRaux.shape[1] == HRaux.shape[0]:
+    index = None
+    if rank==0:
         nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
-        nk1p = nfft1
-        nk2p = nfft2
-        nk3p = nfft3
-        nfft1 = nfft1-nk1
-        nfft2 = nfft2-nk2
-        nfft3 = nfft3-nk3
-        nktotp= nk1p*nk2p*nk3p
+        nktot = nk1*nk2*nk3
+        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin,'nk1':nk1,'nk2':nk2,'nk3':nk3}
 
-        # Extended R to k (with zero padding)
-        Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf,nawf,nspin),dtype=complex)
-        aux = np.zeros((nk1,nk2,nk3),dtype=complex)
+    index = comm.bcast(index,root=0)
+
+    nktot = index['nktot']
+    nawf  = index['nawf']
+    nspin = index['nspin']
+    nk1   = index['nk1']
+    nk2   = index['nk2']
+    nk3   = index['nk3']
+
+    nk1p = nfft1
+    nk2p = nfft2
+    nk3p = nfft3
+    nfft1 = nfft1-nk1
+    nfft2 = nfft2-nk2
+    nfft3 = nfft3-nk3
+    nktotp= nk1p*nk2p*nk3p
+
+    # Extended R to k (with zero padding)
+    if rank==0:
+        Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf**2,nspin),dtype=complex)
+        HRaux = np.ascontiguousarray(np.reshape(HRaux,(nawf**2,nk1,nk2,nk3,nspin)))
+    else:
+        Hksp = None
+
+    for pool in xrange(npool):
+
+        if rank==0:
+            start_n,end_n=load_balancing(npool,pool,HRaux.shape[0])
+            HR_aux = scatter_array(HRaux[start_n:end_n])
+        else:
+            HR_aux = scatter_array(None)
+
+        Hk_aux = np.zeros((HR_aux.shape[0],nk1p,nk2p,nk3p,nspin),dtype=complex,order='C')
 
         for ispin in xrange(nspin):
             if not scipyfft:
@@ -55,17 +86,34 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread):
                             flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         Hksp[:,:,:,i,j,ispin] = fft()
             else:
-                for i in xrange(nawf):
-                    for j in xrange(nawf):
-                        aux = HRaux[i,j,:,:,:,ispin]
-                        Hksp[:,:,:,i,j,ispin] = FFT.fftn(zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3))
+                for n in xrange(HR_aux.shape[0]):
+                    Hk_aux[n,:,:,:,ispin] = FFT.fftn(zero_pad(HR_aux[n,:,:,:,ispin],
+                                                              nk1,nk2,nk3,nfft1,nfft2,nfft3))
+        if rank==0:
+            temp = np.zeros((end_n-start_n,nk1p,nk2p,nk3p,nspin),order="C",dtype=complex)
+            comm.Barrier()
+            gather_array(temp,Hk_aux)
+            comm.Barrier()
+            temp  = np.rollaxis(temp,0,4)
 
-    else:
-        sys.exit('wrong dimensions in input array')
+            temp = temp.reshape(nk1p,nk2p,nk3p,end_n-start_n,nspin)
+            Hksp[:,:,:,start_n:end_n,:] = np.copy(temp)
+
+        else:
+            comm.Barrier()
+            gather_array(None,Hk_aux)
+            comm.Barrier()
+
+
+        Hk_aux = None
+        HR_aux = None
+
+
 
     nk1 = nk1p
     nk2 = nk2p
     nk3 = nk3p
     aux = None
+
     return(Hksp,nk1,nk2,nk3)
 
