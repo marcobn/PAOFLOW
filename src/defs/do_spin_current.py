@@ -59,77 +59,26 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
         Sj = clebsch_gordan(nawf,sh,nl,spol)
 
-    if rank == 0:
-        jksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
-        jdHksp = np.zeros((nktot,3,nawf,nawf,nspin),dtype=complex)
-    else:
-        dHksp = None
-        jdHksp = None
-        jksp = None
 
-    for pool in xrange(npool):
-        ini_ip, end_ip = load_balancing(npool,pool,nktot)
-        nkpool = end_ip - ini_ip
+    jksp = np.zeros((pksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
+    jdHksp = np.zeros((pksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
 
-        if rank == 0:
-            dHksp_split = dHksp[ini_ip:end_ip]
-            jdHksp_split = jdHksp[ini_ip:end_ip]
-            vec_split = vec[ini_ip:end_ip]
-        else:
-            dHksp_split = None
-            jdHksp_split = None
-            vec_split = None
 
-        dHkaux = scatter_array(dHksp_split)
-        jdHkaux = scatter_array(jdHksp_split)
-        vecaux = scatter_array(vec_split)
 
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik - ini_ik
+    for ik in xrange(pksp.shape[0]):
+        for ispin in xrange(nspin):
+            for l in xrange(3):
+                jdHkaux[ik,l,:,:,ispin] = \
+                    0.5*(np.dot(Sj,dHkaux[ik,l,:,:,ispin])+ \
+                    np.dot(dHkaux[ik,l,:,:,ispin],Sj))
 
-        for ik in xrange(nsize):
-            for ispin in xrange(nspin):
-                for l in xrange(3):
-                    jdHkaux[ik,l,:,:,ispin] = \
-                        0.5*(np.dot(Sj,dHkaux[ik,l,:,:,ispin])+ \
-                        np.dot(dHkaux[ik,l,:,:,ispin],Sj))
 
-        gather_array(jdHksp_split, jdHkaux)
-
-        if rank == 0:
-            jdHksp[ini_ip:end_ip,:,:,:,:] = jdHksp_split[:,:,:,:,:]
+    for ik in xrange(pksp.shape[0]):
+        for ispin in xrange(nspin):
+            for l in xrange(3):
+                jksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
+                            (jdHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 
     comm.Barrier()
-
-    for pool in xrange(npool):
-        ini_ip, end_ip = load_balancing(npool,pool,nktot)
-        nkpool = end_ip - ini_ip
-
-        if rank == 0:
-            jdHksp_split = jdHksp[ini_ip:end_ip]
-            jks_split = jksp[ini_ip:end_ip]
-            vec_split = vec[ini_ip:end_ip]
-        else:
-            jdHksp_split = None
-            jks_split = None
-            vec_split = None
-
-        jdHkaux = scatter_array(jdHksp_split)
-        jksaux = scatter_array(jks_split)
-        vecaux = scatter_array(vec_split)
-
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        nsize = end_ik - ini_ik
-
-        for ik in xrange(nsize):
-            for ispin in xrange(nspin):
-                for l in xrange(3):
-                    jksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
-                                (jdHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
-
-        gather_array(jks_split, jksaux)
-
-        if rank == 0:
-            jksp[ini_ip:end_ip,:,:,:,:] = jks_split[:,:,:,:,:]
 
     return(jksp)
