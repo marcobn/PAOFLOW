@@ -63,9 +63,7 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
         comm.Reduce(L2aux,L2,op=MPI.SUM)
 
         return(ene,L0,L1,L2)
-
     else:
-
         return(ene,L0)
 
 def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
