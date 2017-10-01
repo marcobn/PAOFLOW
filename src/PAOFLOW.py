@@ -1108,8 +1108,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     #                if rank == 0:
     #                    eigdw = np.array(eig[:,1])
     #                    deltakpdw = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,1])
-                    deltakpup = np.ravel(deltakp[:,:bnd,0],order='C')
-                    eigup = eig[:,1]
+                    deltakpdw = np.ravel(deltakp[:,:bnd,0],order='C')
+                    eigdw = eig[:,1]
                     do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing,inputpath)
                     eigdw = None
                     deltakpdw = None
