@@ -36,7 +36,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     ene = np.arange(emin,emax,de,dtype=float)
     if ene[0]==0.0: ene[0]=0.00001
 
-    nktot,_,nawf,_,nspin = pksp.shape
+    _,_,nawf,_,nspin = pksp.shape
     
     #=======================
     # Im
@@ -59,6 +59,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     # Re
     #=======================
 
+    print kramerskronig
     if kramerskronig == True:
         # Load balancing
         ini_ie, end_ie = load_balancing(size,rank,ene.size)
@@ -85,6 +86,9 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
         comm.Allreduce(epsr_aux,epsr,op=MPI.SUM)
 
     epsr += 1.0
+
+
+
 
     return(ene,epsi,epsr,jdos)
 
