@@ -183,12 +183,12 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
         Hksp =  np.reshape(Hksp,(nk1,nk2,nk3,nawf*nawf,nspin),order="C")
         Hksp =  np.rollaxis(Hksp,3,0)
         #have flattened H(k) as first indice
-        Hksp = np.ascontiguousarray(Hksp)
     else:
         Hksp=None
 
     comm.Barrier()
     H_aux = scatter_full(Hksp,npool)       
+    Hksp = None
     comm.Barrier()
 
     ########################################
@@ -260,10 +260,7 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
     dH_aux=None
 
     if rank==0:
-        dHksp = np.rollaxis(dHksp,0,5)    
-        dHksp =dHksp.reshape((nk1*nk2*nk3,3,nawf,nawf,nspin),order="C")
-        dHksp = np.ascontiguousarray(dHksp)
-    comm.Barrier()
+        dHksp = np.reshape(np.rollaxis(dHksp,0,5),(nk1*nk2*nk3,3,nawf,nawf,nspin),order="C")
 
     return(dHksp)
 

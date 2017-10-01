@@ -581,7 +581,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
-    
+
+
+    E_kp=None
+    v_kp=None
     try:
         #----------------------
         # Initialize Read/Write restart data
@@ -852,6 +855,14 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         jksp = None
         if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != None:
             if checkpoint < 3:
+
+                #############################################################
+                ################DISTRIBUTE ARRAYS ON KPOINTS#################
+                #############################################################
+                E_k   = np.real(scatter_full(E_k,npool))
+                v_k   = scatter_full(v_k,npool)
+                eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
+
                 #----------------------
                 # Compute the gradient of the k-space Hamiltonian
                 #----------------------
@@ -860,6 +871,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
     
                 comm.Barrier()
+
+                #############################################################
+                ################DISTRIBUTE ARRAYS ON KPOINTS#################
+                #############################################################
+                Hksp  = None
+                comm.Barrier()
+                dHksp = scatter_full(dHksp,npool)
+                comm.Barrier()
+
                 if rank == 0:
                     print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                     reset=time.time()
@@ -907,19 +927,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             if rank != 0:
                 tksp = None
-            if rank == 0:
-                dHksp = np.reshape(dHksp,(nk1*nk2*nk3,3,nawf,nawf,nspin),order='C')
-
-
-            #############################################################
-            ################DISTRIBUTE ARRAYS ON KPOINTS#################
-            #############################################################
-            dHksp = scatter_full(dHksp,npool)
-            E_k = np.real(scatter_full(E_k,npool))
-            v_k = scatter_full(v_k,npool)
-            eig = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
 
             pksp = do_momentum(v_k,dHksp,npool)
+            if not spin_Hall:
+                dHksp=None
 
             #if rank == 0:
             #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
@@ -972,7 +983,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
         index = None
         if rank == 0:
-            index = {'nawf':E_k.shape[1],'nktot':E_k.shape[0]}
+            index = {'nawf':E_k.shape[1],'nktot':nk1*nk2*nk3}
         index = comm.bcast(index,root=0)
         nawf = index['nawf']
         nktot = index['nktot']
@@ -1368,6 +1379,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
+    comm.Barrier()
+
     try:
         #----------------------
         # Compute dielectric tensor (Re and Im epsilon)
@@ -1381,9 +1394,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 ipol = d_tensor[n][0]
                 jpol = d_tensor[n][1]
                 for ispin in xrange(nspin):
-    
                     ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing,kramerskronig)
-                    #ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,tksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing,kramerskronig)
     
                     if rank == 0:
                         f=open(inputpath+'epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
@@ -1421,6 +1432,18 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
+
+
+    if verbose:
+        import resource
+        mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        all_mem=np.copy(mem)
+        comm.Reduce(mem,all_mem)
+        if rank==0:
+            print("Max total memory usage rank 0  :  %6.4f GB"%(mem/1024.0**2))
+            print("Max total memory usage all proc:  %6.4f GB"%(all_mem/1024.0**2))
+
+
 
     if rank == 0:
         if 'Hksp' in outDict:

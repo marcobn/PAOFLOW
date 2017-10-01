@@ -110,7 +110,7 @@ def scatter_full(arr,npool):
         chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
         if chunk_end-chunk_start!=0:
             if rank==0:
-                temp[chunk_start:chunk_end] = scatter_array(arr[(chunk_start*size):(chunk_end*size)])
+                temp[chunk_start:chunk_end] = scatter_array(np.ascontiguousarray(arr[(chunk_start*size):(chunk_end*size)]))
             else:
                 temp[chunk_start:chunk_end] = scatter_array(None)
         
