@@ -59,7 +59,7 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     # Re
     #=======================
 
-    print kramerskronig
+
     if kramerskronig == True:
         # Load balancing
         ini_ie, end_ie = load_balancing(size,rank,ene.size)
