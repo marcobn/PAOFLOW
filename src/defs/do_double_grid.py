@@ -62,51 +62,48 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
 
     # Extended R to k (with zero padding)
     if rank==0:
-        Hksp  = np.zeros((nk1p,nk2p,nk3p,nawf**2,nspin),dtype=complex)
-        HRaux = np.ascontiguousarray(np.reshape(HRaux,(nawf**2,nk1,nk2,nk3,nspin)))
+        HRaux = np.reshape(HRaux,(nawf**2,nk1,nk2,nk3,nspin))
     else:
         Hksp = None
 
-    for pool in xrange(npool):
 
-        if rank==0:
-            start_n,end_n=load_balancing(npool,pool,HRaux.shape[0])
-            HR_aux = scatter_array(HRaux[start_n:end_n])
+
+    if rank==0:
+        HR_aux = scatter_full(HRaux,npool)
+    else:
+        HR_aux = scatter_full(None,npool)
+
+    Hk_aux  = np.zeros((HR_aux.shape[0],nk1p,nk2p,nk3p,nspin),dtype=complex)
+
+    for ispin in xrange(nspin):
+        if not scipyfft:
+            for i in xrange(nawf):
+                for j in xrange(nawf):
+                    aux = zero_pad(H_aux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
+                    fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
+                        flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
+                    Hk_aux[:,:,:,i,j,ispin] = fft()
         else:
-            HR_aux = scatter_array(None)
+            for n in xrange(HR_aux.shape[0]):
+                Hk_aux[n,:,:,:,ispin] = FFT.fftn(zero_pad(HR_aux[n,:,:,:,ispin],
+                                                          nk1,nk2,nk3,nfft1,nfft2,nfft3))
+    if rank==0:
+        comm.Barrier()
+        Hksp = gather_full(Hk_aux,npool)
+        comm.Barrier()
 
-        Hk_aux = np.zeros((HR_aux.shape[0],nk1p,nk2p,nk3p,nspin),dtype=complex,order='C')
+        Hksp  = np.rollaxis(Hksp,0,4)
+        Hksp = Hksp.reshape(nk1p,nk2p,nk3p,nawf,nawf,nspin)
+        Hksp = np.ascontiguousarray(Hksp)
 
-        for ispin in xrange(nspin):
-            if not scipyfft:
-                for i in xrange(nawf):
-                    for j in xrange(nawf):
-                        aux = zero_pad(HRaux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
-                        fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
-                            flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
-                        Hksp[:,:,:,i,j,ispin] = fft()
-            else:
-                for n in xrange(HR_aux.shape[0]):
-                    Hk_aux[n,:,:,:,ispin] = FFT.fftn(zero_pad(HR_aux[n,:,:,:,ispin],
-                                                              nk1,nk2,nk3,nfft1,nfft2,nfft3))
-        if rank==0:
-            temp = np.zeros((end_n-start_n,nk1p,nk2p,nk3p,nspin),order="C",dtype=complex)
-            comm.Barrier()
-            gather_array(temp,Hk_aux)
-            comm.Barrier()
-            temp  = np.rollaxis(temp,0,4)
-
-            temp = temp.reshape(nk1p,nk2p,nk3p,end_n-start_n,nspin)
-            Hksp[:,:,:,start_n:end_n,:] = np.copy(temp)
-
-        else:
-            comm.Barrier()
-            gather_array(None,Hk_aux)
-            comm.Barrier()
+    else:
+        comm.Barrier()
+        gather_full(Hk_aux,npool)
+        comm.Barrier()
 
 
-        Hk_aux = None
-        HR_aux = None
+    Hk_aux = None
+    HR_aux = None
 
 
 
