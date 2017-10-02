@@ -101,7 +101,12 @@ def scatter_full(arr,npool):
 
     per_proc_shape = np.concatenate((np.array([end_tot-start_tot]),nsizes[1:]))
 
-    temp = np.zeros(per_proc_shape,order="C",dtype=complex)
+    pydtype=None
+    if rank==0:
+        pydtype=arr.dtype
+    pydtype = comm.bcast(pydtype)
+
+    temp = np.zeros(per_proc_shape,order="C",dtype=pydtype)
 
     nchunks = nsize/size+1
     
@@ -130,8 +135,11 @@ def gather_full(arr,npool):
 
     nsize=nsize[0]
 
+
+
+
     if rank==0:
-        temp = np.zeros(per_proc_shape,order="C",dtype=complex)
+        temp = np.zeros(per_proc_shape,order="C",dtype=arr.dtype)
     else: temp = None
 
     nchunks = nsize/size+1
