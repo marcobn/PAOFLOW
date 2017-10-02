@@ -37,52 +37,22 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
-    index = None
-
-    if rank == 0:
-        nktot,_,nawf,_,nspin = pksp.shape
-        index = {'nktot':nktot,'nawf':nawf,'nspin':nspin}
-
-    index = comm.bcast(index,root=0)
-
-    nktot = index['nktot']
-    nawf = index['nawf']
-    nspin = index['nspin']
+    nktot,_,nawf,_,nspin = pksp.shape
 
     sigxy = np.zeros((ene.size),dtype=complex)
-    sigxy_sum = np.zeros((ene.size),dtype=complex)
+    sigxy_aux = np.zeros((ene.size),dtype=complex)
 
-    for pool in xrange(npool):
-        ini_ip, end_ip = load_balancing(npool,pool,nktot)
-        nkpool = end_ip - ini_ip
 
-        if rank == 0:
-            pksp_long = pksp[ini_ip:end_ip]
-            E_k_long= E_k[ini_ip:end_ip]
-            deltak_long= deltak[ini_ip:end_ip]
-            deltak2_long= deltak2[ini_ip:end_ip]
-        else:
-            pksp_long = None
-            E_k_long = None
-            deltak_long= None
-            deltak2_long= None
+    if smearing != None:
+        sigxy_aux[:] = smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+    else:
+        sigxy_aux[:] = sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
 
-        pkspaux = scatter_array(pksp_long)
-        E_kaux = scatter_array(E_k_long)
-        deltakaux = scatter_array(deltak_long)
-        deltak2aux = scatter_array(deltak2_long)
+    comm.Allreduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-        # Load balancing
-        ini_ik, end_ik = load_balancing(size,rank,nkpool)
-        sigxy_aux = np.zeros((ene.size),dtype=complex)
-
-        if smearing != None:
-            sigxy_aux[:] = smear_sigma_loop2(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)
-        else:
-            sigxy_aux[:] = sigma_loop(ini_ik,end_ik,ene,E_kaux,pkspaux,nawf,temp,ispin,ipol,jpol,smearing,deltakaux,deltak2aux)
-
-        comm.Allreduce(sigxy_aux,sigxy_sum,op=MPI.SUM)
-        sigxy += sigxy_sum
+    nk_tot = np.array([nktot],dtype=int)
+    nktot = np.zeros((1),dtype=int)
+    comm.Allreduce(nk_tot,nktot)
 
     sigxy /= float(nktot)
 
@@ -118,10 +88,10 @@ def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,del
 
     return(sigxy)
 
-def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+def smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex)
-    func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
+    func = np.zeros((pksp.shape[0],ene.size),dtype=complex)
     delta = 0.05
     Ef = 0.0
 
@@ -141,10 +111,10 @@ def smear_sigma_loop2(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smear
             elif smearing == 'm-p':
                 fm = intmetpax(E_k[:,m,0],Ef,deltak[:,m,0])
             if m != n:
-                func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - \
-                            (ene+1.0j*(deltak2[:,n,m,ispin]*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T)**2
+                func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((pksp.shape[0],ene.size),dtype=float).T).T - \
+                            (ene+1.0j*(deltak2[:,n,m,ispin]*np.ones((pksp.shape[0],ene.size),dtype=float).T).T)**2
                 sigxy[:] += np.sum(((1.0/func * \
-                            ((fn - fm)*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
+                            ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                             np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
                             ),axis=1)
 
