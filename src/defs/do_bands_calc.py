@@ -78,12 +78,12 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
     else:
         gather_array(None,E_kp_aux)
 
-    vecs=False
+    vecs=True
     comm.Barrier()
 
     if vecs:
         if rank==0:
-            v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C")
+            v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C",dtype=complex)
             gather_array(v_kp,v_kp_aux)
         else:
             gather_array(None,v_kp_aux)
