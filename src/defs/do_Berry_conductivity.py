@@ -39,6 +39,10 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
 
     nktot,_,nawf,_,nspin = pksp.shape
 
+    nk_tot = np.array([nktot],dtype=int)
+    nktot = np.zeros((1),dtype=int)
+    comm.Allreduce(nk_tot,nktot)
+
     sigxy = np.zeros((ene.size),dtype=complex)
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
@@ -50,9 +54,7 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
 
     comm.Allreduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-    nk_tot = np.array([nktot],dtype=int)
-    nktot = np.zeros((1),dtype=int)
-    comm.Allreduce(nk_tot,nktot)
+
 
     sigxy /= float(nktot)
 

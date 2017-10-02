@@ -52,8 +52,6 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
     de = (emaxSH-eminSH)/500
     ene = np.arange(eminSH,emaxSH,de,dtype=float)
 
-
-
     Om_zkaux = np.zeros((pksp.shape[0],ene.size),dtype=float)
 
     for i in xrange(ene.size):
@@ -66,15 +64,11 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
 
     Om_zk = gather_full(Om_zkaux,npool)
     comm.Barrier()
-    # if rank==0:
-    #     print(Om_zk)
-    # raise SystemExit
-
 
     ahc = None
     if rank == 0: ahc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
-
     Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
+
     n0 = 0
     if rank == 0:
         for i in xrange(ene.size-1):

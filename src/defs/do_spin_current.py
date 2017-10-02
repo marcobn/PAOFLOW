@@ -60,24 +60,24 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         Sj = clebsch_gordan(nawf,sh,nl,spol)
 
 
-    jksp = np.zeros((pksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
-    jdHksp = np.zeros((pksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
+    jksp = np.zeros((dHksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
+    jdHksp = np.zeros((dHksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
 
 
 
-    for ik in xrange(pksp.shape[0]):
+    for ik in xrange(dHksp.shape[0]):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                jdHkaux[ik,l,:,:,ispin] = \
-                    0.5*(np.dot(Sj,dHkaux[ik,l,:,:,ispin])+ \
-                    np.dot(dHkaux[ik,l,:,:,ispin],Sj))
+                jdHksp[ik,l,:,:,ispin] = \
+                    0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+ \
+                    np.dot(dHksp[ik,l,:,:,ispin],Sj))
 
 
-    for ik in xrange(pksp.shape[0]):
+    for ik in xrange(dHksp.shape[0]):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                jksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
-                            (jdHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
+                jksp[ik,l,:,:,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
+                            (jdHksp[ik,l,:,:,ispin]).dot(vec[ik,:,:,ispin])
 
     comm.Barrier()
 
