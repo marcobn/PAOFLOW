@@ -459,7 +459,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 
 
-def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk):
+def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
     '''
     Get path between HSP
     Arguments:
@@ -484,7 +484,7 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk):
         path_file+="%s %s %s\n"%(kq[0,i],kq[1,i],kq[2,i])
 
     if rank==0:
-        with  open("kpath_points.txt","w") as pfo:
+        with  open(inputpath+"kpath_points.txt","w") as pfo:
             pfo.write(path_file)
 
     return points

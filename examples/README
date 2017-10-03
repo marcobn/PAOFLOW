@@ -17,7 +17,7 @@ python run_test.py [example directory pattern] [reference directory pattern]
 [example directory pattern] and [reference directory pattern] are optional
 arguments and have respective default values: 'example*' and 'Reference'
 
-The reference directory must be located inside the directory containing inputfile.py.
+The reference directory must be located inside the directory containing inputfile.xml.
 
 
 Tests are verified with 'check_test.py' automatically.
