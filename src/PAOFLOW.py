@@ -1440,11 +1440,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     if verbose:
         import resource
         mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        all_mem=np.copy(mem)
-        comm.Reduce(mem,all_mem)
         if rank==0:
             print("Max total memory usage rank 0  :  %6.4f GB"%(mem/1024.0**2))
-            print("Max total memory usage all proc:  %6.4f GB"%(all_mem/1024.0**2))
+
 
 
 
