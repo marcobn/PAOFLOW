@@ -90,7 +90,9 @@ def sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delta
 def smear_sigma_loop2(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex)
-    func = np.zeros((pksp.shape[0],ene.size),dtype=complex)
+#    func = np.zeros((pksp.shape[0],nawf,nawf),dtype=complex)
+    fn_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
     delta = 0.05
     Ef = 0.0
 
@@ -106,12 +108,17 @@ def smear_sigma_loop2(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,delta
     for n in xrange(nawf):
         for m in xrange(nawf):
             if m != n:
-                func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((pksp.shape[0],ene.size),dtype=float).T).T - \
-                            (ene+1.0j*(deltak2[:,n,m,ispin]*np.ones((pksp.shape[0],ene.size),dtype=float).T).T)**2
+                func = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((pksp.shape[0],ene.size),dtype=float).T).T-\
+                    (ene+1.0j*(deltak2[:,n,m,ispin]*np.ones((pksp.shape[0],ene.size),dtype=float).T).T)**2
+
                 sigxy[:] += np.sum(((1.0/func * \
-                            ((fn[:,n] - fn[:,m])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
-                            np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
+                                         ((fn[:,n] - fn[:,m])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
+                                        np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
+
+                                           
                             
+                            
+                                    
 
     return(sigxy)
 
