@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath):
+def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath,npool):
     # Compute Z2 invariant and topological properties on a selected path in the BZ
 
     nkpi=kq.shape[1]
@@ -121,7 +121,9 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
     Hks_aux[:,:,:,:,:] = band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRs,kq,Rfft)
 
-    comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
+    dHks = gather_full(Hks_aux,npool)
+
+
 
     #if rank == 0: 
     #    plt.matshow(abs(dHks[0,:,:,1445,0]))

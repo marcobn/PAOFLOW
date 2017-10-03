@@ -77,6 +77,7 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
         gather_array(E_kp,E_kp_aux)
     else:
         gather_array(None,E_kp_aux)
+        E_kp = None
 
     vecs=True
     comm.Barrier()
@@ -87,13 +88,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
             gather_array(v_kp,v_kp_aux)
         else:
             gather_array(None,v_kp_aux)
-            v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C",dtype=complex)
-            E_kp = np.zeros((kq.shape[1],nawf,nspin),order="C",dtype=float)
-        comm.Bcast(v_kp)
-        comm.Bcast(E_kp)
-    else:
-        v_kp = None
-
+            v_kp = None
+        
     v_kp_aux = None
     E_kp_aux = None
 
