@@ -550,20 +550,17 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
     
-            v_kp=None
+
             if band_topology:
-                if v_kp is None:
-                    print('Band Topology currently cannot be calculated for a system this large.')
-                else:
-                    # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
-                    # curvature operators along the path in the IBZ from do_topology_calc 
-                    
-                    do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,inputpath)
-    
-                    comm.Barrier()
-                    if rank == 0:
-                        print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-                        reset=time.time()
+                # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
+                # curvature operators along the path in the IBZ from do_topology_calc 
+
+                do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,inputpath)
+
+                comm.Barrier()
+                if rank == 0:
+                    print('band topology in                 %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                    reset=time.time()
     
             alat *= ANGSTROM_AU
     
