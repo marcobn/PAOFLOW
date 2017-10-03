@@ -49,19 +49,51 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     sigxy = np.zeros((ene.size),dtype=complex)
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
-
-
-
-    if smearing != None:
-        sigxy_aux = smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
-    else:
-        sigxy_aux = sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+    sigxy_aux = smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
     sigxy /= float(nktot)
     return(ene,sigxy)
     
+
+
+
+def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+    np.seterr(invalid='ignore',divide='ignore')
+
+    sigxy = np.zeros((ene.size),dtype=complex)
+    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    delta = 0.05
+    Ef = 0.0
+
+
+    if smearing == None:
+        fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
+    elif smearing == 'gauss':
+        fn = intgaussian(E_k[:,:,0],Ef,deltak[:,:,0])
+    elif smearing == 'm-p':
+        fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
+
+    # Collapsing the sum over k points
+    for n in xrange(nawf):
+        for m in xrange(nawf):
+            if m != n:
+                E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
+                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+
+    for e in xrange(ene.size):
+        sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2)*f_nm[:,:,:])
+                                         
+                                        
+    F_nm = None
+    E_diff_nm = None
+                    
+                            
+
+    np.seterr(invalid='warn',divide='warn')                                    
+    return(sigxy)
 
 def sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
