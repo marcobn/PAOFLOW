@@ -87,11 +87,16 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
             gather_array(v_kp,v_kp_aux)
         else:
             gather_array(None,v_kp_aux)
-
+            v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C",dtype=complex)
+            E_kp = np.zeros((kq.shape[1],nawf,nspin),order="C",dtype=float)
+        comm.Bcast(v_kp)
+        comm.Bcast(E_kp)
     else:
         v_kp = None
+
     v_kp_aux = None
     E_kp_aux = None
+
   
     if rank==0:
         for ispin in xrange(nspin):
@@ -103,8 +108,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
                 f.write(s)
             f.close()
             
-        return E_kp,v_kp
-    else: return None,None
+    return E_kp,v_kp
+
 
 
 def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
