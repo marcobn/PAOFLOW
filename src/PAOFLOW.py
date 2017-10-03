@@ -1087,10 +1087,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             #----------------------
     
             index = None
-            if rank == 0:
-                index = {'eigtot':eig.shape[0]}
-            index = comm.bcast(index,root=0)
-            eigtot = index['eigtot']
+
+
+
+            eigtot = nk1*nk2*nk3*bnd
         
             eigup = None
             eigdw = None
