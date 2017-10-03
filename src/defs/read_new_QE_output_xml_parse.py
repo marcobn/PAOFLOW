@@ -77,7 +77,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 except:
     		    pass
 		try:
-		    Efermi = float(elem.findall("band_structure/fermi_energym")[0].text)*Hatree2eV
+		    Efermi = float(elem.findall("band_structure/fermi_energy")[0].text)*Hatree2eV
 		except:
 		    pass
 		try:
