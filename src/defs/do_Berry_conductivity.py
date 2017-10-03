@@ -59,8 +59,6 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-
-
     sigxy /= float(nktot)
     return(ene,sigxy)
     
@@ -92,7 +90,7 @@ def sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
     return(sigxy)
 
-def smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2,fn):
+def smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((pksp.shape[0],ene.size),dtype=complex)
