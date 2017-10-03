@@ -92,5 +92,5 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
                             
 
     np.seterr(invalid='warn',divide='warn')                                    
-    return(sigxy)
+    return(np.nan_to_num(sigxy))
 
