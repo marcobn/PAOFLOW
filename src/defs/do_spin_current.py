@@ -69,8 +69,8 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
         for ispin in xrange(nspin):
             for l in xrange(3):
                 jdHksp[ik,l,:,:,ispin] = \
-                    0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+ \
-                    np.dot(dHksp[ik,l,:,:,ispin],Sj))
+                    0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+np.dot(dHksp[ik,l,:,:,ispin],Sj))
+
 
 
     for ik in xrange(dHksp.shape[0]):
