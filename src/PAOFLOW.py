@@ -550,6 +550,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
     
+            v_kp=None
             if band_topology:
                 if v_kp is None:
                     print('Band Topology currently cannot be calculated for a system this large.')

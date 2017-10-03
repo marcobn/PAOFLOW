@@ -41,25 +41,18 @@ def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
         afac = 1.0        
 
 
-    pksaux = pksp[:,:,diag[0],diag[1]]
+    pksaux = np.ascontiguousarray(pksp[:,:,diag[0],diag[1]])
 
     deltakp = np.zeros((pksp.shape[0],nawf,nspin),dtype=float)
-#    np.power(np.sum(np.power(np.real(pksaux),2.0,order="C"),axis=1),0.5,order="C",out=deltakp)
-    deltakp = LAN.norm(np.real(pksaux),axis=1)
-
-
     deltakp2 = np.zeros((pksp.shape[0],nawf,nawf,nspin),dtype=float)
-    for ispin in xrange(pksp.shape[3]):
-        for n in xrange(nawf):
-                for m in xrange(nawf):
-#                    deltakp2[:,n,m,:] = LAN.norm(np.real(np.absolute(pksaux[:,:,n,:] - pksaux[:,:,m,:])),axis=1)    
-                    deltakp2[:,n,m,:] = LAN.norm(pksaux[:,:,n,:] - pksaux[:,:,m,:],axis=1)
 
 
-#    deltakp2 = np.power(np.sum(np.power(deltakp2aux,2.0,order="C"),axis=1),0.5,order="C") 
+    for n in xrange(nawf):
+        deltakp[:,n] = LAN.norm(pksaux[:,:,n],axis=1)
+        for m in xrange(nawf):
+            deltakp2[:,n,m,:] = LAN.norm(pksaux[:,:,n,:] - pksaux[:,:,m,:],axis=1)
 
-#    deltakp2 = deltakp2aux,axis=1)
-
+    pksaux=None
     deltakp*=afac*dk
     deltakp2*=afac*dk
 
