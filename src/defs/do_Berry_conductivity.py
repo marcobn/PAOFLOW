@@ -50,10 +50,12 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
 
+
+
     if smearing != None:
-        sigxy_aux[:] = smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+        sigxy_aux = smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
     else:
-        sigxy_aux[:] = sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+        sigxy_aux = sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
@@ -63,10 +65,10 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     return(ene,sigxy)
     
 
-def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+def sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex)
-    func = np.zeros((end_ik-ini_ik,ene.size),dtype=complex)
+    func = np.zeros((pksp.shape[0],ene.size),dtype=complex)
     delta = 0.05
     Ef = 0.0
 
@@ -82,21 +84,20 @@ def sigma_loop(ini_ik,end_ik,ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,del
     # Collapsing the sum over k points
     for n in xrange(nawf):
         for m in xrange(nawf):
-            func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
+            func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((pksp.shape[0],ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
             sigxy[:] += np.sum(((1.0/func * \
-                        ((f[:,n] - f[:,m])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T).T* \
+                        ((f[:,n] - f[:,m])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                         np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
                         ),axis=1)
 
     return(sigxy)
 
-def smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+def smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2,fn):
 
     sigxy = np.zeros((ene.size),dtype=complex)
     func = np.zeros((pksp.shape[0],ene.size),dtype=complex)
     delta = 0.05
     Ef = 0.0
-
 
     if smearing == None:
         fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
@@ -104,7 +105,6 @@ def smear_sigma_loop2(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,del
         fn = intgaussian(E_k[:,:,0],Ef,deltak[:,:,0])
     elif smearing == 'm-p':
         fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
-
 
     # Collapsing the sum over k points
     for n in xrange(nawf):
