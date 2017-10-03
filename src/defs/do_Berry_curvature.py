@@ -79,4 +79,6 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
 
         Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
 
+    comm.Barrier()
+
     return(ene,ahc,Om_k[:,:,:,n]-Om_k[:,:,:,n0])

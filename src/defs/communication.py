@@ -113,17 +113,16 @@ def scatter_full(arr,npool):
     for pool in xrange(npool):
 
         chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
-        if chunk_end-chunk_start!=0:
-            if rank==0:
-                temp[chunk_start:chunk_end] = scatter_array(np.ascontiguousarray(arr[(chunk_start*size):(chunk_end*size)]))
-            else:
-                temp[chunk_start:chunk_end] = scatter_array(None)
+#        if chunk_end-chunk_start!=0:
+        if rank==0:
+            temp[chunk_start:chunk_end] = scatter_array(np.ascontiguousarray(arr[(chunk_start*size):(chunk_end*size)]))
+        else:
+            temp[chunk_start:chunk_end] = scatter_array(None)
         
     return temp
 
 
 def gather_full(arr,npool):
-
 
     first_ind_per_proc = np.array([arr.shape[0]])
     nsize              = np.zeros_like(first_ind_per_proc)
@@ -135,23 +134,18 @@ def gather_full(arr,npool):
 
     nsize=nsize[0]
 
-
-
-
     if rank==0:
         temp = np.zeros(per_proc_shape,order="C",dtype=arr.dtype)
     else: temp = None
 
     nchunks = nsize/size+1
-
     
     for pool in xrange(npool):
-
         chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
-        if chunk_end-chunk_start!=0:
-            if rank==0:
-                 gather_array(temp[(chunk_start*size):(chunk_end*size)],arr[chunk_start:chunk_end])
-            else:
-                 gather_array(None,arr[chunk_start:chunk_end])
+#        if chunk_end-chunk_start!=0:
+        if rank==0:
+            gather_array(temp[(chunk_start*size):(chunk_end*size)],arr[chunk_start:chunk_end])
+        else:
+            gather_array(None,arr[chunk_start:chunk_end])
 
     return temp
