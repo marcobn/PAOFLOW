@@ -131,7 +131,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml(inputpath,inputfile)
 
         fpath = os.path.join(inputpath, fpath)
-
+        
         #----------------------
         # initialize return dictionary
         #----------------------
@@ -1206,11 +1206,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
                 if ac_cond_spin:
                     ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
-                    shc0 = np.real(sigxy[0])
+
     
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
                 if rank == 0:
+                    shc0 = np.real(sigxy[0])
                     shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(inputpath+'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
@@ -1227,7 +1228,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
                     f.close()
-    
+
             comm.Barrier()
             if rank == 0:
                 print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
