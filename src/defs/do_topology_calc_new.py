@@ -41,6 +41,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     nkpi=kq.shape[1]
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
 
+    if rank!=0:
+        v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C",dtype=complex)
+        E_k = np.zeros((kq.shape[1],nawf,nspin),order="C",dtype=float)
+    comm.Bcast(v_kp)
+    comm.Bcast(E_k)
+
     # Compute Z2 according to Fu, Kane and Mele (2007)
     # Define TRIM points in 2(0-3)/3D(0-7)
     if nspin == 1 and spin_Hall:
