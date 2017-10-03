@@ -31,7 +31,7 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath
 
     emin = float(emin)
     emax = float(emax)
-    de = (emax-emin)/1000
+    de = (emax-emin)/1001
     ene = np.arange(emin,emax,de,dtype=float)
 
     dos = np.zeros((ene.size),dtype=float)
