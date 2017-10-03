@@ -40,22 +40,26 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     nktot,_,nawf,_,nspin = pksp.shape
     nk_tot = np.array([nktot],dtype=int)
     nktot = np.zeros((1),dtype=int)
-    comm.Allreduce(nk_tot,nktot)
+    comm.Reduce(nk_tot,nktot)
 
     sigxy = np.zeros((ene.size),dtype=complex)
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
 
     if smearing != None:
-        sigxy_aux[:] = smear_sigma_loop2(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+        sigxy_aux = smear_sigma_loop2(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
     else:
-        sigxy_aux[:] = sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+        sigxy_aux = sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+            
+    comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-    comm.Allreduce(sigxy_aux,sigxy,op=MPI.SUM)
+    comm.Barrier()
 
-    sigxy /= float(nktot)
+    if rank==0:
+        sigxy /= float(nktot)
+        return(ene,sigxy)
+    else: return None,None
 
-    return(ene,sigxy)
 
 def sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
@@ -64,26 +68,22 @@ def sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delta
     delta = 0.05
     Ef = 0.0
 
+
+    if smearing == None:
+        fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
+    elif smearing == 'gauss':
+        fn = intgaussian(E_k[:,:,0],Ef,deltak[:,:,0])
+    elif smearing == 'm-p':
+        fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
     # Collapsing the sum over k points
     for n in xrange(nawf):
-        if smearing == None:
-            fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        elif smearing == 'gauss':
-            fn = intgaussian(E_k[:,n,0],Ef,deltak[:,n,0])
-        elif smearing == 'm-p':
-            fn = intmetpax(E_k[:,n,0],Ef,deltak[:,n,0])
         for m in xrange(nawf):
-            if smearing == None:
-                fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
-            elif smearing == 'gauss':
-                fm = intgaussian(E_k[:,m,0],Ef,deltak[:,m,0])
-            elif smearing == 'm-p':
-                fm = intmetpax(E_k[:,m,0],Ef,deltak[:,m,0])
             func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((pksp.shape[0],ene.size),dtype=float).T).T - (ene+1.0j*delta)**2
             sigxy[:] += np.sum(((1.0/func * \
-                        ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
+                        ((f[:,n] - f[:,m])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                         np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
                         ),axis=1)
+
 
     return(sigxy)
 
@@ -94,28 +94,24 @@ def smear_sigma_loop2(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,delta
     delta = 0.05
     Ef = 0.0
 
+
+    if smearing == None:
+        fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
+    elif smearing == 'gauss':
+        fn = intgaussian(E_k[:,:,0],Ef,deltak[:,:,0])
+    elif smearing == 'm-p':
+        fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
+
     # Collapsing the sum over k points
     for n in xrange(nawf):
-        if smearing == None:
-            fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        elif smearing == 'gauss':
-            fn = intgaussian(E_k[:,n,0],Ef,deltak[:,n,0])
-        elif smearing == 'm-p':
-            fn = intmetpax(E_k[:,n,0],Ef,deltak[:,n,0])
         for m in xrange(nawf):
-            if smearing == None:
-                fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
-            elif smearing == 'gauss':
-                fm = intgaussian(E_k[:,m,0],Ef,deltak[:,m,0])
-            elif smearing == 'm-p':
-                fm = intmetpax(E_k[:,m,0],Ef,deltak[:,m,0])
             if m != n:
                 func[:,:] = ((E_k[:,n,ispin]-E_k[:,m,ispin])**2*np.ones((pksp.shape[0],ene.size),dtype=float).T).T - \
                             (ene+1.0j*(deltak2[:,n,m,ispin]*np.ones((pksp.shape[0],ene.size),dtype=float).T).T)**2
                 sigxy[:] += np.sum(((1.0/func * \
-                            ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
-                            np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
-                            ),axis=1)
+                            ((fn[:,n] - fn[:,m])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
+                            np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])),axis=1)
+                            
 
     return(sigxy)
 
