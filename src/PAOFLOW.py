@@ -835,15 +835,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             #----------------------
     
             if nspin == 1 or nspin == 2:
-                if rank == 0:
+                if rank==0:
                     eigup = E_k[:,:,0]
                     do_fermisurf(fermi_dw,fermi_up,eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0,inputpath)
-                eigup = None
+                    eigup = None
             if nspin == 2:
-                if rank == 0:
+                if rank==0:
                     eigdw = E_k[:,:,1]
                     do_fermisurf(fermi_dw,fermi_up,eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0,inputpath)
-                eigdw = None
+                    eigdw = None
             if spintexture and nspin == 1:
                 do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
     
