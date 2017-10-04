@@ -591,14 +591,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         # Initialize Read/Write restart data
         #----------------------
         checkpoint = 0
-        if rank == 0:
-            if restart:
-                try:
-                    datadump = np.load(fpath+'PAOdump_%s.npz'%rank)
-                    checkpoint = datadump['checkpoint']
+
+        if restart:
+            try:
+                datadump = np.load(fpath+'PAOdump_%s.npz'%rank)
+                checkpoint = datadump['checkpoint']
+                if rank == 0:
                     print('reading data from dump at checkpoint ',checkpoint)
-                except:
-                    pass
+            except:
+                pass
         checkpoint = comm.bcast(checkpoint,root=0)
     except Exception as e:
         print('Rank %d: Exception in Checkpoint Initialization'%rank)
@@ -680,14 +681,17 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 nk2 = datadump['nk2']
                 nk3 = datadump['nk3']
         else:
-            Hksp = None
-            kq = None
-            kq_wght = None
-            idk = None
-            nk1 = None
-            nk2 = None
-            nk3 = None
+            if rank!=0:
+                Hksp = None
+                kq = None
+                kq_wght = None
+                idk = None
+                nk1 = None
+                nk2 = None
+                nk3 = None
+
         checkpoint = comm.bcast(checkpoint,root=0)
+
     except Exception as e:
         print('Rank %d: Exception in Do Double Grid'%rank)
         traceback.print_exc()
@@ -748,16 +752,18 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 E_k = datadump['E_k']
                 v_k = datadump['v_k']
         else:
-            Hksp = None
-            kq = None
-            kq_wght = None
-            idk = None
-            nk1 = None
-            nk2 = None
-            nk3 = None
-            eig = None
-            E_k = None
-            v_k = None
+            if rank!=0:
+                Hksp = None
+                kq = None
+                kq_wght = None
+                idk = None
+                nk1 = None
+                nk2 = None
+                nk3 = None
+                eig = None
+                E_k = None
+                v_k = None
+
         checkpoint = comm.bcast(checkpoint,root=0)
         nk1 = comm.bcast(nk1,root=0)
         nk2 = comm.bcast(nk2,root=0)
@@ -907,13 +913,14 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 v_k = datadump['v_k']
                 dHksp = datadump['dHksp']
         else:
-            Hksp = None
-            kq = None
-            kq_wght = None
-            idk = None
-            nk1 = None
-            nk2 = None
-            nk3 = None
+            if rank!=0:
+                Hksp = None
+                kq = None
+                kq_wght = None
+                idk = None
+                nk1 = None
+                nk2 = None
+                nk3 = None
 
 
 
@@ -945,52 +952,50 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         #----------------------
         # Read/Write restart data
         #----------------------
-        if rank == 0:
-            if restart:
-                if checkpoint == 3:
+
+        if restart:
+            if checkpoint == 3:
                     checkpoint += 1
                     np.savez(fpath+'PAOdump_%s.npz'%rank,checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
                             eig=eig,E_k=E_k,v_k=v_k,dHksp=dHksp,pksp=pksp)
-                elif checkpoint > 3:
-                    Hksp = datadump['Hksp']
-                    kq = datadump['kq']
-                    kq_wght = datadump['kq_wght']
-                    idk = datadump['idk']
-                    nk1 = datadump['nk1']
-                    nk2 = datadump['nk2']
-                    nk3 = datadump['nk3']
-                    eig = datadump['eig']
-                    E_k = datadump['E_k']
-                    v_k = datadump['v_k']
-                    dHksp = datadump['dHksp']
-                    pksp = datadump['pksp']
+            elif checkpoint > 3:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+                eig = datadump['eig']
+                E_k = datadump['E_k']
+                v_k = datadump['v_k']
+                dHksp = datadump['dHksp']
+                pksp = datadump['pksp']
         else:
-            Hksp = None
-            kq = None
-            kq_wght = None
-            idk = None
-            nk1 = None
-            nk2 = None
-            nk3 = None
-
-
-
-
+            if rank!=0:
+                Hksp = None
+                kq = None
+                kq_wght = None
+                idk = None
+                nk1 = None
+                nk2 = None
+                nk3 = None
 
         checkpoint = comm.bcast(checkpoint,root=0)
         nk1 = comm.bcast(nk1,root=0)
         nk2 = comm.bcast(nk2,root=0)
         nk3 = comm.bcast(nk3,root=0)
-    
+
         index = None
         if rank == 0:
             index = {'nawf':E_k.shape[1],'nktot':nk1*nk2*nk3}
         index = comm.bcast(index,root=0)
         nawf = index['nawf']
         nktot = index['nktot']
-    
+
         kq_wght = np.ones((nktot),dtype=float)
         kq_wght /= float(nktot)
+
     except Exception as e:
         print('Rank %d: Exception in Gradient or Momenta'%rank)
         traceback.print_exc()
@@ -1008,7 +1013,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             deltakp,deltakp2 = do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing)
 
             if restart:
-                np.savez(fpath+'PAOdelta'+str(nspin)+'_%.npz'%rank,deltakp=deltakp,deltakp2=deltakp2)
+                np.savez(fpath+'PAOdelta'+str(nspin)+'_%s.npz'%rank,deltakp=deltakp,deltakp2=deltakp2)
     
         comm.Barrier()
         if rank == 0 and smearing != None:
@@ -1185,7 +1190,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if spincheck == 0:
                     jksp = np.delete(np.delete(do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl),np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
                     if restart:
-                        np.savez(fpath+'PAOspin'+str(spol)+'_%.npz'%rank,jksp=jksp)
+                        np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
      
                     comm.Barrier()
                     if rank == 0:
