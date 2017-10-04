@@ -92,7 +92,7 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
 
         Hksp  = np.rollaxis(Hksp,0,4)
         Hksp = Hksp.reshape(nk1p,nk2p,nk3p,nawf,nawf,nspin)
-        Hksp = np.ascontiguousarray(Hksp)
+#        Hksp = np.ascontiguousarray(Hksp)
 
     else:
         comm.Barrier()

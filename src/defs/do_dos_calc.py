@@ -16,7 +16,7 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
-from communication import scatter_array
+from communication import scatter_full
 
 from do_non_ortho import *
 
@@ -25,7 +25,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath):
+def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
     # DOS calculation with gaussian smearing
 
     #emin = np.min(eig)-1.0
@@ -37,20 +37,23 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath):
 
     dos = np.zeros((ene.size),dtype=float)
 
+    if rank==0:
+        eig = eig.reshape((eig.size,1))
+
+    comm.Barrier()
+    aux = scatter_full(eig,npool)
+
+    dosaux=np.zeros((ene.size),order="C")
+
     for ne in xrange(ene.size):
+        dosaux[ne] = np.sum(np.exp(-((ene[ne]-aux)/delta)**2))
 
-        dossum = np.zeros(1,dtype=float)
+    comm.Barrier()
+    comm.Reduce(dosaux,dos,op=MPI.SUM)
 
-        comm.Barrier()
-        aux = scatter_array(eig)
-
-        dosaux = np.sum(1.0/np.sqrt(np.pi)*np.exp(-((ene[ne]-aux)/delta)**2)/delta)
-
-        comm.Barrier()
-        comm.Reduce(dosaux,dossum,op=MPI.SUM)
-        dos[ne] = dossum*float(nawf)/float(netot)
 
     if rank == 0:
+        dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta
         f=open(inputpath+'dos_'+str(ispin)+'.dat','w')
         for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))

@@ -16,14 +16,14 @@ import sys, time
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
-from communication import scatter_array
+from  communication import scatter_full
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,inputpath):
+def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,inputpath,npool):
     # PDOS calculation with gaussian smearing
     emin = float(emin)
     emax = float(emax)
@@ -31,29 +31,33 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,inputpath):
     ene = np.arange(emin,emax,de,dtype=float)
     nktot = nk1*nk2*nk3
     # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,nktot)
 
-    nsize = end_ik-ini_ik
-    pdos = np.zeros((nawf,ene.size),dtype=float)
+    if rank==0:
+        pdos = np.zeros((nawf,ene.size),dtype=float)
+    else: pdos= None
+
+    pdosaux = np.zeros((nawf,ene.size),dtype=float)
+
+    if rank==0:
+        E_kaux = scatter_full(E_k,npool)
+    else: E_kaux = scatter_full(None,npool)
+    comm.Barrier()
+    if rank==0:
+        v_kaux = scatter_full(v_k,npool)
+    else: v_kaux = scatter_full(None,npool)
+    comm.Barrier()
+
+    v_kaux = np.abs(v_kaux)**2
+
     for m in range(nawf):
+        for e in range(ene.size):
+            pdosaux[m,e] += np.sum(np.exp(-((ene[e]-E_kaux)/delta)**2)*(v_kaux[:,m,:]))
 
-        comm.Barrier()
-        v_kaux = scatter_array(v_k)
-        E_kaux = scatter_array(E_k)
-
-        pdosaux = np.zeros((nawf,ene.size),dtype=float)
-        pdossum = np.zeros((nawf,ene.size),dtype=float)
-        for n in range (nsize):
-            for i in range(nawf):
-                pdosaux[i,:] += 1.0/np.sqrt(np.pi)*np.exp(-((ene[:]-E_kaux[n,m])/delta)**2)/delta*(np.abs(v_kaux[n,i,m])**2)
-
-        comm.Barrier()
-        comm.Reduce(pdosaux,pdossum,op=MPI.SUM)
-        pdos = pdos+pdossum
-
-    pdos = pdos/float(nktot)
+    comm.Barrier()
+    comm.Reduce(pdosaux,pdos,op=MPI.SUM)    
 
     if rank == 0:
+        pdos = pdos/float(nktot)*1.0/np.sqrt(np.pi)/delta
         pdos_sum = np.zeros(ene.size,dtype=float)
         for m in range(nawf):
             pdos_sum += pdos[m]

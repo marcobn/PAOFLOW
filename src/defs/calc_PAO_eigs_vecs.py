@@ -37,47 +37,31 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
     nawf = index['nawf']
     nspin = index['nspin']
 
-    if rank == 0:
-        eall = np.zeros((bnd*nktot,nspin),dtype=float)
-        E_k = np.zeros((nktot,nawf,nspin),dtype=float)
-        v_k = np.zeros((nktot,nawf,nawf,nspin),dtype=complex)
-    else:
-        eall = None
-        E_k = None
-        v_k = None
-        Hks_split = None
-        E_k_split = None
-        v_k_split = None
+    
 
-    for pool in xrange (npool):
-        ini_ip, end_ip = load_balancing(npool,pool,nktot)
-        nkpool = end_ip - ini_ip
+    aux = scatter_full(Hksp,npool)
 
-        if rank == 0:
-            Hks_split = Hksp[ini_ip:end_ip]
-            E_k_split = E_k[ini_ip:end_ip]
-            v_k_split = v_k[ini_ip:end_ip]
+    E_kaux = np.zeros((aux.shape[0],nawf,nspin),dtype=float)
+    v_kaux = np.zeros((aux.shape[0],nawf,nawf,nspin),dtype=complex)
 
-        ini_ik, end_ik = load_balancing(size, rank, nkpool)
-        nsize = end_ik - ini_ik
 
-        E_kaux = np.zeros((nsize,nawf,nspin),dtype=float)
-        v_kaux = np.zeros((nsize,nawf,nawf,nspin),dtype=complex)
 
-        aux = scatter_array(Hks_split)
+    for ispin in xrange(nspin):
+        E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(aux.shape[0],aux[:,:,:,ispin])
 
-        for ispin in xrange(nspin):
-            E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(nsize,aux[:,:,:,ispin])
 
-        gather_array(E_k_split, E_kaux)
-        gather_array(v_k_split, v_kaux)
+    v_k = gather_full(v_kaux,npool)
+    v_kaux = None
+    E_k = gather_full(E_kaux,npool)
+    v_kaux = None
 
-        if rank == 0:
-            E_k[ini_ip:end_ip,:,:] = E_k_split[:,:,:]
-            v_k[ini_ip:end_ip,:,:,:] = v_k_split[:,:,:,:]
 
     if rank == 0:
         eall = np.reshape(np.delete(E_k,np.s_[bnd:],axis=1),(nktot*bnd,nspin),order='C')
+    else: 
+        eall = None
+        v_k = None
+        E_k = None
 
     return(eall,E_k,v_k)
 
