@@ -77,6 +77,8 @@ from do_Berry_conductivity import *
 from write2bxsf import *
 from do_Boltz_tensors import *
 from do_epsilon import *
+from do_adaptive_smearing import *
+import resource
 
 def paoflow(inputpath='./',inputfile='inputfile.xml'):
     try:
@@ -1003,7 +1005,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         deltakp2 = None
 
         if smearing != None:
-            from do_adaptive_smearing import *
             deltakp,deltakp2 = do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing)
 
             if restart:
@@ -1435,7 +1436,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
 
     if verbose:
-        import resource
+
         mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
         if rank==0:
             print("Max total memory usage rank 0  :  %6.4f GB"%(mem/1024.0**2))
