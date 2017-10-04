@@ -41,12 +41,6 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     nkpi=kq.shape[1]
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
 
-    if rank!=0:
-        v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C",dtype=complex)
-        E_k = np.zeros((kq.shape[1],nawf,nspin),order="C",dtype=float)
-    comm.Bcast(v_kp)
-    comm.Bcast(E_k)
-
     # Compute Z2 according to Fu, Kane and Mele (2007)
     # Define TRIM points in 2(0-3)/3D(0-7)
     if nspin == 1 and spin_Hall:
@@ -130,6 +124,8 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                             d2HRs[:,l,lp,n,m,ispin] = -1.0*alat**2*ANGSTROM_AU**2*Rfft_aux[:,l]*Rfft_aux[:,lp]*HRs_aux[:,n,m,ispin]
 
 
+    HRs_aux = None
+    HRs = None
     # Compute dH(k)/dk on the path
 
     # Load balancing
@@ -141,6 +137,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     dHRs = np.reshape(dHRs,(nk1*nk2*nk3,3,nawf*nawf,nspin),order='C')            
     dHRs = np.swapaxes(dHRs,0,2)
     dHRs = np.reshape(dHRs,(nawf,nawf,3,nk1*nk2*nk3,nspin),order='C')            
+
     if eff_mass == True: 
         d2HRs = gather_full(d2HRs,npool)    
         if rank!=0:
@@ -151,36 +148,33 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         d2HRs = np.reshape(d2HRs,(nawf,nawf,3,3,nk1*nk2*nk3,nspin),order='C')            
 
 
-
     kq_aux = scatter_full(kq.T,npool)
     kq_aux = kq_aux.T
-#    if rank==1:
-#        print dHRs.shape    
 
     dHks_aux = np.zeros((kq_aux.shape[1],3,nawf,nawf,nspin),dtype=complex) # read data arrays from tasks
-    
-
 
     dHks_aux[:,:,:,:,:] = band_loop_dH(nspin,nawf,dHRs,kq_aux,Rfft)
 
+    dHRs = None
 
+    if eff_mass == True:
+        # Compute d2H(k)/dk*dkp on the path
+        d2Hks_aux = np.zeros((kq_aux.shape[1],3,3,nawf,nawf,nspin),dtype=complex) # read data arrays from tasks
+        for l in xrange(3):
+            d2Hks_aux[:,l,:,:,:,:] = band_loop_dH(nspin,nawf,d2HRs[:,:,l,:,:,:],kq_aux,Rfft)
 
+        d2HRs = None
 
-#    comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
-
-    # Compute d2H(k)/dk*dkp on the path
-    d2Hks_aux = np.zeros((kq_aux.shape[1],3,3,nawf,nawf,nspin),dtype=complex) # read data arrays from tasks
-    for l in xrange(3):
-        d2Hks_aux[:,l,:,:,:,:] = band_loop_dH(nspin,nawf,d2HRs[:,:,l,:,:,:],kq_aux,Rfft)
-
+    v_kp_aux = scatter_full(v_kp,npool)
+    E_k_aux  = scatter_full(E_k,npool)
 
     # Compute momenta
     pks = np.zeros((dHks_aux.shape[0],3,nawf,nawf,nspin),dtype=complex)
     for ik in xrange(dHks_aux.shape[0]):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                            (dHks_aux[ik,l,:,:,ispin]).dot(v_kp[ik,:,:,ispin])
+                pks[ik,l,:,:,ispin] = np.conj(v_kp_aux[ik,:,:,ispin].T).dot \
+                            (dHks_aux[ik,l,:,:,ispin]).dot(v_kp_aux[ik,:,:,ispin])
 
     if eff_mass:
         # Compute kinetic energy
@@ -189,8 +183,8 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     for lp in xrange(3):
-                        tks[ik,l,lp,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                                    (d2Hks_aux[ik,l,lp,:,:,ispin]).dot(v_kp[ik,:,:,ispin])
+                        tks[ik,l,lp,:,:,ispin] = np.conj(v_kp_aux[ik,:,:,ispin].T).dot \
+                                    (d2Hks_aux[ik,l,lp,:,:,ispin]).dot(v_kp_aux[ik,:,:,ispin])
 
 
 
@@ -208,7 +202,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                     for m in xrange(nawf):
                         if m != n:
                             mkm1[ik,n,ipol,jpol,ispin] += (pks[ik,ipol,n,m,ispin]*pks[ik,jpol,m,n,ispin]+pks[ik,jpol,n,m,ispin]*pks[ik,ipol,m,n,ispin]) / \
-                                                        (E_k[ik,n,ispin]-E_k[ik,m,ispin]+0.001)
+                                                        (E_k_aux[ik,n,ispin]-E_k_aux[ik,m,ispin]+0.001)
                         else:
                             mkm1[ik,n,ipol,jpol,ispin] += tks[ik,ipol,jpol,n,n,ispin]
 
@@ -225,7 +219,6 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                     f.write(s)
                 f.close()
 
-    raise SystemExit    
     if spin_Hall:
         # Compute spin current matrix elements
         # Pauli matrices (x,y,z)
@@ -244,47 +237,51 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
             Sj = clebsch_gordan(nawf,sh,nl,spol)
 
         #jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
-        jks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
+        jks = np.zeros((pks.shape[0],3,nawf,nawf,nspin),dtype=complex)
         for ik in xrange(nkpi):
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     jks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
                                 (0.5*(np.dot(Sj,dHks[l,:,:,ik,ispin])+np.dot(dHks[l,:,:,ik,ispin],Sj))).dot(v_kp[ik,:,:,ispin])
 
-        Omj_znk = np.zeros((nkpi,nawf),dtype=float)
-        Omj_zk = np.zeros((nkpi),dtype=float)
+        Omj_znk = np.zeros((pks.shape[0],nawf),dtype=float)
+        Omj_zk = np.zeros((pks.shape[0],1),dtype=float)
 
     # Compute Berry curvature
     if Berry or spin_Hall:
         deltab = 0.05
         mu = -0.2 # chemical potential in eV)
-        Om_znk = np.zeros((nkpi,nawf),dtype=float)
-        Om_zk = np.zeros((nkpi),dtype=float)
-        for ik in xrange(nkpi):
+        Om_znk = np.zeros((pks.shape[0],nawf),dtype=float)
+        Om_zk = np.zeros((pks.shape[0],1),dtype=float)
+        for ik in xrange(pks.shape[0]):
             for n in xrange(nawf):
                 for m in xrange(nawf):
                     if m!= n:
                         if Berry:
                             Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                            ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+                            ((E_k_aux[ik,m,0] - E_k_aux[ik,n,0])**2 + deltab**2)
                         if spin_Hall:
                             Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                            ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
-            Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
-            if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]-mu) + 1)))  # T=0.0K
+                            ((E_k_aux[ik,m,0] - E_k_aux[ik,n,0])**2 + deltab**2)
+            Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k_aux[ik,:,0]) + 1)))  # T=0.0K
+            if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k_aux[ik,:,0]-mu) + 1)))  # T=0.0K
 
-    if rank == 0:
-        if Berry:
+    if Berry:
+        Om_zk = gather_full(Om_zk,npool)
+        if rank == 0:
             f=open(inputpath+'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
             for ik in xrange(nkpi):
-                f.write('%3d  %.5f \n' %(ik,-Om_zk[ik]))
+                f.write('%3d  %.5f \n' %(ik,-Om_zk[ik,0]))
             f.close()
-        if spin_Hall:
+    if spin_Hall:
+        Omj_zk = gather_full(Omj_zk,npool)
+        if rank == 0:
             f=open(inputpath+'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
             for ik in xrange(nkpi):
-                f.write('%3d  %.5f \n' %(ik,Omj_zk[ik]))
+                f.write('%3d  %.5f \n' %(ik,Omj_zk[ik,0]))
             f.close()
 
+    pks = gather_full(pks,npool)
     if rank == 0:
         if spin_orbit: bnd *= 2
         velk = np.zeros((nkpi,3,nawf,nspin),dtype=float)
