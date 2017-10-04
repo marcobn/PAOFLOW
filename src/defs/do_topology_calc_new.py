@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath):
+def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath,npool):
     # Compute Z2 invariant and topological properties on a selected path in the BZ
 
     nkpi=kq.shape[1]
@@ -108,59 +108,92 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
     # Compute R*H(R)
     HRs = FFT.fftshift(HRs,axes=(2,3,4))
-    dHRs  = np.zeros((3,nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
     Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-    HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-    dHRs  = np.zeros((3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
-    if eff_mass == True: d2HRs = np.zeros((3,3,nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    HRs = np.reshape(HRs,(nawf*nawf,nk1*nk2*nk3,nspin),order='C')
+
+    HRs = np.swapaxes(HRs,0,1)
+    HRs = np.reshape(HRs,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+    HRs_aux = scatter_full(HRs,npool)
+    Rfft_aux = scatter_full(Rfft,npool)
+
+    dHRs  = np.zeros((HRs_aux.shape[0],3,nawf,nawf,nspin),dtype=complex)
+    if eff_mass == True: 
+        d2HRs = np.zeros((HRs_aux.shape[0],3,3,nawf,nawf,nspin),dtype=complex)
+
     for l in xrange(3):
         for ispin in xrange(nspin):
             for n in xrange(nawf):
                 for m in xrange(nawf):
-                    dHRs[l,n,m,:,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft[:,l]*HRs[n,m,:,ispin]
+                    dHRs[:,l,n,m,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft_aux[:,l]*HRs_aux[:,n,m,ispin]
                     if eff_mass == True:
                         for lp in xrange(3):
-                            d2HRs[l,lp,n,m,:,ispin] = -1.0*alat**2*ANGSTROM_AU**2*Rfft[:,l]*Rfft[:,lp]*HRs[n,m,:,ispin]
+                            d2HRs[:,l,lp,n,m,ispin] = -1.0*alat**2*ANGSTROM_AU**2*Rfft_aux[:,l]*Rfft_aux[:,lp]*HRs_aux[:,n,m,ispin]
+
 
     # Compute dH(k)/dk on the path
 
     # Load balancing
-    ini_ik, end_ik = load_balancing(size,rank,nkpi)
+    dHRs = gather_full(dHRs,npool)    
+    if rank!=0:
+        dHRs = np.zeros((nk1*nk2*nk3,3,nawf,nawf,nspin),dtype=complex)            
+    comm.Bcast(dHRs)
 
-    dHks  = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    Hks_aux  = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
+    dHRs = np.reshape(dHRs,(nk1*nk2*nk3,3,nawf*nawf,nspin),order='C')            
+    dHRs = np.swapaxes(dHRs,0,2)
+    dHRs = np.reshape(dHRs,(nawf,nawf,3,nk1*nk2*nk3,nspin),order='C')            
+    if eff_mass == True: 
+        d2HRs = gather_full(d2HRs,npool)    
+        if rank!=0:
+            d2HRs = np.zeros((nk1*nk2*nk3,3,3,nawf,nawf,nspin),dtype=complex)            
+        comm.Bcast(d2HRs)
+        d2HRs = np.reshape(d2HRs,(nk1*nk2*nk3,3,3,nawf*nawf,nspin),order='C')            
+        d2HRs = np.swapaxes(d2HRs,0,3)
+        d2HRs = np.reshape(d2HRs,(nawf,nawf,3,3,nk1*nk2*nk3,nspin),order='C')            
 
-    Hks_aux[:,:,:,:,:] = band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRs,kq,Rfft)
 
-    comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
+
+    kq_aux = scatter_full(kq.T,npool)
+    kq_aux = kq_aux.T
+#    if rank==1:
+#        print dHRs.shape    
+
+    dHks_aux = np.zeros((kq_aux.shape[1],3,nawf,nawf,nspin),dtype=complex) # read data arrays from tasks
+    
+
+
+    dHks_aux[:,:,:,:,:] = band_loop_dH(nspin,nawf,dHRs,kq_aux,Rfft)
+
+
+
+
+#    comm.Reduce(Hks_aux,dHks,op=MPI.SUM)
 
     # Compute d2H(k)/dk*dkp on the path
-
-    d2Hks  = np.zeros((3,3,nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
-    H2ks_aux  = np.zeros((3,3,nawf,nawf,nkpi,nspin),dtype=complex) # read data arrays from tasks
-
+    d2Hks_aux = np.zeros((kq_aux.shape[1],3,3,nawf,nawf,nspin),dtype=complex) # read data arrays from tasks
     for l in xrange(3):
-        H2ks_aux[l,:,:,:,:,:] = band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,d2HRs[l,:,:,:,:,:],kq,Rfft)
+        d2Hks_aux[:,l,:,:,:,:] = band_loop_dH(nspin,nawf,d2HRs[:,:,l,:,:,:],kq_aux,Rfft)
 
-    comm.Reduce(H2ks_aux,d2Hks,op=MPI.SUM)
 
     # Compute momenta
-    pks = np.zeros((nkpi,3,nawf,nawf,nspin),dtype=complex)
-    for ik in xrange(nkpi):
+    pks = np.zeros((dHks_aux.shape[0],3,nawf,nawf,nspin),dtype=complex)
+    for ik in xrange(dHks_aux.shape[0]):
         for ispin in xrange(nspin):
             for l in xrange(3):
                 pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                            (dHks[l,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
+                            (dHks_aux[ik,l,:,:,ispin]).dot(v_kp[ik,:,:,ispin])
 
     if eff_mass:
         # Compute kinetic energy
-        tks = np.zeros((nkpi,3,3,nawf,nawf,nspin),dtype=complex)
-        for ik in xrange(nkpi):
+        tks = np.zeros((d2Hks_aux.shape[0],3,3,nawf,nawf,nspin),dtype=complex)
+        for ik in xrange(dHks_aux.shape[0]):
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     for lp in xrange(3):
                         tks[ik,l,lp,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                                    (d2Hks[l,lp,:,:,ik,ispin]).dot(v_kp[ik,:,:,ispin])
+                                    (d2Hks_aux[ik,l,lp,:,:,ispin]).dot(v_kp[ik,:,:,ispin])
+
+
+
 
         #if rank == 0:
         #    plt.matshow(abs(tks[0,ipol,jpol,:,:,0]))
@@ -168,16 +201,18 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         #    plt.show()
 
         # Compute effective mass
-        mkm1 = np.zeros((nawf,3,3,nkpi,nspin),dtype=complex)
-        for ik in xrange(nkpi):
+        mkm1 = np.zeros((d2Hks_aux.shape[0],nawf,3,3,nspin),dtype=complex)
+        for ik in xrange(d2Hks_aux.shape[0]):
             for ispin in xrange(nspin):
                 for n in xrange(nawf):
                     for m in xrange(nawf):
                         if m != n:
-                            mkm1[n,ipol,jpol,ik,ispin] += (pks[ik,ipol,n,m,ispin]*pks[ik,jpol,m,n,ispin]+pks[ik,jpol,n,m,ispin]*pks[ik,ipol,m,n,ispin]) / \
+                            mkm1[ik,n,ipol,jpol,ispin] += (pks[ik,ipol,n,m,ispin]*pks[ik,jpol,m,n,ispin]+pks[ik,jpol,n,m,ispin]*pks[ik,ipol,m,n,ispin]) / \
                                                         (E_k[ik,n,ispin]-E_k[ik,m,ispin]+0.001)
                         else:
-                            mkm1[n,ipol,jpol,ik,ispin] += tks[ik,ipol,jpol,n,n,ispin]
+                            mkm1[ik,n,ipol,jpol,ispin] += tks[ik,ipol,jpol,n,n,ispin]
+
+        mkm1 = gather_full(mkm1,npool)
 
         #mkm1 *= ELECTRONVOLT_SI**2/H_OVER_TPI**2*ELECTRONMASS_SI
         if rank == 0:
@@ -185,11 +220,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                 f=open(inputpath+'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
                 for ik in xrange(nkpi):
                     s="%d\t"%ik
-                    for  j in np.real(mkm1[:bnd,ipol,jpol,ik,ispin]):s += "%3.5f\t"%j
+                    for  j in np.real(mkm1[ik,:bnd,ipol,jpol,ispin]):s += "% 3.5f\t"%j
                     s+="\n"
                     f.write(s)
                 f.close()
 
+    raise SystemExit    
     if spin_Hall:
         # Compute spin current matrix elements
         # Pauli matrices (x,y,z)
@@ -266,14 +302,15 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
     return()
 
-def band_loop_dH(ini_ik,end_ik,nspin,nawf,nkpi,dHRaux,kq,R):
+def band_loop_dH(nspin,nawf,dHRaux,kq,R):
 
-    auxh = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
+    auxh = np.zeros((kq.shape[1],3,nawf,nawf,nspin),dtype=complex)
 
-    for ik in xrange(ini_ik,end_ik):
+    for ik in xrange(kq.shape[1]):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                auxh[l,:,:,ik,ispin] = np.sum(dHRaux[l,:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
+                auxh[ik,l,:,:,ispin] = np.sum(dHRaux[:,:,l,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
+
 
     return(auxh)
 
