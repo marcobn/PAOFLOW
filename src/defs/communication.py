@@ -98,7 +98,7 @@ def scatter_full(arr,npool):
 
     nsize=nsizes[0]
     start_tot,end_tot   = load_balancing(size,rank,nsize)
-
+    
     per_proc_shape = np.concatenate((np.array([end_tot-start_tot]),nsizes[1:]))
 
     pydtype=None
@@ -109,15 +109,18 @@ def scatter_full(arr,npool):
     temp = np.zeros(per_proc_shape,order="C",dtype=pydtype)
 
     nchunks = nsize/size+1
+    if nsize%size==0:
+        nchunks = nsize/size
     
     for pool in xrange(npool):
         chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
-        if chunk_end-chunk_start!=0:
+        if (chunk_end-chunk_start)!=0:
             if rank==0:
                 temp[chunk_start:chunk_end] = scatter_array(np.ascontiguousarray(arr[(chunk_start*size):(chunk_end*size)]))
             else:
                 temp[chunk_start:chunk_end] = scatter_array(None)
-        
+
+
     return temp
 
 
@@ -138,10 +141,12 @@ def gather_full(arr,npool):
     else: temp = None
 
     nchunks = nsize/size+1
+    if nsize%size==0:
+        nchunks = nsize/size
     
     for pool in xrange(npool):
         chunk_start,chunk_end = load_balancing(npool,pool,nchunks)
-        if chunk_end-chunk_start!=0:
+        if (chunk_end-chunk_start)!=0:
             if rank==0:
                 gather_array(temp[(chunk_start*size):(chunk_end*size)],arr[chunk_start:chunk_end])
             else:
