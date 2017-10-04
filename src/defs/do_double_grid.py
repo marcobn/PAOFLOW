@@ -66,8 +66,6 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
     else:
         Hksp = None
 
-
-
     if rank==0:
         HR_aux = scatter_full(HRaux,npool)
     else:
