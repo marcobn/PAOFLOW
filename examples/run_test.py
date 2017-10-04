@@ -78,7 +78,7 @@ def main():
     if len(sys.argv) > 1:
         alldir = glob.glob(sys.argv[1])
     else:
-        alldir = glob.glob('example*')
+        alldir = sorted(glob.glob('example*'))
 
     refPattern = './Reference/'
     if len(sys.argv) > 2:
