@@ -84,7 +84,10 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
     fn = None
 
     for e in xrange(ene.size):
-        sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2)*f_nm[:,:,:])
+        if smearing!=None:
+            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2)*f_nm[:,:,:])
+        else:
+            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2)*f_nm[:,:,:])
                                                                                  
     F_nm = None
     E_diff_nm = None

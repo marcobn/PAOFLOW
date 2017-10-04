@@ -76,6 +76,8 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
     elif smearing == 'm-p':
         fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
 
+
+
     # Collapsing the sum over k points
     for n in xrange(nawf):
         for m in xrange(nawf):
@@ -84,8 +86,10 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
 
     for e in xrange(ene.size):
-        sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2)*f_nm[:,:,:])
-                                         
+        if smearing!=None:
+            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2)*f_nm[:,:,:])
+        else:
+            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2)*f_nm[:,:,:])
                                         
     F_nm = None
     E_diff_nm = None
