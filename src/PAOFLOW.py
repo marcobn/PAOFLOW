@@ -127,8 +127,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
         shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
         ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
-        double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,do_fermisurf, \
-        fermi_up,fermi_dw,do_spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
+        double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
+        fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml(inputpath,inputfile)
 
@@ -829,7 +829,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
     
     try:
-        if do_fermisurf or do_spintexture:
+        if fermisurf or spintexture:
             #----------------------
             # Fermi surface calculation
             #----------------------
@@ -837,15 +837,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if nspin == 1 or nspin == 2:
                 if rank == 0:
                     eigup = E_k[:,:,0]
-                    do_fermisurf(fermi_dw,fermi_up,eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0)
+                    do_fermisurf(fermi_dw,fermi_up,eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0,inputpath)
                 eigup = None
             if nspin == 2:
                 if rank == 0:
                     eigdw = E_k[:,:,1]
-                    do_fermisurf(fermi_dw,fermi_up,eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0)
+                    do_fermisurf(fermi_dw,fermi_up,eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0,inputpath)
                 eigdw = None
-            if do_spintexture and nspin == 1:
-                do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool)
+            if spintexture and nspin == 1:
+                do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
     
             comm.Barrier()
             if rank ==0:

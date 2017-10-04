@@ -26,7 +26,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_orbit,npool):
+def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_orbit,npool,inputpath):
     nktot = nk1*nk2*nk3
     ind_plot = np.zeros(nawf,dtype=int)
 
@@ -94,6 +94,6 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
     if rank == 0:
         sktxt = np.reshape(sktxt,(nk1,nk2,nk3,3,nawf,nawf),order='C')
         for ib in xrange(icount):
-            np.savez('spin_text_band_'+str(ib), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
+            np.savez(inputpath+'spin_text_band_'+str(ib), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     return()

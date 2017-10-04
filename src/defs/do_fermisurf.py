@@ -17,7 +17,7 @@ from write2bxsf import *
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from write3Ddatagrid import *
-def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
+def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,inputpath):
     #maximum number of bands crossing fermi surface
 
     nbndx_plot = 10
@@ -41,8 +41,8 @@ def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin):
             icount +=1
     x0 = np.zeros(3,dtype=float)   
 
-    write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf')   
+    write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
 
     for ib in xrange(icount):
-        np.savez('Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
+        np.savez(inputpath+'Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
     return()

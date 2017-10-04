@@ -124,10 +124,10 @@ def read_inputfile_xml ( fpath, inputfile ):
     smearing = 'gauss' # other available values are None or 'm-p'
 
     # Plot Fermi Surface (spin texture)
-    do_fermisurf = False
+    fermisurf = False
     fermi_up = 0.1
     fermi_dw = -0.1
-    do_spintexture = False
+    spintexture = False
 
     # Tensor components
     # Dielectric function
@@ -198,8 +198,8 @@ def read_inputfile_xml ( fpath, inputfile ):
         double_grid = read_attribute(aroot, double_grid, 'double_grid', 'logical')
         do_dos = read_attribute(aroot, do_dos, 'do_dos', 'logical')
         do_pdos = read_attribute(aroot, do_pdos, 'do_pdos', 'logical')
-        do_fermisurf = read_attribute(aroot, do_fermisurf, 'do_fermisurf', 'logical')
-        do_spintexture = read_attribute(aroot, do_spintexture, 'do_spintexture', 'logical')
+        fermisurf = read_attribute(aroot, fermisurf, 'fermisurf', 'logical')
+        spintexture = read_attribute(aroot, spintexture, 'spintexture', 'logical')
         Boltzmann = read_attribute(aroot, Boltzmann, 'Boltzmann', 'logical')
         epsilon = read_attribute(aroot, epsilon, 'epsilon', 'logical')
         metal = read_attribute(aroot, metal, 'metal', 'logical')
@@ -263,7 +263,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     return fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
         shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
         ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
-        double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,do_fermisurf, \
-        fermi_up,fermi_dw,do_spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
+        double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
+        fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals.split()
