@@ -773,15 +773,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             #----------------------
             # DOS calculation with gaussian smearing on double_grid Hksp
             #----------------------
-    
+
             index = None
             if rank == 0:
-                index = {'eigtot':eig.shape[0]}
+                index = {'eigtot':nk1*nk2*nk3*bnd}
             index = comm.bcast(index,root=0)
             eigtot = index['eigtot']
-    
+
             eigup = eigdw = None
-    
+
             if nspin == 1 or nspin == 2:
                 if rank == 0: eigup = np.array(eig[:,0])
                 do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0,inputpath)
@@ -790,28 +790,28 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if rank == 0: eigdw = np.array(eig[:,1])
                 do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1,inputpath)
                 eigdw = None
-    
+
             if do_pdos:
                 #----------------------
                 # PDOS calculation
                 #----------------------
-    
+
                 v_kup = v_kdw = None
                 if nspin == 1 or nspin == 2:
                     if rank == 0:
                         eigup = np.array(E_k[:,:,0])
                         v_kup = np.array(v_k[:,:,:,0])
-                    do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0)
+                    do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0,inputpath)
                     eigup = None
                     v_kup = None
                 if nspin == 2:
                     if rank == 0:
                         eigdw = np.array(E_k[:,:,1])
                         v_kdw = np.array(v_k[:,:,:,1])
-                    do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1)
+                    do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1,inputpath)
                     eigdw = None
                     v_kdw = None
-    
+
             comm.Barrier()
             if rank ==0:
                 print('dos in                           %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
