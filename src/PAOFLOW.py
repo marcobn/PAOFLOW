@@ -594,7 +594,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if rank == 0:
             if restart:
                 try:
-                    datadump = np.load(fpath+'PAOdump.npz')
+                    datadump = np.load(fpath+'PAOdump_%s.npz'%rank)
                     checkpoint = datadump['checkpoint']
                     print('reading data from dump at checkpoint ',checkpoint)
                 except:
@@ -666,19 +666,19 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         #----------------------
         # Read/Write restart data
         #----------------------
-        if rank == 0:
-            if restart:
-                if checkpoint == 0:
-                    checkpoint += 1
-                    np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3)
-                elif checkpoint > 0:
-                    Hksp = datadump['Hksp']
-                    kq = datadump['kq']
-                    kq_wght = datadump['kq_wght']
-                    idk = datadump['idk']
-                    nk1 = datadump['nk1']
-                    nk2 = datadump['nk2']
-                    nk3 = datadump['nk3']
+        
+        if restart:
+            if checkpoint == 0:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump_%s.npz'%rank,checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3)
+            elif checkpoint > 0:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
         else:
             Hksp = None
             kq = None
@@ -730,23 +730,23 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         #----------------------
         # Read/Write restart data
         #----------------------
-        if rank == 0:
-            if restart:
-                if checkpoint == 1:
-                    checkpoint += 1
-                    np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
-                            eig=eig,E_k=E_k,v_k=v_k)
-                elif checkpoint > 1:
-                    Hksp = datadump['Hksp']
-                    kq = datadump['kq']
-                    kq_wght = datadump['kq_wght']
-                    idk = datadump['idk']
-                    nk1 = datadump['nk1']
-                    nk2 = datadump['nk2']
-                    nk3 = datadump['nk3']
-                    eig = datadump['eig']
-                    E_k = datadump['E_k']
-                    v_k = datadump['v_k']
+
+        if restart:
+            if checkpoint == 1:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump_%s.npz'%rank,checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                        eig=eig,E_k=E_k,v_k=v_k)
+            elif checkpoint > 1:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+                eig = datadump['eig']
+                E_k = datadump['E_k']
+                v_k = datadump['v_k']
         else:
             Hksp = None
             kq = None
@@ -888,24 +888,24 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         #----------------------
         # Read/Write restart data
         #----------------------
-        if rank == 0:
-            if restart:
-                if checkpoint == 2:
-                    checkpoint += 1
-                    np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
-                            eig=eig,E_k=E_k,v_k=v_k,dHksp=dHksp)
-                elif checkpoint > 2:
-                    Hksp = datadump['Hksp']
-                    kq = datadump['kq']
-                    kq_wght = datadump['kq_wght']
-                    idk = datadump['idk']
-                    nk1 = datadump['nk1']
-                    nk2 = datadump['nk2']
-                    nk3 = datadump['nk3']
-                    eig = datadump['eig']
-                    E_k = datadump['E_k']
-                    v_k = datadump['v_k']
-                    dHksp = datadump['dHksp']
+
+        if restart:
+            if checkpoint == 2:
+                checkpoint += 1
+                np.savez(fpath+'PAOdump_%s.npz'%rank,checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                        eig=eig,E_k=E_k,v_k=v_k,dHksp=dHksp)
+            elif checkpoint > 2:
+                Hksp = datadump['Hksp']
+                kq = datadump['kq']
+                kq_wght = datadump['kq_wght']
+                idk = datadump['idk']
+                nk1 = datadump['nk1']
+                nk2 = datadump['nk2']
+                nk3 = datadump['nk3']
+                eig = datadump['eig']
+                E_k = datadump['E_k']
+                v_k = datadump['v_k']
+                dHksp = datadump['dHksp']
         else:
             Hksp = None
             kq = None
@@ -949,7 +949,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if restart:
                 if checkpoint == 3:
                     checkpoint += 1
-                    np.savez(fpath+'PAOdump.npz',checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
+                    np.savez(fpath+'PAOdump_%s.npz'%rank,checkpoint=checkpoint,Hksp=Hksp,kq=kq,kq_wght=kq_wght,idk=idk,nk1=nk1,nk2=nk2,nk3=nk3, \
                             eig=eig,E_k=E_k,v_k=v_k,dHksp=dHksp,pksp=pksp)
                 elif checkpoint > 3:
                     Hksp = datadump['Hksp']
@@ -1008,7 +1008,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             deltakp,deltakp2 = do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing)
 
             if restart:
-                np.savez(fpath+'PAOdelta'+str(nspin)+'.npz',deltakp=deltakp,deltakp2=deltakp2)
+                np.savez(fpath+'PAOdelta'+str(nspin)+'_%.npz'%rank,deltakp=deltakp,deltakp2=deltakp2)
     
         comm.Barrier()
         if rank == 0 and smearing != None:
@@ -1175,7 +1175,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 spincheck = 0
                 if restart and rank == 0:
                     try:
-                        spindump = np.load(fpath+'PAOspin'+str(spol)+'.npz')
+                        spindump = np.load(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank)
                         jksp = spindump['jksp']
                         spincheck += 1
                         print('reading spin current for polarization ',spol)
@@ -1184,8 +1184,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 spincheck=comm.bcast(spincheck,root=0)
                 if spincheck == 0:
                     jksp = np.delete(np.delete(do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl),np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
-                    if restart and rank == 0:
-                        np.savez(fpath+'PAOspin'+str(spol)+'.npz',jksp=jksp)
+                    if restart:
+                        np.savez(fpath+'PAOspin'+str(spol)+'_%.npz'%rank,jksp=jksp)
      
                     comm.Barrier()
                     if rank == 0:
