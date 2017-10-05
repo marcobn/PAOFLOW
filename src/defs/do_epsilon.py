@@ -164,10 +164,6 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
     jdos = np.zeros((ene.size),dtype=float)
-
-    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    f_nm_pksp2 = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
     Ef = 0.0
     deltat = 0.1
 
@@ -179,24 +175,21 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
         sys.exit('smearing not implemented')
 
     '''upper triangle indices'''
-    upper_ind = np.triu_indices(nawf,k=1)
+    uind = np.triu_indices(nawf,k=1)
     nk=pksp.shape[0]
+    E_diff_nm = (np.reshape(E_k[:,:,ispin],(nk,1,nawf))\
+                     -np.reshape(E_k[:,:,ispin],(nk,nawf,1)))[:,uind[0],uind[1]]
+    f_nm=(np.reshape(fn,(nk,nawf,1))-np.reshape(fn,(nk,1,nawf)))[:,uind[0],uind[1]]
+    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,:,:,ispin]*\
+                                np.transpose(pksp[:,jpol,:,:,ispin],(0,2,1)))[:,uind[0],uind[1]]
 
-    E_diff_nm = np.reshape(E_k[:,:,ispin],(nk,1,nawf))-np.reshape(E_k[:,:,ispin],(nk,nawf,1))
-    E_diff_nm     = E_diff_nm[:,upper_ind[0],upper_ind[1]]
-
-    f_nm=np.reshape(fn,(nk,nawf,1))-np.reshape(fn,(nk,1,nawf))
-    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,:,:,ispin]*np.transpose(pksp[:,jpol,:,:,ispin],(0,2,1)))
-
-    f_nm        = f_nm[:,upper_ind[0],upper_ind[1]]
-    f_nm_pksp2  = f_nm_pksp2[:,upper_ind[0],upper_ind[1]]
     fn = None
 
     for e in xrange(ene.size):
         if smearing=='gauss':
-            dfunc = gaussian(E_diff_nm,ene[e],deltak2[:,upper_ind[0],upper_ind[1],ispin])
+            dfunc = gaussian(E_diff_nm,ene[e],deltak2[:,uind[0],uind[1],ispin])
         if smearing=='m-p':
-            dfunc = metpax(E_diff_nm,ene[e],deltak2[:,upper_ind[0],upper_ind[1],ispin])
+            dfunc = metpax(E_diff_nm,ene[e],deltak2[:,uind[0],uind[1],ispin])
         epsi[ipol,jpol,e] = np.sum(1.0/(ene[e]**2+delta**2)*dfunc*f_nm_pksp2)
         jdos[e] = np.sum(f_nm*dfunc)
 
