@@ -545,7 +545,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             # Compute the bands along the path in the IBZ
             E_kp = v_kp = None
-            E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho,inputpath)
+            E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho,inputpath,npool)
     
             comm.Barrier()
             if rank == 0:

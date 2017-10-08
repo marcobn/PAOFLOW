@@ -98,7 +98,7 @@ def scatter_full(arr,npool):
     nsize=nsizes[0]
     start_tot,end_tot   = load_balancing(size,rank,nsize)
 
-    if nsizes.size>1:
+    if len(nsizes)>1:
         per_proc_shape = np.concatenate((np.array([end_tot-start_tot]),
                                          nsizes[1:]))
     else: per_proc_shape = np.array([end_tot-start_tot])
@@ -140,7 +140,7 @@ def gather_full(arr,npool):
     comm.Barrier()
     comm.Allreduce(first_ind_per_proc,nsize)
 
-    if nsizes.size>1:
+    if len(arr.shape)>1:
         per_proc_shape = np.concatenate((nsize,arr.shape[1:]))
     else: per_proc_shape = np.array([arr.shape[0]])
 

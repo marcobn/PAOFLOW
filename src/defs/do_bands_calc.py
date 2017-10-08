@@ -38,24 +38,24 @@ size = comm.Get_size()
 
 import scipy.linalg as LAN
 
-def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
+def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
     # Load balancing
     nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape    
     
-    ini_ik, end_ik = load_balancing(size,rank,kq.shape[1]) 
-
+    kq_aux = scatter_full(kq.T,npool)
+    kq_aux = kq_aux.T
 
     if read_S:
-        Sks_aux = band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx)
+        Sks_aux = band_loop_S(nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq_aux,R,idx)
     else: Sks_aux = None
 
-    Hks_aux = band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx)
+    Hks_aux = band_loop_H(nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq_aux,R,idx)
 
-    E_kp_aux = np.zeros(((end_ik-ini_ik),nawf,nspin),dtype=float,order="C")
-    v_kp_aux = np.zeros(((end_ik-ini_ik),nawf,nawf,nspin),dtype=complex,order="C")
+    E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin),dtype=float,order="C")
+    v_kp_aux = np.zeros((kq_aux.shape[1],nawf,nawf,nspin),dtype=complex,order="C")
 
     for ispin in xrange(nspin):
-        for ik in xrange(end_ik-ini_ik):
+        for ik in xrange(kq_aux.shape[1]):
             if read_S:
                 E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin], 
                                                                        b=Sks_aux[:,:,ik],lower=False, 
@@ -73,26 +73,13 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
     Sks_aux = None
 
     if rank==0:
-        E_kp = np.zeros((kq.shape[1],nawf,nspin),order="C")
-        gather_array(E_kp,E_kp_aux)
+        E_kp = gather_full(E_kp_aux,npool)
     else:
-        gather_array(None,E_kp_aux)
+        gather_full(E_kp_aux,npool)
         E_kp = None
 
-    vecs=True
+
     comm.Barrier()
-
-    if vecs:
-        if rank==0:
-            v_kp = np.zeros((kq.shape[1],nawf,nawf,nspin),order="C",dtype=complex)
-            gather_array(v_kp,v_kp_aux)
-        else:
-            gather_array(None,v_kp_aux)
-            v_kp = None
-        
-    v_kp_aux = None
-    E_kp_aux = None
-
   
     if rank==0:
         for ispin in xrange(nspin):
@@ -104,18 +91,18 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath):
                 f.write(s)
             f.close()
             
-    return E_kp,v_kp
+    return E_kp_aux,v_kp_aux
 
 
 
-def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
+def band_loop_H(nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
 
     HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
-    kdot = np.zeros(((end_ik-ini_ik),R.shape[0]),dtype=complex,order="C")
-    kdot = np.tensordot(R,2.0j*np.pi*kq[:,ini_ik:end_ik],axes=([1],[0]))
+    kdot = np.zeros((kq.shape[1],R.shape[0]),dtype=complex,order="C")
+    kdot = np.tensordot(R,2.0j*np.pi*kq,axes=([1],[0]))
     np.exp(kdot,kdot)
 
-    auxh = np.zeros((nawf,nawf,(end_ik-ini_ik),nspin),dtype=complex,order="C")
+    auxh = np.zeros((nawf,nawf,kq.shape[1],nspin),dtype=complex,order="C")
 
     for ispin in xrange(nspin):
         auxh[:,:,:,ispin]=np.tensordot(HRaux[:,:,:,ispin],kdot,axes=([2],[0]))
@@ -124,12 +111,12 @@ def band_loop_H(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
     return auxh
 
 
-def band_loop_S(ini_ik,end_ik,nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
+def band_loop_S(nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
 
-    nsize = end_ik - ini_ik
-    auxs = np.zeros((nawf,nawf,nsize),dtype=complex)
+    nsize = kq.shape[1]
+    auxs  = np.zeros((nawf,nawf,nsize),dtype=complex)
 
-    for ik in xrange(ini_ik,end_ik):
+    for ik in xrange(kq.shape[1]):
         for i in xrange(nk1):
             for j in xrange(nk2):
                 for k in xrange(nk3):

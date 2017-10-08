@@ -165,16 +165,13 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
         d2HRs = None
 
-    v_kp_aux = scatter_full(v_kp,npool)
-    E_k_aux  = scatter_full(E_k,npool)
-
     # Compute momenta
     pks = np.zeros((dHks_aux.shape[0],3,nawf,nawf,nspin),dtype=complex)
     for ik in xrange(dHks_aux.shape[0]):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                pks[ik,l,:,:,ispin] = np.conj(v_kp_aux[ik,:,:,ispin].T).dot \
-                            (dHks_aux[ik,l,:,:,ispin]).dot(v_kp_aux[ik,:,:,ispin])
+                pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
+                            (dHks_aux[ik,l,:,:,ispin]).dot(v_kp[ik,:,:,ispin])
 
     if eff_mass:
         # Compute kinetic energy
@@ -183,8 +180,8 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     for lp in xrange(3):
-                        tks[ik,l,lp,:,:,ispin] = np.conj(v_kp_aux[ik,:,:,ispin].T).dot \
-                                    (d2Hks_aux[ik,l,lp,:,:,ispin]).dot(v_kp_aux[ik,:,:,ispin])
+                        tks[ik,l,lp,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
+                                    (d2Hks_aux[ik,l,lp,:,:,ispin]).dot(v_kp[ik,:,:,ispin])
 
 
 
@@ -202,7 +199,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                     for m in xrange(nawf):
                         if m != n:
                             mkm1[ik,n,ipol,jpol,ispin] += (pks[ik,ipol,n,m,ispin]*pks[ik,jpol,m,n,ispin]+pks[ik,jpol,n,m,ispin]*pks[ik,ipol,m,n,ispin]) / \
-                                                        (E_k_aux[ik,n,ispin]-E_k_aux[ik,m,ispin]+0.001)
+                                                        (E_k[ik,n,ispin]-E_k[ik,m,ispin]+0.001)
                         else:
                             mkm1[ik,n,ipol,jpol,ispin] += tks[ik,ipol,jpol,n,n,ispin]
 
@@ -259,12 +256,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                     if m!= n:
                         if Berry:
                             Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                            ((E_k_aux[ik,m,0] - E_k_aux[ik,n,0])**2 + deltab**2)
+                            ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                         if spin_Hall:
                             Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                            ((E_k_aux[ik,m,0] - E_k_aux[ik,n,0])**2 + deltab**2)
-            Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k_aux[ik,:,0]) + 1)))  # T=0.0K
-            if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k_aux[ik,:,0]-mu) + 1)))  # T=0.0K
+                            ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+            Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]) + 1)))  # T=0.0K
+            if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:,0]-mu) + 1)))  # T=0.0K
 
     if Berry:
         Om_zk = gather_full(Om_zk,npool)
