@@ -52,20 +52,20 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
         E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(aux.shape[0],aux[:,:,:,ispin])
 
 
-    v_k = gather_full(v_kaux,npool)
-    v_kaux = None
-    E_k = gather_full(E_kaux,npool)
-    v_kaux = None
+#    v_k = gather_full(v_kaux,npool)
+#    v_kaux = None
+#    E_k = gather_full(E_kaux,npool)
+#    v_kaux = None
 
 
-    if rank == 0:
-        eall = np.reshape(np.delete(E_k,np.s_[bnd:],axis=1),(nktot*bnd,nspin),order='C')
-    else: 
-        eall = None
-        v_k = None
-        E_k = None
+#    if rank == 0:
 
-    return(eall,E_k,v_k)
+#    else: 
+#        eall = None
+#        v_k = None
+#        E_k = None
+
+    return(E_kaux,v_kaux)
 
 def diago(nsize,aux):
     nawf = aux.shape[1]

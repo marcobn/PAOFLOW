@@ -710,14 +710,14 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             v_k = None
 #            if rank == 0:
 #                Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
-            eig, E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
+            E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
 #            if rank == 0:
 #                Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
 
             if rank == 0 and HubbardU.any() != 0.0:
-                eig -= np.amax(E_k[:,bval,:])
                 E_k -= np.amax(E_k[:,bval,:])
-    
+
+            eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
     
 
             _,nk1,nk2,nk3,_ = Hksp.shape
@@ -756,9 +756,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 nk1 = None
                 nk2 = None
                 nk3 = None
-                eig = None
-                E_k = None
-                v_k = None
+#                eig = None
+#                E_k = None
+#                v_k = None
 
         checkpoint = comm.bcast(checkpoint,root=0)
         nk1 = comm.bcast(nk1,root=0)
@@ -785,13 +785,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             eigup = eigdw = None
 
             if nspin == 1 or nspin == 2:
-                if rank==0:
-                    eigup = eig[:,0]
+
+                eigup = eig[:,0]
                 do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0,inputpath,npool)
                 eigup = None
             if nspin == 2:
-                if rank==0:
-                    eigdw = eig[:,1]
+                eigdw = eig[:,1]
                 do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1,inputpath,npool)
                 eigdw = None
 
@@ -802,16 +801,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
                 v_kup = v_kdw = None
                 if nspin == 1 or nspin == 2:
-                    if rank == 0:
-                        eigup = E_k[:,:,0]
-                        v_kup = v_k[:,:,:,0]
+                    
+                    eigup = E_k[:,:,0]
+                    v_kup = v_k[:,:,:,0]
                     do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0,inputpath,npool)
                     eigup = None
                     v_kup = None
                 if nspin == 2:
-                    if rank == 0:
-                        eigdw = E_k[:,:,1]
-                        v_kdw = v_k[:,:,:,1]
+
+                    eigdw = E_k[:,:,1]
+                    v_kdw = v_k[:,:,:,1]
                     do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1,inputpath,npool)
                     eigdw = None
                     v_kdw = None
@@ -864,13 +863,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 #############################################################
                 ################DISTRIBUTE ARRAYS ON KPOINTS#################
                 #############################################################
-                E_k   = np.real(scatter_full(E_k,npool))
-                v_k   = scatter_full(v_k,npool)
-                eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
+#                E_k   = np.real(scatter_full(E_k,npool))
+#                v_k   = scatter_full(v_k,npool)
+
 
                 #----------------------
                 # Compute the gradient of the k-space Hamiltonian
-                #----------------------
+                #----------------------            
                 dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
                 #from do_gradient_d2 
                 #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)

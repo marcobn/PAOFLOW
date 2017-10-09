@@ -35,13 +35,9 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
     de = (emax-emin)/1000
     ene = np.arange(emin,emax,de,dtype=float)
 
-    dos = np.zeros((ene.size),dtype=float)
-
     if rank==0:
-        eig = eig.reshape((eig.size,1))
-
-    comm.Barrier()
-    aux = scatter_full(eig,npool)
+        dos = np.zeros((ene.size),dtype=float)
+    else: dos = None
 
     dosaux=np.zeros((ene.size),order="C")
 
@@ -51,6 +47,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
     comm.Barrier()
     comm.Reduce(dosaux,dos,op=MPI.SUM)
 
+    dosaux = None
 
     if rank == 0:
         dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta

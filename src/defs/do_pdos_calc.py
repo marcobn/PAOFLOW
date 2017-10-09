@@ -38,20 +38,13 @@ def do_pdos_calc(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,inputpath,npool)
 
     pdosaux = np.zeros((nawf,ene.size),dtype=float)
 
-    if rank==0:
-        E_kaux = scatter_full(E_k,npool)
-    else: E_kaux = scatter_full(None,npool)
-    comm.Barrier()
-    if rank==0:
-        v_kaux = scatter_full(v_k,npool)
-    else: v_kaux = scatter_full(None,npool)
-    comm.Barrier()
 
-    v_kaux = np.abs(v_kaux)**2
+
+    v_kaux = np.abs(v_k)**2
 
     for m in range(nawf):
         for e in range(ene.size):
-            pdosaux[m,e] += np.sum(np.exp(-((ene[e]-E_kaux)/delta)**2)*(v_kaux[:,m,:]))
+            pdosaux[m,e] += np.sum(np.exp(-((ene[e]-E_k)/delta)**2)*(v_kaux[:,m,:]))
 
     comm.Barrier()
     comm.Reduce(pdosaux,pdos,op=MPI.SUM)    
