@@ -25,21 +25,23 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 def calc_PAO_eigs_vecs(Hksp,bnd,npool):
-    index = None
 
-    if rank == 0:
-        nktot,nawf,nawf,nspin = Hksp.shape
-        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
 
-    index = comm.bcast(index,root=0)
 
-    nktot = index['nktot']
-    nawf = index['nawf']
-    nspin = index['nspin']
+    _,nk1,nk2,nk3,nspin = Hksp.shape
 
-    
+    Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3,nspin))
 
-    aux = scatter_full(Hksp,npool)
+    _,nktot,nspin = Hksp.shape
+
+    aux = gather_scatter(Hksp,1,npool)
+    nawf=int(np.sqrt(aux.shape[0]))
+
+    aux = np.rollaxis(aux,0,2)
+
+    aux = np.reshape(aux,(aux.shape[0],nawf,nawf,nspin),order="C")
+
+#    aux = scatter_full(aux,npool)
 
     E_kaux = np.zeros((aux.shape[0],nawf,nspin),dtype=float)
     v_kaux = np.zeros((aux.shape[0],nawf,nawf,nspin),dtype=complex)

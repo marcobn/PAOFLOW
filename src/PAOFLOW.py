@@ -402,6 +402,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
+    my_eigsmat=None
+
     try:
         #----------------------
         # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
@@ -415,7 +417,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
             if non_ortho:
-                Skaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3),order='C')
+                Skaux = np.reshape(Sks,(nawf,nawf,nk1,nk2,nk3),order='C')
     
             HRaux = np.zeros_like(Hkaux)
             SRaux = np.zeros_like(Skaux)
@@ -583,9 +585,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
 
+    E_kp = v_kp = None
 
-    E_kp=None
-    v_kp=None
     try:
         #----------------------
         # Initialize Read/Write restart data
@@ -663,7 +664,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             Hksp = np.moveaxis(Hks,(0,1),(3,4))
             Hksp = Hksp.copy(order='C')    
 
-
+        HRs = None
         #----------------------
         # Read/Write restart data
         #----------------------
@@ -682,7 +683,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 nk3 = datadump['nk3']
         else:
             if rank!=0:
-                Hksp = None
+
                 kq = None
                 kq_wght = None
                 idk = None
@@ -707,24 +708,20 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             eig = None
             E_k = None
             v_k = None
-            if rank == 0:
-                Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
+#            if rank == 0:
+#                Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
             eig, E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
-            if rank == 0:
-                Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
-    
+#            if rank == 0:
+#                Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
+
             if rank == 0 and HubbardU.any() != 0.0:
                 eig -= np.amax(E_k[:,bval,:])
                 E_k -= np.amax(E_k[:,bval,:])
     
-            index = None
-            if rank == 0:
-                nk1,nk2,nk3,_,_,_ = Hksp.shape
-                index = {'nk1':nk1,'nk2':nk2,'nk3':nk3}
-            index = comm.bcast(index,root=0)
-            nk1 = index['nk1']
-            nk2 = index['nk2']
-            nk3 = index['nk3']
+    
+
+            _,nk1,nk2,nk3,_ = Hksp.shape
+            
     
             comm.Barrier()
             if rank ==0:
@@ -753,7 +750,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 v_k = datadump['v_k']
         else:
             if rank!=0:
-                Hksp = None
                 kq = None
                 kq_wght = None
                 idk = None
@@ -879,15 +875,30 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 #from do_gradient_d2 
                 #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
     
-                comm.Barrier()
 
                 #############################################################
                 ################DISTRIBUTE ARRAYS ON KPOINTS#################
                 #############################################################
                 Hksp  = None
-                comm.Barrier()
-                dHksp = scatter_full(dHksp,npool)
-                comm.Barrier()
+                dHksp = np.reshape(dHksp,(dHksp.shape[0],nk1*nk2*nk3,3,nspin))
+                #gather dHksp on nawf*nawf and scatter on k points
+                dHksp = gather_scatter(dHksp,1,npool)
+                dHksp = np.rollaxis(dHksp,0,3)
+                dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
+
+                
+                # dHksp = np.zeros((v_k.shape[0],3,nawf,nawf,nspin),dtype=complex,order="C")
+                # for ispin in xrange(nspin):
+                #     for l in xrange(3):
+                #         comm.Barrier()
+                #         dHksp_aux = gather_full(np.ascontiguousarray(dHksp_split[...,l,ispin]),npool)
+                #         if rank==0:
+                #             dHksp_aux = np.reshape(np.rollaxis(dHksp_aux,0,4),
+                #                                (nk1*nk2*nk3,nawf,nawf),order="C")
+                #         comm.Barrier()                
+                #         dHksp[:,l,:,:,ispin] = scatter_full(dHksp_aux,npool)
+
+                # dHksp_split = dHksp_aux = None
 
                 if rank == 0:
                     print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
