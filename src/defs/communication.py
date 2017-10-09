@@ -190,7 +190,15 @@ def gather_scatter(arr,scatter_axis,npool):
 
     for r in xrange(size):
         #broadcast indices that for scattered array to proc with rank 'r'
-        scatter_ind = comm.bcast(axis_ind, root=r)
+        size_r = comm.bcast(axis_ind.size,root=r)
+        comm.Barrier()
+        if rank==r:
+            scatter_ind=axis_ind
+        else:
+            scatter_ind=np.zeros((size_r),dtype=int)
+        comm.Bcast(scatter_ind, root=r)
+        comm.Barrier()
+
         #gather array from each proc with indices for each proc on scatter_axis
         if r==rank:
             exec('temp = gather_full(np.ascontiguousarray(arr[%s]),npool,sroot=r)'%ind_str)

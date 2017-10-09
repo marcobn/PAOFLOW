@@ -145,27 +145,12 @@ def do_gradient_cuda(Hksp,a_vectors,alat,nthread,npool):
 
 
 def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
-
-
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
-    index=None
-    index=np.zeros((6),dtype=int,order="C")
-    if rank == 0:
-        nk1,nk2,nk3,nawf,nawf,nspin = Hksp.shape
-        nktot = nk1*nk2*nk3
-        index = np.array([nawf,nktot,nspin,nk1,nk2,nk3])
 
-    comm.Bcast(index,root=0)
-
-
-    nawf = index[0]
-    nktot = index[1]
-    nspin = index[2]
-    nk1=index[3]
-    nk2=index[4]
-    nk3=index[5]
+    _,nk1,nk2,nk3,nspin = Hksp.shape
+    nktot = nk1*nk2*nk3
 
     # fft grid in R shifted to have (0,0,0) in the center
     _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
@@ -173,94 +158,69 @@ def do_gradient_mpi(Hksp,a_vectors,alat,nthread,npool):
         
     Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
 
-    #############################################################################################
-    #############################################################################################
-    #############################################################################################
-    if rank==0:
-        #roll the axes so nawf,nawf are first
-        #only needed because we're splitting 
-        #between procs on the first indice
-        Hksp =  np.reshape(Hksp,(nk1,nk2,nk3,nawf*nawf,nspin),order="C")
-        Hksp =  np.rollaxis(Hksp,3,0)
-        #have flattened H(k) as first indice
-    else:
-        Hksp=None
-
-    comm.Barrier()
-    H_aux = scatter_full(Hksp,npool)       
-    Hksp = None
     comm.Barrier()
 
     ########################################
     ### real space grid replaces k space ###
     ########################################
     if scipyfft:
-
-        for n in xrange(H_aux.shape[0]):
-            for ispin in xrange(H_aux.shape[4]):
-                H_aux[n,:,:,:,ispin] = FFT.ifftn(H_aux[n,:,:,:,ispin],axes=(0,1,2))
-                H_aux[n,:,:,:,ispin] = FFT.fftshift(H_aux[n,:,:,:,ispin],axes=(0,1,2))
+        for n in xrange(Hksp.shape[0]):
+            for ispin in xrange(Hksp.shape[4]):
+                Hksp[n,:,:,:,ispin] = FFT.ifftn(Hksp[n,:,:,:,ispin],axes=(0,1,2))
+                Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
 
     else:
-        for n in xrange(H_aux.shape[0]):
-            for ispin in xrange(H_aux.shape[4]):
-                fft = pyfftw.FFTW(H_aux[n,:,:,:,ispin],H_aux[n,:,:,:,ispin],axes=(0,1,2),
+        for n in xrange(Hksp.shape[0]):
+            for ispin in xrange(Hksp.shape[4]):
+                fft = pyfftw.FFTW(Hksp[n,:,:,:,ispin],Hksp[n,:,:,:,ispin],axes=(0,1,2),
                                   direction='FFTW_BACKWARD',flags=('FFTW_MEASURE', ),
                                   threads=nthread, planning_timelimit=None )
 
-                H_aux[n,:,:,:,ispin] = fft()
-                H_aux[n,:,:,:,ispin] = FFT.fftshift(H_aux[n,:,:,:,ispin],axes=(0,1,2))
+                Hksp[n,:,:,:,ispin] = fft()
+                Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
 
     #############################################################################################
     #############################################################################################
     #############################################################################################
 
-    num_n = H_aux.shape[0]
+    num_n = Hksp.shape[0]
 
     #reshape Hr for multiplying by the three parts of Rfft grid
-    H_aux  = np.reshape(H_aux,(num_n,nk1*nk2*nk3,nspin),order='C')
-    dH_aux = np.zeros((num_n,nk1*nk2*nk3,3,nspin),dtype=complex,order='C')
+    Hksp  = np.reshape(Hksp,(num_n,nk1*nk2*nk3,nspin),order='C')
+    dHksp = np.zeros((num_n,nk1*nk2*nk3,3,nspin),dtype=complex,order='C')
 
     # Compute R*H(R)
     for ispin in xrange(nspin):
         for l in xrange(3):
-            dH_aux[:,:,l,ispin] = 1.0j*alat*Rfft[:,l]*H_aux[...,ispin]
+            dHksp[:,:,l,ispin] = 1.0j*alat*Rfft[:,l]*Hksp[...,ispin]
 
-    H_aux=None
+    Hksp=None
 
-    dH_aux = np.reshape(dH_aux,(num_n,nk1,nk2,nk3,3,nspin),order='C')
+    dHksp = np.reshape(dHksp,(num_n,nk1,nk2,nk3,3,nspin),order='C')
     # Compute dH(k)/dk
 
     if scipyfft:
-        for n in xrange(dH_aux.shape[0]):
-            for l in xrange(dH_aux.shape[4]):
-                for ispin in xrange(dH_aux.shape[5]):
-                    dH_aux[n,:,:,:,l,ispin] = FFT.fftn(dH_aux[n,:,:,:,l,ispin],axes=(0,1,2),)
+        for n in xrange(dHksp.shape[0]):
+            for l in xrange(dHksp.shape[4]):
+                for ispin in xrange(dHksp.shape[5]):
+                    dHksp[n,:,:,:,l,ispin] = FFT.fftn(dHksp[n,:,:,:,l,ispin],axes=(0,1,2),)
 
     else:
-        for n in xrange(dH_aux.shape[0]):
-            for l in xrange(dH_aux.shape[4]):
-                for ispin in xrange(dH_aux.shape[5]):
-                    fft = pyfftw.FFTW(dH_aux[n,:,:,:,l,ispin]
-                                      ,dH_aux[n,:,:,:,l,ispin],axes=(0,1,2),
+        for n in xrange(dHksp.shape[0]):
+            for l in xrange(dHksp.shape[4]):
+                for ispin in xrange(dHksp.shape[5]):
+                    fft = pyfftw.FFTW(dHksp[n,:,:,:,l,ispin]
+                                      ,dHksp[n,:,:,:,l,ispin],axes=(0,1,2),
                                       direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ),
                                       threads=nthread, planning_timelimit=None )
 
-                    dH_aux[n,:,:,:,l,ispin] = fft()
+                    dHksp[n,:,:,:,l,ispin] = fft()
 
     #############################################################################################
     #############################################################################################
     #############################################################################################
 
     #gather the arrays into flattened dHk
-
-    comm.Barrier()
-    dHksp = gather_full(dH_aux,npool)
-    comm.Barrier()
-    dH_aux=None
-
-    if rank==0:
-        dHksp = np.reshape(np.rollaxis(dHksp,0,5),(nk1*nk2*nk3,3,nawf,nawf,nspin),order="C")
 
     return(dHksp)
 
