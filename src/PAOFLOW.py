@@ -863,8 +863,36 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 #############################################################
                 ################DISTRIBUTE ARRAYS ON KPOINTS#################
                 #############################################################
-#                E_k   = np.real(scatter_full(E_k,npool))
-#                v_k   = scatter_full(v_k,npool)
+
+
+                # if rank==0:
+                #         a=locals().items()
+                #         mem_list=[]
+                #         item_list=[]
+                #         for k,v in a:
+                        
+                #             if v is None:
+                #                 pass
+                        
+                #             if type(v) == type(np.zeros(1,dtype=complex)):
+                #                 size = np.prod(v.shape)*16/(1024.0**3)
+                #                 if size>0.01:
+                #                     item_list.append(k)
+                #                     mem_list.append(size)
+                        
+                #                 elif type(v) == type(np.zeros(1,dtype=float)):
+                #                     size = np.prod(v.shape)*8/(1024.0**3)
+                #                     if size>0.01:
+                #                         item_list.append(k)
+                #                         mem_list.append(size)
+                        
+                #         item_list=np.asarray(item_list)
+                #         mem_list=np.asarray(mem_list)
+                #         order = np.argsort(mem_list)
+                #         mem_list=mem_list[order]
+                #         item_list=item_list[order]
+                #         for i in xrange(mem_list.shape[0]):
+                #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
 
 
                 #----------------------
@@ -884,6 +912,35 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 dHksp = gather_scatter(dHksp,1,npool)
                 dHksp = np.rollaxis(dHksp,0,3)
                 dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
+
+                # if rank==0:
+                #         a=locals().items()
+                #         mem_list=[]
+                #         item_list=[]
+                #         for k,v in a:
+                        
+                #             if v is None:
+                #                 pass
+                        
+                #             if type(v) == type(np.zeros(1,dtype=complex)):
+                #                 size = np.prod(v.shape)*16/(1024.0**3)
+                #                 if size>0.01:
+                #                     item_list.append(k)
+                #                     mem_list.append(size)
+                        
+                #                 elif type(v) == type(np.zeros(1,dtype=float)):
+                #                     size = np.prod(v.shape)*8/(1024.0**3)
+                #                     if size>0.01:
+                #                         item_list.append(k)
+                #                         mem_list.append(size)
+                        
+                #         item_list=np.asarray(item_list)
+                #         mem_list=np.asarray(mem_list)
+                #         order = np.argsort(mem_list)
+                #         mem_list=mem_list[order]
+                #         item_list=item_list[order]
+                #         for i in xrange(mem_list.shape[0]):
+                #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
 
                 
                 # dHksp = np.zeros((v_k.shape[0],3,nawf,nawf,nspin),dtype=complex,order="C")
