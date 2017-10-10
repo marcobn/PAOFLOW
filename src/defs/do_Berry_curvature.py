@@ -62,12 +62,24 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
         else:
             Om_zkaux[:,i] = np.sum(Om_znk[:,:]*(0.5 * (-np.sign(E_k[:,:,0]-ene[i]) + 1)),axis=1)
 
-    Om_zk = gather_full(Om_zkaux,npool)
-    comm.Barrier()
 
-    ahc = None
-    if rank == 0: ahc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
-    Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
+    Om_zk_sum = np.sum(Om_zkaux,axis=0)
+
+    if rank==0:
+        ahc = np.zeros((ene.size),dtype=float)
+    else: ahc = None
+
+    comm.Reduce(Om_zk_sum,ahc)
+    comm.Barrier()
+    
+    Om_zk_sum=None
+
+
+    if rank == 0:
+        ahc/= float(nk1*nk2*nk3)
+    else: Om_k = None
+
+    Om_zk = gather_full(Om_zkaux,npool)
 
     n0 = 0
     if rank == 0:
@@ -78,7 +90,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
                 n = i
 
         Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
-
+        Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
     comm.Barrier()
 
-    return(ene,ahc,Om_k[:,:,:,n]-Om_k[:,:,:,n0])
+    return(ene,ahc,Om_k)

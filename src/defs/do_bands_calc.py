@@ -40,11 +40,11 @@ import scipy.linalg as LAN
 
 def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
     # Load balancing
-    nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape    
-    
+    nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape            
     kq_aux = scatter_full(kq.T,npool)
     kq_aux = kq_aux.T
 
+ 
     if read_S:
         Sks_aux = band_loop_S(nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq_aux,R,idx)
     else: Sks_aux = None
@@ -68,7 +68,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
                                                                        overwrite_a=True,
                                                                        overwrite_b=True,
                                                                        turbo=True,check_finite=True)
-                 
+
+
     Hks_aux = None
     Sks_aux = None
 
@@ -121,6 +122,6 @@ def band_loop_S(nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
             for j in xrange(nk2):
                 for k in xrange(nk3):
                     phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[idx[i,j,k],:])*1j)
-                    auxs[:,:,ik-ini_ik] += SRaux[:,:,i,j,k]*phase
+                    auxs[:,:,ik] += SRaux[:,:,i,j,k]*phase
 
     return(auxs)
