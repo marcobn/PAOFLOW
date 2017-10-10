@@ -323,7 +323,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     # non_ortho flag == 1 - makes H orthogonal (rotated basis) 
     #    Hks = do_non_ortho(Hks,Sks)
     #    Hks = do_ortho(Hks,Sks)
-    
+
     try:
         if rank == 0 and non_ortho:
             Hks = do_non_ortho(Hks,Sks)
@@ -403,7 +403,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
     
     my_eigsmat=None
-
     try:
         #----------------------
         # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
@@ -498,8 +497,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
-    try:
-        if do_bands and not(onedim):
+
+    if do_bands and not(onedim):
             #----------------------
             # Compute bands on a selected path in the BZ
             #----------------------
@@ -530,11 +529,18 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
                 else:
                     HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
-                non_ortho = False
+    
+            non_ortho = False
     
             # Broadcast HRs and SRs
-            HRs = comm.bcast(HRs,root=0)
-            if non_ortho: SRs = comm.bcast(SRs,root=0)
+            if rank!=0:
+                HRs=np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex,order='C')
+            comm.Bcast(HRs,root=0)
+
+            if non_ortho: 
+                if rank!=0:
+                    SRs=np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex,order='C')
+                comm.Bcast(SRs,root=0)
     
             # Define real space lattice vectors
             R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
@@ -547,8 +553,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             # Compute the bands along the path in the IBZ
             E_kp = v_kp = None
+
             E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho,inputpath,npool)
-    
+
             comm.Barrier()
             if rank == 0:
                 print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -568,7 +575,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             alat *= ANGSTROM_AU
     
-        elif do_bands and onedim:
+    elif do_bands and onedim:
             #----------------------
             # FFT interpolation along a single directions in the BZ
             #----------------------
@@ -579,11 +586,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank ==0:
                 print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
-    except Exception as e:
-        print('Rank %d: Exception in Do Bands or Band Topology'%rank)
-        traceback.print_exc()
-        comm.Abort()
-        raise Exception
+    #except Exception as e:
+    #    print('Rank %d: Exception in Do Bands or Band Topology'%rank)
+    #    traceback.print_exc()
+    #    comm.Abort()
+    #    raise Exception
 
     E_kp = v_kp = None
 
