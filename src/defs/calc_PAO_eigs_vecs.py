@@ -31,17 +31,19 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
     Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3,nspin))
 
     aux = gather_scatter(Hksp,1,npool)
-    aux = np.rollaxis(aux,0,2)
     nawf=int(np.sqrt(aux.shape[0]))
+    aux = np.rollaxis(aux,0,2)
     aux = np.reshape(aux,(aux.shape[0],nawf,nawf,nspin),order="C")
 
     E_kaux = np.zeros((aux.shape[0],nawf,nspin),dtype=float)
     v_kaux = np.zeros((aux.shape[0],nawf,nawf,nspin),dtype=complex)
 
-    aux = None
+
 
     for ispin in xrange(nspin):
         E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(aux.shape[0],aux[:,:,:,ispin])
+
+    aux = None
 
     return(E_kaux,v_kaux)
 

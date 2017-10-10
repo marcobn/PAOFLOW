@@ -708,16 +708,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             eig = None
             E_k = None
             v_k = None
-#            if rank == 0:
-#                Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
             E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
-#            if rank == 0:
-#                Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf,nspin),order='C')
-
-            if rank == 0 and HubbardU.any() != 0.0:
-                E_k -= np.amax(E_k[:,bval,:])
 
             eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
+            if HubbardU.any() != 0.0:
+                E_k = gather_full(E_k,npool)
+                if rank==0:
+                    E_k -= np.amax(E_k[:,bval,:])
+                comm.Barrier()
+                E_k = scatter_full(E_k,npool)                    
+                eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")            
     
 
             _,nk1,nk2,nk3,_ = Hksp.shape
