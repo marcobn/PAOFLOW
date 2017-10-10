@@ -26,44 +26,22 @@ size = comm.Get_size()
 
 def calc_PAO_eigs_vecs(Hksp,bnd,npool):
 
-
-
     _,nk1,nk2,nk3,nspin = Hksp.shape
 
     Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3,nspin))
 
-    _,nktot,nspin = Hksp.shape
-
     aux = gather_scatter(Hksp,1,npool)
-    nawf=int(np.sqrt(aux.shape[0]))
-
     aux = np.rollaxis(aux,0,2)
-
+    nawf=int(np.sqrt(aux.shape[0]))
     aux = np.reshape(aux,(aux.shape[0],nawf,nawf,nspin),order="C")
-
-#    aux = scatter_full(aux,npool)
 
     E_kaux = np.zeros((aux.shape[0],nawf,nspin),dtype=float)
     v_kaux = np.zeros((aux.shape[0],nawf,nawf,nspin),dtype=complex)
 
-
+    aux = None
 
     for ispin in xrange(nspin):
         E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(aux.shape[0],aux[:,:,:,ispin])
-
-
-#    v_k = gather_full(v_kaux,npool)
-#    v_kaux = None
-#    E_k = gather_full(E_kaux,npool)
-#    v_kaux = None
-
-
-#    if rank == 0:
-
-#    else: 
-#        eall = None
-#        v_k = None
-#        E_k = None
 
     return(E_kaux,v_kaux)
 
