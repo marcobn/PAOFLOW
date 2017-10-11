@@ -180,8 +180,10 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
     E_diff_nm = (np.reshape(E_k[:,:,ispin],(nk,1,nawf))\
                      -np.reshape(E_k[:,:,ispin],(nk,nawf,1)))[:,uind[0],uind[1]]
     f_nm=(np.reshape(fn,(nk,nawf,1))-np.reshape(fn,(nk,1,nawf)))[:,uind[0],uind[1]]
-    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,:,:,ispin]*\
-                                np.transpose(pksp[:,jpol,:,:,ispin],(0,2,1)))[:,uind[0],uind[1]]
+#    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,[:,uind[0],uind[1]],ispin]*\
+#                                np.transpose(pksp[:,jpol,:,:,ispin],(0,2,1))[:,uind[0],uind[1]])
+    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,[:,uind[0],uind[1]],ispin]*\
+                                pksp[:,jpol,uind[1],uind[0],ispin])
 
     fn = None
 
