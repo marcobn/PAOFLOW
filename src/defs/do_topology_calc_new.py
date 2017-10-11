@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath,npool):
+def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,eff_mass,inputpath,npool):
     # Compute Z2 invariant and topological properties on a selected path in the BZ
 
     nkpi=kq.shape[1]
@@ -98,7 +98,6 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         f.close()
 
     # Compute momenta and kinetic energy
-    eff_mass = True
 
     # Compute R*H(R)
     HRs = FFT.fftshift(HRs,axes=(2,3,4))
@@ -109,6 +108,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     HRs = np.reshape(HRs,(nk1*nk2*nk3,nawf,nawf,nspin),order='C')
     HRs_aux = scatter_full(HRs,npool)
     Rfft_aux = scatter_full(Rfft,npool)
+
 
     dHRs  = np.zeros((HRs_aux.shape[0],3,nawf,nawf,nspin),dtype=complex)
     if eff_mass == True: 

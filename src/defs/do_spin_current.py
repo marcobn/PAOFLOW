@@ -30,18 +30,7 @@ size = comm.Get_size()
 
 def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
     # calculate spin_current operator
-
-    index = None
-
-    if rank == 0:
-        nktot,_,nawf,nawf,nspin = dHksp.shape
-        index = {'nawf':nawf,'nktot':nktot,'nspin':nspin}
-
-    index = comm.bcast(index,root=0)
-
-    nktot = index['nktot']
-    nawf = index['nawf']
-    nspin = index['nspin']
+    _,_,nawf,nawf,nspin = dHksp.shape
 
     # Compute spin current matrix elements
     # Pauli matrices (x,y,z)
@@ -66,16 +55,15 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl):
 
 
     for ik in xrange(dHksp.shape[0]):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
+        for l in xrange(3):
+            for ispin in xrange(nspin):
                 jdHksp[ik,l,:,:,ispin] = \
                     0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+np.dot(dHksp[ik,l,:,:,ispin],Sj))
 
-
-
     for ik in xrange(dHksp.shape[0]):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
+        for l in xrange(3):            
+            for ispin in xrange(nspin):
+
                 jksp[ik,l,:,:,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
                             (jdHksp[ik,l,:,:,ispin]).dot(vec[ik,:,:,ispin])
 

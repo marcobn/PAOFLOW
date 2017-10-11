@@ -131,10 +131,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml(inputpath,inputfile)
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals = read_inputfile_xml(inputpath,inputfile)
 
         fpath = os.path.join(inputpath, fpath)
-        
+
         #----------------------
         # initialize return dictionary
         #----------------------
@@ -198,11 +198,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
-                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-                    for ik in xrange(nkpnts):
-                        Sks[:,:,ik]=np.identity(nawf)
+#                    for ik in xrange(nkpnts):
+#                        Sks[:,:,ik]=np.identity(nawf)
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -214,11 +214,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath, verbose, non_ortho)
-                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-                    for ik in xrange(nkpnts):
-                        Sks[:,:,ik]=np.identity(nawf)
+#                    for ik in xrange(nkpnts):
+#                        Sks[:,:,ik]=np.identity(nawf)
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -246,7 +246,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         nk3 = comm.bcast(nk3,root=0)
         natoms = comm.bcast(natoms,root=0)
         tau = comm.bcast(tau,root=0)
-    
+
+        #set npool to minimum needed if npool isnt high enough
+        int_max = 2147483647
+        temp_pool = int(np.ceil((float(nawf**2*nfft1*nfft2*nfft3*3*nspin)/float(int_max))))
+        if temp_pool>npool:
+            if rank==0:
+                print("Warning: %s too low. Setting npool to %s"%(npool,temp_pool))
+            npool = temp_pool
+
         #----------------------
         # Do memory checks 
         #----------------------
@@ -283,6 +291,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in xrange(nbnds):
                 if Pn[n] > pthr:
                     bnd += 1
+            Pn = None
             if verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
             if verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
                                             np.amax(my_eigsmat[bnd,:,:]))
@@ -304,8 +313,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
         Hks = None
         if rank == 0:
-            Hks,Sks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
-    
+            Hks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
+
+            # This is needed for consistency of the ordering of the matrix elements
+            # Important in ACBN0 file writing
+            if non_ortho:
+                Sks = np.transpose(Sks,(1,0,2))
+
+        #U not needed anymore
+        U = None
+
         comm.Barrier()
         if rank == 0:
             print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -324,7 +341,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     # non_ortho flag == 1 - makes H orthogonal (rotated basis) 
     #    Hks = do_non_ortho(Hks,Sks)
     #    Hks = do_ortho(Hks,Sks)
-    
+
     try:
         if rank == 0 and non_ortho:
             Hks = do_non_ortho(Hks,Sks)
@@ -345,7 +362,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if nspin==2:
                     np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
                     np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
-                np.save('kovp.npy',np.ravel(Sks,order='C'))
+                if non_ortho:
+                    np.save('kovp.npy',np.ravel(Sks,order='C'))
             else:
                 if nspin == 1:
                     f=open(inputpath+'kham.txt','w')
@@ -367,12 +385,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                             for j in xrange(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
                     f.close()
-                f=open(inputpath+'kovp.txt','w')
-                for ik in xrange(nkpnts):
-                    for i in xrange(nawf):
-                        for j in xrange(nawf):
-                            f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
-                f.close()
+                if non_ortho:
+                    f=open(inputpath+'kovp.txt','w')
+                    for ik in xrange(nkpnts):
+                        for i in xrange(nawf):
+                            for j in xrange(nawf):
+                                f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
+                    f.close()
             f=open(inputpath+'k.txt','w')
             for ik in xrange(nkpnts):
                 f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
@@ -404,7 +423,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
     
     my_eigsmat=None
-
     try:
         #----------------------
         # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
@@ -437,6 +455,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # NOTE: Naming convention (from here):
             # Hks = k-space Hamiltonian on original MP grid
             # HRs = R-space Hamiltonian on original MP grid
+            ############################
+            ####  IS THIS NEEDED??  ####
+            ############################
             if non_ortho:
                 if Boltzmann or epsilon:
                     Sks_long = Sks
@@ -499,8 +520,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
-    try:
-        if do_bands and not(onedim):
+
+    if do_bands and not(onedim):
             #----------------------
             # Compute bands on a selected path in the BZ
             #----------------------
@@ -531,12 +552,23 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
                 else:
                     HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
-                non_ortho = False
+    
+            non_ortho = False
     
             # Broadcast HRs and SRs
-            HRs = comm.bcast(HRs,root=0)
-            if non_ortho: SRs = comm.bcast(SRs,root=0)
-    
+            if rank!=0:
+                HRs=np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex,order='C')
+            comm.Bcast(HRs,root=0)
+
+            if non_ortho: 
+                if rank!=0:
+                    SRs=np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex,order='C')
+                comm.Bcast(SRs,root=0)
+            else: 
+                SRs = None
+                Sks = None
+
+
             # Define real space lattice vectors
             R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
     
@@ -548,8 +580,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             # Compute the bands along the path in the IBZ
             E_kp = v_kp = None
+
             E_kp,v_kp = do_bands_calc(HRs,SRs,kq,R_wght,R,idx,non_ortho,inputpath,npool)
-    
+
             comm.Barrier()
             if rank == 0:
                 print('bands in                         %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -559,8 +592,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if band_topology:
                 # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
                 # curvature operators along the path in the IBZ from do_topology_calc 
-
-                do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,inputpath,npool)
+                eff_mass=True
+                do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,eff_mass,inputpath,npool)
 
                 comm.Barrier()
                 if rank == 0:
@@ -569,7 +602,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             alat *= ANGSTROM_AU
     
-        elif do_bands and onedim:
+    elif do_bands and onedim:
             #----------------------
             # FFT interpolation along a single directions in the BZ
             #----------------------
@@ -580,11 +613,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank ==0:
                 print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
-    except Exception as e:
-        print('Rank %d: Exception in Do Bands or Band Topology'%rank)
-        traceback.print_exc()
-        comm.Abort()
-        raise Exception
+    #except Exception as e:
+    #    print('Rank %d: Exception in Do Bands or Band Topology'%rank)
+    #    traceback.print_exc()
+    #    comm.Abort()
+    #    raise Exception
 
     E_kp = v_kp = None
 
@@ -641,10 +674,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
                     else:
                         HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
-                    non_ortho = False
-    
 
-    
+        non_ortho = False
+        Skaux = None
+        SRs   = None
+        Sks   = None
+
         comm.Barrier()
 
 
@@ -665,7 +700,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             Hksp = np.moveaxis(Hks,(0,1),(3,4))
             Hksp = Hksp.copy(order='C')    
 
+        #no longer needed
         HRs = None
+        Hkaux = None
+        Hks   = None
+
         #----------------------
         # Read/Write restart data
         #----------------------
@@ -711,7 +750,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             v_k = None
             E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
 
-            eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
+#            eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
             if HubbardU.any() != 0.0:
                 E_k = gather_full(E_k,npool)
                 if rank==0:
@@ -787,11 +826,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
             if nspin == 1 or nspin == 2:
 
-                eigup = eig[:,0]
+                eigup = E_k[:,:bnd,0].reshape(E_k.shape[0]*bnd)
                 do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0,inputpath,npool)
                 eigup = None
             if nspin == 2:
-                eigdw = eig[:,1]
+                eigdw = E_k[:,:bnd,1].reshape(E_k.shape[0]*bnd)
                 do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1,inputpath,npool)
                 eigdw = None
 
@@ -861,41 +900,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != None:
             if checkpoint < 3:
 
-                #############################################################
-                ################DISTRIBUTE ARRAYS ON KPOINTS#################
-                #############################################################
-
-
-                # if rank==0:
-                #         a=locals().items()
-                #         mem_list=[]
-                #         item_list=[]
-                #         for k,v in a:
-                        
-                #             if v is None:
-                #                 pass
-                        
-                #             if type(v) == type(np.zeros(1,dtype=complex)):
-                #                 size = np.prod(v.shape)*16/(1024.0**3)
-                #                 if size>0.01:
-                #                     item_list.append(k)
-                #                     mem_list.append(size)
-                        
-                #                 elif type(v) == type(np.zeros(1,dtype=float)):
-                #                     size = np.prod(v.shape)*8/(1024.0**3)
-                #                     if size>0.01:
-                #                         item_list.append(k)
-                #                         mem_list.append(size)
-                        
-                #         item_list=np.asarray(item_list)
-                #         mem_list=np.asarray(mem_list)
-                #         order = np.argsort(mem_list)
-                #         mem_list=mem_list[order]
-                #         item_list=item_list[order]
-                #         for i in xrange(mem_list.shape[0]):
-                #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
-
-
                 #----------------------
                 # Compute the gradient of the k-space Hamiltonian
                 #----------------------            
@@ -913,49 +917,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 dHksp = gather_scatter(dHksp,1,npool)
                 dHksp = np.rollaxis(dHksp,0,3)
                 dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
-
-                # if rank==0:
-                #         a=locals().items()
-                #         mem_list=[]
-                #         item_list=[]
-                #         for k,v in a:
-                        
-                #             if v is None:
-                #                 pass
-                        
-                #             if type(v) == type(np.zeros(1,dtype=complex)):
-                #                 size = np.prod(v.shape)*16/(1024.0**3)
-                #                 if size>0.01:
-                #                     item_list.append(k)
-                #                     mem_list.append(size)
-                        
-                #                 elif type(v) == type(np.zeros(1,dtype=float)):
-                #                     size = np.prod(v.shape)*8/(1024.0**3)
-                #                     if size>0.01:
-                #                         item_list.append(k)
-                #                         mem_list.append(size)
-                        
-                #         item_list=np.asarray(item_list)
-                #         mem_list=np.asarray(mem_list)
-                #         order = np.argsort(mem_list)
-                #         mem_list=mem_list[order]
-                #         item_list=item_list[order]
-                #         for i in xrange(mem_list.shape[0]):
-                #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
-
-                
-                # dHksp = np.zeros((v_k.shape[0],3,nawf,nawf,nspin),dtype=complex,order="C")
-                # for ispin in xrange(nspin):
-                #     for l in xrange(3):
-                #         comm.Barrier()
-                #         dHksp_aux = gather_full(np.ascontiguousarray(dHksp_split[...,l,ispin]),npool)
-                #         if rank==0:
-                #             dHksp_aux = np.reshape(np.rollaxis(dHksp_aux,0,4),
-                #                                (nk1*nk2*nk3,nawf,nawf),order="C")
-                #         comm.Barrier()                
-                #         dHksp[:,l,:,:,ispin] = scatter_full(dHksp_aux,npool)
-
-                # dHksp_split = dHksp_aux = None
 
                 if rank == 0:
                     print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -1010,10 +971,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if not spin_Hall:
                 dHksp=None
 
-            #if rank == 0:
-            #    d2Hksp = np.reshape(d2Hksp,(nk1*nk2*nk3,3,3,nawf,nawf,nspin),order='C')
-            #pksp,tksp = do_momentum(v_k,dHksp,d2Hksp,npool)
-    
+
+
             comm.Barrier()
             if rank == 0:
                 print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -1171,26 +1130,21 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             deltakpdw = None
             if do_dos:
                 if nspin == 1 or nspin == 2:
-    #                if rank == 0:
-    #                    eigup = np.array(eig[:,0])
-    #                    deltakpup = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,0])
                     deltakpup = np.ravel(deltakp[:,:bnd,0],order='C')
-                    eigup = eig[:,0]
+                    eigup = E_k[:,:bnd,0].reshape(E_k.shape[0]*bnd)
                     do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,inputpath)
                     eigup = None
                     deltakpup = None
                 if nspin == 2:
-    #                if rank == 0:
-    #                    eigdw = np.array(eig[:,1])
-    #                    deltakpdw = np.array(np.reshape(np.delete(deltakp,np.s_[bnd:],axis=1),(nk1*nk2*nk3*bnd,nspin),order='C')[:,1])
                     deltakpdw = np.ravel(deltakp[:,:bnd,0],order='C')
-                    eigdw = eig[:,1]
+                    eigdw = E_k[:,:bnd,0].reshape(E_k.shape[0]*bnd)
                     do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing,inputpath)
                     eigdw = None
                     deltakpdw = None
         
+            #no longer needed
+            eig=None
 
-        
             if do_pdos:
                 v_kup = v_kdw = None
                 #----------------------
@@ -1216,23 +1170,48 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     #----------------------
     # Reduce memory requirements and improve performance by reducing nawf to bnd (states with good projectability)
     try:
-        pksp = np.delete(np.delete(pksp,np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
         if rank==0:
             if 'E_k' in outDict:
                 outDict['E_k'] = E_k
             if 'deltakp' in outDict:
                 outDict['deltakp'] = deltakp
 
-        E_k = np.delete(E_k,np.s_[bnd:],axis=1)
-        deltakp = np.delete(deltakp,np.s_[bnd:],axis=1)
-        deltakp2 = np.delete(np.delete(deltakp2,np.s_[bnd:],axis=1),np.s_[bnd:],axis=2)
+        if not spin_Hall:
+            v_k = None
+        pksp = pksp[:,:,:bnd,:bnd]
+        E_k = E_k[:,:bnd]
+        if smearing != None:
+            deltakp = deltakp[:,:bnd]
+            deltakp2 = deltakp2[:,:bnd,:bnd]
 
     except Exception as e:
         print('Rank %d: Exception in Memory Reduction'%rank)
         traceback.print_exc()
         comm.Abort()
         raise Exception
-    
+
+
+    # if rank==0:
+    #         a=locals().items()
+    #         mem_list=[]
+    #         item_list=[]
+    #         for k,v in a:
+    #             if v is None:
+    #                 pass
+    #             try:
+    #                 size = sys.getsizeof(v)/(1024.0**3)
+    #                 item_list.append(k)
+    #                 mem_list.append(size)
+    #             except Exception,e:
+    #                 print(e)
+    #         item_list=np.asarray(item_list)
+    #         mem_list=np.asarray(mem_list)
+    #         order = np.argsort(mem_list)
+    #         mem_list=mem_list[order]
+    #         item_list=item_list[order]
+    #         for i in xrange(mem_list.shape[0]):
+    #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
+
     try:
         #----------------------
         # Spin Hall calculation
@@ -1258,7 +1237,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         pass
                 spincheck=comm.bcast(spincheck,root=0)
                 if spincheck == 0:
-                    jksp = np.delete(np.delete(do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl),np.s_[bnd:],axis=2),np.s_[bnd:],axis=3)
+                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
+                    jksp=jksp[:,:,:bnd,:bnd]
                     if restart:
                         np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
      
@@ -1269,18 +1249,21 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 #----------------------
                 # Compute spin Berry curvature... 
                 #----------------------
-                Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-                ene,shc,Om_k[:,:,:,0] = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
+
+                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
     
                 if rank == 0 and writedata:
+                    Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
                     x0 = np.zeros(3,dtype=float)
                     ind_plot = np.zeros(2)
-                    Om_k[:,:,:,1] = Om_k[:,:,:,0]
-                    write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
-    
+                    Om_kps[:,:,:,0] = Om_k
+                    Om_kps[:,:,:,1] = Om_k
+                    write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
+
+                Om_k = Om_kps = None
+                    
                 if ac_cond_spin:
                     ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
-
     
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
@@ -1315,6 +1298,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
+    v_k = None
+
     try:
         #----------------------
         # Compute Berry curvature and AHC
@@ -1325,17 +1310,21 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in xrange(a_tensor.shape[0]):
                 ipol = a_tensor[n][0]
                 jpol = a_tensor[n][1]
-                Om_k = np.zeros((nk1,nk2,nk3,2),dtype=float)
-                ene,ahc,Om_k[:,:,:,0] = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
+                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
     
-                if rank == 0 and writedata:
-                    x0 = np.zeros(3,dtype=float)
-                    ind_plot = np.zeros(2)
-                    Om_k[:,:,:,1] = Om_k[:,:,:,0]
-                    write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
+                if writedata:
+                    if rank == 0: 
+                        Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
+                        x0 = np.zeros(3,dtype=float)
+                        ind_plot = np.zeros(2)
+                        Om_kps[:,:,:,0] = Om_k
+                        Om_kps[:,:,:,1] = Om_k
+                        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
     
                     np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
-    
+
+                Om_k = Om_kps = None
+
                 if ac_cond_Berry:
                     ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
                     ahc0 = np.real(sigxy[0])

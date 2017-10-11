@@ -150,7 +150,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 group_nesting += 1
                 ispin = 0
                 readProj = True
-            if elem.tag == "OVERLAPS":
+            if elem.tag == "OVERLAPS" and non_ortho:
                 readProj = True
                 group_nesting += 1
                 Sks = np.zeros((nawf,nawf,nkpnts),dtype=complex)

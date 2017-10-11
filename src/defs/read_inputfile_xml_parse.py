@@ -96,6 +96,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     nk    = 2000
     # Band topology analysis
     band_topology = False
+    eff_mass = False
     spol = 0  # spin
     ipol = 0
     jpol = 0
@@ -194,6 +195,7 @@ def read_inputfile_xml ( fpath, inputfile ):
         onedim = read_attribute(aroot, onedim, 'onedim', 'logical')
         do_bands = read_attribute(aroot, do_bands, 'do_bands', 'logical')
         band_topology = read_attribute(aroot, band_topology, 'band_topology', 'logical')
+        eff_mass = read_attribute(aroot, eff_mass, 'eff_mass_topology', 'logical')
         do_spin_orbit = read_attribute(aroot, do_spin_orbit, 'do_spin_orbit', 'logical')
         double_grid = read_attribute(aroot, double_grid, 'double_grid', 'logical')
         do_dos = read_attribute(aroot, do_dos, 'do_dos', 'logical')
@@ -266,4 +268,4 @@ def read_inputfile_xml ( fpath, inputfile ):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals.split()
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals.split()

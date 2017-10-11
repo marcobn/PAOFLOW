@@ -15,7 +15,7 @@ from numpy import linalg as LAN
 import numpy.random as rd
 import sys
 
-def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
+def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U):
     minimal = False
     Hksaux = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
     if minimal:
@@ -77,8 +77,4 @@ def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U,Sks):
             else:
                 Hks = Hksaux
 
-        # This is needed for consistency of the ordering of the matrix elements (see "transposition" above)
-        # Important in ACBN0 file writing
-        Sks[:,:,ik] = Sks[:,:,ik].T
-
-    return(Hks,Sks)
+    return(Hks)
