@@ -130,7 +130,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml(inputpath,inputfile)
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals = read_inputfile_xml(inputpath,inputfile)
 
         fpath = os.path.join(inputpath, fpath)
 
@@ -591,8 +591,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if band_topology:
                 # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
                 # curvature operators along the path in the IBZ from do_topology_calc 
-
-                do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,inputpath,npool)
+                eff_mass=False
+                do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,eff_mass,inputpath,npool)
 
                 comm.Barrier()
                 if rank == 0:
