@@ -591,7 +591,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if band_topology:
                 # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
                 # curvature operators along the path in the IBZ from do_topology_calc 
-                eff_mass=False
+                eff_mass=True
                 do_topology_calc(HRs,SRs,non_ortho,kq,E_kp,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,do_spin_orbit,sh,nl,eff_mass,inputpath,npool)
 
                 comm.Barrier()
