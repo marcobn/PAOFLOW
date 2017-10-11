@@ -43,6 +43,7 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
         index = {'nktot':nktot,'nawf':nawf,'nspin':nspin}
 
     index = comm.bcast(index,root=0)
+    comm.Barrier()
 
     nktot = index['nktot']
     nawf = index['nawf']

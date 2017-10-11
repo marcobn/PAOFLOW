@@ -179,6 +179,7 @@ def read_inputfile_xml ( fpath, inputfile ):
         shift = read_attribute(aroot, shift, 'shift', 'string')
         out_vals = read_attribute(aroot, out_vals, 'out_vals', 'string')
         smearing = read_attribute(aroot, smearing, 'smearing', 'string')
+        if smearing == 'None': smearing = None
 
         # Read Logical Input Values
         restart = read_attribute(aroot, restart, 'restart', 'logical')
