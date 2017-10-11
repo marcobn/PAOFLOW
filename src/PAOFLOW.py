@@ -197,11 +197,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
-                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-                    for ik in xrange(nkpnts):
-                        Sks[:,:,ik]=np.identity(nawf)
+#                    for ik in xrange(nkpnts):
+#                        Sks[:,:,ik]=np.identity(nawf)
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -213,11 +213,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath, verbose, non_ortho)
-                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-                    for ik in xrange(nkpnts):
-                        Sks[:,:,ik]=np.identity(nawf)
+#                    for ik in xrange(nkpnts):
+#                        Sks[:,:,ik]=np.identity(nawf)
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -312,7 +312,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
         Hks = None
         if rank == 0:
-            Hks,Sks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U,Sks)
+            Hks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
+
+            # This is needed for consistency of the ordering of the matrix elements
+            # Important in ACBN0 file writing
+            if non_ortho:
+                Sks = np.transpose(Sks,(1,0,2))
 
         #U not needed anymore
         U = None
@@ -356,7 +361,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if nspin==2:
                     np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
                     np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
-                np.save('kovp.npy',np.ravel(Sks,order='C'))
+                if non_ortho:
+                    np.save('kovp.npy',np.ravel(Sks,order='C'))
             else:
                 if nspin == 1:
                     f=open(inputpath+'kham.txt','w')
@@ -378,12 +384,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                             for j in xrange(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
                     f.close()
-                f=open(inputpath+'kovp.txt','w')
-                for ik in xrange(nkpnts):
-                    for i in xrange(nawf):
-                        for j in xrange(nawf):
-                            f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
-                f.close()
+                if non_ortho:
+                    f=open(inputpath+'kovp.txt','w')
+                    for ik in xrange(nkpnts):
+                        for i in xrange(nawf):
+                            for j in xrange(nawf):
+                                f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
+                    f.close()
             f=open(inputpath+'k.txt','w')
             for ik in xrange(nkpnts):
                 f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
