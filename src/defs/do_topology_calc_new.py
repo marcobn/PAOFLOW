@@ -109,6 +109,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     HRs_aux = scatter_full(HRs,npool)
     Rfft_aux = scatter_full(Rfft,npool)
 
+
     dHRs  = np.zeros((HRs_aux.shape[0],3,nawf,nawf,nspin),dtype=complex)
     if eff_mass == True: 
         d2HRs = np.zeros((HRs_aux.shape[0],3,3,nawf,nawf,nspin),dtype=complex)

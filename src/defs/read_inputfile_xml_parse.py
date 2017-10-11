@@ -195,7 +195,7 @@ def read_inputfile_xml ( fpath, inputfile ):
         onedim = read_attribute(aroot, onedim, 'onedim', 'logical')
         do_bands = read_attribute(aroot, do_bands, 'do_bands', 'logical')
         band_topology = read_attribute(aroot, band_topology, 'band_topology', 'logical')
-        band_topology = read_attribute(aroot, eff_mass, 'eff_mass_topology', 'logical')
+        eff_mass = read_attribute(aroot, eff_mass, 'eff_mass_topology', 'logical')
         do_spin_orbit = read_attribute(aroot, do_spin_orbit, 'do_spin_orbit', 'logical')
         double_grid = read_attribute(aroot, double_grid, 'double_grid', 'logical')
         do_dos = read_attribute(aroot, do_dos, 'do_dos', 'logical')
