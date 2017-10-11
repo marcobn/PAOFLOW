@@ -53,6 +53,7 @@ from do_bands_calc_1D import *
 from do_double_grid import *
 from do_spin_orbit import *
 from constants import *
+from cuda_fft import *
 from read_inputfile_xml_parse import *
 from read_QE_output_xml_parse import *
 from read_new_QE_output_xml_parse import *
