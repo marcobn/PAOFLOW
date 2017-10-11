@@ -133,7 +133,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,out_vals = read_inputfile_xml(inputpath,inputfile)
 
         fpath = os.path.join(inputpath, fpath)
-        
+
         #----------------------
         # initialize return dictionary
         #----------------------
@@ -245,7 +245,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         nk3 = comm.bcast(nk3,root=0)
         natoms = comm.bcast(natoms,root=0)
         tau = comm.bcast(tau,root=0)
-    
+
+        #set npool to minimum needed if npool isnt high enough
+        int_max = 2147483647
+        temp_pool = int(np.ceil((float(nawf**2*nfft1*nfft2*nfft3*3*nspin)/float(int_max))))
+        if temp_pool>npool:
+            if rank==0:
+                print("Warning: %s too low. Setting npool to %s"%(npool,temp_pool))
+            npool = temp_pool
+
         #----------------------
         # Do memory checks 
         #----------------------
@@ -282,6 +290,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in xrange(nbnds):
                 if Pn[n] > pthr:
                     bnd += 1
+            Pn = None
             if verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
             if verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
                                             np.amax(my_eigsmat[bnd,:,:]))
@@ -307,6 +316,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
         #U not needed anymore
         U = None
+
         comm.Barrier()
         if rank == 0:
             print('building Hks in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -437,6 +447,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # NOTE: Naming convention (from here):
             # Hks = k-space Hamiltonian on original MP grid
             # HRs = R-space Hamiltonian on original MP grid
+            ############################
+            ####  IS THIS NEEDED??  ####
+            ############################
             if non_ortho:
                 if Boltzmann or epsilon:
                     Sks_long = Sks
@@ -543,7 +556,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if rank!=0:
                     SRs=np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex,order='C')
                 comm.Bcast(SRs,root=0)
-            else: SRs = Sks = None
+            else: 
+                SRs = None
+                Sks = None
 
 
             # Define real space lattice vectors
@@ -651,11 +666,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
                     else:
                         HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
-                    non_ortho = False
 
+        non_ortho = False
+        Skaux = None
+        SRs   = None
+        Sks   = None
 
-
-    
         comm.Barrier()
 
 
@@ -726,7 +742,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             v_k = None
             E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
 
-            eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
+#            eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
             if HubbardU.any() != 0.0:
                 E_k = gather_full(E_k,npool)
                 if rank==0:
@@ -802,11 +818,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
             if nspin == 1 or nspin == 2:
 
-                eigup = eig[:,0]
+                eigup = E_k[:,:bnd,0].reshape(E_k.shape[0]*bnd)
                 do_dos_calc(eigup,emin,emax,delta,eigtot,bnd,0,inputpath,npool)
                 eigup = None
             if nspin == 2:
-                eigdw = eig[:,1]
+                eigdw = E_k[:,:bnd,1].reshape(E_k.shape[0]*bnd)
                 do_dos_calc(eigdw,emin,emax,delta,eigtot,bnd,1,inputpath,npool)
                 eigdw = None
 
@@ -876,41 +892,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != None:
             if checkpoint < 3:
 
-                #############################################################
-                ################DISTRIBUTE ARRAYS ON KPOINTS#################
-                #############################################################
-
-
-                # if rank==0:
-                #         a=locals().items()
-                #         mem_list=[]
-                #         item_list=[]
-                #         for k,v in a:
-                        
-                #             if v is None:
-                #                 pass
-                        
-                #             if type(v) == type(np.zeros(1,dtype=complex)):
-                #                 size = np.prod(v.shape)*16/(1024.0**3)
-                #                 if size>0.01:
-                #                     item_list.append(k)
-                #                     mem_list.append(size)
-                        
-                #                 elif type(v) == type(np.zeros(1,dtype=float)):
-                #                     size = np.prod(v.shape)*8/(1024.0**3)
-                #                     if size>0.01:
-                #                         item_list.append(k)
-                #                         mem_list.append(size)
-                        
-                #         item_list=np.asarray(item_list)
-                #         mem_list=np.asarray(mem_list)
-                #         order = np.argsort(mem_list)
-                #         mem_list=mem_list[order]
-                #         item_list=item_list[order]
-                #         for i in xrange(mem_list.shape[0]):
-                #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
-
-
                 #----------------------
                 # Compute the gradient of the k-space Hamiltonian
                 #----------------------            
@@ -928,49 +909,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 dHksp = gather_scatter(dHksp,1,npool)
                 dHksp = np.rollaxis(dHksp,0,3)
                 dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
-
-                # if rank==0:
-                #         a=locals().items()
-                #         mem_list=[]
-                #         item_list=[]
-                #         for k,v in a:
-                        
-                #             if v is None:
-                #                 pass
-                        
-                #             if type(v) == type(np.zeros(1,dtype=complex)):
-                #                 size = np.prod(v.shape)*16/(1024.0**3)
-                #                 if size>0.01:
-                #                     item_list.append(k)
-                #                     mem_list.append(size)
-                        
-                #                 elif type(v) == type(np.zeros(1,dtype=float)):
-                #                     size = np.prod(v.shape)*8/(1024.0**3)
-                #                     if size>0.01:
-                #                         item_list.append(k)
-                #                         mem_list.append(size)
-                        
-                #         item_list=np.asarray(item_list)
-                #         mem_list=np.asarray(mem_list)
-                #         order = np.argsort(mem_list)
-                #         mem_list=mem_list[order]
-                #         item_list=item_list[order]
-                #         for i in xrange(mem_list.shape[0]):
-                #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
-
-                
-                # dHksp = np.zeros((v_k.shape[0],3,nawf,nawf,nspin),dtype=complex,order="C")
-                # for ispin in xrange(nspin):
-                #     for l in xrange(3):
-                #         comm.Barrier()
-                #         dHksp_aux = gather_full(np.ascontiguousarray(dHksp_split[...,l,ispin]),npool)
-                #         if rank==0:
-                #             dHksp_aux = np.reshape(np.rollaxis(dHksp_aux,0,4),
-                #                                (nk1*nk2*nk3,nawf,nawf),order="C")
-                #         comm.Barrier()                
-                #         dHksp[:,l,:,:,ispin] = scatter_full(dHksp_aux,npool)
-
-                # dHksp_split = dHksp_aux = None
 
                 if rank == 0:
                     print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -1185,13 +1123,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if do_dos:
                 if nspin == 1 or nspin == 2:
                     deltakpup = np.ravel(deltakp[:,:bnd,0],order='C')
-                    eigup = eig[:,0]
+                    eigup = E_k[:,:bnd,0].reshape(E_k.shape[0]*bnd)
                     do_dos_calc_adaptive(eigup,emin,emax,deltakpup,eigtot,bnd,0,smearing,inputpath)
                     eigup = None
                     deltakpup = None
                 if nspin == 2:
                     deltakpdw = np.ravel(deltakp[:,:bnd,0],order='C')
-                    eigdw = eig[:,1]
+                    eigdw = E_k[:,:bnd,0].reshape(E_k.shape[0]*bnd)
                     do_dos_calc_adaptive(eigdw,emin,emax,deltakpdw,eigtot,bnd,1,smearing,inputpath)
                     eigdw = None
                     deltakpdw = None
@@ -1224,13 +1162,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     #----------------------
     # Reduce memory requirements and improve performance by reducing nawf to bnd (states with good projectability)
     try:
-        pksp = pksp[:,:,:bnd,:bnd]
         if rank==0:
             if 'E_k' in outDict:
                 outDict['E_k'] = E_k
             if 'deltakp' in outDict:
                 outDict['deltakp'] = deltakp
 
+        if not spin_Hall:
+            v_k = None
+        pksp = pksp[:,:,:bnd,:bnd]
         E_k = E_k[:,:bnd]
         deltakp = deltakp[:,:bnd]
         deltakp2 = deltakp2[:,:bnd,:bnd]
@@ -1242,33 +1182,26 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
 
 
-    if rank==0:
-            a=locals().items()
-            mem_list=[]
-            item_list=[]
-            for k,v in a:
-
-                if v is None:
-                    pass
-
-
-                try:
-
-                    size = b.nbytes/(1024.0**3)
-                    if size>0.005:
-                        item_list.append(k)
-                        mem_list.append(size)
-
-                except:
-                    pass
-
-            item_list=np.asarray(item_list)
-            mem_list=np.asarray(mem_list)
-            order = np.argsort(mem_list)
-            mem_list=mem_list[order]
-            item_list=item_list[order]
-            for i in xrange(mem_list.shape[0]):
-                print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
+    # if rank==0:
+    #         a=locals().items()
+    #         mem_list=[]
+    #         item_list=[]
+    #         for k,v in a:
+    #             if v is None:
+    #                 pass
+    #             try:
+    #                 size = sys.getsizeof(v)/(1024.0**3)
+    #                 item_list.append(k)
+    #                 mem_list.append(size)
+    #             except Exception,e:
+    #                 print(e)
+    #         item_list=np.asarray(item_list)
+    #         mem_list=np.asarray(mem_list)
+    #         order = np.argsort(mem_list)
+    #         mem_list=mem_list[order]
+    #         item_list=item_list[order]
+    #         for i in xrange(mem_list.shape[0]):
+    #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
 
     try:
         #----------------------
@@ -1356,6 +1289,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
+    v_k = None
+
     try:
         #----------------------
         # Compute Berry curvature and AHC
