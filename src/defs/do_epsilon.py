@@ -177,23 +177,51 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
     '''upper triangle indices'''
     uind = np.triu_indices(nawf,k=1)
     nk=pksp.shape[0]
-    E_diff_nm = (np.reshape(E_k[:,:,ispin],(nk,1,nawf))\
-                     -np.reshape(E_k[:,:,ispin],(nk,nawf,1)))[:,uind[0],uind[1]]
-    f_nm=(np.reshape(fn,(nk,nawf,1))-np.reshape(fn,(nk,1,nawf)))[:,uind[0],uind[1]]
+
+    E_diff_nm=np.zeros((nk,len(uind[0])),order='C')
+    E_nm_pksp2=np.zeros((nk,len(uind[0])),order='C')
+    f_nm=np.zeros((nk,len(uind[0])),order='C')
+
+    E_diff_nm = np.ascontiguousarray((np.reshape(E_k[:,:,ispin],(nk,1,nawf))\
+                     -np.reshape(E_k[:,:,ispin],(nk,nawf,1)))[:,uind[0],uind[1]])
+
+    f_nm=np.ascontiguousarray((np.reshape(fn,(nk,nawf,1))-np.reshape(fn,(nk,1,nawf)))[:,uind[0],uind[1]])
 #    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,[:,uind[0],uind[1]],ispin]*\
 #                                np.transpose(pksp[:,jpol,:,:,ispin],(0,2,1))[:,uind[0],uind[1]])
-    f_nm_pksp2=f_nm*np.real(pksp[:,ipol,[:,uind[0],uind[1]],ispin]*\
-                                pksp[:,jpol,uind[1],uind[0],ispin])
+    f_nm_pksp2=np.ascontiguousarray(f_nm*np.real(pksp[:,ipol,uind[0],uind[1],ispin]*\
+                                pksp[:,jpol,uind[1],uind[0],ispin]))
+
+
+
 
     fn = None
 
+    dk2_nm = np.ascontiguousarray(deltak2[:,uind[0],uind[1],ispin])
+    dfunc=np.zeros_like(f_nm_pksp2)
+    sq2_dk2 = 1.0/(np.sqrt(np.pi)*deltak2[:,uind[0],uind[1],ispin])
+
+
+
+
+    # gaussian smearing
+
+
     for e in xrange(ene.size):
         if smearing=='gauss':
-            dfunc = gaussian(E_diff_nm,ene[e],deltak2[:,uind[0],uind[1],ispin])
+            np.exp(-((ene[e]-E_diff_nm)/dk2_nm)**2,out=dfunc)
+            dfunc *= sq2_dk2
         if smearing=='m-p':
             dfunc = metpax(E_diff_nm,ene[e],deltak2[:,uind[0],uind[1],ispin])
+
         epsi[ipol,jpol,e] = np.sum(1.0/(ene[e]**2+delta**2)*dfunc*f_nm_pksp2)
         jdos[e] = np.sum(f_nm*dfunc)
+
+    sq2_dk2    = None
+    dfunc      = None
+    f_nm       = None
+    f_nm_pksp2 = None
+    E_diff_nm  = None
+    dk2_nm     = None
 
     if metal:
         if smearing == 'gauss':
@@ -201,14 +229,21 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
         elif smearing == 'm-p':
             fnF = metpax(E_k[:,:,ispin],Ef,deltak[:,:,ispin])
 
+        dfunc=np.zeros_like(fnF)
         diag_ind = np.diag_indices(nawf)
-        fnF *= np.real(pksp[:,ipol,diag_ind[0],diag_ind[1],ispin]*pksp[:,jpol,diag_ind[0],diag_ind[1],ispin])
+        fnF *= np.ascontiguousarray(np.real(pksp[:,ipol,diag_ind[0],diag_ind[1],ispin]*pksp[:,jpol,diag_ind[0],diag_ind[1],ispin]))
+        sq2_dk1 = 1.0/(np.sqrt(np.pi)*deltak[:,:,ispin])
         for e in xrange(ene.size):
             if smearing=='gauss':
-                dfunc = gaussian(0.0,ene[e],deltak[:,:,ispin])
+                gaussian2(0.0,ene[e],deltak[:,:,ispin],out=dfunc)
+                dfunc *= sq2_dk1
             elif smearing=='m-p':
                 dfunc = metpax(0.0,ene[e],deltak[:,:,ispin])
             epsi[ipol,jpol,e] += np.sum(1.0/(ene[e])*dfunc*fnF)
+
+        sq2_dk1 = None
+        dfunc   = None
+        fnF     = None
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)*kq_wght[0]
     jdos *= kq_wght[0]

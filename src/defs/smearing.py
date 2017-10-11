@@ -17,10 +17,14 @@ import math, cmath
 import sys, time
 
 
+one_over_sqrt_pi = 1.0/np.sqrt(np.pi)
+
+
+
 def gaussian(eig,ene,delta):
 
     # gaussian smearing
-    return (1.0/np.sqrt(np.pi)*np.exp(-((ene-eig)/delta)**2)/delta)
+    return one_over_sqrt_pi*(np.exp(-((ene-eig)/delta)**2)/delta)
 
 def metpax(eig,ene,delta):
 
