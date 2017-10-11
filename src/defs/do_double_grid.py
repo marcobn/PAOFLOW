@@ -65,7 +65,6 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
         HRaux = np.reshape(HRaux,(nawf**2,nk1,nk2,nk3,nspin))
     else:
         Hksp = None
-
     if rank==0:
         HR_aux = scatter_full(HRaux,npool)
     else:
@@ -85,30 +84,12 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
             for n in xrange(HR_aux.shape[0]):
                 Hk_aux[n,:,:,:,ispin] = FFT.fftn(zero_pad(HR_aux[n,:,:,:,ispin],
                                                           nk1,nk2,nk3,nfft1,nfft2,nfft3))
-#    if rank==0:
-#        comm.Barrier()
-#        Hksp = gather_full(Hk_aux,npool)
-#        comm.Barrier()
-
-#        Hksp  = np.rollaxis(Hksp,0,4)
-#        Hksp = Hksp.reshape(nk1p,nk2p,nk3p,nawf,nawf,nspin)
-#        Hksp = np.ascontiguousarray(Hksp)
-
-#    else:
-#        comm.Barrier()
-#        gather_full(Hk_aux,npool)
-#        comm.Barrier()
-
-
-#    Hk_aux = None
-    HR_aux = None
-
-
 
     nk1 = nk1p
     nk2 = nk2p
     nk3 = nk3p
-    aux = None
+    HR_aux = None
+    aux    = None
 
     return(Hk_aux,nk1,nk2,nk3)
-#    return(Hksp,nk1,nk2,nk3)
+
