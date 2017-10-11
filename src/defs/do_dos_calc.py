@@ -42,7 +42,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
     dosaux=np.zeros((ene.size),order="C")
 
     for ne in xrange(ene.size):
-        dosaux[ne] = np.sum(np.exp(-((ene[ne]-aux)/delta)**2))
+        dosaux[ne] = np.sum(np.exp(-((ene[ne]-eig)/delta)**2))
 
     comm.Barrier()
     comm.Reduce(dosaux,dos,op=MPI.SUM)

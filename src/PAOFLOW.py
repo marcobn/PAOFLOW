@@ -1179,8 +1179,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             v_k = None
         pksp = pksp[:,:,:bnd,:bnd]
         E_k = E_k[:,:bnd]
-        deltakp = deltakp[:,:bnd]
-        deltakp2 = deltakp2[:,:bnd,:bnd]
+        if smearing != None:
+            deltakp = deltakp[:,:bnd]
+            deltakp2 = deltakp2[:,:bnd,:bnd]
 
     except Exception as e:
         print('Rank %d: Exception in Memory Reduction'%rank)
