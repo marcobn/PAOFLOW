@@ -1090,8 +1090,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in xrange(bnd):
                 velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
-            if rank == 0:
-                if critical_points:
+
+
+            if critical_points:
+                velkp_full = gather_full(velkp,npool)
+                if rank == 0:
+
                     #----------------------
                     # Find critical points (grad(E_kn)=0)
                     #----------------------
@@ -1099,11 +1103,14 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     for ik in xrange(nk1*nk2*nk3):
                         for n in xrange(bnd):
                             for ipin in xrange(nspin):
-                                if  np.abs(velkp[ik,0,n,ispin]) < 1.e-2 and \
-                                    np.abs(velkp[ik,1,n,ispin]) < 1.e-2 and \
-                                    np.abs(velkp[ik,2,n,ispin]) < 1.e-2:
+                                if  np.abs(velkp_full[ik,0,n,ispin]) < 1.e-2 and \
+                                    np.abs(velkp_full[ik,1,n,ispin]) < 1.e-2 and \
+                                    np.abs(velkp_full[ik,2,n,ispin]) < 1.e-2:
                                     f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
                     f.close()
+
+                velkp_full = None
+
     except Exception as e:
         print('Rank %d: Exception computing velocities for Boltzmann Transport'%rank)
         traceback.print_exc()
