@@ -40,7 +40,9 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-from cuda_fft import *
+try:
+    from cuda_fft import *
+except: pass
 try:
     import pyfftw
 except:
