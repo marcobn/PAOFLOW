@@ -35,8 +35,9 @@ def verifyData ( subdir, refPattern ):
     print('Verifying .dat files for %s' % subdir)
 
     # Get new data files and existing reference data files
-    datFiles = glob.glob('*.dat')
-    refFiles = glob.glob(refPattern+'*.dat')
+    datFiles  = glob.glob('*.dat')
+    datFiles += glob.glob('*.bxsf')
+    refFiles  = glob.glob(refPattern+'*.dat')
 
     # Verify that .dat files exist in reference directory
     if len(refFiles) == 0:
