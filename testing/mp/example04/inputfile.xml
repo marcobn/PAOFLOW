@@ -3,7 +3,7 @@
     <!-- Control -->
     <fpath type="character" size="1" len="10">./fe.save/</fpath>
     <restart type="logical" size="1">F</restart>
-    <verbose type="logical" size="1">F</verbose>
+    <verbose type="logical" size="1">T</verbose>
     <non_ortho type="logical" size="1">F</non_ortho>
     <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
     <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
