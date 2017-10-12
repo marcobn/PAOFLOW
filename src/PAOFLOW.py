@@ -1245,20 +1245,24 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 # Compute spin Berry curvature... 
                 #----------------------
 
-                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
-    
-                if rank == 0 and writedata:
-                    Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
-                    x0 = np.zeros(3,dtype=float)
-                    ind_plot = np.zeros(2)
-                    Om_kps[:,:,:,0] = Om_k
-                    Om_kps[:,:,:,1] = Om_k
-                    write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
+                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,
+                                                       eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
+                if writedata:
+                    if rank == 0: 
+                        Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
+                        x0 = np.zeros(3,dtype=float)
+                        ind_plot = np.zeros(2)
+                        Om_kps[:,:,:,0] = Om_k
+                        Om_kps[:,:,:,1] = Om_k
+                        fname = 'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf'
+                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,
+                                   ind_plot,0.0,alat,x0,b_vectors,fname,inputpath)
 
                 Om_k = Om_kps = None
                     
                 if ac_cond_spin:
-                    ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
+                    ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,
+                                                             ipol,jpol,shift,deltakp,deltakp2,smearing)
     
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
@@ -1305,7 +1309,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in xrange(a_tensor.shape[0]):
                 ipol = a_tensor[n][0]
                 jpol = a_tensor[n][1]
-                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
+                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,
+                                                  eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
     
                 if writedata:
                     if rank == 0: 
@@ -1314,35 +1319,38 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         ind_plot = np.zeros(2)
                         Om_kps[:,:,:,0] = Om_k
                         Om_kps[:,:,:,1] = Om_k
-                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
+                        fname = 'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf'
+                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,
+                                   0.0,alat,x0,b_vectors,fname,inputpath)
     
-                    np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
+                        np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:])
 
                 Om_k = Om_kps = None
 
                 if ac_cond_Berry:
-                    ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,ipol,jpol,shift,deltakp,deltakp2,smearing)
-                    ahc0 = np.real(sigxy[0])
-    
-                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-    
+                    ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
+                                                         ipol,jpol,shift,deltakp,deltakp2,smearing)
+
                 if rank == 0:
+                    ahc0 = np.real(sigxy[0])    
+                    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+
                     ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(inputpath+'ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
                         f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
                     f.close()
     
-                if rank == 0 and ac_cond_Berry:
-                    sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open(inputpath+'MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
-                    for n in xrange(ene.size):
-                        f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-                    f.close()
-                    f=open(inputpath+'MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
-                    for n in xrange(ene.size):
-                        f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
-                    f.close()
+                    if ac_cond_Berry:
+                        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+                        f=open(inputpath+'MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+                        f.close()
+                        f=open(inputpath+'MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+                        f.close()
     
             comm.Barrier()
             if rank == 0:

@@ -81,14 +81,15 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
                 sktxtaux[ik,l,:,:] = np.conj(vec[ik,:,:,ispin].T).dot \
                             (Sj[l,:,:]).dot(vec[ik,:,:,ispin])
 
-
-
     sktxt = gather_full(sktxtaux,npool)
+    sktxtaux = None
 
     if rank == 0:
         sktxt = np.reshape(sktxt,(nk1,nk2,nk3,3,nawf,nawf),order='C')
 
         for ib in xrange(icount):
             np.savez(inputpath+'spin_text_band_'+str(ib), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
+
+    sktxt = None
 
     return()

@@ -61,3 +61,5 @@ def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,npo
         for ib in xrange(icount):
             np.savez(inputpath+'Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
 
+
+    E_k_full = E_k_rs = None
