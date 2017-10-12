@@ -1236,8 +1236,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         pass
                 spincheck=comm.bcast(spincheck,root=0)
                 if spincheck == 0:
-                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl)
-                    jksp=jksp[:,:,:bnd,:bnd]
+                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl,bnd)
+
                     if restart:
                         np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
      
@@ -1266,7 +1266,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
-                if rank == 0:
+                if rank == 0 and ac_cond_spin:
                     shc0 = np.real(sigxy[0])
                     shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(inputpath+'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
