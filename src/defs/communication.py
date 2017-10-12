@@ -100,8 +100,6 @@ def scatter_full(arr,npool,sroot=0):
 
     ts,te = load_balancing(size,rank,nsize%size)
     full+=te-ts
-    start_tot,end_tot   = load_balancing(size,rank,nsize)
-#    full = end_tot-start_tot
 
     if len(nsizes)>1:
         per_proc_shape = np.concatenate((np.array([full]),
@@ -157,7 +155,6 @@ def gather_full(arr,npool,sroot=0):
 
     nchunks = nsize/size
     
-
     if nchunks!=0:
         for pool in xrange(npool):
             chunk_s,chunk_e = load_balancing(npool,pool,nchunks)

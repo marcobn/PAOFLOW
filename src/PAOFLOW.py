@@ -560,7 +560,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # Broadcast HRs and SRs
             if rank!=0:
                 HRs=np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex,order='C')
-            comm.Bcast(HRs,root=0)
+            comm.Bcast(np.ascontiguousarray(HRs),root=0)
 
             if non_ortho: 
                 if rank!=0:
@@ -1341,10 +1341,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
                                                          ipol,jpol,shift,deltakp,deltakp2,smearing)
 
+                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
                 if rank == 0:
-                    ahc0 = np.real(sigxy[0])    
-                    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-
+                    ahc0 = np.real(sigxy[0])   
                     ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(inputpath+'ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
                     for n in xrange(ene.size):
