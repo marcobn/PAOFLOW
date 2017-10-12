@@ -871,15 +871,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             #----------------------
     
             if nspin == 1 or nspin == 2:
-                if rank==0:
-                    eigup = E_k[:,:,0]
-                    do_fermisurf(fermi_dw,fermi_up,eigup,alat,b_vectors,nk1,nk2,nk3,nawf,0,inputpath)
-                    eigup = None
-            if nspin == 2:
-                if rank==0:
-                    eigdw = E_k[:,:,1]
-                    do_fermisurf(fermi_dw,fermi_up,eigdw,alat,b_vectors,nk1,nk2,nk3,nawf,0,inputpath)
-                    eigdw = None
+                do_fermisurf(fermi_dw,fermi_up,E_k[:,:,0],alat,b_vectors,nk1,nk2,nk3,nawf,0,npool,inputpath)
+                eigup = None
+            if nspin == 2:                
+                do_fermisurf(fermi_dw,fermi_up,E_k[:,:,1],alat,b_vectors,nk1,nk2,nk3,nawf,0,npool,inputpath)
+                eigdw = None
             if spintexture and nspin == 1:
                 do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
     
@@ -1318,7 +1314,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         ind_plot = np.zeros(2)
                         Om_kps[:,:,:,0] = Om_k
                         Om_kps[:,:,:,1] = Om_k
-                        write2bxsf(fermi_dw,fermi_up,Om_k,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
+                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,0.0,alat,x0,b_vectors,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf',inputpath)
     
                     np.savez('Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz',kq=kq,Om_k=Om_k[:,:,:,0])
 

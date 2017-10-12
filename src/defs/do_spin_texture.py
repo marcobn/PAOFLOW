@@ -30,15 +30,20 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
     nktot = nk1*nk2*nk3
     ind_plot = np.zeros(nawf,dtype=int)
 
+    E_k_full = gather_full(E_k,npool)
+
+
     icount = None
     if rank == 0:
         icount = 0
         for ib in range(nawf):
-            if ((np.amin(E_k[:,ib]) < fermi_up and np.amax(E_k[:,ib]) > fermi_up) or \
-                (np.amin(E_k[:,ib]) < fermi_dw and np.amax(E_k[:,ib]) > fermi_dw) or \
-                (np.amin(E_k[:,ib]) > fermi_dw and np.amax(E_k[:,ib]) < fermi_up)):
+            if ((np.amin(E_k_full[:,ib]) < fermi_up and np.amax(E_k_full[:,ib]) > fermi_up) or \
+                (np.amin(E_k_full[:,ib]) < fermi_dw and np.amax(E_k_full[:,ib]) > fermi_dw) or \
+                (np.amin(E_k_full[:,ib]) > fermi_dw and np.amax(E_k_full[:,ib]) < fermi_up)):
                 ind_plot[icount] = ib
                 icount +=1
+
+    E_k_full = None
 
     icount = comm.bcast(icount)
 
@@ -67,14 +72,14 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
 
 
 
-    vecaux = scatter_full(vec,npool)
-    sktxtaux = np.zeros((vecaux.shape[0],3,nawf,nawf),dtype=complex)
 
-    for ik in xrange(vecaux.shape[0]):
+    sktxtaux = np.zeros((vec.shape[0],3,nawf,nawf),dtype=complex)
+
+    for ik in xrange(vec.shape[0]):
         for ispin in xrange(nspin):
             for l in xrange(3):
-                sktxtaux[ik,l,:,:] = np.conj(vecaux[ik,:,:,ispin].T).dot \
-                            (Sj[l,:,:]).dot(vecaux[ik,:,:,ispin])
+                sktxtaux[ik,l,:,:] = np.conj(vec[ik,:,:,ispin].T).dot \
+                            (Sj[l,:,:]).dot(vec[ik,:,:,ispin])
 
 
 
@@ -82,30 +87,6 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
 
     if rank == 0:
         sktxt = np.reshape(sktxt,(nk1,nk2,nk3,3,nawf,nawf),order='C')
-
-        # nbndx_plot = 10
-        # eigband = np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float)
-        # ind_plot = np.zeros(nbndx_plot)
-        # E_K = np.reshape(E_k,(nk1,nk2,nk3,nawf))
-        # Efermi = 0.0
-
-
-        # #collect the interpolated eignvalues
-        # icount = 0
-        # for ib in range(nawf):
-        #     if ((np.amin(E_k[:,ib]) < fermi_up and np.amax(E_k[:,ib]) > fermi_up) or \
-        #         (np.amin(E_k[:,ib]) < fermi_dw and np.amax(E_k[:,ib]) > fermi_dw) or \
-        #         (np.amin(E_k[:,ib]) > fermi_dw and np.amax(E_k[:,ib]) < fermi_up)):
-        #         if ( icount > nbndx_plot ): sys.exit("too many bands contributing")
-        #         eigband[:,:,:,icount] = E_K[:,:,:,ib]
-        #         ind_plot[icount] = ib
-        #         icount +=1
-        # x0 = np.zeros(3,dtype=float)   
-
-        
-
-        # write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
-
 
         for ib in xrange(icount):
             np.savez(inputpath+'spin_text_band_'+str(ib), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])

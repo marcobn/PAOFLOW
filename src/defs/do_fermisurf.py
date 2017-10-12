@@ -25,36 +25,39 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 
-def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,inputpath):
+def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,npool,inputpath):
     #maximum number of bands crossing fermi surface
+
+    E_k_full = gather_full(E_k,npool)
 
     nbndx_plot = 10
     nktot = nk1*nk2*nk3
     
-#    vkpt_int_cry = np.zeros((3,nktot), dtype=float)
-    eigband = np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float)
-    ind_plot = np.zeros(nbndx_plot)
 
-    
+    if rank==0:
+        eigband = np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float)
+        ind_plot = np.zeros(nbndx_plot)
 
-    
-    E_K = np.reshape(E_k,(nk1,nk2,nk3,nawf))
-    Efermi = 0.0
+        E_k_rs = np.reshape(E_k_full,(nk1,nk2,nk3,nawf))
 
-    #collect the interpolated eignvalues
-    icount = 0
-    for ib in range(nawf):
-        if ((np.amin(E_k[:,ib]) < fermi_up and np.amax(E_k[:,ib]) > fermi_up) or \
-            (np.amin(E_k[:,ib]) < fermi_dw and np.amax(E_k[:,ib]) > fermi_dw) or \
-            (np.amin(E_k[:,ib]) > fermi_dw and np.amax(E_k[:,ib]) < fermi_up)):
-            if ( icount > nbndx_plot ): sys.exit("too many bands contributing")
-            eigband[:,:,:,icount] = E_K[:,:,:,ib]
-            ind_plot[icount] = ib
-            icount +=1
-    x0 = np.zeros(3,dtype=float)   
 
-    write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
 
-    for ib in xrange(icount):
-        np.savez(inputpath+'Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
+        Efermi = 0.0
+
+        #collect the interpolated eignvalues
+        icount = 0
+        for ib in range(nawf):
+            if ((np.amin(E_k_full[:,ib]) < fermi_up and np.amax(E_k_full[:,ib]) > fermi_up) or \
+                (np.amin(E_k_full[:,ib]) < fermi_dw and np.amax(E_k_full[:,ib]) > fermi_dw) or \
+                (np.amin(E_k_full[:,ib]) > fermi_dw and np.amax(E_k_full[:,ib]) < fermi_up)):
+                if ( icount > nbndx_plot ): sys.exit("too many bands contributing")
+                eigband[:,:,:,icount] = E_k_rs[:,:,:,ib]
+                ind_plot[icount] = ib
+                icount +=1
+        x0 = np.zeros(3,dtype=float)   
+
+        write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
+
+        for ib in xrange(icount):
+            np.savez(inputpath+'Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
 

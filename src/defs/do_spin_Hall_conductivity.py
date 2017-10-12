@@ -42,7 +42,10 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     nktot = np.zeros((1),dtype=int)
     comm.Reduce(nk_tot,nktot)
 
-    sigxy = np.zeros((ene.size),dtype=complex)
+    if rank==0:
+        sigxy = np.zeros((ene.size),dtype=complex)
+    else: sigxy = None
+
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
     sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
