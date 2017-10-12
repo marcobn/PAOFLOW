@@ -28,6 +28,10 @@
     <ibrav type="integer" size="1">3</ibrav>
     <nk type="integer" size="1">2000</nk>
 
+    <!-- fermi surface and spin texture -->
+    <fermisurf type="logical" size="1">T</fermisurf>
+    <writedata type="logical" size="1">T</writedata>
+
     <!-- Band Topology Analysis -->
     <band_topology type="logical" size="1">T</band_topology>
     <spol type="integer" size="1">2</spol><!-- Spin -->
