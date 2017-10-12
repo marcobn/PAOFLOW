@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<root>
+    <!-- Control -->
+    <fpath type="character" size="1" len="10">./pt.save/</fpath>
+    <restart type="logical" size="1">F</restart>
+    <verbose type="logical" size="1">F</verbose>
+    <non_ortho type="logical" size="1">F</non_ortho>
+    <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
+    <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
+    <shift>auto</shift><!-- if 'auto' shift is selected automatically; else, give numerical value (eV) -->
+    <pthr type="decimal" size="1">0.95</pthr>
+    <npool type="integer" size="1">1</npool>
+
+    <!-- Return Requests -->
+    <out_vals type="character" size="0"></out_vals>
+
+    <!-- Calculations -->
+    
+    <!-- Shell order and degeneracy for SO (order must be the same as in the output of projwfc.x) -->
+    <sh><a type="integer" size="3">0 1 2</a></sh><!-- Calculations -->
+    <nl><a type="integer" size="3">1 1 1</a></nl><!-- Calculations -->
+
+    <!-- Bands interpolation on a path from the original MP mesh -->
+    <do_bands type="logical" size="1">F</do_bands>
+    <ibrav type="integer" size="1">2</ibrav>
+    <nk type="integer" size="1">2000</nk>
+
+    <!-- Band Topology Analysis -->
+    <band_topology type="logical" size="1">T</band_topology>
+    <spol type="integer" size="1">2</spol><!-- Spin -->
+    <ipol type="integer" size="1">0</ipol>
+    <jpol type="integer" size="1">1</jpol>
+
+    <!-- Hamiltonian interpolation on finer MP mesh -->
+    <double_grid type="logical" size="1">T</double_grid>
+    <nfft1 type="integer" size="1">64</nfft1>
+    <nfft2 type="integer" size="1">64</nfft2>
+    <nfft3 type="integer" size="1">64</nfft3>
+
+    <!-- DOS(PDOS) Calculation -->
+    <do_dos type="logical" size="1">T</do_dos>
+    <do_pdos type="logical" size="1">F</do_pdos>
+    <emin type="decimal" size="1">-8.0</emin>
+    <emax type="decimal" size="1">4.0</emax>
+    <delta type="decimal" size="1">0.2</delta>
+
+    <!-- Adaptive smearing -->
+    <smearing type="string" size="1">m-p</smearing><!-- other available values are None or 'm-p' -->
+
+    <!-- Tensor Components -->
+    <!-- Spin Berry Curvature -->
+    <s_tensor>
+        <a type="integer" size="3">0 1 2</a>
+    </s_tensor>
+
+    <!-- Berry curvature and AHC -->
+    <spin_Hall type="logical" size="1">T</spin_Hall>
+    <eminSH type="decimal" size="1">-8.0</eminSH>
+    <emaxSH type="decimal" size="1">4.0</emaxSH>
+    <ac_cond_spin type="logical" size="1">T</ac_cond_spin>
+</root>

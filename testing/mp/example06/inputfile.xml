@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<root>
+    <!-- Control -->
+    <fpath type="character" size="1" len="11">./alp.save/</fpath>
+    <restart type="logical" size="1">F</restart>
+    <verbose type="logical" size="1">F</verbose>
+    <non_ortho type="logical" size="1">F</non_ortho>
+    <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
+    <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
+    <shift>auto</shift><!-- if 'auto' shift is selected automatically; else, give numerical value (eV) -->
+    <pthr type="decimal" size="1">0.95</pthr>
+    <npool type="integer" size="1">1</npool>
+
+    <!-- Return Requests -->
+    <out_vals type="character" size="0"></out_vals>
+
+    <!-- Calculations -->
+    
+    <!--> Compare PAO bands with original DFT bands on the original MP mesh -->
+    <do_comparison type="logical" size="1">F</do_comparison>
+
+    <!-- Dimensions of the atomic basis for each atom (order must be the same as in the output of projwfc.x) -->
+    <naw><a type="integer" size="2">16 16</a></naw>
+
+    <!-- External fields -->
+    <HubbardU><a type="decimal" size="32">0.0 0.01 0.01 0.01 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 2.31 2.31 2.31 2.31 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0</a></HubbardU>
+
+    <!-- Bands interpolation along a path from a 1D string of k points -->
+    <onedim type="logical" size="1">F</onedim>
+
+    <!-- Bands interpolation on a path from the original MP mesh -->
+    <do_bands type="logical" size="1">T</do_bands>
+    <ibrav type="integer" size="1">2</ibrav>
+    <nk type="integer" size="1">2000</nk>
+
+    <!-- Hamiltonian interpolation on finer MP mesh -->
+    <double_grid type="logical" size="1">T</double_grid>
+    <nfft1 type="integer" size="1">24</nfft1>
+    <nfft2 type="integer" size="1">24</nfft2>
+    <nfft3 type="integer" size="1">24</nfft3>
+
+    <!-- DOS(PDOS) Calculation -->
+    <do_dos type="logical" size="1">T</do_dos>
+    <do_pdos type="logical" size="1">F</do_pdos>
+    <emin type="decimal" size="1">-8.0</emin>
+    <emax type="decimal" size="1">5.0</emax>
+    <delta type="decimal" size="1">0.1</delta>
+
+    <!-- Adaptive smearing -->
+    <smearing type="string" size="1">m-p</smearing><!-- other available values are None or 'm-p' -->
+
+    <!-- Plot Fermi Surface (spin texture) -->
+    <do_fermisurf type="logical" size="1">F</do_fermisurf>
+    <fermi_up type="decimal" size="1">1.0</fermi_up>
+    <fermi_dw type="decimal" size="1">-1.0</fermi_dw>
+    <do_spintexture type="logical" size="1">F</do_spintexture>
+
+    <!-- Tensor Components -->
+    <!-- Dielectric Function -->
+    <d_tensor>
+        <a type="integer" size="2">0 0</a>
+    </d_tensor>
+    <!-- Boltzmann Transport -->
+    <t_tensor>
+        <a type="integer" size="2">0 0</a>
+    </t_tensor>
+
+    <!-- Set Temperature in eV -->
+    <temp type="decimal" size="1">0.025852</temp><!-- Room temperature -->
+
+    <!-- Boltzmann Transport -->
+    <Boltzmann type="logical" size="1">T</Boltzmann>
+
+    <!-- Dielectric Function Calculation -->
+    <epsilon type="logical" size="1">T</epsilon>
+    <metal type="logical" size="1">F</metal>
+    <epsmin type="decimal" size="1">0.0</epsmin>
+    <epsmax type="decimal" size="1">6.0</epsmax>
+    <ne type="decimal" size="1">500</ne>
+
+    <!-- Critical Points -->
+    <critical_points type="logical" size="1">F</critical_points>
+</root>
