@@ -31,11 +31,15 @@
     <ipol type="integer" size="1">0</ipol>
     <jpol type="integer" size="1">1</jpol>
 
+    <!-- fermi surface and spin texture -->
+    <fermisurf type="logical" size="1">T</fermisurf>
+    <writedata type="logical" size="1">T</writedata>
+
     <!-- Hamiltonian interpolation on finer MP mesh -->
     <double_grid type="logical" size="1">T</double_grid>
-    <nfft1 type="integer" size="1">64</nfft1>
-    <nfft2 type="integer" size="1">64</nfft2>
-    <nfft3 type="integer" size="1">64</nfft3>
+    <nfft1 type="integer" size="1">24</nfft1>
+    <nfft2 type="integer" size="1">24</nfft2>
+    <nfft3 type="integer" size="1">24</nfft3>
 
     <!-- DOS(PDOS) Calculation -->
     <do_dos type="logical" size="1">T</do_dos>
