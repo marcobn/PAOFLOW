@@ -47,11 +47,6 @@
     <!-- Adaptive smearing -->
     <smearing type="string" size="1">None</smearing><!-- other available values are None or 'm-p' -->
 
-    <!-- fermi surface and spin texture -->
-    <fermisurf type="logical" size="1">T</fermisurf>
-    <spintexture type="logical" size="1">T</spintexture>
-    <writedata type="logical" size="1">T</writedata>
-
     <!-- Tensor Components -->
     <!-- Spin Berry Curvature -->
     <s_tensor>

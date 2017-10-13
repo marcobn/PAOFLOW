@@ -32,13 +32,18 @@ def verifyData ( subdir, refPattern ):
     tolerance = 0.005  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
 
-    print('Verifying .dat files for %s' % subdir)
+    RED   = "\x1B[31m"
+    GREEN = "\x1B[32m"
+    RESET = "\x1B[0m"
+    test_set_dir = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(subdir))))
+    print('Verifying .dat files for %s' % test_set_dir+'/'+subdir)
 
     # Get new data files and existing reference data files
     datFiles  = glob.glob('*.dat')
 #    datFiles += glob.glob('*.bxsf')
     refFiles  = glob.glob(refPattern+'*.dat')
 #    refFiles += glob.glob(refPattern+'*.bxsf')
+
 
     # Verify that .dat files exist in reference directory
     if len(refFiles) == 0:
@@ -59,7 +64,7 @@ def verifyData ( subdir, refPattern ):
     maxErrorIndex = -1  # Will store file index of maximum error value
     maxRelError = -1.  # Store maximum relative error
     maxRelErrorIndex = -1  # Store file index of maximum relative error value
-    allDataResult = 'PASS'  # Stores status of the entire example calculation
+    allDataResult = GREEN+'PASS'+RESET  # Stores status of the entire example calculation
     for i in range(len(datFiles)):
         
         # Gather data from files
@@ -104,9 +109,9 @@ def verifyData ( subdir, refPattern ):
             validData = False
 
         if validData:
-            result = 'PASS'
+            result = GREEN+'PASS'+RESET
         else:
-            allDataResult = result = 'FAIL'
+            allDataResult = result = RED+'FAIL'+RESET
 
         if showErrors:
             print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s' % (datFiles[i], absoluteError, relativeError))
@@ -114,10 +119,10 @@ def verifyData ( subdir, refPattern ):
             print('\t%s ---------- [%s]\n' % (datFiles[i], result))
 
     if showErrors:
-        print('The maximum absolute error in %s was %E in %s' % (subdir, maxError, datFiles[maxErrorIndex]))
-        print('The maximum relative error in %s was %E in %s' % (subdir, maxRelError, datFiles[maxRelErrorIndex]))
+        print('The maximum absolute error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxError, datFiles[maxErrorIndex]))
+        print('The maximum relative error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxRelError, datFiles[maxRelErrorIndex]))
 
-    print('%s ---------- [%s]\n' % (subdir, allDataResult))
+    print('%s ---------- [%s]\n' % (test_set_dir+'/'+subdir, allDataResult))
 
 
 def main():
