@@ -36,8 +36,9 @@ def verifyData ( subdir, refPattern ):
 
     # Get new data files and existing reference data files
     datFiles  = glob.glob('*.dat')
-    datFiles += glob.glob('*.bxsf')
+#    datFiles += glob.glob('*.bxsf')
     refFiles  = glob.glob(refPattern+'*.dat')
+#    refFiles += glob.glob(refPattern+'*.bxsf')
 
     # Verify that .dat files exist in reference directory
     if len(refFiles) == 0:
@@ -125,7 +126,7 @@ def main():
     if len(sys.argv) > 1:
         alldir = glob.glob(sys.argv[1])
     else:
-        alldir = glob.glob('./*example*/')
+        alldir = sorted(glob.glob('./*/*example*/'))
 
     # Assign default reference directory pattern, then look for argument
     refPattern = './Reference/'
@@ -141,7 +142,7 @@ def main():
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         verifyData(subdir, refPattern)
-        os.chdir('../')
+        os.chdir('../../')
 
 
 if __name__ == "__main__":
