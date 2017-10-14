@@ -12,7 +12,7 @@
 import numpy as np
 import cmath
 import sys, time
-
+import os
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
@@ -51,7 +51,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
 
     if rank == 0:
         dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta
-        f=open(inputpath+'dos_'+str(ispin)+'.dat','w')
+        f=open(os.path.join(inputpath,'dos_',str(ispin)+'.dat'),'w')
         for ne in xrange(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()

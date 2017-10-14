@@ -12,7 +12,7 @@
 import numpy as np
 import cmath
 import sys, time
-
+import os
 from write2bxsf import *
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -59,7 +59,7 @@ def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,npo
         write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
 
         for ib in xrange(icount):
-            np.savez(inputpath+'Fermi_surf_band_'+str(ib), nameband = eigband[:,:,:,ib])
+            np.savez(os.path.join(inputpath,'Fermi_surf_band_'+str(ib)), nameband = eigband[:,:,:,ib])
 
 
     E_k_full = E_k_rs = None

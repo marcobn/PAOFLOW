@@ -42,13 +42,13 @@ def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs,inputpath):
     if rank == 0:
         ipad = False
         if ipad:
-            f=open(inputpath+'bands_'+str(ispin)+'.dat','w')
+            f=open(os.path.join(inputpath,'bands_'+str(ispin)+'.dat'),'w')
             for ik in xrange(nkpnts):
                 for nb in xrange(nawf):
                     f.write('%3d  %.5f \n' %(ik,E_k[ik,nb]))
             f.close()
         else:
-            f=open(inputpath+'bands_'+str(ispin)+'.dat','w')
+            f=open(os.path.join(inputpath,'bands_'+str(ispin)+'.dat'),'w')
             for ik in xrange(nkpnts):
                 s="%d\t"%ik
                 for  j in E_k[ik,:]:s += "%3.5f\t"%j

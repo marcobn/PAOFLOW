@@ -12,7 +12,7 @@
 import numpy as np
 import cmath
 import sys, time
-
+import os
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
@@ -60,11 +60,11 @@ def do_pdos_calc_adaptive(E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearin
         pdos_sum = np.zeros(ene.size,dtype=float)
         for m in range(nawf):
             pdos_sum += pdos[m]
-            f=open(inputpath+'/'+str(m)+'_pdosdk_'+str(ispin)+'.dat','w')
+            f=open(os.path.join(inputpath,str(m)+'_pdosdk_'+str(ispin)+'.dat'),'w')
             for ne in range(ene.size):
                 f.write('%.5f  %.5f \n' %(ene[ne],pdos[m,ne]))
             f.close()
-        f=open(inputpath+'/'+'pdosdk_sum_'+str(ispin)+'.dat','w')
+        f=open(os.path.join(inputpath,'pdosdk_sum_'+str(ispin)+'.dat'),'w')
         for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],pdos_sum[ne]))
         f.close()

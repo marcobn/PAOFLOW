@@ -12,9 +12,10 @@
 import numpy as np
 import cmath
 import sys, time
+import os
 
 def write2bxsf(fermi_dw,fermi_up,bands, nx, ny, nz, nbnd, ind_plot, Efermi, alat,x0, b_vectors, filename, inputpath):
-    with open (inputpath+'{0}'.format(filename),'w') as f:
+    with open (os.path.join(inputpath,'{0}'.format(filename)),'w') as f:
         f.write('\nBEGIN_INFO\n  Fermi Energy: {:15.9f}\n  Shift Range: {:12.9f}eV to{:12.9f}eV\nEND_INFO\n'.format(Efermi,fermi_dw,fermi_up))
         # BXSF scalar-field header
         f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBANDGRID_3D_BANDS\n')  

@@ -33,12 +33,16 @@ from PAOFLOW import *
 def main():
 
     arg1 = './'
-    if len(sys.argv) > 1:
-        arg1 = sys.argv[1]
+    arg2 = "inputfile.xml"
+    try:
+        arg1 = os.path.abspath(sys.argv[1])
+        if os.path.isfile(arg1):
+            arg2 = os.path.basename(arg1)
+            arg1 = os.path.dirname(arg1)
+    except: pass
+    print(arg1,arg2)
 
-    arg2 = 'inputfile.xml'
-    if len(sys.argv) > 2:
-        arg2 = sys.argv[2]
+
 
     # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.
     outDict = paoflow(inputpath=arg1,inputfile=arg2)

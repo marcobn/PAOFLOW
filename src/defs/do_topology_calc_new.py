@@ -13,7 +13,7 @@
 from scipy import fftpack as FFT
 import numpy as np
 import cmath
-import sys
+import sys,os
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -67,7 +67,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         for ik in xrange(nktrim/2):
             delta_ik[ik] = pf.pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
-        f=open(inputpath+'Z2'+'.dat','w')
+        f=open(os.path.join(inputpath,'Z2'+'.dat'),'w')
         p2D = np.real(np.prod(delta_ik[:4]))
         if p2D+1.0 < 1.e-5:
             v0 = 1
@@ -208,7 +208,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         #mkm1 *= ELECTRONVOLT_SI**2/H_OVER_TPI**2*ELECTRONMASS_SI
         if rank == 0:
             for ispin in xrange(nspin):
-                f=open(inputpath+'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat','w')
+                f=open(os.path.join(inputpath,'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat'),'w')
                 for ik in xrange(nkpi):
                     s="%d\t"%ik
                     for  j in np.real(mkm1[ik,:bnd,ipol,jpol,ispin]):s += "% 3.5f\t"%j
@@ -266,14 +266,14 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     if Berry:
         Om_zk = gather_full(Om_zk,npool)
         if rank == 0:
-            f=open(inputpath+'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            f=open(os.path.join(inputpath,'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,-Om_zk[ik,0]))
             f.close()
     if spin_Hall:
         Omj_zk = gather_full(Omj_zk,npool)
         if rank == 0:
-            f=open(inputpath+'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat','w')
+            f=open(os.path.join(inputpath,'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,Omj_zk[ik,0]))
             f.close()
@@ -286,7 +286,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
             velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
         for ispin in xrange(nspin):
             for l in xrange(3):
-                f=open(inputpath+'velocity_'+str(l)+'_'+str(ispin)+'.dat','w')
+                f=open(os.path.join(inputpath,'velocity_'+str(l)+'_'+str(ispin)+'.dat'),'w')
                 for ik in xrange(nkpi):
                     s="%d\t"%ik
                     for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j

@@ -12,7 +12,7 @@
 import numpy as np
 import cmath
 import sys, time
-
+import os
 from write2bxsf import *
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -88,7 +88,7 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
         sktxt = np.reshape(sktxt,(nk1,nk2,nk3,3,nawf,nawf),order='C')
 
         for ib in xrange(icount):
-            np.savez(inputpath+'spin_text_band_'+str(ib), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
+            np.savez(os.path.join(inputpath,'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     sktxt = None
 
