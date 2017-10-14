@@ -40,7 +40,7 @@ def main():
             arg2 = os.path.basename(arg1)
             arg1 = os.path.dirname(arg1)
     except: pass
-    print(arg1,arg2)
+
 
 
 
