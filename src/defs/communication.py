@@ -64,26 +64,20 @@ def scatter_array ( arr, sroot=0 ):
 
 # Gathers first dimension of an array of arbitrary length
 def gather_array ( arr, arraux, sroot=0 ):
-    # Data type of the scattered array on this process
-    pydtype = None
 
     # An array to store the size and dimensions of gathered arrays
     lsizes = np.empty((size,3), dtype=int)
     if rank == sroot:
-        pydtype = arr.dtype
         lsizes = load_sizes(size, arr.shape[0], np.prod(arr.shape[1:]))
-    # Broadcast the data type and offsets
-    pydtype = comm.bcast(pydtype, root=sroot)
+
+    # Broadcast the data offsets
     comm.Bcast([lsizes, MPI.INT], root=sroot)
 
     # Get the datatype for the MPI transfer
-    mpidtype = MPI._typedict[np.dtype(pydtype).char]
+    mpidtype = MPI._typedict[np.dtype(arraux.dtype).char]
 
     # Gather the data according to load_sizes
     comm.Gatherv([arraux, mpidtype], [arr, lsizes[:,0], lsizes[:,1], mpidtype], root=sroot)
-
-
-
 
 
 def scatter_full(arr,npool,sroot=0):
@@ -181,25 +175,31 @@ def gather_scatter(arr,scatter_axis,npool):
     axis_ind = np.array(xrange(arr.shape[scatter_axis]),dtype=int)
     axis_ind = scatter_full(axis_ind,npool)
     #get dummy indexing string
-    dummy_indexing = [':']*np.array(arr.shape).size
-    dummy_indexing[scatter_axis]='scatter_ind'
-    ind_str= ','.join(dummy_indexing)
+ 
+    #broadcast indices that for scattered array to proc with rank 'r'
+    size_r = np.zeros((size),dtype=int,order='C')
+    if rank==0:
+        gather_array(size_r,np.array(axis_ind.size,dtype=int))
+    else:
+        gather_array(None,np.array(axis_ind.size,dtype=int))
+    comm.Bcast(size_r)
 
     for r in xrange(size):
-        #broadcast indices that for scattered array to proc with rank 'r'
-        size_r = comm.bcast(axis_ind.size,root=r)
         comm.Barrier()
+
+        # broadcast indices of scatter_axis for proc r to all procs
         if rank==r:
             scatter_ind=axis_ind
         else:
-            scatter_ind=np.zeros((size_r),dtype=int)
+            scatter_ind=np.zeros((size_r[r]),dtype=int)
         comm.Bcast(scatter_ind, root=r)
-        comm.Barrier()
 
         #gather array from each proc with indices for each proc on scatter_axis
         if r==rank:
-            exec('temp = gather_full(np.ascontiguousarray(arr[%s]),npool,sroot=r)'%ind_str)
+            temp = gather_full(np.take(arr,scatter_ind,axis=scatter_axis),npool,sroot=r)
         else:
-            exec('gather_full(np.ascontiguousarray(arr[%s]),npool,sroot=r)'%ind_str)
+            gather_full(np.take(arr,scatter_ind,axis=scatter_axis),npool,sroot=r)
+
+        scatter_ind = None
 
     return temp
