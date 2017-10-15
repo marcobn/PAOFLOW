@@ -174,32 +174,35 @@ def gather_scatter(arr,scatter_axis,npool):
     #scatter indices for scatter_axis to each proc
     axis_ind = np.array(xrange(arr.shape[scatter_axis]),dtype=int)
     axis_ind = scatter_full(axis_ind,npool)
-    #get dummy indexing string
- 
+
     #broadcast indices that for scattered array to proc with rank 'r'
     size_r = np.zeros((size),dtype=int,order='C')
+    scatter_ind = np.zeros((arr.shape[scatter_axis]),dtype=int,order='C')
     if rank==0:
         gather_array(size_r,np.array(axis_ind.size,dtype=int))
+        gather_array(scatter_ind,np.array(axis_ind,dtype=int))
     else:
         gather_array(None,np.array(axis_ind.size,dtype=int))
-    comm.Bcast(size_r)
+        gather_array(None,np.array(axis_ind,dtype=int))
 
+    axis_ind = None
+
+    comm.Bcast(size_r)
+    comm.Bcast(scatter_ind)
+
+    #start and end points of indices of scatter axis for each proc
+    end   = np.cumsum(size_r)
+    start = end - size_r
+    size_r = None
+    
     for r in xrange(size):
         comm.Barrier()
-
-        # broadcast indices of scatter_axis for proc r to all procs
-        if rank==r:
-            scatter_ind=axis_ind
-        else:
-            scatter_ind=np.zeros((size_r[r]),dtype=int)
-        comm.Bcast(scatter_ind, root=r)
-
         #gather array from each proc with indices for each proc on scatter_axis
         if r==rank:
-            temp = gather_full(np.take(arr,scatter_ind,axis=scatter_axis),npool,sroot=r)
+            temp = gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
         else:
-            gather_full(np.take(arr,scatter_ind,axis=scatter_axis),npool,sroot=r)
+            gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
 
-        scatter_ind = None
+    start = end = scatter_ind = None
 
     return temp
