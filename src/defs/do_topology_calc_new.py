@@ -235,11 +235,11 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
         #jdHks = np.zeros((3,nawf,nawf,nkpi,nspin),dtype=complex)
         jks = np.zeros((pks.shape[0],3,nawf,nawf,nspin),dtype=complex)
-        for ik in xrange(nkpi):
+        for ik in xrange(pks.shape[0]):
             for ispin in xrange(nspin):
                 for l in xrange(3):
                     jks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
-                                (0.5*(np.dot(Sj,dHks[l,:,:,ik,ispin])+np.dot(dHks[l,:,:,ik,ispin],Sj))).dot(v_kp[ik,:,:,ispin])
+                                (0.5*(np.dot(Sj,dHks_aux[ik,l,:,:,ispin])+np.dot(dHks_aux[ik,l,:,:,ispin],Sj))).dot(v_kp[ik,:,:,ispin])
 
         Omj_znk = np.zeros((pks.shape[0],nawf),dtype=float)
         Omj_zk = np.zeros((pks.shape[0],1),dtype=float)
