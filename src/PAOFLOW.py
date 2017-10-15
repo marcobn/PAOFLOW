@@ -842,17 +842,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
                 v_kup = v_kdw = None
                 if nspin == 1 or nspin == 2:
-                    
                     eigup = E_k[:,:,0]
                     v_kup = v_k[:,:,:,0]
-                    do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0,inputpath,npool)
+                    do_pdos_calc(eigup,emin,emax,delta,v_kup,nk1,nk2,nk3,nawf,0,inputpath)
                     eigup = None
                     v_kup = None
                 if nspin == 2:
-
                     eigdw = E_k[:,:,1]
                     v_kdw = v_k[:,:,:,1]
-                    do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1,inputpath,npool)
+                    do_pdos_calc(eigdw,emin,emax,delta,v_kdw,nk1,nk2,nk3,nawf,1,inputpath)
                     eigdw = None
                     v_kdw = None
 

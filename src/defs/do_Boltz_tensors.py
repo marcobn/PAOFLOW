@@ -36,9 +36,6 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
-
-    E_k = np.real(E_k)
-
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)
 
