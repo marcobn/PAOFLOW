@@ -61,13 +61,14 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
 
 
 def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
-    np.seterr(invalid='ignore',divide='ignore')
 
     sigxy = np.zeros((ene.size),dtype=complex)
     f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
     E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
     delta = 0.05
     Ef = 0.0
+    #to avoid divide by zero error
+    eps=1.0e-16
 
 
     if smearing == None:
@@ -88,15 +89,12 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
 
     for e in xrange(ene.size):
         if smearing!=None:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2)*f_nm[:,:,:])
+            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
         else:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2)*f_nm[:,:,:])
+            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
                                                                                  
     F_nm = None
     E_diff_nm = None
                     
-                            
-
-    np.seterr(invalid='warn',divide='warn')                                    
     return(np.nan_to_num(sigxy))
 
