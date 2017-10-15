@@ -1245,9 +1245,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
      
 
-                    if rank == 0:
-                        print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-                        reset=time.time()
+#                    if rank == 0:
+#                        print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+#                        reset=time.time()
                 #----------------------
                 # Compute spin Berry curvature... 
                 #----------------------
