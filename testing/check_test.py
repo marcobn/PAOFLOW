@@ -36,7 +36,7 @@ def verifyData ( subdir, refPattern ):
     GREEN = "\x1B[32m"
     RESET = "\x1B[0m"
     test_set_dir = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(subdir))))
-    print('Verifying .dat files for %s' % test_set_dir+'/'+subdir)
+
 
     # Get new data files and existing reference data files
     datFiles  = glob.glob('*.dat')
@@ -115,14 +115,18 @@ def verifyData ( subdir, refPattern ):
 
         if showErrors:
             print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s' % (datFiles[i], absoluteError, relativeError))
-        if showFileResult:
-            print('\t%s ---------- [%s]\n' % (datFiles[i], result))
+        showFileResult_tmp = showFileResult
+        if result == RED+'FAIL'+RESET:
+           showFileResult_tmp = True 
+        if showFileResult_tmp:
+            print('\t[%s] ---------- %s' % (result,datFiles[i]))
+        showFileResult_tmp = showFileResult
 
     if showErrors:
         print('The maximum absolute error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxError, datFiles[maxErrorIndex]))
         print('The maximum relative error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxRelError, datFiles[maxRelErrorIndex]))
 
-    print('%s ---------- [%s]\n' % (test_set_dir+'/'+subdir, allDataResult))
+    print('[%s] ---------- %s' % ( allDataResult,test_set_dir+'/'+subdir))
 
 
 def main():
