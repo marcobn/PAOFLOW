@@ -19,16 +19,20 @@ from check_test import verifyData
 def get_exeCmd(engine, calcType,inputFile):
 
 #################### User defined parameters ####################
-    execPrefix = "mpirun -np 16"
+    execPrefix = "mpirun -np 64"
     execPostfix = " "
     QE_path = "/home/marco/Programs/qe-6.0/bin/"
-    PAO_path = "python ../../../src/"
+
+
 
     if engine=='qe':
         execDict={'scf':'pw.x -npool 8 ','nscf':'pw.x -npool 8 ','proj':'projwfc.x -npool 8 -northo 1 '}
         exeDir = QE_path
 ################ end of user defined parameters #################
 ################ DO NOT MODIFY BELOW THIS POINT #################
+
+
+    PAO_path = "python ../../../src/"
 
     if engine=='PAO':
         execDict={'PAO':'main.py ./'}
@@ -45,14 +49,14 @@ def get_exeCmd(engine, calcType,inputFile):
 
     return command
 
-def oneRun(subdir):
+def run_pw(subdir):
 
     if len(glob.glob('*.save')) == 0:
-        calcList = ['scf','nscf','proj','PAO']
-        fileList = ['scf.in','nscf.in','proj.in','inputfile.xml']
+        calcList = ['scf','nscf','proj']
+        fileList = ['scf.in','nscf.in','proj.in']
     else: 
-        calcList = ['PAO']
-        fileList = ['inputfile.xml']
+        calcList = []
+        fileList = []
 
     engine = {'scf':'qe',
               'nscf':'qe',
@@ -72,13 +76,39 @@ def oneRun(subdir):
             raise SystemExit
     return
 
+
+def run_pao(subdir):
+
+
+    calcList = ['PAO']
+    fileList = ['inputfile.xml']
+
+    engine = {'scf':'qe',
+              'nscf':'qe',
+              'proj':'qe',
+              'PAO':'PAO',}
+
+    n = 0
+    for calc in calcList:
+
+        command = get_exeCmd(engine[calc.split("_")[0]],calc.split("_")[0],fileList[n])
+        n += 1
+        try:
+            print "%s in %s"%(command, subdir)
+            subprocess.check_output([command],shell=True)
+        except subprocess.CalledProcessError as e:
+            print "######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e)
+            raise SystemExit
+    return
+
+
 def main():
     
     start = reset = time.time()
-    if len(sys.argv) > 1:
-        alldir = glob.glob(sys.argv[1])
-    else:
-        alldir = sorted(glob.glob('./*/example*/'))
+
+    pwdir  =  sorted(glob.glob('./pw_data/*/'))
+
+    alldir = sorted(glob.glob('./*/example*/'))
 
     refPattern = './Reference/'
     if len(sys.argv) > 2:
@@ -88,13 +118,23 @@ def main():
         if refPattern[len(refPattern)-1] != '/':
             refPattern += '/'
 
-    print refPattern
+    for n in xrange(len(pwdir)):
+        os.chdir(pwdir[n])
+        subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
+
+        try:
+            run_pw(subdir)
+        except:
+            print('Exception in %s'%subdir)
+            quit()
+        os.chdir('../../')
+
     for n in xrange(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
 
         try:
-            oneRun(subdir)
+            run_pao(subdir)
         except:
             print('Exception in %s'%subdir)
             quit()
