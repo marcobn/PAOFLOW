@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <root>
     <!-- Control -->
-    <fpath type="character" size="1" len="10">./pt.save/</fpath>
+    <fpath type="character" size="1" len="10">../../pw_data/pt_shc/pt.save/</fpath>
     <restart type="logical" size="1">F</restart>
     <verbose type="logical" size="1">T</verbose>
     <non_ortho type="logical" size="1">F</non_ortho>
