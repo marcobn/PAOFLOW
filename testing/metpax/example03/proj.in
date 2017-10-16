@@ -1,7 +1,0 @@
- &projwfc
-    prefix='pt'
-    outdir='./'
-    filpdos='./pt'
-    lwrite_overlaps = .false.
-    lbinary_data  = .false.
- /
