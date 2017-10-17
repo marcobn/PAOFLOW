@@ -66,7 +66,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     npool = 1
 
     # Return Request Definitions
-    out_vals = []
+    out_vals = ''
 
     # Calculation
 
@@ -171,96 +171,96 @@ def read_inputfile_xml ( fpath, inputfile ):
     emaxSH = 1.0
     ac_cond_spin = False
 
-    try:
-        tree = ET.parse(inputfile)
-        aroot = tree.getroot()
 
-        # Read String Input Values
-        fpath = read_attribute(aroot, fpath, 'fpath', 'string')
-        shift = read_attribute(aroot, shift, 'shift', 'string')
-        out_vals = read_attribute(aroot, out_vals, 'out_vals', 'string')
-        smearing = read_attribute(aroot, smearing, 'smearing', 'string')
-        if smearing == 'None': smearing = None
+    tree = ET.parse(inputfile)
+    aroot = tree.getroot()
 
-        # Read Logical Input Values
-        restart = read_attribute(aroot, restart, 'restart', 'logical')
-        verbose = read_attribute(aroot, verbose, 'verbose', 'logical')
-        non_ortho = read_attribute(aroot, non_ortho, 'non_ortho', 'logical')
-        write2file = read_attribute(aroot, write2file, 'write2file', 'logical')
-        write_binary = read_attribute(aroot, write_binary, 'write_binary', 'logical')
-        writedata = read_attribute(aroot, writedata, 'writedata', 'logical')
-        use_cuda = read_attribute(aroot, use_cuda, 'use_cuda', 'logical')
-        do_comparison = read_attribute(aroot, do_comparison, 'do_comparison', 'logical')
-        onedim = read_attribute(aroot, onedim, 'onedim', 'logical')
-        do_bands = read_attribute(aroot, do_bands, 'do_bands', 'logical')
-        band_topology = read_attribute(aroot, band_topology, 'band_topology', 'logical')
-        eff_mass = read_attribute(aroot, eff_mass, 'eff_mass_topology', 'logical')
-        do_spin_orbit = read_attribute(aroot, do_spin_orbit, 'do_spin_orbit', 'logical')
-        double_grid = read_attribute(aroot, double_grid, 'double_grid', 'logical')
-        do_dos = read_attribute(aroot, do_dos, 'do_dos', 'logical')
-        do_pdos = read_attribute(aroot, do_pdos, 'do_pdos', 'logical')
-        fermisurf = read_attribute(aroot, fermisurf, 'fermisurf', 'logical')
-        spintexture = read_attribute(aroot, spintexture, 'spintexture', 'logical')
-        Boltzmann = read_attribute(aroot, Boltzmann, 'Boltzmann', 'logical')
-        epsilon = read_attribute(aroot, epsilon, 'epsilon', 'logical')
-        metal = read_attribute(aroot, metal, 'metal', 'logical')
-        kramerskronig = read_attribute(aroot, kramerskronig, 'kramerskronig', 'logical')
-        critical_points = read_attribute(aroot, critical_points, 'critical_points', 'logical')
-        Berry = read_attribute(aroot, Berry, 'Berry', 'logical')
-        ac_cond_Berry = read_attribute(aroot, ac_cond_Berry, 'ac_cond_Berry', 'logical')
-        spin_Hall = read_attribute(aroot, spin_Hall, 'spin_Hall', 'logical')
-        ac_cond_spin = read_attribute(aroot, ac_cond_spin, 'ac_cond_spin', 'logical')
+    # Read String Input Values
+    fpath = read_attribute(aroot, fpath, 'fpath', 'string')
+    shift = read_attribute(aroot, shift, 'shift', 'string')
+    out_vals = read_attribute(aroot, out_vals, 'out_vals', 'string')
+    smearing = read_attribute(aroot, smearing, 'smearing', 'string')
+    if smearing == 'None': smearing = None
 
-        
-        # Read Integer Input Values
-        shift_type = read_attribute(aroot, shift_type, 'shift_type', 'integer')
-        npool = read_attribute(aroot, npool, 'npool', 'integer')
-        bval = read_attribute(aroot, bval, 'bval', 'integer')
-        ibrav = read_attribute(aroot, ibrav, 'ibrav', 'integer')
-        nk = read_attribute(aroot, nk, 'nk', 'integer')
-        spol = read_attribute(aroot, spol, 'spol', 'integer')
-        ipol = read_attribute(aroot, ipol, 'ipol', 'integer')
-        jpol = read_attribute(aroot, jpol, 'jpol', 'integer')
-        nfft1 = read_attribute(aroot, nfft1, 'nfft1', 'integer')
-        nfft2 = read_attribute(aroot, nfft2, 'nfft2', 'integer')
-        nfft3 = read_attribute(aroot, nfft3, 'nfft3', 'integer')
-        ne = read_attribute(aroot, ne, 'ne', 'integer')
+    # Read Logical Input Values
+    restart = read_attribute(aroot, restart, 'restart', 'logical')
+    verbose = read_attribute(aroot, verbose, 'verbose', 'logical')
+    non_ortho = read_attribute(aroot, non_ortho, 'non_ortho', 'logical')
+    write2file = read_attribute(aroot, write2file, 'write2file', 'logical')
+    write_binary = read_attribute(aroot, write_binary, 'write_binary', 'logical')
+    writedata = read_attribute(aroot, writedata, 'writedata', 'logical')
+    use_cuda = read_attribute(aroot, use_cuda, 'use_cuda', 'logical')
+    do_comparison = read_attribute(aroot, do_comparison, 'do_comparison', 'logical')
+    onedim = read_attribute(aroot, onedim, 'onedim', 'logical')
+    do_bands = read_attribute(aroot, do_bands, 'do_bands', 'logical')
+    band_topology = read_attribute(aroot, band_topology, 'band_topology', 'logical')
+    eff_mass = read_attribute(aroot, eff_mass, 'eff_mass_topology', 'logical')
+    do_spin_orbit = read_attribute(aroot, do_spin_orbit, 'do_spin_orbit', 'logical')
+    double_grid = read_attribute(aroot, double_grid, 'double_grid', 'logical')
+    do_dos = read_attribute(aroot, do_dos, 'do_dos', 'logical')
+    do_pdos = read_attribute(aroot, do_pdos, 'do_pdos', 'logical')
+    fermisurf = read_attribute(aroot, fermisurf, 'fermisurf', 'logical')
+    spintexture = read_attribute(aroot, spintexture, 'spintexture', 'logical')
+    Boltzmann = read_attribute(aroot, Boltzmann, 'Boltzmann', 'logical')
+    epsilon = read_attribute(aroot, epsilon, 'epsilon', 'logical')
+    metal = read_attribute(aroot, metal, 'metal', 'logical')
+    kramerskronig = read_attribute(aroot, kramerskronig, 'kramerskronig', 'logical')
+    critical_points = read_attribute(aroot, critical_points, 'critical_points', 'logical')
+    Berry = read_attribute(aroot, Berry, 'Berry', 'logical')
+    ac_cond_Berry = read_attribute(aroot, ac_cond_Berry, 'ac_cond_Berry', 'logical')
+    spin_Hall = read_attribute(aroot, spin_Hall, 'spin_Hall', 'logical')
+    ac_cond_spin = read_attribute(aroot, ac_cond_spin, 'ac_cond_spin', 'logical')
 
-        # Read Decimal Input Values
-        pthr = read_attribute(aroot, pthr, 'pthr', 'decimal')
-        dkres = read_attribute(aroot, dkres, 'dkres', 'decimal')
-        theta = read_attribute(aroot, theta, 'theta', 'decimal')
-        phi = read_attribute(aroot, phi, 'phi', 'decimal')
-        lambda_p = read_attribute(aroot, lambda_p, 'lambda_p', 'decimal')
-        lambda_d = read_attribute(aroot, lambda_d, 'lambda_d', 'decimal')
-        emin = read_attribute(aroot, emin, 'emin', 'decimal')
-        emax = read_attribute(aroot, emax, 'emax', 'decimal')
-        delta = read_attribute(aroot, delta, 'delta', 'decimal')
-        fermi_up = read_attribute(aroot, fermi_up, 'fermi_up', 'decimal')
-        fermi_dw = read_attribute(aroot, fermi_dw, 'fermi_dw', 'decimal')
-        temp = read_attribute(aroot, temp, 'temp', 'decimal')
-        epsmin = read_attribute(aroot, epsmin, 'epsmin', 'decimal')
-        epsmax = read_attribute(aroot, epsmax, 'epsmax', 'decimal')
-        eminAH = read_attribute(aroot, eminAH, 'eminAH', 'decimal')
-        emaxAH = read_attribute(aroot, emaxAH, 'emaxAH', 'decimal')
-        eminSH = read_attribute(aroot, eminSH, 'eminSH', 'decimal')
-        emaxSH = read_attribute(aroot, emaxSH, 'emaxSH', 'decimal')
 
-        # Read Array Input Values
-        naw = read_attribute(aroot, naw, 'naw', 'array')[0].astype(int)
-        sh = [int(i) for i in read_attribute(aroot, sh, 'sh', 'array')[0]]
-        nl = [int(i) for i in read_attribute(aroot, nl, 'nl', 'array')[0]]
-        Efield = read_attribute(aroot, Efield, 'Efield', 'array')[0]
-        Bfield = read_attribute(aroot, Bfield, 'Bfield', 'array')[0]
-        HubbardU = read_attribute(aroot, HubbardU, 'HubbardU', 'array')[0]
-        d_tensor = read_attribute(aroot, d_tensor, 'd_tensor', 'array').astype(int)
-        t_tensor = read_attribute(aroot, t_tensor, 't_tensor', 'array').astype(int)
-        a_tensor = read_attribute(aroot, a_tensor, 'a_tensor', 'array').astype(int)
-        s_tensor = read_attribute(aroot, s_tensor, 's_tensor', 'array').astype(int)
+    # Read Integer Input Values
+    shift_type = read_attribute(aroot, shift_type, 'shift_type', 'integer')
+    npool = read_attribute(aroot, npool, 'npool', 'integer')
+    bval = read_attribute(aroot, bval, 'bval', 'integer')
+    ibrav = read_attribute(aroot, ibrav, 'ibrav', 'integer')
+    nk = read_attribute(aroot, nk, 'nk', 'integer')
+    spol = read_attribute(aroot, spol, 'spol', 'integer')
+    ipol = read_attribute(aroot, ipol, 'ipol', 'integer')
+    jpol = read_attribute(aroot, jpol, 'jpol', 'integer')
+    nfft1 = read_attribute(aroot, nfft1, 'nfft1', 'integer')
+    nfft2 = read_attribute(aroot, nfft2, 'nfft2', 'integer')
+    nfft3 = read_attribute(aroot, nfft3, 'nfft3', 'integer')
+    ne = read_attribute(aroot, ne, 'ne', 'integer')
 
-    except Exception as e:
-        traceback.print_exc()
-        raise e
+    # Read Decimal Input Values
+    pthr = read_attribute(aroot, pthr, 'pthr', 'decimal')
+    dkres = read_attribute(aroot, dkres, 'dkres', 'decimal')
+    theta = read_attribute(aroot, theta, 'theta', 'decimal')
+    phi = read_attribute(aroot, phi, 'phi', 'decimal')
+    lambda_p = read_attribute(aroot, lambda_p, 'lambda_p', 'decimal')
+    lambda_d = read_attribute(aroot, lambda_d, 'lambda_d', 'decimal')
+    emin = read_attribute(aroot, emin, 'emin', 'decimal')
+    emax = read_attribute(aroot, emax, 'emax', 'decimal')
+    delta = read_attribute(aroot, delta, 'delta', 'decimal')
+    fermi_up = read_attribute(aroot, fermi_up, 'fermi_up', 'decimal')
+    fermi_dw = read_attribute(aroot, fermi_dw, 'fermi_dw', 'decimal')
+    temp = read_attribute(aroot, temp, 'temp', 'decimal')
+    epsmin = read_attribute(aroot, epsmin, 'epsmin', 'decimal')
+    epsmax = read_attribute(aroot, epsmax, 'epsmax', 'decimal')
+    eminAH = read_attribute(aroot, eminAH, 'eminAH', 'decimal')
+    emaxAH = read_attribute(aroot, emaxAH, 'emaxAH', 'decimal')
+    eminSH = read_attribute(aroot, eminSH, 'eminSH', 'decimal')
+    emaxSH = read_attribute(aroot, emaxSH, 'emaxSH', 'decimal')
+
+    # Read Array Input Values
+    naw = read_attribute(aroot, naw, 'naw', 'array')[0].astype(int)
+    sh = [int(i) for i in read_attribute(aroot, sh, 'sh', 'array')[0]]
+    nl = [int(i) for i in read_attribute(aroot, nl, 'nl', 'array')[0]]
+    Efield = read_attribute(aroot, Efield, 'Efield', 'array')[0]
+    Bfield = read_attribute(aroot, Bfield, 'Bfield', 'array')[0]
+    HubbardU = read_attribute(aroot, HubbardU, 'HubbardU', 'array')[0]
+    d_tensor = read_attribute(aroot, d_tensor, 'd_tensor', 'array').astype(int)
+    t_tensor = read_attribute(aroot, t_tensor, 't_tensor', 'array').astype(int)
+    a_tensor = read_attribute(aroot, a_tensor, 'a_tensor', 'array').astype(int)
+    s_tensor = read_attribute(aroot, s_tensor, 's_tensor', 'array').astype(int)
+
+
+
+
     return fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
         shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
         ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
