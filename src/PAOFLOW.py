@@ -302,6 +302,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         # Broadcast 
         bnd = comm.bcast(bnd,root=0)
         shift = comm.bcast(shift,root=0)
+
+        emaxAH = np.amin(np.array([shift,emaxAH]))
+        emaxSH = np.amin(np.array([shift,emaxSH]))
+        emax = np.amin(np.array([shift,emax]))
+
     except Exception as e:
         print('Rank %d: Exception in Building Projectability'%rank)
         traceback.print_exc()
@@ -316,7 +321,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         Hks = None
         if rank == 0:
             Hks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
-
             # This is needed for consistency of the ordering of the matrix elements
             # Important in ACBN0 file writing
             if non_ortho:
@@ -435,7 +439,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             reset=time.time()
             Hkaux  = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin),dtype=complex)
             Skaux  = np.zeros((nawf,nawf,nk1,nk2,nk3),dtype=complex)
-    
+
             Hkaux = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
             if non_ortho:
                 Skaux = np.reshape(Sks,(nawf,nawf,nk1,nk2,nk3),order='C')
@@ -460,9 +464,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             ############################
             ####  IS THIS NEEDED??  ####
             ############################
-            if non_ortho:
-                if Boltzmann or epsilon:
-                    Sks_long = Sks
+
             Hks = None
             Sks = None
             Hks = Hkaux
