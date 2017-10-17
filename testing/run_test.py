@@ -94,7 +94,7 @@ def run_pao(subdir):
         command = get_exeCmd(engine[calc.split("_")[0]],calc.split("_")[0],fileList[n])
         n += 1
         try:
-            print "%s in %s"%(command, subdir)
+
             subprocess.check_output([command],shell=True)
         except subprocess.CalledProcessError as e:
             print "######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e)
@@ -140,7 +140,7 @@ def main():
             quit()
         verifyData(subdir, refPattern)
         os.chdir('../../')
-        print('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+
         reset=time.time()
 
     print('all test runs in %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
