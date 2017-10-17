@@ -99,6 +99,7 @@ def epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
 
     dfunc = np.zeros((pksp.shape[0],ene.size),dtype=float)
     eps=1.e-8
+    fnF = np.zeros((pksp.shape[0]),dtype=float)
 
     for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
@@ -113,10 +114,11 @@ def epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
                            kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                            1.0),axis=1)
             if metal and n == m:
-                try:
-                    fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
-                except:
-                    fnF = 1.0e8*np.ones(pksp.shape[0],dtype=float)
+                for ik in xrange(pksp.shape[0]):
+                    try:
+                        fnF[ik] = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[ik,n,ispin]/temp))
+                    except:
+                        fnF[ik] = 1.0e8
                 epsi[ipol,jpol,:] += np.sum(((1.0/ene * \
                                kq_wght[0] /delta * dfunc * ((fnF/temp)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                                abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
