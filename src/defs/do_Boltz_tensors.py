@@ -78,7 +78,8 @@ def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
         return(ene,L0)
 
 def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
-
+    orig_over_err = np.geterr()['over']
+    np.seterr(over='raise')
     # We assume tau=1 in the constant relaxation time approximation
 
     L = np.zeros((3,3,ene.size),dtype=float)
@@ -93,7 +94,7 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
                 j = t_tensor[l][1]
                 if smearing == None:
                     L[i,j,:] += np.sum((1.0/temp * kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
-                                1.0/2.0 * (1.0/(1.0+np.cosh(Eaux[:,:]/temp)) * np.power(Eaux[:,:],alpha)).T),axis=1)
+                                1.0/2.0 * (1.0/(1.0+0.5*(np.exp(Eaux[:,:]/temp)+np.exp(-Eaux[:,:]/temp))) * np.power(Eaux[:,:],alpha)).T),axis=1)
 
 
     if smearing == 'gauss':
@@ -123,4 +124,6 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
     if smearing != None and smearing != 'gauss' and smearing != 'm-p':
         sys.exit('smearing not implemented')
 
+
+    np.seterr(over=orig_over_err)
     return(L)

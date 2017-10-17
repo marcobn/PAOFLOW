@@ -91,18 +91,17 @@ def do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,
     return(ene,epsi,epsr,jdos)
 
 def epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
+    orig_over_err = np.geterr()['over']
+    np.seterr(over='raise')
 
     epsi = np.zeros((3,3,ene.size),dtype=float)
     jdos = np.zeros((ene.size),dtype=float)
 
     dfunc = np.zeros((pksp.shape[0],ene.size),dtype=float)
+    eps=1.e-8
 
     for n in xrange(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        try:
-            fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
-        except:
-            fnF = 1.0e8*np.ones(pksp.shape[0],dtype=float)
         for m in xrange(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
@@ -114,12 +113,18 @@ def epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
                            kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                            1.0),axis=1)
             if metal and n == m:
+                try:
+                    fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
+                except:
+                    fnF = 1.0e8*np.ones(pksp.shape[0],dtype=float)
                 epsi[ipol,jpol,:] += np.sum(((1.0/ene * \
                                kq_wght[0] /delta * dfunc * ((fnF/temp)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                                abs(pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin])),axis=1)
 
     epsi *= 4.0*np.pi/(EPS0 * EVTORY * omega)
 
+
+    np.seterr(over=orig_over_err)
     return(epsi,jdos)
 
 def smear_epsr_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
