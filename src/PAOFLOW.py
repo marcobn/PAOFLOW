@@ -1273,7 +1273,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
-                if rank == 0 and ac_cond_spin:
+                if rank == 0:
                     shc0 = np.real(sigxy[0])
                     shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(os.path.join(inputpath,'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
@@ -1281,16 +1281,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
                     f.close()
     
-                if rank == 0 and ac_cond_spin:
-                    sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                    for n in xrange(ene.size):
-                        f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-                    f.close()
-                    f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                    for n in xrange(ene.size):
-                        f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
-                    f.close()
+                    if  ac_cond_spin:
+                        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+                        f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+                        f.close()
+                        f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+                        f.close()
 
             comm.Barrier()
             if rank == 0:
