@@ -22,6 +22,7 @@ def get_exeCmd(engine, calcType,inputFile):
     execPrefix = "mpirun -np 32"
     execPostfix = " "
     QE_path = "/home/marco/Programs/qe-6.0/bin/"
+    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
 
 
     if engine=='qe':
@@ -31,8 +32,6 @@ def get_exeCmd(engine, calcType,inputFile):
 ################ DO NOT MODIFY BELOW THIS POINT #################
 
 
-
-    PAO_path = "python ../../src/"
     if engine=='PAO':
         execDict={'PAO':'main.py ./'}
         exeDir = PAO_path
