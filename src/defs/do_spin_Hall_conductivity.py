@@ -83,7 +83,7 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
         for m in xrange(nawf):
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
-                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,n,m,0]*pksp[:,ipol,m,n,0])
 
     fn = None
 

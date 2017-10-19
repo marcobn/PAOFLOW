@@ -36,7 +36,7 @@ import numpy as np
 #import numexpr as ne
 from mpi4py import MPI
 import multiprocessing
-
+import gc
 # Define paths
 sys.path.append(sys.path[0]+'/defs')
 
@@ -82,7 +82,7 @@ from do_Boltz_tensors import *
 from do_epsilon import *
 from do_adaptive_smearing import *
 import resource
-
+import time 
 def paoflow(inputpath='./',inputfile='inputfile.xml'):
     try:
         #----------------------
@@ -405,8 +405,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             f=open(os.path.join(inputpath,'wk.txt'),'w')
             for ik in xrange(nkpnts):
                 f.write('%20.13f \n' %(kpnts_wght[ik]))
-            f.close()
-    
+            f.close()    
+
             print('H(k),S(k),k,wk written to file')
         if write2file: quit()
     except Exception as e:
@@ -415,6 +415,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
+    kpnts = kpnts_wght = None
     try:
         #----------------------
         # Plot the PAO and DFT eigevalues. Writes to comparison.pdf
@@ -891,6 +892,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
     
+
+
     try:
         pksp = None
         jksp = None
@@ -1115,7 +1118,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
-    
+
+
+    idk = idx = kq = None
     try:
         if (do_dos or do_pdos) and smearing != None:
             #----------------------
@@ -1195,179 +1200,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
 
 
-    # if rank==0:
-    #         a=locals().items()
-    #         mem_list=[]
-    #         item_list=[]
-    #         for k,v in a:
-    #             if v is None:
-    #                 pass
-    #             try:
-    #                 size = sys.getsizeof(v)/(1024.0**3)
-    #                 item_list.append(k)
-    #                 mem_list.append(size)
-    #             except Exception,e:
-    #                 print(e)
-    #         item_list=np.asarray(item_list)
-    #         mem_list=np.asarray(mem_list)
-    #         order = np.argsort(mem_list)
-    #         mem_list=mem_list[order]
-    #         item_list=item_list[order]
-    #         for i in xrange(mem_list.shape[0]):
-    #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
 
-    try:
-        #----------------------
-        # Spin Hall calculation
-        #----------------------
-        if spin_Hall:
-            if dftSO == False: sys.exit('full relativistic calculation with SO needed')
-            for n in xrange(s_tensor.shape[0]):
-                ipol = s_tensor[n][0]
-                jpol = s_tensor[n][1]
-                spol = s_tensor[n][2]
-                #----------------------
-                # Compute the spin current operator j^l_n,m(k)
-                #----------------------
-                jksp = None
-                spincheck = 0
-                if restart and rank == 0:
-                    try:
-                        spindump = np.load(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank)
-                        jksp = spindump['jksp']
-                        spincheck += 1
-                        print('reading spin current for polarization ',spol)
-                    except:
-                        pass
-                spincheck=comm.bcast(spincheck,root=0)
-                if spincheck == 0:
-                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl,bnd)
 
-                    if restart:
-                        np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
-     
-
-#                    if rank == 0:
-#                        print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-#                        reset=time.time()
-                #----------------------
-                # Compute spin Berry curvature... 
-                #----------------------
-
-                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,
-                                                       eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
-                if writedata:
-                    if rank == 0: 
-                        Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
-                        x0 = np.zeros(3,dtype=float)
-                        ind_plot = np.zeros(2)
-                        Om_kps[:,:,:,0] = Om_k
-                        Om_kps[:,:,:,1] = Om_k
-                        fname = 'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf'
-                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,
-                                   ind_plot,0.0,alat,x0,b_vectors,fname,inputpath)
-
-                Om_k = Om_kps = None
-                    
-                if ac_cond_spin:
-                    ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,
-                                                             ipol,jpol,shift,deltakp,deltakp2,smearing)
-    
-                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-    
-                if rank == 0:
-                    shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open(os.path.join(inputpath,'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                    for n in xrange(ene.size):
-                        f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
-                    f.close()
-    
-                    if  ac_cond_spin:
-                        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                        f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
-                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-                        f.close()
-                        f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
-                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
-                        f.close()
-
-            comm.Barrier()
-            if rank == 0:
-                print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-                reset=time.time()
-    
-        dHksp = None
-    except Exception as e:
-        print('Rank %d: Exception in Spin Hall Module'%rank)
-        traceback.print_exc()
-        comm.Abort()
-        raise Exception
-    
-    v_k = None
-
-    try:
-        #----------------------
-        # Compute Berry curvature and AHC
-        #----------------------
-        if Berry:
-            if dftSO == False: sys.exit('full relativistic calculation with SO needed')
- 
-            for n in xrange(a_tensor.shape[0]):
-                ipol = a_tensor[n][0]
-                jpol = a_tensor[n][1]
-                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,
-                                                  eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
-    
-                if writedata:
-                    if rank == 0: 
-                        Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
-                        x0 = np.zeros(3,dtype=float)
-                        ind_plot = np.zeros(2)
-                        Om_kps[:,:,:,0] = Om_k
-                        Om_kps[:,:,:,1] = Om_k
-                        fname = 'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf'
-                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,
-                                   0.0,alat,x0,b_vectors,fname,inputpath)
-    
-                        np.savez(os.path.join(inputpath,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz'),kq=kq,Om_k=Om_k[:,:,:])
-
-                Om_k = Om_kps = None
-
-                if ac_cond_Berry:
-                    ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
-                                                         ipol,jpol,shift,deltakp,deltakp2,smearing)
-
-                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-                if rank == 0:
-                    ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                    f=open(os.path.join(inputpath,'ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                    for n in xrange(ene.size):
-                        f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
-                    f.close()
-    
-                    if ac_cond_Berry:
-                        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-                        f=open(os.path.join(inputpath,'MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
-                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-                        f.close()
-                        f=open(os.path.join(inputpath,'MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
-                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
-                        f.close()
-    
-            comm.Barrier()
-            if rank == 0:
-                print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
-                reset=time.time()
-    except Exception as e:
-        print('Rank %d: Exception in Berry Module'%rank)
-        traceback.print_exc()
-        comm.Abort()
-        raise Exception
-    
     try:
         #----------------------
         # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
@@ -1452,7 +1286,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
-    
+
+    velkp = None    
     comm.Barrier()
 
     try:
@@ -1495,6 +1330,191 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
+
+
+    kq_wght=None
+
+    # if rank==0 or rank == 1:
+    #         if rank==1:
+    #             time.sleep(2.5)
+    #         a=locals().items()
+    #         mem_list=[]
+    #         item_list=[]
+    #         for k,v in a:
+    #             if v is None:
+    #                 pass
+    #             try:
+    #                 size = v.nbytes/(1024.0**2)
+    #                 item_list.append(k)
+    #                 mem_list.append(size)
+    #             except Exception,e:
+    #                 pass
+    #         item_list=np.asarray(item_list)
+    #         mem_list=np.asarray(mem_list)
+    #         order = np.argsort(mem_list)
+    #         mem_list=mem_list[order]
+    #         item_list=item_list[order]
+    #         for i in xrange(mem_list.shape[0]):
+    #             print('%10.10s'%item_list[i],'%5.4f MB '%mem_list[i])
+    #         print
+    gc.collect()
+
+    try:
+        #----------------------
+        # Spin Hall calculation
+        #----------------------
+        if spin_Hall:
+            jksp = np.zeros((dHksp.shape[0],bnd,bnd,nspin),dtype=complex)
+            if dftSO == False: sys.exit('full relativistic calculation with SO needed')
+            for n in xrange(s_tensor.shape[0]):
+                ipol = s_tensor[n][0]
+                jpol = s_tensor[n][1]
+                spol = s_tensor[n][2]
+                #----------------------
+                # Compute the spin current operator j^l_n,m(k)
+                #----------------------
+
+                spincheck = 0
+                if restart and rank == 0:
+                    try:
+                        spindump = np.load(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank)
+                        jksp = spindump['jksp']
+                        spincheck += 1
+                        print('reading spin current for polarization ',spol)
+                    except:
+                        pass
+                spincheck=comm.bcast(spincheck,root=0)
+                if spincheck == 0:
+                    do_spin_current(v_k,dHksp,spol,ipol,npool,do_spin_orbit,sh,nl,bnd,jksp)
+
+                    if restart:
+                        np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
+     
+
+#                    if rank == 0:
+#                        print('spin current in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+#                        reset=time.time()
+                #----------------------
+                # Compute spin Berry curvature... 
+                #----------------------
+
+                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,
+                                                       eminSH,emaxSH,fermi_dw,fermi_up,deltakp,
+                                                       smearing,writedata)
+                if writedata:
+                    if rank == 0: 
+                        Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
+                        x0 = np.zeros(3,dtype=float)
+                        ind_plot = np.zeros(2)
+                        Om_kps[:,:,:,0] = Om_k
+                        Om_kps[:,:,:,1] = Om_k
+                        fname = 'spin_Berry_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.bxsf'
+                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,
+                                   ind_plot,0.0,alat,x0,b_vectors,fname,inputpath)
+
+                Om_k = Om_kps = None
+                    
+                if ac_cond_spin:
+                    do_spin_current(v_k,dHksp,spol,jpol,npool,do_spin_orbit,sh,nl,bnd,jksp)
+                    ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,
+                                                             ipol,jpol,shift,deltakp,deltakp2,smearing)
+    
+                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+    
+                if rank == 0:
+                    shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+                    f=open(os.path.join(inputpath,'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                    for n in xrange(ene.size):
+                        f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
+                    f.close()
+    
+                    if  ac_cond_spin:
+                        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+                        f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+                        f.close()
+                        f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+                        f.close()
+
+            comm.Barrier()
+            if rank == 0:
+                print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                reset=time.time()
+    
+        v_k = None
+        dHksp = None
+    except Exception as e:
+        print('Rank %d: Exception in Spin Hall Module'%rank)
+        traceback.print_exc()
+        comm.Abort()
+        raise Exception
+    
+    
+    
+    try:
+        #----------------------
+        # Compute Berry curvature and AHC
+        #----------------------
+        if Berry:
+            if dftSO == False: sys.exit('full relativistic calculation with SO needed')
+ 
+            for n in xrange(a_tensor.shape[0]):
+                ipol = a_tensor[n][0]
+                jpol = a_tensor[n][1]
+                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,
+                                                  eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
+    
+                if writedata:
+                    if rank == 0: 
+                        Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
+                        x0 = np.zeros(3,dtype=float)
+                        ind_plot = np.zeros(2)
+                        Om_kps[:,:,:,0] = Om_k
+                        Om_kps[:,:,:,1] = Om_k
+                        fname = 'Berry_'+str(LL[ipol])+str(LL[jpol])+'.bxsf'
+                        write2bxsf(fermi_dw,fermi_up,Om_kps,nk1,nk2,nk3,2,ind_plot,
+                                   0.0,alat,x0,b_vectors,fname,inputpath)
+    
+                        np.savez(os.path.join(inputpath,'Berry_'+str(LL[ipol])+str(LL[jpol])+'.npz'),kq=kq,Om_k=Om_k[:,:,:])
+
+                Om_k = Om_kps = None
+
+                if ac_cond_Berry:
+                    ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
+                                                         ipol,jpol,shift,deltakp,deltakp2,smearing)
+
+                omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+                if rank == 0:
+                    ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+                    f=open(os.path.join(inputpath,'ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                    for n in xrange(ene.size):
+                        f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
+                    f.close()
+    
+                    if ac_cond_Berry:
+                        sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+                        f=open(os.path.join(inputpath,'MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+                        f.close()
+                        f=open(os.path.join(inputpath,'MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+                        for n in xrange(ene.size):
+                            f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+                        f.close()
+    
+            comm.Barrier()
+            if rank == 0:
+                print('Berry module in                  %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                reset=time.time()
+    except Exception as e:
+        print('Rank %d: Exception in Berry Module'%rank)
+        traceback.print_exc()
+        comm.Abort()
+        raise Exception
+    
     
     try:
         # Timing
