@@ -178,7 +178,7 @@ def read_inputfile_xml ( fpath, inputfile ):
         fpath = read_attribute(aroot, fpath, 'fpath', 'string')
         shift = read_attribute(aroot, shift, 'shift', 'string')
         try:
-	    shift = read_attribute(aroot, shift, 'shift', 'integer')
+	    shift = read_attribute(aroot, shift, 'shift', 'decimal')
 	except:
 	    pass
         out_vals = read_attribute(aroot, out_vals, 'out_vals', 'string')
