@@ -1104,7 +1104,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     f=open(os.path.join(inputpath,'critical_points.dat'),'w')
                     for ik in xrange(nk1*nk2*nk3):
                         for n in xrange(bnd):
-                            for ipin in xrange(nspin):
+                            for ispin in xrange(nspin):
                                 if  np.abs(velkp_full[ik,0,n,ispin]) < 1.e-2 and \
                                     np.abs(velkp_full[ik,1,n,ispin]) < 1.e-2 and \
                                     np.abs(velkp_full[ik,2,n,ispin]) < 1.e-2:

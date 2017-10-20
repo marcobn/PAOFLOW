@@ -20,7 +20,7 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
 from communication import scatter_array
-
+import time
 from constants import *
 from smearing import *
 
@@ -48,6 +48,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
 
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
+
     sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
                 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
@@ -62,9 +63,9 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
 
 def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
-    sigxy = np.zeros((ene.size),dtype=complex)
-    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    sigxy = np.zeros((ene.size),dtype=complex,order="C")
+    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float,order="C")
+    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float,order="C")
     delta = 0.05
     Ef = 0.0
     #to avoid divide by zero error
@@ -85,11 +86,9 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,n,m,0]*pksp[:,ipol,m,n,0])
 
-    fn = None
-
     for e in xrange(ene.size):
         if smearing!=None:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
+            sigxy[e] = np.sum(f_nm/(E_diff_nm-(ene[e]+deltak2[...,ispin])**2+eps))
         else:
             sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
                                                                                  

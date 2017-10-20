@@ -26,7 +26,7 @@ from load_balancing import *
 from communication import *
 from constants import *
 from smearing import *
-
+import time
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -44,14 +44,13 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
     # Compute only Omega_z(k)
     Om_znkaux = np.zeros((pksp.shape[0],nawf),dtype=float)
 
-
+    start=time.time()
     deltap = 0.05
     for n in xrange(nawf):
         for m in xrange(nawf):
             if m!= n:
                 Om_znkaux[:,n] += -2.0*np.imag(jksp[:,n,m,0]*pksp[:,jpol,m,n,0]) / \
                 ((E_k[:,m,0] - E_k[:,n,0])**2 + deltap**2)
-
 
 
     de = (emaxSH-eminSH)/500

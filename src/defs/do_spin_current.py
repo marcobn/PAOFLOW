@@ -22,7 +22,7 @@ from clebsch_gordan import *
 
 from load_balancing import *
 from communication import *
-
+import time
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -62,6 +62,6 @@ def do_spin_current(vec,dHksp,spol,ipol,npool,spin_orbit,sh,nl,bnd,jksp):
 
 
 
-    comm.Barrier()
+
 
 

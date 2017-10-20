@@ -61,13 +61,13 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
 
 def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
-    sigxy = np.zeros((ene.size),dtype=complex)
-    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    sigxy = np.zeros((ene.size),dtype=complex,order="C")
+    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float,order="C")
+    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float,order="C")
     delta = 0.05
     Ef = 0.0
     #to avoid divide by zero error
-    eps=1.0e-16
+    eps=1.0e-16+0.0j
 
     if smearing == None:
         fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
@@ -85,9 +85,16 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
 
+    dk2i = np.ascontiguousarray(1.0j*deltak2[:,:,:,ispin])
+    ene = np.ascontiguousarray((1.0+0.0j)*ene)
+#    dk2i = 1.0j*deltak2[:,:,:,ispin]
+    E_diff_nm = np.ascontiguousarray((1.0+0.0j)*E_diff_nm)
+    f_nm = np.ascontiguousarray((1.0+0.0j)*f_nm)
+
+
     for e in xrange(ene.size):
         if smearing!=None:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
+            sigxy[e] = np.sum(f_nm/(E_diff_nm-(ene[e]+dk2i)**2+eps))
         else:
             sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
                                         
