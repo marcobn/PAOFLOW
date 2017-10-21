@@ -1187,11 +1187,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
         if not spin_Hall:
             v_k = None
-        pksp = pksp[:,:,:bnd,:bnd]
-        E_k = E_k[:,:bnd]
+        pksp = np.ascontiguousarray(pksp[:,:,:bnd,:bnd])
+        E_k = np.ascontiguousarray(E_k[:,:bnd])
         if smearing != None:
-            deltakp = deltakp[:,:bnd]
-            deltakp2 = deltakp2[:,:bnd,:bnd]
+            deltakp = np.ascontiguousarray(deltakp[:,:bnd])
+            deltakp2 = np.ascontiguousarray(deltakp2[:,:bnd,:bnd])
 
     except Exception as e:
         print('Rank %d: Exception in Memory Reduction'%rank)
@@ -1443,7 +1443,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank == 0:
                 print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
-    
+
+        jksp = None
         v_k = None
         dHksp = None
     except Exception as e:
