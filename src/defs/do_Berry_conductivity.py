@@ -91,18 +91,14 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
 
     f_n = None
     if smearing!=None:
-        dk2=deltak2[...,ispin]*1.0j
+        dk2=np.ascontiguousarray(np.ravel(deltak2[...,ispin]*1.0j,order='C'))
     else: dk2=delta
+
+    E_diff_nm = np.ravel(E_diff_nm,order='C')
+    f_nm = np.ravel(f_nm,order='C')
 
     for e in xrange(ene.size):
         sigxy[e] = np.sum(f_nm/(E_diff_nm-((ene[e]+dk2)**2)+eps))
-
-    # for e in xrange(ene.size):
-    #     sigxy[e] = np.sum(f_nm*(E_diff_nm-ene[e]**2+deltak2[...,ispin]**2)/ \
-    #                           ((E_diff_nm-ene[e]**2+deltak2[...,ispin]**2)**2+(ene[e]*deltak2[...,ispin])**2)+eps)
-
-    #     sigxy[e] += 1.0j*np.sum(f_nm*(ene[e]*deltak2[...,ispin])/ \
-    #                                 ((E_diff_nm-ene[e]**2+deltak2[...,ispin]**2)**2+(ene[e]*deltak2[...,ispin])**2)+eps)
 
     F_nm = None
     E_diff_nm = None

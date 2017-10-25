@@ -23,7 +23,7 @@ from communication import scatter_array
 import time
 from constants import *
 from smearing import *
-
+import functools
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -88,14 +88,14 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
 
     f_n = None
     if smearing!=None:
-        dk2=deltak2[...,ispin]*1.0j
+        dk2=np.ascontiguousarray(np.ravel(deltak2[...,ispin]*1.0j,order='C'))
     else: dk2=delta*1.0j
+
+    E_diff_nm = np.ravel(E_diff_nm,order='C')
+    f_nm = np.ravel(f_nm,order='C')
 
     for e in xrange(ene.size):
         sigxy[e] = np.sum(f_nm/(E_diff_nm-((ene[e]+dk2)**2)+eps))
-
-
-
 
     F_nm = None
     E_diff_nm = None
