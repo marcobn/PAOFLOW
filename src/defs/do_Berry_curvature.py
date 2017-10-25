@@ -32,7 +32,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
+def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing,writedata):
     #----------------------
     # Compute spin Berry curvature
     #----------------------
@@ -79,18 +79,22 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
         ahc/= float(nk1*nk2*nk3)
     else: Om_k = None
 
-    Om_zk = gather_full(Om_zkaux,npool)
+    if writedata:
+        Om_zk = gather_full(Om_zkaux,npool)
 
-    n0 = 0
-    if rank == 0:
-        for i in xrange(ene.size-1):
-            if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
-                n0 = i
-            if ene[i] <= fermi_up and ene[i+1] >= fermi_up:
-                n = i
+        n0 = 0
+        if rank == 0:
+            for i in xrange(ene.size-1):
+                if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
+                    n0 = i
+                if ene[i] <= fermi_up and ene[i+1] >= fermi_up:
+                    n = i
 
-        Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
-        Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
-    comm.Barrier()
+            Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
+            Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
+        comm.Barrier()
 
-    return(ene,ahc,Om_k)
+        return(ene,ahc,Om_k)
+
+    else:
+        return(ene,ahc,None)
