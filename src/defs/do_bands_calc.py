@@ -20,13 +20,12 @@ import sys,os
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-import scipy.linalg as LAN
 from write_PAO_eigs import *
 from kpnts_interpolation_mesh import *
 from do_non_ortho import *
 from load_balancing import *
 from communication import *
-
+import scipy.linalg as LAN
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -54,14 +53,14 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
     for ispin in range(nspin):
         for ik in xrange(kq_aux.shape[1]):
             if read_S:
-                E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin], 
-                                                                       b=Sks_aux[:,:,ik],lower=False, 
+                E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin],
+                                                                       b=Sks_aux[:,:,ik],lower=False,
                                                                        overwrite_a=False,
                                                                        overwrite_b=False,
                                                                        turbo=True,check_finite=True)
             else:   
-                E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin], 
-                                                                       b=None,lower=False, 
+                E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin],
+                                                                       lower=False,
                                                                        overwrite_a=False,
                                                                        overwrite_b=False,
                                                                        turbo=True,check_finite=True)
