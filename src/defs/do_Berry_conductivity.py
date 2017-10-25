@@ -29,11 +29,11 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
+def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,emaxAH,deltak,deltak2,smearing):
     # Compute the optical conductivity tensor sigma_xy(ene)
 
     emin = 0.0 
-    emax = shift
+    emax = emaxAH
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
@@ -45,17 +45,22 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     if rank!=0:
         nktot=1
 
+    if rank==0:
+        sigxy = np.zeros((ene.size),dtype=complex)
+    else: sigxy=None
 
-    sigxy = np.zeros((ene.size),dtype=complex)
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
     sigxy_aux = smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-    sigxy /= float(nktot)
-    return(ene,sigxy)
-    
+    sigxy_aux=None
+
+    if rank==0:
+        sigxy /= float(nktot)
+        return(ene,sigxy)
+    else: return(None,None)
 
 
 
@@ -67,7 +72,7 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
     delta = 0.05
     Ef = 0.0
     #to avoid divide by zero error
-    eps=1.0e-16+0.0j
+    eps=1.0e-16
 
     if smearing == None:
         fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
@@ -76,8 +81,6 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
     elif smearing == 'm-p':
         fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
 
-
-
     # Collapsing the sum over k points
     for n in xrange(nawf):
         for m in xrange(nawf):
@@ -85,20 +88,23 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
 
-    dk2i = np.ascontiguousarray(1.0j*deltak2[:,:,:,ispin])
-    ene = np.ascontiguousarray((1.0+0.0j)*ene)
-#    dk2i = 1.0j*deltak2[:,:,:,ispin]
-    E_diff_nm = np.ascontiguousarray((1.0+0.0j)*E_diff_nm)
-    f_nm = np.ascontiguousarray((1.0+0.0j)*f_nm)
 
+    f_n = None
+    if smearing!=None:
+        dk2=deltak2[...,ispin]*1.0j
+    else: dk2=delta
 
     for e in xrange(ene.size):
-        if smearing!=None:
-            sigxy[e] = np.sum(f_nm/(E_diff_nm-(ene[e]+dk2i)**2+eps))
-        else:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
-                                        
+        sigxy[e] = np.sum(f_nm/(E_diff_nm-((ene[e]+dk2)**2)+eps))
+
+    # for e in xrange(ene.size):
+    #     sigxy[e] = np.sum(f_nm*(E_diff_nm-ene[e]**2+deltak2[...,ispin]**2)/ \
+    #                           ((E_diff_nm-ene[e]**2+deltak2[...,ispin]**2)**2+(ene[e]*deltak2[...,ispin])**2)+eps)
+
+    #     sigxy[e] += 1.0j*np.sum(f_nm*(ene[e]*deltak2[...,ispin])/ \
+    #                                 ((E_diff_nm-ene[e]**2+deltak2[...,ispin]**2)**2+(ene[e]*deltak2[...,ispin])**2)+eps)
+
     F_nm = None
     E_diff_nm = None
                     
-    return(np.nan_to_num(sigxy))
+    return(sigxy)

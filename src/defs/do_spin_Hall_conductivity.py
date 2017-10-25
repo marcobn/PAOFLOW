@@ -53,7 +53,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
                 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-    comm.Barrier()
+    sigxy_aux = None
 
     if rank==0:
         sigxy /= float(nktot)
@@ -71,7 +71,6 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
     #to avoid divide by zero error
     eps=1.0e-16
 
-
     if smearing == None:
         fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
     elif smearing == 'gauss':
@@ -86,14 +85,20 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,n,m,0]*pksp[:,ipol,m,n,0])
 
+
+    f_n = None
+    if smearing!=None:
+        dk2=deltak2[...,ispin]*1.0j
+    else: dk2=delta*1.0j
+
     for e in xrange(ene.size):
-        if smearing!=None:
-            sigxy[e] = np.sum(f_nm/(E_diff_nm-(ene[e]+deltak2[...,ispin])**2+eps))
-        else:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
-                                                                                 
+        sigxy[e] = np.sum(f_nm/(E_diff_nm-((ene[e]+dk2)**2)+eps))
+
+
+
+
     F_nm = None
     E_diff_nm = None
                     
-    return(np.nan_to_num(sigxy))
+    return(sigxy)
 

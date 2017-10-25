@@ -1465,9 +1465,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in xrange(a_tensor.shape[0]):
                 ipol = a_tensor[n][0]
                 jpol = a_tensor[n][1]
+
                 ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,
-                                                  eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
-    
+                                                  eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing,writedata)
+
                 if writedata:
                     if rank == 0: 
                         Om_kps = np.zeros((nk1,nk2,nk3,2),dtype=float)
@@ -1485,7 +1486,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
                 if ac_cond_Berry:
                     ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
-                                                         ipol,jpol,shift,deltakp,deltakp2,smearing)
+                                                         ipol,jpol,emaxAH,deltakp,deltakp2,smearing)
 
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
                 if rank == 0:
