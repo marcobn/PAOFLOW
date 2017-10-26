@@ -303,9 +303,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         bnd = comm.bcast(bnd,root=0)
         shift = comm.bcast(shift,root=0)
 
-        emaxAH = np.amin(np.array([shift,emaxAH]))
-        emaxSH = np.amin(np.array([shift,emaxSH]))
-        emax = np.amin(np.array([shift,emax]))
+#        emaxAH = np.amin(np.array([shift,emaxAH]))
+#        emaxSH = np.amin(np.array([shift,emaxSH]))
+#        emax = np.amin(np.array([shift,emax]))
 
     except Exception as e:
         print('Rank %d: Exception in Building Projectability'%rank)
@@ -1101,7 +1101,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     #----------------------
                     # Find critical points (grad(E_kn)=0)
                     #----------------------
-                    f=open(os.path.join(inputpath,'critical_points.dat'),'w')
+                    f=open(os.path.join(inputpath,'critical_points.txt'),'w')
                     for ik in xrange(nk1*nk2*nk3):
                         for n in xrange(bnd):
                             for ispin in xrange(nspin):
@@ -1484,7 +1484,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
                 if ac_cond_Berry:
                     ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
-                                                         ipol,jpol,emaxAH,deltakp,deltakp2,smearing)
+                                                         ipol,jpol,shift,deltakp,deltakp2,smearing)
 
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
                 if rank == 0:

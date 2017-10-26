@@ -23,6 +23,7 @@
     <onedim type="logical" size="1">F</onedim>
 
     <!-- Bands interpolation on a path from the original MP mesh -->
+    <critical_points type="logical" size="1">T</critical_points>
     <do_bands type="logical" size="1">T</do_bands>
     <ibrav type="integer" size="1">2</ibrav>
     <nk type="integer" size="1">2000</nk>

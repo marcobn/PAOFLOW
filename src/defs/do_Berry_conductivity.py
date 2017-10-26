@@ -62,8 +62,6 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,emaxAH,deltak,delt
         return(ene,sigxy)
     else: return(None,None)
 
-
-
 def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex,order="C")
@@ -92,7 +90,7 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
     f_n = None
     if smearing!=None:
         dk2=np.ascontiguousarray(np.ravel(deltak2[...,ispin]*1.0j,order='C'))
-    else: dk2=delta
+    else: dk2=delta*1.0j
 
     E_diff_nm = np.ravel(E_diff_nm,order='C')
     f_nm = np.ravel(f_nm,order='C')
