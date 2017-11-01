@@ -62,7 +62,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     #reshape R grid and each proc's piece of Hr
         
     Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
-
     comm.Barrier()
 
     ########################################
@@ -129,8 +128,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     #############################################################################################
     #############################################################################################
     #############################################################################################
-
-    #gather the arrays into flattened dHk
 
     return(dHksp)
 

@@ -116,7 +116,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         # Initialize n. of threads for multiprocessing (FFTW)
         #----------------------
         nthread = multiprocessing.cpu_count()
-        #ne.set_num_threads(nthread)
+
     except Exception as e:
         print('Rank %d: Exception in Initialization'%rank)
         traceback.print_exc()
@@ -200,11 +200,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
-#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-#                    for ik in xrange(nkpnts):
-#                        Sks[:,:,ik]=np.identity(nawf)
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -216,11 +213,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath, verbose, non_ortho)
-#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-#                    for ik in xrange(nkpnts):
-#                        Sks[:,:,ik]=np.identity(nawf)
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -321,6 +315,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         Hks = None
         if rank == 0:
             Hks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
+            Hks = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin))
+            Hks = FFT.ifftshift(Hks,axes=(2,3,4))
+            Hks = np.reshape(Hks,(nawf,nawf,nk1*nk2*nk3,nspin))
+
             # This is needed for consistency of the ordering of the matrix elements
             # Important in ACBN0 file writing
             if non_ortho:
@@ -617,11 +615,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank ==0:
                 print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
-    #except Exception as e:
-    #    print('Rank %d: Exception in Do Bands or Band Topology'%rank)
-    #    traceback.print_exc()
-    #    comm.Abort()
-    #    raise Exception
 
     E_kp = v_kp = None
 
@@ -678,7 +671,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         HRs = np.moveaxis(cuda_ifftn(np.moveaxis(Hkaux,[0,1],[3,4]),axes=[0,1,2]),[3,4],[0,1])
                     else:
                         HRs[:,:,:,:,:,:] = FFT.ifftn(Hkaux[:,:,:,:,:,:],axes=[2,3,4])
-
+#                        HRs = FFT.fftshift(HRs,axes=(2,3,4))
         non_ortho = False
         Skaux = None
         SRs   = None
@@ -692,6 +685,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # Fourier interpolation on extended grid (zero padding)
             #----------------------
             Hksp,nk1,nk2,nk3 = do_double_grid(nfft1,nfft2,nfft3,HRs,nthread,npool)
+            Hksp = FFT.ifftshift(Hksp,axes=(1,2,3))
             # Naming convention (from here): 
             # Hksp = k-space Hamiltonian on interpolated grid
             if rank == 0 and verbose: print('Grid of k vectors for zero padding Fourier interpolation ',nk1,nk2,nk3),
@@ -800,9 +794,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 nk1 = None
                 nk2 = None
                 nk3 = None
-#                eig = None
-#                E_k = None
-#                v_k = None
 
         checkpoint = comm.bcast(checkpoint,root=0)
         nk1 = comm.bcast(nk1,root=0)
@@ -1091,8 +1082,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             velkp = np.zeros((pksp.shape[0],3,bnd,nspin),dtype=float)
             indices = np.diag_indices(bnd)
             velkp[:,:,indices[0],:] = np.real(pksp[:,:,indices[0],indices[1],:])
-
-
 
             if critical_points:
                 velkp_full = gather_full(velkp,npool)

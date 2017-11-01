@@ -61,8 +61,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
             else:   
                 E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin],
                                                                        lower=False,
-                                                                       overwrite_a=False,
-                                                                       overwrite_b=False,
+                                                                       overwrite_a=True,
+                                                                       overwrite_b=True,
                                                                        turbo=True,check_finite=True)
 
 

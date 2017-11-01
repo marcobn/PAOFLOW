@@ -87,6 +87,7 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,n,m,0]*pksp[:,ipol,m,n,0])
 
 
+
     f_n = None
     if smearing!=None:
         dk2=np.ascontiguousarray(np.ravel(deltak2[...,ispin]*1.0j,order='C'))
