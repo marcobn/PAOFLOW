@@ -316,7 +316,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if rank == 0:
             Hks = build_Hks(nawf,bnd,nkpnts,nspin,shift,my_eigsmat,shift_type,U)
             Hks = np.reshape(Hks,(nawf,nawf,nk1,nk2,nk3,nspin))
-            Hks = FFT.ifftshift(Hks,axes=(2,3,4))
+#            Hks = FFT.ifftshift(Hks,axes=(2,3,4))
             Hks = np.reshape(Hks,(nawf,nawf,nk1*nk2*nk3,nspin))
 
             # This is needed for consistency of the ordering of the matrix elements
