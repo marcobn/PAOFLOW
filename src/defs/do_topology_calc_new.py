@@ -282,7 +282,6 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     # Compute Berry curvature
     if Berry or spin_Hall:
         deltab = 0.05
-        deltasb = 0.00
         mu = -0.0 # chemical potential in eV)
         Om_znk = np.zeros((pks.shape[0],bnd),dtype=float)
         Om_zk = np.zeros((pks.shape[0],1),dtype=float)
@@ -295,7 +294,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                             ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                         if spin_Hall:
                             Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                                ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltasb**2)
+                                ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
 
             Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:bnd,0]) + 1)))  # T=0.0K
             if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:bnd,0]-mu) + 1)))  # T=0.0K
