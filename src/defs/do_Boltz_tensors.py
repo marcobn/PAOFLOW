@@ -22,6 +22,7 @@ from load_balancing import *
 from communication import scatter_array
 
 from smearing import *
+from do_relaxation import *
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -82,7 +83,8 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
 
     L = np.zeros((3,3,ene.size),dtype=float)
 
-
+    ini_ik, end_ik = load_balancing(size, rank, kq_wght.size)
+    nsize = end_ik - ini_ik
 
     if smearing == None:
         for n in xrange(velkp.shape[2]):
@@ -91,7 +93,7 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
                 i = t_tensor[l][0]
                 j = t_tensor[l][1]
                 if smearing == None:
-                    L[i,j,:] += np.sum((1.0/temp * kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
+                    L[i,j,:] += np.sum((1.0/temp * kq_wght[0] * do_relaxation(None,n,kq_wght[ini_ik:end_ik],temp) * velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
                                 1.0/2.0 * (1.0/(1.0+0.5*(np.exp(Eaux[:,:]/temp)+np.exp(-Eaux[:,:]/temp))) * np.power(Eaux[:,:],alpha)).T),axis=1)
 
 

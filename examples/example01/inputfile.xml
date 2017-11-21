@@ -41,7 +41,7 @@
     <delta type="decimal" size="1">0.1</delta>
 
     <!-- Adaptive smearing -->
-    <smearing type="string" size="1">gauss</smearing><!-- other available values are None or 'm-p' -->
+    <smearing type="string" size="1">None</smearing><!-- other available values are None or 'm-p' -->
 
     <!-- Tensor Components -->
     <!-- Dielectric Function -->
@@ -51,6 +51,14 @@
     <!-- Boltzmann Transport -->
     <t_tensor>
         <a type="integer" size="2">0 0</a>
+        <a type="integer" size="2">1 0</a>
+        <a type="integer" size="2">2 0</a>
+        <a type="integer" size="2">0 1</a>
+        <a type="integer" size="2">1 1</a>
+        <a type="integer" size="2">2 1</a>
+        <a type="integer" size="2">0 2</a>
+        <a type="integer" size="2">1 2</a>
+        <a type="integer" size="2">2 2</a>
     </t_tensor>
 
     <!-- Plot Fermi Surface (spin texture) -->
