@@ -1,2 +1,2 @@
-To start the acbn0 calculations:
+To start the acbn0 calculations, modify scfuj.py accordingly(eg. QE_path PAO_path), then run:
 python scfuj.py mgo (prefix in the inputfiles)
