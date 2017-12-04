@@ -1,0 +1,2 @@
+To start the acbn0 calculations:
+python scfuj.py mgo (prefix in the inputfiles)
