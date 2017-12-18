@@ -81,6 +81,7 @@ from write2bxsf import *
 from do_Boltz_tensors import *
 from do_epsilon import *
 from do_adaptive_smearing import *
+from do_z2pack import *
 import resource
 
 def paoflow(inputpath='./',inputfile='inputfile.xml'):
@@ -127,7 +128,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         #----------------------
         # Read input
         #----------------------
-        fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
+        fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,writez2pack,use_cuda,shift_type, \
         shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
         ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
@@ -152,12 +153,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         scipyfft = True
         if use_cuda:
             scipyfft = False
-    
-        if size >  1:
-            if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
-            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
-        else:
-            if rank == 0: print('serial execution')
     
         #----------------------
         # Do dimension checks
@@ -257,6 +252,12 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 print("Warning: %s too low. Setting npool to %s"%(npool,temp_pool))
             npool = temp_pool
 
+        if size >  1:
+            if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
+            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
+        else:
+            if rank == 0: print('serial execution')
+    
         #----------------------
         # Do memory checks 
         #----------------------
@@ -523,6 +524,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
+
+    try:
+        if rank == 0 and writez2pack:
+            do_z2pack_hamiltonian(nawf,nk1,nk2,nk3,a_vectors,HRs)
+    except Exception as e:
+        print('Rank %d: Exception in Do Z2pack'%rank)
+        traceback.print_exc()
+        comm.Abort()
+        raise Exception
     
 
     if do_bands and not(onedim):
@@ -700,8 +710,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 reset=time.time()    
         else:
             kq,kq_wght,_,idk = get_K_grid_fft(nk1,nk2,nk3,b_vectors)
-            Hksp = np.moveaxis(Hks,(0,1),(3,4))
-            Hksp = Hksp.copy(order='C')    
+            if rank == 0: Hksp = np.reshape(Hks,(nawf**2,nk1,nk2,nk3,nspin),order='C')
+            Hksp=scatter_full(Hksp,npool)
 
         #no longer needed
         HRs = None
