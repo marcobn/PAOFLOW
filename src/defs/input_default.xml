@@ -79,10 +79,10 @@
     <smearing type="string" size="1">gauss</smearing><!-- other available values are None or 'm-p' -->
 
     <!-- Plot Fermi Surface (spin texture) -->
-    <do_fermisurf type="logical" size="1">F</do_fermisurf>
+    <fermisurf type="logical" size="1">F</fermisurf>
     <fermi_up type="decimal" size="1">1.0</fermi_up>
     <fermi_dw type="decimal" size="1">-1.0</fermi_dw>
-    <do_spintexture type="logical" size="1">F</do_spintexture>
+    <spintexture type="logical" size="1">F</spintexture>
 
     <!-- Tensor Components -->
     <!-- Dielectric Function -->
