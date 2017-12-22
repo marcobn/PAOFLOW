@@ -18,7 +18,7 @@ from get_R_grid_fft import *
 sys.path.append('./')
 
 def do_z2pack_hamiltonian(nawf,nk1,nk2,nk3,a_vectors,HRs):
-    f=open('z2pack_hamiltoninan.dat','w')
+    f=open('z2pack_hamiltonian.dat','w')
     f.write ("PAOFLOW Generated \n")
     f.write (('%5d \n')%(nawf))
 
@@ -45,7 +45,6 @@ def do_z2pack_hamiltonian(nawf,nk1,nk2,nk3,a_vectors,HRs):
         f.write ('   '.join('{:d} '.format(j) for j in kq_wght[nlines*nl:nkpts]))
         f.write ('\n')
 
-    R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
     for i in xrange(nk1):
         for j in xrange(nk2):
             for k in xrange(nk3):
@@ -59,12 +58,11 @@ def do_z2pack_hamiltonian(nawf,nk1,nk2,nk3,a_vectors,HRs):
                 Rx -= int(Rx)
                 Ry -= int(Ry)
                 Rz -= int(Rz)
+                # the minus sign in Rx*nk1 is due to the Fourier transformation (Ri-Rj)
+                ix=-round(Rx*nk1,0)
+                iy=-round(Ry*nk2,0)
+                iz=-round(Rz*nk3,0)
                 for m in xrange(nawf):
                     for l in xrange(nawf):
-                        # the minus sign in Rx*nk1 is due to the Fourrier transformation (Ri-Rj)
-                        ix=-round(Rx*nk1,0)
-                        iy=-round(Ry*nk2,0)
-                        iz=-round(Rz*nk3,0)
-                
                         # l+1,m+1 just to start from 1 not zero
                         f.write (('%3d %3d %3d %5d %5d %14f %14f \n') %(ix,iy,iz,l+1,m+1,HRs[l,m,i,j,k,0].real,HRs[l,m,i,j,k,0].imag))

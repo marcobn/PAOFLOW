@@ -222,10 +222,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath,verbose,non_ortho)
                     if verbose: print('...using non-orthogonal algorithm')
-    
-            if nk1%2. != 0 or nk2%2. != 0 or nk3%2. != 0:
-                print('CAUTION! nk1 or nk2 or nk3 not even!')
-    
+
         # Broadcast data
         alat = comm.bcast(alat,root=0)
         a_vectors = comm.bcast(a_vectors,root=0)
@@ -257,16 +254,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
         else:
             if rank == 0: print('serial execution')
-    
+
         #----------------------
         # Do memory checks 
         #----------------------
-    
+
         if rank == 0:
             gbyte = nawf**2*nfft1*nfft2*nfft3*3*2*16./1.E9
             print('estimated maximum array size: %5.2f GBytes' %(gbyte))
             print('   ')
-    
+
         comm.Barrier()
         if rank == 0:
             print('reading in                       %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
