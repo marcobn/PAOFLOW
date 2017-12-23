@@ -478,8 +478,10 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
 
 
     kq=np.copy(points)
-    for n in xrange(kq.shape[1]):
-        kq[:,n]=np.dot(kq[:,n],b_vectors)
+    cart = False
+    if cart:
+        for n in xrange(kq.shape[1]):
+            kq[:,n]=np.dot(kq[:,n],b_vectors)
     for i in xrange(kq.shape[1]):
         path_file+="%s %s %s\n"%(kq[0,i],kq[1,i],kq[2,i])
 
