@@ -91,6 +91,7 @@ def scatter_full(arr,npool,sroot=0):
 
     nsize=nsizes[0]
     full = nsize/size
+    full = int(full)
 
     ts,te = load_balancing(size,rank,nsize%size)
     full+=te-ts
@@ -110,7 +111,7 @@ def scatter_full(arr,npool,sroot=0):
     nchunks = nsize/size
     
     if nchunks!=0:
-        for pool in xrange(npool):
+        for pool in range(npool):
             chunk_s,chunk_e = load_balancing(npool,pool,nchunks)
 
             if rank==sroot:
@@ -150,7 +151,7 @@ def gather_full(arr,npool,sroot=0):
     nchunks = nsize/size
     
     if nchunks!=0:
-        for pool in xrange(npool):
+        for pool in range(npool):
             chunk_s,chunk_e = load_balancing(npool,pool,nchunks)
 
             if rank==sroot:
@@ -172,7 +173,7 @@ def gather_full(arr,npool,sroot=0):
 
 def gather_scatter(arr,scatter_axis,npool):
     #scatter indices for scatter_axis to each proc
-    axis_ind = np.array(xrange(arr.shape[scatter_axis]),dtype=int)
+    axis_ind = np.array(range(arr.shape[scatter_axis]),dtype=int)
     axis_ind = scatter_full(axis_ind,npool)
 
     #broadcast indices that for scattered array to proc with rank 'r'
@@ -195,7 +196,7 @@ def gather_scatter(arr,scatter_axis,npool):
     start = end - size_r
     size_r = None
     
-    for r in xrange(size):
+    for r in range(size):
         comm.Barrier()
         #gather array from each proc with indices for each proc on scatter_axis
         if r==rank:

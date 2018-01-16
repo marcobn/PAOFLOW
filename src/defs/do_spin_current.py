@@ -38,10 +38,10 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
     if spin_orbit:
         # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
         Sj = np.zeros((nawf,nawf),dtype=complex)
-        for i in xrange(nawf/2):
+        for i in range(nawf/2):
             Sj[i,i] = sP[spol][0,0]
             Sj[i,i+1] = sP[spol][0,1]
-        for i in xrange(nawf/2,nawf):
+        for i in range(nawf/2,nawf):
             Sj[i,i-1] = sP[spol][1,0]
             Sj[i,i] = sP[spol][1,1]
     else:
@@ -54,18 +54,18 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
 
 
 
-    for ik in xrange(dHksp.shape[0]):
-        for l in xrange(3):
-            for ispin in xrange(nspin):
+    for ik in range(dHksp.shape[0]):
+        for l in range(3):
+            for ispin in range(nspin):
                 jdHksp[ik,l,:,:,ispin] = \
                     0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+np.dot(dHksp[ik,l,:,:,ispin],Sj))
                 
 
     jksp = np.zeros((dHksp.shape[0],3,bnd,bnd,nspin),dtype=complex)
 
-    for ik in xrange(dHksp.shape[0]):
-        for l in xrange(3):            
-            for ispin in xrange(nspin):
+    for ik in range(dHksp.shape[0]):
+        for l in range(3):            
+            for ispin in range(nspin):
 
                 jksp[ik,l,:,:,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
                             (jdHksp[ik,l,:,:,ispin]).dot(vec[ik,:,:,ispin])[:bnd,:bnd]

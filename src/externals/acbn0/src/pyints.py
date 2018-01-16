@@ -17,10 +17,10 @@ def contr_coulomb_v2(aexps,acoefs,anorms,xyza,powa,
                      dexps,dcoefs,dnorms,xyzd,powd):
 
     Jij = 0.
-    for i in xrange(len(aexps)):
-        for j in xrange(len(bexps)):
-            for k in xrange(len(cexps)):
-                for l in xrange(len(dexps)):
+    for i in range(len(aexps)):
+        for j in range(len(bexps)):
+            for k in range(len(cexps)):
+                for l in range(len(dexps)):
                     incr = coulomb_repulsion(xyza,anorms[i],powa[i],aexps[i],
                                              xyzb,bnorms[j],powb[j],bexps[j],
                                              xyzc,cnorms[k],powc[k],cexps[k],
@@ -35,10 +35,10 @@ def contr_coulomb_v3(aexps,acoefs,anorms,xyza,powax,poway,powaz,
                      dexps,dcoefs,dnorms,xyzd,powdx,powdy,powdz):
 
     Jij = 0.
-    for i in xrange(len(aexps)):
-        for j in xrange(len(bexps)):
-            for k in xrange(len(cexps)):
-                for l in xrange(len(dexps)):
+    for i in range(len(aexps)):
+        for j in range(len(bexps)):
+            for k in range(len(cexps)):
+                for l in range(len(dexps)):
                     incr = coulomb_repulsion(xyza,anorms[i],(powax[i],poway[i],powaz[i]),aexps[i],
                                              xyzb,bnorms[j],(powax[j],poway[j],powaz[j]),bexps[j],
                                              xyzc,cnorms[k],(powax[k],poway[k],powaz[k]),cexps[k],
@@ -68,9 +68,9 @@ def coulomb_repulsion((xa,ya,za),norma,(la,ma,na),alphaa,
     Bz = B_array(na,nb,nc,nd,zp,za,zb,zq,zc,zd,gamma1,gamma2,delta) #needs B_array
 
     sum = 0.
-    for I in xrange(la+lb+lc+ld+1):
-        for J in xrange(ma+mb+mc+md+1):
-            for K in xrange(na+nb+nc+nd+1):
+    for I in range(la+lb+lc+ld+1):
+        for J in range(ma+mb+mc+md+1):
+            for K in range(na+nb+nc+nd+1):
                 sum = sum + Bx[I]*By[J]*Bz[K]*Fgamma(I+J+K,0.25*rpq2/delta) #needs Fgamma
 
     return 2*pow(pi,2.5)/(gamma1*gamma2*sqrt(gamma1+gamma2)) \
@@ -84,11 +84,11 @@ def coulomb_repulsion((xa,ya,za),norma,(la,ma,na),alphaa,
 def B_array(l1,l2,l3,l4,p,a,b,q,c,d,g1,g2,delta):
     Imax = l1+l2+l3+l4+1
     B = [0]*Imax
-    for i1 in xrange(l1+l2+1):
-        for i2 in xrange(l3+l4+1):
-            for r1 in xrange(i1/2+1):
-                for r2 in xrange(i2/2+1):
-                    for u in xrange((i1+i2)/2-r1-r2+1):
+    for i1 in range(l1+l2+1):
+        for i2 in range(l3+l4+1):
+            for r1 in range(i1/2+1):
+                for r2 in range(i2/2+1):
+                    for u in range((i1+i2)/2-r1-r2+1):
                         I = i1+i2-2*(r1+r2)-u
                         B[I] = B[I] + B_term(i1,i2,r1,r2,u,l1,l2,l3,l4, 
                                              p,a,b,q,c,d,g1,g2,delta)   #needs B_term
@@ -108,7 +108,7 @@ def fB(i,l1,l2,P,A,B,r,g):
 def binomial_prefactor(s,ia,ib,xpa,xpb):
     "From Augspurger and Dykstra"
     sum = 0
-    for t in xrange(s+1):
+    for t in range(s+1):
         if s-ia <= t <= ib:
                 sum = sum + binomial(ia,s-t)*binomial(ib,t)* \
                   pow(xpa,ia-s+t)*pow(xpb,ib-t)
@@ -186,7 +186,7 @@ def _gser(a,x):
 
     ap = a
     delt = sum = 1./a
-    for i in xrange(ITMAX):
+    for i in range(ITMAX):
         ap=ap+1.
         delt=delt*x/ap
         sum=sum+delt
@@ -207,7 +207,7 @@ def _gcf(a,x):
     c=1./FPMIN
     d=1./b
     h=d
-    for i in xrange(1,ITMAX+1):
+    for i in range(1,ITMAX+1):
         an=-i*(i-a)
         b=b+2.
         d=an*d+b
@@ -234,7 +234,7 @@ def gammln(x): #needs nothing extra
     tmp=x+5.5
     tmp = tmp - (x+0.5)*log(tmp)
     ser=1.000000000190015 # don't you just love these numbers?!
-    for j in xrange(6):
+    for j in range(6):
         y = y+1
         ser = ser+cof[j]/y
     return -tmp+log(2.5066282746310005*ser/x);

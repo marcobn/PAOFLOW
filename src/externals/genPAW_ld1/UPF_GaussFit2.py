@@ -98,7 +98,7 @@ def fit(nzeta, label, l, r, rab, wfc):
 
     with open("wfc"+label+".dat", "wt") as f:
         gto_r = gto(r, l, params)
-        for i in xrange(len(wfc)):
+        for i in range(len(wfc)):
             f.write("%f %f %f\n" % (r[i], wfc[i], r[i]*gto_r[i]))
     pylab.plot(r, wfc, '.', label=label+"_orig")
     pylab.plot(r, r*gto(r, l, params), label=label+"_fit")
@@ -202,7 +202,7 @@ except Exception, inst:
 #### get element name ####
 if upfver == 1:
     text = root.find('PP_HEADER').text.split()
-    for i in xrange(len(text)):
+    for i in range(len(text)):
         if text[i] == 'Element':
             element = text[i-1].strip()
             break
@@ -233,7 +233,7 @@ if upfver == 1:
     if pot is None: quit()
     v = [float(x) for x in pot.text.split()]
     f = open('vlocal.dat', 'w')
-    for i in xrange(len(v)):
+    for i in range(len(v)):
         f.write("%f %f\n" % (r[i], v[i]))
     f.close()
    
@@ -254,7 +254,7 @@ if upfver == 1:
         occ = float(occ)
         wfc = []
 
-        for i in xrange(nlines):
+        for i in range(nlines):
             wfc.extend(map(float, data.readline().split()))
         wfc = np.array(wfc)
 
@@ -288,12 +288,12 @@ if upfver == 1:
         if npoints % 4 != 0: nlines += 1
         beta = []
 
-        for i in xrange(nlines):
+        for i in range(nlines):
             beta.extend(map(float, data.readline().split()))
         print beta
         beta = np.array(beta)
         f = open("beta_%i_%i.dat" % (ibeta, l), 'w')
-        for i in xrange(len(beta)):
+        for i in range(len(beta)):
             f.write("%f %f\n" % (r[i], beta[i]))
         f.close()
         line = data.readline()
@@ -306,7 +306,7 @@ else:
     if pot is None: quit()
     v = [float(x) for x in pot.text.split()]
     f = open('vlocal.dat', 'w')
-    for i in xrange(len(v)):
+    for i in range(len(v)):
         f.write("%f %f\n" % (r[i], v[i]))
     f.close()
 
@@ -314,7 +314,7 @@ else:
     if pot is None: quit()
     v = [float(x) for x in pot.text.split()]
     f = open('vlocal_ae.dat', 'w')
-    for i in xrange(len(v)):
+    for i in range(len(v)):
         f.write("%f %f\n" % (r[i], v[i]))
     f.close()
 

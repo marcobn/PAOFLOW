@@ -29,19 +29,19 @@ def do_bands_calc_1D(Hkaux,inputpath):
 
     # Count points along symmetry direction
     nL = 0
-    for ik1 in xrange(nk1):
-        for ik2 in xrange(nk2):
-            for ik3 in xrange(nk3):
+    for ik1 in range(nk1):
+        for ik2 in range(nk2):
+            for ik3 in range(nk3):
                 nL += 1
 
     Hkaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
-    for ispin in xrange(nspin):
-        for i in xrange(nawf):
-            for j in xrange(nawf):
+    for ispin in range(nspin):
+        for i in range(nawf):
+            for j in range(nawf):
                 nL=0
-                for ik1 in xrange(nk1):
-                    for ik2 in xrange(nk2):
-                        for ik3 in xrange(nk3):
+                for ik1 in range(nk1):
+                    for ik2 in range(nk2):
+                        for ik3 in range(nk3):
                             Hkaux[i,j,nL,ispin]=Hksp[i,j,ik1,ik2,ik3,ispin]
                             nL += 1
 
@@ -49,24 +49,24 @@ def do_bands_calc_1D(Hkaux,inputpath):
     # k to R
     npad = 500
     HRaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
-    for ispin in xrange(nspin):
-        for i in xrange(nawf):
-            for j in xrange(nawf):
+    for ispin in range(nspin):
+        for i in range(nawf):
+            for j in range(nawf):
                 HRaux[i,j,:,ispin] = FFT.ifft(Hkaux[i,j,:,ispin])
 
     Hkaux = None
     Hkaux  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
     HRauxp  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
 
-    for ispin in xrange(nspin):
-        for i in xrange(nawf):
-            for j in xrange(nawf):
+    for ispin in range(nspin):
+        for i in range(nawf):
+            for j in range(nawf):
                 HRauxp[i,j,:(nL/2),ispin]=HRaux[i,j,:(nL/2),ispin]
                 HRauxp[i,j,(npad+nL/2):,ispin]=HRaux[i,j,(nL/2):,ispin]
                 Hkaux[i,j,:,ispin] = FFT.fft(HRauxp[i,j,:,ispin])
 
     # Print PAO eigenvalues on interpolated mesh
-    for ispin in xrange(nspin):
+    for ispin in range(nspin):
         write_PAO_eigs(Hkaux,ispin,inputpath)
 
     return()

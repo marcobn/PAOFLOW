@@ -43,8 +43,8 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
 
     deltap = 0.05
 
-    for n in xrange(nawf):
-        for m in xrange(nawf):
+    for n in range(nawf):
+        for m in range(nawf):
             if m!= n:
                 Om_znk[:,n] += -2.0*np.imag(pksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0]) / \
                 ((E_k[:,m,0] - E_k[:,n,0])**2 + deltap**2)
@@ -54,7 +54,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
 
     Om_zkaux = np.zeros((pksp.shape[0],ene.size),dtype=float)
 
-    for i in xrange(ene.size):
+    for i in range(ene.size):
         if smearing == 'gauss':
             Om_zkaux[:,i] = np.sum(Om_znk[:,:]*intgaussian(E_k[:,:,0],ene[i],deltak[:,:,0]),axis=1)
         elif smearing == 'm-p':
@@ -83,7 +83,7 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
 
     n0 = 0
     if rank == 0:
-        for i in xrange(ene.size-1):
+        for i in range(ene.size-1):
             if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
                 n0 = i
             if ene[i] <= fermi_up and ene[i+1] >= fermi_up:

@@ -32,7 +32,7 @@ def metpax(eig,ene,delta):
     nh = 5
     coeff = np.zeros(2*nh)
     coeff[0] = 1.
-    for n in xrange(2,2*nh,2):
+    for n in range(2,2*nh,2):
         m = n/2
         coeff[n] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
 
@@ -49,7 +49,7 @@ def intmetpax(eig,ene,delta):
     nh = 5
     coeff = np.zeros(2*nh)
     coeff[0] = 0.
-    for n in xrange(2,2*nh,2):
+    for n in range(2,2*nh,2):
         m = n/2
         coeff[n-1] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
 

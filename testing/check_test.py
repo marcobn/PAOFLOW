@@ -85,7 +85,7 @@ def verifyData ( subdir, refPattern ):
 
         # Compare computed error against data average
         validData = True
-        for j in xrange(nCol-1):
+        for j in range(nCol-1):
 
             # Store maximum absolute error
             if absoluteError[j] > maxError:
@@ -147,7 +147,7 @@ def main():
             refPattern += '/'
 
     # Verify data for each test matching the input or default pattern
-    for n in xrange(len(alldir)):
+    for n in range(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         verifyData(subdir, refPattern)

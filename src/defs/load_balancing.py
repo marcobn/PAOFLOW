@@ -26,7 +26,7 @@ def load_balancing(size,rank,n):
 def load_sizes(size,n,dim):
     sizes = np.empty((size,3),dtype=int)
     splitsize = 1.0/size*n
-    for i in xrange(size):
+    for i in range(size):
         start = int(round(i*splitsize))
         stop = int(round((i+1)*splitsize))
         sizes[i][0] = dim*(stop-start)

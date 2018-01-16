@@ -35,12 +35,12 @@ def write2bxsf(fermi_dw,fermi_up,bands, nx, ny, nz, nbnd, ind_plot, Efermi, alat
             f.write('  BAND: {:5d}\n'.format(int(ind_plot[ib])+1))
             for ix in range(nx):
                 for iy in range(ny):
-			f.write('    {}'.format(''.join('%15.9f'%F for F in bands[ix,iy,:,ib] )))
-			f.write('{:15.9f}\n'.format(bands[ix,iy,0,ib]))
-	        f.write('    {}'.format(''.join('%15.9f'%F for F in bands[ix,0,:,ib] )))
-		f.write('{:15.9f}\n'.format(bands[ix,0,0,ib]))
-	    for iy in range(ny):
-	        f.write('    {}'.format(''.join('%15.9f'%F for F in bands[0,iy,:,ib] )))
+                        f.write('    {}'.format(''.join('%15.9f'%F for F in bands[ix,iy,:,ib] )))
+                        f.write('{:15.9f}\n'.format(bands[ix,iy,0,ib]))
+                f.write('    {}'.format(''.join('%15.9f'%F for F in bands[ix,0,:,ib] )))
+                f.write('{:15.9f}\n'.format(bands[ix,0,0,ib]))
+            for iy in range(ny):
+                f.write('    {}'.format(''.join('%15.9f'%F for F in bands[0,iy,:,ib] )))
                 f.write('{:15.9f}\n'.format(bands[0,iy,0,ib]))
             f.write('    {}'.format(''.join('%15.9f'%F for F in bands[0,0,:,ib] )))
             f.write('{:15.9f}\n'.format(bands[0,0,0,ib]))        

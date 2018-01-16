@@ -19,10 +19,10 @@ from check_test import verifyData
 def get_exeCmd(engine, calcType,inputFile):
 
 #################### User defined parameters ####################
-    execPrefix = "mpirun -np 32"
+    execPrefix = "mpirun -np 16"
     execPostfix = " "
-    QE_path = "/home/marco/Programs/qe-6.0/bin/"
-    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
+    QE_path = "/home/hw0163/codes/qe-6.1.sca/qe-6.1/bin"
+    PAO_path = "python /storage/scratch2/hw0163/GitHub4/PAOFLOW/src"
 
 
     if engine=='qe':
@@ -67,10 +67,10 @@ def oneRun(subdir):
         command = get_exeCmd(engine[calc.split("_")[0]],calc.split("_")[0],fileList[n])
         n += 1
         try:
-            print "%s in %s"%(command, subdir)
+            print("%s in %s"%(command, subdir))
             subprocess.check_output([command],shell=True)
         except subprocess.CalledProcessError as e:
-            print "######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e)
+            print("######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e))
             raise SystemExit
     return
 
@@ -90,20 +90,20 @@ def main():
         if refPattern[len(refPattern)-1] != '/':
             refPattern += '/'
 
-    for n in xrange(len(alldir)):
+    for n in range(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         try:
             oneRun(subdir)
         except:
-            print('Exception in %s'%subdir)
+            print(('Exception in %s'%subdir))
             quit()
         verifyData(subdir, refPattern)
         os.chdir('../')
-        print('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+        print(('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10)))
         reset=time.time()
 
-    print('all test runs in %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10))
+    print(('all test runs in %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10)))
 
 if __name__ == "__main__":
     main()

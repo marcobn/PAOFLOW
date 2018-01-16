@@ -78,7 +78,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
                 natoms=int(float(elem.findall("NUMBER_OF_ATOMS")       [0].text.split()[0]))
 
                 tau = np.zeros((natoms,3),dtype=float)
-                for n in xrange(natoms):
+                for n in range(natoms):
                     string="ATOM."+str(n+1)
                     aux = elem.findall(string)[0].attrib['tau'].split()
                     tau[n,:]=np.array(aux,dtype="float32")

@@ -69,19 +69,19 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     ### real space grid replaces k space ###
     ########################################
     if using_cuda:
-        for n in xrange(Hksp.shape[0]):
-            for ispin in xrange(Hksp.shape[4]):
+        for n in range(Hksp.shape[0]):
+            for ispin in range(Hksp.shape[4]):
                 Hksp[n,:,:,:,ispin] = cuda_ifftn(Hksp[n,:,:,:,ispin])
 
     elif scipyfft:
-        for n in xrange(Hksp.shape[0]):
-            for ispin in xrange(Hksp.shape[4]):
+        for n in range(Hksp.shape[0]):
+            for ispin in range(Hksp.shape[4]):
                 Hksp[n,:,:,:,ispin] = FFT.ifftn(Hksp[n,:,:,:,ispin],axes=(0,1,2))
                 Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
 
     else:
-        for n in xrange(Hksp.shape[0]):
-            for ispin in xrange(Hksp.shape[4]):
+        for n in range(Hksp.shape[0]):
+            for ispin in range(Hksp.shape[4]):
                 fft = pyfftw.FFTW(Hksp[n,:,:,:,ispin],Hksp[n,:,:,:,ispin],axes=(0,1,2),
                                   direction='FFTW_BACKWARD',flags=('FFTW_MEASURE', ),
                                   threads=nthread, planning_timelimit=None )
@@ -100,8 +100,8 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     dHksp = np.zeros((num_n,nk1*nk2*nk3,3,nspin),dtype=complex,order='C')
 
     # Compute R*H(R)
-    for ispin in xrange(nspin):
-        for l in xrange(3):
+    for ispin in range(nspin):
+        for l in range(3):
             dHksp[:,:,l,ispin] = 1.0j*alat*Rfft[:,l]*Hksp[...,ispin]
 
     Hksp=None
@@ -110,15 +110,15 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     # Compute dH(k)/dk
 
     if scipyfft:
-        for n in xrange(dHksp.shape[0]):
-            for l in xrange(dHksp.shape[4]):
-                for ispin in xrange(dHksp.shape[5]):
+        for n in range(dHksp.shape[0]):
+            for l in range(dHksp.shape[4]):
+                for ispin in range(dHksp.shape[5]):
                     dHksp[n,:,:,:,l,ispin] = FFT.fftn(dHksp[n,:,:,:,l,ispin],axes=(0,1,2),)
 
     else:
-        for n in xrange(dHksp.shape[0]):
-            for l in xrange(dHksp.shape[4]):
-                for ispin in xrange(dHksp.shape[5]):
+        for n in range(dHksp.shape[0]):
+            for l in range(dHksp.shape[4]):
+                for ispin in range(dHksp.shape[5]):
                     fft = pyfftw.FFTW(dHksp[n,:,:,:,l,ispin]
                                       ,dHksp[n,:,:,:,l,ispin],axes=(0,1,2),
                                       direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ),

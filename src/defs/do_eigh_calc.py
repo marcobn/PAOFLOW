@@ -47,7 +47,7 @@ def do_eigh_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
     E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
     v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
 
-    for ispin in xrange(nspin):
+    for ispin in range(nspin):
         for ik in range(nkpi):
             if read_S:
                 E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = LA.eigh(Hks_int[:,:,ik,ispin],Sks_int[:,:,ik])
@@ -69,8 +69,8 @@ def band_loop_H(nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx):
     auxh = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex)
     HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
 
-    for ik in xrange(nkpi):
-        for ispin in xrange(nspin):
+    for ik in range(nkpi):
+        for ispin in range(nspin):
              auxh[:,:,ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[ik,:].dot(R[:,:].T)*1j),axis=2)
 
     return(auxh)
@@ -79,10 +79,10 @@ def band_loop_S(nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx):
 
     auxs = np.zeros((nawf,nawf,nkpi),dtype=complex)
 
-    for ik in xrange(nkpi):
-        for i in xrange(nk1):
-            for j in xrange(nk2):
-                for k in xrange(nk3):
+    for ik in range(nkpi):
+        for i in range(nk1):
+            for j in range(nk2):
+                for k in range(nk3):
                     phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[ik,:].dot(R[idx[i,j,k],:])*1j)
                     auxs[:,:,ik] += SRaux[:,:,i,j,k]*phase
 

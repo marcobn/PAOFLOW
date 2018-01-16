@@ -62,7 +62,7 @@ def clebsch_gordan(nawf,sh,nl,spol):
         Ul1[m1-1,2*(m1-1)+1-1] = spinor(l,j,m,0)
         Ul1[m1-1,2*(m1-1)+4-1] = spinor(l,j,m,1)
     j = l + 0.5
-    for m1 in xrange (1,2*l+2+1):
+    for m1 in range (1,2*l+2+1):
         m = m1 - l - 2
         if (m1 == 1):
            Ul1[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
@@ -80,7 +80,7 @@ def clebsch_gordan(nawf,sh,nl,spol):
         Ul2[m1-1,2*(m1-1)+1-1] = spinor(l,j,m,0)
         Ul2[m1-1,2*(m1-1)+4-1] = spinor(l,j,m,1)
     j = l + 0.5
-    for m1 in xrange (1,2*l+2+1):
+    for m1 in range (1,2*l+2+1):
         m = m1 - l - 2
         if (m1 == 1):
            Ul2[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
@@ -98,7 +98,7 @@ def clebsch_gordan(nawf,sh,nl,spol):
         Ul3[m1-1,2*(m1-1)+1-1] = spinor(l,j,m,0)
         Ul3[m1-1,2*(m1-1)+4-1] = spinor(l,j,m,1)
     j = l + 0.5
-    for m1 in xrange (1,2*l+2+1):
+    for m1 in range (1,2*l+2+1):
         m = m1 - l - 2
         if (m1 == 1):
            Ul3[m1+2*l-1,2*(m1-1)+2-1] = spinor(l,j,m,1)
@@ -118,14 +118,14 @@ def clebsch_gordan(nawf,sh,nl,spol):
     nl = np.asarray(nl)
 
     ntot = 0
-    for n in xrange(len(sh)):
+    for n in range(len(sh)):
         ntot += nl[n]*occ[sh[n]]
     if ntot != nawf: sys.exit('wrong number of shells in reading')
     Tn = np.zeros((ntot,ntot),dtype=float)
 
     n = 0
-    for l in xrange(len(sh)):
-        for i in xrange(nl[l]):
+    for l in range(len(sh)):
+        for i in range(nl[l]):
             Tn[n:n+occ[sh[l]],n:n+occ[sh[l]]] = Ul[sh[l]]
             n += occ[sh[l]]
 
@@ -134,7 +134,7 @@ def clebsch_gordan(nawf,sh,nl,spol):
 
     # Spin operator matrix  in the basis of |l,m,s,s_z>
     Sl = np.zeros((nawf,nawf),dtype=complex)
-    for i in xrange(0,nawf,2):
+    for i in range(0,nawf,2):
         Sl[i,i] = sP[spol][0,0]
         Sl[i,i+1] = sP[spol][0,1]
         Sl[i+1,i] = sP[spol][1,0]

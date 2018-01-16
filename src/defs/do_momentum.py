@@ -35,17 +35,17 @@ def do_momentum(vec,dHksp,npool):
 
 
 
-    for ik in xrange(dHksp.shape[0]):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
+    for ik in range(dHksp.shape[0]):
+        for ispin in range(nspin):
+            for l in range(3):
                 pksp[ik,l,:,:,ispin] = dHksp[ik,l,:,:,ispin].dot(vec[ik,:,:,ispin])
 
 
     vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(vec,1,2)))
 
-    for ik in xrange(dHksp.shape[0]):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
+    for ik in range(dHksp.shape[0]):
+        for ispin in range(nspin):
+            for l in range(3):
                 pksp[ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(pksp[ik,l,:,:,ispin])
 
     comm.Barrier()

@@ -6,7 +6,7 @@ f= open("full.dat", 'r')
 a_k = np.zeros((300,191),dtype=float)
 Efermi = 0.0#12.79 
 
-for i in xrange(300):
+for i in range(300):
     a = f.readline()
     aux = a.split()
     a = np.array(aux,dtype="float32")

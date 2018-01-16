@@ -47,9 +47,9 @@ def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
     deltakp2 = np.zeros((pksp.shape[0],nawf,nawf,nspin),dtype=float)
 
 
-    for n in xrange(nawf):
+    for n in range(nawf):
         deltakp[:,n] = LAN.norm(np.real(pksaux[:,:,n]),axis=1)
-        for m in xrange(nawf):
+        for m in range(nawf):
             deltakp2[:,n,m,:] = LAN.norm(pksaux[:,:,n,:] - pksaux[:,:,m,:],axis=1)
 
     pksaux=None

@@ -118,7 +118,7 @@ def main():
         if refPattern[len(refPattern)-1] != '/':
             refPattern += '/'
 
-    for n in xrange(len(pwdir)):
+    for n in range(len(pwdir)):
         os.chdir(pwdir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
 
@@ -129,7 +129,7 @@ def main():
             quit()
         os.chdir('../../')
 
-    for n in xrange(len(alldir)):
+    for n in range(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
 

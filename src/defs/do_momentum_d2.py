@@ -49,7 +49,7 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         pksp = None
         tksp = None
 
-    for pool in xrange(npool):
+    for pool in range(npool):
         ini_ip, end_ip = load_balancing(npool, pool, nktot)
         nkpool = end_ip - ini_ip 
 
@@ -72,12 +72,12 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         tksaux = scatter_array(tks_split)
         vecaux = scatter_array(vec_split)
 
-        for ik in xrange(nsize):
-            for ispin in xrange(nspin):
-                for l in xrange(3):
+        for ik in range(nsize):
+            for ispin in range(nspin):
+                for l in range(3):
                     pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                 (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
-                    for lp in xrange(3):
+                    for lp in range(3):
                         tksaux[ik,l,lp,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                     (d2Hkaux[ik,l,lp,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 

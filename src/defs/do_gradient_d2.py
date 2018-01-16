@@ -59,9 +59,9 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
             Hksp = None
         else:
             HRaux  = np.zeros_like(Hksp)
-            for ispin in xrange(nspin):
-                for n in xrange(nawf):
-                    for m in xrange(nawf):
+            for ispin in range(nspin):
+                for n in range(nawf):
+                    for m in range(nawf):
                         fft = pyfftw.FFTW(Hksp[:,:,:,n,m,ispin],HRaux[:,:,:,n,m,ispin],axes=(0,1,2), direction='FFTW_BACKWARD',\
                               flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                         HRaux[:,:,:,n,m,ispin] = fft()
@@ -81,7 +81,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         dHRaux  = None
         d2HRaux  = None
 
-    for pool in xrange(npool):
+    for pool in range(npool):
         ini_ip, end_ip = load_balancing(npool,pool,nktot)
         nkpool = end_ip - ini_ip
 
@@ -102,12 +102,12 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         Rfftaux = scatter_array(Rfft_split)
 
         # Compute R*H(R)
-        for l in xrange(3):
-            for ispin in xrange(nspin):
-                for n in xrange(nawf):
-                    for m in xrange(nawf):
+        for l in range(3):
+            for ispin in range(nspin):
+                for n in range(nawf):
+                    for m in range(nawf):
                         dHRaux1[:,l,n,m,ispin] = 1.0j*alat*Rfftaux[:,l]*HRaux1[:,n,m,ispin]
-                        for lp in xrange(3):
+                        for lp in range(3):
                             d2HRaux1[:,l,lp,n,m,ispin] = -1.0*alat**2*Rfftaux[:,l]*Rfftaux[:,lp]*HRaux1[:,n,m,ispin]
 
         gather_array(dHRaux_split, dHRaux1)
@@ -126,20 +126,20 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft):
         if scipyfft:
             dHksp  = np.zeros((nk1,nk2,nk3,3,nawf,nawf,nspin),dtype=complex)
             d2Hksp  = np.zeros((nk1,nk2,nk3,3,3,nawf,nawf,nspin),dtype=complex)
-            for l in xrange(3):
+            for l in range(3):
                 dHksp[:,:,:,l,:,:,:] = FFT.fftn(dHRaux[:,:,:,l,:,:,:],axes=[0,1,2])
-                for lp in xrange(3):
+                for lp in range(3):
                     d2Hksp[:,:,:,l,lp,:,:,:] = FFT.fftn(d2HRaux[:,:,:,l,lp,:,:,:],axes=[0,1,2])
             dHraux = None
         else:
-            for l in xrange(3):
-                for ispin in xrange(nspin):
-                    for n in xrange(nawf):
-                        for m in xrange(nawf):
+            for l in range(3):
+                for ispin in range(nspin):
+                    for n in range(nawf):
+                        for m in range(nawf):
                             fft = pyfftw.FFTW(dHRaux[:,:,:,l,n,m,ispin],dHksp[:,:,:,l,n,m,ispin],axes=(0,1,2), \
                             direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                             dHksp[:,:,:,l,n,m,ispin] = fft()
-                            for lp in xrange(3):
+                            for lp in range(3):
                                 fft = pyfftw.FFTW(d2HRaux[:,:,:,l,lp,n,m,ispin],d2Hksp[:,:,:,l,lp,n,m,ispin],axes=(0,1,2), \
                                 direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                                 d2Hksp[:,:,:,l,lp,n,m,ispin] = fft()

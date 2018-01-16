@@ -30,7 +30,7 @@ def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs,inputpath):
     if evecs:
         v_k = np.zeros((nkpnts,nawf,nawf),dtype=complex)
 
-    for ik in xrange(nkpnts):
+    for ik in range(nkpnts):
         if read_S:
             eigval,eigvec = LA.eigh(Hks[:,:,ik,ispin],Sks[:,:,ik])
         else:
@@ -43,13 +43,13 @@ def write_PAO_eigs(Hks,Sks,read_S,ispin,evecs,inputpath):
         ipad = False
         if ipad:
             f=open(os.path.join(inputpath,'bands_'+str(ispin)+'.dat'),'w')
-            for ik in xrange(nkpnts):
-                for nb in xrange(nawf):
+            for ik in range(nkpnts):
+                for nb in range(nawf):
                     f.write('%3d  %.5f \n' %(ik,E_k[ik,nb]))
             f.close()
         else:
             f=open(os.path.join(inputpath,'bands_'+str(ispin)+'.dat'),'w')
-            for ik in xrange(nkpnts):
+            for ik in range(nkpnts):
                 s="%d\t"%ik
                 for  j in E_k[ik,:]:s += "%3.5f\t"%j
                 s+="\n"

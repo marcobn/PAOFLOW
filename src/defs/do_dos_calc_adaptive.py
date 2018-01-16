@@ -37,7 +37,7 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath
     dos = np.zeros((ene.size),dtype=float)
     dosaux = np.zeros((ene.size),dtype=float)
 
-    for ne in xrange(ene.size):
+    for ne in range(ene.size):
         if smearing == 'gauss':
             # adaptive Gaussian smearing
             dosaux[ne] = np.sum(gaussian(ene[ne],eig,delta))
@@ -52,7 +52,7 @@ def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath
     if rank == 0:
         dos *= float(nawf)/float(netot)
         f=open(os.path.join(inputpath,'dosdk_'+str(ispin)+'.dat'),'w')
-        for ne in xrange(ene.size):
+        for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 
