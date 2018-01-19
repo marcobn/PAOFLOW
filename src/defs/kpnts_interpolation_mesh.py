@@ -444,7 +444,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         qe_conv    = np.asarray([[ 1.0, 0.0, 0.0],[ 0.0, 1.0, 0.0],[ 0.0, 0.0, 1.0]])
                                    
 
-    for k,v in special_points.iteritems():
+    for k,v in special_points.items():
         first  = np.array(v).dot(np.linalg.inv(aflow_conv))
         if ibrav==9:
             second = qe_conv.T.dot(first)

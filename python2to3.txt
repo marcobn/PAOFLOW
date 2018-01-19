@@ -6674,3 +6674,138 @@
          os.chdir(alldir[n])
          subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
          try:
+--- PAOFLOW/src/main.py	(original)
++++ PAOFLOW/src/main.py	(refactored)
+@@ -50,7 +50,7 @@
+     # Check for output dictionary and print the keys.
+     if outDict is not None:
+         print('\noutDict keys:')
+-        for k in outDict.keys():
++        for k in list(outDict.keys()):
+             print('\''+k+'\'')
+ 
+ if __name__== "__main__":
+--- PAOFLOW/src/defs/kpnts_interpolation_mesh.py	(original)
++++ PAOFLOW/src/defs/kpnts_interpolation_mesh.py	(refactored)
+@@ -444,7 +444,7 @@
+         qe_conv    = np.asarray([[ 1.0, 0.0, 0.0],[ 0.0, 1.0, 0.0],[ 0.0, 0.0, 1.0]])
+                                    
+ 
+-    for k,v in special_points.iteritems():
++    for k,v in special_points.items():
+         first  = np.array(v).dot(np.linalg.inv(aflow_conv))
+         if ibrav==9:
+             second = qe_conv.T.dot(first)
+--- PAOFLOW/src/externals/acbn0/examples/MgO/scfuj.py	(original)
++++ PAOFLOW/src/externals/acbn0/examples/MgO/scfuj.py	(refactored)
+@@ -470,7 +470,7 @@
+ 			newUvals = oneRun(prefix,scfOne=False)
+ 		
+ 			#Check for convergence
+-			for key in uVals.keys():
++			for key in list(uVals.keys()):
+ 				if abs(uVals[key]-newUvals[key]) > uThresh:
+ 					convergence = False
+ 					break;
+@@ -492,7 +492,7 @@
+ 			newUvals = oneRun(prefix,scfOne=False)
+ 		
+ 			#Check for convergence
+-			for key in uVals.keys():
++			for key in list(uVals.keys()):
+ 				if abs(uVals[key]-newUvals[key]) > uThresh:
+ 					convergence = False
+ 					break;
+--- PAOFLOW/src/externals/acbn0/src/scfuj.py	(original)
++++ PAOFLOW/src/externals/acbn0/src/scfuj.py	(refactored)
+@@ -470,7 +470,7 @@
+ 			newUvals = oneRun(prefix,scfOne=False)
+ 		
+ 			#Check for convergence
+-			for key in uVals.keys():
++			for key in list(uVals.keys()):
+ 				if abs(uVals[key]-newUvals[key]) > uThresh:
+ 					convergence = False
+ 					break;
+@@ -492,7 +492,7 @@
+ 			newUvals = oneRun(prefix,scfOne=False)
+ 		
+ 			#Check for convergence
+-			for key in uVals.keys():
++			for key in list(uVals.keys()):
+ 				if abs(uVals[key]-newUvals[key]) > uThresh:
+ 					convergence = False
+ 					break;
+--- PAOFLOW/src/externals/genPAW_ld1/elements.py	(original)
++++ PAOFLOW/src/externals/genPAW_ld1/elements.py	(refactored)
+@@ -210,7 +210,7 @@
+         """Return mass number of most abundant natural stable isotope."""
+         nominalmass = 0
+         maxabundance = 0
+-        for massnum, iso in self.isotopes.items():
++        for massnum, iso in list(self.isotopes.items()):
+             if iso.abundance > maxabundance:
+                 maxabundance = iso.abundance
+                 nominalmass = massnum
+@@ -224,7 +224,7 @@
+     @lazyattr
+     def exactmass(self):
+         """Return relative atomic mass calculated from isotopic composition."""
+-        return sum(iso.mass * iso.abundance for iso in self.isotopes.values())
++        return sum(iso.mass * iso.abundance for iso in list(self.isotopes.values()))
+ 
+     @lazyattr
+     def eleconfig_dict(self):
+@@ -241,7 +241,7 @@
+     def eleshells(self):
+         """Return number of electrons in shell as tuple."""
+         eleshells = [0, 0, 0, 0, 0, 0, 0]
+-        for key, val in self.eleconfig_dict.items():
++        for key, val in list(self.eleconfig_dict.items()):
+             eleshells[key[0] - 1] += val
+         return tuple(ele for ele in eleshells if ele)
+ 
+@@ -266,7 +266,7 @@
+ 
+         mass = 0.0
+         frac = 0.0
+-        for iso in self.isotopes.values():
++        for iso in list(self.isotopes.values()):
+             mass += iso.abundance * iso.mass
+             frac += iso.abundance
+         if abs(mass - self.mass) > 0.03:
+@@ -2565,15 +2565,15 @@
+         );
+     """]
+ 
+-    for key, label in PERIODS.items():
++    for key, label in list(PERIODS.items()):
+         sql.append("""INSERT INTO "period" VALUES (%i, '%s', NULL);""" % (
+             key, label))
+ 
+-    for key, (label, descr) in GROUPS.items():
++    for key, (label, descr) in list(GROUPS.items()):
+         sql.append("""INSERT INTO "group" VALUES (%i, '%s', '%s');""" % (
+             key, label, descr))
+ 
+-    for data in BLOCKS.items():
++    for data in list(BLOCKS.items()):
+         sql.append("""INSERT INTO "block" VALUES ('%s', '%s');""" % data)
+ 
+     for series in sorted(SERIES):
+@@ -2597,13 +2597,13 @@
+                 linelen=74, indent=0, joinstr="\n ")))
+ 
+     for ele in ELEMENTS:
+-        for iso in ele.isotopes.values():
++        for iso in list(ele.isotopes.values()):
+             sql.append(
+                 """INSERT INTO "isotope" VALUES (%i, %i, %.10f, %.8f);""" % (
+                     ele.number, iso.massnumber, iso.mass, iso.abundance))
+ 
+     for ele in ELEMENTS:
+-        for (shell, subshell), count in ele.eleconfig_dict.items():
++        for (shell, subshell), count in list(ele.eleconfig_dict.items()):
+             sql.append(
+                 """INSERT INTO "eleconfig" VALUES (%i, %i, '%s', %i);""" % (
+                     ele.number, shell, subshell, count))

@@ -470,7 +470,7 @@ def main():
 			newUvals = oneRun(prefix,scfOne=False)
 		
 			#Check for convergence
-			for key in uVals.keys():
+			for key in list(uVals.keys()):
 				if abs(uVals[key]-newUvals[key]) > uThresh:
 					convergence = False
 					break;
@@ -492,7 +492,7 @@ def main():
 			newUvals = oneRun(prefix,scfOne=False)
 		
 			#Check for convergence
-			for key in uVals.keys():
+			for key in list(uVals.keys()):
 				if abs(uVals[key]-newUvals[key]) > uThresh:
 					convergence = False
 					break;
