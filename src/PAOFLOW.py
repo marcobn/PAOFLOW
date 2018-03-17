@@ -133,7 +133,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals = read_inputfile_xml(inputpath,inputfile)
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals,band_path,  \
+        high_sym_points = read_inputfile_xml(inputpath,inputfile)
 
         fpath = os.path.join(inputpath, fpath)
 
@@ -576,7 +577,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
     
             # Define k-point mesh for bands interpolation
-            kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk,inputpath)
+            kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk,inputpath,band_path,high_sym_points)
             nkpi=kq.shape[1]
             for n in xrange(nkpi):
                 kq[:,n]=np.dot(kq[:,n],b_vectors)

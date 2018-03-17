@@ -459,7 +459,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 
 
-def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
+def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath,band_path,high_sym_points):
     '''
     Get path between HSP
     Arguments:
@@ -469,12 +469,23 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
           kpoints : array of arrays kx,ky,kz
           numK    : Total no. of k-points
     '''
+
+
     dk       = 0.00001
-    points,_ = get_path(ibrav,alat,cell,dk)
+
+    if high_sym_points.shape[1]==0:
+        points,_ = get_path(ibrav,alat,cell,dk)
+    else:
+        points,_ = get_path(ibrav,alat,cell,dk,band_path,high_sym_points)
 
     scaled_dk = dk*(points.shape[1]/nk)
     points    = None
-    points,path_file = get_path(ibrav,alat,cell,scaled_dk)
+
+    if high_sym_points.shape[1]==0:
+        points,path_file = get_path(ibrav,alat,cell,scaled_dk)
+    else:
+        points,path_file = get_path(ibrav,alat,cell,scaled_dk,band_path,high_sym_points)
+
 
 
     kq=np.copy(points)
@@ -489,7 +500,7 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
 
     return points
 
-def get_path(ibrav,alat,cell,dk):
+def get_path(ibrav,alat,cell,dk,band_path=None,high_sym_points=None):
 
     def kdistance(hs, p1, p2):
         g = np.dot(hs.T, hs)
@@ -512,7 +523,7 @@ def get_path(ibrav,alat,cell,dk):
             numPts += len(getPoints(index))
         return numPts
 
-    if ibrav==0:
+    if ibrav==0 and band_path==None:
         sys.exit('IBRAV = 0 not permitted')
     if ibrav<0:
         print('Lattice type %s is not implemented') % ibrav
@@ -520,7 +531,14 @@ def get_path(ibrav,alat,cell,dk):
         raise Exception
 
     totalK=0
-    special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
+    if band_path==None:
+        special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
+    else:
+        special_points = {}
+        for i in xrange(high_sym_points.shape[0]):
+
+            tmp_coord = tuple(map(float,high_sym_points[i,[1,2,3]].tolist()))
+            special_points[high_sym_points[i][0]]=tmp_coord
 
     hs = np.linalg.inv(cell)  # reciprocal lattice
     #hs = 2*np.pi*bcell
