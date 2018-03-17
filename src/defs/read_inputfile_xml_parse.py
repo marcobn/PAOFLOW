@@ -41,6 +41,18 @@ def read_attribute ( aroot, default_value, attr, atype, alen=1 ):
                     for j in range(n):
                         read_value[i,j] = line[j]
 
+        elif atype == 'string_array':
+            tmp_list = []
+            ntxt = aroot.findall(attr+'/a')
+            m = len(ntxt)
+            if m > 0:
+                n = len(ntxt[0].text)
+                for i in range(m):
+                    line = ntxt[i].text.split()
+                    tmp_list.append(line)
+            read_value = np.asarray(tmp_list,dtype=str)
+            tmp_list = None
+
     if atype == 'string':
       if len(txt) == 1:
         read_value = str(txt[0].text)
@@ -92,6 +104,10 @@ def read_inputfile_xml ( fpath, inputfile ):
     # Bands interpolation on a path from the original MP mesh 
     do_bands = False
     ibrav = 0
+    # string of the band path
+    band_path = ''
+    # high symmetry point coordinates and label
+    high_sym_points = np.array([[]])
     dkres = 0.1
     nk    = 2000
     # Band topology analysis
@@ -181,6 +197,8 @@ def read_inputfile_xml ( fpath, inputfile ):
     out_vals = read_attribute(aroot, out_vals, 'out_vals', 'string')
     smearing = read_attribute(aroot, smearing, 'smearing', 'string')
     if smearing == 'None': smearing = None
+    band_path = read_attribute(aroot, band_path, 'band_path', 'string')
+
 
     # Read Logical Input Values
     restart = read_attribute(aroot, restart, 'restart', 'logical')
@@ -257,8 +275,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     t_tensor = read_attribute(aroot, t_tensor, 't_tensor', 'array').astype(int)
     a_tensor = read_attribute(aroot, a_tensor, 'a_tensor', 'array').astype(int)
     s_tensor = read_attribute(aroot, s_tensor, 's_tensor', 'array').astype(int)
-
-
+    high_sym_points = read_attribute(aroot, high_sym_points, 'high_sym_points', 'string_array')
 
 
     return fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
@@ -267,4 +284,5 @@ def read_inputfile_xml ( fpath, inputfile ):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals.split()
+        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals.split(),band_path, \
+        high_sym_points

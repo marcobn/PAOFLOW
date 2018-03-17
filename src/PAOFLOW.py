@@ -298,9 +298,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         bnd = comm.bcast(bnd,root=0)
         shift = comm.bcast(shift,root=0)
 
-#        emaxAH = np.amin(np.array([shift,emaxAH]))
-#        emaxSH = np.amin(np.array([shift,emaxSH]))
-#        emax = np.amin(np.array([shift,emax]))
+
 
     except Exception as e:
         print('Rank %d: Exception in Building Projectability'%rank)
