@@ -6,6 +6,7 @@
     <verbose type="logical" size="1">F</verbose>
     <non_ortho type="logical" size="1">F</non_ortho>
     <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
+    <writez2pack type="logical" size="1">F</writez2pack><!-- write data formatted for Z2pack calculations -->
     <write_binary type="logical" size="1">F</write_binary><!-- write data formatted for acbn0 calculations in AFLOWpi -->
     <use_cuda type="logical" size="1">F</use_cuda><!-- write 3D Berry curvature and spin Berry curvature to file -->
     <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
@@ -78,10 +79,10 @@
     <smearing type="string" size="1">gauss</smearing><!-- other available values are None or 'm-p' -->
 
     <!-- Plot Fermi Surface (spin texture) -->
-    <do_fermisurf type="logical" size="1">F</do_fermisurf>
+    <fermisurf type="logical" size="1">F</fermisurf>
     <fermi_up type="decimal" size="1">1.0</fermi_up>
     <fermi_dw type="decimal" size="1">-1.0</fermi_dw>
-    <do_spintexture type="logical" size="1">F</do_spintexture>
+    <spintexture type="logical" size="1">F</spintexture>
 
     <!-- Tensor Components -->
     <!-- Dielectric Function -->

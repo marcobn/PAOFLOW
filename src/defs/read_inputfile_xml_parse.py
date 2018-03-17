@@ -71,7 +71,7 @@ def read_inputfile_xml ( fpath, inputfile ):
 
     # Control
     fpath = None
-    restart = verbose = non_ortho = write2file = write_binary = writedata = use_cuda = False
+    restart = verbose = non_ortho = write2file = write_binary = writedata = use_cuda = writez2pack = False
     shift_type = 1
     shift = 'auto'
     pthr = 0.95
@@ -194,6 +194,10 @@ def read_inputfile_xml ( fpath, inputfile ):
     # Read String Input Values
     fpath = read_attribute(aroot, fpath, 'fpath', 'string')
     shift = read_attribute(aroot, shift, 'shift', 'string')
+    try:
+        shift = read_attribute(aroot, shift, 'shift', 'decimal')
+    except:
+        pass
     out_vals = read_attribute(aroot, out_vals, 'out_vals', 'string')
     smearing = read_attribute(aroot, smearing, 'smearing', 'string')
     if smearing == 'None': smearing = None
@@ -202,6 +206,7 @@ def read_inputfile_xml ( fpath, inputfile ):
 
     # Read Logical Input Values
     restart = read_attribute(aroot, restart, 'restart', 'logical')
+    writez2pack = read_attribute(aroot, writez2pack, 'writez2pack', 'logical')
     verbose = read_attribute(aroot, verbose, 'verbose', 'logical')
     non_ortho = read_attribute(aroot, non_ortho, 'non_ortho', 'logical')
     write2file = read_attribute(aroot, write2file, 'write2file', 'logical')
@@ -278,7 +283,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     high_sym_points = read_attribute(aroot, high_sym_points, 'high_sym_points', 'string_array')
 
 
-    return fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,use_cuda,shift_type, \
+    return fpath,restart,verbose,non_ortho,write2file,write_binary,writedata,writez2pack,use_cuda,shift_type, \
         shift,pthr,npool,do_comparison,naw,sh,nl,Efield,Bfield,HubbardU,bval,onedim,do_bands, \
         ibrav,dkres,nk,band_topology,spol,ipol,jpol,do_spin_orbit,theta,phi,lambda_p,lambda_d, \
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
