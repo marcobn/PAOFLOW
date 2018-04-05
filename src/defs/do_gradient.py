@@ -43,11 +43,8 @@ size = comm.Get_size()
 try:
     from cuda_fft import *
 except: pass
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
-    scipyfft = True
+from scipy import fftpack as FFT
+scipyfft = True
 
 def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     #----------------------
@@ -79,16 +76,6 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
                 Hksp[n,:,:,:,ispin] = FFT.ifftn(Hksp[n,:,:,:,ispin],axes=(0,1,2))
                 Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
 
-    else:
-        for n in xrange(Hksp.shape[0]):
-            for ispin in xrange(Hksp.shape[4]):
-                fft = pyfftw.FFTW(Hksp[n,:,:,:,ispin],Hksp[n,:,:,:,ispin],axes=(0,1,2),
-                                  direction='FFTW_BACKWARD',flags=('FFTW_MEASURE', ),
-                                  threads=nthread, planning_timelimit=None )
-
-                Hksp[n,:,:,:,ispin] = fft()
-                Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
-
     #############################################################################################
     #############################################################################################
     #############################################################################################
@@ -109,22 +96,10 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     dHksp = np.reshape(dHksp,(num_n,nk1,nk2,nk3,3,nspin),order='C')
     # Compute dH(k)/dk
 
-    if scipyfft:
-        for n in xrange(dHksp.shape[0]):
-            for l in xrange(dHksp.shape[4]):
-                for ispin in xrange(dHksp.shape[5]):
-                    dHksp[n,:,:,:,l,ispin] = FFT.fftn(dHksp[n,:,:,:,l,ispin],axes=(0,1,2),)
-
-    else:
-        for n in xrange(dHksp.shape[0]):
-            for l in xrange(dHksp.shape[4]):
-                for ispin in xrange(dHksp.shape[5]):
-                    fft = pyfftw.FFTW(dHksp[n,:,:,:,l,ispin]
-                                      ,dHksp[n,:,:,:,l,ispin],axes=(0,1,2),
-                                      direction='FFTW_FORWARD',flags=('FFTW_MEASURE', ),
-                                      threads=nthread, planning_timelimit=None )
-
-                    dHksp[n,:,:,:,l,ispin] = fft()
+    for n in xrange(dHksp.shape[0]):
+        for l in xrange(dHksp.shape[4]):
+            for ispin in xrange(dHksp.shape[5]):
+                dHksp[n,:,:,:,l,ispin] = FFT.fftn(dHksp[n,:,:,:,l,ispin],axes=(0,1,2),)
 
     #############################################################################################
     #############################################################################################

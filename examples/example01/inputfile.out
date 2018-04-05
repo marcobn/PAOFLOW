@@ -1,0 +1,31 @@
+          
+#############################################################################################
+#                                                                                           #
+#                                          PAOFLOW                                          #
+#                                                                                           #
+#                  Utility to construct and operate on Hamiltonians from                    #
+#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #
+#                                                                                           #
+#                      © 2016,2017 ERMES group (http://ermes.unt.edu)                       #
+#############################################################################################
+          
+parallel execution on  32  processors,  72  threads and  1  pool
+estimated maximum array size:  0.43 GBytes
+   
+reading in                            2.195 sec 
+building Hks in                       0.960 sec 
+k -> R in                             0.122 sec 
+bands in                              0.790 sec 
+R -> k zero padding in                0.254 sec 
+eigenvalues in                        0.150 sec 
+gradient in                           0.383 sec 
+momenta in                            0.072 sec 
+adaptive smearing in                  0.022 sec 
+dos (adaptive smearing) in            1.095 sec 
+transport in                          0.634 sec 
+epsilon in                            0.261 sec 
+   
+Total CPU time =                      6.940 sec 
+
+outDict keys:
+'None'
