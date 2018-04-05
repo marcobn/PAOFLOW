@@ -34,6 +34,12 @@
  - Band topology (Z2 invariants, Berry and spin Berry curvature along standard paths in BZ, critical points
  - save and restart for interrupted runs
 
+ Use of PAOFLOW should reference:
+
+ M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
+ PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
+ Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+
  PAOFLOW is integrated in AFLOW𝛑:
 
  A.R. Supka, T.E. Lyons, L. Liyanage, P. D'Amico, R. Al Rahal Al Orabi, S. Mahatara, P. Gopal, C. Toher, 
@@ -42,7 +48,7 @@
  of tight-binding hamiltonians, Computational Materials Science, 136 (2017) 76-84. doi:10.1016/j.commatsci.2017.03.055
  also at www.aflow.org/src/aflowpi
 
- References:
+ Other references:
 
  Luis A. Agapito, Andrea Ferretti, Arrigo Calzolari, Stefano Curtarolo and Marco Buongiorno Nardelli,
  Effective and accurate representation of extended Bloch states on finite Hilbert spaces, Phys. Rev. B 88, 165127 (2013).
