@@ -32,7 +32,7 @@ def verifyData ( subdir, refPattern ):
     tolerance = 0.005  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
 
-    print('Verifying .dat files for %s' % subdir)
+    print(('Verifying .dat files for %s' % subdir))
 
     # Get new data files and existing reference data files
     datFiles = glob.glob('*.dat')
@@ -78,7 +78,7 @@ def verifyData ( subdir, refPattern ):
 
         # Compare computed error against data average
         validData = True
-        for j in xrange(nCol-1):
+        for j in range(nCol-1):
 
             # Store maximum absolute error
             if absoluteError[j] > maxError:
@@ -107,15 +107,15 @@ def verifyData ( subdir, refPattern ):
             allDataResult = result = 'FAIL'
 
         if showErrors:
-            print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s' % (datFiles[i], absoluteError, relativeError))
+            print(('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s' % (datFiles[i], absoluteError, relativeError)))
         if showFileResult:
-            print('\t%s ---------- [%s]\n' % (datFiles[i], result))
+            print(('\t%s ---------- [%s]\n' % (datFiles[i], result)))
 
     if showErrors:
-        print('The maximum absolute error in %s was %E in %s' % (subdir, maxError, datFiles[maxErrorIndex]))
-        print('The maximum relative error in %s was %E in %s' % (subdir, maxRelError, datFiles[maxRelErrorIndex]))
+        print(('The maximum absolute error in %s was %E in %s' % (subdir, maxError, datFiles[maxErrorIndex])))
+        print(('The maximum relative error in %s was %E in %s' % (subdir, maxRelError, datFiles[maxRelErrorIndex])))
 
-    print('%s ---------- [%s]\n' % (subdir, allDataResult))
+    print(('%s ---------- [%s]\n' % (subdir, allDataResult)))
 
 
 def main():
@@ -136,7 +136,7 @@ def main():
             refPattern += '/'
 
     # Verify data for each test matching the input or default pattern
-    for n in xrange(len(alldir)):
+    for n in range(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         verifyData(subdir, refPattern)

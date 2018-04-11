@@ -40,7 +40,7 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
 
 
 
-    for ispin in xrange(nspin):
+    for ispin in range(nspin):
         E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(aux.shape[0],aux[:,:,:,ispin])
 
     aux = None
@@ -52,7 +52,7 @@ def diago(nsize,aux):
     ekp = np.zeros((nsize,nawf),dtype=float)
     ekv = np.zeros((nsize,nawf,nawf),dtype=complex)
 
-    for n in xrange(nsize):
+    for n in range(nsize):
         eigval,eigvec = LAN.eigh(aux[n,:,:],UPLO='U')
         ekp[n,:] = np.real(eigval)
         ekv[n,:,:] = eigvec

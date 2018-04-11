@@ -85,9 +85,9 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
 
 
     if smearing == None:
-        for n in xrange(velkp.shape[2]):
+        for n in range(velkp.shape[2]):
             Eaux = (E_k[:,n,ispin]*np.ones((E_k.shape[0],ene.size),dtype=float).T).T - ene
-            for l in xrange(t_tensor.shape[0]):
+            for l in range(t_tensor.shape[0]):
                 i = t_tensor[l][0]
                 j = t_tensor[l][1]
                 if smearing == None:
@@ -97,10 +97,10 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
 
     if smearing == 'gauss':
         om = ((ene*np.ones((E_k.shape[0],ene.size),dtype=float)).T).T
-        for n in xrange(velkp.shape[2]):
+        for n in range(velkp.shape[2]):
             eig = (E_k[:,n,ispin]*np.ones((E_k.shape[0],ene.size),dtype=float).T).T
             delk = (deltak[:,n,ispin]*np.ones((E_k.shape[0],ene.size),dtype=float).T).T
-            for l in xrange(t_tensor.shape[0]):
+            for l in range(t_tensor.shape[0]):
                 i = t_tensor[l][0]
                 j = t_tensor[l][1]
                 L[i,j,:] += np.sum((kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
@@ -109,10 +109,10 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
 
     if smearing == 'm-p': 
         om = ((ene*np.ones((E_k.shape[0],ene.size),dtype=float)).T).T
-        for n in xrange(velkp.shape[2]):
+        for n in range(velkp.shape[2]):
             eig = (E_k[:,n,ispin]*np.ones((E_k.shape[0],ene.size),dtype=float).T).T
             delk = (deltak[:,n,ispin]*np.ones((E_k.shape[0],ene.size),dtype=float).T).T
-            for l in xrange(t_tensor.shape[0]):
+            for l in range(t_tensor.shape[0]):
                 i = t_tensor[l][0]
                 j = t_tensor[l][1]
                 L[i,j,:] += np.sum((kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \

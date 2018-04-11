@@ -19,9 +19,9 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
     R_wght = np.ones((nrtot),dtype=float)
     idx = np.zeros((nk1,nk2,nk3),dtype=int)
 
-    for i in xrange(nk1):
-        for j in xrange(nk2):
-            for k in xrange(nk3):
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
                 n = k + j*nk3 + i*nk2*nk3
                 Rx = float(i)/float(nk1)
                 Ry = float(j)/float(nk2)

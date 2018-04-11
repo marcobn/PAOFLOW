@@ -24,7 +24,7 @@
 # *************************************************************************************
 
 # future imports
-from __future__ import print_function
+
 
 import sys
 import numpy as np
@@ -50,7 +50,7 @@ def main():
     # Check for output dictionary and print the keys.
     if outDict is not None:
         print('\noutDict keys:')
-        for k in outDict.keys():
+        for k in list(outDict.keys()):
             print('\''+k+'\'')
 
 if __name__== "__main__":

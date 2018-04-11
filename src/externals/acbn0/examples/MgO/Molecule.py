@@ -88,11 +88,11 @@ class Handler(object):
             nat = int(line.split()[0])
             title = lines.pop(0)
             atoms = []
-            for i in xrange(nat):
+            for i in range(nat):
                 line = lines.pop(0)
                 words = line.split()
                 atno = sym2no[words[0]]
-                x,y,z = map(float,words[1:])
+                x,y,z = list(map(float,words[1:]))
                 atoms.append((atno,(x,y,z)))
             atoms = Molecule("XYZ geometry #%d" % igeo,atoms)
             igeo += 1
@@ -235,12 +235,12 @@ class HandlerList(object):
 format_handlers= HandlerList(Handler)
 class PyQuanteStringHandler(StringHandler):
     def read(self, string, format):
-        if not format_handlers.has_key(format):
+        if format not in format_handlers:
             raise FormatUnsupported("Format %s not supported"%format)
         fh = format_handlers[format]()
         return fh.read(string)
     def write(self, data, format):
-        if not format_handlers.has_key(format):
+        if format not in format_handlers:
             raise FormatUnsupported("Format %s not supported"%format)
         fh = format_handlers[format]()
         return fh.write(data)
@@ -299,7 +299,7 @@ symbol = [
 
 
 sym2no = {}
-for i in xrange(len(symbol)):
+for i in range(len(symbol)):
     sym2no[symbol[i]] = i
     sym2no[symbol[i].lower()] = i
 
@@ -392,7 +392,7 @@ class Atom:
     def get_nel_mindo(self): return self.Z
 
     def update_coords(self,xyz): self.r = array(xyz)
-    def update_from_atuple(self,(atno,xyz)): self.update_coords(xyz)
+    def update_from_atuple(self, xxx_todo_changeme): (atno,xyz) = xxx_todo_changeme; self.update_coords(xyz)
     
     def set_force(self,fxfyfz): self.f = array(fxfyfz)
     def set_velocity(self,vxvyvz): self.vel = array(vxvyvz)
@@ -485,14 +485,14 @@ class Molecule:
     def update_from_atuples(self,geo):
         nat = len(geo)
         assert nat == len(self.atoms)
-        for i in xrange(nat):
+        for i in range(nat):
             self.atoms[i].update_from_atuple(geo[i])
         return
 
     def update_coords(self,coords):
         nat = len(coords)/3
         assert nat == len(self.atoms)
-        for i in xrange(nat):
+        for i in range(nat):
             self.atoms[i].update_coords(coords[3*i:3*i+3])
         return
 
@@ -543,9 +543,9 @@ class Molecule:
     def get_nel(self,charge=None):
         if charge:
             # Deprecation warning inserted 8/2005
-            print "Warning: use of get_nel(charge) has been deprecated"
-            print "Please supply charge at construction of molecule or use"
-            print "mol.set_charge(charge)"
+            print("Warning: use of get_nel(charge) has been deprecated")
+            print("Please supply charge at construction of molecule or use")
+            print("mol.set_charge(charge)")
             self.set_charge(charge)
         nel = -self.charge
         for atom in self.atoms: nel += atom.get_nel()
@@ -554,9 +554,9 @@ class Molecule:
     def get_enuke(self):
         enuke = 0.
         nat = len(self.atoms)
-        for i in xrange(nat):
+        for i in range(nat):
             ati = self.atoms[i]
-            for j in xrange(i):
+            for j in range(i):
                 atj = self.atoms[j]
                 enuke += ati.get_nuke_chg()*atj.get_nuke_chg()/ati.dist(atj)
         return enuke
@@ -569,20 +569,20 @@ class Molecule:
 
         if (nel%2 == 0 and multiplicity%2 == 0) \
                or (nel%2 == 1 and multiplicity%2 == 1):
-            print "Incompatible number of electrons and spin multiplicity"
-            print "nel = ",nel
-            print "multiplicity = ",multiplicity
+            print("Incompatible number of electrons and spin multiplicity")
+            print("nel = ",nel)
+            print("multiplicity = ",multiplicity)
             raise Exception("Incompatible number of electrons and spin multiplicity")
 
         nopen = multiplicity-1
         nclosed,ierr = divmod(nel-nopen,2)
         if ierr:
-            print "Error in Molecule.get_closedopen()"
-            print 'nel = ',nel
-            print 'multiplicity = ',multiplicity
-            print 'nopen = ',nopen
-            print 'nclosed = ',nclosed
-            print 'ierr = ',ierr
+            print("Error in Molecule.get_closedopen()")
+            print('nel = ',nel)
+            print('multiplicity = ',multiplicity)
+            print('nopen = ',nopen)
+            print('nclosed = ',nclosed)
+            print('ierr = ',ierr)
             raise Exception("Error in Molecule.get_closedopen()")
         return nclosed, nopen
 
@@ -606,7 +606,7 @@ class Molecule:
         "Transform to inertial coordinates"
 
         rcom = self.com()
-        print "Translating to COM: ",rcom
+        print("Translating to COM: ",rcom)
         self.translate(-rcom)
         I = zeros((3,3),'d')
         for atom in self:
@@ -623,10 +623,10 @@ class Molecule:
             I[1,2] -= m*y*z
             I[2,1] = I[1,2]
         E,U = eigh(I)
-        print "Moments of inertial ",E
+        print("Moments of inertial ",E)
         self.urotate(U)
-        print "New coordinates: "
-        print self
+        print("New coordinates: ")
+        print(self)
         return
 
     def urotate(self,U):
@@ -676,7 +676,7 @@ def ParseXYZLines(name,xyz_lines,**opts):
         words = line.split()
         if not words: continue
         sym = cleansym(words[0])
-        xyz = map(float,words[1:4])
+        xyz = list(map(float,words[1:4]))
         atoms.append((sym,xyz))
     return Molecule(name,atoms,**opts)
 
@@ -708,6 +708,6 @@ if __name__ == '__main__':
     h2o = Molecule('h2o',
                    [('O',(0.,0.,0.)),('H',(1.,0.,0.)),('H',(0.,1.,0.))],
                    units='Angstrom')
-    print h2o
-    print h2o.subsystem([0,1])
+    print(h2o)
+    print(h2o.subsystem([0,1]))
     

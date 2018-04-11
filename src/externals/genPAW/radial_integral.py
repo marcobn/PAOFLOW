@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 __author__ = 'believe'
 
 import sys

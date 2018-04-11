@@ -72,8 +72,8 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
 
     Hk_aux  = np.zeros((HR_aux.shape[0],nk1p,nk2p,nk3p,nspin),dtype=complex)
 
-    for ispin in xrange(nspin):
-        for n in xrange(HR_aux.shape[0]):
+    for ispin in range(nspin):
+        for n in range(HR_aux.shape[0]):
             Hk_aux[n,:,:,:,ispin] = FFT.fftn(zero_pad(HR_aux[n,:,:,:,ispin],
                                                       nk1,nk2,nk3,nfft1,nfft2,nfft3))
 

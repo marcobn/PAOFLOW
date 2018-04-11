@@ -9,7 +9,7 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from __future__ import print_function
+
 import numpy as np
 import xml.etree.cElementTree as ET
 import sys
@@ -36,7 +36,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
         if event == 'end':
             if elem.tag == "output":
 #                alatunits  = elem.findall("LATTICE_PARAMETER")[0].attrib['UNITS']
-		alatunits = "Bohr"
+                alatunits = "Bohr"
                 alat   = float(elem.findall("atomic_structure")[0].attrib['alat'])
                 if rank == 0 and verbose: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
 
@@ -75,21 +75,21 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 try:
                     Efermi = float(elem.findall("band_structure/highestOccupiedLevel")[0].text)*Hatree2eV
                 except:
-    		    pass
-		try:
-		    Efermi = float(elem.findall("band_structure/fermi_energy")[0].text)*Hatree2eV
-		except:
-		    pass
-		try:
-		    aux = elem.findall("band_structure/two_fermi_energies")[0].text.split()
-		    Efermi = float(np.amax(np.array(aux,dtype='float32')))*Hatree2eV
-		except:
-		    pass
+                    pass
+                try:
+                    Efermi = float(elem.findall("band_structure/fermi_energy")[0].text)*Hatree2eV
+                except:
+                    pass
+                try:
+                    aux = elem.findall("band_structure/two_fermi_energies")[0].text.split()
+                    Efermi = float(np.amax(np.array(aux,dtype='float32')))*Hatree2eV
+                except:
+                    pass
 
                 # Atomic Positions
                 natoms=int(float(elem.findall("atomic_structure")[0].attrib['nat']))
                 tau = np.zeros((natoms,3),dtype=float)
-                for n in xrange(natoms):
+                for n in range(natoms):
                     aux = elem.findall("atomic_structure/atomic_positions/atom")[n].text.split()
                     tau[n,:]=np.array(aux,dtype="float32")
 			

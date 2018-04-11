@@ -41,7 +41,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
 
     dosaux=np.zeros((ene.size),order="C")
 
-    for ne in xrange(ene.size):
+    for ne in range(ene.size):
         dosaux[ne] = np.sum(np.exp(-((ene[ne]-eig)/delta)**2))
 
     comm.Barrier()
@@ -52,7 +52,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
     if rank == 0:
         dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta
         f=open(os.path.join(inputpath,'dos_'+str(ispin)+'.dat'),'w')
-        for ne in xrange(ene.size):
+        for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 

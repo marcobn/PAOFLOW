@@ -38,7 +38,7 @@ freq = np.array((4.220014,4.220014,9.435680))*10**12   # in Hz
 delta = degauss*13.6058                          # delta in eV
 delta = sys.argv[1]                          # delta in eV
 delta = float(delta)
-print 'delta = ',delta
+print('delta = ',delta)
 alat = 4.039e-10                             # lattice parameter in m
 N_Ef = 0.202                                  # in eV^-1 (2.75 Ry^-1 per atom per spin)
 mass = 2.513314e+10                           # in eV/c^2
@@ -61,7 +61,7 @@ Hksp0 = np.reshape(Hksp0,(kq.shape[1],Hksp0.shape[3],Hksp0.shape[4],Hksp0.shape[
 nawf = Hksp0.shape[1]                  # number of atomic orbitals
 nspin = Hksp0.shape[3]                 # number of spin components
 nktot = kq.shape[1]                    # number of k-points
-print 'nktot = ', nktot
+print('nktot = ', nktot)
 lambda_q = np.zeros(Hksp0.shape[3])
 
 ofile.write('\n**************************************************************************************************')
@@ -110,7 +110,7 @@ for v in range(3):
 
     lambda_q = gamma_q/2.0/np.pi**2/N_Ef*ELECTRONVOLT_SI/H_OVER_TPI/freq[v]**2 # the factor 1./2./np.pi comes from conversion from rad to Hz.
 
-    print 'lambda_q = ',lambda_q, ', freq = ',freq[v]/1.e+12,' THz,  gamma_q = ',gamma_q/1.0e+9,' GHz'
+    print('lambda_q = ',lambda_q, ', freq = ',freq[v]/1.e+12,' THz,  gamma_q = ',gamma_q/1.0e+9,' GHz')
     ofile.write('\n%f' %lambda_q)
     #start = time.time()
 

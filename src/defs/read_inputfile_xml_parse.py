@@ -10,7 +10,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-from __future__ import print_function
+
 import os, sys, traceback
 import xml.etree.cElementTree as ET
 import numpy as np

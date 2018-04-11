@@ -29,7 +29,7 @@ def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
 
     if Efield.any() != 0.0:
         # Electric field
-        for n in xrange(nawf):
+        for n in range(nawf):
             HRs[n,n,0,:] -= Efield.dot(tau_wf[n,:])
 
     if Bfield.any() != 0.0:
@@ -43,7 +43,7 @@ def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
     #            HRs[n,m,i,:] *= np.exp(-np.pi*arg*1.j)
 
     if HubbardU.any() != 0:
-        for n in xrange(nawf):
+        for n in range(nawf):
             HRs[n,n,0,:] -= HubbardU[n]/2.0
 
     HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')

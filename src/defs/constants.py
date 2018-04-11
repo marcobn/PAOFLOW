@@ -54,11 +54,11 @@ E2               = 2.0 # e^2
 
 # Logos
 PAO = 'PAO'
-p = u"\u03C0"
+p = "\u03C0"
 pp = p.encode('utf8')
 PAOPY = str(PAO)+str(pp)
 
-C = u"\u00A9"
+C = "\u00A9"
 CC = C.encode('utf8')
 
 LL = ['x','y','z']

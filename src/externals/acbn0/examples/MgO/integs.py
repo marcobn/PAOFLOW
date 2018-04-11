@@ -68,18 +68,18 @@ def my_getbasis(atoms,basis_files_path):
     import math  as m
     bfs = []
     for atom in atoms:
-        print 'Building basis for atom ', atom.atid, atom.symbol()
+        print('Building basis for atom ', atom.atid, atom.symbol())
         basis_data_file = basis_files_path+'/'+atom.symbol()+'_basis'
         if os.path.exists(basis_data_file+'.py'):
-           print '\tFile '+basis_data_file+' found'
+           print('\tFile '+basis_data_file+' found')
 	else:
-           print '\tFile '+basis_data_file+' not found. Exiting ...'
+           print('\tFile '+basis_data_file+' not found. Exiting ...')
            sys.exit()
         exec('execfile("'+basis_data_file+'.py")')
         #print basis_data
         bs = basis_data[atom.atno]
         for shell in bs:
-	    print '\t One shell (L) found'
+	    print('\t One shell (L) found')
             for subshell in shell:
                 bf = myCGBF(atom.pos(),atom.atid)
                 pgto_counter = 0
@@ -94,7 +94,7 @@ def my_getbasis(atoms,basis_files_path):
                     bf.pcoefs.append(coeff)
                     bf.pexps.append(zeta)
                     pgto_counter += 1
-                print '\t\t One subshell (M) spanned with %d PGTOs found' % pgto_counter
+                print('\t\t One subshell (M) spanned with %d PGTOs found' % pgto_counter)
                 bfs.append(bf)
     return bfs
 
@@ -103,7 +103,7 @@ def get2ints(bfs,coul_func):
     """Store integrals in a long array in the form (ij|kl) (chemists
     notation. We only need i>=j, k>=l, and ij <= kl"""
     from array import array
-    print 'Calculationg 2e integrals using %s'%coul_func.__name__
+    print('Calculationg 2e integrals using %s'%coul_func.__name__)
     nbf = len(bfs)
     totlen = nbf*(nbf+1)*(nbf*nbf+nbf+2)/8
     Ints = array('d',[0]*totlen)
@@ -145,10 +145,10 @@ def coulomb(a,b,c,d,coul_func):
            dl.append(x[0]) 
            dm.append(x[1]) 
            dn.append(x[2]) 
-       al=map(float,al);am=map(float,am);an=map(float,an)
-       bl=map(float,bl);bm=map(float,bm);bn=map(float,bn)
-       cl=map(float,cl);cm=map(float,cm);cn=map(float,cn)
-       dl=map(float,dl);dm=map(float,dm);dn=map(float,dn)
+       al=list(map(float,al));am=list(map(float,am));an=list(map(float,an))
+       bl=list(map(float,bl));bm=list(map(float,bm));bn=list(map(float,bn))
+       cl=list(map(float,cl));cm=list(map(float,cm));cn=list(map(float,cn))
+       dl=list(map(float,dl));dm=list(map(float,dm));dn=list(map(float,dn))
 
        Jij = coul_func(a.pexps,a.pcoefs,a.pnorms,a.origin,al,am,an,
                        b.pexps,b.pcoefs,b.pnorms,b.origin,bl,bm,bn,
@@ -181,11 +181,11 @@ def test():
     t0 = time()
     int0 = get2ints(bfs,pycc)
     t1 = time()
-    print "time:    ",t1-t0, ' s'
-    print 'Calculationg 2e integrals'
+    print("time:    ",t1-t0, ' s')
+    print('Calculationg 2e integrals')
     mesg= """Store integrals in a long array in the form (ij|kl) (chemists
     notation. We only need i>=j, k>=l, and ij <= kl"""
-    print mesg
+    print(mesg)
     from array import array
     nbf = len(bfs)
     totlen = nbf*(nbf+1)*(nbf*nbf+nbf+2)/8
@@ -199,7 +199,7 @@ def test():
                     if ij >= kl:
                         intval = int0[ijkl2intindex(i,j,k,l)]
                         if intval >= 1E-6:
-                         print 'I= %d  J= %d  K= %d  L= %d  Int= %f' %(i+1,j+1,k+1,l+1,intval)
+                         print('I= %d  J= %d  K= %d  L= %d  Int= %f' %(i+1,j+1,k+1,l+1,intval))
     return int0,bfs
 
 #if __name__ == '__main__': test()

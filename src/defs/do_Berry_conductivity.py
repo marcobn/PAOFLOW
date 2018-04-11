@@ -79,13 +79,13 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
 
 
     # Collapsing the sum over k points
-    for n in xrange(nawf):
-        for m in xrange(nawf):
+    for n in range(nawf):
+        for m in range(nawf):
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
 
-    for e in xrange(ene.size):
+    for e in range(ene.size):
         if smearing!=None:
             sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
         else:
