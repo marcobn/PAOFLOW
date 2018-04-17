@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 # *************************************************************************************
 # *                                                                                   *
-# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2017      *
+# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2018      *
 # *                                                                                   *
 # *************************************************************************************
 #
-#  Copyright 2016-2017 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
+#  Copyright 2016-2018 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 #
 #  This file is part of AFLOW software.
 #
@@ -109,7 +110,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             print('#                  Utility to construct and operate on Hamiltonians from                    #')
             print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
             print('#                                                                                           #')
-            print('#                     ',str('%1s' %CC),'2016,2017 ERMES group (http://ermes.unt.edu)                       #')
+            print('#                         ©2016-2018 ERMES group (http://ermes.unt.edu)                     #')
             print('#############################################################################################')
             print('          ')
     
@@ -250,8 +251,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             npool = temp_pool
 
         if size >  1:
-            if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
-            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
+            if rank == 0 and npool == 1: print('parallel execution on {} processors, {} threads and {} pool'.format(size,nthread,npool))
+            if rank == 0 and npool > 1: print('parallel execution on {} processors, {} threads and {} pools'.format(size,nthread,npool))
+#            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
         else:
             if rank == 0: print('serial execution')
 
@@ -292,7 +294,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if Pn[n] > pthr:
                     bnd += 1
             Pn = None
-            if verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
+            if verbose: print('# of bands with good projectability > {} = {}'.format(pthr,bnd))
             if verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
                                             np.amax(my_eigsmat[bnd,:,:]))
             if shift == 'auto': shift = np.amin(my_eigsmat[bnd,:,:])
