@@ -282,7 +282,7 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     # Compute Berry curvature
     if Berry or spin_Hall:
         deltab = 0.05
-        mu = -0.2 # chemical potential in eV)
+        mu = -0.0 # chemical potential in eV)
         Om_znk = np.zeros((pks.shape[0],bnd),dtype=float)
         Om_zk = np.zeros((pks.shape[0],1),dtype=float)
         for ik in xrange(pks.shape[0]):
@@ -294,25 +294,32 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
                             ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
                         if spin_Hall:
                             Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
-                            ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+                                ((E_k[ik,m,0] - E_k[ik,n,0])**2 + deltab**2)
+
             Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:bnd,0]) + 1)))  # T=0.0K
             if spin_Hall: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(E_k[ik,:bnd,0]-mu) + 1)))  # T=0.0K
 
     if Berry:
         Om_zk = gather_full(Om_zk,npool)
         if rank == 0:
-            f=open(os.path.join(inputpath,'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+            f=open(os.path.join(inputpath,'Omega_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,-Om_zk[ik,0]))
             f.close()
     if spin_Hall:
         Omj_zk = gather_full(Omj_zk,npool)
+        Omj_znk = gather_full(Omj_znk,npool)
         if rank == 0:
             f=open(os.path.join(inputpath,'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
             for ik in xrange(nkpi):
                 f.write('%3d  %.5f \n' %(ik,Omj_zk[ik,0]))
             f.close()
-
+            Ojn_path = os.path.join(inputpath,'Omegajn_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat')
+            np.savetxt(Ojn_path,Omj_znk.T)
+    Om_zk=None
+    Om_znk=None
+    Omj_znk=None
+    Omj_zk=None
     pks = gather_full(pks,npool)
     if rank == 0:
         if spin_orbit: bnd *= 2
@@ -345,30 +352,4 @@ def band_loop_H(nspin,nawf,HRaux,kq,R):
     auxh = np.transpose(auxh,(2,0,1,3))
     return auxh
 
-
-# def band_loop_dH(nspin,nawf,dHRaux,kq,R):
-
-#     auxh = np.zeros((kq.shape[1],3,nawf,nawf,nspin),dtype=complex)
-
-#     for ik in xrange(kq.shape[1]):
-#         for ispin in xrange(nspin):
-#             for l in xrange(3):
-#                 auxh[ik,l,:,:,ispin] = np.sum(dHRaux[:,:,l,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
-
-
-#     return(auxh)
-
-
-
-
-# def band_loop_dH_single(nspin,nawf,dHRaux,kq,R):
-
-#     auxh = np.zeros((kq.shape[1],nawf,nawf,nspin),dtype=complex)
-
-#     for ik in xrange(kq.shape[1]):
-#         for ispin in xrange(nspin):
-#             auxh[ik,:,:,ispin] = np.sum(dHRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
-
-
-#     return(auxh)
 

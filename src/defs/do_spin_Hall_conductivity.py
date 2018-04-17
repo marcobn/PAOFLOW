@@ -20,10 +20,10 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
 from communication import scatter_array
-
+import time
 from constants import *
 from smearing import *
-
+import functools
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -46,30 +46,31 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
         sigxy = np.zeros((ene.size),dtype=complex)
     else: sigxy = None
 
+
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
     sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
                 
+
+
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
-    comm.Barrier()
+    sigxy_aux = None
 
     if rank==0:
         sigxy /= float(nktot)
         return(ene,sigxy)
     else: return None,None
 
-
 def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
 
-    sigxy = np.zeros((ene.size),dtype=complex)
-    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    sigxy = np.zeros((ene.size),dtype=complex,order="C")
+    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float,order="C")
+    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float,order="C")
     delta = 0.05
     Ef = 0.0
     #to avoid divide by zero error
     eps=1.0e-16
-
 
     if smearing == None:
         fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
@@ -83,18 +84,23 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
         for m in xrange(nawf):
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
-                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,n,m,0]*pksp[:,ipol,m,n,0])
 
-    fn = None
+
+
+    f_n = None
+    if smearing!=None:
+        dk2=np.ascontiguousarray(np.ravel(deltak2[...,ispin]*1.0j,order='C'))
+    else: dk2=delta*1.0j
+
+    E_diff_nm = np.ravel(E_diff_nm,order='C')
+    f_nm = np.ravel(f_nm,order='C')
 
     for e in xrange(ene.size):
-        if smearing!=None:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
-        else:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
-                                                                                 
+        sigxy[e] = np.sum(f_nm/(E_diff_nm-((ene[e]+dk2)**2)+eps))
+
     F_nm = None
     E_diff_nm = None
                     
-    return(np.nan_to_num(sigxy))
+    return(sigxy)
 

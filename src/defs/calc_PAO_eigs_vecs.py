@@ -34,7 +34,9 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
     nawf=int(np.sqrt(aux.shape[0]))
     aux = np.rollaxis(aux,0,2)
     aux = np.reshape(aux,(aux.shape[0],nawf,nawf,nspin),order="C")
-
+    # if rank==1:
+    #     print aux[9,:4,:4,0].real
+    #     print aux[9,:4,:4,0].imag
     E_kaux = np.zeros((aux.shape[0],nawf,nspin),dtype=float)
     v_kaux = np.zeros((aux.shape[0],nawf,nawf,nspin),dtype=complex)
 

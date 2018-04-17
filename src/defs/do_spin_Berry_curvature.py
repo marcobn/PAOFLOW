@@ -26,13 +26,13 @@ from load_balancing import *
 from communication import *
 from constants import *
 from smearing import *
-
+import time
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
+def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing,writedata):
     #----------------------
     # Compute spin Berry curvature
     #----------------------
@@ -44,14 +44,13 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
     # Compute only Omega_z(k)
     Om_znkaux = np.zeros((pksp.shape[0],nawf),dtype=float)
 
-
+    start=time.time()
     deltap = 0.05
     for n in xrange(nawf):
         for m in xrange(nawf):
             if m!= n:
-                Om_znkaux[:,n] += -2.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0]) / \
+                Om_znkaux[:,n] += -2.0*np.imag(jksp[:,n,m,0]*pksp[:,jpol,m,n,0]) / \
                 ((E_k[:,m,0] - E_k[:,n,0])**2 + deltap**2)
-
 
 
     de = (emaxSH-eminSH)/500
@@ -73,27 +72,39 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
             Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(E_k[:,:,0]-ene[i]) + 1)),axis=1)
 
 
+    if writedata:
+        Om_zk = gather_full(Om_zkaux,npool)
+        comm.Barrier()
 
-    Om_zk = gather_full(Om_zkaux,npool)
-    comm.Barrier()
-    
-    Om_zk_aux = None
+        Om_zk_aux = None
 
-    shc = None
-    if rank == 0: shc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
+        shc = None
+        if rank == 0: shc = np.sum(Om_zk,axis=0)/float(nk1*nk2*nk3)
 
 
-    n0 = 0
-    if rank == 0:
-        Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
-        for i in xrange(ene.size-1):
-            if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
-                n0 = i
-            if ene[i] <= fermi_up and ene[i+1] >= fermi_up:
-                n = i
-        Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
-        Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
+        n0 = 0
+        if rank == 0:
+            Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
+            for i in xrange(ene.size-1):
+                if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
+                    n0 = i
+                if ene[i] <= fermi_up and ene[i+1] >= fermi_up:
+                    n = i
+            Om_k = np.reshape(Om_zk,(nk1,nk2,nk3,ene.size),order='C')
+            Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
 
-    else: Om_k = None
+        else: Om_k = None
 
-    return(ene,shc,Om_k)
+        return(ene,shc,Om_k)
+
+    else:
+        
+        shc_aux = np.sum(Om_zkaux,axis=0)/float(nk1*nk2*nk3)
+        if rank==0:
+            shc = np.zeros_like(ene)
+        else:
+            shc=None
+
+        comm.Reduce(shc_aux,shc)
+
+        return(ene,shc,None)
