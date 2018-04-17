@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -32,7 +38,7 @@ def metpax(eig,ene,delta):
     nh = 5
     coeff = np.zeros(2*nh)
     coeff[0] = 1.
-    for n in xrange(2,2*nh,2):
+    for n in range(2,2*nh,2):
         m = n/2
         coeff[n] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
 
@@ -49,7 +55,7 @@ def intmetpax(eig,ene,delta):
     nh = 5
     coeff = np.zeros(2*nh)
     coeff[0] = 0.
-    for n in xrange(2,2*nh,2):
+    for n in range(2,2*nh,2):
         m = n/2
         coeff[n-1] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
 

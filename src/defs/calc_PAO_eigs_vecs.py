@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -40,7 +46,7 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
 
 
 
-    for ispin in xrange(nspin):
+    for ispin in range(nspin):
         E_kaux[:,:,ispin], v_kaux[:,:,:,ispin] = diago(aux.shape[0],aux[:,:,:,ispin])
 
     aux = None
@@ -52,7 +58,7 @@ def diago(nsize,aux):
     ekp = np.zeros((nsize,nawf),dtype=float)
     ekv = np.zeros((nsize,nawf,nawf),dtype=complex)
 
-    for n in xrange(nsize):
+    for n in range(nsize):
         eigval,eigvec = LAN.eigh(aux[n,:,:],UPLO='U')
         ekp[n,:] = np.real(eigval)
         ekv[n,:,:] = eigvec

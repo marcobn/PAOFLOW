@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -101,9 +107,9 @@ def epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
     eps=1.e-8
     fnF = np.zeros((pksp.shape[0]),dtype=float)
 
-    for n in xrange(nawf):
+    for n in range(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
-        for m in xrange(nawf):
+        for m in range(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
                 np.exp(-((((E_k[:,n,ispin]-E_k[:,m,ispin])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T + ene)/delta)**2)
@@ -114,7 +120,7 @@ def epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal):
                            kq_wght[0] /delta * dfunc * ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T* \
                            1.0),axis=1)
             if metal and n == m:
-                for ik in xrange(pksp.shape[0]):
+                for ik in range(pksp.shape[0]):
                     try:
                         fnF[ik] = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[ik,n,ispin]/temp))
                     except:
@@ -137,7 +143,7 @@ def smear_epsr_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
     effterm = np.zeros((pksp.shape[0],nawf),dtype=complex)
     Ef = 0.0
 
-    for n in xrange(nawf):
+    for n in range(nawf):
         if smearing == 'gauss':
             fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
             fnF = gaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
@@ -146,7 +152,7 @@ def smear_epsr_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
             fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
         else:
             sys.exit('smearing not implemented')
-        for m in xrange(nawf):
+        for m in range(nawf):
             if smearing == 'gauss':
                 fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
             elif smearing == 'm-p':
@@ -213,7 +219,7 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
     # gaussian smearing
 
 
-    for e in xrange(ene.size):
+    for e in range(ene.size):
         if smearing=='gauss':
             np.exp(-((ene[e]-E_diff_nm)/dk2_nm)**2,out=dfunc)
             dfunc *= sq2_dk2
@@ -244,7 +250,7 @@ def smear_epsi_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,m
 
 
 
-        for e in xrange(ene.size):
+        for e in range(ene.size):
             if smearing=='gauss':
                 np.exp(-((ene[e])/dk_cont)**2,out=dfunc)
                 dfunc *= sq2_dk1
@@ -273,7 +279,7 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
     if ini_ie < 3: ini_ie = 3
     if end_ie == ene.size: end_ie = ene.size-1
     f_ene = intmetpax(ene,shift,1.0)
-    for ie in xrange(ini_ie,end_ie):
+    for ie in range(ini_ie,end_ie):
         #epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
         #               np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
         epsr[i,j,ie] = 2.0/np.pi * ( tgr.simps(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]*f_ene[1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \

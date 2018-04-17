@@ -133,7 +133,7 @@ def acbn0(prefix):
                                 return float(alat[0]),paramMatrix
 
                         else:
-                                print 'No card!'
+                                print('No card!')
                                 return float(alat[0]),[[0.,0.,0.],[0.,0.,0.],[0.,0.,0.]]
 
 
@@ -159,7 +159,7 @@ def acbn0(prefix):
                 atmPosRegex1 = re.compile(r".*=.*\((.*)\)\n+",re.MULTILINE)
                 atmPos = atmPosRegex1.findall(lines1)
                 atmPosList = []
-                for i in atmPos:atmPosList.append(map(float,i.split()))
+                for i in atmPos:atmPosList.append(list(map(float,i.split())))
 
 				#Convert fractional atomic coordinates to cartesian coordinates using the lattice vectors
                 atmPosStr = ""
@@ -195,19 +195,19 @@ def acbn0(prefix):
                 #For each atomic species
                 for atmSp in atmSpList:
 
-                        print "Creating acbn0 inpufile for %s"%atmSp
+                        print("Creating acbn0 inpufile for %s"%atmSp)
 
                         #Get orbital type to apply Hubbard correction
                         ql = get_orbital(atmSp.strip('0123456789'))
 
                         #Get list of all orbitals of type ql of the same species
                         eqOrbRegex = re.compile(r"state #\s*(\d*): atom.*\(%s.*\).*\(l=%d.*\)\n"%(atmSp.strip('0123456789'),ql),re.MULTILINE)
-                        eqOrbList = map(int, map(float,eqOrbRegex.findall(proj_lines)))
+                        eqOrbList = list(map(int, list(map(float,eqOrbRegex.findall(proj_lines)))))
                         red_basis = [x - 1 for x in eqOrbList]
 
                         #Get ones relevant for hubbard center
                         eqOrbRegex = re.compile(r"state #\s*(\d*): atom.*\(%s\s*\).*\(l=%d.*\)\n"%(atmSp,ql),re.MULTILINE)
-                        eqOrbList = map(int, map(float,eqOrbRegex.findall(proj_lines)));print eqOrbList
+                        eqOrbList = list(map(int, list(map(float,eqOrbRegex.findall(proj_lines)))));print(eqOrbList)
                         red_basis_for2e = [x - 1 for x in eqOrbList]
                         #Get list of orbitals of type l for one atom of the species
                         red_basis_2e = []
@@ -249,11 +249,11 @@ def acbn0(prefix):
                         cmd="python %s/acbn0.py %s > /dev/null"%(subdir1,os.path.join(subdir,infnm))
 
 			try:
-                        	print "Starting python acbn0.py %s\n"%(os.path.join(subdir,infnm))
+                        	print("Starting python acbn0.py %s\n"%(os.path.join(subdir,infnm)))
 				subprocess.check_output([cmd],shell=True)
-	                        print "Finished python acbn0.py %s\n"%(os.path.join(subdir,infnm))
+	                        print("Finished python acbn0.py %s\n"%(os.path.join(subdir,infnm)))
 			except subprocess.CalledProcessError as e:
-				print "######### ABORTING ACBN0 LOOP ######### \n FAILED %s \n %s\n"%(cmd,e)
+				print("######### ABORTING ACBN0 LOOP ######### \n FAILED %s \n %s\n"%(cmd,e))
 				raise SystemExit
 
         acbn0_inFileList = gen_input(prefix,nspin)
@@ -281,12 +281,12 @@ def get_Ueff(prefix):
 	                        acbn0_Uval = re.findall("U_eff\s*=\s*(\d+.\d+)",lines)[0]
 	                        Uvals[isp] = float(acbn0_Uval)
 			except Exception as e:
-				print "######### ABORTING ACBN0 LOOP ######### \n Could not find U values from acbn0 output"
+				print("######### ABORTING ACBN0 LOOP ######### \n Could not find U values from acbn0 output")
 				raise SystemExit
                 else:
                         Uvals[isp] = 0.001
 
-	print Uvals
+	print(Uvals)
 
 	#Record U values in a Log file
         if os.path.isfile(os.path.join(subdir,'%s_uValLog.log' % prefix)):
@@ -311,7 +311,7 @@ def updateUvals(infile, Uvals):
 	inputfile = fin.read()
 	fin.close()
 
-	print "Updating U values of %s with "%infile, Uvals
+	print("Updating U values of %s with "%infile, Uvals)
 		
         #Get species
         species = re.findall("(\w+).*UPF",inputfile)
@@ -347,7 +347,7 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 		try:
 			nspin = int(regEx.findall(scfInput)[0])
 		except Exception as e:
-			print "Detected Non-spin polarized calculation"
+			print("Detected Non-spin polarized calculation")
 			nspin = 1
 			pass
 
@@ -382,7 +382,7 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 		elif nspin == 2:
 			calcList = ['scf','nscf','pdos','PAO_bands_up','PAO_bands_down','acbn0']
 
-		print "List of calculations for each ACBN0 iteration ", str(calcList).strip('[]')
+		print("List of calculations for each ACBN0 iteration ", str(calcList).strip('[]'))
 
 		engine = {'scf':'espresso',
 			  'nscf':'espresso',
@@ -410,12 +410,12 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 				#	if calc == 'nscf':
 				#		os.system("cp -r %s %s"%(initDir, bakDir))
 							
-					print "Starting %s in %s"%(command, subdir)
+					print("Starting %s in %s"%(command, subdir))
 					subprocess.check_output([command],shell=True)
-					print "Finished %s in %s"%(command, subdir)
+					print("Finished %s in %s"%(command, subdir))
 
 				except subprocess.CalledProcessError as e:
-					print "######### ERROR IN ACBN0 LOOP CALCULATION ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e)
+					print("######### ERROR IN ACBN0 LOOP CALCULATION ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e))
 				#	pass
 					raise SystemExit
 				if "PAO" in calc:
@@ -423,10 +423,10 @@ def oneRun(prefix,scfOne=False,isInit=False,startPt='scf'):
 						PAOOutput = file("%s_%s.out"%(prefix,calc),'r').read()
 						errorList = re.findall(r'.*error #\s*\d+.*\n.*\n',PAOOutput)
 						if len(errorList) > 0:
-							print "######### ABORTING ACBN0 LOOP ######### \n FAILED %s in %s\n PAO ERROR: \n%s"%(command, subdir,errorList[0])
+							print("######### ABORTING ACBN0 LOOP ######### \n FAILED %s in %s\n PAO ERROR: \n%s"%(command, subdir,errorList[0]))
 							raise SystemExit
 					except Exception as e:
-						print e 
+						print(e) 
 						pass
 
 
@@ -470,7 +470,7 @@ def main():
 			newUvals = oneRun(prefix,scfOne=False)
 		
 			#Check for convergence
-			for key in uVals.keys():
+			for key in list(uVals.keys()):
 				if abs(uVals[key]-newUvals[key]) > uThresh:
 					convergence = False
 					break;
@@ -492,7 +492,7 @@ def main():
 			newUvals = oneRun(prefix,scfOne=False)
 		
 			#Check for convergence
-			for key in uVals.keys():
+			for key in list(uVals.keys()):
 				if abs(uVals[key]-newUvals[key]) > uThresh:
 					convergence = False
 					break;
@@ -501,7 +501,7 @@ def main():
 
 
 	else:
-		print "Usage: $PATH/scfuj.py prefix"
+		print("Usage: $PATH/scfuj.py prefix")
 
 		
 

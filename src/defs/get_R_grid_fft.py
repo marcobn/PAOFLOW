@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -19,9 +25,9 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
     R_wght = np.ones((nrtot),dtype=float)
     idx = np.zeros((nk1,nk2,nk3),dtype=int)
 
-    for i in xrange(nk1):
-        for j in xrange(nk2):
-            for k in xrange(nk3):
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
                 n = k + j*nk3 + i*nk2*nk3
                 Rx = float(i)/float(nk1)
                 Ry = float(j)/float(nk2)

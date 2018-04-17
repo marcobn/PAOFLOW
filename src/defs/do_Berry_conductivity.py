@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -79,13 +85,13 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
 
 
     # Collapsing the sum over k points
-    for n in xrange(nawf):
-        for m in xrange(nawf):
+    for n in range(nawf):
+        for m in range(nawf):
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
 
-    for e in xrange(ene.size):
+    for e in range(ene.size):
         if smearing!=None:
             sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
         else:

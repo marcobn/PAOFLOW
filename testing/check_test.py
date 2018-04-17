@@ -85,7 +85,7 @@ def verifyData ( subdir, refPattern ):
 
         # Compare computed error against data average
         validData = True
-        for j in xrange(nCol-1):
+        for j in range(nCol-1):
 
             # Store maximum absolute error
             if absoluteError[j] > maxError:
@@ -114,19 +114,19 @@ def verifyData ( subdir, refPattern ):
             allDataResult = result = RED+'FAIL'+RESET
 
         if showErrors:
-            print('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s' % (datFiles[i], absoluteError, relativeError))
+            print(('\t%s:\n\t\tMean Absolute Errors: %s\n\t\tRelative Errors: %s' % (datFiles[i], absoluteError, relativeError)))
         showFileResult_tmp = showFileResult
         if result == RED+'FAIL'+RESET:
            showFileResult_tmp = True 
         if showFileResult_tmp:
-            print('\t[%s] ---------- %s' % (result,datFiles[i]))
+            print(('\t[%s] ---------- %s' % (result,datFiles[i])))
         showFileResult_tmp = showFileResult
 
     if showErrors:
-        print('The maximum absolute error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxError, datFiles[maxErrorIndex]))
-        print('The maximum relative error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxRelError, datFiles[maxRelErrorIndex]))
+        print(('The maximum absolute error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxError, datFiles[maxErrorIndex])))
+        print(('The maximum relative error in %s was %E in %s' % (test_set_dir+'/'+subdir, maxRelError, datFiles[maxRelErrorIndex])))
 
-    print('[%s] ---------- %s' % ( allDataResult,test_set_dir+'/'+subdir))
+    print(('[%s] ---------- %s' % ( allDataResult,test_set_dir+'/'+subdir)))
 
 
 def main():
@@ -147,7 +147,7 @@ def main():
             refPattern += '/'
 
     # Verify data for each test matching the input or default pattern
-    for n in xrange(len(alldir)):
+    for n in range(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         verifyData(subdir, refPattern)

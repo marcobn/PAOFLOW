@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -46,8 +52,8 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
 
 
     deltap = 0.05
-    for n in xrange(nawf):
-        for m in xrange(nawf):
+    for n in range(nawf):
+        for m in range(nawf):
             if m!= n:
                 Om_znkaux[:,n] += -2.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0]) / \
                 ((E_k[:,m,0] - E_k[:,n,0])**2 + deltap**2)
@@ -64,7 +70,7 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
 
     Om_zkaux = np.zeros((pksp.shape[0],ene.size),dtype=float)
 
-    for i in xrange(ene.size):
+    for i in range(ene.size):
         if smearing == 'gauss':
             Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intgaussian(E_k[:,:,0],ene[i],deltak[:,:,0]),axis=1)
         elif smearing == 'm-p':
@@ -86,7 +92,7 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
     n0 = 0
     if rank == 0:
         Om_k = np.zeros((nk1,nk2,nk3,ene.size),dtype=float)
-        for i in xrange(ene.size-1):
+        for i in range(ene.size-1):
             if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
                 n0 = i
             if ene[i] <= fermi_up and ene[i+1] >= fermi_up:

@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 # *************************************************************************************
 # *                                                                                   *
-# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2017      *
+# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2018      *
 # *                                                                                   *
 # *************************************************************************************
 #
-#  Copyright 2016-2017 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
+#  Copyright 2016-2018 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 #
 #  This file is part of AFLOW software.
 #
@@ -24,7 +25,7 @@
 # *************************************************************************************
 
 # future imports
-from __future__ import absolute_import, print_function
+
 
 # import general modules
 import os, sys, traceback, psutil, time
@@ -109,7 +110,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             print('#                  Utility to construct and operate on Hamiltonians from                    #')
             print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
             print('#                                                                                           #')
-            print('#                     ',str('%1s' %CC),'2016,2017 ERMES group (http://ermes.unt.edu)                       #')
+            print('#                         ©2016-2018 ERMES group (http://ermes.unt.edu)                     #')
             print('#############################################################################################')
             print('          ')
     
@@ -250,8 +251,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             npool = temp_pool
 
         if size >  1:
-            if rank == 0 and npool == 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pool')
-            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
+            if rank == 0 and npool == 1: print('parallel execution on {} processors, {} threads and {} pool'.format(size,nthread,npool))
+            if rank == 0 and npool > 1: print('parallel execution on {} processors, {} threads and {} pools'.format(size,nthread,npool))
+#            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
         else:
             if rank == 0: print('serial execution')
 
@@ -288,11 +290,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # Check projectability and decide bnd
     
             bnd = 0
-            for n in xrange(nbnds):
+            for n in range(nbnds):
                 if Pn[n] > pthr:
                     bnd += 1
             Pn = None
-            if verbose: print('# of bands with good projectability (>',pthr,') = ',bnd)
+            if verbose: print('# of bands with good projectability > {} = {}'.format(pthr,bnd))
             if verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
                                             np.amax(my_eigsmat[bnd,:,:]))
             if shift == 'auto': shift = np.amin(my_eigsmat[bnd,:,:])
@@ -371,37 +373,37 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             else:
                 if nspin == 1:
                     f=open(os.path.join(inputpath,'kham.txt'),'w')
-                    for ik in xrange(nkpnts):
-                        for i in xrange(nawf):
-                            for j in xrange(nawf):
+                    for ik in range(nkpnts):
+                        for i in range(nawf):
+                            for j in range(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
                     f.close()
                 elif nspin == 2:
                     f=open(os.path.join(inputpath,'kham_up.txt'),'w')
-                    for ik in xrange(nkpnts):
-                        for i in xrange(nawf):
-                            for j in xrange(nawf):
+                    for ik in range(nkpnts):
+                        for i in range(nawf):
+                            for j in range(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
                     f.close()
                     f=open(os.path.join(inputpath,'kham_down.txt'),'w')
-                    for ik in xrange(nkpnts):
-                        for i in xrange(nawf):
-                            for j in xrange(nawf):
+                    for ik in range(nkpnts):
+                        for i in range(nawf):
+                            for j in range(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
                     f.close()
                 if non_ortho:
                     f=open(os.path.join(inputpath,'kovp.txt'),'w')
-                    for ik in xrange(nkpnts):
-                        for i in xrange(nawf):
-                            for j in xrange(nawf):
+                    for ik in range(nkpnts):
+                        for i in range(nawf):
+                            for j in range(nawf):
                                 f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
                     f.close()
             f=open(os.path.join(inputpath,'k.txt'),'w')
-            for ik in xrange(nkpnts):
+            for ik in range(nkpnts):
                 f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
             f.close()
             f=open(os.path.join(inputpath,'wk.txt'),'w')
-            for ik in xrange(nkpnts):
+            for ik in range(nkpnts):
                 f.write('%20.13f \n' %(kpnts_wght[ik]))
             f.close()
     
@@ -489,8 +491,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # Add external fields or non scf ACBN0 correction
             tau_wf = np.zeros((nawf,3),dtype=float)
             l=0
-            for n in xrange(natoms):
-                for i in xrange(naw[n]):
+            for n in range(natoms):
+                for i in range(naw[n]):
                     tau_wf[l,:] = tau[n,:]
                     l += 1
     
@@ -586,7 +588,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # Define k-point mesh for bands interpolation
             kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk,inputpath)
             nkpi=kq.shape[1]
-            for n in xrange(nkpi):
+            for n in range(nkpi):
                 kq[:,n]=np.dot(kq[:,n],b_vectors)
     
             # Compute the bands along the path in the IBZ
@@ -1093,7 +1095,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             # Compute velocities for Boltzmann transport
             #----------------------
             velkp = np.zeros((pksp.shape[0],3,bnd,nspin),dtype=float)
-            for n in xrange(bnd):
+            for n in range(bnd):
                 velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
 
@@ -1106,9 +1108,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     # Find critical points (grad(E_kn)=0)
                     #----------------------
                     f=open(os.path.join(inputpath,'critical_points.dat'),'w')
-                    for ik in xrange(nk1*nk2*nk3):
-                        for n in xrange(bnd):
-                            for ipin in xrange(nspin):
+                    for ik in range(nk1*nk2*nk3):
+                        for n in range(bnd):
+                            for ipin in range(nspin):
                                 if  np.abs(velkp_full[ik,0,n,ispin]) < 1.e-2 and \
                                     np.abs(velkp_full[ik,1,n,ispin]) < 1.e-2 and \
                                     np.abs(velkp_full[ik,2,n,ispin]) < 1.e-2:
@@ -1161,7 +1163,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 #----------------------
                 # PDOS calculation
                 #----------------------    
-                for ispin in xrange(nspin):
+                for ispin in range(nspin):
                     do_pdos_calc_adaptive(E_k[:,:,ispin],emin,emax,deltakp[:,:,ispin],v_k[:,:,:,ispin],
                                           nk1,nk2,nk3,nawf,ispin,smearing,inputpath)
 
@@ -1229,7 +1231,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         #----------------------
         if spin_Hall:
             if dftSO == False: sys.exit('full relativistic calculation with SO needed')
-            for n in xrange(s_tensor.shape[0]):
+            for n in range(s_tensor.shape[0]):
                 ipol = s_tensor[n][0]
                 jpol = s_tensor[n][1]
                 spol = s_tensor[n][2]
@@ -1285,18 +1287,18 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if rank == 0:
                     shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(os.path.join(inputpath,'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                    for n in xrange(ene.size):
+                    for n in range(ene.size):
                         f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
                     f.close()
     
                     if  ac_cond_spin:
                         sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                         f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
                         f.close()
                         f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
                         f.close()
 
@@ -1321,7 +1323,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if Berry:
             if dftSO == False: sys.exit('full relativistic calculation with SO needed')
  
-            for n in xrange(a_tensor.shape[0]):
+            for n in range(a_tensor.shape[0]):
                 ipol = a_tensor[n][0]
                 jpol = a_tensor[n][1]
                 ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,
@@ -1350,18 +1352,18 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 if rank == 0:
                     ahc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                     f=open(os.path.join(inputpath,'ahcEf_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                    for n in xrange(ene.size):
+                    for n in range(ene.size):
                         f.write('%.5f %9.5e \n' %(ene[n],ahc[n]))
                     f.close()
     
                     if ac_cond_Berry:
                         sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
                         f=open(os.path.join(inputpath,'MCDi_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
                         f.close()
                         f=open(os.path.join(inputpath,'MCDr_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
                         f.close()
     
@@ -1380,7 +1382,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
         #----------------------
         if Boltzmann:
-            for ispin in xrange(nspin):
+            for ispin in range(nspin):
     
                 if smearing == None:
                     ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor)
@@ -1395,7 +1397,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                       (ELECTRONVOLT_SI/(H_OVER_TPI**2*BOHR_RADIUS_SI))*1.0e-21
                 if rank == 0:
                     f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
-                    for n in xrange(ene.size):
+                    for n in range(ene.size):
                         f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                             %(ene[n],L0[0,0,n],L0[1,1,n],L0[2,2,n],L0[0,1,n],L0[0,2,n],L0[1,2,n]))
                     f.close()
@@ -1411,7 +1413,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     L1 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**2/(H_OVER_TPI**2*BOHR_RADIUS_SI))
     
                     if rank == 0:
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             try:
                                 S[:,:,n] = LAN.inv(L0[:,:,n])*L1[:,:,n]*(-K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**2))*1.e4
                             except:
@@ -1419,7 +1421,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                                 raise ValueError
     
                         f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                                     %(ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n]))
                         f.close()
@@ -1433,11 +1435,11 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     L2 *= (ELECTRONVOLT_SI**2/(4.0*np.pi**3))*(ELECTRONVOLT_SI**3/(H_OVER_TPI**2*BOHR_RADIUS_SI))
     
                     if rank == 0:
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             kappa[:,:,n] = (L2[:,:,n] - L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*(K_BOLTZMAN_SI/(temp*ELECTRONVOLT_SI**3))*1.e-15
     
                         f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e %9.5e %9.5e %9.5e %9.5e %9.5e \n' \
                                     %(ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n]))
                         f.close()
@@ -1471,25 +1473,25 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     
             omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
-            for n in xrange(d_tensor.shape[0]):
+            for n in range(d_tensor.shape[0]):
                 ipol = d_tensor[n][0]
                 jpol = d_tensor[n][1]
-                for ispin in xrange(nspin):
+                for ispin in range(nspin):
                     ene, epsi, epsr, jdos = do_epsilon(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,epsmin,epsmax,deltakp,deltakp2,smearing,kramerskronig)
     
                     if rank == 0:
                         f=open(os.path.join(inputpath,'epsi_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' \
                                     %(ene[n],epsi[ipol,jpol,n]))
                         f.close()
                         f=open(os.path.join(inputpath,'epsr_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' \
                                     %(ene[n],epsr[ipol,jpol,n]))
                         f.close()
                         f=open(os.path.join(inputpath,'jdos_'+str(ispin)+'.dat'),'w')
-                        for n in xrange(ene.size):
+                        for n in range(ene.size):
                             f.write('%.5f %9.5e \n' \
                                     %(ene[n],jdos[n]))
                         f.close()

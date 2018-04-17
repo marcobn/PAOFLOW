@@ -7,7 +7,7 @@
 
 #Reads QE pseudopotential files for UPF v2.0.1
 
-from __future__ import division
+
 import numpy as np
 
 ##################################################
@@ -17,7 +17,7 @@ def read_UPF(fullpath):
  import xml.etree.ElementTree as et
  import sys
  import scipy.io as sio
- import cPickle as pickle
+ import pickle as pickle
 
  #reads xml file
  #http://www.quantum-espresso.org/pseudopotentials/unified-pseudopotential-format
@@ -77,7 +77,7 @@ def read_UPF(fullpath):
      if mesh != sizeaux:
         sys.exit('Error: The size of PP_R does not match mesh: %i != %i'%(sizeaux,mesh))
      xxaux = re.split('\n| ',rootaux.text)
-     rmesh  =np.array(map(float,filter(None,xxaux))) #In Bohrs
+     rmesh  =np.array(list(map(float,[_f for _f in xxaux if _f]))) #In Bohrs
      if mesh != len(rmesh):
        sys.exit('Error: wrong mesh size')
  psp["mesh"]=mesh
@@ -90,7 +90,7 @@ def read_UPF(fullpath):
      if mesh != sizeaux:
         sys.exit('Error: The size of PP_RAB does not match mesh: %i != %i'%(sizeaux,mesh))
      xxaux = re.split('\n| ',rootaux.text)
-     rmesh  =np.array(map(float,filter(None,xxaux))) #In Bohrs
+     rmesh  =np.array(list(map(float,[_f for _f in xxaux if _f]))) #In Bohrs
      if mesh != len(rmesh):
        sys.exit('Error: wrong mesh size')
  psp["rab"]=rmesh
@@ -104,7 +104,7 @@ def read_UPF(fullpath):
          kkbeta[ibeta] = int(rootaux.attrib['size'])
          lll[ibeta]    = int(rootaux.attrib['angular_momentum'])
          xxaux         = re.split('\n| ',rootaux.text)
-         rmesh         = np.array(map(float,filter(None,xxaux))) 
+         rmesh         = np.array(list(map(float,[_f for _f in xxaux if _f]))) 
          if kkbeta[ibeta] != len(rmesh):
            sys.exit('Error: wrong mesh size')
      psp["beta_"+str(ibeta+1)]=rmesh
@@ -121,17 +121,17 @@ def read_UPF(fullpath):
  lchi= []
  oc  = []
  for node in pswfc:
-   print node.tag, node.attrib['l'],node.attrib['label']
+   print(node.tag, node.attrib['l'],node.attrib['label'])
    els.append(node.attrib['label'])
    lchi.append(int(node.attrib['l']))
    oc.append(float(node.attrib['occupation']))
    xxaux = re.split('\n| ',node.text)
-   wfc_aux  =np.array([map(float,filter(None,xxaux))])
+   wfc_aux  =np.array([list(map(float,[_f for _f in xxaux if _f]))])
    chi = np.concatenate((chi,wfc_aux))
  if nwfc != chi.shape[0]: 
    sys.error('Error: wrong number of PAOs')
  else:
-   print 'Number of radial wavefunctions found: %i' % chi.shape[0]
+   print('Number of radial wavefunctions found: %i' % chi.shape[0])
  psp["chi"] =np.transpose(chi)
  psp["els"] =els
  psp["lchi"]=lchi
@@ -154,7 +154,7 @@ def read_UPF(fullpath):
             full_aewfc_l.append(int(rootaux.attrib['l']))
             full_aewfc_label.append(rootaux.attrib['label'])
             xxaux         = re.split('\n| ',rootaux.text)
-            rmesh         = np.array([map(float,filter(None,xxaux))]) 
+            rmesh         = np.array([list(map(float,[_f for _f in xxaux if _f]))]) 
             if sizeaux != rmesh.shape[1]: sys.exit('Error: wrong mesh size')
             full_aewfc    = np.concatenate((full_aewfc,rmesh))
     psp["full_aewfc"]       =np.transpose(full_aewfc)
@@ -171,7 +171,7 @@ def read_UPF(fullpath):
             full_pswfc_l.append(int(rootaux.attrib['l']))
             full_pswfc_label.append(rootaux.attrib['label'])
             xxaux         = re.split('\n| ',rootaux.text)
-            rmesh         = np.array([map(float,filter(None,xxaux))]) 
+            rmesh         = np.array([list(map(float,[_f for _f in xxaux if _f]))]) 
             if sizeaux != rmesh.shape[1]: sys.exit('Error: wrong mesh size')
             full_pswfc    = np.concatenate((full_pswfc,rmesh))
     psp["full_pswfc"]       =np.transpose(full_pswfc)

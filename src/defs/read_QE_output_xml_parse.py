@@ -3,13 +3,19 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from __future__ import print_function
+
 import numpy as np
 import xml.etree.cElementTree as ET
 import sys
@@ -78,7 +84,7 @@ def read_QE_output_xml(fpath,verbose,non_ortho):
                 natoms=int(float(elem.findall("NUMBER_OF_ATOMS")       [0].text.split()[0]))
 
                 tau = np.zeros((natoms,3),dtype=float)
-                for n in xrange(natoms):
+                for n in range(natoms):
                     string="ATOM."+str(n+1)
                     aux = elem.findall(string)[0].attrib['tau'].split()
                     tau[n,:]=np.array(aux,dtype="float32")

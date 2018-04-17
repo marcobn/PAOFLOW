@@ -1,9 +1,16 @@
+from __future__ import division
 #
 # PAOFLOW
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016 ERMES group (http://ermes.unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -444,7 +451,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
         qe_conv    = np.asarray([[ 1.0, 0.0, 0.0],[ 0.0, 1.0, 0.0],[ 0.0, 0.0, 1.0]])
                                    
 
-    for k,v in special_points.iteritems():
+    for k,v in special_points.items():
         first  = np.array(v).dot(np.linalg.inv(aflow_conv))
         if ibrav==9:
             second = qe_conv.T.dot(first)
@@ -480,9 +487,9 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
     kq=np.copy(points)
     cart = False
     if cart:
-        for n in xrange(kq.shape[1]):
+        for n in range(kq.shape[1]):
             kq[:,n]=np.dot(kq[:,n],b_vectors)
-    for i in xrange(kq.shape[1]):
+    for i in range(kq.shape[1]):
         path_file+="%s %s %s\n"%(kq[0,i],kq[1,i],kq[2,i])
 
     if rank==0:
@@ -517,7 +524,7 @@ def get_path(ibrav,alat,cell,dk):
     if ibrav==0:
         sys.exit('IBRAV = 0 not permitted')
     if ibrav<0:
-        print('Lattice type %s is not implemented') % ibrav
+        print(('Lattice type %s is not implemented') % ibrav)
         logging.error('The ibrav value from QE has not yet been implemented')
         raise Exception
 
@@ -540,7 +547,7 @@ def get_path(ibrav,alat,cell,dk):
         point1 = None
         point2 = None
 
-        for index2 in xrange(len(a)-1):
+        for index2 in range(len(a)-1):
             try:
                 point1 = a[index2]
                 point2 = a[index2+1]

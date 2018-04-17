@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -29,7 +35,7 @@ def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
 
     if Efield.any() != 0.0:
         # Electric field
-        for n in xrange(nawf):
+        for n in range(nawf):
             HRs[n,n,0,:] -= Efield.dot(tau_wf[n,:])
 
     if Bfield.any() != 0.0:
@@ -43,7 +49,7 @@ def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
     #            HRs[n,m,i,:] *= np.exp(-np.pi*arg*1.j)
 
     if HubbardU.any() != 0:
-        for n in xrange(nawf):
+        for n in range(nawf):
             HRs[n,n,0,:] -= HubbardU[n]/2.0
 
     HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')

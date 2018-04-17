@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -49,7 +55,7 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         pksp = None
         tksp = None
 
-    for pool in xrange(npool):
+    for pool in range(npool):
         ini_ip, end_ip = load_balancing(npool, pool, nktot)
         nkpool = end_ip - ini_ip 
 
@@ -72,12 +78,12 @@ def do_momentum(vec,dHksp,d2Hksp,npool):
         tksaux = scatter_array(tks_split)
         vecaux = scatter_array(vec_split)
 
-        for ik in xrange(nsize):
-            for ispin in xrange(nspin):
-                for l in xrange(3):
+        for ik in range(nsize):
+            for ispin in range(nspin):
+                for l in range(3):
                     pksaux[ik,l,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                 (dHkaux[ik,l,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
-                    for lp in xrange(3):
+                    for lp in range(3):
                         tksaux[ik,l,lp,:,:,ispin] = np.conj(vecaux[ik,:,:,ispin].T).dot \
                                     (d2Hkaux[ik,l,lp,:,:,ispin]).dot(vecaux[ik,:,:,ispin])
 

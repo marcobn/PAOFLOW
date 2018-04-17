@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -60,11 +66,11 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         # Define time reversal operator
         theta = -1.0j*clebsch_gordan(nawf,sh,nl,1)
         wl = np.zeros((nktrim/2,nawf,nawf),dtype=complex)
-        for ik in xrange(nktrim/2):
+        for ik in range(nktrim/2):
             wl[ik,:,:] = np.conj(v_ktrim[ik,:,:,0].T).dot(theta).dot(np.conj(v_ktrim[ik+nktrim/2,:,:,0]))
             wl[ik,:,:] = wl[ik,:,:]-wl[ik,:,:].T  # enforce skew symmetry
         delta_ik = np.zeros(nktrim/2,dtype=complex)
-        for ik in xrange(nktrim/2):
+        for ik in range(nktrim/2):
             delta_ik[ik] = pf.pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
         f=open(os.path.join(inputpath,'Z2'+'.dat'),'w')
@@ -123,10 +129,10 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         if spin_orbit:
             # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
             Sj = np.zeros((nawf,nawf),dtype=complex)
-            for i in xrange(nawf/2):
+            for i in range(nawf/2):
                 Sj[i,i] = sP[spol][0,0]
                 Sj[i,i+1] = sP[spol][0,1]
-            for i in xrange(nawf/2,nawf):
+            for i in range(nawf/2,nawf):
                 Sj[i,i-1] = sP[spol][1,0]
                 Sj[i,i] = sP[spol][1,1]
         else:
@@ -142,11 +148,11 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
 
     pks = np.zeros((kq_aux.shape[1],3,bnd,bnd,nspin),dtype=complex)
-    for l in xrange(3):
+    for l in range(3):
         dHRs  = np.zeros((HRs_aux.shape[0],nawf,nawf,nspin),dtype=complex)
-        for ispin in xrange(nspin):
-            for n in xrange(nawf):
-                for m in xrange(nawf):
+        for ispin in range(nspin):
+            for n in range(nawf):
+                for m in range(nawf):
                     dHRs[:,n,m,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft_aux[:,l]*HRs_aux[:,n,m,ispin]
 
 
@@ -171,15 +177,15 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         dHRs = None
 
         # Compute momenta
-        for ik in xrange(dHks_aux.shape[0]):
-            for ispin in xrange(nspin):
+        for ik in range(dHks_aux.shape[0]):
+            for ispin in range(nspin):
                 pks[ik,l,:,:,ispin] = np.conj(v_kp[ik,:,:,ispin].T).dot \
                     (dHks_aux[ik,:,:,ispin]).dot(v_kp[ik,:,:,ispin])[:bnd,:bnd]
 
 
         if spin_Hall:
-            for ik in xrange(pks.shape[0]):
-                for ispin in xrange(nspin):
+            for ik in range(pks.shape[0]):
+                for ispin in range(nspin):
                     jks[ik,l,:,:,ispin] = (np.conj(v_kp[ik,:,:,ispin].T).dot \
                         (0.5*(np.dot(Sj,dHks_aux[ik,:,:,ispin])+np.dot(dHks_aux[ik,:,:,ispin],Sj))).dot(v_kp[ik,:,:,ispin]))[:bnd,:bnd]
         if spin_Hall:
@@ -194,12 +200,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     if eff_mass == True: 
         tks = np.zeros((kq_aux.shape[1],3,3,bnd,bnd,nspin),dtype=complex)
 
-        for l in xrange(3):
-            for lp in xrange(3):
+        for l in range(3):
+            for lp in range(3):
                 d2HRs = np.zeros((HRs_aux.shape[0],nawf,nawf,nspin),dtype=complex)
-                for ispin in xrange(nspin):
-                    for n in xrange(nawf):
-                        for m in xrange(nawf):
+                for ispin in range(nspin):
+                    for n in range(nawf):
+                        for m in range(nawf):
                             d2HRs[:,n,m,ispin] = -1.0*alat**2*ANGSTROM_AU**2*Rfft_aux[:,l]*Rfft_aux[:,lp]*HRs_aux[:,n,m,ispin]
 
 
@@ -222,8 +228,8 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
                 # Compute kinetic energy
 
-                for ik in xrange(d2Hks_aux.shape[0]):
-                    for ispin in xrange(nspin):
+                for ik in range(d2Hks_aux.shape[0]):
+                    for ispin in range(nspin):
                         tks[ik,l,lp,:,:,ispin] = (np.conj(v_kp[ik,:,:,ispin].T).dot \
                             (d2Hks_aux[ik,:,:,ispin]).dot(v_kp[ik,:,:,ispin]))[:bnd,:bnd]
 
@@ -234,10 +240,10 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
         # Compute effective mass
         mkm1 = np.zeros((tks.shape[0],bnd,3,3,nspin),dtype=complex)
-        for ik in xrange(tks.shape[0]):
-            for ispin in xrange(nspin):
-                for n in xrange(bnd):
-                    for m in xrange(bnd):
+        for ik in range(tks.shape[0]):
+            for ispin in range(nspin):
+                for n in range(bnd):
+                    for m in range(bnd):
                         if m != n:
                             mkm1[ik,n,ipol,jpol,ispin] += (pks[ik,ipol,n,m,ispin]*pks[ik,jpol,m,n,ispin]+pks[ik,jpol,n,m,ispin]*pks[ik,ipol,m,n,ispin]) / \
                                                         (E_k[ik,n,ispin]-E_k[ik,m,ispin]+1.e-16)
@@ -251,9 +257,9 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
 
         #mkm1 *= ELECTRONVOLT_SI**2/H_OVER_TPI**2*ELECTRONMASS_SI
         if rank == 0:
-            for ispin in xrange(nspin):
+            for ispin in range(nspin):
                 f=open(os.path.join(inputpath,'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat'),'w')
-                for ik in xrange(nkpi):
+                for ik in range(nkpi):
                     s="%d\t"%ik
                     for  j in np.real(mkm1[ik,:bnd,ipol,jpol,ispin]):s += "% 3.5f\t"%j
                     s+="\n"
@@ -285,9 +291,9 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         mu = -0.2 # chemical potential in eV)
         Om_znk = np.zeros((pks.shape[0],bnd),dtype=float)
         Om_zk = np.zeros((pks.shape[0],1),dtype=float)
-        for ik in xrange(pks.shape[0]):
-            for n in xrange(bnd):
-                for m in xrange(bnd):
+        for ik in range(pks.shape[0]):
+            for n in range(bnd):
+                for m in range(bnd):
                     if m!= n:
                         if Berry:
                             Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0]) / \
@@ -302,14 +308,14 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
         Om_zk = gather_full(Om_zk,npool)
         if rank == 0:
             f=open(os.path.join(inputpath,'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-            for ik in xrange(nkpi):
+            for ik in range(nkpi):
                 f.write('%3d  %.5f \n' %(ik,-Om_zk[ik,0]))
             f.close()
     if spin_Hall:
         Omj_zk = gather_full(Omj_zk,npool)
         if rank == 0:
             f=open(os.path.join(inputpath,'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-            for ik in xrange(nkpi):
+            for ik in range(nkpi):
                 f.write('%3d  %.5f \n' %(ik,Omj_zk[ik,0]))
             f.close()
 
@@ -317,12 +323,12 @@ def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vect
     if rank == 0:
         if spin_orbit: bnd *= 2
         velk = np.zeros((nkpi,3,bnd,nspin),dtype=float)
-        for n in xrange(bnd):
+        for n in range(bnd):
             velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
-        for ispin in xrange(nspin):
-            for l in xrange(3):
+        for ispin in range(nspin):
+            for l in range(3):
                 f=open(os.path.join(inputpath,'velocity_'+str(l)+'_'+str(ispin)+'.dat'),'w')
-                for ik in xrange(nkpi):
+                for ik in range(nkpi):
                     s="%d\t"%ik
                     for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
                     s+="\n"
@@ -338,7 +344,7 @@ def band_loop_H(nspin,nawf,HRaux,kq,R):
 
     auxh = np.zeros((nawf,nawf,kq.shape[1],nspin),dtype=complex,order="C")
 
-    for ispin in xrange(nspin):
+    for ispin in range(nspin):
         auxh[:,:,:,ispin]=np.tensordot(HRaux[:,:,:,ispin],kdot,axes=([2],[0]))
 
     kdot  = None

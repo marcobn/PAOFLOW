@@ -96,10 +96,10 @@ def epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp
 
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
 
-    for n in xrange(nawf):
+    for n in range(nawf):
         fn = 1.0/(np.exp(E_k[:,n,ispin]/temp)+1)
         fnF = 1.0/2.0 * 1.0/(1.0+np.cosh(E_k[:,n,ispin]/temp))
-        for m in xrange(nawf):
+        for m in range(nawf):
             fm = 1.0/(np.exp(E_k[:,m,ispin]/temp)+1)
             dfunc[:,:] = 1.0/np.sqrt(np.pi)* \
             np.exp(-((((E_k[:,n,ispin]-E_k[:,m,ispin])*np.ones((end_ik-ini_ik,ene.size),dtype=float).T).T + ene)/delta)**2)
@@ -122,7 +122,7 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
     dfunc = np.zeros((end_ik-ini_ik,ene.size),dtype=float)
     Ef = 0.0
 
-    for n in xrange(nawf):
+    for n in range(nawf):
         if smearing == 'gauss':
             fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
             fnF = gaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
@@ -131,7 +131,7 @@ def smear_epsi_loop(ipol,jpol,ini_ik,end_ik,ene,E_k,pksp,kq_wght,nawf,omega,delt
             fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
         else:
             sys.exit('smearing not implemented')
-        for m in xrange(nawf):
+        for m in range(nawf):
             if smearing == 'gauss':
                 fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,n,ispin])
             elif smearing == 'm-p':
@@ -181,9 +181,9 @@ def epsr_kramkron(ini_ie,end_ie,ene,epsi):
 
     if ini_ie == 0: ini_ie = 3
     if end_ie == ene.size: end_ie = ene.size-1
-    for ie in xrange(ini_ie,end_ie):
-        for i in xrange(3):
-            for j in xrange(3):
+    for ie in range(ini_ie,end_ie):
+        for i in range(3):
+            for j in range(3):
                 #epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
                 #               np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
                 epsr[i,j,ie] = 2.0/np.pi * ( tgr.simps(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \

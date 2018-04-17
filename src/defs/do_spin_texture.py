@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -55,17 +61,17 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
     if spin_orbit:
         # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
         Sj = np.zeros((3,nawf,nawf),dtype=complex)
-        for spol in xrange(3):
-            for i in xrange(nawf/2):
+        for spol in range(3):
+            for i in range(nawf/2):
                 Sj[spol,i,i] = sP[spol][0,0]
                 Sj[spol,i,i+1] = sP[spol][0,1]
-            for i in xrange(nawf/2,nawf):
+            for i in range(nawf/2,nawf):
                 Sj[spol,i,i-1] = sP[spol][1,0]
                 Sj[spol,i,i] = sP[spol][1,1]
     else:
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
         Sj = np.zeros((3,nawf,nawf),dtype=complex)
-        for spol in xrange(3):
+        for spol in range(3):
             Sj[spol,:,:] = clebsch_gordan(nawf,sh,nl,spol)
 
     # Compute matrix elements of the spin operator
@@ -75,9 +81,9 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
 
     sktxtaux = np.zeros((vec.shape[0],3,nawf,nawf),dtype=complex)
 
-    for ik in xrange(vec.shape[0]):
-        for ispin in xrange(nspin):
-            for l in xrange(3):
+    for ik in range(vec.shape[0]):
+        for ispin in range(nspin):
+            for l in range(3):
                 sktxtaux[ik,l,:,:] = np.conj(vec[ik,:,:,ispin].T).dot \
                             (Sj[l,:,:]).dot(vec[ik,:,:,ispin])
 
@@ -87,7 +93,7 @@ def do_spin_texture(fermi_dw,fermi_up,E_k,vec,sh,nl,nk1,nk2,nk3,nawf,nspin,spin_
     if rank == 0:
         sktxt = np.reshape(sktxt,(nk1,nk2,nk3,3,nawf,nawf),order='C')
 
-        for ib in xrange(icount):
+        for ib in range(icount):
             np.savez(os.path.join(inputpath,'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     sktxt = None

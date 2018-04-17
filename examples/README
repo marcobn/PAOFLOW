@@ -4,6 +4,7 @@ example03 : Pt with lsda (nspin = 2)
 example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
 example05 : Pt non collinear with spin orbit - Spin Hall conductivity
 example06 : AlP with non self consistent ACBN0
+example07 : Al starting from projections with overlap matrix of the atomic orbital (prior to orthogonalization)
 
 Simply run all the tests: 
 python run_test.py

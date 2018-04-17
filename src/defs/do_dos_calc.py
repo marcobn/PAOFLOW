@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -41,7 +47,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
 
     dosaux=np.zeros((ene.size),order="C")
 
-    for ne in xrange(ene.size):
+    for ne in range(ene.size):
         dosaux[ne] = np.sum(np.exp(-((ene[ne]-eig)/delta)**2))
 
     comm.Barrier()
@@ -52,7 +58,7 @@ def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
     if rank == 0:
         dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta
         f=open(os.path.join(inputpath,'dos_'+str(ispin)+'.dat'),'w')
-        for ne in xrange(ene.size):
+        for ne in range(ene.size):
             f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
         f.close()
 

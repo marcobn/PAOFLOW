@@ -3,7 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -54,8 +60,8 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
     E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin),dtype=float,order="C")
     v_kp_aux = np.zeros((kq_aux.shape[1],nawf,nawf,nspin),dtype=complex,order="C")
 
-    for ispin in xrange(nspin):
-        for ik in xrange(kq_aux.shape[1]):
+    for ispin in range(nspin):
+        for ik in range(kq_aux.shape[1]):
             if read_S:
                 E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LAN.eigh(Hks_aux[:,:,ik,ispin], 
                                                                        b=Sks_aux[:,:,ik],lower=False, 
@@ -83,9 +89,9 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
     comm.Barrier()
   
     if rank==0:
-        for ispin in xrange(nspin):
+        for ispin in range(nspin):
             f=open(os.path.join(inputpath,'bands_'+str(ispin)+'.dat'),'w')
-            for ik in xrange(kq.shape[1]):
+            for ik in range(kq.shape[1]):
                 s="%d\t"%ik
                 for  j in E_kp[ik,:,ispin]:s += "% 3.5f\t"%j
                 s+="\n"
@@ -105,7 +111,7 @@ def band_loop_H(nspin,nk1,nk2,nk3,nawf,HRaux,R_wght,kq,R,idx):
 
     auxh = np.zeros((nawf,nawf,kq.shape[1],nspin),dtype=complex,order="C")
 
-    for ispin in xrange(nspin):
+    for ispin in range(nspin):
         auxh[:,:,:,ispin]=np.tensordot(HRaux[:,:,:,ispin],kdot,axes=([2],[0]))
 
     kdot  = None
@@ -117,10 +123,10 @@ def band_loop_S(nspin,nk1,nk2,nk3,nawf,SRaux,R_wght,kq,R,idx):
     nsize = kq.shape[1]
     auxs  = np.zeros((nawf,nawf,nsize),dtype=complex)
 
-    for ik in xrange(kq.shape[1]):
-        for i in xrange(nk1):
-            for j in xrange(nk2):
-                for k in xrange(nk3):
+    for ik in range(kq.shape[1]):
+        for i in range(nk1):
+            for j in range(nk2):
+                for k in range(nk3):
                     phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[:,ik].dot(R[idx[i,j,k],:])*1j)
                     auxs[:,:,ik] += SRaux[:,:,i,j,k]*phase
 

@@ -1,5 +1,5 @@
 #from __future__ import print_function,division
-from __future__ import print_function
+
 __author__ = 'believe'
 
 
@@ -14,7 +14,7 @@ def read_UPF(fullpath):
  import xml.etree.ElementTree as et
  import sys
  import scipy.io as sio
- import cPickle as pickle
+ import pickle as pickle
 
  #reads xml file
  #http://www.quantum-espresso.org/pseudopotentials/unified-pseudopotential-format
@@ -74,7 +74,7 @@ def read_UPF(fullpath):
      if mesh != sizeaux:
         sys.exit('Error: The size of PP_R does not match mesh: %i != %i'%(sizeaux,mesh))
      xxaux = re.split('\n| ',rootaux.text)
-     rmesh  =np.array(map(float,filter(None,xxaux))) #In Bohrs
+     rmesh  =np.array(list(map(float,[_f for _f in xxaux if _f]))) #In Bohrs
      if mesh != len(rmesh):
        sys.exit('Error: wrong mesh size')
  psp["mesh"]=mesh
@@ -87,7 +87,7 @@ def read_UPF(fullpath):
      if mesh != sizeaux:
         sys.exit('Error: The size of PP_RAB does not match mesh: %i != %i'%(sizeaux,mesh))
      xxaux = re.split('\n| ',rootaux.text)
-     rmesh  =np.array(map(float,filter(None,xxaux))) #In Bohrs
+     rmesh  =np.array(list(map(float,[_f for _f in xxaux if _f]))) #In Bohrs
      if mesh != len(rmesh):
        sys.exit('Error: wrong mesh size')
  psp["rab"]=rmesh
@@ -101,7 +101,7 @@ def read_UPF(fullpath):
          kkbeta[ibeta] = int(rootaux.attrib['size'])
          lll[ibeta]    = int(rootaux.attrib['angular_momentum'])
          xxaux         = re.split('\n| ',rootaux.text)
-         rmesh         = np.array(map(float,filter(None,xxaux))) 
+         rmesh         = np.array(list(map(float,[_f for _f in xxaux if _f]))) 
          if kkbeta[ibeta] != len(rmesh):
            sys.exit('Error: wrong mesh size')
      psp["beta_"+str(ibeta+1)]=rmesh
@@ -123,7 +123,7 @@ def read_UPF(fullpath):
    lchi.append(int(node.attrib['l']))
    oc.append(float(node.attrib['occupation']))
    xxaux = re.split('\n| ',node.text)
-   wfc_aux  =np.array([map(float,filter(None,xxaux))])
+   wfc_aux  =np.array([list(map(float,[_f for _f in xxaux if _f]))])
    chi = np.concatenate((chi,wfc_aux))
  if nwfc != chi.shape[0]: 
    sys.error('Error: wrong number of PAOs')
@@ -151,7 +151,7 @@ def read_UPF(fullpath):
             full_aewfc_l.append(int(rootaux.attrib['l']))
             full_aewfc_label.append(rootaux.attrib['label'])
             xxaux         = re.split('\n| ',rootaux.text)
-            rmesh         = np.array([map(float,filter(None,xxaux))]) 
+            rmesh         = np.array([list(map(float,[_f for _f in xxaux if _f]))]) 
             if sizeaux != rmesh.shape[1]: sys.exit('Error: wrong mesh size')
             full_aewfc    = np.concatenate((full_aewfc,rmesh))
     psp["full_aewfc"]       =np.transpose(full_aewfc)
@@ -168,7 +168,7 @@ def read_UPF(fullpath):
             full_pswfc_l.append(int(rootaux.attrib['l']))
             full_pswfc_label.append(rootaux.attrib['label'])
             xxaux         = re.split('\n| ',rootaux.text)
-            rmesh         = np.array([map(float,filter(None,xxaux))]) 
+            rmesh         = np.array([list(map(float,[_f for _f in xxaux if _f]))]) 
             if sizeaux != rmesh.shape[1]: sys.exit('Error: wrong mesh size')
             full_pswfc    = np.concatenate((full_pswfc,rmesh))
     psp["full_pswfc"]       =np.transpose(full_pswfc)
@@ -384,10 +384,10 @@ def pseudizeWFC(ld1FileString, UPF_file):
 		paoList = paoRE.findall(ld1FileString)
 
 		llabels	= [x[0] for i,x in enumerate(paoList)];print("llabels:", llabels)
-		ll	= map(int,[x[1] for i,x in enumerate(paoList)]);print("ll:", ll)
-		rcut	= max(map(float,[x[4] for i,x in enumerate(paoList)]));print("rcut:", rcut)
-		pseudo_e= map(float, [x[3] for i,x in enumerate(paoList)]);print("pseudo_e:", pseudo_e)
-		occups  = map(float,[x[2] for i,x in enumerate(paoList)]);print("occupations:", occups)
+		ll	= list(map(int,[x[1] for i,x in enumerate(paoList)]));print("ll:", ll)
+		rcut	= max(list(map(float,[x[4] for i,x in enumerate(paoList)])));print("rcut:", rcut)
+		pseudo_e= list(map(float, [x[3] for i,x in enumerate(paoList)]));print("pseudo_e:", pseudo_e)
+		occups  = list(map(float,[x[2] for i,x in enumerate(paoList)]));print("occupations:", occups)
 
 		
 		PS2AE_print(UPF_fullpath,wfc_ae_fullpath,llabels,ll,rcut,pseudo_e)
@@ -450,7 +450,7 @@ def main():
 			r1=re.compile(r"\!cases.*\n!.*",re.DOTALL)
 			r1String = r1.findall(ld1Str)[0].split('\n')[1:]
 
-			wfc_combinations = [map(int,x.strip('!').split()) for i, x in enumerate(r1String) if len(x) > 0]
+			wfc_combinations = [list(map(int,x.strip('!').split())) for i, x in enumerate(r1String) if len(x) > 0]
 		except:
 			print("Error in case specification of ld1.x input file")
 			raise SystemExit

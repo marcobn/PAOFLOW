@@ -1,10 +1,10 @@
 # *************************************************************************************
 # *                                                                                   *
-# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2017      *
+# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2018      *
 # *                                                                                   *
 # *************************************************************************************
 #
-#  Copyright 2016-2017 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
+#  Copyright 2016-2018 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 #
 #  This file is part of AFLOW software.
 #
@@ -24,7 +24,7 @@
 # *************************************************************************************
 
 # future imports
-from __future__ import print_function
+
 
 import sys
 import numpy as np
@@ -50,7 +50,7 @@ def main():
     # Check for output dictionary and print the keys.
     if outDict is not None:
         print('\noutDict keys:')
-        for k in outDict.keys():
+        for k in list(outDict.keys()):
             print('\''+k+'\'')
 
 if __name__== "__main__":
