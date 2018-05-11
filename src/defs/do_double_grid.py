@@ -24,12 +24,8 @@ import multiprocessing
 
 from zero_pad import *
 
-scipyfft = False
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
-    scipyfft = True
+from scipy import fftpack as FFT
+scipyfft = True
 
 
 from communication import *
