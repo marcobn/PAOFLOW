@@ -136,7 +136,15 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals = read_inputfile_xml(inputpath,inputfile)
-
+        
+        if double_grid:
+            if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
+                nfft1 = 2*((nfft1+1)//2)
+                nfft2 = 2*((nfft2+1)//2)
+                nfft3 = 2*((nfft3+1)//2)
+                print('Warning: nfft grid has been modified to support double_grid,')
+                print('modified nfft grid:{} {} {}\n'.format(nfft1,nfft2,nfft3))
+       
         fpath = os.path.join(inputpath, fpath)
 
         #----------------------
