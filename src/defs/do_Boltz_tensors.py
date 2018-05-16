@@ -28,13 +28,12 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor):
+def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor,emin,emax,ne):
     # Compute the L_alpha tensors for Boltzmann transport
 
-    emin = -2.0 # To be read in input
-    emax = 2.0
-    de = (emax-emin)/500
-    ene = np.arange(emin,emax,de,dtype=float)
+
+    de = (emax-emin)/ne
+    ene = np.arange(emin,emax+1.e-10,de,dtype=float)
 
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)

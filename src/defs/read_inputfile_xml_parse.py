@@ -161,6 +161,10 @@ def read_inputfile_xml ( fpath, inputfile ):
     # Set temperature in eV
     temp = 0.025852  # room temperature
 
+    tmin = 300        # initial temperature in Kelvin
+    tmax = 300      # highest temperature in Kelvin
+    tstep= 1        # temperature step in Kelvin
+
     # Boltzmann transport calculation
     Boltzmann = False
 
@@ -262,6 +266,9 @@ def read_inputfile_xml ( fpath, inputfile ):
     fermi_up = read_attribute(aroot, fermi_up, 'fermi_up', 'decimal')
     fermi_dw = read_attribute(aroot, fermi_dw, 'fermi_dw', 'decimal')
     temp = read_attribute(aroot, temp, 'temp', 'decimal')
+    tmin = read_attribute(aroot, tmin, 'tmin', 'decimal')
+    tmax = read_attribute(aroot, tmax, 'tmax', 'decimal')
+    tstep = read_attribute(aroot, tstep, 'tstep', 'decimal')
     epsmin = read_attribute(aroot, epsmin, 'epsmin', 'decimal')
     epsmax = read_attribute(aroot, epsmax, 'epsmax', 'decimal')
     eminAH = read_attribute(aroot, eminAH, 'eminAH', 'decimal')
@@ -290,4 +297,4 @@ def read_inputfile_xml ( fpath, inputfile ):
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,out_vals.split(),band_path, \
-        high_sym_points
+        high_sym_points,tmin,tmax,tstep
