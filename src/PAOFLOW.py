@@ -1212,18 +1212,20 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 else:
                     spin_mult=2.0
 
-            sigmadk_str=""
-            sigma_str=""
-            kappa_str=""
-            seebeck_str=""
-            PF_str=""
 
-            
-            for t in range(temps.shape[0]):
-                temp=temps[t]/11604.52500617
-                comm.Barrier()
 
-                for ispin in range(nspin):
+            for ispin in range(nspin):
+                sigmadk_str=""
+                sigma_str=""
+                kappa_str=""
+                seebeck_str=""
+                PF_str=""
+                
+                for t in range(temps.shape[0]):
+                    temp=temps[t]/11604.52500617
+                    comm.Barrier()
+
+
                     if smearing != None:
                         ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor,emin,emax,ne)
 
@@ -1321,23 +1323,23 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
 
 
-            if rank==0:
-                if smearing!=None:
-                    f=open(os.path.join(inputpath,'sigmadk_'+str(ispin)+'.dat'),'w')
-                    f.write(sigmadk_str)
+                if rank==0:
+                    if smearing!=None:
+                        f=open(os.path.join(inputpath,'sigmadk_'+str(ispin)+'.dat'),'w')
+                        f.write(sigmadk_str)
+                        f.close()
+                    f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
+                    f.write(sigma_str)
                     f.close()
-                f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
-                f.write(sigma_str)
-                f.close()
-                f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
-                f.write(seebeck_str)
-                f.close()
-                f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
-                f.write(kappa_str)
-                f.close()    
-                f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
-                f.write(PF_str)
-                f.close()    
+                    f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
+                    f.write(seebeck_str)
+                    f.close()
+                    f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
+                    f.write(kappa_str)
+                    f.close()    
+                    f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
+                    f.write(PF_str)
+                    f.close()    
 
     
             velkp = None
