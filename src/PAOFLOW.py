@@ -1452,8 +1452,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         L0 *= 6.9884 # convert in units of 10^21 siemens m^-1 s^-1
 
                         sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
-                        if rank==0:
-                            print(temp)
+
                         for n in range(ene.size):
                             sigma_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
                                 %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
