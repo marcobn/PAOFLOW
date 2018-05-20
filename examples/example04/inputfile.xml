@@ -9,7 +9,7 @@
     <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
     <shift>auto</shift><!-- if 'auto' shift is selected automatically; else, give numerical value (eV) -->
     <pthr type="decimal" size="1">0.95</pthr>
-    <npool type="integer" size="1">8</npool>
+    <npool type="integer" size="1">16</npool>
 
     <!-- Return Requests -->
     <out_vals type="character" size="0"></out_vals>
