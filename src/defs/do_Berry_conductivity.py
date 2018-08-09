@@ -90,12 +90,14 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
                 f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+        
+    E_diff_nm[np.where(E_diff_nm<1.e-4)] = np.inf
 
     for e in range(ene.size):
         if smearing!=None:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
+            sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps))
         else:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
+            sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]))
                                         
     F_nm = None
     E_diff_nm = None

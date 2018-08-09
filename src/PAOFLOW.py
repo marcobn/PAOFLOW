@@ -1258,13 +1258,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if not spin_Hall:
             v_k = None
 
-        E_k = np.ascontiguousarray(E_k[:,:bnd])
+#        E_k = np.ascontiguousarray(E_k[:,:bnd])
 
-        if smearing != None:
-            deltakp = np.ascontiguousarray(deltakp[:,:bnd])
-            deltakp2 = np.ascontiguousarray(deltakp2[:,:bnd,:bnd])
+#        if smearing != None:
+#            deltakp = np.ascontiguousarray(deltakp[:,:bnd])
+#            deltakp2 = np.ascontiguousarray(deltakp2[:,:bnd,:bnd])
 
-        pksp = np.ascontiguousarray(pksp[:,:,:bnd,:bnd])
+#        pksp = np.ascontiguousarray(pksp[:,:,:bnd,:bnd])
 
 
 

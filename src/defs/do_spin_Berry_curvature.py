@@ -52,11 +52,20 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
 
 
     deltap = 0.05
-    for n in range(nawf):
-        for m in range(nawf):
-            if m!= n:
-                Om_znkaux[:,n] += -2.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0]) / \
-                ((E_k[:,m,0] - E_k[:,n,0])**2 + deltap**2)
+    # for n in range(nawf):
+    #     for m in range(nawf):
+    #         if m!= n:
+    #             Om_znkaux[:,n] += -2.0*np.imag(jksp[:,ipol,n,m,0]*pksp[:,jpol,m,n,0]) / \
+    #             ((E_k[:,m,0] - E_k[:,n,0])**2 + deltap**2)
+
+
+    for ik in range(E_k.shape[0]):
+        E_nm = (E_k[ik,:,0] - E_k[ik,:,0][:,None])**2
+        E_nm[np.where(E_nm<1.e-4)] = np.inf
+        Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,ipol,:,:,0]*pksp[ik,jpol,:,:,0].T) / \
+                                            E_nm,axis=1)
+    E_nm = None
+
 
 
 
