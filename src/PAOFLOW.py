@@ -914,7 +914,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
     
     if Boltzmann:#do d2H/d2k_ij
-        M_ij ,= do_d2Ed2k_ij(Hksp,a_vectors,alat,nthread,npool,use_cuda,v_k,bnd,degen)
+        M_ij = do_d2Ed2k_ij(Hksp,a_vectors,alat,nthread,npool,use_cuda,v_k,bnd,degen)
 
     try:
 
@@ -1013,6 +1013,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
             pksp = do_momentum(v_k,dHksp)
 
+            for ik in range(pksp.shape[0]):
+                for l in range(pksp.shape[1]):
+                    for ispin in range(pksp.shape[4]):
+                        pksp[ik,l,:,:,ispin] = do_perturb_split(pksp[ik,l,:,:,ispin],
+                                                                dHksp[ik,l,:,:,ispin],
+                                                                v_k[ik,:,:,ispin],
+                                                                degen[ispin][ik])
+
+
+
             if rank == 0:
                 print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
@@ -1071,13 +1081,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
 
 
-    for ik in range(pksp.shape[0]):
-        for l in range(pksp.shape[1]):
-            for ispin in range(pksp.shape[4]):
-                pksp[ik,l,:,:,ispin] = do_perturb_split(pksp[ik,l,:,:,ispin],
-                                                        dHksp[ik,l,:,:,ispin],
-                                                        v_k[ik,:,:,ispin],
-                                                        degen[ispin][ik])
 
 
     if not spin_Hall:
