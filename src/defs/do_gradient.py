@@ -62,56 +62,36 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
 
     # fft grid in R shifted to have (0,0,0) in the center
     _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-    #reshape R grid and each proc's piece of Hr
-        
-    Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+
+    Rfft = np.reshape(Rfft,(3,nk1,nk2,nk3),order='C')
 
     comm.Barrier()
-
-    ########################################
-    ### real space grid replaces k space ###
-    ########################################
-    if using_cuda:
-        for n in range(Hksp.shape[0]):
-            for ispin in range(Hksp.shape[4]):
-                Hksp[n,:,:,:,ispin] = cuda_ifftn(Hksp[n,:,:,:,ispin])
-
-    elif scipyfft:
-        for n in range(Hksp.shape[0]):
-            for ispin in range(Hksp.shape[4]):
-                Hksp[n,:,:,:,ispin] = FFT.ifftn(Hksp[n,:,:,:,ispin],axes=(0,1,2))
-                Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
 
     #############################################################################################
     #############################################################################################
     #############################################################################################
 
     num_n = Hksp.shape[0]
+    dHksp = np.zeros((num_n,nk1,nk2,nk3,3,nspin),dtype=complex,order='C')
+    for ispin in range(dHksp.shape[5]):
+        for n in range(dHksp.shape[0]):
+            ########################################
+            ### real space grid replaces k space ###
+            ########################################
+            if using_cuda:
+                Hksp[n,:,:,:,ispin] = cuda_ifftn(Hksp[n,:,:,:,ispin])*1.0j*alat
 
-    #reshape Hr for multiplying by the three parts of Rfft grid
-    Hksp  = np.reshape(Hksp,(num_n,nk1*nk2*nk3,nspin),order='C')
-    dHksp = np.zeros((num_n,nk1*nk2*nk3,3,nspin),dtype=complex,order='C')
+            elif scipyfft:
+                Hksp[n,:,:,:,ispin] = FFT.ifftn(Hksp[n,:,:,:,ispin])*1.0j*alat
 
-    # Compute R*H(R)
-    for ispin in range(nspin):
-        for l in range(3):
-            dHksp[:,:,l,ispin] = 1.0j*alat*Rfft[:,l]*Hksp[...,ispin]
+            # Compute R*H(R)            
+            for l in range(dHksp.shape[4]):
+                dHksp[n,:,:,:,l,ispin] = FFT.fftn(Rfft[l]*Hksp[n,:,:,:,ispin])
 
-    Hksp=None
-
-    dHksp = np.reshape(dHksp,(num_n,nk1,nk2,nk3,3,nspin),order='C')
-    # Compute dH(k)/dk
-
-    for n in range(dHksp.shape[0]):
-        for l in range(dHksp.shape[4]):
-            for ispin in range(dHksp.shape[5]):
-                dHksp[n,:,:,:,l,ispin] = FFT.fftn(dHksp[n,:,:,:,l,ispin],axes=(0,1,2),)
-
+                
     #############################################################################################
     #############################################################################################
     #############################################################################################
-
-    #gather the arrays into flattened dHk
 
     return(dHksp)
 

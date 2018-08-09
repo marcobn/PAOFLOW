@@ -28,13 +28,14 @@ from clebsch_gordan import *
 
 from load_balancing import *
 from communication import *
+from do_perturb_split import * 
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
+def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd,degen):
     # calculate spin_current operator
     _,_,nawf,nawf,nspin = dHksp.shape
 
@@ -54,11 +55,7 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
         Sj = clebsch_gordan(nawf,sh,nl,spol)
 
-
-
     jdHksp = np.zeros((dHksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
-
-
 
     for ik in range(dHksp.shape[0]):
         for l in range(3):
@@ -67,14 +64,22 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
                     0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+np.dot(dHksp[ik,l,:,:,ispin],Sj))
                 
 
-    jksp = np.zeros((dHksp.shape[0],3,bnd,bnd,nspin),dtype=complex)
+    jksp = np.zeros((dHksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
+
+    for ik in range(dHksp.shape[0]):
+        for l in range(3):            
+            for ispin in range(nspin): 
+                jksp[ik,l,:,:,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
+                            (jdHksp[ik,l,:,:,ispin]).dot(vec[ik,:,:,ispin])
 
     for ik in range(dHksp.shape[0]):
         for l in range(3):            
             for ispin in range(nspin):
+                jksp[ik,l,:,:,ispin] = do_perturb_split(jksp[ik,l,:,:,ispin],
+                                                        jdHksp[ik,l,:,:,ispin],
+                                                        vec[ik,:,:,ispin],
+                                                        degen[ispin][ik])
 
-                jksp[ik,l,:,:,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
-                            (jdHksp[ik,l,:,:,ispin]).dot(vec[ik,:,:,ispin])[:bnd,:bnd]
 
     jdHksp = None
 

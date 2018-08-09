@@ -3,13 +3,7 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
-#
-# Reference:
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
-# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
-#
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
@@ -23,6 +17,9 @@ def load_balancing(size,rank,n):
     splitsize = 1.0/size*n
     start = int(round(rank*splitsize))
     stop = int(round((rank+1)*splitsize))
+    out = load_sizes(size,n,1)
+    start= out[rank,1]
+    stop=start+out[rank,0]
     return(start,stop)
 
 # For each processor calculate 3 values:
@@ -32,10 +29,11 @@ def load_balancing(size,rank,n):
 def load_sizes(size,n,dim):
     sizes = np.empty((size,3),dtype=int)
     splitsize = 1.0/size*n
-    for i in range(size):
+    for i in xrange(size):
         start = int(round(i*splitsize))
         stop = int(round((i+1)*splitsize))
         sizes[i][0] = dim*(stop-start)
         sizes[i][1] = dim*start
         sizes[i][2] = stop-start
+#    return sizes[np.argsort(sizes[:,0])]
     return sizes

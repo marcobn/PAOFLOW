@@ -17,15 +17,15 @@ def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
     nk2p = nfft2+nk2
     nk3p = nfft3+nk3
     # first dimension
-    auxp1 = np.zeros((nk1,nk2,nk3p),dtype=complex)
+    auxp1 = np.zeros((nk1,nk2,nk3p),dtype=complex,order="C")
     auxp1[:,:,:int(nk3/2)]=aux[:,:,:int(nk3/2)]
     auxp1[:,:,int(nfft3+nk3/2):]=aux[:,:,int(nk3/2):]
     # second dimension
-    auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=complex)
+    auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=complex,order="C")
     auxp2[:,:int(nk2/2),:]=auxp1[:,:int(nk2/2),:]
     auxp2[:,int(nfft2+nk2/2):,:]=auxp1[:,int(nk2/2):,:]
     # third dimension
-    auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=complex)
+    auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=complex,order="C")
     auxp3[:int(nk1/2),:,:]=auxp2[:int(nk1/2),:,:]
     auxp3[int(nfft1+nk1/2):,:,:]=auxp2[int(nk1/2):,:,:]
 

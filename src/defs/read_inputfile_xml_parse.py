@@ -158,6 +158,8 @@ def read_inputfile_xml ( fpath, inputfile ):
 
     # Boltzmann transport calculation
     Boltzmann = False
+    eminBT    = -1.0
+    emaxBT    =  1.0
 
     # Dielectric function calculation
     epsilon = False
@@ -264,6 +266,8 @@ def read_inputfile_xml ( fpath, inputfile ):
     emaxAH = read_attribute(aroot, emaxAH, 'emaxAH', 'decimal')
     eminSH = read_attribute(aroot, eminSH, 'eminSH', 'decimal')
     emaxSH = read_attribute(aroot, emaxSH, 'emaxSH', 'decimal')
+    eminBT = read_attribute(aroot, eminBT, 'eminBT', 'decimal')
+    emaxBT = read_attribute(aroot, emaxBT, 'emaxBT', 'decimal')
 
     # Read Array Input Values
     naw = read_attribute(aroot, naw, 'naw', 'array')[0].astype(int)
@@ -286,4 +290,4 @@ def read_inputfile_xml ( fpath, inputfile ):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,out_vals.split()
+        ac_cond_Berry,spin_Hall,eminBT,emaxBT,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,out_vals.split()

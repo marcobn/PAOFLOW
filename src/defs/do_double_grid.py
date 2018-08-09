@@ -79,6 +79,8 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
             Hk_aux[n,:,:,:,ispin] = FFT.fftn(zero_pad(HR_aux[n,:,:,:,ispin],
                                                       nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
+
+    Hk_aux=FFT.fftshift(Hk_aux,axes=(1,2,3))
     nk1 = nk1p
     nk2 = nk2p
     nk3 = nk3p

@@ -19,7 +19,7 @@
 import numpy as np
 import cmath
 import os, sys
-import scipy.linalg.lapack as lapack
+import scipy.linalg as LAN
 
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
@@ -31,31 +31,22 @@ from communication import *
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-
-def do_momentum(vec,dHksp,npool):
+np.set_printoptions(suppress=True,linewidth=140,precision=7)
+def do_momentum(vec,dHksp):
 
     # calculate momentum vector
     nktot,_,nawf,nawf,nspin = dHksp.shape
 
     pksp = np.zeros_like(dHksp)
 
-
-
     for ik in range(dHksp.shape[0]):
         for ispin in range(nspin):
             for l in range(3):
-                pksp[ik,l,:,:,ispin] = dHksp[ik,l,:,:,ispin].dot(vec[ik,:,:,ispin])
-
-
-    vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(vec,1,2)))
-
-    for ik in range(dHksp.shape[0]):
-        for ispin in range(nspin):
-            for l in range(3):
-                pksp[ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(pksp[ik,l,:,:,ispin])
+                pksp[ik,l,:,:,ispin] = np.dot(np.conj(vec[ik,:,:,ispin].T),
+                                              np.dot(dHksp[ik,l,:,:,ispin],
+                                                     vec[ik,:,:,ispin]))
 
     comm.Barrier()
-
 
     return(pksp)
 #  except Exception as e:

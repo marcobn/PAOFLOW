@@ -37,9 +37,11 @@ size = comm.Get_size()
 def do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltak,smearing,t_tensor,emin,emax,ne):
     # Compute the L_alpha tensors for Boltzmann transport
 
-    de = (emax-emin)/ne
-    ene = np.arange(emin,emax,de,dtype=float)
-
+    if emin!=emax:
+        de = (emax-emin)/ne
+        ene = np.arange(emin,emax,de,dtype=float)
+    else:
+        ene=np.array([emax])
     L0 = np.zeros((3,3,ene.size),dtype=float)
     L0aux = np.zeros((3,3,ene.size),dtype=float)
 
@@ -86,18 +88,24 @@ def L_loop(ene,E_k,velkp,kq_wght,temp,ispin,alpha,deltak,smearing,t_tensor):
 
     L = np.zeros((3,3,ene.size),dtype=float)
 
-
-
     if smearing == None:
-        for n in range(velkp.shape[2]):
-            Eaux = (E_k[:,n,ispin]*np.ones((E_k.shape[0],ene.size),dtype=float).T).T - ene
+        v2=np.zeros((t_tensor.shape[0],E_k.shape[0]),dtype=float,order="C")
+
+        for l in range(t_tensor.shape[0]):
+            i = t_tensor[l][0]
+            j = t_tensor[l][1]
+            v2[l]=velkp[i]*velkp[j]
+        for n in range(ene.shape[0]):
+            Eaux = E_k-ene[n]
+            Eaux = 1.0/(1.0+np.cosh(Eaux/temp)) * np.power(Eaux,alpha)
             for l in range(t_tensor.shape[0]):
                 i = t_tensor[l][0]
                 j = t_tensor[l][1]
-                if smearing == None:
-                    L[i,j,:] += np.sum((1.0/temp * kq_wght[0]*velkp[:,i,n,ispin]*velkp[:,j,n,ispin] * \
-                                1.0/2.0 * (1.0/(1.0+0.5*(np.exp(Eaux[:,:]/temp)+np.exp(-Eaux[:,:]/temp))) * np.power(Eaux[:,:],alpha)).T),axis=1)
+            
+                L[i,j,n] += np.sum(v2[l]*Eaux)
+                                
 
+        L*=1.0/temp * kq_wght[0] * 0.5
 
     if smearing == 'gauss':
         om = ((ene*np.ones((E_k.shape[0],ene.size),dtype=float)).T).T

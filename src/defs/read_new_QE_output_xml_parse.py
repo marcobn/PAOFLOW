@@ -3,19 +3,13 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
-#
-# Reference:
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
-# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
-#
+# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-
+from __future__ import print_function
 import numpy as np
 import xml.etree.cElementTree as ET
 import sys
@@ -37,75 +31,98 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
     data_file = fpath+'/data-file-schema.xml'
 
     # Reading data-file-schema.xml
+    iterator_obj = ET.iterparse(data_file,events=('start','end'))
+    iterator     = iter(iterator_obj)
+    event,root   = iterator.next()
 
-    for event,elem in ET.iterparse(data_file,events=('start','end')):
-        if event == 'end':
-            if elem.tag == "output":
-#                alatunits  = elem.findall("LATTICE_PARAMETER")[0].attrib['UNITS']
-                alatunits = "Bohr"
-                alat   = float(elem.findall("atomic_structure")[0].attrib['alat'])
-                if rank == 0 and verbose: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
+    for event,elem in iterator:
+        if event == 'end' and elem.tag == "output":
 
-                aux=elem.findall("atomic_structure/cell/a1")[0].text.split()
-                a1=np.array(aux,dtype="float32")
+            alatunits = "Bohr"
 
-                aux=elem.findall("atomic_structure/cell/a2")[0].text.split()
-                a2=np.array(aux,dtype="float32")
+            alat   = float(elem.findall("atomic_structure")[0].attrib['alat'])
 
-                aux=elem.findall("atomic_structure/cell/a3")[0].text.split()
-                a3=np.array(aux,dtype="float32")
+            aux=elem.findall("atomic_structure/cell/a1")[0].text.split()
+            a1=np.array(aux,dtype="float64")
 
-                a_vectors = np.array([a1,a2,a3])/alat #in units of alat
-                aux=elem.findall("basis_set/reciprocal_lattice/b1")[0].text.split()
-                b1=np.array(aux,dtype='float32')
+            aux=elem.findall("atomic_structure/cell/a2")[0].text.split()
+            a2=np.array(aux,dtype="float64")
 
-                aux=elem.findall("basis_set/reciprocal_lattice/b2")[0].text.split()
-                b2=np.array(aux,dtype='float32')
+            aux=elem.findall("atomic_structure/cell/a3")[0].text.split()
+            a3=np.array(aux,dtype="float64")
 
-                aux=elem.findall("basis_set/reciprocal_lattice/b3")[0].text.split()
-                b3=np.array(aux,dtype='float32')
+            aux=elem.findall("basis_set/reciprocal_lattice/b1")[0].text.split()
+            b1=np.array(aux,dtype='float64')
 
-                b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
+            aux=elem.findall("basis_set/reciprocal_lattice/b2")[0].text.split()
+            b2=np.array(aux,dtype='float64')
+
+            aux=elem.findall("basis_set/reciprocal_lattice/b3")[0].text.split()
+            b3=np.array(aux,dtype='float64')
 
 
-                # Monkhorst&Pack grid
-                nk1=int(elem.findall(".//monkhorst_pack")[0].attrib['nk1'])
-                nk2=int(elem.findall(".//monkhorst_pack")[0].attrib['nk2'])
-                nk3=int(elem.findall(".//monkhorst_pack")[0].attrib['nk3'])
-                k1=int(elem.findall(".//monkhorst_pack")[0].attrib['k1'])
-                k2=int(elem.findall(".//monkhorst_pack")[0].attrib['k2'])
-                k3=int(elem.findall(".//monkhorst_pack")[0].attrib['k3'])
-                if rank == 0 and verbose: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
-               
-	        # Get hightest occupied level or fermi energy
-                try:
-                    Efermi = float(elem.findall("band_structure/highestOccupiedLevel")[0].text)*Hatree2eV
-                except:
-                    pass
-                try:
-                    Efermi = float(elem.findall("band_structure/fermi_energy")[0].text)*Hatree2eV
-                except:
-                    pass
-                try:
-                    aux = elem.findall("band_structure/two_fermi_energies")[0].text.split()
-                    Efermi = float(np.amax(np.array(aux,dtype='float32')))*Hatree2eV
-                except:
-                    pass
 
-                # Atomic Positions
-                natoms=int(float(elem.findall("atomic_structure")[0].attrib['nat']))
-                tau = np.zeros((natoms,3),dtype=float)
-                for n in range(natoms):
-                    aux = elem.findall("atomic_structure/atomic_positions/atom")[n].text.split()
-                    tau[n,:]=np.array(aux,dtype="float32")
+
+
+            # Monkhorst&Pack grid
+            nk1=int(elem.findall(".//monkhorst_pack")[0].attrib['nk1'])
+            nk2=int(elem.findall(".//monkhorst_pack")[0].attrib['nk2'])
+            nk3=int(elem.findall(".//monkhorst_pack")[0].attrib['nk3'])
+            k1=int(elem.findall(".//monkhorst_pack")[0].attrib['k1'])
+            k2=int(elem.findall(".//monkhorst_pack")[0].attrib['k2'])
+            k3=int(elem.findall(".//monkhorst_pack")[0].attrib['k3'])
+
+            # Get hightest occupied level or fermi energy
+            try:
+                Efermi = float(elem.findall("band_structure/highestOccupiedLevel")[0].text)*Hatree2eV
+            except: pass
+            try:
+                Efermi = float(elem.findall("band_structure/fermi_energy")[0].text)*Hatree2eV
+            except: pass
+            try:
+                aux = elem.findall("band_structure/two_fermi_energies")[0].text.split()
+                Efermi = float(np.amax(np.array(aux,dtype='float64')))*Hatree2eV
+            except: pass
+
+
+
+            # Atomic Positions                
+            natoms=int(float(elem.findall("atomic_structure")[0].attrib['nat']))
+            tau = np.zeros((natoms,3),dtype=float)
+            for n in xrange(natoms):
+                aux = elem.findall("atomic_structure/atomic_positions/atom")[n].text.split()
+                tau[n,:]=np.array(aux,dtype="float64")
+
 			
-			
-			
+#        else:
+#            elem.clear()
+
+    a_vectors = np.array([a1,a2,a3])/alat #in units of alat
+    b_vectors = np.array([b1,b2,b3]) #in units of 2pi/alat
+
+    elem.clear()
+    root.clear()
+    root = None
+    elem = None
+    subelem=None
+    iterator = None
+    iterator_obj = None
+
+    if rank == 0 and verbose: print("The lattice parameter is: alat= {0:f} ({1:s})".format(alat,alatunits))
+    if rank == 0 and verbose: print('Monkhorst&Pack grid',nk1,nk2,nk3,k1,k2,k3)
     # Reading atomic_proj.xml
 
     group_nesting = 0
     readEigVals = False; readProj = False
-    for event,elem in ET.iterparse(atomic_proj,events=('start','end')):
+
+
+
+    # Reading data-file-schema.xml
+    iterator_obj = ET.iterparse(atomic_proj,events=('start','end'))
+    iterator     = iter(iterator_obj)
+    event,root   = iterator.next()
+
+    for event,elem in iterator:
 
         if event == 'end' and  elem.tag == "HEADER":
             nkpnts = int(elem.findall("NUMBER_OF_K-POINTS")[0].text.strip())
@@ -116,6 +133,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             if nspin == 4:
                 nspin = 1
                 dftSO = True
+            
             if rank == 0 and verbose: print('Number of spin components: {0:d}'.format(nspin))
             nelec = float(elem.findall("NUMBER_OF_ELECTRONS")[0].text.split()[0])
             nelec = int(nelec)
@@ -134,11 +152,11 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             elem.clear()
 
         if event == 'end' and elem.tag =="K-POINTS":
-            kpnts  = np.array(elem.text.split(),dtype="float32").reshape((nkpnts,3))
+            kpnts  = np.array(elem.text.split(),dtype="float64").reshape((nkpnts,3))
             elem.clear()
 
         if event == 'end' and elem.tag =="WEIGHT_OF_K-POINTS":
-            kpnts_wght  = np.array(elem.text.split(),dtype='float32')
+            kpnts_wght  = np.array(elem.text.split(),dtype='float64')
 
             if kpnts_wght.shape[0] != nkpnts:
                 sys.exit('Error in size of the kpnts_wght vector')
@@ -174,18 +192,24 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 ik = int(float(elem.tag.split('.')[-1]))-1
                 if nspin ==1:
                     ispin = 0
+                    try:
+                        subelem.clear()
+                    except: pass
                     subelem = elem.findall("EIG")[0]
                     #if verbose:print("Reading eigenvalues of ",  elem.tag)
                     eigk_type=subelem.attrib['type']
-                    eigk_file=np.array(subelem.text.split(),dtype='float32')
+                    eigk_file=np.array(subelem.text.split(),dtype='float64')
                     my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
                 else:
                     for ispin in range(nspin):
+                        try:
+                            subelem.clear()
+                        except: pass
                         subelem = elem.findall("EIG.%d"%(ispin+1))[0]
                         #if verbose:print("Reading eigenvalues of ",elem.tag)
                         eigk_type=subelem.attrib['type']
-                        eigk_file=np.array(subelem.text.split(),dtype='float32')
+                        eigk_file=np.array(subelem.text.split(),dtype='float64')
                         my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
 
@@ -195,7 +219,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 iin = int(float(elem.tag.split('.')[-1]))-1
                 wfc_type=elem.attrib['type']
                 aux     =elem.text
-                aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+                aux = np.array(re.split(',|\n',aux.strip()),dtype='float64')
 
                 if wfc_type=='real':
                     wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
@@ -209,11 +233,14 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             if 'SPIN' in elem.tag and readProj and group_nesting ==3:
                 ispin = int(float(elem.tag.split('.')[-1]))-1
                 for iin in range(nawf):
+                    try:
+                        subelem.clear()
+                    except: pass
                     subelem = elem.findall("ATMWFC.%d"%(iin+1))[0]
                     #if verbose:print("Reading ", subelem.tag, elem.tag, "of k-point",ik)
                     wfc_type= subelem.attrib['type']
                     aux     = subelem.text
-                    aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+                    aux = np.array(re.split(',|\n',aux.strip()),dtype='float64')
                     if wfc_type=='real':
                         wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
                         U[:,iin,ik,ispin] = wfc[:,0]
@@ -227,7 +254,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 iin = int(float(elem.tag.split('.')[-1]))-1
                 ovlp_type=elem.attrib['type']
                 aux     =elem.text
-                aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
+                aux = np.array(re.split(',|\n',aux.strip()),dtype='float64')
 
                 if ovlp_type !='complex':
                     sys.exit('the overlaps are assumed to be complex numbers')
@@ -272,6 +299,21 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                     group_nesting = 0
                     ik = 0
 
+    subelem.clear()
+    elem.clear()
+    root.clear()
+    root = None
+    elem = None
+    subelem=None
+    iterator = None
+    iterator_obj = None
+
+
+
+
+#    U=np.ascontiguousarray(U[:,:,:,1:])
+#    my_eigsmat=np.ascontiguousarray(my_eigsmat[:,:,1:])
+#    nspin=1
     if non_ortho:
         return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
             kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)

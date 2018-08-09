@@ -24,6 +24,7 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import *
 from communication import *
+import scipy.fftpack as FFT
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -37,6 +38,7 @@ def calc_PAO_eigs_vecs(Hksp,bnd,npool):
     Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3,nspin))
 
     aux = gather_scatter(Hksp,1,npool)
+    
     nawf=int(np.sqrt(aux.shape[0]))
     aux = np.rollaxis(aux,0,2)
     aux = np.reshape(aux,(aux.shape[0],nawf,nawf,nspin),order="C")

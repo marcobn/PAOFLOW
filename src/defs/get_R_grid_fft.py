@@ -21,7 +21,7 @@ from scipy import fftpack as FFT
 def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
     nrtot = nk1*nk2*nk3
     R = np.zeros((nrtot,3),dtype=float)
-    Rfft = np.zeros((nk1,nk2,nk3,3),dtype=float)
+    Rfft = np.zeros((3,nk1,nk2,nk3),dtype=float,order="C")
     R_wght = np.ones((nrtot),dtype=float)
     idx = np.zeros((nk1,nk2,nk3),dtype=int)
 
@@ -38,10 +38,8 @@ def get_R_grid_fft(nk1,nk2,nk3,a_vectors):
                 Rx -= int(Rx)
                 Ry -= int(Ry)
                 Rz -= int(Rz)
-                R[n,:] = Rx*nk1*a_vectors[0,:]+Ry*nk2*a_vectors[1,:]+Rz*nk3*a_vectors[2,:]
-                Rfft[i,j,k,:] = R[n,:]
+                R[n,:] = Rx*nk1*a_vectors[0]+Ry*nk2*a_vectors[1]+Rz*nk3*a_vectors[2]
+                Rfft[:,i,j,k] = R[n,:]
                 idx[i,j,k]=n
-
-    Rfft = FFT.fftshift(Rfft,axes=(0,1,2))
 
     return(R,Rfft,R_wght,nrtot,idx)

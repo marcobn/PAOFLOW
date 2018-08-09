@@ -135,7 +135,7 @@ def scatter_full(arr,npool,sroot=0):
     return temp
 
 
-def gather_full(arr,npool,sroot=0):
+def gather_full(arr,npool,sroot=0,out=None):
 
     first_ind_per_proc = np.array([arr.shape[0]])
     nsize              = np.zeros_like(first_ind_per_proc)
@@ -149,9 +149,10 @@ def gather_full(arr,npool,sroot=0):
 
     nsize=nsize[0]
 
-    if rank==sroot:
-        temp = np.zeros(per_proc_shape,order="C",dtype=arr.dtype)
-    else: temp = None
+    return_val=True
+    if rank==sroot and type(out)==type(None):
+        out = np.zeros(per_proc_shape,order="C",dtype=arr.dtype)
+    else: return_val=False
 
     nchunks = nsize/size
     
@@ -160,7 +161,7 @@ def gather_full(arr,npool,sroot=0):
             chunk_s,chunk_e = load_balancing(npool,pool,nchunks)
 
             if rank==sroot:
-                gather_array(temp[(chunk_s*size):(chunk_e*size)],arr[chunk_s:chunk_e],sroot=sroot)
+                gather_array(out[(chunk_s*size):(chunk_e*size)],arr[chunk_s:chunk_e],sroot=sroot)
             else:
                 gather_array(None,arr[chunk_s:chunk_e],sroot=sroot)
     else:
@@ -168,15 +169,35 @@ def gather_full(arr,npool,sroot=0):
 
     if nsize%size!=0:
         if rank==sroot:
-            gather_array(temp[(chunk_e*size):],arr[chunk_e:],sroot=sroot)
+            gather_array(out[(chunk_e*size):],arr[chunk_e:],sroot=sroot)
         else:
             gather_array(None,arr[chunk_e:],sroot=sroot)
         
-    if rank==sroot:
-        return temp
+    if rank==sroot and return_val:
+        return out
+
 
 
 def gather_scatter(arr,scatter_axis,npool):
+
+    first_ind_per_proc = np.array([arr.shape[0]])
+    nsize              = np.zeros_like(first_ind_per_proc)
+
+    comm.Barrier()
+    comm.Allreduce(first_ind_per_proc,nsize)
+
+    if len(arr.shape)>1:
+        per_proc_shape = np.concatenate((nsize,arr.shape[1:]))
+    else: per_proc_shape = np.array([arr.shape[0]])
+
+    nsize=nsize[0]
+
+
+    comm.Barrier()
+
+
+
+
     #scatter indices for scatter_axis to each proc
     axis_ind = np.array(list(range(arr.shape[scatter_axis])),dtype=int)
     axis_ind = scatter_full(axis_ind,npool)
@@ -191,10 +212,19 @@ def gather_scatter(arr,scatter_axis,npool):
         gather_array(None,np.array(axis_ind.size,dtype=int))
         gather_array(None,np.array(axis_ind,dtype=int))
 
+    per_proc_shape[1]=axis_ind.size
     axis_ind = None
 
     comm.Bcast(size_r)
     comm.Bcast(scatter_ind)
+
+
+    temp = np.zeros(per_proc_shape,order="C",dtype=arr.dtype)
+    comm.Barrier()
+
+
+
+
 
     #start and end points of indices of scatter axis for each proc
     end   = np.cumsum(size_r)
@@ -205,9 +235,9 @@ def gather_scatter(arr,scatter_axis,npool):
         comm.Barrier()
         #gather array from each proc with indices for each proc on scatter_axis
         if r==rank:
-            temp = gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
+            gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r,out=temp)
         else:
-            gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
+            gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r,out=temp)
 
     start = end = scatter_ind = None
 
