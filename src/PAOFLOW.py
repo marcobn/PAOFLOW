@@ -84,6 +84,10 @@ from do_epsilon import *
 from do_adaptive_smearing import *
 from do_z2pack import *
 import resource
+from do_d2Ed2k import *
+from do_Rij import *
+from get_degeneracies import *
+from do_perturb_split import *
 
 def paoflow(inputpath='./',inputfile='inputfile.xml'):
     try:
@@ -135,7 +139,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,out_vals = read_inputfile_xml(inputpath,inputfile)
+        ac_cond_Berry,spin_Hall,eminBT,emaxBT,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,\
+        out_vals = read_inputfile_xml(inputpath,inputfile)
         
         if double_grid:
             if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
@@ -204,11 +209,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_QE_output_xml(fpath, verbose, non_ortho)
-#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-#                    for ik in xrange(nkpnts):
-#                        Sks[:,:,ik]=np.identity(nawf)
+
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -220,11 +224,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     U,my_eigsmat,alat,a_vectors,b_vectors, \
                     nkpnts,nspin,dftSO,kpnts,kpnts_wght, \
                     nelec,nbnds,Efermi,nawf,nk1,nk2,nk3,natoms,tau  =  read_new_QE_output_xml(fpath, verbose, non_ortho)
-#                    Sks  = np.zeros((nawf,nawf,nkpnts),dtype=complex)
+
                     sumk = np.sum(kpnts_wght)
                     kpnts_wght /= sumk
-#                    for ik in xrange(nkpnts):
-#                        Sks[:,:,ik]=np.identity(nawf)
+
                     if verbose: print('...using orthogonal algorithm')
                 else:
                     U,Sks,my_eigsmat,alat,a_vectors,b_vectors, \
@@ -261,7 +264,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         if size >  1:
             if rank == 0 and npool == 1: print('parallel execution on {} processors, {} threads and {} pool'.format(size,nthread,npool))
             if rank == 0 and npool > 1: print('parallel execution on {} processors, {} threads and {} pools'.format(size,nthread,npool))
-#            if rank == 0 and npool > 1: print('parallel execution on ',size,' processors, ',nthread,' threads and ',npool,' pools')
         else:
             if rank == 0: print('serial execution')
 
@@ -306,6 +308,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if verbose and bnd < nbnds: print('Range of suggested shift ',np.amin(my_eigsmat[bnd,:,:]),' , ', \
                                             np.amax(my_eigsmat[bnd,:,:]))
             if shift == 'auto': shift = np.amin(my_eigsmat[bnd,:,:])
+
     
         # Broadcast 
         bnd = comm.bcast(bnd,root=0)
@@ -633,11 +636,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank ==0:
                 print('bands in                          %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
-    #except Exception as e:
-    #    print('Rank %d: Exception in Do Bands or Band Topology'%rank)
-    #    traceback.print_exc()
-    #    comm.Abort()
-    #    raise Exception
 
     E_kp = v_kp = None
 
@@ -704,6 +702,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
 
         if double_grid:
+            nr1=nk1
+            nr2=nk2
+            nr3=nk3
             #----------------------
             # Fourier interpolation on extended grid (zero padding)
             #----------------------
@@ -770,7 +771,9 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             v_k = None
             E_k, v_k = calc_PAO_eigs_vecs(Hksp,bnd,npool)
 
-#            eig   = np.reshape(E_k[:,:bnd],(E_k.shape[0]*bnd,nspin),order="C")
+            # get the degenerate eigenvalues for each H(k)
+            degen = get_degeneracies(E_k,bnd)
+
             if HubbardU.any() != 0.0:
                 E_k = gather_full(E_k,npool)
                 if rank==0:
@@ -907,30 +910,59 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         traceback.print_exc()
         comm.Abort()
         raise Exception
+
+
     
+    if Boltzmann:#do d2H/d2k_ij
+        M_ij ,= do_d2Ed2k_ij(Hksp,a_vectors,alat,nthread,npool,use_cuda,v_k,bnd,degen)
+
     try:
+
         pksp = None
         jksp = None
         if Boltzmann or epsilon or Berry or spin_Hall or critical_points or smearing != None:
             if checkpoint < 3:
 
+                ###############################################################################
+                #----------------------
+                # Make sure fourier interpolated Hksp is hermitian
+                #----------------------           
+
+                Hksp = np.ascontiguousarray(np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3,nspin)))
+                Hksp = gather_scatter(Hksp,1,npool)                
+
+                Hksp = np.ascontiguousarray(np.reshape(Hksp,(nawf,nawf,Hksp.shape[1],nspin)))
+                for ik in range(Hksp.shape[2]):
+                    for ispin in range(Hksp.shape[3]):
+                        Hksp[:,:,ik,ispin] = (np.conj(Hksp[:,:,ik,ispin].T) + \
+                                                      Hksp[:,:,ik,ispin])/2.0
+
+
+                Hksp = np.ascontiguousarray(np.reshape(Hksp,(nawf*nawf,Hksp.shape[2],nspin)))
+                Hksp = np.ascontiguousarray(np.swapaxes(Hksp,0,1))
+                Hksp = gather_scatter(Hksp,1,npool)                
+                Hksp = np.swapaxes(Hksp,0,1)
+
+                Hksp = np.ascontiguousarray(np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3,nspin)))
+                ###############################################################################
                 #----------------------
                 # Compute the gradient of the k-space Hamiltonian
-                #----------------------            
-                dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
-                #from do_gradient_d2 
-                #dHksp,d2Hksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,scipyfft)
-    
+                #----------------------           
+
+                dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)                
 
                 #############################################################
                 ################DISTRIBUTE ARRAYS ON KPOINTS#################
                 #############################################################
+                
                 Hksp  = None
                 dHksp = np.reshape(dHksp,(dHksp.shape[0],nk1*nk2*nk3,3,nspin))
                 #gather dHksp on nawf*nawf and scatter on k points
                 dHksp = gather_scatter(dHksp,1,npool)
                 dHksp = np.rollaxis(dHksp,0,3)
                 dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
+
+
 
                 if rank == 0:
                     print('gradient in                      %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -968,8 +1000,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 nk3 = None
 
 
-
-
         checkpoint = comm.bcast(checkpoint,root=0)
     
         if checkpoint < 4:
@@ -981,10 +1011,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if rank != 0:
                 tksp = None
 
-            pksp = do_momentum(v_k,dHksp,npool)
-            if not spin_Hall:
-                dHksp=None
-
+            pksp = do_momentum(v_k,dHksp)
 
             if rank == 0:
                 print('momenta in                       %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
@@ -1044,6 +1071,17 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
 
 
+    for ik in range(pksp.shape[0]):
+        for l in range(pksp.shape[1]):
+            for ispin in range(pksp.shape[4]):
+                pksp[ik,l,:,:,ispin] = do_perturb_split(pksp[ik,l,:,:,ispin],
+                                                        dHksp[ik,l,:,:,ispin],
+                                                        v_k[ik,:,:,ispin],
+                                                        degen[ispin][ik])
+
+
+    if not spin_Hall:
+        dHksp=None
 
 
     try:
@@ -1096,43 +1134,63 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     #    print (Tsum, Psum)
     #quit()
     
-    try:
-        velkp = None
-        if Boltzmann or critical_points:
-            #----------------------
-            # Compute velocities for Boltzmann transport
-            #----------------------
-            velkp = np.zeros((pksp.shape[0],3,bnd,nspin),dtype=float)
-            for n in range(bnd):
-                velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
+#    try:
 
 
 
-            if critical_points:
-                velkp_full = gather_full(velkp,npool)
-                if rank == 0:
 
-                    #----------------------
-                    # Find critical points (grad(E_kn)=0)
-                    #----------------------
-                    f=open(os.path.join(inputpath,'critical_points.dat'),'w')
-                    for ik in range(nk1*nk2*nk3):
-                        for n in range(bnd):
-                            for ipin in range(nspin):
-                                if  np.abs(velkp_full[ik,0,n,ispin]) < 1.e-2 and \
-                                    np.abs(velkp_full[ik,1,n,ispin]) < 1.e-2 and \
-                                    np.abs(velkp_full[ik,2,n,ispin]) < 1.e-2:
-                                    f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
-                    f.close()
 
-                velkp_full = None
 
-    except Exception as e:
-        print('Rank %d: Exception computing velocities for Boltzmann Transport'%rank)
-        traceback.print_exc()
-        comm.Abort()
-        raise Exception
-    
+
+
+    velkp = None
+    if Boltzmann or critical_points:
+        #----------------------
+        # Compute velocities for Boltzmann transport
+        #----------------------
+        velkp = np.zeros((pksp.shape[0],3,bnd,nspin),dtype=float)
+        for n in range(bnd):
+            velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
+
+        #----------------------
+        # for d2H/d2k_ij
+        #----------------------
+        ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[1,2],[0,2]],dtype=int)
+        E_temp = np.zeros((bnd,nawf),order="C")
+
+        for ispin in range(M_ij.shape[3]):
+            for ik in range(M_ij.shape[1]):
+
+                E_temp = ((E_k[ik,:,ispin]-E_k[ik,:,ispin][:,None])[:,:])
+                E_temp[np.where(np.abs(E_temp)<1.e-6)]=np.inf
+
+                for ij in range(ij_ind.shape[0]):
+                    ipol = ij_ind[ij,0]
+                    jpol = ij_ind[ij,1]
+                    temp = (pksp[ik,ipol,:,:,ispin]*pksp[ik,jpol,:,:,ispin].T + \
+                            pksp[ik,jpol,:,:,ispin]*pksp[ik,ipol,:,:,ispin].T).real / E_temp
+                    M_ij[ij,ik,:,ispin] += np.sum(temp,axis=0)[:bnd]
+
+        if critical_points:
+            velkp_full = gather_full(velkp,npool)
+
+            if rank == 0:
+
+                #----------------------
+                # Find critical points (grad(E_kn)=0)
+                #----------------------
+                f=open(os.path.join(inputpath,'critical_points.dat'),'w')
+                for ik in range(nk1*nk2*nk3):
+                    for n in range(bnd):
+                        for ipin in range(nspin):
+                            if  np.abs(velkp_full[ik,0,n,ispin]) < 1.e-2 and \
+                                np.abs(velkp_full[ik,1,n,ispin]) < 1.e-2 and \
+                                np.abs(velkp_full[ik,2,n,ispin]) < 1.e-2:
+                                f.write('band %5d at %.5f %.5f %.5f \n' %(n,kq[0,ik],kq[1,ik],kq[2,ik]))
+                f.close()
+
+            velkp_full = None
+
     try:
         if (do_dos or do_pdos) and smearing != None:
             #----------------------
@@ -1140,9 +1198,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             #----------------------
     
             index = None
-
-
-
             eigtot = nk1*nk2*nk3*bnd
         
             eigup = None
@@ -1199,11 +1254,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
         if not spin_Hall:
             v_k = None
-        pksp = pksp[:,:,:bnd,:bnd]
-        E_k = E_k[:,:bnd]
+
+        E_k = np.ascontiguousarray(E_k[:,:bnd])
+
         if smearing != None:
-            deltakp = deltakp[:,:bnd]
-            deltakp2 = deltakp2[:,:bnd,:bnd]
+            deltakp = np.ascontiguousarray(deltakp[:,:bnd])
+            deltakp2 = np.ascontiguousarray(deltakp2[:,:bnd,:bnd])
+
+        pksp = np.ascontiguousarray(pksp[:,:,:bnd,:bnd])
+
+
 
     except Exception as e:
         print('Rank %d: Exception in Memory Reduction'%rank)
@@ -1211,27 +1271,6 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         comm.Abort()
         raise Exception
 
-
-    # if rank==0:
-    #         a=locals().items()
-    #         mem_list=[]
-    #         item_list=[]
-    #         for k,v in a:
-    #             if v is None:
-    #                 pass
-    #             try:
-    #                 size = sys.getsizeof(v)/(1024.0**3)
-    #                 item_list.append(k)
-    #                 mem_list.append(size)
-    #             except Exception,e:
-    #                 print(e)
-    #         item_list=np.asarray(item_list)
-    #         mem_list=np.asarray(mem_list)
-    #         order = np.argsort(mem_list)
-    #         mem_list=mem_list[order]
-    #         item_list=item_list[order]
-    #         for i in xrange(mem_list.shape[0]):
-    #             print('%10.10s'%item_list[i],'%5.4f GB '%mem_list[i])
 
     try:
         #----------------------
@@ -1258,7 +1297,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         pass
                 spincheck=comm.bcast(spincheck,root=0)
                 if spincheck == 0:
-                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl,bnd)
+                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl,bnd,degen)
 
                     if restart:
                         np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
@@ -1386,166 +1425,211 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         raise Exception
     
 
-    try:
+
         #----------------------
         # Compute transport quantities (conductivity, Seebeck and thermal electrical conductivity)
         #----------------------
-        if Boltzmann:
+    if Boltzmann:
 
-            temps = np.arange(tmin,tmax+1.e-10,tstep)
-
-            # in cubic bohr radii 
-            omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-
-            if nspin==2:
+        if nspin==2:
+            spin_mult=1.0
+        else:
+            if dftSO:
                 spin_mult=1.0
             else:
-                if dftSO:
-                    spin_mult=1.0
-                else:
-                    spin_mult=2.0
+                spin_mult=2.0
 
 
+        temps = np.arange(tmin,tmax+1.e-10,tstep)
+        # in cubic bohr radii 
+        omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-            for ispin in range(nspin):
-                sigmadk_str=""
-                sigma_str=""
-                kappa_str=""
-                seebeck_str=""
-                PF_str=""
-                
-                for t in range(temps.shape[0]):
-                    temp=temps[t]/11604.52500617
-                    comm.Barrier()
+        for ispin in range(nspin):
+            #restrict states that are within energy range of interest +- 1eV
+            E_k_mask = np.where(np.logical_and(E_k[:,:,ispin]>=(eminBT-1.0),E_k[:,:,ispin]<=(emaxBT+1.0)))
+            E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],ispin])
+            velkp_range = np.swapaxes(velkp,1,0)
+            velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],ispin])
+            M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],ispin])    
 
+            sigmadk_str=""
+            sigma_str=""
+            kappa_str=""
+            seebeck_str=""
+            PF_str=""
+            Hall_str=""
 
-                    if smearing != None:
-                        ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor,emin,emax,ne)
-
-                        #----------------------
-                        # Conductivity (in units of 1.e21/Ohm/m/s)
-                        #----------------------
-                        if rank==0:
-                            L0 *= spin_mult    
-                            L0 *= 1.0/omega
-                            L0 *= 6.9884 # convert in units of 10*21 siemens m^-1 s^-1
-
-                            sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
-
-                            if rank == 0:
-                                for n in range(ene.size):
-                                    sigmadk_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                                        %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
-                            L0 = None
-                                            
-
-                    ene,L0,L1,L2 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,0.1,None,t_tensor,emin,emax,ne)  
+            for t in range(temps.shape[0]):
+                temp=temps[t]/11604.52500617
+                comm.Barrier()
 
 
-                    if rank == 0:
-                        #----------------------
-                        # Conductivity (in units of /Ohm/m/s)
-                        #----------------------
+                if smearing != None:
+                    ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
 
+                    #----------------------
+                    # Conductivity (in units of 1.e21/Ohm/m/s)
+                    #----------------------
+                    if rank==0:
                         L0 *= spin_mult    
                         L0 *= 1.0/omega
-                        L0 *= 6.9884 # convert in units of 10^21 siemens m^-1 s^-1
+                        L0 *= 6.9884 # convert in units of 10*21 siemens m^-1 s^-1
 
                         sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
 
-                        for n in range(ene.size):
-                            sigma_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                                %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
+                        if rank == 0:
+                            for n in range(ene.size):
+                                sigmadk_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                                    %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
+                        L0 = None
 
 
-                        #----------------------
-                        # Seebeck (in units of V/K)
-                        #----------------------
-
-                        S = np.zeros((3,3,ene.size),dtype=float)
-
-                        L1 *= spin_mult
-                        L1 *= 1.0/omega
-                        L1 *= 6.9884 # convert in units of 10^21 Amperes m^-1 s^-1
-                        L1 *= 1.0/(temp*11604.52500617)
-
-                        for n in range(ene.size):
-                            try:
-                                S[:,:,n] = -1.0*LAN.inv(L0[:,:,n])*L1[:,:,n]
-                            except:
-                                print('check t_tensor components - matrix cannot be singular')
-                                raise ValueError
-
-                        for n in range(ene.size):
-                            seebeck_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                                %(temps[t],ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n])
-
-                        #----------------------
-                        # Electron thermal conductivity ((in units of W/m/K/s)
-                        #----------------------
-                        kappa = np.zeros((3,3,ene.size),dtype=float)
-
-                        L2 *= spin_mult
-                        L2 *= 1.0/omega
-                        L2 *= 6.9884e15 # convert in units of kg m s^-4
-                        L2 *= 1.0/(temp*11604.52500617) # temp in kelvin
+                ene,L0,L1,L2 = do_Boltz_tensors(E_k_range,velkp_range,kq_wght,temp,ispin,0.1,None,t_tensor,eminBT,emaxBT,ne)  
 
 
-                        for n in range(ene.size):
-                            kappa[:,:,n] = (L2[:,:,n] - temp*11604.52500617*L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*1.e6
-                        for n in range(ene.size):
-                            kappa_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                                %(temps[t],ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n])
-                            
+                if rank == 0:
+                    #----------------------
+                    # Conductivity (in units of /Ohm/m/s)
+                    #----------------------
 
-                        PF = np.zeros((3,3,ene.size),dtype=float)
+                    L0 *= spin_mult    
+                    L0 *= 1.0/omega
+                    L0 *= 6.9884 # convert in units of 10^21 siemens m^-1 s^-1
 
-                        for n in range(ene.size):
-                            PF[:,:,n] = np.dot(np.dot(S[:,:,n],L0[:,:,n]),S[:,:,n])*1.e21
-                        for n in range(ene.size):
-                            PF_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                                %(temps[t],ene[n],PF[0,0,n],PF[1,1,n],PF[2,2,n],PF[0,1,n],PF[0,2,n],PF[1,2,n])
+                    sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
+
+                    for n in range(ene.size):
+                        sigma_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                            %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
 
 
+                    #----------------------
+                    # Seebeck (in units of V/K)
+                    #----------------------
+
+                    S = np.zeros((3,3,ene.size),dtype=float)
+
+                    L1 *= spin_mult
+                    L1 *= 1.0/omega
+                    L1 *= 6.9884 # convert in units of 10^21 Amperes m^-1 s^-1
+                    L1 *= 1.0/(temp*11604.52500617)
+
+                    inv_L0=np.zeros_like(L0)
+                    for n in range(ene.size):
+                        try:
+                            inv_L0[:,:,n] = LAN.inv(L0[:,:,n])
+                        except:
+                            inv_L0[:,:,n]= 0.0
+
+
+                    for n in range(ene.size):
+                            S[:,:,n] = -1.0*np.dot(inv_L0[:,:,n],L1[:,:,n])
+
+
+                    for n in range(ene.size):
+                        seebeck_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                            %(temps[t],ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n])
+
+                    #----------------------
+                    # Electron thermal conductivity ((in units of W/m/K/s)
+                    #----------------------
+                    kappa = np.zeros((3,3,ene.size),dtype=float)
+
+                    L2 *= spin_mult
+                    L2 *= 1.0/omega
+                    L2 *= 6.9884e15 # convert in units of kg m s^-4
+                    L2 *= 1.0/(temp*11604.52500617) # temp in kelvin
+
+
+                    for n in range(ene.size):
+                        try:
+                            kappa[:,:,n] = (L2[:,:,n] - temp*11604.52500617*L1[:,:,n]*inv_L0[:,:,n]*L1[:,:,n])*1.e6
+                        except:
+                            kappa[:,:,n] = 0.0
+
+                    for n in range(ene.size):
+                        kappa_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                            %(temps[t],ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n])
+
+
+                    PF = np.zeros((3,3,ene.size),dtype=float)
+
+                    for n in range(ene.size):
+                        PF[:,:,n] = np.dot(np.dot(S[:,:,n],L0[:,:,n]),S[:,:,n])*1.e21
+                    for n in range(ene.size):
+                        PF_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                            %(temps[t],ene[n],PF[0,0,n],PF[1,1,n],PF[2,2,n],PF[0,1,n],PF[0,2,n],PF[1,2,n])
+
+
+
+                ene,sig_ijk = do_Hall_tensors(E_k_range,velkp_range,M_ij_range,kq_wght,temp,
+                                          ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
 
 
                 if rank==0:
-                    if smearing!=None:
-                        f=open(os.path.join(inputpath,'sigmadk_'+str(ispin)+'.dat'),'w')
-                        f.write(sigmadk_str)
-                        f.close()
-                    f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
-                    f.write(sigma_str)
-                    f.close()
-                    f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
-                    f.write(seebeck_str)
-                    f.close()
-                    f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
-                    f.write(kappa_str)
-                    f.close()    
-                    f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
-                    f.write(PF_str)
-                    f.close()    
+                    R_ijk = np.zeros_like(sig_ijk)
 
-    
-            velkp = None
-            L0 = None
-            L1 = None
-            L2 = None
-            S = None
-            kappa = None
-    
-            comm.Barrier()
-            if rank ==0:
-                print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+                    #return inverse L0 to base units
+                    inv_L0 *= 1.0/omega
+                    inv_L0 *= 6.9884 
 
-                reset=time.time()
-    except:
-        print('Rank %d: Exception in Transport'%rank)
-        traceback.print_exc()
-        comm.Abort()
-        raise Exception
-    
+                    #scale by cell size 
+
+                    #multiply by spin multiplier
+                    sig_ijk *= spin_mult
+
+
+                    for i in range(3):
+                        for j in range(3):
+                            for k in range(3):
+                                for a in range(3):
+                                    for b in range(3):
+                                        R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
+
+                    np.save("sig_ijk.npy",sig_ijk)
+                    np.save("Rijk.npy",R_ijk)
+
+                    for n in range(ene.size):
+                        pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
+                        pcpm = pcp/(omega*(5.29177249e-9**3))
+
+                        Hall_str+='%8.2f % .5f % 9.5e % 9.5e \n' \
+                            %(temps[t],ene[n],pcp,pcpm)
+
+            if rank==0:
+                if smearing!=None:
+                    f=open(os.path.join(inputpath,'sigmadk_'+str(ispin)+'.dat'),'w')
+                    f.write(sigmadk_str)
+                    f.close()
+                f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
+                f.write(sigma_str)
+                f.close()
+                f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
+                f.write(seebeck_str)
+                f.close()
+                f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
+                f.write(kappa_str)
+                f.close()    
+                f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
+                f.write(PF_str)
+                f.close()    
+                f=open(os.path.join(inputpath,'carrier_conc_'+str(ispin)+'.dat'),'w')
+                f.write(Hall_str)
+                f.close()    
+
+        velkp = None
+        L0 = None
+        L1 = None
+        L2 = None
+        S = None
+        kappa = None
+
+        comm.Barrier()
+        if rank ==0:
+            print('transport in                     %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
+
+            reset=time.time()
+
     comm.Barrier()
 
     try:
