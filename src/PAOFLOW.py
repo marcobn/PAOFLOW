@@ -1452,192 +1452,192 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
         #restrict states that are within energy range of interest +- 1eV
 
-        # E_k_mask = np.where(np.logical_and(E_k[:,:,:]>=(eminBT-1.0),E_k[:,:,:]<=(emaxBT+1.0)))
-        # E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],E_k_mask[2]])
-        # velkp_range = np.swapaxes(velkp,1,0)
-        # velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])
+        E_k_mask = np.where(np.logical_and(E_k[:,:,:]>=(eminBT-1.0),E_k[:,:,:]<=(emaxBT+1.0)))
+        E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],E_k_mask[2]])
+        velkp_range = np.swapaxes(velkp,1,0)
+        velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])
 
-        # if carrier_conc:
-        #     M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])    
+        if carrier_conc:
+            M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])    
 
-        #ispin=0
-        for ispin in range(nspin):
-            E_k_mask = np.where(np.logical_and(E_k[:,:,ispin]>=(eminBT-1.0),E_k[:,:,ispin]<=(emaxBT+1.0)))
-            E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],ispin])
-            velkp_range = np.swapaxes(velkp,1,0)
-            velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],ispin])
+        ispin=0
+    # for ispin in range(nspin):
+    #     E_k_mask = np.where(np.logical_and(E_k[:,:,ispin]>=(eminBT-1.0),E_k[:,:,ispin]<=(emaxBT+1.0)))
+    #     E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],ispin])
+    #     velkp_range = np.swapaxes(velkp,1,0)
+    #     velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],ispin])
 
-            if carrier_conc:
-                M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],ispin])    
-
-
+    #     if carrier_conc:
+    #         M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],ispin])    
 
 
-            sigmadk_str=""
-            sigma_str=""
-            kappa_str=""
-            seebeck_str=""
-            PF_str=""
-            Hall_str=""
-
-            for t in range(temps.shape[0]):
-                temp=temps[t]/11604.52500617
-                comm.Barrier()
 
 
-                if smearing != None:
-                    ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
+        sigmadk_str=""
+        sigma_str=""
+        kappa_str=""
+        seebeck_str=""
+        PF_str=""
+        Hall_str=""
 
-                    #----------------------
-                    # Conductivity (in units of 1.e21/Ohm/m/s)
-                    #----------------------
-                    if rank==0:
-                        L0 *= spin_mult    
-                        L0 *= 1.0/omega
-                        L0 *= 6.9884 # convert in units of 10*21 siemens m^-1 s^-1
-
-                        sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
-
-                        if rank == 0:
-                            for n in range(ene.size):
-                                sigmadk_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                                    %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
-                        L0 = None
+        for t in range(temps.shape[0]):
+            temp=temps[t]/11604.52500617
+            comm.Barrier()
 
 
-                ene,L0,L1,L2 = do_Boltz_tensors(E_k_range,velkp_range,kq_wght,temp,ispin,0.1,None,t_tensor,eminBT,emaxBT,ne)  
+            if smearing != None:
+                ene,L0 = do_Boltz_tensors(E_k,velkp,kq_wght,temp,ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
 
-
-                if rank == 0:
-                    #----------------------
-                    # Conductivity (in units of /Ohm/m/s)
-                    #----------------------
-
+                #----------------------
+                # Conductivity (in units of 1.e21/Ohm/m/s)
+                #----------------------
+                if rank==0:
                     L0 *= spin_mult    
                     L0 *= 1.0/omega
-                    L0 *= 6.9884 # convert in units of 10^21 siemens m^-1 s^-1
+                    L0 *= 6.9884 # convert in units of 10*21 siemens m^-1 s^-1
 
                     sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
 
-                    for n in range(ene.size):
-                        sigma_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                            %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
-
-
-                    #----------------------
-                    # Seebeck (in units of V/K)
-                    #----------------------
-
-                    S = np.zeros((3,3,ene.size),dtype=float)
-
-                    L1 *= spin_mult
-                    L1 *= 1.0/omega
-                    L1 *= 6.9884 # convert in units of 10^21 Amperes m^-1 s^-1
-                    L1 *= 1.0/(temp*11604.52500617)
-
-                    inv_L0=np.zeros_like(L0)
-                    for n in range(ene.size):
-                        try:
-                            inv_L0[:,:,n] = LAN.inv(L0[:,:,n])
-                        except:
-                            inv_L0[:,:,n]= 0.0
-
-
-                    for n in range(ene.size):
-                            S[:,:,n] = -1.0*np.dot(inv_L0[:,:,n],L1[:,:,n])
-
-
-                    for n in range(ene.size):
-                        seebeck_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                            %(temps[t],ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n])
-
-                    #----------------------
-                    # Electron thermal conductivity ((in units of W/m/K/s)
-                    #----------------------
-                    kappa = np.zeros((3,3,ene.size),dtype=float)
-
-                    L2 *= spin_mult
-                    L2 *= 1.0/omega
-                    L2 *= 6.9884e15 # convert in units of kg m s^-4
-                    L2 *= 1.0/(temp*11604.52500617) # temp in kelvin
-
-
-                    for n in range(ene.size):
-                        try:
-                            kappa[:,:,n] = (L2[:,:,n] - temp*11604.52500617*L1[:,:,n]*inv_L0[:,:,n]*L1[:,:,n])*1.e6
-                        except:
-                            kappa[:,:,n] = 0.0
-
-                    for n in range(ene.size):
-                        kappa_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                            %(temps[t],ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n])
-
-
-                    PF = np.zeros((3,3,ene.size),dtype=float)
-
-                    for n in range(ene.size):
-                        PF[:,:,n] = np.dot(np.dot(S[:,:,n],L0[:,:,n]),S[:,:,n])*1.e21
-                    for n in range(ene.size):
-                        PF_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
-                            %(temps[t],ene[n],PF[0,0,n],PF[1,1,n],PF[2,2,n],PF[0,1,n],PF[0,2,n],PF[1,2,n])
-
-
-                if carrier_conc:
-                    ene,sig_ijk = do_Hall_tensors(E_k_range,velkp_range,M_ij_range,kq_wght,temp,
-                                              ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
-
-
-                    if rank==0:
-                        R_ijk = np.zeros_like(sig_ijk)
-
-                        #return inverse L0 to base units
-                        inv_L0 *= 1.0/omega
-                        inv_L0 *= 6.9884 
-
-                        #scale by cell size 
-
-                        #multiply by spin multiplier
-                        sig_ijk *= spin_mult
-
-
-                        for i in range(3):
-                            for j in range(3):
-                                for k in range(3):
-                                    for a in range(3):
-                                        for b in range(3):
-                                            R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
-
-
-
-
+                    if rank == 0:
                         for n in range(ene.size):
-                            pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
-                            pcpm = pcp/(omega*(5.29177249e-9**3))
+                            sigmadk_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                                %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
+                    L0 = None
 
-                            Hall_str+='%8.2f % .5f % 9.5e % 9.5e \n' \
-                                %(temps[t],ene[n],pcp,pcpm)
 
-            if rank==0:
-                if smearing!=None:
-                    f=open(os.path.join(inputpath,'sigmadk_'+str(ispin)+'.dat'),'w')
-                    f.write(sigmadk_str)
-                    f.close()
-                f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
-                f.write(sigma_str)
+            ene,L0,L1,L2 = do_Boltz_tensors(E_k_range,velkp_range,kq_wght,temp,ispin,0.1,None,t_tensor,eminBT,emaxBT,ne)  
+
+
+            if rank == 0:
+                #----------------------
+                # Conductivity (in units of /Ohm/m/s)
+                #----------------------
+
+                L0 *= spin_mult    
+                L0 *= 1.0/omega
+                L0 *= 6.9884 # convert in units of 10^21 siemens m^-1 s^-1
+
+                sigma = L0*1.0e21 # convert in units of siemens m^-1 s^-1
+
+                for n in range(ene.size):
+                    sigma_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                        %(temps[t],ene[n],sigma[0,0,n],sigma[1,1,n],sigma[2,2,n],sigma[0,1,n],sigma[0,2,n],sigma[1,2,n])
+
+
+                #----------------------
+                # Seebeck (in units of V/K)
+                #----------------------
+
+                S = np.zeros((3,3,ene.size),dtype=float)
+
+                L1 *= spin_mult
+                L1 *= 1.0/omega
+                L1 *= 6.9884 # convert in units of 10^21 Amperes m^-1 s^-1
+                L1 *= 1.0/(temp*11604.52500617)
+
+                inv_L0=np.zeros_like(L0)
+                for n in range(ene.size):
+                    try:
+                        inv_L0[:,:,n] = LAN.inv(L0[:,:,n])
+                    except:
+                        inv_L0[:,:,n]= 0.0
+
+
+                for n in range(ene.size):
+                        S[:,:,n] = -1.0*np.dot(inv_L0[:,:,n],L1[:,:,n])
+
+
+                for n in range(ene.size):
+                    seebeck_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                        %(temps[t],ene[n],S[0,0,n],S[1,1,n],S[2,2,n],S[0,1,n],S[0,2,n],S[1,2,n])
+
+                #----------------------
+                # Electron thermal conductivity ((in units of W/m/K/s)
+                #----------------------
+                kappa = np.zeros((3,3,ene.size),dtype=float)
+
+                L2 *= spin_mult
+                L2 *= 1.0/omega
+                L2 *= 6.9884e15 # convert in units of kg m s^-4
+                L2 *= 1.0/(temp*11604.52500617) # temp in kelvin
+
+
+                for n in range(ene.size):
+                    try:
+                        kappa[:,:,n] = (L2[:,:,n] - temp*11604.52500617*L1[:,:,n]*inv_L0[:,:,n]*L1[:,:,n])*1.e6
+                    except:
+                        kappa[:,:,n] = 0.0
+
+                for n in range(ene.size):
+                    kappa_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                        %(temps[t],ene[n],kappa[0,0,n],kappa[1,1,n],kappa[2,2,n],kappa[0,1,n],kappa[0,2,n],kappa[1,2,n])
+
+
+                PF = np.zeros((3,3,ene.size),dtype=float)
+
+                for n in range(ene.size):
+                    PF[:,:,n] = np.dot(np.dot(S[:,:,n],L0[:,:,n]),S[:,:,n])*1.e21
+                for n in range(ene.size):
+                    PF_str+='%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n' \
+                        %(temps[t],ene[n],PF[0,0,n],PF[1,1,n],PF[2,2,n],PF[0,1,n],PF[0,2,n],PF[1,2,n])
+
+
+            if carrier_conc:
+                ene,sig_ijk = do_Hall_tensors(E_k_range,velkp_range,M_ij_range,kq_wght,temp,
+                                          ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
+
+
+                if rank==0:
+                    R_ijk = np.zeros_like(sig_ijk)
+
+                    #return inverse L0 to base units
+                    inv_L0 *= 1.0/omega
+                    inv_L0 *= 6.9884 
+
+                    #scale by cell size 
+
+                    #multiply by spin multiplier
+                    sig_ijk *= spin_mult
+
+
+                    for i in range(3):
+                        for j in range(3):
+                            for k in range(3):
+                                for a in range(3):
+                                    for b in range(3):
+                                        R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
+
+
+
+
+                    for n in range(ene.size):
+                        pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
+                        pcpm = pcp/(omega*(5.29177249e-9**3))
+
+                        Hall_str+='%8.2f % .5f % 9.5e % 9.5e \n' \
+                            %(temps[t],ene[n],pcp,pcpm)
+
+        if rank==0:
+            if smearing!=None:
+                f=open(os.path.join(inputpath,'sigmadk_'+str(ispin)+'.dat'),'w')
+                f.write(sigmadk_str)
                 f.close()
-                f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
-                f.write(seebeck_str)
-                f.close()
-                f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
-                f.write(kappa_str)
+            f=open(os.path.join(inputpath,'sigma_'+str(ispin)+'.dat'),'w')
+            f.write(sigma_str)
+            f.close()
+            f=open(os.path.join(inputpath,'Seebeck_'+str(ispin)+'.dat'),'w')
+            f.write(seebeck_str)
+            f.close()
+            f=open(os.path.join(inputpath,'kappa_'+str(ispin)+'.dat'),'w')
+            f.write(kappa_str)
+            f.close()    
+            f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
+            f.write(PF_str)
+            f.close()    
+            if carrier_conc:
+                f=open(os.path.join(inputpath,'carrier_conc_'+str(ispin)+'.dat'),'w')
+                f.write(Hall_str)
                 f.close()    
-                f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
-                f.write(PF_str)
-                f.close()    
-                if carrier_conc:
-                    f=open(os.path.join(inputpath,'carrier_conc_'+str(ispin)+'.dat'),'w')
-                    f.write(Hall_str)
-                    f.close()    
 
         velkp = None
         L0 = None
