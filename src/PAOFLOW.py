@@ -1607,8 +1607,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                                         for b in range(3):
                                             R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
 
-                        np.save("sig_ijk.npy",sig_ijk)
-                        np.save("Rijk.npy",R_ijk)
+
+
 
                         for n in range(ene.size):
                             pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
