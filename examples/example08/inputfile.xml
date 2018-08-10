@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<root>
+    <!-- Control -->
+    <fpath type="character" size="1" len="15">./silicon.save/</fpath>
+    <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
+    <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
+    <shift>auto</shift><!-- if 'auto' shift is selected automatically; else, give numerical value (eV) -->
+    <pthr type="decimal" size="1">0.95</pthr>
+    <npool type="integer" size="1">1</npool>
+
+    <!-- Hamiltonian interpolation on finer MP mesh -->
+    <double_grid type="logical" size="1">T</double_grid>
+    <nfft1 type="integer" size="1">24</nfft1>
+    <nfft2 type="integer" size="1">24</nfft2>
+    <nfft3 type="integer" size="1">24</nfft3>
+
+    <!-- Adaptive smearing -->
+    <smearing type="string" size="1">gauss</smearing><!-- other available values are None or 'm-p' -->
+
+    <!-- Boltzmann Transport -->
+    <Boltzmann type="logical" size="1">T</Boltzmann>
+    <!-- Carrier Concentration -->
+    <carrier_conc type="logical" size="1">T</carrier_conc>
+
+    <eminBT type="decimal" size="1">-12.0</eminBT><!--min chemical potential for boltzmann transport-->
+    <emaxBT type="decimal" size="1">2.2</emaxBT>
+
+    <!-- Set Temperature in eV -->
+    <tmin type="decimal" size="1">300.0</tmin><!-- Room temperature in K-->
+    <tmax type="decimal" size="1">700.0</tmax>
+    <tstep type="decimal" size="1">100.0</tstep> <!-- temperature steps in K-->
+
+</root>
