@@ -10,6 +10,7 @@ def get_degeneracies(E_k,bnd):
     E_k_round = np.around(E_k,decimals=6)
     
     for ispin in range(E_k_round.shape[2]):
+
         by_spin =[]
         for ik in range(E_k_round.shape[0]):
             by_kp = []
@@ -25,7 +26,7 @@ def get_degeneracies(E_k,bnd):
             by_spin.append(by_kp)
 
 
-    all_degen.append(by_spin)
+        all_degen.append(by_spin)
 
     return np.asarray(all_degen)
                     

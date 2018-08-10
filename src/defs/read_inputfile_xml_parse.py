@@ -160,6 +160,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     Boltzmann = False
     eminBT    = -1.0
     emaxBT    =  1.0
+    carrier_conc = False
 
     # Dielectric function calculation
     epsilon = False
@@ -220,6 +221,7 @@ def read_inputfile_xml ( fpath, inputfile ):
     fermisurf = read_attribute(aroot, fermisurf, 'fermisurf', 'logical')
     spintexture = read_attribute(aroot, spintexture, 'spintexture', 'logical')
     Boltzmann = read_attribute(aroot, Boltzmann, 'Boltzmann', 'logical')
+    carrier_conc = read_attribute(aroot, carrier_conc, 'carrier_conc', 'logical')
     epsilon = read_attribute(aroot, epsilon, 'epsilon', 'logical')
     metal = read_attribute(aroot, metal, 'metal', 'logical')
     kramerskronig = read_attribute(aroot, kramerskronig, 'kramerskronig', 'logical')
@@ -290,4 +292,5 @@ def read_inputfile_xml ( fpath, inputfile ):
         double_grid,nfft1,nfft2,nfft3,do_dos,do_pdos,emin,emax,delta,smearing,fermisurf, \
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
-        ac_cond_Berry,spin_Hall,eminBT,emaxBT,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,out_vals.split()
+        ac_cond_Berry,spin_Hall,eminBT,emaxBT,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,\
+        tstep,carrier_conc,out_vals.split()

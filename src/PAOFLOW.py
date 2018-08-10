@@ -140,7 +140,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminBT,emaxBT,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,\
-        out_vals = read_inputfile_xml(inputpath,inputfile)
+        carrier_conc, out_vals = read_inputfile_xml(inputpath,inputfile)
         
         if double_grid:
             if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
@@ -913,7 +913,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
 
     
-    if Boltzmann:#do d2H/d2k_ij
+    if Boltzmann and carrier_conc:#do d2H/d2k_ij
         M_ij = do_d2Ed2k_ij(Hksp,a_vectors,alat,nthread,npool,use_cuda,v_k,bnd,degen)
 
     try:
@@ -1155,24 +1155,25 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         for n in range(bnd):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
-        #----------------------
-        # for d2H/d2k_ij
-        #----------------------
-        ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[1,2],[0,2]],dtype=int)
-        E_temp = np.zeros((bnd,nawf),order="C")
+        if carrier_conc:
+            #----------------------
+            # for d2H/d2k_ij
+            #----------------------
+            ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[1,2],[0,2]],dtype=int)
+            E_temp = np.zeros((bnd,nawf),order="C")
 
-        for ispin in range(M_ij.shape[3]):
-            for ik in range(M_ij.shape[1]):
+            for ispin in range(M_ij.shape[3]):
+                for ik in range(M_ij.shape[1]):
 
-                E_temp = ((E_k[ik,:,ispin]-E_k[ik,:,ispin][:,None])[:,:])
-                E_temp[np.where(np.abs(E_temp)<1.e-6)]=np.inf
+                    E_temp = ((E_k[ik,:,ispin]-E_k[ik,:,ispin][:,None])[:,:])
+                    E_temp[np.where(np.abs(E_temp)<1.e-6)]=np.inf
 
-                for ij in range(ij_ind.shape[0]):
-                    ipol = ij_ind[ij,0]
-                    jpol = ij_ind[ij,1]
-                    temp = (pksp[ik,ipol,:,:,ispin]*pksp[ik,jpol,:,:,ispin].T + \
-                            pksp[ik,jpol,:,:,ispin]*pksp[ik,ipol,:,:,ispin].T).real / E_temp
-                    M_ij[ij,ik,:,ispin] += np.sum(temp,axis=0)[:bnd]
+                    for ij in range(ij_ind.shape[0]):
+                        ipol = ij_ind[ij,0]
+                        jpol = ij_ind[ij,1]
+                        temp = (pksp[ik,ipol,:,:,ispin]*pksp[ik,jpol,:,:,ispin].T + \
+                                pksp[ik,jpol,:,:,ispin]*pksp[ik,ipol,:,:,ispin].T).real / E_temp
+                        M_ij[ij,ik,:,ispin] += np.sum(temp,axis=0)[:bnd]
 
         if critical_points:
             velkp_full = gather_full(velkp,npool)
@@ -1444,16 +1445,33 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
 
         temps = np.arange(tmin,tmax+1.e-10,tstep)
+
         # in cubic bohr radii 
         omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
 
+
+        #restrict states that are within energy range of interest +- 1eV
+
+        # E_k_mask = np.where(np.logical_and(E_k[:,:,:]>=(eminBT-1.0),E_k[:,:,:]<=(emaxBT+1.0)))
+        # E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],E_k_mask[2]])
+        # velkp_range = np.swapaxes(velkp,1,0)
+        # velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])
+
+        # if carrier_conc:
+        #     M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])    
+
+        #ispin=0
         for ispin in range(nspin):
-            #restrict states that are within energy range of interest +- 1eV
             E_k_mask = np.where(np.logical_and(E_k[:,:,ispin]>=(eminBT-1.0),E_k[:,:,ispin]<=(emaxBT+1.0)))
             E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],ispin])
             velkp_range = np.swapaxes(velkp,1,0)
             velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],ispin])
-            M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],ispin])    
+
+            if carrier_conc:
+                M_ij_range = np.ascontiguousarray(M_ij[:,E_k_mask[0],E_k_mask[1],ispin])    
+
+
+
 
             sigmadk_str=""
             sigma_str=""
@@ -1564,40 +1582,40 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                             %(temps[t],ene[n],PF[0,0,n],PF[1,1,n],PF[2,2,n],PF[0,1,n],PF[0,2,n],PF[1,2,n])
 
 
-
-                ene,sig_ijk = do_Hall_tensors(E_k_range,velkp_range,M_ij_range,kq_wght,temp,
-                                          ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
-
-
-                if rank==0:
-                    R_ijk = np.zeros_like(sig_ijk)
-
-                    #return inverse L0 to base units
-                    inv_L0 *= 1.0/omega
-                    inv_L0 *= 6.9884 
-
-                    #scale by cell size 
-
-                    #multiply by spin multiplier
-                    sig_ijk *= spin_mult
+                if carrier_conc:
+                    ene,sig_ijk = do_Hall_tensors(E_k_range,velkp_range,M_ij_range,kq_wght,temp,
+                                              ispin,deltakp,smearing,t_tensor,eminBT,emaxBT,ne)
 
 
-                    for i in range(3):
-                        for j in range(3):
-                            for k in range(3):
-                                for a in range(3):
-                                    for b in range(3):
-                                        R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
+                    if rank==0:
+                        R_ijk = np.zeros_like(sig_ijk)
 
-                    np.save("sig_ijk.npy",sig_ijk)
-                    np.save("Rijk.npy",R_ijk)
+                        #return inverse L0 to base units
+                        inv_L0 *= 1.0/omega
+                        inv_L0 *= 6.9884 
 
-                    for n in range(ene.size):
-                        pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
-                        pcpm = pcp/(omega*(5.29177249e-9**3))
+                        #scale by cell size 
 
-                        Hall_str+='%8.2f % .5f % 9.5e % 9.5e \n' \
-                            %(temps[t],ene[n],pcp,pcpm)
+                        #multiply by spin multiplier
+                        sig_ijk *= spin_mult
+
+
+                        for i in range(3):
+                            for j in range(3):
+                                for k in range(3):
+                                    for a in range(3):
+                                        for b in range(3):
+                                            R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
+
+                        np.save("sig_ijk.npy",sig_ijk)
+                        np.save("Rijk.npy",R_ijk)
+
+                        for n in range(ene.size):
+                            pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
+                            pcpm = pcp/(omega*(5.29177249e-9**3))
+
+                            Hall_str+='%8.2f % .5f % 9.5e % 9.5e \n' \
+                                %(temps[t],ene[n],pcp,pcpm)
 
             if rank==0:
                 if smearing!=None:
@@ -1616,9 +1634,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 f=open(os.path.join(inputpath,'PF_'+str(ispin)+'.dat'),'w')
                 f.write(PF_str)
                 f.close()    
-                f=open(os.path.join(inputpath,'carrier_conc_'+str(ispin)+'.dat'),'w')
-                f.write(Hall_str)
-                f.close()    
+                if carrier_conc:
+                    f=open(os.path.join(inputpath,'carrier_conc_'+str(ispin)+'.dat'),'w')
+                    f.write(Hall_str)
+                    f.close()    
 
         velkp = None
         L0 = None
