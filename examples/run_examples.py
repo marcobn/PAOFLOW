@@ -19,14 +19,14 @@ from check_test import verifyData
 def get_exeCmd(engine, calcType,inputFile):
 
 #################### User defined parameters ####################
-    execPrefix = "mpirun -np 32"
+    execPrefix = "mpirun -np 2"
     execPostfix = " "
-    QE_path = "/home/marco/Programs/qe-6.0/bin/"
-    PAO_path = "python /home/marco/Programs/PAOFLOW/src/"
+    QE_path = "/Users/marco/Local/Programs//qe-6.2.1/bin/"
+    PAO_path = "python /Users/marco/Local/Programs/PAOFLOW/src/"
 
 
     if engine=='qe':
-        execDict={'scf':'pw.x -npool 8 ','nscf':'pw.x -npool 8 ','proj':'projwfc.x -npool 8 '}
+        execDict={'scf':'pw.x -npool 2 ','nscf':'pw.x -npool 2 ','proj':'projwfc.x -npool 2 '}
         exeDir = QE_path
 ################ end of user defined parameters #################
 ################ DO NOT MODIFY BELOW THIS POINT #################
