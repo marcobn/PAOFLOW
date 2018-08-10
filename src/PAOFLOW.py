@@ -1452,9 +1452,10 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
         #restrict states that are within energy range of interest +- 1eV
 
-        E_k_mask = np.where(np.logical_and(E_k[:,:,:]>=(eminBT-1.0),E_k[:,:,:]<=(emaxBT+1.0)))
+        E_k_mask = np.where(np.logical_and(E_k[:,:bnd,:]>=(eminBT-1.0),E_k[:,:bnd,:]<=(emaxBT+1.0)))
         E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],E_k_mask[2]])
         velkp_range = np.swapaxes(velkp,1,0)
+
         velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])
 
         if carrier_conc:
