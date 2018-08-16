@@ -24,23 +24,15 @@ sys.path.append('./')
 
 from write_PAO_eigs import *
 
+
+# THIS MODULE **CANNOT** BE FUNCTOINAL
 def do_bands_calc_1D(Hkaux,inputpath):
     # FFT interpolation along a single directions in the BZ
 
-    nawf = Hksp.shape[0]
-    nk1 = Hksp.shape[2]
-    nk2 = Hksp.shape[3]
-    nk3 = Hksp.shape[4]
-    nspin = Hksp.shape[5]
+    nawf,_,nk1,nk2,nk3,nspin = Hksp.shape
+    nktot = nk1*nk2*nk3
 
-    # Count points along symmetry direction
-    nL = 0
-    for ik1 in range(nk1):
-        for ik2 in range(nk2):
-            for ik3 in range(nk3):
-                nL += 1
-
-    Hkaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
+    Hkaux  = np.zeros((nawf,nawf,nktot,nspin), dtype=complex)
     for ispin in range(nspin):
         for i in range(nawf):
             for j in range(nawf):
@@ -48,31 +40,29 @@ def do_bands_calc_1D(Hkaux,inputpath):
                 for ik1 in range(nk1):
                     for ik2 in range(nk2):
                         for ik3 in range(nk3):
-                            Hkaux[i,j,nL,ispin]=Hksp[i,j,ik1,ik2,ik3,ispin]
+                            Hkaux[i,j,nL,ispin] = Hksp[i,j,ik1,ik2,ik3,ispin]
                             nL += 1
 
     # zero padding interpolation
     # k to R
     npad = 500
-    HRaux  = np.zeros((nawf,nawf,nL,nspin),dtype=complex)
+    HRaux  = np.zeros((nawf,nawf,nktot,nspin), dtype=complex)
     for ispin in range(nspin):
         for i in range(nawf):
             for j in range(nawf):
                 HRaux[i,j,:,ispin] = FFT.ifft(Hkaux[i,j,:,ispin])
 
     Hkaux = None
-    Hkaux  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
-    HRauxp  = np.zeros((nawf,nawf,npad+nL,nspin),dtype=complex)
+    Hkaux  = np.zeros((nawf,nawf,npad+nktot,nspin),dtype=complex)
+    HRauxp  = np.zeros((nawf,nawf,npad+nktot,nspin),dtype=complex)
 
     for ispin in range(nspin):
         for i in range(nawf):
             for j in range(nawf):
-                HRauxp[i,j,:(nL/2),ispin]=HRaux[i,j,:(nL/2),ispin]
-                HRauxp[i,j,(npad+nL/2):,ispin]=HRaux[i,j,(nL/2):,ispin]
+                HRauxp[i,j,:(nktot/2),ispin] = HRaux[i,j,:(nktot/2),ispin]
+                HRauxp[i,j,(npad+nktot/2):,ispin] = HRaux[i,j,(nktot/2):,ispin]
                 Hkaux[i,j,:,ispin] = FFT.fft(HRauxp[i,j,:,ispin])
 
     # Print PAO eigenvalues on interpolated mesh
     for ispin in range(nspin):
         write_PAO_eigs(Hkaux,ispin,inputpath)
-
-    return()

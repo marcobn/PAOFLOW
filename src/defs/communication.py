@@ -27,6 +27,7 @@ size = comm.Get_size()
 
 # Scatters first dimension of an array of arbitrary length
 def scatter_array ( arr, sroot=0 ):
+
     # Compute data type and shape of the scattered array on this process
     pydtype = None
     auxlen = None

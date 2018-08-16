@@ -17,12 +17,22 @@
 #
 import numpy as np
 
-def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
+def get_K_grid_fft ( data_controller ):
+
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
+    nk1 = attributes['nk1']
+    nk2 = attributes['nk2']
+    nk3 = attributes['nk3']
+    b_vectors = arrays['b_vectors']
+
     nktot = nk1*nk2*nk3
-    Kint = np.zeros((3,nktot),dtype=float)
-    K_wght = np.ones((nktot),dtype=float)
-    K_wght /= nktot
-    idk = np.zeros((nk1,nk2,nk3),dtype=int)
+    arrays['kq_wght'] = np.ones((nktot), dtype=float)/nktot
+    return
+
+    Kint = np.zeros((3,nktot), dtype=float)
+    idk = np.zeros((nk1,nk2,nk3), dtype=int)
 
     for i in range(nk1):
         for j in range(nk2):
@@ -39,5 +49,3 @@ def get_K_grid_fft(nk1,nk2,nk3,b_vectors):
                 Rz -= int(Rz)
                 idk[i,j,k]=n
                 Kint[:,n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
-
-    return(Kint,K_wght,nktot,idk)

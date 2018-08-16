@@ -39,12 +39,12 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 
 # initialize parallel execution
-comm=MPI.COMM_WORLD
+comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 
 
-def _getHighSymPoints(ibrav,alat,cellOld):
+def _getHighSymPoints( ibrav, alat, cellOld ):
     '''
     Searching for the ibrav number in the input file for the calculation
     to determine the path for the band structure calculation
@@ -466,7 +466,7 @@ def _getHighSymPoints(ibrav,alat,cellOld):
 
 
 
-def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
+def kpnts_interpolation_mesh ( data_controller ):
     '''
     Get path between HSP
     Arguments:
@@ -476,29 +476,44 @@ def kpnts_interpolation_mesh(ibrav,alat,cell,b_vectors,nk,inputpath):
           kpoints : array of arrays kx,ky,kz
           numK    : Total no. of k-points
     '''
+
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
+    nk = attributes['nk']
+    alat = attributes['alat']
+    ibrav = attributes['ibrav']
+    a_vectors = arrays['a_vectors']
+    b_vectors = arrays['b_vectors']
+
+
     dk       = 0.00001
-    points,_ = get_path(ibrav,alat,cell,dk)
+    points,_ = get_path(ibrav, alat, a_vectors,dk)
 
     scaled_dk = dk*(points.shape[1]/nk)
-    points    = None
-    points,path_file = get_path(ibrav,alat,cell,scaled_dk)
+    points, path_file = get_path(ibrav, alat, a_vectors, scaled_dk)
 
 
-    kq=np.copy(points)
+    arrays['kq'] = points
+
     cart = False
     if cart:
+        arrays['kq'] = np.zeros_like(points)
         for n in range(kq.shape[1]):
-            kq[:,n]=np.dot(kq[:,n],b_vectors)
-    for i in range(kq.shape[1]):
-        path_file+="%s %s %s\n"%(kq[0,i],kq[1,i],kq[2,i])
+            arrays['kq'][:,n] = np.dot(points[:,n], b_vectors)
 
-    if rank==0:
-        with  open(os.path.join(inputpath,"kpath_points.txt"),"w") as pfo:
-            pfo.write(path_file)
+    points = None
 
-    return points
+## File Output!
+##    for i in range(kq.shape[1]):
+##       path_file += '%s %s %s\n'%(kq[0,i],kq[1,i],kq[2,i])
+##
+##    if rank == 0:
+##        with  open(os.path.join(inputpath,"kpath_points.txt"),"w") as pfo:
+##            pfo.write(path_file)
 
-def get_path(ibrav,alat,cell,dk):
+
+def get_path ( ibrav, alat, cell, dk ):
 
     def kdistance(hs, p1, p2):
         g = np.dot(hs.T, hs)
@@ -521,25 +536,24 @@ def get_path(ibrav,alat,cell,dk):
             numPts += len(getPoints(index))
         return numPts
 
-    if ibrav==0:
+    if ibrav == 0:
         sys.exit('IBRAV = 0 not permitted')
-    if ibrav<0:
+    if ibrav < 0:
         print(('Lattice type %s is not implemented') % ibrav)
         logging.error('The ibrav value from QE has not yet been implemented')
         raise Exception
 
-    totalK=0
-    special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
+    totalK = 0
+    special_points,band_path = _getHighSymPoints(ibrav, alat, cell)
 
     hs = np.linalg.inv(cell)  # reciprocal lattice
-    #hs = 2*np.pi*bcell
     segs = getSegments(band_path)
 
     kx = np.array([])
     ky = np.array([])
     kz = np.array([])
 
-    path_file = ""
+    path_file = ''
 
     for index in segs:
 
@@ -556,15 +570,15 @@ def get_path(ibrav,alat,cell,dk):
 
                 newDK = (2.0*np.pi/alat)*dk
                 numK = int(np.ceil((kdistance(hs, p1, p2)/newDK)))
-                totalK+=numK
+                totalK += numK
 
-                path_file+="%s %s\n"%(point1,numK)
+                path_file += "%s %s\n"%(point1,numK)
                 
                 numK = str(numK)
 
-                a0 = np.linspace(p1[0],p2[0],numK).astype(np.float16)
-                a1 = np.linspace(p1[1],p2[1],numK).astype(np.float16)
-                a2 = np.linspace(p1[2],p2[2],numK).astype(np.float16)
+                a0 = np.linspace(p1[0], p2[0], numK).astype(np.float16)
+                a1 = np.linspace(p1[1], p2[1], numK).astype(np.float16)
+                a2 = np.linspace(p1[2], p2[2], numK).astype(np.float16)
 
                 kx = np.concatenate((kx,a0))
                 ky = np.concatenate((ky,a1))
@@ -573,10 +587,9 @@ def get_path(ibrav,alat,cell,dk):
             except Exception as e:
                 print(e)
 
+        path_file += "%s %s\n"%(a[-1],0)
 
-        path_file+="%s %s\n"%(a[-1],0)
-
-    path_file+="\n"
+    path_file += "\n"
     kpoints = np.array([kx,ky,kz])
         
     return kpoints,path_file

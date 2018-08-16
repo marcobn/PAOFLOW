@@ -15,43 +15,60 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from scipy import linalg as LA
-import numpy as np
-from numpy import linalg as LAN
-import numpy.random as rd
 import sys
+import numpy as np
+import numpy.random as rd
+from scipy import linalg as LA
+from numpy import linalg as LAN
 
-def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U):
+def build_Hks ( data_controller ):
+
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
+    bnd = attributes['bnd']
+    nawf = attributes['nawf']
+    eta = attributes['shift']
+    nspin = attributes['nspin']
+    nkpnts = attributes['nkpnts']
+    shift_type = attributes['shift_type']
+
+    U = arrays['U'] 
+    my_eigsmat = arrays['my_eigsmat']
+    
     minimal = False
-    Hksaux = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
+    Hksaux = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
     if minimal:
-        Hks = np.zeros((bnd,bnd,nkpnts,nspin),dtype=complex)
+        Hks = np.zeros((bnd,bnd,nkpnts,nspin), dtype=complex)
     else:
-        Hks = np.zeros((nawf,nawf,nkpnts,nspin),dtype=complex)
+        Hks = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
+
     for ik in range(nkpnts):
         for ispin in range(nspin):
-            my_eigs=my_eigsmat[:,ik,ispin]
+            my_eigs = my_eigsmat[:,ik,ispin]
+
             #Building the Hamiltonian matrix
             E = np.diag(my_eigs)
             UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
-            norms = 1/np.sqrt(np.real(np.sum(np.conj(UU)*UU,axis=0)))
+            norms = 1./np.sqrt(np.real(np.sum(np.conj(UU)*UU,axis=0)))
             UU[:,:nawf] = UU[:,:nawf]*norms[:nawf]
+
             # Choose only the eigenvalues that are below the energy shift
-            bnd_ik=0
+            bnd_ik = 0
             for n in range(bnd):
                 if my_eigs[n] <= eta:
                     bnd_ik += 1
             if bnd_ik == 0: sys.exit('no eigenvalues in selected energy range')
             ac = UU[:,:bnd_ik]  # filtering: bnd is defined by the projectabilities
             ee1 = E[:bnd_ik,:bnd_ik]
-            if shift_type ==0:
+            if shift_type == 0:
                 #option 1 (PRB 2013)
                 Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(np.conj(ac).T))
-            elif shift_type==1:
+            elif shift_type == 1:
                 #option 2 (PRB 2016)
                 aux_p=LA.inv(np.dot(np.conj(ac).T,ac))
                 Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(aux_p).dot(np.conj(ac).T))
-            elif shift_type==2:
+            elif shift_type == 2:
                 # no shift
                 Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
             else:
@@ -82,5 +99,36 @@ def build_Hks(nawf,bnd,nkpnts,nspin,eta,my_eigsmat,shift_type,U):
                 Hks[:,:,ik,ispin] = 0.5*(Hbd[:bnd,:bnd]+np.conj(Hbd[:bnd,:bnd].T))
             else:
                 Hks = Hksaux
+    return Hks
 
-    return(Hks)
+
+def do_build_pao_hamiltonian ( data_controller ):
+    #------------------------------
+    # Building the PAO Hamiltonian
+    #------------------------------
+
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
+    ashape = (attributes['nawf'],attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3'],attributes['nspin'])
+
+    arrays['Hks'] = build_Hks(data_controller)
+
+    # This is needed for consistency of the ordering of the matrix elements
+    # Important in ACBN0 file writing
+    if attributes['non_ortho']:
+        arrays['Sks'] = np.transpose(arrays['Sks'], (1,0,2))
+
+    # NOTE: Take care of non-orthogonality, if needed
+    # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
+    # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
+    # non_ortho flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
+    # non_ortho flag == 1 - makes H orthogonal (rotated basis) 
+    #    Hks = do_non_ortho(Hks,Sks)
+    #    Hks = do_ortho(Hks,Sks)
+    if attributes['non_ortho']:
+        from do_non_ortho import do_non_ortho
+        arrays['Hks'] = do_non_ortho(arrays['Hks'],arrays['Sks'])
+        arrays['Sks'] = np.reshape(arrays['Sks'], ashape)
+
+    arrays['Hks'] = np.reshape(arrays['Hks'], ashape)

@@ -21,26 +21,33 @@ from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
 from load_balancing import load_balancing
 
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
+def add_ext_field ( data_controller ):
 
-def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
-    nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
-    HRs = np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
+    nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
+    arrays['HRs'] = np.reshape(arrays['HRs'],(nawf,nawf,nk1*nk2*nk3,nspin), order='C')
+
+    tau_wf = np.zeros((nawf,3),dtype=float)
+    l=0
+    for n in range(attributes['natoms']):
+        for i in range(arrays['naw'][n]):
+            tau_wf[l,:] = arrays['tau'][n,:]
+            l += 1
 
     tau_wf /= ANGSTROM_AU
-    alat /= ANGSTROM_AU
 
-    if Efield.any() != 0.0:
-        # Electric field
+    if arrays['Efield'].any() != 0.0:
         for n in range(nawf):
-            HRs[n,n,0,:] -= Efield.dot(tau_wf[n,:])
+            arrays['HRs'][n,n,0,:] -= arrays['Efield'].dot(tau_wf[n,:])
 
-    if Bfield.any() != 0.0:
-        if rank == 0: print('calculation in magnetic supercell not implemented')
-        pass
+    # --- Add Magnetic Field ---
+    # Define real space lattice vectors
+    #get_R_grid_fft(data_controller)
+    #alat = attributes['alat']/ANGSTROM_AU
+    if arrays['Bfield'].any() != 0.0:
+        print('calculation in magnetic supercell not implemented')
     # Magnetic field in units of magnetic flux quantum (hc/e)
     #for i in xrange(nk1*nk2*nk3):
     #    for n in xrange(nawf):
@@ -48,9 +55,8 @@ def add_ext_field(HRs,tau_wf,R,alat,Efield,Bfield,HubbardU):
     #            arg = 0.5*np.dot((np.cross(Bfield,alat*R[i,:]+tau_wf[m,:])+np.cross(Bfield,tau_wf[n,:])),(alat*R[i,:]+tau_wf[m,:]-tau_wf[n,:]))
     #            HRs[n,m,i,:] *= np.exp(-np.pi*arg*1.j)
 
-    if HubbardU.any() != 0:
+    if arrays['HubbardU'].any() != 0:
         for n in range(nawf):
-            HRs[n,n,0,:] -= HubbardU[n]/2.0
+            arrays['HRs'][n,n,0,:] -= arrays['HubbardU'][n]/2.0
 
-    HRs = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
-    return(HRs)
+    arrays['HRs'] = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
