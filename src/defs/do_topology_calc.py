@@ -16,26 +16,17 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-from scipy import fftpack as FFT
-import numpy as np
-import cmath
-import sys,os
+import os
+#import matplotlib.pyplot as plt
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-
-from kpnts_interpolation_mesh import *
-from do_non_ortho import *
-from do_momentum import *
-
-import pfaffian as pf
-
-import matplotlib.pyplot as plt
 
 # Compute Z2 invariant and topological properties on a selected path in the BZ
 def do_topology_calc ( data_controller ):
 #def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath,npool):
+    import numpy as np
+    from pfaffian import pfaffian 
     from mpi4py import MPI
+    from scipy.fftpack import fftshift
     from constants import LL, ANGSTROM_AU
     from load_balancing import load_balancing
 
@@ -87,7 +78,7 @@ def do_topology_calc ( data_controller ):
             wl[ik,:,:] = wl[ik,:,:]-wl[ik,:,:].T  # enforce skew symmetry
         delta_ik = np.zeros(nktrim/2,dtype=complex)
         for ik in range(nktrim/2):
-            delta_ik[ik] = pf.pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
+            delta_ik[ik] = pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
         f=open(os.path.join(attributes['inputpath'],'Z2'+'.dat'),'w')
         p2D = np.real(np.prod(delta_ik[:4]))
@@ -125,7 +116,7 @@ def do_topology_calc ( data_controller ):
     kq_aux = kq_aux.T
 
     # Compute R*H(R)
-    arrays['HRs'] = FFT.fftshift(arrays['HRs'], axes=(2,3,4))
+    arrays['HRs'] = fftshift(arrays['HRs'], axes=(2,3,4))
     arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
     arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
     arrays['HRs'] = np.moveaxis(arrays['HRs'], 2, 0)

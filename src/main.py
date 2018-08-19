@@ -27,13 +27,17 @@
 
 
 import sys
+import time
 import numpy as np
-from PAOFLOW import *
+from PAOFLOW_class import PAOFLOW
+from mpi4py import MPI
 
 def main():
 
+    rank = MPI.COMM_WORLD.Get_rank()
+
     arg1 = './'
-    arg2 = "inputfile.xml"
+    arg2 = 'inputfile.xml'
     try:
         arg1 = os.path.abspath(sys.argv[1])
         if os.path.isfile(arg1):
@@ -41,8 +45,23 @@ def main():
             arg1 = os.path.dirname(arg1)
     except: pass
 
+    paoflow = PAOFLOW(inputpath=arg1,inputfile=arg2,verbose=False)
+    paoflow.calc_projectability(pthr=None)
+    paoflow.calc_pao_hamiltonian()
+    if paoflow.data_controller.data_attributes['non_ortho']:
+        paoflow.orthogonalize_hamiltonian()
+#    paoflow.calc_k_to_R()
+    paoflow.add_external_fields()
+    paoflow.calc_bands()
 
+    ## MUST KNOW DOUBLE_GRID IN ADVANCE
+    if paoflow.data_controller.data_attributes['double_grid']:
+        paoflow.calc_double_grid()
 
+    paoflow.calc_pao_eigh()
+    if rank == 0: print(paoflow.data_controller.data_arrays['Hksp'].shape)
+
+    quit()
 
     # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.
     outDict = paoflow(inputpath=arg1,inputfile=arg2)
@@ -55,4 +74,3 @@ def main():
 
 if __name__== "__main__":
     main()
-

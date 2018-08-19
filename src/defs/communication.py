@@ -173,7 +173,7 @@ def gather_full(arr,npool,sroot=0):
         else:
             gather_array(None,arr[chunk_e:],sroot=sroot)
         
-    if rank==sroot:
+    if rank == sroot:
         return temp
 
 
@@ -205,7 +205,7 @@ def gather_scatter(arr,scatter_axis,npool):
     for r in range(size):
         comm.Barrier()
         #gather array from each proc with indices for each proc on scatter_axis
-        if r==rank:
+        if r == rank:
             temp = gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
         else:
             gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
