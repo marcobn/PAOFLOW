@@ -15,53 +15,60 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-import numpy as np
-import math, cmath
-import sys, time
-import os
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-from load_balancing import *
-from communication import scatter_array
-from smearing import *
-
-from do_non_ortho import *
-
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-
-def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath):
-    # DOS calculation with adaptive smearing
-
-    emin = float(emin)
-    emax = float(emax)
-    de = (emax-emin)/1001
-    ene = np.arange(emin,emax,de,dtype=float)
-
-    dos = np.zeros((ene.size),dtype=float)
-    dosaux = np.zeros((ene.size),dtype=float)
-
-    for ne in range(ene.size):
-        if smearing == 'gauss':
-            # adaptive Gaussian smearing
-            dosaux[ne] = np.sum(gaussian(ene[ne],eig,delta))
-        elif smearing == 'm-p':
-            # adaptive Methfessel and Paxton smearing
-            dosaux[ne] = np.sum(metpax(ene[ne],eig,delta))
 
 
-    comm.Reduce(dosaux,dos,op=MPI.SUM)
+def do_dos_calc_adaptive ( data_controller ):
+#def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath):
+  from smearing import gaussian, metpax
+  from mpi4py import MPI
+  import numpy as np
+
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
+
+  arrays = data_controller.data_arrays
+  attributes = data_controller.data_attributes
+
+  # DOS calculation with adaptive smearing
+  emin = float(attributes['emin'])
+  emax = float(attributes['emax'])
+  de = (emax-emin)/1000.
+  ene = np.arange(emin, emax, de)
+  esize = ene.size
+
+  bnd = attributes['bnd']
+  netot = attributes['nkpnts']*bnd
+
+  for ispin in range(attributes['nspin']):
+
+    E_k = arrays['E_k'][:,:bnd,ispin].reshape(arrays['E_k'].shape[0]*bnd)
+    delta = np.ravel(arrays['deltakp'][:,:bnd,ispin], order='C')
+
+### Parallelization wastes time and memory here!!! 
+    dosaux = np.zeros((esize), dtype=float)
+
+    for ne in range(esize):
+      if smearing == 'gauss':
+        # adaptive Gaussian smearing
+        dosaux[ne] = np.sum(gaussian(ene[ne],E_k,delta))
+      elif smearing == 'm-p':
+        # adaptive Methfessel and Paxton smearing
+        dosaux[ne] = np.sum(metpax(ene[ne],E_k,delta))
+
+    dosaux *= float(nawf)/float(netot)
+
+    dos = (np.zeros((esize), dtype=float) if rank==0 else None)
+
+    comm.Reduce(dosaux, dos, op=MPI.SUM)
 
 
+## Decide how to write...
     if rank == 0:
-        dos *= float(nawf)/float(netot)
-        f=open(os.path.join(inputpath,'dosdk_'+str(ispin)+'.dat'),'w')
-        for ne in range(ene.size):
-            f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
-        f.close()
+      import os
+      #dos *= float(nawf)/float(netot)
+      f = open(os.path.join(attributes['inputpath'],'dosdk_'+str(ispin)+'.dat'), 'w')
+      for ne in range(esize):
+        f.write('%.5f  %.5f\n' %(ene[ne],dos[ne]))
+      f.close()
 
-
-    comm.Barrier()
-    return
+  comm.Barrier()

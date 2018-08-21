@@ -62,8 +62,12 @@ def main():
   paoflow.calc_pao_eigh()
   if rank == 0: print(paoflow.data_controller.data_arrays['Hksp'].shape)
 
-  if paoflow.data_controller.data_attributes['do_dos'] or paoflow.data_controller.data_attributes['do_pdos']:
-    paoflow.calc_dos()
+  paoflow.calc_gradient()
+
+#  paoflow.calc_adaptive_smearing()
+
+#  if paoflow.data_controller.data_attributes['do_dos'] or paoflow.data_controller.data_attributes['do_pdos']:
+#  paoflow.calc_dos()
 
   quit()
 

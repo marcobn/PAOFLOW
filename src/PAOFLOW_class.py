@@ -1,7 +1,7 @@
 import os
 import sys
-import time
 import numpy as np
+from time import time
 from scipy import fftpack as FFT
 
 
@@ -11,13 +11,14 @@ from report_exception import report_exception
 
 
 class PAOFLOW:
-  comm = rank = size = None
 
-  start_time = reset_time = None
+  data_controller = None
+
+  comm = rank = size = None
 
   inputpath = inputfile = None
 
-  data_controller = None
+  start_time = reset_time = None
 
 
   def __init__ ( self, inputpath='./', inputfile='inputfile.xml', verbose=False ):
@@ -37,7 +38,7 @@ class PAOFLOW:
     # Initialize Time
     #-----------------
     if self.rank == 0:
-      self.start_time = self.reset_time = time.time()
+      self.start_time = self.reset_time = time()
 
     #--------------
     # Print Header
@@ -140,9 +141,9 @@ class PAOFLOW:
     self.comm.Barrier()
     if self.rank == 0:
       lms = spaces-lmn
-      dt = time.time() - self.reset_time
+      dt = time() - self.reset_time
       print('%s: %s %.3f sec'%(mname,lms*' ',dt))
-      self.reset_time = time.time()
+      self.reset_time = time()
     self.comm.Barrier()
 
 
@@ -349,5 +350,67 @@ class PAOFLOW:
 
 
 
-  def calc_dos ( self ):
-    pass
+  def calc_gradient ( self ):
+    from do_gradient import do_gradient
+    
+    #----------------------
+    # Compute the gradient of the k-space Hamiltonian
+    #----------------------            
+    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
+
+########### PARALLELIZATION
+    ################DISTRIBUTE ARRAYS ON KPOINTS#################
+    #############################################################
+    Hksp  = None
+    dHksp = np.reshape(dHksp,(dHksp.shape[0],nk1*nk2*nk3,3,nspin))
+    #gather dHksp on nawf*nawf and scatter on k points
+    dHksp = gather_scatter(dHksp,1,npool)
+    dHksp = np.rollaxis(dHksp,0,3)
+    dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
+
+    if rank == 0:
+
+
+
+  def calc_adaptive_smearing ( self, smearing=None ):
+    from do_adaptive_smearing import do_adaptive_smearing
+
+    attributes = self.data_controller.data_attributes
+
+    if smearing != None and (smearing == 'gauss' or smearing == 'm-p'):
+      attributes['smearing'] = smearing
+
+    do_adaptive_smearing(self.data_controller)
+
+    self.report_module_time('Adaptive Smearing in')
+
+
+
+  def calc_dos ( self, smearing='gauss', do_dos=None, do_pdos=None ):
+    from do_dos_calc_adaptive import do_dos_calc_adaptive
+    from do_pdos_calc_adaptive import do_pdos_calc_adaptive
+
+    attributes = self.data_controller.data_attributes
+
+    if smearing != attributes['smearing']:
+      attributes['smearing'] = smearing
+
+    if do_dos == None:
+      do_dos = True
+
+    if do_pdos == None:
+      do_pdos = True
+
+    #------------------------------------------------------------
+    # DOS calculation with adaptive smearing on double_grid Hksp
+    #------------------------------------------------------------
+    if do_dos:
+      do_dos_calc_adaptive(self.data_controller)
+
+    #----------------------
+    # PDOS calculation ...
+    #----------------------
+    if do_pdos:
+      do_pdos_calc_adaptive(self.data_controller)
+
+    self.report_module_time('DoS (Adaptive Smearing) in')

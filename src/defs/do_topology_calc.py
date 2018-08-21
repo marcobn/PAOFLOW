@@ -24,8 +24,8 @@ import os
 def do_topology_calc ( data_controller ):
 #def do_topology_calc(HRs,SRs,non_ortho,kq,E_k,v_kp,R,Rfft,R_wght,idx,alat,b_vectors,nelec,bnd,Berry,ipol,jpol,spin_Hall,spol,spin_orbit,sh,nl,inputpath,npool):
     import numpy as np
-    from pfaffian import pfaffian 
     from mpi4py import MPI
+    from pfaffian import pfaffian 
     from scipy.fftpack import fftshift
     from constants import LL, ANGSTROM_AU
     from load_balancing import load_balancing

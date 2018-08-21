@@ -57,7 +57,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
 
-    _,nk1,nk2,nk3,nspin = Hksp.shape
+    _,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
     nktot = nk1*nk2*nk3
 
     # fft grid in R shifted to have (0,0,0) in the center

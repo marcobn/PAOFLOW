@@ -16,52 +16,50 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
 
-from communication import *
-import numpy as np
-from numpy import linalg as LAN
-from load_balancing import *
+def do_adaptive_smearing ( data_controller ):
+    from numpy.linalg import norm
+    import numpy as np
 
-def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
-
-    if smearing == None:
-        return
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
 
     #----------------------
     # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
     #----------------------
 
+    a_vectors = arrays['a_vectors']
 
-    deltakp = np.zeros((pksp.shape[0],nawf,nspin),dtype=float)
+    nawf = attributes['nawf']
+    nspin = attributes['nspin']
+    nkpnts = attributes['nkpnts']
+    npks = arrays['pksp'].shape[0]
+
+    deltakp = np.zeros((npks,nawf,nspin), dtype=float)
 
     diag = np.diag_indices(nawf)
 
-    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-    dk = (8.*np.pi**3/omega/(nk1*nk2*nk3))**(1./3.)
+    omega = attributes['alat']**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+    dk = (8.*np.pi**3/omega/(nkpnts))**(1./3.)
 
     if smearing == 'gauss':
         afac = 0.7
     elif smearing == 'm-p':
         afac = 1.0        
 
+    pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
 
-    pksaux = np.ascontiguousarray(pksp[:,:,diag[0],diag[1]])
-
-    deltakp = np.zeros((pksp.shape[0],nawf,nspin),dtype=float)
-    deltakp2 = np.zeros((pksp.shape[0],nawf,nawf,nspin),dtype=float)
-
+    deltakp = np.zeros((npks,nawf,nspin),dtype=float)
+    deltakp2 = np.zeros((npks,nawf,nawf,nspin),dtype=float)
 
     for n in range(nawf):
-        deltakp[:,n] = LAN.norm(np.real(pksaux[:,:,n]),axis=1)
+        deltakp[:,n] = norm(np.real(pksaux[:,:,n]), axis=1)
         for m in range(nawf):
-            deltakp2[:,n,m,:] = LAN.norm(pksaux[:,:,n,:] - pksaux[:,:,m,:],axis=1)
+            deltakp2[:,n,m,:] = norm(pksaux[:,:,n,:]-pksaux[:,:,m,:], axis=1)
 
-    pksaux=None
-    deltakp*=afac*dk
-    deltakp2*=afac*dk
+    pksaux = None
+    deltakp *= afac*dk
+    deltakp2 *= afac*dk
 
-    comm.Barrier()
-
-    return deltakp,deltakp2
+    arrays['deltakp'] = deltakp
+    arrays['deltakp2'] = deltakp2
