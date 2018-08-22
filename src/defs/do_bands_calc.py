@@ -93,7 +93,7 @@ def do_bands_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S,inputpath,npool):
             f=open(os.path.join(inputpath,'bands_'+str(ispin)+'.dat'),'w')
             for ik in range(kq.shape[1]):
                 s="%d\t"%ik
-                for  j in E_kp[ik,:,ispin]:s += "% 3.5f\t"%j
+                for  j in E_kp[ik,:,ispin]:s += "% 3.5f "%j
                 s+="\n"
                 f.write(s)
             f.close()

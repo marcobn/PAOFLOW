@@ -43,22 +43,22 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             alat   = float(elem.findall("atomic_structure")[0].attrib['alat'])
 
             aux=elem.findall("atomic_structure/cell/a1")[0].text.split()
-            a1=np.array(aux,dtype="float64")
+            a1=np.array(aux,dtype="float32")
 
             aux=elem.findall("atomic_structure/cell/a2")[0].text.split()
-            a2=np.array(aux,dtype="float64")
+            a2=np.array(aux,dtype="float32")
 
             aux=elem.findall("atomic_structure/cell/a3")[0].text.split()
-            a3=np.array(aux,dtype="float64")
+            a3=np.array(aux,dtype="float32")
 
             aux=elem.findall("basis_set/reciprocal_lattice/b1")[0].text.split()
-            b1=np.array(aux,dtype='float64')
+            b1=np.array(aux,dtype='float32')
 
             aux=elem.findall("basis_set/reciprocal_lattice/b2")[0].text.split()
-            b2=np.array(aux,dtype='float64')
+            b2=np.array(aux,dtype='float32')
 
             aux=elem.findall("basis_set/reciprocal_lattice/b3")[0].text.split()
-            b3=np.array(aux,dtype='float64')
+            b3=np.array(aux,dtype='float32')
 
 
 
@@ -81,7 +81,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             except: pass
             try:
                 aux = elem.findall("band_structure/two_fermi_energies")[0].text.split()
-                Efermi = float(np.amax(np.array(aux,dtype='float64')))*Hatree2eV
+                Efermi = float(np.amax(np.array(aux,dtype='float32')))*Hatree2eV
             except: pass
 
 
@@ -91,7 +91,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             tau = np.zeros((natoms,3),dtype=float)
             for n in xrange(natoms):
                 aux = elem.findall("atomic_structure/atomic_positions/atom")[n].text.split()
-                tau[n,:]=np.array(aux,dtype="float64")
+                tau[n,:]=np.array(aux,dtype="float32")
 
 			
 #        else:
@@ -133,7 +133,6 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             if nspin == 4:
                 nspin = 1
                 dftSO = True
-            
             if rank == 0 and verbose: print('Number of spin components: {0:d}'.format(nspin))
             nelec = float(elem.findall("NUMBER_OF_ELECTRONS")[0].text.split()[0])
             nelec = int(nelec)
@@ -152,11 +151,11 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
             elem.clear()
 
         if event == 'end' and elem.tag =="K-POINTS":
-            kpnts  = np.array(elem.text.split(),dtype="float64").reshape((nkpnts,3))
+            kpnts  = np.array(elem.text.split(),dtype="float32").reshape((nkpnts,3))
             elem.clear()
 
         if event == 'end' and elem.tag =="WEIGHT_OF_K-POINTS":
-            kpnts_wght  = np.array(elem.text.split(),dtype='float64')
+            kpnts_wght  = np.array(elem.text.split(),dtype='float32')
 
             if kpnts_wght.shape[0] != nkpnts:
                 sys.exit('Error in size of the kpnts_wght vector')
@@ -198,7 +197,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                     subelem = elem.findall("EIG")[0]
                     #if verbose:print("Reading eigenvalues of ",  elem.tag)
                     eigk_type=subelem.attrib['type']
-                    eigk_file=np.array(subelem.text.split(),dtype='float64')
+                    eigk_file=np.array(subelem.text.split(),dtype='float32')
                     my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
                 else:
@@ -209,7 +208,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                         subelem = elem.findall("EIG.%d"%(ispin+1))[0]
                         #if verbose:print("Reading eigenvalues of ",elem.tag)
                         eigk_type=subelem.attrib['type']
-                        eigk_file=np.array(subelem.text.split(),dtype='float64')
+                        eigk_file=np.array(subelem.text.split(),dtype='float32')
                         my_eigsmat[:,ik,ispin] = np.real(eigk_file)*Ry2eV-Efermi #meigs in eVs and wrt Ef
 
 
@@ -219,7 +218,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 iin = int(float(elem.tag.split('.')[-1]))-1
                 wfc_type=elem.attrib['type']
                 aux     =elem.text
-                aux = np.array(re.split(',|\n',aux.strip()),dtype='float64')
+                aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
 
                 if wfc_type=='real':
                     wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
@@ -240,7 +239,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                     #if verbose:print("Reading ", subelem.tag, elem.tag, "of k-point",ik)
                     wfc_type= subelem.attrib['type']
                     aux     = subelem.text
-                    aux = np.array(re.split(',|\n',aux.strip()),dtype='float64')
+                    aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
                     if wfc_type=='real':
                         wfc = aux.reshape((nbnds,1))#wfc = nbnds x 1
                         U[:,iin,ik,ispin] = wfc[:,0]
@@ -254,7 +253,7 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
                 iin = int(float(elem.tag.split('.')[-1]))-1
                 ovlp_type=elem.attrib['type']
                 aux     =elem.text
-                aux = np.array(re.split(',|\n',aux.strip()),dtype='float64')
+                aux = np.array(re.split(',|\n',aux.strip()),dtype='float32')
 
                 if ovlp_type !='complex':
                     sys.exit('the overlaps are assumed to be complex numbers')
@@ -308,12 +307,6 @@ def read_new_QE_output_xml(fpath,verbose,non_ortho):
     iterator = None
     iterator_obj = None
 
-
-
-
-#    U=np.ascontiguousarray(U[:,:,:,1:])
-#    my_eigsmat=np.ascontiguousarray(my_eigsmat[:,:,1:])
-#    nspin=1
     if non_ortho:
         return(U,Sks, my_eigsmat, alat, a_vectors, b_vectors, nkpnts, nspin, dftSO, kpnts, \
             kpnts_wght, nelec, nbnds, Efermi, nawf, nk1, nk2, nk3, natoms, tau)

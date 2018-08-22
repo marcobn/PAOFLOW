@@ -140,7 +140,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         fermi_up,fermi_dw,spintexture,d_tensor,t_tensor,a_tensor,s_tensor,temp,Boltzmann, \
         epsilon,metal,kramerskronig,epsmin,epsmax,ne,critical_points,Berry,eminAH,emaxAH, \
         ac_cond_Berry,spin_Hall,eminBT,emaxBT,eminSH,emaxSH,ac_cond_spin,eff_mass,tmin,tmax,tstep,\
-        carrier_conc, out_vals = read_inputfile_xml(inputpath,inputfile)
+        carrier_conc,high_sym_points,band_path, out_vals = read_inputfile_xml(inputpath,inputfile)
         
         if double_grid:
             if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
@@ -597,7 +597,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             R,Rfft,R_wght,nrtot,idx = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
     
             # Define k-point mesh for bands interpolation
-            kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk,inputpath)
+            kq = kpnts_interpolation_mesh(ibrav,alat,a_vectors,b_vectors,nk,inputpath,band_path,high_sym_points)
             nkpi=kq.shape[1]
             for n in range(nkpi):
                 kq[:,n]=np.dot(kq[:,n],b_vectors)
@@ -916,6 +916,16 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
     if Boltzmann and carrier_conc:#do d2H/d2k_ij
         M_ij = do_d2Ed2k_ij(Hksp,a_vectors,alat,nthread,npool,use_cuda,v_k,bnd,degen)
 
+
+    if not Boltzmann and not epsilon and not Berry and not spin_Hall and not critical_points and not do_pdos and not do_dos:
+        Hksp = np.ascontiguousarray(np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3,nspin)))
+        Hksp = gather_full(Hksp,npool)
+        if rank==0:
+            Hksp = np.ascontiguousarray(np.reshape(Hksp,(nawf,nawf,nk1,nk2,nk3,nspin)))
+            np.save("Hksp.npy",Hksp)
+        return
+                    
+
     try:
 
         pksp = None
@@ -936,6 +946,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                     for ispin in range(Hksp.shape[3]):
                         Hksp[:,:,ik,ispin] = (np.conj(Hksp[:,:,ik,ispin].T) + \
                                                       Hksp[:,:,ik,ispin])/2.0
+
+
 
 
                 Hksp = np.ascontiguousarray(np.reshape(Hksp,(nawf*nawf,Hksp.shape[2],nspin)))
