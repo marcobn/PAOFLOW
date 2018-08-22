@@ -38,14 +38,14 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
+def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
     #----------------------
     # Compute spin Berry curvature
     #----------------------
 
 
 
-    nktot,_,nawf,nawf,nspin = pksp.shape
+    nktot,nawf,nawf,nspin = pksp.shape
 
     # Compute only Omega_z(k)
     Om_znkaux = np.zeros((pksp.shape[0],nawf),dtype=float)
@@ -62,7 +62,7 @@ def do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,ema
     for ik in range(E_k.shape[0]):
         E_nm = (E_k[ik,:,0] - E_k[ik,:,0][:,None])**2
         E_nm[np.where(E_nm<1.e-4)] = np.inf
-        Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,ipol,:,:,0]*pksp[ik,jpol,:,:,0].T) / \
+        Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T) / \
                                             E_nm,axis=1)
     E_nm = None
 

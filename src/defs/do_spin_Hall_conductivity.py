@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
+def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,shift,deltak,deltak2,smearing):
     # Compute the optical conductivity tensor sigma_xy(ene)
 
     emin = 0.0
@@ -43,7 +43,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
-    nktot,_,nawf,_,nspin = pksp.shape
+    nktot,nawf,_,nspin = pksp.shape
     nk_tot = np.array([nktot],dtype=int)
     nktot = np.zeros((1),dtype=int)
     comm.Reduce(nk_tot,nktot)
@@ -54,7 +54,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
 
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
-    sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+    sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,smearing,deltak,deltak2)
                 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
@@ -66,7 +66,7 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     else: return None,None
 
 
-def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex)
     f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
@@ -89,7 +89,8 @@ def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak
         for m in range(nawf):
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
-                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,n,m,0]*pksp[:,m,n,0])
+
 
     fn = None
 

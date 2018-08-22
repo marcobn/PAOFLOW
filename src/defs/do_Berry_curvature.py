@@ -38,14 +38,14 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
+def do_Berry_curvature(E_k,pksp_i,pksp_j,nk1,nk2,nk3,npool,eminSH,emaxSH,fermi_dw,fermi_up,deltak,smearing):
     #----------------------
     # Compute spin Berry curvature
     #----------------------
 
-    _,_,nawf,nawf,nspin = pksp.shape
+    _,nawf,nawf,nspin = pksp_i.shape
 
-    Om_znk = np.zeros((pksp.shape[0],nawf),dtype=float)
+    Om_znk = np.zeros((pksp_i.shape[0],nawf),dtype=float)
 
     deltap = 0.05
     deltap = 0.00
@@ -53,14 +53,14 @@ def do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,eminSH,emaxSH,fermi_
     for ik in range(E_k.shape[0]):
         E_nm = (E_k[ik,:,0] - E_k[ik,:,0][:,None])**2
         E_nm[np.where(E_nm<1.e-4)] = np.inf
-        Om_znk[ik] = -2.0*np.sum(np.imag(pksp[ik,ipol,:,:,0]*pksp[ik,jpol,:,:,0].T) / \
+        Om_znk[ik] = -2.0*np.sum(np.imag(pksp_i[ik,:,:,0]*pksp_j[ik,:,:,0].T) / \
                                             E_nm,axis=1)
     E_nm = None
 
     de = (emaxSH-eminSH)/500
     ene = np.arange(eminSH,emaxSH,de,dtype=float)
 
-    Om_zkaux = np.zeros((pksp.shape[0],ene.size),dtype=float)
+    Om_zkaux = np.zeros((pksp_i.shape[0],ene.size),dtype=float)
 
     for i in range(ene.size):
         if smearing == 'gauss':

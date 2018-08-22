@@ -35,7 +35,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
+def do_Berry_conductivity(E_k,pksp_i,pksp_j,temp,ispin,npool,shift,deltak,deltak2,smearing):
     # Compute the optical conductivity tensor sigma_xy(ene)
 
     emin = 0.0 
@@ -43,7 +43,7 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     de = (emax-emin)/500
     ene = np.arange(emin,emax,de,dtype=float)
 
-    nktot,_,nawf,_,nspin = pksp.shape
+    nktot,nawf,_,nspin = pksp_i.shape
 
     nk_tot = np.array([nktot],dtype=int)
     nktot = np.zeros((1),dtype=int)
@@ -55,7 +55,7 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     sigxy = np.zeros((ene.size),dtype=complex)
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
-    sigxy_aux = smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+    sigxy_aux = smear_sigma_loop(ene,E_k,pksp_i,pksp_j,nawf,temp,ispin,smearing,deltak,deltak2)
 
     comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
 
@@ -65,11 +65,11 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
 
 
 
-def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+def smear_sigma_loop(ene,E_k,pksp_i,pksp_j,nawf,temp,ispin,smearing,deltak,deltak2):
 
     sigxy = np.zeros((ene.size),dtype=complex)
-    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
+    f_nm = np.zeros((pksp_i.shape[0],nawf,nawf),dtype=float)
+    E_diff_nm = np.zeros((pksp_i.shape[0],nawf,nawf),dtype=float)
     delta = 0.05
     Ef = 0.0
     #to avoid divide by zero error
@@ -89,9 +89,9 @@ def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,delt
         for m in range(nawf):
             if m != n:
                 E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
-                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(pksp_j[:,n,m,0]*pksp_i[:,m,n,0])
         
-    E_diff_nm[np.where(E_diff_nm<1.e-4)] = np.inf
+
 
     for e in range(ene.size):
         if smearing!=None:

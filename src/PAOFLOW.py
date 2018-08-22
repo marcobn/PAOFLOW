@@ -1025,13 +1025,13 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
             pksp = do_momentum(v_k,dHksp)
 
-            for ik in range(pksp.shape[0]):
-                for l in range(pksp.shape[1]):
-                    for ispin in range(pksp.shape[4]):
-                        pksp[ik,l,:,:,ispin] = do_perturb_split(pksp[ik,l,:,:,ispin],
-                                                                dHksp[ik,l,:,:,ispin],
-                                                                v_k[ik,:,:,ispin],
-                                                                degen[ispin][ik])
+            # for ik in range(pksp.shape[0]):
+            #     for l in range(pksp.shape[1]):
+            #         for ispin in range(pksp.shape[4]):
+            #             pksp[ik,l,:,:,ispin] = do_perturb_split(pksp[ik,l,:,:,ispin],
+            #                                                     dHksp[ik,l,:,:,ispin],
+            #                                                     v_k[ik,:,:,ispin],
+            #                                                     degen[ispin][ik])
 
 
 
@@ -1095,8 +1095,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
 
 
-    if not spin_Hall:
-        dHksp=None
+#    if not spin_Hall:
+#        dHksp=None
 
 
     try:
@@ -1167,7 +1167,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
         for n in range(bnd):
             velkp[:,:,n,:] = np.real(pksp[:,:,n,n,:])
 
-        if carrier_conc:
+        if carrier_conc and Boltzmann:
             #----------------------
             # for d2H/d2k_ij
             #----------------------
@@ -1178,14 +1178,29 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 for ik in range(M_ij.shape[1]):
 
                     E_temp = ((E_k[ik,:,ispin]-E_k[ik,:,ispin][:,None])[:,:])
-                    E_temp[np.where(np.abs(E_temp)<1.e-6)]=np.inf
+                    E_temp[np.where(np.abs(E_temp)<1.e-5)]=np.inf
 
                     for ij in range(ij_ind.shape[0]):
                         ipol = ij_ind[ij,0]
                         jpol = ij_ind[ij,1]
-                        temp = (pksp[ik,ipol,:,:,ispin]*pksp[ik,jpol,:,:,ispin].T + \
-                                pksp[ik,jpol,:,:,ispin]*pksp[ik,ipol,:,:,ispin].T).real / E_temp
+
+
+                        pksp_i,pksp_j = do_perturb_split_twoop(dHksp[ik,ipol,:,:,ispin],
+                                                               dHksp[ik,jpol,:,:,ispin],
+                                                               v_k[ik,:,:,ispin],
+                                                               degen[ispin][ik])
+
+
+                        temp = (pksp_i*pksp_j.T + pksp_j*pksp_i.T).real / E_temp
                         M_ij[ij,ik,:,ispin] += np.sum(temp,axis=0)[:bnd]
+
+
+#        M_ij_save = np.ascontiguousarray(np.swapaxes(M_ij,0,1))
+#        M_ij_save = gather_full(M_ij_save,npool)
+#        if rank==0:
+#            print(M_ij_save.shape)
+#            np.save('M_ij.npy',M_ij_save)
+#        raise SystemExit
 
         if critical_points:
             velkp_full = gather_full(velkp,npool)
@@ -1268,8 +1283,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             if 'deltakp' in outDict:
                 outDict['deltakp'] = deltakp
 
-        if not spin_Hall:
-            v_k = None
+
+
 
 #        E_k = np.ascontiguousarray(E_k[:,:bnd])
 
@@ -1313,7 +1328,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                         pass
                 spincheck=comm.bcast(spincheck,root=0)
                 if spincheck == 0:
-                    jksp = do_spin_current(v_k,dHksp,spol,npool,do_spin_orbit,sh,nl,bnd,degen)
+                    jdHksp = do_spin_current(dHksp,spol,ipol,npool,do_spin_orbit,sh,nl)
 
                     if restart:
                         np.savez(fpath+'PAOspin'+str(spol)+'_%s.npz'%rank,jksp=jksp)
@@ -1326,7 +1341,20 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 # Compute spin Berry curvature... 
                 #----------------------
 
-                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp,pksp,nk1,nk2,nk3,npool,ipol,jpol,
+                jksp_is = np.zeros_like(jdHksp)
+                pksp_j = np.zeros_like(jdHksp)
+
+                for ik in range(jdHksp.shape[0]):
+                    for ispin in range(jdHksp.shape[3]):
+                        jksp_is[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = do_perturb_split_twoop(jdHksp[ik,:,:,ispin],
+                                                                                            dHksp[ik,jpol,:,:,ispin],
+                                                                                            v_k[ik,:,:,ispin],
+                                                                                            degen[ispin][ik])
+
+                jdHksp = None
+
+
+                ene,shc,Om_k = do_spin_Berry_curvature(E_k,jksp_is,pksp_j,nk1,nk2,nk3,npool,
                                                        eminSH,emaxSH,fermi_dw,fermi_up,deltakp,smearing)
                 if writedata:
                     if rank == 0: 
@@ -1342,8 +1370,23 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 Om_k = Om_kps = None
                     
                 if ac_cond_spin:
-                    ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp,pksp,temp,0,npool,
-                                                             ipol,jpol,shift,deltakp,deltakp2,smearing)
+                    jdHksp = do_spin_current(dHksp,spol,jpol,npool,do_spin_orbit,sh,nl)
+
+                    jksp_js = np.zeros_like(jdHksp)
+                    pksp_i = np.zeros_like(jdHksp)
+
+                    for ik in range(jdHksp.shape[0]):
+                        for ispin in range(jdHksp.shape[3]):
+                            jksp_js[ik,:,:,ispin],pksp_i[ik,:,:,ispin] = do_perturb_split_twoop(jdHksp[ik,:,:,ispin],
+                                                                                                dHksp[ik,ipol,:,:,ispin],
+                                                                                                v_k[ik,:,:,ispin],
+                                                                                                degen[ispin][ik])
+
+                    jdHksp = None
+
+
+                    ene_ac,sigxy = do_spin_Hall_conductivity(E_k,jksp_js,pksp_i,temp,0,npool,
+                                                             shift,deltakp,deltakp2,smearing)
     
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
     
@@ -1370,14 +1413,14 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 print('spin Hall module in              %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10))
                 reset=time.time()
     
-        dHksp = None
+
     except Exception as e:
         print('Rank %d: Exception in Spin Hall Module'%rank)
         traceback.print_exc()
         comm.Abort()
         raise Exception
     
-    v_k = None
+
 
     try:
         #----------------------
@@ -1389,7 +1432,21 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
             for n in range(a_tensor.shape[0]):
                 ipol = a_tensor[n][0]
                 jpol = a_tensor[n][1]
-                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp,nk1,nk2,nk3,npool,ipol,jpol,
+
+
+
+                pksp_i = np.zeros((dHksp.shape[0],dHksp.shape[2],dHksp.shape[3],dHksp.shape[4]),order="C",dtype=complex)
+                pksp_j = np.zeros_like(pksp_i)
+
+                for ik in range(dHksp.shape[0]):
+                    for ispin in range(dHksp.shape[4]):
+                        pksp_i[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = do_perturb_split_twoop(dHksp[ik,ipol,:,:,ispin],
+                                                                                            dHksp[ik,jpol,:,:,ispin],
+                                                                                            v_k[ik,:,:,ispin],
+                                                                                            degen[ispin][ik])
+
+
+                ene,ahc,Om_k = do_Berry_curvature(E_k,pksp_i,pksp_j,nk1,nk2,nk3,npool,
                                                   eminAH,emaxAH,fermi_dw,fermi_up,deltakp,smearing)
     
                 if writedata:
@@ -1408,8 +1465,8 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
                 Om_k = Om_kps = None
 
                 if ac_cond_Berry:
-                    ene_ac,sigxy = do_Berry_conductivity(E_k,pksp,temp,0,npool,
-                                                         ipol,jpol,shift,deltakp,deltakp2,smearing)
+                    ene_ac,sigxy = do_Berry_conductivity(E_k,pksp_i,pksp_j,temp,0,npool,
+                                                         shift,deltakp,deltakp2,smearing)
 
                 omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
                 if rank == 0:
@@ -1464,7 +1521,7 @@ def paoflow(inputpath='./',inputfile='inputfile.xml'):
 
         #restrict states that are within energy range of interest +- 1eV
 
-        E_k_mask = np.where(np.logical_and(E_k[:,:bnd,:]>=(eminBT-1.0),E_k[:,:bnd,:]<=(emaxBT+1.0)))
+        E_k_mask = np.where(np.logical_and(E_k[:,:bnd,:]>=(eminBT-5.0),E_k[:,:bnd,:]<=(emaxBT+5.0)))
         E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],E_k_mask[2]])
         velkp_range = np.swapaxes(velkp,1,0)
 
