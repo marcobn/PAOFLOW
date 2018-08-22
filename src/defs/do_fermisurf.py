@@ -36,33 +36,42 @@ def do_fermisurf ( data_controller ):
 
     if rank==0:
       nbndx_plot = 10
+      nawf = attributes['nawf']
       nktot = attributes['nkpnts']
       nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
-      eigband = np.zeros((nk1,nk2,nk3,nbndx_plot), dtype=float)
-      ind_plot = np.zeros(nbndx_plot)
+      fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
 
-      E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf))
+      E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attributes['nspin']))
 
-      Efermi = 0.0
+      for ispin in range(attributes['nspin']):
 
-      #collect the interpolated eignvalues
-      icount = 0
-      for ib in range(nawf):
-        if ((np.amin(E_k_full[:,ib]) < fermi_up and np.amax(E_k_full[:,ib]) > fermi_up) or \
-          (np.amin(E_k_full[:,ib]) < fermi_dw and np.amax(E_k_full[:,ib]) > fermi_dw) or \
-          (np.amin(E_k_full[:,ib]) > fermi_dw and np.amax(E_k_full[:,ib]) < fermi_up)):
-          if ( icount > nbndx_plot ):
-            print('Too many bands contributing')
-            MPI.COMM_WORLD.Abort()
-          eigband[:,:,:,icount] = E_k_rs[:,:,:,ib]
-          ind_plot[icount] = ib
-          icount +=1
-      x0 = np.zeros(3,dtype=float)   
+        eigband = np.zeros((nk1,nk2,nk3,nbndx_plot), dtype=float)
+        ind_plot = np.zeros(nbndx_plot)
 
-      write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
+        Efermi = 0.0
 
-      for ib in range(icount):
-        np.savez(os.path.join(inputpath,'Fermi_surf_band_'+str(ib)), nameband = eigband[:,:,:,ib])
+        #collect the interpolated eignvalues
+        icount = 0
+        for ib in range(nawf):
+          if ((np.amin(E_k_full[:,ib,ispin]) < fermi_up and np.amax(E_k_full[:,ib,ispin]) > fermi_up) or \
+          (np.amin(E_k_full[:,ib,ispin]) < fermi_dw and np.amax(E_k_full[:,ib,ispin]) > fermi_dw) or \
+          (np.amin(E_k_full[:,ib,ispin]) > fermi_dw and np.amax(E_k_full[:,ib,ispin]) < fermi_up)):
+            if ( icount > nbndx_plot ):
+              print('Too many bands contributing')
+              MPI.COMM_WORLD.Abort()
+            eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]
+            ind_plot[icount] = ib
+            icount +=1
+        x0 = np.zeros(3, dtype=float)   
 
-    E_k_full = E_k_rs = None
+        write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, attributes['alat'],x0, arrays['b_vectors'], 'FermiSurf_'+str(ispin)+'.bxsf',attributes['inputpath'])   
+
+#  WHAT IS THIS WRITE?
+# NO ISPIN IN FILENAME
+#        for ib in range(icount):
+#          np.savez(os.path.join(inputpath,'Fermi_surf_band_'+str(ib)), nameband = eigband[:,:,:,ib])
+
+      E_k_rs = None
+
+    E_k_full = None

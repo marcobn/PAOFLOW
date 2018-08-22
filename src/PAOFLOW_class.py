@@ -445,13 +445,16 @@ class PAOFLOW:
     #----------------------
     do_fermisurf(self.data_controller)
 
-    quit()
-    if nspin == 1 or nspin == 2:
-      do_fermisurf(fermi_dw,fermi_up,E_k[:,:,0],alat,b_vectors,nk1,nk2,nk3,nawf,0,npool,inputpath)
-      eigup = None
-    if nspin == 2:
-      do_fermisurf(fermi_dw,fermi_up,E_k[:,:,1],alat,b_vectors,nk1,nk2,nk3,nawf,0,npool,inputpath)
-      eigdw = None
-    if spintexture and nspin == 1:
-      do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
+    self.report_module_time('Fermi Surface in')
+
+
+
+  def calc_spin_texutre ( self ):
+    from do_spin_texture import do_spin_texture
+
+    attributes = self.data_controller.data_attributes
+
+    if attributes['nspin'] == 1:
+      do_spin_texture(self.data_controller)
+      #do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
 
