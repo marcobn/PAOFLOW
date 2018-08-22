@@ -30,7 +30,6 @@ def do_double_grid ( data_controller ):
     attributes = data_controller.data_attributes
 
     nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
-    nktot = nk1*nk2*nk3
 
     nk1p = attributes['nfft1']
     nk2p = attributes['nfft2']
@@ -38,7 +37,7 @@ def do_double_grid ( data_controller ):
     nfft1 = nk1p-nk1
     nfft2 = nk2p-nk2
     nfft3 = nk3p-nk3
-    nktotp= nk1p*nk2p*nk3p
+    attributes['nkpnts'] = nk1p*nk2p*nk3p
 
     # Extended R to k (with zero padding)
     if rank == 0:

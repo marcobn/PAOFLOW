@@ -289,7 +289,7 @@ class PAOFLOW:
 
     del arrays['R']
     del arrays['idx']
-#    del arrays['Rfft']
+    del arrays['Rfft']
     del arrays['R_wght']
 #    self.data_controller.clean_data()
 
@@ -307,13 +307,10 @@ class PAOFLOW:
     #------------------------------------------------------
     do_double_grid(self.data_controller)
 
-    nk1 = attributes['nk1']
-    nk2 = attributes['nk2']
-    nk3 = attributes['nk3']
-
     get_K_grid_fft(self.data_controller)
 
     if self.rank == 0 and attributes['verbose']:
+      nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
       print('Grid of k vectors for zero padding Fourier interpolation ', nk1, nk2, nk3)
 
     self.report_module_time('R -> k with Zero Padding in')
@@ -333,7 +330,7 @@ class PAOFLOW:
     # Compute eigenvalues of the interpolated Hamiltonian
     #-----------------------------------------------------
 
-    arrays['E_k'],arrays['v_k'] = do_pao_eigh(self.data_controller)
+    do_pao_eigh(self.data_controller)
 
 ### PARALLELIZATION
     ## Parallelize search for amax & subtract for all processes. Test time.
@@ -350,8 +347,9 @@ class PAOFLOW:
 
 
 
-  def calc_gradient ( self ):
+  def calc_gradient_and_momenta ( self ):
     from do_gradient import do_gradient
+    from do_momentum import do_momentum
     from communication import gather_scatter
 
     arrays = self.data_controller.data_arrays
@@ -364,27 +362,32 @@ class PAOFLOW:
     snawf,_,nspin = arrays['Hksp'].shape
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attributes['nk1'],attributes['nk2'],attributes['nk3'],nspin))
 
-    if self.rank == 0:
-      print(arrays['Hksp'].shape)
-
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------            
-    dHksp = do_gradient(self.data_controller)
-#    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
+    do_gradient(self.data_controller)
 
 ########### PARALLELIZATION
+    #gather dHksp on nawf*nawf and scatter on k points
     ################DISTRIBUTE ARRAYS ON KPOINTS#################
     #############################################################
-    Hksp  = None
-    dHksp = np.reshape(dHksp,(dHksp.shape[0],nk1*nk2*nk3,3,nspin))
-    #gather dHksp on nawf*nawf and scatter on k points
-    dHksp = gather_scatter(dHksp,1,npool)
-    dHksp = np.rollaxis(dHksp,0,3)
-    dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
+    arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attributes['nkpnts'],3,nspin))
+    arrays['dHksp'] = gather_scatter(arrays['dHksp'], 1, attributes['npool'])
+    arrays['dHksp'] = np.moveaxis(arrays['dHksp'], 0, 2)
+    arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
 
-    if rank == 0:
-      print(arrays['Hksp'].shape, arrays['dHksp'].shape)
+    self.report_module_time('Gradient in')
+
+    #----------------------------------------------------------------------
+    # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
+    #----------------------------------------------------------------------
+    do_momentum(self.data_controller)
+
+    if not attributes['spin_Hall']:
+      del arrays['dHksp']
+
+    self.report_module_time('Momenta in')
+
 
 
   def calc_adaptive_smearing ( self, smearing=None ):
@@ -401,7 +404,10 @@ class PAOFLOW:
 
 
 
-  def calc_dos ( self, smearing='gauss', do_dos=None, do_pdos=None ):
+  def calc_dos ( self ):
+    pass
+
+  def calc_dos_adaptive ( self, smearing='gauss', do_dos=None, do_pdos=None ):
     from do_dos_calc_adaptive import do_dos_calc_adaptive
     from do_pdos_calc_adaptive import do_pdos_calc_adaptive
 
@@ -429,3 +435,23 @@ class PAOFLOW:
       do_pdos_calc_adaptive(self.data_controller)
 
     self.report_module_time('DoS (Adaptive Smearing) in')
+
+
+
+  def calc_fermi_surface ( self ):
+    from do_fermisurf import do_fermisurf
+    #----------------------
+    # Fermi surface calculation
+    #----------------------
+    do_fermisurf(self.data_controller)
+
+    quit()
+    if nspin == 1 or nspin == 2:
+      do_fermisurf(fermi_dw,fermi_up,E_k[:,:,0],alat,b_vectors,nk1,nk2,nk3,nawf,0,npool,inputpath)
+      eigup = None
+    if nspin == 2:
+      do_fermisurf(fermi_dw,fermi_up,E_k[:,:,1],alat,b_vectors,nk1,nk2,nk3,nawf,0,npool,inputpath)
+      eigdw = None
+    if spintexture and nspin == 1:
+      do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
+

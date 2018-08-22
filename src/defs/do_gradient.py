@@ -31,97 +31,56 @@
 # optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
 # 
 
-import numpy as np
-import sys, time
-
-
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-from load_balancing import *
-from get_R_grid_fft import *
-from communication import *
-
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
-
-try:
-    from cuda_fft import *
-except: pass
-from scipy import fftpack as FFT
-scipyfft = True
-
 def do_gradient ( data_controller ):
-#def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
+  import numpy as np
+  from scipy import fftpack as FFT
+  from get_R_grid_fft import get_R_grid_fft
 
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+  arrays = data_controller.data_arrays
+  attributes = data_controller.data_attributes
 
-    #----------------------
-    # Compute the gradient of the k-space Hamiltonian
-    #----------------------
+  #----------------------
+  # Compute the gradient of the k-space Hamiltonian
+  #----------------------
 
-    nktot = attributes['nkpnts']
-    snawf,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
+  nktot = attributes['nkpnts']
+  snawf,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
 
-    if rank == 0:
-      print(arrays.keys())
+  # fft grid in R shifted to have (0,0,0) in the center
+  get_R_grid_fft(data_controller)
+  #reshape R grid and each proc's piece of Hr
 
-    # fft grid in R shifted to have (0,0,0) in the center
-#    _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
-    #reshape R grid and each proc's piece of Hr
-        
-    arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
+  arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
 
-    comm.Barrier()
+  ########################################
+  ### real space grid replaces k space ###
+  ########################################
+  if attributes['use_cuda']:
+    for n in range(snawf):
+      for ispin in range(nspin):
+        arrays['Hksp'][n,:,:,:,ispin] = cuda_ifftn(arrays['Hksp'][n,:,:,:,ispin])
 
-    ########################################
-    ### real space grid replaces k space ###
-    ########################################
-    if using_cuda:
-        for n in range(snawf):
-            for ispin in range(Hksp.shape[4]):
-                Hksp[n,:,:,:,ispin] = cuda_ifftn(Hksp[n,:,:,:,ispin])
+  else:
+    for n in range(snawf):
+      for ispin in range(nspin):
+        arrays['Hksp'][n,:,:,:,ispin] = FFT.ifftn(arrays['Hksp'][n,:,:,:,ispin], axes=(0,1,2))
+        arrays['Hksp'][n,:,:,:,ispin] = FFT.fftshift(arrays['Hksp'][n,:,:,:,ispin], axes=(0,1,2))
 
-    elif scipyfft:
-        for n in range(Hksp.shape[0]):
-            for ispin in range(Hksp.shape[4]):
-                Hksp[n,:,:,:,ispin] = FFT.ifftn(Hksp[n,:,:,:,ispin],axes=(0,1,2))
-                Hksp[n,:,:,:,ispin] = FFT.fftshift(Hksp[n,:,:,:,ispin],axes=(0,1,2))
+  #reshape Hr for multiplying by the three parts of Rfft grid
+  arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,nk1*nk2*nk3,nspin), order='C')
+  arrays['dHksp'] = np.zeros((snawf,nk1*nk2*nk3,3,nspin), dtype=complex, order='C')
 
-    #############################################################################################
-    #############################################################################################
-    #############################################################################################
+  # Compute R*H(R)
+  for ispin in range(nspin):
+    for l in range(3):
+      arrays['dHksp'][:,:,l,ispin] = 1.0j*attributes['alat']*arrays['Rfft'][:,l]*arrays['Hksp'][...,ispin]
 
-    num_n = Hksp.shape[0]
+  del arrays['Hksp']
 
-    #reshape Hr for multiplying by the three parts of Rfft grid
-    Hksp  = np.reshape(Hksp,(num_n,nk1*nk2*nk3,nspin),order='C')
-    dHksp = np.zeros((num_n,nk1*nk2*nk3,3,nspin),dtype=complex,order='C')
+  arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,nk1,nk2,nk3,3,nspin), order='C')
 
-    # Compute R*H(R)
-    for ispin in range(nspin):
-        for l in range(3):
-            dHksp[:,:,l,ispin] = 1.0j*alat*Rfft[:,l]*Hksp[...,ispin]
-
-    Hksp=None
-
-    dHksp = np.reshape(dHksp,(num_n,nk1,nk2,nk3,3,nspin),order='C')
-    # Compute dH(k)/dk
-
-    for n in range(dHksp.shape[0]):
-        for l in range(dHksp.shape[4]):
-            for ispin in range(dHksp.shape[5]):
-                dHksp[n,:,:,:,l,ispin] = FFT.fftn(dHksp[n,:,:,:,l,ispin],axes=(0,1,2),)
-
-    #############################################################################################
-    #############################################################################################
-    #############################################################################################
-
-    #gather the arrays into flattened dHk
-
-    return(dHksp)
-
-
-
+  # Compute dH(k)/dk
+  for n in range(snawf):
+    for l in range(3):
+      for ispin in range(nspin):
+        arrays['dHksp'][n,:,:,:,l,ispin] = FFT.fftn(arrays['dHksp'][n,:,:,:,l,ispin], axes=(0,1,2),)

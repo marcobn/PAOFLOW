@@ -18,7 +18,7 @@
 
 
 def do_pdos_calc_adaptive ( data_controller ):
-#def do_pdos_calc_adaptive ( E_k,emin,emax,delta,v_k,nk1,nk2,nk3,nawf,ispin,smearing,inputpath ):
+  import numpy as np
   from mpi4py import MPI
   from smearing import metpax, gaussian
 
@@ -49,9 +49,9 @@ def do_pdos_calc_adaptive ( data_controller ):
 
 ### Parallelization wastes time and memory here!!! 
     for e in range (ene.size):
-      if smearing == 'gauss':
+      if attributes['smearing'] == 'gauss':
         taux = gaussian(ene[e], E_k, arrays['deltakp'][:,:,ispin]) 
-      elif smearing == 'm-p':
+      elif attributes['smearing'] == 'm-p':
         taux = metpax(ene[e], E_k, arrays['deltakp'][:,:,ispin])
       for i in range(nawf):
           # Adaptive Gaussian Smearing

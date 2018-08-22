@@ -16,47 +16,24 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import numpy as np
-import cmath
-import os, sys
-import scipy.linalg.lapack as lapack
+def do_momentum ( data_controller ):
+  import numpy as np
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
+  arrays = data_controller.data_arrays
+  attributes = data_controller.data_attributes
 
-from load_balancing import *
-from communication import *
+  nktot,_,nawf,nawf,nspin = arrays['dHksp'].shape
 
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
+  arrays['pksp'] = np.zeros_like(arrays['dHksp'])
 
-def do_momentum(vec,dHksp,npool):
+  for ispin in range(nspin):
+    for ik in range(nktot):
+      for l in range(3):
+        arrays['pksp'][ik,l,:,:,ispin] = arrays['dHksp'][ik,l,:,:,ispin].dot(arrays['v_k'][ik,:,:,ispin])
 
-    # calculate momentum vector
-    nktot,_,nawf,nawf,nspin = dHksp.shape
+  vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arrays['v_k'],1,2)))
 
-    pksp = np.zeros_like(dHksp)
-
-
-
-    for ik in range(dHksp.shape[0]):
-        for ispin in range(nspin):
-            for l in range(3):
-                pksp[ik,l,:,:,ispin] = dHksp[ik,l,:,:,ispin].dot(vec[ik,:,:,ispin])
-
-
-    vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(vec,1,2)))
-
-    for ik in range(dHksp.shape[0]):
-        for ispin in range(nspin):
-            for l in range(3):
-                pksp[ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(pksp[ik,l,:,:,ispin])
-
-    comm.Barrier()
-
-
-    return(pksp)
-#  except Exception as e:
-#    raise e
+  for ispin in range(nspin):
+    for ik in range(nktot):
+      for l in range(3):
+        arrays['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arrays['pksp'][ik,l,:,:,ispin])

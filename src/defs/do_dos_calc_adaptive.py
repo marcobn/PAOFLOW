@@ -18,7 +18,6 @@
 
 
 def do_dos_calc_adaptive ( data_controller ):
-#def do_dos_calc_adaptive(eig,emin,emax,delta,netot,nawf,ispin,smearing,inputpath):
   from smearing import gaussian, metpax
   from mpi4py import MPI
   import numpy as np
@@ -48,14 +47,15 @@ def do_dos_calc_adaptive ( data_controller ):
     dosaux = np.zeros((esize), dtype=float)
 
     for ne in range(esize):
-      if smearing == 'gauss':
+      if attributes['smearing'] == 'gauss':
         # adaptive Gaussian smearing
         dosaux[ne] = np.sum(gaussian(ene[ne],E_k,delta))
-      elif smearing == 'm-p':
+
+      elif attributes['smearing'] == 'm-p':
         # adaptive Methfessel and Paxton smearing
         dosaux[ne] = np.sum(metpax(ene[ne],E_k,delta))
 
-    dosaux *= float(nawf)/float(netot)
+    dosaux *= float(attributes['nawf'])/float(netot)
 
     dos = (np.zeros((esize), dtype=float) if rank==0 else None)
 
@@ -65,7 +65,6 @@ def do_dos_calc_adaptive ( data_controller ):
 ## Decide how to write...
     if rank == 0:
       import os
-      #dos *= float(nawf)/float(netot)
       f = open(os.path.join(attributes['inputpath'],'dosdk_'+str(ispin)+'.dat'), 'w')
       for ne in range(esize):
         f.write('%.5f  %.5f\n' %(ene[ne],dos[ne]))

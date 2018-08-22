@@ -26,7 +26,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_bands_calc ( data_controller ):
+def bands_calc ( data_controller ):
     from scipy import linalg as LA
     from communication import scatter_full, gather_full
 
@@ -185,7 +185,7 @@ def do_bands ( data_controller ):
 
             # Compute the bands along the path in the IBZ
 
-            arrays['E_k'], arrays['v_k'] = do_bands_calc(data_controller)
+            arrays['E_k'], arrays['v_k'] = bands_calc(data_controller)
 
     # 1D Bands not implemented
     elif do_bands and onedim:
@@ -194,7 +194,7 @@ def do_bands ( data_controller ):
             # FFT interpolation along a single directions in the BZ
             #----------------------
             #if rank == 0 and verbose: print('... computing bands along a line')
-            #if rank == 0: do_bands_calc_1D(Hks,inputpath)
+            #if rank == 0: bands_calc_1D(Hks,inputpath)
 
     # Angstrom to Bohr
     attributes['alat'] *= ANGSTROM_AU

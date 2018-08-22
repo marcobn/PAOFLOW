@@ -51,7 +51,6 @@ def main():
   paoflow.calc_pao_hamiltonian()
   if paoflow.data_controller.data_attributes['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
-#  paoflow.calc_k_to_R()
   paoflow.add_external_fields()
   paoflow.calc_bands()
 
@@ -60,14 +59,15 @@ def main():
     paoflow.calc_double_grid()
 
   paoflow.calc_pao_eigh()
-  if rank == 0: print(paoflow.data_controller.data_arrays['Hksp'].shape)
 
-  paoflow.calc_gradient()
+  paoflow.calc_fermi_surface()
 
-#  paoflow.calc_adaptive_smearing()
+  paoflow.calc_gradient_and_momenta()
+
+  paoflow.calc_adaptive_smearing()
 
 #  if paoflow.data_controller.data_attributes['do_dos'] or paoflow.data_controller.data_attributes['do_pdos']:
-#  paoflow.calc_dos()
+  paoflow.calc_dos_adaptive()
 
   quit()
 

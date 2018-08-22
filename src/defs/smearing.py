@@ -21,7 +21,7 @@ def gaussian ( eig, ene, delta ):
     import numpy as np
 
     # Gaussian Smearing
-    return (np.exp(-((ene-eig)/delta)**2)/delta)/np.sqrt(pi)
+    return (np.exp(-((ene-eig)/delta)**2)/delta)/np.sqrt(np.pi)
 
 
 
