@@ -54,16 +54,19 @@ def do_fermisurf ( data_controller ):
         #collect the interpolated eignvalues
         icount = 0
         for ib in range(nawf):
-          if ((np.amin(E_k_full[:,ib,ispin]) < fermi_up and np.amax(E_k_full[:,ib,ispin]) > fermi_up) or \
-          (np.amin(E_k_full[:,ib,ispin]) < fermi_dw and np.amax(E_k_full[:,ib,ispin]) > fermi_dw) or \
-          (np.amin(E_k_full[:,ib,ispin]) > fermi_dw and np.amax(E_k_full[:,ib,ispin]) < fermi_up)):
+          E_k_min = np.amin(E_k_full[:,ib,ispin])
+          E_k_max = np.amax(E_k_full[:,ib,ispin])
+          btwUp = (E_k_min < fermi_up and E_k_max > fermi_up)
+          btwDwn = (E_k_min < fermi_dw and E_k_max > fermi_dw)
+          btwUaD = (E_k_min > fermi_dw and E_k_max < fermi_up)
+          if btwUp or btwDwn or btwUaD:
             if ( icount > nbndx_plot ):
               print('Too many bands contributing')
               MPI.COMM_WORLD.Abort()
             eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]
             ind_plot[icount] = ib
-            icount +=1
-        x0 = np.zeros(3, dtype=float)   
+            icount += 1
+        x0 = np.zeros(3, dtype=float) 
 
         write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, attributes['alat'],x0, arrays['b_vectors'], 'FermiSurf_'+str(ispin)+'.bxsf',attributes['inputpath'])   
 
