@@ -34,7 +34,9 @@ def do_pao_eigh ( data_controller ):
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,nktot,nspin))
 
 ##### PARALLELIZATION
+    if rank == 0: print(arrays['Hksp'].shape)
     arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attributes['npool'])
+    if rank == 0: print(arrays['Hksp'].shape)
 
     snktot = arrays['Hksp'].shape[1]
 

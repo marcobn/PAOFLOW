@@ -28,7 +28,6 @@ def do_topology_calc ( data_controller ):
     from pfaffian import pfaffian 
     from scipy.fftpack import fftshift
     from constants import LL, ANGSTROM_AU
-    from load_balancing import load_balancing
 
     size = MPI.COMM_WORLD.Get_size()
     rank = MPI.COMM_WORLD.Get_rank()

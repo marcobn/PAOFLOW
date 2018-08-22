@@ -52,19 +52,27 @@ except: pass
 from scipy import fftpack as FFT
 scipyfft = True
 
-def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
+def do_gradient ( data_controller ):
+#def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
+
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------
 
-    _,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
-    nktot = nk1*nk2*nk3
+    nktot = attributes['nkpnts']
+    snawf,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
+
+    if rank == 0:
+      print(arrays.keys())
 
     # fft grid in R shifted to have (0,0,0) in the center
-    _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
+#    _,Rfft,_,_,_ = get_R_grid_fft(nk1,nk2,nk3,a_vectors)
     #reshape R grid and each proc's piece of Hr
         
-    Rfft = np.reshape(Rfft,(nk1*nk2*nk3,3),order='C')
+    arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
 
     comm.Barrier()
 
@@ -72,7 +80,7 @@ def do_gradient(Hksp,a_vectors,alat,nthread,npool,using_cuda):
     ### real space grid replaces k space ###
     ########################################
     if using_cuda:
-        for n in range(Hksp.shape[0]):
+        for n in range(snawf):
             for ispin in range(Hksp.shape[4]):
                 Hksp[n,:,:,:,ispin] = cuda_ifftn(Hksp[n,:,:,:,ispin])
 

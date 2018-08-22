@@ -289,7 +289,7 @@ class PAOFLOW:
 
     del arrays['R']
     del arrays['idx']
-    del arrays['Rfft']
+#    del arrays['Rfft']
     del arrays['R_wght']
 #    self.data_controller.clean_data()
 
@@ -352,11 +352,26 @@ class PAOFLOW:
 
   def calc_gradient ( self ):
     from do_gradient import do_gradient
-    
+    from communication import gather_scatter
+
+    arrays = self.data_controller.data_arrays
+    attributes = self.data_controller.data_attributes
+
+    snktot,nawf,_,nspin = arrays['Hksp'].shape
+    arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
+    arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attributes['npool'])
+    arrays['Hksp'] = np.moveaxis(arrays['Hksp'], 0, 1)
+    snawf,_,nspin = arrays['Hksp'].shape
+    arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attributes['nk1'],attributes['nk2'],attributes['nk3'],nspin))
+
+    if self.rank == 0:
+      print(arrays['Hksp'].shape)
+
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
     #----------------------            
-    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
+    dHksp = do_gradient(self.data_controller)
+#    dHksp = do_gradient(Hksp,a_vectors,alat,nthread,npool,use_cuda)
 
 ########### PARALLELIZATION
     ################DISTRIBUTE ARRAYS ON KPOINTS#################
@@ -369,7 +384,7 @@ class PAOFLOW:
     dHksp = np.reshape(dHksp,(dHksp.shape[0],3,nawf,nawf,nspin),order="C")
 
     if rank == 0:
-
+      print(arrays['Hksp'].shape, arrays['dHksp'].shape)
 
 
   def calc_adaptive_smearing ( self, smearing=None ):
