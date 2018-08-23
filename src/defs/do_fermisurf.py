@@ -15,66 +15,64 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
+
 import os
 from write2bxsf import *
-#from write3Ddatagrid import *
 
 def do_fermisurf ( data_controller ):
-#def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,npool,inputpath):
-    import numpy as np
-    from mpi4py import MPI
-    from communication import gather_full
+  import numpy as np
+  from mpi4py import MPI
+  from communication import gather_full
 
-    rank = MPI.COMM_WORLD.Get_rank()
+  rank = MPI.COMM_WORLD.Get_rank()
 
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+  arrays = data_controller.data_arrays
+  attributes = data_controller.data_attributes
 
-    #maximum number of bands crossing fermi surface
+  #maximum number of bands crossing fermi surface
 
-    E_k_full = gather_full(arrays['E_k'], attributes['npool'])
+  E_k_full = gather_full(arrays['E_k'], attributes['npool'])
 
-    if rank==0:
-      nbndx_plot = 10
-      nawf = attributes['nawf']
-      nktot = attributes['nkpnts']
-      nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
+  if rank==0:
+    nbndx_plot = 10
+    nawf = attributes['nawf']
+    nktot = attributes['nkpnts']
+    nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
-      fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
+    fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
 
-      E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attributes['nspin']))
+    E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attributes['nspin']))
 
-      for ispin in range(attributes['nspin']):
+    for ispin in range(attributes['nspin']):
 
-        eigband = np.zeros((nk1,nk2,nk3,nbndx_plot), dtype=float)
-        ind_plot = np.zeros(nbndx_plot)
+      eigband = np.zeros((nk1,nk2,nk3,nbndx_plot), dtype=float)
+      ind_plot = np.zeros(nbndx_plot)
 
-        Efermi = 0.0
+      Efermi = 0.0
 
-        #collect the interpolated eignvalues
-        icount = 0
-        for ib in range(nawf):
-          E_k_min = np.amin(E_k_full[:,ib,ispin])
-          E_k_max = np.amax(E_k_full[:,ib,ispin])
-          btwUp = (E_k_min < fermi_up and E_k_max > fermi_up)
-          btwDwn = (E_k_min < fermi_dw and E_k_max > fermi_dw)
-          btwUaD = (E_k_min > fermi_dw and E_k_max < fermi_up)
-          if btwUp or btwDwn or btwUaD:
-            if ( icount > nbndx_plot ):
-              print('Too many bands contributing')
-              MPI.COMM_WORLD.Abort()
-            eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]
-            ind_plot[icount] = ib
-            icount += 1
-        x0 = np.zeros(3, dtype=float) 
+###### FILE OUTPUT
+      #collect the interpolated eignvalues
+      icount = 0
+      for ib in range(nawf):
+        E_k_min = np.amin(E_k_full[:,ib,ispin])
+        E_k_max = np.amax(E_k_full[:,ib,ispin])
+        btwUp = (E_k_min < fermi_up and E_k_max > fermi_up)
+        btwDwn = (E_k_min < fermi_dw and E_k_max > fermi_dw)
+        btwUaD = (E_k_min > fermi_dw and E_k_max < fermi_up)
+        if btwUp or btwDwn or btwUaD:
+          if ( icount > nbndx_plot ):
+            print('Too many bands contributing')
+            MPI.COMM_WORLD.Abort()
+          eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]
+          ind_plot[icount] = ib
+          icount += 1
+      x0 = np.zeros(3, dtype=float) 
 
-        write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, attributes['alat'],x0, arrays['b_vectors'], 'FermiSurf_'+str(ispin)+'.bxsf',attributes['inputpath'])   
+      write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, attributes['alat'],x0, arrays['b_vectors'], 'FermiSurf_'+str(ispin)+'.bxsf',attributes['inputpath'])   
 
-#  WHAT IS THIS WRITE?
-# NO ISPIN IN FILENAME
-#        for ib in range(icount):
-#          np.savez(os.path.join(inputpath,'Fermi_surf_band_'+str(ib)), nameband = eigband[:,:,:,ib])
+      for ib in range(icount):
+        np.savez(os.path.join(attributes['inputpath'],'Fermi_surf_band_'+str(ib)+'_spin_'+str(ispin)), nameband = eigband[:,:,:,ib])
 
-      E_k_rs = None
+    E_k_rs = None
 
-    E_k_full = None
+  E_k_full = None

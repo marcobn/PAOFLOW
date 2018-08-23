@@ -117,7 +117,7 @@ class PAOFLOW:
     if self.rank == 0:
       dxdydz = 3
       B_to_GB = 1.E-9
-      fudge_factor = 1.3
+      fudge_factor = 1.
       bytes_per_complex = 128//8
       spins = attributes['nspin']
       num_wave_functions = attributes['nawf']
@@ -170,15 +170,10 @@ class PAOFLOW:
 
     self.report_module_time('Building Hks in')
 
-#  def calc_k_to_R ( self ):
-#    from get_K_grid_fft import get_K_grid_fft
-
-#    arrays = self.data_controller.data_arrays
-#    attributes = self.data_controller.data_attributes
-
-    #----------------------
-    # Define the Hamiltonian and overlap matrix in real space: HRs and SRs (noinv and nosym = True in pw.x)
-    #----------------------
+    #----------------------------------------------------------
+    # Define the Hamiltonian and overlap matrix in real space:
+    #   HRs and SRs (noinv and nosym = True in pw.x)
+    #----------------------------------------------------------
     if self.rank == 0:
       # Original k grid to R grid
       arrays['HRs'] = np.zeros_like(arrays['Hks'])
@@ -189,6 +184,7 @@ class PAOFLOW:
         arrays['SRs'] = FFT.ifftn(arrays['Sks'], axes=[2,3,4])
         del arrays['Sks']
 
+#### PARALLELIZATION
     #### MUST KNOW DOUBLE_GRID
     # Save Hks if the interpolated Hamiltonian will not be computed.
     if not attributes['double_grid']:
@@ -407,6 +403,8 @@ class PAOFLOW:
   def calc_dos ( self ):
     pass
 
+
+
   def calc_dos_adaptive ( self, smearing='gauss', do_dos=None, do_pdos=None ):
     from do_dos_calc_adaptive import do_dos_calc_adaptive
     from do_pdos_calc_adaptive import do_pdos_calc_adaptive
@@ -449,7 +447,7 @@ class PAOFLOW:
 
 
 
-  def calc_spin_texutre ( self ):
+  def calc_spin_texture ( self ):
     from do_spin_texture import do_spin_texture
 
     attributes = self.data_controller.data_attributes
@@ -458,3 +456,10 @@ class PAOFLOW:
       do_spin_texture(self.data_controller)
       #do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
 
+      self.report_module_time('Spin Texutre in')
+
+    else:
+      if self.rank == 0:
+        print('Cannot compute spin texture with nspin=2')
+        self.comm.Abort()
+      self.comm.Barrier()
