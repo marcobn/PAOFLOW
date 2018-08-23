@@ -489,20 +489,14 @@ def kpnts_interpolation_mesh ( data_controller ):
 
     dk       = 0.00001
     points,_ = get_path(ibrav, alat, a_vectors,dk)
-
     scaled_dk = dk*(points.shape[1]/nk)
-    points, path_file = get_path(ibrav, alat, a_vectors, scaled_dk)
-
-
-    arrays['kq'] = points
+    arrays['kq'], path_file = get_path(ibrav, alat, a_vectors, scaled_dk)
 
     cart = False
     if cart:
         arrays['kq'] = np.zeros_like(points)
         for n in range(kq.shape[1]):
             arrays['kq'][:,n] = np.dot(points[:,n], b_vectors)
-
-    points = None
 
 ## File Output!
 ##    for i in range(kq.shape[1]):

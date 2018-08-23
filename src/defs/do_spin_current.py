@@ -34,16 +34,24 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
-    # calculate spin_current operator
-    _,_,nawf,nawf,nspin = dHksp.shape
+def do_spin_current ( data_controller, spol ):
+#def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
 
+    arrays = data_controller.data_arrays
+    attributes = data_controller.data_attributes
+
+    bnd = attributes['bnd']
+    snktot,_,nawf,nawf,nspin = arrays['dHksp'].shape
+
+
+    # calculate spin_current operator
+##### REDUNDANT
     # Compute spin current matrix elements
     # Pauli matrices (x,y,z)
     sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    if spin_orbit:
+    if attributes['do_spin_orbit']:
         # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
-        Sj = np.zeros((nawf,nawf),dtype=complex)
+        Sj = np.zeros((nawf,nawf), dtype=complex)
         for i in range(nawf/2):
             Sj[i,i] = sP[spol][0,0]
             Sj[i,i+1] = sP[spol][0,1]
@@ -51,33 +59,30 @@ def do_spin_current(vec,dHksp,spol,npool,spin_orbit,sh,nl,bnd):
             Sj[i,i-1] = sP[spol][1,0]
             Sj[i,i] = sP[spol][1,1]
     else:
+        from clebsch_gordan import clebsch_gordan
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-        Sj = clebsch_gordan(nawf,sh,nl,spol)
+        Sj = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
+###############
 
 
+    jdHksp = np.empty_like(arrays['dHksp'])
 
-    jdHksp = np.zeros((dHksp.shape[0],3,nawf,nawf,nspin),dtype=complex)
-
-
-
-    for ik in range(dHksp.shape[0]):
-        for l in range(3):
-            for ispin in range(nspin):
+    for l in range(3):
+        for ispin in range(nspin):
+            for ik in range(snktot):
                 jdHksp[ik,l,:,:,ispin] = \
-                    0.5*(np.dot(Sj,dHksp[ik,l,:,:,ispin])+np.dot(dHksp[ik,l,:,:,ispin],Sj))
+                    0.5*(np.dot(Sj,arrays['dHksp'][ik,l,:,:,ispin])+np.dot(arrays['dHksp'][ik,l,:,:,ispin],Sj))
                 
 
-    jksp = np.zeros((dHksp.shape[0],3,bnd,bnd,nspin),dtype=complex)
+    jksp = np.zeros((snktot,3,bnd,bnd,nspin), dtype=complex)
 
-    for ik in range(dHksp.shape[0]):
-        for l in range(3):            
-            for ispin in range(nspin):
-
-                jksp[ik,l,:,:,ispin] = np.conj(vec[ik,:,:,ispin].T).dot \
-                            (jdHksp[ik,l,:,:,ispin]).dot(vec[ik,:,:,ispin])[:bnd,:bnd]
+    for l in range(3):
+        for ispin in range(nspin):
+            for ik in range(snktot):
+                jksp[ik,l,:,:,ispin] = np.conj(arrays['v_k'][ik,:,:,ispin].T).dot(jdHksp[ik,l,:,:,ispin]).dot(arrays['v_k'][ik,:,:,ispin])[:bnd,:bnd]
 
     jdHksp = None
 
     comm.Barrier()
 
-    return(jksp)
+    return jksp

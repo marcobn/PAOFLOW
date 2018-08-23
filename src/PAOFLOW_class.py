@@ -269,6 +269,20 @@ class PAOFLOW:
 
       do_spin_orbit_bands(self.data_controller)
 
+###### PARALLELIZATION
+    # Broadcast HRs and SRs
+    nawf,nk1,nk2,nk3,nspin = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3'],attributes['nspin']
+    if self.rank != 0:
+      arrays['HRs'] = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin), dtype=complex, order='C')
+    self.comm.Bcast(np.ascontiguousarray(arrays['HRs']), root=0)
+    if attributes['non_ortho']:
+      if self.rank != 0:
+        arrays['SRs'] = np.zeros((nawf,nawf,nk1,nk2,nk3), dtype=complex, order='C')
+      self.comm.Bcast(np.ascontiguousarray(arrays['SRs']), root=0)
+
+    if not attributes['do_bands']:
+      return
+
     do_bands(self.data_controller)
 
     self.report_module_time('Bands in')
@@ -379,8 +393,9 @@ class PAOFLOW:
     #----------------------------------------------------------------------
     do_momentum(self.data_controller)
 
-    if not attributes['spin_Hall']:
-      del arrays['dHksp']
+## NEED FOR A BETTER CLEANING METHODOLOGY! AGH!!!
+#    if not attributes['spin_Hall']:
+#      del arrays['dHksp']
 
     self.report_module_time('Momenta in')
 
@@ -405,7 +420,7 @@ class PAOFLOW:
 
 
 
-  def calc_dos_adaptive ( self, smearing='gauss', do_dos=None, do_pdos=None ):
+  def calc_dos_adaptive ( self, smearing='gauss', do_dos=True, do_pdos=True ):
     from do_dos_calc_adaptive import do_dos_calc_adaptive
     from do_pdos_calc_adaptive import do_pdos_calc_adaptive
 
@@ -413,12 +428,6 @@ class PAOFLOW:
 
     if smearing != attributes['smearing']:
       attributes['smearing'] = smearing
-
-    if do_dos == None:
-      do_dos = True
-
-    if do_pdos == None:
-      do_pdos = True
 
     #------------------------------------------------------------
     # DOS calculation with adaptive smearing on double_grid Hksp
@@ -463,3 +472,63 @@ class PAOFLOW:
         print('Cannot compute spin texture with nspin=2')
         self.comm.Abort()
       self.comm.Barrier()
+
+
+
+  def calc_spin_Hall ( self, shc=True, ahc=True ):
+    from do_spin_current import do_spin_current
+    from do_spin_Berry_curvature import do_spin_Berry_curvature
+    from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+
+    arrays = self.data_controller.data_arrays
+    attributes = self.data_controller.data_attributes
+
+    s_tensor = arrays['s_tensor']
+
+    #----------------------
+    # Spin Hall calculation
+    #----------------------
+    if attributes['dftSO'] == False:
+      if self.rank == 0:
+        print('Relativistic calculation with SO required')
+        self.comm.Abort()
+      self.comm.Barrier()
+
+    for n in range(s_tensor.shape[0]):
+      ipol = s_tensor[n][0]
+      jpol = s_tensor[n][1]
+      spol = s_tensor[n][2]
+      #----------------------
+      # Compute the spin current operator j^l_n,m(k)
+      #----------------------
+      jksp = do_spin_current(self.data_controller, spol)
+
+      #----------------------
+      # Compute spin Berry curvature... 
+      #----------------------
+
+      ene,shc,Om_k = do_spin_Berry_curvature(self.data_controller, jksp, ipol, jpol)
+
+      shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+      fshc = 'shcEf_%s_%s%s.dat'%(str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
+      self.data_controller.write_file_row_col(fshc, ene, shc)
+
+    self.report_module_time('Spin Hall and Anomalous Hall in')
+#if rank == 0:
+#shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+#f=open(os.path.join(inputpath,'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+#for n in range(ene.size):
+#f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
+#f.close()
+
+#if  ac_cond_spin:
+#sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+#f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+#for n in range(ene.size):
+#f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
+#f.close()
+#f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
+#for n in range(ene.size):
+#f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
+#f.close()
+

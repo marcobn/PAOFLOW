@@ -27,13 +27,23 @@ def do_topology_calc ( data_controller ):
   from pfaffian import pfaffian 
   from scipy.fftpack import fftshift
   from constants import LL, ANGSTROM_AU
+  from get_R_grid_fft import get_R_grid_fft
+  from communication import scatter_full,gather_full
+  from kpnts_interpolation_mesh import kpnts_interpolation_mesh
 
-  rank = MPI.COMM_WORLD.Get_rank()
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
 
   npool = attributes['npool']
+
+  if 'kq' not in arrays:
+    kpnts_interpolation_mesh(data_controller)
+
+  if 'Rfft' not in arrays:
+    get_R_grid_fft(data_controller)
 
   bnd = attributes['bnd']
   nkpi = arrays['kq'].shape[1]
@@ -49,6 +59,8 @@ def do_topology_calc ( data_controller ):
   # Compute Z2 according to Fu, Kane and Mele (2007)
   # Define TRIM points in 2(0-3)/3D(0-7)
   if nspin == 1 and attributes['spin_Hall']:
+    pass
+  if False:
     from do_eigh_calc import do_eigh_calc
   # NOT IMPLEMENTED IN PAOFLOW_CLASS
     print('Topology with nspin==1 and spin_Hall under development in PAOFLOW_CLASS')
@@ -127,7 +139,7 @@ def do_topology_calc ( data_controller ):
     # Compute spin current matrix elements
     # Pauli matrices (x,y,z)
     sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    if attributes['spin_orbit']:
+    if attributes['do_spin_orbit']:
       # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
       Sj = np.zeros((nawf,nawf),dtype=complex)
       for i in range(nawf/2):
@@ -137,9 +149,9 @@ def do_topology_calc ( data_controller ):
         Sj[i,i-1] = sP[spol][1,0]
         Sj[i,i] = sP[spol][1,1]
     else:
-      from clebsch_gordon import clebsch_gordan
+      from clebsch_gordan import clebsch_gordan
       # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-      Sj = clebsch_gordan(nawf,sh,nl,spol)
+      Sj = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
 
     jks = np.zeros((kq_aux.shape[1],3,bnd,bnd,nspin), dtype=complex)
 
@@ -293,6 +305,7 @@ def do_topology_calc ( data_controller ):
   return
 
 def band_loop_H ( HRaux, R, kq, nawf, nspin ):
+  import numpy as np
 
   kdot = np.zeros((kq.shape[1],R.shape[0]),dtype=complex,order="C")
   kdot = np.tensordot(R,2.0j*np.pi*kq,axes=([1],[0]))

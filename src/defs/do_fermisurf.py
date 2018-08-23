@@ -60,7 +60,7 @@ def do_fermisurf ( data_controller ):
         btwDwn = (E_k_min < fermi_dw and E_k_max > fermi_dw)
         btwUaD = (E_k_min > fermi_dw and E_k_max < fermi_up)
         if btwUp or btwDwn or btwUaD:
-          if ( icount > nbndx_plot ):
+          if ( icount >= nbndx_plot ):
             print('Too many bands contributing')
             MPI.COMM_WORLD.Abort()
           eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]

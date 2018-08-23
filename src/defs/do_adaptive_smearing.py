@@ -39,8 +39,7 @@ def do_adaptive_smearing ( data_controller ):
 
     diag = np.diag_indices(nawf)
 
-    omega = attributes['alat']**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-    dk = (8.*np.pi**3/omega/(nkpnts))**(1./3.)
+    dk = (8.*np.pi**3/attributes['omega']/(nkpnts))**(1./3.)
 
     if attributes['smearing'] == 'gauss':
         afac = 0.7

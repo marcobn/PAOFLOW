@@ -55,6 +55,18 @@ class DataController:
                 raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
 
 
+    def write_file_row_col ( self, filename, col1, col2 ):
+        if self.rank == 0:
+            if len(col1) != len(col2):
+                print('Data does not have the same shape')
+                self.comm.Abort()
+
+            with open(filename, 'w') as f:
+                for i in range(len(col1)):
+                    f.write('%.5f %.5e\n'%(col1[i],col2[i]))
+        self.comm.Barrier()
+
+
     def broadcast_single_attribute ( self, key ):
         if rank == 0:
             for i in xrange(1,self.size):

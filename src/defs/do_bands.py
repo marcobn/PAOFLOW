@@ -164,14 +164,6 @@ def do_bands ( data_controller ):
 
 ###### PARALLELIZATION
             # Broadcast HRs and SRs
-            if rank != 0:
-                arrays['HRs'] = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin), dtype=complex, order='C')
-            comm.Bcast(np.ascontiguousarray(arrays['HRs']), root=0)
-
-            if attributes['non_ortho']:
-                if rank != 0:
-                    arrays['SRs'] = np.zeros((nawf,nawf,nk1,nk2,nk3), dtype=complex, order='C')
-                comm.Bcast(np.ascontiguousarray(arrays['SRs']), root=0)
 
             # Define real space lattice vectors
             get_R_grid_fft(data_controller)
@@ -188,7 +180,7 @@ def do_bands ( data_controller ):
             arrays['E_k'], arrays['v_k'] = bands_calc(data_controller)
 
     # 1D Bands not implemented
-    elif do_bands and onedim:
+    elif attributes['do_bands'] and attributes['onedim']:
         pass
             #----------------------
             # FFT interpolation along a single directions in the BZ

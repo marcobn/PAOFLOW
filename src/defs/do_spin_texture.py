@@ -23,11 +23,12 @@ def do_spin_texture ( data_controller ):
   from mpi4py import MPI
   from communication import gather_full
 
-  rank = comm.Get_rank()
+  rank = MPI.COMM_WORLD.Get_rank()
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
 
+  nspin = attributes['nspin']
   nktot = attributes['nkpnts']
   nawf,nk1,nk2,nk3 = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3']
 
@@ -35,7 +36,7 @@ def do_spin_texture ( data_controller ):
 
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
 
-  for ispin in range(attributes['nspin']):
+  for ispin in range(nspin):
     ind_plot = np.zeros(nawf, dtype=int)
     icount = None
     if rank == 0:
@@ -77,7 +78,7 @@ def do_spin_texture ( data_controller ):
 
     # Compute matrix elements of the spin operator
     for ik in range(snktot):
-      for ispin in range(attributes['nspin']):
+      for ispin in range(nspin):
         for l in range(3):
           sktxtaux[ik,l,:,:] = np.conj(arrays['v_k'][ik,:,:,ispin].T).dot(Sj[l,:,:]).dot(arrays['v_k'][ik,:,:,ispin])
 

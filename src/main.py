@@ -52,6 +52,7 @@ def main():
   if paoflow.data_controller.data_attributes['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
   paoflow.add_external_fields()
+  #if paoflow.data_controller.data_attributes['do_bands']:
   paoflow.calc_bands()
 
   ## MUST KNOW DOUBLE_GRID IN ADVANCE
@@ -60,8 +61,8 @@ def main():
 
   paoflow.calc_pao_eigh()
 
-  paoflow.calc_fermi_surface()
-  paoflow.calc_spin_texture()
+#  paoflow.calc_fermi_surface()
+#  paoflow.calc_spin_texture()
 
   paoflow.calc_gradient_and_momenta()
 
@@ -69,6 +70,8 @@ def main():
 
 #  if paoflow.data_controller.data_attributes['do_dos'] or paoflow.data_controller.data_attributes['do_pdos']:
   paoflow.calc_dos_adaptive()
+
+  paoflow.calc_spin_Hall()
 
   quit()
 
