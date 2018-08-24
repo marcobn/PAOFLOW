@@ -28,7 +28,8 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
 
   arrays,attributes = data_controller.data_dicts()
 
-  snktot,_,bnd,_,nspin = jksp.shape
+  snktot = jksp.shape[0]
+  bnd = attributes['bnd']
   fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
@@ -38,7 +39,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
 
   emin = 0.0
   emax = attributes['shift']
-  de = (emax-emin)/500
+  de = (emax-emin)/500.
   ene = np.arange(emin, emax, de)
   esize = ene.size
 
@@ -49,6 +50,43 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
   comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
 
   if rank==0:
+    sigxy /= float(attributes['nkpnts'])
+    return(ene, sigxy)
+  else:
+    return(None, None)
+
+
+def do_Berry_conductivity ( data_controller, pksp, ipol, jpol ):
+  import numpy as np
+  from mpi4py import MPI
+
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
+
+  arrays,attributes = data_controller.data_dicts()
+
+  snktot = pksp.shape[0]
+  bnd = attributes['bnd']
+
+  # Compute the optical conductivity tensor sigma_xy(ene)
+
+  ispin = 0
+
+  emin = 0.0
+  emax = attributes['shift']
+  de = (emax-emin)/500.
+  ene = np.arange(emin, emax, de)
+  esize = ene.size
+
+  sigxy_aux = np.zeros((esize),dtype=complex)
+
+  sigxy_aux = smear_sigma_loop(data_controller, ene, pksp, ispin, ipol, jpol)
+
+  sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
+
+  comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
+
+  if rank == 0:
     sigxy /= float(attributes['nkpnts'])
     return(ene, sigxy)
   else:
@@ -74,11 +112,11 @@ def smear_sigma_loop ( data_controller, ene, jksp, ispin, ipol, jpol ):
   delta = 0.05
 
   if attributes['smearing'] == None:
-    fn = 1.0/(np.exp(E_k[:,:,ispin]/attributes['temp'])+1)
+    fn = 1.0/(np.exp(arrays['E_k'][:,:bnd,ispin]/attributes['temp'])+1)
   elif attributes['smearing'] == 'gauss':
-    fn = intgaussian(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin])
+    fn = intgaussian(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
   elif smearing == 'm-p':
-    fn = intmetpax(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin]) 
+    fn = intmetpax(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin]) 
 
   # Collapsing the sum over k points
   for n in range(bnd):

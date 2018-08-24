@@ -69,7 +69,8 @@ def main():
 
   paoflow.calc_pao_eigh()
 
-  paoflow.calc_dos(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
+  if attributes['smearing'] == None:
+    paoflow.calc_dos(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
 
   if attributes['fermisurf']:
     paoflow.calc_fermi_surface()
@@ -83,8 +84,11 @@ def main():
 
   paoflow.calc_dos_adaptive(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
 
-  paoflow.calc_spin_Hall(do_shc=attributes['spin_Hall'], do_ac=attributes['ac_cond_spin'])
+  if attributes['spin_Hall']:
+    paoflow.calc_spin_Hall(do_ac=attributes['ac_cond_spin'])
 
+  if attributes['Berry']:
+    paoflow.calc_anomalous_Hall(do_ac=attributes['ac_cond_Berry'])
   quit()
 
   # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.

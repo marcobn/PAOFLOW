@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_spin_Berry_curvature ( data_controller, jksp, ipol, jpol ):
+def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
   import numpy as np
   from mpi4py import MPI
   from communication import gather_full
@@ -30,7 +30,9 @@ def do_spin_Berry_curvature ( data_controller, jksp, ipol, jpol ):
   # Compute spin Berry curvature
   #----------------------
 
-  snktot,_,bnd,_,nspin = jksp.shape
+  bnd = attributes['bnd']
+  nspin = attributes['nspin']
+  snktot = pksp.shape[0]
   fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
@@ -41,7 +43,7 @@ def do_spin_Berry_curvature ( data_controller, jksp, ipol, jpol ):
   for n in range(bnd):
     for m in range(bnd):
       if m != n:
-        Om_znkaux[:,n] += -2.0*np.imag(jksp[:,ipol,n,m,0]*arrays['pksp'][:,jpol,m,n,0]) / \
+        Om_znkaux[:,n] += -2.0*np.imag(pksp[:,ipol,n,m,0]*arrays['pksp'][:,jpol,m,n,0]) / \
         ((arrays['E_k'][:,m,0] - arrays['E_k'][:,n,0])**2 + deltap**2)
 
   de = (attributes['emaxSH']-attributes['eminSH'])/500
