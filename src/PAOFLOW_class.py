@@ -199,6 +199,10 @@ class PAOFLOW:
 
     get_K_grid_fft(self.data_controller)
 
+    self.data_controller.broadcast_single_array('HRs')
+    if attributes['non_ortho']:
+      self.data_controller.broadcast_single_array('SRs')
+
     self.report_module_time('k -> R in')
 
 
@@ -229,6 +233,8 @@ class PAOFLOW:
       arrays['HRs'] = np.moveaxis(cuda_ifftn(np.moveaxis(arrays['Hks'],[0,1],[3,4]), axes=[0,1,2]),[3,4],[0,1])
     else:
       arrays['HRs'] = FFT.ifftn(arrays['Hks'], axes=[2,3,4])
+
+    self.data_controller.broadcast_single_array('HRs')
 
     del arrays['Sks']
     del arrays['SRs']
@@ -268,20 +274,6 @@ class PAOFLOW:
       socStrengh [:,1] = arrays['lambda_d'][:]
 
       do_spin_orbit_bands(self.data_controller)
-
-###### PARALLELIZATION
-    # Broadcast HRs and SRs
-    nawf,nk1,nk2,nk3,nspin = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3'],attributes['nspin']
-    if self.rank != 0:
-      arrays['HRs'] = np.zeros((nawf,nawf,nk1,nk2,nk3,nspin), dtype=complex, order='C')
-    self.comm.Bcast(np.ascontiguousarray(arrays['HRs']), root=0)
-    if attributes['non_ortho']:
-      if self.rank != 0:
-        arrays['SRs'] = np.zeros((nawf,nawf,nk1,nk2,nk3), dtype=complex, order='C')
-      self.comm.Bcast(np.ascontiguousarray(arrays['SRs']), root=0)
-
-    if not attributes['do_bands']:
-      return
 
     do_bands(self.data_controller)
 
@@ -420,6 +412,18 @@ class PAOFLOW:
 
 
 
+  def trim_non_projectable_bands ( self ):
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    arrays['E_k'] = arrays['E_k'][:,:bnd]
+    arrays['pksp'] = arrays['pksp'][:,:,:bnd,:bnd]
+    if 'deltakp' in arrays:
+      arrays['deltakp'] = arrays['deltakp'][:,:bnd]
+      arrays['deltakp2'] = arrays['deltakp2'][:,:bnd]
+
+
+
   def calc_dos_adaptive ( self, smearing='gauss', do_dos=True, do_pdos=True ):
     from do_dos_calc_adaptive import do_dos_calc_adaptive
     from do_pdos_calc_adaptive import do_pdos_calc_adaptive
@@ -509,7 +513,8 @@ class PAOFLOW:
 
       ene,shc,Om_k = do_spin_Berry_curvature(self.data_controller, jksp, ipol, jpol)
 
-      shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
+      if self.rank == 0:
+        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/attributes['omega']
       fshc = 'shcEf_%s_%s%s.dat'%(str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
       self.data_controller.write_file_row_col(fshc, ene, shc)
 

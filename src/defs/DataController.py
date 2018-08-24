@@ -27,6 +27,10 @@ class DataController:
             self.data_attributes['inputfile'] = inputfile
 
 
+    def data_dicts ( self ):
+        return(self.data_arrays, self.data_attributes)
+
+
     def clean_data ( self ):
         print(self.data_arrays.keys())
 
@@ -39,6 +43,7 @@ class DataController:
         # Broadcast Data
         self.broadcast_data_arrays()
         self.broadcast_data_attributes()
+        print(self.data_attributes['omega'])
 
     def read_pao_inputfile ( self ):
         if self.rank == 0:
@@ -65,6 +70,13 @@ class DataController:
                 for i in range(len(col1)):
                     f.write('%.5f %.5e\n'%(col1[i],col2[i]))
         self.comm.Barrier()
+
+
+    def broadcast_single_array ( self, key, dtype=complex, root=0 ):
+        ashape = self.comm.bcast((None if self.rank!=root else self.data_arrays[key].shape), root=root)
+        if self.rank != root:
+            self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
+        self.comm.Bcast(np.ascontiguousarray(self.data_arrays[key]), root=root)
 
 
     def broadcast_single_attribute ( self, key ):

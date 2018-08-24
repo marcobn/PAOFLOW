@@ -17,6 +17,41 @@
 #
 
 
+##### Not finished
+def do_dos_calc ( data_controller, emin=-10., emax=2. ):
+(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
+#def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
+
+    arrays,attributes = data_controller.data_dicts()
+
+    # DOS calculation with gaussian smearing
+    de = (emax-emin)/1000
+    ene = np.arange(emin, emax, de)
+    esize = ene.size
+
+    dos = np.zeros((esize), dtype=float) if rank == 0 else None
+
+    dosaux = np.zeros((esize), order="C")
+
+    for ne in range(esize):
+        dosaux[ne] = np.sum(np.exp(-((ene[ne]-arrays['E_k'])/arrays['delta'])**2))
+
+    if rank == 0: print(dosaux)
+
+    comm.Barrier()
+    comm.Reduce(dosaux,dos,op=MPI.SUM)
+
+    dosaux = None
+
+    if rank == 0:
+        dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta
+        f=open(os.path.join(inputpath,'dos_'+str(ispin)+'.dat'),'w')
+        for ne in xrange(ene.size):
+            f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
+        f.close()
+
+    return
+
 def do_dos_calc_adaptive ( data_controller ):
   from smearing import gaussian, metpax
   from mpi4py import MPI

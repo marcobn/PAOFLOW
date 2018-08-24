@@ -275,6 +275,8 @@ def read_new_QE_output_xml ( data_controller ):
                     group_nesting = 0
                     ik = 0
 
+    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
+
     data_attributes['nawf'] = nawf
     data_attributes['nk1'] = nk1
     data_attributes['nk2'] = nk2
@@ -285,6 +287,7 @@ def read_new_QE_output_xml ( data_controller ):
     data_attributes['natoms'] = natoms
     data_attributes['nbnds'] = nbnds
     data_attributes['alat'] = alat
+    data_attributes['omega'] = omega
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
     data_attributes['tau'] = tau

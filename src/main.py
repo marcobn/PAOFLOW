@@ -52,8 +52,8 @@ def main():
   if paoflow.data_controller.data_attributes['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
   paoflow.add_external_fields()
-  #if paoflow.data_controller.data_attributes['do_bands']:
-  paoflow.calc_bands()
+  if paoflow.data_controller.data_attributes['do_bands']:
+    paoflow.calc_bands()
 
   ## MUST KNOW DOUBLE_GRID IN ADVANCE
   if paoflow.data_controller.data_attributes['double_grid']:
