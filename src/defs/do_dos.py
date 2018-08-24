@@ -17,48 +17,45 @@
 #
 
 
-##### Not finished
 def do_dos ( data_controller, emin=-10., emax=2. ):
-#def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
-    import numpy as np
-    from mpi4py import MPI
+  import numpy as np
+  from mpi4py import MPI
 
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
 
-    arrays,attributes = data_controller.data_dicts()
+  arrays,attributes = data_controller.data_dicts()
 
-    bnd = attributes['bnd']
-    netot = attributes['nkpnts']*bnd
+  bnd = attributes['bnd']
+  netot = attributes['nkpnts']*bnd
 
-    # DOS calculation with gaussian smearing
-    de = (emax-emin)/1000
-    ene = np.arange(emin, emax, de)
-    esize = ene.size
+  # DOS calculation with gaussian smearing
+  de = (emax-emin)/1000
+  ene = np.arange(emin, emax, de)
+  esize = ene.size
 
-    dos = np.zeros((esize), dtype=float) if rank == 0 else None
+  for ispin in range(attributes['nspin']):
 
     dosaux = np.zeros((esize), order="C")
 
-    for ispin in range(attributes['nspin']):
+    E_k = arrays['E_k'][:,:bnd,ispin]
 
-      for ne in range(esize):
-          dosaux[ne] = np.sum(np.exp(-((ene[ne]-arrays['E_k'])/attributes['delta'])**2))
+    for ne in range(esize):
+      dosaux[ne] = np.sum(np.exp(-((ene[ne]-E_k)/attributes['delta'])**2))
 
-      comm.Reduce(dosaux,dos,op=MPI.SUM)
+    dos = np.zeros((esize), dtype=float) if rank == 0 else None
 
-      dosaux = None
+    comm.Reduce(dosaux,dos,op=MPI.SUM)
+    dosaux = None
 
-      if rank == 0:
-        dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attributes['delta'])
-      else:
-        dos = None
+    if rank == 0:
+      dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attributes['delta'])
 
-      fdos = 'dos_%s.dat'%str(ispin)
-      data_controller.write_file_row_col(fdos, ene, dos)
+    fdos = 'dos_%s.dat'%str(ispin)
+    data_controller.write_file_row_col(fdos, ene, dos)
 
 
-def do_dos_adaptive ( data_controller ):
+def do_dos_adaptive ( data_controller, emin=-10., emax=2. ):
   from smearing import gaussian, metpax
   from mpi4py import MPI
   import numpy as np
@@ -70,8 +67,6 @@ def do_dos_adaptive ( data_controller ):
   attributes = data_controller.data_attributes
 
   # DOS calculation with adaptive smearing
-  emin = float(attributes['emin'])
-  emax = float(attributes['emax'])
   de = (emax-emin)/1000.
   ene = np.arange(emin, emax, de)
   esize = ene.size
@@ -96,11 +91,13 @@ def do_dos_adaptive ( data_controller ):
         # adaptive Methfessel and Paxton smearing
         dosaux[ne] = np.sum(metpax(ene[ne],E_k,delta))
 
-    dosaux *= float(bnd)/float(netot)
-
     dos = (np.zeros((esize), dtype=float) if rank==0 else None)
 
     comm.Reduce(dosaux, dos, op=MPI.SUM)
+    dosaux = None
+
+    if rank == 0:
+      dos *= float(bnd)/float(netot)
 
     fdosdk = 'dosdk_%s.dat'%str(ispin)
     data_controller.write_file_row_col(fdosdk, ene, dos)

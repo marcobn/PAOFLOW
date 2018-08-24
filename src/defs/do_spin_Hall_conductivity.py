@@ -16,91 +16,86 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import numpy as np
-import cmath
-from math import cosh
-import sys, time
-import scipy.integrate
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-from load_balancing import load_balancing
-from communication import scatter_array
+def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
+  import numpy as np
+  from mpi4py import MPI
+  from communication import gather_full
+  from smearing import intgaussian, intmetpax
 
-from constants import *
-from smearing import *
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
 
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
+  arrays,attributes = data_controller.data_dicts()
 
-def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,deltak2,smearing):
-    # Compute the optical conductivity tensor sigma_xy(ene)
+  snktot,_,bnd,_,nspin = jksp.shape
+  fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
+  nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
-    emin = 0.0
-    emax = shift
-    de = (emax-emin)/500
-    ene = np.arange(emin,emax,de,dtype=float)
+  # Compute the optical conductivity tensor sigma_xy(ene)
 
-    nktot,_,nawf,_,nspin = pksp.shape
-    nk_tot = np.array([nktot],dtype=int)
-    nktot = np.zeros((1),dtype=int)
-    comm.Reduce(nk_tot,nktot)
+  ispin = 0
 
-    if rank==0:
-        sigxy = np.zeros((ene.size),dtype=complex)
-    else: sigxy = None
+  emin = 0.0
+  emax = attributes['shift']
+  de = (emax-emin)/500
+  ene = np.arange(emin, emax, de)
+  esize = ene.size
 
-    sigxy_aux = np.zeros((ene.size),dtype=complex)
+  sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, ispin, ipol, jpol)
 
-    sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
-                
-    comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
+  sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
 
-    comm.Barrier()
+  comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
 
-    if rank==0:
-        sigxy /= float(nktot)
-        return(ene,sigxy)
-    else: return None,None
+  if rank==0:
+    sigxy /= float(attributes['nkpnts'])
+    return(ene, sigxy)
+  else:
+    return(None, None)
 
 
-def smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
+def smear_sigma_loop ( data_controller, ene, jksp, ispin, ipol, jpol ):
+  import numpy as np
+  from smearing import intgaussian,intmetpax
 
-    sigxy = np.zeros((ene.size),dtype=complex)
-    f_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    E_diff_nm = np.zeros((pksp.shape[0],nawf,nawf),dtype=float)
-    delta = 0.05
-    Ef = 0.0
-    #to avoid divide by zero error
-    eps=1.0e-16
+  arrays,attributes = data_controller.data_dicts()
 
+  esize = ene.size
+  sigxy = np.zeros((esize), dtype=complex)
 
-    if smearing == None:
-        fn = 1.0/(np.exp(E_k[:,:,ispin]/temp)+1)
-    elif smearing == 'gauss':
-        fn = intgaussian(E_k[:,:,0],Ef,deltak[:,:,0])
-    elif smearing == 'm-p':
-        fn = intmetpax(E_k[:,:,0],Ef,deltak[:,:,0]) 
+  bnd = attributes['bnd']
+  snktot = arrays['pksp'].shape[0]
+  f_nm = np.zeros((snktot,bnd,bnd), dtype=float)
+  E_diff_nm = np.zeros((snktot,bnd,bnd), dtype=float)
 
-    # Collapsing the sum over k points
-    for n in range(nawf):
-        for m in range(nawf):
-            if m != n:
-                E_diff_nm[:,n,m] = (E_k[:,n,ispin]-E_k[:,m,ispin])**2
-                f_nm[:,n,m]      = (fn[:,n] - fn[:,m])*np.imag(jksp[:,jpol,n,m,0]*pksp[:,ipol,m,n,0])
+  Ef = 0.0
+  eps=1.0e-16
+  delta = 0.05
 
-    fn = None
+  if attributes['smearing'] == None:
+    fn = 1.0/(np.exp(E_k[:,:,ispin]/attributes['temp'])+1)
+  elif attributes['smearing'] == 'gauss':
+    fn = intgaussian(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin])
+  elif smearing == 'm-p':
+    fn = intmetpax(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin]) 
 
-    for e in range(ene.size):
-        if smearing!=None:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*deltak2[:,:,:,ispin])**2+eps)*f_nm[:,:,:])
-        else:
-            sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*delta)**2+eps)*f_nm[:,:,:])
-                                                                                 
-    F_nm = None
-    E_diff_nm = None
-                    
-    return(np.nan_to_num(sigxy))
+  # Collapsing the sum over k points
+  for n in range(bnd):
+    for m in range(bnd):
+      if m != n:
+        E_diff_nm[:,n,m] = (arrays['E_k'][:,n,ispin]-arrays['E_k'][:,m,ispin])**2
+        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(jksp[:,jpol,n,m,ispin]*arrays['pksp'][:,ipol,m,n,ispin])
 
+  fn = None
+
+  for e in range(esize):
+    if attributes['smearing'] != None:
+      sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*arrays['deltakp2'][:,:bnd,:bnd,ispin])**2+eps)*f_nm[:,:,:])
+    else:
+      sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*arrays['delta'])**2+eps)*f_nm[:,:,:])
+
+  F_nm = None
+  E_diff_nm = None
+
+  return np.nan_to_num(sigxy)

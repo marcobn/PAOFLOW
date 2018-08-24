@@ -159,8 +159,7 @@ class PAOFLOW:
     from do_build_pao_hamiltonian import do_build_pao_hamiltonian
     from get_K_grid_fft import get_K_grid_fft
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     if self.rank == 0:
       do_build_pao_hamiltonian(self.data_controller)
@@ -209,8 +208,7 @@ class PAOFLOW:
 
   def orthogonalize_hamiltonian ( self ):
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
@@ -260,8 +258,7 @@ class PAOFLOW:
   def calc_bands ( self ):
     from do_bands import do_bands
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     #----------------------------------------
     # Compute bands with spin-orbit coupling
@@ -301,8 +298,7 @@ class PAOFLOW:
     from get_K_grid_fft import get_K_grid_fft
     from do_double_grid import do_double_grid
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     #------------------------------------------------------
     # Fourier interpolation on extended grid (zero padding)
@@ -325,8 +321,7 @@ class PAOFLOW:
     from communication import scatter_full, gather_full
     from do_pao_eigh import do_pao_eigh
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     #-----------------------------------------------------
     # Compute eigenvalues of the interpolated Hamiltonian
@@ -354,8 +349,7 @@ class PAOFLOW:
     from do_momentum import do_momentum
     from communication import gather_scatter
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     snktot,nawf,_,nspin = arrays['Hksp'].shape
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
@@ -393,13 +387,10 @@ class PAOFLOW:
 
 
 
-  def calc_adaptive_smearing ( self, smearing=None ):
+  def calc_adaptive_smearing ( self, smearing='gauss' ):
     from do_adaptive_smearing import do_adaptive_smearing
 
     attributes = self.data_controller.data_attributes
-
-    if smearing != None and (smearing == 'gauss' or smearing == 'm-p'):
-      attributes['smearing'] = smearing
 
     do_adaptive_smearing(self.data_controller)
 
@@ -407,11 +398,15 @@ class PAOFLOW:
 
 
 
-  def calc_dos ( self ):
+  def calc_dos ( self, do_dos=True, do_pdos=True, emin=-10., emax=2. ):
     from do_dos import do_dos
+    from do_pdos import do_pdos
 
-    do_dos(self.data_controller)
+    if do_dos:
+      do_dos(self.data_controller, emin=emin, emax=emax)
 
+    if do_pdos:
+      do_pdos(self.data_controller, emin=emin, emax=emax)
     self.report_module_time('DoS in')
 
 
@@ -428,26 +423,23 @@ class PAOFLOW:
 
 
 
-  def calc_dos_adaptive ( self, smearing='gauss', do_dos=True, do_pdos=True ):
+  def calc_dos_adaptive ( self, do_dos=True, do_pdos=True, emin=-10., emax=2. ):
     from do_dos import do_dos_adaptive
-    from do_pdos_calc_adaptive import do_pdos_calc_adaptive
+    from do_pdos import do_pdos_adaptive
 
     attributes = self.data_controller.data_attributes
-
-    if smearing != attributes['smearing']:
-      attributes['smearing'] = smearing
 
     #------------------------------------------------------------
     # DOS calculation with adaptive smearing on double_grid Hksp
     #------------------------------------------------------------
     if do_dos:
-      do_dos_adaptive(self.data_controller)
+      do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
 
     #----------------------
     # PDOS calculation ...
     #----------------------
     if do_pdos:
-      do_pdos_calc_adaptive(self.data_controller)
+      do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
 
     self.report_module_time('DoS (Adaptive Smearing) in')
 
@@ -483,13 +475,13 @@ class PAOFLOW:
 
 
 
-  def calc_spin_Hall ( self, shc=True, ahc=True ):
+  def calc_spin_Hall ( self, do_shc=True, do_ac=True ):
     from do_spin_current import do_spin_current
     from do_spin_Berry_curvature import do_spin_Berry_curvature
+    from do_spin_Hall_conductivity import do_spin_Hall_conductivity
     from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
-    arrays = self.data_controller.data_arrays
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     s_tensor = arrays['s_tensor']
 
@@ -518,26 +510,32 @@ class PAOFLOW:
       ene,shc,Om_k = do_spin_Berry_curvature(self.data_controller, jksp, ipol, jpol)
 
       if self.rank == 0:
-        shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/attributes['omega']
-      fshc = 'shcEf_%s_%s%s.dat'%(str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
-      self.data_controller.write_file_row_col(fshc, ene, shc)
+        cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attributes['omega'])
+        shc *= cgs_conv
 
-    self.report_module_time('Spin Hall and Anomalous Hall in')
-#if rank == 0:
-#shc *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-#f=open(os.path.join(inputpath,'shcEf_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-#for n in range(ene.size):
-#f.write('%.5f %9.5e \n' %(ene[n],shc[n]))
-#f.close()
+      cart_indices = (str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
 
-#if  ac_cond_spin:
-#sigxy *= 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/H_OVER_TPI/omega
-#f=open(os.path.join(inputpath,'SCDi_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-#for n in range(ene.size):
-#f.write('%.5f %9.5e \n' %(ene_ac[n],np.imag(ene_ac[n]*sigxy[n]/105.4571)))  #convert energy in freq (1/hbar in cgs units)
-#f.close()
-#f=open(os.path.join(inputpath,'SCDr_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-#for n in range(ene.size):
-#f.write('%.5f %9.5e \n' %(ene_ac[n],np.real(sigxy[n])))
-#f.close()
+      if do_shc:
+        fshc = 'shcEf_%s_%s%s.dat'%cart_indices
+        self.data_controller.write_file_row_col(fshc, ene, shc)
 
+        fBerry = 'Spin_Berry_%s_%s%s.dat'%cart_indices
+
+        nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
+        Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if self.rank==0 else None)
+        if self.rank == 0:
+          Om_kps[:,:,:,0] = Om_kps[:,:,:,1] = Om_k[:,:,:]
+        self.data_controller.write_bxsf(fBerry, Om_kps, 2)
+
+      if do_ac:
+        ene,sigxy = do_spin_Hall_conductivity(self.data_controller, jksp, ipol, jpol)
+        if self.rank == 0:
+          sigxy *= cgs_conv
+
+        fsigI = 'SCDi_%s_%s%s.dat'%cart_indices
+        self.data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))
+
+        fsigR = 'SCDr_%s_%s%s.dat'%cart_indices
+        self.data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+
+    self.report_module_time('Spin Hall and/or Anomalous Hall in')

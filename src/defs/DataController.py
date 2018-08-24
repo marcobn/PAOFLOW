@@ -43,7 +43,6 @@ class DataController:
         # Broadcast Data
         self.broadcast_data_arrays()
         self.broadcast_data_attributes()
-        print(self.data_attributes['omega'])
 
     def read_pao_inputfile ( self ):
         if self.rank == 0:
@@ -60,16 +59,24 @@ class DataController:
                 raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
 
 
-    def write_file_row_col ( self, filename, col1, col2 ):
-        from os.path import join
+    def write_file_row_col ( self, fname, col1, col2 ):
         if self.rank == 0:
+            from os.path import join
             if len(col1) != len(col2):
+                print('Cannon write file: %s'%fname)
                 print('Data does not have the same shape')
                 self.comm.Abort()
 
-            with open(join(self.data_attributes['inputpath'],filename), 'w') as f:
+            with open(join(self.data_attributes['inputpath'],fname), 'w') as f:
                 for i in range(len(col1)):
                     f.write('%.5f %.5e\n'%(col1[i],col2[i]))
+        self.comm.Barrier()
+
+
+    def write_bxsf ( self, fname, bands, nbnd ):
+        if self.rank == 0:
+            from write2bxsf import write2bxsf
+            write2bxsf(self, fname, bands, nbnd)
         self.comm.Barrier()
 
 

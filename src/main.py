@@ -47,34 +47,43 @@ def main():
     pass
 
   paoflow = PAOFLOW(inputpath=arg1,inputfile=arg2,verbose=False)
+
+  arrays, attributes = paoflow.data_controller.data_dicts()
+
+
   paoflow.calc_projectability(pthr=None)
+
   paoflow.calc_pao_hamiltonian()
-  if paoflow.data_controller.data_attributes['non_ortho']:
+
+  if attributes['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
+
   paoflow.add_external_fields()
-  if paoflow.data_controller.data_attributes['do_bands']:
+
+  if attributes['do_bands']:
     paoflow.calc_bands()
 
   ## MUST KNOW DOUBLE_GRID IN ADVANCE
-  if paoflow.data_controller.data_attributes['double_grid']:
+  if attributes['double_grid']:
     paoflow.calc_double_grid()
 
   paoflow.calc_pao_eigh()
 
-  paoflow.calc_dos()
+  paoflow.calc_dos(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
 
+  if attributes['fermisurf']:
+    paoflow.calc_fermi_surface()
 
-#  paoflow.calc_fermi_surface()
-#  paoflow.calc_spin_texture()
+  if attributes['spintexture']:
+    paoflow.calc_spin_texture()
 
   paoflow.calc_gradient_and_momenta()
 
-  paoflow.calc_adaptive_smearing()
+  paoflow.calc_adaptive_smearing(smearing=attributes['smearing'])
 
-#  if paoflow.data_controller.data_attributes['do_dos'] or paoflow.data_controller.data_attributes['do_pdos']:
-  paoflow.calc_dos_adaptive()
+  paoflow.calc_dos_adaptive(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
 
-  paoflow.calc_spin_Hall()
+  paoflow.calc_spin_Hall(do_shc=attributes['spin_Hall'], do_ac=attributes['ac_cond_spin'])
 
   quit()
 

@@ -17,7 +17,57 @@
 #
 
 
-def do_pdos_calc_adaptive ( data_controller ):
+def do_pdos ( data_controller, emin=-10., emax=2. ):
+  import numpy as np
+  from mpi4py import MPI
+
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
+
+  arrays,attributes = data_controller.data_dicts()
+
+  nawf = attributes['nawf']
+  nspin = attributes['nspin']
+  nktot = attributes['nkpnts']
+
+  # PDOS calculation with gaussian smearing
+  de = (emax-emin)/1000.
+  ene = np.arange(emin, emax, de)
+  esize = ene.size
+
+  for ispin in range(nspin):
+
+    pdosaux = np.zeros((nawf,esize), dtype=float)
+    v_kaux = np.real(np.abs(arrays['v_k'][:,:,:,ispin])**2)
+
+    E_k = arrays['E_k'][:,:,ispin]
+
+    for e in range(esize):
+      taux = np.exp(-((ene[e]-E_k)/attributes['delta'])**2)/np.sqrt(np.pi)
+      for m in range(nawf):
+        pdosaux[m,e] += np.sum(taux*v_kaux[:,m,:])
+
+    pdos = (np.zeros((nawf,esize),dtype=float) if rank==0 else None)
+
+    comm.Reduce(pdosaux, pdos, op=MPI.SUM)
+    pdosaux = None
+
+    if rank == 0:
+      pdos /= (float(nktot)*np.sqrt(np.pi)*attributes['delta'])
+
+    pdos_sum = (np.zeros(esize, dtype=float) if rank==0 else None)
+
+    for m in range(nawf):
+      if rank == 0:
+        pdos_sum += pdos[m]
+      fpdos = '%d_pdos_%d.dat'%(m,ispin)
+      data_controller.write_file_row_col(fpdos, ene, (pdos[m] if rank==0 else None))
+
+    fpdos = 'pdos_sum_%d.dat'%ispin
+    data_controller.write_file_row_col(fpdos, ene, pdos_sum)
+
+
+def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
   import numpy as np
   from mpi4py import MPI
   from smearing import metpax, gaussian
@@ -29,8 +79,6 @@ def do_pdos_calc_adaptive ( data_controller ):
   attributes = data_controller.data_attributes
 
   # PDoS Calculation with Gaussian Smearing
-  emin = float(attributes['emin'])
-  emax = float(attributes['emax'])
   de = (emax-emin)/1000.
   ene = np.arange(emin, emax, de)
   esize = ene.size
@@ -57,25 +105,21 @@ def do_pdos_calc_adaptive ( data_controller ):
           # Adaptive Gaussian Smearing
           pdosaux[i,e] += np.sum(taux*v_kaux[:,i,:])
 
-    pdosaux /= float(attributes['nkpnts'])
-
     pdos = (np.zeros((nawf,esize), dtype=float) if rank==0 else None)
 
     comm.Reduce(pdosaux, pdos, op=MPI.SUM)
+    pdosaux = None
 
-
-#### Decide how to write....
     if rank == 0:
-      import os
-#      pdos /= float(attributes['nkpnts'])
-      pdos_sum = np.zeros(esize, dtype=float)
-      for m in range(nawf):
+      pdos /= float(attributes['nkpnts'])
+
+    pdos_sum = (np.zeros(esize, dtype=float) if rank==0 else None)
+
+    for m in range(nawf):
+      if rank == 0:
         pdos_sum += pdos[m]
-        f = open(os.path.join(attributes['inputpath'],str(m)+'_pdosdk_'+str(ispin)+'.dat'), 'w')
-        for ne in range(esize):
-          f.write('%.5f  %.5f\n' %(ene[ne],pdos[m,ne]))
-        f.close()
-      f = open(os.path.join(attributes['inputpath'],'pdosdk_sum_'+str(ispin)+'.dat'), 'w')
-      for ne in range(esize):
-        f.write('%.5f  %.5f\n' %(ene[ne],pdos_sum[ne]))
-      f.close()
+      fpdos = '%d_pdosdk_%d.dat'%(m,ispin)
+      data_controller.write_file_row_col(fpdos, ene, (pdos[m] if rank==0 else None))
+
+    fpdos = 'pdosdk_sum_%d.dat'%ispin
+    data_controller.write_file_row_col(fpdos, ene, pdos_sum)
