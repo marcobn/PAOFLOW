@@ -408,7 +408,11 @@ class PAOFLOW:
 
 
   def calc_dos ( self ):
-    pass
+    from do_dos import do_dos
+
+    do_dos(self.data_controller)
+
+    self.report_module_time('DoS in')
 
 
 
@@ -425,7 +429,7 @@ class PAOFLOW:
 
 
   def calc_dos_adaptive ( self, smearing='gauss', do_dos=True, do_pdos=True ):
-    from do_dos_calc_adaptive import do_dos_calc_adaptive
+    from do_dos import do_dos_adaptive
     from do_pdos_calc_adaptive import do_pdos_calc_adaptive
 
     attributes = self.data_controller.data_attributes
@@ -437,7 +441,7 @@ class PAOFLOW:
     # DOS calculation with adaptive smearing on double_grid Hksp
     #------------------------------------------------------------
     if do_dos:
-      do_dos_calc_adaptive(self.data_controller)
+      do_dos_adaptive(self.data_controller)
 
     #----------------------
     # PDOS calculation ...

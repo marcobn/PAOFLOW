@@ -27,9 +27,6 @@ def do_spin_Berry_curvature ( data_controller, jksp, ipol, jpol ):
 
     arrays,attributes = data_controller.data_dicts()
 
-    from time import sleep
-    sleep(rank)
-    print(attributes.keys())
     #----------------------
     # Compute spin Berry curvature
     #----------------------

@@ -18,11 +18,18 @@
 
 
 ##### Not finished
-def do_dos_calc ( data_controller, emin=-10., emax=2. ):
-(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
+def do_dos ( data_controller, emin=-10., emax=2. ):
 #def do_dos_calc(eig,emin,emax,delta,netot,nawf,ispin,inputpath,npool):
+    import numpy as np
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
 
     arrays,attributes = data_controller.data_dicts()
+
+    bnd = attributes['bnd']
+    netot = attributes['nkpnts']*bnd
 
     # DOS calculation with gaussian smearing
     de = (emax-emin)/1000
@@ -33,26 +40,25 @@ def do_dos_calc ( data_controller, emin=-10., emax=2. ):
 
     dosaux = np.zeros((esize), order="C")
 
-    for ne in range(esize):
-        dosaux[ne] = np.sum(np.exp(-((ene[ne]-arrays['E_k'])/arrays['delta'])**2))
+    for ispin in range(attributes['nspin']):
 
-    if rank == 0: print(dosaux)
+      for ne in range(esize):
+          dosaux[ne] = np.sum(np.exp(-((ene[ne]-arrays['E_k'])/attributes['delta'])**2))
 
-    comm.Barrier()
-    comm.Reduce(dosaux,dos,op=MPI.SUM)
+      comm.Reduce(dosaux,dos,op=MPI.SUM)
 
-    dosaux = None
+      dosaux = None
 
-    if rank == 0:
-        dos *= float(nawf)/float(netot)*1.0/np.sqrt(np.pi)/delta
-        f=open(os.path.join(inputpath,'dos_'+str(ispin)+'.dat'),'w')
-        for ne in xrange(ene.size):
-            f.write('%.5f  %.5f \n' %(ene[ne],dos[ne]))
-        f.close()
+      if rank == 0:
+        dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attributes['delta'])
+      else:
+        dos = None
 
-    return
+      fdos = 'dos_%s.dat'%str(ispin)
+      data_controller.write_file_row_col(fdos, ene, dos)
 
-def do_dos_calc_adaptive ( data_controller ):
+
+def do_dos_adaptive ( data_controller ):
   from smearing import gaussian, metpax
   from mpi4py import MPI
   import numpy as np

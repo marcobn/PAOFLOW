@@ -61,12 +61,13 @@ class DataController:
 
 
     def write_file_row_col ( self, filename, col1, col2 ):
+        from os.path import join
         if self.rank == 0:
             if len(col1) != len(col2):
                 print('Data does not have the same shape')
                 self.comm.Abort()
 
-            with open(filename, 'w') as f:
+            with open(join(self.data_attributes['inputpath'],filename), 'w') as f:
                 for i in range(len(col1)):
                     f.write('%.5f %.5e\n'%(col1[i],col2[i]))
         self.comm.Barrier()

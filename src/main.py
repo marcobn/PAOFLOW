@@ -61,6 +61,9 @@ def main():
 
   paoflow.calc_pao_eigh()
 
+  paoflow.calc_dos()
+
+
 #  paoflow.calc_fermi_surface()
 #  paoflow.calc_spin_texture()
 
