@@ -96,19 +96,11 @@ def do_dos_adaptive ( data_controller ):
         # adaptive Methfessel and Paxton smearing
         dosaux[ne] = np.sum(metpax(ene[ne],E_k,delta))
 
-    dosaux *= float(attributes['nawf'])/float(netot)
+    dosaux *= float(bnd)/float(netot)
 
     dos = (np.zeros((esize), dtype=float) if rank==0 else None)
 
     comm.Reduce(dosaux, dos, op=MPI.SUM)
 
-
-## Decide how to write...
-    if rank == 0:
-      import os
-      f = open(os.path.join(attributes['inputpath'],'dosdk_'+str(ispin)+'.dat'), 'w')
-      for ne in range(esize):
-        f.write('%.5f  %.5f\n' %(ene[ne],dos[ne]))
-      f.close()
-
-  comm.Barrier()
+    fdosdk = 'dosdk_%s.dat'%str(ispin)
+    data_controller.write_file_row_col(fdosdk, ene, dos)
