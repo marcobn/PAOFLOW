@@ -48,6 +48,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
   sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
 
   comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
+  sigxy_aux = None
 
   if rank==0:
     sigxy /= float(attributes['nkpnts'])
@@ -85,6 +86,7 @@ def do_Berry_conductivity ( data_controller, pksp, ipol, jpol ):
   sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
 
   comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
+  sigxy_aux = None
 
   if rank == 0:
     sigxy /= float(attributes['nkpnts'])

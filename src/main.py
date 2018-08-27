@@ -46,59 +46,53 @@ def main():
   except:
     pass
 
-  paoflow = PAOFLOW(inputpath=arg1,inputfile=arg2,verbose=False)
+  paoflow = PAOFLOW(inputpath=arg1, inputfile=arg2, verbose=False)
 
-  arrays, attributes = paoflow.data_controller.data_dicts()
+  arry, attr = paoflow.data_controller.data_dicts()
 
-
-  paoflow.calc_projectability(pthr=None)
+  paoflow.calc_projectability(pthr=attr['pthr'])
 
   paoflow.calc_pao_hamiltonian()
 
-  if attributes['non_ortho']:
+  if attr['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
 
   paoflow.add_external_fields()
 
-  if attributes['do_bands']:
+  if attr['do_bands']:
     paoflow.calc_bands()
 
   ## MUST KNOW DOUBLE_GRID IN ADVANCE
-  if attributes['double_grid']:
+  if attr['double_grid']:
     paoflow.calc_double_grid()
 
   paoflow.calc_pao_eigh()
 
-  if attributes['smearing'] == None:
-    paoflow.calc_dos(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
+  if attr['smearing'] == None:
+    paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
-  if attributes['fermisurf']:
+  if attr['fermisurf']:
     paoflow.calc_fermi_surface()
 
-  if attributes['spintexture']:
+  if attr['spintexture']:
     paoflow.calc_spin_texture()
 
   paoflow.calc_gradient_and_momenta()
 
-  paoflow.calc_adaptive_smearing(smearing=attributes['smearing'])
+  paoflow.calc_adaptive_smearing(smearing=attr['smearing'])
 
-  paoflow.calc_dos_adaptive(do_dos=attributes['do_dos'], do_pdos=attributes['do_pdos'], emin=attributes['emin'], emax=attributes['emax'])
+  paoflow.calc_dos_adaptive(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
-  if attributes['spin_Hall']:
-    paoflow.calc_spin_Hall(do_ac=attributes['ac_cond_spin'])
+  if attr['spin_Hall']:
+    paoflow.calc_spin_Hall(do_ac=attr['ac_cond_spin'])
 
-  if attributes['Berry']:
-    paoflow.calc_anomalous_Hall(do_ac=attributes['ac_cond_Berry'])
+  if attr['Berry']:
+    paoflow.calc_anomalous_Hall(do_ac=attr['ac_cond_Berry'])
+
+  if attr['Boltzmann']:
+    paoflow.calc_transport(tmin=attr['tmin'], tmax=attr['tmax'], tstep=attr['tstep'], emin=attr['emin'], emax=attr['emax'], ne=attr['ne'])
   quit()
 
-  # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.
-  outDict = paoflow(inputpath=arg1,inputfile=arg2)
 
-  # Check for output dictionary and print the keys.
-  if outDict is not None:
-    print('\noutDict keys:')
-    for k in list(outDict.keys()):
-      print('\''+k+'\'')
-
-if __name__== "__main__":
+if __name__== '__main__':
   main()

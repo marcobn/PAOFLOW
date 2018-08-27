@@ -602,3 +602,26 @@ class PAOFLOW:
         self.data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
 
     self.report_module_time('Anomalous Hall Conductivity in')
+
+
+
+  def calc_transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500 ):
+    from do_transport import do_transport
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    temps = np.arange(tmin, tmax+1.e-10, tstep)
+    ene = np.arange(emin, emax, (emax-emin)/float(ne))
+
+    bnd = attributes['bnd']
+    nspin = attributes['nspin']
+    snktot = arrays['pksp'].shape[0]
+
+    # Compute Velocities
+    velkp = np.zeros((snktot,3,bnd,nspin), dtype=float)
+    for n in range(bnd):
+        velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
+
+    do_transport(self.data_controller, temps, ene, velkp)
+
+    self.report_module_time('Transport in')
