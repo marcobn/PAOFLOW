@@ -476,130 +476,18 @@ class PAOFLOW:
 
 
   def calc_spin_Hall ( self, do_ac=True ):
-    from do_spin_current import do_spin_current
-    from do_spin_Berry_curvature import do_spin_Berry_curvature
-    from do_Hall_conductivity import do_spin_Hall_conductivity
-    from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+    from do_Hall import do_spin_Hall
 
-    arrays,attributes = self.data_controller.data_dicts()
-
-    s_tensor = arrays['s_tensor']
-
-    #-----------------------
-    # Spin Hall calculation
-    #-----------------------
-    if attributes['dftSO'] == False:
-      if self.rank == 0:
-        print('Relativistic calculation with SO required')
-        self.comm.Abort()
-      self.comm.Barrier()
-
-    for n in range(s_tensor.shape[0]):
-      ipol = s_tensor[n][0]
-      jpol = s_tensor[n][1]
-      spol = s_tensor[n][2]
-      #----------------------------------------------
-      # Compute the spin current operator j^l_n,m(k)
-      #----------------------------------------------
-      jksp = do_spin_current(self.data_controller, spol)
-
-      #---------------------------------
-      # Compute spin Berry curvature... 
-      #---------------------------------
-
-      ene,shc,Om_k = do_spin_Berry_curvature(self.data_controller, jksp, ipol, jpol)
-
-      if self.rank == 0:
-        cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attributes['omega'])
-        shc *= cgs_conv
-
-      cart_indices = (str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
-
-      fBerry = 'Spin_Berry_%s_%s%s.dat'%cart_indices
-      nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
-      Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if self.rank==0 else None)
-      if self.rank == 0:
-        Om_kps[:,:,:,0] = Om_kps[:,:,:,1] = Om_k[:,:,:]
-      self.data_controller.write_bxsf(fBerry, Om_kps, 2)
-
-      Om_k = Om_kps = None
-
-      fshc = 'shcEf_%s_%s%s.dat'%cart_indices
-      self.data_controller.write_file_row_col(fshc, ene, shc)
-
-      ene = shc = None
-
-      if do_ac:
-        ene,sigxy = do_spin_Hall_conductivity(self.data_controller, jksp, ipol, jpol)
-        if self.rank == 0:
-          sigxy *= cgs_conv
-
-        fsigI = 'SCDi_%s_%s%s.dat'%cart_indices
-        self.data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))
-
-        fsigR = 'SCDr_%s_%s%s.dat'%cart_indices
-        self.data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+    do_spin_Hall(self.data_controller, do_ac)
 
     self.report_module_time('Spin Hall Conductivity in')
 
 
 
   def calc_anomalous_Hall ( self, do_ac=True ):
-    from do_spin_current import do_spin_current
-    from do_spin_Berry_curvature import do_spin_Berry_curvature
-    from do_Hall_conductivity import do_Berry_conductivity
-    from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+    from do_Hall import do_anomalous_Hall
 
-    arrays,attributes = self.data_controller.data_dicts()
-
-    a_tensor = arrays['a_tensor']
-
-    #----------------------------
-    # Anomalous Hall calculation
-    #----------------------------
-    if attributes['dftSO'] == False:
-      if self.rank == 0:
-        print('Relativistic calculation with SO required')
-        self.comm.Abort()
-      self.comm.Barrier()
-
-    for n in range(a_tensor.shape[0]):
-      ipol = a_tensor[n][0]
-      jpol = a_tensor[n][1]
-
-      ene,ahc,Om_k = do_spin_Berry_curvature(self.data_controller, arrays['pksp'], ipol, jpol)
-
-      if self.rank == 0:
-        cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attributes['omega'])
-
-      cart_indices = (str(LL[ipol]),str(LL[jpol]))
-
-      fBerry = 'Berry_%s%s.dat'%cart_indices
-      nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
-      Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if self.rank==0 else None)
-      if self.rank == 0:
-        Om_kps[:,:,:,0] = Om_kps[:,:,:,1] = Om_k[:,:,:]
-      self.data_controller.write_bxsf(fBerry, Om_kps, 2)
-
-      Om_k = Om_kps = None
-
-      if self.rank == 0:
-        ahc *= cgs_conv
-      fahc = 'ahcEf_%s%s.dat'%cart_indices
-      self.data_controller.write_file_row_col(fahc, ene, ahc)
-
-      ene = ahc = None
-
-      if do_ac:
-        ene,sigxy = do_Berry_conductivity(self.data_controller, arrays['pksp'], ipol, jpol)
-        if self.rank == 0:
-          sigxy *= cgs_conv
-        
-        fsigI = 'MCDi_%s%s.dat'%cart_indices
-        self.data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))
-
-        fsigR = 'MCDr_%s%s.dat'%cart_indices
-        self.data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+    do_anomalous_Hall(self.data_controller, do_ac)
 
     self.report_module_time('Anomalous Hall Conductivity in')
 
