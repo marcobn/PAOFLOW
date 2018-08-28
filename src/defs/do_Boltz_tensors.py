@@ -109,7 +109,7 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha
 
     for n in range(bnd):
         Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
-        delk = np.reshape(np.repeat(arrays['deltakp'][:,n,ispin],esize), (snktot,esize))
+        delk = (np.reshape(np.repeat(arrays['deltakp'][:,n,ispin],esize), (snktot,esize)) if smearing!=None else None)
         EtoAlpha = np.power(Eaux[:,:]-ene, alpha)
         if smearing == None:
             Eaux -= ene

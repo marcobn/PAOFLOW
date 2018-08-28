@@ -161,7 +161,7 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     # Dielectric function calculation
     epsilon = False
     metal = False
-    kramerskronig = True
+    kramerskronig = False
     epsmin=0.0
     epsmax=10.0
     ne = 500

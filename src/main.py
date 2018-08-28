@@ -68,7 +68,7 @@ def main():
 
   paoflow.calc_pao_eigh()
 
-  if attr['smearing'] == None:
+  if attr['smearing'] is None:
     paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['fermisurf']:
@@ -79,9 +79,10 @@ def main():
 
   paoflow.calc_gradient_and_momenta()
 
-  paoflow.calc_adaptive_smearing(smearing=attr['smearing'])
+  if attr['smearing'] is not None:
+    paoflow.calc_adaptive_smearing(smearing=attr['smearing'])
 
-  paoflow.calc_dos_adaptive(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
+    paoflow.calc_dos_adaptive(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['spin_Hall']:
     paoflow.calc_spin_Hall(do_ac=attr['ac_cond_spin'])
@@ -91,6 +92,9 @@ def main():
 
   if attr['Boltzmann']:
     paoflow.calc_transport(tmin=attr['tmin'], tmax=attr['tmax'], tstep=attr['tstep'], emin=attr['emin'], emax=attr['emax'], ne=attr['ne'])
+
+  if attr['epsilon']:
+    paoflow.calc_dielectric_tensor(metal=attr['metal'], kramerskronig=attr['kramerskronig'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
   quit()
 
 

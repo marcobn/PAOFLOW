@@ -71,22 +71,17 @@ class PAOFLOW:
     # Update Input Arguments
     attributes['verbose'] = verbose
 
-### MOVE TO DATA_CONTROLLER
-    #------------------------------
-    # Initialize Return Dictionary
-    #------------------------------
-    #if self.rank == 0 and attributes['out_vals'] is not None:
-    #  outDict = {}
-    #  if len(attributes['out_vals']) > 0:
-    #    for i in attributes['out_vals']:
-    #      outDict[i] = None
-
     #------------------------------
     # Check for CUDA FFT Libraries
     #------------------------------
     attributes['scipyfft'] = True
     if attributes['use_cuda']:
       attributes['scipyfft'] = False
+    if self.rank == 0 and attributes['verbose']:
+      if attributes['use_cuda']:
+        print('CUDA will perform FFTs on %d GPU'%1)
+      else:
+        print('SciPy will perform FFTs')
 
     # Ensure nffts are even
     if attributes['double_grid']:
@@ -130,6 +125,7 @@ class PAOFLOW:
     self.report_module_time('Reading in')
 
 
+
   def report_module_time ( self, mname ):
 
     spaces = 40
@@ -145,6 +141,7 @@ class PAOFLOW:
       print('%s: %s %.3f sec'%(mname,lms*' ',dt))
       self.reset_time = time()
     self.comm.Barrier()
+
 
 
   def calc_projectability ( self, pthr=None ):
@@ -392,6 +389,11 @@ class PAOFLOW:
 
     attributes = self.data_controller.data_attributes
 
+    if smearing != 'gauss' and smearing != 'm-p':
+      if self.rank == 0:
+        print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
+      quit()
+
     do_adaptive_smearing(self.data_controller)
 
     self.report_module_time('Adaptive Smearing in')
@@ -427,7 +429,12 @@ class PAOFLOW:
     from do_dos import do_dos_adaptive
     from do_pdos import do_pdos_adaptive
 
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
+
+    if 'deltakp' not in arrays:
+      if self.rank == 0:
+        print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
+      quit()
 
     #------------------------------------------------------------
     # DOS calculation with adaptive smearing on double_grid Hksp
@@ -512,4 +519,24 @@ class PAOFLOW:
 
     do_transport(self.data_controller, temps, ene, velkp)
 
+    velkp = None
+
     self.report_module_time('Transport in')
+
+
+
+  def calc_dielectric_tensor ( self, metal=False, kramerskronig=False, emin=0., emax=10., ne=500. ):
+    import numpy as np
+    from do_epsilon import do_dielectric_tensor
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    #-----------------------------------------------
+    # Compute dielectric tensor (Re and Im epsilon)
+    #-----------------------------------------------
+
+    ene = np.arange(emin, emax, (emax-emin)/ne)
+
+    do_dielectric_tensor(self.data_controller, ene, metal, kramerskronig)
+
+    self.report_module_time('Dielectric Tensor in')
