@@ -409,6 +409,7 @@ class PAOFLOW:
 
     if do_pdos:
       do_pdos(self.data_controller, emin=emin, emax=emax)
+
     self.report_module_time('DoS in')
 
 
