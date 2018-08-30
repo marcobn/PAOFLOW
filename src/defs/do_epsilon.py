@@ -16,13 +16,6 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import sys
-
-from load_balancing import *
-
-from constants import *
-from smearing import *
-
 
 def do_dielectric_tensor ( data_controller, ene, metal, kramerskronig ):
     import numpy as np
@@ -60,12 +53,12 @@ def do_dielectric_tensor ( data_controller, ene, metal, kramerskronig ):
         fjdos = 'jdos_%s%s_%d.dat'%indices
         data_controller.write_file_row_col(fjdos, ene, jdos)
 
-#        fepsr = 'epsr_%s%s_%d.dat'%indices
-#        data_controller.write_file_row_col(fepsr, ene, epsr)
+        if epsr is not None:
+          fepsr = 'epsr_%s%s_%d.dat'%indices
+          data_controller.write_file_row_col(fepsr, ene, epsr)
 
 
 def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol ):
-#(E_k,pksp,kq_wght,omega,shift,delta,temp,ipol,jpol,ispin,metal,ne,emin,emax,deltak,deltak2,smearing,kramerskronig):
     import numpy as np
     from mpi4py import MPI
 
@@ -99,35 +92,25 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
     #=======================
     epsr = None
     if kramerskronig:
-        if rank == 0:
-          print('Kramers Kronig not implemented in PAOFLOW_CLASS')
-        quit()
-        # Load balancing
-        #ini_ie, end_ie = load_balancing(size, rank, esize)
+        epsr_aux = epsr_kramerskronig(data_controller, ene, epsi)
 
-        #epsr_aux = epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,ipol,jpol)
+    elif attributes['smearing'] is None:
+        if rank == 0:
+            print('Fixed smearing not implemented\nReal part of epsilon will not be calculated')
+        return(epsi, None, jdos)
 
     else:
-        if rank == 0 and metal:
+        if metal and rank == 0 and ispin == 0:
           print('CAUTION: direct calculation of epsr in metals is not working!!!!!')
+        epsr_aux = smear_epsr_loop(data_controller, ene, ispin, ipol, jpol)
 
-        if attributes['smearing'] == None:
-            if rank == 0:
-                print('Fixed smearing not implemented\nReal part of epsilon will not be calculated')
+    epsr = np.zeros(esize, dtype=float)
+    comm.Allreduce(epsr_aux, epsr, op=MPI.SUM)
+    epsr_aux = None
 
-        if rank == 0:
-            print('Real Smearing not done')
-        #epsr_aux = smear_epsr_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,\
-        #                      ispin,metal,deltak,deltak2,smearing)
-
-    #epsr = np.zeros((3,3,esize), dtype=float)
-    #comm.Allreduce(epsr_aux, epsr, op=MPI.SUM)
-    #epsr_aux = None
-
-    #epsr += 1.0
+    epsr += 1.0
 
     return(epsi, epsr, jdos)
-
 
 
 def epsi_loop ( data_controller, ene, metal, ispin, ipol, jpol):
@@ -144,9 +127,6 @@ def epsi_loop ( data_controller, ene, metal, ispin, ipol, jpol):
 
     arrays,attributes = data_controller.data_dicts()
 
-    jdos = np.zeros(esize, dtype=float)
-    epsi = np.zeros(esize, dtype=float)
-
     esize = ene.size
     bnd = attributes['bnd']
     temp = attributes['temp']
@@ -157,6 +137,9 @@ def epsi_loop ( data_controller, ene, metal, ispin, ipol, jpol):
     Ef = 0.
     eps=1.e-8
     kq_wght = 1./attributes['nkpnts']
+
+    jdos = np.zeros(esize, dtype=float)
+    epsi = np.zeros(esize, dtype=float)
 
     fn = None
     if smearing == None:
@@ -241,60 +224,121 @@ def epsi_loop ( data_controller, ene, metal, ispin, ipol, jpol):
     return(epsi, jdos)
 
 
-def smear_epsr_loop(ipol,jpol,ene,E_k,pksp,kq_wght,nawf,omega,delta,temp,ispin,metal,deltak,deltak2,smearing):
+def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
     import numpy as np
-    from smearing import intgaussian,intmetpax,gaussian,metpax
+    from constants import EPS0, EVTORY
+    from smearing import intgaussian,intmetpax
 
-    epsr = np.zeros((3,3,ene.size),dtype=float)
+    arrays,attributes = data_controller.data_dicts()
 
-    dfunc = np.zeros((pksp.shape[0],ene.size),dtype=float)
-    effterm = np.zeros((pksp.shape[0],nawf),dtype=complex)
+    esize = ene.size
+    bnd = attributes['bnd']
+    delta = attributes['delta']
+    snktot = arrays['pksp'].shape[0]
+    smearing = attributes['smearing']
+
     Ef = 0.0
+    kq_wght = 1./attributes['nkpnts']
 
-    for n in range(nawf):
+    epsr = np.zeros(esize, dtype=float)
+
+    for n in range(bnd):
         if smearing == 'gauss':
-            fn = intgaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
-            fnF = gaussian(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
+            fn = intgaussian(arrays['E_k'][:,n,ispin], Ef, arrays['deltakp'][:,n,ispin])
         elif smearing == 'm-p':
-            fn = intmetpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
-            fnF = metpax(E_k[:,n,ispin],Ef,deltak[:,n,ispin])
-        else:
-            sys.exit('smearing not implemented')
-        for m in range(nawf):
+            fn = intmetpax(arrays['E_k'][:,n,ispin], Ef, arrays['deltak'][:,n,ispin])
+        for m in range(bnd):
             if smearing == 'gauss':
-                fm = intgaussian(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
+                fm = intgaussian(arrays['E_k'][:,m,ispin], Ef, arrays['deltakp'][:,m,ispin])
             elif smearing == 'm-p':
-                fm = intmetpax(E_k[:,m,ispin],Ef,deltak[:,m,ispin])
-            else:
-                sys.exit('smearing not implemented')
-            eig = ((E_k[:,m,ispin]-E_k[:,n,ispin])*np.ones((pksp.shape[0],ene.size),dtype=float).T).T
-            om = ((ene*np.ones((pksp.shape[0],ene.size),dtype=float)).T).T
-            del2 = (deltak2[:,n,m,ispin]*np.ones((pksp.shape[0],ene.size),dtype=float).T).T
-            dfunc = 1.0/(eig - om + 1.0j*del2)
-            if n != m:
-                epsr[ipol,jpol,:] += np.real(np.sum((1.0/(eig**2+1.0j*delta**2) * \
-                               kq_wght[0] * dfunc * ((fn - fm)*np.ones((pksp.shape[0],ene.size),dtype=float).T).T).T * \
-                               (pksp[:,ipol,n,m,ispin] * pksp[:,jpol,m,n,ispin]),axis=1))
+                fm = intmetpax(arrays['E_k'][:,m,ispin], Ef, arrays['deltakp'][:,m,ispin])
 
-    epsr *= 4.0/(EPS0 * EVTORY * omega)
+            f_nm = np.reshape(np.repeat(fn-fm,esize), (snktot,esize))
+            fm = None
+
+            eig = np.reshape(np.repeat(arrays['E_k'][:,m,ispin]-arrays['E_k'][:,n,ispin],esize), (snktot,esize))
+            del2 = np.reshape(np.repeat(arrays['deltakp2'][:,n,m,ispin],esize), (snktot,esize))
+            dfunc = 1.0/(eig - ene + 1.0j*del2)
+            del2 = None
+
+            if n != m:
+                pksp2 = arrays['pksp'][:,ipol,n,m,ispin] * arrays['pksp'][:,jpol,m,n,ispin]
+                epsr += np.real(np.sum(pksp2*(dfunc*f_nm/(eig**2+1.0j*delta**2)).T, axis=1))
+
+    epsr *= 4./(EPS0*EVTORY*attributes['omega']*attributes['nkpnts'])
 
     return epsr
 
+#### Try to flatten one loop of epsr_loop
+#   fn = None
+#   if smearing == None:
+#       fn = 1./(1.+np.exp(arrays['E_k'][:,:bnd,ispin]/temp))
+#   elif smearing == 'gauss':
+#       fn = intgaussian(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
+#   elif smearing == 'm-p':
+#       fn = intmetpax(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
 
-def epsr_kramkron(ini_ie,end_ie,ene,epsi,shift,i,j):
+#   '''upper triangle indices'''
+#   uind = np.triu_indices(bnd, k=1)
+#   ni = len(uind[0])
+
+#   # E_kn-Ek_m for every k-point and every band combination (m,n)
+#   E_diff_nm = (np.reshape(arrays['E_k'][:,:bnd,ispin],(snktot,1,bnd))-np.reshape(arrays['E_k'][:,:bnd,ispin],(snktot,bnd,1)))[:,uind[0],uind[1]]
+
+#   # fn_n-fn_m for every k-point and every band combination (m,n)
+#   f_nm = (np.reshape(fn,(snktot,bnd,1))-np.reshape(fn,(snktot,1,bnd)))[:,uind[0],uind[1]]
+#   fn = None
+
+#   # <p_n|p_m> for every k-point and every band combination (m,n)
+#   pksp2 = arrays['pksp'][:,ipol,uind[0],uind[1],ispin]*arrays['pksp'][:,jpol,uind[1],uind[0],ispin]
+#   pksp2 = (abs(pksp2) if smearing is None else np.real(pksp2))
+
+#    sq2_dk2 = (1.0/(np.sqrt(np.pi)*arrays['deltakp2'][:,uind[0],uind[1],ispin]) if smearing=='gauss' else None)
+
+#   for i,e in enumerate(ene):
+#       if smearing is None:
+#           dfunc = np.exp(-((e-E_diff_nm)/delta)**2)/(delta*np.sqrt(np.pi))
+#       else:
+#           dfunc = 1./(E_diff_nm-e+1.j*arrays['deltakp2'][:,uind[0],uind[1],ispin])
+#        elif smearing == 'gauss':
+#            dfunc = np.exp(-((e-E_diff_nm)/arrays['deltakp2'][:,uind[0],uind[1],ispin])**2)*sq2_dk2
+#        elif smearing == 'm-p':
+#            dfunc = metpax(E_diff_nm, e, arrays['deltakp2'][:,uind[0],uind[1],ispin])
+#       epsr[i] = np.sum((kq_wght/(E_diff_nm**2+1.j*delta**2))*dfunc*f_nm*pksp2/(e**2+delta**2))
+
+#   f_nm = dfunc = uind = pksp2 = sq2_dk2 = E_diff_nm = None
+
+
+def epsr_kramerskronig ( data_controller, ene, epsi ):
+    from mpi4py import MPI
     from scipy.integrate import simps
+    from load_balancing import load_balancing
 
-    epsr = np.zeros((3,3,ene.size),dtype=float)
-    de = ene[1]-ene[0]
+    comm = MPI.COMM_WORLD
 
-    if end_ie == ini_ie: return
-    if ini_ie < 3: ini_ie = 3
-    if end_ie == ene.size: end_ie = ene.size-1
-    f_ene = intmetpax(ene,shift,1.0)
-    for ie in range(ini_ie,end_ie):
-        #epsr[i,j,ie] = 2.0/np.pi * ( np.sum(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
-        #               np.sum(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
-        epsr[i,j,ie] = 2.0/np.pi * ( simps(ene[1:(ie-1)]*de*epsi[i,j,1:(ie-1)]*f_ene[1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2)) + \
-                       simps(ene[(ie+1):ene.size]*de*epsi[i,j,(ie+1):ene.size]*f_ene[(ie+1):ene.size]/(ene[(ie+1):ene.size]**2-ene[ie]**2)) )
+    arrays,attributes = data_controller.data_dicts()
+
+    esize = ene.size
+    de = ene[1] - ene[0]
+
+    epsr = np.zeros(esize, dtype=float)
+
+#### PARALLELIZATION
+#### Use scatter
+    ini_ie,end_ie = load_balancing(comm.Get_size(), comm.Get_rank(), esize)
+
+    # Range checks for Simpson Integrals
+    if end_ie == ini_ie:
+        return
+    if ini_ie < 3:
+        ini_ie = 3
+    if end_ie == esize:
+        end_ie = esize-1
+
+    f_ene = intmetpax(ene, attributes['shift'], 1.)
+    for ie in range(ini_ie, end_ie):
+        I1 = simps(ene[1:(ie-1)]*de*epsi[1:(ie-1)]*f_ene[1:(ie-1)]/(ene[1:(ie-1)]**2-ene[ie]**2))
+        I2 = simps(ene[(ie+1):esize]*de*epsi[(ie+1):esize]*f_ene[(ie+1):esize]/(ene[(ie+1):esize]**2-ene[ie]**2))
+        epsr[ie] = 2.*(I1+I2)/np.pi
 
     return epsr
