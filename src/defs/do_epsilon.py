@@ -246,7 +246,7 @@ def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
         if smearing == 'gauss':
             fn = intgaussian(arrays['E_k'][:,n,ispin], Ef, arrays['deltakp'][:,n,ispin])
         elif smearing == 'm-p':
-            fn = intmetpax(arrays['E_k'][:,n,ispin], Ef, arrays['deltak'][:,n,ispin])
+            fn = intmetpax(arrays['E_k'][:,n,ispin], Ef, arrays['deltakp'][:,n,ispin])
         for m in range(bnd):
             if smearing == 'gauss':
                 fm = intgaussian(arrays['E_k'][:,m,ispin], Ef, arrays['deltakp'][:,m,ispin])
