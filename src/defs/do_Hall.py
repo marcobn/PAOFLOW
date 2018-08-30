@@ -19,7 +19,6 @@
 def do_spin_Hall ( data_controller, do_ac ):
   import numpy as np
   from mpi4py import MPI
-  from do_spin_current import do_spin_current
   from do_Hall_conductivity import do_spin_Hall_conductivity
   from do_spin_Berry_curvature import do_spin_Berry_curvature
   from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
@@ -90,7 +89,6 @@ def do_spin_Hall ( data_controller, do_ac ):
 def do_anomalous_Hall ( data_controller, do_ac ):
   import numpy as np
   from mpi4py import MPI
-  from do_spin_current import do_spin_current
   from do_Hall_conductivity import do_Berry_conductivity
   from do_spin_Berry_curvature import do_spin_Berry_curvature
   from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
@@ -148,3 +146,32 @@ def do_anomalous_Hall ( data_controller, do_ac ):
 
       fsigR = 'MCDr_%s%s.dat'%cart_indices
       data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+
+
+def do_spin_current ( data_controller, spol ):
+  import numpy as np
+
+  arrays = data_controller.data_arrays
+  attributes = data_controller.data_attributes
+
+  Sj = arrays['Sj']
+  bnd = attributes['bnd']
+  snktot,_,nawf,nawf,nspin = arrays['dHksp'].shape
+
+  jdHksp = np.empty_like(arrays['dHksp'])
+
+  for l in range(3):
+    for ispin in range(nspin):
+      for ik in range(snktot):
+        jdHksp[ik,l,:,:,ispin] = 0.5*(np.dot(Sj,arrays['dHksp'][ik,l,:,:,ispin])+np.dot(arrays['dHksp'][ik,l,:,:,ispin],Sj))
+
+  jksp = np.zeros((snktot,3,bnd,bnd,nspin), dtype=complex)
+
+  for l in range(3):
+    for ispin in range(nspin):
+      for ik in range(snktot):
+        jksp[ik,l,:,:,ispin] = np.conj(arrays['v_k'][ik,:,:,ispin].T).dot(jdHksp[ik,l,:,:,ispin]).dot(arrays['v_k'][ik,:,:,ispin])[:bnd,:bnd]
+
+  jdHksp = None
+
+  return jksp

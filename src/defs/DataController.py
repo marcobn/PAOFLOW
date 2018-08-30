@@ -22,18 +22,51 @@ class DataController:
 
   data_arrays = data_attributes = None
 
-  def __init__ ( self, inputpath, inputfile ):
+  def __init__ ( self, workpath, outputdir, inputfile, savepath, smearing, npool, verbose ):
+    import os
     from mpi4py import MPI
+    from report_exception import report_exception
+
     self.comm = MPI.COMM_WORLD
     self.rank = self.comm.Get_rank()
     self.size = self.comm.Get_size()
 
-    if self.rank == 0:
-      self.data_arrays = {}
-      self.data_attributes = {}
+    if inputfile is None and savepath is None:
+      if self.rank == 0:
+        print('Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
+      quit()
 
-      self.data_attributes['inputpath'] = inputpath
-      self.data_attributes['inputfile'] = inputfile
+    if self.rank == 0:
+      self.data_arrays = arrays= {}
+      self.data_attributes = attributes = {}
+
+      attributes['workpath'] = workpath
+      attributes['outputdir'] = outputdir
+      attributes['inputfile'] = inputfile
+      attributes['opath'] = os.path.join(workpath, outputdir)
+
+      if not os.path.exists(attributes['opath']):
+        os.mkdir(attributes['opath'])
+
+      # Read inputfile, if it exsts
+      if inputfile != None:
+        try:
+          self.read_external_files()
+        except Exception as e:
+          report_exception()
+          self.comm.Abort()
+
+      # Set or update attributes
+        attributes['fpath'] = os.path.join(workpath, attributes['fpath'])
+      else:
+        attributes['npool'] = npool
+        attributes['verbose'] = verbose
+        attributes['smearing'] = smearing
+        attributes['fpath'] = os.path.join(workpath, savepath)
+
+    # Broadcast Data
+    self.broadcast_data_arrays()
+    self.broadcast_data_attributes()
 
 
   def data_dicts ( self ):
@@ -49,14 +82,11 @@ class DataController:
     self.read_pao_inputfile()
     self.read_qe_output()
 
-    # Broadcast Data
-    self.broadcast_data_arrays()
-    self.broadcast_data_attributes()
 
   def read_pao_inputfile ( self ):
     if self.rank == 0:
       from read_inputfile_xml_parse import read_inputfile_xml
-      read_inputfile_xml(self.data_attributes['inputpath'], self.data_attributes['inputfile'], self)
+      read_inputfile_xml(self.data_attributes['workpath'], self.data_attributes['inputfile'], self)
 
   def read_qe_output ( self ):
     if self.rank == 0:
@@ -80,10 +110,12 @@ class DataController:
         print('Data does not have the same shape')
         self.comm.Abort()
 
-      if self.data_attributes['verbose']:
+      attr = self.data_attributes
+
+      if attr['verbose']:
         print('Writing file: %s'%fname)
 
-      with open(join(self.data_attributes['inputpath'],fname), 'w') as f:
+      with open(join(attr['opath'],fname), 'w') as f:
         for i in range(len(col1)):
           f.write('%.5f %.5e\n'%(col1[i],col2[i]))
     self.comm.Barrier()
@@ -92,10 +124,12 @@ class DataController:
     if self.rank == 0:
       from os.path import join
 
-      if self.data_attributes['verbose']:
+      attr = self.data_attributes
+
+      if attr['verbose']:
         print('Writing transport file: %s'%fname)
 
-      with open(join(self.data_attributes['inputpath'],fname), 'w') as f:
+      with open(join(attr['opath'],fname), 'w') as f:
         for i in range(energies.size):
           tup = (temp,energies[i],tensor[0,0,i],tensor[1,1,i],tensor[2,2,i],tensor[0,1,i],tensor[0,2,i],tensor[1,2,i])
           f.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)

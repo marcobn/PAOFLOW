@@ -136,23 +136,7 @@ def do_topology_calc ( data_controller ):
   arrays['HRs'] = np.reshape(np.moveaxis(arrays['HRs'],0,2), (nawf,nawf,nk1,nk2,nk3,nspin), order='C')
 
   if attributes['spin_Hall']:
-    # Compute spin current matrix elements
-    # Pauli matrices (x,y,z)
-    sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    if attributes['do_spin_orbit']:
-      # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
-      Sj = np.zeros((nawf,nawf),dtype=complex)
-      for i in range(nawf/2):
-        Sj[i,i] = sP[spol][0,0]
-        Sj[i,i+1] = sP[spol][0,1]
-      for i in range(nawf/2,nawf):
-        Sj[i,i-1] = sP[spol][1,0]
-        Sj[i,i] = sP[spol][1,1]
-    else:
-      from clebsch_gordan import clebsch_gordan
-      # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-      Sj = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
-
+    Sj = arrays['Sj']
     jks = np.zeros((kq_aux.shape[1],3,bnd,bnd,nspin), dtype=complex)
 
   pks = np.zeros((kq_aux.shape[1],3,bnd,bnd,nspin), dtype=complex)
@@ -234,7 +218,7 @@ def do_topology_calc ( data_controller ):
     #mkm1 *= ELECTRONVOLT_SI**2/H_OVER_TPI**2*ELECTRONMASS_SI
     if rank == 0:
       for ispin in range(nspin):
-        f = open(os.path.join(attributes['inputpath'],'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat'),'w')
+        f = open(os.path.join(attributes['opath'],'effmass'+'_'+str(LL[ipol])+str(LL[jpol])+'_'+str(ispin)+'.dat'),'w')
         for ik in range(nkpi):
           s="%d\t"%ik
           for  j in np.real(mkm1[ik,:bnd,ipol,jpol,ispin]):s += "% 3.5f\t"%j
@@ -269,21 +253,23 @@ def do_topology_calc ( data_controller ):
       Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(arrays['E_k'][ik,:bnd,0]) + 1)))  # T=0.0K
       if attributes['spin_Hall']: Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(arrays['E_k'][ik,:bnd,0]-mu) + 1)))  # T=0.0K
 
+  indices = (LL[spol], LL[ipol], LL[jpol])
+  lrng = (list(range(nkpi)) if rank==0 else None)
+
   if attributes['Berry']:
     Om_zk = gather_full(Om_zk, npool)
-    if rank == 0:
-      f=open(os.path.join(attributes['inputpath'],'Omega_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-      for ik in range(nkpi):
-        f.write('%3d  %.5f \n' %(ik,-Om_zk[ik,0]))
-      f.close()
+    fOm_zk = 'Omega_%s_%s%s.dat'%indices
+    data_controller.write_file_row_col(fOm_zk, lrng, (Om_zk[:,0] if rank==0 else None))
+
   if attributes['spin_Hall']:
     Omj_zk = gather_full(Omj_zk, npool)
-    if rank == 0:
-      f=open(os.path.join(attributes['inputpath'],'Omegaj_'+str(LL[spol])+'_'+str(LL[ipol])+str(LL[jpol])+'.dat'),'w')
-      for ik in range(nkpi):
-        f.write('%3d  %.5f \n' %(ik,Omj_zk[ik,0]))
-      f.close()
+    fOmj_zk = 'Omegaj_%s_%s%s.dat'%indices
+    data_controller.write_file_row_col(fOmj_zk, lrng, (Omj_zk[:,0] if rank==0 else None))
 
+#### Velocity write
+#### Same as Band write
+#### Write DataController band write
+  return
   pks = gather_full(pks, npool)
   if rank == 0:
     if attributes['do_spin_orbit']:
@@ -302,7 +288,6 @@ def do_topology_calc ( data_controller ):
           f.write(s)
         f.close()
 
-  return
 
 def band_loop_H ( HRaux, R, kq, nawf, nspin ):
   import numpy as np

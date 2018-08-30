@@ -46,9 +46,9 @@ def main():
   except:
     pass
 
-  paoflow = PAOFLOW(inputpath=arg1, inputfile=arg2, verbose=False)
+  paoflow = PAOFLOW(workpath=arg1, inputfile=arg2, verbose=False)
 
-  arry, attr = paoflow.data_controller.data_dicts()
+  arry,attr = paoflow.data_controller.data_dicts()
 
   paoflow.calc_projectability(pthr=attr['pthr'])
 
@@ -57,22 +57,25 @@ def main():
   if attr['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
 
-  paoflow.add_external_fields()
+  paoflow.add_external_fields(Efield=arry['Efield'], Bfield=arry['Bfield'], HubbardU=arry['HubbardU'])
 
   if attr['do_bands']:
-    paoflow.calc_bands()
+    paoflow.calc_bands(topology=attr['band_topology'])
 
   ## MUST KNOW DOUBLE_GRID IN ADVANCE
   if attr['double_grid']:
     paoflow.calc_double_grid()
 
-  paoflow.calc_pao_eigh()
+  paoflow.calc_pao_eigh(bval=attr['bval'])
 
   if attr['smearing'] is None:
     paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['fermisurf']:
     paoflow.calc_fermi_surface()
+
+  if attr['spintexture'] or attr['spin_Hall']:
+    paoflow.calc_spin_operator(spin_orbit=attr['do_spin_orbit'], sh=arry['sh'], nl=arry['nl'])
 
   if attr['spintexture']:
     paoflow.calc_spin_texture()
@@ -95,7 +98,6 @@ def main():
 
   if attr['epsilon']:
     paoflow.calc_dielectric_tensor(metal=attr['metal'], kramerskronig=attr['kramerskronig'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
-  quit()
 
 
 if __name__== '__main__':

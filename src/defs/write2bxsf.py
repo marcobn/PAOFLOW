@@ -33,7 +33,7 @@ def write2bxsf ( data_controller, fname, bands, nbnd ):
 
     b_vectors = arrays['b_vectors']
 
-    with open (os.path.join(attributes['inputpath'],'{0}'.format(fname)),'w') as f:
+    with open (os.path.join(attributes['workpath'],attributes['outputdir'],'{0}'.format(fname)),'w') as f:
         f.write('\nBEGIN_INFO\n  Fermi Energy: {:15.9f}\n  Shift Range: {:12.9f}eV to{:12.9f}eV\nEND_INFO\n'.format(Efermi,fermi_dw,fermi_up))
         # BXSF scalar-field header
         f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBANDGRID_3D_BANDS\n')  

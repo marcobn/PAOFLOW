@@ -50,8 +50,6 @@ def do_fermisurf ( data_controller ):
 
       Efermi = 0.0
 
-###### FILE OUTPUT
-      #collect the interpolated eignvalues
       icount = 0
       for ib in range(nawf):
         E_k_min = np.amin(E_k_full[:,ib,ispin])
@@ -68,10 +66,8 @@ def do_fermisurf ( data_controller ):
           icount += 1
       x0 = np.zeros(3, dtype=float) 
 
-      write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, attributes['alat'],x0, arrays['b_vectors'], 'FermiSurf_'+str(ispin)+'.bxsf',attributes['inputpath'])   
-
-      for ib in range(icount):
-        np.savez(os.path.join(attributes['inputpath'],'Fermi_surf_band_'+str(ib)+'_spin_'+str(ispin)), nameband = eigband[:,:,:,ib])
+      feig = 'FermiSurf_%d.bxsf'%ispin
+      data_controller.write_bxsf(feig, eigband, icount)
 
     E_k_rs = None
 

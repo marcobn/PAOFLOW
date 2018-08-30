@@ -16,15 +16,16 @@ class PAOFLOW:
 
   comm = rank = size = None
 
-  inputpath = inputfile = None
+  workpath = inputfile = None
 
   start_time = reset_time = None
 
 
-  def __init__ ( self, inputpath='./', inputfile='inputfile.xml', verbose=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savepath=None, smearing='gauss', npool=1, verbose=False ):
     from mpi4py import MPI
 
-    self.inputpath = inputpath
+    self.workpath = workpath
+    self.outputdir = outputdir
     self.inputfile = inputfile
 
     #-------------------------------
@@ -56,20 +57,9 @@ class PAOFLOW:
       print('#############################################################################################\n')
 
     # Initialize Data Controller 
-    self.data_controller = DataController(inputpath, inputfile)
-    try:
-      self.data_controller.read_external_files()
-    except Exception as e:
-      report_exception()
-      self.comm.Abort()
-    
+    self.data_controller = DataController(workpath, outputdir, inputfile, savepath, smearing, npool, verbose)
+
     attributes = self.data_controller.data_attributes
-
-    # Update Path
-    attributes['fpath'] = os.path.join(inputpath, attributes['fpath'])
-
-    # Update Input Arguments
-    attributes['verbose'] = verbose
 
     #------------------------------
     # Check for CUDA FFT Libraries
@@ -128,12 +118,14 @@ class PAOFLOW:
 
   def report_module_time ( self, mname ):
 
+    # White spacing between module name and reported time
     spaces = 40
     lmn = len(mname)
     if len(mname) > spaces:
       print('Please use a shorter module tag.')
       quit()
 
+    # Format string and print
     self.comm.Barrier()
     if self.rank == 0:
       lms = spaces-lmn
@@ -144,11 +136,9 @@ class PAOFLOW:
 
 
 
-  def calc_projectability ( self, pthr=None ):
+  def calc_projectability ( self, pthr=0.95, shift='auto' ):
     from do_projectability import do_projectability
-    if pthr is not None:
-      self.data_controller.data_attributes['pthr'] = pthr
-    do_projectability(self.data_controller)
+    do_projectability(self.data_controller, pthr, shift)
 
 
 
@@ -236,13 +226,13 @@ class PAOFLOW:
 
 
 
-  def add_external_fields ( self ):
+  def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
     from add_ext_field import add_ext_field
 
     arrays = self.data_controller.data_arrays
 
     # Add external fields or non scf ACBN0 correction
-    if self.rank == 0 and (arrays['Efield'].any() != 0.0 or arrays['Bfield'].any() != 0.0 or arrays['HubbardU'].any() != 0.0):
+    if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
       add_ext_field(self.data_controller)
     self.comm.Barrier()
 
@@ -252,7 +242,7 @@ class PAOFLOW:
 
 
 
-  def calc_bands ( self ):
+  def calc_bands ( self, topology=False ):
     from do_bands import do_bands
 
     arrays,attributes = self.data_controller.data_dicts()
@@ -273,7 +263,8 @@ class PAOFLOW:
 
     self.report_module_time('Bands in')
 
-    if not attributes['onedim'] and attributes['band_topology']:
+    attributes['onedim'] = False
+    if not attributes['onedim'] and topology:
       from do_topology_calc import do_topology_calc
       # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
       # curvature operators along the path in the IBZ from do_topology_calc 
@@ -314,7 +305,7 @@ class PAOFLOW:
 
 
 
-  def calc_pao_eigh ( self ):
+  def calc_pao_eigh ( self, bval=0 ):
     from communication import scatter_full, gather_full
     from do_pao_eigh import do_pao_eigh
 
@@ -464,6 +455,42 @@ class PAOFLOW:
 
 
 
+  def calc_spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
+    import numpy as np
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    arrays['sh'] = sh
+    arrays['nl'] = nl
+    attributes['do_spin_orbit'] = spin_orbit
+
+    bnd = attributes['bnd']
+
+    # Compute spin operators
+    # Pauli matrices (x,y,z)
+    sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+    if spin_orbit:
+      # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
+      Sj = np.zeros((3,nawf,nawf), dtype=complex)
+      for spol in range(3):
+        for i in range(nawf//2):
+          Sj[spol,i,i] = sP[spol][0,0]
+          Sj[spol,i,i+1] = sP[spol][0,1]
+        for i in range(nawf//2, nawf):
+          Sj[spol,i,i-1] = sP[spol][1,0]
+          Sj[spol,i,i] = sP[spol][1,1]
+    else:
+      from clebsch_gordan import clebsch_gordan
+      # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
+      Sj = np.zeros((3,nawf,nawf), dtype=complex)
+      for spol in range(3):
+        Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
+
+    arrays['Sj'] = Sj
+    Sj = None
+
+
+
   def calc_spin_texture ( self ):
     from do_spin_texture import do_spin_texture
 
@@ -471,7 +498,6 @@ class PAOFLOW:
 
     if attributes['nspin'] == 1:
       do_spin_texture(self.data_controller)
-      #do_spin_texture(fermi_dw,fermi_up,E_k,v_k,sh,nl,nk1,nk2,nk3,nawf,nspin,do_spin_orbit,npool,inputpath)
 
       self.report_module_time('Spin Texutre in')
 

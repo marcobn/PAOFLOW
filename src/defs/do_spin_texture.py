@@ -53,26 +53,7 @@ def do_spin_texture ( data_controller ):
 
     icount = MPI.COMM_WORLD.bcast(icount)
 
-    # Compute spin operators
-    # Pauli matrices (x,y,z)
-    sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    if attributes['do_spin_orbit']:
-      # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
-      Sj = np.zeros((3,nawf,nawf), dtype=complex)
-      for spol in range(3):
-        for i in range(nawf/2):
-          Sj[spol,i,i] = sP[spol][0,0]
-          Sj[spol,i,i+1] = sP[spol][0,1]
-        for i in range(nawf/2,nawf):
-          Sj[spol,i,i-1] = sP[spol][1,0]
-          Sj[spol,i,i] = sP[spol][1,1]
-    else:
-      from clebsch_gordan import clebsch_gordan
-      # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-      Sj = np.zeros((3,nawf,nawf), dtype=complex)
-      for spol in range(3):
-        Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
-
+    Sj = arrays['Sj']
     snktot = arrays['v_k'].shape[0]
     sktxtaux = np.zeros((snktot,3,nawf,nawf),dtype=complex)
 
@@ -88,8 +69,9 @@ def do_spin_texture ( data_controller ):
     if rank == 0:
       sktxt = np.reshape(sktxt, (nk1,nk2,nk3,3,nawf,nawf), order='C')
 
-      for ib in range(icount):
-        np.savez(os.path.join(attributes['inputpath'],'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
+## FILE OUTPUT
+##      for ib in range(icount):
+##        np.savez(os.path.join(attributes['inputpath'],'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     sktxt = None
 

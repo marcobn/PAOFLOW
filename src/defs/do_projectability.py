@@ -26,7 +26,7 @@ def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
             Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
     return Pn
 
-def do_projectability ( data_controller ):
+def do_projectability ( data_controller, pthr, shift ):
     #----------------------
     # Building the Projectability
     #----------------------
@@ -43,6 +43,9 @@ def do_projectability ( data_controller ):
         if attributes['verbose']:
             print('Projectability vector ',Pn)
 
+        if 'pthr' not in attributes:
+            attributes['pthr'] = pthr
+
         # Check projectability and decide bnd
         bnd = 0
         for n in range(attributes['nbnds']):
@@ -50,8 +53,8 @@ def do_projectability ( data_controller ):
                 bnd += 1
         Pn = None
         attributes['bnd'] = bnd
-        if attributes['shift'] == 'auto':
-            attributes['shift'] = np.amin(arrays['my_eigsmat'][bnd,:,:])
+        if 'shift' not in attributes or attributes['shift']=='auto':
+            attributes['shift'] = (np.amin(arrays['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
 
         if attributes['verbose']:
             print('# of bands with good projectability > {} = {}'.format(attributes['pthr'],bnd))

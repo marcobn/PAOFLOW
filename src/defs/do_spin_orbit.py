@@ -15,14 +15,12 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from scipy import fftpack as FFT
-import numpy as np
-import cmath
-import sys, time
 
-sys.path.append('./')
+#sys.path.append('./')
 
 def do_spin_orbit_bands( data_controller ):
+    import cmath
+    import numpy as np
 
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 
@@ -63,6 +61,8 @@ def do_spin_orbit_bands( data_controller ):
 
 
 def soc_p(theta,phi):
+        import cmath
+        import numpy as np
 
     # Hardcoded to s,p,d. This must change latter.
         HR_soc = np.zeros((18,18),dtype=complex) 
@@ -100,6 +100,8 @@ def soc_p(theta,phi):
 
 
 def soc_d(theta,phi):
+        import cmath
+        import numpy as np
 
     # Hardcoded to s,p,d. This must change latter.
         HR_soc = np.zeros((18,18),dtype=complex) 
