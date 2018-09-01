@@ -23,50 +23,36 @@
 #
 # *************************************************************************************
 
-# future imports
-
-
-import sys
-import time
-import numpy as np
 from PAOFLOW_class import PAOFLOW
-from mpi4py import MPI
 
 def main():
 
-  rank = MPI.COMM_WORLD.Get_rank()
-
   arg1 = './'
   arg2 = 'inputfile.xml'
-  try:
-    arg1 = os.path.abspath(sys.argv[1])
-    if os.path.isfile(arg1):
-      arg2 = os.path.basename(arg1)
-      arg1 = os.path.dirname(arg1)
-  except:
-    pass
 
   paoflow = PAOFLOW(workpath=arg1, inputfile=arg2, verbose=False)
 
   arry,attr = paoflow.data_controller.data_dicts()
 
-  paoflow.calc_projectability(pthr=attr['pthr'])
+  paoflow.calc_projectability()
 
   paoflow.calc_pao_hamiltonian()
 
   if attr['non_ortho']:
     paoflow.orthogonalize_hamiltonian()
 
-  paoflow.add_external_fields(Efield=arry['Efield'], Bfield=arry['Bfield'], HubbardU=arry['HubbardU'])
+  paoflow.add_external_fields()
 
   if attr['do_bands']:
-    paoflow.calc_bands(topology=attr['band_topology'])
+    paoflow.calc_bands()
 
-  ## MUST KNOW DOUBLE_GRID IN ADVANCE
+  if attr['band_topology'] and not attr['onedim']:
+    paoflow.calc_topology()
+
   if attr['double_grid']:
-    paoflow.calc_double_grid()
+    paoflow.calc_interpolated_hamiltonian()
 
-  paoflow.calc_pao_eigh(bval=attr['bval'])
+  paoflow.calc_pao_eigh()
 
   if attr['smearing'] is None:
     paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
@@ -75,7 +61,7 @@ def main():
     paoflow.calc_fermi_surface()
 
   if attr['spintexture'] or attr['spin_Hall']:
-    paoflow.calc_spin_operator(spin_orbit=attr['do_spin_orbit'], sh=arry['sh'], nl=arry['nl'])
+    paoflow.calc_spin_operator(spin_orbit=attr['do_spin_orbit'])
 
   if attr['spintexture']:
     paoflow.calc_spin_texture()
@@ -83,15 +69,15 @@ def main():
   paoflow.calc_gradient_and_momenta()
 
   if attr['smearing'] is not None:
-    paoflow.calc_adaptive_smearing(smearing=attr['smearing'])
+    paoflow.calc_adaptive_smearing()
 
     paoflow.calc_dos_adaptive(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['spin_Hall']:
-    paoflow.calc_spin_Hall(do_ac=attr['ac_cond_spin'])
+    paoflow.calc_spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'])
 
   if attr['Berry']:
-    paoflow.calc_anomalous_Hall(do_ac=attr['ac_cond_Berry'])
+    paoflow.calc_anomalous_Hall(do_ac=attr['ac_cond_Berry'], emin=attr['eminAH'], emax=attr['emaxSH'])
 
   if attr['Boltzmann']:
     paoflow.calc_transport(tmin=attr['tmin'], tmax=attr['tmax'], tstep=attr['tstep'], emin=attr['emin'], emax=attr['emax'], ne=attr['ne'])
@@ -99,6 +85,8 @@ def main():
   if attr['epsilon']:
     paoflow.calc_dielectric_tensor(metal=attr['metal'], kramerskronig=attr['kramerskronig'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
 
+  paoflow.finish_execution()
 
 if __name__== '__main__':
   main()
+

@@ -480,7 +480,8 @@ def kpnts_interpolation_mesh ( data_controller ):
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes
 
-    nk = attributes['nk']
+## nk HARDCODED    nk = attributes['nk']
+    nk = 2000
     alat = attributes['alat']
     ibrav = attributes['ibrav']
     a_vectors = arrays['a_vectors']

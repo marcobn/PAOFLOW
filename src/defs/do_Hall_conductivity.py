@@ -30,7 +30,6 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
 
   snktot = jksp.shape[0]
   bnd = attributes['bnd']
-  fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
   # Compute the optical conductivity tensor sigma_xy(ene)

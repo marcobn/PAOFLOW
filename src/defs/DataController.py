@@ -22,7 +22,7 @@ class DataController:
 
   data_arrays = data_attributes = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, savepath, smearing, npool, verbose ):
+  def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose ):
     import os
     from mpi4py import MPI
     from report_exception import report_exception
@@ -31,38 +31,40 @@ class DataController:
     self.rank = self.comm.Get_rank()
     self.size = self.comm.Get_size()
 
-    if inputfile is None and savepath is None:
+    if inputfile is None and savedir is None:
       if self.rank == 0:
         print('Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
       quit()
 
     if self.rank == 0:
-      self.data_arrays = arrays= {}
+      self.data_arrays = arrays = {}
       self.data_attributes = attributes = {}
 
+      # Set or update attributes
+      attributes['verbose'] = verbose
       attributes['workpath'] = workpath
       attributes['outputdir'] = outputdir
       attributes['inputfile'] = inputfile
+      attributes['fpath'] = os.path.join(workpath, (savedir if inputfile==None else inputfile))
       attributes['opath'] = os.path.join(workpath, outputdir)
+
+      if inputfile == None:
+        attributes['npool'] = npool
+        attributes['smearing'] = smearing
 
       if not os.path.exists(attributes['opath']):
         os.mkdir(attributes['opath'])
 
-      # Read inputfile, if it exsts
-      if inputfile != None:
-        try:
-          self.read_external_files()
-        except Exception as e:
-          report_exception()
-          self.comm.Abort()
+      self.add_default_tensors()
 
-      # Set or update attributes
-        attributes['fpath'] = os.path.join(workpath, attributes['fpath'])
-      else:
-        attributes['npool'] = npool
-        attributes['verbose'] = verbose
-        attributes['smearing'] = smearing
-        attributes['fpath'] = os.path.join(workpath, savepath)
+      # Read inputfile, if it exsts
+      try:
+        if inputfile != None:
+          self.read_pao_inputfile()
+        self.read_qe_output()
+      except Exception as e:
+        report_exception()
+        self.comm.Abort()
 
     # Broadcast Data
     self.broadcast_data_arrays()
@@ -77,10 +79,19 @@ class DataController:
     print(self.data_arrays.keys())
 
 
-  def read_external_files ( self ):
-    # Read Input Data
-    self.read_pao_inputfile()
-    self.read_qe_output()
+  def add_default_tensors ( self ):
+    import numpy as np
+    # Tensor components
+    # Dielectric function
+    self.data_arrays['d_tensor'] = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])
+    # Boltzmann transport
+    self.data_arrays['t_tensor'] = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])
+    # Berry curvature
+    self.data_arrays['a_tensor'] = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])
+    # Spin Berry curvature
+    self.data_arrays['s_tensor'] = np.array([[0,0,0],[0,1,0],[0,2,0],[1,0,0],[1,1,0],[1,2,0],[2,0,0],[2,1,0],[2,2,0], \
+                                             [0,0,1],[0,1,1],[0,2,1],[1,0,1],[1,1,1],[1,2,1],[2,0,1],[2,1,1],[2,2,1], \
+                                             [0,0,2],[0,1,2],[0,2,2],[1,0,2],[1,1,2],[1,2,2],[2,0,2],[2,1,2],[2,2,2]])
 
 
   def read_pao_inputfile ( self ):
@@ -106,7 +117,7 @@ class DataController:
     if self.rank == 0:
       from os.path import join
       if len(col1) != len(col2):
-        print('Cannon write file: %s'%fname)
+        print('Cannot write file: %s'%fname)
         print('Data does not have the same shape')
         self.comm.Abort()
 

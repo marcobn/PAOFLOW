@@ -29,6 +29,8 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
   bnd = attributes['bnd']
   netot = attributes['nkpnts']*bnd
 
+  emax = np.amin(np.array([attributes['shift'], emax]))
+
   # DOS calculation with gaussian smearing
   de = (emax-emin)/1000
   ene = np.arange(emin, emax, de)

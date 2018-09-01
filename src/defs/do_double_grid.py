@@ -26,8 +26,7 @@ def do_double_grid ( data_controller ):
 
     rank = MPI.COMM_WORLD.Get_rank()
 
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+    arrays,attributes = data_controller.data_dicts()
 
     nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 

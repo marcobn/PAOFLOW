@@ -33,7 +33,7 @@ def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
   bnd = attributes['bnd']
   nspin = attributes['nspin']
   snktot = pksp.shape[0]
-  fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
+  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
   # Compute only Omega_z(k)
@@ -46,8 +46,9 @@ def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
         Om_znkaux[:,n] += -2.0*np.imag(pksp[:,ipol,n,m,0]*arrays['pksp'][:,jpol,m,n,0]) / \
         ((arrays['E_k'][:,m,0] - arrays['E_k'][:,n,0])**2 + deltap**2)
 
-  de = (attributes['emaxSH']-attributes['eminSH'])/500
-  ene = np.arange(attributes['eminSH'], attributes['emaxSH'], de)
+  attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
+  de = (attributes['emaxH']-attributes['eminH'])/500
+  ene = np.arange(attributes['eminH'], attributes['emaxH'], de)
   esize = ene.size
 
   Om_zkaux = np.zeros((snktot,esize), dtype=float)

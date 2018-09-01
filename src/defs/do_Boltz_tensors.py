@@ -29,7 +29,7 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
 
     esize = ene.size
 
-    smearing = None
+    smearing = attributes['smearing']
 
     t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
 
@@ -77,9 +77,11 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
 
     arrays,attributes = data_controller.data_dicts()
 
+    t_tensor = arrays['t_tensor']
+
     esize = ene.size
 
-    L0aux = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, arrays['t_tensor'], ispin, 0)
+    L0aux = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, ispin, 0)
     L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
     comm.Reduce(L0aux, L0, op=MPI.SUM)
     L0aux = None
@@ -101,7 +103,7 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha
     bnd = attributes['bnd']
     kq_wght = 1./attributes['nkpnts']
 
-    if smearing != None and smearing != 'gauss' and smearing != 'm-p':
+    if smearing is not None and smearing != 'gauss' and smearing != 'm-p':
         print('%s Smearing Not Implemented.'%smearing)
         comm.Abort()
 
@@ -111,7 +113,7 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha
         Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
         delk = (np.reshape(np.repeat(arrays['deltakp'][:,n,ispin],esize), (snktot,esize)) if smearing!=None else None)
         EtoAlpha = np.power(Eaux[:,:]-ene, alpha)
-        if smearing == None:
+        if smearing is None:
             Eaux -= ene
             smearA = .5/(temp*(1.+.5*(np.exp(Eaux/temp)+np.exp(-Eaux/temp))))
         else:

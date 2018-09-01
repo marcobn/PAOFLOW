@@ -32,6 +32,8 @@ def do_transport ( data_controller, temps, ene, velkp ):
   siemen_conv = 6.9884
   temp_conv = 11604.52500617
 
+  t_tensor = arrays['t_tensor']
+
   esize = ene.size
 
   spin_mult = (1. if attributes['nspin']==2 or attributes['dftSO'] else 2.)

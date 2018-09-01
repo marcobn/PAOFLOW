@@ -30,9 +30,8 @@ def do_spin_texture ( data_controller ):
 
   nspin = attributes['nspin']
   nktot = attributes['nkpnts']
+  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nawf,nk1,nk2,nk3 = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3']
-
-  fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
 
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
 

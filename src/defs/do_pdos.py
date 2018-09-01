@@ -31,6 +31,8 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
   nktot = attributes['nkpnts']
 
   # PDOS calculation with gaussian smearing
+
+  emax = np.amin(np.array([attributes['shift'], emax]))
   de = (emax-emin)/1000.
   ene = np.arange(emin, emax, de)
   esize = ene.size
@@ -79,6 +81,7 @@ def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
   attributes = data_controller.data_attributes
 
   # PDoS Calculation with Gaussian Smearing
+  emax = np.amin(np.array([attributes['shift'], emax]))
   de = (emax-emin)/1000.
   ene = np.arange(emin, emax, de)
   esize = ene.size

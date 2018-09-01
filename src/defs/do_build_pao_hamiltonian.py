@@ -23,8 +23,7 @@ from numpy import linalg as LAN
 
 def build_Hks ( data_controller ):
 
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+    arrays,attributes = data_controller.data_dicts()
 
     bnd = attributes['bnd']
     nawf = attributes['nawf']
@@ -103,21 +102,15 @@ def build_Hks ( data_controller ):
 
 
 def do_build_pao_hamiltonian ( data_controller ):
+
     #------------------------------
     # Building the PAO Hamiltonian
     #------------------------------
-
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+    arrays,attributes = data_controller.data_dicts()
 
     ashape = (attributes['nawf'],attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3'],attributes['nspin'])
 
     arrays['Hks'] = build_Hks(data_controller)
-
-    # This is needed for consistency of the ordering of the matrix elements
-    # Important in ACBN0 file writing
-    if attributes['non_ortho']:
-        arrays['Sks'] = np.transpose(arrays['Sks'], (1,0,2))
 
     # NOTE: Take care of non-orthogonality, if needed
     # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
@@ -128,6 +121,11 @@ def do_build_pao_hamiltonian ( data_controller ):
     #    Hks = do_ortho(Hks,Sks)
     if attributes['non_ortho']:
         from do_non_ortho import do_non_ortho
+
+        # This is needed for consistency of the ordering of the matrix elements
+        # Important in ACBN0 file writing
+        arrays['Sks'] = np.transpose(arrays['Sks'], (1,0,2))
+
         arrays['Hks'] = do_non_ortho(arrays['Hks'],arrays['Sks'])
         arrays['Sks'] = np.reshape(arrays['Sks'], ashape)
 

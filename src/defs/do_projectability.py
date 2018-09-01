@@ -26,25 +26,26 @@ def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
             Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
     return Pn
 
-def do_projectability ( data_controller, pthr, shift ):
+def do_projectability ( data_controller ):
     #----------------------
     # Building the Projectability
     #----------------------
     rank = MPI.COMM_WORLD.Get_rank()
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+
+    arrays,attributes = data_controller.data_dicts()
+
+    pthr = attributes['pthr']
+    shift = attributes['shift']
 
     bnd = None
     if rank != 0:
-        attributes['shift']= None
+        attributes['shift'] = None
     else:
         Pn = build_Pn(attributes['nawf'], attributes['nbnds'], attributes['nkpnts'], attributes['nspin'], arrays['U'])
 
         if attributes['verbose']:
             print('Projectability vector ',Pn)
 
-        if 'pthr' not in attributes:
-            attributes['pthr'] = pthr
 
         # Check projectability and decide bnd
         bnd = 0
@@ -65,7 +66,3 @@ def do_projectability ( data_controller, pthr, shift ):
     # Broadcast 
     data_controller.broadcast_single_attribute('bnd')
     data_controller.broadcast_single_attribute('shift')
-
-    attributes['emaxAH'] = np.amin(np.array([attributes['shift'],attributes['emaxAH']]))
-    attributes['emaxSH'] = np.amin(np.array([attributes['shift'],attributes['emaxSH']]))
-    attributes['emax'] = np.amin(np.array([attributes['shift'],attributes['emax']]))

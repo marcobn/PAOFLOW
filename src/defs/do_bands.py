@@ -30,7 +30,7 @@ def bands_calc ( data_controller ):
 #### PARALLELIZATION
   kq_aux = scatter_full(arrays['kq'].T, npool).T
  
-  Sks_aux = None if not attributes['non_ortho'] else band_loop_S(data_controller)
+  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller))
   Hks_aux = band_loop_H(data_controller)
 
   E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float,order="C")
@@ -125,7 +125,9 @@ def do_bands ( data_controller ):
   # Bohr to Angstrom
   attributes['alat'] /= ANGSTROM_AU
 
-  if attributes['do_bands'] and not attributes['onedim']:
+## What about ONEDIM?
+  attributes['onedim'] = False
+  if not attributes['onedim']:
     #--------------------------------------------
     # Compute bands on a selected path in the BZ
     #--------------------------------------------
@@ -164,7 +166,7 @@ def do_bands ( data_controller ):
     E_kp = None
 
   # 1D Bands not implemented
-  elif attributes['do_bands'] and attributes['onedim']:
+  elif attributes['onedim']:
     if rank == 0:
       print('OneDim bands not implemented in PAOFLOW_Class')
       #----------------------

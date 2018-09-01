@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def write2bxsf ( data_controller, fname, bands, nbnd ):
+def write2bxsf ( data_controller, fname, bands, nbnd, fermi_up=1., fermi_dw=-1. ):
     import os
     import numpy as np
     from numpy import pi
@@ -29,7 +29,6 @@ def write2bxsf ( data_controller, fname, bands, nbnd ):
     alat = attributes['alat']
     Efermi = attributes['Efermi']
     nx,ny,nz = attributes['nk1'],attributes['nk2'],attributes['nk3']
-    fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
 
     b_vectors = arrays['b_vectors']
 

@@ -37,9 +37,8 @@ def do_fermisurf ( data_controller ):
     nbndx_plot = 10
     nawf = attributes['nawf']
     nktot = attributes['nkpnts']
+    fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
     nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
-
-    fermi_dw,fermi_up = attributes['fermi_dw'],attributes['fermi_up']
 
     E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attributes['nspin']))
 

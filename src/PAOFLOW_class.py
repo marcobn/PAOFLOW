@@ -21,7 +21,7 @@ class PAOFLOW:
   start_time = reset_time = None
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savepath=None, smearing='gauss', npool=1, verbose=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
     from mpi4py import MPI
 
     self.workpath = workpath
@@ -57,13 +57,13 @@ class PAOFLOW:
       print('#############################################################################################\n')
 
     # Initialize Data Controller 
-    self.data_controller = DataController(workpath, outputdir, inputfile, savepath, smearing, npool, verbose)
+    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose)
 
     attributes = self.data_controller.data_attributes
 
-    #------------------------------
     # Check for CUDA FFT Libraries
-    #------------------------------
+## CUDA not yet supported in PAOFLOW_CLASS
+    attributes['use_cuda'] = False
     attributes['scipyfft'] = True
     if attributes['use_cuda']:
       attributes['scipyfft'] = False
@@ -73,44 +73,26 @@ class PAOFLOW:
       else:
         print('SciPy will perform FFTs')
 
-    # Ensure nffts are even
-    if attributes['double_grid']:
-      if attributes['nfft1']%2!=0 or attributes['nfft2']%2!=0 or attributes['nfft3']%2!=0:
-        attributes['nfft1'] = 2*((attributes['nfft1']+1)//2)
-        attributes['nfft2'] = 2*((attributes['nfft2']+1)//2)
-        attributes['nfft3'] = 2*((attributes['nfft3']+1)//2)
-        print('Warning: nfft grid has been modified to support double_grid,')
-        print('Modified nfft grid to: %d %d %d\n'%(attributes['nfft1'],attributes['nfft2'],attributes['nfft3']))
-
-    # set npool to minimum needed if npool isnt high enough
-    int_max = 2147483647
-    temp_pool = int(np.ceil((float(attributes['nawf']**2*attributes['nfft1']*attributes['nfft2']*attributes['nfft3']*3*attributes['nspin'])/float(int_max))))
-    if temp_pool > attributes['npool']:
-      if self.rank == 0:
-        print("Warning: %s too low. Setting npool to %s"%(attributes['npool'],temp_pool))
-      attributes['npool'] = temp_pool
-
+    # Report execution information
     if self.rank == 0:
       if self.size > 1:
         print('Parallel execution on %d processors and %d pool'%(self.size,attributes['npool']) + ('' if attributes['npool']==1 else 's'))
       else:
         print('Serial execution')
 
-    #------------------
     # Do memory checks 
-    #------------------
     if self.rank == 0:
       dxdydz = 3
       B_to_GB = 1.E-9
-      fudge_factor = 1.
       bytes_per_complex = 128//8
       spins = attributes['nspin']
       num_wave_functions = attributes['nawf']
-      nd1 = (attributes['nfft1'] if attributes['nfft1']>attributes['nk1'] else attributes['nk1'])
-      nd2 = (attributes['nfft2'] if attributes['nfft2']>attributes['nk2'] else attributes['nk2'])
-      nd3 = (attributes['nfft3'] if attributes['nfft3']>attributes['nk3'] else attributes['nk3'])
+      nd1 = attributes['nk1']
+      nd2 = attributes['nk2']
+      nd3 = attributes['nk3']
+      attributes['gb_fudge_factor'] = fudge_factor = 2.
       gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
-      print('Estimated maximum array size: %5.2f GBytes\n' %(gbyte))
+      print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
     self.report_module_time('Reading in')
 
@@ -136,23 +118,53 @@ class PAOFLOW:
 
 
 
+  def finish_execution ( self ):
+    import reesource
+    from mpi4py import MPI
+##  Out_Dict goes here
+    if self.rank == 0:
+      tt = time() - self.start_time
+      print('Total CPU time =%s%.3f sec'%(25*' ',tt))
+    self.comm.Barrier()
+    if self.rank == 0:
+      if self.data_controller.data_attributes['verbose']:
+        mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        print("Approximate maximum concurrent memory usage (rank 0):  %6.4f GB"%(mem/1024.0**2))
+    MPI.Finalize()
+    quit()
+
+
+
   def calc_projectability ( self, pthr=0.95, shift='auto' ):
     from do_projectability import do_projectability
-    do_projectability(self.data_controller, pthr, shift)
+
+    attributes = self.data_controller.data_attributes
+
+    if 'pthr' not in attributes:
+      attributes['pthr'] = pthr
+    if 'shift' not in attributes:
+      attributes['shift'] = shift
+
+    do_projectability(self.data_controller)
 
 
 
-  def calc_pao_hamiltonian ( self ):
+  def calc_pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
     from do_build_pao_hamiltonian import do_build_pao_hamiltonian
     from get_K_grid_fft import get_K_grid_fft
 
     arrays,attributes = self.data_controller.data_dicts()
 
+    if 'non_ortho' not in attributes:
+      attributes['non_ortho'] = non_ortho
+    if 'shift_type' not in attributes:
+      attributes['shift_type'] = shift_type
+
     if self.rank == 0:
       do_build_pao_hamiltonian(self.data_controller)
 
     # U not needed anymore
-    del self.data_controller.data_arrays['U']
+    del arrays['U']
 
     self.report_module_time('Building Hks in')
 
@@ -173,7 +185,8 @@ class PAOFLOW:
 #### PARALLELIZATION
     #### MUST KNOW DOUBLE_GRID
     # Save Hks if the interpolated Hamiltonian will not be computed.
-    if not attributes['double_grid']:
+#    if not attributes['double_grid']:
+    if attributes['non_ortho']:
       from communication import scatter_full
       if self.rank == 0:
         nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
@@ -194,9 +207,11 @@ class PAOFLOW:
 
 
   def orthogonalize_hamiltonian ( self ):
+    from do_ortho import do_ortho
 
     arrays,attributes = self.data_controller.data_dicts()
 
+    nktot = attributes['nkpnts']
     nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
     if attributes['use_cuda']:
@@ -231,6 +246,12 @@ class PAOFLOW:
 
     arrays = self.data_controller.data_arrays
 
+    if 'Efield' not in arrays: arrays['Efield'] = Efield
+    if 'Bfield' not in arrays: arrays['Bfield'] = Bfield
+    if 'HubbardU' not in arrays: arrays['HubbardU'] = HubbardU
+
+    Efield,Bfield,HubbardU = arrays['Efield'],arrays['Bfield'],arrays['HubbardU']
+
     # Add external fields or non scf ACBN0 correction
     if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
       add_ext_field(self.data_controller)
@@ -242,10 +263,22 @@ class PAOFLOW:
 
 
 
-  def calc_bands ( self, topology=False ):
+  def calc_bands ( self, ibrav=None, spin_orbit=False, theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
     from do_bands import do_bands
 
     arrays,attributes = self.data_controller.data_dicts()
+
+
+    if 'ibrav' not in attributes:
+      if ibrav is None:
+        if self.rank == 0:
+          print('Must specify \'ibrav\' in the inputfile or as an optional argument to \'calc_bands\'')
+        quit()
+      else:
+        attributes['ibrav'] = ibrav
+
+    if 'do_spin_orbit' not in attributes:
+      attributes['do_spin_orbit'] = spin_orbit
 
     #----------------------------------------
     # Compute bands with spin-orbit coupling
@@ -253,9 +286,15 @@ class PAOFLOW:
     if self.rank == 0 and attributes['do_spin_orbit']:
       from do_spin_orbit import do_spin_orbit_bands
 
-      socStrengh = np.zeros((attributes['natoms'],2), dtype=float)
-      socStrengh [:,0] = arrays['lambda_p'][:]
-      socStrengh [:,1] = arrays['lambda_d'][:]
+      natoms = attributes['natoms']
+      if len(lambda_p) != natoms or len(lambda_d) != natoms:
+        if self.rank == 0:
+          print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
+        quit()
+
+      socStrengh = np.zeros((natoms,2), dtype=float)
+      socStrengh [:,0] = lambda_p[:]
+      socStrengh [:,1] = lambda_d[:]
 
       do_spin_orbit_bands(self.data_controller)
 
@@ -263,16 +302,34 @@ class PAOFLOW:
 
     self.report_module_time('Bands in')
 
-    attributes['onedim'] = False
-    if not attributes['onedim'] and topology:
-      from do_topology_calc import do_topology_calc
-      # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
-      # curvature operators along the path in the IBZ from do_topology_calc 
 
-      attributes['eff_mass'] = True
-      do_topology_calc(self.data_controller)
+
+  def calc_topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None, theta=0., phi=0. ):
+    from do_topology import do_topology
+    # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
+    # curvature operators along the path in the IBZ from do_topology_calc 
+
+    arrays,attr = self.data_controller.data_dicts()
+
+    if 'Berry' not in attr: attr['Berry'] = Berry
+    if 'eff_mass' not in attr: attr['eff_mass'] = eff_mass
+    if 'spin_Hall' not in attr: attr['spin_Hall'] = spin_Hall
+
+    if 'spol' not in attr: attr['spol'] = spol
+    if 'ipol' not in attr: attr['ipol'] = ipol
+    if 'jpol' not in attr: attr['jpol'] = jpol
+
+    if 'phi' not in attr: attr['phi'] = phi
+    if 'theta' not in attr: attr['theta'] = theta
+
+    if spol is None or ipol is None or jpol is None:
+      if self.rank == 0:
+        print('Must specify \'spol\', \'ipol\', and \'jpol\'')
+      return
+
+    do_topology(self.data_controller)
   
-      self.report_module_time('Band Topology in')
+    self.report_module_time('Band Topology in')
 
     del arrays['R']
     del arrays['idx']
@@ -282,11 +339,39 @@ class PAOFLOW:
 
 
 
-  def calc_double_grid ( self ):
+  def calc_interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
     from get_K_grid_fft import get_K_grid_fft
     from do_double_grid import do_double_grid
 
-    arrays,attributes = self.data_controller.data_dicts()
+    arrays,attr = self.data_controller.data_dicts()
+
+    if 'nfft1' not in attr: attr['nfft1'] = nfft1
+    if 'nfft2' not in attr: attr['nfft2'] = nfft2
+    if 'nfft3' not in attr: attr['nfft3'] = nfft3
+
+    nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
+
+    if nfft1 is None or nfft2 is None or nfft3 is None:
+      if self.rank == 0:
+        print('\nMay specify \'nfft1\', \'nfft2\', and \'nfft3\' in inputfile or as optional argument to \'calc_double_grid\'')
+      quit()
+
+    # Ensure FFT grid is even
+    if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
+      nfft1 = 2*((nfft1+1)//2)
+      nfft2 = 2*((nfft2+1)//2)
+      nfft3 = 2*((nfft3+1)//2)
+      if self.rank == 0:
+        print('Warning: nfft grid has been modified to support double_grid,')
+        print('Modified nfft grid to: %d %d %d\n'%(nfft1,nfft2,nfft3))
+
+    # Adjust 'npool' if arrays exceed MPI maximum
+    int_max = 2147483647
+    temp_pool = int(np.ceil((float(attr['nawf']**2*attr['nfft1']*attr['nfft2']*attr['nfft3']*3*attr['nspin'])/float(int_max))))
+    if temp_pool > attr['npool']:
+      if self.rank == 0:
+        print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
+      attributes['npool'] = temp_pool
 
     #------------------------------------------------------
     # Fourier interpolation on extended grid (zero padding)
@@ -295,11 +380,24 @@ class PAOFLOW:
 
     get_K_grid_fft(self.data_controller)
 
-    if self.rank == 0 and attributes['verbose']:
-      nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
-      print('Grid of k vectors for zero padding Fourier interpolation ', nk1, nk2, nk3)
-
     self.report_module_time('R -> k with Zero Padding in')
+
+    if self.rank == 0:
+      dxdydz = 3
+      nd1 = nfft1
+      nd2 = nfft2
+      nd3 = nfft3
+      B_to_GB = 1.E-9
+      fudge_factor = attr['gb_fudge_factor']
+      bytes_per_complex = 128//8
+      spins = attr['nspin']
+      num_wave_functions = attr['nawf']
+      nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
+      if attr['verbose']:
+        print('Performing Fourier interpolation on a larger grid.')
+        print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
+      print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
     del arrays['HRs']
 
@@ -311,15 +409,17 @@ class PAOFLOW:
 
     arrays,attributes = self.data_controller.data_dicts()
 
+    if 'bval' not in attributes:
+      attributes['bval'] = bval
+
     #-----------------------------------------------------
     # Compute eigenvalues of the interpolated Hamiltonian
     #-----------------------------------------------------
-
     do_pao_eigh(self.data_controller)
 
 ### PARALLELIZATION
     ## Parallelize search for amax & subtract for all processes. Test time.
-    if arrays['HubbardU'].any() != 0.0:
+    if 'HubbardU' in arrays and arrays['HubbardU'].any() != 0.0:
       if self.rank == 0 and attributes['verbose']:
         print('Shifting Eigenvalues to top of valence band.')
       arrays['E_k'] = gather_full(arrays['E_k'], attributes['npool'])
@@ -378,11 +478,14 @@ class PAOFLOW:
   def calc_adaptive_smearing ( self, smearing='gauss' ):
     from do_adaptive_smearing import do_adaptive_smearing
 
-    attributes = self.data_controller.data_attributes
+    attr = self.data_controller.data_attributes
 
-    if smearing != 'gauss' and smearing != 'm-p':
+    if 'smearing' not in attr or attr['smearing'] is None:
+      attr['smearing'] = smearing
+
+    if attr['smearing'] != 'gauss' and attr['smearing'] != 'm-p':
       if self.rank == 0:
-        print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
+        print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
       quit()
 
     do_adaptive_smearing(self.data_controller)
@@ -391,9 +494,14 @@ class PAOFLOW:
 
 
 
-  def calc_dos ( self, do_dos=True, do_pdos=True, emin=-10., emax=2. ):
+  def calc_dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
     from do_dos import do_dos
     from do_pdos import do_pdos
+
+    attributes = self.data_controller.data_attributes
+
+    if 'delta' not in attributes:
+      attributes['delta'] = delta
 
     if do_dos:
       do_dos(self.data_controller, emin=emin, emax=emax)
@@ -417,11 +525,14 @@ class PAOFLOW:
 
 
 
-  def calc_dos_adaptive ( self, do_dos=True, do_pdos=True, emin=-10., emax=2. ):
+  def calc_dos_adaptive ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
     from do_dos import do_dos_adaptive
     from do_pdos import do_pdos_adaptive
 
     arrays,attributes = self.data_controller.data_dicts()
+
+    if 'delta' not in attributes:
+      attributes['delta'] = delta
 
     if 'deltakp' not in arrays:
       if self.rank == 0:
@@ -444,11 +555,16 @@ class PAOFLOW:
 
 
 
-  def calc_fermi_surface ( self ):
+  def calc_fermi_surface ( self, fermi_up=1., fermi_dw=-1. ):
     from do_fermisurf import do_fermisurf
-    #----------------------
+
+    if 'fermi_up' not in attributes: attributes['fermi_up'] = fermi_up
+    if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
+
+    #---------------------------
     # Fermi surface calculation
-    #----------------------
+    #---------------------------
+
     do_fermisurf(self.data_controller)
 
     self.report_module_time('Fermi Surface in')
@@ -462,9 +578,9 @@ class PAOFLOW:
 
     arrays['sh'] = sh
     arrays['nl'] = nl
-    attributes['do_spin_orbit'] = spin_orbit
+#    attributes['do_spin_orbit'] = spin_orbit
 
-    bnd = attributes['bnd']
+    nawf = attributes['nawf']
 
     # Compute spin operators
     # Pauli matrices (x,y,z)
@@ -491,10 +607,13 @@ class PAOFLOW:
 
 
 
-  def calc_spin_texture ( self ):
+  def calc_spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
     from do_spin_texture import do_spin_texture
 
     attributes = self.data_controller.data_attributes
+
+    if 'fermi_up' not in attributes: attributes['fermi_up'] = fermi_up
+    if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
     if attributes['nspin'] == 1:
       do_spin_texture(self.data_controller)
@@ -509,8 +628,17 @@ class PAOFLOW:
 
 
 
-  def calc_spin_Hall ( self, do_ac=True ):
+  def calc_spin_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     from do_Hall import do_spin_Hall
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    attributes['eminH'] = emin
+    attributes['emaxH'] = emax
+
+    if s_tensor is not None: arrays['s_tensor'] = s_tensor
+    if 'fermi_up' not in attributes: attributes['fermi_up'] = fermi_up
+    if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
     do_spin_Hall(self.data_controller, do_ac)
 
@@ -518,8 +646,17 @@ class PAOFLOW:
 
 
 
-  def calc_anomalous_Hall ( self, do_ac=True ):
+  def calc_anomalous_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
     from do_Hall import do_anomalous_Hall
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    attributes['eminH'] = emin
+    attributes['emaxH'] = emax
+
+    if 'a_tensor' is not None: arrays['a_tensor'] = a_tensor
+    if 'fermi_up' not in attributes: attributes['fermi_up'] = fermi_up
+    if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
     do_anomalous_Hall(self.data_controller, do_ac)
 
@@ -527,7 +664,7 @@ class PAOFLOW:
 
 
 
-  def calc_transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500 ):
+  def calc_transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None ):
     from do_transport import do_transport
 
     arrays,attributes = self.data_controller.data_dicts()
@@ -539,10 +676,13 @@ class PAOFLOW:
     nspin = attributes['nspin']
     snktot = arrays['pksp'].shape[0]
 
+    if t_tensor is not None:
+      arrays['t_tensor'] = t_tensor
+
     # Compute Velocities
     velkp = np.zeros((snktot,3,bnd,nspin), dtype=float)
     for n in range(bnd):
-        velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
+      velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
 
     do_transport(self.data_controller, temps, ene, velkp)
 
@@ -552,7 +692,7 @@ class PAOFLOW:
 
 
 
-  def calc_dielectric_tensor ( self, metal=False, kramerskronig=False, emin=0., emax=10., ne=500. ):
+  def calc_dielectric_tensor ( self, metal=False, kramerskronig=True, temp=.025852, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
     import numpy as np
     from do_epsilon import do_dielectric_tensor
 
@@ -561,6 +701,12 @@ class PAOFLOW:
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
+
+    if 'temp' not in attributes: attributes['temp'] = temp
+    if 'delta' not in attributes: attributes['delta'] = delta
+
+    if d_tensor is not None:
+      arrays['d_tensor'] = d_tensor
 
     ene = np.arange(emin, emax, (emax-emin)/ne)
 

@@ -35,7 +35,10 @@ def read_QE_output_xml( data_controller ):
 
     fpath = data_attributes['fpath']
     verbose = data_attributes['verbose']
-    non_ortho = data_attributes['non_ortho']
+
+    Sks = None
+    non_ortho = True#data_attributes['non_ortho']
+
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
 
@@ -283,11 +286,11 @@ def read_QE_output_xml( data_controller ):
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
     data_arrays['tau'] = tau
-#    data_arrays['kpnts'] = kpnts
-#    data_arrays['kpnts_wght'] = kpnts_wght
+    data_arrays['kpnts'] = kpnts
+    data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors
     data_arrays['b_vectors'] = b_vectors
     data_arrays['my_eigsmat'] = my_eigsmat
     data_arrays['U'] = U
-    if non_ortho:
-        data_arrays['Sks'] = Sks
+    if Sks is not None:
+      data_arrays['Sks'] = Sks
