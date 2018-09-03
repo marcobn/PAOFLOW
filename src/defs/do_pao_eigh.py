@@ -25,21 +25,9 @@ def do_pao_eigh ( data_controller ):
 
   rank = MPI.COMM_WORLD.Get_rank()
 
-  arrays = data_controller.data_arrays
-  attributes = data_controller.data_attributes
+  arrays,attributes = data_controller.data_dicts()
 
-  snawf,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
-  nawf = attributes['nawf']
-  nktot = nk1*nk2*nk3
-
-  arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,nktot,nspin))
-
-##### PARALLELIZATION
-  arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attributes['npool'])
-
-  snktot = arrays['Hksp'].shape[1]
-
-  arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'], 0, 1), (snktot,nawf,nawf,nspin), order='C')
+  snktot,nawf,_,nspin = arrays['Hksp'].shape
 
   arrays['E_k'] = np.zeros((snktot,nawf,nspin), dtype=float)
   arrays['v_k'] = np.zeros((snktot,nawf,nawf,nspin), dtype=complex)

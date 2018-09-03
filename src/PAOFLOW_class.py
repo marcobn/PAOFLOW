@@ -130,7 +130,6 @@ class PAOFLOW:
 
     verbose = self.data_controller.data_attributes['verbose']
 
-##  Out_Dict goes here
     if self.rank == 0:
       tt = time() - self.start_time
       print('Total CPU time =%s%.3f sec'%(27*' ',tt))
@@ -151,10 +150,8 @@ class PAOFLOW:
 
     attributes = self.data_controller.data_attributes
 
-    if 'pthr' not in attributes:
-      attributes['pthr'] = pthr
-    if 'shift' not in attributes:
-      attributes['shift'] = shift
+    if 'pthr' not in attributes: attributes['pthr'] = pthr
+    if 'shift' not in attributes: attributes['shift'] = shift
 
     do_projectability(self.data_controller)
 
@@ -167,10 +164,8 @@ class PAOFLOW:
 
     arrays,attributes = self.data_controller.data_dicts()
 
-    if 'non_ortho' not in attributes:
-      attributes['non_ortho'] = non_ortho
-    if 'shift_type' not in attributes:
-      attributes['shift_type'] = shift_type
+    if 'non_ortho' not in attributes: attributes['non_ortho'] = non_ortho
+    if 'shift_type' not in attributes: attributes['shift_type'] = shift_type
 
     if self.rank == 0:
       do_build_pao_hamiltonian(self.data_controller)
@@ -193,20 +188,6 @@ class PAOFLOW:
         arrays['SRs'] = np.zeros_like(arrays['Sks'])
         arrays['SRs'] = FFT.ifftn(arrays['Sks'], axes=[2,3,4])
         del arrays['Sks']
-
-#### PARALLELIZATION
-## Move to beginning of Eigenvalues
-    #### MUST KNOW DOUBLE_GRID
-    # Save Hks if the interpolated Hamiltonian will not be computed.
-#    if not attributes['double_grid']:
-#    from communication import scatter_full
-#    if self.rank == 0:
-#      nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
-#      arrays['Hks'] = np.reshape(arrays['Hks'], (nawf**2,nk1,nk2,nk3,nspin), order='C')
-#    else:
-#      arrays['Hks'] = None
-#    arrays['Hksp'] = scatter_full(arrays['Hks'], attributes['npool'])
-#    del arrays['Hks']
 
     get_K_grid_fft(self.data_controller)
 
@@ -250,8 +231,7 @@ class PAOFLOW:
     self.data_controller.broadcast_single_array('HRs')
 
     attributes['non_ortho'] = False
-    SRs = None
-#    del arrays['SRs']
+    del arrays['SRs']
 
 
 
@@ -281,7 +261,6 @@ class PAOFLOW:
     from do_bands import do_bands
 
     arrays,attributes = self.data_controller.data_dicts()
-
 
     if 'ibrav' not in attributes:
       if ibrav is None:
@@ -349,13 +328,13 @@ class PAOFLOW:
     del arrays['idx']
     del arrays['Rfft']
     del arrays['R_wght']
-#    self.data_controller.clean_data()
 
 
 
   def calc_interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
     from get_K_grid_fft import get_K_grid_fft
     from do_double_grid import do_double_grid
+    from communication import gather_scatter,scatter_full
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -408,24 +387,47 @@ class PAOFLOW:
     #------------------------------------------------------
     # Fourier interpolation on extended grid (zero padding)
     #------------------------------------------------------
+
+    if self.rank == 0:
+      nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+      arrays['HRs'] = np.reshape(arrays['HRs'], (attr['nawf']**2,nk1,nk2,nk3,attr['nspin']))
+    arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
+
     do_double_grid(self.data_controller)
+
+    snawf,_,_,_,nspin = arrays['Hksp'].shape
+    arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nkpnts'],nspin))
+    arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
+    nawf = attr['nawf']
+    snktot = arrays['Hksp'].shape[1]
+    arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
 
     get_K_grid_fft(self.data_controller)
 
     self.report_module_time('R -> k with Zero Padding in')
 
-##    del arrays['HRs']
-
 
 
   def calc_pao_eigh ( self, bval=0 ):
     from do_pao_eigh import do_pao_eigh
-    from communication import scatter_full, gather_full
+    from communication import gather_scatter,scatter_full,gather_full
 
     arrays,attributes = self.data_controller.data_dicts()
 
     if 'bval' not in attributes:
       attributes['bval'] = bval
+
+##    del arrays['HRs']
+    if 'Hksp' not in arrays:
+      if self.rank == 0:
+        nktot = attributes['nkpnts']
+        nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
+        arrays['Hks'] = np.reshape(arrays['Hks'], (nawf,nawf,nktot,nspin), order='C')
+        arrays['Hks'] = np.moveaxis(arrays['Hks'], 2, 0)
+      else:
+        arrays['Hks'] = None
+      arrays['Hksp'] = scatter_full(arrays['Hks'], attributes['npool'])
+      del arrays['Hks']
 
     #-----------------------------------------------------
     # Compute eigenvalues of the interpolated Hamiltonian
@@ -481,10 +483,6 @@ class PAOFLOW:
     # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
     #----------------------------------------------------------------------
     do_momentum(self.data_controller)
-
-## NEED FOR A BETTER CLEANING METHODOLOGY! AGH!!!
-#    if not attributes['spin_Hall']:
-#      del arrays['dHksp']
 
     self.report_module_time('Momenta in')
 
@@ -699,7 +697,6 @@ class PAOFLOW:
       velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
 
     do_transport(self.data_controller, temps, ene, velkp)
-
     velkp = None
 
     self.report_module_time('Transport in')

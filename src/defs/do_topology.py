@@ -126,7 +126,6 @@ def do_topology ( data_controller ):
     f.close()
 
 
-#### PARALLELIZATION
   # Compute momenta and kinetic energy
 
   kq_aux = scatter_full(arrays['kq'].T, npool)
@@ -239,11 +238,6 @@ def do_topology ( data_controller ):
   HRs_aux = None
   HRs = None
   
-    #if rank == 0:
-    #  plt.matshow(abs(tks[0,ipol,jpol,:,:,0]))
-    #  plt.colorbar()
-    #  plt.show()
-
   # Compute Berry curvature
   if Berry or spin_Hall:
     deltab = 0.05
@@ -315,28 +309,3 @@ def band_loop_H ( HRaux, R, kq, nawf, nspin ):
   kdot  = None
   Haux = np.transpose(Haux,(2,0,1,3))
   return Haux
-
-
-# def band_loop_dH(nspin,nawf,dHRaux,kq,R):
-
-#   auxh = np.zeros((kq.shape[1],3,nawf,nawf,nspin),dtype=complex)
-
-#   for ik in xrange(kq.shape[1]):
-#     for ispin in xrange(nspin):
-#       for l in xrange(3):
-#         auxh[ik,l,:,:,ispin] = np.sum(dHRaux[:,:,l,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
-
-
-#   return(auxh)
-
-# def band_loop_dH_single(nspin,nawf,dHRaux,kq,R):
-
-#   auxh = np.zeros((kq.shape[1],nawf,nawf,nspin),dtype=complex)
-
-#   for ik in xrange(kq.shape[1]):
-#     for ispin in xrange(nspin):
-#       auxh[ik,:,:,ispin] = np.sum(dHRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[:,ik].dot(R[:,:].T)*1j),axis=2)
-
-
-#   return(auxh)
-

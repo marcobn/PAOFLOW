@@ -323,8 +323,6 @@ def epsr_kramerskronig ( data_controller, ene, epsi ):
 
     epsr = np.zeros(esize, dtype=float)
 
-#### PARALLELIZATION
-#### Use scatter
     ini_ie,end_ie = load_balancing(comm.Get_size(), comm.Get_rank(), esize)
 
     # Range checks for Simpson Integrals

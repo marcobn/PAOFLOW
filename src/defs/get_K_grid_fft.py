@@ -19,8 +19,7 @@ import numpy as np
 
 def get_K_grid_fft ( data_controller ):
 
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+    arrays,attributes = data_controller.data_dicts()
 
     nk1 = attributes['nk1']
     nk2 = attributes['nk2']

@@ -27,9 +27,9 @@ def bands_calc ( data_controller ):
   npool = attributes['npool']
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
-#### PARALLELIZATION
   kq_aux = scatter_full(arrays['kq'].T, npool).T
  
+## Ortho before bands
 ##  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller))
   Hks_aux = band_loop_H(data_controller)
 
@@ -39,6 +39,7 @@ def bands_calc ( data_controller ):
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
       E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+## Orthogonalize before bands?
 ##      E_kp_aux[ik,:,ispin], v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(Sks_aux[:,:,ik] if attributes['non_ortho'] else None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
 
   Hks_aux = None
@@ -140,9 +141,6 @@ def do_bands ( data_controller ):
     nk3 = attributes['nk3']
     nspin = attributes['nspin']
     nktot = attributes['nkpnts']
-
-###### PARALLELIZATION
-    # Broadcast HRs and SRs
 
     # Define real space lattice vectors
     get_R_grid_fft(data_controller)

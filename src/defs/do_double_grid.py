@@ -22,32 +22,21 @@ def do_double_grid ( data_controller ):
     from mpi4py import MPI
     from zero_pad import zero_pad
     from scipy import fftpack as FFT
-    from communication import scatter_full
 
     rank = MPI.COMM_WORLD.Get_rank()
 
     arrays,attributes = data_controller.data_dicts()
 
-    nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
-
+    snawf,nk1,nk2,nk3,nspin = arrays['HRs'].shape
     nk1p = attributes['nfft1']
     nk2p = attributes['nfft2']
     nk3p = attributes['nfft3']
     nfft1 = nk1p-nk1
     nfft2 = nk2p-nk2
     nfft3 = nk3p-nk3
-    attributes['nkpnts'] = nk1p*nk2p*nk3p
 
     # Extended R to k (with zero padding)
-    if rank == 0:
-        arrays['HRs'] = np.reshape(arrays['HRs'], (nawf**2,nk1,nk2,nk3,nspin))
-    else:
-        Hksp = None
-
-#### PARALLELIZATION
-    arrays['HRs'] = scatter_full((arrays['HRs'] if rank==0 else None), attributes['npool'])
-
-    arrays['Hksp']  = np.zeros((arrays['HRs'].shape[0],nk1p,nk2p,nk3p,nspin), dtype=complex)
+    arrays['Hksp']  = np.empty((arrays['HRs'].shape[0],nk1p,nk2p,nk3p,nspin), dtype=complex)
 
     for ispin in range(nspin):
         for n in range(arrays['HRs'].shape[0]):
@@ -57,3 +46,4 @@ def do_double_grid ( data_controller ):
     attributes['nk1'] = nk1p
     attributes['nk2'] = nk2p
     attributes['nk3'] = nk3p
+    attributes['nkpnts'] = nk1p*nk2p*nk3p
