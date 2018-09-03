@@ -17,7 +17,7 @@
 #
 
 
-def do_dielectric_tensor ( data_controller, ene, metal, kramerskronig ):
+def do_dielectric_tensor ( data_controller, ene ):
     import numpy as np
     from mpi4py import MPI
     from constants import LL
@@ -43,7 +43,7 @@ def do_dielectric_tensor ( data_controller, ene, metal, kramerskronig ):
         ipol = d_tensor[n][0]
         jpol = d_tensor[n][1]
 
-        epsi, epsr, jdos = do_epsilon(data_controller, ene, metal, kramerskronig, ispin, ipol, jpol)
+        epsi, epsr, jdos = do_epsilon(data_controller, ene, ispin, ipol, jpol)
 
         indices = (LL[ipol], LL[jpol], ispin)
 
@@ -58,7 +58,7 @@ def do_dielectric_tensor ( data_controller, ene, metal, kramerskronig ):
           data_controller.write_file_row_col(fepsr, ene, epsr)
 
 
-def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol ):
+def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
     import numpy as np
     from mpi4py import MPI
 
@@ -76,7 +76,7 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
     #=======================
     # Im
     #=======================
-    epsi_aux,jdos_aux = epsi_loop(data_controller, ene, metal, ispin, ipol, jpol)
+    epsi_aux,jdos_aux = epsi_loop(data_controller, ene, ispin, ipol, jpol)
 
     epsi = np.zeros(esize, dtype=float)
     comm.Allreduce(epsi_aux, epsi, op=MPI.SUM)
@@ -89,7 +89,7 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
     #=======================
     # Re
     #=======================
-    if kramerskronig:
+    if attributes['kramerskronig']:
         epsr_aux = epsr_kramerskronig(data_controller, ene, epsi)
 
     elif attributes['smearing'] is None:
@@ -98,7 +98,7 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
         return(epsi, None, jdos)
 
     else:
-        if metal and rank == 0 and ispin == 0:
+        if attributes['metal'] and rank == 0 and ispin == 0:
           print('CAUTION: direct calculation of epsr in metals is not working!!!!!')
         epsr_aux = smear_epsr_loop(data_controller, ene, ispin, ipol, jpol)
 
@@ -111,7 +111,7 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
     return(epsi, epsr, jdos)
 
 
-def epsi_loop ( data_controller, ene, metal, ispin, ipol, jpol):
+def epsi_loop ( data_controller, ene, ispin, ipol, jpol):
     import numpy as np
     from mpi4py import MPI
     from constants import EPS0, EVTORY
@@ -176,7 +176,7 @@ def epsi_loop ( data_controller, ene, metal, ispin, ipol, jpol):
 
     f_nm = dfunc = uind = pksp2 = sq2_dk2 = E_diff_nm = None
 
-    if metal:
+    if attributes['metal']:
         fnF = None
         if smearing is None:
             fnF = np.empty((snktot,bnd), dtype=float)

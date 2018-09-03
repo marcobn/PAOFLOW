@@ -291,11 +291,11 @@ def read_new_QE_output_xml ( data_controller ):
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
     data_attributes['tau'] = tau
-#    data_arrays['kpnts'] = kpnts
-#    data_arrays['kpnts_wght'] = kpnts_wght
+    data_arrays['kpnts'] = kpnts
+    data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors
     data_arrays['b_vectors'] = b_vectors
     data_arrays['my_eigsmat'] = my_eigsmat
     data_arrays['U'] = U
-    if non_ortho:
+    if Sks is not None:
         data_arrays['Sks'] = Sks

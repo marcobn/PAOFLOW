@@ -127,6 +127,6 @@ def do_build_pao_hamiltonian ( data_controller ):
         arrays['Sks'] = np.transpose(arrays['Sks'], (1,0,2))
 
         arrays['Hks'] = do_non_ortho(arrays['Hks'],arrays['Sks'])
-        arrays['Sks'] = np.reshape(arrays['Sks'], ashape)
+        arrays['Sks'] = np.reshape(arrays['Sks'], ashape[:-1])
 
     arrays['Hks'] = np.reshape(arrays['Hks'], ashape)

@@ -195,18 +195,18 @@ class PAOFLOW:
         del arrays['Sks']
 
 #### PARALLELIZATION
+## Move to beginning of Eigenvalues
     #### MUST KNOW DOUBLE_GRID
     # Save Hks if the interpolated Hamiltonian will not be computed.
 #    if not attributes['double_grid']:
-    if attributes['non_ortho']:
-      from communication import scatter_full
-      if self.rank == 0:
-        nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
-        arrays['Hks'] = np.reshape(arrays['Hks'], (nawf**2,nk1,nk2,nk3,nspin), order='C')
-      else:
-        arrays['Hks'] = None
-      arrays['Hksp'] = scatter_full(arrays['Hks'], attributes['npool'])
-      del arrays['Hks']
+#    from communication import scatter_full
+#    if self.rank == 0:
+#      nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
+#      arrays['Hks'] = np.reshape(arrays['Hks'], (nawf**2,nk1,nk2,nk3,nspin), order='C')
+#    else:
+#      arrays['Hks'] = None
+#    arrays['Hksp'] = scatter_full(arrays['Hks'], attributes['npool'])
+#    del arrays['Hks']
 
     get_K_grid_fft(self.data_controller)
 
@@ -249,8 +249,9 @@ class PAOFLOW:
 
     self.data_controller.broadcast_single_array('HRs')
 
-    del arrays['Sks']
-    del arrays['SRs']
+    attributes['non_ortho'] = False
+    SRs = None
+#    del arrays['SRs']
 
 
 
@@ -358,16 +359,19 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
+    # Automatically doubles grid in all directions
+    if nfft1 is None:
+      nfft1 = 2*attr['nk1']
+    if nfft2 is None:
+      nfft2 = 2*attr['nk2']
+    if nfft3 is None:
+      nfft3 = 2*attr['nk3']
+
     if 'nfft1' not in attr: attr['nfft1'] = nfft1
     if 'nfft2' not in attr: attr['nfft2'] = nfft2
     if 'nfft3' not in attr: attr['nfft3'] = nfft3
 
     nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
-
-    if nfft1 is None or nfft2 is None or nfft3 is None:
-      if self.rank == 0:
-        print('\nMay specify \'nfft1\', \'nfft2\', and \'nfft3\' in inputfile or as optional argument to \'calc_double_grid\'')
-      quit()
 
     # Ensure FFT grid is even
     if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
@@ -386,6 +390,21 @@ class PAOFLOW:
         print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
       attributes['npool'] = temp_pool
 
+    if self.rank == 0:
+      dxdydz = 3
+      B_to_GB = 1.E-9
+      spins = attr['nspin']
+      bytes_per_complex = 128//8
+      nd1,nd2,nd3 = nfft1,nfft2,nfft3
+      num_wave_functions = attr['nawf']
+      fudge_factor = attr['gb_fudge_factor']
+      nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
+      if attr['verbose']:
+        print('Performing Fourier interpolation on a larger grid.')
+        print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
+      print('New estimated maximum array size: %.2f GBytes'%gbyte)
+
     #------------------------------------------------------
     # Fourier interpolation on extended grid (zero padding)
     #------------------------------------------------------
@@ -394,23 +413,6 @@ class PAOFLOW:
     get_K_grid_fft(self.data_controller)
 
     self.report_module_time('R -> k with Zero Padding in')
-
-    if self.rank == 0:
-      dxdydz = 3
-      nd1 = nfft1
-      nd2 = nfft2
-      nd3 = nfft3
-      B_to_GB = 1.E-9
-      fudge_factor = attr['gb_fudge_factor']
-      bytes_per_complex = 128//8
-      spins = attr['nspin']
-      num_wave_functions = attr['nawf']
-      nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
-      if attr['verbose']:
-        print('Performing Fourier interpolation on a larger grid.')
-        print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
-      print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
 ##    del arrays['HRs']
 
@@ -715,12 +717,14 @@ class PAOFLOW:
 
     if 'temp' not in attributes: attributes['temp'] = temp
     if 'delta' not in attributes: attributes['delta'] = delta
+    if 'metal' not in attributes: attributes['metal'] = metal
+    if 'kramerskronig' not in attributes: attributes['kramerskronig'] = kramerskronig
 
     if d_tensor is not None:
       arrays['d_tensor'] = np.array(d_tensor)
 
     ene = np.arange(emin, emax, (emax-emin)/ne)
 
-    do_dielectric_tensor(self.data_controller, ene, metal, kramerskronig)
+    do_dielectric_tensor(self.data_controller, ene)
 
     self.report_module_time('Dielectric Tensor in')

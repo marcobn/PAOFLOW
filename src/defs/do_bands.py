@@ -30,7 +30,7 @@ def bands_calc ( data_controller ):
 #### PARALLELIZATION
   kq_aux = scatter_full(arrays['kq'].T, npool).T
  
-  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller))
+##  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller))
   Hks_aux = band_loop_H(data_controller)
 
   E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float,order="C")
@@ -38,7 +38,8 @@ def bands_calc ( data_controller ):
 
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
-      E_kp_aux[ik,:,ispin], v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(Sks_aux[:,:,ik] if attributes['non_ortho'] else None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+      E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+##      E_kp_aux[ik,:,ispin], v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(Sks_aux[:,:,ik] if attributes['non_ortho'] else None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
 
   Hks_aux = None
   Sks_aux = None
@@ -154,7 +155,7 @@ def do_bands ( data_controller ):
       arrays['kq'][:,n] = np.dot(arrays['kq'][:,n], arrays['b_vectors'])
 
     # Compute the bands along the path in the IBZ
-    arrays['E_k'], arrays['v_k'] = bands_calc(data_controller)
+    arrays['E_k'],arrays['v_k'] = bands_calc(data_controller)
 
     E_kp = gather_full(arrays['E_k'], attributes['npool'])
     if rank == 0:

@@ -30,8 +30,14 @@ def main():
   arg1 = './'
   arg2 = 'inputfile.xml'
 
+  # Start PAOFLOW with an inputfile in the current directory
+  #
+  # PAOFLOW will us data attributes read from 
+  #   inputfile.xml for the following calculations 
   paoflow = PAOFLOW(workpath=arg1, inputfile=arg2, verbose=False)
 
+  # Get dictionary containers with the
+  #   attributes and arrays read from inputfiles
   arry,attr = paoflow.data_controller.data_dicts()
 
   paoflow.calc_projectability()
@@ -85,7 +91,10 @@ def main():
   if attr['epsilon']:
     paoflow.calc_dielectric_tensor(metal=attr['metal'], kramerskronig=attr['kramerskronig'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
 
+  # Print the total execution time and request
+  #   desired quantites for further processing
   paoflow.finish_execution()
+
 
 if __name__== '__main__':
   main()
