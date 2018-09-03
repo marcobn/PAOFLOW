@@ -55,7 +55,7 @@ class DataController:
       if not os.path.exists(attributes['opath']):
         os.mkdir(attributes['opath'])
 
-      self.add_default_tensors()
+      self.add_default_arrays()
 
       # Read inputfile, if it exsts
       try:
@@ -65,6 +65,11 @@ class DataController:
       except Exception as e:
         report_exception()
         self.comm.Abort()
+
+    # Add default Hubbard correction
+## Necessary?
+#    if self.rank == 0:
+#      self.data_arrays['HubbardU'] = np.zeros(attributes['nawf'], dtype=float)
 
     # Broadcast Data
     self.broadcast_data_arrays()
@@ -79,8 +84,14 @@ class DataController:
     print(self.data_arrays.keys())
 
 
-  def add_default_tensors ( self ):
+  def add_default_arrays ( self ):
     import numpy as np
+
+    # Electric Field
+    self.data_arrays['Efield'] = np.zeros(3, dtype=float)
+    # Magnetic Field
+    self.data_arrays['Bfield'] = np.zeros(3, dtype=float)
+
     # Tensor components
     # Dielectric function
     self.data_arrays['d_tensor'] = np.array([[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]])

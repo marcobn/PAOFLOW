@@ -163,7 +163,7 @@ def do_spin_current ( data_controller, spol ):
   for l in range(3):
     for ispin in range(nspin):
       for ik in range(snktot):
-        jdHksp[ik,l,:,:,ispin] = 0.5*(np.dot(Sj,arrays['dHksp'][ik,l,:,:,ispin])+np.dot(arrays['dHksp'][ik,l,:,:,ispin],Sj))
+        jdHksp[ik,l,:,:,ispin] = 0.5*(np.dot(Sj[l],arrays['dHksp'][ik,l,:,:,ispin])+np.dot(arrays['dHksp'][ik,l,:,:,ispin],Sj[l]))
 
   jksp = np.zeros((snktot,3,bnd,bnd,nspin), dtype=complex)
 

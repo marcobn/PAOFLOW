@@ -1,16 +1,26 @@
-import os
-import sys
+#
+# PAOFLOW
+#
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
+#
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+#
+# Reference:
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+#
+# This file is distributed under the terms of the
+# GNU General Public License. See the file `License'
+# in the root directory of the present distribution,
+# or http://www.gnu.org/copyleft/gpl.txt .
+#
+
 import numpy as np
-from time import time
-from scipy import fftpack as FFT
-
-
-sys.path.append(sys.path[0]+'/defs')
-from DataController import DataController
-from report_exception import report_exception
-
 
 class PAOFLOW:
+  import sys
+  sys.path.append(sys.path[0]+'/defs')
 
   data_controller = None
 
@@ -22,7 +32,10 @@ class PAOFLOW:
 
 
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
+    from time import time
     from mpi4py import MPI
+    from header import header
+    from DataController import DataController
 
     self.workpath = workpath
     self.outputdir = outputdir
@@ -45,16 +58,7 @@ class PAOFLOW:
     # Print Header
     #--------------
     if self.rank == 0:
-      print('')
-      print('#############################################################################################')
-      print('#                                                                                           #')
-      print('#                                          PAOFLOW                                          #')
-      print('#                                                                                           #')
-      print('#                  Utility to construct and operate on Hamiltonians from                    #')
-      print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
-      print('#                                                                                           #')
-      print('#                       (c)2016-2018 ERMES group (http://ermes.unt.edu)                     #')
-      print('#############################################################################################\n')
+      header()
 
     # Initialize Data Controller 
     self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose)
@@ -99,6 +103,7 @@ class PAOFLOW:
 
 
   def report_module_time ( self, mname ):
+    from time import time
 
     # White spacing between module name and reported time
     spaces = 40
@@ -119,17 +124,23 @@ class PAOFLOW:
 
 
   def finish_execution ( self ):
-    import reesource
+    import resource
+    from time import time
     from mpi4py import MPI
+
+    verbose = self.data_controller.data_attributes['verbose']
+
 ##  Out_Dict goes here
     if self.rank == 0:
       tt = time() - self.start_time
-      print('Total CPU time =%s%.3f sec'%(25*' ',tt))
-    self.comm.Barrier()
-    if self.rank == 0:
-      if self.data_controller.data_attributes['verbose']:
+      print('Total CPU time =%s%.3f sec'%(27*' ',tt))
+      if verbose:
         mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        print("Approximate maximum concurrent memory usage (rank 0):  %6.4f GB"%(mem/1024.0**2))
+        print("Memory usage on rank 0:  %6.4f GB"%(mem/1024.0**2))
+    self.comm.Barrier()
+    if self.rank == 1 and verbose:
+      mem = self.size*resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+      print("Approximate maximum concurrent memory usage:  %6.4f GB"%(mem/1024.0**2))
     MPI.Finalize()
     quit()
 
@@ -150,8 +161,9 @@ class PAOFLOW:
 
 
   def calc_pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
-    from do_build_pao_hamiltonian import do_build_pao_hamiltonian
+    from scipy import fftpack as FFT
     from get_K_grid_fft import get_K_grid_fft
+    from do_build_pao_hamiltonian import do_build_pao_hamiltonian
 
     arrays,attributes = self.data_controller.data_dicts()
 
@@ -208,6 +220,7 @@ class PAOFLOW:
 
   def orthogonalize_hamiltonian ( self ):
     from do_ortho import do_ortho
+    from scipy import fftpack as FFT
 
     arrays,attributes = self.data_controller.data_dicts()
 
@@ -246,9 +259,9 @@ class PAOFLOW:
 
     arrays = self.data_controller.data_arrays
 
-    if 'Efield' not in arrays: arrays['Efield'] = Efield
-    if 'Bfield' not in arrays: arrays['Bfield'] = Bfield
-    if 'HubbardU' not in arrays: arrays['HubbardU'] = HubbardU
+    if 'Efield' not in arrays: arrays['Efield'] = np.array(Efield)
+    if 'Bfield' not in arrays: arrays['Bfield'] = np.array(Bfield)
+    if 'HubbardU' not in arrays: arrays['HubbardU'] = np.array(HubbardU)
 
     Efield,Bfield,HubbardU = arrays['Efield'],arrays['Bfield'],arrays['HubbardU']
 
@@ -322,10 +335,10 @@ class PAOFLOW:
     if 'phi' not in attr: attr['phi'] = phi
     if 'theta' not in attr: attr['theta'] = theta
 
-    if spol is None or ipol is None or jpol is None:
+    if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
       if self.rank == 0:
         print('Must specify \'spol\', \'ipol\', and \'jpol\'')
-      return
+      quit()
 
     do_topology(self.data_controller)
   
@@ -399,13 +412,13 @@ class PAOFLOW:
         print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
       print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
-    del arrays['HRs']
+##    del arrays['HRs']
 
 
 
   def calc_pao_eigh ( self, bval=0 ):
-    from communication import scatter_full, gather_full
     from do_pao_eigh import do_pao_eigh
+    from communication import scatter_full, gather_full
 
     arrays,attributes = self.data_controller.data_dicts()
 
@@ -572,13 +585,12 @@ class PAOFLOW:
 
 
   def calc_spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
-    import numpy as np
 
     arrays,attributes = self.data_controller.data_dicts()
 
-    arrays['sh'] = sh
-    arrays['nl'] = nl
-#    attributes['do_spin_orbit'] = spin_orbit
+    if 'do_spin_orbit' not in attributes: attributes['do_spin_orbit'] = spin_orbit
+    if 'sh' not in arrays: arrays['sh'] = sh
+    if 'nl' not in arrays: arrays['nl'] = nl
 
     nawf = attributes['nawf']
 
@@ -636,7 +648,7 @@ class PAOFLOW:
     attributes['eminH'] = emin
     attributes['emaxH'] = emax
 
-    if s_tensor is not None: arrays['s_tensor'] = s_tensor
+    if s_tensor is not None: arrays['s_tensor'] = np.array(s_tensor)
     if 'fermi_up' not in attributes: attributes['fermi_up'] = fermi_up
     if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
@@ -654,7 +666,7 @@ class PAOFLOW:
     attributes['eminH'] = emin
     attributes['emaxH'] = emax
 
-    if 'a_tensor' is not None: arrays['a_tensor'] = a_tensor
+    if 'a_tensor' is not None: arrays['a_tensor'] = np.array(a_tensor)
     if 'fermi_up' not in attributes: attributes['fermi_up'] = fermi_up
     if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
@@ -677,7 +689,7 @@ class PAOFLOW:
     snktot = arrays['pksp'].shape[0]
 
     if t_tensor is not None:
-      arrays['t_tensor'] = t_tensor
+      arrays['t_tensor'] = np.array(t_tensor)
 
     # Compute Velocities
     velkp = np.zeros((snktot,3,bnd,nspin), dtype=float)
@@ -693,7 +705,6 @@ class PAOFLOW:
 
 
   def calc_dielectric_tensor ( self, metal=False, kramerskronig=True, temp=.025852, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
-    import numpy as np
     from do_epsilon import do_dielectric_tensor
 
     arrays,attributes = self.data_controller.data_dicts()
@@ -706,7 +717,7 @@ class PAOFLOW:
     if 'delta' not in attributes: attributes['delta'] = delta
 
     if d_tensor is not None:
-      arrays['d_tensor'] = d_tensor
+      arrays['d_tensor'] = np.array(d_tensor)
 
     ene = np.arange(emin, emax, (emax-emin)/ne)
 

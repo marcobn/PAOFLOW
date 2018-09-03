@@ -76,7 +76,6 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
     #=======================
     # Im
     #=======================
-
     epsi_aux,jdos_aux = epsi_loop(data_controller, ene, metal, ispin, ipol, jpol)
 
     epsi = np.zeros(esize, dtype=float)
@@ -90,7 +89,6 @@ def do_epsilon ( data_controller, ene, metal, kramerskronig, ispin, ipol, jpol )
     #=======================
     # Re
     #=======================
-    epsr = None
     if kramerskronig:
         epsr_aux = epsr_kramerskronig(data_controller, ene, epsi)
 
@@ -263,7 +261,7 @@ def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
 
             if n != m:
                 pksp2 = arrays['pksp'][:,ipol,n,m,ispin] * arrays['pksp'][:,jpol,m,n,ispin]
-                epsr += np.real(np.sum(pksp2*(dfunc*f_nm/(eig**2+1.0j*delta**2)).T, axis=1))
+                epsr[:] += np.real(np.sum(pksp2*(dfunc*f_nm/(eig**2+1.0j*delta**2)).T, axis=1))
 
     epsr *= 4./(EPS0*EVTORY*attributes['omega']*attributes['nkpnts'])
 
@@ -310,7 +308,9 @@ def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
 
 
 def epsr_kramerskronig ( data_controller, ene, epsi ):
+    import numpy as np
     from mpi4py import MPI
+    from smearing import intmetpax
     from scipy.integrate import simps
     from load_balancing import load_balancing
 

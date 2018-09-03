@@ -53,13 +53,19 @@ def do_topology ( data_controller ):
   jpol = attributes['jpol']
   spol = attributes['spol']
 
+  Berry = attributes['Berry']
+  eff_mass = attributes['eff_mass']
+  spin_Hall = attributes['spin_Hall']
+
   alat = attributes['alat'] / ANGSTROM_AU
   b_vectors = arrays['b_vectors']
 
   # Compute Z2 according to Fu, Kane and Mele (2007)
   # Define TRIM points in 2(0-3)/3D(0-7)
+## 
   if nspin == 1 and spin_Hall:
     pass
+##
   if False:
     from do_eigh_calc import do_eigh_calc
   # NOT IMPLEMENTED IN PAOFLOW_CLASS
@@ -119,6 +125,8 @@ def do_topology ( data_controller ):
     f.write('3D case: v0;v1,v2,v3 = %1d;%1d,%1d,%1d \n' %(v0,v1,v2,v3))
     f.close()
 
+
+#### PARALLELIZATION
   # Compute momenta and kinetic energy
 
   kq_aux = scatter_full(arrays['kq'].T, npool)
@@ -167,7 +175,7 @@ def do_topology ( data_controller ):
       for ik in range(pks.shape[0]):
         for ispin in range(nspin):
           jks[ik,l,:,:,ispin] = (np.conj(arrays['v_k'][ik,:,:,ispin].T).dot \
-            (0.5*(np.dot(Sj,dHks_aux[ik,:,:,ispin])+np.dot(dHks_aux[ik,:,:,ispin],Sj))).dot(arrays['v_k'][ik,:,:,ispin]))[:bnd,:bnd]
+            (0.5*(np.dot(Sj[l],dHks_aux[ik,:,:,ispin])+np.dot(dHks_aux[ik,:,:,ispin],Sj[l]))).dot(arrays['v_k'][ik,:,:,ispin]))[:bnd,:bnd]
 
   if eff_mass == True: 
     tks = np.zeros((kq_aux.shape[1],3,3,bnd,bnd,nspin), dtype=complex)
@@ -240,8 +248,10 @@ def do_topology ( data_controller ):
   if Berry or spin_Hall:
     deltab = 0.05
     mu = -0.2 # chemical potential in eV)
-    Om_znk = np.zeros((pks.shape[0],bnd), dtype=float)
     Om_zk = np.zeros((pks.shape[0],1), dtype=float)
+    Om_znk = np.zeros((pks.shape[0],bnd), dtype=float)
+    Omj_zk = (np.zeros((pks.shape[0],1), dtype=float) if spin_Hall else None)
+    Omj_znk = (np.zeros((pks.shape[0],bnd), dtype=float) if spin_Hall else None)
     for ik in range(pks.shape[0]):
       for n in range(bnd):
         for m in range(bnd):

@@ -43,8 +43,11 @@ def main():
 
   paoflow.add_external_fields()
 
-  if attr['do_bands']:
+  if attr['do_bands'] or attr['band_topology']:
     paoflow.calc_bands()
+
+  if attr['spintexture'] or attr['spin_Hall']:
+    paoflow.calc_spin_operator(spin_orbit=attr['do_spin_orbit'])
 
   if attr['band_topology'] and not attr['onedim']:
     paoflow.calc_topology()
@@ -59,9 +62,6 @@ def main():
 
   if attr['fermisurf']:
     paoflow.calc_fermi_surface()
-
-  if attr['spintexture'] or attr['spin_Hall']:
-    paoflow.calc_spin_operator(spin_orbit=attr['do_spin_orbit'])
 
   if attr['spintexture']:
     paoflow.calc_spin_texture()

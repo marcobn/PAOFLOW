@@ -18,18 +18,20 @@
 
 def add_ext_field ( data_controller ):
   import numpy as np
-  #from constants import ANGSTROM_AU
+  from constants import ANGSTROM_AU
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
 
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
-  arrays['HRs'] = np.reshape(arrays['HRs'],(nawf,nawf,nk1*nk2*nk3,nspin), order='C')
+  arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
 
-  tau_wf = np.zeros((nawf,3),dtype=float)
   l=0
+  natoms = attributes['natoms']
+  nwf = nawf//natoms
+  tau_wf = np.zeros((nawf,3), dtype=float)
   for n in range(attributes['natoms']):
-    for i in range(arrays['naw'][n]):
+    for i in range(nwf):
       tau_wf[l,:] = arrays['tau'][n,:]
       l += 1
 
@@ -56,4 +58,4 @@ def add_ext_field ( data_controller ):
     for n in range(nawf):
       arrays['HRs'][n,n,0,:] -= arrays['HubbardU'][n]/2.0
 
-  arrays['HRs'] = np.reshape(HRs,(nawf,nawf,nk1,nk2,nk3,nspin),order='C')
+  arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,nk1,nk2,nk3,nspin), order='C')

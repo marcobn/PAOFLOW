@@ -29,8 +29,9 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
 
     esize = ene.size
 
-    smearing = attributes['smearing']
+    smearing = None
 
+#    t_tensor = arrays['t_tensor']
     t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
 
     L0aux = L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, ispin, 0)

@@ -91,6 +91,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
         L1 *= spin_mult*siemen_conv/(temp*attributes['omega'])
 
         S = np.zeros((3,3,esize), dtype=float)
+
         for n in range(esize):
           try:
             S[:,:,n] = -1.*LAN.inv(L0[:,:,n])*L1[:,:,n]
