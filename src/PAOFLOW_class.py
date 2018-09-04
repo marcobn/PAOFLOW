@@ -449,18 +449,40 @@ class PAOFLOW:
 
 
   def calc_dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
-    from do_dos import do_dos
-    from do_pdos import do_pdos
 
-    attributes = self.data_controller.data_attributes
+    arrays,attributes = self.data_controller.data_dicts()
 
     if 'delta' not in attributes:
       attributes['delta'] = delta
 
-    if do_dos: do_dos(self.data_controller, emin=emin, emax=emax)
-    if do_pdos: do_pdos(self.data_controller, emin=emin, emax=emax)
+    if 'smearing' not in attributes or attributes['smearing'] is None:
+      if do_dos:
+        from do_dos import do_dos
+        do_dos(self.data_controller, emin=emin, emax=emax)
+      if do_pdos:
+        from do_pdos import do_pdos
+        do_pdos(self.data_controller, emin=emin, emax=emax)
+      self.report_module_time('DoS in')
+    else:
+      if 'deltakp' not in arrays:
+        if self.rank == 0:
+          print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
+        quit()
+      #------------------------------------------------------------
+      # DOS calculation with adaptive smearing on double_grid Hksp
+      #------------------------------------------------------------
+      if do_dos:
+        from do_dos import do_dos_adaptive
+        do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
 
-    self.report_module_time('DoS in')
+      #----------------------
+      # PDOS calculation ...
+      #----------------------
+      if do_pdos:
+        from do_pdos import do_pdos_adaptive
+        do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
+
+      self.report_module_time('DoS (Adaptive Smearing) in')
 
 
 
@@ -473,33 +495,6 @@ class PAOFLOW:
     if 'deltakp' in arrays:
       arrays['deltakp'] = arrays['deltakp'][:,:bnd]
       arrays['deltakp2'] = arrays['deltakp2'][:,:bnd]
-
-
-
-  def calc_dos_adaptive ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
-    from do_dos import do_dos_adaptive
-    from do_pdos import do_pdos_adaptive
-
-    arrays,attributes = self.data_controller.data_dicts()
-
-    if 'delta' not in attributes:
-      attributes['delta'] = delta
-    if 'deltakp' not in arrays:
-      if self.rank == 0:
-        print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
-      quit()
-
-    #------------------------------------------------------------
-    # DOS calculation with adaptive smearing on double_grid Hksp
-    #------------------------------------------------------------
-    if do_dos: do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
-
-    #----------------------
-    # PDOS calculation ...
-    #----------------------
-    if do_pdos: do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
-
-    self.report_module_time('DoS (Adaptive Smearing) in')
 
 
 

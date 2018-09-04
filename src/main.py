@@ -63,9 +63,6 @@ def main():
 
   paoflow.calc_pao_eigh()
 
-  if attr['smearing'] is None:
-    paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
-
   if attr['fermisurf']:
     paoflow.calc_fermi_surface()
 
@@ -77,7 +74,7 @@ def main():
   if attr['smearing'] is not None:
     paoflow.calc_adaptive_smearing()
 
-    paoflow.calc_dos_adaptive(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
+  paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['spin_Hall']:
     paoflow.calc_spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'])
