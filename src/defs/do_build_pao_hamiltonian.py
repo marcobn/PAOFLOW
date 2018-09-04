@@ -102,6 +102,10 @@ def build_Hks ( data_controller ):
 
 
 def do_build_pao_hamiltonian ( data_controller ):
+  from mpi4py import MPI
+
+  if MPI.COMM_WORLD.Get_rank() != 0:
+    return
 
   #------------------------------
   # Building the PAO Hamiltonian
@@ -130,3 +134,30 @@ def do_build_pao_hamiltonian ( data_controller ):
     arrays['Sks'] = np.reshape(arrays['Sks'], ashape[:-1])
 
   arrays['Hks'] = np.reshape(arrays['Hks'], ashape)
+
+
+def do_Hks_to_HRs ( data_controller ):
+  from mpi4py import MPI
+  from scipy import fftpack as FFT
+
+  rank = MPI.COMM_WORLD.Get_rank()
+
+  arrays,attributes = data_controller.data_dicts()
+
+  #----------------------------------------------------------
+  # Define the Hamiltonian and overlap matrix in real space:
+  #   HRs and SRs (noinv and nosym = True in pw.x)
+  #----------------------------------------------------------
+  if rank == 0:
+    # Original k grid to R grid
+    arrays['HRs'] = np.zeros_like(arrays['Hks'])
+    arrays['HRs'] = FFT.ifftn(arrays['Hks'], axes=[2,3,4])
+
+    if attributes['non_ortho']:
+      arrays['SRs'] = np.zeros_like(arrays['Sks'])
+      arrays['SRs'] = FFT.ifftn(arrays['Sks'], axes=[2,3,4])
+      del arrays['Sks']
+
+  data_controller.broadcast_single_array('HRs')
+  if attributes['non_ortho']:
+    data_controller.broadcast_single_array('SRs')

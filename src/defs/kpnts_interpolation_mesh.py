@@ -487,7 +487,6 @@ def kpnts_interpolation_mesh ( data_controller ):
     a_vectors = arrays['a_vectors']
     b_vectors = arrays['b_vectors']
 
-
     dk       = 0.00001
     points,_ = get_path(ibrav, alat, a_vectors,dk)
     scaled_dk = dk*(points.shape[1]/nk)

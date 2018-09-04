@@ -16,49 +16,43 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-
 def do_adaptive_smearing ( data_controller ):
-    from numpy.linalg import norm
-    import numpy as np
+  from numpy.linalg import norm
+  import numpy as np
 
-    arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
+  arrays,attributes = data_controller.data_dicts()
 
-    #----------------------
-    # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
-    #----------------------
+  #----------------------
+  # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
+  #----------------------
 
-    a_vectors = arrays['a_vectors']
+  a_vectors = arrays['a_vectors']
 
-    nawf = attributes['nawf']
-    nspin = attributes['nspin']
-    nkpnts = attributes['nkpnts']
-    npks = arrays['pksp'].shape[0]
+  nawf = attributes['nawf']
+  nspin = attributes['nspin']
+  nkpnts = attributes['nkpnts']
+  npks = arrays['pksp'].shape[0]
 
-    deltakp = np.zeros((npks,nawf,nspin), dtype=float)
+  diag = np.diag_indices(nawf)
 
-    diag = np.diag_indices(nawf)
+  dk = (8.*np.pi**3/attributes['omega']/(nkpnts))**(1./3.)
 
-    dk = (8.*np.pi**3/attributes['omega']/(nkpnts))**(1./3.)
+  afac = (1. if attributes['smearing']=='m-p' else .7)
 
-    if attributes['smearing'] == 'gauss':
-        afac = 0.7
-    elif attributes['smearing'] == 'm-p':
-        afac = 1.0        
+## Test This
+##  pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
+  pksaux = arrays['pksp'][:,:,diag[0],diag[1]]
 
-    pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
+  deltakp = np.zeros((npks,nawf,nspin), dtype=float)
+  deltakp2 = np.zeros((npks,nawf,nawf,nspin), dtype=float)
+  for n in range(nawf):
+    deltakp[:,n] = norm(np.real(pksaux[:,:,n]), axis=1)
+    for m in range(nawf):
+      deltakp2[:,n,m,:] = norm(pksaux[:,:,n,:]-pksaux[:,:,m,:], axis=1)
 
-    deltakp = np.zeros((npks,nawf,nspin),dtype=float)
-    deltakp2 = np.zeros((npks,nawf,nawf,nspin),dtype=float)
+  pksaux = None
+  deltakp *= afac*dk
+  deltakp2 *= afac*dk
 
-    for n in range(nawf):
-        deltakp[:,n] = norm(np.real(pksaux[:,:,n]), axis=1)
-        for m in range(nawf):
-            deltakp2[:,n,m,:] = norm(pksaux[:,:,n,:]-pksaux[:,:,m,:], axis=1)
-
-    pksaux = None
-    deltakp *= afac*dk
-    deltakp2 *= afac*dk
-
-    arrays['deltakp'] = deltakp
-    arrays['deltakp2'] = deltakp2
+  arrays['deltakp'] = deltakp
+  arrays['deltakp2'] = deltakp2

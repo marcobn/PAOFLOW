@@ -91,14 +91,12 @@ class PAOFLOW:
       bytes_per_complex = 128//8
       spins = attributes['nspin']
       num_wave_functions = attributes['nawf']
-      nd1 = attributes['nk1']
-      nd2 = attributes['nk2']
-      nd3 = attributes['nk3']
-      attributes['gb_fudge_factor'] = fudge_factor = 2.
+      attributes['gb_fudge_factor'] = fudge_factor = 10.
+      nd1,nd2,nd3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
       gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
-    self.report_module_time('Reading in')
+    self.report_module_time('Initialization in')
 
 
 
@@ -154,91 +152,46 @@ class PAOFLOW:
     if 'shift' not in attributes: attributes['shift'] = shift
 
     do_projectability(self.data_controller)
+    self.report_module_time('Projectability in')
 
 
 
   def calc_pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
-    from scipy import fftpack as FFT
     from get_K_grid_fft import get_K_grid_fft
-    from do_build_pao_hamiltonian import do_build_pao_hamiltonian
+    from do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
 
     arrays,attributes = self.data_controller.data_dicts()
 
     if 'non_ortho' not in attributes: attributes['non_ortho'] = non_ortho
     if 'shift_type' not in attributes: attributes['shift_type'] = shift_type
 
-    if self.rank == 0:
-      do_build_pao_hamiltonian(self.data_controller)
-
-    # U not needed anymore
-    del arrays['U']
-
+    do_build_pao_hamiltonian(self.data_controller)
     self.report_module_time('Building Hks in')
 
-    #----------------------------------------------------------
-    # Define the Hamiltonian and overlap matrix in real space:
-    #   HRs and SRs (noinv and nosym = True in pw.x)
-    #----------------------------------------------------------
-    if self.rank == 0:
-      # Original k grid to R grid
-      arrays['HRs'] = np.zeros_like(arrays['Hks'])
-      arrays['HRs'] = FFT.ifftn(arrays['Hks'], axes=[2,3,4])
+    # Done with U
+    del arrays['U']
 
-      if attributes['non_ortho']:
-        arrays['SRs'] = np.zeros_like(arrays['Sks'])
-        arrays['SRs'] = FFT.ifftn(arrays['Sks'], axes=[2,3,4])
-        del arrays['Sks']
-
+    do_Hks_to_HRs(self.data_controller)
     get_K_grid_fft(self.data_controller)
-
-    self.data_controller.broadcast_single_array('HRs')
-    if attributes['non_ortho']:
-      self.data_controller.broadcast_single_array('SRs')
-
     self.report_module_time('k -> R in')
 
 
 
   def orthogonalize_hamiltonian ( self ):
-    from do_ortho import do_ortho
+    from do_ortho import do_orthogonalize
     from scipy import fftpack as FFT
 
     arrays,attributes = self.data_controller.data_dicts()
 
-    nktot = attributes['nkpnts']
-    nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
-
-    if attributes['use_cuda']:
-      from cuda_fft import cuda_fftn, cuda_ifftn
-      arrays['Hks'] = cuda_fftn(np.moveaxis(arrays['HRs'],[0,1],[3,4]), axes=[0,1,2])
-      arrays['Sks'] = cuda_fftn(np.moveaxis(arrays['SRs'],[0,1],[3,4]), axes=[0,1,2])
-      arrays['Hks'] = np.reshape(np.moveaxis(arrays['Hks'],[3,4],[0,1]), (nawf,nawf,nktot,nspin), order='C')
-      arrays['Sks'] = np.reshape(np.moveaxis(arrays['Sks'],[3,4],[0,1]), (nawf,nawf,nktot), order='C')
-    else:
-      arrays['Hks'] = FFT.fftn(arrays['HRs'],axes=[2,3,4])
-      arrays['Sks'] = FFT.fftn(arrays['SRs'], axes=[2,3,4])
-      arrays['Hks'] = np.reshape(arrays['Hks'], (nawf,nawf,nktot,nspin), order='C')
-      arrays['Sks'] = np.reshape(arrays['Sks'], (nawf,nawf,nktot), order='C')
-
-    arrays['Hks'] = do_ortho(arrays['Hks'], arrays['Sks'])
-    arrays['Hks'] = np.reshape(arrays['Hks'], (nawf,nawf,nk1,nk2,nk3,nspin), order='C')
-    arrays['Sks'] = np.reshape(arrays['Sks'], (nawf,nawf,nk1,nk2,nk3), order='C')
-    if attributes['use_cuda']:
-      arrays['HRs'] = np.moveaxis(cuda_ifftn(np.moveaxis(arrays['Hks'],[0,1],[3,4]), axes=[0,1,2]),[3,4],[0,1])
-    else:
-      arrays['HRs'] = FFT.ifftn(arrays['Hks'], axes=[2,3,4])
-
-    self.data_controller.broadcast_single_array('HRs')
-
-    attributes['non_ortho'] = False
-    del arrays['SRs']
+    do_orthogonalize(self.data_controller)
+    self.report_module_time('Orthogonalize in')
 
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
     from add_ext_field import add_ext_field
 
-    arrays = self.data_controller.data_arrays
+    arrays,attributes = self.data_controller.data_dicts()
 
     if 'Efield' not in arrays: arrays['Efield'] = np.array(Efield)
     if 'Bfield' not in arrays: arrays['Bfield'] = np.array(Bfield)
@@ -249,6 +202,8 @@ class PAOFLOW:
     # Add external fields or non scf ACBN0 correction
     if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
       add_ext_field(self.data_controller)
+      if attributes['verbose']:
+        print('External Fields Added')
     self.comm.Barrier()
 
 
@@ -269,7 +224,6 @@ class PAOFLOW:
         quit()
       else:
         attributes['ibrav'] = ibrav
-
     if 'do_spin_orbit' not in attributes:
       attributes['do_spin_orbit'] = spin_orbit
 
@@ -278,21 +232,17 @@ class PAOFLOW:
     #----------------------------------------
     if self.rank == 0 and attributes['do_spin_orbit']:
       from do_spin_orbit import do_spin_orbit_bands
-
       natoms = attributes['natoms']
       if len(lambda_p) != natoms or len(lambda_d) != natoms:
         if self.rank == 0:
           print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
         quit()
-
       socStrengh = np.zeros((natoms,2), dtype=float)
       socStrengh [:,0] = lambda_p[:]
       socStrengh [:,1] = lambda_d[:]
-
       do_spin_orbit_bands(self.data_controller)
 
     do_bands(self.data_controller)
-
     self.report_module_time('Bands in')
 
 
@@ -321,7 +271,6 @@ class PAOFLOW:
       quit()
 
     do_topology(self.data_controller)
-  
     self.report_module_time('Band Topology in')
 
     del arrays['R']
@@ -339,12 +288,9 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
 
     # Automatically doubles grid in all directions
-    if nfft1 is None:
-      nfft1 = 2*attr['nk1']
-    if nfft2 is None:
-      nfft2 = 2*attr['nk2']
-    if nfft3 is None:
-      nfft3 = 2*attr['nk3']
+    if nfft1 is None: nfft1 = 2*attr['nk1']
+    if nfft2 is None: nfft2 = 2*attr['nk2']
+    if nfft3 is None: nfft3 = 2*attr['nk3']
 
     if 'nfft1' not in attr: attr['nfft1'] = nfft1
     if 'nfft2' not in attr: attr['nfft2'] = nfft2
@@ -414,10 +360,10 @@ class PAOFLOW:
 
     arrays,attributes = self.data_controller.data_dicts()
 
+    del arrays['HRs']
     if 'bval' not in attributes:
       attributes['bval'] = bval
 
-##    del arrays['HRs']
     if 'Hksp' not in arrays:
       if self.rank == 0:
         nktot = attributes['nkpnts']
@@ -458,8 +404,7 @@ class PAOFLOW:
 
     snktot,nawf,_,nspin = arrays['Hksp'].shape
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
-    arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attributes['npool'])
-    arrays['Hksp'] = np.moveaxis(arrays['Hksp'], 0, 1)
+    arrays['Hksp'] = np.moveaxis(gather_scatter(arrays['Hksp'],1,attributes['npool']), 0, 1)
     snawf,_,nspin = arrays['Hksp'].shape
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attributes['nk1'],attributes['nk2'],attributes['nk3'],nspin))
 
@@ -473,8 +418,7 @@ class PAOFLOW:
     ################DISTRIBUTE ARRAYS ON KPOINTS#################
     #############################################################
     arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attributes['nkpnts'],3,nspin))
-    arrays['dHksp'] = gather_scatter(arrays['dHksp'], 1, attributes['npool'])
-    arrays['dHksp'] = np.moveaxis(arrays['dHksp'], 0, 2)
+    arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attributes['npool']), 0, 2)
     arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
 
     self.report_module_time('Gradient in')
@@ -483,7 +427,6 @@ class PAOFLOW:
     # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
     #----------------------------------------------------------------------
     do_momentum(self.data_controller)
-
     self.report_module_time('Momenta in')
 
 
@@ -495,14 +438,12 @@ class PAOFLOW:
 
     if 'smearing' not in attr or attr['smearing'] is None:
       attr['smearing'] = smearing
-
     if attr['smearing'] != 'gauss' and attr['smearing'] != 'm-p':
       if self.rank == 0:
         print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
       quit()
 
     do_adaptive_smearing(self.data_controller)
-
     self.report_module_time('Adaptive Smearing in')
 
 
@@ -516,11 +457,8 @@ class PAOFLOW:
     if 'delta' not in attributes:
       attributes['delta'] = delta
 
-    if do_dos:
-      do_dos(self.data_controller, emin=emin, emax=emax)
-
-    if do_pdos:
-      do_pdos(self.data_controller, emin=emin, emax=emax)
+    if do_dos: do_dos(self.data_controller, emin=emin, emax=emax)
+    if do_pdos: do_pdos(self.data_controller, emin=emin, emax=emax)
 
     self.report_module_time('DoS in')
 
@@ -546,7 +484,6 @@ class PAOFLOW:
 
     if 'delta' not in attributes:
       attributes['delta'] = delta
-
     if 'deltakp' not in arrays:
       if self.rank == 0:
         print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
@@ -555,14 +492,12 @@ class PAOFLOW:
     #------------------------------------------------------------
     # DOS calculation with adaptive smearing on double_grid Hksp
     #------------------------------------------------------------
-    if do_dos:
-      do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
+    if do_dos: do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
 
     #----------------------
     # PDOS calculation ...
     #----------------------
-    if do_pdos:
-      do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
+    if do_pdos: do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
 
     self.report_module_time('DoS (Adaptive Smearing) in')
 
@@ -577,9 +512,7 @@ class PAOFLOW:
     #---------------------------
     # Fermi surface calculation
     #---------------------------
-
     do_fermisurf(self.data_controller)
-
     self.report_module_time('Fermi Surface in')
 
 
@@ -653,7 +586,6 @@ class PAOFLOW:
     if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
     do_spin_Hall(self.data_controller, do_ac)
-
     self.report_module_time('Spin Hall Conductivity in')
 
 
@@ -671,7 +603,6 @@ class PAOFLOW:
     if 'fermi_dw' not in attributes: attributes['fermi_dw'] = fermi_dw
 
     do_anomalous_Hall(self.data_controller, do_ac)
-
     self.report_module_time('Anomalous Hall Conductivity in')
 
 
@@ -698,7 +629,6 @@ class PAOFLOW:
 
     do_transport(self.data_controller, temps, ene, velkp)
     velkp = None
-
     self.report_module_time('Transport in')
 
 
@@ -721,7 +651,5 @@ class PAOFLOW:
       arrays['d_tensor'] = np.array(d_tensor)
 
     ene = np.arange(emin, emax, (emax-emin)/ne)
-
     do_dielectric_tensor(self.data_controller, ene)
-
     self.report_module_time('Dielectric Tensor in')
