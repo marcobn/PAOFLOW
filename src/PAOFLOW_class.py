@@ -454,15 +454,16 @@ class PAOFLOW:
 
     if 'delta' not in attributes:
       attributes['delta'] = delta
+    if 'smearing' not in attributes:
+      attributes['smearing'] = None
 
-    if 'smearing' not in attributes or attributes['smearing'] is None:
+    if attributes['smearing'] is None:
       if do_dos:
         from do_dos import do_dos
         do_dos(self.data_controller, emin=emin, emax=emax)
       if do_pdos:
         from do_pdos import do_pdos
         do_pdos(self.data_controller, emin=emin, emax=emax)
-      self.report_module_time('DoS in')
     else:
       if 'deltakp' not in arrays:
         if self.rank == 0:
@@ -482,7 +483,8 @@ class PAOFLOW:
         from do_pdos import do_pdos_adaptive
         do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
 
-      self.report_module_time('DoS (Adaptive Smearing) in')
+    mname = 'DoS %s in'%('' if attributes['smearing'] is None else '(Adaptive Smearing)')
+    self.report_module_time(mname)
 
 
 
