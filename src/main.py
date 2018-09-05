@@ -44,9 +44,6 @@ def main():
 
   paoflow.calc_pao_hamiltonian()
 
-  if attr['non_ortho']:
-    paoflow.orthogonalize_hamiltonian()
-
   paoflow.add_external_fields()
 
   if attr['do_bands'] or attr['band_topology']:

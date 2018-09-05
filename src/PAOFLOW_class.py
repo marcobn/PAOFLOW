@@ -175,16 +175,14 @@ class PAOFLOW:
     get_K_grid_fft(self.data_controller)
     self.report_module_time('k -> R in')
 
+    if non_ortho:
+      from do_ortho import do_orthogonalize
+      from scipy import fftpack as FFT
 
+      arrays,attributes = self.data_controller.data_dicts()
 
-  def orthogonalize_hamiltonian ( self ):
-    from do_ortho import do_orthogonalize
-    from scipy import fftpack as FFT
-
-    arrays,attributes = self.data_controller.data_dicts()
-
-    do_orthogonalize(self.data_controller)
-    self.report_module_time('Orthogonalize in')
+      do_orthogonalize(self.data_controller)
+      self.report_module_time('Orthogonalize in')
 
 
 
@@ -304,12 +302,11 @@ class PAOFLOW:
       nfft2 = 2*((nfft2+1)//2)
       nfft3 = 2*((nfft3+1)//2)
       if self.rank == 0:
-        print('Warning: nfft grid has been modified to support double_grid,')
-        print('Modified nfft grid to: %d %d %d\n'%(nfft1,nfft2,nfft3))
+        print('Warning: nfft grid has been modified to support double_grid\nModified nfft grid to: %d %d %d'%(nfft1,nfft2,nfft3))
 
     # Adjust 'npool' if arrays exceed MPI maximum
     int_max = 2147483647
-    temp_pool = int(np.ceil((float(attr['nawf']**2*attr['nfft1']*attr['nfft2']*attr['nfft3']*3*attr['nspin'])/float(int_max))))
+    temp_pool = int(np.ceil((float(attr['nawf']**2*nfft1*nfft2*nfft3*3*attr['nspin'])/float(int_max))))
     if temp_pool > attr['npool']:
       if self.rank == 0:
         print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
@@ -368,8 +365,7 @@ class PAOFLOW:
       if self.rank == 0:
         nktot = attributes['nkpnts']
         nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
-        arrays['Hks'] = np.reshape(arrays['Hks'], (nawf,nawf,nktot,nspin), order='C')
-        arrays['Hks'] = np.moveaxis(arrays['Hks'], 2, 0)
+        arrays['Hks'] = np.moveaxis(np.reshape(arrays['Hks'],(nawf,nawf,nktot,nspin),order='C'), 2, 0)
       else:
         arrays['Hks'] = None
       arrays['Hksp'] = scatter_full(arrays['Hks'], attributes['npool'])
@@ -415,8 +411,6 @@ class PAOFLOW:
 
 ########### PARALLELIZATION
     #gather dHksp on nawf*nawf and scatter on k points
-    ################DISTRIBUTE ARRAYS ON KPOINTS#################
-    #############################################################
     arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attributes['nkpnts'],3,nspin))
     arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attributes['npool']), 0, 2)
     arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
@@ -452,10 +446,8 @@ class PAOFLOW:
 
     arrays,attributes = self.data_controller.data_dicts()
 
-    if 'delta' not in attributes:
-      attributes['delta'] = delta
-    if 'smearing' not in attributes:
-      attributes['smearing'] = None
+    if 'delta' not in attributes: attributes['delta'] = delta
+    if 'smearing' not in attributes: attributes['smearing'] = None
 
     if attributes['smearing'] is None:
       if do_dos:
@@ -483,7 +475,7 @@ class PAOFLOW:
         from do_pdos import do_pdos_adaptive
         do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
 
-    mname = 'DoS %s in'%('' if attributes['smearing'] is None else '(Adaptive Smearing)')
+    mname = 'DoS%s in'%('' if attributes['smearing'] is None else ' (Adaptive Smearing)')
     self.report_module_time(mname)
 
 
@@ -545,7 +537,6 @@ class PAOFLOW:
         Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
 
     arrays['Sj'] = Sj
-    Sj = None
 
 
 
@@ -559,9 +550,7 @@ class PAOFLOW:
 
     if attributes['nspin'] == 1:
       do_spin_texture(self.data_controller)
-
       self.report_module_time('Spin Texutre in')
-
     else:
       if self.rank == 0:
         print('Cannot compute spin texture with nspin=2')
