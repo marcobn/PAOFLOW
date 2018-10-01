@@ -16,30 +16,24 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import numpy as np
-import cmath
 
-
-def do_eigh_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
+def do_eigh_calc ( HRaux, SRaux, kq, R, read_S ):
   import numpy as np
   from numpy import linalg as LAN
 
   # Compute bands on a selected mesh in the BZ
 
-  nkpi=kq.shape[0]
+  nkpi = kq.shape[0]
+  nawf = HRaux.shape[0]
+  nspin = HRaux.shape[-1]
 
-  nawf,nawf,nk1,nk2,nk3,nspin = HRaux.shape
-  Hks_int  = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex) # final data arrays
+  Hks_int = band_loop_H(HRaux, kq, R)
 
-  Hks_int[:,:,:,:] = band_loop_H(nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx)
-
-  Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
   if read_S:
-    Sks_int  = np.zeros((nawf,nawf,nkpi),dtype=complex)
-    Sks_int[:,:,:] = band_loop_S(nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx)
+    Sks_int = band_loop_S(SRaux, kq, R)
 
-  E_kp = np.zeros((nkpi,nawf,nspin),dtype=float)
-  v_kp = np.zeros((nkpi,nawf,nawf,nspin),dtype=complex)
+  E_kp = np.empty((nkpi,nawf,nspin), dtype=float)
+  v_kp = np.empty((nkpi,nawf,nawf,nspin), dtype=complex)
 
   for ispin in range(nspin):
     for ik in range(nkpi):
@@ -48,29 +42,34 @@ def do_eigh_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
       else:
         E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = LAN.eigh(Hks_int[:,:,ik,ispin],UPLO='U')
 
+  return (E_kp, v_kp)
 
-  return(E_kp,v_kp)
 
-def band_loop_H(nspin,nk1,nk2,nk3,nawf,nkpi,HRaux,R_wght,kq,R,idx):
+### R_wght assumed to be 1
+def band_loop_H ( HRaux, kq, R ):
+  import numpy as np
 
-  auxh = np.zeros((nawf,nawf,nkpi,nspin),dtype=complex)
-  HRaux = np.reshape(HRaux,(nawf,nawf,nk1*nk2*nk3,nspin),order='C')
+  nkpi = kq.shape[0]
+  nawf,_,nk1,nk2,nk3,nspin = HRaux.shape
+  auxh = np.empty((nawf,nawf,nkpi,nspin), dtype=complex)
+  HRaux = np.reshape(HRaux, (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
 
   for ik in range(nkpi):
     for ispin in range(nspin):
-       auxh[:,:,ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.0*np.pi*kq[ik,:].dot(R[:,:].T)*1j),axis=2)
+       auxh[:,:,ik,ispin] = np.sum(HRaux[:,:,:,ispin]*np.exp(2.j*np.pi*kq[ik,:].dot(R[:,:].T)), axis=2)
 
-  return(auxh)
+  return auxh
 
-def band_loop_S(nspin,nk1,nk2,nk3,nawf,nkpi,SRaux,R_wght,kq,R,idx):
 
-  auxs = np.zeros((nawf,nawf,nkpi),dtype=complex)
+def band_loop_S ( SRaux, kq, R ):
+  import numpy as np
+
+  nkpi = kq.shape[0]
+  nawf,_,nk1,nk2,nk3 = SRaux.shape
+  auxs = np.empty((nawf,nawf,nkpi), dtype=complex)
+  SRaux = np.reshape(SRaux, (nawf,nawf,nk1*nk2*nk3), order='C')
 
   for ik in range(nkpi):
-    for i in range(nk1):
-      for j in range(nk2):
-        for k in range(nk3):
-          phase=R_wght[idx[i,j,k]]*cmath.exp(2.0*np.pi*kq[ik,:].dot(R[idx[i,j,k],:])*1j)
-          auxs[:,:,ik] += SRaux[:,:,i,j,k]*phase
+    auxs[:,:,ik] = np.sum(SRaux[:,:,:]*np.exp(2.j*np.pi*kq[ik,:].dot(R[:,:].T)), axis=2)
 
-  return(auxs)
+  return auxs

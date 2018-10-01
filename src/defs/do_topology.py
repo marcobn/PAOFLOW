@@ -71,7 +71,7 @@ def do_topology ( data_controller ):
     from numpy import linalg as LAN
     from do_eigh_calc import do_eigh_calc
     from clebsch_gordan import clebsch_gordan
-### NOT IMPLEMENTED IN PAOFLOW_CLASS
+    print('PC')
 
     nktrim = 16
     ktrim = np.zeros((nktrim,3),dtype=float)
@@ -91,7 +91,7 @@ def do_topology ( data_controller ):
     if 'SRs' in arrays:
       SRs = arrays['SRs']
       non_ortho = True
-    E_ktrim,v_ktrim = do_eigh_calc(arrays['HRs'], SRs, ktrim, arrays['R_wght'], arrays['R'], arrays['idx'], non_ortho)
+    E_ktrim,v_ktrim = do_eigh_calc(arrays['HRs'], SRs, ktrim, arrays['R'], non_ortho)
 
     # Define time reversal operator
     theta = -1.0j*clebsch_gordan(nawf, attributes['sh'], attributes['nl'], 1)
