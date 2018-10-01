@@ -230,11 +230,16 @@ class PAOFLOW:
     #----------------------------------------
     if self.rank == 0 and attributes['do_spin_orbit']:
       from do_spin_orbit import do_spin_orbit_bands
+
       natoms = attributes['natoms']
       if len(lambda_p) != natoms or len(lambda_d) != natoms:
         if self.rank == 0:
           print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
         quit()
+
+      if 'phi' not in attr: attr['phi'] = phi
+      if 'theta' not in attr: attr['theta'] = theta
+
       socStrengh = np.zeros((natoms,2), dtype=float)
       socStrengh [:,0] = lambda_p[:]
       socStrengh [:,1] = lambda_d[:]
@@ -245,7 +250,41 @@ class PAOFLOW:
 
 
 
-  def calc_topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None, theta=0., phi=0. ):
+  def calc_spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
+
+    arrays,attributes = self.data_controller.data_dicts()
+
+    if 'do_spin_orbit' not in attributes: attributes['do_spin_orbit'] = spin_orbit
+    if 'sh' not in arrays: arrays['sh'] = sh
+    if 'nl' not in arrays: arrays['nl'] = nl
+
+    nawf = attributes['nawf']
+
+    # Compute spin operators
+    # Pauli matrices (x,y,z)
+    sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+    if spin_orbit:
+      # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
+      Sj = np.zeros((3,nawf,nawf), dtype=complex)
+      for spol in range(3):
+        for i in range(nawf//2):
+          Sj[spol,i,i] = sP[spol][0,0]
+          Sj[spol,i,i+1] = sP[spol][0,1]
+        for i in range(nawf//2, nawf):
+          Sj[spol,i,i-1] = sP[spol][1,0]
+          Sj[spol,i,i] = sP[spol][1,1]
+    else:
+      from clebsch_gordan import clebsch_gordan
+      # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
+      Sj = np.zeros((3,nawf,nawf), dtype=complex)
+      for spol in range(3):
+        Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
+
+    arrays['Sj'] = Sj
+
+
+
+  def calc_topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
     from do_topology import do_topology
     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
     # curvature operators along the path in the IBZ from do_topology_calc 
@@ -259,9 +298,6 @@ class PAOFLOW:
     if 'spol' not in attr: attr['spol'] = spol
     if 'ipol' not in attr: attr['ipol'] = ipol
     if 'jpol' not in attr: attr['jpol'] = jpol
-
-    if 'phi' not in attr: attr['phi'] = phi
-    if 'theta' not in attr: attr['theta'] = theta
 
     if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
       if self.rank == 0:
@@ -503,40 +539,6 @@ class PAOFLOW:
     #---------------------------
     do_fermisurf(self.data_controller)
     self.report_module_time('Fermi Surface in')
-
-
-
-  def calc_spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
-
-    arrays,attributes = self.data_controller.data_dicts()
-
-    if 'do_spin_orbit' not in attributes: attributes['do_spin_orbit'] = spin_orbit
-    if 'sh' not in arrays: arrays['sh'] = sh
-    if 'nl' not in arrays: arrays['nl'] = nl
-
-    nawf = attributes['nawf']
-
-    # Compute spin operators
-    # Pauli matrices (x,y,z)
-    sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    if spin_orbit:
-      # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
-      Sj = np.zeros((3,nawf,nawf), dtype=complex)
-      for spol in range(3):
-        for i in range(nawf//2):
-          Sj[spol,i,i] = sP[spol][0,0]
-          Sj[spol,i,i+1] = sP[spol][0,1]
-        for i in range(nawf//2, nawf):
-          Sj[spol,i,i-1] = sP[spol][1,0]
-          Sj[spol,i,i] = sP[spol][1,1]
-    else:
-      from clebsch_gordan import clebsch_gordan
-      # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-      Sj = np.zeros((3,nawf,nawf), dtype=complex)
-      for spol in range(3):
-        Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
-
-    arrays['Sj'] = Sj
 
 
 

@@ -15,27 +15,15 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from scipy import fftpack as FFT
+
 import numpy as np
 import cmath
-import sys
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-
-#import matplotlib.pyplot as plt
-
-from kpnts_interpolation_mesh import *
-#from new_kpoint_interpolation import *
-from do_non_ortho import *
-from load_balancing import *
-
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
 
 def do_eigh_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
+  import numpy as np
+  from numpy import linalg as LAN
+
   # Compute bands on a selected mesh in the BZ
 
   nkpi=kq.shape[0]
@@ -60,13 +48,6 @@ def do_eigh_calc(HRaux,SRaux,kq,R_wght,R,idx,read_S):
       else:
         E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = LAN.eigh(Hks_int[:,:,ik,ispin],UPLO='U')
 
-
-#  if rank == 0:
-#    plt.matshow(abs(Hks_int[:,:,1445,0]))
-#    plt.colorbar()
-#    plt.show()
-#
-#    np.save('Hks_noSO0',Hks_int[:,:,0,0])
 
   return(E_kp,v_kp)
 
