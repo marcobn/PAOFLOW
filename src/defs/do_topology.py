@@ -64,7 +64,6 @@ def do_topology ( data_controller ):
   alat = attributes['alat'] / ANGSTROM_AU
   b_vectors = arrays['b_vectors']
 
-  nspin = 1
   # Compute Z2 according to Fu, Kane and Mele (2007)
   # Define TRIM points in 2(0-3)/3D(0-7)
   if nspin == 1 and spin_Hall:
