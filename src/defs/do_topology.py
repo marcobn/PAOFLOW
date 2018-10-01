@@ -17,8 +17,6 @@
 #
 
 import os
-#import matplotlib.pyplot as plt
-
 
 # Compute Z2 invariant and topological properties on a selected path in the BZ
 def do_topology ( data_controller ):
@@ -71,7 +69,6 @@ def do_topology ( data_controller ):
     from numpy import linalg as LAN
     from do_eigh_calc import do_eigh_calc
     from clebsch_gordan import clebsch_gordan
-    print('PC')
 
     nktrim = 16
     ktrim = np.zeros((nktrim,3),dtype=float)
@@ -94,7 +91,7 @@ def do_topology ( data_controller ):
     E_ktrim,v_ktrim = do_eigh_calc(arrays['HRs'], SRs, ktrim, arrays['R'], non_ortho)
 
     # Define time reversal operator
-    theta = -1.0j*clebsch_gordan(nawf, attributes['sh'], attributes['nl'], 1)
+    theta = -1.0j*clebsch_gordan(nawf, arrays['sh'], arrays['nl'], 1)
 
     nelec = attributes['nelec']
     wl = np.zeros((nktrim/2,nawf,nawf), dtype=complex)
@@ -105,34 +102,24 @@ def do_topology ( data_controller ):
     for ik in range(nktrim/2):
       delta_ik[ik] = pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
-### Move write to data controller
+    # Write 'Z2.dat'
     with open(os.path.join(attributes['opath'],'Z2'+'.dat'), 'w') as f:
       p2D = np.real(np.prod(delta_ik[:4]))
-      if p2D+1.0 < 1.e-5:
-        v0 = 1
-      elif p2D-1.0 < 1.e-5:
-        v0 = 0
+      v0 = (1 if p2D+1. < 1.e-5 else 0)
       f.write('2D case: v0 = %1d \n' %(v0))
+
       p3D = np.real(np.prod(delta_ik))
-      if p3D+1.0 < 1.e-5:
-        v0 = 1
-      elif p3D-1.0 < 1.e-5:
-        v0 = 0
+      v0 = (1 if p3D+1. < 1.e-5 else 0)
+
       p3D = delta_ik[1]*delta_ik[3]*delta_ik[6]*delta_ik[7]
-      if p3D+1.0 < 1.e-5:
-        v1 = 1
-      elif p3D-1.0 < 1.e-5:
-        v1 = 0
+      v1 = (1 if p3D+1. < 1.e-5 else 0)
+
       p3D = delta_ik[2]*delta_ik[3]*delta_ik[5]*delta_ik[7]
-      if p3D+1.0 < 1.e-5:
-        v2 = 1
-      elif p3D-1.0 < 1.e-5:
-        v2 = 0
+      v2 = (1 if p3D+1. < 1.e-5 else 0)
+
       p3D = delta_ik[4]*delta_ik[6]*delta_ik[5]*delta_ik[7]
-      if p3D+1.0 < 1.e-5:
-        v3 = 1
-      elif p3D-1.0 < 1.e-5:
-        v3 = 0
+      v3 = (1 if p3D+1. < 1.e-5 else 0)
+
       f.write('3D case: v0;v1,v2,v3 = %1d;%1d,%1d,%1d \n' %(v0,v1,v2,v3))
 
   # Compute momenta and kinetic energy

@@ -30,6 +30,9 @@ class PAOFLOW:
 
   start_time = reset_time = None
 
+  # Overestimate factor for guessing memory requirements
+  gb_fudge_factor = 10.
+
 
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
     from time import time
@@ -91,9 +94,9 @@ class PAOFLOW:
       bytes_per_complex = 128//8
       spins = attributes['nspin']
       num_wave_functions = attributes['nawf']
-      attributes['gb_fudge_factor'] = fudge_factor = 10.
+      ff = self.gb_fudge_factor
       nd1,nd2,nd3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
-      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
+      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
     self.report_module_time('Initialization in')
@@ -355,9 +358,9 @@ class PAOFLOW:
       bytes_per_complex = 128//8
       nd1,nd2,nd3 = nfft1,nfft2,nfft3
       num_wave_functions = attr['nawf']
-      fudge_factor = attr['gb_fudge_factor']
+      ff = self.gb_fudge_factor
       nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * fudge_factor * B_to_GB
+      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
       if attr['verbose']:
         print('Performing Fourier interpolation on a larger grid.')
         print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
