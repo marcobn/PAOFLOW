@@ -38,11 +38,6 @@ def do_topology ( data_controller ):
 
   npool = attributes['npool']
 
-  if spin_Hall and 'Sj' not in arrays:
-    if rank == 0:
-      print('Spin operator \'Sj\' must be calculated before Band Topology.')
-    quit()
-
   if 'kq' not in arrays:
     kpnts_interpolation_mesh(data_controller)
 
@@ -61,9 +56,15 @@ def do_topology ( data_controller ):
   eff_mass = attributes['eff_mass']
   spin_Hall = attributes['spin_Hall']
 
+  if spin_Hall and 'Sj' not in arrays:
+    if rank == 0:
+      print('Spin operator \'Sj\' must be calculated before Band Topology.')
+    quit()
+
   alat = attributes['alat'] / ANGSTROM_AU
   b_vectors = arrays['b_vectors']
 
+  nspin = 1
   # Compute Z2 according to Fu, Kane and Mele (2007)
   # Define TRIM points in 2(0-3)/3D(0-7)
   if nspin == 1 and spin_Hall:
