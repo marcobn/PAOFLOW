@@ -18,7 +18,7 @@
 
 def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
   import numpy as np
-  Pn = 0.0
+  Pn = 0.
   for ispin in range(nspin):
     for ik in range(nkpnts):
       UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
@@ -34,35 +34,33 @@ def do_projectability ( data_controller ):
   #----------------------
   rank = MPI.COMM_WORLD.Get_rank()
 
-  arrays,attributes = data_controller.data_dicts()
+  arry,attr = data_controller.data_dicts()
 
-  pthr = attributes['pthr']
-  shift = attributes['shift']
+  pthr,shift = attr['pthr'],attr['shift']
 
-  bnd = None
   if rank != 0:
-    attributes['shift'] = None
+    attr['shift'] = None
   else:
-    Pn = build_Pn(attributes['nawf'], attributes['nbnds'], attributes['nkpnts'], attributes['nspin'], arrays['U'])
+    Pn = build_Pn(attr['nawf'], attr['nbnds'], attr['nkpnts'], attr['nspin'], arry['U'])
 
-    if attributes['verbose']:
-      print('Projectability vector ',Pn)
+    if attr['verbose']:
+      print('Projectability vector ', Pn)
 
     # Check projectability and decide bnd
     bnd = 0
-    for n in range(attributes['nbnds']):
-      if Pn[n] > attributes['pthr']:
+    for n in range(attr['nbnds']):
+      if Pn[n] > attr['pthr']:
         bnd += 1
     Pn = None
-    attributes['bnd'] = bnd
-    if 'shift' not in attributes or attributes['shift']=='auto':
-      attributes['shift'] = (np.amin(arrays['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
+    attr['bnd'] = bnd
+    if 'shift' not in attr or attr['shift']=='auto':
+      attr['shift'] = (np.amin(arry['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
 
-    if attributes['verbose']:
-      print('# of bands with good projectability > {} = {}'.format(attributes['pthr'],bnd))
-    if attributes['verbose'] and bnd < attributes['nbnds']:
-      print('Range of suggested shift ', np.amin(arrays['my_eigsmat'][bnd,:,:]), ' , ', np.amax(arrays['my_eigsmat'][bnd,:,:]))
+    if attr['verbose']:
+      print('# of bands with good projectability > {} = {}'.format(attr['pthr'],bnd))
+    if attr['verbose'] and bnd < attr['nbnds']:
+      print('Range of suggested shift ', np.amin(arry['my_eigsmat'][bnd,:,:]), ' , ', np.amax(arry['my_eigsmat'][bnd,:,:]))
 
   # Broadcast 
-  data_controller.broadcast_single_attribute('bnd')
-  data_controller.broadcast_single_attribute('shift')
+  data_controller.broadcast_attribute('bnd')
+  data_controller.broadcast_attribute('shift')

@@ -175,7 +175,7 @@ class DataController:
       self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
     self.comm.Bcast(np.ascontiguousarray(self.data_arrays[key]), root=root)
 
-  def broadcast_single_attribute ( self, key ):
+  def broadcast_attribute ( self, key ):
     if self.rank == 0:
       for i in xrange(1,self.size):
         self.comm.send(self.data_attributes[key], dest=i)

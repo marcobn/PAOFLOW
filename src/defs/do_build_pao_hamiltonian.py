@@ -110,11 +110,11 @@ def do_build_pao_hamiltonian ( data_controller ):
   #------------------------------
   # Building the PAO Hamiltonian
   #------------------------------
-  arrays,attributes = data_controller.data_dicts()
+  arry,attr = data_controller.data_dicts()
 
-  ashape = (attributes['nawf'],attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3'],attributes['nspin'])
+  ashape = (attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin'])
 
-  arrays['Hks'] = build_Hks(data_controller)
+  arry['Hks'] = build_Hks(data_controller)
 
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
@@ -123,17 +123,17 @@ def do_build_pao_hamiltonian ( data_controller ):
   # non_ortho flag == 1 - makes H orthogonal (rotated basis) 
   #  Hks = do_non_ortho(Hks,Sks)
   #  Hks = do_ortho(Hks,Sks)
-  if attributes['non_ortho']:
+  if attr['non_ortho']:
     from do_non_ortho import do_non_ortho
 
     # This is needed for consistency of the ordering of the matrix elements
     # Important in ACBN0 file writing
-    arrays['Sks'] = np.transpose(arrays['Sks'], (1,0,2))
+    arry['Sks'] = np.transpose(arry['Sks'], (1,0,2))
 
-    arrays['Hks'] = do_non_ortho(arrays['Hks'],arrays['Sks'])
-    arrays['Sks'] = np.reshape(arrays['Sks'], ashape[:-1])
+    arry['Hks'] = do_non_ortho(arry['Hks'],arry['Sks'])
+    arry['Sks'] = np.reshape(arry['Sks'], ashape[:-1])
 
-  arrays['Hks'] = np.reshape(arrays['Hks'], ashape)
+  arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
 
 def do_Hks_to_HRs ( data_controller ):
@@ -142,7 +142,7 @@ def do_Hks_to_HRs ( data_controller ):
 
   rank = MPI.COMM_WORLD.Get_rank()
 
-  arrays,attributes = data_controller.data_dicts()
+  arry,attr = data_controller.data_dicts()
 
   #----------------------------------------------------------
   # Define the Hamiltonian and overlap matrix in real space:
@@ -150,14 +150,14 @@ def do_Hks_to_HRs ( data_controller ):
   #----------------------------------------------------------
   if rank == 0:
     # Original k grid to R grid
-    arrays['HRs'] = np.zeros_like(arrays['Hks'])
-    arrays['HRs'] = FFT.ifftn(arrays['Hks'], axes=[2,3,4])
+    arry['HRs'] = np.zeros_like(arry['Hks'])
+    arry['HRs'] = FFT.ifftn(arry['Hks'], axes=[2,3,4])
 
-    if attributes['non_ortho']:
-      arrays['SRs'] = np.zeros_like(arrays['Sks'])
-      arrays['SRs'] = FFT.ifftn(arrays['Sks'], axes=[2,3,4])
-      del arrays['Sks']
+    if attr['non_ortho']:
+      arry['SRs'] = np.zeros_like(arry['Sks'])
+      arry['SRs'] = FFT.ifftn(arry['Sks'], axes=[2,3,4])
+      del arry['Sks']
 
   data_controller.broadcast_single_array('HRs')
-  if attributes['non_ortho']:
+  if attr['non_ortho']:
     data_controller.broadcast_single_array('SRs')
