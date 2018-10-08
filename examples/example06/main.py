@@ -30,22 +30,22 @@ def main():
 
   paoflow = PAOFLOW(savedir='alp.save')
 
-  paoflow.calc_projectability()
-  paoflow.calc_pao_hamiltonian()
+  paoflow.projectability()
+  paoflow.pao_hamiltonian()
 
   correction_Hubbard = np.zeros(32, dtype=float)
   correction_Hubbard[1:4] = .1
   correction_Hubbard[17:20] = 2.31
   paoflow.add_external_fields(HubbardU=correction_Hubbard)
 
-  paoflow.calc_bands(ibrav=2)
-  paoflow.calc_interpolated_hamiltonian(nfft1=24, nfft2=24, nfft3=24)
-  paoflow.calc_pao_eigh()
-  paoflow.calc_gradient_and_momenta()
-  paoflow.calc_adaptive_smearing()
-  paoflow.calc_dos_adaptive(do_pdos=False, emin=-8., emax=5., delta=.1)
-  paoflow.calc_transport(emin=-8., emax=5., t_tensor=[[0,0]])
-  paoflow.calc_dielectric_tensor(emax=6., d_tensor=[[0,0]])
+  paoflow.bands(ibrav=2)
+  paoflow.interpolated_hamiltonian(nfft1=24, nfft2=24, nfft3=24)
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing()
+  paoflow.dos(do_pdos=False, emin=-8., emax=5., delta=.1)
+  paoflow.transport(emin=-8., emax=5., t_tensor=[[0,0]])
+  paoflow.dielectric_tensor(emax=6., d_tensor=[[0,0]])
   paoflow.finish_execution()
 
 if __name__== '__main__':

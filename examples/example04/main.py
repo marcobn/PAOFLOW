@@ -28,16 +28,16 @@ from PAOFLOW_class import PAOFLOW
 
 def main():
   paoflow = PAOFLOW(savedir='./fe.save')
-  paoflow.calc_projectability(pthr=0.95)
-  paoflow.calc_pao_hamiltonian()
-  paoflow.calc_bands(ibrav=3)
-  paoflow.calc_topology(spol=2, ipol=1, jpol=2, eff_mass=True, Berry=True)
-  paoflow.calc_interpolated_hamiltonian()
-  paoflow.calc_pao_eigh()
-  paoflow.calc_gradient_and_momenta()
-  paoflow.calc_adaptive_smearing(smearing='gauss')
-  paoflow.calc_dos_adaptive(do_pdos=False)
-  paoflow.calc_anomalous_Hall(a_tensor=np.array([[0,1]]))
+  paoflow.projectability(pthr=0.95)
+  paoflow.pao_hamiltonian()
+  paoflow.bands(ibrav=3)
+  paoflow.topology(spol=2, ipol=1, jpol=2, eff_mass=True, Berry=True)
+  paoflow.interpolated_hamiltonian()
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing(smearing='gauss')
+  paoflow.dos(do_pdos=False)
+  paoflow.anomalous_Hall(a_tensor=np.array([[0,1]]))
   paoflow.finish_execution()
 
 if __name__== '__main__':

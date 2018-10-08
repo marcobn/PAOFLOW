@@ -144,7 +144,7 @@ class PAOFLOW:
 
 
 
-  def calc_projectability ( self, pthr=0.95, shift='auto' ):
+  def projectability ( self, pthr=0.95, shift='auto' ):
     from do_projectability import do_projectability
 
     attr = self.data_controller.data_attributes
@@ -157,7 +157,7 @@ class PAOFLOW:
 
 
 
-  def calc_pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
+  def pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
     from get_K_grid_fft import get_K_grid_fft
     from do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
 
@@ -210,7 +210,7 @@ class PAOFLOW:
 
 
 
-  def calc_bands ( self, ibrav=None, spin_orbit=False, theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
+  def bands ( self, ibrav=None, spin_orbit=False, theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
     from do_bands import do_bands
 
     arrays,attr = self.data_controller.data_dicts()
@@ -250,7 +250,7 @@ class PAOFLOW:
 
 
 
-  def calc_spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
+  def spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -284,7 +284,7 @@ class PAOFLOW:
 
 
 
-  def calc_topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
+  def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
     from do_topology import do_topology
     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
     # curvature operators along the path in the IBZ from do_topology_calc 
@@ -314,7 +314,7 @@ class PAOFLOW:
 
 
 
-  def calc_interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
+  def interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
     from get_K_grid_fft import get_K_grid_fft
     from do_double_grid import do_double_grid
     from communication import gather_scatter,scatter_full
@@ -387,7 +387,7 @@ class PAOFLOW:
 
 
 
-  def calc_pao_eigh ( self, bval=0 ):
+  def pao_eigh ( self, bval=0 ):
     from do_pao_eigh import do_pao_eigh
     from communication import gather_scatter,scatter_full,gather_full
 
@@ -428,7 +428,7 @@ class PAOFLOW:
 
 
 
-  def calc_gradient_and_momenta ( self ):
+  def gradient_and_momenta ( self ):
     from do_gradient import do_gradient
     from do_momentum import do_momentum
     from communication import gather_scatter
@@ -462,7 +462,7 @@ class PAOFLOW:
 
 
 
-  def calc_adaptive_smearing ( self, smearing='gauss' ):
+  def adaptive_smearing ( self, smearing='gauss' ):
     from do_adaptive_smearing import do_adaptive_smearing
 
     attr = self.data_controller.data_attributes
@@ -479,7 +479,7 @@ class PAOFLOW:
 
 
 
-  def calc_dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
+  def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -529,7 +529,7 @@ class PAOFLOW:
 
 
 
-  def calc_fermi_surface ( self, fermi_up=1., fermi_dw=-1. ):
+  def fermi_surface ( self, fermi_up=1., fermi_dw=-1. ):
     from do_fermisurf import do_fermisurf
 
     attr = self.data_controller.data_attributes
@@ -545,7 +545,7 @@ class PAOFLOW:
 
 
 
-  def calc_spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
+  def spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
     from do_spin_texture import do_spin_texture
 
     attr = self.data_controller.data_attributes
@@ -564,7 +564,7 @@ class PAOFLOW:
 
 
 
-  def calc_spin_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
+  def spin_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     from do_Hall import do_spin_Hall
 
     arrays,attr = self.data_controller.data_dicts()
@@ -581,7 +581,7 @@ class PAOFLOW:
 
 
 
-  def calc_anomalous_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
+  def anomalous_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
     from do_Hall import do_anomalous_Hall
 
     arrays,attr = self.data_controller.data_dicts()
@@ -598,7 +598,7 @@ class PAOFLOW:
 
 
 
-  def calc_transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None ):
+  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None ):
     from do_transport import do_transport
 
     arrays,attr = self.data_controller.data_dicts()
@@ -624,7 +624,7 @@ class PAOFLOW:
 
 
 
-  def calc_dielectric_tensor ( self, metal=False, kramerskronig=True, temp=.025852, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=.025852, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
     from do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()

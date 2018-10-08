@@ -28,16 +28,16 @@ from PAOFLOW_class import PAOFLOW
 def main():
 
   paoflow = PAOFLOW(savedir='silicon.save', smearing='gauss', npool=1)
-  paoflow.calc_projectability()
-  paoflow.calc_pao_hamiltonian()
-  paoflow.calc_bands(ibrav=2)
-  paoflow.calc_interpolated_hamiltonian()
-  paoflow.calc_pao_eigh()
-  paoflow.calc_gradient_and_momenta()
-  paoflow.calc_adaptive_smearing()
-  paoflow.calc_dos_adaptive(emin=-12., emax=2.2)
-  paoflow.calc_transport(t_tensor=[[0,0]])
-  paoflow.calc_dielectric_tensor(emax=6., d_tensor=[[0,0]])
+  paoflow.projectability()
+  paoflow.pao_hamiltonian()
+  paoflow.bands(ibrav=2)
+  paoflow.interpolated_hamiltonian()
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing()
+  paoflow.dos(emin=-12., emax=2.2)
+  paoflow.transport(t_tensor=[[0,0]])
+  paoflow.dielectric_tensor(emax=6., d_tensor=[[0,0]])
   paoflow.finish_execution()
 
 if __name__== '__main__':

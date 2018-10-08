@@ -40,50 +40,50 @@ def main():
   #   attributes and arrays read from inputfiles
   arry,attr = paoflow.data_controller.data_dicts()
 
-  paoflow.calc_projectability()
+  paoflow.projectability()
 
-  paoflow.calc_pao_hamiltonian()
+  paoflow.pao_hamiltonian()
 
   paoflow.add_external_fields()
 
   if attr['do_bands'] or attr['band_topology']:
-    paoflow.calc_bands()
+    paoflow.bands()
 
   if attr['spintexture'] or attr['spin_Hall']:
-    paoflow.calc_spin_operator(spin_orbit=attr['do_spin_orbit'])
+    paoflow.spin_operator(spin_orbit=attr['do_spin_orbit'])
 
   if attr['band_topology'] and not attr['onedim']:
-    paoflow.calc_topology()
+    paoflow.topology()
 
   if attr['double_grid']:
-    paoflow.calc_interpolated_hamiltonian()
+    paoflow.interpolated_hamiltonian()
 
-  paoflow.calc_pao_eigh()
+  paoflow.pao_eigh()
 
   if attr['fermisurf']:
-    paoflow.calc_fermi_surface()
+    paoflow.fermi_surface()
 
   if attr['spintexture']:
-    paoflow.calc_spin_texture()
+    paoflow.spin_texture()
 
-  paoflow.calc_gradient_and_momenta()
+  paoflow.gradient_and_momenta()
 
   if attr['smearing'] is not None:
-    paoflow.calc_adaptive_smearing()
+    paoflow.adaptive_smearing()
 
-  paoflow.calc_dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
+  paoflow.dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['spin_Hall']:
-    paoflow.calc_spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'])
+    paoflow.spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'])
 
   if attr['Berry']:
-    paoflow.calc_anomalous_Hall(do_ac=attr['ac_cond_Berry'], emin=attr['eminAH'], emax=attr['emaxSH'])
+    paoflow.anomalous_Hall(do_ac=attr['ac_cond_Berry'], emin=attr['eminAH'], emax=attr['emaxSH'])
 
   if attr['Boltzmann']:
-    paoflow.calc_transport(tmin=attr['tmin'], tmax=attr['tmax'], tstep=attr['tstep'], emin=attr['emin'], emax=attr['emax'], ne=attr['ne'])
+    paoflow.transport(tmin=attr['tmin'], tmax=attr['tmax'], tstep=attr['tstep'], emin=attr['emin'], emax=attr['emax'], ne=attr['ne'])
 
   if attr['epsilon']:
-    paoflow.calc_dielectric_tensor(metal=attr['metal'], kramerskronig=attr['kramerskronig'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
+    paoflow.dielectric_tensor(metal=attr['metal'], kramerskronig=attr['kramerskronig'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
 
   # Print the total execution time and request
   #   desired quantites for further processing

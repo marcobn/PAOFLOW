@@ -28,15 +28,15 @@ from PAOFLOW_class import PAOFLOW
 def main():
 
   paoflow = PAOFLOW(savedir='pt.save', smearing='m-p')
-  paoflow.calc_projectability()
-  paoflow.calc_pao_hamiltonian()
-  paoflow.calc_interpolated_hamiltonian()
-  paoflow.calc_pao_eigh()
-  paoflow.calc_gradient_and_momenta()
-  paoflow.calc_adaptive_smearing()
-  paoflow.calc_dos_adaptive(emin=-8., emax=4., delta=.2)
-  paoflow.calc_transport(t_tensor=[[0,0]])
-  paoflow.calc_dielectric_tensor(metal=True, kramerskronig=False, emin=.5, emax=10., d_tensor=[[0,0]])
+  paoflow.projectability()
+  paoflow.pao_hamiltonian()
+  paoflow.interpolated_hamiltonian()
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing()
+  paoflow.dos(emin=-8., emax=4., delta=.2)
+  paoflow.transport(t_tensor=[[0,0]])
+  paoflow.dielectric_tensor(metal=True, kramerskronig=False, emin=.5, emax=10., d_tensor=[[0,0]])
   paoflow.finish_execution()
 
 if __name__== '__main__':

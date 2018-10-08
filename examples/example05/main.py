@@ -28,17 +28,17 @@ from PAOFLOW_class import PAOFLOW
 def main():
 
   paoflow = PAOFLOW(savedir='pt.save')
-  paoflow.calc_projectability()
-  paoflow.calc_pao_hamiltonian()
-  paoflow.calc_bands(ibrav=2)
-  paoflow.calc_spin_operator(sh=[0,1,2], nl=[1,1,1])
-  paoflow.calc_topology(Berry=True, eff_mass=True, spin_Hall=True, spol=2, ipol=0, jpol=1)
-  paoflow.calc_interpolated_hamiltonian()
-  paoflow.calc_pao_eigh()
-  paoflow.calc_gradient_and_momenta()
-  paoflow.calc_adaptive_smearing()
-  paoflow.calc_dos_adaptive(do_pdos=False, emin=-8., emax=4.)
-  paoflow.calc_spin_Hall(emin=-8., emax=4., s_tensor=[[0,1,2]])
+  paoflow.projectability()
+  paoflow.pao_hamiltonian()
+  paoflow.bands(ibrav=2)
+  paoflow.spin_operator(sh=[0,1,2], nl=[1,1,1])
+  paoflow.topology(Berry=True, eff_mass=True, spin_Hall=True, spol=2, ipol=0, jpol=1)
+  paoflow.interpolated_hamiltonian()
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing()
+  paoflow.dos(do_pdos=False, emin=-8., emax=4.)
+  paoflow.spin_Hall(emin=-8., emax=4., s_tensor=[[0,1,2]])
   paoflow.finish_execution()
 
 if __name__== '__main__':

@@ -28,18 +28,18 @@ from PAOFLOW_class import PAOFLOW
 def main():
 
   paoflow = PAOFLOW(savedir='al.save', npool=8)
-  paoflow.calc_projectability(pthr=.97)
-  paoflow.calc_pao_hamiltonian(non_ortho=True)
+  paoflow.projectability(pthr=.97)
+  paoflow.pao_hamiltonian(non_ortho=True)
   paoflow.orthogonalize_hamiltonian()
   paoflow.add_external_fields()
-  paoflow.calc_bands(ibrav=2)
-  paoflow.calc_interpolated_hamiltonian()
-  paoflow.calc_pao_eigh()
-  paoflow.calc_gradient_and_momenta()
-  paoflow.calc_adaptive_smearing()
-  paoflow.calc_dos_adaptive(do_pdos=False, emin=-12., emax=3.)
-  paoflow.calc_transport(emin=-2., emax=2., t_tensor=[[0,0]])
-  paoflow.calc_dielectric_tensor(metal=True, emin=.05, emax=6., d_tensor=[[0,0]])
+  paoflow.bands(ibrav=2)
+  paoflow.interpolated_hamiltonian()
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing()
+  paoflow.dos(do_pdos=False, emin=-12., emax=3.)
+  paoflow.transport(emin=-2., emax=2., t_tensor=[[0,0]])
+  paoflow.dielectric_tensor(metal=True, emin=.05, emax=6., d_tensor=[[0,0]])
   paoflow.finish_execution()
 
 if __name__== '__main__':
