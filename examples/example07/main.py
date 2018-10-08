@@ -30,7 +30,6 @@ def main():
   paoflow = PAOFLOW(savedir='al.save', npool=8)
   paoflow.projectability(pthr=.97)
   paoflow.pao_hamiltonian(non_ortho=True)
-  paoflow.orthogonalize_hamiltonian()
   paoflow.add_external_fields()
   paoflow.bands(ibrav=2)
   paoflow.interpolated_hamiltonian()

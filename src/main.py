@@ -42,7 +42,7 @@ def main():
 
   paoflow.projectability()
 
-  paoflow.pao_hamiltonian()
+  paoflow.pao_hamiltonian(non_ortho=attr['non_ortho'])
 
   paoflow.add_external_fields()
 
