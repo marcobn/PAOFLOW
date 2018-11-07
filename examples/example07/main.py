@@ -23,11 +23,11 @@
 #
 # *************************************************************************************
 
-from PAOFLOW_class import PAOFLOW
+from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW(savedir='al.save', npool=8)
+  paoflow = PAOFLOW.PAOFLOW(savedir='al.save', npool=8)
   paoflow.projectability(pthr=.97)
   paoflow.pao_hamiltonian(non_ortho=True)
   paoflow.add_external_fields()

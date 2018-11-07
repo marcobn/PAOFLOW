@@ -23,11 +23,11 @@
 #
 # *************************************************************************************
 
-from PAOFLOW_class import PAOFLOW
+from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW(savedir='al.save')
+  paoflow = PAOFLOW.PAOFLOW(savedir='al.save')
   paoflow.projectability(pthr=.97)
   paoflow.pao_hamiltonian()
   paoflow.interpolated_hamiltonian()

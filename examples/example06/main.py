@@ -24,11 +24,11 @@
 # *************************************************************************************
 
 import numpy as np
-from PAOFLOW_class import PAOFLOW
+from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW(savedir='alp.save')
+  paoflow = PAOFLOW.PAOFLOW(savedir='alp.save')
 
   paoflow.projectability()
   paoflow.pao_hamiltonian()

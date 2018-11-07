@@ -23,11 +23,11 @@
 #
 # *************************************************************************************
 
-from PAOFLOW_class import PAOFLOW
+from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW(savedir='silicon.save', smearing='gauss', npool=1)
+  paoflow = PAOFLOW.PAOFLOW(savedir='silicon.save', smearing='gauss', npool=1)
   paoflow.projectability()
   paoflow.pao_hamiltonian()
   paoflow.bands(ibrav=2)
