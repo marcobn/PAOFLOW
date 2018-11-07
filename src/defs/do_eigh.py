@@ -17,6 +17,26 @@
 #
 
 
+def do_pao_eigh ( data_controller ):
+  from communication import gather_scatter
+  from numpy.linalg import eigh
+  from mpi4py import MPI
+  import numpy as np
+
+  rank = MPI.COMM_WORLD.Get_rank()
+
+  arrays,attributes = data_controller.data_dicts()
+
+  snktot,nawf,_,nspin = arrays['Hksp'].shape
+
+  arrays['E_k'] = np.zeros((snktot,nawf,nspin), dtype=float)
+  arrays['v_k'] = np.zeros((snktot,nawf,nawf,nspin), dtype=complex)
+
+  for ispin in range(nspin):
+    for n in range(snktot):
+      arrays['E_k'][n,:,ispin],arrays['v_k'][n,:,:,ispin] = eigh(arrays['Hksp'][n,:,:,ispin], UPLO='U')
+
+
 def do_eigh_calc ( HRaux, SRaux, kq, R, read_S ):
   import numpy as np
   from numpy import linalg as LAN

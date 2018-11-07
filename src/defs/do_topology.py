@@ -67,7 +67,7 @@ def do_topology ( data_controller ):
   if nspin == 1 and spin_Hall:
     from pfaffian import pfaffian 
     from numpy import linalg as LAN
-    from do_eigh_calc import do_eigh_calc
+    from do_eigh import do_eigh_calc
     from clebsch_gordan import clebsch_gordan
 
     nktrim = 16

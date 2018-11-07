@@ -16,9 +16,8 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-#sys.path.append('./')
 
-def do_spin_orbit_bands( data_controller ):
+def do_spin_orbit_bands ( data_controller ):
     import cmath
     import numpy as np
 
@@ -60,7 +59,7 @@ def do_spin_orbit_bands( data_controller ):
     attributes['nawfR'] = 2*nawf
 
 
-def soc_p(theta,phi):
+def soc_p ( theta, phi ):
         import cmath
         import numpy as np
 
@@ -96,10 +95,10 @@ def soc_p(theta,phi):
         HR_soc[12,2]=np.conjugate(HR_soc[2,12])
         HR_soc[10,3]=np.conjugate(HR_soc[3,10])
         HR_soc[11,3]=np.conjugate(HR_soc[3,11])
-        return(HR_soc)
+        return HR_soc
 
 
-def soc_d(theta,phi):
+def soc_d ( theta, phi ):
         import cmath
         import numpy as np
 
@@ -166,4 +165,4 @@ def soc_d(theta,phi):
         HR_soc[14,8] = np.conjugate(HR_soc[8,14])
         HR_soc[15,7] = np.conjugate(HR_soc[7,15])
         HR_soc[15,8] = np.conjugate(HR_soc[8,15])
-        return(HR_soc)
+        return HR_soc

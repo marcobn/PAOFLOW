@@ -1,4 +1,3 @@
-from __future__ import division
 #
 # PAOFLOW
 #
@@ -29,6 +28,7 @@ from __future__ import division
 #
 
 # This module from AFLOWpi
+from __future__ import division
 
 import numpy as np
 import sys,os

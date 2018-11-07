@@ -15,10 +15,11 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-import numpy as np
-from scipy import fftpack as FFT
+
 
 def get_R_grid_fft ( data_controller ):
+  import numpy as np
+  from scipy import fftpack as FFT
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes

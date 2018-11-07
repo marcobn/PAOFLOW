@@ -15,9 +15,10 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-import numpy as np
+
 
 def get_K_grid_fft ( data_controller ):
+  import numpy as np
 
   arrays,attributes = data_controller.data_dicts()
 

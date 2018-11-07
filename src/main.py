@@ -23,7 +23,7 @@
 #
 # *************************************************************************************
 
-from PAOFLOW_class import PAOFLOW
+from PAOFLOW import PAOFLOW
 
 def main():
 
