@@ -36,7 +36,7 @@ class PAOFLOW:
     from time import time
     from mpi4py import MPI
     from defs.header import header
-    from defs.DataController import DataController
+    from DataController import DataController
 
     self.workpath = workpath
     self.outputdir = outputdir
@@ -172,6 +172,11 @@ class PAOFLOW:
     del arrays['U']
 
     do_Hks_to_HRs(self.data_controller)
+#### PARALLELIZATION
+    data_controller.broadcast_single_array('HRs')
+    if attr['non_ortho']:
+      data_controller.broadcast_single_array('SRs')
+
     get_K_grid_fft(self.data_controller)
     self.report_module_time('k -> R')
 
@@ -201,10 +206,6 @@ class PAOFLOW:
       if attr['verbose']:
         print('External Fields Added')
     self.comm.Barrier()
-
-
-
-# ----- Z2 Pack ----- #
 
 
 

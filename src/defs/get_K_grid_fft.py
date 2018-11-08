@@ -31,6 +31,7 @@ def get_K_grid_fft ( data_controller ):
   arrays['kq_wght'] = np.ones((nktot), dtype=float)/nktot
   return
 
+### Not used
   Kint = np.zeros((3,nktot), dtype=float)
   idk = np.zeros((nk1,nk2,nk3), dtype=int)
 

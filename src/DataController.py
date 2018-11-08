@@ -142,6 +142,7 @@ class DataController:
           f.write('%.5f %.5e\n'%(col1[i],col2[i]))
     self.comm.Barrier()
 
+
   def write_transport_tensor ( self, fname, temp, energies, tensor ):
     if self.rank == 0:
       from os.path import join
@@ -157,6 +158,7 @@ class DataController:
           f.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
     self.comm.Barrier()
 
+
   def write_bxsf ( self, fname, bands, nbnd ):
     if self.rank == 0:
       from write2bxsf import write2bxsf
@@ -168,6 +170,85 @@ class DataController:
     self.comm.Barrier()
 
 
+  def write_bands ( self, fname, bands ):
+    if rank == 0:
+      from os import join
+
+      arry,attr = self.data_dicts()
+      nspin,nkpi = attr['nspin'],arry['kq'].shape[1]
+
+      for ispin in range(nspin):
+        with open(join(attr['opath'],fname+'_'+str(ispin)+'.dat'), 'w') as f:
+          for ik in range(nkpi):
+            f.write('\t'.join(['%d'%ik]+['% 3.5f'%j for j in bands[ik,:,ispin]])+'\n') 
+    self.comm.Barrier()
+
+
+  def write_z2pack ( self, fname ):
+    if self.rank == 0:
+      from os.path import join
+
+      attr,arry = self.data_dicts()
+
+      if 'HRs' not in arry:
+        print('HRs must first be calculated with \'build_pao_hamiltonian\'')
+        return
+
+      with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
+
+        nawf,nkpts = attr['nawf'],attr['nkpnts']
+        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+
+        f.write("PAOFLOW Generated \n")
+        f.write('%5d \n'%nawf)
+
+        f.write('%5d \n'%nkpts)
+
+        nl = 15 # z2pack read the weights in lines of 15 items
+
+        nlines = nkpts//nl # number of lines
+        nlast = nkpts%nl   # number of items of laste line if needed
+
+        # the weight is always one
+        kq_wght = np.ones(nkpts, dtype=int)
+
+        # print each cell weight
+        j = 0
+        for i in range(nlines):
+          j = i * nl
+          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][j:j+nl]) + '\n')
+
+        # Last line if needed
+        if nlast != 0:
+          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][nlines*nl:nkpts]) + '\n')
+
+#### Can be condensed
+        for i in range(nk1):
+          for j in range(nk2):
+            for k in range(nk3):
+              n = k + j*nk3 + i*nk2*nk3
+              Rx = float(i)/float(nk1)
+              Ry = float(j)/float(nk2)
+              Rz = float(k)/float(nk3)
+              if Rx >= 0.5: Rx=Rx-1.0
+              if Ry >= 0.5: Ry=Ry-1.0
+              if Rz >= 0.5: Rz=Rz-1.0
+              Rx -= int(Rx)
+              Ry -= int(Ry)
+              Rz -= int(Rz)
+              # the minus sign in Rx*nk1 is due to the Fourier transformation (Ri-Rj)
+              ix=-round(Rx*nk1,0)
+              iy=-round(Ry*nk2,0)
+              iz=-round(Rz*nk3,0)
+              for m in range(nawf):
+                for l in range(nawf):
+                  # l+1,m+1 just to start from 1 not zero
+                  f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry['HRs'][l,m,i,j,k,0].real,arry['HRs'][l,m,i,j,k,0].imag))
+    self.comm.Barrier()
+
+
+
+### This section is under construction
   def broadcast_single_array ( self, key, dtype=complex, root=0 ):
     import numpy as np
     ashape = self.comm.bcast((None if self.rank!=root else self.data_arrays[key].shape), root=root)

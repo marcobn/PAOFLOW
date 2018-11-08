@@ -127,7 +127,7 @@ def do_bands ( data_controller ):
   # Bohr to Angstrom
   attributes['alat'] /= ANGSTROM_AU
 
-## What about ONEDIM?
+#### What about ONEDIM?
   attributes['onedim'] = False
   if not attributes['onedim']:
     #--------------------------------------------
@@ -156,16 +156,11 @@ def do_bands ( data_controller ):
     arrays['E_k'],arrays['v_k'] = bands_calc(data_controller)
 
     E_kp = gather_full(arrays['E_k'], attributes['npool'])
-    if rank == 0:
-      import os
-      for ispin in range(nspin):
-        with open(os.path.join(attributes['opath'],'bands_'+str(ispin)+'.dat'), 'w') as f:
-          for ik in range(nkpi):
-            f.write('\t'.join(['%d'%ik]+['% 3.5f'%j for j in E_kp[ik,:,ispin]])+'\n')
+    data_controller.write_bands('bands', E_kp)
     E_kp = None
 
   # 1D Bands not implemented
-  elif attributes['onedim']:
+  else:
     if rank == 0:
       print('OneDim bands not implemented in PAOFLOW_Class')
       #----------------------

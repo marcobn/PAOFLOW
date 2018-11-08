@@ -31,8 +31,7 @@ def do_topology ( data_controller ):
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
 
-  arrays = data_controller.data_arrays
-  attributes = data_controller.data_attributes
+  arrays,attributes = data_controller.data_dicts()
 
   npool = attributes['npool']
 
@@ -257,37 +256,29 @@ def do_topology ( data_controller ):
   indices = (LL[spol], LL[ipol], LL[jpol])
   lrng = (list(range(nkpi)) if rank==0 else None)
 
+  if 'writez2pack' in attributes and attributes['writez2pack']:
+    pks = gather_full(pks, npool)
+    if attributes['do_spin_orbit']:
+      bnd *= 2
+    velk = np.zeros((nkpi,3,bnd,nspin), dtype=float)
+    for n in range(bnd):
+      velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
+    for l in range(3):
+      fvk = 'velocity_'+str(l)
+      data_controller.write_bands(fvk, velk[:,:bnd,:])
+  pks = velk = None
+
   if Berry:
     Om_zk = gather_full(Om_zk, npool)
     fOm_zk = 'Omega_%s_%s%s.dat'%indices
     data_controller.write_file_row_col(fOm_zk, lrng, (Om_zk[:,0] if rank==0 else None))
+  Om_zk = fOm_zk = None
 
   if spin_Hall:
     Omj_zk = gather_full(Omj_zk, npool)
     fOmj_zk = 'Omegaj_%s_%s%s.dat'%indices
     data_controller.write_file_row_col(fOmj_zk, lrng, (Omj_zk[:,0] if rank==0 else None))
-
-  return
-#### Velocity write
-#### Same as Band write
-#### Write DataController band write
-  pks = gather_full(pks, npool)
-  if rank == 0:
-    if attributes['do_spin_orbit']:
-      bnd *= 2
-##      attributes['bnd'] *= 2
-    velk = np.zeros((nkpi,3,bnd,nspin), dtype=float)
-    for n in range(bnd):
-      velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
-    for ispin in range(nspin):
-      for l in range(3):
-        f=open(os.path.join(attributes['opath'],'velocity_'+str(l)+'_'+str(ispin)+'.dat'),'w')
-        for ik in range(nkpi):
-          s="%d\t"%ik
-          for  j in velk[ik,l,:bnd,ispin]:s += "%3.5f\t"%j
-          s+="\n"
-          f.write(s)
-        f.close()
+  Omj_zk = fOmj_zk = None
 
 
 def band_loop_H ( HRaux, R, kq, nawf, nspin ):

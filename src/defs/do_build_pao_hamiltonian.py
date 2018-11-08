@@ -157,7 +157,3 @@ def do_Hks_to_HRs ( data_controller ):
       arry['SRs'] = np.zeros_like(arry['Sks'])
       arry['SRs'] = FFT.ifftn(arry['Sks'], axes=[2,3,4])
       del arry['Sks']
-
-  data_controller.broadcast_single_array('HRs')
-  if attr['non_ortho']:
-    data_controller.broadcast_single_array('SRs')
