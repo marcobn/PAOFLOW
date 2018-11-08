@@ -25,7 +25,7 @@ class DataController:
   def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose ):
     import os
     from mpi4py import MPI
-    from report_exception import report_exception
+    from defs.report_exception import report_exception
 
     self.comm = MPI.COMM_WORLD
     self.rank = self.comm.Get_rank()
@@ -107,7 +107,7 @@ class DataController:
 
   def read_pao_inputfile ( self ):
     if self.rank == 0:
-      from read_inputfile_xml_parse import read_inputfile_xml
+      from defs.read_inputfile_xml_parse import read_inputfile_xml
       read_inputfile_xml(self.data_attributes['workpath'], self.data_attributes['inputfile'], self)
 
   def read_qe_output ( self ):
@@ -115,10 +115,10 @@ class DataController:
       from os.path import exists
       fpath = self.data_attributes['fpath']
       if exists(fpath+'/data-file.xml'):
-        from read_QE_output_xml_parse import read_QE_output_xml
+        from defs.read_QE_output_xml_parse import read_QE_output_xml
         read_QE_output_xml(self)
       elif exists(fpath+'/data-file-schema.xml'):
-        from read_new_QE_output_xml_parse import read_new_QE_output_xml
+        from defs.read_new_QE_output_xml_parse import read_new_QE_output_xml
         read_new_QE_output_xml(self)
       else:
         raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
@@ -161,7 +161,7 @@ class DataController:
 
   def write_bxsf ( self, fname, bands, nbnd ):
     if self.rank == 0:
-      from write2bxsf import write2bxsf
+      from defs.write2bxsf import write2bxsf
 
       if self.data_attributes['verbose']:
         print('Writing bxsf file: %s'%fname)
@@ -171,8 +171,8 @@ class DataController:
 
 
   def write_bands ( self, fname, bands ):
-    if rank == 0:
-      from os import join
+    if self.rank == 0:
+      from os.path import join
 
       arry,attr = self.data_dicts()
       nspin,nkpi = attr['nspin'],arry['kq'].shape[1]
@@ -274,12 +274,12 @@ class DataController:
       self.data_arrays = self.comm.recv(source=0)
 
   def scatter_data_array ( self, key ):
-    from communication import scatter_array
+    from defs.communication import scatter_array
     self.data_arrays[key] = scatter_array(self.data_arrays[key])
 
   def gather_data_array ( self, key ):
     import numpy as np
-    from communication import gather_array
+    from defs.communication import gather_array
     arr = self.data_arrays[key]
     aux = None
     size1 = arr.shape[0]

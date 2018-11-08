@@ -173,9 +173,9 @@ class PAOFLOW:
 
     do_Hks_to_HRs(self.data_controller)
 #### PARALLELIZATION
-    data_controller.broadcast_single_array('HRs')
+    self.data_controller.broadcast_single_array('HRs')
     if attr['non_ortho']:
-      data_controller.broadcast_single_array('SRs')
+      self.data_controller.broadcast_single_array('SRs')
 
     get_K_grid_fft(self.data_controller)
     self.report_module_time('k -> R')

@@ -10,5 +10,5 @@ setup(name='PAOFLOW',
       author_email='mbn@unt.edu',
       platforms='Linux',
       url='ERMES',
-      packages=['PAOFLOW'],
+      packages=['PAOFLOW', 'PAOFLOW.defs'],
       package_dir={'PAOFLOW':'src'})
