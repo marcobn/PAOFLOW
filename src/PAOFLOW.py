@@ -209,6 +209,17 @@ class PAOFLOW:
 
 
 
+  def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
+
+    attr,arry = self.data_controller.data_dicts()
+
+    if 'HRs' not in arry:
+      print('HRs must first be calculated with \'build_pao_hamiltonian\'')
+    else:
+      self.data_controller.write_z2pack(fname)
+
+
+
   def bands ( self, ibrav=None, spin_orbit=False, theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
     from defs.do_bands import do_bands
 

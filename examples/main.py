@@ -58,7 +58,7 @@ def main():
   paoflow.add_external_fields()
 
   if attr['writez2pack']:
-    paoflow.data_controller.write_z2pack('')
+    paoflow.z2_pack(fname='z2pack_hamiltonian.dat')
 
   if attr['do_bands'] or attr['band_topology']:
     paoflow.bands()

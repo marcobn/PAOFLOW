@@ -190,10 +190,6 @@ class DataController:
 
       attr,arry = self.data_dicts()
 
-      if 'HRs' not in arry:
-        print('HRs must first be calculated with \'build_pao_hamiltonian\'')
-        return
-
       with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
 
         nawf,nkpts = attr['nawf'],attr['nkpnts']

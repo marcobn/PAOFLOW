@@ -256,16 +256,16 @@ def do_topology ( data_controller ):
   indices = (LL[spol], LL[ipol], LL[jpol])
   lrng = (list(range(nkpi)) if rank==0 else None)
 
-  if 'writez2pack' in attributes and attributes['writez2pack']:
-    pks = gather_full(pks, npool)
-    if attributes['do_spin_orbit']:
-      bnd *= 2
-    velk = np.zeros((nkpi,3,bnd,nspin), dtype=float)
+  pks = gather_full(pks, npool)
+  if attributes['do_spin_orbit']:
+    bnd *= 2
+  velk = (None if rank!=0 else np.zeros((nkpi,3,bnd,nspin), dtype=float))
+  if rank == 0:
     for n in range(bnd):
       velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
-    for l in range(3):
-      fvk = 'velocity_'+str(l)
-      data_controller.write_bands(fvk, velk[:,:bnd,:])
+  for l in range(3):
+    fvk = 'velocity_'+str(l)
+    data_controller.write_bands(fvk, (velk[:,l,:bnd,:] if rank==0 else None))
   pks = velk = None
 
   if Berry:
