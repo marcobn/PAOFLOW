@@ -53,11 +53,6 @@ def do_topology ( data_controller ):
   eff_mass = attributes['eff_mass']
   spin_Hall = attributes['spin_Hall']
 
-  if spin_Hall and 'Sj' not in arrays:
-    if rank == 0:
-      print('Spin operator \'Sj\' must be calculated before Band Topology.')
-    quit()
-
   alat = attributes['alat'] / ANGSTROM_AU
   b_vectors = arrays['b_vectors']
 

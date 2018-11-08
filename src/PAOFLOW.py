@@ -314,6 +314,11 @@ class PAOFLOW:
         print('Must specify \'spol\', \'ipol\', and \'jpol\'')
       quit()
 
+    if attr['spin_Hall'] and 'Sj' not in arrays:
+      if rank == 0:
+        print('Spin operator \'Sj\' must be calculated before Band Topology can be computed.')
+      quit()
+
     do_topology(self.data_controller)
     self.report_module_time('Band Topology')
 
@@ -558,12 +563,16 @@ class PAOFLOW:
   def spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
     from defs.do_spin_texture import do_spin_texture
 
-    attr = self.data_controller.data_attributes
+    attr,arry = self.data_controller.data_dicts()
 
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
     if attr['nspin'] == 1:
+      if 'Sj' not in arry:
+        if rank == 0:
+          print('Spin operator \'Sj\' must be calculated before Spin Texture can be computed.')
+        quit()
       do_spin_texture(self.data_controller)
       self.report_module_time('Spin Texutre')
     else:
@@ -586,8 +595,13 @@ class PAOFLOW:
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
+    if 'Sj' not in arrays:
+      if rank == 0:
+        print('Spin operator \'Sj\' must be calculated before Spin Hall Conductivity can be computed.')
+      quit()
+
     do_spin_Hall(self.data_controller, do_ac)
-    self.report_module_time('Spin Hall Conductivity in')
+    self.report_module_time('Spin Hall Conductivity')
 
 
 
