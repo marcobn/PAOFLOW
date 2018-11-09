@@ -87,7 +87,8 @@ def main():
   if attr['smearing'] is not None:
     paoflow.adaptive_smearing()
 
-  paoflow.dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
+  if attr['do_dos'] or attr['do_pdos']:
+    paoflow.dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['spin_Hall']:
     paoflow.spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'])
