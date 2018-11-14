@@ -86,10 +86,10 @@ class PAOFLOW:
     if self.rank == 0:
       dxdydz = 3
       B_to_GB = 1.E-9
-      bytes_per_complex = 128//8
       spins = attr['nspin']
-      num_wave_functions = attr['nawf']
       ff = self.gb_fudge_factor
+      bytes_per_complex = 128//8
+      num_wave_functions = attr['nawf']
       nd1,nd2,nd3 = attr['nk1'],attr['nk2'],attr['nk3']
       gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
@@ -182,7 +182,6 @@ class PAOFLOW:
 
     if non_ortho:
       from defs.do_ortho import do_orthogonalize
-      from scipy import fftpack as FFT
 
       do_orthogonalize(self.data_controller)
       self.report_module_time('Orthogonalize')
@@ -190,7 +189,6 @@ class PAOFLOW:
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
-    from defs.add_ext_field import add_ext_field
 
     arry,attr = self.data_controller.data_dicts()
 
@@ -202,6 +200,7 @@ class PAOFLOW:
 
     # Add external fields or non scf ACBN0 correction
     if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
+      from defs.add_ext_field import add_ext_field
       add_ext_field(self.data_controller)
       if attr['verbose']:
         print('External Fields Added')
@@ -249,10 +248,9 @@ class PAOFLOW:
 
       if 'phi' not in attr: attr['phi'] = phi
       if 'theta' not in attr: attr['theta'] = theta
+      if 'lambda_p' not in arrays: arrays['lambda_p'] = lambda_p[:]
+      if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
 
-      socStrengh = np.zeros((natoms,2), dtype=float)
-      socStrengh [:,0] = lambda_p[:]
-      socStrengh [:,1] = lambda_d[:]
       do_spin_orbit_bands(self.data_controller)
 
     do_bands(self.data_controller)

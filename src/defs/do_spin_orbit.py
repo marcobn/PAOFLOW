@@ -23,25 +23,32 @@ def do_spin_orbit_bands ( data_controller ):
 
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 
-    nawf,_,nk1,nk2,nk3,nspin = HRaux.shape
+    arry,attr = data_controller.data_dicts()
 
-    HR_double= np.zeros((2*nawf,2*nawf,nk1,nk2,nk3,nspin), dtype=complex)
+    natoms = attr['natoms']
+    nawf,_,nk1,nk2,nk3,nspin = arry['HRs'].shape
+
+    HR_double = np.zeros((2*nawf,2*nawf,nk1,nk2,nk3,nspin), dtype=complex)
     HR_soc_p = np.zeros((18,18), dtype=complex)  #Hardcoded do s,p,d only (18 orbitals per atom) - Must Change
 
     # nonmagnetic :  copy H at the upper (lower) left (right) of the double matrix HR_double
     if nspin == 1:
-        HR_double[0:nawf,0:nawf,:,:,:,0] = arrays['HRs'][0:nawf,0:nawf,:,:,:,0]
-        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] = array['HRs'][0:nawf,0:nawf,:,:,:,0]
+        HR_double[:nawf,:nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,0]
+        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,0]
     # magnetic :  copy H_up (H_down) at the upper (lower) left (right) of the double matrix 
     else:
-        HR_double[0:nawf,0:nawf,:,:,:,0] = arrays['HRs'][0:nawf,0:nawf,:,:,:,0]
-        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] = arrays['HRs'][0:nawf,0:nawf,:,:,:,1]
+        HR_double[:nawf,:nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,0]
+        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,1]
 
-    HR_soc_p = soc_p(attributes['theta'], attributes['phi'])
-    HR_soc_d = soc_d(attributes['theta'], attributes['phi'])
+    socStrengh = np.zeros((natoms,2), dtype=float)
+    socStrengh [:,0] =  arry['lambda_p'][:]
+    socStrengh [:,1] =  arry['lambda_d'][:]
+
+    HR_soc_p = soc_p(attr['theta'], attr['phi'])
+    HR_soc_d = soc_d(attr['theta'], attr['phi'])
 
     M = 9
-    nt = attributes['natoms']
+    nt = attr['natoms']
     for n in range(nt):
         i=n*M
         j=(n+1)*M
@@ -54,9 +61,9 @@ def do_spin_orbit_bands ( data_controller ):
         # Down-Up
         HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,0:9] + socStrengh[n,1]*HR_soc_d[9:18,0:9]
 
-    del arrays['HRs']
-    arrays['HRs'] = HR_double
-    attributes['nawfR'] = 2*nawf
+    del arry['HRs']
+    arry['HRs'] = HR_double
+    attr['nawfR'] = 2*nawf
 
 
 def soc_p ( theta, phi ):

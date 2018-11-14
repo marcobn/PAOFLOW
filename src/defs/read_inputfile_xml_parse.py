@@ -94,11 +94,13 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
 
     # Bands interpolation along a path from a 1D string of k points
     onedim = False
+
     # Bands interpolation on a path from the original MP mesh 
     do_bands = False
     ibrav = 0
     dkres = 0.1
     nk    = 2000
+
     # Band topology analysis
     band_topology = False
     eff_mass = False
@@ -154,7 +156,6 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     tmax = 300      # highest temperature in Kelvin
     tstep= 1        # temperature step in Kelvin
 
-
     # Boltzmann transport calculation
     Boltzmann = False
 
@@ -180,7 +181,6 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     eminSH = -1.0
     emaxSH = 1.0
     ac_cond_spin = False
-
 
     tree = ET.parse(inputfile)
     aroot = tree.getroot()
@@ -228,7 +228,6 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_attributes['spin_Hall'] = read_attribute(aroot, spin_Hall, 'spin_Hall', 'logical')
     data_attributes['ac_cond_spin'] = read_attribute(aroot, ac_cond_spin, 'ac_cond_spin', 'logical')
 
-
     # Read Integer Input Values
     data_attributes['shift_type'] = read_attribute(aroot, shift_type, 'shift_type', 'integer')
     data_attributes['npool'] = read_attribute(aroot, npool, 'npool', 'integer')
@@ -248,8 +247,6 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_attributes['dkres'] = read_attribute(aroot, dkres, 'dkres', 'decimal')
     data_attributes['theta'] = read_attribute(aroot, theta, 'theta', 'decimal')
     data_attributes['phi'] = read_attribute(aroot, phi, 'phi', 'decimal')
-    data_attributes['lambda_p'] = read_attribute(aroot, lambda_p, 'lambda_p', 'decimal')
-    data_attributes['lambda_d'] = read_attribute(aroot, lambda_d, 'lambda_d', 'decimal')
     data_attributes['emin'] = read_attribute(aroot, emin, 'emin', 'decimal')
     data_attributes['emax'] = read_attribute(aroot, emax, 'emax', 'decimal')
     data_attributes['delta'] = read_attribute(aroot, delta, 'delta', 'decimal')
@@ -273,6 +270,8 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_arrays['Efield'] = read_attribute(aroot, Efield, 'Efield', 'array')[0]
     data_arrays['Bfield'] = read_attribute(aroot, Bfield, 'Bfield', 'array')[0]
     data_arrays['HubbardU'] = read_attribute(aroot, HubbardU, 'HubbardU', 'array')[0]
+    data_arrays['lambda_p'] = read_attribute(aroot, lambda_p, 'lambda_p', 'array')[0]
+    data_arrays['lambda_d'] = read_attribute(aroot, lambda_d, 'lambda_d', 'array')[0]
     data_arrays['d_tensor'] = read_attribute(aroot, d_tensor, 'd_tensor', 'array').astype(int)
     data_arrays['t_tensor'] = read_attribute(aroot, t_tensor, 't_tensor', 'array').astype(int)
     data_arrays['a_tensor'] = read_attribute(aroot, a_tensor, 'a_tensor', 'array').astype(int)
