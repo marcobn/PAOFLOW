@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
+def do_spin_Berry_curvature ( data_controller, jksp, pksp, ipol, jpol ):
   import numpy as np
   from mpi4py import MPI
   from communication import gather_full
@@ -30,9 +30,9 @@ def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
   # Compute spin Berry curvature
   #----------------------
 
+  snktot = pksp.shape[0]
   bnd = attributes['bnd']
   nspin = attributes['nspin']
-  snktot = pksp.shape[0]
   fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
@@ -40,11 +40,11 @@ def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
   Om_znkaux = np.zeros((snktot,bnd), dtype=float)
 
   deltap = 0.05
-  for n in range(bnd):
-    for m in range(bnd):
-      if m != n:
-        Om_znkaux[:,n] += -2.0*np.imag(pksp[:,ipol,n,m,0]*arrays['pksp'][:,jpol,m,n,0]) / \
-        ((arrays['E_k'][:,m,0] - arrays['E_k'][:,n,0])**2 + deltap**2)
+  for ik in range(snktot):
+    E_nm = (arrays['E_k'][ik,:bnd,0] - arrays['E_k'][ik,:bnd,0][:,None])**2
+    E_nm[np.where(E_nm<1.e-4)] = np.inf
+    Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:bnd,:bnd,0]*pksp[ik,:bnd,:bnd,0].T)/E_nm, axis=1)
+  E_nm = None
 
   attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
   de = (attributes['emaxH']-attributes['eminH'])/500
@@ -69,6 +69,7 @@ def do_spin_Berry_curvature ( data_controller, pksp, ipol, jpol ):
     shc = np.sum(Om_zk, axis=0)/float(attributes['nkpnts'])
 
   n0 = 0
+  n = esize-1
   Om_k = None
   if rank == 0:
     Om_k = np.zeros((nk1,nk2,nk3,esize), dtype=float)

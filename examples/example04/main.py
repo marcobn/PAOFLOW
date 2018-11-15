@@ -38,7 +38,7 @@ def main():
   paoflow.gradient_and_momenta()
   paoflow.adaptive_smearing(smearing='gauss')
   paoflow.dos(do_pdos=False)
-  paoflow.anomalous_Hall(a_tensor=np.array([[0,1]]))
+  paoflow.anomalous_Hall(emin=-8., emax=4., a_tensor=np.array([[0,1]]))
   paoflow.finish_execution()
 
 if __name__== '__main__':

@@ -17,7 +17,7 @@
 #
 
 
-def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
+def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   import numpy as np
   from mpi4py import MPI
   from communication import gather_full
@@ -42,7 +42,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
   ene = np.arange(emin, emax, de)
   esize = ene.size
 
-  sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, ispin, ipol, jpol)
+  sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
 
   sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
 
@@ -56,7 +56,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, ipol, jpol ):
     return(None, None)
 
 
-def do_Berry_conductivity ( data_controller, pksp, ipol, jpol ):
+def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
   import numpy as np
   from mpi4py import MPI
 
@@ -65,7 +65,7 @@ def do_Berry_conductivity ( data_controller, pksp, ipol, jpol ):
 
   arrays,attributes = data_controller.data_dicts()
 
-  snktot = pksp.shape[0]
+  snktot = pksp_j.shape[0]
   bnd = attributes['bnd']
 
   # Compute the optical conductivity tensor sigma_xy(ene)
@@ -80,7 +80,7 @@ def do_Berry_conductivity ( data_controller, pksp, ipol, jpol ):
 
   sigxy_aux = np.zeros((esize),dtype=complex)
 
-  sigxy_aux = smear_sigma_loop(data_controller, ene, pksp, ispin, ipol, jpol)
+  sigxy_aux = smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol)
 
   sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
 
@@ -94,7 +94,7 @@ def do_Berry_conductivity ( data_controller, pksp, ipol, jpol ):
     return(None, None)
 
 
-def smear_sigma_loop ( data_controller, ene, jksp, ispin, ipol, jpol ):
+def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol ):
   import numpy as np
   from smearing import intgaussian,intmetpax
 
@@ -104,12 +104,12 @@ def smear_sigma_loop ( data_controller, ene, jksp, ispin, ipol, jpol ):
   sigxy = np.zeros((esize), dtype=complex)
 
   bnd = attributes['bnd']
-  snktot = arrays['pksp'].shape[0]
+  snktot = pksp_j.shape[0]
   f_nm = np.zeros((snktot,bnd,bnd), dtype=float)
   E_diff_nm = np.zeros((snktot,bnd,bnd), dtype=float)
 
   Ef = 0.0
-  eps=1.0e-16
+  eps = 1.0e-16
   delta = 0.05
 
   if attributes['smearing'] == None:
@@ -124,7 +124,7 @@ def smear_sigma_loop ( data_controller, ene, jksp, ispin, ipol, jpol ):
     for m in range(bnd):
       if m != n:
         E_diff_nm[:,n,m] = (arrays['E_k'][:,n,ispin]-arrays['E_k'][:,m,ispin])**2
-        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(jksp[:,jpol,n,m,ispin]*arrays['pksp'][:,ipol,m,n,ispin])
+        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_i[:,n,m,ispin]*pksp_i[:,m,n,ispin])
 
   fn = None
 
