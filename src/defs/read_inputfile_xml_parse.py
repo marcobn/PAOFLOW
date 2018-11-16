@@ -79,7 +79,7 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     do_comparison = False
 
     # Dimensions of the atomic basis for each atom (order must be the same as in the output of projwfc.x)
-    naw=np.array([[0,0]]) # naw.shape[0] = natom
+    naw = np.array([[0,0]])
 
     # Shell order and degeneracy for SO (order must be the same as in the output of projwfc.x)
     sh = np.array([[0,1,2,0,1,2]])    # order of shells with l angular momentum
@@ -112,8 +112,8 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     do_spin_orbit = False
     theta = 0.0
     phi = 0.0
-    lambda_p = 0.0
-    lambda_d = 0.0
+    lambda_p = np.array([[0.0]])
+    lambda_d = np.array([[0.0]])
 
     # Hamiltonian interpolation on finer MP mesh
     double_grid = False
