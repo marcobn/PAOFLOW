@@ -41,9 +41,10 @@ def do_topology ( data_controller ):
   if 'Rfft' not in arrays:
     get_R_grid_fft(data_controller)
 
+  HRs = arrays['HRs']
   bnd = attributes['bnd']
   nkpi = arrays['kq'].shape[1]
-  nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
+  nawf,_,nk1,nk2,nk3,nspin = HRs.shape
 
   ipol = attributes['ipol']
   jpol = attributes['jpol']
@@ -82,7 +83,7 @@ def do_topology ( data_controller ):
     if 'SRs' in arrays:
       SRs = arrays['SRs']
       non_ortho = True
-    E_ktrim,v_ktrim = do_eigh_calc(arrays['HRs'], SRs, ktrim, arrays['R'], non_ortho)
+    E_ktrim,v_ktrim = do_eigh_calc(HRs, SRs, ktrim, arrays['R'], non_ortho)
 
     # Define time reversal operator
     theta = -1.0j*clebsch_gordan(nawf, arrays['sh'], arrays['nl'], 1)
@@ -121,15 +122,15 @@ def do_topology ( data_controller ):
   kq_aux = kq_aux.T
 
   # Compute R*H(R)
-  arrays['HRs'] = fftshift(arrays['HRs'], axes=(2,3,4))
-  arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
-  arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
-  arrays['HRs'] = np.moveaxis(arrays['HRs'], 2, 0)
+  HRs = fftshift(HRs, axes=(2,3,4))
+  Rfft = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
+  HRs = np.reshape(HRs, (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
+  HRs = np.moveaxis(HRs, 2, 0)
 
-  HRs_aux = scatter_full(arrays['HRs'], npool)
-  Rfft_aux = scatter_full(arrays['Rfft'], npool)
+  HRs_aux = scatter_full(HRs, npool)
+  Rfft_aux = scatter_full(Rfft, npool)
 
-  arrays['HRs'] = np.reshape(np.moveaxis(arrays['HRs'],0,2), (nawf,nawf,nk1,nk2,nk3,nspin), order='C')
+  HRs = np.reshape(np.moveaxis(HRs,0,2), (nawf,nawf,nk1,nk2,nk3,nspin), order='C')
 
   if spin_Hall:
     Sj = arrays['Sj']
@@ -150,7 +151,7 @@ def do_topology ( data_controller ):
     dHRs = np.moveaxis(dHRs,0,2)
 
     # Compute dH(k)/dk on the path
-    dHks_aux = band_loop_H(dHRs, arrays['Rfft'], kq_aux, nawf, nspin)
+    dHks_aux = band_loop_H(dHRs, Rfft, kq_aux, nawf, nspin)
 
     dHRs = None
 
@@ -183,7 +184,7 @@ def do_topology ( data_controller ):
         d2HRs = np.moveaxis(d2HRs, 0, 2)
 
         # Compute d2H(k)/dk*dkp on the path
-        d2Hks_aux = band_loop_H(d2HRs, arrays['Rfft'], kq_aux, nawf, nspin)
+        d2Hks_aux = band_loop_H(d2HRs, Rfft, kq_aux, nawf, nspin)
 
         d2HRs = None
 
