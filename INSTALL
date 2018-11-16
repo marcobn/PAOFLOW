@@ -13,6 +13,7 @@ conda install mpi4py
 
 PAOFLOW:
 python setup.py install
+python setup.py install --user
 
 
 Intel Distribution for python:
