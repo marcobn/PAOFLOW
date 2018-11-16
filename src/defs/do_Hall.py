@@ -19,7 +19,7 @@
 def do_spin_Hall ( data_controller, do_ac ):
   import numpy as np
   from mpi4py import MPI
-  from perurb_split import perturb_split
+  from perturb_split import perturb_split
   from do_Hall_conductivity import do_spin_Hall_conductivity
   from do_spin_Berry_curvature import do_spin_Berry_curvature
   from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
