@@ -184,6 +184,15 @@ class DataController:
     self.comm.Barrier()
 
 
+  def write_kpnts_path ( self, fname, kpnts ):
+    if self.rank == 0:
+      from os.path import join
+
+      with open(join(self.data_attributes['opath'],fname), 'w') as f:
+        f.write(''.join(['%s %s %s\n'%(kpnts[0,i],kpnts[1,i],kpnts[2,i]) for i in range(kpnts.shape[1])]))
+    self.comm.Barrier()
+
+
   def write_z2pack ( self, fname ):
     if self.rank == 0:
       from os.path import join

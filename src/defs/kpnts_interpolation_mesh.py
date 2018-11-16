@@ -497,13 +497,7 @@ def kpnts_interpolation_mesh ( data_controller ):
         for n in range(kq.shape[1]):
             arrays['kq'][:,n] = np.dot(points[:,n], b_vectors)
 
-## File Output!
-##    for i in range(kq.shape[1]):
-##       path_file += '%s %s %s\n'%(kq[0,i],kq[1,i],kq[2,i])
-##
-##    if rank == 0:
-##        with  open(os.path.join(inputpath,"kpath_points.txt"),"w") as pfo:
-##            pfo.write(path_file)
+    data_controller.write_kpnts_path('kpath_points.txt', arrays['kq'])
 
 
 def get_path ( ibrav, alat, cell, dk ):
