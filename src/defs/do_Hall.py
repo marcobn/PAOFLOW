@@ -182,25 +182,14 @@ def do_spin_current ( data_controller, spol, ipol ):
 
   arry,attr = data_controller.data_dicts()
 
-  Sj = arry['Sj']
+  Sj = arry['Sj'][spol]
   bnd = attr['bnd']
   snktot,_,nawf,nawf,nspin = arry['dHksp'].shape
 
-  jdHksp = np.empty_like(arry['dHksp'])
+  jdHksp = np.empty((snktot,nawf,nawf,nspin), dtype=complex)
 
-#  for l in range(3):
   for ispin in range(nspin):
     for ik in range(snktot):
       jdHksp[ik,:,:,ispin] = 0.5*(np.dot(Sj,arry['dHksp'][ik,ipol,:,:,ispin])+np.dot(arry['dHksp'][ik,ipol,:,:,ispin],Sj))
 
-#  jksp = np.zeros((snktot,3,bnd,bnd,nspin), dtype=complex)
-
-#  for l in range(3):
-#    for ispin in range(nspin):
-#      for ik in range(snktot):
-#        jksp[ik,l,:,:,ispin] = np.conj(arry['v_k'][ik,:,:,ispin].T).dot(jdHksp[ik,l,:,:,ispin]).dot(arry['v_k'][ik,:,:,ispin])[:bnd,:bnd]
-
-#  jdHksp = None
-
-#  return jksp
   return jdHksp
