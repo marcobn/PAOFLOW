@@ -480,17 +480,16 @@ def kpnts_interpolation_mesh ( data_controller ):
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes
 
-## nk HARDCODED    nk = attributes['nk']
-    nk = 2000
+    nk = attributes['nk']
     alat = attributes['alat']
     ibrav = attributes['ibrav']
     a_vectors = arrays['a_vectors']
     b_vectors = arrays['b_vectors']
 
-    dk       = 0.00001
+    dk = 0.00001
     points,_ = get_path(ibrav, alat, a_vectors,dk)
     scaled_dk = dk*(points.shape[1]/nk)
-    arrays['kq'], path_file = get_path(ibrav, alat, a_vectors, scaled_dk)
+    arrays['kq'],path_file = get_path(ibrav, alat, a_vectors, scaled_dk)
 
     cart = False
     if cart:

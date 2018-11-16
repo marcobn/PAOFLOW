@@ -219,7 +219,7 @@ class PAOFLOW:
 
 
 
-  def bands ( self, ibrav=None, spin_orbit=False, theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
+  def bands ( self, ibrav=None, spin_orbit=False, nk=500., theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
     from .defs.do_bands import do_bands
 
     arrays,attr = self.data_controller.data_dicts()
@@ -231,8 +231,9 @@ class PAOFLOW:
         quit()
       else:
         attr['ibrav'] = ibrav
-    if 'do_spin_orbit' not in attr:
-      attr['do_spin_orbit'] = spin_orbit
+
+    if 'nk' not in attr: attr['nk'] = nk
+    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
     #----------------------------------------
     # Compute bands with spin-orbit coupling
