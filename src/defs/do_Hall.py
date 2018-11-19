@@ -60,7 +60,7 @@ def do_spin_Hall ( data_controller, do_ac ):
     #---------------------------------
     # Compute spin Berry curvature... 
     #---------------------------------
-    ene,shc,Om_k = do_spin_Berry_curvature(data_controller, jksp_is, pksp_j, ipol, jpol)
+    ene,shc,Om_k = do_spin_Berry_curvature(data_controller, jksp_is, pksp_j)
 
     if rank == 0:
       cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])

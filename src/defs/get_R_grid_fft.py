@@ -53,4 +53,4 @@ def get_R_grid_fft ( data_controller ):
         arrays['Rfft'][i,j,k,:] = arrays['R'][n,:]
         arrays['idx'][i,j,k] = n
 
-  arrays['Rfft'] = FFT.fftshift(arrays['Rfft'], axes=(0,1,2))
+#  arrays['Rfft'] = FFT.fftshift(arrays['Rfft'], axes=(0,1,2))

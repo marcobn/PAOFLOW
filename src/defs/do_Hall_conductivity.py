@@ -29,7 +29,6 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   arrays,attributes = data_controller.data_dicts()
 
   snktot = jksp.shape[0]
-  bnd = attributes['bnd']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
   # Compute the optical conductivity tensor sigma_xy(ene)
@@ -49,7 +48,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
   sigxy_aux = None
 
-  if rank==0:
+  if rank == 0:
     sigxy /= float(attributes['nkpnts'])
     return(ene, sigxy)
   else:
@@ -103,36 +102,37 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   esize = ene.size
   sigxy = np.zeros((esize), dtype=complex)
 
-  bnd = attributes['bnd']
-  snktot = pksp_j.shape[0]
-  f_nm = np.zeros((snktot,bnd,bnd), dtype=float)
-  E_diff_nm = np.zeros((snktot,bnd,bnd), dtype=float)
+  snktot,nawf,_,nspin = pksp_j.shape
+  f_nm = np.zeros((snktot,nawf,nawf), dtype=float)
+  E_diff_nm = np.zeros((snktot,nawf,nawf), dtype=float)
+
+  print(attributes['temp'], ispin, nawf)
 
   Ef = 0.0
   eps = 1.0e-16
   delta = 0.05
 
   if attributes['smearing'] == None:
-    fn = 1.0/(np.exp(arrays['E_k'][:,:bnd,ispin]/attributes['temp'])+1)
+    fn = 1.0/(np.exp(arrays['E_k'][:,:,ispin]/attributes['temp'])+1)
   elif attributes['smearing'] == 'gauss':
-    fn = intgaussian(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
+    fn = intgaussian(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin])
   elif smearing == 'm-p':
-    fn = intmetpax(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin]) 
+    fn = intmetpax(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin]) 
 
   # Collapsing the sum over k points
-  for n in range(bnd):
-    for m in range(bnd):
+  for n in range(nawf):
+    for m in range(nawf):
       if m != n:
         E_diff_nm[:,n,m] = (arrays['E_k'][:,n,ispin]-arrays['E_k'][:,m,ispin])**2
-        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_i[:,n,m,ispin]*pksp_i[:,m,n,ispin])
+        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_i[:,n,m,ispin]*pksp_j[:,m,n,ispin])
 
   fn = None
 
   for e in range(esize):
     if attributes['smearing'] != None:
-      sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*arrays['deltakp2'][:,:bnd,:bnd,ispin])**2+eps)*f_nm[:,:,:])
+      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arrays['deltakp2'][:,:nawf,:nawf,ispin])**2+eps))
     else:
-      sigxy[e] = np.sum(1.0/(E_diff_nm[:,:,:]-(ene[e]+1.0j*arrays['delta'])**2+eps)*f_nm[:,:,:])
+      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arrays['delta'])**2+eps))
 
   F_nm = None
   E_diff_nm = None

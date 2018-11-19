@@ -50,37 +50,18 @@ def do_gradient ( data_controller ):
   get_R_grid_fft(data_controller)
   #reshape R grid and each proc's piece of Hr
 
-  arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
+  arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1,nk2,nk3,3), order='C')
 
-  ########################################
-  ### real space grid replaces k space ###
-  ########################################
-  if attributes['use_cuda']:
-    for n in range(snawf):
-      for ispin in range(nspin):
-        arrays['Hksp'][n,:,:,:,ispin] = cuda_ifftn(arrays['Hksp'][n,:,:,:,ispin])
-
-  else:
-    for n in range(snawf):
-      for ispin in range(nspin):
-        arrays['Hksp'][n,:,:,:,ispin] = FFT.ifftn(arrays['Hksp'][n,:,:,:,ispin], axes=(0,1,2))
-        arrays['Hksp'][n,:,:,:,ispin] = FFT.fftshift(arrays['Hksp'][n,:,:,:,ispin], axes=(0,1,2))
-
-  #reshape Hr for multiplying by the three parts of Rfft grid
-  arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,nk1*nk2*nk3,nspin), order='C')
-  arrays['dHksp'] = np.zeros((snawf,nk1*nk2*nk3,3,nspin), dtype=complex, order='C')
-
-  # Compute R*H(R)
+  arrays['dHksp'] = np.empty((snawf,nk1,nk2,nk3,3,nspin), dtype=complex, order='C')
   for ispin in range(nspin):
-    for l in range(3):
-      arrays['dHksp'][:,:,l,ispin] = 1.0j*attributes['alat']*arrays['Rfft'][:,l]*arrays['Hksp'][...,ispin]
-
-  del arrays['Hksp']
-
-  arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,nk1,nk2,nk3,3,nspin), order='C')
-
-  # Compute dH(k)/dk
-  for n in range(snawf):
-    for l in range(3):
-      for ispin in range(nspin):
-        arrays['dHksp'][n,:,:,:,l,ispin] = FFT.fftn(arrays['dHksp'][n,:,:,:,l,ispin], axes=(0,1,2),)
+    for n in range(snawf):
+      ########################################
+      ### real space grid replaces k space ###
+      ########################################
+      if attributes['use_cuda']:
+        arrays['Hksp'][n,:,:,:,ispin] = cuda_ifftn(arrays['Hksp'][n,:,:,:,ispin])*1.0j*attributes['alat']
+      else:
+        arrays['Hksp'][n,:,:,:,ispin] = FFT.ifftn(arrays['Hksp'][n,:,:,:,ispin])*1.0j*attributes['alat']
+      # Compute R*H(R)
+      for l in range(3):
+        arrays['dHksp'][n,:,:,:,l,ispin] = FFT.fftn(arrays['Rfft'][:,:,:,l]*arrays['Hksp'][n,:,:,:,ispin])

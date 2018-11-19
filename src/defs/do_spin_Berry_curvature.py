@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_spin_Berry_curvature ( data_controller, jksp, pksp, ipol, jpol ):
+def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
   import numpy as np
   from mpi4py import MPI
   from communication import gather_full
@@ -30,20 +30,18 @@ def do_spin_Berry_curvature ( data_controller, jksp, pksp, ipol, jpol ):
   # Compute spin Berry curvature
   #----------------------
 
-  snktot = pksp.shape[0]
-  bnd = attributes['bnd']
-  nspin = attributes['nspin']
+  snktot,nawf,_,nspin = pksp.shape
   fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
   # Compute only Omega_z(k)
-  Om_znkaux = np.zeros((snktot,bnd), dtype=float)
+  Om_znkaux = np.zeros((snktot,nawf), dtype=float)
 
   deltap = 0.05
   for ik in range(snktot):
-    E_nm = (arrays['E_k'][ik,:bnd,0] - arrays['E_k'][ik,:bnd,0][:,None])**2
+    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2
     E_nm[np.where(E_nm<1.e-4)] = np.inf
-    Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:bnd,:bnd,0]*pksp[ik,:bnd,:bnd,0].T)/E_nm, axis=1)
+    Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T)/E_nm, axis=1)
   E_nm = None
 
   attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
@@ -55,14 +53,14 @@ def do_spin_Berry_curvature ( data_controller, jksp, pksp, ipol, jpol ):
 
   for i in range(esize):
     if attributes['smearing'] == 'gauss':
-      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intgaussian(arrays['E_k'][:,:bnd,0],ene[i],arrays['deltakp'][:,:bnd,0]), axis=1)
+      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intgaussian(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0]), axis=1)
     elif attributes['smearing'] == 'm-p':
-      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intmetpax(arrays['E_k'][:,:bnd,0],ene[i],arrays['deltakp'][:,:bnd,0]), axis=1)
+      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intmetpax(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0]), axis=1)
     else:
-      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(arrays['E_k'][:,:bnd,0]-ene[i]) + 1)), axis=1)
+      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(arrays['E_k'][:,:,0]-ene[i]) + 1)), axis=1)
 
   Om_zk = gather_full(Om_zkaux, attributes['npool'])
-  Om_zk_aux = None
+  Om_zkaux = None
 
   shc = None
   if rank == 0:

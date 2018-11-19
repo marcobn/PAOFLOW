@@ -450,6 +450,11 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
 
     snktot,nawf,_,nspin = arrays['Hksp'].shape
+
+    for ik in range(snktot):
+      for ispin in range(nspin):
+        arrays['Hksp'][ik,:,:,ispin] = (np.conj(arrays['Hksp'][ik,:,:,ispin].T) + arrays['Hksp'][ik,:,:,ispin])/2.
+
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
     arrays['Hksp'] = np.moveaxis(gather_scatter(arrays['Hksp'],1,attr['npool']), 0, 1)
     snawf,_,nspin = arrays['Hksp'].shape
@@ -535,6 +540,9 @@ class PAOFLOW:
 
     arrays,_ = self.data_controller.data_dicts()
 
+    bnd = attributes['bnd']
+    attributes['nawf'] = bnd
+
     arrays['E_k'] = arrays['E_k'][:,:bnd]
     arrays['pksp'] = arrays['pksp'][:,:,:bnd,:bnd]
     if 'deltakp' in arrays:
@@ -562,7 +570,7 @@ class PAOFLOW:
   def spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
     from .defs.do_spin_texture import do_spin_texture
 
-    attr,arry = self.data_controller.data_dicts()
+    arry,attr = self.data_controller.data_dicts()
 
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
@@ -647,7 +655,7 @@ class PAOFLOW:
 
 
 
-  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=.025852, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
     from .defs.do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()
@@ -656,7 +664,7 @@ class PAOFLOW:
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
 
-    if 'temp' not in attr: attr['temp'] = temp
+    if temp is not None: attr['temp'] = temp
     if 'delta' not in attr: attr['delta'] = delta
     if 'metal' not in attr: attr['metal'] = metal
     if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig

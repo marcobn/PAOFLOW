@@ -49,6 +49,7 @@ class DataController:
       attributes['opath'] = os.path.join(workpath, outputdir)
 
       if inputfile == None:
+        attributes['temp'] = .025852
         attributes['npool'] = npool
         attributes['smearing'] = smearing
 
