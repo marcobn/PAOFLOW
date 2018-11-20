@@ -66,9 +66,8 @@ def do_spin_texture ( data_controller ):
     if rank == 0:
       sktxt = np.reshape(sktxt, (nk1,nk2,nk3,3,nawf,nawf), order='C')
 
-## FILE OUTPUT
-##      for ib in range(icount):
-##        np.savez(os.path.join(attributes['inputpath'],'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
+      for ib in range(icount):
+        np.savez(os.path.join(attributes['opath'],'spin_text_band_%d_%d'%(ib,ispin)), spinband=sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     sktxt = None
 

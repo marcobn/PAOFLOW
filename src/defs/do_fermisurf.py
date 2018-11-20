@@ -31,7 +31,7 @@ def do_fermisurf ( data_controller ):
 
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
 
-  if rank==0:
+  if rank == 0:
     nbndx_plot = 10
     nawf = attributes['nawf']
     nktot = attributes['nkpnts']
@@ -65,6 +65,9 @@ def do_fermisurf ( data_controller ):
 
       feig = 'FermiSurf_%d.bxsf'%ispin
       data_controller.write_bxsf(feig, eigband, icount)
+
+      for ib in range(icount):
+        np.savez(os.path.join(attributes['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[:,:,:,ib])
 
     E_k_rs = None
 
