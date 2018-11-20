@@ -1,4 +1,4 @@
-# 
+#
 # PAOFLOW
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
@@ -60,7 +60,7 @@ def do_topology ( data_controller ):
   # Compute Z2 according to Fu, Kane and Mele (2007)
   # Define TRIM points in 2(0-3)/3D(0-7)
   if nspin == 1 and spin_Hall:
-    from .pfaffian import pfaffian 
+    from .pfaffian import pfaffian
     from numpy import linalg as LAN
     from .do_eigh import do_eigh_calc
     from .clebsch_gordan import clebsch_gordan
@@ -88,13 +88,15 @@ def do_topology ( data_controller ):
     # Define time reversal operator
     theta = -1.0j*clebsch_gordan(nawf, arrays['sh'], arrays['nl'], 1)
 
+    nkt = nktrim // 2
+
     nelec = attributes['nelec']
-    wl = np.zeros((nktrim/2,nawf,nawf), dtype=complex)
-    for ik in range(nktrim/2):
-      wl[ik,:,:] = np.conj(v_ktrim[ik,:,:,0].T).dot(theta).dot(np.conj(v_ktrim[ik+nktrim/2,:,:,0]))
+    wl = np.zeros((nkt,nawf,nawf), dtype=complex)
+    for ik in range(nkt):
+      wl[ik,:,:] = np.conj(v_ktrim[ik,:,:,0].T).dot(theta).dot(np.conj(v_ktrim[ik+nkt,:,:,0]))
       wl[ik,:,:] = wl[ik,:,:] - wl[ik,:,:].T  # enforce skew symmetry
-    delta_ik = np.zeros(nktrim/2, dtype=complex)
-    for ik in range(nktrim/2):
+    delta_ik = np.zeros(nkt, dtype=complex)
+    for ik in range(nkt):
       delta_ik[ik] = pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
 
     # Write 'Z2.dat'
@@ -144,7 +146,7 @@ def do_topology ( data_controller ):
         for m in range(nawf):
           dHRs[:,n,m,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft_aux[:,l]*HRs_aux[:,n,m,ispin]
 
-    dHRs = gather_full(dHRs, npool)  
+    dHRs = gather_full(dHRs, npool)
     if rank != 0:
       dHRs = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin), dtype=complex)
     comm.Bcast(dHRs)
@@ -166,7 +168,7 @@ def do_topology ( data_controller ):
           jks[ik,l,:,:,ispin] = (np.conj(arrays['v_k'][ik,:,:,ispin].T).dot \
             (0.5*(np.dot(Sj[l],dHks_aux[ik,:,:,ispin])+np.dot(dHks_aux[ik,:,:,ispin],Sj[l]))).dot(arrays['v_k'][ik,:,:,ispin]))[:bnd,:bnd]
 
-  if eff_mass == True: 
+  if eff_mass == True:
     tks = np.zeros((kq_aux.shape[1],3,3,bnd,bnd,nspin), dtype=complex)
 
     for l in range(3):
@@ -177,9 +179,9 @@ def do_topology ( data_controller ):
             for m in range(nawf):
               d2HRs[:,n,m,ispin] = -1.0*alat**2*ANGSTROM_AU**2*Rfft_aux[:,l]*Rfft_aux[:,lp]*HRs_aux[:,n,m,ispin]
 
-        d2HRs = gather_full(d2HRs, npool)  
+        d2HRs = gather_full(d2HRs, npool)
         if rank != 0:
-          d2HRs = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin), dtype=complex)      
+          d2HRs = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin), dtype=complex)
         comm.Bcast(d2HRs)
         d2HRs = np.moveaxis(d2HRs, 0, 2)
 
@@ -228,7 +230,7 @@ def do_topology ( data_controller ):
 
   HRs_aux = None
   HRs = None
-  
+
   # Compute Berry curvature
   if Berry or spin_Hall:
     deltab = 0.05
