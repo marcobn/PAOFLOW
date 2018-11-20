@@ -31,23 +31,25 @@ def do_fermisurf ( data_controller ):
 
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
 
-  if rank == 0:
-    nbndx_plot = 10
-    nawf = attributes['nawf']
-    nktot = attributes['nkpnts']
-    fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
-    nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
+  nbndx_plot = 10
+  nawf = attributes['nawf']
+  nktot = attributes['nkpnts']
+  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
+  nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
+  if rank == 0:
     E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attributes['nspin']))
 
-    for ispin in range(attributes['nspin']):
+  for ispin in range(attributes['nspin']):
 
-      eigband = np.zeros((nk1,nk2,nk3,nbndx_plot), dtype=float)
-      ind_plot = np.zeros(nbndx_plot)
+    icount = 0
+    eigband = (np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float) if rank==0 else None)
+
+    if rank == 0:
 
       Efermi = 0.0
+      ind_plot = np.zeros(nbndx_plot)
 
-      icount = 0
       for ib in range(nawf):
         E_k_min = np.amin(E_k_full[:,ib,ispin])
         E_k_max = np.amax(E_k_full[:,ib,ispin])
@@ -61,14 +63,11 @@ def do_fermisurf ( data_controller ):
           eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]
           ind_plot[icount] = ib
           icount += 1
-      x0 = np.zeros(3, dtype=float) 
 
-      feig = 'FermiSurf_%d.bxsf'%ispin
-      data_controller.write_bxsf(feig, eigband, icount)
+    feig = 'FermiSurf_%d.bxsf'%ispin
+    data_controller.write_bxsf(feig, eigband, icount)
 
-      for ib in range(icount):
-        np.savez(os.path.join(attributes['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[:,:,:,ib])
+    for ib in range(icount):
+      np.savez(os.path.join(attributes['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[:,:,:,ib])
 
-    E_k_rs = None
-
-  E_k_full = None
+  E_k_full = E_k_rs = None
