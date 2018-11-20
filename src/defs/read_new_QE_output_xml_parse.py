@@ -39,7 +39,7 @@ def read_new_QE_output_xml ( data_controller ):
     non_ortho = data_attributes['non_ortho']
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file = fpath+'/data-file-schema.xml'
-
+    Sks = None
     # Reading data-file-schema.xml
     for event,elem in ET.iterparse(data_file,events=('start','end')):
         if event == 'end':
@@ -290,7 +290,7 @@ def read_new_QE_output_xml ( data_controller ):
     data_attributes['omega'] = omega
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
-    data_attributes['tau'] = tau
+    data_arrays['tau'] = tau
     data_arrays['kpnts'] = kpnts
     data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors

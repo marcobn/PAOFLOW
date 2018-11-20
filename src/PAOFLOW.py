@@ -280,8 +280,8 @@ class PAOFLOW:
     
     doubling_HRs(self.data_controller)
     # Broadcasting the modified arrays
-    arry['HRs'] = comm.Bcast(arry['HRs'],root=0)
-    self.data_controller.broadcast_single_array('HRs')
+    #arry['HRs'] = comm.Bcast(arry['HRs'],root=0)
+    #self.data_controller.broadcast_single_array('HRs')
     #self.data_controller.broadcast_single_array('tau')
     #self.data_controller.broadcast_single_array('a_vectors')
     #self.data_controller.broadcast_single_array('naw')
