@@ -18,6 +18,7 @@
 
 
 def do_fermisurf ( data_controller ):
+  import os
   import numpy as np
   from mpi4py import MPI
   from .communication import gather_full
