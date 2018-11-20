@@ -57,7 +57,7 @@ class PAOFLOW:
       header()
       self.start_time = self.reset_time = time()
 
-    # Initialize Data Controller 
+    # Initialize Data Controller
     self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose)
 
     # Data Attributes
@@ -82,7 +82,7 @@ class PAOFLOW:
       else:
         print('Serial execution')
 
-    # Do memory checks 
+    # Do memory checks
     if self.rank == 0:
       dxdydz = 3
       B_to_GB = 1.E-9
@@ -221,6 +221,7 @@ class PAOFLOW:
 
   def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500., theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
     from .defs.do_bands import do_bands
+    from .defs.communication import gather_full
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -301,7 +302,7 @@ class PAOFLOW:
   def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
     from .defs.do_topology import do_topology
     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
-    # curvature operators along the path in the IBZ from do_topology_calc 
+    # curvature operators along the path in the IBZ from do_topology_calc
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -467,7 +468,7 @@ class PAOFLOW:
 
     #----------------------
     # Compute the gradient of the k-space Hamiltonian
-    #----------------------            
+    #----------------------
     do_gradient(self.data_controller)
 
 ########### PARALLELIZATION
