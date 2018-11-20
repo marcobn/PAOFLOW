@@ -35,8 +35,8 @@ class PAOFLOW:
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
     from time import time
     from mpi4py import MPI
-    from defs.header import header
-    from DataController import DataController
+    from .defs.header import header
+    from .DataController import DataController
 
     self.workpath = workpath
     self.outputdir = outputdir
@@ -143,7 +143,7 @@ class PAOFLOW:
 
 
   def projectability ( self, pthr=0.95, shift='auto' ):
-    from defs.do_projectability import do_projectability
+    from .defs.do_projectability import do_projectability
 
     attr = self.data_controller.data_attributes
 
@@ -156,8 +156,8 @@ class PAOFLOW:
 
 
   def pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
-    from defs.get_K_grid_fft import get_K_grid_fft
-    from defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
+    from .defs.get_K_grid_fft import get_K_grid_fft
+    from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
 
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
@@ -181,7 +181,7 @@ class PAOFLOW:
     self.report_module_time('k -> R')
 
     if non_ortho:
-      from defs.do_ortho import do_orthogonalize
+      from .defs.do_ortho import do_orthogonalize
 
       do_orthogonalize(self.data_controller)
       self.report_module_time('Orthogonalize')
@@ -200,7 +200,7 @@ class PAOFLOW:
 
     # Add external fields or non scf ACBN0 correction
     if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
-      from defs.add_ext_field import add_ext_field
+      from .defs.add_ext_field import add_ext_field
       add_ext_field(self.data_controller)
       if attr['verbose']:
         print('External Fields Added')
@@ -218,8 +218,8 @@ class PAOFLOW:
       self.data_controller.write_z2pack(fname)
 
 
-  def bands ( self, ibrav=None, fname='bands', spin_orbit=False, nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
-    from defs.do_bands import do_bands
+  def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
+    from .defs.do_bands import do_bands
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -230,15 +230,15 @@ class PAOFLOW:
         quit()
       else:
         attr['ibrav'] = ibrav
+
     if 'nk' not in attr: attr['nk'] = nk
-    if 'do_spin_orbit' not in attr:
-      attr['do_spin_orbit'] = spin_orbit
+    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
     #----------------------------------------
     # Compute bands with spin-orbit coupling
     #----------------------------------------
     if self.rank == 0 and attr['do_spin_orbit']:
-      from defs.do_spin_orbit import do_spin_orbit_bands
+      from .defs.do_spin_orbit import do_spin_orbit_bands
 
       natoms = attr['natoms']
       if 'phi' not in attr: attr['phi'] = phi
@@ -246,27 +246,27 @@ class PAOFLOW:
       if 'lambda_p' not in arrays: arrays['lambda_p'] = lambda_p[:]
       if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
       if 'orb_pseudo' not in arrays: arrays['orb_pseudo'] = orb_pseudo[:]
-
       if len(arrays['lambda_p']) != natoms or len(arrays['lambda_p']) != natoms:
         if self.rank == 0:  
           print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
         quit()
 
-
       do_spin_orbit_bands(self.data_controller)
-  
-    do_bands(self.data_controller,fname)
     if(arrays['kq'].shape[1] == (attr['nk1']+attr['nk2']+attr['nk3']) ):
       print('The bands kpath and nscf calculations have the same size : spintexture calculation could be wrong\n')
       print('Modify nk\n')
+
+    do_bands(self.data_controller)
+
+    E_kp = gather_full(arrays['E_k'], attr['npool'])
+    self.data_controller.write_bands(fname, E_kp)
+    E_kp = None
+
     self.report_module_time('Bands')
-
-
   def wave_function_projection (self,dimension=3):
     from defs.do_wave_function_site_projection import wave_function_site_projection
     wave_function_site_projection(self.data_controller)
     self.report_module_time('wave_function_projection')
-  
   def doubling_Hamiltonian (self, nx , ny, nz):
     from defs.do_doubling import doubling_HRs
     
@@ -310,8 +310,6 @@ class PAOFLOW:
     _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
     attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
 
-  #def removing_atoms (self, site=[0]):
-  #  arry,attr = self.data_controller.data_dicts()
 
 
   def spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
@@ -323,6 +321,7 @@ class PAOFLOW:
     if 'nl' not in arrays: arrays['nl'] = nl
 
     nawf = attr['nawf']
+
     # Compute spin operators
     # Pauli matrices (x,y,z)
     sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
@@ -337,7 +336,7 @@ class PAOFLOW:
           Sj[spol,i,i-1] = sP[spol][1,0]
           Sj[spol,i,i] = sP[spol][1,1]
     else:
-      from defs.clebsch_gordan import clebsch_gordan
+      from .defs.clebsch_gordan import clebsch_gordan
       # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
       Sj = np.zeros((3,nawf,nawf), dtype=complex)
       for spol in range(3):
@@ -348,7 +347,7 @@ class PAOFLOW:
 
 
   def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
-    from defs.do_topology import do_topology
+    from .defs.do_topology import do_topology
     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
     # curvature operators along the path in the IBZ from do_topology_calc 
 
@@ -383,9 +382,9 @@ class PAOFLOW:
 
 
   def interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
-    from defs.get_K_grid_fft import get_K_grid_fft
-    from defs.do_double_grid import do_double_grid
-    from defs.communication import gather_scatter,scatter_full
+    from .defs.get_K_grid_fft import get_K_grid_fft
+    from .defs.do_double_grid import do_double_grid
+    from .defs.communication import gather_scatter,scatter_full
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -456,8 +455,8 @@ class PAOFLOW:
 
 
   def pao_eigh ( self, bval=0 ):
-    from defs.do_eigh import do_pao_eigh
-    from defs.communication import gather_scatter,scatter_full,gather_full
+    from .defs.do_eigh import do_pao_eigh
+    from .defs.communication import gather_scatter,scatter_full,gather_full
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -497,13 +496,18 @@ class PAOFLOW:
 
 
   def gradient_and_momenta ( self ):
-    from defs.do_gradient import do_gradient
-    from defs.do_momentum import do_momentum
-    from defs.communication import gather_scatter
+    from .defs.do_gradient import do_gradient
+    from .defs.do_momentum import do_momentum
+    from .defs.communication import gather_scatter
 
     arrays,attr = self.data_controller.data_dicts()
 
     snktot,nawf,_,nspin = arrays['Hksp'].shape
+
+    for ik in range(snktot):
+      for ispin in range(nspin):
+        arrays['Hksp'][ik,:,:,ispin] = (np.conj(arrays['Hksp'][ik,:,:,ispin].T) + arrays['Hksp'][ik,:,:,ispin])/2.
+
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
     arrays['Hksp'] = np.moveaxis(gather_scatter(arrays['Hksp'],1,attr['npool']), 0, 1)
     snawf,_,nspin = arrays['Hksp'].shape
@@ -531,7 +535,7 @@ class PAOFLOW:
 
 
   def adaptive_smearing ( self, smearing='gauss' ):
-    from defs.do_adaptive_smearing import do_adaptive_smearing
+    from .defs.do_adaptive_smearing import do_adaptive_smearing
 
     attr = self.data_controller.data_attributes
 
@@ -556,10 +560,10 @@ class PAOFLOW:
 
     if attr['smearing'] is None:
       if do_dos:
-        from defs.do_dos import do_dos
+        from .defs.do_dos import do_dos
         do_dos(self.data_controller, emin=emin, emax=emax)
       if do_pdos:
-        from defs.do_pdos import do_pdos
+        from .defs.do_pdos import do_pdos
         do_pdos(self.data_controller, emin=emin, emax=emax)
     else:
       if 'deltakp' not in arrays:
@@ -570,14 +574,14 @@ class PAOFLOW:
       # DOS calculation with adaptive smearing on double_grid Hksp
       #------------------------------------------------------------
       if do_dos:
-        from defs.do_dos import do_dos_adaptive
+        from .defs.do_dos import do_dos_adaptive
         do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
 
       #----------------------
       # PDOS calculation ...
       #----------------------
       if do_pdos:
-        from defs.do_pdos import do_pdos_adaptive
+        from .defs.do_pdos import do_pdos_adaptive
         do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
 
     mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
@@ -589,6 +593,9 @@ class PAOFLOW:
 
     arrays,_ = self.data_controller.data_dicts()
 
+    bnd = attributes['bnd']
+    attributes['nawf'] = bnd
+
     arrays['E_k'] = arrays['E_k'][:,:bnd]
     arrays['pksp'] = arrays['pksp'][:,:,:bnd,:bnd]
     if 'deltakp' in arrays:
@@ -598,7 +605,7 @@ class PAOFLOW:
 
 
   def fermi_surface ( self, fermi_up=1., fermi_dw=-1. ):
-    from defs.do_fermisurf import do_fermisurf
+    from .defs.do_fermisurf import do_fermisurf
 
     attr = self.data_controller.data_attributes
 
@@ -614,7 +621,7 @@ class PAOFLOW:
 
 
   def spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
-    from defs.do_spin_texture import do_spin_texture
+    from .defs.do_spin_texture import do_spin_texture
 
     arry,attr = self.data_controller.data_dicts()
 
@@ -637,7 +644,7 @@ class PAOFLOW:
 
 
   def spin_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
-    from defs.do_Hall import do_spin_Hall
+    from .defs.do_Hall import do_spin_Hall
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -659,7 +666,7 @@ class PAOFLOW:
 
 
   def anomalous_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
-    from defs.do_Hall import do_anomalous_Hall
+    from .defs.do_Hall import do_anomalous_Hall
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -676,7 +683,7 @@ class PAOFLOW:
 
 
   def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None ):
-    from defs.do_transport import do_transport
+    from .defs.do_transport import do_transport
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -701,8 +708,8 @@ class PAOFLOW:
 
 
 
-  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=.025852, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
-    from defs.do_epsilon import do_dielectric_tensor
+  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+    from .defs.do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -710,7 +717,7 @@ class PAOFLOW:
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
 
-    if 'temp' not in attr: attr['temp'] = temp
+    if temp is not None: attr['temp'] = temp
     if 'delta' not in attr: attr['delta'] = delta
     if 'metal' not in attr: attr['metal'] = metal
     if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
