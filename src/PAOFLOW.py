@@ -257,7 +257,7 @@ class PAOFLOW:
     do_bands(self.data_controller)
 
     E_kp = gather_full(arrays['E_k'], attr['npool'])
-    data_controller.write_bands(fname, E_kp)
+    self.data_controller.write_bands(fname, E_kp)
     E_kp = None
 
     self.report_module_time('Bands')
