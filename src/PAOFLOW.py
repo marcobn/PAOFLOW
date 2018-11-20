@@ -252,11 +252,12 @@ class PAOFLOW:
         quit()
 
       do_spin_orbit_bands(self.data_controller)
+
+    do_bands(self.data_controller)
+
     if(arrays['kq'].shape[1] == (attr['nk1']+attr['nk2']+attr['nk3']) ):
       print('The bands kpath and nscf calculations have the same size : spintexture calculation could be wrong\n')
       print('Modify nk\n')
-
-    do_bands(self.data_controller)
 
     E_kp = gather_full(arrays['E_k'], attr['npool'])
     self.data_controller.write_bands(fname, E_kp)
