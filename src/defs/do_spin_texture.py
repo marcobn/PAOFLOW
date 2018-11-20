@@ -16,10 +16,13 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import os
+
 def do_spin_texture ( data_controller ):
   import numpy as np
   from mpi4py import MPI
-  from .communication import gather_full
+  from communication import gather_full
+  import os, sys, time
 
   rank = MPI.COMM_WORLD.Get_rank()
 
@@ -27,11 +30,11 @@ def do_spin_texture ( data_controller ):
   attributes = data_controller.data_attributes
 
   nspin = attributes['nspin']
-  nktot = attributes['nkpnts']
   fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nawf,nk1,nk2,nk3 = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3']
-
+  ispin = attributes['nspin']
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
+ 
 
   for ispin in range(nspin):
     ind_plot = np.zeros(nawf, dtype=int)
@@ -64,11 +67,19 @@ def do_spin_texture ( data_controller ):
     sktxtaux = None
 
     if rank == 0:
-      sktxt = np.reshape(sktxt, (nk1,nk2,nk3,3,nawf,nawf), order='C')
+      if(E_k_full.shape[0] == arrays['kq'].shape[1] ):
+        f=open(os.path.join(attributes['opath'],'spin-texture-bands'+'.dat'),'w')
+        for ik in range(E_k_full.shape[0]):
+          for ib in range(icount):
+            idx=ind_plot[ib]
+            f.write('\t'.join(['%d'%ik]+['% 5.8f'%E_k_full[ik,idx]]+['% 5.8f'%j for j in sktxt[ik,:,idx,idx].real])+'\n')
+          f.write("\n")
+        f.close()
+      else:
+        sktxt = np.reshape(sktxt, (nk1,nk2,nk3,3,nawf,nawf), order='C')
+        for ib in range(icount):
+          np.savez(os.path.join(attributes['opath'],'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
-      for ib in range(icount):
-        np.savez(os.path.join(attributes['opath'],'spin_text_band_%d_%d'%(ib,ispin)), spinband=sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
 
     sktxt = None
-
-  E_k_full = None
+    E_k_full = None
