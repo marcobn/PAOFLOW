@@ -218,8 +218,7 @@ class PAOFLOW:
       self.data_controller.write_z2pack(fname)
 
 
-
-  def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500., theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
+  def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
     from .defs.do_bands import do_bands
     from .defs.communication import gather_full
 
@@ -243,17 +242,20 @@ class PAOFLOW:
       from .defs.do_spin_orbit import do_spin_orbit_bands
 
       natoms = attr['natoms']
-      if len(lambda_p) != natoms or len(lambda_d) != natoms:
-        if self.rank == 0:
-          print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
-        quit()
-
       if 'phi' not in attr: attr['phi'] = phi
       if 'theta' not in attr: attr['theta'] = theta
       if 'lambda_p' not in arrays: arrays['lambda_p'] = lambda_p[:]
       if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
+      if 'orb_pseudo' not in arrays: arrays['orb_pseudo'] = orb_pseudo[:]
+      if len(arrays['lambda_p']) != natoms or len(arrays['lambda_p']) != natoms:
+        if self.rank == 0:  
+          print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
+        quit()
 
       do_spin_orbit_bands(self.data_controller)
+    if(arrays['kq'].shape[1] == (attr['nk1']+attr['nk2']+attr['nk3']) ):
+      print('The bands kpath and nscf calculations have the same size : spintexture calculation could be wrong\n')
+      print('Modify nk\n')
 
     do_bands(self.data_controller)
 
@@ -262,6 +264,52 @@ class PAOFLOW:
     E_kp = None
 
     self.report_module_time('Bands')
+  def wave_function_projection (self,dimension=3):
+    from defs.do_wave_function_site_projection import wave_function_site_projection
+    wave_function_site_projection(self.data_controller)
+    self.report_module_time('wave_function_projection')
+  def doubling_Hamiltonian (self, nx , ny, nz):
+    from defs.do_doubling import doubling_HRs
+    
+#   arry,attr = self.data_controller.data_dicts()
+    arrays,attr = self.data_controller.data_dicts()
+    attr['nx'] = nx
+    attr['ny'] = ny
+    attr['nz'] = nz
+    
+    doubling_HRs(self.data_controller)
+    # Broadcasting the modified arrays
+    arry['HRs'] = comm.Bcast(arry['HRs'],root=0)
+    self.data_controller.broadcast_single_array('HRs')
+    #self.data_controller.broadcast_single_array('tau')
+    #self.data_controller.broadcast_single_array('a_vectors')
+    #self.data_controller.broadcast_single_array('naw')
+    #self.data_controller.broadcast_single_array('sh')
+    #if self.rank==0:  self.data_controller.broadcast_single_array('nl')
+    #self.data_controller.broadcast_attribute('nawf')
+    #self.data_controller.broadcast_attribute('natoms')
+    #if (attr['do_spin_orbit']):
+    #    self.data_controller.broadcast_single_array('lambda_p')
+    #    self.data_controller.broadcast_single_array('lambda_d')
+    #    self.data_controller.broadcast_single_array('orb_pseudo')
+
+    self.report_module_time('doubling_Hamiltonian')
+  
+  def cutting_Hamiltonian (self, x=False , y=False, z=False):
+    arry,attr = self.data_controller.data_dicts()
+    
+    if ( x == True):
+        for i in range(attr['nk1']-1,0,-1):
+            arry['HRs'] = np.delete(arry['HRs'],i,2)
+    if ( y == True):
+        for i in range(attr['nk2']-1,0,-1):
+            arry['HRs'] = np.delete(arry['HRs'],i,3)
+    if ( z == True):
+        for i in range(attr['nk3']-1,0,-1):
+            arry['HRs'] = np.delete(arry['HRs'],i,4)
+
+    _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
+    attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
 
 
 
@@ -583,7 +631,7 @@ class PAOFLOW:
 
     if attr['nspin'] == 1:
       if 'Sj' not in arry:
-        if rank == 0:
+        if self.rank == 0:
           print('Spin operator \'Sj\' must be calculated before Spin Texture can be computed.')
         quit()
       do_spin_texture(self.data_controller)
