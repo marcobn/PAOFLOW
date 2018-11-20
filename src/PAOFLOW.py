@@ -219,7 +219,7 @@ class PAOFLOW:
 
 
 
-  def bands ( self, ibrav=None, spin_orbit=False, nk=500., theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
+  def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500., theta=0., phi=0., lambda_p=[0.], lambda_d=[0.] ):
     from .defs.do_bands import do_bands
 
     arrays,attr = self.data_controller.data_dicts()
@@ -255,6 +255,11 @@ class PAOFLOW:
       do_spin_orbit_bands(self.data_controller)
 
     do_bands(self.data_controller)
+
+    E_kp = gather_full(arrays['E_k'], attr['npool'])
+    data_controller.write_bands(fname, E_kp)
+    E_kp = None
+
     self.report_module_time('Bands')
 
 

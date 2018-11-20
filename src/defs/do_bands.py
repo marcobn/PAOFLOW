@@ -155,10 +155,6 @@ def do_bands ( data_controller ):
     # Compute the bands along the path in the IBZ
     arrays['E_k'],arrays['v_k'] = bands_calc(data_controller)
 
-    E_kp = gather_full(arrays['E_k'], attributes['npool'])
-    data_controller.write_bands('bands', E_kp)
-    E_kp = None
-
   # 1D Bands not implemented
   else:
     if rank == 0:
