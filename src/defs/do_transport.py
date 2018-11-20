@@ -21,8 +21,8 @@ def do_transport ( data_controller, temps, ene, velkp ):
   import numpy as np
   from mpi4py import MPI
   from numpy import linalg as LAN
-  from do_Boltz_tensors import do_Boltz_tensors_smearing
-  from do_Boltz_tensors import do_Boltz_tensors_no_smearing
+  from .do_Boltz_tensors import do_Boltz_tensors_smearing
+  from .do_Boltz_tensors import do_Boltz_tensors_no_smearing
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -96,7 +96,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
           try:
             S[:,:,n] = -1.*LAN.inv(L0[:,:,n])*L1[:,:,n]
           except:
-            from report_exception import report_exception
+            from .report_exception import report_exception
             print('check t_tensor components - matrix cannot be singular')
             report_exception()
             comm.Abort()

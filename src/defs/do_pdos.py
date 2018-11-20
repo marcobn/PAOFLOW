@@ -72,7 +72,7 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
 def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
   import numpy as np
   from mpi4py import MPI
-  from smearing import metpax, gaussian
+  from .smearing import metpax, gaussian
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()

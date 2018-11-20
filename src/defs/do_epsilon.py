@@ -20,7 +20,7 @@
 def do_dielectric_tensor ( data_controller, ene ):
   import numpy as np
   from mpi4py import MPI
-  from constants import LL
+  from .constants import LL
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -114,8 +114,8 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
 def epsi_loop ( data_controller, ene, ispin, ipol, jpol):
   import numpy as np
   from mpi4py import MPI
-  from constants import EPS0, EVTORY
-  from smearing import intgaussian,gaussian,intmetpax,metpax
+  from .constants import EPS0, EVTORY
+  from .smearing import intgaussian,gaussian,intmetpax,metpax
 
   rank = MPI.COMM_WORLD.Get_rank()
 
@@ -224,8 +224,8 @@ def epsi_loop ( data_controller, ene, ispin, ipol, jpol):
 
 def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
   import numpy as np
-  from constants import EPS0, EVTORY
-  from smearing import intgaussian,intmetpax
+  from .constants import EPS0, EVTORY
+  from .smearing import intgaussian,intmetpax
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -267,52 +267,13 @@ def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
 
   return epsr
 
-#### Try to flatten one loop of epsr_loop
-#   fn = None
-#   if smearing == None:
-#     fn = 1./(1.+np.exp(arrays['E_k'][:,:bnd,ispin]/temp))
-#   elif smearing == 'gauss':
-#     fn = intgaussian(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
-#   elif smearing == 'm-p':
-#     fn = intmetpax(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
-
-#   '''upper triangle indices'''
-#   uind = np.triu_indices(bnd, k=1)
-#   ni = len(uind[0])
-
-#   # E_kn-Ek_m for every k-point and every band combination (m,n)
-#   E_diff_nm = (np.reshape(arrays['E_k'][:,:bnd,ispin],(snktot,1,bnd))-np.reshape(arrays['E_k'][:,:bnd,ispin],(snktot,bnd,1)))[:,uind[0],uind[1]]
-
-#   # fn_n-fn_m for every k-point and every band combination (m,n)
-#   f_nm = (np.reshape(fn,(snktot,bnd,1))-np.reshape(fn,(snktot,1,bnd)))[:,uind[0],uind[1]]
-#   fn = None
-
-#   # <p_n|p_m> for every k-point and every band combination (m,n)
-#   pksp2 = arrays['pksp'][:,ipol,uind[0],uind[1],ispin]*arrays['pksp'][:,jpol,uind[1],uind[0],ispin]
-#   pksp2 = (abs(pksp2) if smearing is None else np.real(pksp2))
-
-#  sq2_dk2 = (1.0/(np.sqrt(np.pi)*arrays['deltakp2'][:,uind[0],uind[1],ispin]) if smearing=='gauss' else None)
-
-#   for i,e in enumerate(ene):
-#     if smearing is None:
-#       dfunc = np.exp(-((e-E_diff_nm)/delta)**2)/(delta*np.sqrt(np.pi))
-#     else:
-#       dfunc = 1./(E_diff_nm-e+1.j*arrays['deltakp2'][:,uind[0],uind[1],ispin])
-#    elif smearing == 'gauss':
-#      dfunc = np.exp(-((e-E_diff_nm)/arrays['deltakp2'][:,uind[0],uind[1],ispin])**2)*sq2_dk2
-#    elif smearing == 'm-p':
-#      dfunc = metpax(E_diff_nm, e, arrays['deltakp2'][:,uind[0],uind[1],ispin])
-#     epsr[i] = np.sum((kq_wght/(E_diff_nm**2+1.j*delta**2))*dfunc*f_nm*pksp2/(e**2+delta**2))
-
-#   f_nm = dfunc = uind = pksp2 = sq2_dk2 = E_diff_nm = None
-
 
 def epsr_kramerskronig ( data_controller, ene, epsi ):
   import numpy as np
   from mpi4py import MPI
-  from smearing import intmetpax
+  from .smearing import intmetpax
   from scipy.integrate import simps
-  from load_balancing import load_balancing
+  from .load_balancing import load_balancing
 
   comm = MPI.COMM_WORLD
 

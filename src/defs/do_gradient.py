@@ -34,7 +34,7 @@
 def do_gradient ( data_controller ):
   import numpy as np
   from scipy import fftpack as FFT
-  from get_R_grid_fft import get_R_grid_fft
+  from .get_R_grid_fft import get_R_grid_fft
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes

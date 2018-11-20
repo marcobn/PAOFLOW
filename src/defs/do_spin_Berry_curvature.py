@@ -19,8 +19,8 @@
 def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
   import numpy as np
   from mpi4py import MPI
-  from communication import gather_full
-  from smearing import intgaussian, intmetpax
+  from .communication import gather_full
+  from .smearing import intgaussian, intmetpax
 
   rank = MPI.COMM_WORLD.Get_rank()
 

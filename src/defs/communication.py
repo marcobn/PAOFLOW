@@ -19,7 +19,7 @@
 import numpy as np
 import time
 from mpi4py import MPI
-from load_balancing import *
+from .load_balancing import *
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

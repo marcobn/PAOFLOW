@@ -23,10 +23,10 @@ def do_topology ( data_controller ):
   import numpy as np
   from mpi4py import MPI
   from scipy.fftpack import fftshift
-  from constants import LL, ANGSTROM_AU
-  from get_R_grid_fft import get_R_grid_fft
-  from communication import scatter_full,gather_full
-  from kpnts_interpolation_mesh import kpnts_interpolation_mesh
+  from .constants import LL, ANGSTROM_AU
+  from .get_R_grid_fft import get_R_grid_fft
+  from .communication import scatter_full,gather_full
+  from .kpnts_interpolation_mesh import kpnts_interpolation_mesh
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -60,10 +60,10 @@ def do_topology ( data_controller ):
   # Compute Z2 according to Fu, Kane and Mele (2007)
   # Define TRIM points in 2(0-3)/3D(0-7)
   if nspin == 1 and spin_Hall:
-    from pfaffian import pfaffian 
+    from .pfaffian import pfaffian 
     from numpy import linalg as LAN
-    from do_eigh import do_eigh_calc
-    from clebsch_gordan import clebsch_gordan
+    from .do_eigh import do_eigh_calc
+    from .clebsch_gordan import clebsch_gordan
 
     nktrim = 16
     ktrim = np.zeros((nktrim,3),dtype=float)

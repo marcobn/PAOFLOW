@@ -45,7 +45,7 @@ def do_orthogonalize ( data_controller ):
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
   if attributes['use_cuda']:
-    from cuda_fft import cuda_fftn, cuda_ifftn
+    from .cuda_fft import cuda_fftn, cuda_ifftn
     arrays['Hks'] = cuda_fftn(np.moveaxis(arrays['HRs'],[0,1],[3,4]), axes=[0,1,2])
     arrays['Sks'] = cuda_fftn(np.moveaxis(arrays['SRs'],[0,1],[3,4]), axes=[0,1,2])
     arrays['Hks'] = np.reshape(np.moveaxis(arrays['Hks'],[3,4],[0,1]), (nawf,nawf,nktot,nspin), order='C')

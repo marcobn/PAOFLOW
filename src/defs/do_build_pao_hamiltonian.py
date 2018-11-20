@@ -124,7 +124,7 @@ def do_build_pao_hamiltonian ( data_controller ):
   #  Hks = do_non_ortho(Hks,Sks)
   #  Hks = do_ortho(Hks,Sks)
   if attr['non_ortho']:
-    from do_non_ortho import do_non_ortho
+    from .do_non_ortho import do_non_ortho
 
     # This is needed for consistency of the ordering of the matrix elements
     # Important in ACBN0 file writing

@@ -58,7 +58,7 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
 
 
 def do_dos_adaptive ( data_controller, emin=-10., emax=2. ):
-  from smearing import gaussian, metpax
+  from .smearing import gaussian, metpax
   from mpi4py import MPI
   import numpy as np
 

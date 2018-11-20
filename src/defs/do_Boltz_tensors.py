@@ -92,7 +92,7 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
 
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha ):
   import numpy as np
-  from smearing import gaussian,metpax
+  from .smearing import gaussian,metpax
   # We assume tau=1 in the constant relaxation time approximation
 
   arrays,attributes = data_controller.data_dicts()

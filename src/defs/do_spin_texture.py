@@ -16,12 +16,10 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import os
-
 def do_spin_texture ( data_controller ):
   import numpy as np
   from mpi4py import MPI
-  from communication import gather_full
+  from .communication import gather_full
 
   rank = MPI.COMM_WORLD.Get_rank()
 

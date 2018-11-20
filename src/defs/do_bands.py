@@ -20,7 +20,7 @@
 def bands_calc ( data_controller ):
   import numpy as np
   from scipy import linalg as LA
-  from communication import scatter_full, gather_full
+  from .communication import scatter_full, gather_full
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -115,10 +115,10 @@ def do_ortho ( Hks, Sks ):
 def do_bands ( data_controller ):
   import numpy as np
   from mpi4py import MPI
-  from constants import ANGSTROM_AU
-  from communication import gather_full
-  from get_R_grid_fft import get_R_grid_fft
-  from kpnts_interpolation_mesh import kpnts_interpolation_mesh
+  from .constants import ANGSTROM_AU
+  from .communication import gather_full
+  from .get_R_grid_fft import get_R_grid_fft
+  from .kpnts_interpolation_mesh import kpnts_interpolation_mesh
 
   rank = MPI.COMM_WORLD.Get_rank()
 

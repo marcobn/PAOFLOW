@@ -19,9 +19,9 @@
 def do_spin_Hall ( data_controller, do_ac ):
   import numpy as np
   from mpi4py import MPI
-  from perturb_split import perturb_split
-  from do_spin_Berry_curvature import do_spin_Berry_curvature
-  from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+  from .perturb_split import perturb_split
+  from .do_spin_Berry_curvature import do_spin_Berry_curvature
+  from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -107,9 +107,9 @@ def do_spin_Hall ( data_controller, do_ac ):
 def do_anomalous_Hall ( data_controller, do_ac ):
   import numpy as np
   from mpi4py import MPI
-  from perturb_split import perturb_split
-  from do_spin_Berry_curvature import do_spin_Berry_curvature
-  from constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+  from .perturb_split import perturb_split
+  from .do_spin_Berry_curvature import do_spin_Berry_curvature
+  from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -199,8 +199,8 @@ def do_spin_current ( data_controller, spol, ipol ):
 def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   import numpy as np
   from mpi4py import MPI
-  from communication import gather_full
-  from smearing import intgaussian, intmetpax
+  from .communication import gather_full
+  from .smearing import intgaussian, intmetpax
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -274,7 +274,7 @@ def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
 
 def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol ):
   import numpy as np
-  from smearing import intgaussian,intmetpax
+  from .smearing import intgaussian,intmetpax
 
   arrays,attributes = data_controller.data_dicts()
 
