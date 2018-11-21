@@ -20,6 +20,7 @@
 def do_transport ( data_controller, temps, ene, velkp ):
   import numpy as np
   from mpi4py import MPI
+  from os.path import join
   from numpy import linalg as LAN
   from .do_Boltz_tensors import do_Boltz_tensors_smearing
   from .do_Boltz_tensors import do_Boltz_tensors_no_smearing
@@ -42,6 +43,20 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
   for ispin in range(nspin):
 
+    op = attributes['opath']
+
+    fnPF = join(op, 'PF_%d.dat'%ispin)
+    fnkappa = join(op, 'kappa_%d.dat'%ispin)
+    fnsigma = join(op, 'sigma_%d.dat'%ispin)
+    fnsigmadk = join(op, 'sigmadk_%d.dat'%ispin)
+    fnSeebeck = join(op, 'Seebeck_%d.dat'%ispin)
+
+    fPF = open(fnPF, 'w')
+    fkappa = open(fnkappa, 'w')
+    fsigma = open(fnsigma, 'w')
+    fsigmadk = open(fnsigmadk, 'w')
+    fSeebeck = open(fnSeebeck, 'w')
+
     for temp in temps:
 
       itemp = temp/temp_conv
@@ -57,12 +72,14 @@ def do_transport ( data_controller, temps, ene, velkp ):
           # convert in units of 10*21 siemens m^-1 s^-1
           L0 *= spin_mult*siemen_conv/attributes['omega']
 
-          sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
-          L0 = None
+          # convert in units of siemens m^-1 s^-1
+          sigma = L0*1.e21
 
-        fsigma = 'sigmadk_%d.dat'%ispin
-        data_controller.write_transport_tensor(fsigma, temp, ene, sigma)
-        sigma = None
+          for i in range(esize):
+            tup = (temp,ene[i],sigma[0,0,i],sigma[1,1,i],sigma[2,2,i],sigma[0,1,i],sigma[0,2,i],sigma[1,2,i])
+            fsigmadk.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
+          sigma = None
+        comm.Barrier()
 
       L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
 
@@ -77,9 +94,11 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
         sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
 
-      fsigma = 'sigma_%d.dat'%ispin
-      data_controller.write_transport_tensor(fsigma, temp, ene, sigma)
-      sigma = None
+        for i in range(esize):
+          tup = (temp,ene[i],sigma[0,0,i],sigma[1,1,i],sigma[2,2,i],sigma[0,1,i],sigma[0,2,i],sigma[1,2,i])
+          fsigma.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
+        sigma = None
+      comm.Barrier()
 
       S = None
       if rank == 0:
@@ -101,8 +120,10 @@ def do_transport ( data_controller, temps, ene, velkp ):
             report_exception()
             comm.Abort()
 
-      fSeebeck = 'Seebeck_%d.dat'%ispin
-      data_controller.write_transport_tensor(fSeebeck, temp, ene, S)
+        for i in range(esize):
+          tup = (temp,ene[i],S[0,0,i],S[1,1,i],S[2,2,i],S[0,1,i],S[0,2,i],S[1,2,i])
+          fSeebeck.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
+      comm.Barrier()
 
       PF = None
       kappa = None
@@ -117,16 +138,26 @@ def do_transport ( data_controller, temps, ene, velkp ):
         kappa = np.zeros((3,3,esize),dtype=float)
         for n in range(esize):
           kappa[:,:,n] = (L2[:,:,n] - temp*L1[:,:,n]*LAN.inv(L0[:,:,n])*L1[:,:,n])*1.e6
+        L1 = L2 = None
+
+        for i in range(esize):
+          tup = (temp,ene[i],kappa[0,0,i],kappa[1,1,i],kappa[2,2,i],kappa[0,1,i],kappa[0,2,i],kappa[1,2,i])
+          fkappa.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
+        kappa = None
 
         PF = np.zeros((3,3,esize), dtype=float)
         for n in range(esize):
           PF[:,:,n] = np.dot(np.dot(S[:,:,n],L0[:,:,n]),S[:,:,n])*1.e21
+        S = L0 = None
 
-      fkappa = 'kappa_%d.dat'%ispin
-      data_controller.write_transport_tensor(fkappa, temp, ene, kappa)
-      kappa = None
+        for i in range(esize):
+          tup = (temp,ene[i],PF[0,0,i],PF[1,1,i],PF[2,2,i],PF[0,1,i],PF[0,2,i],PF[1,2,i])
+          fPF.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
+        PF = None
+      comm.Barrier()
 
-      fPF = 'PF_%d.dat'%ispin
-      data_controller.write_transport_tensor(fPF, temp, ene, PF)
-      PF = None
-      S = None
+    fPF.close()
+    fkappa.close()
+    fsigma.close()
+    fsigmadk.close()
+    fSeebeck.close()
