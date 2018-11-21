@@ -67,7 +67,7 @@ def do_spin_texture ( data_controller ):
     sktxtaux = None
 
     if rank == 0:
-      if(E_k_full.shape[0] == arrays['kq'].shape[1] ):
+      if 'kq' in arrays and E_k_full.shape[0] == arrays['kq'].shape[1]:
         f=open(os.path.join(attributes['opath'],'spin-texture-bands'+'.dat'),'w')
         for ik in range(E_k_full.shape[0]):
           for ib in range(icount):

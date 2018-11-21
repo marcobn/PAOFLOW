@@ -504,6 +504,11 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
+    if 'v_k' not in arrays:
+      if self.rank == 0:
+        print('Eigenvalues not computed. Exiting.')
+      quit()
+
     snktot,nawf,_,nspin = arrays['Hksp'].shape
 
     for ik in range(snktot):
@@ -627,6 +632,11 @@ class PAOFLOW:
 
     arry,attr = self.data_controller.data_dicts()
 
+    if 'E_k' not in arry:
+      if self.rank == 0:
+        print('Eigenvalues not computed. Exiting.')
+      quit()
+
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
@@ -636,7 +646,7 @@ class PAOFLOW:
           print('Spin operator \'Sj\' must be calculated before Spin Texture can be computed.')
         quit()
       do_spin_texture(self.data_controller)
-      self.report_module_time('Spin Texutre')
+      self.report_module_time('Spin Texture')
     else:
       if self.rank == 0:
         print('Cannot compute spin texture with nspin=2')
@@ -645,7 +655,7 @@ class PAOFLOW:
 
 
 
-  def spin_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
+  def spin_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     from .defs.do_Hall import do_spin_Hall
 
     arrays,attr = self.data_controller.data_dicts()
