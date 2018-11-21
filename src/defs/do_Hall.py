@@ -67,7 +67,7 @@ def do_spin_Hall ( data_controller, do_ac ):
 
     cart_indices = (str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
 
-    fBerry = 'Spin_Berry_%s_%s%s.dat'%cart_indices
+    fBerry = 'Spin_Berry_%s_%s%s.bxsf'%cart_indices
     nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
     Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if rank==0 else None)
     if rank == 0:
