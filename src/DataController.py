@@ -144,22 +144,6 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_transport_tensor ( self, fname, temp, energies, tensor ):
-    if self.rank == 0:
-      from os.path import join
-
-      attr = self.data_attributes
-
-      if attr['verbose']:
-        print('Writing transport file: %s'%fname)
-
-      with open(join(attr['opath'],fname), 'w') as f:
-        for i in range(energies.size):
-          tup = (temp,energies[i],tensor[0,0,i],tensor[1,1,i],tensor[2,2,i],tensor[0,1,i],tensor[0,2,i],tensor[1,2,i])
-          f.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tup)
-    self.comm.Barrier()
-
-
   def write_bxsf ( self, fname, bands, nbnd ):
     if self.rank == 0:
       from .defs.write2bxsf import write2bxsf
