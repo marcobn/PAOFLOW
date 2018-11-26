@@ -168,8 +168,9 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       if rank == 0:
         sigxy *= cgs_conv
 
-      for n in range(ene.size):
-        sigxy[n] *= ene[n]/105.4571
+#### Scaling??
+        for n in range(ene.size):
+          sigxy[n] *= ene[n]/105.4571
 
       fsigI = 'MCDi_%s%s.dat'%cart_indices
       data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))

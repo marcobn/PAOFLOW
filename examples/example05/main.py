@@ -30,7 +30,7 @@ def main():
   paoflow = PAOFLOW.PAOFLOW(savedir='pt.save')
   paoflow.projectability()
   paoflow.pao_hamiltonian()
-  paoflow.bands(ibrav=2)
+  paoflow.bands(ibrav=2, nk=2000)
   paoflow.spin_operator(sh=[0,1,2], nl=[1,1,1])
   paoflow.topology(Berry=True, eff_mass=True, spin_Hall=True, spol=2, ipol=0, jpol=1)
   paoflow.interpolated_hamiltonian()

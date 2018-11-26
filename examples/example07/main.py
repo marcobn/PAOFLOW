@@ -31,7 +31,7 @@ def main():
   paoflow.projectability(pthr=.97)
   paoflow.pao_hamiltonian(non_ortho=True)
   paoflow.add_external_fields()
-  paoflow.bands(ibrav=2)
+  paoflow.bands(ibrav=2, nk=2000)
   paoflow.interpolated_hamiltonian()
   paoflow.pao_eigh()
   paoflow.gradient_and_momenta()

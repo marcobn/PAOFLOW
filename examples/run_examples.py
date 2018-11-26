@@ -21,7 +21,7 @@ def get_exeCmd(engine, calcType,inputFile):
 #################### User defined parameters ####################
     execPrefix = "mpirun -np 2"
     execPostfix = " "
-    QE_path = "/Users/marco/Local/Programs//qe-6.2.1/bin/"
+    QE_path = "/Users/marco/Local/Programs/qe-6.2.1/bin/"
     PAO_path = "python /Users/marco/Local/Programs/PAOFLOW/src/"
 
 
@@ -31,9 +31,8 @@ def get_exeCmd(engine, calcType,inputFile):
 ################ end of user defined parameters #################
 ################ DO NOT MODIFY BELOW THIS POINT #################
 
-
     if engine=='PAO':
-        execDict={'PAO':'main.py ./'}
+        execDict={'PAO':'main.py '}
         exeDir = PAO_path
 
     executable = execDict[calcType]
@@ -41,9 +40,9 @@ def get_exeCmd(engine, calcType,inputFile):
 
 
     if engine=='qe':
-        command  = '%s %s < %s %s >  %s' % ( execPrefix, os.path.join(exeDir, executable),inputFile, execPostfix, outputFile )
+        command  = '%s %s < %s %s > %s'%(execPrefix, os.path.join(exeDir,executable), inputFile, execPostfix, outputFile)
     else:
-        command  = '%s %s %s >  %s' % (execPrefix, os.path.join(exeDir, executable),execPostfix, outputFile )
+        command  = '%s %s %s %s > %s'%(execPrefix, exeDir, executable, execPostfix, outputFile)
 
     return command
 

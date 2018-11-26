@@ -38,7 +38,7 @@ def main():
   correction_Hubbard[17:20] = 2.31
   paoflow.add_external_fields(HubbardU=correction_Hubbard)
 
-  paoflow.bands(ibrav=2)
+  paoflow.bands(ibrav=2, nk=2000)
   paoflow.interpolated_hamiltonian(nfft1=24, nfft2=24, nfft3=24)
   paoflow.pao_eigh()
   paoflow.gradient_and_momenta()
