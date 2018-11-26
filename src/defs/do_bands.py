@@ -30,11 +30,11 @@ def bands_calc ( data_controller ):
   kq_aux = scatter_full(arrays['kq'].T, npool).T
  
 ## Ortho before bands
-##  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller))
-  Hks_aux = band_loop_H(data_controller)
+##  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller, kq_aux))
+  Hks_aux = band_loop_H(data_controller, kq_aux)
 
-  E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float,order="C")
-  v_kp_aux = np.zeros((kq_aux.shape[1],nawf,nawf,nspin), dtype=complex,order="C")
+  E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float, order="C")
+  v_kp_aux = np.zeros((kq_aux.shape[1],nawf,nawf,nspin), dtype=complex, order="C")
 
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
@@ -48,17 +48,18 @@ def bands_calc ( data_controller ):
   return E_kp_aux, v_kp_aux
 
 
-def band_loop_H ( data_controller ):
+def band_loop_H ( data_controller, kq_aux ):
   import numpy as np
 
   arrays,attributes = data_controller.data_dicts()
 
+  nksize = kq_aux.shape[1]
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
   arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,attributes['nkpnts'],nspin), order='C')
-  kdot = np.tensordot(arrays['R'], 2.0j*np.pi*arrays['kq'], axes=([1],[0]))
+  kdot = np.tensordot(arrays['R'], 2.0j*np.pi*kq_aux, axes=([1],[0]))
   np.exp(kdot, kdot)
-  Haux = np.zeros((nawf,nawf,arrays['kq'].shape[1],nspin), dtype=complex, order="C")
+  Haux = np.zeros((nawf,nawf,nksize,nspin), dtype=complex, order="C")
 
   for ispin in range(nspin):
     Haux[:,:,:,ispin] = np.tensordot(arrays['HRs'][:,:,:,ispin], kdot, axes=([2],[0]))
@@ -69,7 +70,7 @@ def band_loop_H ( data_controller ):
   return Haux
 
 
-def band_loop_S ( data_controller ):
+def band_loop_S ( data_controller, kq_aux ):
   import cmath
   import numpy as np
 
@@ -77,7 +78,7 @@ def band_loop_S ( data_controller ):
 
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
-  nsize = arrays['kq'].shape[1]
+  nsize = kq_aux.shape[1]
   Saux  = np.zeros((nawf,nawf,nsize), dtype=complex)
 
   for ik in range(nsize):
@@ -85,7 +86,7 @@ def band_loop_S ( data_controller ):
       for j in range(nk2):
         for k in range(nk3):
 #### Why cmath here?
-          phase = arrays['R_wght'][arrays['idx'][i,j,k]]*cmath.exp(2.0*np.pi*arrays['kq'][:,ik].dot(arrays['R'][arrays['idx'][i,j,k],:])*1j)
+          phase = arrays['R_wght'][arrays['idx'][i,j,k]]*cmath.exp(2.0*np.pi*kq_aux[:,ik].dot(arrays['R'][arrays['idx'][i,j,k],:])*1j)
           Saux[:,:,ik] += phase*arrays['SRs'][:,:,i,j,k]
 
   return Saux

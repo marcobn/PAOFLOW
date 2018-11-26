@@ -30,7 +30,7 @@ def main():
   paoflow = PAOFLOW.PAOFLOW(savedir='silicon.save', smearing='gauss', npool=1)
   paoflow.projectability()
   paoflow.pao_hamiltonian()
-  paoflow.bands(ibrav=2)
+  paoflow.bands(ibrav=2, nk=2000)
   paoflow.interpolated_hamiltonian()
   paoflow.pao_eigh()
   paoflow.gradient_and_momenta()

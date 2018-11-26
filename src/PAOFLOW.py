@@ -180,6 +180,7 @@ class PAOFLOW:
     get_K_grid_fft(self.data_controller)
     self.report_module_time('k -> R')
 
+#### Band Orthogonalization?
     if non_ortho:
       from .defs.do_ortho import do_orthogonalize
 
@@ -256,29 +257,34 @@ class PAOFLOW:
 
     do_bands(self.data_controller)
 
-    if(arrays['kq'].shape[1] == (attr['nk1']+attr['nk2']+attr['nk3']) ):
-      print('The bands kpath and nscf calculations have the same size : spintexture calculation could be wrong\n')
-      print('Modify nk\n')
+    if self.rank == 0 and arrays['kq'].shape[1] == attr['nkpnts']:
+      print('WARNING: The bands kpath and nscf calculations have the same size.')
+      print('Spin Texture calculation could be wrong. Modify \'nk\'\n')
 
     E_kp = gather_full(arrays['E_k'], attr['npool'])
     self.data_controller.write_bands(fname, E_kp)
     E_kp = None
 
     self.report_module_time('Bands')
-  def wave_function_projection (self,dimension=3):
-    from defs.do_wave_function_site_projection import wave_function_site_projection
+
+
+
+  def wave_function_projection ( self, dimension=3 ):
+    from .defs.do_wave_function_site_projection import wave_function_site_projection
+
     wave_function_site_projection(self.data_controller)
     self.report_module_time('wave_function_projection')
-  def doubling_Hamiltonian (self, nx , ny, nz):
-    from defs.do_doubling import doubling_HRs
+
+
+
+  def doubling_Hamiltonian ( self, nx , ny, nz ):
+    from .defs.do_doubling import doubling_HRs
     
-#   arry,attr = self.data_controller.data_dicts()
     arrays,attr = self.data_controller.data_dicts()
-    attr['nx'] = nx
-    attr['ny'] = ny
-    attr['nz'] = nz
+    attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
     
     doubling_HRs(self.data_controller)
+
     # Broadcasting the modified arrays
     #arry['HRs'] = comm.Bcast(arry['HRs'],root=0)
     #self.data_controller.broadcast_single_array('HRs')
@@ -296,16 +302,18 @@ class PAOFLOW:
 
     self.report_module_time('doubling_Hamiltonian')
   
-  def cutting_Hamiltonian (self, x=False , y=False, z=False):
+
+
+  def cutting_Hamiltonian ( self, x=False , y=False, z=False ):
     arry,attr = self.data_controller.data_dicts()
     
-    if ( x == True):
+    if x:
         for i in range(attr['nk1']-1,0,-1):
             arry['HRs'] = np.delete(arry['HRs'],i,2)
-    if ( y == True):
+    if y:
         for i in range(attr['nk2']-1,0,-1):
             arry['HRs'] = np.delete(arry['HRs'],i,3)
-    if ( z == True):
+    if z:
         for i in range(attr['nk3']-1,0,-1):
             arry['HRs'] = np.delete(arry['HRs'],i,4)
 
