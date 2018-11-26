@@ -140,7 +140,7 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       for ispin in range(dks[4]):
         pksp_i[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = perturb_split(arry['dHksp'][ik,ipol,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
 
-    ene,ahc,Om_k = do_spin_Berry_curvature(data_controller, pksp_i, pksp_j, ipol, jpol)
+    ene,ahc,Om_k = do_spin_Berry_curvature(data_controller, pksp_i, pksp_j)
 
     if rank == 0:
       cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
