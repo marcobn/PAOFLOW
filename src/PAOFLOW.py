@@ -209,14 +209,17 @@ class PAOFLOW:
 
 
 
-  def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
+  def z2_pack ( self, fname='z2pack_hamiltonian.dat', key='HRs' ):
 
     attr,arry = self.data_controller.data_dicts()
 
-    if 'HRs' not in arry:
-      print('HRs must first be calculated with \'build_pao_hamiltonian\'')
-    else:
-      self.data_controller.write_z2pack(fname)
+    try:
+      self.data_controller.write_z2pack(fname, arry[key])
+    except Exception as e:
+      self.data_controller.report_exception()
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+      raise e
 
 
   def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
@@ -308,14 +311,14 @@ class PAOFLOW:
     arry,attr = self.data_controller.data_dicts()
     
     if x:
-        for i in range(attr['nk1']-1,0,-1):
-            arry['HRs'] = np.delete(arry['HRs'],i,2)
+      for i in range(attr['nk1']-1,0,-1):
+        arry['HRs'] = np.delete(arry['HRs'],i,2)
     if y:
-        for i in range(attr['nk2']-1,0,-1):
-            arry['HRs'] = np.delete(arry['HRs'],i,3)
+      for i in range(attr['nk2']-1,0,-1):
+        arry['HRs'] = np.delete(arry['HRs'],i,3)
     if z:
-        for i in range(attr['nk3']-1,0,-1):
-            arry['HRs'] = np.delete(arry['HRs'],i,4)
+      for i in range(attr['nk3']-1,0,-1):
+        arry['HRs'] = np.delete(arry['HRs'],i,4)
 
     _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
     attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']

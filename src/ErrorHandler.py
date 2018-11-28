@@ -16,12 +16,17 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def report_exception ( ):
-  import sys
-  import traceback
 
-  etype, evalue, etb = sys.exc_info()
-  print('Exception: ', etype)
-  print(evalue)
-  traceback.print_tb(etb)
- 
+class ErrorHandler:
+
+  def __init__ ( self ):
+    pass
+
+  def report_exception ( self ):
+    import sys
+    import traceback
+
+    etype, evalue, etb = sys.exc_info()
+    print('Exception: ', etype)
+    print(evalue)
+    traceback.print_tb(etb)

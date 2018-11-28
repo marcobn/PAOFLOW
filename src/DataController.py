@@ -22,10 +22,12 @@ class DataController:
 
   data_arrays = data_attributes = None
 
+  error_handler = report_exception = None
+
   def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose ):
     import os
     from mpi4py import MPI
-    from .defs.report_exception import report_exception
+    from ErrorHandler import ErrorHandler
 
     self.comm = MPI.COMM_WORLD
     self.rank = self.comm.Get_rank()
@@ -35,6 +37,9 @@ class DataController:
       if self.rank == 0:
         print('Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
       quit()
+
+    self.error_handler = ErrorHandler()
+    self.report_exception = self.error_handler.report_exception
 
     if self.rank == 0:
       self.data_arrays = arrays = {}
@@ -58,31 +63,32 @@ class DataController:
 
       self.add_default_arrays()
 
+      attributes['abort_on_exception'] = True
+
       # Read inputfile, if it exsts
       try:
         if inputfile != None:
           self.read_pao_inputfile()
         self.read_qe_output()
       except Exception as e:
-        report_exception()
+        self.report_exception()
         self.comm.Abort()
 
-    # Add default Hubbard correction
-## Necessary?
-#    if self.rank == 0:
-#      self.data_arrays['HubbardU'] = np.zeros(attributes['nawf'], dtype=float)
-
     # Broadcast Data
-    self.broadcast_data_arrays()
-    self.broadcast_data_attributes()
+    self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
+    self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
 
 
   def data_dicts ( self ):
     return(self.data_arrays, self.data_attributes)
 
 
-  def clean_data ( self ):
-    print(self.data_arrays.keys())
+  def print_data ( self ):
+    if self.rank == 0:
+      print('\nData Attributes:')
+      print(self.data_attributes.keys())
+      print('\nData Arrays:')
+      print(self.data_arrays.keys())
 
 
   def add_default_arrays ( self ):
@@ -178,7 +184,7 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_z2pack ( self, fname ):
+  def write_z2pack ( self, fname, key ):
     if self.rank == 0:
       from os.path import join
 
@@ -233,7 +239,7 @@ class DataController:
               for m in range(nawf):
                 for l in range(nawf):
                   # l+1,m+1 just to start from 1 not zero
-                  f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry['HRs'][l,m,i,j,k,0].real,arry['HRs'][l,m,i,j,k,0].imag))
+                  f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry[key][l,m,i,j,k,0].real,arry[key][l,m,i,j,k,0].imag))
     self.comm.Barrier()
 
 
@@ -252,20 +258,6 @@ class DataController:
         self.comm.send(self.data_attributes[key], dest=i)
     else:
       self.data_attributes[key] = self.comm.recv(source=0)
-
-  def broadcast_data_attributes ( self ):
-    if self.rank == 0:
-      for i in range(1,self.size):
-        self.comm.send(self.data_attributes, dest=i)
-    else:
-      self.data_attributes = self.comm.recv(source=0)
-
-  def broadcast_data_arrays ( self ):
-    if self.rank == 0:
-      for i in range(1,self.size):
-        self.comm.send(self.data_arrays, dest=i)
-    else:
-      self.data_arrays = self.comm.recv(source=0)
 
   def scatter_data_array ( self, key ):
     from .defs.communication import scatter_array
