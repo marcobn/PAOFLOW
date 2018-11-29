@@ -63,7 +63,7 @@ class DataController:
 
       self.add_default_arrays()
 
-      attributes['abort_on_exception'] = True
+      attributes['abort_on_exception'] = False#True
 
       # Read inputfile, if it exsts
       try:
@@ -75,8 +75,8 @@ class DataController:
         self.comm.Abort()
 
     # Broadcast Data
-    self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
-    self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
+    self.broadcast_data_arrays()
+    self.broadcast_data_attributes()
 
 
   def data_dicts ( self ):
@@ -184,11 +184,12 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_z2pack ( self, fname, key ):
+  def write_z2pack ( self, fname ):
     if self.rank == 0:
+      import numpy as np
       from os.path import join
 
-      attr,arry = self.data_dicts()
+      arry,attr = self.data_dicts()
 
       with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
 
@@ -205,18 +206,14 @@ class DataController:
         nlines = nkpts//nl # number of lines
         nlast = nkpts%nl   # number of items of laste line if needed
 
-        # the weight is always one
-        kq_wght = np.ones(nkpts, dtype=int)
-
         # print each cell weight
-        j = 0
         for i in range(nlines):
-          j = i * nl
-          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][j:j+nl]) + '\n')
+          jp = i * nl
+          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
 
         # Last line if needed
         if nlast != 0:
-          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][nlines*nl:nkpts]) + '\n')
+          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][nlines*nl,nkpts]) + '\n')
 
 #### Can be condensed
         for i in range(nk1):
@@ -239,7 +236,7 @@ class DataController:
               for m in range(nawf):
                 for l in range(nawf):
                   # l+1,m+1 just to start from 1 not zero
-                  f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry[key][l,m,i,j,k,0].real,arry[key][l,m,i,j,k,0].imag))
+                  f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry['HRs'][l,m,i,j,k,0].real,arry['HRs'][l,m,i,j,k,0].imag))
     self.comm.Barrier()
 
 
@@ -258,6 +255,20 @@ class DataController:
         self.comm.send(self.data_attributes[key], dest=i)
     else:
       self.data_attributes[key] = self.comm.recv(source=0)
+
+  def broadcast_data_attributes ( self ):
+    if self.rank == 0:
+      for i in range(1,self.size):
+        self.comm.send(self.data_attributes, dest=i)
+    else:
+      self.data_attributes = self.comm.recv(source=0)
+
+  def broadcast_data_arrays ( self ):
+    if self.rank == 0:
+      for i in range(1,self.size):
+        self.comm.send(self.data_arrays, dest=i)
+    else:
+      self.data_arrays = self.comm.recv(source=0)
 
   def scatter_data_array ( self, key ):
     from .defs.communication import scatter_array

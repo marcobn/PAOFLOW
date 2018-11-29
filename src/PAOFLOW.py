@@ -209,17 +209,16 @@ class PAOFLOW:
 
 
 
-  def z2_pack ( self, fname='z2pack_hamiltonian.dat', key='HRs' ):
+  def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
 
-    attr,arry = self.data_controller.data_dicts()
+    arry,attr = self.data_controller.data_dicts()
 
     try:
-      self.data_controller.write_z2pack(fname, arry[key])
-    except Exception as e:
-      self.data_controller.report_exception()
+      self.data_controller.write_z2pack(fname)
+    except:
+      self.data_controller.report_exception('z2_pack')
       if attr['abort_on_exception']:
         self.comm.Abort()
-      raise e
 
 
   def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):

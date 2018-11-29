@@ -22,11 +22,14 @@ class ErrorHandler:
   def __init__ ( self ):
     pass
 
-  def report_exception ( self ):
+  def report_exception ( self, mname, keys=[] ):
     import sys
     import traceback
+    from .defs.module_prerequisites import key_error_strings
 
     etype, evalue, etb = sys.exc_info()
+    if etype is KeyError:
+      print('kEyeRRor')
     print('Exception: ', etype)
     print(evalue)
     traceback.print_tb(etb)

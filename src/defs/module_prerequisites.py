@@ -1,10 +1,9 @@
 
 
-#+  def z2_pack ( self, fname='z2pack_hamiltonian.dat', key='HRs' ):
 
-#     attr,arry = self.data_controller.data_dicts()
+module_prerequisites = { 'z2_pack' : 'pao_hamiltonian'}
 
-#-    if 'HRs' not in arry:
-#-      print('HRs must first be calculated with \'build_pao_hamiltonian\'')
-#-    else:
-#-      self.data_controller.write_z2pack(fname)
+
+key_error_strings = { 'HRs'  : 'HRs must first be calculated with \'build_pao_hamiltonian\'',\
+                      'Hks'  : 'Hks must first be calculated with \'build_pao_hamiltonian\'',\
+                      '1' : '2' }
