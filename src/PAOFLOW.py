@@ -31,8 +31,26 @@ class PAOFLOW:
   # Overestimate factor for guessing memory requirements
   gb_fudge_factor = 10.
 
+  # Function container for ErrorHandler's method
+  report_exception = None
+
 
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
+    '''
+    Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
+
+    Arguments:
+        workpath (str): Path to the working directory
+        outputdir (str): Name of the output directory (created in the working directory path)
+        inputfile (str): (optional) Name of the xml inputfile
+        savedir (str): QE .save directory
+        smearing (str): Smearing type (None, m-p, gauss)
+        npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
+        verbose (bool): False supresses debugging output
+
+    Returns:
+        None
+    '''
     from time import time
     from mpi4py import MPI
     from .defs.header import header
@@ -62,6 +80,7 @@ class PAOFLOW:
 
     # Data Attributes
     attr = self.data_controller.data_attributes
+    self.report_exception = self.data_controller.report_exception
 
     # Check for CUDA FFT Libraries
 ## CUDA not yet supported in PAOFLOW_CLASS
@@ -121,6 +140,15 @@ class PAOFLOW:
 
 
   def finish_execution ( self ):
+    '''
+    Finish the PAOFLOW execution. Print out run time and maximum memory usage
+
+    Arguments:
+        None
+
+    Returns:
+        None
+    '''
     import resource
     from time import time
     from mpi4py import MPI
@@ -143,6 +171,16 @@ class PAOFLOW:
 
 
   def projectability ( self, pthr=0.95, shift='auto' ):
+    '''
+    Calculate the Projectability Matrix to determine how many states need to be shifted
+
+    Arguments:
+        pthr (float): The minimum allowed projectability for high projectability states
+        shift (str or float): If 'auto' the shift will be automatic. Otherwise the shift will be the value of 'shift'
+
+    Returns:
+        None
+    '''
     from .defs.do_projectability import do_projectability
 
     attr = self.data_controller.data_attributes
@@ -156,6 +194,18 @@ class PAOFLOW:
 
 
   def pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
+    '''
+    Construct the Tight Binding Hamiltonian
+    Yields 'HRs', 'Hks' and 'kq_wght'
+
+    Arguments:
+        non_ortho (bool): If True the Hamiltonian will be Orthogonalized after construction
+        shift_type (int): Shift type [ 0-(PRB 2016), 1-(PRB 2013), 2-No Shift ] 
+
+    Returns:
+        None
+    
+    '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
 
@@ -190,6 +240,18 @@ class PAOFLOW:
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
+    '''
+    Add External Fields and Corrections to the Hamiltonian 'HRs'
+
+    Arguments:
+        Efield (ndarray): 1D array of Efield values
+        Bfield (ndarray): 1D array of Bfield values
+        HubbardU (ndarray): 1D array of Hubbard Correctional values
+
+    Returns:
+        None
+    
+    '''
 
     arry,attr = self.data_controller.data_dicts()
 
@@ -210,18 +272,46 @@ class PAOFLOW:
 
 
   def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
+    '''
+    Write 'HRs' to file for use with Z2 Pack
 
-    arry,attr = self.data_controller.data_dicts()
+    Arguments:
+        fname (str): File name for the Hamiltonian in the Z2 Pack format
+
+    Returns:
+        None
+
+    '''
+
+    irry,attr = self.data_controller.data_dicts()
 
     try:
       self.data_controller.write_z2pack(fname)
     except:
-      self.data_controller.report_exception('z2_pack')
+      self.report_exception('z2_pack')
       if attr['abort_on_exception']:
         self.comm.Abort()
 
 
   def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
+    '''
+    Compute the electronic band structure
+
+    Arguments:
+        ibrav (int): Crystal structure (following the specifications of QE)
+        spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+        fname (str): File name for the band output
+        nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
+        theta (int): Spin orbit angle
+        phi (int): Spin orbit azimuthal angle
+        lambda_p (list of floats):
+        lambda_d (list of float):
+        orb_pseudo (list of str): Orbitals included in the Pseudopotential
+
+    Returns:
+        None
+
+    '''
     from .defs.do_bands import do_bands
     from .defs.communication import gather_full
 
@@ -272,6 +362,16 @@ class PAOFLOW:
 
 
   def wave_function_projection ( self, dimension=3 ):
+    '''
+    Marcio, can you write something here please?
+    Please check the argument descriptions also, I half guessed.
+
+    Arguments:
+        dimension (int): Dimensionality of the system
+
+    Returns:
+        None
+    '''
     from .defs.do_wave_function_site_projection import wave_function_site_projection
 
     wave_function_site_projection(self.data_controller)
@@ -280,6 +380,18 @@ class PAOFLOW:
 
 
   def doubling_Hamiltonian ( self, nx , ny, nz ):
+    '''
+    Marcio, can you write something here please?
+    Please check the argument descriptions also
+
+    Arguments:
+        nx (bool): Number of doubles in first dimension
+        ny (bool): Number of doubles in second dimension
+        nz (bool): Number of doubles in third dimension
+
+    Returns:
+        None
+    '''
     from .defs.do_doubling import doubling_HRs
     
     arrays,attr = self.data_controller.data_dicts()
@@ -307,6 +419,17 @@ class PAOFLOW:
 
 
   def cutting_Hamiltonian ( self, x=False , y=False, z=False ):
+    '''
+    Marcio, can you write something here please?
+
+    Arguments:
+        x (bool): If True, cut along the first dimension
+        y (bool): If True, cut along the second dimension
+        z (bool): If True, cut along the third dimension
+
+    Returns:
+        None
+    '''
     arry,attr = self.data_controller.data_dicts()
     
     if x:
@@ -325,6 +448,17 @@ class PAOFLOW:
 
 
   def spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
+    '''
+    Calculate the Spin Operator for calculations involving spin
+
+    Arguments:
+        spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+        sh (list of ints): The Shell levels
+        nl (list of ints): The Shell level occupations
+
+    Returns:
+        None
+    '''
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -359,6 +493,20 @@ class PAOFLOW:
 
 
   def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
+    '''
+    Calculate the Band Topology along the k-path 'kq'
+
+    Arguments:
+        eff_mass (bool): If True calculate the Effective Mass Tensor
+        Berry (bool): If True calculate the Berry Curvature
+        spin_Hall (bool): If True calculate Spin Hall Conductivity
+        spol (int): Spin polarization
+        ipol (int): In plane dimension 1
+        jpol (int): In plane dimension 2
+
+    Returns:
+        None
+    '''
     from .defs.do_topology import do_topology
     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
     # curvature operators along the path in the IBZ from do_topology_calc
@@ -394,6 +542,18 @@ class PAOFLOW:
 
 
   def interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
+    '''
+    Calculate the interpolated Hamiltonian with the method of zero padding
+    Yields 'Hksp'
+
+    Arguments:
+        nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
+        nfft2 (int): Desired size of the interpolated Hamiltonian's second dimension
+        nfft3 (int): Desired size of the interpolated Hamiltonian's third dimension
+
+    Returns:
+        None
+    '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_double_grid import do_double_grid
     from .defs.communication import gather_scatter,scatter_full
@@ -467,14 +627,24 @@ class PAOFLOW:
 
 
   def pao_eigh ( self, bval=0 ):
+    '''
+    Calculate the Eigen values and vectors of k-space Hamiltonian 'Hksp'
+    Yields 'E_k' and 'v_k'
+
+    Arguments:
+        bval (int): Top valence band number (nelec/2) to correctly shift Eigenvalues
+
+    Returns:
+        None
+    '''
+
     from .defs.do_eigh import do_pao_eigh
     from .defs.communication import gather_scatter,scatter_full,gather_full
 
     arrays,attr = self.data_controller.data_dicts()
 
     del arrays['HRs']
-    if 'bval' not in attr:
-      attr['bval'] = bval
+    if 'bval' not in attr: attr['bval'] = bval
 
     if 'Hksp' not in arrays:
       if self.rank == 0:
@@ -508,6 +678,16 @@ class PAOFLOW:
 
 
   def gradient_and_momenta ( self ):
+    '''
+    Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
+    Yields 'dHksp'
+
+    Arguments:
+        None
+
+    Returns:
+        None
+    '''
     from .defs.do_gradient import do_gradient
     from .defs.do_momentum import do_momentum
     from .defs.communication import gather_scatter
@@ -530,9 +710,6 @@ class PAOFLOW:
     snawf,_,nspin = arrays['Hksp'].shape
     arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nk1'],attr['nk2'],attr['nk3'],nspin))
 
-    #----------------------
-    # Compute the gradient of the k-space Hamiltonian
-    #----------------------
     do_gradient(self.data_controller)
 
 ########### PARALLELIZATION
@@ -552,6 +729,16 @@ class PAOFLOW:
 
 
   def adaptive_smearing ( self, smearing='gauss' ):
+    '''
+    Calculate the Adaptive Smearing parameters
+    Yields 'deltakp' and 'deltakp2'
+
+    Arguments:
+        smearing (str): Smearing type (m-p and gauss)
+
+    Returns:
+        None
+    '''
     from .defs.do_adaptive_smearing import do_adaptive_smearing
 
     attr = self.data_controller.data_attributes
@@ -569,6 +756,20 @@ class PAOFLOW:
 
 
   def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
+    '''
+    Calculate the Density of States and Projected Density of States
+      If Adaptive Smearing has been performed, the Adaptive DoS will be calculated
+
+    Arguments:
+        do_dos (bool): Perform Density of States calculation
+        do_pdos (bool): Perform Projected Density of States calculation
+        delta (float): The gaussian width
+        emin (float): The minimum energy in the range to be computed
+        emax (float): The maximum energy in the range to be computed
+
+    Returns:
+        None
+    '''
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -622,6 +823,16 @@ class PAOFLOW:
 
 
   def fermi_surface ( self, fermi_up=1., fermi_dw=-1. ):
+    '''
+    Calculate the Fermi Surface
+
+    Arguments:
+        fermi_up (float): The upper limit of the occupied energy range
+        fermi_dw (float): The lower limit of the occupied energy range
+
+    Returns:
+        None
+    '''
     from .defs.do_fermisurf import do_fermisurf
 
     attr = self.data_controller.data_attributes
@@ -638,6 +849,16 @@ class PAOFLOW:
 
 
   def spin_texture ( self, fermi_up=1., fermi_dw=-1. ):
+    '''
+    Calculate the Spin Texture
+
+    Arguments:
+        fermi_up (float): The upper limit of the occupied energy range
+        fermi_dw (float): The lower limit of the occupied energy range
+
+    Returns:
+        None
+    '''
     from .defs.do_spin_texture import do_spin_texture
 
     arry,attr = self.data_controller.data_dicts()
@@ -666,6 +887,20 @@ class PAOFLOW:
 
 
   def spin_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
+    '''
+    Calculate the Spin Hall Conductivity
+
+    Arguments:
+        do_ac (bool): True to calculate the Spic Circular Dichroism
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        fermi_up (float): The upper limit of the occupied energy range
+        fermi_dw (float): The lower limit of the occupied energy range
+        s_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+
+    Returns:
+        None
+    '''
     from .defs.do_Hall import do_spin_Hall
 
     arrays,attr = self.data_controller.data_dicts()
@@ -688,6 +923,20 @@ class PAOFLOW:
 
 
   def anomalous_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
+    '''
+    Calculate the Anomalous Hall Conductivity
+
+    Arguments:
+        do_ac (bool): True to calculate the Magnetic Circular Dichroism
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        fermi_up (float): The upper limit of the occupied energy range
+        fermi_dw (float): The lower limit of the occupied energy range
+        a_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and xyz use [[0,0,0],[0,1,2]])
+
+    Returns:
+        None
+    '''
     from .defs.do_Hall import do_anomalous_Hall
 
     arrays,attr = self.data_controller.data_dicts()
@@ -705,6 +954,20 @@ class PAOFLOW:
 
 
   def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None ):
+    '''
+    Calculate the Transport Properties
+
+    Arguments:
+        tmin (float): The minimum temperature in the range
+        tmax (float): The maximum temperature in the range
+        tstep (float): The step size for temperature increments
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        ne (float): The number of energy increments
+
+    Returns:
+        None
+    '''
     from .defs.do_transport import do_transport
 
     arrays,attr = self.data_controller.data_dicts()
@@ -712,41 +975,62 @@ class PAOFLOW:
     temps = np.arange(tmin, tmax+1.e-10, tstep)
     ene = np.arange(emin, emax, (emax-emin)/float(ne))
 
-    bnd = attr['bnd']
-    nspin = attr['nspin']
-    snktot = arrays['pksp'].shape[0]
-
     if t_tensor is not None:
       arrays['t_tensor'] = np.array(t_tensor)
 
-    # Compute Velocities
-    velkp = np.zeros((snktot,3,bnd,nspin), dtype=float)
-    for n in range(bnd):
-      velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
+    try:
 
-    do_transport(self.data_controller, temps, ene, velkp)
-    velkp = None
+      # Compute Velocities
+      velkp = np.moveaxis(np.diagonal(np.real(arrays['pksp']),axis1=2,axis2=3), 3, 2)
+
+      do_transport(self.data_controller, temps, ene, velkp)
+      velkp = None
+    except:
+      self.report_exception('transport')
+
     self.report_module_time('Transport')
 
 
 
   def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+    '''
+    Calculate the Dielectric Tensor
+
+    Arguments:
+        metal (bool): True if system is metallic
+        kramerskronig (bool): True performs Kramers-Kronig integration to calculate epsr
+        temp (float): Temperature (default is Room Temperature)
+        delta (float): Smearing width for gaussian (if smearing is None)
+        emin (float): The minimum value of energy
+        emax (float): The maximum value of energy
+        ne (float): Number of energy values between emin and emax
+        d_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and xyz use [[0,0,0],[0,1,2]])
+
+    Returns:
+        None
+    '''
     from .defs.do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()
+
+
+    if temp is not None: attr['temp'] = temp
+    if 'delta' not in attr: attr['delta'] = delta
+    if 'metal' not in attr: attr['metal'] = metal
+    if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
+    if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
+
+    ene = np.arange(emin, emax, (emax-emin)/ne)
 
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
 
-    if temp is not None: attr['temp'] = temp
-    if 'delta' not in attr: attr['delta'] = delta
-    if 'metal' not in attr: attr['metal'] = metal
-    if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
+    try:
+      do_dielectric_tensor(self.data_controller, ene)
+    except:
+      self.report_exception('dielectric_tensor')
+      if attr['abort_on_exception']:
+        comm.Abort()
 
-    if d_tensor is not None:
-      arrays['d_tensor'] = np.array(d_tensor)
-
-    ene = np.arange(emin, emax, (emax-emin)/ne)
-    do_dielectric_tensor(self.data_controller, ene)
     self.report_module_time('Dielectric Tensor')

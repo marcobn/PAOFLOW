@@ -25,6 +25,20 @@ class DataController:
   error_handler = report_exception = None
 
   def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose ):
+    '''
+    Initialize the DataController
+
+    Arguments:
+        workpath (str): Path to the working directory
+        outputdir (str): Name of the output directory (created in the working directory path)
+        inputfile (str): (optional) Name of the xml inputfile
+        savedir (str): QE .save directory
+        smearing (str): Smearing type (None, m-p, gauss)
+        verbose (bool): False supresses debugging output
+
+    Returns:
+        None
+    '''
     import os
     from mpi4py import MPI
     from ErrorHandler import ErrorHandler
@@ -80,10 +94,28 @@ class DataController:
 
 
   def data_dicts ( self ):
+    '''
+    Get the data dictionaries
+
+    Arguments:
+        None
+
+    Returns:
+       (arrays, attributes): Tuple of two dictionaries, data_arrays and data_attributes 
+    '''
     return(self.data_arrays, self.data_attributes)
 
 
   def print_data ( self ):
+    '''
+    Print the data dictionary keys
+
+    Arguments:
+        None
+
+    Returns:
+        None
+    '''
     if self.rank == 0:
       print('\nData Attributes:')
       print(self.data_attributes.keys())
@@ -132,6 +164,17 @@ class DataController:
 
 
   def write_file_row_col ( self, fname, col1, col2 ):
+    '''
+    Write a file with 2 columns
+
+    Arguments:
+        fname (str): Name of the file (written to outputdir)
+        col1 (ndarray): 1D array of values for the rightmost column
+        col2 (ndarray): 1D array of values for the leftmost column
+
+    Returns:
+        None
+    '''
     if self.rank == 0:
       from os.path import join
       if len(col1) != len(col2):
@@ -151,17 +194,41 @@ class DataController:
 
 
   def write_bxsf ( self, fname, bands, nbnd ):
+    '''
+    Write a file in the bxsf format
+
+    Arguments:
+        fname (str): Name of the file (written to outputdir)
+        bands (ndarray): The data array of values to be written
+        nbnd (int): Number of values from array to write
+
+    Returns:
+        None
+    '''
+
+    attr = self.data_attributes
+
     if self.rank == 0:
       from .defs.write2bxsf import write2bxsf
 
-      if self.data_attributes['verbose']:
+      if attr['verbose']:
         print('Writing bxsf file: %s'%fname)
 
-      write2bxsf(self, fname, bands, nbnd)
+      write2bxsf(self, fname, bands, nbnd, attr['fermi_up'], attr['fermi_dw'])
     self.comm.Barrier()
 
 
   def write_bands ( self, fname, bands ):
+    '''
+    Write electronic band structure file
+
+    Arguments:
+        fname (str): Name of the file (written to outputdir)
+        bands (ndarray): Band data array (shape: (nk,nbnd,nspin))
+
+    Returns:
+        None
+    '''
     if self.rank == 0:
       from os.path import join
 
@@ -176,6 +243,16 @@ class DataController:
 
 
   def write_kpnts_path ( self, fname, kpnts ):
+    '''
+    Write the k-path through the BZ
+
+    Arguments:
+        fname (str): Name of the file (written to outputdir)
+        kpnts (ndarray): k-point path (shape: (3,nk))
+
+    Returns:
+        None
+    '''
     if self.rank == 0:
       from os.path import join
 
@@ -185,58 +262,73 @@ class DataController:
 
 
   def write_z2pack ( self, fname ):
-    if self.rank == 0:
-      import numpy as np
-      from os.path import join
+    '''
+    Write HRs in the Z2 Pack format
 
-      arry,attr = self.data_dicts()
+    Arguments:
+        fname (str): Name of the file (written to outputdir)
 
-      with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
+    Returns:
+        None
+    '''
+    try:
+      if self.rank == 0:
+        import numpy as np
+        from os.path import join
+  
+        arry,attr = self.data_dicts()
+  
+        with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
+  
+          nawf,nkpts = attr['nawf'],attr['nkpnts']
+          nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+  
+          f.write("PAOFLOW Generated \n")
+          f.write('%5d \n'%nawf)
+  
+          f.write('%5d \n'%nkpts)
+  
+          nl = 15 # z2pack read the weights in lines of 15 items
+  
+          nlines = nkpts//nl # number of lines
+          nlast = nkpts%nl   # number of items of laste line if needed
+  
+          # print each cell weight
+          for i in range(nlines):
+            jp = i * nl
+            f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
+  
+          # Last line if needed
+          if nlast != 0:
+            f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][nlines*nl,nkpts]) + '\n')
+  
+  #### Can be condensed
+          for i in range(nk1):
+            for j in range(nk2):
+              for k in range(nk3):
+                n = k + j*nk3 + i*nk2*nk3
+                Rx = float(i)/float(nk1)
+                Ry = float(j)/float(nk2)
+                Rz = float(k)/float(nk3)
+                if Rx >= 0.5: Rx=Rx-1.0
+                if Ry >= 0.5: Ry=Ry-1.0
+                if Rz >= 0.5: Rz=Rz-1.0
+                Rx -= int(Rx)
+                Ry -= int(Ry)
+                Rz -= int(Rz)
+                # the minus sign in Rx*nk1 is due to the Fourier transformation (Ri-Rj)
+                ix=-round(Rx*nk1,0)
+                iy=-round(Ry*nk2,0)
+                iz=-round(Rz*nk3,0)
+                for m in range(nawf):
+                  for l in range(nawf):
+                    # l+1,m+1 just to start from 1 not zero
+                    f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry['HRs'][l,m,i,j,k,0].real,arry['HRs'][l,m,i,j,k,0].imag))
+    except:
+      self.report_exception('z2_pack')
+      if self.data_attributes['abort_on_exception']:
+        self.comm.Abort()
 
-        nawf,nkpts = attr['nawf'],attr['nkpnts']
-        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-
-        f.write("PAOFLOW Generated \n")
-        f.write('%5d \n'%nawf)
-
-        f.write('%5d \n'%nkpts)
-
-        nl = 15 # z2pack read the weights in lines of 15 items
-
-        nlines = nkpts//nl # number of lines
-        nlast = nkpts%nl   # number of items of laste line if needed
-
-        # print each cell weight
-        for i in range(nlines):
-          jp = i * nl
-          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
-
-        # Last line if needed
-        if nlast != 0:
-          f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][nlines*nl,nkpts]) + '\n')
-
-#### Can be condensed
-        for i in range(nk1):
-          for j in range(nk2):
-            for k in range(nk3):
-              n = k + j*nk3 + i*nk2*nk3
-              Rx = float(i)/float(nk1)
-              Ry = float(j)/float(nk2)
-              Rz = float(k)/float(nk3)
-              if Rx >= 0.5: Rx=Rx-1.0
-              if Ry >= 0.5: Ry=Ry-1.0
-              if Rz >= 0.5: Rz=Rz-1.0
-              Rx -= int(Rx)
-              Ry -= int(Ry)
-              Rz -= int(Rz)
-              # the minus sign in Rx*nk1 is due to the Fourier transformation (Ri-Rj)
-              ix=-round(Rx*nk1,0)
-              iy=-round(Ry*nk2,0)
-              iz=-round(Rz*nk3,0)
-              for m in range(nawf):
-                for l in range(nawf):
-                  # l+1,m+1 just to start from 1 not zero
-                  f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry['HRs'][l,m,i,j,k,0].real,arry['HRs'][l,m,i,j,k,0].imag))
     self.comm.Barrier()
 
 

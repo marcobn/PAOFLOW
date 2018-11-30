@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def write2bxsf ( data_controller, fname, bands, nbnd, fermi_up=1., fermi_dw=-1. ):
+def write2bxsf ( data_controller, fname, bands, nbnd, fermi_up, fermi_dw ):
     import os
     import numpy as np
     from numpy import pi
