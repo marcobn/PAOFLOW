@@ -310,13 +310,11 @@ class PAOFLOW:
 
     '''
 
-    irry,attr = self.data_controller.data_dicts()
-
     try:
       self.data_controller.write_z2pack(fname)
     except:
       self.report_exception('z2_pack')
-      if attr['abort_on_exception']:
+      if self.data_controller.data_attributes['abort_on_exception']:
         self.comm.Abort()
 
 
@@ -410,7 +408,7 @@ class PAOFLOW:
       wave_function_site_projection(self.data_controller)
     except:
       self.report_exception('wave_function_projection')
-      if attr['abort_on_exception']:
+      if self.data_controller.data_attributes['abort_on_exception']:
         self.comm.Abort()
 
     self.report_module_time('wave_function_projection')
@@ -821,6 +819,8 @@ class PAOFLOW:
       do_adaptive_smearing(self.data_controller)
     except:
       self.report_exception('adaptive_smearing')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
     self.report_module_time('Adaptive Smearing')
 
 
