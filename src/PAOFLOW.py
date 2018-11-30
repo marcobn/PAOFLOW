@@ -188,7 +188,13 @@ class PAOFLOW:
     if 'pthr' not in attr: attr['pthr'] = pthr
     if 'shift' not in attr: attr['shift'] = shift
 
-    do_projectability(self.data_controller)
+    try:
+      do_projectability(self.data_controller)
+    except:
+      self.report_exception('projectability')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
     self.report_module_time('Projectability')
 
 
@@ -215,27 +221,42 @@ class PAOFLOW:
     if 'non_ortho' not in attr: attr['non_ortho'] = non_ortho
     if 'shift_type' not in attr: attr['shift_type'] = shift_type
 
-    do_build_pao_hamiltonian(self.data_controller)
+    try:
+      do_build_pao_hamiltonian(self.data_controller)
+    except:
+      self.report_module('pao_hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
     self.report_module_time('Building Hks')
 
     # Done with U
     del arrays['U']
 
-    do_Hks_to_HRs(self.data_controller)
-#### PARALLELIZATION
-    self.data_controller.broadcast_single_array('HRs')
-    if attr['non_ortho']:
-      self.data_controller.broadcast_single_array('SRs')
+    try:
+      do_Hks_to_HRs(self.data_controller)
+###### PARALLELIZATION
+      self.data_controller.broadcast_single_array('HRs')
+      if attr['non_ortho']:
+        self.data_controller.broadcast_single_array('SRs')
 
-    get_K_grid_fft(self.data_controller)
+      get_K_grid_fft(self.data_controller)
+    except:
+      self.report_exception('pao_hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
     self.report_module_time('k -> R')
 
-#### Band Orthogonalization?
-    if non_ortho:
-      from .defs.do_ortho import do_orthogonalize
+    try:
+###### Band Orthogonalization?
+      if non_ortho:
+        from .defs.do_ortho import do_orthogonalize
 
-      do_orthogonalize(self.data_controller)
-      self.report_module_time('Orthogonalize')
+        do_orthogonalize(self.data_controller)
+    except:
+      self.report_exception('pao_hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+    self.report_module_time('Orthogonalize')
 
 
 
@@ -261,12 +282,18 @@ class PAOFLOW:
 
     Efield,Bfield,HubbardU = arry['Efield'],arry['Bfield'],arry['HubbardU']
 
-    # Add external fields or non scf ACBN0 correction
-    if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
-      from .defs.add_ext_field import add_ext_field
-      add_ext_field(self.data_controller)
-      if attr['verbose']:
-        print('External Fields Added')
+    try:
+      # Add external fields or non scf ACBN0 correction
+      if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
+        from .defs.add_ext_field import add_ext_field
+        add_ext_field(self.data_controller)
+        if attr['verbose']:
+          print('External Fields Added')
+    except:
+      self.report_exception('add_external_fields')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
     self.comm.Barrier()
 
 
@@ -331,31 +358,36 @@ class PAOFLOW:
     #----------------------------------------
     # Compute bands with spin-orbit coupling
     #----------------------------------------
-    if self.rank == 0 and attr['do_spin_orbit']:
-      from .defs.do_spin_orbit import do_spin_orbit_bands
+    try:
+      if self.rank == 0 and attr['do_spin_orbit']:
+        from .defs.do_spin_orbit import do_spin_orbit_bands
 
-      natoms = attr['natoms']
-      if 'phi' not in attr: attr['phi'] = phi
-      if 'theta' not in attr: attr['theta'] = theta
-      if 'lambda_p' not in arrays: arrays['lambda_p'] = lambda_p[:]
-      if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
-      if 'orb_pseudo' not in arrays: arrays['orb_pseudo'] = orb_pseudo[:]
-      if len(arrays['lambda_p']) != natoms or len(arrays['lambda_p']) != natoms:
-        if self.rank == 0:  
-          print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
-        quit()
+        natoms = attr['natoms']
+        if 'phi' not in attr: attr['phi'] = phi
+        if 'theta' not in attr: attr['theta'] = theta
+        if 'lambda_p' not in arrays: arrays['lambda_p'] = lambda_p[:]
+        if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
+        if 'orb_pseudo' not in arrays: arrays['orb_pseudo'] = orb_pseudo[:]
+        if len(arrays['lambda_p']) != natoms or len(arrays['lambda_p']) != natoms:
+          if self.rank == 0:  
+            print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
+          quit()
 
-      do_spin_orbit_bands(self.data_controller)
+        do_spin_orbit_bands(self.data_controller)
 
-    do_bands(self.data_controller)
+      do_bands(self.data_controller)
 
-    if self.rank == 0 and arrays['kq'].shape[1] == attr['nkpnts']:
-      print('WARNING: The bands kpath and nscf calculations have the same size.')
-      print('Spin Texture calculation could be wrong. Modify \'nk\'\n')
+      if self.rank == 0 and arrays['kq'].shape[1] == attr['nkpnts']:
+        print('WARNING: The bands kpath and nscf calculations have the same size.')
+        print('Spin Texture calculation could be wrong. Modify \'nk\'\n')
 
-    E_kp = gather_full(arrays['E_k'], attr['npool'])
-    self.data_controller.write_bands(fname, E_kp)
-    E_kp = None
+      E_kp = gather_full(arrays['E_k'], attr['npool'])
+      self.data_controller.write_bands(fname, E_kp)
+      E_kp = None
+    except:
+      self.report_exception('bands')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
     self.report_module_time('Bands')
 
@@ -374,7 +406,13 @@ class PAOFLOW:
     '''
     from .defs.do_wave_function_site_projection import wave_function_site_projection
 
-    wave_function_site_projection(self.data_controller)
+    try:
+      wave_function_site_projection(self.data_controller)
+    except:
+      self.report_exception('wave_function_projection')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
     self.report_module_time('wave_function_projection')
 
 
@@ -397,7 +435,13 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
     attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
     
-    doubling_HRs(self.data_controller)
+    try:
+      doubling_HRs(self.data_controller)
+    except:
+      self.report_exception('doubling_Hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
 
     # Broadcasting the modified arrays
     #arry['HRs'] = comm.Bcast(arry['HRs'],root=0)
@@ -431,19 +475,24 @@ class PAOFLOW:
         None
     '''
     arry,attr = self.data_controller.data_dicts()
-    
-    if x:
-      for i in range(attr['nk1']-1,0,-1):
-        arry['HRs'] = np.delete(arry['HRs'],i,2)
-    if y:
-      for i in range(attr['nk2']-1,0,-1):
-        arry['HRs'] = np.delete(arry['HRs'],i,3)
-    if z:
-      for i in range(attr['nk3']-1,0,-1):
-        arry['HRs'] = np.delete(arry['HRs'],i,4)
 
-    _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
-    attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
+    try:
+      if x:
+        for i in range(attr['nk1']-1,0,-1):
+          arry['HRs'] = np.delete(arry['HRs'],i,2)
+      if y:
+        for i in range(attr['nk2']-1,0,-1):
+          arry['HRs'] = np.delete(arry['HRs'],i,3)
+      if z:
+        for i in range(attr['nk3']-1,0,-1):
+          arry['HRs'] = np.delete(arry['HRs'],i,4)
+
+      _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
+      attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
+    except:
+      self.report_exception('cutting_Hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
 
 
@@ -466,29 +515,35 @@ class PAOFLOW:
     if 'sh' not in arrays: arrays['sh'] = sh
     if 'nl' not in arrays: arrays['nl'] = nl
 
-    nawf = attr['nawf']
+    try:
+      nawf = attr['nawf']
 
-    # Compute spin operators
-    # Pauli matrices (x,y,z)
-    sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
-    if spin_orbit:
-      # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
-      Sj = np.zeros((3,nawf,nawf), dtype=complex)
-      for spol in range(3):
-        for i in range(nawf//2):
-          Sj[spol,i,i] = sP[spol][0,0]
-          Sj[spol,i,i+1] = sP[spol][0,1]
-        for i in range(nawf//2, nawf):
-          Sj[spol,i,i-1] = sP[spol][1,0]
-          Sj[spol,i,i] = sP[spol][1,1]
-    else:
-      from .defs.clebsch_gordan import clebsch_gordan
-      # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-      Sj = np.zeros((3,nawf,nawf), dtype=complex)
-      for spol in range(3):
-        Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
+      # Compute spin operators
+      # Pauli matrices (x,y,z)
+      sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+      if spin_orbit:
+        # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
+        Sj = np.zeros((3,nawf,nawf), dtype=complex)
+        for spol in range(3):
+          for i in range(nawf//2):
+            Sj[spol,i,i] = sP[spol][0,0]
+            Sj[spol,i,i+1] = sP[spol][0,1]
+          for i in range(nawf//2, nawf):
+            Sj[spol,i,i-1] = sP[spol][1,0]
+            Sj[spol,i,i] = sP[spol][1,1]
+      else:
+        from .defs.clebsch_gordan import clebsch_gordan
+        # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
+        Sj = np.zeros((3,nawf,nawf), dtype=complex)
+        for spol in range(3):
+          Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
 
-    arrays['Sj'] = Sj
+      arrays['Sj'] = Sj
+    except:
+      self.report_exception('spin_operator')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
 
 
 
@@ -526,12 +581,13 @@ class PAOFLOW:
         print('Must specify \'spol\', \'ipol\', and \'jpol\'')
       quit()
 
-    if attr['spin_Hall'] and 'Sj' not in arrays:
-      if rank == 0:
-        print('Spin operator \'Sj\' must be calculated before Band Topology can be computed.')
-      quit()
+    try:
+      do_topology(self.data_controller)
+    except:
+      self.report_exception('topology')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
-    do_topology(self.data_controller)
     self.report_module_time('Band Topology')
 
     del arrays['R']
@@ -560,67 +616,76 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-    # Automatically doubles grid in all directions
-    if nfft1 is None: nfft1 = 2*attr['nk1']
-    if nfft2 is None: nfft2 = 2*attr['nk2']
-    if nfft3 is None: nfft3 = 2*attr['nk3']
+    try:
 
-    if 'nfft1' not in attr: attr['nfft1'] = nfft1
-    if 'nfft2' not in attr: attr['nfft2'] = nfft2
-    if 'nfft3' not in attr: attr['nfft3'] = nfft3
+      if 'HRs' not in arrays or 'pksp' not in arrays:
+        raise KeyError('HRs')
 
-    nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
+      # Automatically doubles grid in all directions
+      if nfft1 is None: nfft1 = 2*attr['nk1']
+      if nfft2 is None: nfft2 = 2*attr['nk2']
+      if nfft3 is None: nfft3 = 2*attr['nk3']
 
-    # Ensure FFT grid is even
-    if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
-      nfft1 = 2*((nfft1+1)//2)
-      nfft2 = 2*((nfft2+1)//2)
-      nfft3 = 2*((nfft3+1)//2)
+      if 'nfft1' not in attr: attr['nfft1'] = nfft1
+      if 'nfft2' not in attr: attr['nfft2'] = nfft2
+      if 'nfft3' not in attr: attr['nfft3'] = nfft3
+
+      nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
+
+      # Ensure FFT grid is even
+      if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
+        nfft1 = 2*((nfft1+1)//2)
+        nfft2 = 2*((nfft2+1)//2)
+        nfft3 = 2*((nfft3+1)//2)
+        if self.rank == 0:
+          print('Warning: nfft grid has been modified to support double_grid\nModified nfft grid to: %d %d %d'%(nfft1,nfft2,nfft3))
+
+      # Adjust 'npool' if arrays exceed MPI maximum
+      int_max = 2147483647
+      temp_pool = int(np.ceil((float(attr['nawf']**2*nfft1*nfft2*nfft3*3*attr['nspin'])/float(int_max))))
+      if temp_pool > attr['npool']:
+        if self.rank == 0:
+          print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
+        attr['npool'] = temp_pool
+
       if self.rank == 0:
-        print('Warning: nfft grid has been modified to support double_grid\nModified nfft grid to: %d %d %d'%(nfft1,nfft2,nfft3))
+        dxdydz = 3
+        B_to_GB = 1.E-9
+        spins = attr['nspin']
+        bytes_per_complex = 128//8
+        nd1,nd2,nd3 = nfft1,nfft2,nfft3
+        num_wave_functions = attr['nawf']
+        ff = self.gb_fudge_factor
+        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+        gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
+        if attr['verbose']:
+          print('Performing Fourier interpolation on a larger grid.')
+          print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
+        print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
-    # Adjust 'npool' if arrays exceed MPI maximum
-    int_max = 2147483647
-    temp_pool = int(np.ceil((float(attr['nawf']**2*nfft1*nfft2*nfft3*3*attr['nspin'])/float(int_max))))
-    if temp_pool > attr['npool']:
+      #------------------------------------------------------
+      # Fourier interpolation on extended grid (zero padding)
+      #------------------------------------------------------
+
       if self.rank == 0:
-        print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
-      attr['npool'] = temp_pool
+        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+        arrays['HRs'] = np.reshape(arrays['HRs'], (attr['nawf']**2,nk1,nk2,nk3,attr['nspin']))
+      arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
 
-    if self.rank == 0:
-      dxdydz = 3
-      B_to_GB = 1.E-9
-      spins = attr['nspin']
-      bytes_per_complex = 128//8
-      nd1,nd2,nd3 = nfft1,nfft2,nfft3
-      num_wave_functions = attr['nawf']
-      ff = self.gb_fudge_factor
-      nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
-      if attr['verbose']:
-        print('Performing Fourier interpolation on a larger grid.')
-        print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
-      print('New estimated maximum array size: %.2f GBytes'%gbyte)
+      do_double_grid(self.data_controller)
 
-    #------------------------------------------------------
-    # Fourier interpolation on extended grid (zero padding)
-    #------------------------------------------------------
+      snawf,_,_,_,nspin = arrays['Hksp'].shape
+      arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nkpnts'],nspin))
+      arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
+      nawf = attr['nawf']
+      snktot = arrays['Hksp'].shape[1]
+      arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
 
-    if self.rank == 0:
-      nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-      arrays['HRs'] = np.reshape(arrays['HRs'], (attr['nawf']**2,nk1,nk2,nk3,attr['nspin']))
-    arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
-
-    do_double_grid(self.data_controller)
-
-    snawf,_,_,_,nspin = arrays['Hksp'].shape
-    arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nkpnts'],nspin))
-    arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
-    nawf = attr['nawf']
-    snktot = arrays['Hksp'].shape[1]
-    arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
-
-    get_K_grid_fft(self.data_controller)
+      get_K_grid_fft(self.data_controller)
+    except:
+      self.report_exception('interpolated_hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
     self.report_module_time('R -> k with Zero Padding')
 
@@ -646,32 +711,34 @@ class PAOFLOW:
     del arrays['HRs']
     if 'bval' not in attr: attr['bval'] = bval
 
-    if 'Hksp' not in arrays:
-      if self.rank == 0:
-        nktot = attr['nkpnts']
-        nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
-        arrays['Hks'] = np.moveaxis(np.reshape(arrays['Hks'],(nawf,nawf,nktot,nspin),order='C'), 2, 0)
-      else:
-        arrays['Hks'] = None
-      arrays['Hksp'] = scatter_full(arrays['Hks'], attr['npool'])
-      del arrays['Hks']
+    try:
+      if 'Hksp' not in arrays:
+        if self.rank == 0:
+          nktot = attr['nkpnts']
+          nawf,_,nk1,nk2,nk3,nspin = arrays['Hks'].shape
+          arrays['Hks'] = np.moveaxis(np.reshape(arrays['Hks'],(nawf,nawf,nktot,nspin),order='C'), 2, 0)
+        else:
+          arrays['Hks'] = None
+        arrays['Hksp'] = scatter_full(arrays['Hks'], attr['npool'])
+        del arrays['Hks']
 
-    #-----------------------------------------------------
-    # Compute eigenvalues of the interpolated Hamiltonian
-    #-----------------------------------------------------
-    do_pao_eigh(self.data_controller)
+      do_pao_eigh(self.data_controller)
 
-### PARALLELIZATION
-### Sample RunTime Here
-    ## Parallelize search for amax & subtract for all processes.
-    if 'HubbardU' in arrays and arrays['HubbardU'].any() != 0.0:
-      if self.rank == 0 and attr['verbose']:
-        print('Shifting Eigenvalues to top of valence band.')
-      arrays['E_k'] = gather_full(arrays['E_k'], attr['npool'])
-      if self.rank == 0:
-        arrays['E_k'] -= np.amax(arrays['E_k'][:,attr['bval'],:])
-      self.comm.Barrier()
-      arrays['E_k'] = scatter_full(arrays['E_k'], attr['npool'])
+##### PARALLELIZATION
+##### Sample RunTime Here
+      ## Parallelize search for amax & subtract for all processes.
+      if 'HubbardU' in arrays and arrays['HubbardU'].any() != 0.0:
+        if self.rank == 0 and attr['verbose']:
+          print('Shifting Eigenvalues to top of valence band.')
+        arrays['E_k'] = gather_full(arrays['E_k'], attr['npool'])
+        if self.rank == 0:
+          arrays['E_k'] -= np.amax(arrays['E_k'][:,attr['bval'],:])
+        self.comm.Barrier()
+        arrays['E_k'] = scatter_full(arrays['E_k'], attr['npool'])
+    except:
+      self.report_exception('pao_eigh')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
     self.report_module_time('Eigenvalues')
 
@@ -694,29 +761,29 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-    if 'v_k' not in arrays:
-      if self.rank == 0:
-        print('Eigenvalues not computed. Exiting.')
-      quit()
+    try:
+      snktot,nawf,_,nspin = arrays['Hksp'].shape
 
-    snktot,nawf,_,nspin = arrays['Hksp'].shape
+      for ik in range(snktot):
+        for ispin in range(nspin):
+          arrays['Hksp'][ik,:,:,ispin] = (np.conj(arrays['Hksp'][ik,:,:,ispin].T) + arrays['Hksp'][ik,:,:,ispin])/2.
 
-    for ik in range(snktot):
-      for ispin in range(nspin):
-        arrays['Hksp'][ik,:,:,ispin] = (np.conj(arrays['Hksp'][ik,:,:,ispin].T) + arrays['Hksp'][ik,:,:,ispin])/2.
+      arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
+      arrays['Hksp'] = np.moveaxis(gather_scatter(arrays['Hksp'],1,attr['npool']), 0, 1)
+      snawf,_,nspin = arrays['Hksp'].shape
+      arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nk1'],attr['nk2'],attr['nk3'],nspin))
 
-    arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
-    arrays['Hksp'] = np.moveaxis(gather_scatter(arrays['Hksp'],1,attr['npool']), 0, 1)
-    snawf,_,nspin = arrays['Hksp'].shape
-    arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nk1'],attr['nk2'],attr['nk3'],nspin))
-
-    do_gradient(self.data_controller)
+      do_gradient(self.data_controller)
 
 ########### PARALLELIZATION
-    #gather dHksp on nawf*nawf and scatter on k points
-    arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attr['nkpnts'],3,nspin))
-    arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attr['npool']), 0, 2)
-    arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
+      #gather dHksp on nawf*nawf and scatter on k points
+      arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attr['nkpnts'],3,nspin))
+      arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attr['npool']), 0, 2)
+      arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
+    except:
+      self.report_exception('gradient_and_momenta')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
     self.report_module_time('Gradient')
 
@@ -750,7 +817,10 @@ class PAOFLOW:
         print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
       quit()
 
-    do_adaptive_smearing(self.data_controller)
+    try:
+      do_adaptive_smearing(self.data_controller)
+    except:
+      self.report_exception('adaptive_smearing')
     self.report_module_time('Adaptive Smearing')
 
 
@@ -776,31 +846,37 @@ class PAOFLOW:
     if 'delta' not in attr: attr['delta'] = delta
     if 'smearing' not in attr: attr['smearing'] = None
 
-    if attr['smearing'] is None:
-      if do_dos:
-        from .defs.do_dos import do_dos
-        do_dos(self.data_controller, emin=emin, emax=emax)
-      if do_pdos:
-        from .defs.do_pdos import do_pdos
-        do_pdos(self.data_controller, emin=emin, emax=emax)
-    else:
-      if 'deltakp' not in arrays:
-        if self.rank == 0:
-          print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
-        quit()
-      #------------------------------------------------------------
-      # DOS calculation with adaptive smearing on double_grid Hksp
-      #------------------------------------------------------------
-      if do_dos:
-        from .defs.do_dos import do_dos_adaptive
-        do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
+    try:
+      if attr['smearing'] is None:
+        if do_dos:
+          from .defs.do_dos import do_dos
+          do_dos(self.data_controller, emin=emin, emax=emax)
+        if do_pdos:
+          from .defs.do_pdos import do_pdos
+          do_pdos(self.data_controller, emin=emin, emax=emax)
+      else:
+        if 'deltakp' not in arrays:
+          if self.rank == 0:
+            print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
+          quit()
 
-      #----------------------
-      # PDOS calculation ...
-      #----------------------
-      if do_pdos:
-        from .defs.do_pdos import do_pdos_adaptive
-        do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
+        #------------------------------------------------------------
+        # DOS calculation with adaptive smearing on double_grid Hksp
+        #------------------------------------------------------------
+        if do_dos:
+          from .defs.do_dos import do_dos_adaptive
+          do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
+
+        #----------------------
+        # PDOS calculation ...
+        #----------------------
+        if do_pdos:
+          from .defs.do_pdos import do_pdos_adaptive
+          do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
+    except:
+      self.report_exception('dos')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
     mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
     self.report_module_time(mname)
@@ -840,10 +916,13 @@ class PAOFLOW:
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
-    #---------------------------
-    # Fermi surface calculation
-    #---------------------------
-    do_fermisurf(self.data_controller)
+    try:
+      do_fermisurf(self.data_controller)
+    except:
+      self.report_exception('fermi_surface')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
     self.report_module_time('Fermi Surface')
 
 
@@ -863,26 +942,23 @@ class PAOFLOW:
 
     arry,attr = self.data_controller.data_dicts()
 
-    if 'E_k' not in arry:
-      if self.rank == 0:
-        print('Eigenvalues not computed. Exiting.')
-      quit()
-
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
-    if attr['nspin'] == 1:
-      if 'Sj' not in arry:
+    try:
+      if attr['nspin'] == 1:
+        do_spin_texture(self.data_controller)
+        self.report_module_time('Spin Texture')
+      else:
         if self.rank == 0:
-          print('Spin operator \'Sj\' must be calculated before Spin Texture can be computed.')
-        quit()
-      do_spin_texture(self.data_controller)
-      self.report_module_time('Spin Texture')
-    else:
-      if self.rank == 0:
-        print('Cannot compute spin texture with nspin=2')
+          print('Cannot compute spin texture with nspin=2')
+    except:
+      self.report_exception('spin_texture')
+      if attr['abort_on_exception']:
         self.comm.Abort()
-      self.comm.Barrier()
+
+
+    self.comm.Barrier()
 
 
 
@@ -912,12 +988,13 @@ class PAOFLOW:
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
-    if 'Sj' not in arrays:
-      if rank == 0:
-        print('Spin operator \'Sj\' must be calculated before Spin Hall Conductivity can be computed.')
-      quit()
+    try:
+      do_spin_Hall(self.data_controller, do_ac)
+    except:
+      self.report_exception('spin_Hall')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
-    do_spin_Hall(self.data_controller, do_ac)
     self.report_module_time('Spin Hall Conductivity')
 
 
@@ -948,7 +1025,13 @@ class PAOFLOW:
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
-    do_anomalous_Hall(self.data_controller, do_ac)
+    try:
+      do_anomalous_Hall(self.data_controller, do_ac)
+    except:
+      self.report_exception('anomalous_Hall')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
     self.report_module_time('Anomalous Hall Conductivity')
 
 
@@ -987,6 +1070,8 @@ class PAOFLOW:
       velkp = None
     except:
       self.report_exception('transport')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
     self.report_module_time('Transport')
 
@@ -1031,6 +1116,6 @@ class PAOFLOW:
     except:
       self.report_exception('dielectric_tensor')
       if attr['abort_on_exception']:
-        comm.Abort()
+        self.comm.Abort()
 
     self.report_module_time('Dielectric Tensor')
