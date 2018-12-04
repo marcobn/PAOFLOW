@@ -616,7 +616,7 @@ class PAOFLOW:
 
     try:
 
-      if 'HRs' not in arrays or 'pksp' not in arrays:
+      if 'HRs' not in arrays:
         raise KeyError('HRs')
 
       # Automatically doubles grid in all directions
