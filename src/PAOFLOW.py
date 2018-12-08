@@ -1064,7 +1064,8 @@ class PAOFLOW:
     try:
 
       # Compute Velocities
-      velkp = np.moveaxis(np.diagonal(np.real(arrays['pksp']),axis1=2,axis2=3), 3, 2)
+      bnd = attr['bnd']
+      velkp = np.moveaxis(np.diagonal(np.real(arrays['pksp'][:,:,:bnd,:]),axis1=2,axis2=3), 3, 2)
 
       do_transport(self.data_controller, temps, ene, velkp)
       velkp = None

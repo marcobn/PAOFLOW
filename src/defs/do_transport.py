@@ -83,7 +83,6 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
       L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
 
-      sigma = None
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
