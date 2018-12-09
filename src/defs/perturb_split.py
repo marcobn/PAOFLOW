@@ -18,7 +18,7 @@
 
 def perturb_split ( rot_op1, rot_op2, v_k, degen ):
   import numpy as np
-  import scipy.linalg as LAN
+  from scipy import linalg as spl
 
   op1 = np.dot(np.conj(v_k.T), np.dot(rot_op1,v_k))
   if len(degen) == 0:
@@ -34,7 +34,7 @@ def perturb_split ( rot_op1, rot_op2, v_k, degen ):
     ul = degen[i][-1]+1
 
     # diagonalize in degenerate subspace
-    _,weight = LAN.eigh(op1[ll:ul,ll:ul])
+    _,weight = spl.eigh(op1[ll:ul,ll:ul])
 
     # linear combination of eigenvectors of H that diagonalize
     v_k_temp[:,ll:ul] = np.dot(v_k_temp[:,ll:ul], weight)

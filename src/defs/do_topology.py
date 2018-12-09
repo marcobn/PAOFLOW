@@ -17,10 +17,11 @@
 #
 
 import os
+import numpy as np
+from numpy import linalg as npl
 
 # Compute Z2 invariant and topological properties on a selected path in the BZ
 def do_topology ( data_controller ):
-  import numpy as np
   from mpi4py import MPI
   from scipy.fftpack import fftshift
   from .constants import LL, ANGSTROM_AU
@@ -61,7 +62,6 @@ def do_topology ( data_controller ):
   # Define TRIM points in 2(0-3)/3D(0-7)
   if nspin == 1 and spin_Hall:
     from .pfaffian import pfaffian
-    from numpy import linalg as LAN
     from .do_eigh import do_eigh_calc
     from .clebsch_gordan import clebsch_gordan
 
@@ -97,7 +97,7 @@ def do_topology ( data_controller ):
       wl[ik,:,:] = wl[ik,:,:] - wl[ik,:,:].T  # enforce skew symmetry
     delta_ik = np.zeros(nkt, dtype=complex)
     for ik in range(nkt):
-      delta_ik[ik] = pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(LAN.det(wl[ik,:nelec,:nelec]))
+      delta_ik[ik] = pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(npl.det(wl[ik,:nelec,:nelec]))
 
     # Write 'Z2.dat'
     with open(os.path.join(attributes['opath'],'Z2'+'.dat'), 'w') as f:
@@ -280,7 +280,6 @@ def do_topology ( data_controller ):
 
 
 def band_loop_H ( HRaux, R, kq, nawf, nspin ):
-  import numpy as np
 
   kdot = np.zeros((kq.shape[1],R.shape[0]),dtype=complex,order="C")
   kdot = np.tensordot(R,2.0j*np.pi*kq,axes=([1],[0]))

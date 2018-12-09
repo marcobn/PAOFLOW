@@ -16,34 +16,34 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 def do_dos ( data_controller, emin=-10., emax=2. ):
-  import numpy as np
-  from mpi4py import MPI
 
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
+  arry,attr = data_controller.data_dicts()
 
-  arrays,attributes = data_controller.data_dicts()
+  bnd = attr['bnd']
+  netot = attr['nkpnts']*bnd
 
-  bnd = attributes['bnd']
-  netot = attributes['nkpnts']*bnd
-
-  emax = np.amin(np.array([attributes['shift'], emax]))
+  emax = np.amin(np.array([attr['shift'], emax]))
 
   # DOS calculation with gaussian smearing
-  de = (emax-emin)/1000
-  ene = np.arange(emin, emax, de)
-  esize = ene.size
+#### Hardcoded 'de'
+  esize = 1000
+  ene = np.linspace(emin, emax, esize)
 
-  for ispin in range(attributes['nspin']):
+  for ispin in range(attr['nspin']):
 
     dosaux = np.zeros((esize), order="C")
 
-    E_k = arrays['E_k'][:,:bnd,ispin]
+    E_k = arry['E_k'][:,:bnd,ispin]
 
     for ne in range(esize):
-      dosaux[ne] = np.sum(np.exp(-((ene[ne]-E_k)/attributes['delta'])**2))
+      dosaux[ne] = np.sum(np.exp(-((ene[ne]-E_k)/attr['delta'])**2))
 
     dos = np.zeros((esize), dtype=float) if rank == 0 else None
 
@@ -51,7 +51,7 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
     dosaux = None
 
     if rank == 0:
-      dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attributes['delta'])
+      dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attr['delta'])
 
     fdos = 'dos_%s.dat'%str(ispin)
     data_controller.write_file_row_col(fdos, ene, dos)
@@ -59,47 +59,44 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
 
 def do_dos_adaptive ( data_controller, emin=-10., emax=2. ):
   from .smearing import gaussian, metpax
-  from mpi4py import MPI
-  import numpy as np
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
 
-  arrays = data_controller.data_arrays
-  attributes = data_controller.data_attributes
+  arry,attr = data_controller.data_dicts()
 
   # DOS calculation with adaptive smearing
-  de = (emax-emin)/1000.
-  ene = np.arange(emin, emax, de)
-  esize = ene.size
+##### Hardcoded 'de'
+  esize = 1000
+  ene = np.linspace(emin, emax, esize)
 
-  bnd = attributes['bnd']
-  netot = attributes['nkpnts']*bnd
+  bnd = attr['bnd']
+  netot = attr['nkpnts']*bnd
 
-  for ispin in range(attributes['nspin']):
+  for ispin in range(attr['nspin']):
 
-    E_k = arrays['E_k'][:,:bnd,ispin].reshape(arrays['E_k'].shape[0]*bnd)
-    delta = np.ravel(arrays['deltakp'][:,:bnd,ispin], order='C')
+    E_k = arry['E_k'][:,:bnd,ispin].reshape(arry['E_k'].shape[0]*bnd)
+    delta = np.ravel(arry['deltakp'][:,:bnd,ispin], order='C')
 
 ### Parallelization wastes time and memory here!!! 
     dosaux = np.zeros((esize), dtype=float)
 
     for ne in range(esize):
-      if attributes['smearing'] == 'gauss':
+      if attr['smearing'] == 'gauss':
         # adaptive Gaussian smearing
         dosaux[ne] = np.sum(gaussian(ene[ne],E_k,delta))
 
-      elif attributes['smearing'] == 'm-p':
+      elif attr['smearing'] == 'm-p':
         # adaptive Methfessel and Paxton smearing
         dosaux[ne] = np.sum(metpax(ene[ne],E_k,delta))
 
-    dos = (np.zeros((esize), dtype=float) if rank==0 else None)
+    dos = np.zeros((esize), dtype=float) if rank==0 else None
 
     comm.Reduce(dosaux, dos, op=MPI.SUM)
     dosaux = None
 
     if rank == 0:
-      dos *= float(bnd)/float(netot)
+      dos *= float(bnd)/netot
 
     fdosdk = 'dosdk_%s.dat'%str(ispin)
     data_controller.write_file_row_col(fdosdk, ene, dos)

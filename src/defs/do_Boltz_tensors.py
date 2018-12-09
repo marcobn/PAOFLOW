@@ -16,73 +16,63 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+from mpi4py import MPI
 
-def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
-  import numpy as np
-  from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp ):
   # Compute the L_alpha tensors for Boltzmann transport
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   arrays,attributes = data_controller.data_dicts()
 
   esize = ene.size
 
-  smearing = None
-
-#  t_tensor = arrays['t_tensor']
+#### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
 
-  L0aux = L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, ispin, 0)
-  L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
+  # Quick call function for L_loop (None is smearing type)
+  fLloop = lambda spol : L_loop(data_controller, temp, None, ene, velkp, t_tensor, spol)
+
+  # Quick call function for Zeros on rank Zero
+  zoz = lambda r: (np.zeros((3,3,esize), dtype=float) if r==0 else None)
+
+  L0 = zoz(rank)
+  L0aux = fLloop(0)
   comm.Reduce(L0aux, L0, op=MPI.SUM)
   L0aux = None
 
-  L1aux = L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, ispin, 1)
-  L1 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
+  L1 = zoz(rank)
+  L1aux = fLloop(1)
   comm.Reduce(L1aux, L1, op=MPI.SUM)
   L1aux = None
 
-  L2aux = L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, ispin, 2)
-  L2 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
+  L2 = zoz(rank)
+  L2aux = fLloop(2)
   comm.Reduce(L2aux, L2, op=MPI.SUM)
   L2aux = None
 
   if rank == 0:
-    L0[1,0] = L0[0,1]
-    L0[2,0] = L0[2,0]
-    L0[2,1] = L0[1,2]
+    # Assign lower triangular to upper triangular
+    sym = lambda L : (L[0,1], L[0,2], L[1,2])
+    L0[1,0],L0[2,0],L0[2,1] = sym(L0)
+    L1[1,0],L1[2,0],L1[2,1] = sym(L1)
+    L2[1,0],L2[2,0],L2[2,1] = sym(L2)
 
-    L1[1,0] = L1[0,1]
-    L1[2,0] = L1[2,0]
-    L1[2,1] = L1[1,2]
-
-    L2[1,0] = L2[0,1]
-    L2[2,0] = L2[2,0]
-    L2[2,1] = L2[1,2]
-
-    return(L0, L1, L2)
-
-  else:
-    return(None, None, None)
+  return (L0, L1, L2) if rank==0 else (None, None, None)
 
 
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
-  import numpy as np
-  from mpi4py import MPI
-  # Compute the L_0 tensor for Boltzmann Transport with Smearing
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
+# Compute the L_0 tensor for Boltzmann Transport with Smearing
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp ):
 
   arrays,attributes = data_controller.data_dicts()
 
-  t_tensor = arrays['t_tensor']
-
   esize = ene.size
 
-  L0aux = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, ispin, 0)
+  t_tensor = arrays['t_tensor']
+
+  L0aux = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0)
   L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
   comm.Reduce(L0aux, L0, op=MPI.SUM)
   L0aux = None
@@ -90,8 +80,7 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
   return L0
 
 
-def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha ):
-  import numpy as np
+def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha ):
   from .smearing import gaussian,metpax
   # We assume tau=1 in the constant relaxation time approximation
 
@@ -111,8 +100,8 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha
   L = np.zeros((3,3,esize), dtype=float)
 
   for n in range(bnd):
-    Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
-    delk = (np.reshape(np.repeat(arrays['deltakp'][:,n,ispin],esize), (snktot,esize)) if smearing!=None else None)
+    Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,0],esize), (snktot,esize))
+    delk = (np.reshape(np.repeat(arrays['deltakp'][:,n,0],esize), (snktot,esize)) if smearing!=None else None)
     EtoAlpha = np.power(Eaux[:,:]-ene, alpha)
     if smearing is None:
       Eaux -= ene
@@ -125,6 +114,6 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, ispin, alpha
     for l in range(t_tensor.shape[0]):
       i = t_tensor[l][0]
       j = t_tensor[l][1]
-      L[i,j,:] += np.sum(kq_wght*velkp[:,i,n,ispin]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
+      L[i,j,:] += np.sum(kq_wght*velkp[:,i,n]*velkp[:,j,n]*(smearA*EtoAlpha).T, axis=1)
 
   return L

@@ -12,36 +12,32 @@
 
 # this version works only for non-magnetic or non-collienar calculations
 def wave_function_site_projection(data_controller):
-    from scipy import fftpack as FFT
-    import numpy as np
     import cmath
-    import os, sys, time
+    import numpy as np
     from mpi4py import MPI
-    from scipy.fftpack import fftshift
+    from os.path import join
+    from scipy import fftpack as FFT
     from constants import ANGSTROM_AU
+    from scipy.fftpack import fftshift
     from communication import scatter_full,gather_full
     
-    arrays,attributes = data_controller.data_dicts()
+    arry,attr = data_controller.data_dicts()
 
-    naw   = arrays['naw']    
-    v_k  = arrays['v_k']    
-    tau   = arrays['tau'] / ANGSTROM_AU
-    bands = arrays['bands_proj']    
-    k_index = attributes['k_proj']    
+    tau = arry['tau'] / ANGSTROM_AU
+    naw,v_k = arry['naw'],array['v_k']   
+    bands,k_index = arry['bands_proj'],attr['k_proj']   
     
     # sites to project the wave function
-    site = np.zeros_like(tau[:,0])
-    site[:]=tau[:,0]
+    site = np.copy(tau[:,0])
 
-    do_spin_orbit = attributes['do_spin_orbit']    
-    nawf = attributes['nawf']   
-    dim = attributes['dimension']
+    do_spin_orbit = attr['do_spin_orbit']    
+    nawf,dim = attr['nawf'],attr['dimension']
 
-    for idx in xrange(bands.shape[0]):
+    for idx in range(bands.shape[0]):
         bnd_idx=bands[idx]  # index of the band to be projected
         # open file
-        f=open(os.path.join(attributes['opath'],'site-projected-wave-function-'+str(bnd_idx)+'.dat'),'w')
-        for n in xrange(tau.shape[0]):
+        f=open(join(attr['opath'],'site-projected-wave-function-'+str(bnd_idx)+'.dat'), 'w')
+        for n in range(tau.shape[0]):
 
             # creating masks to consirer only the n site.
             mask   = np.zeros_like(v_k[k_index:k_index+1,:,:,0])

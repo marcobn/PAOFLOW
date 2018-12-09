@@ -16,10 +16,11 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+from scipy import linalg as spl
+from numpy import linalg as npl
 
 def bands_calc ( data_controller ):
-  import numpy as np
-  from scipy import linalg as LA
   from .communication import scatter_full, gather_full
 
   arrays,attributes = data_controller.data_dicts()
@@ -38,9 +39,9 @@ def bands_calc ( data_controller ):
 
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
-      E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
-## Orthogonalize before bands?
-##      E_kp_aux[ik,:,ispin], v_kp_aux[ik,:,:,ispin] = LA.eigh(Hks_aux[:,:,ik,ispin], b=(Sks_aux[:,:,ik] if attributes['non_ortho'] else None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+      E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+#### HOW TO Orthogonalize wtih Bands??
+####      E_kp_aux[ik,:,ispin], v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(Sks_aux[:,:,ik] if attributes['non_ortho'] else None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
 
   Hks_aux = None
   Sks_aux = None
@@ -49,7 +50,6 @@ def bands_calc ( data_controller ):
 
 
 def band_loop_H ( data_controller, kq_aux ):
-  import numpy as np
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -72,7 +72,6 @@ def band_loop_H ( data_controller, kq_aux ):
 
 def band_loop_S ( data_controller, kq_aux ):
   import cmath
-  import numpy as np
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -93,9 +92,6 @@ def band_loop_S ( data_controller, kq_aux ):
 
 
 def do_ortho ( Hks, Sks ):
-  import numpy as np
-  from scipy import linalg as LA
-  from numpy import linalg as LAN
 
   # If orthogonality is required, we have to apply a basis change to Hks as
   # Hks -> Sks^(-1/2)*Hks*Sks^(-1/2)
@@ -103,7 +99,7 @@ def do_ortho ( Hks, Sks ):
   nawf,_,nkpnts,nspin = Hks.shape
   S2k  = np.zeros((nawf,nawf,nkpnts), dtype=complex)
   for ik in range(nkpnts):
-    S2k[:,:,ik] = LAN.inv(LA.sqrtm(Sks[:,:,ik]))
+    S2k[:,:,ik] = npl.inv(spl.sqrtm(Sks[:,:,ik]))
 
   Hks_o = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
   for ispin in range(nspin):
@@ -114,7 +110,6 @@ def do_ortho ( Hks, Sks ):
 
 
 def do_bands ( data_controller ):
-  import numpy as np
   from mpi4py import MPI
   from .constants import ANGSTROM_AU
   from .communication import gather_full
@@ -156,7 +151,8 @@ def do_bands ( data_controller ):
     # Compute the bands along the path in the IBZ
     arrays['E_k'],arrays['v_k'] = bands_calc(data_controller)
 
-  # 1D Bands not implemented
+#### 1D Bands?
+#### 1D Bands not implemented
   else:
     if rank == 0:
       print('OneDim bands not implemented in PAOFLOW_Class')

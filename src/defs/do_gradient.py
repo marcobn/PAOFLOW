@@ -36,32 +36,31 @@ def do_gradient ( data_controller ):
   from scipy import fftpack as FFT
   from .get_R_grid_fft import get_R_grid_fft
 
-  arrays = data_controller.data_arrays
-  attributes = data_controller.data_attributes
+  arry,attr = data_controller.data_dicts()
 
   #----------------------
   # Compute the gradient of the k-space Hamiltonian
   #----------------------
 
-  nktot = attributes['nkpnts']
-  snawf,nk1,nk2,nk3,nspin = arrays['Hksp'].shape
+  nktot = attr['nkpnts']
+  snawf,nk1,nk2,nk3,nspin = arry['Hksp'].shape
 
   # fft grid in R shifted to have (0,0,0) in the center
   get_R_grid_fft(data_controller)
   #reshape R grid and each proc's piece of Hr
 
-  arrays['Rfft'] = np.reshape(arrays['Rfft'], (nk1,nk2,nk3,3), order='C')
+  arry['Rfft'] = np.reshape(arry['Rfft'], (nk1,nk2,nk3,3), order='C')
 
-  arrays['dHksp'] = np.empty((snawf,nk1,nk2,nk3,3,nspin), dtype=complex, order='C')
+  arry['dHksp'] = np.empty((snawf,nk1,nk2,nk3,3,nspin), dtype=complex, order='C')
   for ispin in range(nspin):
     for n in range(snawf):
       ########################################
       ### real space grid replaces k space ###
       ########################################
-      if attributes['use_cuda']:
-        arrays['Hksp'][n,:,:,:,ispin] = cuda_ifftn(arrays['Hksp'][n,:,:,:,ispin])*1.0j*attributes['alat']
+      if attr['use_cuda']:
+        arry['Hksp'][n,:,:,:,ispin] = cuda_ifftn(arry['Hksp'][n,:,:,:,ispin])*1.0j*attr['alat']
       else:
-        arrays['Hksp'][n,:,:,:,ispin] = FFT.ifftn(arrays['Hksp'][n,:,:,:,ispin])*1.0j*attributes['alat']
+        arry['Hksp'][n,:,:,:,ispin] = FFT.ifftn(arry['Hksp'][n,:,:,:,ispin])*1.0j*attr['alat']
       # Compute R*H(R)
       for l in range(3):
-        arrays['dHksp'][n,:,:,:,l,ispin] = FFT.fftn(arrays['Rfft'][:,:,:,l]*arrays['Hksp'][n,:,:,:,ispin])
+        arry['dHksp'][n,:,:,:,l,ispin] = FFT.fftn(arry['Rfft'][:,:,:,l]*arry['Hksp'][n,:,:,:,ispin])

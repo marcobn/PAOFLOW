@@ -14,10 +14,11 @@
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
+
+import numpy as np
+from mpi4py import MPI
 
 def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
-  import numpy as np
   Pn = 0.
   for ispin in range(nspin):
     for ik in range(nkpnts):
@@ -25,9 +26,8 @@ def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
       Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
   return Pn
 
+
 def do_projectability ( data_controller ):
-  import numpy as np
-  from mpi4py import MPI
 
   #----------------------
   # Building the Projectability

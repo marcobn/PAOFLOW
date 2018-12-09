@@ -16,9 +16,11 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+from scipy import linalg as spl
+from numpy import linalg as npl
 
 def get_degeneracies ( E_k, bnd ):
-  import numpy as np
 
   all_degen = []
 
@@ -47,7 +49,6 @@ def do_pao_eigh ( data_controller ):
   from .communication import gather_scatter
   from numpy.linalg import eigh
   from mpi4py import MPI
-  import numpy as np
 
   rank = MPI.COMM_WORLD.Get_rank()
 
@@ -66,8 +67,6 @@ def do_pao_eigh ( data_controller ):
 
 
 def do_eigh_calc ( HRaux, SRaux, kq, R, read_S ):
-  import numpy as np
-  from numpy import linalg as LAN
 
   # Compute bands on a selected mesh in the BZ
 
@@ -86,16 +85,15 @@ def do_eigh_calc ( HRaux, SRaux, kq, R, read_S ):
   for ispin in range(nspin):
     for ik in range(nkpi):
       if read_S:
-        E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = LA.eigh(Hks_int[:,:,ik,ispin],Sks_int[:,:,ik])
+        E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = spl.eigh(Hks_int[:,:,ik,ispin],Sks_int[:,:,ik])
       else:
-        E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = LAN.eigh(Hks_int[:,:,ik,ispin],UPLO='U')
+        E_kp[ik,:,ispin],v_kp[ik,:,:,ispin] = npl.eigh(Hks_int[:,:,ik,ispin],UPLO='U')
 
   return (E_kp, v_kp)
 
 
 ### R_wght assumed to be 1
 def band_loop_H ( HRaux, kq, R ):
-  import numpy as np
 
   nkpi = kq.shape[0]
   nawf,_,nk1,nk2,nk3,nspin = HRaux.shape
@@ -110,7 +108,6 @@ def band_loop_H ( HRaux, kq, R ):
 
 
 def band_loop_S ( SRaux, kq, R ):
-  import numpy as np
 
   nkpi = kq.shape[0]
   nawf,_,nk1,nk2,nk3 = SRaux.shape

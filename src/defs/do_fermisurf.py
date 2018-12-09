@@ -18,30 +18,29 @@
 
 
 def do_fermisurf ( data_controller ):
-  import os
   import numpy as np
   from mpi4py import MPI
+  from os.path import join
   from .communication import gather_full
 
   rank = MPI.COMM_WORLD.Get_rank()
 
-  arrays = data_controller.data_arrays
-  attributes = data_controller.data_attributes
+  arry,attr = data_controller.data_dicts()
 
   #maximum number of bands crossing fermi surface
-
-  E_k_full = gather_full(arrays['E_k'], attributes['npool'])
+###### PAR!!!!!
+  E_k_full = gather_full(arry['E_k'], attr['npool'])
 
   nbndx_plot = 10
-  nawf = attributes['nawf']
-  nktot = attributes['nkpnts']
-  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
-  nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
+  nawf = attr['nawf']
+  nktot = attr['nkpnts']
+  fermi_up,fermi_dw = attr['fermi_up'],attr['fermi_dw']
+  nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
 
   if rank == 0:
-    E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attributes['nspin']))
+    E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attr['nspin']))
 
-  for ispin in range(attributes['nspin']):
+  for ispin in range(attr['nspin']):
 
     icount = 0
     eigband = (np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float) if rank==0 else None)
@@ -69,6 +68,6 @@ def do_fermisurf ( data_controller ):
     data_controller.write_bxsf(feig, eigband, icount)
 
     for ib in range(icount):
-      np.savez(os.path.join(attributes['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[:,:,:,ib])
+      np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[:,:,:,ib])
 
   E_k_full = E_k_rs = None

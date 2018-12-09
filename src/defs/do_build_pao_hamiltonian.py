@@ -15,12 +15,17 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-import sys
+
 import numpy as np
 import numpy.random as rd
-from scipy import linalg as LA
-from numpy import linalg as LAN
+from scipy import linalg as spl
+from numpy import linalg as npl
 
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+### Reformat
 def build_Hks ( data_controller ):
 
   arrays,attributes = data_controller.data_dicts()
@@ -57,21 +62,30 @@ def build_Hks ( data_controller ):
       for n in range(bnd):
         if my_eigs[n] <= eta:
           bnd_ik += 1
-      if bnd_ik == 0: sys.exit('no eigenvalues in selected energy range')
+      if bnd_ik == 0:
+        if rank == 0:
+          print('No Eigenvalues in the selected energy range')
+        comm.Abort()
       ac = UU[:,:bnd_ik]  # filtering: bnd is defined by the projectabilities
       ee1 = E[:bnd_ik,:bnd_ik]
       if shift_type == 0:
         #option 1 (PRB 2013)
         Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(np.conj(ac).T))
+
       elif shift_type == 1:
         #option 2 (PRB 2016)
-        aux_p=LA.inv(np.dot(np.conj(ac).T,ac))
+        aux_p=spl.inv(np.dot(np.conj(ac).T,ac))
         Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta*(np.identity(nawf)-ac.dot(aux_p).dot(np.conj(ac).T))
+
       elif shift_type == 2:
         # no shift
         Hksaux[:,:,ik,ispin] = ac.dot(ee1).dot(np.conj(ac).T)
+
       else:
-        sys.exit('shift_type not recognized')
+        if rank == 0:
+          print('\'shift_type\' Not Recognized')
+        comm.Abort()
+
       # Enforce Hermiticity (just in case...)
       Hksaux[:,:,ik,ispin] = 0.5*(Hksaux[:,:,ik,ispin] + np.conj(Hksaux[:,:,ik,ispin].T))
 
@@ -81,16 +95,16 @@ def build_Hks ( data_controller ):
         S = sv = np.zeros((nawf,nawf),dtype=complex)
         e = se = np.zeros(nawf,dtype=float)
 
-        e,S = LAN.eigh(Hksaux[:,:,ik,ispin])
+        e,S = npl.eigh(Hksaux[:,:,ik,ispin])
         S11 = S[:bnd,:bnd] + 1.0*rd.random(bnd)/10000.
         S21 = S[:bnd,bnd:] + 1.0*rd.random(nawf-bnd)/10000.
         S12 = S21.T
         S22 = S[bnd:,bnd:] + 1.0*rd.random(nawf-bnd)/10000.
-        S22 = S22 + S21.T.dot(np.dot(LA.inv(S11),S12.T))
+        S22 = S22 + S21.T.dot(np.dot(spl.inv(S11),S12.T))
         Sbd[:bnd,:bnd] = 0.5*(S11+np.conj(S11.T))
         Sbd[bnd:,bnd:] = 0.5*(S22+np.conj(S22.T))
-        Sbdi = LA.inv(np.dot(Sbd,np.conj(Sbd.T)))
-        se,sv = LAN.eigh(Sbdi)
+        Sbdi = spl.inv(np.dot(Sbd,np.conj(Sbd.T)))
+        se,sv = npl.eigh(Sbdi)
         se = np.sqrt(se+0.0j)*np.identity(nawf,dtype=complex)
         Sbdi = sv.dot(se).dot(np.conj(sv).T)
         T = S.dot(np.conj(Sbd.T)).dot(Sbdi)
@@ -102,9 +116,8 @@ def build_Hks ( data_controller ):
 
 
 def do_build_pao_hamiltonian ( data_controller ):
-  from mpi4py import MPI
 
-  if MPI.COMM_WORLD.Get_rank() != 0:
+  if rank != 0:
     return
 
   #------------------------------
@@ -137,10 +150,7 @@ def do_build_pao_hamiltonian ( data_controller ):
 
 
 def do_Hks_to_HRs ( data_controller ):
-  from mpi4py import MPI
   from scipy import fftpack as FFT
-
-  rank = MPI.COMM_WORLD.Get_rank()
 
   arry,attr = data_controller.data_dicts()
 

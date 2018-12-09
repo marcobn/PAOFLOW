@@ -19,21 +19,20 @@
 def do_momentum ( data_controller ):
   import numpy as np
 
-  arrays = data_controller.data_arrays
-  attributes = data_controller.data_attributes
+  arry,attr = data_controller.data_dicts()
 
-  nktot,_,nawf,nawf,nspin = arrays['dHksp'].shape
+  nktot,_,nawf,nawf,nspin = arry['dHksp'].shape
 
-  arrays['pksp'] = np.zeros_like(arrays['dHksp'])
-
-  for ispin in range(nspin):
-    for ik in range(nktot):
-      for l in range(3):
-        arrays['pksp'][ik,l,:,:,ispin] = arrays['dHksp'][ik,l,:,:,ispin].dot(arrays['v_k'][ik,:,:,ispin])
-
-  vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arrays['v_k'],1,2)))
+  arry['pksp'] = np.zeros_like(arry['dHksp'])
 
   for ispin in range(nspin):
     for ik in range(nktot):
       for l in range(3):
-        arrays['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arrays['pksp'][ik,l,:,:,ispin])
+        arry['pksp'][ik,l,:,:,ispin] = arry['dHksp'][ik,l,:,:,ispin].dot(arry['v_k'][ik,:,:,ispin])
+
+  vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arry['v_k'],1,2)))
+
+  for ispin in range(nspin):
+    for ik in range(nktot):
+      for l in range(3):
+        arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])

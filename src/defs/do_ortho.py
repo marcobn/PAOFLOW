@@ -16,17 +16,19 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+
 def do_ortho ( Hks, Sks ):
-  import numpy as np
-  from scipy import linalg as LA
-  from numpy import linalg as LAN
+  from scipy import linalg as spl
+  from numpy import linalg as npl
+
   # If orthogonality is required, we have to apply a basis change to Hks as
   # Hks -> Sks^(-1/2)*Hks*Sks^(-1/2)
 
   nawf,_,nkpnts,nspin = Hks.shape
   S2k  = np.zeros((nawf,nawf,nkpnts), dtype=complex)
   for ik in range(nkpnts):
-      S2k[:,:,ik] = LAN.inv(LA.sqrtm(Sks[:,:,ik]))
+      S2k[:,:,ik] = npl.inv(spl.sqrtm(Sks[:,:,ik]))
 
   Hks_o = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
   for ispin in range(nspin):
@@ -36,8 +38,8 @@ def do_ortho ( Hks, Sks ):
   return Hks_o
 
 def do_orthogonalize ( data_controller ):
-  import numpy as np
   from scipy import fftpack as FFT
+  from .cuda_fft import cuda_fftn, cuda_ifftn
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -45,7 +47,6 @@ def do_orthogonalize ( data_controller ):
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
   if attributes['use_cuda']:
-    from .cuda_fft import cuda_fftn, cuda_ifftn
     arrays['Hks'] = cuda_fftn(np.moveaxis(arrays['HRs'],[0,1],[3,4]), axes=[0,1,2])
     arrays['Sks'] = cuda_fftn(np.moveaxis(arrays['SRs'],[0,1],[3,4]), axes=[0,1,2])
     arrays['Hks'] = np.reshape(np.moveaxis(arrays['Hks'],[3,4],[0,1]), (nawf,nawf,nktot,nspin), order='C')

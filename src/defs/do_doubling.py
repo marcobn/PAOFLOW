@@ -9,23 +9,13 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from scipy import fftpack as FFT
+
 import numpy as np
-import cmath
-import sys, time
-from get_R_grid_fft import *
+from constants import ANGSTROM_AU
 
-sys.path.append('./')
-
-#def doubling_HRs(do_spin_orbit,lambda_p,lambda_d,orb_pseudo,nx,ny,nz,naw,tau,a_vectors,HRs):
-def doubling_HRs(data_controller):
-    from scipy import fftpack as FFT
-    import numpy as np
-    import cmath
-    import os, sys, time
-    from mpi4py import MPI
+def doubling_HRs ( data_controller ):
     from scipy.fftpack import fftshift
-    from constants import ANGSTROM_AU
+    from mpi4py import MPI
 
     if MPI.COMM_WORLD.Get_rank() != 0:
        return
@@ -41,15 +31,14 @@ def doubling_HRs(data_controller):
     nk3 = attr['nk3']   
     nspin = attr['nspin']   
 
-
     nkpts=nk1*nk2*nk3
 
     cell_index=np.zeros((nk1,nk2,nk3,3),dtype=int)
     new_index=np.zeros((3,nkpts),dtype=int)
     
-    for i in xrange(nk1):
-        for j in xrange(nk2):
-            for k in xrange(nk3):
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
                 n = k + j*nk3 + i*nk2*nk3
                 Rx = float(i)/float(nk1)
                 Ry = float(j)/float(nk2)
@@ -74,12 +63,12 @@ def doubling_HRs(data_controller):
                 new_index[2,n]=iz
 
     # This construction is doubling along the X direction nx times    
-    for dx in xrange(nx):
+    for dx in range(nx):
         
         HR_double= np.zeros((2*attr['nawf'],2*attr['nawf'],nk1,nk2,nk3,nspin),dtype=complex)
-        for ix in xrange(min(new_index[0,:]),max(new_index[0,:])+1):
-            for iy in xrange(min(new_index[1,:]),max(new_index[1,:])+1):
-                for iz in xrange(min(new_index[2,:]),max(new_index[2,:])+1):
+        for ix in range(min(new_index[0,:]),max(new_index[0,:])+1):
+            for iy in range(min(new_index[1,:]),max(new_index[1,:])+1):
+                for iz in range(min(new_index[2,:]),max(new_index[2,:])+1):
                                   
                     i,j,k = cell_index[ix,iy,iz,:] # doubled cell index
 
@@ -112,12 +101,12 @@ def doubling_HRs(data_controller):
 
 
     # This construction is doubling along the X direction nx times    
-    for dy in xrange(ny):
+    for dy in range(ny):
         HR_double= np.zeros((2*attr['nawf'],2*attr['nawf'],nk1,nk2,nk3,nspin),dtype=complex)
 
-        for ix in xrange(min(new_index[0,:]),max(new_index[0,:])+1):
-            for iy in xrange(min(new_index[1,:]),max(new_index[1,:])+1):
-                for iz in xrange(min(new_index[2,:]),max(new_index[2,:])+1):
+        for ix in range(min(new_index[0,:]),max(new_index[0,:])+1):
+            for iy in range(min(new_index[1,:]),max(new_index[1,:])+1):
+                for iz in range(min(new_index[2,:]),max(new_index[2,:])+1):
                                   
                     i,j,k = cell_index[ix,iy,iz,:] # doubled cell index
 
@@ -150,13 +139,13 @@ def doubling_HRs(data_controller):
 
     # This construction is doubling along the X direction nx times    
     delete_index=0
-    for dz in xrange(nz):
+    for dz in range(nz):
 
         HR_double= np.zeros((2*attr['nawf'],2*attr['nawf'],nk1,nk2,nk3,nspin),dtype=complex)
         
-        for ix in xrange(min(new_index[0,:]),max(new_index[0,:])+1):
-            for iy in xrange(min(new_index[1,:]),max(new_index[1,:])+1):
-                for iz in xrange(min(new_index[2,:]),max(new_index[2,:])+1):
+        for ix in range(min(new_index[0,:]),max(new_index[0,:])+1):
+            for iy in range(min(new_index[1,:]),max(new_index[1,:])+1):
+                for iz in range(min(new_index[2,:]),max(new_index[2,:])+1):
                                   
                     i,j,k = cell_index[ix,iy,iz,:] # doubled cell index
 
@@ -187,11 +176,7 @@ def doubling_HRs(data_controller):
         doubling_attr_arry(data_controller)
 
 
-def doubling_attr_arry(data_controller):
-    import numpy as np
-    import cmath
-    import os, sys, time
-    from constants import ANGSTROM_AU
+def doubling_attr_arry ( data_controller ):
 
     arry,attr = data_controller.data_dicts()
 

@@ -16,6 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+
 def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
   import numpy as np
   from mpi4py import MPI
@@ -45,9 +46,9 @@ def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
   E_nm = None
 
   attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
-  de = (attributes['emaxH']-attributes['eminH'])/500
-  ene = np.arange(attributes['eminH'], attributes['emaxH'], de)
-  esize = ene.size
+### Hardcoded 'de'
+  esize = 500
+  ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
 
   Om_zkaux = np.zeros((snktot,esize), dtype=float)
 

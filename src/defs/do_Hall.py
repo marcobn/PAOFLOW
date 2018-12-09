@@ -16,15 +16,17 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+
+import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
 def do_spin_Hall ( data_controller, do_ac ):
-  import numpy as np
-  from mpi4py import MPI
   from .perturb_split import perturb_split
   from .do_spin_Berry_curvature import do_spin_Berry_curvature
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   arry,attr = data_controller.data_dicts()
 
@@ -105,14 +107,9 @@ def do_spin_Hall ( data_controller, do_ac ):
 
 
 def do_anomalous_Hall ( data_controller, do_ac ):
-  import numpy as np
-  from mpi4py import MPI
   from .perturb_split import perturb_split
   from .do_spin_Berry_curvature import do_spin_Berry_curvature
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   arry,attr = data_controller.data_dicts()
 
@@ -180,7 +177,6 @@ def do_anomalous_Hall ( data_controller, do_ac ):
 
 
 def do_spin_current ( data_controller, spol, ipol ):
-  import numpy as np
 
   arry,attr = data_controller.data_dicts()
 
@@ -198,28 +194,23 @@ def do_spin_current ( data_controller, spol, ipol ):
 
 
 def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
-  import numpy as np
-  from mpi4py import MPI
   from .communication import gather_full
   from .smearing import intgaussian, intmetpax
 
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
-
-  arrays,attributes = data_controller.data_dicts()
+  arry,attr = data_controller.data_dicts()
 
   snktot = jksp.shape[0]
-  nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
+  nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
 
   # Compute the optical conductivity tensor sigma_xy(ene)
 
   ispin = 0
 
   emin = 0.0
-  emax = attributes['shift']
-  de = (emax-emin)/500.
-  ene = np.arange(emin, emax, de)
-  esize = ene.size
+  emax = attr['shift']
+#### Hardcode 'de'
+  esize = 500
+  ene = np.linspace(emin, emax, esize)
 
   sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
 
@@ -229,33 +220,28 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   sigxy_aux = None
 
   if rank == 0:
-    sigxy /= float(attributes['nkpnts'])
+    sigxy /= float(attr['nkpnts'])
     return(ene, sigxy)
   else:
     return(None, None)
 
 
 def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
-  import numpy as np
-  from mpi4py import MPI
 
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
-
-  arrays,attributes = data_controller.data_dicts()
+  arry,attr = data_controller.data_dicts()
 
   snktot = pksp_j.shape[0]
-  bnd = attributes['bnd']
+  bnd = attr['bnd']
 
   # Compute the optical conductivity tensor sigma_xy(ene)
 
   ispin = 0
 
   emin = 0.0
-  emax = attributes['shift']
-  de = (emax-emin)/500.
-  ene = np.arange(emin, emax, de)
-  esize = ene.size
+  emax = attr['shift']
+##### Hardcoded 'de'
+  esize = 500
+  ene = np.linspace(emin, emax, esize)
 
   sigxy_aux = np.zeros((esize),dtype=complex)
 
@@ -267,17 +253,16 @@ def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
   sigxy_aux = None
 
   if rank == 0:
-    sigxy /= float(attributes['nkpnts'])
+    sigxy /= float(attr['nkpnts'])
     return(ene, sigxy)
   else:
     return(None, None)
 
 
 def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol ):
-  import numpy as np
   from .smearing import intgaussian,intmetpax
 
-  arrays,attributes = data_controller.data_dicts()
+  arry,attr = data_controller.data_dicts()
 
   esize = ene.size
   sigxy = np.zeros((esize), dtype=complex)
@@ -290,27 +275,27 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   eps = 1.0e-16
   delta = 0.05
 
-  if attributes['smearing'] == None:
-    fn = 1.0/(np.exp(arrays['E_k'][:,:,ispin]/attributes['temp'])+1)
-  elif attributes['smearing'] == 'gauss':
-    fn = intgaussian(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin])
+  if attr['smearing'] == None:
+    fn = 1.0/(np.exp(arry['E_k'][:,:,ispin]/attr['temp'])+1)
+  elif attr['smearing'] == 'gauss':
+    fn = intgaussian(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin])
   elif smearing == 'm-p':
-    fn = intmetpax(arrays['E_k'][:,:,ispin], Ef, arrays['deltakp'][:,:,ispin]) 
+    fn = intmetpax(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin]) 
 
   # Collapsing the sum over k points
   for n in range(nawf):
     for m in range(nawf):
       if m != n:
-        E_diff_nm[:,n,m] = (arrays['E_k'][:,n,ispin]-arrays['E_k'][:,m,ispin])**2
+        E_diff_nm[:,n,m] = (arry['E_k'][:,n,ispin]-arry['E_k'][:,m,ispin])**2
         f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_i[:,n,m,ispin]*pksp_j[:,m,n,ispin])
 
   fn = None
 
   for e in range(esize):
-    if attributes['smearing'] != None:
-      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arrays['deltakp2'][:,:nawf,:nawf,ispin])**2+eps))
+    if attr['smearing'] != None:
+      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['deltakp2'][:,:nawf,:nawf,ispin])**2+eps))
     else:
-      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arrays['delta'])**2+eps))
+      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['delta'])**2+eps))
 
   F_nm = None
   E_diff_nm = None

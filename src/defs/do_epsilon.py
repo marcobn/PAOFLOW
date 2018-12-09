@@ -16,14 +16,14 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 def do_dielectric_tensor ( data_controller, ene ):
-  import numpy as np
-  from mpi4py import MPI
   from .constants import LL
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -59,11 +59,6 @@ def do_dielectric_tensor ( data_controller, ene ):
 
 
 def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
-  import numpy as np
-  from mpi4py import MPI
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   # Compute the dielectric tensor
 
@@ -112,12 +107,8 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
 
 
 def epsi_loop ( data_controller, ene, ispin, ipol, jpol):
-  import numpy as np
-  from mpi4py import MPI
   from .constants import EPS0, EVTORY
   from .smearing import intgaussian,gaussian,intmetpax,metpax
-
-  rank = MPI.COMM_WORLD.Get_rank()
 
 ### What is this?
   orig_over_err = np.geterr()['over']
@@ -223,7 +214,6 @@ def epsi_loop ( data_controller, ene, ispin, ipol, jpol):
 
 
 def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
-  import numpy as np
   from .constants import EPS0, EVTORY
   from .smearing import intgaussian,intmetpax
 
@@ -268,14 +258,11 @@ def smear_epsr_loop ( data_controller, ene, ispin, ipol, jpol ):
   return epsr
 
 
+#### Overhaul
 def epsr_kramerskronig ( data_controller, ene, epsi ):
-  import numpy as np
-  from mpi4py import MPI
   from .smearing import intmetpax
   from scipy.integrate import simps
   from .load_balancing import load_balancing
-
-  comm = MPI.COMM_WORLD
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -284,7 +271,7 @@ def epsr_kramerskronig ( data_controller, ene, epsi ):
 
   epsr = np.zeros(esize, dtype=float)
 
-  ini_ie,end_ie = load_balancing(comm.Get_size(), comm.Get_rank(), esize)
+  ini_ie,end_ie = load_balancing(comm.Get_size(), rank, esize)
 
   # Range checks for Simpson Integrals
   if end_ie == ini_ie:

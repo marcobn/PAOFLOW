@@ -16,13 +16,13 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 def do_pdos ( data_controller, emin=-10., emax=2. ):
-  import numpy as np
-  from mpi4py import MPI
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -33,9 +33,9 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
   # PDOS calculation with gaussian smearing
 
   emax = np.amin(np.array([attributes['shift'], emax]))
-  de = (emax-emin)/1000.
-  ene = np.arange(emin, emax, de)
-  esize = ene.size
+## Hardcoded 'de'
+  esize = 1000
+  ene = np.linspace(emin, emax, esize)
 
   for ispin in range(nspin):
 
@@ -70,21 +70,16 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
 
 
 def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
-  import numpy as np
-  from mpi4py import MPI
   from .smearing import metpax, gaussian
-
-  comm = MPI.COMM_WORLD
-  rank = comm.Get_rank()
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
 
   # PDoS Calculation with Gaussian Smearing
   emax = np.amin(np.array([attributes['shift'], emax]))
-  de = (emax-emin)/1000.
-  ene = np.arange(emin, emax, de)
-  esize = ene.size
+#### Hardcoded 'de'
+  esize = 1000
+  ene = np.linspace(emin, emax, esize)
 
   nawf = attributes['nawf']
 

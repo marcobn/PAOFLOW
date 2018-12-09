@@ -246,17 +246,17 @@ class PAOFLOW:
         self.comm.Abort()
     self.report_module_time('k -> R')
 
-    try:
-###### Band Orthogonalization?
-      if non_ortho:
+    # Orthogonalization
+    if non_ortho:
+      try:
         from .defs.do_ortho import do_orthogonalize
 
         do_orthogonalize(self.data_controller)
-    except:
-      self.report_exception('pao_hamiltonian')
-      if attr['abort_on_exception']:
-        self.comm.Abort()
-    self.report_module_time('Orthogonalize')
+      except:
+        self.report_exception('pao_hamiltonian')
+        if attr['abort_on_exception']:
+          self.comm.Abort()
+      self.report_module_time('Orthogonalize')
 
 
 
@@ -1055,17 +1055,16 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
+    ene = np.linspace(emin, emax, ne)
     temps = np.arange(tmin, tmax+1.e-10, tstep)
-    ene = np.arange(emin, emax, (emax-emin)/float(ne))
 
     if t_tensor is not None:
       arrays['t_tensor'] = np.array(t_tensor)
 
     try:
-
-      # Compute Velocities
+      # Compute Velocities for Spin 0 Only
       bnd = attr['bnd']
-      velkp = np.moveaxis(np.diagonal(np.real(arrays['pksp'][:,:,:bnd,:]),axis1=2,axis2=3), 3, 2)
+      velkp = np.diagonal(np.real(arrays['pksp'][:,:,:bnd,:bnd,0]),axis1=2,axis2=3)
 
       do_transport(self.data_controller, temps, ene, velkp)
       velkp = None
@@ -1106,7 +1105,7 @@ class PAOFLOW:
     if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
     if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
 
-    ene = np.arange(emin, emax, (emax-emin)/ne)
+    ene = np.linspace(emin, emax, ne)
 
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
