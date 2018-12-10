@@ -41,7 +41,7 @@ class DataController:
     '''
     import os
     from mpi4py import MPI
-    from ErrorHandler import ErrorHandler
+    from .ErrorHandler import ErrorHandler
 
     self.comm = MPI.COMM_WORLD
     self.rank = self.comm.Get_rank()
