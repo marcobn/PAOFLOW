@@ -224,7 +224,7 @@ class PAOFLOW:
     try:
       do_build_pao_hamiltonian(self.data_controller)
     except:
-      self.report_module('pao_hamiltonian')
+      self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
         self.comm.Abort()
     self.report_module_time('Building Hks')
@@ -745,6 +745,7 @@ class PAOFLOW:
   def gradient_and_momenta ( self ):
     '''
     Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
+    Requires 'Hksp'
     Yields 'dHksp'
 
     Arguments:
@@ -772,6 +773,9 @@ class PAOFLOW:
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nk1'],attr['nk2'],attr['nk3'],nspin))
 
       do_gradient(self.data_controller)
+
+      # No more need for k-space Hamiltonian
+      del arrays['Hksp']
 
 ########### PARALLELIZATION
       #gather dHksp on nawf*nawf and scatter on k points
