@@ -80,6 +80,28 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp ):
   return L0
 
 
+def get_tau ( data_controller, channels ):
+  import numpy as np
+
+  arry,attr = data_controller.data_dicts()
+  snktot = arry['E_k'].shape[0]
+
+  taus = []
+  for c in channels:
+    if c == 'accoustic':
+      a_tau = np.ones((snktot), dtype=float)
+      taus.append(a_tau)
+
+    if c == 'optical':
+      o_tau = np.ones((snktot), dtype=float)
+      taus.append(o_tau)
+
+  tau = np.zeros((snktot), dtype=float)
+  for t in taus:
+    tau += 1./t
+  return len(channels)/tau
+
+
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha ):
   from .smearing import gaussian,metpax
   # We assume tau=1 in the constant relaxation time approximation
@@ -114,6 +136,7 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha ):
     for l in range(t_tensor.shape[0]):
       i = t_tensor[l][0]
       j = t_tensor[l][1]
-      L[i,j,:] += np.sum(kq_wght*velkp[:,i,n]*velkp[:,j,n]*(smearA*EtoAlpha).T, axis=1)
+      tau = get_tau(data_controller, ['accoustic', 'optical'])
+      L[i,j,:] += np.sum(kq_wght*tau*velkp[:,i,n]*velkp[:,j,n]*(smearA*EtoAlpha).T, axis=1)
 
   return L
