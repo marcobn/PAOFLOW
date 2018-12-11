@@ -22,7 +22,7 @@ class ErrorHandler:
   def __init__ ( self ):
     pass
 
-  def report_exception ( self, mname ):
+  def report_exception ( self, mname='UNKNOWN' ):
     '''
     Print the exception and traceback. Print suggestion if the error is recognized as a user mistake.
 
@@ -43,7 +43,7 @@ class ErrorHandler:
     traceback.print_tb(etb)
 
     if etype is KeyError:
-      pre_reqs = module_pre_reqs[mname]
+      pre_reqs = module_pre_reqs[mname] if mname in module_pre_reqs else '<%s>'%mname
 
       if len(pre_reqs) > 1:
         pr_str = ', '.join(pre_reqs[:-1]) + ' and %s'%pre_reqs[-1]

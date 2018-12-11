@@ -49,7 +49,7 @@ class DataController:
 
     if inputfile is None and savedir is None:
       if self.rank == 0:
-        print('Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
+        print('\nERROR: Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
       quit()
 
     self.error_handler = ErrorHandler()
@@ -57,27 +57,25 @@ class DataController:
 
     if self.rank == 0:
       self.data_arrays = arrays = {}
-      self.data_attributes = attributes = {}
+      self.data_attributes = attr = {}
 
       # Set or update attributes
-      attributes['verbose'] = verbose
-      attributes['workpath'] = workpath
-      attributes['outputdir'] = outputdir
-      attributes['inputfile'] = inputfile
-      attributes['fpath'] = os.path.join(workpath, (savedir if inputfile==None else inputfile))
-      attributes['opath'] = os.path.join(workpath, outputdir)
+      attr['verbose'] = verbose
+      attr['workpath'] = workpath
+      attr['inputfile'],attr['outputdir'] = inputfile,outputdir
+      attr['fpath'] = os.path.join(workpath, (savedir if inputfile==None else inputfile))
+      attr['opath'] = os.path.join(workpath, outputdir)
 
       if inputfile == None:
-        attributes['temp'] = .025852
-        attributes['npool'] = npool
-        attributes['smearing'] = smearing
+        attr['temp'] = .025852
+        attr['npool'],attr['smearing'] = npool,smearing
 
-      if not os.path.exists(attributes['opath']):
-        os.mkdir(attributes['opath'])
+      if not os.path.exists(attr['opath']):
+        os.mkdir(attr['opath'])
 
       self.add_default_arrays()
 
-      attributes['abort_on_exception'] = False#True
+      attr['abort_on_exception'] = False#True
 
       # Read inputfile, if it exsts
       try:
@@ -85,7 +83,15 @@ class DataController:
           self.read_pao_inputfile()
         self.read_qe_output()
       except Exception as e:
-        self.report_exception()
+        print('\nERROR: Could not read QE xml data file')
+        self.report_exception('Data Controller Initialization')
+        self.comm.Abort()
+
+      # Ensure that the number of k-points from QE matches the grid size
+      nkpnts = attr['nk1']*attr['nk2']*attr['nk3']
+      if nkpnts != attr['nkpnts']:
+        print('\nERROR: Number of QE k-points does not match the MP grid size.')
+        print('Calculate nscf with nosym=.true. & noinv=.true.\n')
         self.comm.Abort()
 
     # Broadcast Data
@@ -178,7 +184,7 @@ class DataController:
     if self.rank == 0:
       from os.path import join
       if len(col1) != len(col2):
-        print('Cannot write file: %s'%fname)
+        print('ERROR: Cannot write file: %s'%fname)
         print('Data does not have the same shape')
         self.comm.Abort()
 
