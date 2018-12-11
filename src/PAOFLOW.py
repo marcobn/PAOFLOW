@@ -29,7 +29,7 @@ class PAOFLOW:
   start_time = reset_time = None
 
   # Overestimate factor for guessing memory requirements
-  gb_fudge_factor = 10.
+  gb_fudge_factor = 8.
 
   # Function container for ErrorHandler's method
   report_exception = None
@@ -96,21 +96,14 @@ class PAOFLOW:
 
     # Report execution information
     if self.rank == 0:
-      if self.size > 1:
-        print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
-      else:
+      if self.size == 1:
         print('Serial execution')
+      else:
+        print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
 
     # Do memory checks
     if self.rank == 0:
-      dxdydz = 3
-      B_to_GB = 1.E-9
-      spins = attr['nspin']
-      ff = self.gb_fudge_factor
-      bytes_per_complex = 128//8
-      num_wave_functions = attr['nawf']
-      nd1,nd2,nd3 = attr['nk1'],attr['nk2'],attr['nk3']
-      gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
+      gbyte = self.memory_check()
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
     self.report_module_time('Initialization')
@@ -129,13 +122,34 @@ class PAOFLOW:
       lmn = len(mname)
       if len(mname) > spaces:
         print('DEBUG: Please use a shorter module tag.')
-        quit()
+        self.comm.Abort()
 
       # Format string and print
       lms = spaces-lmn
       dt = time() - self.reset_time
       print('%s in: %s %.3f sec'%(mname,lms*' ',dt))
       self.reset_time = time()
+
+
+
+  def memory_check ( self ):
+    '''
+    Estimate PAOFLOW's memory requirements with a "fudge factor" defined above
+
+    Arguments:
+        None
+
+    Returns:
+        gbyte (float): Estimated number of Gigabytes required in memory for PAOFLOW to run.
+    '''
+    dxdydz = 3
+    B_to_GB = 1.E-9
+    ff = self.gb_fudge_factor
+    bytes_per_complex = 128//8
+    arry,attr = self.data_controller.data_dicts()
+    nd1,nd2,nd3 = attr['nk1'],attr['nk2'],attr['nk3']
+    spins,num_wave_functions = attr['nspin'],attr['nawf']
+    return num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
 
 
 
@@ -273,7 +287,6 @@ class PAOFLOW:
         None
     
     '''
-
     arry,attr = self.data_controller.data_dicts()
 
     if 'Efield' not in arry: arry['Efield'] = np.array(Efield)
@@ -309,7 +322,6 @@ class PAOFLOW:
         None
 
     '''
-
     try:
       self.data_controller.write_z2pack(fname)
     except:
@@ -343,7 +355,7 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
 
     if 'ibrav' not in attr:
-      if ibrav is None:
+      if ibrav is None and self.rank == 0:
         if self.rank == 0:
           print('Must specify \'ibrav\' in the inputfile or as an optional argument to \'calc_bands\'')
         quit()
@@ -367,9 +379,8 @@ class PAOFLOW:
         if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
         if 'orb_pseudo' not in arrays: arrays['orb_pseudo'] = orb_pseudo[:]
         if len(arrays['lambda_p']) != natoms or len(arrays['lambda_p']) != natoms:
-          if self.rank == 0:  
-            print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
-          quit()
+          print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
+          self.comm.Abort()
 
         do_spin_orbit_bands(self.data_controller)
 
@@ -377,7 +388,7 @@ class PAOFLOW:
 
       if self.rank == 0 and arrays['kq'].shape[1] == attr['nkpnts']:
         print('WARNING: The bands kpath and nscf calculations have the same size.')
-        print('Spin Texture calculation could be wrong. Modify \'nk\'\n')
+        print('Spin Texture calculation should be performed after \'pao_eigh\' to ensure integration across the entire BZ.\n')
 
       E_kp = gather_full(arrays['E_k'], attr['npool'])
       self.data_controller.write_bands(fname, E_kp)
@@ -440,17 +451,12 @@ class PAOFLOW:
       if attr['abort_on_exception']:
         self.comm.Abort()
 
-
     # Broadcasting the modified arrays
-    #arry['HRs'] = comm.Bcast(arry['HRs'],root=0)
     #self.data_controller.broadcast_single_array('HRs')
     #self.data_controller.broadcast_single_array('tau')
     #self.data_controller.broadcast_single_array('a_vectors')
     #self.data_controller.broadcast_single_array('naw')
     #self.data_controller.broadcast_single_array('sh')
-    #if self.rank==0:  self.data_controller.broadcast_single_array('nl')
-    #self.data_controller.broadcast_attribute('nawf')
-    #self.data_controller.broadcast_attribute('natoms')
     #if (attr['do_spin_orbit']):
     #    self.data_controller.broadcast_single_array('lambda_p')
     #    self.data_controller.broadcast_single_array('lambda_d')
@@ -506,7 +512,6 @@ class PAOFLOW:
     Returns:
         None
     '''
-
     arrays,attr = self.data_controller.data_dicts()
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
@@ -628,6 +633,7 @@ class PAOFLOW:
       if 'nfft2' not in attr: attr['nfft2'] = nfft2
       if 'nfft3' not in attr: attr['nfft3'] = nfft3
 
+      nko1,nko2,nko3 = attr['nk1'],attr['nk2'],attr['nk3']
       nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
 
       # Ensure FFT grid is even
@@ -645,21 +651,6 @@ class PAOFLOW:
         if self.rank == 0:
           print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
         attr['npool'] = temp_pool
-
-      if self.rank == 0:
-        dxdydz = 3
-        B_to_GB = 1.E-9
-        spins = attr['nspin']
-        bytes_per_complex = 128//8
-        nd1,nd2,nd3 = nfft1,nfft2,nfft3
-        num_wave_functions = attr['nawf']
-        ff = self.gb_fudge_factor
-        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-        gbyte = num_wave_functions**2 * (nd1*nd2*nd3) * spins * dxdydz * bytes_per_complex * ff * B_to_GB
-        if attr['verbose']:
-          print('Performing Fourier interpolation on a larger grid.')
-          print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nk1,nfft1,nk2,nfft2,nk3,nfft3))
-        print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
       #------------------------------------------------------
       # Fourier interpolation on extended grid (zero padding)
@@ -680,6 +671,15 @@ class PAOFLOW:
       arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
 
       get_K_grid_fft(self.data_controller)
+
+      # Report new memory requirements
+      if self.rank == 0:
+        gbyte = self.memory_check()
+        if attr['verbose']:
+          print('Performing Fourier interpolation on a larger grid.')
+          print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nko1,nfft1,nko2,nfft2,nko3,nfft3))
+        print('New estimated maximum array size: %.2f GBytes'%gbyte)
+
     except:
       self.report_exception('interpolated_hamiltonian')
       if attr['abort_on_exception']:
@@ -700,14 +700,15 @@ class PAOFLOW:
     Returns:
         None
     '''
-
     from .defs.do_eigh import do_pao_eigh
     from .defs.communication import gather_scatter,scatter_full,gather_full
 
     arrays,attr = self.data_controller.data_dicts()
 
-    del arrays['HRs']
     if 'bval' not in attr: attr['bval'] = bval
+
+    # HRs and Hks are replaced with Hksp
+    del arrays['HRs']
 
     try:
       if 'Hksp' not in arrays:
@@ -726,10 +727,10 @@ class PAOFLOW:
 ##### Sample RunTime Here
       ## Parallelize search for amax & subtract for all processes.
       if 'HubbardU' in arrays and arrays['HubbardU'].any() != 0.0:
-        if self.rank == 0 and attr['verbose']:
-          print('Shifting Eigenvalues to top of valence band.')
         arrays['E_k'] = gather_full(arrays['E_k'], attr['npool'])
         if self.rank == 0:
+          if attr['verbose']:
+            print('Shifting Eigenvalues to top of valence band.')
           arrays['E_k'] -= np.amax(arrays['E_k'][:,attr['bval'],:])
         self.comm.Barrier()
         arrays['E_k'] = scatter_full(arrays['E_k'], attr['npool'])
@@ -789,6 +790,7 @@ class PAOFLOW:
 
     self.report_module_time('Gradient')
 
+##### Proposed to remove this and calculate pksp or velkp when required
     #----------------------------------------------------------------------
     # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
     #----------------------------------------------------------------------
@@ -844,7 +846,6 @@ class PAOFLOW:
     Returns:
         None
     '''
-
     arrays,attr = self.data_controller.data_dicts()
 
     if 'delta' not in attr: attr['delta'] = delta
@@ -889,10 +890,9 @@ class PAOFLOW:
 
   def trim_non_projectable_bands ( self ):
 
-    arrays,_ = self.data_controller.data_dicts()
+    arrays = self.data_controller.data_arrays
 
-    bnd = attributes['bnd']
-    attributes['nawf'] = bnd
+    bnd = attributes['nawf'] = attributes['bnd']
 
     arrays['E_k'] = arrays['E_k'][:,:bnd]
     arrays['pksp'] = arrays['pksp'][:,:,:bnd,:bnd]
@@ -985,8 +985,7 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-    attr['eminH'] = emin
-    attr['emaxH'] = emax
+    attr['eminH'],att['emaxH'] = emin,emax
 
     if s_tensor is not None: arrays['s_tensor'] = np.array(s_tensor)
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
@@ -1062,8 +1061,7 @@ class PAOFLOW:
     ene = np.linspace(emin, emax, ne)
     temps = np.arange(tmin, tmax+1.e-10, tstep)
 
-    if t_tensor is not None:
-      arrays['t_tensor'] = np.array(t_tensor)
+    if t_tensor is not None: arrays['t_tensor'] = np.array(t_tensor)
 
     try:
       # Compute Velocities for Spin 0 Only
@@ -1102,20 +1100,18 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-
     if temp is not None: attr['temp'] = temp
     if 'delta' not in attr: attr['delta'] = delta
     if 'metal' not in attr: attr['metal'] = metal
     if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
     if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
 
-    ene = np.linspace(emin, emax, ne)
-
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
 
     try:
+      ene = np.linspace(emin, emax, ne)
       do_dielectric_tensor(self.data_controller, ene)
     except:
       self.report_exception('dielectric_tensor')
