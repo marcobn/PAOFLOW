@@ -41,6 +41,9 @@ def do_spin_Hall ( data_controller, do_ac ):
       comm.Abort()
     comm.Barrier()
 
+  if rank == 0 and attr['verbose']:
+    print('Writing bxsf files for Spin Berry Curvature')
+
   for n in range(s_tensor.shape[0]):
     ipol = s_tensor[n][0]
     jpol = s_tensor[n][1]
@@ -123,6 +126,9 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       print('Relativistic calculation with SO required')
       comm.Abort()
     comm.Barrier()
+
+  if rank == 0 and attr['verbose']:
+    print('Writing bxsf files for Berry Curvature')
 
   for n in range(a_tensor.shape[0]):
     ipol = a_tensor[n][0]

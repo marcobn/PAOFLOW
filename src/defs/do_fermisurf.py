@@ -23,51 +23,47 @@ def do_fermisurf ( data_controller ):
   from os.path import join
   from .communication import gather_full
 
-  rank = MPI.COMM_WORLD.Get_rank()
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
 
   arry,attr = data_controller.data_dicts()
 
   #maximum number of bands crossing fermi surface
 ###### PAR!!!!!
-  E_k_full = gather_full(arry['E_k'], attr['npool'])
-
-  nbndx_plot = 10
-  nawf = attr['nawf']
-  nktot = attr['nkpnts']
-  fermi_up,fermi_dw = attr['fermi_up'],attr['fermi_dw']
-  nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+  E_kf = gather_full(arry['E_k'], attr['npool'])
 
   if rank == 0:
-    E_k_rs = np.reshape(E_k_full, (nk1,nk2,nk3,nawf,attr['nspin']))
+    if attr['verbose']:
+      print('Writing bxsf file for Fermi Surface')
 
-  for ispin in range(attr['nspin']):
+    Efermi = 0,0.0
+    nawf,nktot = attr['nawf'],attr['nkpnts']
+    nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+    fermi_up,fermi_dw = attr['fermi_up'],attr['fermi_dw']
 
-    icount = 0
-    eigband = (np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float) if rank==0 else None)
+    E_ks = np.reshape(E_kf, (nk1,nk2,nk3,nawf,attr['nspin']))
 
-    if rank == 0:
+    for ispin in range(attr['nspin']):
 
-      Efermi = 0.0
-      ind_plot = np.zeros(nbndx_plot)
+      ind_plot = []
+      eigband = []
 
       for ib in range(nawf):
-        E_k_min = np.amin(E_k_full[:,ib,ispin])
-        E_k_max = np.amax(E_k_full[:,ib,ispin])
-        btwUp = (E_k_min < fermi_up and E_k_max > fermi_up)
-        btwDwn = (E_k_min < fermi_dw and E_k_max > fermi_dw)
-        btwUaD = (E_k_min > fermi_dw and E_k_max < fermi_up)
+        E_k_min = np.amin(E_kf[:,ib,ispin])
+        E_k_max = np.amax(E_kf[:,ib,ispin])
+        btwUp = E_k_min < fermi_up and E_k_max > fermi_up
+        btwDwn = E_k_min < fermi_dw and E_k_max > fermi_dw
+        btwUaD = E_k_min > fermi_dw and E_k_max < fermi_up
         if btwUp or btwDwn or btwUaD:
-          if ( icount >= nbndx_plot ):
-            print('Too many bands contributing')
-            MPI.COMM_WORLD.Abort()
-          eigband[:,:,:,icount] = E_k_rs[:,:,:,ib,ispin]
-          ind_plot[icount] = ib
-          icount += 1
+          ind_plot.append(ib)
+          eigband.append(E_ks[:,:,:,ib,ispin])
 
-    feig = 'FermiSurf_%d.bxsf'%ispin
-    data_controller.write_bxsf(feig, eigband, icount)
+      feig = 'FermiSurf_%d.bxsf'%ispin
+      eigband = np.moveaxis(np.array(eigband), 0, 3)
+      data_controller.write_bxsf(feig, eigband, len(ind_plot), indices=ind_plot)
 
-    for ib in range(icount):
-      np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[:,:,:,ib])
+      for ib in range(len(eigband)):
+        np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[ib])
 
-  E_k_full = E_k_rs = None
+  comm.Barrier()
+  E_kf = E_ks = None

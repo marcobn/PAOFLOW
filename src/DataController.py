@@ -75,7 +75,7 @@ class DataController:
 
       self.add_default_arrays()
 
-      attr['abort_on_exception'] = False#True
+      attr['abort_on_exception'] = True
 
       # Read inputfile, if it exsts
       try:
@@ -190,16 +190,13 @@ class DataController:
 
       attr = self.data_attributes
 
-      if attr['verbose']:
-        print('Writing file: %s'%fname)
-
       with open(join(attr['opath'],fname), 'w') as f:
         for i in range(len(col1)):
           f.write('%.5f %.5e\n'%(col1[i],col2[i]))
     self.comm.Barrier()
 
 
-  def write_bxsf ( self, fname, bands, nbnd ):
+  def write_bxsf ( self, fname, bands, nbnd, indices=None ):
     '''
     Write a file in the bxsf format
 
@@ -211,17 +208,12 @@ class DataController:
     Returns:
         None
     '''
-
     attr = self.data_attributes
 
     if self.rank == 0:
       from .defs.write2bxsf import write2bxsf
 
-      if attr['verbose']:
-        print('Writing bxsf file: %s'%fname)
-
-      write2bxsf(self, fname, bands, nbnd, attr['fermi_up'], attr['fermi_dw'])
-    self.comm.Barrier()
+      write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
 
 
   def write_bands ( self, fname, bands ):

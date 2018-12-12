@@ -985,7 +985,7 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-    attr['eminH'],att['emaxH'] = emin,emax
+    attr['eminH'],attr['emaxH'] = emin,emax
 
     if s_tensor is not None: arrays['s_tensor'] = np.array(s_tensor)
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up

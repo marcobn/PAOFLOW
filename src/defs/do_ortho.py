@@ -39,7 +39,6 @@ def do_ortho ( Hks, Sks ):
 
 def do_orthogonalize ( data_controller ):
   from scipy import fftpack as FFT
-  from .cuda_fft import cuda_fftn, cuda_ifftn
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -47,6 +46,7 @@ def do_orthogonalize ( data_controller ):
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
   if attributes['use_cuda']:
+    from .cuda_fft import cuda_fftn
     arrays['Hks'] = cuda_fftn(np.moveaxis(arrays['HRs'],[0,1],[3,4]), axes=[0,1,2])
     arrays['Sks'] = cuda_fftn(np.moveaxis(arrays['SRs'],[0,1],[3,4]), axes=[0,1,2])
     arrays['Hks'] = np.reshape(np.moveaxis(arrays['Hks'],[3,4],[0,1]), (nawf,nawf,nktot,nspin), order='C')
@@ -61,6 +61,7 @@ def do_orthogonalize ( data_controller ):
   arrays['Hks'] = np.reshape(arrays['Hks'], (nawf,nawf,nk1,nk2,nk3,nspin), order='C')
   arrays['Sks'] = np.reshape(arrays['Sks'], (nawf,nawf,nk1,nk2,nk3), order='C')
   if attributes['use_cuda']:
+    from .cuda_fft import cuda_ifftn
     arrays['HRs'] = np.moveaxis(cuda_ifftn(np.moveaxis(arrays['Hks'],[0,1],[3,4]), axes=[0,1,2]),[3,4],[0,1])
   else:
     arrays['HRs'] = FFT.ifftn(arrays['Hks'], axes=[2,3,4])

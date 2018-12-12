@@ -36,6 +36,9 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
   esize = 1000
   ene = np.linspace(emin, emax, esize)
 
+  if rank == 0 and attr['verbose']:
+    print('Writing DoS Files')
+
   for ispin in range(attr['nspin']):
 
     dosaux = np.zeros((esize), order="C")
@@ -72,6 +75,9 @@ def do_dos_adaptive ( data_controller, emin=-10., emax=2. ):
 
   bnd = attr['bnd']
   netot = attr['nkpnts']*bnd
+
+  if rank == 0 and attr['verbose']:
+    print('Writing Adaptive DoS Files')
 
   for ispin in range(attr['nspin']):
 
