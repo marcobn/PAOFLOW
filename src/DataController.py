@@ -90,8 +90,7 @@ class DataController:
       # Ensure that the number of k-points from QE matches the grid size
       nkpnts = attr['nk1']*attr['nk2']*attr['nk3']
       if nkpnts != attr['nkpnts']:
-        print('\nERROR: Number of QE k-points does not match the MP grid size.')
-        print('Calculate nscf with nosym=.true. & noinv=.true.\n')
+        print('\nERROR: Number of QE k-points does not match the MP grid size. Calculate nscf with nosym=.true. & noinv=.true.\n')
         self.comm.Abort()
 
     # Broadcast Data

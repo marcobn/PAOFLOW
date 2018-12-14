@@ -29,7 +29,7 @@ class PAOFLOW:
   start_time = reset_time = None
 
   # Overestimate factor for guessing memory requirements
-  gb_fudge_factor = 8.
+  gb_fudge_factor = 4.
 
   # Function container for ErrorHandler's method
   report_exception = None
