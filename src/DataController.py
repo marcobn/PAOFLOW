@@ -39,8 +39,9 @@ class DataController:
     Returns:
         None
     '''
-    import os
+    from os import mkdir
     from mpi4py import MPI
+    from os.path import join,exists
     from .ErrorHandler import ErrorHandler
 
     self.comm = MPI.COMM_WORLD
@@ -63,15 +64,15 @@ class DataController:
       attr['verbose'] = verbose
       attr['workpath'] = workpath
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
-      attr['fpath'] = os.path.join(workpath, (savedir if inputfile==None else inputfile))
-      attr['opath'] = os.path.join(workpath, outputdir)
+      attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
+      attr['opath'] = join(workpath, outputdir)
 
       if inputfile == None:
         attr['temp'] = .025852
         attr['npool'],attr['smearing'] = npool,smearing
 
-      if not os.path.exists(attr['opath']):
-        os.mkdir(attr['opath'])
+      if not exists(attr['opath']):
+        mkdir(attr['opath'])
 
       self.add_default_arrays()
 
@@ -80,6 +81,8 @@ class DataController:
       # Read inputfile, if it exsts
       try:
         if inputfile != None:
+          if not exists(attr['fpath']):
+            raise Exception('ERROR: Inputfile does not exist\n%s'%attr['fpath'])
           self.read_pao_inputfile()
         self.read_qe_output()
       except Exception as e:
@@ -92,6 +95,8 @@ class DataController:
       if nkpnts != attr['nkpnts']:
         print('\nERROR: Number of QE k-points does not match the MP grid size. Calculate nscf with nosym=.true. & noinv=.true.\n')
         self.comm.Abort()
+
+    self.comm.Barrier()
 
     # Broadcast Data
     self.broadcast_data_arrays()
