@@ -47,9 +47,6 @@ def do_gradient ( data_controller ):
 
   # fft grid in R shifted to have (0,0,0) in the center
   get_R_grid_fft(data_controller)
-  #reshape R grid and each proc's piece of Hr
-
-  arry['Rfft'] = np.reshape(arry['Rfft'], (nk1,nk2,nk3,3), order='C')
 
   arry['dHksp'] = np.empty((snawf,nk1,nk2,nk3,3,nspin), dtype=complex, order='C')
   for ispin in range(nspin):

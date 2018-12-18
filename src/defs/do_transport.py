@@ -32,14 +32,14 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
   esize = ene.size
 
-  siemen_conv,temp_conv = 6.9884,11604.52500617
+  t_tensor = arrays['t_tensor']
 
-  op,t_tensor = attr['opath'],arrays['t_tensor']
+  siemen_conv,temp_conv = 6.9884,11604.52500617
 
   spin_mult = 1. if attr['nspin']==2 or attr['dftSO'] else 2.
 
   # Quick function opens file in output folder with name 's'
-  ojf = lambda s : open(join(op,'%s.dat'%s),'w')
+  ojf = lambda s : open(join(attr['opath'],'%s.dat'%s),'w')
 
   fPF = ojf('PF')
   fkappa = ojf('kappa')
