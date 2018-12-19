@@ -1,6 +1,6 @@
 
 
-report_pre_reqs = '%s must be called before %s'
+report_pre_reqs = 'SUGGESTION: %s must be called before %s'
 
 module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
                     'pao_hamiltonian'          : ['projectability'],\

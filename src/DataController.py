@@ -85,7 +85,7 @@ class DataController:
             raise Exception('ERROR: Inputfile does not exist\n%s'%attr['fpath'])
           self.read_pao_inputfile()
         self.read_qe_output()
-      except Exception as e:
+      except:
         print('\nERROR: Could not read QE xml data file')
         self.report_exception('Data Controller Initialization')
         self.comm.Abort()
@@ -99,8 +99,13 @@ class DataController:
     self.comm.Barrier()
 
     # Broadcast Data
-    self.broadcast_data_arrays()
-    self.broadcast_data_attributes()
+    try:
+      self.broadcast_data_arrays()
+      self.broadcast_data_attributes()
+    except:
+      print('ERROR: MPI was unable to broadcast')
+      self.report_exception('Initialization Broadcast')
+      self.comm.Abort()
 
 
   def data_dicts ( self ):
@@ -335,21 +340,40 @@ class DataController:
 
 
 
-### This section is under construction
   def broadcast_single_array ( self, key, dtype=complex, root=0 ):
+    '''
+    Broadcast array from 'data_arrays' with 'key' from 'root' to all other ranks
+
+    Arguments:
+        key (str): The key for the array to broadcast (key must exist in dictionary 'data_arrays')
+        dtype (dtype): The data type of the array to broadcast
+        root (int): The rank which is the source of the broadcasted array
+
+    Returns:
+        None
+    '''
     import numpy as np
     ashape = self.comm.bcast((None if self.rank!=root else self.data_arrays[key].shape), root=root)
     if self.rank != root:
       self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
     self.comm.Bcast(np.ascontiguousarray(self.data_arrays[key]), root=root)
 
-  def broadcast_attribute ( self, key ):
-    if self.rank == 0:
-      for i in range(1,self.size):
-        self.comm.send(self.data_attributes[key], dest=i)
-    else:
-      self.data_attributes[key] = self.comm.recv(source=0)
+  def broadcast_attribute ( self, key, root=0 ):
+    '''
+    Broadcast attribute from 'data_attributes' with 'key' from 'root' to all other ranks
 
+    Arguments:
+        key (str): The key for the attribute to broadcast (key must exist in dictionary 'data_attributes')
+        root (int): The rank which is the source of the broadcasted attribut
+
+    Returns:
+        None
+    '''
+    attr = self.data_attributes[key] if self.rank==root else None
+    self.data_attributes[key] = self.comm.bcast(attr, root=root)
+
+### This section is under construction
+### Only 'broadcast_single_array' should be used
   def broadcast_data_attributes ( self ):
     if self.rank == 0:
       for i in range(1,self.size):

@@ -167,18 +167,24 @@ class PAOFLOW:
     from time import time
     from mpi4py import MPI
 
-    verbose = self.data_controller.data_attributes['verbose']
-
     if self.rank == 0:
       tt = time() - self.start_time
       print('Total CPU time =%s%.3f sec'%(27*' ',tt))
-      if verbose:
-        mem = np.asarray(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        print("Memory usage on rank 0:  %6.4f GB"%(mem/1024.0**2))
-    self.comm.Barrier()
-    if self.rank == 1 and verbose:
-      mem = self.size*resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-      print("Approximate maximum concurrent memory usage:  %6.4f GB"%(mem/1024.0**2))
+
+    verbose = self.data_controller.data_attributes['verbose']
+
+    if verbose:
+
+      # Add up memory usage from each core
+      mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+      mem = np.array([mem], dtype=float)
+      mem0 = np.zeros(1, dtype=float) if self.rank==0 else None
+      self.comm.Reduce(mem, mem0, op=MPI.SUM, root=0)
+
+      if self.rank == 0:
+        print("Memory usage on rank 0:  %6.4f GB"%(mem[0]/1024.0**2))
+        print("Maximum concurrent memory usage:  %6.4f GB"%(mem0[0]/1024.0**2))
+
     MPI.Finalize()
     quit()
 
@@ -248,7 +254,8 @@ class PAOFLOW:
 
     try:
       do_Hks_to_HRs(self.data_controller)
-###### PARALLELIZATION
+
+      ### PARALLELIZATION
       self.data_controller.broadcast_single_array('HRs')
       if attr['non_ortho']:
         self.data_controller.broadcast_single_array('SRs')
@@ -365,9 +372,7 @@ class PAOFLOW:
     if 'nk' not in attr: attr['nk'] = nk
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
-    #----------------------------------------
-    # Compute bands with spin-orbit coupling
-    #----------------------------------------
+    # Prepare HRs for band computation with spin-orbit coupling
     try:
       if self.rank == 0 and attr['do_spin_orbit']:
         from .defs.do_spin_orbit import do_spin_orbit_bands
@@ -384,6 +389,7 @@ class PAOFLOW:
 
         do_spin_orbit_bands(self.data_controller)
 
+      # Calculate the bands
       do_bands(self.data_controller)
 
       if self.rank == 0 and arrays['kq'].shape[1] == attr['nkpnts']:
@@ -652,15 +658,13 @@ class PAOFLOW:
           print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
         attr['npool'] = temp_pool
 
-      #------------------------------------------------------
-      # Fourier interpolation on extended grid (zero padding)
-      #------------------------------------------------------
-
+      ### PARALLELIZATION
       if self.rank == 0:
         nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
         arrays['HRs'] = np.reshape(arrays['HRs'], (attr['nawf']**2,nk1,nk2,nk3,attr['nspin']))
       arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
 
+      # Fourier interpolation on extended grid (zero padding)
       do_double_grid(self.data_controller)
 
       snawf,_,_,_,nspin = arrays['Hksp'].shape
@@ -723,9 +727,9 @@ class PAOFLOW:
 
       do_pao_eigh(self.data_controller)
 
-##### PARALLELIZATION
-##### Sample RunTime Here
-      ## Parallelize search for amax & subtract for all processes.
+      ### PARALLELIZATION
+      ## DEV: Sample RunTime Here
+      ## DEV: Parallelize search for amax & subtract for all processes.
       if 'HubbardU' in arrays and arrays['HubbardU'].any() != 0.0:
         arrays['E_k'] = gather_full(arrays['E_k'], attr['npool'])
         if self.rank == 0:
@@ -778,7 +782,7 @@ class PAOFLOW:
       # No more need for k-space Hamiltonian
       del arrays['Hksp']
 
-########### PARALLELIZATION
+      ### PARALLELIZATION
       #gather dHksp on nawf*nawf and scatter on k points
       arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attr['nkpnts'],3,nspin))
       arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attr['npool']), 0, 2)
@@ -790,10 +794,8 @@ class PAOFLOW:
 
     self.report_module_time('Gradient')
 
-##### Proposed to remove this and calculate pksp or velkp when required
-    #----------------------------------------------------------------------
+    ### DEV: Proposed to remove this and calculate pksp or velkp when required
     # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
-    #----------------------------------------------------------------------
     do_momentum(self.data_controller)
     self.report_module_time('Momenta')
 
@@ -865,16 +867,10 @@ class PAOFLOW:
             print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
           quit()
 
-        #------------------------------------------------------------
-        # DOS calculation with adaptive smearing on double_grid Hksp
-        #------------------------------------------------------------
         if do_dos:
           from .defs.do_dos import do_dos_adaptive
           do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
 
-        #----------------------
-        # PDOS calculation ...
-        #----------------------
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
           do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
