@@ -25,7 +25,6 @@ rank = comm.Get_rank()
 
 def do_spin_Hall ( data_controller, do_ac ):
   from .perturb_split import perturb_split
-  from .do_spin_Berry_curvature import do_spin_Berry_curvature
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
   arry,attr = data_controller.data_dicts()
@@ -111,7 +110,6 @@ def do_spin_Hall ( data_controller, do_ac ):
 
 def do_anomalous_Hall ( data_controller, do_ac ):
   from .perturb_split import perturb_split
-  from .do_spin_Berry_curvature import do_spin_Berry_curvature
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
   arry,attr = data_controller.data_dicts()
@@ -171,15 +169,15 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       if rank == 0:
         sigxy *= cgs_conv
 
-#### Scaling??
-        for n in range(ene.size):
-          sigxy[n] *= ene[n]/105.4571
+      sigxyi = np.imag(ene*sigxy/105.4571) if rank==0 else None
+      sigxyr = np.real(sigxy) if rank==0 else None
+      sigxy = None
 
       fsigI = 'MCDi_%s%s.dat'%cart_indices
-      data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))
+      data_controller.write_file_row_col(fsigI, ene, sigxyi)
 
       fsigR = 'MCDr_%s%s.dat'%cart_indices
-      data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+      data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
 
 def do_spin_current ( data_controller, spol, ipol ):
@@ -214,7 +212,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
 
   emin = 0.0
   emax = attr['shift']
-#### Hardcode 'de'
+  ### Hardcode 'de'
   esize = 500
   ene = np.linspace(emin, emax, esize)
 
@@ -232,6 +230,67 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
     return(None, None)
 
 
+def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
+  #----------------------
+  # Compute spin Berry curvature
+  #----------------------
+  from .communication import gather_full
+  from .smearing import intgaussian, intmetpax
+
+  arrays,attributes = data_controller.data_dicts()
+
+  snktot,nawf,_,nspin = pksp.shape
+  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
+  nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
+
+  # Compute only Omega_z(k)
+  Om_znkaux = np.zeros((snktot,nawf), dtype=float)
+
+  deltap = 0.05
+  for ik in range(snktot):
+    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2
+    E_nm[np.where(E_nm<1.e-4)] = np.inf
+    Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T)/E_nm, axis=1)
+  E_nm = None
+
+  attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
+  ### Hardcoded 'de'
+  esize = 500
+  ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
+
+  Om_zkaux = np.zeros((snktot,esize), dtype=float)
+
+  for i in range(esize):
+    if attributes['smearing'] == 'gauss':
+      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intgaussian(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0]), axis=1)
+    elif attributes['smearing'] == 'm-p':
+      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intmetpax(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0]), axis=1)
+    else:
+      Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*(0.5 * (-np.sign(arrays['E_k'][:,:,0]-ene[i]) + 1)), axis=1)
+
+  Om_zk = gather_full(Om_zkaux, attributes['npool'])
+  Om_zkaux = None
+
+  shc = None
+  if rank == 0:
+    shc = np.sum(Om_zk, axis=0)/float(attributes['nkpnts'])
+
+  n0 = 0
+  n = esize-1
+  Om_k = None
+  if rank == 0:
+    Om_k = np.zeros((nk1,nk2,nk3,esize), dtype=float)
+    for i in range(esize-1):
+      if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
+        n0 = i
+      if ene[i] <= fermi_up and ene[i+1] >= fermi_up:
+        n = i
+    Om_k = np.reshape(Om_zk, (nk1,nk2,nk3,esize), order='C')
+    Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
+
+  return(ene, shc, Om_k)
+
+
 def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
 
   arry,attr = data_controller.data_dicts()
@@ -245,7 +304,7 @@ def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
 
   emin = 0.0
   emax = attr['shift']
-##### Hardcoded 'de'
+  ### Hardcoded 'de'
   esize = 500
   ene = np.linspace(emin, emax, esize)
 
@@ -293,7 +352,7 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
     for m in range(nawf):
       if m != n:
         E_diff_nm[:,n,m] = (arry['E_k'][:,n,ispin]-arry['E_k'][:,m,ispin])**2
-        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_i[:,n,m,ispin]*pksp_j[:,m,n,ispin])
+        f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_j[:,n,m,ispin]*pksp_i[:,m,n,ispin])
 
   fn = None
 

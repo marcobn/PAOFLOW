@@ -39,9 +39,8 @@ def do_adaptive_smearing ( data_controller ):
 
   afac = (1. if attributes['smearing']=='m-p' else .7)
 
-## Test This
-##  pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
-  pksaux = arrays['pksp'][:,:,diag[0],diag[1]]
+## DEV: Try to make contiguinuity conditional. Requires benchmark testing
+  pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
 
   deltakp = np.zeros((npks,nawf,nspin), dtype=float)
   deltakp2 = np.zeros((npks,nawf,nawf,nspin), dtype=float)

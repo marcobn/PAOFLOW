@@ -30,8 +30,6 @@ def bands_calc ( data_controller ):
 
   kq_aux = scatter_full(arrays['kq'].T, npool).T
  
-## Ortho before bands
-##  Sks_aux = (None if not attributes['non_ortho'] else band_loop_S(data_controller, kq_aux))
   Hks_aux = band_loop_H(data_controller, kq_aux)
 
   E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float, order="C")
@@ -40,12 +38,8 @@ def bands_calc ( data_controller ):
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
       E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
-#### HOW TO Orthogonalize wtih Bands??
-####      E_kp_aux[ik,:,ispin], v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(Sks_aux[:,:,ik] if attributes['non_ortho'] else None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
 
-  Hks_aux = None
-  Sks_aux = None
-
+  Hks_aux = Sks_aux = None
   return E_kp_aux, v_kp_aux
 
 
@@ -68,45 +62,6 @@ def band_loop_H ( data_controller, kq_aux ):
 
   kdot  = None
   return Haux
-
-
-def band_loop_S ( data_controller, kq_aux ):
-  import cmath
-
-  arrays,attributes = data_controller.data_dicts()
-
-  nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
-
-  nsize = kq_aux.shape[1]
-  Saux  = np.zeros((nawf,nawf,nsize), dtype=complex)
-
-  for ik in range(nsize):
-    for i in range(nk1):
-      for j in range(nk2):
-        for k in range(nk3):
-#### Why cmath here?
-          phase = arrays['R_wght'][arrays['idx'][i,j,k]]*cmath.exp(2.0*np.pi*kq_aux[:,ik].dot(arrays['R'][arrays['idx'][i,j,k],:])*1j)
-          Saux[:,:,ik] += phase*arrays['SRs'][:,:,i,j,k]
-
-  return Saux
-
-
-def do_ortho ( Hks, Sks ):
-
-  # If orthogonality is required, we have to apply a basis change to Hks as
-  # Hks -> Sks^(-1/2)*Hks*Sks^(-1/2)
-
-  nawf,_,nkpnts,nspin = Hks.shape
-  S2k  = np.zeros((nawf,nawf,nkpnts), dtype=complex)
-  for ik in range(nkpnts):
-    S2k[:,:,ik] = npl.inv(spl.sqrtm(Sks[:,:,ik]))
-
-  Hks_o = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
-  for ispin in range(nspin):
-    for ik in range(nkpnts):
-      Hks_o[:,:,ik,ispin] = np.dot(S2k[:,:,ik], Hks[:,:,ik,ispin]).dot(S2k[:,:,ik])
-
-  return Hks_o
 
 
 def do_bands ( data_controller ):
@@ -151,7 +106,6 @@ def do_bands ( data_controller ):
     # Compute the bands along the path in the IBZ
     arrays['E_k'],arrays['v_k'] = bands_calc(data_controller)
 
-#### 1D Bands?
 #### 1D Bands not implemented
   else:
     if rank == 0:
