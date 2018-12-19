@@ -1062,7 +1062,9 @@ class PAOFLOW:
     try:
       # Compute Velocities for Spin 0 Only
       bnd = attr['bnd']
-      velkp = np.diagonal(np.real(arrays['pksp'][:,:,:bnd,:bnd,0]),axis1=2,axis2=3)
+      velkp = np.zeros((arrays['pksp'].shape[0],3,bnd,attr['nspin']))
+      for n in range(bnd):
+        velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
 
       do_transport(self.data_controller, temps, ene, velkp)
       velkp = None
