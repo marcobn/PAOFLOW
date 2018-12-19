@@ -124,7 +124,6 @@ def do_topology ( data_controller ):
   kq_aux = kq_aux.T
 
   # Compute R*H(R)
-  HRs = fftshift(HRs, axes=(2,3,4))
   Rfft = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
   HRs = np.reshape(HRs, (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
   HRs = np.moveaxis(HRs, 2, 0)
@@ -257,7 +256,7 @@ def do_topology ( data_controller ):
   pks = gather_full(pks, npool)
   if attributes['do_spin_orbit']:
     bnd *= 2
-  velk = (None if rank!=0 else np.zeros((nkpi,3,bnd,nspin), dtype=float))
+  velk = np.zeros((nkpi,3,bnd,nspin), dtype=float) if rank==0 else None
   if rank == 0:
     for n in range(bnd):
       velk[:,:,n,:] = np.real(pks[:,:,n,n,:])
