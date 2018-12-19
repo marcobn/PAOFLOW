@@ -15,57 +15,55 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-import numpy as np
-import cmath
-import sys, time
-import os
-from write2bxsf import *
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-from write3Ddatagrid import *
-from communication import *
-
-# initialize parallel execution
-comm=MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
 
 
-def do_fermisurf(fermi_dw,fermi_up,E_k,alat,b_vectors,nk1,nk2,nk3,nawf,ispin,npool,inputpath):
-    #maximum number of bands crossing fermi surface
+def do_fermisurf ( data_controller ):
+  import numpy as np
+  from mpi4py import MPI
+  from os.path import join
+  from .communication import gather_full
 
-    E_k_full = gather_full(E_k,npool)
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
 
-    nbndx_plot = 10
-    nktot = nk1*nk2*nk3
-    
+  arry,attr = data_controller.data_dicts()
 
-    if rank==0:
-        eigband = np.zeros((nk1,nk2,nk3,nbndx_plot),dtype=float)
-        ind_plot = np.zeros(nbndx_plot)
+  #maximum number of bands crossing fermi surface
+###### PAR!!!!!
+  E_kf = gather_full(arry['E_k'], attr['npool'])
 
-        E_k_rs = np.reshape(E_k_full,(nk1,nk2,nk3,nawf))
+  if rank == 0:
+    if attr['verbose']:
+      print('Writing bxsf file for Fermi Surface')
 
+    Efermi = 0,0.0
+    nawf,nktot = attr['nawf'],attr['nkpnts']
+    nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+    fermi_up,fermi_dw = attr['fermi_up'],attr['fermi_dw']
 
+    E_ks = np.reshape(E_kf, (nk1,nk2,nk3,nawf,attr['nspin']))
 
-        Efermi = 0.0
+    for ispin in range(attr['nspin']):
 
-        #collect the interpolated eignvalues
-        icount = 0
-        for ib in range(nawf):
-            if ((np.amin(E_k_full[:,ib]) < fermi_up and np.amax(E_k_full[:,ib]) > fermi_up) or \
-                (np.amin(E_k_full[:,ib]) < fermi_dw and np.amax(E_k_full[:,ib]) > fermi_dw) or \
-                (np.amin(E_k_full[:,ib]) > fermi_dw and np.amax(E_k_full[:,ib]) < fermi_up)):
-                if ( icount > nbndx_plot ): sys.exit("too many bands contributing")
-                eigband[:,:,:,icount] = E_k_rs[:,:,:,ib]
-                ind_plot[icount] = ib
-                icount +=1
-        x0 = np.zeros(3,dtype=float)   
+      ind_plot = []
+      eigband = []
 
-        write2bxsf(fermi_dw,fermi_up,eigband, nk1, nk2, nk3, icount, ind_plot, Efermi, alat,x0, b_vectors, 'FermiSurf_'+str(ispin)+'.bxsf',inputpath)   
+      for ib in range(nawf):
+        E_k_min = np.amin(E_kf[:,ib,ispin])
+        E_k_max = np.amax(E_kf[:,ib,ispin])
+        btwUp = E_k_min < fermi_up and E_k_max > fermi_up
+        btwDwn = E_k_min < fermi_dw and E_k_max > fermi_dw
+        btwUaD = E_k_min > fermi_dw and E_k_max < fermi_up
+        if btwUp or btwDwn or btwUaD:
+          ind_plot.append(ib)
+          eigband.append(E_ks[:,:,:,ib,ispin])
 
-        for ib in range(icount):
-            np.savez(os.path.join(inputpath,'Fermi_surf_band_'+str(ib)), nameband = eigband[:,:,:,ib])
+      feig = 'FermiSurf_%d.bxsf'%ispin
+      eigband = np.moveaxis(np.array(eigband), 0, 3)
+      data_controller.write_bxsf(feig, eigband, len(ind_plot), indices=ind_plot)
 
+      for ib in range(len(eigband)):
+        np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[ib])
 
-    E_k_full = E_k_rs = None
+  comm.Barrier()
+  E_kf = E_ks = None

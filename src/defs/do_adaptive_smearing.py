@@ -16,52 +16,42 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
+def do_adaptive_smearing ( data_controller ):
+  from numpy.linalg import norm
+  import numpy as np
 
-from communication import *
-import numpy as np
-from numpy import linalg as LAN
-from load_balancing import *
+  arrays,attributes = data_controller.data_dicts()
 
-def do_adaptive_smearing(pksp,nawf,nspin,alat,a_vectors,nk1,nk2,nk3,smearing):
+  #----------------------
+  # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
+  #----------------------
 
-    if smearing == None:
-        return
+  a_vectors = arrays['a_vectors']
 
-    #----------------------
-    # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
-    #----------------------
+  nawf = attributes['nawf']
+  nspin = attributes['nspin']
+  nkpnts = attributes['nkpnts']
+  npks = arrays['pksp'].shape[0]
 
+  diag = np.diag_indices(nawf)
 
-    deltakp = np.zeros((pksp.shape[0],nawf,nspin),dtype=float)
+  dk = (8.*np.pi**3/attributes['omega']/(nkpnts))**(1./3.)
 
-    diag = np.diag_indices(nawf)
+  afac = (1. if attributes['smearing']=='m-p' else .7)
 
-    omega = alat**3 * np.dot(a_vectors[0,:],np.cross(a_vectors[1,:],a_vectors[2,:]))
-    dk = (8.*np.pi**3/omega/(nk1*nk2*nk3))**(1./3.)
+## DEV: Try to make contiguinuity conditional. Requires benchmark testing
+  pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
 
-    if smearing == 'gauss':
-        afac = 0.7
-    elif smearing == 'm-p':
-        afac = 1.0        
+  deltakp = np.zeros((npks,nawf,nspin), dtype=float)
+  deltakp2 = np.zeros((npks,nawf,nawf,nspin), dtype=float)
+  for n in range(nawf):
+    deltakp[:,n] = norm(np.real(pksaux[:,:,n]), axis=1)
+    for m in range(nawf):
+      deltakp2[:,n,m,:] = norm(pksaux[:,:,n,:]-pksaux[:,:,m,:], axis=1)
 
+  pksaux = None
+  deltakp *= afac*dk
+  deltakp2 *= afac*dk
 
-    pksaux = np.ascontiguousarray(pksp[:,:,diag[0],diag[1]])
-
-    deltakp = np.zeros((pksp.shape[0],nawf,nspin),dtype=float)
-    deltakp2 = np.zeros((pksp.shape[0],nawf,nawf,nspin),dtype=float)
-
-
-    for n in range(nawf):
-        deltakp[:,n] = LAN.norm(np.real(pksaux[:,:,n]),axis=1)
-        for m in range(nawf):
-            deltakp2[:,n,m,:] = LAN.norm(pksaux[:,:,n,:] - pksaux[:,:,m,:],axis=1)
-
-    pksaux=None
-    deltakp*=afac*dk
-    deltakp2*=afac*dk
-
-    comm.Barrier()
-
-    return deltakp,deltakp2
+  arrays['deltakp'] = deltakp
+  arrays['deltakp2'] = deltakp2

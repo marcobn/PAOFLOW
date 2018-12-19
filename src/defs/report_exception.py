@@ -15,3 +15,13 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
+
+def report_exception ( ):
+  import sys
+  import traceback
+
+  etype, evalue, etb = sys.exc_info()
+  print('Exception: ', etype)
+  print(evalue)
+  traceback.print_tb(etb)
+ 

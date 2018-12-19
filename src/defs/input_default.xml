@@ -8,8 +8,8 @@
     <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
     <writez2pack type="logical" size="1">F</writez2pack><!-- write data formatted for Z2pack calculations -->
     <write_binary type="logical" size="1">F</write_binary><!-- write data formatted for acbn0 calculations in AFLOWpi -->
-    <use_cuda type="logical" size="1">F</use_cuda><!-- write 3D Berry curvature and spin Berry curvature to file -->
-    <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
+    <use_cuda type="logical" size="1">F</use_cuda><!-- Use GPU to perform FFTs -->
+    <shift_type type="integer" size="1">1</shift_type><!-- Shift Type -->
     <shift>auto</shift><!-- if 'auto' shift is selected automatically; else, give numerical value (eV) -->
     <pthr type="decimal" size="1">0.95</pthr>
     <npool type="integer" size="1">1</npool>
@@ -59,8 +59,8 @@
     <do_spin_orbit type="logical" size="1">F</do_spin_orbit>
     <theta type="decimal" size="1">0.0</theta>
     <phi type="decimal" size="1">0.0</phi>
-    <lambda_p type="decimal" size="1">0.0</lambda_p>
-    <lambda_d type="decimal" size="1">0.0</lambda_d>
+    <lambda_p><a type="decimal" size="1">0.0</a></lambda_p>
+    <lambda_d><a type="decimal" size="1">0.0</a></lambda_d>
 
     <!-- Hamiltonian interpolation on finer MP mesh -->
     <double_grid type="logical" size="1">F</double_grid>

@@ -15,56 +15,58 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-from scipy import fftpack as FFT
-import numpy as np
+
 import cmath
-import sys, time
+import numpy as np
 
-sys.path.append('./')
-
-def do_spin_orbit_calc(HRaux,natoms,theta,phi,socStrengh):
+def do_spin_orbit_bands ( data_controller ):
 
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 
-    nawf = HRaux.shape[0]
-    nk1 = HRaux.shape[2]
-    nk2 = HRaux.shape[3]
-    nk3 = HRaux.shape[4]
-    nspin = HRaux.shape[5]
+    arry,attr = data_controller.data_dicts()
 
-    HR_double= np.zeros((2*nawf,2*nawf,nk1,nk2,nk3,nspin),dtype=complex)
-    HR_soc_p = np.zeros((18,18),dtype=complex)  #Hardcoded do s,p,d only (18 orbitals per atom) - Must Change
+    natoms = attr['natoms']
+    nawf,_,nk1,nk2,nk3,nspin = arry['HRs'].shape
+
+    HR_double = np.zeros((2*nawf,2*nawf,nk1,nk2,nk3,nspin), dtype=complex)
+    HR_soc_p = np.zeros((18,18), dtype=complex)  #Hardcoded do s,p,d only (18 orbitals per atom) - Must Change
 
     # nonmagnetic :  copy H at the upper (lower) left (right) of the double matrix HR_double
     if nspin == 1:
-        HR_double[0:nawf,0:nawf,:,:,:,0]   			       	       =  HRaux[0:nawf,0:nawf,:,:,:,0]
-        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] 	      	       =  HRaux[0:nawf,0:nawf,:,:,:,0]
+        HR_double[:nawf,:nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,0]
+        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,0]
     # magnetic :  copy H_up (H_down) at the upper (lower) left (right) of the double matrix 
     else:
-        HR_double[0:nawf,0:nawf,:,:,:,0]   			       	       =  HRaux[0:nawf,0:nawf,:,:,:,0]
-        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] 	       	       =  HRaux[0:nawf,0:nawf,:,:,:,1]
+        HR_double[:nawf,:nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,0]
+        HR_double[nawf:2*nawf,nawf:2*nawf,:,:,:,0] = arry['HRs'][:nawf,:nawf,:,:,:,1]
 
-    HR_soc_p =  soc_p(theta,phi)
-    HR_soc_d =  soc_d(theta,phi)
+    socStrengh = np.zeros((natoms,2), dtype=float)
+    socStrengh [:,0] =  arry['lambda_p'][:]
+    socStrengh [:,1] =  arry['lambda_d'][:]
 
-    M=9
-    nt=natoms
+    HR_soc_p = soc_p(attr['theta'], attr['phi'])
+    HR_soc_d = soc_d(attr['theta'], attr['phi'])
+
+    M = 9
+    nt = attr['natoms']
     for n in range(nt):
         i=n*M
         j=(n+1)*M
         # Up-Up
-        HR_double[i:j,i:j,0,0,0,0]                             = HR_double[i:j,i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[0:9,0:9] + socStrengh[n,1]*HR_soc_d[0:9,0:9]
+        HR_double[i:j,i:j,0,0,0,0] = HR_double[i:j,i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[0:9,0:9] + socStrengh[n,1]*HR_soc_d[0:9,0:9]
         # Down-Down
         HR_double[(i+nt*M):(j+nt*M),(i+nt*M):(j+nt*M),0,0,0,0] = HR_double[(i+nt*M):(j+nt*M),(i+nt*M):(j+nt*M),0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,9:18]  + socStrengh[n,1]*HR_soc_d[9:18,9:18]
         # Up-Down
-        HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0]               = HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0] + socStrengh[n,0]*HR_soc_p[0:9,9:18] + socStrengh[n,1]*HR_soc_d[0:9,9:18]
+        HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0] = HR_double[i:j,(i+nt*M):(j+nt*M),0,0,0,0] + socStrengh[n,0]*HR_soc_p[0:9,9:18] + socStrengh[n,1]*HR_soc_d[0:9,9:18]
         # Down-Up
-        HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0]               = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,0:9] + socStrengh[n,1]*HR_soc_d[9:18,0:9]
+        HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] = HR_double[(i+nt*M):(j+nt*M),i:j,0,0,0,0] + socStrengh[n,0]*HR_soc_p[9:18,0:9] + socStrengh[n,1]*HR_soc_d[9:18,0:9]
 
-    return(HR_double)
+    del arry['HRs']
+    arry['HRs'] = HR_double
+    attr['nawfR'] = 2*nawf
 
 
-def soc_p(theta,phi):
+def soc_p ( theta, phi ):
 
     # Hardcoded to s,p,d. This must change latter.
         HR_soc = np.zeros((18,18),dtype=complex) 
@@ -98,8 +100,10 @@ def soc_p(theta,phi):
         HR_soc[12,2]=np.conjugate(HR_soc[2,12])
         HR_soc[10,3]=np.conjugate(HR_soc[3,10])
         HR_soc[11,3]=np.conjugate(HR_soc[3,11])
-        return(HR_soc)
-def soc_d(theta,phi):
+        return HR_soc
+
+
+def soc_d ( theta, phi ):
 
     # Hardcoded to s,p,d. This must change latter.
         HR_soc = np.zeros((18,18),dtype=complex) 
@@ -164,4 +168,4 @@ def soc_d(theta,phi):
         HR_soc[14,8] = np.conjugate(HR_soc[8,14])
         HR_soc[15,7] = np.conjugate(HR_soc[7,15])
         HR_soc[15,8] = np.conjugate(HR_soc[8,15])
-        return(HR_soc)
+        return HR_soc

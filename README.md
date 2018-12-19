@@ -6,7 +6,7 @@
 
  Copyright 2016-2017 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 
- This file is part of AFLOW software.
+ This package is part of AFLOW software.
 
  AFLOW is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -16,7 +16,7 @@
 
  You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
- PAOFLOW current capabilities:
+ PAOFLOW's capabilities:
 
  - Construction of PAO Hamiltonians from the DFT wavefunctions onto pseudo atomic orbitals
  - Hamiltonian data for further processing (ACBN0, PAOtransport, etc.)
@@ -32,7 +32,6 @@
  - Berry curvature and anomalous Hall conductivity (including magnetic circular dichroism spectra)
  - spin Berry curvature and spin Hall conductivity (including spin circular dichroism spectra) 
  - Band topology (Z2 invariants, Berry and spin Berry curvature along standard paths in BZ, critical points
- - save and restart for interrupted runs
 
  Use of PAOFLOW should reference:
 

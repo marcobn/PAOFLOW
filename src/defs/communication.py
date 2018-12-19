@@ -19,7 +19,7 @@
 import numpy as np
 import time
 from mpi4py import MPI
-from load_balancing import *
+from .load_balancing import *
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -27,6 +27,7 @@ size = comm.Get_size()
 
 # Scatters first dimension of an array of arbitrary length
 def scatter_array ( arr, sroot=0 ):
+
     # Compute data type and shape of the scattered array on this process
     pydtype = None
     auxlen = None
@@ -172,7 +173,7 @@ def gather_full(arr,npool,sroot=0):
         else:
             gather_array(None,arr[chunk_e:],sroot=sroot)
         
-    if rank==sroot:
+    if rank == sroot:
         return temp
 
 
@@ -204,7 +205,7 @@ def gather_scatter(arr,scatter_axis,npool):
     for r in range(size):
         comm.Barrier()
         #gather array from each proc with indices for each proc on scatter_axis
-        if r==rank:
+        if r == rank:
             temp = gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
         else:
             gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)

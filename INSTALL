@@ -2,27 +2,23 @@
 GENERAL NOTES ON INSTALLATION
 -----------------------------------------------------------------------------------
 
-Instruction to install the python packages needed by PAOFLOW and to run the code:
+Instruction to install the python package, PAOFLOW, and package prerequisites:
 
-Python + MPI:
-
+Python:
 wget https://repo.continuum.io/archive/Anaconda2-4.2.0-Linux-x86_64.sh
 bash Anaconda2-4.2.0-Linux-x86_64.sh
+
+MPI:
 conda install mpi4py
-conda install pip
-pip install multiprocessing
+
+PAOFLOW:
+python setup.py install
+python setup.py install --user
+
 
 Intel Distribution for python:
 
-I was able to gain at least an order of magnitude in performance boost by installing
-the Intel distribution for python on my local DELL PowerEdge T630: 
+About an order of magnitude in performance boost obtained by installing the Intel distribution for python on my local DELL PowerEdge T630: 
 https://software.intel.com/en-us/articles/using-intel-distribution-for-python-with-anaconda
 The same installation does not seem to improve the performance of python on Stampede (UTexas)
 or Talon2 (UNT).
-
-Save and Restart:
-
-PAOFLOW can save data and restart from data at selected checkpoints. However, it uses the numpy.savez 
-protocol, which needs a TMP directory to store intermediate arrays. To make it work, define a TMP 
-directory (export TMPDIR=local_dir) with enough space (typically you need to have at least 2 x dimension 
-of the largest array as written in the output).

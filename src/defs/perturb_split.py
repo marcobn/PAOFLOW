@@ -1,4 +1,4 @@
-# 
+#
 # PAOFLOW
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
@@ -16,23 +16,31 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_momentum ( data_controller ):
+def perturb_split ( rot_op1, rot_op2, v_k, degen ):
   import numpy as np
+  from scipy import linalg as spl
 
-  arry,attr = data_controller.data_dicts()
+  op1 = np.dot(np.conj(v_k.T), np.dot(rot_op1,v_k))
+  if len(degen) == 0:
+    op2 = np.dot(np.conj(v_k.T), np.dot(rot_op2,v_k))
+    return op1,op2
 
-  nktot,_,nawf,nawf,nspin = arry['dHksp'].shape
+  v_k_temp = np.copy(v_k)
 
-  arry['pksp'] = np.zeros_like(arry['dHksp'])
+  for i in range(len(degen)):
 
-  for ispin in range(nspin):
-    for ik in range(nktot):
-      for l in range(3):
-        arry['pksp'][ik,l,:,:,ispin] = arry['dHksp'][ik,l,:,:,ispin].dot(arry['v_k'][ik,:,:,ispin])
+    # degenerate subspace indices upper and lower lim
+    ll = degen[i][0]
+    ul = degen[i][-1]+1
 
-  vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arry['v_k'],1,2)))
+    # diagonalize in degenerate subspace
+    _,weight = spl.eigh(op1[ll:ul,ll:ul])
 
-  for ispin in range(nspin):
-    for ik in range(nktot):
-      for l in range(3):
-        arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])
+    # linear combination of eigenvectors of H that diagonalize
+    v_k_temp[:,ll:ul] = np.dot(v_k_temp[:,ll:ul], weight)
+
+  # return new operator in non degenerate basis
+  op1 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op1,v_k_temp))
+  op2 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op2,v_k_temp))
+
+  return(op1, op2)

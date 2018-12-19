@@ -16,23 +16,19 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import numpy as np
-import numpy.polynomial.hermite as HERMITE
-import scipy.special as SPECIAL
-import math, cmath
-import sys, time
 
+def gaussian ( eig, ene, delta ):
+    import numpy as np
 
-one_over_sqrt_pi = 1.0/np.sqrt(np.pi)
+    # Gaussian Smearing
+    return (np.exp(-((ene-eig)/delta)**2)/delta)/np.sqrt(np.pi)
 
 
 
-def gaussian(eig,ene,delta):
-
-    # gaussian smearing
-    return one_over_sqrt_pi*(np.exp(-((ene-eig)/delta)**2)/delta)
-
-def metpax(eig,ene,delta):
+def metpax ( eig, ene, delta ):
+    import numpy as np
+    from math import factorial
+    from numpy.polynomial.hermite import hermval
 
     # Methfessel and Paxton smearing
     nh = 5
@@ -40,16 +36,22 @@ def metpax(eig,ene,delta):
     coeff[0] = 1.
     for n in range(2,2*nh,2):
         m = n/2
-        coeff[n] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
+        coeff[n] = (-1.)**m/(factorial(m)*(4.0**m)*np.sqrt(np.pi))
 
-    return (HERMITE.hermval((ene-eig)/delta,coeff)*np.exp(-((ene-eig)/delta)**2)/delta/np.sqrt(np.pi))
+    x = (ene-eig)/delta
+    return hermval(x, coeff)*np.exp(-(x)**2)/(delta*np.sqrt(np.pi))
 
-def intgaussian(eig,ene,delta):
+def intgaussian ( eig, ene, delta ):
+    from scipy.special import erf
 
     # integral of the gaussian function as approximation of the Fermi-Dirac distribution 
-    return(0.5*(1-SPECIAL.erf((eig-ene)/delta)))
+    return (1.-erf((eig-ene)/delta))/2.
 
-def intmetpax(eig,ene,delta):
+def intmetpax ( eig, ene, delta ):
+    import numpy as np
+    from math import factorial
+    from scipy.special import erf
+    from numpy.polynomial.hermite import hermval
 
     # Methfessel and Paxton correction to the Fermi-Dirac distribution
     nh = 5
@@ -57,6 +59,7 @@ def intmetpax(eig,ene,delta):
     coeff[0] = 0.
     for n in range(2,2*nh,2):
         m = n/2
-        coeff[n-1] = (-1.)**m/(math.factorial(m)*4.0**m*np.sqrt(np.pi))
+        coeff[n-1] = (-1.)**m/(factorial(m)*(4.0**m)*np.sqrt(np.pi))
 
-    return(0.5*(1-SPECIAL.erf((eig-ene)/delta)) + HERMITE.hermval((eig-ene)/delta,coeff)*np.exp(-((eig-ene)/delta)**2)/np.sqrt(np.pi))
+    x = (eig-ene)/delta
+    return (1.-erf(x))/2. + hermval(x, coeff)*np.exp(-(x**2))/np.sqrt(np.pi)

@@ -23,36 +23,22 @@
 #
 # *************************************************************************************
 
-# future imports
-
-
-import sys
-import numpy as np
-from PAOFLOW import *
+from PAOFLOW import PAOFLOW
 
 def main():
 
-    arg1 = './'
-    arg2 = "inputfile.xml"
-    try:
-        arg1 = os.path.abspath(sys.argv[1])
-        if os.path.isfile(arg1):
-            arg2 = os.path.basename(arg1)
-            arg1 = os.path.dirname(arg1)
-    except: pass
+  paoflow = PAOFLOW.PAOFLOW(savedir='pt.save', smearing='m-p')
+  paoflow.projectability()
+  paoflow.pao_hamiltonian()
+  paoflow.interpolated_hamiltonian()
+  paoflow.pao_eigh()
+  paoflow.gradient_and_momenta()
+  paoflow.adaptive_smearing()
+  paoflow.dos(emin=-8., emax=4., delta=.2)
+  paoflow.transport(emin=-8., emax=4., t_tensor=[[0,0]])
+  paoflow.dielectric_tensor(metal=True, kramerskronig=False, emin=.5, emax=10., d_tensor=[[0,0]])
+  paoflow.finish_execution()
 
-
-
-
-    # PAOFLOW may be called with one argument specifying the directory containing 'inputfile.xml'.
-    outDict = paoflow(inputpath=arg1,inputfile=arg2)
-
-    # Check for output dictionary and print the keys.
-    if outDict is not None:
-        print('\noutDict keys:')
-        for k in list(outDict.keys()):
-            print('\''+k+'\'')
-
-if __name__== "__main__":
-    main()
+if __name__== '__main__':
+  main()
 
