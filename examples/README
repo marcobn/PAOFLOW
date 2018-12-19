@@ -19,9 +19,6 @@ The options have default values:
 <inputfile_name> - 'inputfile.xml'
 
 
-
-!! This section is currently under construction !!
-
 Simply run all the tests: 
 python run_test.py
 
