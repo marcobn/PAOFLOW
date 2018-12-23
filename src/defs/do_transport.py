@@ -57,7 +57,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
       wtup = lambda fn,tu : fn.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
 
       # Quick function to get tuple elements to write
-      gtup = lambda tu,i : (temps,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
+      gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
       if attr['smearing'] != None:
         L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin)
@@ -150,5 +150,6 @@ def do_transport ( data_controller, temps, ene, velkp ):
     fPF.close()
     fkappa.close()
     fsigma.close()
-    fsigmadk.close()
+    if attr['smearing'] != None:
+      fsigmadk.close()
     fSeebeck.close()
