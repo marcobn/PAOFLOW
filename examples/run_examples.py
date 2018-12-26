@@ -81,13 +81,13 @@ def main():
     else:
         alldir = sorted(glob.glob('example*'))
 
-    refPattern = './Reference/'
+    datPattern = 'output'
     if len(sys.argv) > 2:
-        refPattern = sys.argv[2]
-        if refPattern[0] != '.' and refPattern[0] != '/' and refPattern[0] != '~':
-            refPattern = './'+refPattern
-        if refPattern[len(refPattern)-1] != '/':
-            refPattern += '/'
+        datPattern = sys.argv[2]
+
+    refPattern = 'Reference'
+    if len(sys.argv) > 3:
+        refPattern = sys.argv[3]
 
     for n in range(len(alldir)):
         os.chdir(alldir[n])
@@ -97,7 +97,7 @@ def main():
         except:
             print(('Exception in %s'%subdir))
             quit()
-        verifyData(subdir, refPattern)
+        verifyData(subdir, datPattern, refPattern)
         os.chdir('../')
         print(('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10)))
         reset=time.time()

@@ -23,13 +23,13 @@ Simply run all the tests:
 python run_test.py
 
 This is equivalent to:
-python run_test.py 'example*' 'Reference'
+python run_test.py 'example*' 'output' 'Reference'
 
 Specify pattern for selecting directories containing independent examples or tests:
-python run_test.py [example directory pattern] [reference directory pattern]
+python run_test.py [example directory pattern] [output directory] [reference directory]
 
-[example directory pattern] and [reference directory pattern] are optional
-arguments and have respective default values: 'example*' and 'Reference'
+[example directory pattern], [output directory], and [reference directory] are optional
+arguments and have respective default values: 'example*', 'output', and 'Reference'
 
 The reference directory must be located inside the directory containing inputfile.xml.
 
@@ -37,4 +37,4 @@ The reference directory must be located inside the directory containing inputfil
 Tests are verified with 'check_test.py' automatically.
 
 'check_test.py' can be run independently with:
-python check_test.py [example directory pattern] [reference directory pattern]
+python check_test.py [example directory pattern] ] [output directory] [reference directory]

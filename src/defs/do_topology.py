@@ -99,8 +99,8 @@ def do_topology ( data_controller ):
     for ik in range(nkt):
       delta_ik[ik] = pfaffian(wl[ik,:nelec,:nelec])/np.sqrt(npl.det(wl[ik,:nelec,:nelec]))
 
-    # Write 'Z2.dat'
-    with open(os.path.join(attributes['opath'],'Z2'+'.dat'), 'w') as f:
+    # Write 'Z2.dim'
+    with open(os.path.join(attributes['opath'],'Z2'+'.dim'), 'w') as f:
       p2D = np.real(np.prod(delta_ik[:4]))
       v0 = (1 if p2D+1. < 1.e-5 else 0)
       f.write('2D case: v0 = %1d \n' %(v0))
