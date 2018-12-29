@@ -89,13 +89,13 @@ def doubling_HRs ( data_controller ):
                     if ( ((2*ix-1) >= min(new_index[0,:])) and ((2*ix-1) <= (max(new_index[0,:])))):
                         i,j,k = cell_index[ix,iy,iz,:]
                         m,n,l = cell_index[2*ix-1,iy,iz,:]
-                        #Lower left HR_double block                
+                        #Lower left HR_double block
                         HR_double[attr['nawf']:2*attr['nawf'],0:attr['nawf'],i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
 
         arry['HRs'] = HR_double
         HR_double = None
-    	arry['tau']   = np.append(arry['tau'],arry['tau'][:,:]+arry['a_vectors'][0,:]*ANGSTROM_AU,axis=0)
-    	arry['a_vectors'][0,:]=2*arry['a_vectors'][0,:]
+        arry['tau']   = np.append(arry['tau'],arry['tau'][:,:]+arry['a_vectors'][0,:]*ANGSTROM_AU,axis=0)
+        arry['a_vectors'][0,:]=2*arry['a_vectors'][0,:]
         doubling_attr_arry(data_controller)
 
 
@@ -133,8 +133,8 @@ def doubling_HRs ( data_controller ):
 
         arry['HRs'] = HR_double
         HR_double = None
-    	arry['tau']   = np.append(arry['tau'],arry['tau'][:,:]+arry['a_vectors'][1,:]*ANGSTROM_AU,axis=0)
-    	arry['a_vectors'][1,:]=2*arry['a_vectors'][1,:]
+        arry['tau']   = np.append(arry['tau'],arry['tau'][:,:]+arry['a_vectors'][1,:]*ANGSTROM_AU,axis=0)
+        arry['a_vectors'][1,:]=2*arry['a_vectors'][1,:]
         doubling_attr_arry(data_controller)
 
     # This construction is doubling along the X direction nx times    
@@ -171,8 +171,8 @@ def doubling_HRs ( data_controller ):
         
         arry['HRs'] = HR_double
         HR_double = None
-    	arry['tau']   = np.append(arry['tau'],arry['tau'][:,:]+arry['a_vectors'][2,:]*ANGSTROM_AU,axis=0)
-    	arry['a_vectors'][1,:]=2*arry['a_vectors'][1,:]
+        arry['tau']   = np.append(arry['tau'],arry['tau'][:,:]+arry['a_vectors'][2,:]*ANGSTROM_AU,axis=0)
+        arry['a_vectors'][1,:]=2*arry['a_vectors'][1,:]
         doubling_attr_arry(data_controller)
 
 

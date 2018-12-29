@@ -17,14 +17,14 @@ import numpy as np
 
 ############# Verifies the output of PAOFLOW #############
 ## Usage:
-##  "python check_test.py [test_directory_pattern] [reference_directory_pattern]"
+##  "python check_test.py [test_directory_pattern] [output_directory] [reference_directory]"
 ##
 ## Default:
-##  "python check_test.py example* ./Reference/"
+##  "python check_test.py example* output Reference"
 ##
 ##########################################################
 
-def verifyData ( subdir, refPattern ):
+def verifyData ( subdir, datPattern, refPattern ):
 
     ########## User Defined Variables ##########
     showFileResult = False  # Show PASS or FAIL for each file
@@ -35,8 +35,8 @@ def verifyData ( subdir, refPattern ):
     print(('Verifying .dat files for %s' % subdir))
 
     # Get new data files and existing reference data files
-    datFiles = glob.glob('*.dat')
-    refFiles = glob.glob(refPattern+'*.dat')
+    datFiles = glob.glob(datPattern+'/*.dat')
+    refFiles = glob.glob(refPattern+'/*.dat')
 
     # Verify that .dat files exist in reference directory
     if len(refFiles) == 0:
@@ -47,8 +47,11 @@ def verifyData ( subdir, refPattern ):
     datFiles.sort()
     refFiles.sort()
 
+    # Quick function to replace directory path
+    rp = lambda f, p : [r.replace(p,'') for r in f]
+
     # Ensure that the lists are identical
-    if datFiles != [r.replace(refPattern, '') for r in refFiles]:
+    if rp(datFiles, datPattern) != rp(refFiles, refPattern):
         print('\tList of calculated .dat files does not match reference files.')
         return
 
@@ -127,19 +130,20 @@ def main():
         alldir = glob.glob('example*')
 
     # Assign default reference directory pattern, then look for argument
-    refPattern = './Reference/'
+    datPattern = 'output'
     if len(sys.argv) > 2:
-        refPattern = sys.argv[2]
-        if refPattern[0] != '.' and refPattern[0] != '/' and refPattern != '~':
-            refPattern = './'+refPattern
-        if refPattern[len(refPattern)-1] != '/':
-            refPattern += '/'
+        datPattern = sys.argv[2]
+
+    # Assign default reference directory pattern, then look for argument
+    refPattern = 'Reference'
+    if len(sys.argv) > 3:
+        refPattern = sys.argv[3]
 
     # Verify data for each test matching the input or default pattern
     for n in range(len(alldir)):
         os.chdir(alldir[n])
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
-        verifyData(subdir, refPattern)
+        verifyData(subdir, datPattern, refPattern)
         os.chdir('../')
 
 
