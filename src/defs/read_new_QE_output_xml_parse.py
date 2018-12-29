@@ -36,10 +36,13 @@ def read_new_QE_output_xml ( data_controller ):
 
     fpath = data_attributes['fpath']
     verbose = data_attributes['verbose']
-    non_ortho = data_attributes['non_ortho']
+
+    Sks = None
+    non_ortho = True #data_attributes['non_ortho']
+
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file = fpath+'/data-file-schema.xml'
-    Sks = None
+
     # Reading data-file-schema.xml
     for event,elem in ET.iterparse(data_file,events=('start','end')):
         if event == 'end':

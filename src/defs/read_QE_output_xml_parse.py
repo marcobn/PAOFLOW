@@ -37,7 +37,7 @@ def read_QE_output_xml( data_controller ):
     verbose = data_attributes['verbose']
 
     Sks = None
-    non_ortho = True#data_attributes['non_ortho']
+    non_ortho = True #data_attributes['non_ortho']
 
     atomic_proj = fpath+'/atomic_proj.xml'
     data_file   = fpath+'/data-file.xml'
