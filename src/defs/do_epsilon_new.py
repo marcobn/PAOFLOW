@@ -116,6 +116,7 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
   for i in range(esize):
     for j in range(1,esize):
         ieps[i] += ene[j]*epsi[j]/(ene[i]**2+ene[j]**2)
+  ieps = 1.0 + (2./np.pi)*ieps*(ene[3]-ene[2])
   jdos /= (4.*count[0])
 
   return(epsi, epsr, eels, jdos, ieps)
