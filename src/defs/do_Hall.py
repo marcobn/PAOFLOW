@@ -63,7 +63,7 @@ def do_spin_Hall ( data_controller, do_ac ):
     #---------------------------------
     # Compute spin Berry curvature... 
     #---------------------------------
-    ene,shc,Om_k = do_spin_Berry_curvature(data_controller, jksp_is, pksp_j)
+    ene,shc,Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
 
     if rank == 0:
       cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
@@ -141,7 +141,7 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       for ispin in range(dks[4]):
         pksp_i[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = perturb_split(arry['dHksp'][ik,ipol,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
 
-    ene,ahc,Om_k = do_spin_Berry_curvature(data_controller, pksp_i, pksp_j)
+    ene,ahc,Om_k = do_Berry_curvature(data_controller, pksp_i, pksp_j)
 
     if rank == 0:
       cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
@@ -212,7 +212,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
 
   emin = 0.0
   emax = attr['shift']
-  ### Hardcode 'de'
+  ### Hardcoded 'de'
   esize = 500
   ene = np.linspace(emin, emax, esize)
 
@@ -230,7 +230,7 @@ def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
     return(None, None)
 
 
-def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
+def do_Berry_curvature ( data_controller, jksp, pksp ):
   #----------------------
   # Compute spin Berry curvature
   #----------------------
@@ -271,13 +271,11 @@ def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
   Om_zk = gather_full(Om_zkaux, attributes['npool'])
   Om_zkaux = None
 
-  shc = None
-  if rank == 0:
-    shc = np.sum(Om_zk, axis=0)/float(attributes['nkpnts'])
+  shc = np.sum(Om_zk, axis=0)/float(attributes['nkpnts']) if rank==0 else None
+  Om_k = None
 
   n0 = 0
   n = esize-1
-  Om_k = None
   if rank == 0:
     Om_k = np.zeros((nk1,nk2,nk3,esize), dtype=float)
     for i in range(esize-1):
@@ -307,8 +305,6 @@ def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
   ### Hardcoded 'de'
   esize = 500
   ene = np.linspace(emin, emax, esize)
-
-  sigxy_aux = np.zeros((esize),dtype=complex)
 
   sigxy_aux = smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol)
 
