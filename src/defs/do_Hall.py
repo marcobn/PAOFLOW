@@ -248,7 +248,7 @@ def do_spin_Berry_curvature ( data_controller, jksp, pksp ):
 
   deltap = 0.05
   for ik in range(snktot):
-    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2
+    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2 + deltap**2
     E_nm[np.where(E_nm<1.e-4)] = np.inf
     Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T)/E_nm, axis=1)
   E_nm = None
