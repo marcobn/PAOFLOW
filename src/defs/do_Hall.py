@@ -87,25 +87,29 @@ def do_spin_Hall ( data_controller, do_ac ):
 
     if do_ac:
 
-      jdHksp = do_spin_current(data_controller, spol, jpol)
+      jdHksp = do_spin_current(data_controller, spol, ipol)
 
       jksp_js = np.empty_like(jdHksp)
       pksp_i = np.empty_like(jdHksp)
 
       for ik in range(jdHksp.shape[0]):
         for ispin in range(jdHksp.shape[3]):
-          jksp_js[ik,:,:,ispin],pksp_i[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+          jksp_js[ik,:,:,ispin],pksp_i[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
       jdHksp = None
 
       ene,sigxy = do_ac_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
       if rank == 0:
         sigxy *= cgs_conv
 
+      sigxyi = np.imag(ene*sigxy/105.4571) if rank==0 else None
+      sigxyr = np.real(sigxy) if rank==0 else None
+      sigxy = None
+
       fsigI = 'SCDi_%s_%s%s.dat'%cart_indices
-      data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))
+      data_controller.write_file_row_col(fsigI, ene, sigxyi)
 
       fsigR = 'SCDr_%s_%s%s.dat'%cart_indices
-      data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+      data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
 
 def do_anomalous_Hall ( data_controller, do_ac ):
