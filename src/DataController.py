@@ -71,6 +71,7 @@ class DataController:
         attr['temp'] = .025852
         attr['npool'],attr['smearing'] = npool,smearing
 
+      # Create the output directory
       if not exists(attr['opath']):
         mkdir(attr['opath'])
 
@@ -140,6 +141,10 @@ class DataController:
 
   def add_default_arrays ( self ):
     import numpy as np
+
+    # Band Path
+    self.data_attributes['band_path'] = ''
+    self.data_arrays['high_sym_points'] = np.array([[]])
 
     # Electric Field
     self.data_arrays['Efield'] = np.zeros(3, dtype=float)
@@ -249,7 +254,7 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_kpnts_path ( self, fname, kpnts ):
+  def write_kpnts_path ( self, fname, path, kpnts ):
     '''
     Write the k-path through the BZ
 
@@ -264,6 +269,7 @@ class DataController:
       from os.path import join
 
       with open(join(self.data_attributes['opath'],fname), 'w') as f:
+        f.write(path)
         f.write(''.join(['%s %s %s\n'%(kpnts[0,i],kpnts[1,i],kpnts[2,i]) for i in range(kpnts.shape[1])]))
     self.comm.Barrier()
 
