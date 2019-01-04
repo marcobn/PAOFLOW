@@ -100,6 +100,8 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     ibrav = 0
     dkres = 0.1
     nk    = 2000
+    band_path = ''
+    high_sym_points = np.array([[]])
 
     # Band topology analysis
     band_topology = False
@@ -158,6 +160,11 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
 
     # Boltzmann transport calculation
     Boltzmann = False
+    eminBT = -1.
+    emaxBT = 1.
+
+    # Evaluate the Carrier Concentration
+    carrier_conc = False
 
     # Dielectric function calculation
     epsilon = False
@@ -219,6 +226,7 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_attributes['fermisurf'] = read_attribute(aroot, fermisurf, 'fermisurf', 'logical')
     data_attributes['spintexture'] = read_attribute(aroot, spintexture, 'spintexture', 'logical')
     data_attributes['Boltzmann'] = read_attribute(aroot, Boltzmann, 'Boltzmann', 'logical')
+    data_attributes['carrier_conc'] = read_attribute(aroot, carrier_conc, 'carrier_conc', 'logical')
     data_attributes['epsilon'] = read_attribute(aroot, epsilon, 'epsilon', 'logical')
     data_attributes['metal'] = read_attribute(aroot, metal, 'metal', 'logical')
     data_attributes['kramerskronig'] = read_attribute(aroot, kramerskronig, 'kramerskronig', 'logical')
@@ -228,11 +236,14 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_attributes['spin_Hall'] = read_attribute(aroot, spin_Hall, 'spin_Hall', 'logical')
     data_attributes['ac_cond_spin'] = read_attribute(aroot, ac_cond_spin, 'ac_cond_spin', 'logical')
 
+
     # Read Integer Input Values
     data_attributes['shift_type'] = read_attribute(aroot, shift_type, 'shift_type', 'integer')
     data_attributes['npool'] = read_attribute(aroot, npool, 'npool', 'integer')
     data_attributes['bval'] = read_attribute(aroot, bval, 'bval', 'integer')
     data_attributes['ibrav'] = read_attribute(aroot, ibrav, 'ibrav', 'integer')
+    data_attributes['band_path'] = read_attribute(aroot, band_path, 'band_path', 'string')
+    data_attributes['ne'] = read_attribute(aroot, ne, 'ne', 'integer')
     data_attributes['nk'] = read_attribute(aroot, nk, 'nk', 'integer')
     data_attributes['spol'] = read_attribute(aroot, spol, 'spol', 'integer')
     data_attributes['ipol'] = read_attribute(aroot, ipol, 'ipol', 'integer')
@@ -240,7 +251,6 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_attributes['nfft1'] = read_attribute(aroot, nfft1, 'nfft1', 'integer')
     data_attributes['nfft2'] = read_attribute(aroot, nfft2, 'nfft2', 'integer')
     data_attributes['nfft3'] = read_attribute(aroot, nfft3, 'nfft3', 'integer')
-    data_attributes['ne'] = read_attribute(aroot, ne, 'ne', 'integer')
 
     # Read Decimal Input Values
     data_attributes['pthr'] = read_attribute(aroot, pthr, 'pthr', 'decimal')
@@ -262,6 +272,8 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_attributes['emaxAH'] = read_attribute(aroot, emaxAH, 'emaxAH', 'decimal')
     data_attributes['eminSH'] = read_attribute(aroot, eminSH, 'eminSH', 'decimal')
     data_attributes['emaxSH'] = read_attribute(aroot, emaxSH, 'emaxSH', 'decimal')
+    data_attributes['eminBT'] = read_attribute(aroot, eminBT, 'eminBT', 'decimal')
+    data_attributes['emaxBT'] = read_attribute(aroot, emaxBT, 'emaxBT', 'decimal')
 
     # Read Array Input Values
     data_arrays['naw'] = read_attribute(aroot, naw, 'naw', 'array')[0].astype(int)
@@ -276,3 +288,4 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_arrays['t_tensor'] = read_attribute(aroot, t_tensor, 't_tensor', 'array').astype(int)
     data_arrays['a_tensor'] = read_attribute(aroot, a_tensor, 'a_tensor', 'array').astype(int)
     data_arrays['s_tensor'] = read_attribute(aroot, s_tensor, 's_tensor', 'array').astype(int)
+    data_arrays['high_sym_points'] = read_attribute(aroot, high_sym_points, 'high_sym_points', 'string_array')

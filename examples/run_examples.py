@@ -19,9 +19,9 @@ from check_test import verifyData
 def get_exeCmd(engine, calcType,inputFile):
 
 #################### User defined parameters ####################
-    execPrefix = "mpirun -np 2"
+    execPrefix = "mpirun -np 16"
     execPostfix = " "
-    QE_path = "/Users/marco/Local/Programs/qe-6.2.1/bin/"
+    QE_path = "/home/ftc/Programs/qe-6.3/bin/"
     python_path = "python"
 
 
