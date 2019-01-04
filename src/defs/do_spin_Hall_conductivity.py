@@ -49,14 +49,20 @@ def do_spin_Hall_conductivity(E_k,jksp,pksp,temp,ispin,npool,ipol,jpol,shift,del
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
     sigxy_aux = smear_sigma_loop(ene,E_k,jksp,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
+    
+    sigxyR = (np.zeros((ene.size),dtype=float) if rank==0 else None)
+    sigxyI = (np.zeros((ene.size),dtype=float) if rank==0 else None)
+    
+    sigxy_auxR = np.ascontiguousarray(np.real(sigxy_aux))
+    sigxy_auxI = np.ascontiguousarray(np.imag(sigxy_aux))
+    
+    comm.Reduce(sigxy_auxR, sigxyR, op=MPI.SUM)
+    comm.Reduce(sigxy_auxI, sigxyI, op=MPI.SUM)
                 
-    comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
-
     comm.Barrier()
 
     if rank==0:
-        sigxy /= float(nktot)
-        return(ene,sigxy)
+        return(ene,(sigxyR+1j*sigxyI)/float(nktot))
     else: return None,None
 
 

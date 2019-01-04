@@ -45,18 +45,28 @@ def do_Berry_conductivity(E_k,pksp,temp,ispin,npool,ipol,jpol,shift,deltak,delta
     if rank!=0:
         nktot=1
 
+    if rank==0:
+        sigxy = np.zeros((ene.size),dtype=complex)
+    else: sigxy = None
 
-    sigxy = np.zeros((ene.size),dtype=complex)
     sigxy_aux = np.zeros((ene.size),dtype=complex)
 
     sigxy_aux = smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2)
 
-    comm.Reduce(sigxy_aux,sigxy,op=MPI.SUM)
+    sigxyR = (np.zeros((ene.size),dtype=float) if rank==0 else None)
+    sigxyI = (np.zeros((ene.size),dtype=float) if rank==0 else None)
 
-    sigxy /= float(nktot)
-    return(ene,sigxy)
-    
+    sigxy_auxR = np.ascontiguousarray(np.real(sigxy_aux))
+    sigxy_auxI = np.ascontiguousarray(np.imag(sigxy_aux))
 
+    comm.Reduce(sigxy_auxR, sigxyR, op=MPI.SUM)
+    comm.Reduce(sigxy_auxI, sigxyI, op=MPI.SUM)
+                
+    comm.Barrier()
+
+    if rank==0:
+        return(ene,(sigxyR+1j*sigxyI)/float(nktot))
+    else: return None,None
 
 
 def smear_sigma_loop(ene,E_k,pksp,nawf,temp,ispin,ipol,jpol,smearing,deltak,deltak2):
