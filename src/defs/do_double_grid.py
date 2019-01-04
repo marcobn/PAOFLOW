@@ -76,7 +76,7 @@ def do_double_grid(nfft1,nfft2,nfft3,HRaux,nthread,npool):
         if not scipyfft:
             for i in xrange(nawf):
                 for j in xrange(nawf):
-                    aux = zero_pad(H_aux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
+                    aux = zero_pad(HR_aux[i,j,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
                     fft = pyfftw.FFTW(aux,Hksp[:,:,:,i,j,ispin], axes=(0,1,2), direction='FFTW_FORWARD',\
                         flags=('FFTW_MEASURE', ), threads=nthread, planning_timelimit=None )
                     Hk_aux[:,:,:,i,j,ispin] = fft()
