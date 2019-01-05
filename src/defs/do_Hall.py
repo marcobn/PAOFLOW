@@ -87,25 +87,29 @@ def do_spin_Hall ( data_controller, do_ac ):
 
     if do_ac:
 
-      jdHksp = do_spin_current(data_controller, spol, jpol)
+      jdHksp = do_spin_current(data_controller, spol, ipol)
 
       jksp_js = np.empty_like(jdHksp)
       pksp_i = np.empty_like(jdHksp)
 
       for ik in range(jdHksp.shape[0]):
         for ispin in range(jdHksp.shape[3]):
-          jksp_js[ik,:,:,ispin],pksp_i[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+          jksp_js[ik,:,:,ispin],pksp_i[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
       jdHksp = None
 
-      ene,sigxy = do_spin_Hall_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
+      ene,sigxy = do_ac_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
       if rank == 0:
         sigxy *= cgs_conv
 
+      sigxyi = np.imag(ene*sigxy/105.4571) if rank==0 else None
+      sigxyr = np.real(sigxy) if rank==0 else None
+      sigxy = None
+
       fsigI = 'SCDi_%s_%s%s.dat'%cart_indices
-      data_controller.write_file_row_col(fsigI, ene, np.imag(sigxy))
+      data_controller.write_file_row_col(fsigI, ene, sigxyi)
 
       fsigR = 'SCDr_%s_%s%s.dat'%cart_indices
-      data_controller.write_file_row_col(fsigR, ene, np.real(sigxy))
+      data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
 
 def do_anomalous_Hall ( data_controller, do_ac ):
@@ -165,7 +169,7 @@ def do_anomalous_Hall ( data_controller, do_ac ):
     ene = ahc = None
 
     if do_ac:
-      ene,sigxy = do_Berry_conductivity(data_controller, pksp_i, pksp_j, ipol, jpol)
+      ene,sigxy = do_ac_conductivity(data_controller, pksp_i, pksp_j, ipol, jpol)
       if rank == 0:
         sigxy *= cgs_conv
 
@@ -178,57 +182,6 @@ def do_anomalous_Hall ( data_controller, do_ac ):
 
       fsigR = 'MCDr_%s%s.dat'%cart_indices
       data_controller.write_file_row_col(fsigR, ene, sigxyr)
-
-
-def do_spin_current ( data_controller, spol, ipol ):
-
-  arry,attr = data_controller.data_dicts()
-
-  Sj = arry['Sj'][spol]
-  bnd = attr['bnd']
-  snktot,_,nawf,nawf,nspin = arry['dHksp'].shape
-
-  jdHksp = np.empty((snktot,nawf,nawf,nspin), dtype=complex)
-
-  for ispin in range(nspin):
-    for ik in range(snktot):
-      jdHksp[ik,:,:,ispin] = 0.5*(np.dot(Sj,arry['dHksp'][ik,ipol,:,:,ispin])+np.dot(arry['dHksp'][ik,ipol,:,:,ispin],Sj))
-
-  return jdHksp
-
-
-def do_spin_Hall_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
-  from .communication import gather_full
-  from .smearing import intgaussian, intmetpax
-
-  arry,attr = data_controller.data_dicts()
-
-  snktot = jksp.shape[0]
-  nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-
-  # Compute the optical conductivity tensor sigma_xy(ene)
-
-  ispin = 0
-
-  emin = 0.0
-  emax = attr['shift']
-  ### Hardcoded 'de'
-  esize = 500
-  ene = np.linspace(emin, emax, esize)
-
-  sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
-
-  sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
-
-  comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
-  sigxy_aux = None
-
-  if rank == 0:
-    sigxy /= float(attr['nkpnts'])
-    return(ene, sigxy)
-  else:
-    return(None, None)
-
 
 def do_Berry_curvature ( data_controller, jksp, pksp ):
   #----------------------
@@ -248,7 +201,7 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
 
   deltap = 0.05
   for ik in range(snktot):
-    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2
+    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2 + deltap**2
     E_nm[np.where(E_nm<1.e-4)] = np.inf
     Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T)/E_nm, axis=1)
   E_nm = None
@@ -271,11 +224,13 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
   Om_zk = gather_full(Om_zkaux, attributes['npool'])
   Om_zkaux = None
 
-  shc = np.sum(Om_zk, axis=0)/float(attributes['nkpnts']) if rank==0 else None
-  Om_k = None
+  shc = None
+  if rank == 0:
+    shc = np.sum(Om_zk, axis=0)/float(attributes['nkpnts'])
 
   n0 = 0
   n = esize-1
+  Om_k = None
   if rank == 0:
     Om_k = np.zeros((nk1,nk2,nk3,esize), dtype=float)
     for i in range(esize-1):
@@ -288,13 +243,11 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
 
   return(ene, shc, Om_k)
 
-
-def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
+def do_ac_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
+  from .communication import gather_full
+  from .smearing import intgaussian, intmetpax
 
   arry,attr = data_controller.data_dicts()
-
-  snktot = pksp_j.shape[0]
-  bnd = attr['bnd']
 
   # Compute the optical conductivity tensor sigma_xy(ene)
 
@@ -302,23 +255,29 @@ def do_Berry_conductivity ( data_controller, pksp_i, pksp_j, ipol, jpol ):
 
   emin = 0.0
   emax = attr['shift']
-  ### Hardcoded 'de'
-  esize = 500
+  ### Hardcode 'de'
+  esize = 501
   ene = np.linspace(emin, emax, esize)
 
-  sigxy_aux = smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol)
+  sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
 
   sigxy = (np.zeros((esize),dtype=complex) if rank==0 else None)
+  sigxyR = (np.zeros((esize),dtype=float) if rank==0 else None)
+  sigxyI = (np.zeros((esize),dtype=float) if rank==0 else None)
+  
+  sigxy_auxR = np.ascontiguousarray(np.real(sigxy_aux))
+  sigxy_auxI = np.ascontiguousarray(np.imag(sigxy_aux))
+  
+  comm.Reduce(sigxy_auxR, sigxyR, op=MPI.SUM)
+  comm.Reduce(sigxy_auxI, sigxyI, op=MPI.SUM)
 
-  comm.Reduce(sigxy_aux, sigxy, op=MPI.SUM)
-  sigxy_aux = None
+  sigxy_aux = sigxy_auxR = sigxy_auxI = None
 
   if rank == 0:
-    sigxy /= float(attr['nkpnts'])
+    sigxy = (sigxyR+1j*sigxyI)/float(attr['nkpnts'])
     return(ene, sigxy)
   else:
     return(None, None)
-
 
 def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol ):
   from .smearing import intgaussian,intmetpax
@@ -362,3 +321,20 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   E_diff_nm = None
 
   return np.nan_to_num(sigxy)
+
+def do_spin_current ( data_controller, spol, ipol ):
+
+  arry,attr = data_controller.data_dicts()
+
+  Sj = arry['Sj'][spol]
+  bnd = attr['bnd']
+  snktot,_,nawf,nawf,nspin = arry['dHksp'].shape
+
+  jdHksp = np.empty((snktot,nawf,nawf,nspin), dtype=complex)
+
+  for ispin in range(nspin):
+    for ik in range(snktot):
+      jdHksp[ik,:,:,ispin] = 0.5*(np.dot(Sj,arry['dHksp'][ik,ipol,:,:,ispin])+np.dot(arry['dHksp'][ik,ipol,:,:,ispin],Sj))
+
+  return jdHksp
+

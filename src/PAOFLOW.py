@@ -998,7 +998,7 @@ class PAOFLOW:
 
 
 
-  def anomalous_Hall ( self, do_ac=True, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
+  def anomalous_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
     '''
     Calculate the Anomalous Hall Conductivity
 
