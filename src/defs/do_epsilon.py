@@ -40,30 +40,18 @@ def do_dielectric_tensor ( data_controller, ene ):
       ipol = d_tensor[n][0]
       jpol = d_tensor[n][1]
 
-      epsi, epsr, eels, jdos, ieps = do_epsilon(data_controller, ene, ispin, ipol, jpol)
+      epsi,epsr,eels,jdos,ieps = do_epsilon(data_controller, ene, ispin, ipol, jpol)
 
+      # Write files
       indices = (LL[ipol], LL[jpol], ispin)
+      for ep,es in [(epsi,'epsi'),(epsr,'epsr'),(eels,'eels'),(jdos,'jdos'),(ieps,'ieps')]:
+        fn = '%s_%s%s_%d.dat'%((es,)+indices)
+        data_controller.write_file_row_col(fn, ene, ep)
 
-      fepsi = 'epsi_%s%s_%d.dat'%indices
-      data_controller.write_file_row_col(fepsi, ene, epsi)
-
-      fepsr = 'epsr_%s%s_%d.dat'%indices
-      data_controller.write_file_row_col(fepsr, ene, epsr)
-
-      feels = 'eels_%s%s_%d.dat'%indices
-      data_controller.write_file_row_col(feels, ene, eels)
-
-      fjdos = 'jdos_%s%s_%d.dat'%indices
-      data_controller.write_file_row_col(fjdos, ene, jdos)
-
-      fieps = 'ieps_%s%s_%d.dat'%indices
-      data_controller.write_file_row_col(fieps, ene, ieps)
-
-  renorm = (ene[3]-ene[2])*np.sum(epsi*ene)
-  renorm = np.sqrt(renorm*2.0/np.pi)
-  if rank == 0: print(ipol,jpol,' plasmon frequency = ',renorm,' eV')
-  renorm = (ene[3]-ene[2])*np.sum(jdos)
-  if rank == 0: print(' integration over JDOS = ',renorm)
+      if rank == 0:
+        renorm = np.sqrt((2./np.pi)*(ene[3]-ene[2])*np.sum(epsi*ene))
+        print(ipol,jpol,' plasmon frequency = ',renorm,' eV')
+        print(' integration over JDOS = ', (ene[3]-ene[2])*np.sum(jdos))
 
 
 def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
@@ -80,8 +68,10 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
   #=======================
   # EPS
   #=======================
-  epsi_aux, epsr_aux, jdos_aux, count_aux = eps_loop(data_controller, ene, ispin, ipol, jpol)
+  epsi_aux,epsr_aux,jdos_aux,count_aux = eps_loop(data_controller, ene, ispin, ipol, jpol)
 
+  ### TNeeds revision. Each processor is allocating zeros here, when only rank 0 needs it. 
+  ### Can be condensed
   epsi = np.zeros(esize, dtype=float)
   comm.Allreduce(epsi_aux, epsi, op=MPI.SUM)
   epsi_aux = None
@@ -90,7 +80,7 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol ):
   comm.Allreduce(epsr_aux, epsr, op=MPI.SUM)
   epsr_aux = None
 
-  epsr_aux = epsr_kramerskronig ( data_controller, ene, epsi )
+  epsr_aux = epsr_kramerskronig(data_controller, ene, epsi)
   epsr0 = np.zeros(esize, dtype=float)
   comm.Allreduce(epsr_aux, epsr0, op=MPI.SUM)
   epsr_aux = None
