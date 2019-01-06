@@ -444,7 +444,7 @@ def _getHighSymPoints ( ibrav, alat, cellOld ):
     qe_conv  = np.asarray([[ 1.0, 0.0, 0.0],[ 0.0, 1.0, 0.0],[ 0.0, 0.0, 1.0]])
                    
 
-  for k,v in special_points.iteritems():
+  for k,v in special_points.items():
     first  = np.array(v).dot(np.linalg.inv(aflow_conv))
     if ibrav==9:
       second = qe_conv.T.dot(first)
@@ -524,7 +524,7 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,high_sym_points):
     special_points, band_path = _getHighSymPoints(ibrav,alat,cell)
   else:
     special_points = {}
-    for i in xrange(high_sym_points.shape[0]):
+    for i in range(high_sym_points.shape[0]):
       tmp_coord = tuple(map(float,high_sym_points[i,[1,2,3]].tolist()))
       special_points[high_sym_points[i][0]]=tmp_coord
 
@@ -544,7 +544,7 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,high_sym_points):
     point1 = None
     point2 = None
 
-    for index2 in xrange(len(a)-1):
+    for index2 in range(len(a)-1):
       try:
         point1 = a[index2]
         point2 = a[index2+1]
@@ -570,7 +570,7 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,high_sym_points):
         
         ### Why print?? Just a test?? print("%s %s %s %s %s %s"%(p1[0],p1[0],p1[0],numK,"#",point1))
       except Exception as e:
-        print e
+        print(e)
 
     """ last point """
     point1 = a[-1]
