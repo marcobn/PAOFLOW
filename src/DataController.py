@@ -309,11 +309,11 @@ class DataController:
           # print each cell weight
           for i in range(nlines):
             jp = i * nl
-            f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
+            f.write('   '.join('{:f} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
   
           # Last line if needed
           if nlast != 0:
-            f.write('   '.join('{:d} '.format(j) for j in arry['kq_wght'][nlines*nl,nkpts]) + '\n')
+            f.write('   '.join('{:f} '.format(j) for j in arry['kq_wght'][nlines*nl:nkpts]) + '\n')
   
   #### Can be condensed
           for i in range(nk1):
