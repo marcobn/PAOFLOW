@@ -306,9 +306,18 @@ class DataController:
           nlines = nkpts//nl # number of lines
           nlast = nkpts%nl   # number of items of laste line if needed
   
+          kq_wght_int = np.zeros(arry['kq_wght'].shape,dtype=int)
+          for kn in range(arry['kq_wght'].shape[0]):
+              kq_wght_int[kn] = int(arry['kq_wght'][kn]*attr['nkpnts'])
+
           # print each cell weight
           for i in range(nlines):
             jp = i * nl
+            f.write('   '.join('{:d} '.format(j) for j in kq_wght_int[jp:jp+nl]) + '\n')
+  
+          # Last line if needed
+          if nlast != 0:
+            f.write('   '.join('{:d} '.format(j) for j in kq_wght_int[nlines*nl:nkpts]) + '\n')
             f.write('   '.join('{:f} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
   
           # Last line if needed
