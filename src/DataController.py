@@ -308,7 +308,7 @@ class DataController:
   
           kq_wght_int = np.zeros(arry['kq_wght'].shape,dtype=int)
           for kn in range(arry['kq_wght'].shape[0]):
-              kq_wght_int[kn] = int(arry['kq_wght'][kn]*attr['nkpnts'])
+              kq_wght_int[kn] = int(round(arry['kq_wght'][kn]*attr['nkpnts']))
 
           # print each cell weight
           for i in range(nlines):
@@ -318,11 +318,6 @@ class DataController:
           # Last line if needed
           if nlast != 0:
             f.write('   '.join('{:d} '.format(j) for j in kq_wght_int[nlines*nl:nkpts]) + '\n')
-            f.write('   '.join('{:f} '.format(j) for j in arry['kq_wght'][jp:jp+nl]) + '\n')
-  
-          # Last line if needed
-          if nlast != 0:
-            f.write('   '.join('{:f} '.format(j) for j in arry['kq_wght'][nlines*nl:nkpts]) + '\n')
   
   #### Can be condensed
           for i in range(nk1):
