@@ -642,14 +642,6 @@ class PAOFLOW:
       nko1,nko2,nko3 = attr['nk1'],attr['nk2'],attr['nk3']
       nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
 
-      # Ensure FFT grid is even
-      if nfft1%2!=0 or nfft2%2!=0 or nfft3%2!=0:
-        nfft1 = 2*((nfft1+1)//2)
-        nfft2 = 2*((nfft2+1)//2)
-        nfft3 = 2*((nfft3+1)//2)
-        if self.rank == 0:
-          print('Warning: nfft grid has been modified to support double_grid\nModified nfft grid to: %d %d %d'%(nfft1,nfft2,nfft3))
-
       # Adjust 'npool' if arrays exceed MPI maximum
       int_max = 2147483647
       temp_pool = int(np.ceil((float(attr['nawf']**2*nfft1*nfft2*nfft3*3*attr['nspin'])/float(int_max))))
