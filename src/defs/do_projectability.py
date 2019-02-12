@@ -46,20 +46,25 @@ def do_projectability ( data_controller ):
     if attr['verbose']:
       print('Projectability vector ', Pn)
 
-    # Check projectability and decide bnd
-    bnd = 0
-    for n in range(attr['nbnds']):
-      if Pn[n] > attr['pthr']:
-        bnd += 1
+    # Count the number of projectable states
+    bnd = len(np.where(Pn[n]>attr['pthr'])[0])
     Pn = None
+
+    if bnd == 0:
+      raise Exception('No projectable bands!')
+
+    if bnd >= arry['my_eigsmat'].shape[0]:
+      print('\nWARNING: Number of projectable states is equal to the number of bands.\n\tIncrease nbnd in nscf calculation to include the required Null space, to where the states with bad projectability are shifted.\n')
+
     attr['bnd'] = bnd
-    if 'shift' not in attr or attr['shift']=='auto':
-      attr['shift'] = (np.amin(arry['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
+    bnd -= 1
+
+    attr['shift'] = (np.amin(arry['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
 
     if attr['verbose']:
       print('# of bands with good projectability > {} = {}'.format(attr['pthr'],bnd))
-    if attr['verbose'] and bnd < attr['nbnds']:
-      print('Range of suggested shift ', np.amin(arry['my_eigsmat'][bnd,:,:]), ' , ', np.amax(arry['my_eigsmat'][bnd,:,:]))
+      if attr['bnd'] < attr['nbnds']:
+        print('Range of suggested shift ', np.amin(arry['my_eigsmat'][bnd,:,:]), ' , ', np.amax(arry['my_eigsmat'][bnd,:,:]))
 
   # Broadcast 
   data_controller.broadcast_attribute('bnd')
