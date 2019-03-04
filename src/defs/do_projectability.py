@@ -18,8 +18,8 @@
 import numpy as np
 from mpi4py import MPI
 
-def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
-  Pn = 0.
+def build_Pn ( nawf, nkpnts, nspin, U ):
+  Pn = np.zeros((U.shape[0]), dtype=float)
   for ispin in range(nspin):
     for ik in range(nkpnts):
       UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
@@ -41,13 +41,13 @@ def do_projectability ( data_controller ):
   if rank != 0:
     attr['shift'] = None
   else:
-    Pn = build_Pn(attr['nawf'], attr['nbnds'], attr['nkpnts'], attr['nspin'], arry['U'])
+    Pn = build_Pn(attr['nawf'], attr['nkpnts'], attr['nspin'], arry['U'])
 
     if attr['verbose']:
       print('Projectability vector ', Pn)
 
     # Count the number of projectable states
-    bnd = len(np.where(Pn[n]>attr['pthr'])[0])
+    bnd = len(np.where(Pn>attr['pthr'])[0])
     Pn = None
 
     if bnd == 0:
