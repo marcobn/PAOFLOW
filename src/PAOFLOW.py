@@ -1000,7 +1000,7 @@ class PAOFLOW:
         emax (float): The maximum energy in the range
         fermi_up (float): The upper limit of the occupied energy range
         fermi_dw (float): The lower limit of the occupied energy range
-        a_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and xyz use [[0,0,0],[0,1,2]])
+        a_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:
         None
@@ -1038,6 +1038,7 @@ class PAOFLOW:
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
         ne (float): The number of energy increments
+        t_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:
         None
@@ -1081,7 +1082,7 @@ class PAOFLOW:
         emin (float): The minimum value of energy
         emax (float): The maximum value of energy
         ne (float): Number of energy values between emin and emax
-        d_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and xyz use [[0,0,0],[0,1,2]])
+        d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:
         None
