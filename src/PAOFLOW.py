@@ -506,12 +506,13 @@ class PAOFLOW:
 
 
 
-  def spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
+  def spin_operator ( self, spin_orbit=False, fnscf='nscf.in', sh=None, nl=None):
     '''
     Calculate the Spin Operator for calculations involving spin
 
     Arguments:
         spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+        fnscf (string): Filename for the QE nscf inputfile, from which to read shell data
         sh (list of ints): The Shell levels
         nl (list of ints): The Shell level occupations
 
@@ -521,8 +522,13 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
-    if 'sh' not in arrays: arrays['sh'] = sh
-    if 'nl' not in arrays: arrays['nl'] = nl
+
+    if ('sh' and 'nl') not in arrays:
+      if (sh and nl) is None:
+        from .defs.read_sh_nl import read_sh_nl
+        arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller, fnscf)
+      else:
+        arrays['sh'],arrays['nl'] = sh,nl
 
     try:
       nawf = attr['nawf']

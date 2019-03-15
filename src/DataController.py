@@ -61,6 +61,7 @@ class DataController:
       self.data_attributes = attr = {}
 
       # Set or update attributes
+      attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
