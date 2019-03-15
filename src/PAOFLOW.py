@@ -1070,13 +1070,12 @@ class PAOFLOW:
 
 
 
-  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+  def dielectric_tensor ( self, metal=False, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
     '''
     Calculate the Dielectric Tensor
 
     Arguments:
         metal (bool): True if system is metallic
-        kramerskronig (bool): True performs Kramers-Kronig integration to calculate epsr
         temp (float): Temperature (default is Room Temperature)
         delta (float): Smearing width for gaussian (if smearing is None)
         emin (float): The minimum value of energy
@@ -1095,7 +1094,6 @@ class PAOFLOW:
     if 'delta' not in attr: attr['delta'] = delta
     if 'metal' not in attr: attr['metal'] = metal
     if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
-    if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
 
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
