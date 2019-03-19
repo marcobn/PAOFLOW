@@ -230,18 +230,16 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
 
   n0 = 0
   n = esize-1
-  Om_k = None
   if rank == 0:
-    Om_k = np.zeros((nk1,nk2,nk3,esize), dtype=float)
     for i in range(esize-1):
       if ene[i] <= fermi_dw and ene[i+1] >= fermi_dw:
         n0 = i
       if ene[i] <= fermi_up and ene[i+1] >= fermi_up:
         n = i
-    Om_k = np.reshape(Om_zk, (nk1,nk2,nk3,esize), order='C')
-    Om_k = Om_k[:,:,:,n]-Om_k[:,:,:,n0]
+    Om_zk = np.reshape(Om_zk, (nk1,nk2,nk3,esize), order='C')
+    Om_zk = Om_zk[:,:,:,n]-Om_zk[:,:,:,n0]
 
-  return(ene, shc, Om_k)
+  return(ene, shc, Om_zk)
 
 def do_ac_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   from .communication import gather_full
