@@ -506,7 +506,7 @@ class PAOFLOW:
 
 
 
-  def spin_operator ( self, spin_orbit=False, fnscf='nscf.in', sh=None, nl=None):
+  def spin_operator ( self, spin_orbit=False, sh=None, nl=None):
     '''
     Calculate the Spin Operator for calculations involving spin
 
@@ -526,7 +526,7 @@ class PAOFLOW:
     if ('sh' and 'nl') not in arrays:
       if (sh and nl) is None:
         from .defs.read_sh_nl import read_sh_nl
-        arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller, fnscf)
+        arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller)
       else:
         arrays['sh'],arrays['nl'] = sh,nl
 
