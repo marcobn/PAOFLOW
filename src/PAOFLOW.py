@@ -509,6 +509,8 @@ class PAOFLOW:
   def spin_operator ( self, spin_orbit=False, sh=None, nl=None):
     '''
     Calculate the Spin Operator for calculations involving spin
+      Requires: None
+      Yeilds: 'Sj'
 
     Arguments:
         spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
@@ -562,7 +564,7 @@ class PAOFLOW:
 
 
 
-  def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
+  def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spin_orbit=False, spol=None, ipol=None, jpol=None ):
     '''
     Calculate the Band Topology along the k-path 'kq'
 
@@ -570,6 +572,7 @@ class PAOFLOW:
         eff_mass (bool): If True calculate the Effective Mass Tensor
         Berry (bool): If True calculate the Berry Curvature
         spin_Hall (bool): If True calculate Spin Hall Conductivity
+        spin_orbit (bool): If True the calculation includes spin_orbit effects for topology.
         spol (int): Spin polarization
         ipol (int): In plane dimension 1
         jpol (int): In plane dimension 2
@@ -586,6 +589,7 @@ class PAOFLOW:
     if 'Berry' not in attr: attr['Berry'] = Berry
     if 'eff_mass' not in attr: attr['eff_mass'] = eff_mass
     if 'spin_Hall' not in attr: attr['spin_Hall'] = spin_Hall
+    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
     if 'spol' not in attr: attr['spol'] = spol
     if 'ipol' not in attr: attr['ipol'] = ipol
@@ -595,6 +599,9 @@ class PAOFLOW:
       if self.rank == 0:
         print('Must specify \'spol\', \'ipol\', and \'jpol\'')
       quit()
+
+    if spin_Hall and 'Sj' not in arrays:
+      self.spin_operator(spin_orbit=attr['do_spin_orbit'])
 
     try:
       do_topology(self.data_controller)
@@ -963,6 +970,8 @@ class PAOFLOW:
   def spin_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     '''
     Calculate the Spin Hall Conductivity
+      Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
+      Thus, do_spin_orbit defaults to False here. If anybody needs the spin_orbit capability here, please contact me and we'll sort it out.
 
     Arguments:
         do_ac (bool): True to calculate the Spic Circular Dichroism
@@ -984,6 +993,9 @@ class PAOFLOW:
     if s_tensor is not None: arrays['s_tensor'] = np.array(s_tensor)
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
+
+    if 'Sj' not in arrays:
+      self.spin_operator()
 
     try:
       do_spin_Hall(self.data_controller, do_ac)
