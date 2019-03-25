@@ -99,11 +99,20 @@ def read_new_QE_output_xml ( data_controller ):
                     pass
 
                 # Atomic Positions
-                natoms=int(float(elem.findall("atomic_structure")[0].attrib['nat']))
-                tau = np.zeros((natoms,3),dtype=float)
+                species = []
+                pseudos = []
+                lspecies = elem.findall("atomic_species/species")
+                for n in lspecies:
+                    species.append(n.attrib['name'])
+                    pseudos.append(n.findall('pseudo_file')[0])
+
+                atoms = []
+                natoms = int(elem.findall("atomic_structure")[0].attrib['nat'])
+                tau = np.zeros((natoms,3), dtype=float)
+                latoms = elem.findall("atomic_structure/atomic_positions/atom")
                 for n in range(natoms):
-                    aux = elem.findall("atomic_structure/atomic_positions/atom")[n].text.split()
-                    tau[n,:]=np.array(aux,dtype="float32")
+                    atoms.append(latoms[n].attrib['name'])
+                    tau[n,:] = np.array(latoms[n].text.split(), dtype="float32")
 			
 			
 			
@@ -294,6 +303,8 @@ def read_new_QE_output_xml ( data_controller ):
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
     data_arrays['tau'] = tau
+    data_arrays['atoms'] = atoms
+    data_arrays['species'] = zip(species,pseudos)
     data_arrays['kpnts'] = kpnts
     data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors

@@ -87,13 +87,22 @@ def read_QE_output_xml( data_controller ):
 
             # number of atoms
             if elem.tag == 'IONS':
-                natoms=int(float(elem.findall("NUMBER_OF_ATOMS")       [0].text.split()[0]))
+                species = []
+                pseudos = []
+                nspecs = int(elem.findall("NUMBER_OF_SPECIES")[0].text.split()[0])
+                for n in range(nspecs):
+                    string = "SPECIE."+str(n+1)
+                    species.append(elem.findall(string+"/ATOM_TYPE")[0].text.split()[0])
+                    pseudos.append(elem.findall(string+"/PSEUDO")[0].text.split()[0])
 
-                tau = np.zeros((natoms,3),dtype=float)
+                atoms = []
+                natoms = int(elem.findall("NUMBER_OF_ATOMS")[0].text.split()[0])
+                tau = np.zeros((natoms,3), dtype=float)
                 for n in range(natoms):
-                    string="ATOM."+str(n+1)
-                    aux = elem.findall(string)[0].attrib['tau'].split()
-                    tau[n,:]=np.array(aux,dtype="float32")
+                    string = "ATOM."+str(n+1)
+                    aux = elem.findall(string)[0]
+                    atoms.append(aux.attrib['SPECIES'][:-1])
+                    tau[n,:] = np.array(aux.attrib['tau'].split(), dtype="float32")
 
     # Reading atomic_proj.xml
 
@@ -287,6 +296,8 @@ def read_QE_output_xml( data_controller ):
     data_attributes['dftSO'] = dftSO
     data_arrays['tau'] = tau
     data_arrays['kpnts'] = kpnts
+    data_arrays['atoms'] = atoms
+    data_arrays['species'] = zip(species,pseudos)
     data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors
     data_arrays['b_vectors'] = b_vectors

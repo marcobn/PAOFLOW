@@ -130,10 +130,8 @@ def clebsch_gordan ( nawf, sh, nl, spol ):
   for n in range(len(sh)):
       ntot += nl[n]*occ[sh[n]]
   if ntot != nawf:
-    from mpi4py import MPI
-    if MPI.COMM_WORLD.Get_rank() == 0:
-      print('Wrong number of shells when creating \'Sj\'')
-    quit()
+    raise ValueError('Wrong number of shells when creating \'Sj\'')
+
   Tn = np.zeros((ntot,ntot), dtype=float)
 
   n = 0

@@ -506,12 +506,15 @@ class PAOFLOW:
 
 
 
-  def spin_operator ( self, spin_orbit=False, sh=[0,1,2,0,1,2], nl=[2,1,1,1,1,1]):
+  def spin_operator ( self, spin_orbit=False, sh=None, nl=None):
     '''
     Calculate the Spin Operator for calculations involving spin
+      Requires: None
+      Yeilds: 'Sj'
 
     Arguments:
         spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+        fnscf (string): Filename for the QE nscf inputfile, from which to read shell data
         sh (list of ints): The Shell levels
         nl (list of ints): The Shell level occupations
 
@@ -521,8 +524,13 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
-    if 'sh' not in arrays: arrays['sh'] = sh
-    if 'nl' not in arrays: arrays['nl'] = nl
+
+    if ('sh' and 'nl') not in arrays:
+      if (sh and nl) is None:
+        from .defs.read_sh_nl import read_sh_nl
+        arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller)
+      else:
+        arrays['sh'],arrays['nl'] = sh,nl
 
     try:
       nawf = attr['nawf']
@@ -556,7 +564,7 @@ class PAOFLOW:
 
 
 
-  def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spol=None, ipol=None, jpol=None ):
+  def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spin_orbit=False, spol=None, ipol=None, jpol=None ):
     '''
     Calculate the Band Topology along the k-path 'kq'
 
@@ -564,6 +572,7 @@ class PAOFLOW:
         eff_mass (bool): If True calculate the Effective Mass Tensor
         Berry (bool): If True calculate the Berry Curvature
         spin_Hall (bool): If True calculate Spin Hall Conductivity
+        spin_orbit (bool): If True the calculation includes spin_orbit effects for topology.
         spol (int): Spin polarization
         ipol (int): In plane dimension 1
         jpol (int): In plane dimension 2
@@ -580,6 +589,7 @@ class PAOFLOW:
     if 'Berry' not in attr: attr['Berry'] = Berry
     if 'eff_mass' not in attr: attr['eff_mass'] = eff_mass
     if 'spin_Hall' not in attr: attr['spin_Hall'] = spin_Hall
+    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
     if 'spol' not in attr: attr['spol'] = spol
     if 'ipol' not in attr: attr['ipol'] = ipol
@@ -589,6 +599,9 @@ class PAOFLOW:
       if self.rank == 0:
         print('Must specify \'spol\', \'ipol\', and \'jpol\'')
       quit()
+
+    if spin_Hall and 'Sj' not in arrays:
+      self.spin_operator(spin_orbit=attr['do_spin_orbit'])
 
     try:
       do_topology(self.data_controller)
@@ -957,6 +970,8 @@ class PAOFLOW:
   def spin_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     '''
     Calculate the Spin Hall Conductivity
+      Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
+      Thus, do_spin_orbit defaults to False here. If anybody needs the spin_orbit capability here, please contact me and we'll sort it out.
 
     Arguments:
         do_ac (bool): True to calculate the Spic Circular Dichroism
@@ -979,6 +994,9 @@ class PAOFLOW:
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
+    if 'Sj' not in arrays:
+      self.spin_operator()
+
     try:
       do_spin_Hall(self.data_controller, do_ac)
     except:
@@ -1000,7 +1018,7 @@ class PAOFLOW:
         emax (float): The maximum energy in the range
         fermi_up (float): The upper limit of the occupied energy range
         fermi_dw (float): The lower limit of the occupied energy range
-        a_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and xyz use [[0,0,0],[0,1,2]])
+        a_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:
         None
@@ -1038,6 +1056,7 @@ class PAOFLOW:
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
         ne (float): The number of energy increments
+        t_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:
         None
@@ -1069,19 +1088,18 @@ class PAOFLOW:
 
 
 
-  def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+  def dielectric_tensor ( self, metal=False, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
     '''
     Calculate the Dielectric Tensor
 
     Arguments:
         metal (bool): True if system is metallic
-        kramerskronig (bool): True performs Kramers-Kronig integration to calculate epsr
         temp (float): Temperature (default is Room Temperature)
         delta (float): Smearing width for gaussian (if smearing is None)
         emin (float): The minimum value of energy
         emax (float): The maximum value of energy
         ne (float): Number of energy values between emin and emax
-        d_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and xyz use [[0,0,0],[0,1,2]])
+        d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:
         None
@@ -1094,7 +1112,6 @@ class PAOFLOW:
     if 'delta' not in attr: attr['delta'] = delta
     if 'metal' not in attr: attr['metal'] = metal
     if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
-    if 'kramerskronig' not in attr: attr['kramerskronig'] = kramerskronig
 
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)

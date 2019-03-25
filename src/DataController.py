@@ -61,6 +61,7 @@ class DataController:
       self.data_attributes = attr = {}
 
       # Set or update attributes
+      attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
@@ -85,6 +86,8 @@ class DataController:
           if not exists(attr['fpath']):
             raise Exception('ERROR: Inputfile does not exist\n%s'%attr['fpath'])
           self.read_pao_inputfile()
+        else:
+          attr['do_spin_orbit'] = False
         self.read_qe_output()
       except:
         print('\nERROR: Could not read QE xml data file')
