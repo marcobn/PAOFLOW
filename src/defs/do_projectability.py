@@ -57,7 +57,6 @@ def do_projectability ( data_controller ):
       print('\nWARNING: Number of projectable states is equal to the number of bands.\n\tIncrease nbnd in nscf calculation to include the required Null space, to where the states with bad projectability are shifted.\n')
 
     attr['bnd'] = bnd
-    bnd -= 1
 
     attr['shift'] = (np.amin(arry['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
 

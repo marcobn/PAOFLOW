@@ -35,6 +35,23 @@ class PAOFLOW:
   report_exception = None
 
 
+  def print_data_keys ( self ):
+    '''
+      Print's out the keys do the data_controller dictionaries, "arrays" and "attributes".
+      Each stores the respective data required for the various calculation PAOFLOW can perform.
+
+      Arguments:
+          None
+
+      Returns:
+          None
+    '''
+    if self.rank == 0:
+      self.data_controller.print_data()
+    self.comm.Barrier()
+
+
+
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
