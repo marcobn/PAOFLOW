@@ -32,6 +32,8 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
   esize = ene.size
 
+  L0dw = L0up = L1dw = L1up = None
+
   siemen_conv,temp_conv = 6.9884,11604.52500617
 
   nspin,t_tensor = attr['nspin'],arrays['t_tensor']
@@ -78,6 +80,12 @@ def do_transport ( data_controller, temps, ene, velkp ):
         comm.Barrier()
 
       L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
+      if ispin == 0:
+        L0dw = L0
+        L1dw = L1
+      elif ispin == 1:
+        L0up = L0
+        L1up = L1
 
       if rank == 0:
         #----------------------
@@ -153,3 +161,9 @@ def do_transport ( data_controller, temps, ene, velkp ):
     if attr['smearing'] != None:
       fsigmadk.close()
     fSeebeck.close()
+
+  if nspin == 2:
+    with open(join(attr['opath'],'Seebeck_avg.dat'),'w') as f:
+      for n in range(esize):
+        SA = (L1dw[:,:,n]+L1up[:,:,n])*np.inv(L0dw[:,:,n]+L0up[:,:,n])
+        wtup(f, (temp,ene[n],SA[0,0],SA[1,1],SA[2,2],SA[0,1],SA[0,2],SA[1,2]))
