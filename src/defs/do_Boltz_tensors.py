@@ -76,53 +76,77 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
   L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
   comm.Reduce(L0aux, L0, op=MPI.SUM)
   L0aux = None
-
+  
   return L0
 
 
-def get_tau ( data_controller, channels ):
-  import numpy as np
+def get_tau (temp,data_controller, channels ):
 
+  import numpy as np
+  import scipy.constants as cp
+  h = cp.hbar
+  kb = cp.Boltzmann
+  hw0 = 0.063*1.6e-19 #joules
+  rho = 2.329e3   #kg/m^3
+  Eo = 41.45*1.6e-19  #joules
+  a = 5.43e-10 #metres
+  Ea = 5*1.6e-19 #joules
+  v0 = 9.04e3    #m/s
+  T  = 700.
+  #T = np.linspace(300.,700.,50.)
   arry,attr = data_controller.data_dicts()
   snktot = arry['E_k'].shape[0]
-
+  nspin = arry['E_k'].shape[2]
+  bnd = attr['bnd']
   taus = []
+  me = 0.19*9.11e-31*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg
+  E =abs(1.6e-19*(arry['E_k'][:,:bnd])) #can i get rid of negative sign of energy for tay calcs?
+  E_re = np.reshape(E,(snktot,bnd)) #i do this because i am not able to saave 3d arrays to a file
+  #di = ((1./di_inf)-(1./di_o))**-1   #dielectric constant
   for c in channels:
-    if c == 'accoustic':
-      a_tau = np.ones((snktot), dtype=float)
-      taus.append(a_tau)
+      if c == 'accoustic':
+          
+          a_tau = (2*np.pi*h**4*rho*v0**2*np.power(E/(kb*T),(-0.5)))/((np.power(2*me*kb*T,1.5)*Ea**2))
+          taus.append(a_tau)
 
-    if c == 'optical':
-      o_tau = np.ones((snktot), dtype=float)
-      taus.append(o_tau)
+      if c == 'optical':
+          o_tau = (2*(hw0/Eo)**2*h**2*a**2*rho*np.power(E/(kb*T),(-0.5)))/((np.power(2*me*kb*T,1.5))*np.pi)
+          taus.append(o_tau)
 
-  tau = np.zeros((snktot), dtype=float)
-  for t in taus:
-    tau += 1./t
-  return len(channels)/tau
+      #if c == 'polar optical':
+       #   po_tau = (di*h**2*np.power(E_modi/(kb*T),(0.5)))/((np.power(2*me*kb*T,0.5))*F_scr*e**2)
+       #   taus.append(po_tau)
 
+      tau = np.zeros((snktot,bnd,nspin), dtype=float)
+      for t in taus:
+          tau += 1./t
+      tau = 1/tau
+  tau_new = np.reshape(tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  o_tau_new = np.reshape(o_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  a_tau_new = np.reshape(a_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  np.savetxt('tau.dat',tau_new)
+  np.savetxt('o_tau.dat',o_tau_new)
+  np.savetxt('a_tau.dat',a_tau_new)
+  np.savetxt('E.dat',E_re)
+  return(tau) 
 
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
   from .smearing import gaussian,metpax
   # We assume tau=1 in the constant relaxation time approximation
-
+ 
   arrays,attributes = data_controller.data_dicts()
-
   esize = ene.size
-
   snktot = arrays['E_k'].shape[0]
-
   bnd = attributes['bnd']
   kq_wght = 1./attributes['nkpnts']
-
   if smearing is not None and smearing != 'gauss' and smearing != 'm-p':
     print('%s Smearing Not Implemented.'%smearing)
     comm.Abort()
-
   L = np.zeros((3,3,esize), dtype=float)
-
+  tau_t = get_tau(temp,data_controller,['accoustic', 'optical'])
   for n in range(bnd):
     Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
+    tau_re = np.reshape(np.repeat(tau_t[:,n,0],esize), (snktot,esize))
     delk = (np.reshape(np.repeat(arrays['deltakp'][:,n,ispin],esize), (snktot,esize)) if smearing!=None else None)
     EtoAlpha = np.power(Eaux[:,:]-ene, alpha)
     if smearing is None:
@@ -136,7 +160,6 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
     for l in range(t_tensor.shape[0]):
       i = t_tensor[l][0]
       j = t_tensor[l][1]
-      tau = get_tau(data_controller, ['accoustic', 'optical'])
-      L[i,j,:] += np.sum(kq_wght*tau*velkp[:,i,n,ispin]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
+      L[i,j,:] += np.sum(kq_wght*velkp[:,i,n,ispin]*tau_re[:,n]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
 
   return L
