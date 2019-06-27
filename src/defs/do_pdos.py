@@ -22,7 +22,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_pdos ( data_controller, emin=-10., emax=2. ):
+def do_pdos ( data_controller, emin, emax, delta ):
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -45,7 +45,7 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
     E_k = arrays['E_k'][:,:,ispin]
 
     for e in range(esize):
-      taux = np.exp(-((ene[e]-E_k)/attributes['delta'])**2)/np.sqrt(np.pi)
+      taux = np.exp(-((ene[e]-E_k)/delta)**2)/np.sqrt(np.pi)
       for m in range(nawf):
         pdosaux[m,e] += np.sum(taux*v_kaux[:,m,:])
 
@@ -55,7 +55,7 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
     pdosaux = None
 
     if rank == 0:
-      pdos /= (float(nktot)*np.sqrt(np.pi)*attributes['delta'])
+      pdos /= (float(nktot)*np.sqrt(np.pi)*delta)
 
     pdos_sum = (np.zeros(esize, dtype=float) if rank==0 else None)
 
@@ -69,7 +69,7 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
     data_controller.write_file_row_col(fpdos, ene, pdos_sum)
 
 
-def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
+def do_pdos_adaptive ( data_controller, emin, emax ):
   from .smearing import metpax, gaussian
 
   arrays = data_controller.data_arrays

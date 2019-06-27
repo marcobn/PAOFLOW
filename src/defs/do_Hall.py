@@ -23,7 +23,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_spin_Hall ( data_controller, do_ac ):
+def do_spin_Hall ( data_controller, twoD, do_ac ):
   from .perturb_split import perturb_split
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
@@ -66,7 +66,11 @@ def do_spin_Hall ( data_controller, do_ac ):
     ene,shc,Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
 
     if rank == 0:
-      cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
+      if twoD:
+        av0,av1 = arry['a_vectors'][0,:],arry['a_vectors'][1,:]
+        cgs_conv = 1./(np.linalg.norm(np.cross(av0,av1))*attr['alat']**2)
+      else:
+        cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
       shc *= cgs_conv
 
     cart_indices = (str(LL[spol]),str(LL[ipol]),str(LL[jpol]))

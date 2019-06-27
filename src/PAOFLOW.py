@@ -872,17 +872,16 @@ class PAOFLOW:
     '''
     arrays,attr = self.data_controller.data_dicts()
 
-    if 'delta' not in attr: attr['delta'] = delta
     if 'smearing' not in attr: attr['smearing'] = None
 
     try:
       if attr['smearing'] is None:
         if do_dos:
           from .defs.do_dos import do_dos
-          do_dos(self.data_controller, emin=emin, emax=emax)
+          do_dos(self.data_controller, emin, emax, delta)
         if do_pdos:
           from .defs.do_pdos import do_pdos
-          do_pdos(self.data_controller, emin=emin, emax=emax)
+          do_pdos(self.data_controller, emin, emax, delta)
       else:
         if 'deltakp' not in arrays:
           if self.rank == 0:
@@ -891,11 +890,11 @@ class PAOFLOW:
 
         if do_dos:
           from .defs.do_dos import do_dos_adaptive
-          do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
+          do_dos_adaptive(self.data_controller, emin, emax)
 
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
-          do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
+          do_pdos_adaptive(self.data_controller, emin, emax)
     except:
       self.report_exception('dos')
       if attr['abort_on_exception']:
@@ -984,13 +983,14 @@ class PAOFLOW:
 
 
 
-  def spin_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
+  def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     '''
     Calculate the Spin Hall Conductivity
       Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
       Thus, do_spin_orbit defaults to False here. If anybody needs the spin_orbit capability here, please contact me and we'll sort it out.
 
     Arguments:
+        twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
         do_ac (bool): True to calculate the Spic Circular Dichroism
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
@@ -1015,7 +1015,7 @@ class PAOFLOW:
       self.spin_operator()
 
     try:
-      do_spin_Hall(self.data_controller, do_ac)
+      do_spin_Hall(self.data_controller, twoD, do_ac)
     except:
       self.report_exception('spin_Hall')
       if attr['abort_on_exception']:
