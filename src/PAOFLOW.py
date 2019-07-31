@@ -965,6 +965,8 @@ class PAOFLOW:
 
     try:
       if attr['nspin'] == 1:
+        if 'Sj' not in arrays:
+          self.spin_operator()
         do_spin_texture(self.data_controller)
         self.report_module_time('Spin Texture')
       else:
