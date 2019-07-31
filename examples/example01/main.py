@@ -27,7 +27,7 @@ from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW.PAOFLOW(savedir='silicon.save', smearing='gauss', npool=1, verbose=True)
+  paoflow = PAOFLOW.PAOFLOW(savedir='silicon.save', outputdir='output_silicon', smearing='gauss', npool=1, verbose=True)
   paoflow.projectability()
   paoflow.pao_hamiltonian()
   paoflow.print_data_keys()
