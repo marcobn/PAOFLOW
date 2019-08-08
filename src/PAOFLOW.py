@@ -354,12 +354,14 @@ class PAOFLOW:
         self.comm.Abort()
 
 
-  def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
+  def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
     '''
     Compute the electronic band structure
 
     Arguments:
         ibrav (int): Crystal structure (following the specifications of QE)
+        band_path (str): A string representing the band path to follow
+        high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
         spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
         fname (str): File name for the band output
         nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
@@ -387,7 +389,9 @@ class PAOFLOW:
         attr['ibrav'] = ibrav
 
     if 'nk' not in attr: attr['nk'] = nk
+    if band_path is not None: attr['band_path'] = band_path
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
+    if high_sym_points is not None: arrays['high_sym_points'] = high_sym_points
 
     # Prepare HRs for band computation with spin-orbit coupling
     try:

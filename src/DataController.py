@@ -148,7 +148,7 @@ class DataController:
 
     # Band Path
     self.data_attributes['band_path'] = ''
-    self.data_arrays['high_sym_points'] = np.array([[]])
+    self.data_arrays['high_sym_points'] = {}
 
     # Electric Field
     self.data_arrays['Efield'] = np.zeros(3, dtype=float)

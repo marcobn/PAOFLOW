@@ -43,6 +43,14 @@ def read_attribute ( aroot, default_value, attr, atype, alen=1 ):
                     line = ntxt[i].text.split()
                     for j in range(n):
                         read_value[i,j] = line[j]
+        elif atype == 'string_array':
+            tmp_dict = {}
+            ntxt = aroot.findall(attr+'/a')
+            if m > 0:
+              for i in range(len(ntxt)):
+                line = ntxt[i].text.split()
+                tmp_dict[line[0]] = np.asarray(line[1:], dtype=float)
+            read_value = tmp_dict
 
     if atype == 'string':
       if len(txt) == 1:
