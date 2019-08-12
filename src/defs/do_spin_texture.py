@@ -33,8 +33,7 @@ def do_spin_texture ( data_controller ):
   nawf,nk1,nk2,nk3 = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3']
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
  
-
-  ind_plot = np.zeros(nawf, dtype=int)
+  ind_plot = []
   icount = None
   if rank == 0:
     icount = 0
@@ -45,21 +44,23 @@ def do_spin_texture ( data_controller ):
       btwDwn = (E_k_min < fermi_dw and E_k_max > fermi_dw)
       btwUaD = (E_k_min > fermi_dw and E_k_max < fermi_up)
       if btwUp or btwDwn or btwUaD:
-        ind_plot[icount] = ib
+        ind_plot.append(ib)
         icount += 1
 
   icount = MPI.COMM_WORLD.bcast(icount)
+  ind_plot = MPI.COMM_WORLD.bcast(ind_plot)
 
   Sj = arrays['Sj']
   snktot = arrays['v_k'].shape[0]
-  sktxtaux = np.zeros((snktot,3,nawf,nawf),dtype=complex)
+  sktxtaux = np.zeros((snktot,3,nawf,nawf), dtype=complex)
 
   # Compute matrix elements of the spin operator
   for ik in range(snktot):
       for l in range(3):
         sktxtaux[ik,l,:,:] = np.conj(arrays['v_k'][ik,:,:,0].T).dot(Sj[l,:,:]).dot(arrays['v_k'][ik,:,:,0])
 
-  sktxt = gather_full(sktxtaux, attributes['npool'])
+  sktxtaux = np.take(np.diagonal(sktxtaux[:,:,:,:],axis1=2,axis2=3), ind_plot, axis=2)
+  sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
   sktxtaux = None
 
   if rank == 0:
@@ -68,13 +69,13 @@ def do_spin_texture ( data_controller ):
       for ik in range(E_k_full.shape[0]):
         for ib in range(icount):
           idx=ind_plot[ib]
-          f.write('\t'.join(['%d'%ik]+['% 5.8f'%E_k_full[ik,idx]]+['% 5.8f'%j for j in sktxt[ik,:,idx,idx].real])+'\n')
+          f.write('\t'.join(['%d'%ik]+['% 5.8f'%E_k_full[ik,idx]]+['% 5.8f'%j for j in sktxt[ik,:,ib].real])+'\n')
         f.write("\n")
       f.close()
     else:
-      sktxt = np.reshape(sktxt, (nk1,nk2,nk3,3,nawf,nawf), order='C')
+      sktxt = np.reshape(sktxt, (nk1,nk2,nk3,3,icount), order='C')
       for ib in range(icount):
-        np.savez(os.path.join(attributes['opath'],'spin_text_band_'+str(ib)), spinband = sktxt[:,:,:,:,ind_plot[ib],ind_plot[ib]])
+        np.savez(os.path.join(attributes['opath'],'spin_text_band_'+str(ib)), spinband=sktxt[:,:,:,:,ib])
 
 
   sktxt = None

@@ -1,0 +1,7 @@
+2D SnTe with relativistic PBE pseudopotentials.
+
+* Bands are calculated along a user definied path
+
+* Fermisurface and Spin Texture are calculated through the entire BZ on a densly interpolated mesh (140x140x1).
+
+* Spin Hall Conductivity is computed in 2 dimensional units (h_bar/e)/(Ohm*m)
