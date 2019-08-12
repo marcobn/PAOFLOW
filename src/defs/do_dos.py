@@ -22,7 +22,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_dos ( data_controller, emin=-10., emax=2. ):
+def do_dos ( data_controller, emin, emax, delta ):
 
   arry,attr = data_controller.data_dicts()
 
@@ -46,7 +46,7 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
     E_k = arry['E_k'][:,:bnd,ispin]
 
     for ne in range(esize):
-      dosaux[ne] = np.sum(np.exp(-((ene[ne]-E_k)/attr['delta'])**2))
+      dosaux[ne] = np.sum(np.exp(-((ene[ne]-E_k)/delta)**2))
 
     dos = np.zeros((esize), dtype=float) if rank == 0 else None
 
@@ -54,13 +54,13 @@ def do_dos ( data_controller, emin=-10., emax=2. ):
     dosaux = None
 
     if rank == 0:
-      dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attr['delta'])
+      dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*delta)
 
     fdos = 'dos_%s.dat'%str(ispin)
     data_controller.write_file_row_col(fdos, ene, dos)
 
 
-def do_dos_adaptive ( data_controller, emin=-10., emax=2. ):
+def do_dos_adaptive ( data_controller, emin, emax ):
   from .smearing import gaussian, metpax
 
   comm = MPI.COMM_WORLD

@@ -35,6 +35,23 @@ class PAOFLOW:
   report_exception = None
 
 
+  def print_data_keys ( self ):
+    '''
+      Print's out the keys do the data_controller dictionaries, "arrays" and "attributes".
+      Each stores the respective data required for the various calculation PAOFLOW can perform.
+
+      Arguments:
+          None
+
+      Returns:
+          None
+    '''
+    if self.rank == 0:
+      self.data_controller.print_data()
+    self.comm.Barrier()
+
+
+
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -337,12 +354,14 @@ class PAOFLOW:
         self.comm.Abort()
 
 
-  def bands ( self, ibrav=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
+  def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
     '''
     Compute the electronic band structure
 
     Arguments:
         ibrav (int): Crystal structure (following the specifications of QE)
+        band_path (str): A string representing the band path to follow
+        high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
         spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
         fname (str): File name for the band output
         nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
@@ -370,7 +389,9 @@ class PAOFLOW:
         attr['ibrav'] = ibrav
 
     if 'nk' not in attr: attr['nk'] = nk
+    if band_path is not None: attr['band_path'] = band_path
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
+    if high_sym_points is not None: arrays['high_sym_points'] = high_sym_points
 
     # Prepare HRs for band computation with spin-orbit coupling
     try:
@@ -619,7 +640,7 @@ class PAOFLOW:
 
 
 
-  def interpolated_hamiltonian ( self, nfft1=None, nfft2=None, nfft3=None ):
+  def interpolated_hamiltonian ( self, nfft1=0, nfft2=0, nfft3=0 ):
     '''
     Calculate the interpolated Hamiltonian with the method of zero padding
     Yields 'Hksp'
@@ -643,21 +664,19 @@ class PAOFLOW:
       if 'HRs' not in arrays:
         raise KeyError('HRs')
 
-      # Automatically doubles grid in all directions
-      if nfft1 is None: nfft1 = 2*attr['nk1']
-      if nfft2 is None: nfft2 = 2*attr['nk2']
-      if nfft3 is None: nfft3 = 2*attr['nk3']
-
-      if 'nfft1' not in attr: attr['nfft1'] = nfft1
-      if 'nfft2' not in attr: attr['nfft2'] = nfft2
-      if 'nfft3' not in attr: attr['nfft3'] = nfft3
-
+      nawf = attr['nawf']
       nko1,nko2,nko3 = attr['nk1'],attr['nk2'],attr['nk3']
-      nfft1,nfft2,nfft3 = attr['nfft1'],attr['nfft2'],attr['nfft3']
+
+      # Automatically doubles grid in any direction with unspecified nfft value
+      if nfft1 == 0: nfft1 = 2*nko1
+      if nfft2 == 0: nfft2 = 2*nko2
+      if nfft3 == 0: nfft3 = 2*nko3
+
+      attr['nfft1'],attr['nfft2'],attr['nfft3'] = nfft1,nfft2,nfft3
 
       # Adjust 'npool' if arrays exceed MPI maximum
       int_max = 2147483647
-      temp_pool = int(np.ceil((float(attr['nawf']**2*nfft1*nfft2*nfft3*3*attr['nspin'])/float(int_max))))
+      temp_pool = int(np.ceil((float(nawf**2*nfft1*nfft2*nfft3*3*attr['nspin'])/float(int_max))))
       if temp_pool > attr['npool']:
         if self.rank == 0:
           print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
@@ -666,7 +685,7 @@ class PAOFLOW:
       ### PARALLELIZATION
       if self.rank == 0:
         nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-        arrays['HRs'] = np.reshape(arrays['HRs'], (attr['nawf']**2,nk1,nk2,nk3,attr['nspin']))
+        arrays['HRs'] = np.reshape(arrays['HRs'], (nawf**2,nk1,nk2,nk3,attr['nspin']))
       arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
 
       # Fourier interpolation on extended grid (zero padding)
@@ -675,7 +694,6 @@ class PAOFLOW:
       snawf,_,_,_,nspin = arrays['Hksp'].shape
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nkpnts'],nspin))
       arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
-      nawf = attr['nawf']
       snktot = arrays['Hksp'].shape[1]
       arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
 
@@ -855,17 +873,16 @@ class PAOFLOW:
     '''
     arrays,attr = self.data_controller.data_dicts()
 
-    if 'delta' not in attr: attr['delta'] = delta
     if 'smearing' not in attr: attr['smearing'] = None
 
     try:
       if attr['smearing'] is None:
         if do_dos:
           from .defs.do_dos import do_dos
-          do_dos(self.data_controller, emin=emin, emax=emax)
+          do_dos(self.data_controller, emin, emax, delta)
         if do_pdos:
           from .defs.do_pdos import do_pdos
-          do_pdos(self.data_controller, emin=emin, emax=emax)
+          do_pdos(self.data_controller, emin, emax, delta)
       else:
         if 'deltakp' not in arrays:
           if self.rank == 0:
@@ -874,11 +891,11 @@ class PAOFLOW:
 
         if do_dos:
           from .defs.do_dos import do_dos_adaptive
-          do_dos_adaptive(self.data_controller, emin=emin, emax=emax)
+          do_dos_adaptive(self.data_controller, emin, emax)
 
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
-          do_pdos_adaptive(self.data_controller, emin=emin, emax=emax)
+          do_pdos_adaptive(self.data_controller, emin, emax)
     except:
       self.report_exception('dos')
       if attr['abort_on_exception']:
@@ -952,6 +969,8 @@ class PAOFLOW:
 
     try:
       if attr['nspin'] == 1:
+        if 'Sj' not in arry:
+          self.spin_operator()
         do_spin_texture(self.data_controller)
         self.report_module_time('Spin Texture')
       else:
@@ -967,13 +986,14 @@ class PAOFLOW:
 
 
 
-  def spin_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
+  def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     '''
     Calculate the Spin Hall Conductivity
       Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
       Thus, do_spin_orbit defaults to False here. If anybody needs the spin_orbit capability here, please contact me and we'll sort it out.
 
     Arguments:
+        twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
         do_ac (bool): True to calculate the Spic Circular Dichroism
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
@@ -998,7 +1018,7 @@ class PAOFLOW:
       self.spin_operator()
 
     try:
-      do_spin_Hall(self.data_controller, do_ac)
+      do_spin_Hall(self.data_controller, twoD, do_ac)
     except:
       self.report_exception('spin_Hall')
       if attr['abort_on_exception']:
