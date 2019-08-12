@@ -24,7 +24,8 @@ def do_spin_texture ( data_controller ):
   from mpi4py import MPI
   from .communication import gather_full
 
-  rank = MPI.COMM_WORLD.Get_rank()
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
@@ -47,8 +48,8 @@ def do_spin_texture ( data_controller ):
         ind_plot.append(ib)
         icount += 1
 
-  icount = MPI.COMM_WORLD.bcast(icount)
-  ind_plot = MPI.COMM_WORLD.bcast(ind_plot)
+  icount = comm.bcast(icount)
+  ind_plot = comm.bcast(ind_plot)
 
   Sj = arrays['Sj']
   snktot = arrays['v_k'].shape[0]
@@ -59,7 +60,7 @@ def do_spin_texture ( data_controller ):
       for l in range(3):
         sktxtaux[ik,l,:,:] = np.conj(arrays['v_k'][ik,:,:,0].T).dot(Sj[l,:,:]).dot(arrays['v_k'][ik,:,:,0])
 
-  sktxtaux = np.take(np.diagonal(sktxtaux[:,:,:,:],axis1=2,axis2=3), ind_plot, axis=2)
+  sktxtaux = np.take(np.diagonal(sktxtaux,axis1=2,axis2=3), ind_plot, axis=2)
   sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
   sktxtaux = None
 
