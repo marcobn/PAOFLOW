@@ -154,6 +154,8 @@ class DataController:
     self.data_arrays['Efield'] = np.zeros(3, dtype=float)
     # Magnetic Field
     self.data_arrays['Bfield'] = np.zeros(3, dtype=float)
+    # Hubbard Parameters
+    self.data_arrays['HubbardU'] = np.zeros(1, dtype=float)
 
     # Tensor components
     # Dielectric function

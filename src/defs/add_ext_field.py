@@ -39,7 +39,7 @@ def add_ext_field ( data_controller ):
 
   if arrays['Efield'].any() != 0.0:
     for n in range(nawf):
-      arrays['HRs'][n,n,0,:] -= arrays['Efield'].dot(tau_wf[n,:])
+      arrays['HRs'][n,n,:,:] -= arrays['Efield'].dot(tau_wf[n,:])
 
   # --- Add Magnetic Field ---
   # Define real space lattice vectors

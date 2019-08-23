@@ -313,18 +313,18 @@ class PAOFLOW:
     '''
     arry,attr = self.data_controller.data_dicts()
 
-    if 'Efield' not in arry: arry['Efield'] = np.array(Efield)
-    if 'Bfield' not in arry: arry['Bfield'] = np.array(Bfield)
-    if 'HubbardU' not in arry: arry['HubbardU'] = np.array(HubbardU)
+    if Efield != [0.]: arry['Efield'] = np.array(Efield)
+    if Bfield != [0.]: arry['Bfield'] = np.array(Bfield)
+    if HubbardU != [0.]: arry['HubbardU'] = np.array(HubbardU)
 
     Efield,Bfield,HubbardU = arry['Efield'],arry['Bfield'],arry['HubbardU']
 
     try:
       # Add external fields or non scf ACBN0 correction
-      if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
+      if Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.:
         from .defs.add_ext_field import add_ext_field
         add_ext_field(self.data_controller)
-        if attr['verbose']:
+        if self.rank == 0 and attr['verbose']:
           print('External Fields Added')
     except:
       self.report_exception('add_external_fields')
