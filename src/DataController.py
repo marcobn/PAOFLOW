@@ -104,8 +104,8 @@ class DataController:
 
     # Broadcast Data
     try:
-      self.broadcast_data_arrays()
-      self.broadcast_data_attributes()
+      self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
+      self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
     except:
       print('ERROR: MPI was unable to broadcast')
       self.report_exception('Initialization Broadcast')
@@ -148,7 +148,7 @@ class DataController:
 
     # Band Path
     self.data_attributes['band_path'] = ''
-    self.data_arrays['high_sym_points'] = np.array([[]])
+    self.data_arrays['high_sym_points'] = {}
 
     # Electric Field
     self.data_arrays['Efield'] = np.zeros(3, dtype=float)

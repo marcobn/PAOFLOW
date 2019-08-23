@@ -35,7 +35,7 @@ def read_sh_nl ( data_controller ):
   # Get Shells for each species
   sdict = {}
   for s in arry['species']:
-    sdict[s[0]] = read_pseudopotential(s[1])
+    sdict[s[0]] = read_pseudopotential(join(attr['workpath'],attr['savedir'],s[1]))
 
   # Concatenate shells for each atom
   sh = []

@@ -72,7 +72,7 @@ def main():
     print('1D Band topology not supported with the PAOFLOW class')
 
   if attr['double_grid']:
-    paoflow.interpolated_hamiltonian()
+    paoflow.interpolated_hamiltonian(nfft1=attr['nfft1'], nfft2=attr['nfft2'], nfft3=attr['nfft3'])
 
   paoflow.pao_eigh()
 

@@ -1,0 +1,57 @@
+&control
+   calculation = 'scf',
+   verbosity = 'high',
+   restart_mode = 'from_scratch',
+   prefix = 'SnTe',
+   outdir = './',
+   pseudo_dir = './',
+   wf_collect = .false.,
+/
+&system
+   lda_plus_u = .true.,
+   Hubbard_U(1) = 0.166567,
+   Hubbard_U(2) = 2.152901,
+   lda_plus_u_kind = 1,
+   lspinorb = .true.,
+   noncolin = .true.,
+
+   ibrav = 8,
+   nat = 4,
+   ntyp = 2,
+   starting_magnetization(1) = 0.0,
+   starting_magnetization(2) = 0.0,
+   occupations = 'smearing',
+   smearing = 'gaussian',
+   degauss = 0.001,
+   ecutwfc = 50.0,
+   ecutrho = 500.,
+
+   celldm(1) = 8.68,
+   celldm(2) = 0.97,
+   celldm(3) = 6.0,
+
+   vdw_corr = 'grimme-d2',
+/
+&electrons
+   mixing_beta = 0.5,
+   conv_thr = 1.0d-8,
+/
+&ions
+/
+&cell
+   cell_factor = 2.,
+   cell_dofree = 'xy',
+/
+
+ATOMIC_SPECIES 
+Sn  118.71  Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
+Te  127.60  Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF 
+
+ATOMIC_POSITIONS (angstrom)
+Sn       3.209230901   3.359791015   1.808577660
+Sn       0.923519000   1.126040722   4.373010620
+Te       3.389128928   3.359791015   4.719631669
+Te       1.097739082   1.126040722   1.462519925
+
+K_POINTS {automatic}
+16 16 1  0 0 0

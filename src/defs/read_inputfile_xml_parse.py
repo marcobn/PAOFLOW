@@ -43,6 +43,15 @@ def read_attribute ( aroot, default_value, attr, atype, alen=1 ):
                     line = ntxt[i].text.split()
                     for j in range(n):
                         read_value[i,j] = line[j]
+        elif atype == 'string_array':
+            tmp_dict = {}
+            ntxt = aroot.findall(attr+'/a')
+            m = len(ntxt)
+            if m > 0:
+              for i in range(m):
+                line = ntxt[i].text.split()
+                tmp_dict[line[0]] = np.asarray(line[1:], dtype=float)
+            read_value = tmp_dict
 
     if atype == 'string':
       if len(txt) == 1:
@@ -82,8 +91,8 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     naw = np.array([[0,0]])
 
     # Shell order and degeneracy for SO (order must be the same as in the output of projwfc.x)
-    sh = np.array([[0,1,2,0,1,2]])    # order of shells with l angular momentum
-    nl = np.array([[2,1,1,1,1,1]])    # multiplicity of each l shell
+    sh = np.array([[]])    # order of shells with l angular momentum
+    nl = np.array([[]])    # multiplicity of each l shell
 
     # External fields
     Efield = np.array([[0,0,0]]) # static electric field (eV)
@@ -194,6 +203,7 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
 
     # Read String Input Values
     data_attributes['fpath'] = read_attribute(aroot, fpath, 'fpath', 'string')
+    data_attributes['savedir'] = data_attributes['fpath']
     data_attributes['shift'] = read_attribute(aroot, shift, 'shift', 'string')
     try:
         data_attributes['shift'] = read_attribute(aroot, shift, 'shift', 'decimal')
@@ -279,6 +289,9 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_arrays['naw'] = read_attribute(aroot, naw, 'naw', 'array')[0].astype(int)
     data_arrays['sh'] = [int(i) for i in read_attribute(aroot, sh, 'sh', 'array')[0]]
     data_arrays['nl'] = [int(i) for i in read_attribute(aroot, nl, 'nl', 'array')[0]]
+    if len(data_arrays['sh']) == 0 or len(data_arrays['sh']) != len(data_arrays['nl']):
+      del data_arrays['sh']
+      del data_arrays['nl']
     data_arrays['Efield'] = read_attribute(aroot, Efield, 'Efield', 'array')[0]
     data_arrays['Bfield'] = read_attribute(aroot, Bfield, 'Bfield', 'array')[0]
     data_arrays['HubbardU'] = read_attribute(aroot, HubbardU, 'HubbardU', 'array')[0]
