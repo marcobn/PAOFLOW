@@ -175,7 +175,7 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol):
 
   if attributes['metal']:
     if rank == 0: print('NOT TESTED - needs different delta for intraband transitions and degauss from QE + check on units!!!')
-    intrasmear=0.05
+    degauss=0.05
     fnF = None
     if smearing is None:
       fnF = np.empty((snktot,bnd), dtype=float)
@@ -196,8 +196,8 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol):
       for iband1 in range(bndmax):
         pksp2 = np.real(arrays['pksp'][ik,ipol,iband1,iband1,ispin]*arrays['pksp'][ik,jpol,iband1,iband1,ispin])
         pksp2 *= attributes['alat']*BOHR_RADIUS_ANGS/(EPS0*RYTOEV**3)
-        epsi[:] +=  pksp2*intrasmear*ene[:]*fnF[ik,iband1]/((ene[:]**4+intrasmear**2*ene[:]**2)*degauss)
-        epsr[:] -=  pksp2*fnF[ik,iband1]*ene[:]**2/((ene[:]**4+intrasmear**2*ene[:]**2)*degauss)
+        epsi[:] +=  pksp2*delta*ene[:]*fnF[ik,iband1]/((ene[:]**4+delta**2*ene[:]**2)*degauss)
+        epsr[:] -=  pksp2*fnF[ik,iband1]*ene[:]**2/((ene[:]**4+delta**2*ene[:]**2)*degauss)
 
   np.seterr(over=orig_over_err)
   return(epsi, epsr, jdos, count)
