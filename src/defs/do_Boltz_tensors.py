@@ -88,7 +88,7 @@ def get_tau ( data_controller, channels ):
 
   taus = []
   for c in channels:
-    if c == 'accoustic':
+    if c == 'acoustic':
       a_tau = np.ones((snktot), dtype=float)
       taus.append(a_tau)
 
@@ -136,7 +136,7 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
     for l in range(t_tensor.shape[0]):
       i = t_tensor[l][0]
       j = t_tensor[l][1]
-      tau = get_tau(data_controller, ['accoustic', 'optical'])
+      tau = get_tau(data_controller, ['acoustic', 'optical'])
       L[i,j,:] += np.sum(kq_wght*tau*velkp[:,i,n,ispin]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
 
   return L
