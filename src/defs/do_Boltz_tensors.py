@@ -22,7 +22,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
+def do_Boltz_tensors ( data_controller, temp, ene, velkp, ispin ):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
@@ -33,7 +33,7 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
 
   # Quick call function for L_loop (None is smearing type)
-  fLloop = lambda spol : L_loop(data_controller, temp, None, ene, velkp, t_tensor, spol, ispin)
+  fLloop = lambda spol : L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, spol, ispin)
 
   # Quick call function for Zeros on rank Zero
   zoz = lambda r: (np.zeros((3,3,esize), dtype=float) if r==0 else None)
@@ -61,23 +61,6 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
     L2[1,0],L2[2,0],L2[2,1] = sym(L2)
 
   return (L0, L1, L2) if rank==0 else (None, None, None)
-
-
-# Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
-
-  arrays,attributes = data_controller.data_dicts()
-
-  esize = ene.size
-
-  t_tensor = arrays['t_tensor']
-
-  L0aux = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
-  L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
-  comm.Reduce(L0aux, L0, op=MPI.SUM)
-  L0aux = None
-
-  return L0
 
 
 def get_tau ( data_controller, channels ):

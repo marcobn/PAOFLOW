@@ -22,8 +22,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
   from mpi4py import MPI
   from os.path import join
   from numpy import linalg as npl
-  from .do_Boltz_tensors import do_Boltz_tensors_smearing
-  from .do_Boltz_tensors import do_Boltz_tensors_no_smearing
+  from .do_Boltz_tensors import do_Boltz_tensors
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -47,7 +46,6 @@ def do_transport ( data_controller, temps, ene, velkp ):
     fkappa = ojf('kappa', ispin)
     fsigma = ojf('sigma', ispin)
     fSeebeck = ojf('Seebeck', ispin)
-    fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
 
     for temp in temps:
 
@@ -59,26 +57,8 @@ def do_transport ( data_controller, temps, ene, velkp ):
       # Quick function to get tuple elements to write
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
-      if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin)
-
-        #----------------------
-        # Conductivity (in units of 1.e21/Ohm/m/s)
-        #----------------------
-        if rank == 0:
-          # convert in units of 10*21 siemens m^-1 s^-1
-          L0 *= spin_mult*siemen_conv/attr['omega']
-
-          # convert in units of siemens m^-1 s^-1
-          sigma = L0*1.e21
-
-          for i in range(esize):
-            wtup(fsigmadk, gtup(sigma,i))
-          sigma = None
-        comm.Barrier()
-
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
-
+      L0,L1,L2 = do_Boltz_tensors(data_controller, itemp, ene, velkp, ispin)
+      
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
@@ -86,7 +66,6 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
         # convert in units of 10*21 siemens m^-1 s^-1
         L0 *= spin_mult*siemen_conv/attr['omega']
-
         sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
 
         for i in range(esize):
@@ -150,6 +129,4 @@ def do_transport ( data_controller, temps, ene, velkp ):
     fPF.close()
     fkappa.close()
     fsigma.close()
-    if attr['smearing'] != None:
-      fsigmadk.close()
     fSeebeck.close()
