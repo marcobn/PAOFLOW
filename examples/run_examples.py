@@ -19,7 +19,7 @@ from check_test import verifyData
 def get_exeCmd(engine, calcType,inputFile):
 
 #################### User defined parameters ####################
-    execPrefix = "mpirun -np 2"
+    execPrefix = "mpirun -np 16"
     execPostfix = " "
     QE_path = "/Users/marco/Local/Programs/qe-6.2.1/bin/"
     python_path = "python"
@@ -97,7 +97,10 @@ def main():
         except:
             print(('Exception in %s'%subdir))
             quit()
-        verifyData(subdir, datPattern, refPattern)
+        try:
+            verifyData(subdir, datPattern, refPattern)
+        except:
+            print(('Exception in %s'%subdir))
         os.chdir('../')
         print(('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10)))
         reset=time.time()
