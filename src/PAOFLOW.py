@@ -52,7 +52,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing='gauss', npool=1, verbose=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -839,15 +839,14 @@ class PAOFLOW:
 
     attr = self.data_controller.data_attributes
 
-    if 'smearing' not in attr or attr['smearing'] is None:
-      attr['smearing'] = smearing
-    if attr['smearing'] != 'gauss' and attr['smearing'] != 'm-p':
-      if self.rank == 0:
-        print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
-      quit()
+    if smearing != 'gauss' and 'smearing' != 'm-p':
+      raise ValueError('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
+      #if self.rank == 0:
+      #  print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
+      #quit()
 
     try:
-      do_adaptive_smearing(self.data_controller)
+      do_adaptive_smearing(self.data_controller, smearing)
     except:
       self.report_exception('adaptive_smearing')
       if attr['abort_on_exception']:
@@ -856,7 +855,7 @@ class PAOFLOW:
 
 
 
-  def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
+  def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2., ne=1000 ):
     '''
     Calculate the Density of States and Projected Density of States
       If Adaptive Smearing has been performed, the Adaptive DoS will be calculated
@@ -867,6 +866,7 @@ class PAOFLOW:
         delta (float): The gaussian width
         emin (float): The minimum energy in the range to be computed
         emax (float): The maximum energy in the range to be computed
+        ne (int): The number of points to place in the range [emin,emax]
 
     Returns:
         None
@@ -879,10 +879,10 @@ class PAOFLOW:
       if attr['smearing'] is None:
         if do_dos:
           from .defs.do_dos import do_dos
-          do_dos(self.data_controller, emin, emax, delta)
+          do_dos(self.data_controller, emin, emax, ne, delta)
         if do_pdos:
           from .defs.do_pdos import do_pdos
-          do_pdos(self.data_controller, emin, emax, delta)
+          do_pdos(self.data_controller, emin, emax, ne, delta)
       else:
         if 'deltakp' not in arrays:
           if self.rank == 0:
@@ -891,11 +891,11 @@ class PAOFLOW:
 
         if do_dos:
           from .defs.do_dos import do_dos_adaptive
-          do_dos_adaptive(self.data_controller, emin, emax)
+          do_dos_adaptive(self.data_controller, emin, emax, ne)
 
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
-          do_pdos_adaptive(self.data_controller, emin, emax)
+          do_pdos_adaptive(self.data_controller, emin, emax, ne)
     except:
       self.report_exception('dos')
       if attr['abort_on_exception']:
