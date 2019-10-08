@@ -17,17 +17,14 @@
 #
 
 
-def get_R_grid_fft ( data_controller ):
+def get_R_grid_fft ( data_controller, nr1, nr2, nr3):
   import numpy as np
   from scipy import fftpack as FFT
 
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
 
-  nr1 = attributes['nk1']
-  nr2 = attributes['nk2']
-  nr3 = attributes['nk3']
-  nrtot = nr1 * nr2 * nr3
+  nrtot = nr1*nr2*nr3
 
   a_vectors = arrays['a_vectors']
 

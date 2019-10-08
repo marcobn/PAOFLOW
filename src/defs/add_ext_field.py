@@ -41,19 +41,6 @@ def add_ext_field ( data_controller ):
     for n in range(nawf):
       arrays['HRs'][n,n,0,:] -= arrays['Efield'].dot(tau_wf[n,:])
 
-  # --- Add Magnetic Field ---
-  # Define real space lattice vectors
-  #get_R_grid_fft(data_controller)
-  #alat = attributes['alat']/ANGSTROM_AU
-  if arrays['Bfield'].any() != 0.0:
-    print('calculation in magnetic supercell not implemented')
-  # Magnetic field in units of magnetic flux quantum (hc/e)
-  #for i in xrange(nk1*nk2*nk3):
-  #    for n in xrange(nawf):
-  #        for m in xrange(nawf):
-  #            arg = 0.5*np.dot((np.cross(Bfield,alat*R[i,:]+tau_wf[m,:])+np.cross(Bfield,tau_wf[n,:])),(alat*R[i,:]+tau_wf[m,:]-tau_wf[n,:]))
-  #            HRs[n,m,i,:] *= np.exp(-np.pi*arg*1.j)
-
   if arrays['HubbardU'].any() != 0:
     for n in range(nawf):
       arrays['HRs'][n,n,0,:] -= arrays['HubbardU'][n]/2.0

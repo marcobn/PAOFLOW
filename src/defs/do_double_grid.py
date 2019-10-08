@@ -22,30 +22,38 @@ def do_double_grid ( data_controller ):
   from mpi4py import MPI
   from .zero_pad import zero_pad
   from scipy import fftpack as FFT
+  from .communication import scatter_full
 
   rank = MPI.COMM_WORLD.Get_rank()
 
-  arrays,attributes = data_controller.data_dicts()
+  arrays,attr = data_controller.data_dicts()
 
-  snawf,nk1,nk2,nk3,nspin = arrays['HRs'].shape
-  nk1p = attributes['nfft1']
-  nk2p = attributes['nfft2']
-  nk3p = attributes['nfft3']
+  HRs = None
+  if rank == 0:
+    nawf,nk1,nk2,nk3 = attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3']
+    HRs = np.reshape(arrays['HRs'], (nawf**2,nk1,nk2,nk3,attr['nspin']))
+  HRs = scatter_full(HRs, attr['npool'])
+
+
+  snawf,nk1,nk2,nk3,nspin = HRs.shape
+  nk1p = attr['nfft1']
+  nk2p = attr['nfft2']
+  nk3p = attr['nfft3']
   nfft1 = nk1p-nk1
   nfft2 = nk2p-nk2
   nfft3 = nk3p-nk3
 
   # Extended R to k (with zero padding)
-  arrays['Hksp']  = np.empty((arrays['HRs'].shape[0],nk1p,nk2p,nk3p,nspin), dtype=complex)
+  arrays['Hksp']  = np.empty((HRs.shape[0],nk1p,nk2p,nk3p,nspin), dtype=complex)
 
   for ispin in range(nspin):
-    for n in range(arrays['HRs'].shape[0]):
-      arrays['Hksp'][n,:,:,:,ispin] = FFT.fftn(zero_pad(arrays['HRs'][n,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3))
+    for n in range(HRs.shape[0]):
+      arrays['Hksp'][n,:,:,:,ispin] = FFT.fftn(zero_pad(HRs[n,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
 #### When to shift?
 ####  arrays['Hksp'] = FFT.fftshift(arrays['Hksp'], axes=(1,2,3))
 
-  attributes['nk1'] = nk1p
-  attributes['nk2'] = nk2p
-  attributes['nk3'] = nk3p
-  attributes['nkpnts'] = nk1p*nk2p*nk3p
+  attr['nk1'] = nk1p
+  attr['nk2'] = nk2p
+  attr['nk3'] = nk3p
+  attr['nkpnts'] = nk1p*nk2p*nk3p

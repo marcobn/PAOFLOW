@@ -50,15 +50,13 @@ def band_loop_H ( data_controller, kq_aux ):
   nksize = kq_aux.shape[1]
   nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
 
-  arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,attributes['nkpnts'],nspin), order='C')
+  HRs = np.reshape(arrays['HRs'], (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
   kdot = np.tensordot(arrays['R'], 2.0j*np.pi*kq_aux, axes=([1],[0]))
   np.exp(kdot, kdot)
   Haux = np.zeros((nawf,nawf,nksize,nspin), dtype=complex, order="C")
 
   for ispin in range(nspin):
-    Haux[:,:,:,ispin] = np.tensordot(arrays['HRs'][:,:,:,ispin], kdot, axes=([2],[0]))
-
-  arrays['HRs'] = np.reshape(arrays['HRs'], (nawf,nawf,nk1,nk2,nk3,nspin), order='C')
+    Haux[:,:,:,ispin] = np.tensordot(HRs[:,:,:,ispin], kdot, axes=([2],[0]))
 
   kdot  = None
   return Haux
@@ -86,15 +84,11 @@ def do_bands ( data_controller ):
     #--------------------------------------------
 
     alat = attributes['alat']
-    nawf = attributes['nawf']
-    nk1 = attributes['nk1']
-    nk2 = attributes['nk2']
-    nk3 = attributes['nk3']
-    nspin = attributes['nspin']
-    nktot = attributes['nkpnts']
+    nawf,_,nk1,nk2,nk3,nspin = arrays['HRs'].shape
+    nktot = nk1*nk2*nk3
 
     # Define real space lattice vectors
-    get_R_grid_fft(data_controller)
+    get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
     # Define k-point mesh for bands interpolation
     kpnts_interpolation_mesh(data_controller)
