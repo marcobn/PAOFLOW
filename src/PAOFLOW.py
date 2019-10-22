@@ -546,8 +546,8 @@ class PAOFLOW:
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
-    if ('sh' and 'nl') not in arrays:
-      if (sh and nl) is None:
+    if 'sh' not in arrays and 'nl' not in arrays:
+      if sh is None and nl is None:
         from .defs.read_sh_nl import read_sh_nl
         arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller)
       else:
