@@ -165,7 +165,7 @@ def do_topology ( data_controller ):
       for ik in range(pks.shape[0]):
         for ispin in range(nspin):
           jks[ik,l,:,:,ispin] = (np.conj(arrays['v_k'][ik,:,:,ispin].T).dot \
-            (0.5*(np.dot(Sj[l],dHks_aux[ik,:,:,ispin])+np.dot(dHks_aux[ik,:,:,ispin],Sj[l]))).dot(arrays['v_k'][ik,:,:,ispin]))[:bnd,:bnd]
+            (0.5*(np.dot(Sj[spol],dHks_aux[ik,:,:,ispin])+np.dot(dHks_aux[ik,:,:,ispin],Sj[spol]))).dot(arrays['v_k'][ik,:,:,ispin]))[:bnd,:bnd]
 
   if eff_mass == True:
     tks = np.zeros((kq_aux.shape[1],3,3,bnd,bnd,nspin), dtype=complex)
@@ -246,9 +246,9 @@ def do_topology ( data_controller ):
               Om_znk[ik,n] += -1.0*np.imag(pks[ik,jpol,n,m,0]*pks[ik,ipol,m,n,0]-pks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0])/((arrays['E_k'][ik,m,0] - arrays['E_k'][ik,n,0])**2 + deltab**2)
             if spin_Hall:
               Omj_znk[ik,n] += -2.0*np.imag(jks[ik,ipol,n,m,0]*pks[ik,jpol,m,n,0])/((arrays['E_k'][ik,m,0] - arrays['E_k'][ik,n,0])**2 + deltab**2)
-      Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (-np.sign(arrays['E_k'][ik,:bnd,0]) + 1)))  # T=0.0K
+      Om_zk[ik] = np.sum(Om_znk[ik,:]*(0.5 * (1 - np.sign(arrays['E_k'][ik,:bnd,0]))))  # T=0.0K
       if spin_Hall:
-        Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (-np.sign(arrays['E_k'][ik,:bnd,0]-mu) + 1)))  # T=0.0K
+        Omj_zk[ik] = np.sum(Omj_znk[ik,:]*(0.5 * (1 - np.sign(arrays['E_k'][ik,:bnd,0]-mu))))  # T=0.0K
 
   indices = (LL[spol], LL[ipol], LL[jpol])
   lrng = (list(range(nkpi)) if rank==0 else None)
@@ -268,7 +268,7 @@ def do_topology ( data_controller ):
   if Berry:
     Om_zk = gather_full(Om_zk, npool)
     fOm_zk = 'Omega_%s_%s%s.dat'%indices
-    data_controller.write_file_row_col(fOm_zk, lrng, (Om_zk[:,0] if rank==0 else None))
+    data_controller.write_file_row_col(fOm_zk, lrng, (-Om_zk[:,0] if rank==0 else None))
   Om_zk = fOm_zk = None
 
   if spin_Hall:
