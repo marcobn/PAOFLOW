@@ -654,7 +654,7 @@ class PAOFLOW:
     '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_double_grid import do_double_grid
-    from .defs.communication import gather_scatter,scatter_full
+    from .defs.communication import gather_scatter
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -680,12 +680,6 @@ class PAOFLOW:
         if self.rank == 0:
           print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
         attr['npool'] = temp_pool
-
-      ### PARALLELIZATION
-      if self.rank == 0:
-        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-        arrays['HRs'] = np.reshape(arrays['HRs'], (nawf**2,nk1,nk2,nk3,attr['nspin']))
-      arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
 
       # Fourier interpolation on extended grid (zero padding)
       do_double_grid(self.data_controller)

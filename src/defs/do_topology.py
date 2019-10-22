@@ -39,13 +39,13 @@ def do_topology ( data_controller ):
   if 'kq' not in arrays:
     kpnts_interpolation_mesh(data_controller)
 
-  if 'Rfft' not in arrays:
-    get_R_grid_fft(data_controller)
-
   HRs = arrays['HRs']
   bnd = attributes['bnd']
   nkpi = arrays['kq'].shape[1]
   nawf,_,nk1,nk2,nk3,nspin = HRs.shape
+
+  if 'Rfft' not in arrays:
+    get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
   ipol = attributes['ipol']
   jpol = attributes['jpol']
