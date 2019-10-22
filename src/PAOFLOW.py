@@ -558,10 +558,10 @@ class PAOFLOW:
 
       # Compute spin operators
       # Pauli matrices (x,y,z)
+      Sj = np.zeros((3,nawf,nawf), dtype=complex)
       sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
       if spin_orbit:
         # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
-        Sj = np.zeros((3,nawf,nawf), dtype=complex)
         for spol in range(3):
           for i in range(nawf//2):
             Sj[spol,i,i] = sP[spol][0,0]
@@ -572,7 +572,6 @@ class PAOFLOW:
       else:
         from .defs.clebsch_gordan import clebsch_gordan
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
-        Sj = np.zeros((3,nawf,nawf), dtype=complex)
         for spol in range(3):
           Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
 
