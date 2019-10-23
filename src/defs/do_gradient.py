@@ -46,7 +46,7 @@ def do_gradient ( data_controller ):
   snawf,nk1,nk2,nk3,nspin = arry['Hksp'].shape
 
   # fft grid in R shifted to have (0,0,0) in the center
-  get_R_grid_fft(data_controller)
+  get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
   arry['dHksp'] = np.empty((snawf,nk1,nk2,nk3,3,nspin), dtype=complex, order='C')
   for ispin in range(nspin):

@@ -36,7 +36,7 @@ def main():
   paoflow.interpolated_hamiltonian()
   paoflow.pao_eigh()
   paoflow.gradient_and_momenta()
-  paoflow.adaptive_smearing(smearing='gauss')
+  paoflow.adaptive_smearing()
   paoflow.dos(do_pdos=False)
   paoflow.anomalous_Hall(do_ac=True, emin=-8., emax=4., a_tensor=np.array([[0,1]]))
   paoflow.finish_execution()

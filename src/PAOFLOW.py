@@ -52,7 +52,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing='gauss', npool=1, verbose=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -313,18 +313,18 @@ class PAOFLOW:
     '''
     arry,attr = self.data_controller.data_dicts()
 
-    if 'Efield' not in arry: arry['Efield'] = np.array(Efield)
-    if 'Bfield' not in arry: arry['Bfield'] = np.array(Bfield)
-    if 'HubbardU' not in arry: arry['HubbardU'] = np.array(HubbardU)
+    if any(v != 0. for v in Efield): arry['Efield'] = np.array(Efield)
+    if any(v != 0. for v in Bfield): arry['Bfield'] = np.array(Bfield)
+    if any(v != 0. for v in HubbardU): arry['HubbardU'] = np.array(HubbardU)
 
     Efield,Bfield,HubbardU = arry['Efield'],arry['Bfield'],arry['HubbardU']
 
     try:
       # Add external fields or non scf ACBN0 correction
-      if self.rank == 0 and (Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.):
+      if Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.:
         from .defs.add_ext_field import add_ext_field
         add_ext_field(self.data_controller)
-        if attr['verbose']:
+        if self.rank == 0 and attr['verbose']:
           print('External Fields Added')
     except:
       self.report_exception('add_external_fields')
@@ -546,8 +546,8 @@ class PAOFLOW:
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
-    if ('sh' and 'nl') not in arrays:
-      if (sh and nl) is None:
+    if 'sh' not in arrays and 'nl' not in arrays:
+      if sh is None and nl is None:
         from .defs.read_sh_nl import read_sh_nl
         arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller)
       else:
@@ -654,7 +654,7 @@ class PAOFLOW:
     '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_double_grid import do_double_grid
-    from .defs.communication import gather_scatter,scatter_full
+    from .defs.communication import gather_scatter
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -680,12 +680,6 @@ class PAOFLOW:
         if self.rank == 0:
           print("Warning: %s too low. Setting npool to %s"%(attr['npool'],temp_pool))
         attr['npool'] = temp_pool
-
-      ### PARALLELIZATION
-      if self.rank == 0:
-        nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-        arrays['HRs'] = np.reshape(arrays['HRs'], (nawf**2,nk1,nk2,nk3,attr['nspin']))
-      arrays['HRs'] = scatter_full((arrays['HRs'] if self.rank==0 else None), attr['npool'])
 
       # Fourier interpolation on extended grid (zero padding)
       do_double_grid(self.data_controller)
@@ -838,15 +832,14 @@ class PAOFLOW:
 
     attr = self.data_controller.data_attributes
 
-    if 'smearing' not in attr or attr['smearing'] is None:
-      attr['smearing'] = smearing
-    if attr['smearing'] != 'gauss' and attr['smearing'] != 'm-p':
-      if self.rank == 0:
-        print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
-      quit()
+    if smearing != 'gauss' and 'smearing' != 'm-p':
+      raise ValueError('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
+      #if self.rank == 0:
+      #  print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
+      #quit()
 
     try:
-      do_adaptive_smearing(self.data_controller)
+      do_adaptive_smearing(self.data_controller, smearing)
     except:
       self.report_exception('adaptive_smearing')
       if attr['abort_on_exception']:
@@ -855,7 +848,7 @@ class PAOFLOW:
 
 
 
-  def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2. ):
+  def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2., ne=1000 ):
     '''
     Calculate the Density of States and Projected Density of States
       If Adaptive Smearing has been performed, the Adaptive DoS will be calculated
@@ -866,6 +859,7 @@ class PAOFLOW:
         delta (float): The gaussian width
         emin (float): The minimum energy in the range to be computed
         emax (float): The maximum energy in the range to be computed
+        ne (int): The number of points to place in the range [emin,emax]
 
     Returns:
         None
@@ -878,10 +872,10 @@ class PAOFLOW:
       if attr['smearing'] is None:
         if do_dos:
           from .defs.do_dos import do_dos
-          do_dos(self.data_controller, emin, emax, delta)
+          do_dos(self.data_controller, emin, emax, ne, delta)
         if do_pdos:
           from .defs.do_pdos import do_pdos
-          do_pdos(self.data_controller, emin, emax, delta)
+          do_pdos(self.data_controller, emin, emax, ne, delta)
       else:
         if 'deltakp' not in arrays:
           if self.rank == 0:
@@ -890,11 +884,11 @@ class PAOFLOW:
 
         if do_dos:
           from .defs.do_dos import do_dos_adaptive
-          do_dos_adaptive(self.data_controller, emin, emax)
+          do_dos_adaptive(self.data_controller, emin, emax, ne)
 
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
-          do_pdos_adaptive(self.data_controller, emin, emax)
+          do_pdos_adaptive(self.data_controller, emin, emax, ne)
     except:
       self.report_exception('dos')
       if attr['abort_on_exception']:

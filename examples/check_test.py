@@ -35,7 +35,7 @@ def verifyData ( subdir, datPattern, refPattern ):
     print(('Verifying .dat files for %s' % subdir))
 
     # Get new data files and existing reference data files
-    datFiles = glob.glob(datPattern+'/*.dat')
+    datFiles = glob.glob(datPattern+'*/*.dat')
     refFiles = glob.glob(refPattern+'/*.dat')
 
     # Verify that .dat files exist in reference directory
@@ -51,7 +51,7 @@ def verifyData ( subdir, datPattern, refPattern ):
     rp = lambda f, p : [r.replace(p,'') for r in f]
 
     # Ensure that the lists are identical
-    if rp(datFiles, datPattern) != rp(refFiles, refPattern):
+    if rp(datFiles, datFiles[0].split('/')[0]) != rp(refFiles, refFiles[0].split('/')[0]):
         print('\tList of calculated .dat files does not match reference files.')
         return
 
@@ -125,9 +125,9 @@ def main():
 
     # Look for test directory pattern argument
     if len(sys.argv) > 1:
-        alldir = glob.glob(sys.argv[1])
+        alldir = sorted(glob.glob(sys.argv[1]))
     else:
-        alldir = glob.glob('example*')
+        alldir = sorted(glob.glob('example*'))
 
     # Assign default reference directory pattern, then look for argument
     datPattern = 'output'

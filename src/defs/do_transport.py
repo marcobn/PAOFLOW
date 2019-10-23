@@ -22,10 +22,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
   from mpi4py import MPI
   from os.path import join
   from numpy import linalg as npl
-#  from .do_Boltz_tensors import do_Boltz_tensors_smearing
-  from .do_Boltz_tensors import do_Boltz_tensors_no_smearing
   from .do_Boltz_tensors import do_Boltz_tensors
-
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
@@ -61,50 +58,39 @@ def do_transport ( data_controller, temps, ene, velkp ):
       # Quick function to get tuple elements to write
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
-#      if attr['smearing'] != None:
-#        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin)
-#        #----------------------
-#        # Conductivity (in units of 1.e21/Ohm/m/s)
-#        #----------------------
-#        if rank == 0:
-#          # convert in units of 10*21 siemens m^-1 s^-1
-#          L0 *= spin_mult*siemen_conv/attr['omega']
-#          print(L0[:,:,10])
-#          # convert in units of siemens m^-1 s^-1
-#          sigma = L0*1.e21
-#          
-#          for i in range(esize):
-#            wtup(fsigmadk, gtup(sigma,i))
-#          sigma = None
-#        comm.Barrier()
+      if attr['smearing'] is not None:
+        L0,_,_ = do_Boltz_tensors(data_controller, attr['smearing'], itemp, ene, velkp, ispin)
+        #----------------------
+        # Conductivity (in units of 1.e21/Ohm/m/s)
+        #----------------------
+        if rank == 0:
+          # convert in units of 10*21 siemens m^-1 s^-1
+          L0 *= spin_mult*siemen_conv/attr['omega']
+          # convert in units of siemens m^-1 s^-1
+          sigma = L0*1.e21
+          
+          for i in range(esize):
+            wtup(fsigmadk, gtup(sigma,i))
+          sigma = None
+        comm.Barrier()
 
-      if attr['smearing'] == None:
-        L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
-      else:
-        L0,L1,L2 = do_Boltz_tensors(data_controller, itemp, ene, velkp, ispin)
-      
+      L0,L1,L2 = do_Boltz_tensors(data_controller, None, itemp, ene, velkp, ispin)
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
-        #----------------------
-
         # convert in units of 10*21 siemens m^-1 s^-1
+        #----------------------
         L0 *= spin_mult*siemen_conv/attr['omega']
-#        print(L0[:,:,10])
         sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
 
         for i in range(esize):
           wtup(fsigma, gtup(sigma,i))
         sigma = None
-      comm.Barrier()
 
-      S = None
-      if rank == 0:
         #----------------------
         # Seebeck (in units of V/K)
-        #----------------------
-
         # convert in units of 10^21 Amperes m^-1 s^-1
+        #----------------------
         L1 *= spin_mult*siemen_conv/(temp*attr['omega'])
 
         S = np.zeros((3,3,esize), dtype=float)
@@ -120,16 +106,11 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
         for i in range(esize):
           wtup(fSeebeck, gtup(S,i))
-      comm.Barrier()
 
-      PF = None
-      kappa = None
-      if rank == 0:
         #----------------------
         # Electron thermal conductivity ((in units of W/m/K/s)
-        #----------------------
-
         # convert in units of kg m s^-4
+        #----------------------
         L2 *= spin_mult*siemen_conv*1.e15/(temp*attr['omega'])
 
         kappa = np.zeros((3,3,esize),dtype=float)
@@ -154,6 +135,6 @@ def do_transport ( data_controller, temps, ene, velkp ):
     fPF.close()
     fkappa.close()
     fsigma.close()
-#    if attr['smearing'] != None:
-#      fsigmadk.close()
     fSeebeck.close()
+    if attr['smearing'] is not None:
+      fsigmadk.close()
