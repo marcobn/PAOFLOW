@@ -104,7 +104,7 @@ def read_new_QE_output_xml ( data_controller ):
                 lspecies = elem.findall("atomic_species/species")
                 for n in lspecies:
                     species.append(n.attrib['name'])
-                    pseudos.append(n.findall('pseudo_file')[0])
+                    pseudos.append(n.findall('pseudo_file')[0].text)
 
                 atoms = []
                 natoms = int(elem.findall("atomic_structure")[0].attrib['nat'])
