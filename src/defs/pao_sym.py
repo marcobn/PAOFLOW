@@ -2,14 +2,8 @@ import numpy as np
 from get_R_grid_fft import *
 from get_K_grid_fft import *
 import scipy.linalg as LA
-import time
-import qsymm
 import read_qe
 from scipy.special import factorial as fac
-from scipy.spatial.transform import Rotation as R
-
-
-
 
 ############################################################################################
 ############################################################################################
