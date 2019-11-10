@@ -1,9 +1,190 @@
 import numpy as np
-from get_R_grid_fft import *
 from get_K_grid_fft import *
 import scipy.linalg as LA
 import read_qe
 from scipy.special import factorial as fac
+
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def check(Hksp_s,Hksp_f,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom):
+
+    nawf=Hksp_s.shape[1]
+    # load for testing
+    Hksp_f = np.load("kham_full.npy")
+    Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
+    Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
+
+    bad_symop=np.ones(48,dtype=bool)
+    good_symop=np.ones(48,dtype=bool)
+    good=[]
+    bad=[]
+
+    st=0
+    fn=27
+    for j in range(Hksp_s.shape[0]):
+        
+        isym = si_per_k[j]
+        nki  = new_k_ind[j]
+        oki  = orig_k_ind[j]
+
+        HP = Hksp_f[nki]
+        THP=Hksp_s[nki]
+
+        U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
+
+
+        good.append(isym)
+        if np.all(np.isclose(HP[st:fn,st:fn],THP[st:fn,st:fn],
+                             rtol=1.e-4,atol=1.e-4)):
+            bad.append(isym)   
+        else:
+            good_symop[isym]=False
+#            continue
+
+            print(j,isym)
+            print(equiv_atom[isym])
+            print(symop[isym])
+            print()
+            print("inv:",inv_flag[isym])
+            print()
+            print("*"*50)
+            print("REAL "*10)
+            print("*"*50)
+            print()
+            print(U_k[st:fn,st:fn])
+            print()
+#            print("ORIG")
+#            print(H[st:fn,st:fn].real)
+#            print()
+            print("CORRECT")
+            print(HP[st:fn,st:fn].real)
+            print("NEW")
+            print(THP[st:fn,st:fn].real)
+            print("EQUAL?")
+            print(np.isclose(HP[st:fn,st:fn].real,THP[st:fn,st:fn].real,
+                             rtol=1.e-4,atol=1.e-4))
+
+            print("*"*50)
+            print("IMAG "*10)
+            print("*"*50)
+#            print()
+#            print("ORIG")
+#            print(H[st:fn,st:fn].imag)
+            print("CORRECT")
+            print(HP[st:fn,st:fn].imag)
+            print("NEW")
+            print(THP[st:fn,st:fn].imag)
+            print("EQUAL?")
+            print(np.isclose(HP[st:fn,st:fn].imag,THP[st:fn,st:fn].imag,
+                             rtol=1.e-4,atol=1.e-4))
+
+
+            print("*"*100)
+            print("*"*100)
+            print("*"*100)
+            raise SystemExit
+    print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
+
+    isl=sym_list()
+    eac=np.array([0,1,2,3,4])
+
+    print()
+    for i in range(48):
+        if i in si_per_k:
+            if not  good_symop[i]:
+                print("BAD ",isl[i],np.all(equiv_atom[i]==eac))
+    #            print(symop[i] @ np.ones(3))
+
+
+    for i in range(48):            
+        if i in si_per_k:
+            if  good_symop[i]:
+                print("GOOD",isl[i],np.all(equiv_atom[i]==eac))
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def sym_list():
+    isl=[]
+    isl.append("identity")
+    isl.append("180 deg rotation - cart. axis [0,0,1]")        
+    isl.append("180 deg rotation - cart. axis [0,1,0]")        
+    isl.append("180 deg rotation - cart. axis [1,0,0]")        
+    isl.append("180 deg rotation - cart. axis [1,1,0]")        
+    isl.append("180 deg rotation - cart. axis [1,-1,0]")       
+    isl.append(" 90 deg rotation - cart. axis [0,0,-1]")       
+    isl.append(" 90 deg rotation - cart. axis [0,0,1]")        
+    isl.append("180 deg rotation - cart. axis [1,0,1]")        
+    isl.append("180 deg rotation - cart. axis [-1,0,1]")       
+    isl.append(" 90 deg rotation - cart. axis [0,1,0]")        
+    isl.append(" 90 deg rotation - cart. axis [0,-1,0]")       
+    isl.append("180 deg rotation - cart. axis [0,1,1]")        
+    isl.append("180 deg rotation - cart. axis [0,1,-1]")       
+    isl.append(" 90 deg rotation - cart. axis [-1,0,0]")       
+    isl.append(" 90 deg rotation - cart. axis [1,0,0]")        
+    isl.append("120 deg rotation - cart. axis [-1,-1,-1]")     
+    isl.append("120 deg rotation - cart. axis [-1,1,1]")       
+    isl.append("120 deg rotation - cart. axis [1,1,-1]")       
+    isl.append("120 deg rotation - cart. axis [1,-1,1]")       
+    isl.append("120 deg rotation - cart. axis [1,1,1]")        
+    isl.append("120 deg rotation - cart. axis [-1,1,-1]")      
+    isl.append("120 deg rotation - cart. axis [1,-1,-1]")      
+    isl.append("120 deg rotation - cart. axis [-1,-1,1]")      
+    isl.append("inversion")                                    
+    isl.append("inv. 180 deg rotation - cart. axis [0,0,1]")   
+    isl.append("inv. 180 deg rotation - cart. axis [0,1,0]")   
+    isl.append("inv. 180 deg rotation - cart. axis [1,0,0]")   
+    isl.append("inv. 180 deg rotation - cart. axis [1,1,0]")   
+    isl.append("inv. 180 deg rotation - cart. axis [1,-1,0]")  
+    isl.append("inv.  90 deg rotation - cart. axis [0,0,-1]")  
+    isl.append("inv.  90 deg rotation - cart. axis [0,0,1]")   
+    isl.append("inv. 180 deg rotation - cart. axis [1,0,1]")   
+    isl.append("inv. 180 deg rotation - cart. axis [-1,0,1]")  
+    isl.append("inv.  90 deg rotation - cart. axis [0,1,0]")   
+    isl.append("inv.  90 deg rotation - cart. axis [0,-1,0]")  
+    isl.append("inv. 180 deg rotation - cart. axis [0,1,1]")   
+    isl.append("inv. 180 deg rotation - cart. axis [0,1,-1]")  
+    isl.append("inv.  90 deg rotation - cart. axis [-1,0,0]")  
+    isl.append("inv.  90 deg rotation - cart. axis [1,0,0]")   
+    isl.append("inv. 120 deg rotation - cart. axis [-1,-1,-1]")
+    isl.append("inv. 120 deg rotation - cart. axis [-1,1,1]")  
+    isl.append("inv. 120 deg rotation - cart. axis [1,1,-1]")  
+    isl.append("inv. 120 deg rotation - cart. axis [1,-1,1]")  
+    isl.append("inv. 120 deg rotation - cart. axis [1,1,1]")   
+    isl.append("inv. 120 deg rotation - cart. axis [-1,1,-1]") 
+    isl.append("inv. 120 deg rotation - cart. axis [1,-1,-1]") 
+    isl.append("inv. 120 deg rotation - cart. axis [-1,-1,1]") 
+
+    return isl
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def map_equiv_atoms(a_index,map_ind):
+    # generate unitary tranformation for swapping
+    # between atoms equivalent by symmetry op
+
+    nawf = a_index.shape[0]
+    U_wyc = np.zeros((map_ind.shape[0],nawf,nawf),dtype=complex)
+
+    for isym in range(map_ind.shape[0]):
+        map_U=np.zeros((nawf,nawf),dtype=complex)
+        for i in range(map_ind[isym].shape[0]):
+            fi=np.where(a_index==i)[0]
+            si=np.where(a_index==map_ind[isym][i])[0]
+
+            for j in range(si.shape[0]):
+                map_U[fi[j],si[j]]=1
+
+        U_wyc[isym]=map_U
+
+    return U_wyc
+
 
 ############################################################################################
 ############################################################################################
@@ -29,8 +210,8 @@ def get_trans():
     trans_l2=np.array([[ 0, 0, 1, 0, 0],
                        [ 0,-1, 0, 1, 0],
                        [ 0, 1, 0, 1, 0],
-                       [-1, 0, 0, 0, 1],
-                       [ 1, 0, 0, 0, 1],],dtype=complex)
+                       [ 1, 0, 0, 0, 1],
+                       [-1, 0, 0, 0, 1],],dtype=complex)
 
     trans_l2[1]*=rsh
     trans_l2[2]*=ish
@@ -41,8 +222,8 @@ def get_trans():
     trans_l3=np.array([[ 0, 0, 0, 1, 0, 0, 0],
                        [ 0, 0,-1, 0, 1, 0, 0],
                        [ 0, 0, 1, 0, 1, 0, 0],
-                       [ 0,-1, 0, 0, 0, 1, 0],
                        [ 0, 1, 0, 0, 0, 1, 0],
+                       [ 0,-1, 0, 0, 0, 1, 0],
                        [-1, 0, 0, 0, 0, 0, 1],
                        [ 1, 0, 0, 0, 0, 0, 1],],dtype=complex)
 
@@ -231,7 +412,7 @@ def find_equiv_k(kp,symop,full_grid):
     if counter!=full_grid.shape[0]:
         print('NOT ALL KPOINTS ACCOUNTED FOR')
     else:
-        print('all clear')
+        pass
 
     new_k_ind=np.array(new_k_ind)
     orig_k_ind=np.array(orig_k_ind)
@@ -299,15 +480,17 @@ def build_U_matrix(wigner,shells):
 ############################################################################################
 ############################################################################################
 
-def get_phase_shifts(atom_pos,symop,inv_flag):
+def get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom):
     # calculate phase shifts for U
     phase_shift=np.zeros((symop.shape[0],atom_pos.shape[0],3),dtype=float)
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
+            p1 = equiv_atom[isym,p]
+
             if inv_flag[isym]:
-                phase_shift[isym,p] = (-symop[isym].T @ atom_pos[p])-atom_pos[p]
+                phase_shift[isym,p1] = (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
             else:
-                phase_shift[isym,p] = ( symop[isym].T @ atom_pos[p])-atom_pos[p]
+                phase_shift[isym,p1] = ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
 
     return phase_shift
 
@@ -322,7 +505,7 @@ def get_U_k(k,shift,a_index,U):
 
 ############################################################################################
 ############################################################################################
-
+############################################################################################
 
 def correct_roundoff(arr):
     #correct for round off
@@ -332,6 +515,7 @@ def correct_roundoff(arr):
 
     return arr
 
+############################################################################################
 ############################################################################################
 ############################################################################################
 
@@ -347,6 +531,9 @@ def construct_reduced(red_k_ind,full_k_ind,si_per_k,symop,H):
 
     return H_red
 
+############################################################################################
+############################################################################################
+############################################################################################
 
 def check_reduced(red_k_ind,full_k_ind,si_per_k,symop,H,H_wedge):
     #check function to check if wedge H can be constructed from full grid H
@@ -356,6 +543,7 @@ def check_reduced(red_k_ind,full_k_ind,si_per_k,symop,H,H_wedge):
         print('FULL AND REDUCED KHAM NOT EQUAL!!!')
         raise SystemExit
 
+############################################################################################
 ############################################################################################
 ############################################################################################
 
@@ -369,11 +557,11 @@ def check_symop(symop):
                     print(symop[isym])
                     raise SystemExit
 
-
 ############################################################################################
 ############################################################################################
+############################################################################################
 
-def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag):
+def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc):
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
     nkp_grid = new_k_ind.shape[0]
@@ -392,18 +580,26 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
         #transformated H(k)
         THP = U_k @ H @ U_k_inv
 
+        # swap equiv atoms if needed
+        THP = U_wyc[isym] @ THP @ U_wyc[isym].T
+
         # invert if the symop has inversion
         if inv_flag[isym]:
             THP=np.conj(THP)
 
         Hksp_s[nki]=THP
 
+
+    check(Hksp_s,Hksp_s,si_per_k,new_k_ind,orig_k_ind,
+          phase_shifts,U,a_index,inv_flag,equiv_atom)
+
     return Hksp_s
 
 ############################################################################################
 ############################################################################################
+############################################################################################
 
-def open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index):
+def open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom):
 
     nawf = Hksp.shape[1]
 
@@ -423,48 +619,61 @@ def open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index):
     wigner = convert_wigner_d(wigner)
 
     # get phase shifts from rotation symop
-    phase_shifts     = get_phase_shifts(atom_pos,symop,inv_flag)
+    phase_shifts     = get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom)
 
     # build U and U_inv from blocks
     U = build_U_matrix(wigner    ,shells)
 
+    # adds transformation to U that maps orbitals from
+    # atom A to equivalent atom B atoms after symop
+    U_wyc = map_equiv_atoms(a_index,equiv_atom)
+
+    # transform H(k) -> H(k')
     Hksp_s = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
-                           new_k_ind,orig_k_ind,si_per_k,inv_flag)
+                           new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc)
 
     return Hksp_s
 
+############################################################################################
 ############################################################################################
 ############################################################################################
 
 np.set_printoptions(precision=3,suppress=True,linewidth=160)
 
 # path to data-file.xml
-fp='../../_29471fbe625be6a2_01.save/'
+fp='wedge.save/'
 
 # load from QE data file
-nk1,nk2,nk3,b_vectors,a_vectors,kp,symop,nawf = read_qe.read_new_QE_output_xml(fp,False,False)
+nk1,nk2,nk3,b_vectors,a_vectors,kp,symop,nawf,equiv_atom = read_qe.read_new_QE_output_xml(fp,False,False)
 
 # load for testing
-Hksp = np.load("kham_red_shift.npy")
+Hksp = np.load("kham_wedge.npy")
 Hksp = np.reshape(Hksp,(nawf,nawf,kp.shape[0]))
 Hksp = np.transpose(Hksp,axes=(2,0,1))
 
 
 atom_pos=np.array([[0.0,0.0,0.0],
-                   [0.5,0.5,0.5]])
+                   [0.5,0.5,0.5],
+                   [0.5,0.5,0.0],
+                   [0.0,0.5,0.5],
+                   [0.5,0.0,0.5],])
 
-a_index= np.array([0,0,0,0,0,1,1,1,1])
-shells = np.array([0,1,0,0,1])
 
-Hksp_s = open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index)
+
+a_index = np.array([1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,])-1
+shells=np.array([0,1,0,0,1,0,2,0,1,0,1,0,1])
+
+
+Hksp_s = open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom)
 
 Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
 np.save("Hksp_s.npy",Hksp_s)
 
 
 
-# Hksp_f = np.copy(Hksp_s)
-# Hksp_s = np.zeros_like(Hksp_f)
+
+
+
 
 # for oki in range(Hksp_s.shape[0]):
 #     new_k_ind,_,si_per_k=find_equiv_k_mod(full_grid[oki][None],symop,full_grid)
@@ -491,3 +700,4 @@ np.save("Hksp_s.npy",Hksp_s)
 
 # Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
 # np.save("Hksp_s.npy",Hksp_s)
+
