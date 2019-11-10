@@ -1,7 +1,6 @@
 import numpy as np
-from get_K_grid_fft import *
 import scipy.linalg as LA
-import read_qe
+#import read_qe
 from scipy.special import factorial as fac
 
 
@@ -641,33 +640,55 @@ def open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom):
 np.set_printoptions(precision=3,suppress=True,linewidth=160)
 
 # path to data-file.xml
-fp='wedge.save/'
+#fp='wedge.save/'
 
 # load from QE data file
-nk1,nk2,nk3,b_vectors,a_vectors,kp,symop,nawf,equiv_atom = read_qe.read_new_QE_output_xml(fp,False,False)
+#nk1,nk2,nk3,b_vectors,a_vectors,kp,symop,nawf,equiv_atom = read_qe.read_new_QE_output_xml(fp,False,False)
 
 # load for testing
-Hksp = np.load("kham_wedge.npy")
-Hksp = np.reshape(Hksp,(nawf,nawf,kp.shape[0]))
-Hksp = np.transpose(Hksp,axes=(2,0,1))
+#Hksp = np.load("kham_wedge.npy")
+#Hksp = np.reshape(Hksp,(nawf,nawf,kp.shape[0]))
+#Hksp = np.transpose(Hksp,axes=(2,0,1))
 
 
-atom_pos=np.array([[0.0,0.0,0.0],
-                   [0.5,0.5,0.5],
-                   [0.5,0.5,0.0],
-                   [0.0,0.5,0.5],
-                   [0.5,0.0,0.5],])
+#atom_pos=np.array([[0.0,0.0,0.0],
+#                   [0.5,0.5,0.5],
+#                   [0.5,0.5,0.0],
+#                   [0.0,0.5,0.5],
+#                   [0.5,0.0,0.5],])
 
 
 
-a_index = np.array([1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,])-1
-shells=np.array([0,1,0,0,1,0,2,0,1,0,1,0,1])
+def open_grid_wrapper(data_controller):
 
 
-Hksp_s = open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom)
+    data_arrays = data_controller.data_arrays
+    data_attr = data_controller.data_attributes
 
-Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
-np.save("Hksp_s.npy",Hksp_s)
+
+    print(data_attr.keys())
+    Hksp       = data_arrays['Hks']
+    nk1        = data_attr['nk1']
+    nk2        = data_attr['nk2']
+    nk3        = data_attr['nk3']
+    symop      = data_arrays['sym_rot']
+    atom_pos   = data_arrays['tau']
+    shells     = data_arrays['sh']
+    atom_lab   = data_arrays['atoms']
+    equiv_atom = data_arrays['equiv_atom']
+
+
+
+
+
+    a_index = np.array([1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,])-1
+    shells=np.array([0,1,0,0,1,0,2,0,1,0,1,0,1])
+
+
+    Hksp_s = open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom)
+
+    Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
+    np.save("Hksp_s.npy",Hksp_s)
 
 
 

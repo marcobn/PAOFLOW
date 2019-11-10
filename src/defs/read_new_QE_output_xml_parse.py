@@ -113,7 +113,37 @@ def read_new_QE_output_xml ( data_controller ):
                 for n in range(natoms):
                     atoms.append(latoms[n].attrib['name'])
                     tau[n,:] = np.array(latoms[n].text.split(), dtype="float32")
-			
+
+
+                # read in info on symmetry operations
+                sym_list=[]
+                shift_list=[]
+                equiv_atom=[]
+                aux=elem.findall("symmetries/symmetry")
+
+                for i in range(len(aux)):
+                    try:
+                        if aux[i].findall('info')[0].text=="crystal_symmetry":
+                            shift_txt = aux[i].findall('fractional_translation')[0].text
+                            equiv_atom_txt = aux[i].findall('equivalent_atoms')[0].text
+                            equiv_atom.append(list(map(int,equiv_atom_txt.split())))
+                            if np.all(np.isclose(np.array(list(map(float,shift_txt.split()))),0.0)):
+                                sym_list.append([list(map(float,x.split())) for x in aux[i].findall\
+                                                 ('rotation')[0].text.split('\n') if len(x.split())!=0] )
+                    except: pass       
+
+                sym_rot=np.transpose(np.array(sym_list),axes=(0,2,1))
+                sym_shift=np.array(shift_list)
+                equiv_atom=np.array(equiv_atom)-1
+
+                # read k points in wedge
+                k_list=[]
+                aux=elem.findall("band_structure/ks_energies/k_point")
+                for i in aux:
+                    k_list.append(list(map(float,i.text.split())))
+
+                # in crystal fractional
+                kp_red=np.array(k_list).dot(np.linalg.inv(b_vectors))                    
 			
 			
     # Reading atomic_proj.xml
@@ -311,5 +341,9 @@ def read_new_QE_output_xml ( data_controller ):
     data_arrays['b_vectors'] = b_vectors
     data_arrays['my_eigsmat'] = my_eigsmat
     data_arrays['U'] = U
+    data_arrays['kp_red'] = kp_red
+    data_arrays['sym_rot'] = sym_rot
+    data_arrays['sym_shift'] = sym_shift
+    data_arrays['equiv_atom'] = equiv_atom
     if Sks is not None:
         data_arrays['Sks'] = Sks

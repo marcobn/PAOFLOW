@@ -30,6 +30,9 @@ def read_sh_nl ( data_controller ):
   '''
   from os.path import join,exists
 
+
+
+
   arry,attr = data_controller.data_dicts()
 
   # Get Shells for each species
@@ -43,6 +46,7 @@ def read_sh_nl ( data_controller ):
   for a in arry['atoms']:
     sh += sdict[a][0]
     nl += sdict[a][1]
+
 
   return(sh, nl)
 
@@ -60,30 +64,30 @@ def read_pseudopotential ( fpp ):
       sh and nl are representative of one atom only
   '''
 
+  import numpy as np
+  import xml.etree.cElementTree as ET
+
   sh = []
   nl = []
 
-  with open(fpp,'r') as f:
+  
 
-    ln = 0
-    lines = f.readlines()
+  iterator_obj = ET.iterparse(fpp,events=('start','end'))
+  iterator     = iter(iterator_obj)
+  event,root   = next(iterator)
 
-    # Walk to Valence Configuration
-    while 'Valence configuration:' not in lines[ln]:
-      ln += 1
+  for event,elem in iterator:        
+      try:
+          for i in elem.findall("PP_PSWFC/"):
+              sh.append(int(i.attrib['l']))
+      except Exception as e: print(e)
 
-    # Reference Line is the first line of valence data
-    ln = ln+2
+#      for i in elem.findall("PP_SPIN_ORB/"):
+#            print(i)
 
-    get_ql = lambda l : int(lines[l].split()[2])
 
-    prev = None
-    while 'Generation' not in lines[ln]:
-      ql = get_ql(ln)
-      if ql != prev:
-        prev = ql
-        sh.append(ql)
-        nl.append(1)
-      ln += 1
+  
 
-  return(sh, nl)
+  nl=list(range(len(sh)))
+  return sh,nl
+
