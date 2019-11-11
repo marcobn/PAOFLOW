@@ -716,34 +716,14 @@ def open_grid(Hksp,full_grid,kp,symop,atom_pos,shells,a_index,equiv_atom):
                            new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc)
 
 
-    check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop)
+#    check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop)
     return Hksp_s
 
 ############################################################################################
 ############################################################################################
 ############################################################################################
 
-np.set_printoptions(precision=3,suppress=True,linewidth=160)
-
-# path to data-file.xml
-#fp='wedge.save/'
-
-# load from QE data file
-#nk1,nk2,nk3,b_vectors,a_vectors,kp,symop,nawf,equiv_atom = read_qe.read_new_QE_output_xml(fp,False,False)
-
-# load for testing
-#Hksp = np.load("kham_wedge.npy")
-#Hksp = np.reshape(Hksp,(nawf,nawf,kp.shape[0]))
-#Hksp = np.transpose(Hksp,axes=(2,0,1))
-
-
-#atom_pos=np.array([[0.0,0.0,0.0],
-#                   [0.5,0.5,0.5],
-#                   [0.5,0.5,0.0],
-#                   [0.0,0.5,0.5],
-#                   [0.5,0.0,0.5],])
-
-
+#np.set_printoptions(precision=3,suppress=True,linewidth=160)
 
 def open_grid_wrapper(data_controller):
 
@@ -751,13 +731,13 @@ def open_grid_wrapper(data_controller):
 
     data_arrays = data_controller.data_arrays
     data_attr = data_controller.data_attributes
-
+    alat       = data_attr['alat']
     nk1        = data_attr['nk1']
     nk2        = data_attr['nk2']
     nk3        = data_attr['nk3']
     Hks        = data_arrays['Hks']
     symop      = data_arrays['sym_rot']
-    atom_pos   = data_arrays['tau']
+    atom_pos   = data_arrays['tau']/alat
     atom_lab   = data_arrays['atoms']
     equiv_atom = data_arrays['equiv_atom']
     kp_red     = data_arrays['kp_red']
@@ -767,7 +747,7 @@ def open_grid_wrapper(data_controller):
     shells,a_index = read_shell(data_attr['workpath'],data_attr['savedir'],
                                 data_arrays['species'],atom_lab)
 
-    
+
     nspin = Hks.shape[3]
     nawf  = Hks.shape[0]
 
@@ -797,7 +777,6 @@ def open_grid_wrapper(data_controller):
 
 #         #transformated H(k)
 #         THP = U_k @ HP @ U_k_inv
-
 #         # invert if the symop has inversion
 #         if inv_flag[isym]:
 #             THP=np.conj(THP)
