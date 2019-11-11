@@ -129,6 +129,10 @@ def do_build_pao_hamiltonian ( data_controller ):
 
   arry['Hks'] = build_Hks(data_controller)
 
+  from PAOFLOW.defs.pao_sym import open_grid_wrapper
+
+  open_grid_wrapper(data_controller)
+
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
   # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)

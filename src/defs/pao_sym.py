@@ -2,13 +2,13 @@ import numpy as np
 import scipy.linalg as LA
 #import read_qe
 from scipy.special import factorial as fac
-
+from PAOFLOW.defs.get_K_grid_fft import get_K_grid_fft
 
 ############################################################################################
 ############################################################################################
 ############################################################################################
 
-def check(Hksp_s,Hksp_f,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom):
+def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop):
 
     nawf=Hksp_s.shape[1]
     # load for testing
@@ -410,6 +410,9 @@ def find_equiv_k(kp,symop,full_grid):
     #check to make sure we have all the k points accounted for
     if counter!=full_grid.shape[0]:
         print('NOT ALL KPOINTS ACCOUNTED FOR')
+        print(counter,full_grid.shape[0])
+        raise SystemExit
+
     else:
         pass
 
@@ -560,6 +563,95 @@ def check_symop(symop):
 ############################################################################################
 ############################################################################################
 
+def get_full_grid(nk1,nk2,nk3):
+  nktot=nk1*nk2*nk3
+
+  b_vectors=np.eye(3)
+
+  Kint = np.zeros((nktot,3), dtype=float)
+
+  for i in range(nk1):
+    for j in range(nk2):
+      for k in range(nk3):
+        n = k + j*nk3 + i*nk2*nk3
+        Rx = float(i)/float(nk1)
+        Ry = float(j)/float(nk2)
+        Rz = float(k)/float(nk3)
+        if Rx >= 0.5: Rx=Rx-1.0
+        if Ry >= 0.5: Ry=Ry-1.0
+        if Rz >= 0.5: Rz=Rz-1.0
+        Rx -= int(Rx)
+        Ry -= int(Ry)
+        Rz -= int(Rz)
+
+        Kint[n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
+
+  return Kint
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def read_shell ( workpath,savedir,species,atoms):
+
+    from os.path import join,exists
+    import numpy as np
+
+    # Get Shells for each species
+    sdict = {}
+    for s in species:
+      sdict[s[0]] = np.array(read_pseudopotential(join(workpath,savedir,s[1])))
+
+    # index of which orbitals belong to which atom in the basis
+    a_index = np.hstack([[a]*np.sum((2*sdict[atoms[a]])+1) for a in range(len(atoms))])
+    # value of l
+    shell   = np.hstack([sdict[a] for a in atoms])
+
+
+
+
+
+    return shell,a_index
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def read_pseudopotential ( fpp ):
+  '''
+  Reads a psuedopotential file to determine the included shells and occupations.
+
+  Arguments:
+      fnscf (string) - Filename of the pseudopotential, copied to the .save directory
+
+  Returns:
+      sh, nl (lists) - sh is a list of orbitals (s-0, p-1, d-2, etc)
+                       nl is a list of occupations at each site
+      sh and nl are representative of one atom only
+  '''
+
+  import numpy as np
+  import xml.etree.cElementTree as ET
+
+  sh = []
+
+
+  iterator_obj = ET.iterparse(fpp,events=('start','end'))
+  iterator     = iter(iterator_obj)
+  event,root   = next(iterator)
+
+  for event,elem in iterator:        
+      try:
+          for i in elem.findall("PP_PSWFC/"):
+              sh.append(int(i.attrib['l']))
+      except Exception as e: print(e)
+
+  return sh
+
+############################################################################################
+############################################################################################
+############################################################################################
+
 def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc):
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
@@ -588,23 +680,15 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 
         Hksp_s[nki]=THP
 
-
-    check(Hksp_s,Hksp_s,si_per_k,new_k_ind,orig_k_ind,
-          phase_shifts,U,a_index,inv_flag,equiv_atom)
-
     return Hksp_s
 
 ############################################################################################
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom):
+def open_grid(Hksp,full_grid,kp,symop,atom_pos,shells,a_index,equiv_atom):
 
     nawf = Hksp.shape[1]
-
-    # full grid
-    full_grid,_,_,_ = get_K_grid_fft(nk1,nk2,nk3,np.eye(3))
-    full_grid=full_grid.T
 
     # get index of k in wedge, index in full grid, 
     # and index of symop that transforms k to k'
@@ -631,6 +715,8 @@ def open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom):
     Hksp_s = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                            new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc)
 
+
+    check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop)
     return Hksp_s
 
 ############################################################################################
@@ -662,36 +748,37 @@ np.set_printoptions(precision=3,suppress=True,linewidth=160)
 def open_grid_wrapper(data_controller):
 
 
+
     data_arrays = data_controller.data_arrays
     data_attr = data_controller.data_attributes
 
-
-    print(data_attr.keys())
-    Hksp       = data_arrays['Hks']
     nk1        = data_attr['nk1']
     nk2        = data_attr['nk2']
     nk3        = data_attr['nk3']
+    Hks        = data_arrays['Hks']
     symop      = data_arrays['sym_rot']
     atom_pos   = data_arrays['tau']
-    shells     = data_arrays['sh']
     atom_lab   = data_arrays['atoms']
     equiv_atom = data_arrays['equiv_atom']
+    kp_red     = data_arrays['kp_red']
 
+    full_grid = get_full_grid(nk1,nk2,nk3)
 
+    shells,a_index = read_shell(data_attr['workpath'],data_attr['savedir'],
+                                data_arrays['species'],atom_lab)
 
+    
+    nspin = Hks.shape[3]
+    nawf  = Hks.shape[0]
 
+    Hksp_s_temp=np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    for ispin in range(nspin):
+        Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
+        Hksp_s = open_grid(Hksp,full_grid,kp_red,symop,atom_pos,shells,a_index,equiv_atom)
+        
+        Hksp_s_temp[:,:,:,ispin] = np.transpose(Hksp_s,axes=(1,2,0))
 
-    a_index = np.array([1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,])-1
-    shells=np.array([0,1,0,0,1,0,2,0,1,0,1,0,1])
-
-
-    Hksp_s = open_grid(Hksp,nk1,nk2,nk3,symop,atom_pos,shells,a_index,equiv_atom)
-
-    Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
-    np.save("Hksp_s.npy",Hksp_s)
-
-
-
+    data_arrays['Hks']=np.ascontiguousarray(Hksp_s_temp)
 
 
 

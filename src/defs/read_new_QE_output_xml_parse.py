@@ -145,7 +145,8 @@ def read_new_QE_output_xml ( data_controller ):
                 # in crystal fractional
                 kp_red=np.array(k_list).dot(np.linalg.inv(b_vectors))                    
 			
-			
+
+
     # Reading atomic_proj.xml
 
     group_nesting = 0
@@ -347,3 +348,4 @@ def read_new_QE_output_xml ( data_controller ):
     data_arrays['equiv_atom'] = equiv_atom
     if Sks is not None:
         data_arrays['Sks'] = Sks
+
