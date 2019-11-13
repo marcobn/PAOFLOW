@@ -132,6 +132,7 @@ def read_new_QE_output_xml ( data_controller ):
                             if np.all(np.isclose(np.array(list(map(float,shift_txt.split()))),0.0)):
                                 sym_list.append([list(map(float,x.split())) for x in aux[i].findall\
                                                  ('rotation')[0].text.split('\n') if len(x.split())!=0] )
+
                     except Exception as e: print(e)
 
                 sym_rot=np.transpose(np.array(sym_list),axes=(0,2,1))
@@ -139,15 +140,6 @@ def read_new_QE_output_xml ( data_controller ):
                 sym_shift=np.array(shift_list)
                 equiv_atom=np.array(equiv_atom)-1
                 sym_info=np.array(sym_info)
-                # read k points in wedge
-                k_list=[]
-                aux=elem.findall("band_structure/ks_energies/k_point")
-                for i in aux:
-                    k_list.append(list(map(float,i.text.split())))
-
-#                # in crystal fractional
-#                kp_red=np.array(k_list).dot(np.linalg.inv(b_vectors))                    
-			
 
 
     # Reading atomic_proj.xml
