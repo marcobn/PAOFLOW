@@ -451,15 +451,6 @@ class PAOFLOW:
 
     self.report_module_time('wave_function_projection')
 
-  def pao_sym(self):
-    from .defs.pao_sym import open_grid_wrapper
-    from .defs.read_sh_nl import read_sh_nl
-
-    sh,nl = read_sh_nl(self.data_controller)
-    self.data_controller.data_arrays['sh']=sh
-    open_grid_wrapper(self.data_controller)
-
-
 
   def doubling_Hamiltonian ( self, nx , ny, nz ):
     '''
