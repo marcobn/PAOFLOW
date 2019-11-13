@@ -4,25 +4,80 @@ import scipy.linalg as LA
 from scipy.special import factorial as fac
 from PAOFLOW.defs.get_K_grid_fft import get_K_grid_fft
 
+
+def get_symop_atom_map(pos,symop,inv_flag):
+    # maps the atomic positions to their equivilent
+    # positions after a transformation
+            
+    index_mapping=np.zeros((symop.shape[0],pos.shape[0]),dtype=int)
+
+    # scales the translational shift symmetry to supercell
+
+    
+    for i in range(index_mapping.shape[0]):
+        # rotate
+        if not inv_flag[i]:
+            new_pos   = (pos @  symop[i].T)%1.0
+        else:
+            new_pos   = (pos @ -symop[i].T)%1.0
+
+    
+        # fold rotated, shifted supercell back into original supercell
+        new_pos[np.where(np.isclose(new_pos,0.0))]=0.0
+        new_pos=new_pos%1.0
+        new_pos[np.where(np.isclose(new_pos,1.0))]=0.0
+        
+        # key that maps equivilent positions
+        # before and after rotation
+        remap_key=np.zeros((pos.shape[0]),dtype=int)
+        remap_key[:]=-999
+
+        # roll over atoms rotated out of original
+        # supercell back into original supercell
+        # and check for equivilent positions
+        for j in range(pos.shape[0]):
+            for k in range(new_pos.shape[0]):
+                if np.all(np.isclose(pos[j],new_pos[k],rtol=1e-5,atol=1e-6,)):
+                    remap_key[j] = k
+
+        index_mapping[i]=remap_key
+
+
+    return index_mapping
+
+def switch_handed(tmat):
+
+    rhtmat=np.zeros((3,3))
+
+    rhtmat[:,0]=tmat[:,0]/np.sqrt(np.dot(tmat[:,0],tmat[:,0]))
+    rhtmat[:,1]=np.cross(tmat[:,2],tmat[:,0])
+    rhtmat[:,2]=tmat[:,2]/np.sqrt(np.dot(tmat[:,2],tmat[:,2]))
+    rhtmat[np.where(np.isclose(rhtmat,0.0))]=0.0
+    rhtmat[np.where(np.isclose(rhtmat,1.0))]=1.0
+    rhtmat[np.where(np.isclose(rhtmat,-1.0))]=-1.0
+
+    return rhtmat
+
 ############################################################################################
 ############################################################################################
 ############################################################################################
 
-def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop):
+def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl):
 
     nawf=Hksp_s.shape[1]
     # load for testing
     Hksp_f = np.load("kham_full.npy")
     Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
     Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
+    print(np.allclose(Hksp_f,Hksp_s,atol=1.e-4,rtol=1.e-4))
 
-    bad_symop=np.ones(48,dtype=bool)
-    good_symop=np.ones(48,dtype=bool)
+    bad_symop=np.ones(symop.shape[0],dtype=bool)
+    good_symop=np.ones(symop.shape[0],dtype=bool)
     good=[]
     bad=[]
 
     st=0
-    fn=27
+    fn=148
     for j in range(Hksp_s.shape[0]):
         
         isym = si_per_k[j]
@@ -41,9 +96,11 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             bad.append(isym)   
         else:
             good_symop[isym]=False
-#            continue
+            continue
 
             print(j,isym)
+            print('old_k=',kp[oki])
+            print('new_k=',fg[nki])
             print(equiv_atom[isym])
             print(symop[isym])
             print()
@@ -84,81 +141,25 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             print("*"*100)
             print("*"*100)
             print("*"*100)
-            raise SystemExit
+#            raise SystemExit
     print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
 
-    isl=sym_list()
-    eac=np.array([0,1,2,3,4])
+
+
 
     print()
-    for i in range(48):
+    for i in range(symop.shape[0]):
         if i in si_per_k:
             if not  good_symop[i]:
-                print("BAD ",isl[i],np.all(equiv_atom[i]==eac))
+                print("BAD ",isl[i])
     #            print(symop[i] @ np.ones(3))
 
 
-    for i in range(48):            
+    for i in range(symop.shape[0]):            
         if i in si_per_k:
             if  good_symop[i]:
-                print("GOOD",isl[i],np.all(equiv_atom[i]==eac))
+                print("GOOD",isl[i])
 
-############################################################################################
-############################################################################################
-############################################################################################
-
-def sym_list():
-    isl=[]
-    isl.append("identity")
-    isl.append("180 deg rotation - cart. axis [0,0,1]")        
-    isl.append("180 deg rotation - cart. axis [0,1,0]")        
-    isl.append("180 deg rotation - cart. axis [1,0,0]")        
-    isl.append("180 deg rotation - cart. axis [1,1,0]")        
-    isl.append("180 deg rotation - cart. axis [1,-1,0]")       
-    isl.append(" 90 deg rotation - cart. axis [0,0,-1]")       
-    isl.append(" 90 deg rotation - cart. axis [0,0,1]")        
-    isl.append("180 deg rotation - cart. axis [1,0,1]")        
-    isl.append("180 deg rotation - cart. axis [-1,0,1]")       
-    isl.append(" 90 deg rotation - cart. axis [0,1,0]")        
-    isl.append(" 90 deg rotation - cart. axis [0,-1,0]")       
-    isl.append("180 deg rotation - cart. axis [0,1,1]")        
-    isl.append("180 deg rotation - cart. axis [0,1,-1]")       
-    isl.append(" 90 deg rotation - cart. axis [-1,0,0]")       
-    isl.append(" 90 deg rotation - cart. axis [1,0,0]")        
-    isl.append("120 deg rotation - cart. axis [-1,-1,-1]")     
-    isl.append("120 deg rotation - cart. axis [-1,1,1]")       
-    isl.append("120 deg rotation - cart. axis [1,1,-1]")       
-    isl.append("120 deg rotation - cart. axis [1,-1,1]")       
-    isl.append("120 deg rotation - cart. axis [1,1,1]")        
-    isl.append("120 deg rotation - cart. axis [-1,1,-1]")      
-    isl.append("120 deg rotation - cart. axis [1,-1,-1]")      
-    isl.append("120 deg rotation - cart. axis [-1,-1,1]")      
-    isl.append("inversion")                                    
-    isl.append("inv. 180 deg rotation - cart. axis [0,0,1]")   
-    isl.append("inv. 180 deg rotation - cart. axis [0,1,0]")   
-    isl.append("inv. 180 deg rotation - cart. axis [1,0,0]")   
-    isl.append("inv. 180 deg rotation - cart. axis [1,1,0]")   
-    isl.append("inv. 180 deg rotation - cart. axis [1,-1,0]")  
-    isl.append("inv.  90 deg rotation - cart. axis [0,0,-1]")  
-    isl.append("inv.  90 deg rotation - cart. axis [0,0,1]")   
-    isl.append("inv. 180 deg rotation - cart. axis [1,0,1]")   
-    isl.append("inv. 180 deg rotation - cart. axis [-1,0,1]")  
-    isl.append("inv.  90 deg rotation - cart. axis [0,1,0]")   
-    isl.append("inv.  90 deg rotation - cart. axis [0,-1,0]")  
-    isl.append("inv. 180 deg rotation - cart. axis [0,1,1]")   
-    isl.append("inv. 180 deg rotation - cart. axis [0,1,-1]")  
-    isl.append("inv.  90 deg rotation - cart. axis [-1,0,0]")  
-    isl.append("inv.  90 deg rotation - cart. axis [1,0,0]")   
-    isl.append("inv. 120 deg rotation - cart. axis [-1,-1,-1]")
-    isl.append("inv. 120 deg rotation - cart. axis [-1,1,1]")  
-    isl.append("inv. 120 deg rotation - cart. axis [1,1,-1]")  
-    isl.append("inv. 120 deg rotation - cart. axis [1,-1,1]")  
-    isl.append("inv. 120 deg rotation - cart. axis [1,1,1]")   
-    isl.append("inv. 120 deg rotation - cart. axis [-1,1,-1]") 
-    isl.append("inv. 120 deg rotation - cart. axis [1,-1,-1]") 
-    isl.append("inv. 120 deg rotation - cart. axis [-1,-1,1]") 
-
-    return isl
 
 ############################################################################################
 ############################################################################################
@@ -301,6 +302,7 @@ def get_wigner(symop):
             AL,BE,GA = mat2eul(-symop[i])
             if not np.all(np.isclose(eul2mat(AL,BE,GA),-symop[i])):
                 print("ERROR IN MAT2EUL!")
+                print(symop[i])
                 raise SystemExit
 
         # wigner_d matrix for l=0
@@ -389,16 +391,26 @@ def find_equiv_k(kp,symop,full_grid):
     si_per_k = []
     counter = 0
     kp_track = []
-    for k in range(kp.shape[0]):
-        for sym in range(symop.shape[0]):
-            #transform k -> k' with the sym op
-            newk = ((symop[sym].dot(kp[k])+0.5)%1.0)-0.5
 
+#    print(repr(symop))
+
+
+#    full_grid[np.where(np.isclose(full_grid,-0.5))]=0.5
+
+    for sym in range(symop.shape[0]):
+        for k in range(kp.shape[0]):
+
+            #transform k -> k' with the sym op
+#            newk = (((symop[sym] @ kp[k])+0.5)%1.0)-0.5
+            newk = symop[sym] @ kp[k]
+            newk[np.where(np.isclose(newk,0.5))]=-0.5
+#            print(newk)
             # find index in the full grid where this k -> k' with this sym op
             nw = np.where(np.all(np.isclose(newk[None],full_grid,
-                                            atol=1.e-6,rtol=1.e-6),axis=1))[0]
+                                            atol=1.e-4,rtol=1.e-4,),axis=1))[0]
             if len(nw)!=0:
                 if nw[0] in kp_track:
+#                    print(newk)
                     continue
                 else:
                     kp_track.append(nw[0])
@@ -406,54 +418,22 @@ def find_equiv_k(kp,symop,full_grid):
                     si_per_k.append(sym)
                     orig_k_ind.append(k)
                     new_k_ind.append(nw[0])
+            else:
+                pass
+#                print(kp[k],newk)
 
     #check to make sure we have all the k points accounted for
+
+
     if counter!=full_grid.shape[0]:
         print('NOT ALL KPOINTS ACCOUNTED FOR')
         print(counter,full_grid.shape[0])
+        print('missing k:')
+        print(full_grid[np.setxor1d(new_k_ind,np.arange(64))])
         raise SystemExit
 
     else:
         pass
-
-    new_k_ind=np.array(new_k_ind)
-    orig_k_ind=np.array(orig_k_ind)
-    si_per_k=np.array(si_per_k)
-
-    return new_k_ind,orig_k_ind,si_per_k
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def find_equiv_k_mod(kp,symop,full_grid):
-    # find indices and symops that generate full grid H from wedge H
-    kp_track = []
-    orig_k_ind = []
-    new_k_ind = []
-    si_per_k = []
-    counter = 0
-
-    for k in range(kp.shape[0]):
-        for sym in range(symop.shape[0]):
-            #transform k -> k' with the sym op
-            newk = ((symop[sym].dot(kp[k])+0.5)%1.0)-0.5
-            new_k= correct_roundoff(newk)
-
-            # Find index in the full grid where this k -> k' with this sym op
-            nw = np.where(np.all(np.isclose(newk[None],full_grid,atol=1.e-5,
-                                            rtol=1.e-5),axis=1))[0]
-
-            if len(nw)!=0:
-                #check if we already have an equivilent k' for this k
-                if nw[0] in kp_track:
-                    continue
-                else:
-                    kp_track.append(nw[0])
-                    counter+=1
-                    si_per_k.append(sym)
-                    orig_k_ind.append(k)
-                    new_k_ind.append(nw[0])
 
     new_k_ind=np.array(new_k_ind)
     orig_k_ind=np.array(orig_k_ind)
@@ -488,7 +468,6 @@ def get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom):
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
             p1 = equiv_atom[isym,p]
-
             if inv_flag[isym]:
                 phase_shift[isym,p1] = (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
             else:
@@ -602,6 +581,7 @@ def read_shell ( workpath,savedir,species,atoms):
     for s in species:
       sdict[s[0]] = np.array(read_pseudopotential(join(workpath,savedir,s[1])))
 
+
     # index of which orbitals belong to which atom in the basis
     a_index = np.hstack([[a]*np.sum((2*sdict[atoms[a]])+1) for a in range(len(atoms))])
     # value of l
@@ -632,19 +612,30 @@ def read_pseudopotential ( fpp ):
 
   import numpy as np
   import xml.etree.cElementTree as ET
+  import re
 
   sh = []
 
+  try:
+      iterator_obj = ET.iterparse(fpp,events=('start','end'))
+      iterator     = iter(iterator_obj)
+      event,root   = next(iterator)
 
-  iterator_obj = ET.iterparse(fpp,events=('start','end'))
-  iterator     = iter(iterator_obj)
-  event,root   = next(iterator)
+      for event,elem in iterator:        
+          try:
+              for i in elem.findall("PP_PSWFC/"):
+                  sh.append(int(i.attrib['l']))
+          except Exception as e: print(e)    
+      sh=np.array(sh)
 
-  for event,elem in iterator:        
-      try:
-          for i in elem.findall("PP_PSWFC/"):
-              sh.append(int(i.attrib['l']))
-      except Exception as e: print(e)
+
+  except:
+      with open(fpp) as ifo:
+          ifs=ifo.read()
+      res=re.findall("(.*)\s*Wavefunction",ifs)[1:]
+
+      
+      sh=np.array(list(map(int,list([x.split()[1] for x in res]))))
 
   return sh
 
@@ -686,7 +677,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,atom_pos,shells,a_index,equiv_atom):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info):
 
     nawf = Hksp.shape[1]
 
@@ -696,8 +687,11 @@ def open_grid(Hksp,full_grid,kp,symop,atom_pos,shells,a_index,equiv_atom):
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
-    wigner,inv_flag = get_wigner(symop)
+    wigner,inv_flag = get_wigner(symop_cart)
 
+    equiv_atom = get_symop_atom_map(atom_pos,symop,inv_flag)
+#    print(equiv_atom==equiv_atom1)
+#    raise SystemExit
     # convert the wigner_d into chemistry form for each symop
     wigner = convert_wigner_d(wigner)
 
@@ -705,7 +699,7 @@ def open_grid(Hksp,full_grid,kp,symop,atom_pos,shells,a_index,equiv_atom):
     phase_shifts     = get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom)
 
     # build U and U_inv from blocks
-    U = build_U_matrix(wigner    ,shells)
+    U = build_U_matrix(wigner,shells)
 
     # adds transformation to U that maps orbitals from
     # atom A to equivalent atom B atoms after symop
@@ -716,14 +710,15 @@ def open_grid(Hksp,full_grid,kp,symop,atom_pos,shells,a_index,equiv_atom):
                            new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc)
 
 
-#    check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop)
+    check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+          a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)
     return Hksp_s
 
 ############################################################################################
 ############################################################################################
 ############################################################################################
 
-#np.set_printoptions(precision=3,suppress=True,linewidth=160)
+
 
 def open_grid_wrapper(data_controller):
 
@@ -740,8 +735,52 @@ def open_grid_wrapper(data_controller):
     atom_pos   = data_arrays['tau']/alat
     atom_lab   = data_arrays['atoms']
     equiv_atom = data_arrays['equiv_atom']
-    kp_red     = data_arrays['kp_red']
+    kp_red     = data_arrays['kpnts']
+    b_vectors  = data_arrays['b_vectors']
+    a_vectors  = data_arrays['a_vectors']
+    sym_info   = data_arrays['sym_info']
 
+
+    a_vectors = correct_roundoff(a_vectors)
+    b_vectors = correct_roundoff(b_vectors)
+
+    # convert atomic positions to crystal fractional coords
+    conv=LA.inv(a_vectors)
+    for i in range(atom_pos.shape[0]):
+        atom_pos[i] = conv @ atom_pos[i]
+
+    atom_pos = correct_roundoff(atom_pos)
+
+    # get symop crystal -> cartesian
+    symop = correct_roundoff(symop)
+    symop_cart = np.zeros_like(symop)
+    inv_a_vectors = LA.inv(a_vectors)
+    for isym in range(symop.shape[0]):
+        symop_cart[isym] = (inv_a_vectors @ symop[isym] @ a_vectors)
+    symop_cart = correct_roundoff(symop_cart)
+
+
+#    shift kp in crystal to < 0.5
+
+    # for i in range(symop.shape[0]):
+    #     print('isym(%2d)'%(i+1))
+    #     print(isl[i])
+    #     print(symop[i])
+    #     print()
+    # raise SystemExit
+
+
+    conv = LA.inv(b_vectors)
+    conv = correct_roundoff(conv)
+    np.set_printoptions(precision=4,suppress=True,linewidth=160)
+
+    kp_red =  kp_red @ conv
+
+
+    kp_red=correct_roundoff(kp_red)
+
+
+    # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)
 
     shells,a_index = read_shell(data_attr['workpath'],data_attr['savedir'],
@@ -751,10 +790,13 @@ def open_grid_wrapper(data_controller):
     nspin = Hks.shape[3]
     nawf  = Hks.shape[0]
 
+
+
     Hksp_s_temp=np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
     for ispin in range(nspin):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
-        Hksp_s = open_grid(Hksp,full_grid,kp_red,symop,atom_pos,shells,a_index,equiv_atom)
+        Hksp_s = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,
+                           atom_pos,shells,a_index,equiv_atom,sym_info)
         
         Hksp_s_temp[:,:,:,ispin] = np.transpose(Hksp_s,axes=(1,2,0))
 
@@ -788,3 +830,44 @@ def open_grid_wrapper(data_controller):
 # Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
 # np.save("Hksp_s.npy",Hksp_s)
 
+
+# def find_equiv_k_mod(kp,symop,full_grid):
+#     # find indices and symops that generate full grid H from wedge H
+#     kp_track = []
+#     orig_k_ind = []
+#     new_k_ind = []
+#     si_per_k = []
+#     counter = 0
+
+#     for k in range(kp.shape[0]):
+#         for sym in range(symop.shape[0]):
+#             #transform k -> k' with the sym op
+#             newk = ((symop[sym].dot(kp[k])+0.5)%1.0)-0.5
+#             newk= correct_roundoff(newk)
+
+
+#             # Find index in the full grid where this k -> k' with this sym op
+#             nw = np.where(np.all(np.isclose(newk[None],full_grid,atol=1.e-5,
+#                                             rtol=1.e-5),axis=1))[0]
+
+#             if len(nw)!=0:
+#                 #check if we already have an equivilent k' for this k
+#                 if nw[0] in kp_track:
+#                     continue
+#                 else:
+#                     kp_track.append(nw[0])
+#                     counter+=1
+#                     si_per_k.append(sym)
+#                     orig_k_ind.append(k)
+#                     new_k_ind.append(nw[0])
+#             else:
+#                 print(kp[k])
+#     new_k_ind=np.array(new_k_ind)
+#     orig_k_ind=np.array(orig_k_ind)
+#     si_per_k=np.array(si_per_k)
+
+#     return new_k_ind,orig_k_ind,si_per_k
+
+# ############################################################################################
+# ############################################################################################
+# ############################################################################################
