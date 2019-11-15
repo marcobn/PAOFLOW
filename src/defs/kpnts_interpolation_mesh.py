@@ -481,7 +481,7 @@ def kpnts_interpolation_mesh ( data_controller ):
 
   points,path_file = get_path(ibrav,alat,a_vectors,scaled_dk,b_vectors,bp,hsp)
 
-  data_controller.write_kpnts_path('kpath_points.txt', path_file, points)
+  data_controller.write_kpnts_path('kpath_points.txt', path_file, points, b_vectors)
 
   arrays['kq'] = points
 

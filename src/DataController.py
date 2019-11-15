@@ -260,7 +260,7 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_kpnts_path ( self, fname, path, kpnts ):
+  def write_kpnts_path ( self, fname, path, kpnts, b_vectors ):
     '''
     Write the k-path through the BZ
 
@@ -274,6 +274,7 @@ class DataController:
     if self.rank == 0:
       from os.path import join
 
+      kpnts= b_vectors.dot(kpnts)
       with open(join(self.data_attributes['opath'],fname), 'w') as f:
         f.write(path)
         f.write(''.join(['%s %s %s\n'%(kpnts[0,i],kpnts[1,i],kpnts[2,i]) for i in range(kpnts.shape[1])]))

@@ -13,9 +13,8 @@ def invert_atom_pos_map(pos,equiv_atom,inv_flag,sym_shift):
         if not inv_flag[i]:
             new_pos=pos
         else:
-            if i==12:
-                print(sym_shift[i])
-            new_pos=-pos
+
+            new_pos=(-pos)%1.0
 
         new_pos[np.where(np.isclose(new_pos,-1.0))]=0.0
         new_pos[np.where(np.isclose(new_pos, 1.0))]=0.0
@@ -815,8 +814,8 @@ def open_grid_wrapper(data_controller):
 
 
 
-    print(shells)
-    raise SystemExit
+
+
 #    print(a_index)
 
 
