@@ -732,9 +732,12 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     Hksp_s = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                            new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc,nk1,nk2,nk3)
 
-
-    check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-          a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)
+    try:
+        check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)
+    except Exception as e:
+        print("error in PAO-SYM check:",e)
+        
     return Hksp_s
 
 ############################################################################################
