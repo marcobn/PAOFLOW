@@ -5,7 +5,7 @@ from scipy.special import factorial as fac
 from PAOFLOW.defs.get_K_grid_fft import get_K_grid_fft
 import sys
 
-def invert_atom_pos_map(pos,equiv_atom,inv_flag,sym_shift):
+def invert_atom_pos_map(pos,equiv_atom,inv_flag,sym_shift,symop):
     # finds mapping of atomic positions for inversion
     
     for i in range(inv_flag.shape[0]):
@@ -13,7 +13,6 @@ def invert_atom_pos_map(pos,equiv_atom,inv_flag,sym_shift):
         if not inv_flag[i]:
             new_pos=pos
         else:
-
             new_pos=(-pos)%1.0
 
         new_pos[np.where(np.isclose(new_pos,-1.0))]=0.0
@@ -26,11 +25,7 @@ def invert_atom_pos_map(pos,equiv_atom,inv_flag,sym_shift):
                 if np.all(np.isclose(pos[j],new_pos[k],rtol=1e-4,atol=1e-4,)):
                     remap_key[j] = k
 
-
-#        try:
         equiv_atom[i] = equiv_atom[i][remap_key]
-#        except:
-#            equiv_atom[i] = equiv_atom[i][np.arange(pos.shape[0])]
 
     return equiv_atom
 
@@ -51,7 +46,6 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     print(a_index)
     st=0
     fn=10
-
 
     for j in range(Hksp_s.shape[0]):        
         isym = si_per_k[j]
@@ -85,9 +79,6 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             print()
             print(U_k[st:fn,st:fn])
             print()
-#            print("ORIG")
-#            print(H[st:fn,st:fn].real)
-#            print()
             print("CORRECT")
             print(HP[st:fn,st:fn].real)
             print("NEW")
@@ -99,9 +90,6 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             print("*"*50)
             print("IMAG "*10)
             print("*"*50)
-#            print()
-#            print("ORIG")
-#            print(H[st:fn,st:fn].imag)
             print("CORRECT")
             print(HP[st:fn,st:fn].imag)
             print("NEW")
@@ -146,7 +134,7 @@ def map_equiv_atoms(a_index,map_ind):
     U_wyc = np.zeros((map_ind.shape[0],nawf,nawf),dtype=complex)
 
     for isym in range(map_ind.shape[0]):
-#        print(map_ind[isym])
+
         map_U=np.zeros((nawf,nawf),dtype=complex)
         for i in range(map_ind[isym].shape[0]):
             fi=np.where(a_index==i)[0]
@@ -382,15 +370,12 @@ def find_equiv_k(kp,symop,full_grid,sym_shift,check=True):
             # find index in the full grid where this k -> k' with this sym op
             nw = np.where(np.all(np.isclose(newk[None],full_grid,
                                             atol=1.e-4,rtol=1.e-4,),axis=1))[0]
-            if len(nw)!=0:
-                if nw[0] in kp_track:
-                    continue
-                else:
-                    kp_track.append(nw[0])
-                    counter+=1
+            if len(nw)==1:
+                if nw[0] not in new_k_ind:
+                    new_k_ind.append(nw[0])
                     si_per_k.append(isym)
                     orig_k_ind.append(k)
-                    new_k_ind.append(nw[0])
+                    counter+=1
             else:
                 print(kp[k],newk)
                 pass
@@ -434,17 +419,13 @@ def build_U_matrix(wigner,shells):
 ############################################################################################
 ############################################################################################
 
-def get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom,sym_shift):
+def get_phase_shifts(atom_pos,symop,equiv_atom):
     # calculate phase shifts for U
     phase_shift=np.zeros((symop.shape[0],atom_pos.shape[0],3),dtype=float)
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
             p1 = equiv_atom[isym,p]
-            p2 = p
-            if inv_flag[isym]:
-                phase_shift[isym,p1] =   ((-symop[isym].T @ (atom_pos[p2]))-atom_pos[p1])
-            else:
-                phase_shift[isym,p1] =   ( symop[isym].T @ atom_pos[p2])-atom_pos[p1]
+            phase_shift[isym,p1] =   (( symop[isym].T @ atom_pos[p]))-atom_pos[p1]
 
     return phase_shift
 
@@ -544,8 +525,20 @@ def get_full_grid(nk1,nk2,nk3):
 ############################################################################################
 ############################################################################################
 
-def read_shell ( workpath,savedir,species,atoms):
+def get_inv_op(shells):
+    # returns the inversion operator
+    orb_index = np.hstack([[l]*(2*l+1) for l in shells])
+    sign_inv=(-np.ones(orb_index.shape[0]))**orb_index
 
+    return np.outer(sign_inv,sign_inv)
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+
+def read_shell ( workpath,savedir,species,atoms):
+    # reads in shelks from pseudo files
     from os.path import join,exists
     import numpy as np
 
@@ -613,20 +606,25 @@ def read_pseudopotential ( fpp ):
 ############################################################################################
 ############################################################################################
 
-def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc,nk1,nk2,nk3):
+def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc,U_inv):
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
 
-    Hksp_s=np.zeros((nk1*nk2*nk3,nawf,nawf),dtype=complex)
+    Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
+
 
     for j in range(new_k_ind.shape[0]):
         isym = si_per_k[j]
         oki  = orig_k_ind[j]
         nki  = new_k_ind[j]
 
-#        if inv_flag[isym]:
-#            continue
+        # if symop is identity
+        if isym==0:
+            Hksp_s[nki]=Hksp[oki]
+            continue
 
+
+        # other cases
         H  = Hksp[oki]
 
         U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
@@ -640,15 +638,10 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 
         # invert if the symop has inversion
         if inv_flag[isym]:
-            THP=np.conj(THP)
-
+            THP=THP*U_inv
 
         Hksp_s[nki]=THP
-
-
-
-    Hksp_s = enforce_t_rev(Hksp_s,nk1,nk2,nk3)
-
+    
     return Hksp_s
 
 ############################################################################################
@@ -683,7 +676,7 @@ def apply_t_rev(Hksp,kp):
     new_Hk_list=[]
     for i in range(Hksp.shape[0]):
         new_kp= -kp[i]
-        if not np.all(np.isclose(new_kp,kp)):
+        if not np.any(np.all(np.isclose(new_kp,kp),axis=1)):
             new_kp_list.append(new_kp)
             new_Hk_list.append(np.conj(Hksp[i]))
 
@@ -700,22 +693,18 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     nawf = Hksp.shape[1]
 
+    # apply time reversal symmetry H(k) = H(-k)*
     Hksp,kp=apply_t_rev(Hksp,kp)
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
     wigner,inv_flag = get_wigner(symop_cart)
 
-#
-    equiv_atom=invert_atom_pos_map(atom_pos,equiv_atom,inv_flag,sym_shift)
-#    print(equiv_atom[12])
-#    raise SystemExit
-
     # convert the wigner_d into chemistry form for each symop
     wigner = convert_wigner_d(wigner)
 
     # get phase shifts from rotation symop
-    phase_shifts     = get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom,sym_shift)
+    phase_shifts     = get_phase_shifts(atom_pos,symop,equiv_atom)
 
     # build U and U_inv from blocks
     U = build_U_matrix(wigner,shells)
@@ -728,25 +717,21 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # and index of symop that transforms k to k'        
     new_k_ind,orig_k_ind,si_per_k = find_equiv_k(kp,symop,full_grid,sym_shift,check=True)
 
+
+    # get inversion operator
+    U_inv = get_inv_op(shells)
+
     # transform H(k) -> H(k')
-    Hksp_s = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
-                           new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc,nk1,nk2,nk3)
+    Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
+                         new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc,U_inv)
 
-    try:
-        check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)
-    except Exception as e:
-        print("error in PAO-SYM check:",e)
-        
-    return Hksp_s
+    Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)
+    check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
+    return Hksp
 
 ############################################################################################
 ############################################################################################
 ############################################################################################
-
-
-
-
 
 def open_grid_wrapper(data_controller):
     np.set_printoptions(precision=4,suppress=True,linewidth=160)
@@ -773,6 +758,16 @@ def open_grid_wrapper(data_controller):
     nspin       = Hks.shape[3]
     nawf        = Hks.shape[0]
 
+    # # add inverse symop
+    # symop_inv=np.zeros_like(symop)
+    # for isym in range(symop.shape[0]):
+    #     symop_inv[isym]=LA.inv(symop[isym])
+    # symop=np.vstack([symop,symop_inv])
+    # sym_shift=np.vstack([sym_shift,sym_shift])
+    # sym_info=np.vstack([sym_info,sym_info])
+    # equiv_atom=np.vstack([equiv_atom,equiv_atom])
+    # symop_inv=None
+
     # convert atomic positions to crystal fractional coords
     conv=LA.inv(a_vectors)
     atom_pos = atom_pos @ conv
@@ -791,51 +786,35 @@ def open_grid_wrapper(data_controller):
     conv = correct_roundoff(conv)
     kp_red =  kp_red @ conv
     kp_red=correct_roundoff(kp_red)
-#    kp_red[np.where(np.isclose(kp_red,-0.5))]=0.5
 
     # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)
-
-
-
 
     # get shells and atom indices for blocks of the hamiltonian
     shells,a_index = read_shell(data_attr['workpath'],data_attr['savedir'],
                                 data_arrays['species'],atom_lab)
 
 
-    
-
-    
-#    shift kp in crystal to < 0.5
-
-    # for i in range(symop.shape[0]):
-    #     print('isym(%2d)'%(i+1))
-    #     print(isl[i])
-    #     print(symop[i])
-    #     print()
-
-
-
-
-
-#    print(a_index)
-
-
+#    print(kp_red)
+#    raise SystemExit
 
     # expand grid from wedge
-    Hksp_s_temp=np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    Hksp_temp=np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
     for ispin in range(nspin):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
-        Hksp_s = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
+
+        Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
                            shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3)
-        
-#        Hksp_s = symmetrize_grid(Hksp_s,full_grid,kp_red,symop,symop_cart,atom_pos,
-#                                 shells,a_index,equiv_atom,sym_info)
 
-        Hksp_s_temp[:,:,:,ispin] = np.transpose(Hksp_s,axes=(1,2,0))
+        Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
 
-    data_arrays['Hks']=np.ascontiguousarray(Hksp_s_temp)
+
+    np.save("kham.npy",Hksp_temp)
+    data_arrays['Hks']=Hksp_temp
+
+############################################################################################
+############################################################################################
+############################################################################################
 
 
 
