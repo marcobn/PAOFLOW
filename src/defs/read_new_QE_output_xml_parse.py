@@ -131,8 +131,9 @@ def read_new_QE_output_xml ( data_controller ):
                             equiv_atom.append(list(map(int,equiv_atom_txt.split())))
                             sym_info.append(aux[i].findall('info')[0].attrib['name'])
 #                            if np.all(np.isclose(np.array(list(map(float,shift_txt.split()))),0.0)):
+                 
                             sym_list.append([list(map(float,x.split())) for x in aux[i].findall\
-                                                 ('rotation')[0].text.split('\n') if len(x.split())!=0] )
+                                             ('rotation')[0].text.split('\n') if len(x.split())!=0] )
 
                     except Exception as e: print(e)
 
