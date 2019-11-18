@@ -4,7 +4,8 @@ import scipy.linalg as LA
 from scipy.special import factorial as fac
 from PAOFLOW.defs.get_K_grid_fft import get_K_grid_fft
 import sys
-
+from tempfile import NamedTemporaryFile
+import re
 
 
 
@@ -571,9 +572,16 @@ def read_pseudopotential ( fpp ):
   import re
 
   sh = []
+  with open(fpp) as ifo:
+      temp_str=ifo.read()
+
+  temp_str = re.sub('&',' ',temp_str)
+  f = NamedTemporaryFile(mode='w',delete=True)
+  f.write(temp_str)
+
 
   try:
-      iterator_obj = ET.iterparse(fpp,events=('start','end'))
+      iterator_obj = ET.iterparse(f.name,events=('start','end'))
       iterator     = iter(iterator_obj)
       event,root   = next(iterator)
 
@@ -769,12 +777,14 @@ def add_spin_rot_rep(U,symop):
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb):
 
     nawf = Hksp.shape[1]
 
-    # apply time reversal symmetry H(k) = H(-k)*
-    Hksp,kp=apply_t_rev(Hksp,kp)
+    if not spin_orb:
+        # apply time reversal symmetry H(k) = H(-k)*
+        Hksp,kp=apply_t_rev(Hksp,kp)
+
 
 
     # get index of k in wedge, index in full grid, 
@@ -804,23 +814,22 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # get inversion operator
     U_inv = get_inv_op(shells)
 
-
-
-
-#    U = add_spin_rot_rep(U,symop_cart)
-
-#    print(U.shape,U_inv.shape,Hksp[0].shape)
-#    raise SystemExit
-
-
-
+    # add representation of the rotation to the spin vector if needed
+    if spin_orb:
+        U = add_spin_rot_rep(U,symop_cart)
 
     # transform H(k) -> H(k')
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv)
 
-    Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)
-#    check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
+    if not spin_orb:
+        Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)
+    
+    try:
+        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
+    except: pass
+        
+
     return Hksp
 
 ############################################################################################
@@ -851,7 +860,7 @@ def open_grid_wrapper(data_controller):
     b_vectors   = correct_roundoff(b_vectors)
     nspin       = Hks.shape[3]
     nawf        = Hks.shape[0]
-
+    spin_orb    = False
 
     # convert atomic positions to crystal fractional coords
     conv=LA.inv(a_vectors)
@@ -875,9 +884,6 @@ def open_grid_wrapper(data_controller):
     # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)
 
-
-
-    spin_orb=False
     # get shells and atom indices for blocks of the hamiltonian
     shells,a_index = read_shell(data_attr['workpath'],data_attr['savedir'],
                                 data_arrays['species'],atom_lab,
@@ -890,7 +896,7 @@ def open_grid_wrapper(data_controller):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
 
         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
-                           shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3)
+                           shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb)
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
 
