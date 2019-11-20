@@ -12,8 +12,6 @@
     degauss=0.02,
     ecutwfc =40.0,
     ecutrho =467.0,
-    nosym = .true.
-    noinv = .true.
     nspin = 2
     starting_magnetization(1)=0.1
  /

@@ -33,8 +33,6 @@
    vdw_corr = 'grimme-d2',
 
    nbnd = 72,
-   nosym = .True.,
-   noinv = .True.,
 
 /
 &electrons

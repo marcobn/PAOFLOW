@@ -15,8 +15,6 @@
     degauss=0.02,
     ecutwfc =40.0,
     ecutrho =467.0,
-    nosym = .true.
-    noinv = .true.
  /
  &electrons
     mixing_beta = 0.7,
