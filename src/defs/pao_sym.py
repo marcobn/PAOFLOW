@@ -7,121 +7,6 @@ import sys
 from tempfile import NamedTemporaryFile
 import re
 
-
-
-def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl):
-
-    nawf=Hksp_s.shape[1]
-    # load for testing
-    Hksp_f = np.load("kham_full.npy")
-    Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
-    Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
-    print(np.allclose(Hksp_f,Hksp_s,atol=1.e-4,rtol=1.e-4))
-
-    bad_symop=np.ones(symop.shape[0],dtype=bool)
-    good_symop=np.ones(symop.shape[0],dtype=bool)
-    good=[]
-    bad=[]
-    print(a_index)
-    st=0
-    fn=20
-
-    for j in range(Hksp_s.shape[0]):        
-        isym = si_per_k[j]
-        nki  = new_k_ind[j]
-        oki  = orig_k_ind[j]
-
-        HP = Hksp_f[nki]
-        THP=Hksp_s[nki]
-
-        U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
-
-        good.append(isym)
-#        if np.allclose(np.diag(HP.real),np.diag(THP.real),atol=1.e-3,rtol=1.e-3):
-          
-        if np.all(np.isclose(HP,THP,rtol=1.e-3,atol=1.e-3)):
-            bad.append(isym)   
-        else:
-            good_symop[isym]=False
-
-#            if isym!=0:
-
-
-
-
-#            continue
-
-
-
-            print(j,isym)
-            print('old_k=',kp[oki])
-            print('new_k=',fg[nki])
-            print(equiv_atom[isym])
-            print(symop[isym])
-            print()
-            print("inv:",inv_flag[isym])
-            print()
-            print("*"*50)
-            print("REAL "*10)
-            print("*"*50)
-            print()
-            print(U_k[st:fn,st:fn])
-            print()
-            print("CORRECT")
-            print(HP[st:fn,st:fn].real)
-            print("NEW")
-            print(THP[st:fn,st:fn].real)
-            print("EQUAL?")
-            print(np.isclose(HP[st:fn,st:fn].real,THP[st:fn,st:fn].real,
-                             rtol=1.e-4,atol=1.e-4))
-
-            print("*"*50)
-            print("IMAG "*10)
-            print("*"*50)
-            print("CORRECT")
-            print(HP[st:fn,st:fn].imag)
-            print("NEW")
-            print(THP[st:fn,st:fn].imag)
-            print("EQUAL?")
-            print(np.isclose(HP[st:fn,st:fn].imag,THP[st:fn,st:fn].imag,
-                             rtol=1.e-4,atol=1.e-4))
-
-
-            print("*"*100)
-            print("*"*100)
-            print("*"*100)
-            raise SystemExit
-    print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
-
-
-    print()
-    for i in range(symop.shape[0]):
-        if i in si_per_k:
-            if not  good_symop[i]:
-                print("BAD ",isl[i])
-    #            print(symop[i] @ np.ones(3))
-
-
-    for i in range(symop.shape[0]):            
-        if i in si_per_k:
-            if  good_symop[i]:
-                print("GOOD",isl[i])
-
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def get_wig_spin(alpha,beta,gamma):
-    wig_spin=np.zeros((2,2),dtype=complex)
-    wig_spin[0,0] = np.exp( 0.5j*alpha)*np.exp( 0.5j*gamma)*np.cos(beta/2.0)
-    wig_spin[0,1] = np.exp( 0.5j*alpha)*np.exp(-0.5j*gamma)*np.sin(beta/2.0)
-    wig_spin[1,0] =-np.exp(-0.5j*alpha)*np.exp( 0.5j*gamma)*np.sin(beta/2.0)
-    wig_spin[1,1] = np.exp(-0.5j*alpha)*np.exp(-0.5j*gamma)*np.cos(beta/2.0)
-
-    return wig_spin
-
-
 ############################################################################################
 ############################################################################################
 ############################################################################################
@@ -307,8 +192,6 @@ def get_wigner_so(symop):
                 print(symop[i])
                 raise SystemExit
 
-        wig_spin=get_wig_spin(AL,BE,GA)
-
         # wigner_d for l=0
         wigner_l0[i]=d_mat_l(AL,BE,GA,0.5)
         # wigner_d for l=1                                
@@ -334,11 +217,6 @@ def convert_wigner_d(wigner):
     c_wigner_l1 = np.zeros_like(wigner[1])
     c_wigner_l2 = np.zeros_like(wigner[2])
     c_wigner_l3 = np.zeros_like(wigner[3])
-
-#    inv_trans_l0 = LA.inv(trans_l0)
-#    inv_trans_l1 = LA.inv(trans_l1)
-#    inv_trans_l2 = LA.inv(trans_l2)
-#    inv_trans_l3 = LA.inv(trans_l3)
 
     for i in range(wigner[0].shape[0]):
         c_wigner_l0[i] = trans_l0 @ wigner[0][i] @ np.conj(trans_l0.T)
@@ -389,7 +267,6 @@ def mat2eul(R):
 
     return np.array([ALPHA,BETA,GAMMA])
 
-
 ############################################################################################
 ############################################################################################
 ############################################################################################
@@ -422,9 +299,6 @@ def find_equiv_k(kp,symop,full_grid,sym_shift,check=True):
                     si_per_k.append(isym)
                     orig_k_ind.append(k)
                     counter+=1
-#            else:
-#                    print(kp[k],newk)
-
 
     new_k_ind=np.array(new_k_ind)
     orig_k_ind=np.array(orig_k_ind)
@@ -522,37 +396,10 @@ def construct_reduced(red_k_ind,full_k_ind,si_per_k,symop,H):
 ############################################################################################
 ############################################################################################
 
-def check_reduced(red_k_ind,full_k_ind,si_per_k,symop,H,H_wedge):
-    #check function to check if wedge H can be constructed from full grid H
-    H_red=construct_reduced(red_k_ind,full_k_ind,si_per_k,symop,H)
-
-    if not np.allclose(H_red,H_wedge):
-        print('FULL AND REDUCED KHAM NOT EQUAL!!!')
-        raise SystemExit
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def check_symop(symop):
-    # check function to make sure s.T==inv(s)
-    for isym in range(symop.shape[0]):
-        if not np.allclose(symop[isym] @ symop[isym].T,np.eye(3)):
-            if not np.allclose(symop[isym] @ LA.inv(symop[isym]),np.eye(3)):
-                if not np.allclose(symop[isym].T @ LA.inv(symop[isym])):
-                    print('BAD SYMOP')
-                    print(symop[isym])
-                    raise SystemExit
-
-############################################################################################
-############################################################################################
-############################################################################################
-
 def get_full_grid(nk1,nk2,nk3):
+  # generates full k grid in crystal fractional coords
   nktot=nk1*nk2*nk3
-
   b_vectors=np.eye(3)
-
   Kint = np.zeros((nktot,3), dtype=float)
 
   for i in range(nk1):
@@ -588,7 +435,6 @@ def get_inv_op(shells):
 ############################################################################################
 ############################################################################################
 
-
 def read_shell ( workpath,savedir,species,atoms,spin_orb=False):
     # reads in shelks from pseudo files
     from os.path import join,exists
@@ -599,7 +445,6 @@ def read_shell ( workpath,savedir,species,atoms,spin_orb=False):
     for s in species:
       sdict[s[0]] = np.array(read_pseudopotential(join(workpath,savedir,s[1])))
 
-#    print(sdict)
     #double the l=0 if spin orbit
     if spin_orb:
         for s,p in sdict.items():
@@ -649,7 +494,6 @@ def read_pseudopotential ( fpp ):
   f = NamedTemporaryFile(mode='w',delete=True)
   f.write(temp_str)
 
-
   try:
       iterator_obj = ET.iterparse(f.name,events=('start','end'))
       iterator     = iter(iterator_obj)
@@ -663,7 +507,6 @@ def read_pseudopotential ( fpp ):
               print(e)    
 
       sh=np.array(sh)
-
 
   except:
       with open(fpp) as ifo:
@@ -682,7 +525,6 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
     nawf     = Hksp.shape[1]
 
     Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
-
 
     for j in range(new_k_ind.shape[0]):
         isym = si_per_k[j]
@@ -716,6 +558,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 
 def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
+    # enforce time reversal symmetry on H(k)
     nawf=Hksp_s.shape[1]
     Hksp_s= np.reshape(Hksp_s,(nk1,nk2,nk3,nawf,nawf))
     Hksp_g=np.copy(Hksp_s)
@@ -738,8 +581,6 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
 ############################################################################################
 
 def apply_t_rev(Hksp,kp,spin_orb,U_inv):
-
-    
 
     new_kp_list=[]
     new_Hk_list=[]
@@ -771,82 +612,6 @@ def add_U_wyc(U,U_wyc):
 ############################################################################################
 ############################################################################################
 
-def mat2aa(symop):
-    # turn improper to proper rotation
-    symop*=LA.det(symop)
-    TR=np.trace(symop)
-    ang=np.arccos(np.around((TR-1.0)/2.0,decimals=5))
-    axis=np.zeros(3)
-    # if angle is zero the axis is arbitrary
-    if np.isclose(ang,0.0):
-        axis=np.array([0,0,1])
-
-    # if angle is pi..sign of direction of axis is arbitrary 
-    elif np.isclose(ang,np.pi):
-        S = symop+symop.T+((1-TR)*np.eye(3))
-        N=S/(3.0-TR)
-        axis[0]=N[0,0]
-        axis[1]=N[1,1]
-        axis[2]=N[2,2]
-        if axis[0] != 0:
-            axis[0]/=axis[0]
-        if axis[1] != 0:
-            axis[1]/=axis[1]
-        if axis[2] != 0:
-            axis[2]/=axis[2]
-        
-    # other cases
-    else:
-        axis[0] = symop[2,1] - symop[1,2]
-        axis[1] = symop[0,2] - symop[2,0]
-        axis[2] = symop[1,0] - symop[0,1]
-        axis   *= -1.0/np.sqrt((3.0-TR)*(1.0+TR))
-    return correct_roundoff(axis),ang
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def get_spin_rot(axis,angle):
-    sr=np.zeros((2,2),dtype=complex)
-    sr[0,0] = np.cos(angle/2.0)-1.0j*axis[2]*np.sin(angle/2.0)
-    sr[1,1] = np.cos(angle/2.0)+1.0j*axis[2]*np.sin(angle/2.0)
-    sr[0,1] = (-1.0j*axis[0]-axis[1])*np.sin(angle/2.0)
-    sr[1,0] = (-1.0j*axis[0]+axis[1])*np.sin(angle/2.0)
-                          
-    return sr
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def get_spin_rot_rep(symop):
-    # gets representation of a rotation for a spinor
-    sr=np.zeros((symop.shape[0],2,2),dtype=complex)
-    for isym in range(symop.shape[0]):
-        axis,angle=mat2aa( symop[isym])
-        sr[isym] = get_spin_rot(axis,angle)        
-
-    return sr
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def add_spin_rot_rep(U,symop):
-    sr = get_spin_rot_rep(symop)
-
-    U_so = np.zeros((U.shape[0],U.shape[1]*2,U.shape[2]*2),dtype=complex)
-    for isym in range(U.shape[0]):
-        U_so[isym] = np.kron(U[isym],np.eye(2))#sr[isym])
-
-    return U_so
-
-
-############################################################################################
-############################################################################################
-############################################################################################
-
 def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb):
 
     nawf = Hksp.shape[1]
@@ -854,10 +619,11 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # get inversion operator
     U_inv = get_inv_op(shells)
 
-    # apply time reversal symmetry H(k) = H(-k)*
+
 #    if not spin_orb:
 
-#    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb,U_inv)
+    # apply time reversal symmetry H(k) = H(-k)*
+    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb,U_inv)
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
@@ -890,12 +656,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv)
 
     if not spin_orb:
-        Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)
-    
-#    try:
-#        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
-#    except: pass
-        
+        Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)        
 
     return Hksp
 
@@ -928,9 +689,6 @@ def open_grid_wrapper(data_controller):
     b_vectors   = correct_roundoff(b_vectors)
     nspin       = Hks.shape[3]
     nawf        = Hks.shape[0]
-
-
-
 
     # convert atomic positions to crystal fractional coords
     conv=LA.inv(a_vectors)
@@ -979,171 +737,3 @@ def open_grid_wrapper(data_controller):
 ############################################################################################
 ############################################################################################
 ############################################################################################
-
-
-
-
-# for oki in range(Hksp_s.shape[0]):
-#     new_k_ind,_,si_per_k=find_equiv_k_mod(full_grid[oki][None],symop,full_grid)
-#     num_g=new_k_ind.shape[0]
-
-#     for g in range(num_g):
-#         nki  = new_k_ind[g]
-#         isym = si_per_k[g]
-#         HP = Hksp_f[nki]
-
-#         U_k     = get_U_k(full_grid[oki],phase_shifts[isym],a_index,U[isym])
-#         U_k_inv = LA.inv(U_k)
-
-#         #transformated H(k)
-#         THP = U_k @ HP @ U_k_inv
-#         # invert if the symop has inversion
-#         if inv_flag[isym]:
-#             THP=np.conj(THP)
-
-#         Hksp_s[oki]+=THP/num_g
-                        
-#     print(oki)
-
-# Hksp_s=np.ravel(np.transpose(Hksp_s,axes=(1,2,0)))
-# np.save("Hksp_s.npy",Hksp_s)
-
-
-# def find_equiv_k_mod(kp,symop,full_grid):
-#     # find indices and symops that generate full grid H from wedge H
-#     kp_track = []
-#     orig_k_ind = []
-#     new_k_ind = []
-#     si_per_k = []
-#     counter = 0
-
-#     for k in range(kp.shape[0]):
-#         for sym in range(symop.shape[0]):
-#             #transform k -> k' with the sym op
-#             newk = ((symop[sym].dot(kp[k])+0.5)%1.0)-0.5
-#             newk= correct_roundoff(newk)
-
-
-#             # Find index in the full grid where this k -> k' with this sym op
-#             nw = np.where(np.all(np.isclose(newk[None],full_grid,atol=1.e-5,
-#                                             rtol=1.e-5),axis=1))[0]
-
-#             if len(nw)!=0:
-#                 #check if we already have an equivilent k' for this k
-#                 if nw[0] in kp_track:
-#                     continue
-#                 else:
-#                     kp_track.append(nw[0])
-#                     counter+=1
-#                     si_per_k.append(sym)
-#                     orig_k_ind.append(k)
-#                     new_k_ind.append(nw[0])
-#             else:
-#                 print(kp[k])
-#     new_k_ind=np.array(new_k_ind)
-#     orig_k_ind=np.array(orig_k_ind)
-#     si_per_k=np.array(si_per_k)
-
-#     return new_k_ind,orig_k_ind,si_per_k
-
-# ############################################################################################
-# ############################################################################################
-# ############################################################################################
-
-
-# def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_wyc):
-#     # generates full grid from k points in IBZ
-#     nawf     = Hksp.shape[1]
-#     nkp_grid = new_k_ind.shape[0]
-#     Hksp_s=np.zeros((nkp_grid,nawf,nawf),dtype=complex)
-
-#     for j in range(Hksp_s.shape[0]):
-#         isym = si_per_k[j]
-
-#         oki  = orig_k_ind[j]
-#         nki  = new_k_ind[j]
-
-#         H  = Hksp[j]
-
-#         U_k     = get_U_k(kp[j],phase_shifts[isym],a_index,U[isym])
-#         U_k_inv = LA.inv(U_k)
-
-#         #transformated H(k)
-#         THP = U_k @ H @ U_k_inv
-
-#         # swap equiv atoms if needed
-#         THP = U_wyc[isym] @ THP @ U_wyc[isym].T
-
-#         # invert if the symop has inversion
-#         if inv_flag[isym]:
-#             THP=np.conj(THP)
-
-#         Hksp_s[j]=THP
-
-#     return np.sum(Hksp_s,axis=0)/Hksp_s.shape[0]
-
-# ############################################################################################
-# ############################################################################################
-# ############################################################################################
-
-# def symmetrize_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info):
-
-#     nawf = Hksp.shape[1]
-#     symop_inv=np.zeros_like(symop)
-
-#     for i in range(symop.shape[0]):
-#         symop_inv[i]=LA.inv(symop[i])
-
-#     symop_inv_cart=np.zeros_like(symop_cart)
-#     for i in range(symop.shape[0]):
-#         symop_inv_cart[i]=LA.inv(symop_cart[i])
-
-#     # get array with wigner_d rotation matrix for each symop_inv
-#     # for each of the orbital angular momentum l=[0,1,2,3]
-#     wigner,inv_flag = get_wigner(symop_cart)
-
-#     # if there is an inversion we need yo remap for that
-#     equiv_atom = invert_atom_pos_map(atom_pos,equiv_atom,inv_flag)
-
-#     # convert the wigner_d into chemistry form for each symop_inv
-#     wigner = convert_wigner_d(wigner)
-
-#     # get phase shifts from rotation symop_inv
-#     phase_shifts     = get_phase_shifts(atom_pos,symop,inv_flag,equiv_atom)
-
-#     # build U and U_inv from blocks
-#     U = build_U_matrix(wigner,shells)
-
-#     # adds transformation to U that maps orbitals from
-#     # atom A to equivalent atom B atoms after symop_inv
-#     U_wyc = map_equiv_atoms(a_index,equiv_atom)
-
-#     # get index of k in wedge, index in full grid, 
-#     # and index of symop_inv that transforms k to k'
-
-#     Hksp_d = np.zeros_like(Hksp)
-#     for i in range(full_grid.shape[0]):
-#         new_k_ind,orig_k_ind,si_per_k = find_equiv_k(full_grid[i][None],symop_inv,
-#                                                      full_grid,check=False)
-#         print(i)
-# #        print5B(orig_k_ind)
-# #        continue
-
-#         # transform H(k) -> H(k')
-#         temp = symmetrize(Hksp[new_k_ind],U,a_index,phase_shifts,full_grid[new_k_ind],
-#                                orig_k_ind,new_k_ind,si_per_k,inv_flag,U_wyc)
-
-#         Hksp[i]=temp
-# #        print(Hksp_d[i][:3,:3])
-# #        print()
-# #        print(Hksp[i][:3,:3])
-# #        print("*"*20)
-
- 
-
-
-#     return Hksp
-
-# ############################################################################################
-# ############################################################################################
-# ############################################################################################
