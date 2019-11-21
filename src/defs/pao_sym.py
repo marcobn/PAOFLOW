@@ -1,18 +1,17 @@
 import numpy as np
 import scipy.linalg as LA
-#import read_qe
 from scipy.special import factorial as fac
-from PAOFLOW.defs.get_K_grid_fft import get_K_grid_fft
-import sys
 from tempfile import NamedTemporaryFile
 import re
 
 
 def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl):
 
+    # compares saved full grid hamiltonain to one generated 
+    # from wedge... only for debugging purposes
     nawf=Hksp_s.shape[1]
     # load for testing
-    Hksp_f = np.load("kham_full.npy")
+    Hksp_f = np.load("ONLY_FOR_TESTING_kham.npy")
     Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
     Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
     print(np.allclose(Hksp_f,Hksp_s,atol=1.e-4,rtol=1.e-4))
@@ -36,13 +35,11 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
         U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
 
         good.append(isym)
-#        if np.allclose(np.diag(HP.real),np.diag(THP.real),atol=1.e-3,rtol=1.e-3):
           
         if np.all(np.isclose(HP,THP,rtol=1.e-5,atol=1.e-5)):
             bad.append(isym)   
         else:
             good_symop[isym]=False
-#            continue
             print(j,isym)
             print('old_k=',kp[oki])
             print('new_k=',fg[nki])
@@ -544,22 +541,6 @@ def correct_roundoff(arr):
 ############################################################################################
 ############################################################################################
 
-def construct_reduced(red_k_ind,full_k_ind,si_per_k,symop,H):
-    #check function to check if wedge H can be constructed from full grid H
-    red_dim=np.unique(red_k_ind).shape[0]
-    H_red = np.zeros((red_dim,H.shape[1],H.shape[2]),dtype=complex)
-    for j in range(full_k_ind.shape[0]):
-        if np.allclose(symop[si_per_k[j]],np.eye(3)):
-            oki  = red_k_ind[j]
-            nki  = full_k_ind[j]
-            H_red[oki]=H[nki]
-
-    return H_red
-
-############################################################################################
-############################################################################################
-############################################################################################
-
 def get_full_grid(nk1,nk2,nk3):
   # generates full k grid in crystal fractional coords
   nktot=nk1*nk2*nk3
@@ -687,6 +668,7 @@ def read_pseudopotential ( fpp ):
 def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
     # enforce time reversal symmetry on H(k)
     nawf=Hksp_s.shape[1]
+    
     Hksp_s= np.reshape(Hksp_s,(nk1,nk2,nk3,nawf,nawf))
     Hksp_g=np.copy(Hksp_s)
 
@@ -697,6 +679,7 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
                 jv= (nk2-j)%nk2
                 kv= (nk3-k)%nk3
                 Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(Hksp_g[iv,jv,kv]))/2.0
+
 
 
     Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf))
@@ -764,6 +747,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
         if inv_flag[isym]:
             THP*=U_inv
 
+        # time inversion is anti-unitary
         if sym_TR[isym]:
             THP= np.conj(THP)
 
@@ -783,7 +767,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     U_inv = get_inv_op(shells)
 
     # apply time reversal symmetry H(k) = H(-k)*
-#    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb)
+    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb)
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
@@ -819,10 +803,15 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR)
 
-
+    # enforce time reversion where appropriate
     if not spin_orb:
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)        
-#    check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
+
+    # for debugging purposes
+    try:
+        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
+    except: pass
 
     return Hksp
 
