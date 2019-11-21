@@ -7,6 +7,96 @@ import sys
 from tempfile import NamedTemporaryFile
 import re
 
+
+def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl):
+
+    nawf=Hksp_s.shape[1]
+    # load for testing
+    Hksp_f = np.load("kham_full.npy")
+    Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
+    Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
+    print(np.allclose(Hksp_f,Hksp_s,atol=1.e-4,rtol=1.e-4))
+
+    bad_symop=np.ones(symop.shape[0],dtype=bool)
+    good_symop=np.ones(symop.shape[0],dtype=bool)
+    good=[]
+    bad=[]
+    print(a_index)
+    st=4
+    fn=10
+
+    for j in range(Hksp_s.shape[0]):        
+        isym = si_per_k[j]
+        nki  = new_k_ind[j]
+        oki  = orig_k_ind[j]
+
+        HP = Hksp_f[nki]
+        THP=Hksp_s[nki]
+
+        U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
+
+        good.append(isym)
+#        if np.allclose(np.diag(HP.real),np.diag(THP.real),atol=1.e-3,rtol=1.e-3):
+          
+        if np.all(np.isclose(HP,THP,rtol=1.e-5,atol=1.e-5)):
+            bad.append(isym)   
+        else:
+            good_symop[isym]=False
+#            continue
+            print(j,isym)
+            print('old_k=',kp[oki])
+            print('new_k=',fg[nki])
+            print(equiv_atom[isym])
+            print(symop[isym])
+            print()
+            print("inv:",inv_flag[isym])
+            print()
+            print("*"*50)
+            print("REAL "*10)
+            print("*"*50)
+            print()
+            print(U_k[st:fn,st:fn])
+            print()
+            print("CORRECT")
+            print(HP[st:fn,st:fn].real)
+            print("NEW")
+            print(THP[st:fn,st:fn].real)
+            print("EQUAL?")
+            print(np.isclose(HP[st:fn,st:fn].real,THP[st:fn,st:fn].real,
+                             rtol=1.e-4,atol=1.e-4))
+
+            print("*"*50)
+            print("IMAG "*10)
+            print("*"*50)
+            print("CORRECT")
+            print(HP[st:fn,st:fn].imag)
+            print("NEW")
+            print(THP[st:fn,st:fn].imag)
+            print("EQUAL?")
+            print(np.isclose(HP[st:fn,st:fn].imag,THP[st:fn,st:fn].imag,
+                             rtol=1.e-4,atol=1.e-4))
+
+
+            print("*"*100)
+            print("*"*100)
+            print("*"*100)
+            raise SystemExit
+    print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
+
+
+    print()
+    for i in range(symop.shape[0]):
+        if i in si_per_k:
+            if not  good_symop[i]:
+                print("BAD ",isl[i])
+
+
+
+    for i in range(symop.shape[0]):            
+        if i in si_per_k:
+            if  good_symop[i]:
+                print("GOOD",isl[i])
+
 ############################################################################################
 ############################################################################################
 ############################################################################################
@@ -36,6 +126,80 @@ def map_equiv_atoms(a_index,map_ind):
 ############################################################################################
 ############################################################################################
 ############################################################################################
+
+def get_TR_op(shells):
+    # operator that swaps J for -J
+    TR_L0=np.array([[0,-1], 
+                    [1, 0]])
+
+    TR_L1=np.array([[0,-1, 0, 0, 0, 0], 
+                    [1, 0, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 0,-1], 
+                    [0, 0, 0, 0, 1, 0], 
+                    [0, 0, 0,-1, 0, 0], 
+                    [0, 0, 1, 0, 0, 0], ])
+
+    TR_L2=np.array([[0, 0, 0,-1, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 1, 0, 0, 0, 0, 0, 0, 0], 
+                    [0,-1, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0,-1], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0], 
+                    [0, 0, 0, 0, 0, 0, 0,-1, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 1, 0, 0, 0], 
+                    [0, 0, 0, 0, 0,-1, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0], ])
+
+
+    TR_L3=np.array([[0, 0, 0, 0, 0,-1, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 0,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [0,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,-1], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,-1, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0,-1, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 0,-1, 0, 0, 0, 0, 0, 0], 
+                    [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], ])
+
+
+    TR=[TR_L0,TR_L1,TR_L2,TR_L3]
+
+    shells=shells[::2]
+    nawf = int(np.sum(2*shells+1)*2)
+
+    U_TR=np.zeros((nawf,nawf),dtype=complex)
+
+    blocks=[]
+    #block diagonal transformation matrix of T @ H(k) @ T^-1
+    for s in shells:
+        blocks.append(TR[s])
+    U_TR = LA.block_diag(*blocks)
+
+    return U_TR
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def add_U_TR(U,sym_TR,shells):
+    # applies time inversion to symops as needed
+    U_TR = get_TR_op(shells)
+
+    for isym in range(U.shape[0]):
+        if sym_TR[isym]:
+            U[isym]= U_TR @ U[isym] 
+    
+    return U
+
+############################################################################################
+############################################################################################
+############################################################################################
+
 
 def get_trans():
     # get transformation from angular momentum number to 
@@ -520,10 +684,61 @@ def read_pseudopotential ( fpp ):
 ############################################################################################
 ############################################################################################
 
-def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv):
+def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
+    # enforce time reversal symmetry on H(k)
+    nawf=Hksp_s.shape[1]
+    Hksp_s= np.reshape(Hksp_s,(nk1,nk2,nk3,nawf,nawf))
+    Hksp_g=np.copy(Hksp_s)
+
+    for i in range(nk1):
+        for j in range(nk2):
+            for k in range(nk3):
+                iv= (nk1-i)%nk1
+                jv= (nk2-j)%nk2
+                kv= (nk3-k)%nk3
+                Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(Hksp_g[iv,jv,kv]))/2.0
+
+
+    Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf))
+    
+    return Hksp_s
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def apply_t_rev(Hksp,kp,spin_orb):
+
+    new_kp_list=[]
+    new_Hk_list=[]
+    for i in range(Hksp.shape[0]):
+        new_kp= -kp[i]
+        if not np.any(np.all(np.isclose(new_kp,kp),axis=1)):
+            new_kp_list.append(new_kp)
+            new_Hk_list.append(np.conj(Hksp[i]))
+
+    kp=np.vstack([kp,np.array(new_kp_list)])
+    Hksp=np.vstack([Hksp,np.array(new_Hk_list)])
+
+    return Hksp,kp
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def add_U_wyc(U,U_wyc):
+    for isym in range(U.shape[0]):
+        U[isym]=U_wyc[isym] @ U[isym]
+
+    return U
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR):
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
-
     Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
 
     for j in range(new_k_ind.shape[0]):
@@ -549,6 +764,9 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
         if inv_flag[isym]:
             THP*=U_inv
 
+        if sym_TR[isym]:
+            THP= np.conj(THP)
+
         Hksp_s[nki]=THP
     
     return Hksp_s
@@ -557,73 +775,15 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
-    # enforce time reversal symmetry on H(k)
-    nawf=Hksp_s.shape[1]
-    Hksp_s= np.reshape(Hksp_s,(nk1,nk2,nk3,nawf,nawf))
-    Hksp_g=np.copy(Hksp_s)
-
-    for i in range(nk1):
-        for j in range(nk2):
-            for k in range(nk3):
-                iv= (nk1-i)%nk1
-                jv= (nk2-j)%nk2
-                kv= (nk3-k)%nk3
-                Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(Hksp_g[iv,jv,kv]))/2.0
-
-
-    Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf))
-    
-    return Hksp_s
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def apply_t_rev(Hksp,kp,spin_orb,U_inv):
-
-    new_kp_list=[]
-    new_Hk_list=[]
-    for i in range(Hksp.shape[0]):
-        new_kp= -kp[i]
-        if not np.any(np.all(np.isclose(new_kp,kp),axis=1)):
-            new_kp_list.append(new_kp)
-            if spin_orb:
-                new_Hk_list.append(Hksp[i]*U_inv)
-            else:
-                new_Hk_list.append(np.conj(Hksp[i]))
-
-    kp=np.vstack([kp,np.array(new_kp_list)])
-    Hksp=np.vstack([Hksp,np.array(new_Hk_list)])
-
-    return Hksp,kp
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def add_U_wyc(U,U_wyc):
-    for isym in range(U.shape[0]):
-        U[isym]=U_wyc[isym] @ U[isym]
-
-    return U
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR):
 
     nawf = Hksp.shape[1]
 
     # get inversion operator
     U_inv = get_inv_op(shells)
 
-
-#    if not spin_orb:
-
     # apply time reversal symmetry H(k) = H(-k)*
-    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb,U_inv)
+#    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb)
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
@@ -647,16 +807,22 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # combine U_wyc and U
     U = add_U_wyc(U,U_wyc)
 
+    # if any symop involve time inversion add the TR to the symop
+    if np.any(sym_TR):
+        U = add_U_TR(U,sym_TR,shells)
+        
     # get index of k in wedge, index in full grid, 
     # and index of symop that transforms k to k'        
     new_k_ind,orig_k_ind,si_per_k = find_equiv_k(kp,symop,full_grid,sym_shift,check=True)
 
     # transform H(k) -> H(k')
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
-                         new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv)
+                         new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR)
+
 
     if not spin_orb:
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)        
+#    check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
 
     return Hksp
 
@@ -685,6 +851,7 @@ def open_grid_wrapper(data_controller):
     sym_info    = data_arrays['sym_info']
     sym_shift   = data_arrays['sym_shift']
     symop       = data_arrays['sym_rot']
+    sym_TR      = data_arrays['sym_TR']
     a_vectors   = correct_roundoff(a_vectors)
     b_vectors   = correct_roundoff(b_vectors)
     nspin       = Hks.shape[3]
@@ -724,7 +891,7 @@ def open_grid_wrapper(data_controller):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
 
         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
-                           shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb)
+                           shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR)
 
 
 
