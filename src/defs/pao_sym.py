@@ -21,8 +21,8 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     good=[]
     bad=[]
     print(a_index)
-    st=4
-    fn=10
+    st=6
+    fn=16
 
     for j in range(Hksp_s.shape[0]):        
         isym = si_per_k[j]
@@ -36,10 +36,12 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
 
         good.append(isym)
           
-        if np.all(np.isclose(HP,THP,rtol=1.e-5,atol=1.e-5)):
+        if np.all(np.isclose(HP,THP,rtol=1.e-4,atol=1.e-4)):
             bad.append(isym)   
         else:
+ 
             good_symop[isym]=False
+#            continue
             print(j,isym)
             print('old_k=',kp[oki])
             print('new_k=',fg[nki])
@@ -85,14 +87,10 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     for i in range(symop.shape[0]):
         if i in si_per_k:
             if not  good_symop[i]:
-                print("BAD ",isl[i])
-
-
-
-    for i in range(symop.shape[0]):            
-        if i in si_per_k:
-            if  good_symop[i]:
-                print("GOOD",isl[i])
+                print("%2d"%(i+1),"BAD ",isl[i])
+            else:
+                print("%2d"%(i+1),"GOOD",isl[i])
+            
 
 ############################################################################################
 ############################################################################################
@@ -124,56 +122,60 @@ def map_equiv_atoms(a_index,map_ind):
 ############################################################################################
 ############################################################################################
 
-def get_TR_op(shells):
+def get_TR_op(jchia):
     # operator that swaps J for -J
-    TR_L0=np.array([[0,-1], 
-                    [1, 0]])
+    TR_J05=np.array([[ 0.0,-1.0], 
+                     [ 1.0, 0.0]],dtype=complex)**(1)
 
-    TR_L1=np.array([[0,-1, 0, 0, 0, 0], 
-                    [1, 0, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 0,-1], 
-                    [0, 0, 0, 0, 1, 0], 
-                    [0, 0, 0,-1, 0, 0], 
-                    [0, 0, 1, 0, 0, 0], ])
+    TR_J15=np.array([[ 0.0, 0.0, 0.0,-1.0], 
+                     [ 0.0, 0.0,+1.0, 0.0], 
+                     [ 0.0,-1.0, 0.0, 0.0], 
+                     [+1.0, 0.0, 0.0, 0.0],],dtype=complex)**(2)
 
-    TR_L2=np.array([[0, 0, 0,-1, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 1, 0, 0, 0, 0, 0, 0, 0], 
-                    [0,-1, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0,-1], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0], 
-                    [0, 0, 0, 0, 0, 0, 0,-1, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 1, 0, 0, 0], 
-                    [0, 0, 0, 0, 0,-1, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0], ])
+    TR_J25=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0,-1.0], 
+                     [ 0.0, 0.0, 0.0, 0.0,+1.0, 0.0], 
+                     [ 0.0, 0.0, 0.0,-1.0, 0.0, 0.0], 
+                     [ 0.0, 0.0,+1.0, 0.0, 0.0, 0.0], 
+                     [ 0.0,-1.0, 0.0, 0.0, 0.0, 0.0], 
+                     [+1.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)**(2.5)
 
 
-    TR_L3=np.array([[0, 0, 0, 0, 0,-1, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 0,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [0,-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,-1], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,-1, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0,-1, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 0,-1, 0, 0, 0, 0, 0, 0], 
-                    [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], ])
+    TR_J35=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,+1.0], 
+                     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,-1.0, 0.0], 
+                     [ 0.0, 0.0, 0.0, 0.0, 0.0,+1.0, 0.0, 0.0], 
+                     [ 0.0, 0.0, 0.0, 0.0,-1.0, 0.0, 0.0, 0.0], 
+                     [ 0.0, 0.0, 0.0,+1.0, 0.0, 0.0, 0.0, 0.0], 
+                     [ 0.0, 0.0,-1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
+                     [ 0.0,+1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
+                     [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)**(3.5)
+
+    # TR_J15=np.array([[ 0, 0, 0,+1], 
+    #                  [ 0, 0,-1, 0], 
+    #                  [ 0,+1, 0, 0], 
+    #                  [-1, 0, 0, 0], ])
+
+    # TR_J25=np.array([[ 0, 0, 0, 0, 0,+1], 
+    #                  [ 0, 0, 0, 0,-1, 0], 
+    #                  [ 0, 0, 0,+1, 0, 0], 
+    #                  [ 0, 0,-1, 0, 0, 0], 
+    #                  [ 0,+1, 0, 0, 0, 0], 
+    #                  [-1, 0, 0, 0, 0, 0], ])
 
 
-    TR=[TR_L0,TR_L1,TR_L2,TR_L3]
+    TR=[TR_J05,TR_J15,TR_J25,TR_J35]
 
-    shells=shells[::2]
-    nawf = int(np.sum(2*shells+1)*2)
+
+    nawf = int(np.sum(2*jchia+1)*2)
 
     U_TR=np.zeros((nawf,nawf),dtype=complex)
 
     blocks=[]
+
+    flr_jchia=np.array([int(np.floor(a)) for a in jchia])
+    print(jchia)
+    print(flr_jchia)
     #block diagonal transformation matrix of T @ H(k) @ T^-1
-    for s in shells:
+    for s in flr_jchia:
         blocks.append(TR[s])
     U_TR = LA.block_diag(*blocks)
 
@@ -183,9 +185,9 @@ def get_TR_op(shells):
 ############################################################################################
 ############################################################################################
 
-def add_U_TR(U,sym_TR,shells):
+def add_U_TR(U,sym_TR,jchia):
     # applies time inversion to symops as needed
-    U_TR = get_TR_op(shells)
+    U_TR = get_TR_op(jchia)
 
     for isym in range(U.shape[0]):
         if sym_TR[isym]:
@@ -313,6 +315,7 @@ def get_wigner(symop):
             AL,BE,GA = mat2eul(-symop[i])
             if not np.all(np.isclose(eul2mat(AL,BE,GA),-symop[i])):
                 print("ERROR IN MAT2EUL!")
+                print(i+1)
                 print(symop[i])
                 raise SystemExit
 
@@ -333,10 +336,10 @@ def get_wigner(symop):
 
 def get_wigner_so(symop):
     # gets wigner_d matrix associated with each symop
-    wigner_l0=np.zeros((symop.shape[0],2,2),dtype=complex)
-    wigner_l1=np.zeros((symop.shape[0],6,6),dtype=complex)
-    wigner_l2=np.zeros((symop.shape[0],10,10),dtype=complex)
-    wigner_l3=np.zeros((symop.shape[0],14,14),dtype=complex)
+    wigner_j05=np.zeros((symop.shape[0],2,2),dtype=complex)
+    wigner_j15=np.zeros((symop.shape[0],4,4),dtype=complex)
+    wigner_j25=np.zeros((symop.shape[0],6,6),dtype=complex)
+    wigner_j35=np.zeros((symop.shape[0],8,8),dtype=complex)
     #inversion flag
     inv_flag =np.zeros((symop.shape[0]),dtype=bool)
 
@@ -345,24 +348,34 @@ def get_wigner_so(symop):
         AL,BE,GA =  mat2eul(symop[i])
 
         # check if there is an inversion in the symop
-        if not np.all(np.isclose(eul2mat(AL,BE,GA),symop[i])):
+        if not np.all(np.isclose(correct_roundoff(eul2mat(AL,BE,GA)),
+                                 symop[i],atol=1.e-3,rtol=1.e-2)):
             inv_flag[i]=True
+
             AL,BE,GA = mat2eul(-symop[i])
-            if not np.all(np.isclose(eul2mat(AL,BE,GA),-symop[i])):
+            if not np.all(np.isclose(correct_roundoff(eul2mat(AL,BE,GA)),
+                                     -symop[i],atol=1.e-3,rtol=1.e-2)):
                 print("ERROR IN MAT2EUL!")
+
+                print(i+1)
+                print('RESULT')
+                print(-eul2mat(AL,BE,GA))
+                print('CORRECT')
                 print(symop[i])
                 raise SystemExit
 
-        # wigner_d for l=0
-        wigner_l0[i]=d_mat_l(AL,BE,GA,0.5)
-        # wigner_d for l=1                                
-        wigner_l1[i]=LA.block_diag(d_mat_l(AL,BE,GA,0.5),d_mat_l(AL,BE,GA,1.5))
-        # wigner_d for l=2                                
-        wigner_l2[i]=LA.block_diag(d_mat_l(AL,BE,GA,1.5),d_mat_l(AL,BE,GA,2.5))
-        # wigner_d for l=3                                
-        wigner_l3[i]=np.eye(14)
 
-    return [wigner_l0,wigner_l1,wigner_l2,wigner_l3,inv_flag],inv_flag
+
+        # wigner_d for l=0
+        wigner_j05[i]=d_mat_l(AL,BE,GA,0.5)
+        # wigner_d for l=1                                
+        wigner_j15[i]=d_mat_l(AL,BE,GA,1.5)
+        # wigner_d for l=2                                
+        wigner_j25[i]=d_mat_l(AL,BE,GA,2.5)
+        # wigner_d for l=3                                
+        wigner_j35[i]=d_mat_l(AL,BE,GA,3.5)
+
+    return [wigner_j05,wigner_j15,wigner_j25,wigner_j35,inv_flag],inv_flag
 
 ############################################################################################
 ############################################################################################
@@ -483,21 +496,24 @@ def find_equiv_k(kp,symop,full_grid,sym_shift,check=True):
 ############################################################################################
 ############################################################################################
 
-def build_U_matrix(wigner,shells,spin_orb):
+def build_U_matrix(wigner,shells):
     # builds U from blocks 
     
-    if spin_orb:
-        shells=shells[::2]
-        nawf = int(np.sum(2*shells+1)*2)
-    else:
-        nawf = np.sum(2*shells+1)
+    # if spin_orb:
+    #     nawf = int(np.sum(2*jchia+1)*2)
+    #     print(nawf)
+    #     raise SystemExit
+    # else:
+    nawf = int(np.sum(2*shells+1))
 
     U=np.zeros((wigner[0].shape[0],nawf,nawf),dtype=complex)
+    # for the so case...
+    flr_shells=np.array([int(np.floor(a)) for a in shells])
 
     for i in range(wigner[0].shape[0]):
         blocks=[]
         #block diagonal transformation matrix of H(k)->H(k')
-        for s in shells:
+        for s in flr_shells:
             blocks.append(wigner[s][i])
         U[i] = LA.block_diag(*blocks)
     return U
@@ -587,8 +603,10 @@ def read_shell ( workpath,savedir,species,atoms,spin_orb=False):
 
     # Get Shells for each species
     sdict = {}
+    jchid = {}
+    jchia = None
     for s in species:
-      sdict[s[0]] = np.array(read_pseudopotential(join(workpath,savedir,s[1])))
+      sdict[s[0]],jchid[s[0]] = read_pseudopotential(join(workpath,savedir,s[1]))
 
     #double the l=0 if spin orbit
     if spin_orb:
@@ -602,13 +620,15 @@ def read_shell ( workpath,savedir,species,atoms,spin_orb=False):
 
             sdict[s] = np.array(tmp_list)
 
+        jchia = np.hstack([jchid[a] for a in atoms])
+
+
     # index of which orbitals belong to which atom in the basis
     a_index = np.hstack([[a]*np.sum((2*sdict[atoms[a]])+1) for a in range(len(atoms))])
 
     # value of l
     shell   = np.hstack([sdict[a] for a in atoms])
-
-    return shell,a_index
+    return shell,a_index,jchia
 
 ############################################################################################
 ############################################################################################
@@ -632,6 +652,10 @@ def read_pseudopotential ( fpp ):
   import re
 
   sh = []
+  # fully rel case
+  jchi=[]
+
+  # clean xnl before reading
   with open(fpp) as ifo:
       temp_str=ifo.read()
 
@@ -650,16 +674,23 @@ def read_pseudopotential ( fpp ):
                   sh.append(int(i.attrib['l']))
           except Exception as e:
               print(e)    
+          for i in elem.findall("PP_SPIN_ORB/"):
+              try:
+                  jchi.append(float(i.attrib["jchi"]))
+              except: pass
+              
+      jchi = np.array(jchi)
+      sh   = np.array(sh)
 
-      sh=np.array(sh)
-
-  except:
+  except Exception as e:
+      print(e)
       with open(fpp) as ifo:
           ifs=ifo.read()
       res=re.findall("(.*)\s*Wavefunction",ifs)[1:]      
       sh=np.array(list(map(int,list([x.split()[1] for x in res]))))
 
-  return sh
+
+  return sh,jchi
 
 ############################################################################################
 ############################################################################################
@@ -759,7 +790,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia):
 
     nawf = Hksp.shape[1]
 
@@ -767,7 +798,8 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     U_inv = get_inv_op(shells)
 
     # apply time reversal symmetry H(k) = H(-k)*
-    Hksp,kp=apply_t_rev(Hksp,kp,spin_orb)
+    if not spin_orb:
+        Hksp,kp=apply_t_rev(Hksp,kp,spin_orb)
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
@@ -782,7 +814,10 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom)
 
     # build U and U_inv from blocks
-    U = build_U_matrix(wigner,shells,spin_orb)
+    if spin_orb:
+        U = build_U_matrix(wigner,jchia)
+    else:
+        U = build_U_matrix(wigner,shells)
 
     # adds transformation to U that maps orbitals from
     # atom A to equivalent atom B atoms after symop
@@ -793,7 +828,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     # if any symop involve time inversion add the TR to the symop
     if np.any(sym_TR):
-        U = add_U_TR(U,sym_TR,shells)
+        U = add_U_TR(U,sym_TR,jchia)
         
     # get index of k in wedge, index in full grid, 
     # and index of symop that transforms k to k'        
@@ -859,6 +894,8 @@ def open_grid_wrapper(data_controller):
         symop_cart[isym] = (inv_a_vectors @ symop[isym] @ a_vectors)
     symop_cart = correct_roundoff(symop_cart)
 
+
+
     # convert k points from cartesian to crystal fractional
     conv = LA.inv(b_vectors)
     conv = correct_roundoff(conv)
@@ -869,9 +906,9 @@ def open_grid_wrapper(data_controller):
     full_grid = get_full_grid(nk1,nk2,nk3)
 
     # get shells and atom indices for blocks of the hamiltonian
-    shells,a_index = read_shell(data_attr['workpath'],data_attr['savedir'],
-                                data_arrays['species'],atom_lab,
-                                spin_orb=spin_orb)
+    shells,a_index,jchia = read_shell(data_attr['workpath'],data_attr['savedir'],
+                                      data_arrays['species'],atom_lab,
+                                      spin_orb=spin_orb)
 
 
     # expand grid from wedge
@@ -880,12 +917,11 @@ def open_grid_wrapper(data_controller):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
 
         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
-                           shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR)
-
+                         shells,a_index,equiv_atom,sym_info,sym_shift,
+                         nk1,nk2,nk3,spin_orb,sym_TR,jchia)
 
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
-
 
     np.save("kham.npy",Hksp_temp)
     data_arrays['Hks']=Hksp_temp
