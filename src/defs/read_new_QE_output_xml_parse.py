@@ -120,8 +120,9 @@ def read_new_QE_output_xml ( data_controller ):
                 shift_list=[]
                 equiv_atom=[]
                 sym_info=[]
-                aux=elem.findall("symmetries/symmetry")
+                time_rev=[]
 
+                aux=elem.findall("symmetries/symmetry")
                 for i in range(len(aux)):
                     try:
                         if aux[i].findall('info')[0].text=="crystal_symmetry":
@@ -130,8 +131,9 @@ def read_new_QE_output_xml ( data_controller ):
                             equiv_atom_txt = aux[i].findall('equivalent_atoms')[0].text
                             equiv_atom.append(list(map(int,equiv_atom_txt.split())))
                             sym_info.append(aux[i].findall('info')[0].attrib['name'])
-#                            if np.all(np.isclose(np.array(list(map(float,shift_txt.split()))),0.0)):
-                 
+                            try:
+                                time_rev.append(aux[i].findall('info')[0].attrib['time_reversal'])
+                            except: pass
                             sym_list.append([list(map(float,x.split())) for x in aux[i].findall\
                                              ('rotation')[0].text.split('\n') if len(x.split())!=0] )
 
@@ -141,7 +143,15 @@ def read_new_QE_output_xml ( data_controller ):
                 sym_shift=np.array(shift_list)
                 equiv_atom=np.array(equiv_atom)-1
                 sym_info=np.array(sym_info)
-
+                if len(time_rev)!=0:
+                    for i in range(len(time_rev)):
+                        if time_rev[i]=="true":
+                            time_rev[i]=True
+                        else:
+                            time_rev[i]=False
+                    time_rev=np.array(time_rev)
+                else:
+                    time_rev=np.zeros(sym_info.shape[0],dtype=bool)
 
     # Reading atomic_proj.xml
 
@@ -338,10 +348,11 @@ def read_new_QE_output_xml ( data_controller ):
     data_arrays['b_vectors'] = b_vectors
     data_arrays['my_eigsmat'] = my_eigsmat
     data_arrays['U'] = U
+    data_arrays['equiv_atom'] = equiv_atom
     data_arrays['sym_rot'] = sym_rot
     data_arrays['sym_shift'] = sym_shift
-    data_arrays['equiv_atom'] = equiv_atom
     data_arrays['sym_info'] = sym_info 
+    data_arrays['sym_TR'] = time_rev
     if Sks is not None:
         data_arrays['Sks'] = Sks
 

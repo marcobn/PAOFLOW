@@ -21,8 +21,8 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     good=[]
     bad=[]
     print(a_index)
-    st=6
-    fn=16
+    st=72
+    fn=90
 
     for j in range(Hksp_s.shape[0]):        
         isym = si_per_k[j]
@@ -35,7 +35,7 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
         U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
 
         good.append(isym)
-          
+
         if np.all(np.isclose(HP,THP,rtol=1.e-4,atol=1.e-4)):
             bad.append(isym)   
         else:
@@ -54,7 +54,7 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             print("REAL "*10)
             print("*"*50)
             print()
-            print(U_k[st:fn,st:fn])
+ #           print(U_k[st:fn,st:fn])
             print()
             print("CORRECT")
             print(HP[st:fn,st:fn].real)
@@ -79,7 +79,7 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             print("*"*100)
             print("*"*100)
             print("*"*100)
-            raise SystemExit
+          #  raise SystemExit
     print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
 
 
@@ -122,44 +122,50 @@ def map_equiv_atoms(a_index,map_ind):
 ############################################################################################
 ############################################################################################
 
-def get_TR_op(jchia):
+def get_U_TR(jchia):
     # operator that swaps J for -J
     TR_J05=np.array([[ 0.0,-1.0], 
-                     [ 1.0, 0.0]],dtype=complex)**(1)
+                     [+1.0, 0.0]],dtype=complex)
 
     TR_J15=np.array([[ 0.0, 0.0, 0.0,-1.0], 
                      [ 0.0, 0.0,+1.0, 0.0], 
                      [ 0.0,-1.0, 0.0, 0.0], 
-                     [+1.0, 0.0, 0.0, 0.0],],dtype=complex)**(2)
+                     [+1.0, 0.0, 0.0, 0.0],],dtype=complex)
 
     TR_J25=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0,-1.0], 
                      [ 0.0, 0.0, 0.0, 0.0,+1.0, 0.0], 
                      [ 0.0, 0.0, 0.0,-1.0, 0.0, 0.0], 
                      [ 0.0, 0.0,+1.0, 0.0, 0.0, 0.0], 
                      [ 0.0,-1.0, 0.0, 0.0, 0.0, 0.0], 
-                     [+1.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)**(2.5)
+                     [+1.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)
 
 
-    TR_J35=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,+1.0], 
-                     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,-1.0, 0.0], 
-                     [ 0.0, 0.0, 0.0, 0.0, 0.0,+1.0, 0.0, 0.0], 
-                     [ 0.0, 0.0, 0.0, 0.0,-1.0, 0.0, 0.0, 0.0], 
-                     [ 0.0, 0.0, 0.0,+1.0, 0.0, 0.0, 0.0, 0.0], 
-                     [ 0.0, 0.0,-1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
-                     [ 0.0,+1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
-                     [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)**(3.5)
+    TR_J35=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,-1.0], 
+                     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,+1.0, 0.0], 
+                     [ 0.0, 0.0, 0.0, 0.0, 0.0,-1.0, 0.0, 0.0], 
+                     [ 0.0, 0.0, 0.0, 0.0,+1.0, 0.0, 0.0, 0.0], 
+                     [ 0.0, 0.0, 0.0,-1.0, 0.0, 0.0, 0.0, 0.0], 
+                     [ 0.0, 0.0,+1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
+                     [ 0.0,-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
+                     [+1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)
 
-    # TR_J15=np.array([[ 0, 0, 0,+1], 
-    #                  [ 0, 0,-1, 0], 
-    #                  [ 0,+1, 0, 0], 
-    #                  [-1, 0, 0, 0], ])
+    J=0.5
+    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
+    J=1.5
+    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
+    J=2.5
+    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
+    J=3.5
+    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
 
-    # TR_J25=np.array([[ 0, 0, 0, 0, 0,+1], 
-    #                  [ 0, 0, 0, 0,-1, 0], 
-    #                  [ 0, 0, 0,+1, 0, 0], 
-    #                  [ 0, 0,-1, 0, 0, 0], 
-    #                  [ 0,+1, 0, 0, 0, 0], 
-    #                  [-1, 0, 0, 0, 0, 0], ])
+#    raise SystemExit
+
+    # TR_J05=LA.inv(np.nan_to_num(np.power(TR_J05,-np.arange(-0.5,1.5))))
+    # TR_J15=LA.inv(np.nan_to_num(np.power(TR_J15,-np.arange(-1.5,2.5))))
+    # TR_J25=LA.inv(np.nan_to_num(np.power(TR_J25,-np.arange(-2.5,3.5))))
+    # TR_J35=LA.inv(np.nan_to_num(np.power(TR_J35,-np.arange(-3.5,4.5))))
+
+
 
 
     TR=[TR_J05,TR_J15,TR_J25,TR_J35]
@@ -187,11 +193,11 @@ def get_TR_op(jchia):
 
 def add_U_TR(U,sym_TR,jchia):
     # applies time inversion to symops as needed
-    U_TR = get_TR_op(jchia)
+    U_TR = get_U_TR(jchia)
 
     for isym in range(U.shape[0]):
         if sym_TR[isym]:
-            U[isym]= U_TR @ U[isym] 
+            U[isym]=  U_TR @ U[isym] 
     
     return U
 
@@ -522,13 +528,16 @@ def build_U_matrix(wigner,shells):
 ############################################################################################
 ############################################################################################
 
-def get_phase_shifts(atom_pos,symop,equiv_atom):
+def get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR):
     # calculate phase shifts for U
     phase_shift=np.zeros((symop.shape[0],atom_pos.shape[0],3),dtype=float)
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
-            p1 = equiv_atom[isym,p]
-            phase_shift[isym,p1] =   (symop[isym].T @ atom_pos[p])-atom_pos[p1]
+            p1 = equiv_atom[isym,p]            
+            if sym_TR[isym]:
+                phase_shift[isym,p1] =   (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
+            else:
+                phase_shift[isym,p1] =   (symop[isym].T @ atom_pos[p])-atom_pos[p1]
 
     return phase_shift
 
@@ -811,7 +820,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         wigner = convert_wigner_d(wigner)
 
     # get phase shifts from rotation symop
-    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom)
+    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR)
 
     # build U and U_inv from blocks
     if spin_orb:
@@ -819,16 +828,17 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     else:
         U = build_U_matrix(wigner,shells)
 
+
+    # if any symop involve time inversion add the TR to the symop
+    if np.any(sym_TR):
+        U = add_U_TR(U,sym_TR,jchia)
+
     # adds transformation to U that maps orbitals from
     # atom A to equivalent atom B atoms after symop
     U_wyc = map_equiv_atoms(a_index,equiv_atom)
 
     # combine U_wyc and U
     U = add_U_wyc(U,U_wyc)
-
-    # if any symop involve time inversion add the TR to the symop
-    if np.any(sym_TR):
-        U = add_U_TR(U,sym_TR,jchia)
         
     # get index of k in wedge, index in full grid, 
     # and index of symop that transforms k to k'        
