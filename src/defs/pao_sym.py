@@ -5,7 +5,7 @@ from tempfile import NamedTemporaryFile
 import re
 
 
-def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl):
+def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl,sym_TR):
 
     # compares saved full grid hamiltonain to one generated 
     # from wedge... only for debugging purposes
@@ -21,9 +21,9 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     good=[]
     bad=[]
     print(a_index)
-    st=72
-    fn=90
-
+    st=0
+    fn=8
+#    for j in range(20):        
     for j in range(Hksp_s.shape[0]):        
         isym = si_per_k[j]
         nki  = new_k_ind[j]
@@ -41,7 +41,7 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
         else:
  
             good_symop[isym]=False
-#            continue
+            continue
             print(j,isym)
             print('old_k=',kp[oki])
             print('new_k=',fg[nki])
@@ -79,7 +79,7 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
             print("*"*100)
             print("*"*100)
             print("*"*100)
-          #  raise SystemExit
+#            raise SystemExit
     print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
 
 
@@ -87,10 +87,33 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     for i in range(symop.shape[0]):
         if i in si_per_k:
             if not  good_symop[i]:
-                print("%2d"%(i+1),"BAD ",isl[i])
+                print("%2d"%(i+1),"BAD ",isl[i],sym_TR[i])
             else:
-                print("%2d"%(i+1),"GOOD",isl[i])
+                print("%2d"%(i+1),"GOOD",isl[i],sym_TR[i])
+
+############################################################################################
+############################################################################################
+############################################################################################
             
+def invert_atom_pos_map(pos,equiv_atom,sym_TR):
+    # finds mapping of atomic positions for inversion
+    
+    for isym in range(sym_TR.shape[0]):
+
+        if not sym_TR[isym]:
+            new_pos=pos
+        else:
+            new_pos=(-pos)%1.0
+
+        remap_key=np.zeros(pos.shape[0],dtype=int)
+        for j in range(pos.shape[0]):
+            for k in range(new_pos.shape[0]):
+                if np.all(np.isclose(pos[j],new_pos[k],rtol=1e-4,atol=1e-4,)):
+                    remap_key[j] = k
+
+        equiv_atom[isym] = equiv_atom[isym][remap_key]
+
+    return equiv_atom
 
 ############################################################################################
 ############################################################################################
@@ -124,48 +147,15 @@ def map_equiv_atoms(a_index,map_ind):
 
 def get_U_TR(jchia):
     # operator that swaps J for -J
-    TR_J05=np.array([[ 0.0,-1.0], 
-                     [+1.0, 0.0]],dtype=complex)
-
-    TR_J15=np.array([[ 0.0, 0.0, 0.0,-1.0], 
-                     [ 0.0, 0.0,+1.0, 0.0], 
-                     [ 0.0,-1.0, 0.0, 0.0], 
-                     [+1.0, 0.0, 0.0, 0.0],],dtype=complex)
-
-    TR_J25=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0,-1.0], 
-                     [ 0.0, 0.0, 0.0, 0.0,+1.0, 0.0], 
-                     [ 0.0, 0.0, 0.0,-1.0, 0.0, 0.0], 
-                     [ 0.0, 0.0,+1.0, 0.0, 0.0, 0.0], 
-                     [ 0.0,-1.0, 0.0, 0.0, 0.0, 0.0], 
-                     [+1.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)
-
-
-    TR_J35=np.array([[ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,-1.0], 
-                     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,+1.0, 0.0], 
-                     [ 0.0, 0.0, 0.0, 0.0, 0.0,-1.0, 0.0, 0.0], 
-                     [ 0.0, 0.0, 0.0, 0.0,+1.0, 0.0, 0.0, 0.0], 
-                     [ 0.0, 0.0, 0.0,-1.0, 0.0, 0.0, 0.0, 0.0], 
-                     [ 0.0, 0.0,+1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
-                     [ 0.0,-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
-                     [+1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],],dtype=complex)
 
     J=0.5
-    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
+    TR_J05=np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
     J=1.5
-    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
+    TR_J15=np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
     J=2.5
-    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
+    TR_J25=np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
     J=3.5
-    np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
-
-#    raise SystemExit
-
-    # TR_J05=LA.inv(np.nan_to_num(np.power(TR_J05,-np.arange(-0.5,1.5))))
-    # TR_J15=LA.inv(np.nan_to_num(np.power(TR_J15,-np.arange(-1.5,2.5))))
-    # TR_J25=LA.inv(np.nan_to_num(np.power(TR_J25,-np.arange(-2.5,3.5))))
-    # TR_J35=LA.inv(np.nan_to_num(np.power(TR_J35,-np.arange(-3.5,4.5))))
-
-
+    TR_J35=np.fliplr(np.eye(int(2*J+1))*((-1)**(J-np.arange(-J,J+1))))
 
 
     TR=[TR_J05,TR_J15,TR_J25,TR_J35]
@@ -535,7 +525,7 @@ def get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR):
         for p in range(atom_pos.shape[0]):
             p1 = equiv_atom[isym,p]            
             if sym_TR[isym]:
-                phase_shift[isym,p1] =   (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
+                phase_shift[isym,p1] =  ((-symop[isym].T @ atom_pos[p])-atom_pos[p1])
             else:
                 phase_shift[isym,p1] =   (symop[isym].T @ atom_pos[p])-atom_pos[p1]
 
@@ -780,7 +770,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
         # get k dependent U
         U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
 
-        #transformated H(k)
+        #transformated H(k)            
         THP = U_k @ H @ np.conj(U_k.T)
 
         # apply inversion operator if needed
@@ -819,6 +809,8 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         # convert the wigner_d into chemistry form for each symop
         wigner = convert_wigner_d(wigner)
 
+    equiv_atom = invert_atom_pos_map(atom_pos,equiv_atom,sym_TR)
+
     # get phase shifts from rotation symop
     phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR)
 
@@ -855,9 +847,9 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # for debugging purposes
     try:
         check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info)        
+              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
     except: pass
-
+#    raise SystemExit
     return Hksp
 
 ############################################################################################
