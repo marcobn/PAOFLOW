@@ -14,6 +14,7 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
     Hksp_f = np.load("ONLY_FOR_TESTING_kham.npy")
     Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
     Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
+
     print(np.allclose(Hksp_f,Hksp_s,atol=1.e-4,rtol=1.e-4))
 
     bad_symop=np.ones(symop.shape[0],dtype=bool)
@@ -127,7 +128,6 @@ def map_equiv_atoms(a_index,map_ind):
     U_wyc = np.zeros((map_ind.shape[0],nawf,nawf),dtype=complex)
 
     for isym in range(map_ind.shape[0]):
-
         map_U=np.zeros((nawf,nawf),dtype=complex)
         for i in range(map_ind[isym].shape[0]):
             fi=np.where(a_index==i)[0]
@@ -168,8 +168,8 @@ def get_U_TR(jchia):
     blocks=[]
 
     flr_jchia=np.array([int(np.floor(a)) for a in jchia])
-    print(jchia)
-    print(flr_jchia)
+#    print(jchia)
+#    print(flr_jchia)
     #block diagonal transformation matrix of T @ H(k) @ T^-1
     for s in flr_jchia:
         blocks.append(TR[s])
@@ -518,16 +518,16 @@ def build_U_matrix(wigner,shells):
 ############################################################################################
 ############################################################################################
 
-def get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR):
+def get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR,inv_flag):
     # calculate phase shifts for U
     phase_shift=np.zeros((symop.shape[0],atom_pos.shape[0],3),dtype=float)
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
             p1 = equiv_atom[isym,p]            
             if sym_TR[isym]:
-                phase_shift[isym,p1] =  ((-symop[isym].T @ atom_pos[p])-atom_pos[p1])
+                phase_shift[isym,p1] =  (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
             else:
-                phase_shift[isym,p1] =   (symop[isym].T @ atom_pos[p])-atom_pos[p1]
+                phase_shift[isym,p1] =  ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
 
     return phase_shift
 
@@ -804,15 +804,21 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # for each of the orbital angular momentum l=[0,1,2,3]
     if spin_orb:
         wigner,inv_flag = get_wigner_so(symop_cart)
+        for isym in range(symop.shape[0]):
+            if sym_TR[isym]:
+                symop[isym]*=-1
+                if inv_flag[isym]:
+                    inv_flag[isym]=False
+                else:
+                    inv_flag[isym]=True
+#        print(inv_flag)
     else:
         wigner,inv_flag = get_wigner(symop_cart)
         # convert the wigner_d into chemistry form for each symop
         wigner = convert_wigner_d(wigner)
 
-    equiv_atom = invert_atom_pos_map(atom_pos,equiv_atom,sym_TR)
-
     # get phase shifts from rotation symop
-    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR)
+    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR,inv_flag)
 
     # build U and U_inv from blocks
     if spin_orb:
@@ -845,10 +851,10 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)        
 
     # for debugging purposes
-    try:
-        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
-    except: pass
+#    try:
+#        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+#              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
+#    except: pass
 #    raise SystemExit
     return Hksp
 
@@ -857,7 +863,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 ############################################################################################
 
 def open_grid_wrapper(data_controller):
-    np.set_printoptions(precision=2,suppress=True,linewidth=200)
+#    np.set_printoptions(precision=2,suppress=True,linewidth=200)
 
 
     data_arrays = data_controller.data_arrays
@@ -925,7 +931,7 @@ def open_grid_wrapper(data_controller):
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
 
-    np.save("kham.npy",Hksp_temp)
+#    np.save("kham.npy",Hksp_temp)
     data_arrays['Hks']=Hksp_temp
 
 ############################################################################################
