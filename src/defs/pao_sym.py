@@ -524,10 +524,11 @@ def get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR,inv_flag):
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
             p1 = equiv_atom[isym,p]            
-            if sym_TR[isym]:
-                phase_shift[isym,p1] =  (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
-            else:
-                phase_shift[isym,p1] =  ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
+            phase_shift[isym,p1] =  ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
+#            if sym_TR[isym]:
+#                phase_shift[isym,p1] =  (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
+#            else:
+
 
     return phase_shift
 
@@ -804,13 +805,6 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # for each of the orbital angular momentum l=[0,1,2,3]
     if spin_orb:
         wigner,inv_flag = get_wigner_so(symop_cart)
-        for isym in range(symop.shape[0]):
-            if sym_TR[isym]:
-                symop[isym]*=-1
-                if inv_flag[isym]:
-                    inv_flag[isym]=False
-                else:
-                    inv_flag[isym]=True
 #        print(inv_flag)
     else:
         wigner,inv_flag = get_wigner(symop_cart)
@@ -819,6 +813,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     # get phase shifts from rotation symop
     phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR,inv_flag)
+
 
     # build U and U_inv from blocks
     if spin_orb:
@@ -838,6 +833,15 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # combine U_wyc and U
     U = add_U_wyc(U,U_wyc)
         
+
+    for isym in range(symop.shape[0]):
+        if sym_TR[isym]:
+            symop[isym]*=-1
+            if inv_flag[isym]:
+                inv_flag[isym]=False
+            else:
+                inv_flag[isym]=True
+
     # get index of k in wedge, index in full grid, 
     # and index of symop that transforms k to k'        
     new_k_ind,orig_k_ind,si_per_k = find_equiv_k(kp,symop,full_grid,sym_shift,check=True)
@@ -931,7 +935,7 @@ def open_grid_wrapper(data_controller):
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
 
-#    np.save("kham.npy",Hksp_temp)
+    np.save("kham.npy",Hksp_temp)
     data_arrays['Hks']=Hksp_temp
 
 ############################################################################################
