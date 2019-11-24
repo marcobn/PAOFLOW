@@ -256,7 +256,7 @@ class DataController:
       for ispin in range(nspin):
         with open(join(attr['opath'],fname+'_'+str(ispin)+'.dat'), 'w') as f:
           for ik in range(nkpi):
-            f.write('\t'.join(['%d'%ik]+['% 3.5f'%j for j in bands[ik,:,ispin]])+'\n') 
+            f.write(' '.join(['%6d'%ik]+['% 14.8f'%j for j in bands[ik,:,ispin]])+'\n') 
     self.comm.Barrier()
 
 
