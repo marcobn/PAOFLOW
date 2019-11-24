@@ -693,12 +693,15 @@ def read_pseudopotential ( fpp ):
 ############################################################################################
 ############################################################################################
 
-def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
+def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
     # enforce time reversal symmetry on H(k)
     nawf=Hksp_s.shape[1]
     
     Hksp_s= np.reshape(Hksp_s,(nk1,nk2,nk3,nawf,nawf))
     Hksp_g=np.copy(Hksp_s)
+
+    if spin_orb:
+        U_TR = get_U_TR(jchia)
 
     for i in range(nk1):
         for j in range(nk2):
@@ -706,9 +709,10 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
                 iv= (nk1-i)%nk1
                 jv= (nk2-j)%nk2
                 kv= (nk3-k)%nk3
-                Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(Hksp_g[iv,jv,kv]))/2.0
-
-
+                if not spin_orb:
+                    Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(Hksp_g[iv,jv,kv]))/2.0
+                else:
+                    Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(U_inv*(U_TR @ Hksp_g[iv,jv,kv] @ np.conj(U_TR.T))))/2.0
 
     Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf))
     
@@ -718,15 +722,22 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3):
 ############################################################################################
 ############################################################################################
 
-def apply_t_rev(Hksp,kp,spin_orb):
+def apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia):
 
     new_kp_list=[]
     new_Hk_list=[]
+
+    if spin_orb:
+        U_TR = get_U_TR(jchia)
+
     for i in range(Hksp.shape[0]):
         new_kp= -kp[i]
         if not np.any(np.all(np.isclose(new_kp,kp),axis=1)):
             new_kp_list.append(new_kp)
-            new_Hk_list.append(np.conj(Hksp[i]))
+            if not spin_orb:
+                new_Hk_list.append(np.conj(Hksp[i]))
+            else:
+                new_Hk_list.append(np.conj(U_inv*(U_TR @ Hksp[i] @ np.conj(U_TR.T))))
 
     kp=np.vstack([kp,np.array(new_kp_list)])
     Hksp=np.vstack([Hksp,np.array(new_Hk_list)])
@@ -788,16 +799,16 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc):
 
     nawf = Hksp.shape[1]
 
     # get inversion operator
     U_inv = get_inv_op(shells)
 
-    # apply time reversal symmetry H(k) = H(-k)*
-    if not spin_orb:
-        Hksp,kp=apply_t_rev(Hksp,kp,spin_orb)
+    # apply time reversal symmetry H(k) = H(-k)* where appropriate
+    if not (spin_orb and mag_calc):
+        Hksp,kp=apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia)
 
     # get array with wigner_d rotation matrix for each symop
     # for each of the orbital angular momentum l=[0,1,2,3]
@@ -838,8 +849,8 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR)
 
     # enforce time reversion where appropriate
-    if not spin_orb:
-        Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3)        
+    if not (spin_orb and mag_calc):
+        Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
     # for debugging purposes
 #    try:
@@ -864,6 +875,7 @@ def open_grid_wrapper(data_controller):
     nk2         = data_attr['nk2']
     nk3         = data_attr['nk3']
     spin_orb    = data_attr['dftSO']
+    mag_calc    = data_attr['dftMAG']
     Hks         = data_arrays['Hks']
     atom_pos    = data_arrays['tau']/alat
     atom_lab    = data_arrays['atoms']
@@ -917,7 +929,7 @@ def open_grid_wrapper(data_controller):
 
         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
                          shells,a_index,equiv_atom,sym_info,sym_shift,
-                         nk1,nk2,nk3,spin_orb,sym_TR,jchia)
+                         nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc)
 
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))

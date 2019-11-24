@@ -115,6 +115,15 @@ def read_new_QE_output_xml ( data_controller ):
                     tau[n,:] = np.array(latoms[n].text.split(), dtype="float32")
 
 
+                # checking for magnetic calc (for symmetry stuff)
+                dftMAG=False
+                try:
+                    aux = elem.findall("magnetization/do_magnetization")
+                    mag = aux[0].text
+                    if mag.lower()=="true":
+                        dftMAG=True
+                except: pass
+
                 # read in info on symmetry operations
                 sym_list=[]
                 shift_list=[]
@@ -339,6 +348,7 @@ def read_new_QE_output_xml ( data_controller ):
     data_attributes['omega'] = omega
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
+    data_attributes['dftMAG'] = dftMAG
     data_arrays['tau'] = tau
     data_arrays['atoms'] = atoms
     data_arrays['species'] = zip(species,pseudos)
