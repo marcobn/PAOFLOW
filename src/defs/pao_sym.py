@@ -168,8 +168,7 @@ def get_U_TR(jchia):
     blocks=[]
 
     flr_jchia=np.array([int(np.floor(a)) for a in jchia])
-#    print(jchia)
-#    print(flr_jchia)
+
     #block diagonal transformation matrix of T @ H(k) @ T^-1
     for s in flr_jchia:
         blocks.append(TR[s])
@@ -352,15 +351,12 @@ def get_wigner_so(symop):
             if not np.all(np.isclose(correct_roundoff(eul2mat(AL,BE,GA)),
                                      -symop[i],atol=1.e-3,rtol=1.e-2)):
                 print("ERROR IN MAT2EUL!")
-
                 print(i+1)
                 print('RESULT')
                 print(-eul2mat(AL,BE,GA))
                 print('CORRECT')
                 print(symop[i])
                 raise SystemExit
-
-
 
         # wigner_d for l=0
         wigner_j05[i]=d_mat_l(AL,BE,GA,0.5)
@@ -370,6 +366,7 @@ def get_wigner_so(symop):
         wigner_j25[i]=d_mat_l(AL,BE,GA,2.5)
         # wigner_d for l=3                                
         wigner_j35[i]=d_mat_l(AL,BE,GA,3.5)
+
 
     return [wigner_j05,wigner_j15,wigner_j25,wigner_j35,inv_flag],inv_flag
 
@@ -441,7 +438,7 @@ def mat2eul(R):
 ############################################################################################
 ############################################################################################
 
-def find_equiv_k(kp,symop,full_grid,sym_shift,check=True):
+def find_equiv_k(kp,symop,full_grid,sym_TR,check=True):
     # find indices and symops that generate full grid H from wedge H
     orig_k_ind = []
     new_k_ind = []
@@ -449,11 +446,15 @@ def find_equiv_k(kp,symop,full_grid,sym_shift,check=True):
     counter = 0
     kp_track = []
     kp = correct_roundoff(kp)
+
+
     for k in range(kp.shape[0]):
         for isym in range(symop.shape[0]):
             #transform k -> k' with the sym op
-            
-            newk = ((((symop[isym] @ (kp[k]%1.0))%1.0)+0.5)%1.0)-0.5
+            if sym_TR[isym]:
+                newk = ((((-symop[isym] @ (kp[k]%1.0))%1.0)+0.5)%1.0)-0.5
+            else:
+                newk = (((( symop[isym] @ (kp[k]%1.0))%1.0)+0.5)%1.0)-0.5
             newk = correct_roundoff(newk)
             newk[np.where(np.isclose(newk,0.5))]=-0.5
             newk[np.where(np.isclose(newk,-1.0))]=0.0
@@ -518,17 +519,13 @@ def build_U_matrix(wigner,shells):
 ############################################################################################
 ############################################################################################
 
-def get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR,inv_flag):
+def get_phase_shifts(atom_pos,symop,equiv_atom):
     # calculate phase shifts for U
     phase_shift=np.zeros((symop.shape[0],atom_pos.shape[0],3),dtype=float)
     for isym in range(symop.shape[0]):
         for p in range(atom_pos.shape[0]):
             p1 = equiv_atom[isym,p]            
             phase_shift[isym,p1] =  ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
-#            if sym_TR[isym]:
-#                phase_shift[isym,p1] =  (-symop[isym].T @ atom_pos[p])-atom_pos[p1]
-#            else:
-
 
     return phase_shift
 
@@ -780,7 +777,8 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 
         # time inversion is anti-unitary
         if sym_TR[isym]:
-            THP= np.conj(THP)
+            THP*= U_inv
+            THP = np.conj(THP)
 
         Hksp_s[nki]=THP
     
@@ -805,15 +803,13 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     # for each of the orbital angular momentum l=[0,1,2,3]
     if spin_orb:
         wigner,inv_flag = get_wigner_so(symop_cart)
-#        print(inv_flag)
     else:
         wigner,inv_flag = get_wigner(symop_cart)
         # convert the wigner_d into chemistry form for each symop
         wigner = convert_wigner_d(wigner)
 
     # get phase shifts from rotation symop
-    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom,sym_TR,inv_flag)
-
+    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom)
 
     # build U and U_inv from blocks
     if spin_orb:
@@ -832,19 +828,10 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     # combine U_wyc and U
     U = add_U_wyc(U,U_wyc)
-        
-
-    for isym in range(symop.shape[0]):
-        if sym_TR[isym]:
-            symop[isym]*=-1
-            if inv_flag[isym]:
-                inv_flag[isym]=False
-            else:
-                inv_flag[isym]=True
 
     # get index of k in wedge, index in full grid, 
     # and index of symop that transforms k to k'        
-    new_k_ind,orig_k_ind,si_per_k = find_equiv_k(kp,symop,full_grid,sym_shift,check=True)
+    new_k_ind,orig_k_ind,si_per_k = find_equiv_k(kp,symop,full_grid,sym_TR,check=True)
 
     # transform H(k) -> H(k')
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
