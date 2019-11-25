@@ -95,30 +95,6 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
 ############################################################################################
 ############################################################################################
 ############################################################################################
-            
-def invert_atom_pos_map(pos,equiv_atom,sym_TR):
-    # finds mapping of atomic positions for inversion
-    
-    for isym in range(sym_TR.shape[0]):
-
-        if not sym_TR[isym]:
-            new_pos=pos
-        else:
-            new_pos=(-pos)%1.0
-
-        remap_key=np.zeros(pos.shape[0],dtype=int)
-        for j in range(pos.shape[0]):
-            for k in range(new_pos.shape[0]):
-                if np.all(np.isclose(pos[j],new_pos[k],rtol=1e-4,atol=1e-4,)):
-                    remap_key[j] = k
-
-        equiv_atom[isym] = equiv_atom[isym][remap_key]
-
-    return equiv_atom
-
-############################################################################################
-############################################################################################
-############################################################################################
 
 def map_equiv_atoms(a_index,map_ind):
     # generate unitary tranformation for swapping
@@ -496,11 +472,6 @@ def find_equiv_k(kp,symop,full_grid,sym_TR,check=True):
 def build_U_matrix(wigner,shells):
     # builds U from blocks 
     
-    # if spin_orb:
-    #     nawf = int(np.sum(2*jchia+1)*2)
-    #     print(nawf)
-    #     raise SystemExit
-    # else:
     nawf = int(np.sum(2*shells+1))
 
     U=np.zeros((wigner[0].shape[0],nawf,nawf),dtype=complex)
@@ -602,6 +573,7 @@ def read_shell ( workpath,savedir,species,atoms,spin_orb=False):
     sdict = {}
     jchid = {}
     jchia = None
+
     for s in species:
       sdict[s[0]],jchid[s[0]] = read_pseudopotential(join(workpath,savedir,s[1]))
 
@@ -670,7 +642,7 @@ def read_pseudopotential ( fpp ):
               for i in elem.findall("PP_PSWFC/"):
                   sh.append(int(i.attrib['l']))
           except Exception as e:
-              print(e)    
+              pass
           for i in elem.findall("PP_SPIN_ORB/"):
               try:
                   jchi.append(float(i.attrib["jchi"]))
@@ -680,7 +652,7 @@ def read_pseudopotential ( fpp ):
       sh   = np.array(sh)
 
   except Exception as e:
-      print(e)
+
       with open(fpp) as ifo:
           ifs=ifo.read()
       res=re.findall("(.*)\s*Wavefunction",ifs)[1:]      
@@ -723,6 +695,7 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
 ############################################################################################
 
 def apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia):
+    # apply time reversal operator to get H(-k) from H(k)
 
     new_kp_list=[]
     new_Hk_list=[]
@@ -748,7 +721,19 @@ def apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia):
 ############################################################################################
 ############################################################################################
 
+def enforce_hermaticity(Hksp):
+    # enforce H(k) to be hermitian (it should be already)
+    for k in range(Hksp.shape[0]):
+        Hksp[k] = (Hksp[k] + np.conj(Hksp[k].T))/2.0
+
+    return Hksp
+
+############################################################################################
+############################################################################################
+############################################################################################
+
 def add_U_wyc(U,U_wyc):
+    # add operator that shifts orbital from one equivalent site to another
     for isym in range(U.shape[0]):
         U[isym]=U_wyc[isym] @ U[isym]
 
@@ -800,6 +785,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 
 def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc):
+    # calculates full H(k) grid from wedge
 
     nawf = Hksp.shape[1]
 
@@ -848,16 +834,19 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR)
 
+    # make sure of hermiticity of each H(k)
+    Hksp = enforce_hermaticity(Hksp)
+
     # enforce time reversion where appropriate
     if not (spin_orb and mag_calc):
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
     # for debugging purposes
-#    try:
-#        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-#              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
-#    except: pass
-#    raise SystemExit
+    try:
+         check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
+    except: pass
+ 
     return Hksp
 
 ############################################################################################
@@ -865,8 +854,8 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 ############################################################################################
 
 def open_grid_wrapper(data_controller):
-#    np.set_printoptions(precision=2,suppress=True,linewidth=200)
-
+    # wrapper function to unload everything from
+    # data controller and do a few conversions
 
     data_arrays = data_controller.data_arrays
     data_attr   = data_controller.data_attributes
@@ -910,8 +899,9 @@ def open_grid_wrapper(data_controller):
     # convert k points from cartesian to crystal fractional
     conv = LA.inv(b_vectors)
     conv = correct_roundoff(conv)
-    kp_red =  kp_red @ conv
-    kp_red=correct_roundoff(kp_red)
+    kp_red = kp_red @ conv
+    kp_red = correct_roundoff(kp_red)
+
 
     # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)

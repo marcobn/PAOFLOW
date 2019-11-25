@@ -351,7 +351,7 @@ def read_new_QE_output_xml ( data_controller ):
     data_attributes['dftMAG'] = dftMAG
     data_arrays['tau'] = tau
     data_arrays['atoms'] = atoms
-    data_arrays['species'] = zip(species,pseudos)
+    data_arrays['species'] = [[species[i],pseudos[i]] for i in range(len(species))]
     data_arrays['kpnts'] = kpnts
     data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors

@@ -16,36 +16,39 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def read_sh_nl ( data_controller ):
-  '''
-  Determines the shell configuration for based on the referenced QE .save directory
+def read_sh_nl (data_controller):
+    # reads in shelks from pseudo files
+    from os.path import join,exists
+    import numpy as np
 
-  Arguments:
-      data_controller (DataController) - The DataController being initialized to the referenced .save directory
 
-  Returns:
-      sh, nl (lists) - sh is a list of orbitals (s-0, p-1, d-2, etc)
-                       nl is a list of occupations at each site
-      sh and nl are representative of the entire system
-  '''
-  from os.path import join,exists
+#    arry,attr = data_controller.data_dicts()
+    arry = data_controller.data_arrays
+    attr = data_controller.data_attributes
+ 
+    # Get Shells for each species
+    sdict = {}
+    for s in arry['species']:
+      sdict[s[0]] = read_pseudopotential(join(attr['workpath'],attr['savedir'],s[1]))
 
-  arry,attr = data_controller.data_dicts()
+    for s,p in sdict.items():
+        tmp_list=[]
+        for o in p:
+            tmp_list.append(o)
+            # if l=0 include it twice
+            if o==0:
+                tmp_list.append(o)
 
-  # Get Shells for each species
-  sdict = {}
-  for s in arry['species']:
-    sdict[s[0]] = read_pseudopotential(join(attr['workpath'],attr['savedir'],s[1]))
+        sdict[s] = np.array(tmp_list)
 
-  # Concatenate shells for each atom
-  sh = []
-  nl = []
-  for a in arry['atoms']:
-    sh += sdict[a][0]
-    nl += sdict[a][1]
+    # value of l
+    shell   = np.hstack([sdict[a] for a in arry['atoms']])
 
-  return(sh, nl)
+    return shell[::2],np.ones(shell.shape[0],dtype=int)
 
+############################################################################################
+############################################################################################
+############################################################################################
 
 def read_pseudopotential ( fpp ):
   '''
@@ -60,30 +63,40 @@ def read_pseudopotential ( fpp ):
       sh and nl are representative of one atom only
   '''
 
+  import numpy as np
+  import xml.etree.cElementTree as ET
+  import re
+  from tempfile import NamedTemporaryFile
+
   sh = []
-  nl = []
+ 
+  # clean xnl before reading
+  with open(fpp) as ifo:
+      temp_str=ifo.read()
 
-  with open(fpp,'r') as f:
+  temp_str = re.sub('&',' ',temp_str)
+  f = NamedTemporaryFile(mode='w',delete=True)
+  f.write(temp_str)
 
-    ln = 0
-    lines = f.readlines()
+  try:
+      iterator_obj = ET.iterparse(f.name,events=('start','end'))
+      iterator     = iter(iterator_obj)
+      event,root   = next(iterator)
 
-    # Walk to Valence Configuration
-    while 'Valence configuration:' not in lines[ln]:
-      ln += 1
+      for event,elem in iterator:        
+          try:
+              for i in elem.findall("PP_PSWFC/"):
+                  sh.append(int(i.attrib['l']))
+          except Exception as e:
+              pass
 
-    # Reference Line is the first line of valence data
-    ln = ln+2
+      sh   = np.array(sh)
 
-    get_ql = lambda l : int(lines[l].split()[2])
+  except Exception as e:
+      with open(fpp) as ifo:
+          ifs=ifo.read()
+      res=re.findall("(.*)\s*Wavefunction",ifs)[1:]      
+      sh=np.array(list(map(int,list([x.split()[1] for x in res]))))
 
-    prev = None
-    while 'Generation' not in lines[ln]:
-      ql = get_ql(ln)
-      if ql != prev:
-        prev = ql
-        sh.append(ql)
-        nl.append(1)
-      ln += 1
+  return sh
 
-  return(sh, nl)
