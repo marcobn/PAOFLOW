@@ -75,15 +75,25 @@ def read_pseudopotential ( fpp ):
     # Reference Line is the first line of valence data
     ln = ln+2
 
-    get_ql = lambda l : int(lines[l].split()[2])
-
+    mcnt = 1
     prev = None
+    prevN = None
     while 'Generation' not in lines[ln]:
-      ql = get_ql(ln)
+      ls = lines[ln].split()
+      ql = int(ls[2])
+      n,s = ls[0][0],ls[0][1]
+      if ql != prev and n != prevN:
+        prevN = n
       if ql != prev:
+        mcnt = 1
         prev = ql
         sh.append(ql)
-        nl.append(1)
+        nl.append(mcnt)
+      elif n != prevN:
+        mcnt += 1
+        sh.pop(),nl.pop()
+        sh.append(ql)
+        nl.append(mcnt)
       ln += 1
 
   return(sh, nl)
