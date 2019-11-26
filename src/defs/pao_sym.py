@@ -924,7 +924,7 @@ def open_grid_wrapper(data_controller):
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
 
-    np.save("kham.npy",Hksp_temp)
+
     data_arrays['Hks']=Hksp_temp
 
 ############################################################################################
