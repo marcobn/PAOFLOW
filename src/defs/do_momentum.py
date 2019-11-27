@@ -18,6 +18,7 @@
 
 def do_momentum ( data_controller ):
   import numpy as np
+  from .perturb_split import perturb_split
 
   arry,attr = data_controller.data_dicts()
 
@@ -25,14 +26,19 @@ def do_momentum ( data_controller ):
 
   arry['pksp'] = np.zeros_like(arry['dHksp'])
 
+  # for ispin in range(nspin):
+  #   for ik in range(nktot):
+  #     for l in range(3):
+  #       arry['pksp'][ik,l,:,:,ispin] = arry['dHksp'][ik,l,:,:,ispin].dot(arry['v_k'][ik,:,:,ispin])
+
+  # vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arry['v_k'],1,2)))
+
   for ispin in range(nspin):
     for ik in range(nktot):
       for l in range(3):
-        arry['pksp'][ik,l,:,:,ispin] = arry['dHksp'][ik,l,:,:,ispin].dot(arry['v_k'][ik,:,:,ispin])
+  #       arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])
 
-  vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arry['v_k'],1,2)))
-
-  for ispin in range(nspin):
-    for ik in range(nktot):
-      for l in range(3):
-        arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])
+         arry['pksp'][ik,l,:,:,ispin],_ = perturb_split(arry['dHksp'][ik,l,:,:,ispin], 
+                                                        arry['dHksp'][ik,l,:,:,ispin], 
+                                                        arry['v_k'][ik,:,:,ispin],
+                                                        arry['degen'][ispin][ik])
