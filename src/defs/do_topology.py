@@ -86,7 +86,7 @@ def do_topology ( data_controller ):
     E_ktrim,v_ktrim = do_eigh_calc(HRs, SRs, ktrim, arrays['R'], non_ortho)
 
     # Define time reversal operator
-    theta = -1.0j*clebsch_gordan(nawf, arrays['sh'], arrays['nl'], 1)
+    theta = -1.0j*clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], 1)
 
     nkt = nktrim // 2
 

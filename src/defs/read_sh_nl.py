@@ -34,11 +34,28 @@ def read_sh_nl (data_controller):
     for s in arry['species']:
       sdict[s[0]],jchid[s[0]] = read_pseudopotential(join(attr['workpath'],attr['savedir'],s[1]))
 
+
+    for s,p in sdict.items():
+        tmp_list=[]
+        tmp_list_chi=[]
+        for o in range(len(p)):
+            tmp_list_chi.append(jchid[s][o])
+            tmp_list.append(p[o])
+            # if l=0 include it twice
+            if p[o]==0:
+                tmp_list_chi.append(jchid[s][o])
+                tmp_list.append(p[o])
+
+        sdict[s] = np.array(tmp_list)
+        jchid[s] = np.array(tmp_list_chi)
+
+
+
     # value of l
     shell   = np.hstack([sdict[a] for a in arry['atoms']])
     jchia   = np.hstack([jchid[a] for a in arry['atoms']])
 
-    return shell,jchia
+    return shell[::2],jchia[::2]
 
 ############################################################################################
 ############################################################################################

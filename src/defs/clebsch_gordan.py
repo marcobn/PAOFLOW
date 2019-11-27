@@ -120,19 +120,15 @@ def clebsch_gordan ( nawf, sh_l, sh_j, spol ):
 
   Ul = [Ul0,Ul1,Ul2,Ul3]
 
-
   Ul1_alt=np.roll(np.roll(Ul1,-2,axis=0),-2,axis=1)
   Ul2_alt=np.roll(np.roll(Ul2,-4,axis=0),-4,axis=1)
   Ul3_alt=np.roll(np.roll(Ul3,-6,axis=0),-6,axis=1)
 
-  Ul = [Ul0,Ul1_alt,Ul2_alt,Ul3_alt]  
+  Ul_alt = [Ul0,Ul1_alt,Ul2_alt,Ul3_alt]  
 
   # Build the full transformation matrix
 
   occ = [2,6,10,14]
-
-  sh = np.asarray(sh)
-
 
   ntot = 0
   for n in range(len(sh_l)):
@@ -143,6 +139,20 @@ def clebsch_gordan ( nawf, sh_l, sh_j, spol ):
   Tn = np.zeros((ntot,ntot), dtype=float)
 
   
+  n = 0
+  for l in range(len(sh_l)):
+    if sh_l[l]==0:
+      Tn[n:n+occ[sh_l[l]],n:n+occ[sh_l[l]]] = Ul[sh_l[l]]
+    else:
+      if (sh_l[l]-sh_j[l])>0.0:
+        # the case when j are sorted in ascending order in the pseudo
+        Tn[n:n+occ[sh_l[l]],n:n+occ[sh_l[l]]] = Ul[sh_l[l]]
+      else:
+        # the case when j are sorted in descending order in the pseudo
+        Tn[n:n+occ[sh_l[l]],n:n+occ[sh_l[l]]] = Ul_alt[sh_l[l]]
+
+    n += occ[sh_l[l]]
+
   # Pauli matrices (x,y,z) 
   sP=0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
 
