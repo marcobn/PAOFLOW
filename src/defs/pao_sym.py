@@ -859,12 +859,17 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     if not (spin_orb and mag_calc):
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
+
+    Hksp = symmetrize_grid(Hksp,U,a_index,equiv_atom,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,atom_pos)
+
+#    raise SystemExit    
+
     # for debugging purposes
     try:
          check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
               a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
     except: pass
- 
+
     return Hksp
 
 ############################################################################################
@@ -941,10 +946,98 @@ def open_grid_wrapper(data_controller):
 
 
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
-
-
+ 
+    np.save("kham.npy",Hksp_temp)
+#    np.save("Hksp.npy",Hksp_temp)
     data_arrays['Hks']=Hksp_temp
 
 ############################################################################################
 ############################################################################################
 ############################################################################################
+
+def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid):
+    # generates full grid from k points in IBZ
+    nawf     = Hksp.shape[1]
+    Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
+
+    for j in range(new_k_ind.shape[0]):
+        isym = si_per_k[j]
+        oki  = orig_k_ind[j]
+        nki  = new_k_ind[j]
+
+        # if symop is identity
+        if isym==0:
+            Hksp_s[j]=Hksp[nki]
+            continue
+
+        # other cases
+        H  = Hksp[nki]
+
+        # get k dependent U
+        U_k     = get_U_k(full_grid[nki],phase_shifts[isym],a_index,U[isym])
+
+        #transformated H(k)            
+        THP = U_k @ H @ np.conj(U_k.T)
+
+        # apply inversion operator if needed
+        if inv_flag[isym]:
+            THP*=U_inv
+
+        # time inversion is anti-unitary
+        if sym_TR[isym]:
+            THP*= U_inv
+            THP = np.conj(THP)
+
+        Hksp_s[j]=THP
+    
+    return Hksp_s
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+
+def symmetrize_grid(Hksp,U,a_index,equiv_atom,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,atom_pos):
+    np.set_printoptions(suppress=False,precision=3,linewidth=180)
+
+
+    symop_inv=np.zeros_like(symop)
+
+    for i in range(symop.shape[0]):
+        symop_inv[i]=LA.inv(symop[i])
+
+    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom)
+#    for i in range(100):
+    tl=[]
+
+    tmax=0.0
+    for t in range(8):
+        Hksp_d = np.zeros_like(Hksp)
+        for i in range(full_grid.shape[0]):
+            new_k_ind,orig_k_ind,si_per_k = find_equiv_k(full_grid[i][None],symop_inv,
+                                                         full_grid,sym_TR,check=False)
+
+
+
+            temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
+                              orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
+
+
+            Hksp_d[i]=np.sum(temp,axis=0)/temp.shape[0]
+
+
+        print(np.amax(np.abs(Hksp_d-Hksp)))
+        Hksp=Hksp_d
+
+    return Hksp
+
+#        Hksp[i]=temp
+#        print(Hksp_d[i][:3,:3])
+#        print()
+#        print(Hksp[i][:3,:3])
+#        print("*"*20)
+
+ 
+
+
+
