@@ -28,23 +28,17 @@ def read_sh_nl (data_controller):
  
     # Get Shells for each species
     sdict = {}
+    jchid = {}
+    jchia = None
+
     for s in arry['species']:
-      sdict[s[0]] = read_pseudopotential(join(attr['workpath'],attr['savedir'],s[1]))
-
-    for s,p in sdict.items():
-        tmp_list=[]
-        for o in p:
-            tmp_list.append(o)
-            # if l=0 include it twice
-            if o==0:
-                tmp_list.append(o)
-
-        sdict[s] = np.array(tmp_list)
+      sdict[s[0]],jchid[s[0]] = read_pseudopotential(join(attr['workpath'],attr['savedir'],s[1]))
 
     # value of l
     shell   = np.hstack([sdict[a] for a in arry['atoms']])
+    jchia   = np.hstack([jchid[a] for a in arry['atoms']])
 
-    return shell[::2],np.ones(shell.shape[0],dtype=int)
+    return shell,jchia
 
 ############################################################################################
 ############################################################################################
@@ -69,7 +63,8 @@ def read_pseudopotential ( fpp ):
   from tempfile import NamedTemporaryFile
 
   sh = []
- 
+  jchi=[]
+
   # clean xnl before reading
   with open(fpp) as ifo:
       temp_str=ifo.read()
@@ -98,5 +93,12 @@ def read_pseudopotential ( fpp ):
       res=re.findall("(.*)\s*Wavefunction",ifs)[1:]      
       sh=np.array(list(map(int,list([x.split()[1] for x in res]))))
 
-  return sh
+  for i in elem.findall("PP_SPIN_ORB/"):
+      try:
+          jchi.append(float(i.attrib["jchi"]))
+      except: pass
+
+  jchi = np.array(jchi)
+
+  return sh,jchi
 
