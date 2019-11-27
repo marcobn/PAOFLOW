@@ -526,7 +526,7 @@ class PAOFLOW:
 
 
 
-  def spin_operator ( self, spin_orbit=False, sh=None, nl=None):
+  def spin_operator ( self, spin_orbit=False, sh_l=None, sh_j=None):
     '''
     Calculate the Spin Operator for calculations involving spin
       Requires: None
@@ -545,13 +545,12 @@ class PAOFLOW:
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
-    if 'sh' not in arrays and 'nl' not in arrays:
-      if sh is None and nl is None:
+    if 'sh_l' not in arrays and 'sh_j' not in arrays:
+      if sh_l is None and sh_j is None:
         from .defs.read_sh_nl import read_sh_nl
-        arrays['sh'],arrays['nl'] = read_sh_nl(self.data_controller)
+        arrays['sh_l'],arrays['sh_j'] = read_sh_nl(self.data_controller)
       else:
-        arrays['sh'],arrays['nl'] = sh,nl
-
+        arrays['sh_l'],arrays['sh_j'] = sh_l,sh_j
     try:
       nawf = attr['nawf']
 
@@ -572,7 +571,7 @@ class PAOFLOW:
         from .defs.clebsch_gordan import clebsch_gordan
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
         for spol in range(3):
-          Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh'], arrays['nl'], spol)
+          Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
 
       arrays['Sj'] = Sj
     except:
