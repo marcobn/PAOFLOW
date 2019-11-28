@@ -516,7 +516,7 @@ def get_phase_shifts(atom_pos,symop,equiv_atom):
             p1 = equiv_atom[isym,p]            
             phase_shift[isym,p1] =  ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
 
-    return phase_shift
+    return correct_roundoff(phase_shift)
 
 ############################################################################################
 ############################################################################################
@@ -860,7 +860,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
 
-    Hksp = symmetrize_grid(Hksp,U,a_index,equiv_atom,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,atom_pos)
+#    Hksp = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
 
 #    raise SystemExit    
 
@@ -924,7 +924,7 @@ def open_grid_wrapper(data_controller):
     conv = correct_roundoff(conv)
     kp_red = kp_red @ conv
     kp_red = correct_roundoff(kp_red)
-
+    kp_red = np.around(kp_red,decimals=8)
 
     # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)
@@ -997,7 +997,7 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
 ############################################################################################
 
 
-def symmetrize_grid(Hksp,U,a_index,equiv_atom,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,atom_pos):
+def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3):
     np.set_printoptions(suppress=False,precision=3,linewidth=180)
 
 
@@ -1006,28 +1006,36 @@ def symmetrize_grid(Hksp,U,a_index,equiv_atom,kp,new_k_ind,orig_k_ind,si_per_k,i
     for i in range(symop.shape[0]):
         symop_inv[i]=LA.inv(symop[i])
 
-    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom)
-#    for i in range(100):
+
+
     tl=[]
 
-    tmax=0.0
-    for t in range(8):
-        Hksp_d = np.zeros_like(Hksp)
-        for i in range(full_grid.shape[0]):
-            new_k_ind,orig_k_ind,si_per_k = find_equiv_k(full_grid[i][None],symop_inv,
-                                                         full_grid,sym_TR,check=False)
 
+    nkl=[]
+    for i in range(full_grid.shape[0]):
+        print(i)
+        nkl.append(find_equiv_k(full_grid[i][None],symop_inv,full_grid,sym_TR,check=False))
+                                                     
+
+    for t in range(1):
+#        Hksp_d = np.zeros_like(Hksp)
+        Hksp_d=np.copy(Hksp)
+        for i in range(full_grid.shape[0]):
+
+            new_k_ind,orig_k_ind,si_per_k=nkl[i]
 
 
             temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
                               orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
 
+            Hksp[i]=np.sum(temp,axis=0)/temp.shape[0]
 
-            Hksp_d[i]=np.sum(temp,axis=0)/temp.shape[0]
-
+        # enforce time reversion where appropriate
+        if not (spin_orb and mag_calc):
+            Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
         print(np.amax(np.abs(Hksp_d-Hksp)))
-        Hksp=Hksp_d
+
 
     return Hksp
 
