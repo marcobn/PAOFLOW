@@ -1,4 +1,4 @@
-#
+
 # PAOFLOW
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
@@ -432,7 +432,7 @@ def mat2eul(R):
 ############################################################################################
 ############################################################################################
 
-def find_equiv_k(kp,symop,full_grid,sym_TR,check=True):
+def find_equiv_k(kp,symop,full_grid,sym_TR,check=True,include_self=False):
     # find indices and symops that generate full grid H from wedge H
     orig_k_ind = []
     new_k_ind = []
@@ -440,34 +440,41 @@ def find_equiv_k(kp,symop,full_grid,sym_TR,check=True):
     counter = 0
     kp_track = []
     kp = correct_roundoff(kp)
+    from scipy.spatial.distance import cdist
 
+    full_grid_mask = np.copy(full_grid)
 
-    for k in range(kp.shape[0]):
-        for isym in range(symop.shape[0]):
-            #transform k -> k' with the sym op
-            if sym_TR[isym]:
-                newk = ((((-symop[isym] @ (kp[k]%1.0))%1.0)+0.5)%1.0)-0.5
-            else:
-                newk = (((( symop[isym] @ (kp[k]%1.0))%1.0)+0.5)%1.0)-0.5
-            newk = correct_roundoff(newk)
-            newk[np.where(np.isclose(newk,0.5))]=-0.5
-            newk[np.where(np.isclose(newk,-1.0))]=0.0
-            newk[np.where(np.isclose(newk,1.0))]=0.0
-            
-            # find index in the full grid where this k -> k' with this sym op
-            nw = np.where(np.all(np.isclose(newk[None],full_grid,
-                                            atol=1.e-6,rtol=1.e-6,),axis=1))[0]
-                                            
-            if len(nw)==1:
-                if nw[0] not in new_k_ind:
-                    new_k_ind.append(nw[0])
-                    si_per_k.append(isym)
-                    orig_k_ind.append(k)
-                    counter+=1
+    for isym in range(symop.shape[0]):
+        #transform k -> k' with the sym op
+        if sym_TR[isym]:
+            newk = ((((-symop[isym] @ (kp.T%1.0))%1.0)+0.5)%1.0)-0.5
+        else:
+            newk = (((( symop[isym] @ (kp.T%1.0))%1.0)+0.5)%1.0)-0.5
+        newk = correct_roundoff(newk)
+        newk[np.where(np.isclose(newk,0.5))]=-0.5
+        newk[np.where(np.isclose(newk,-1.0))]=0.0
+        newk[np.where(np.isclose(newk,1.0))]=0.0
 
-    new_k_ind=np.array(new_k_ind)
-    orig_k_ind=np.array(orig_k_ind)
-    si_per_k=np.array(si_per_k)
+        # find index in the full grid where this k -> k' with this sym op
+        nw = np.where(np.isclose(cdist(newk.T,full_grid_mask),0.0,atol=1.e-6,rtol=1.e-6,))
+        if not include_self:
+            full_grid_mask[nw[1]]=np.ma.masked
+
+        new_k_ind.extend(nw[1].tolist())
+        si_per_k.extend([isym]*nw[1].shape[0])
+        orig_k_ind.extend(nw[0].tolist())
+
+    new_k_ind  = np.array(new_k_ind)
+    orig_k_ind = np.array(orig_k_ind)
+    si_per_k   = np.array(si_per_k)
+
+    if not include_self:
+        inds = np.unique(new_k_ind,return_index=True)
+
+        new_k_ind  = new_k_ind[inds[1]]
+        orig_k_ind = orig_k_ind[inds[1]]
+        si_per_k   = si_per_k[inds[1]]
+        counter=inds[1].shape[0]
 
     #check to make sure we have all the k points accounted for
     if counter!=full_grid.shape[0] and check:
@@ -486,6 +493,7 @@ def find_equiv_k(kp,symop,full_grid,sym_TR,check=True):
 ############################################################################################
 ############################################################################################
 ############################################################################################
+
 
 def build_U_matrix(wigner,shells):
     # builds U from blocks 
@@ -754,6 +762,7 @@ def add_U_wyc(U,U_wyc):
     # add operator that shifts orbital from one equivalent site to another
     for isym in range(U.shape[0]):
         U[isym]=U_wyc[isym] @ U[isym]
+        U[isym]=correct_roundoff(U[isym])
 
     return U
 
@@ -860,7 +869,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
 
-#    Hksp = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
+    Hksp = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
 
 #    raise SystemExit    
 
@@ -935,6 +944,9 @@ def open_grid_wrapper(data_controller):
                                       spin_orb=spin_orb)
 
 
+
+
+    
     # expand grid from wedge
     Hksp_temp=np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
     for ispin in range(nspin):
@@ -944,13 +956,14 @@ def open_grid_wrapper(data_controller):
                          shells,a_index,equiv_atom,sym_info,sym_shift,
                          nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc)
 
-
         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
  
-    np.save("kham.npy",Hksp_temp)
-#    np.save("Hksp.npy",Hksp_temp)
-    data_arrays['Hks']=Hksp_temp
 
+
+    data_arrays['Hks']=Hksp_temp
+    
+    np.save("Hksp.npy",Hksp_temp)
+    
 ############################################################################################
 ############################################################################################
 ############################################################################################
@@ -1006,46 +1019,135 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
     for i in range(symop.shape[0]):
         symop_inv[i]=LA.inv(symop[i])
 
-
-
     tl=[]
-
-
     nkl=[]
     for i in range(full_grid.shape[0]):
-        print(i)
-        nkl.append(find_equiv_k(full_grid[i][None],symop_inv,full_grid,sym_TR,check=False))
+        nkl.append(find_equiv_k(full_grid[i][None],symop_inv,full_grid,sym_TR,check=False,include_self=True))
                                                      
-
-    for t in range(1):
-#        Hksp_d = np.zeros_like(Hksp)
-        Hksp_d=np.copy(Hksp)
+    for t in range(16):
+        tmax=[]
         for i in range(full_grid.shape[0]):
-
             new_k_ind,orig_k_ind,si_per_k=nkl[i]
-
 
             temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
                               orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
 
+            tmax.append(np.amax(np.abs(temp[0][None]-temp)))
             Hksp[i]=np.sum(temp,axis=0)/temp.shape[0]
 
         # enforce time reversion where appropriate
         if not (spin_orb and mag_calc):
             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
-        print(np.amax(np.abs(Hksp_d-Hksp)))
+        print(np.amax(tmax))
 
 
-    return Hksp
+    return Hksp 
 
-#        Hksp[i]=temp
-#        print(Hksp_d[i][:3,:3])
-#        print()
-#        print(Hksp[i][:3,:3])
-#        print("*"*20)
 
+def full_to_wedge(full_grid,symop,sym_TR,Hksp):
+    # find indices and symops that generate full grid H from wedge H
+    w_list = []
+    f_list = []
+
+
+    full_grid_mask=np.copy(full_grid)
+
+
+    for k in range(full_grid.shape[0]):
+#        if k in f_list:
+#            continue
+        for isym in range(symop.shape[0]):
+
+            #transform k -> k' with the sym op
+            if sym_TR[isym]:
+                newk = ((((-symop[isym] @ (full_grid[k]%1.0))%1.0)+0.5)%1.0)-0.5
+            else:
+                newk = (((( symop[isym] @ (full_grid[k]%1.0))%1.0)+0.5)%1.0)-0.5
+            newk = correct_roundoff(newk)
+            newk[np.where(np.isclose(newk,0.5))]=-0.5
+            newk[np.where(np.isclose(newk,-1.0))]=0.0
+            newk[np.where(np.isclose(newk,1.0))]=0.0
+
+            # find index in the full grid where this k -> k' with this sym op
+            nw = np.where(np.all(np.isclose(newk[None],full_grid_mask,
+                                            atol=1.e-6,rtol=1.e-6,),axis=1))[0]
+                                            
+            if len(nw)==1:
+                w_list.append(k)
+                if nw[0]!=k:
+                    full_grid_mask[nw[0]]=np.ma.masked
+                    f_list.append(nw[0])
+                    
+
+    w_list=np.unique(w_list)
+    print(w_list.shape)
+    return Hksp[w_list],full_grid[w_list]
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+
+    
+#     np.save("Hksp.npy",Hksp_temp)
+#     return
+#     data_arrays['Hks']=Hksp_temp
+#     from .do_double_grid import do_double_grid
+#     data_arrays['HRs']=np.fft.ifftn(np.reshape(Hksp_temp,(nawf,nawf,nk1,nk2,nk3,nspin)),axes=(2,3,4))
+
+#     nfft1=nk1*2
+#     nfft2=nk2*2
+#     nfft3=nk3*2
+#     data_attr["nfft1"]=nfft1
+#     data_attr["nfft2"]=nfft2
+#     data_attr["nfft3"]=nfft3
+#     do_double_grid ( data_controller )
+#     Hksp=data_arrays['Hksp']
+#     Hksp=np.reshape(Hksp,(nawf,nawf,nfft1*nfft2*nfft3,nspin))
+#     Hksp=np.transpose(Hksp,axes=(2,0,1,3))
+#     full_grid = get_full_grid(nfft1,nfft2,nfft3)
+#     print(full_grid.shape)
+#     Hks,kp_red =full_to_wedge(full_grid,symop,sym_TR,Hksp)
+#     print(Hksp.shape)
+#     print(kp_red.shape)
+
+#     # expand grid from wedge
+#     Hksp_temp=np.zeros((nawf,nawf,nfft1*nfft2*nfft3,nspin),dtype=complex)
+#     for ispin in range(nspin):
+# #        Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
+#         Hksp = np.ascontiguousarray(Hks[:,:,:,ispin])
+#         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
+#                          shells,a_index,equiv_atom,sym_info,sym_shift,
+#                          nfft1,nfft2,nfft3,spin_orb,sym_TR,jchia,mag_calc)
+
+#         Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
  
+#     np.save("kham.npy",Hksp_temp)
+#     HR=np.fft.ifftn(np.reshape(Hksp_temp,(nawf,nawf,nfft1,nfft2,nfft3,nspin)),axes=(2,3,4))
+    
+#     Hksp_temp=np.fft.fftn(HR,axes=(2,3,4))
+#     print(Hksp_temp.shape)
+#     from scipy.signal import resample
 
 
 
+
+
+
+# #
+#     data_attr["nk1"]=nfft1
+#     data_attr["nk2"]=nfft2
+#     data_attr["nk3"]=nfft3
+#     data_attr["nfft1"]=nfft1
+#     data_attr["nfft2"]=nfft2
+#     data_attr["nfft3"]=nfft3
+#     data_arrays['Hks']=Hksp_temp
+#     np.save("kham.npy",Hksp_temp)    
+#     # data_attr["nfft1"]=nk1
+#     # data_attr["nfft2"]=nk2
+#     # data_attr["nfft3"]=nk3
+#     # do_double_grid ( data_controller )
+#     # Hksp=data_arrays['Hksp']
+#     # Hksp=np.reshape(Hksp,(nawf,nawf,nk1*nk2*nk3,nspin))
+    
