@@ -529,7 +529,7 @@ def get_phase_shifts(atom_pos,symop,equiv_atom):
             p1 = equiv_atom[isym,p]            
             phase_shift[isym,p1] =  ( symop[isym].T @ atom_pos[p])-atom_pos[p1]
 
-    return correct_roundoff(phase_shift)
+    return correct_roundoff(np.around(phase_shift,decimals=2))
 
 ############################################################################################
 ############################################################################################
@@ -701,21 +701,24 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
     nawf=Hksp_s.shape[1]
     
     Hksp_s= np.reshape(Hksp_s,(nk1,nk2,nk3,nawf,nawf))
-    Hksp_g=np.copy(Hksp_s)
 
     if spin_orb:
         U_TR = get_U_TR(jchia)
 
-    for i in range(nk1):
-        for j in range(nk2):
-            for k in range(nk3):
+    for i in range(int(nk1/2)+1):
+        for j in range(int(nk2/2)+1):
+            for k in range(int(nk3/2)+1):
                 iv= (nk1-i)%nk1
                 jv= (nk2-j)%nk2
                 kv= (nk3-k)%nk3
                 if not spin_orb:
-                    Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(Hksp_g[iv,jv,kv]))/2.0
+                    temp1 = (Hksp_s[i,j,k]+np.conj(Hksp_s[iv,jv,kv]))/2.0
+                    Hksp_s[iv,jv,kv] = (Hksp_s[iv,jv,kv]+np.conj(Hksp_s[i,j,k]))/2.0                    
                 else:
-                    Hksp_s[i,j,k] = (Hksp_g[i,j,k]+np.conj(U_inv*(U_TR @ Hksp_g[iv,jv,kv] @ np.conj(U_TR.T))))/2.0
+                    temp1 = (Hksp_s[i,j,k]+np.conj(U_inv*(U_TR @ Hksp_s[iv,jv,kv] @ np.conj(U_TR.T))))/2.0
+                    Hksp_s[iv,jv,kv] = (Hksp_s[iv,jv,kv]+np.conj(U_inv*(U_TR @ Hksp_s[i,j,k] @ np.conj(U_TR.T))))/2.0
+
+                Hksp_s[i,j,k] = temp1
 
     Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf))
     
@@ -767,7 +770,7 @@ def add_U_wyc(U,U_wyc):
     # add operator that shifts orbital from one equivalent site to another
     for isym in range(U.shape[0]):
         U[isym]=U_wyc[isym] @ U[isym]
-        U[isym]=correct_roundoff(U[isym])
+#        U[isym]=correct_roundoff(U[isym])
 
     return U
 
@@ -778,12 +781,20 @@ def add_U_wyc(U,U_wyc):
 def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR):
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
+
+    fgm        = scatter_full(np.arange(si_per_k.shape[0],dtype=int),1)
+    new_k_ind  = scatter_full(new_k_ind,1)
+    orig_k_ind = scatter_full(orig_k_ind,1)
+    si_per_k   = scatter_full(si_per_k,1)
+
+
     Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
 
     for j in range(new_k_ind.shape[0]):
         isym = si_per_k[j]
         oki  = orig_k_ind[j]
-        nki  = new_k_ind[j]
+        nki  = np.where(new_k_ind[j]==fgm)[0]
+        
 
         # if symop is identity
         if isym==0:
@@ -809,7 +820,10 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
             THP = np.conj(THP)
 
         Hksp_s[nki]=THP
-    
+
+    Hksp = None
+    Hksp_s = gather_full(Hksp_s,1)
+
     return Hksp_s
 
 ############################################################################################
@@ -846,7 +860,6 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     else:
         U = build_U_matrix(wigner,shells)
 
-
     # if any symop involve time inversion add the TR to the symop
     if np.any(sym_TR):
         U = add_U_TR(U,sym_TR,jchia)
@@ -866,20 +879,18 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR)
 
-    # make sure of hermiticity of each H(k)
-    Hksp = enforce_hermaticity(Hksp)
+    if rank==0:
+        # make sure of hermiticity of each H(k)
+        Hksp = enforce_hermaticity(Hksp)
+        # enforce time reversion where appropriate
+        if not (spin_orb and mag_calc):
+            Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+    else:
+        Hksp=np.zeros((full_grid.shape[0],nawf,nawf),dtype=complex)
 
-    # enforce time reversion where appropriate
-    if not (spin_orb and mag_calc):
-        Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
-
-
-
-    comm.Barrier()
+    comm.Bcast(Hksp)
 
     Hksp = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
-
-
 
     # for debugging purposes
     try:
@@ -916,8 +927,8 @@ def open_grid_wrapper(data_controller):
     sym_shift   = data_arrays['sym_shift']
     symop       = data_arrays['sym_rot']
     sym_TR      = data_arrays['sym_TR']
-    a_vectors   = correct_roundoff(a_vectors)
-    b_vectors   = correct_roundoff(b_vectors)
+    a_vectors   = a_vectors
+    b_vectors   = b_vectors
     nspin       = Hks.shape[3]
     nawf        = Hks.shape[0]
 
@@ -935,13 +946,11 @@ def open_grid_wrapper(data_controller):
     symop_cart = correct_roundoff(symop_cart)
 
 
-
     # convert k points from cartesian to crystal fractional
     conv = LA.inv(b_vectors)
     conv = correct_roundoff(conv)
     kp_red = kp_red @ conv
     kp_red = correct_roundoff(kp_red)
-    kp_red = np.around(kp_red,decimals=8)
 
     # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)
@@ -952,11 +961,16 @@ def open_grid_wrapper(data_controller):
                                       spin_orb=spin_orb)
 
 
+    # correct small differences due to conversion
+#    kp_red = correct_kp(kp_red,full_grid)
 
+    # we wont need this for now
+    if rank==0:
+        data_arrays['Hks'] = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+    else:
+        data_arrays['Hks']=None
 
-    
     # expand grid from wedge
-    Hksp_temp=np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
     for ispin in range(nspin):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
 
@@ -964,14 +978,13 @@ def open_grid_wrapper(data_controller):
                          shells,a_index,equiv_atom,sym_info,sym_shift,
                          nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc)
 
-        Hksp_temp[:,:,:,ispin] = np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
- 
-
-
-    data_arrays['Hks']=Hksp_temp
+        if rank==0:
+            data_arrays['Hks'][:,:,:,ispin]=np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
+            np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
+        else:
+            Hksp=None
     
-#    np.save("Hksp.npy",Hksp_temp)
-    
+
 ############################################################################################
 ############################################################################################
 ############################################################################################
@@ -1026,7 +1039,6 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
     for i in range(symop.shape[0]):
         symop_inv[i]=LA.inv(symop[i])
 
-    tl=[]
     nkl=[]
 
     partial_grid = scatter_full(full_grid,1)
@@ -1052,20 +1064,25 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
         
         if rank==0:
             Hksp=gather_full(Hksp_d,1)
+            Hksp = enforce_hermaticity(Hksp)
             # enforce time reversion where appropriate
             if not (spin_orb and mag_calc):
                 Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+
         else:
             gather_full(Hksp_d,1)
 
         comm.Bcast(Hksp)
 
-        comm.reduce(np.amax(np.array(tmax)),op=MPI.MAX)
+        TMAX=np.zeros(1)
+        comm.Allreduce(np.amax(np.array(tmax)),TMAX,op=MPI.MAX)
 
-        if np.abs(np.amax(tmax)-prev_tmax)<1.e-14:            
+        if rank==0:
+            print(np.amax(TMAX))
+        if np.abs(np.amax(TMAX)-prev_tmax)<1.e-14:            
             break
         else:
-            prev_tmax=np.amax(tmax)
+            prev_tmax=np.amax(TMAX)
 
     return Hksp 
 
