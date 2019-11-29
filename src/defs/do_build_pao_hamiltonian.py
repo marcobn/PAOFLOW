@@ -125,11 +125,11 @@ def do_build_pao_hamiltonian ( data_controller ):
   arry,attr = data_controller.data_dicts()
 
   ashape = (attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin'])
-
   
   arry['Hks'] = build_Hks(data_controller)
 
   open_grid_wrapper(data_controller)
+
   if rank != 0:
     return
 

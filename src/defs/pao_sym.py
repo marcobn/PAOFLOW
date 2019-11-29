@@ -879,7 +879,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     Hksp = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
 
-#    raise SystemExit    
+
 
     # for debugging purposes
     try:
@@ -970,7 +970,7 @@ def open_grid_wrapper(data_controller):
 
     data_arrays['Hks']=Hksp_temp
     
-    np.save("Hksp.npy",Hksp_temp)
+#    np.save("Hksp.npy",Hksp_temp)
     
 ############################################################################################
 ############################################################################################
@@ -1017,10 +1017,9 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
 ############################################################################################
 ############################################################################################
 
-
 def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3):
-    np.set_printoptions(suppress=False,precision=3,linewidth=180)
 
+    max_iter=16
 
     symop_inv=np.zeros_like(symop)
 
@@ -1039,7 +1038,8 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
 
     Hksp_d = np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[1]),dtype=complex)
 
-    for t in range(16):
+    prev_tmax=999
+    for t in range(max_iter):
         tmax=[]
         for i in range(partial_grid.shape[0]):
             new_k_ind,orig_k_ind,si_per_k=nkl[i]
@@ -1060,56 +1060,60 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
 
         comm.Bcast(Hksp)
 
-        comm.reduce(np.amax(tmax),op=MPI.MAX)
-        if rank==0:
-            print(np.amax(tmax))
+        comm.reduce(np.amax(np.array(tmax)),op=MPI.MAX)
 
+        if np.abs(np.amax(tmax)-prev_tmax)<1.e-14:            
+            break
+        else:
+            prev_tmax=np.amax(tmax)
 
     return Hksp 
 
+############################################################################################
+############################################################################################
+############################################################################################
 
-def full_to_wedge(full_grid,symop,sym_TR,Hksp):
-    # find indices and symops that generate full grid H from wedge H
-    w_list = []
-    f_list = []
+# def full_to_wedge(full_grid,symop,sym_TR,Hksp):
+#     # find indices and symops that generate full grid H from wedge H
+#     w_list = []
+#     f_list = []
 
 
-    full_grid_mask=np.copy(full_grid)
+#     full_grid_mask=np.copy(full_grid)
 
 
-    for k in range(full_grid.shape[0]):
-#        if k in f_list:
-#            continue
-        for isym in range(symop.shape[0]):
+#     for k in range(full_grid.shape[0]):
 
-            #transform k -> k' with the sym op
-            if sym_TR[isym]:
-                newk = ((((-symop[isym] @ (full_grid[k]%1.0))%1.0)+0.5)%1.0)-0.5
-            else:
-                newk = (((( symop[isym] @ (full_grid[k]%1.0))%1.0)+0.5)%1.0)-0.5
-            newk = correct_roundoff(newk)
-            newk[np.where(np.isclose(newk,0.5))]=-0.5
-            newk[np.where(np.isclose(newk,-1.0))]=0.0
-            newk[np.where(np.isclose(newk,1.0))]=0.0
+#         for isym in range(symop.shape[0]):
 
-            # find index in the full grid where this k -> k' with this sym op
-            nw = np.where(np.all(np.isclose(newk[None],full_grid_mask,
-                                            atol=1.e-6,rtol=1.e-6,),axis=1))[0]
+#             #transform k -> k' with the sym op
+#             if sym_TR[isym]:
+#                 newk = ((((-symop[isym] @ (full_grid[k]%1.0))%1.0)+0.5)%1.0)-0.5
+#             else:
+#                 newk = (((( symop[isym] @ (full_grid[k]%1.0))%1.0)+0.5)%1.0)-0.5
+#             newk = correct_roundoff(newk)
+#             newk[np.where(np.isclose(newk,0.5))]=-0.5
+#             newk[np.where(np.isclose(newk,-1.0))]=0.0
+#             newk[np.where(np.isclose(newk,1.0))]=0.0
+
+#             # find index in the full grid where this k -> k' with this sym op
+#             nw = np.where(np.all(np.isclose(newk[None],full_grid_mask,
+#                                             atol=1.e-6,rtol=1.e-6,),axis=1))[0]
                                             
-            if len(nw)==1:
-                w_list.append(k)
-                if nw[0]!=k:
-                    full_grid_mask[nw[0]]=np.ma.masked
-                    f_list.append(nw[0])
+#             if len(nw)==1:
+#                 w_list.append(k)
+#                 if nw[0]!=k:
+#                     full_grid_mask[nw[0]]=np.ma.masked
+#                     f_list.append(nw[0])
                     
 
-    w_list=np.unique(w_list)
-    print(w_list.shape)
-    return Hksp[w_list],full_grid[w_list]
+#     w_list=np.unique(w_list)
+#     print(w_list.shape)
+#     return Hksp[w_list],full_grid[w_list]
 
-############################################################################################
-############################################################################################
-############################################################################################
+# ############################################################################################
+# ############################################################################################
+# ############################################################################################
 
 
     
