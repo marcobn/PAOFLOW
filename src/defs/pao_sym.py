@@ -21,6 +21,11 @@ import scipy.linalg as LA
 from scipy.special import factorial as fac
 from tempfile import NamedTemporaryFile
 import re
+from .communication import scatter_full, gather_full
+
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 
 def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl,sym_TR):
@@ -869,6 +874,9 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
 
+
+    comm.Barrier()
+
     Hksp = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
 
 #    raise SystemExit    
@@ -1021,25 +1029,40 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
 
     tl=[]
     nkl=[]
-    for i in range(full_grid.shape[0]):
-        nkl.append(find_equiv_k(full_grid[i][None],symop_inv,full_grid,sym_TR,check=False,include_self=True))
-                                                     
+
+    partial_grid = scatter_full(full_grid,1)
+
+    for i in range(partial_grid.shape[0]):
+        nkl.append(find_equiv_k(partial_grid[i][None],symop_inv,full_grid,sym_TR,check=False,include_self=True))
+
+    nkl=np.array(nkl)
+
+    Hksp_d = np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[1]),dtype=complex)
+
     for t in range(16):
         tmax=[]
-        for i in range(full_grid.shape[0]):
+        for i in range(partial_grid.shape[0]):
             new_k_ind,orig_k_ind,si_per_k=nkl[i]
 
             temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
                               orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
 
             tmax.append(np.amax(np.abs(temp[0][None]-temp)))
-            Hksp[i]=np.sum(temp,axis=0)/temp.shape[0]
+            Hksp_d[i]=np.sum(temp,axis=0)/temp.shape[0]
+        
+        if rank==0:
+            Hksp=gather_full(Hksp_d,1)
+            # enforce time reversion where appropriate
+            if not (spin_orb and mag_calc):
+                Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+        else:
+            gather_full(Hksp_d,1)
 
-        # enforce time reversion where appropriate
-        if not (spin_orb and mag_calc):
-            Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+        comm.Bcast(Hksp)
 
-        print(np.amax(tmax))
+        comm.reduce(np.amax(tmax),op=MPI.MAX)
+        if rank==0:
+            print(np.amax(tmax))
 
 
     return Hksp 

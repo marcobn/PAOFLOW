@@ -116,9 +116,8 @@ def build_Hks ( data_controller ):
 
 
 def do_build_pao_hamiltonian ( data_controller ):
+  from PAOFLOW.defs.pao_sym import open_grid_wrapper
 
-  if rank != 0:
-    return
 
   #------------------------------
   # Building the PAO Hamiltonian
@@ -127,11 +126,12 @@ def do_build_pao_hamiltonian ( data_controller ):
 
   ashape = (attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin'])
 
+  
   arry['Hks'] = build_Hks(data_controller)
 
-  from PAOFLOW.defs.pao_sym import open_grid_wrapper
-
   open_grid_wrapper(data_controller)
+  if rank != 0:
+    return
 
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
