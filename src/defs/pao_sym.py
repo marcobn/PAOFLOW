@@ -544,11 +544,18 @@ def get_U_k(k,shift,a_index,U):
 ############################################################################################
 ############################################################################################
 
-def correct_roundoff(arr):
+def correct_roundoff(arr,incl_hex=False):
     #correct for round off
     arr[np.where(np.isclose(arr, 0.0))] =  0.0
     arr[np.where(np.isclose(arr, 1.0))] =  1.0
     arr[np.where(np.isclose(arr,-1.0))] = -1.0
+
+    if incl_hex:
+        sq3o2 = np.sqrt(3)/2.0
+        arr[np.where(np.isclose(arr, sq3o2))] = sq3o2
+        arr[np.where(np.isclose(arr,-sq3o2))] = -sq3o2
+        arr[np.where(np.isclose(arr, 0.5))] =  0.5
+        arr[np.where(np.isclose(arr,-0.5))] = -0.5
 
     return arr
 
@@ -894,8 +901,9 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     # for debugging purposes
     try:
-         check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
+        if rank==0:
+            check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+                  a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
     except: pass
 
     return Hksp
@@ -943,7 +951,8 @@ def open_grid_wrapper(data_controller):
     inv_a_vectors = LA.inv(a_vectors)
     for isym in range(symop.shape[0]):
         symop_cart[isym] = (inv_a_vectors @ symop[isym] @ a_vectors)
-    symop_cart = correct_roundoff(symop_cart)
+
+    symop_cart = correct_roundoff(symop_cart,incl_hex=True)
 
 
     # convert k points from cartesian to crystal fractional
@@ -1032,7 +1041,7 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
 
 def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3):
 
-    max_iter=16
+    max_iter=2
 
     symop_inv=np.zeros_like(symop)
 
@@ -1049,6 +1058,9 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
     nkl=np.array(nkl)
 
     Hksp_d = np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[1]),dtype=complex)
+
+
+#    Hksp = gen_window(Hksp)
 
     prev_tmax=999
     for t in range(max_iter):
@@ -1068,23 +1080,23 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
             # enforce time reversion where appropriate
             if not (spin_orb and mag_calc):
                 Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
-
         else:
             gather_full(Hksp_d,1)
 
         comm.Bcast(Hksp)
+#        Hksp = gen_window(Hksp)
 
         TMAX=np.zeros(1)
         comm.Allreduce(np.amax(np.array(tmax)),TMAX,op=MPI.MAX)
 
         if rank==0:
             print(np.amax(TMAX))
-        if np.abs(np.amax(TMAX)-prev_tmax)<1.e-14:            
+        if np.abs(np.amax(TMAX)-prev_tmax)<1.e-12:            
             break
         else:
             prev_tmax=np.amax(TMAX)
 
-    return Hksp 
+    return Hksp
 
 ############################################################################################
 ############################################################################################
