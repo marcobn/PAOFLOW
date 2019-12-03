@@ -738,6 +738,9 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
 def apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia):
     # apply time reversal operator to get H(-k) from H(k)
 
+    # gamma only case
+    if Hksp.shape[0]==1:
+        return Hksp,kp
     new_kp_list=[]
     new_Hk_list=[]
 
@@ -1041,7 +1044,7 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
 
 def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3):
 
-    max_iter=2
+    max_iter=1
 
     symop_inv=np.zeros_like(symop)
 
@@ -1084,13 +1087,15 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
             gather_full(Hksp_d,1)
 
         comm.Bcast(Hksp)
+        if len(tmax)==0:
+            tmax=np.zeros(1)
 #        Hksp = gen_window(Hksp)
 
         TMAX=np.zeros(1)
         comm.Allreduce(np.amax(np.array(tmax)),TMAX,op=MPI.MAX)
 
-        if rank==0:
-            print(np.amax(TMAX))
+#        if rank==0:
+#            print(np.amax(TMAX))
         if np.abs(np.amax(TMAX)-prev_tmax)<1.e-12:            
             break
         else:
