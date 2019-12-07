@@ -1044,7 +1044,11 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
 
 def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3):
 
-    max_iter=1
+
+    Hksp[np.where(np.isclose(Hksp,0.0))]=0.0
+
+
+    max_iter=16
 
     symop_inv=np.zeros_like(symop)
 
@@ -1079,10 +1083,10 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
         
         if rank==0:
             Hksp=gather_full(Hksp_d,1)
-            Hksp = enforce_hermaticity(Hksp)
+#            Hksp = enforce_hermaticity(Hksp)
             # enforce time reversion where appropriate
-            if not (spin_orb and mag_calc):
-                Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+#            if not (spin_orb and mag_calc):
+#                Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
         else:
             gather_full(Hksp_d,1)
 
@@ -1094,10 +1098,11 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k
         TMAX=np.zeros(1)
         comm.Allreduce(np.amax(np.array(tmax)),TMAX,op=MPI.MAX)
 
-#        if rank==0:
-#            print(np.amax(TMAX))
+        if rank==0:
+            print(np.amax(TMAX))
         if np.abs(np.amax(TMAX)-prev_tmax)<1.e-12:            
-            break
+            pass
+#            break
         else:
             prev_tmax=np.amax(TMAX)
 
