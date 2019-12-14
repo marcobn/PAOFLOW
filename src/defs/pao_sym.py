@@ -908,7 +908,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     np.save("U.npy",U)
 
-    Hksp = symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
+#    Hksp = symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
 
 
 
@@ -918,11 +918,11 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     nfft2=nk2+2
     nfft3=nk3+2
     Hksp=None
-    if rank==0:
-        Hksp=np.zeros((nfft1,nfft2,nfft3,nawf,nawf),dtype=complex)
-        for m in range(nawf):
-            for n in range(nawf):
-                Hksp[:,:,:,m,n]=np.fft.fftn(zero_pad(HRs[:,:,:,m,n],nk1,nk2,nk3,2,2,2))
+
+    Hksp=np.zeros((nfft1,nfft2,nfft3,nawf,nawf),dtype=complex)
+    for m in range(nawf):
+        for n in range(nawf):
+            Hksp[:,:,:,m,n]=np.fft.fftn(zero_pad(HRs[:,:,:,m,n],nk1,nk2,nk3,2,2,2))
     Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
 
     full_grid = get_full_grid(nfft1,nfft2,nfft3)
@@ -930,26 +930,26 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
 
 
-    Hksp = np.reshape(Hksp,(nk1+2,nk2+2,nk3+2,nawf,nawf))
-    HRs = np.fft.ifftn(Hksp,axes=(0,1,2))
-    nfft1=nk1+4
-    nfft2=nk2+4
-    nfft3=nk3+4
-    Hksp=None
-    if rank==0:
-        Hksp=np.zeros((nfft1,nfft2,nfft3,nawf,nawf),dtype=complex)
-        for m in range(nawf):
-            for n in range(nawf):
-                Hksp[:,:,:,m,n]=np.fft.fftn(zero_pad(HRs[:,:,:,m,n],nk1+2,nk2+2,nk3+2,2,2,2))
-    Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
+    # Hksp = np.reshape(Hksp,(nfft1,nfft2,nfft3,nawf,nawf))
+    # HRs = np.fft.ifftn(Hksp,axes=(0,1,2))
+    # nfft1=nk1+8
+    # nfft2=nk2+8
+    # nfft3=nk3+8
+    # Hksp=None
+    # if rank==0:
+    #     Hksp=np.zeros((nfft1,nfft2,nfft3,nawf,nawf),dtype=complex)
+    #     for m in range(nawf):
+    #         for n in range(nawf):
+    #             Hksp[:,:,:,m,n]=np.fft.fftn(zero_pad(HRs[:,:,:,m,n],nk1+4,nk2+4,nk3+4,4,4,4))
+    # Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
 
-    full_grid = get_full_grid(nfft1,nfft2,nfft3)
-    Hksp = symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nfft1,nfft2,nfft3)
+    # full_grid = get_full_grid(nfft1,nfft2,nfft3)
+    # Hksp = symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nfft1,nfft2,nfft3)
 
 
     if rank==0:
         np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
-    raise SystemExit
+
     # Hksp = symmetrize_grid_r(Hksp,U,a_index,atom_pos,equiv_atom,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
 
     
@@ -1038,11 +1038,16 @@ def open_grid_wrapper(data_controller):
 
     # we wont need this for now
     if rank==0:
-        data_arrays['Hks'] = np.zeros((nawf,nawf,nk1*nk2*nk3,nspin),dtype=complex)
+        data_arrays['Hks'] = np.zeros((nawf,nawf,(nk1+2)*(nk2+2)*(nk3+2),nspin),dtype=complex)
     else:
         data_arrays['Hks']=None
 
     # expand grid from wedge
+
+    data_attr['nk1']+=2
+    data_attr['nk2']+=2
+    data_attr['nk3']+=2
+
     for ispin in range(nspin):
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,ispin])
 
@@ -1073,8 +1078,6 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
         nki  = new_k_ind[j]
 
         # if symop is identity
-
-
         if isym==0:
             Hksp_s[j]=Hksp[nki]
             continue
@@ -1112,7 +1115,7 @@ def symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,
 
 #    trs_ind=get_trs_index(nk1,nk2,nk3)
 
-    max_iter=2
+    max_iter=1
 
     symop_inv=np.zeros_like(symop)
     for i in range(symop.shape[0]):
@@ -1165,12 +1168,9 @@ def symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,
 def correct_roundoff_kp(kp,full_grid):
     kp_c =np.copy(kp)
     nw = np.where(np.isclose(cdist(kp_c,full_grid),0.0,atol=1.e-5,rtol=1.e-5,))    
-    print(nw[1].shape[0])
-    print(kp.shape[0])
     kp_c[nw[0]]=full_grid[nw[1]]
     
     return kp_c
-
 
 ############################################################################################
 ############################################################################################
