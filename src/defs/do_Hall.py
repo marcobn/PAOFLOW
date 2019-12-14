@@ -19,7 +19,7 @@
 
 import numpy as np
 from mpi4py import MPI
-
+import time
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
@@ -205,7 +205,7 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
 
   deltap = 0.05
   for ik in range(snktot):
-    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2 + deltap**2
+    E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2 #+ deltap**2
     E_nm[np.where(E_nm<1.e-4)] = np.inf
     Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T)/E_nm, axis=1)
   E_nm = None
@@ -297,28 +297,40 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   eps = 1.0e-16
   delta = 0.05
 
+  st=time.time()
   if attr['smearing'] == None:
     fn = 1.0/(np.exp(arry['E_k'][:,:,ispin]/attr['temp'])+1)
   elif attr['smearing'] == 'gauss':
     fn = intgaussian(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin])
   elif smearing == 'm-p':
     fn = intmetpax(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin]) 
+  if rank==0:
+    print(1,st-time.time())
+  arry['E_k']  = np.asfortranarray(arry["E_k"])
 
+  pksp_i = np.asfortranarray(pksp_i)
+  pksp_j = np.asfortranarray(pksp_j)
   # Collapsing the sum over k points
+  st=time.time()
   for n in range(nawf):
     for m in range(nawf):
       if m != n:
         E_diff_nm[:,n,m] = (arry['E_k'][:,n,ispin]-arry['E_k'][:,m,ispin])**2
         f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_j[:,n,m,ispin]*pksp_i[:,m,n,ispin])
-
+  if rank==0:
+    print(2,st-time.time())
   fn = None
+
+  E_diff_nm  = np.ascontiguousarray(E_diff_nm)
+  f_nm  = np.ascontiguousarray(f_nm)
 
   for e in range(esize):
     if attr['smearing'] != None:
-      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['deltakp2'][:,:nawf,:nawf,ispin])**2+eps))
+      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['deltakp2'][:,:,:,ispin])**2+eps))
     else:
       sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['delta'])**2+eps))
-
+  if rank==0:
+    print(3,st-time.time())
   F_nm = None
   E_diff_nm = None
 

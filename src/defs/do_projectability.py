@@ -19,12 +19,13 @@ import numpy as np
 from mpi4py import MPI
 
 def build_Pn ( nawf, nkpnts, nspin, U ):
-  Pn = np.zeros((U.shape[0]), dtype=float)
+  Pn = np.zeros((nkpnts,U.shape[0]), dtype=float)
   for ispin in range(nspin):
     for ik in range(nkpnts):
       UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
-      Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
-  return Pn
+      Pn[ik] = np.real(np.sum(np.conj(UU)*UU,axis=0))
+
+  return np.amin(Pn,axis=0)
 
 
 def do_projectability ( data_controller ):

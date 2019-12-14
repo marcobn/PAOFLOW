@@ -213,3 +213,37 @@ def gather_scatter(arr,scatter_axis,npool):
     start = end = scatter_ind = None
 
     return temp
+
+
+def gen_window(array,root=0):
+    # creates a shared memory copy of array on
+    # rank == root that all procs can access
+
+    if rank==root:
+        array_shape=array.shape
+        pydtype = array.dtype
+    else:
+        array_shape=None
+        pydtype=None
+
+    array_shape=comm.bcast(array_shape)
+    pydtype=comm.bcast(pydtype)
+
+    size=np.prod(array_shape)
+
+    itemsize = MPI._typedict[np.dtype(pydtype).char].Get_size()
+    if rank == root:
+        nbytes = size * itemsize
+    else:
+        nbytes = 0
+
+    win = MPI.Win.Allocate_shared(nbytes, itemsize, comm=comm)
+    buf, itemsize = win.Shared_query(0)
+    win_array = np.ndarray(buffer=buf, dtype=pydtype, shape=array_shape,)
+
+    if rank==root:
+        win_array[:]=array
+
+    comm.Barrier()
+    
+    return win_array
