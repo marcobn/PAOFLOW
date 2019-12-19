@@ -17,6 +17,7 @@
 #
 
 import numpy as np
+import scipy.sparse as sprs
 import scipy.linalg as LA
 from scipy.special import factorial as fac
 from tempfile import NamedTemporaryFile
@@ -25,6 +26,8 @@ from .communication import scatter_full, gather_full
 from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
+import time
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
@@ -729,7 +732,7 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
                     Hksp_s[iv,jv,kv] = np.conj(U_inv*(U_TR @ Hksp_s[i,j,k] @ np.conj(U_TR.T)))
 
     Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf),order="C")
-    
+
     return Hksp_s
 
 ############################################################################################
@@ -834,6 +837,9 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 
         Hksp_s[nki]=THP
 
+    # make sure of hermiticity of each H(k)
+    Hksp_s = enforce_hermaticity(Hksp_s)
+
     Hksp = None
     Hksp_s = gather_full(Hksp_s,1)
 
@@ -893,46 +899,101 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR)
 
     if rank==0:
-        pass
-        # # make sure of hermiticity of each H(k)
-        Hksp = enforce_hermaticity(Hksp)
-        # # # enforce time reversion where appropriate
+        # enforce time reversion where appropriate
         if not (spin_orb and mag_calc):
             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+
     else:
         Hksp=np.zeros((full_grid.shape[0],nawf,nawf),dtype=complex)
 
     comm.Bcast(Hksp)
 
     symop_inv=np.zeros_like(symop)
+    for i in range(symop.shape[0]):
+        symop_inv[i]=LA.inv(symop[i])
 
+    nkl=[]
+    partial_grid = scatter_full(full_grid,1)
+    for i in range(partial_grid.shape[0]):
+        nkl.append(find_equiv_k(partial_grid[i][None],symop_inv,full_grid,sym_TR,check=False,include_self=True))
+    nkl_no_interp=np.array(nkl)
 
+    Hksp,tmax = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,
+                                full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3,
+                                nkl_no_interp,partial_grid)
 
-    Hksp = symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3)
-    for i in range(64):
-        if rank==0:
-#            print(i)
+    add=4
+    nfft1=nk1+add
+    nfft2=nk2+add
+    nfft3=nk3+add
+
+    full_grid_interp = get_full_grid(nfft1,nfft2,nfft3)
+    nkl=[]
+    partial_grid_interp = scatter_full(full_grid_interp,1)
+    for i in range(partial_grid_interp.shape[0]):
+        nkl.append(find_equiv_k(partial_grid_interp[i][None],symop_inv,full_grid_interp,sym_TR,check=False,include_self=True))
+    nkl_interp=np.array(nkl)
+
+    #max difference bewtween H(k) and H(k*)
+    tmax=999999
+
+    thresh=1.e-10
+
+    max_iter=128
+    for i in range(max_iter):
+        st=time.time()
         add=4*((-1)**i)
 
-        Hksp = np.reshape(Hksp,(nk1,nk2,nk3,nawf,nawf))
-        HRs = np.fft.ifftn(Hksp,axes=(0,1,2))
         nfft1=nk1+add
         nfft2=nk2+add
         nfft3=nk3+add
+
+
+        Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf*nawf))
+        Hksp = np.ascontiguousarray(Hksp.T)
+        Hksp = scatter_full(Hksp,1)        
+        Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
+        HRs = np.fft.ifftn(Hksp,axes=(1,2,3))
         Hksp=None
+        Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
 
-        Hksp=np.zeros((nfft1,nfft2,nfft3,nawf,nawf),dtype=complex)
-        for m in range(nawf):
-            for n in range(nawf):
-                Hksp[:,:,:,m,n]=np.fft.fftn(zero_pad(HRs[:,:,:,m,n],nk1,nk2,nk3,add,add,add))
-        Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
+        for m in range(Hksp.shape[0]):
+            Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add,add,add))
 
-        full_grid = get_full_grid(nfft1,nfft2,nfft3)
-        Hksp = symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nfft1,nfft2,nfft3)
+        HRs  = None
+        Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
+        Hksp = gather_full(Hksp,1)
+        if rank==0:
+            Hksp = np.ascontiguousarray(Hksp.T)
+            Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
+        else:
+            Hksp=np.zeros((nfft1*nfft2*nfft3,nawf,nawf),dtype=complex)
+
+        comm.Bcast(Hksp)
+
+        # if it's the non interpolated grid
+        if i%2:
+            Hksp,_ = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,
+                                     sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,
+                                     nfft1,nfft2,nfft3,nkl_no_interp,partial_grid)
+
+        # if it's the interpolated grid
+        else:
+            Hksp,tmax = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,
+                                        sym_TR,full_grid_interp,symop,jchia,spin_orb,
+                                        mag_calc,nfft1,nfft2,nfft3,nkl_interp,partial_grid_interp)
 
         nk1+=add
         nk2+=add
         nk3+=add
+
+        if rank==0 and i%2:
+            print(i//2,tmax,time.time()-st)
+
+        # stop if we hit threshold
+        if tmax<thresh and i%2 and i>=3:
+            break
+
     
     # for debugging purposes
     try:
@@ -948,7 +1009,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 ############################################################################################
 
 def open_grid_wrapper(data_controller):
-    np.set_printoptions(precision=12,suppress=True,linewidth=220)
+#    np.set_printoptions(precision=3,suppress=True,linewidth=220)
 
 
 
@@ -1033,10 +1094,10 @@ def open_grid_wrapper(data_controller):
 
         if rank==0:
             data_arrays['Hks'][:,:,:,ispin]=np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
-
+            np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
         else:
             Hksp=None
-    
+
 
 ############################################################################################
 ############################################################################################
@@ -1086,56 +1147,42 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
 ############################################################################################
 ############################################################################################
 
-def symmetrize_grid(Hksp,U,a_index,atom_pos,equiv_atom,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3):
+def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3,nkl,partial_grid):
 
     max_iter=1
 
-    symop_inv=np.zeros_like(symop)
-    for i in range(symop.shape[0]):
-        symop_inv[i]=LA.inv(symop[i])
-
-    phase_shifts = get_phase_shifts(atom_pos,symop,equiv_atom)
-
-    nkl=[]
-
-    partial_grid = scatter_full(full_grid,1)
+    tmax=[]
+    Hksp_d=np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[2]),dtype=complex)
 
     for i in range(partial_grid.shape[0]):
-        nkl.append(find_equiv_k(partial_grid[i][None],symop_inv,full_grid,sym_TR,check=False,include_self=True))
+        new_k_ind,orig_k_ind,si_per_k=nkl[i]
 
-    nkl=np.array(nkl)
+        temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
+                          orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
 
-    prev_tmax=999
+        tmax.append(np.amax(np.abs(temp[0][None]-temp)))
+        Hksp_d[i]=np.sum(temp,axis=0)/(temp.shape[0])
 
 
-    for t in range(max_iter):
-        tmax=[]
-        Hksp_d=np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[2]),dtype=complex)
+    # make sure of hermiticity of each H(k)
+    Hksp_d = enforce_hermaticity(Hksp_d)
 
-        for i in range(partial_grid.shape[0]):
-            new_k_ind,orig_k_ind,si_per_k=nkl[i]
+    if rank==0:
+        Hksp=gather_full(Hksp_d,1)
+        if not (spin_orb and mag_calc):
+             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
-            temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
-                              orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
+    else:
+        gather_full(Hksp_d,1)
 
-            tmax.append(np.amax(np.abs(temp[0][None]-temp)))
-            Hksp_d[i]=np.sum(temp,axis=0)/(temp.shape[0])
+    comm.Bcast(Hksp)
+    tm=np.array([np.amax(tmax)])
+    tmax=np.copy(tm)
+    comm.Reduce(tm,tmax,op=MPI.MAX)
+    comm.Bcast(tmax)
 
-        tm=np.array([np.amax(tmax)])
-        tmax=np.copy(tm)
-        comm.Reduce(tm,tmax,op=MPI.MAX)
-        if rank==0:
-#            print(np.amax(tmax))
-            Hksp=gather_full(Hksp_d,1)
-            Hksp = enforce_hermaticity(Hksp)
-            if not (spin_orb and mag_calc):
-                 Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
-        else:
-            gather_full(Hksp_d,1)
 
-        comm.Bcast(Hksp)
-
-    return Hksp
+    return Hksp,tmax
 
 ############################################################################################
 ############################################################################################
