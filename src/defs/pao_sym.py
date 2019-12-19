@@ -922,7 +922,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                                 full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3,
                                 nkl_no_interp,partial_grid)
 
-    add=4
+    add=8
     nfft1=nk1+add
     nfft2=nk2+add
     nfft3=nk3+add
@@ -942,7 +942,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     max_iter=128
     for i in range(max_iter):
         st=time.time()
-        add=4*((-1)**i)
+        add=8*((-1)**i)
 
         nfft1=nk1+add
         nfft2=nk2+add
