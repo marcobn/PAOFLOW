@@ -552,18 +552,18 @@ def get_U_k(k,shift,a_index,U):
 ############################################################################################
 ############################################################################################
 
-def correct_roundoff(arr,incl_hex=False):
+def correct_roundoff(arr,incl_hex=False,atol=1.e-8):
     #correct for round off
-    arr[np.where(np.isclose(arr, 0.0))] =  0.0
-    arr[np.where(np.isclose(arr, 1.0))] =  1.0
-    arr[np.where(np.isclose(arr,-1.0))] = -1.0
+    arr[np.where(np.isclose(arr, 0.0,atol=atol))] =  0.0
+    arr[np.where(np.isclose(arr, 1.0,atol=atol))] =  1.0
+    arr[np.where(np.isclose(arr,-1.0,atol=atol))] = -1.0
 
     if incl_hex:
         sq3o2 = np.sqrt(3)/2.0
-        arr[np.where(np.isclose(arr, sq3o2))] = sq3o2
-        arr[np.where(np.isclose(arr,-sq3o2))] = -sq3o2
-        arr[np.where(np.isclose(arr, 0.5))] =  0.5
-        arr[np.where(np.isclose(arr,-0.5))] = -0.5
+        arr[np.where(np.isclose(arr, sq3o2,atol=atol))] = sq3o2
+        arr[np.where(np.isclose(arr,-sq3o2,atol=atol))] = -sq3o2
+        arr[np.where(np.isclose(arr, 0.5,atol=atol))] =  0.5
+        arr[np.where(np.isclose(arr,-0.5,atol=atol))] = -0.5
 
     return arr
 
@@ -1075,7 +1075,7 @@ def open_grid_wrapper(data_controller):
     for isym in range(symop.shape[0]):
         symop_cart[isym] = (inv_a_vectors @ symop[isym] @ a_vectors)
 
-    symop_cart = correct_roundoff(symop_cart,incl_hex=True)
+    symop_cart = correct_roundoff(symop_cart,incl_hex=True,atol=1.e-6)
 
     # convert k points from cartesian to crystal fractional
     conv = LA.inv(b_vectors)

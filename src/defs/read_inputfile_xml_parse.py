@@ -198,6 +198,12 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     emaxSH = 1.0
     ac_cond_spin = False
 
+    # symmetrization and wedge -> grid
+    expand_wedge  = True
+    symmetrize    = False
+    symm_thresh   = 1.e-6
+    symm_max_iter = 16
+
     tree = ET.parse(inputfile)
     aroot = tree.getroot()
 
@@ -302,3 +308,10 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     data_arrays['a_tensor'] = read_attribute(aroot, a_tensor, 'a_tensor', 'array').astype(int)
     data_arrays['s_tensor'] = read_attribute(aroot, s_tensor, 's_tensor', 'array').astype(int)
     data_arrays['high_sym_points'] = read_attribute(aroot, high_sym_points, 'high_sym_points', 'string_array')
+
+    # symmetrization and wedge -> grid
+    data_attributes['expand_wedge'] = read_attribute(aroot, expand_wedge, 'expand_wedge', 'logical')
+    data_attributes['symmetrize'] = read_attribute(aroot, symmetrize, 'symmetrize', 'logical')
+    data_attributes['symm_thresh'] = read_attribute(aroot,symm_thresh, 'symm_thresh', 'integer')
+    data_attributes['symm_max_iter'] = read_attribute(aroot, symm_max_iter, 'symm_max_iter', 'integer')
+

@@ -57,6 +57,9 @@ def main():
 
   paoflow.add_external_fields()
 
+  if attr['write2file']:
+    paoflow.write_Hk_acbn0()
+
   if attr['writez2pack']:
     paoflow.z2_pack(fname='z2pack_hamiltonian.dat')
 

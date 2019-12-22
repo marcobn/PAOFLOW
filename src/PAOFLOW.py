@@ -337,8 +337,7 @@ class PAOFLOW:
         self.comm.Abort()
 
     self.comm.Barrier()
-
-
+    
 
   def z2_pack ( self, fname='z2pack_hamiltonian.hm' ):
     '''

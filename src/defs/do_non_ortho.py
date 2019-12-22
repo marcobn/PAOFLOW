@@ -26,6 +26,12 @@ def do_non_ortho ( Hks, Sks ):
   # Hks -> Sks^(1/2)*Hks*Sks^(1/2)
 
   nawf,_,nkpnts,nspin = Hks.shape
+
+
+
+
+  print(Hks.shape)
+  print(Sks.shape)
   S2k  = np.zeros((nawf,nawf,nkpnts), dtype=complex)
   for ik in range(nkpnts):
     S2k[:,:,ik] = spl.sqrtm(Sks[:,:,ik])

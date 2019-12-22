@@ -129,6 +129,7 @@ def do_build_pao_hamiltonian ( data_controller ):
   arry['Hks'] = build_Hks(data_controller)
 
   if attr['expand_wedge']:
+    print(attr['expand_wedge'])
     open_grid_wrapper(data_controller)
 
   if rank != 0:
@@ -149,7 +150,11 @@ def do_build_pao_hamiltonian ( data_controller ):
     arry['Sks'] = np.transpose(arry['Sks'], (1,0,2))
 
     arry['Hks'] = do_non_ortho(arry['Hks'],arry['Sks'])
-    arry['Sks'] = np.reshape(arry['Sks'], ashape[:-1])
+    try:
+      arry['Sks'] = np.reshape(arry['Sks'], ashape[:-1])
+    except: pass
+
+    data_controller.write_Hk_acbn0()
 
   arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
