@@ -109,7 +109,7 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     ibrav = 0
     dkres = 0.1
     nk    = 2000
-    band_path = ''
+    band_path = None
     high_sym_points = np.array([[]])
 
     # Band topology analysis
