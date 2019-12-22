@@ -42,9 +42,25 @@ def read_sh_nl (data_controller):
             tmp_list_chi.append(jchid[s][o])
             tmp_list.append(p[o])
             # if l=0 include it twice
-            if p[o]==0:
+            if p[o]==0 or len(jchid[s])==0:
                 tmp_list_chi.append(jchid[s][o])
                 tmp_list.append(p[o])
+
+            # when using scalar rel pseido with spin orb..
+            if len(jchid[s])==0:
+                tmp=[]
+                for o in sdict[s][::2]:
+                    if o==0:
+                        tmp.extend([0.5])
+                    if o==1:
+                        tmp.extend([0.5,1.5])
+                    if o==2:
+                        tmp.extend([1.5,2.5])
+                    if o==3:
+                        tmp.extend([2.5,3.5])
+                jchid[s]=np.array(tmp)
+
+
 
         sdict[s] = np.array(tmp_list)
         jchid[s] = np.array(tmp_list_chi)
