@@ -236,7 +236,7 @@ class PAOFLOW:
 
 
 
-  def pao_hamiltonian ( self, non_ortho=False, shift_type=1 ):
+  def pao_hamiltonian ( self, non_ortho=False, shift_type=1,expand_wedge=True,symmetrize=False,thresh=1.e-6,max_iter=16 ):
     '''
     Construct the Tight Binding Hamiltonian
     Yields 'HRs', 'Hks' and 'kq_wght'
@@ -257,6 +257,11 @@ class PAOFLOW:
 
     if 'non_ortho' not in attr: attr['non_ortho'] = non_ortho
     if 'shift_type' not in attr: attr['shift_type'] = shift_type
+
+    attr['symm_thresh']=thresh
+    attr['symm_max_iter']=max_iter
+    attr['symmetrize']=symmetrize
+    attr['expand_wedge']=expand_wedge
 
     try:
       do_build_pao_hamiltonian(self.data_controller)

@@ -128,7 +128,8 @@ def do_build_pao_hamiltonian ( data_controller ):
   
   arry['Hks'] = build_Hks(data_controller)
 
-  open_grid_wrapper(data_controller)
+  if attr['expand_wedge']:
+    open_grid_wrapper(data_controller)
 
   if rank != 0:
     return
