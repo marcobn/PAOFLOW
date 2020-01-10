@@ -77,10 +77,10 @@ def main():
   paoflow.pao_eigh()
 
   if attr['fermisurf']:
-    paoflow.fermi_surface()
+    paoflow.fermi_surface(fermi_up=attr['fermi_up'], fermi_dw=['fermi_dw'])
 
   if attr['spintexture']:
-    paoflow.spin_texture()
+    paoflow.spin_texture(fermi_up=attr['fermi_up'], fermi_dw=['fermi_dw'])
 
   paoflow.gradient_and_momenta()
 
@@ -91,7 +91,7 @@ def main():
     paoflow.dos(do_dos=attr['do_dos'], do_pdos=attr['do_pdos'], emin=attr['emin'], emax=attr['emax'])
 
   if attr['spin_Hall']:
-    paoflow.spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'])
+    paoflow.spin_Hall(do_ac=attr['ac_cond_spin'], emin=attr['eminSH'], emax=attr['emaxSH'], fermi_up=attr['fermi_up'], fermi_dw=['fermi_dw'])
 
   if attr['Berry']:
     paoflow.anomalous_Hall(do_ac=attr['ac_cond_Berry'], emin=attr['eminAH'], emax=attr['emaxSH'])
@@ -100,7 +100,7 @@ def main():
     paoflow.transport(tmin=attr['tmin'], tmax=attr['tmax'], tstep=attr['tstep'], emin=attr['emin'], emax=attr['emax'], ne=attr['ne'])
 
   if attr['epsilon']:
-    paoflow.dielectric_tensor(metal=attr['metal'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'])
+    paoflow.dielectric_tensor(metal=attr['metal'], emin=attr['epsmin'], emax=attr['epsmax'], ne=attr['ne'], fermi_up=attr['fermi_up'], fermi_dw=['fermi_dw'])
 
   # Print the total execution time and request
   #   desired quantites for further processing

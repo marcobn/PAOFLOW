@@ -23,7 +23,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_spin_Hall ( data_controller, twoD, do_ac ):
+def do_spin_Hall ( data_controller, twoD, do_ac, fermi_up, fermi_dw):
   from .perturb_split import perturb_split
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
@@ -63,7 +63,7 @@ def do_spin_Hall ( data_controller, twoD, do_ac ):
     #---------------------------------
     # Compute spin Berry curvature... 
     #---------------------------------
-    ene,shc,Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
+    ene,shc,Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j, fermi_up, fermi_dw)
 
     if rank == 0:
       if twoD:
@@ -80,7 +80,7 @@ def do_spin_Hall ( data_controller, twoD, do_ac ):
     Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if rank==0 else None)
     if rank == 0:
       Om_kps[:,:,:,0] = Om_kps[:,:,:,1] = Om_k[:,:,:]
-    data_controller.write_bxsf(fBerry, Om_kps, 2)
+    data_controller.write_bxsf(fBerry, Om_kps, 2, fermi_up, fermi_dw)
 
     Om_k = Om_kps = None
 
@@ -116,7 +116,7 @@ def do_spin_Hall ( data_controller, twoD, do_ac ):
       data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
 
-def do_anomalous_Hall ( data_controller, do_ac ):
+def do_anomalous_Hall ( data_controller, do_ac, fermi_up, fermi_dw ):
   from .perturb_split import perturb_split
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
@@ -149,7 +149,7 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       for ispin in range(dks[4]):
         pksp_i[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = perturb_split(arry['dHksp'][ik,ipol,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
 
-    ene,ahc,Om_k = do_Berry_curvature(data_controller, pksp_i, pksp_j)
+    ene,ahc,Om_k = do_Berry_curvature(data_controller, pksp_i, pksp_j, fermi_up, fermi_dw)
 
     if rank == 0:
       cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
@@ -161,7 +161,7 @@ def do_anomalous_Hall ( data_controller, do_ac ):
     Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if rank==0 else None)
     if rank == 0:
       Om_kps[:,:,:,0] = Om_kps[:,:,:,1] = Om_k[:,:,:]
-    data_controller.write_bxsf(fBerry, Om_kps, 2)
+    data_controller.write_bxsf(fBerry, Om_kps, 2, fermi_up, fermi_dw)
 
     Om_k = Om_kps = None
 
@@ -187,7 +187,7 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       fsigR = 'MCDr_%s%s.dat'%cart_indices
       data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
-def do_Berry_curvature ( data_controller, jksp, pksp ):
+def do_Berry_curvature ( data_controller, jksp, pksp, fermi_up, fermi_dw ):
   #----------------------
   # Compute spin Berry curvature
   #----------------------
@@ -197,7 +197,6 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
   arrays,attributes = data_controller.data_dicts()
 
   snktot,nawf,_,nspin = pksp.shape
-  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nk1,nk2,nk3 = attributes['nk1'],attributes['nk2'],attributes['nk3']
 
   # Compute only Omega_z(k)

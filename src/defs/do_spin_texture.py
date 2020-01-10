@@ -18,7 +18,7 @@
 
 
 ### In serious need of update
-def do_spin_texture ( data_controller ):
+def do_spin_texture ( data_controller, fermi_up, fermi_dw ):
   import os
   import numpy as np
   from mpi4py import MPI
@@ -30,7 +30,6 @@ def do_spin_texture ( data_controller ):
   arrays = data_controller.data_arrays
   attributes = data_controller.data_attributes
 
-  fermi_up,fermi_dw = attributes['fermi_up'],attributes['fermi_dw']
   nawf,nk1,nk2,nk3 = attributes['nawf'],attributes['nk1'],attributes['nk2'],attributes['nk3']
   E_k_full = gather_full(arrays['E_k'], attributes['npool'])
  

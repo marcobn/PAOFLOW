@@ -17,7 +17,7 @@
 #
 
 
-def do_fermisurf ( data_controller ):
+def do_fermisurf ( data_controller, fermi_up, fermi_dw ):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -39,7 +39,6 @@ def do_fermisurf ( data_controller ):
     Efermi = 0,0.0
     nawf,nktot = attr['nawf'],attr['nkpnts']
     nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-    fermi_up,fermi_dw = attr['fermi_up'],attr['fermi_dw']
 
     E_ks = np.reshape(E_kf, (nk1,nk2,nk3,nawf,attr['nspin']))
 
@@ -60,7 +59,7 @@ def do_fermisurf ( data_controller ):
 
       feig = 'FermiSurf_%d.bxsf'%ispin
       eigband = np.array(eigband)
-      data_controller.write_bxsf(feig, np.moveaxis(eigband,0,3), len(ind_plot), indices=ind_plot)
+      data_controller.write_bxsf(feig, np.moveaxis(eigband,0,3), len(ind_plot), fermi_up, fermi_dw, indices=ind_plot)
 
       for ib in range(len(eigband)):
         np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[ib])

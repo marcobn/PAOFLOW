@@ -527,15 +527,13 @@ class PAOFLOW:
 
 
 
-  def spin_operator ( self, spin_orbit=False, sh=None, nl=None):
+  def spin_operator ( self, sh=None, nl=None ):
     '''
     Calculate the Spin Operator for calculations involving spin
       Requires: None
       Yeilds: 'Sj'
 
     Arguments:
-        spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
-        fnscf (string): Filename for the QE nscf inputfile, from which to read shell data
         sh (list of ints): The Shell levels
         nl (list of ints): The Shell level occupations
 
@@ -544,7 +542,10 @@ class PAOFLOW:
     '''
     arrays,attr = self.data_controller.data_dicts()
 
-    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
+    spin_orbit = False
+    if 'do_spin_orbit' in attr:
+      if attr['do_spin_orbit']:
+        spin_orbit = True
 
     if 'sh' not in arrays and 'nl' not in arrays:
       if sh is None and nl is None:
@@ -928,11 +929,8 @@ class PAOFLOW:
 
     attr = self.data_controller.data_attributes
 
-    if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
-    if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
-
     try:
-      do_fermisurf(self.data_controller)
+      do_fermisurf(self.data_controller, fermi_up, fermi_dw)
     except:
       self.report_exception('fermi_surface')
       if attr['abort_on_exception']:
@@ -957,14 +955,11 @@ class PAOFLOW:
 
     arry,attr = self.data_controller.data_dicts()
 
-    if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
-    if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
-
     try:
       if attr['nspin'] == 1:
         if 'Sj' not in arry:
           self.spin_operator()
-        do_spin_texture(self.data_controller)
+        do_spin_texture(self.data_controller, fermi_up, fermi_dw)
         self.report_module_time('Spin Texture')
       else:
         if self.rank == 0:
@@ -987,12 +982,12 @@ class PAOFLOW:
 
     Arguments:
         twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
-        do_ac (bool): True to calculate the Spic Circular Dichroism
+        do_ac (bool): True to calculate the Spin Circular Dichroism
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
         fermi_up (float): The upper limit of the occupied energy range
         fermi_dw (float): The lower limit of the occupied energy range
-        s_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+        s_tensor (list): List of tensor elements to calculate (e.g. To calculate x_xx and z_xy use [[0,0,0],[2,0,1]])
 
     Returns:
         None
@@ -1004,14 +999,12 @@ class PAOFLOW:
     attr['eminH'],attr['emaxH'] = emin,emax
 
     if s_tensor is not None: arrays['s_tensor'] = np.array(s_tensor)
-    if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
-    if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
     if 'Sj' not in arrays:
       self.spin_operator()
 
     try:
-      do_spin_Hall(self.data_controller, twoD, do_ac)
+      do_spin_Hall(self.data_controller, twoD, do_ac, fermi_up, fermi_dw)
     except:
       self.report_exception('spin_Hall')
       if attr['abort_on_exception']:
@@ -1044,11 +1037,9 @@ class PAOFLOW:
     attr['emaxH'] = emax
 
     if 'a_tensor' is not None: arrays['a_tensor'] = np.array(a_tensor)
-    if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
-    if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
     try:
-      do_anomalous_Hall(self.data_controller, do_ac)
+      do_anomalous_Hall(self.data_controller, do_ac, fermi_up, fermi_dw)
     except:
       self.report_exception('anomalous_Hall')
       if attr['abort_on_exception']:
@@ -1068,7 +1059,7 @@ class PAOFLOW:
         tstep (float): The step size for temperature increments
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
-        ne (float): The number of energy increments
+        ne (int): The number of energy increments
         t_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
 
     Returns:

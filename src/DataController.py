@@ -216,7 +216,7 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_bxsf ( self, fname, bands, nbnd, indices=None ):
+  def write_bxsf ( self, fname, bands, nbnd, fermi_up, fermi_dw, indices=None ):
     '''
     Write a file in the bxsf format
 
@@ -233,7 +233,7 @@ class DataController:
     if self.rank == 0:
       from .defs.write2bxsf import write2bxsf
 
-      write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
+      write2bxsf(self, fname, bands, nbnd, fermi_up, fermi_dw, indices)
 
 
   def write_bands ( self, fname, bands ):
