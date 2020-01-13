@@ -27,7 +27,6 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
 
@@ -81,7 +80,6 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
   from .smearing import gaussian,metpax
   # We assume tau=1 in the constant relaxation time approximation
- 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
   snktot = arrays['E_k'].shape[0]

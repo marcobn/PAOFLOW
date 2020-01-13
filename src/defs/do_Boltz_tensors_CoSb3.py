@@ -27,6 +27,7 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
+  arrays['tau_t'] = get_tau(temp,data_controller,['accoustic','optical','polar optical'])
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -37,8 +38,6 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
   # Quick call function for Zeros on rank Zero
   zol = lambda r,l: (np.zeros_like(l) if r==0 else None)
 
-  arrays['tau_avg'] = []
-  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','optical','polar optical'] )
   L0aux, tau_aux, norm_aux = fLloop(0)
   L0 = zol(rank, L0aux) 
   tau = zol(rank, tau_aux) 
@@ -47,30 +46,22 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
   comm.Reduce(tau_aux, tau, op=MPI.SUM)
   comm.Reduce(norm_aux, norm, op=MPI.SUM)
   L0aux = norm_aux = tau_aux = None
-  arrays['tau_avg'].append(tau/norm)
+  if rank == 0:
+    arrays['tau_avg'] = []
+    arrays['tau_avg'].append(tau/norm)
+    arrays['tau_avg'] = np.array(arrays['tau_avg'])
 
   L1aux, tau_aux, norm_aux = fLloop(1)
   L1 = zol(rank,L1aux)
-  tau = zol(rank, tau_aux) 
-  norm = zol(rank, norm_aux) 
   comm.Reduce(L1aux, L1, op=MPI.SUM)
-  comm.Reduce(tau_aux, tau, op=MPI.SUM)
-  comm.Reduce(norm_aux, norm, op=MPI.SUM)
-  L1aux = norm_aux = tau_aux = None
-  arrays['tau_avg'].append(tau/norm)
+  L1aux = None
 
 
   L2aux, tau_aux, norm_aux = fLloop(2)
   L2 = zol(rank,L2aux)
-  tau = zol(rank, tau_aux) 
-  norm = zol(rank, norm_aux) 
   comm.Reduce(L2aux, L2, op=MPI.SUM)
-  comm.Reduce(tau_aux, tau, op=MPI.SUM)
-  comm.Reduce(norm_aux, norm, op=MPI.SUM)
-  L2aux =  norm_aux = tau_aux = None
-  arrays['tau_avg'].append(tau/norm)
+  L2aux = None
   tau = norm = None
-  arrays['tau_avg'] = np.array(arrays['tau_avg'])
 
   if rank == 0:
     # Assign lower triangular to upper triangular
@@ -87,9 +78,11 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
+  arrays['tau_t'] = get_tau(temp,data_controller,['accoustic','optical','polar optical'])
 
   t_tensor = arrays['t_tensor']
-  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','optical','polar optical'] )
+  L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
+  L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
   comm.Reduce(L0aux, L0, op=MPI.SUM)
   L0aux = None
   
@@ -120,28 +113,28 @@ def get_tau (temp,data_controller, channels ):
   DtK = 1e11*1.60217662e-19 #J/m
   di_inf = 25.6*8.854187817e-12 #CoSb3
   di_0 = 33.5*8.854187817e-12 #CoSb3
-  et =11.9*8.854187817e-12 # dielectric constant*permitivtty of free space
+  et =33.5*8.854187817e-12 # dielectric constant*permitivtty of free space
   vl = 4.59e3    #acoustic phonon velocity longitudinal component (m/s)
   vt = 2.643e3    #acoustic phonon velocity transverse component (m/s)
-  v = (2*vt+vl)/3 
+  v = (2*vt+vl)/3
   ms = 0.071
   me = ms*9.10938e-31*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
   E = abs(1.60217662e-19*(arry['E_k'][:,:bnd]))
-  for c in channels: 
-  
+  for c in channels:
+
       if c == 'impurity':
           qo = np.sqrt(((e**2)*n)/(et*temp))
           epso = ((h**2)*(qo**2))/(2*me)
           i_tau = (16*np.pi*np.sqrt(2*me)*(et**2)*(E**1.5))/((np.log(1+(4*E/epso))-((4*E/epso)/(1+(4*E/epso))))*(e**4)*nI)
           #i_pf = np.sqrt(ms)*((et/8.854187817e-12)**2)*
-          taus.append(i_tau)
+          #taus.append(i_tau)
 
       if c == 'accoustic':
           a_tau = (2*np.pi*(h**4)*rho*v**2*((E/temp)**-0.5))/((np.power(2*me*temp,1.5)*Ea**2))
           taus.append(a_tau)
 
       if c == 'optical':
-   	  #Nop = (temp/hw0)-0.5
+          #Nop = (temp/hw0)-0.5
           #x = E/temp
           #xo = hw0/temp
           #X = x-xo
@@ -149,34 +142,37 @@ def get_tau (temp,data_controller, channels ):
           #o_tau = (np.sqrt(2*temp)*np.pi*xo*(h**2)*rho)/((me**1.5)*(DtK**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))#elastic +inelastic
           o_tau = (2/np.pi)*((hw0/Eo)**2)*(h**2*a**2*rho)*((E/temp)**-0.5)/((2*me*temp)**1.5)
 #          #o_tau = (np.sqrt(2*temp)*np.pi*xo*(h**2)*rho)/((me**1.5)*(DtK**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X))) + (np.sqrt(2*temp)*np.pi*xo*(h**2)*rho)/((me**1.5)*Zf*(DtK**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))#intervalley
-          taus.append(o_tau)
-    
+          #taus.append(o_tau)
+
 
       if c == 'polar optical':
           ro = ((di_inf*temp)/(4*np.pi*e**2*nd))**0.5
           deltap = (2*me*E*(2*ro)**2)/h**2
           F_scr = 1 - ((2/deltap)*np.log(deltap+1))+1/(deltap+1)
-          #F_scr = 1 
-          di = ((1/di_inf)-(1/di_0))**-1
+          F_scr2 = 1 
+          di = abs(((1/di_inf)-(1/di_0))**-1)
           po_tau = (di*h**2*np.power(E/(temp),(0.5)))/((np.power(2*me*temp,0.5))*F_scr*e**2)
-          taus.append(po_tau)
+          po_tau2 = (di*h**2*np.power(E/(temp),(0.5)))/((np.power(2*me*temp,0.5))*F_scr2*e**2)
+          #taus.append(po_tau)
 
       tau = np.zeros((snktot,bnd,nspin), dtype=float)
       for t in taus:
           tau += 1./t
       tau = 1/tau
-  tau_new = np.reshape(tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  o_tau_new = np.reshape(o_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  a_tau_new = np.reshape(a_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  #tau_new = np.reshape(tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  #o_tau_new = np.reshape(o_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  #a_tau_new = np.reshape(a_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
  # i_tau_new = np.reshape(i_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  po_tau_new = np.reshape(po_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  E_re = np.reshape(E/1.60217662e-19,(snktot,bnd)) #i do this because i am not able to saave 3d arrays to a file
-  np.savetxt('tau.dat',tau_new)
-  np.savetxt('o_tau.dat',o_tau_new)
-  np.savetxt('a_tau.dat',a_tau_new)
- # np.savetxt('i_tau.dat',i_tau_new)
-  np.savetxt('po_tau.dat',po_tau_new)
-  np.savetxt('E.dat',E_re)
+  #po_tau_new = np.reshape(po_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  #po_tau_new2 = np.reshape(po_tau2,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
+  #E_re = np.reshape(E/1.60217662e-19,(snktot,bnd)) #i do this because i am not able to saave 3d arrays to a file
+  #np.savetxt('tau.dat',tau_new)
+  #np.savetxt('o_tau.dat',o_tau_new)
+  #np.savetxt('a_tau.dat',a_tau_new)
+  #np.savetxt('i_tau.dat',i_tau_new)
+  #np.savetxt('po_tau_scr.dat',po_tau_new)
+  #np.savetxt('po_tau_no_scr.dat',po_tau_new2)
+  #np.savetxt('E.dat',E_re)
   return tau
 
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
@@ -211,7 +207,6 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
       i = t_tensor[l][0]
       j = t_tensor[l][1]
       L[i,j,:] += np.sum(kq_wght*velkp[:,i,n,ispin]*tau_re[:,n]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
-      #L[i,j,:] += np.sum(kq_wght*velkp[:,i,n,ispin]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
       tau_avg += np.sum(kq_wght*tau_re[:,n]*(smearA*EtoAlpha).T, axis=1)
       Nm += np.sum(kq_wght*(smearA*EtoAlpha).T, axis=1)
   return(L, tau_avg, Nm)

@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps, ene, velkp ):
+def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp ):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
