@@ -74,7 +74,6 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp ):
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      print(ene)
       L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
 
 
