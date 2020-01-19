@@ -274,7 +274,7 @@ class DataController:
     if self.rank == 0:
       from os.path import join
 
-      kpnts= b_vectors.dot(kpnts)
+      kpnts= b_vectors.T.dot(kpnts)
       with open(join(self.data_attributes['opath'],fname), 'w') as f:
         f.write(path)
         f.write(''.join(['%s %s %s\n'%(kpnts[0,i],kpnts[1,i],kpnts[2,i]) for i in range(kpnts.shape[1])]))
