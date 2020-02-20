@@ -128,3 +128,70 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
       L[i,j,:] += np.sum(kq_wght*tau*velkp[:,i,n,ispin]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
 
   return L
+
+
+def do_Hall_tensors( E_k_range,velkp_range,d2Ed2k_range,kq_wght,temp,ene ):
+  # calculated components of the Hall tensor R_ijk
+
+
+  if rank==0:
+      R = np.zeros((3,3,3,ene.size),dtype=float,order="C")
+  else: R = None
+
+  Raux = H_loop(ene,E_k_range,velkp_range,d2Ed2k_range,kq_wght,temp)
+  comm.Reduce(Raux,R,op=MPI.SUM)
+
+  return(R)
+
+
+
+def H_loop(ene,E_k,velkp,d2Ed2k,kq_wght,temp):
+  # We assume tau=1 in the constant relaxation time approximation
+
+  R = np.zeros((3,3,3,ene.size),dtype=float,order="C")
+
+  # mapping of the unique 2nd rank tensor components
+  d2Ed2k_ind = np.array([[0,3,5],
+                       [3,1,4],
+                       [5,4,2]],dtype=int,order="C")
+
+  # precompute the 6 unique v_i*v_j
+  v2=np.zeros((6,E_k.shape[0]),dtype=float,order="C")
+  ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[1,2],[0,2]],dtype=int)
+
+  for l in range(ij_ind.shape[0]):
+      i     = ij_ind[l][0]
+      j     = ij_ind[l][1]
+      v2[l] = velkp[i]*velkp[j]
+
+  # precompute sig_xyz
+  sig_xyz=np.zeros((3,3,3,E_k.shape[0]),order="C")    
+  for a in range(3):
+      for b in range(3):
+          if a==b and b==0: continue
+          sig_xyz[a,b,0] = d2Ed2k[d2Ed2k_ind[b,1]]*v2[d2Ed2k_ind[a,2]] - \
+                           d2Ed2k[d2Ed2k_ind[b,2]]*v2[d2Ed2k_ind[a,1]]
+  for a in range(3):
+      for b in range(3):                          
+          if a==b and b==1: continue
+          sig_xyz[a,b,1] = d2Ed2k[d2Ed2k_ind[b,2]]*v2[d2Ed2k_ind[a,0]] - \
+                           d2Ed2k[d2Ed2k_ind[b,0]]*v2[d2Ed2k_ind[a,2]]
+  for a in range(3):
+      for b in range(3):                          
+          if a==b and b==2: continue 
+          sig_xyz[a,b,2] = d2Ed2k[d2Ed2k_ind[b,0]]*v2[d2Ed2k_ind[a,1]] - \
+                           d2Ed2k[d2Ed2k_ind[b,1]]*v2[d2Ed2k_ind[a,0]]
+
+
+  for n in range(ene.shape[0]):        
+      # dfermi(e-e_f)/de
+      Eaux = 1.0/(1.0+np.cosh((E_k-ene[n])/temp))
+      for a in range(3):
+          for b in range(3):
+              for g in range(3):                    
+                  if a==b and b==g: continue                                           
+                  R[a,b,g,n] = np.sum(sig_xyz[a,b,g]*Eaux)
+
+  return(R*kq_wght[0]*0.5/temp)
+
+

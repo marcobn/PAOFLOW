@@ -443,7 +443,7 @@ class PAOFLOW:
 
     Returns:
         None
-    '''
+mo    '''
     from .defs.do_wave_function_site_projection import wave_function_site_projection
 
     try:
@@ -765,7 +765,7 @@ class PAOFLOW:
 
 
 
-  def gradient_and_momenta ( self ):
+  def gradient_and_momenta ( self,band_curvature=False ):
     '''
     Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
     Requires 'Hksp'
@@ -780,6 +780,7 @@ class PAOFLOW:
     from .defs.do_gradient import do_gradient
     from .defs.do_momentum import do_momentum
     from .defs.communication import gather_scatter
+    import numpy as np 
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -788,6 +789,7 @@ class PAOFLOW:
 
       for ik in range(snktot):
         for ispin in range(nspin):
+          #make sure Hksp is hermitian (it should be)
           arrays['Hksp'][ik,:,:,ispin] = (np.conj(arrays['Hksp'][ik,:,:,ispin].T) + arrays['Hksp'][ik,:,:,ispin])/2.
 
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
@@ -797,14 +799,24 @@ class PAOFLOW:
 
       do_gradient(self.data_controller)
 
-      # No more need for k-space Hamiltonian
-      del arrays['Hksp']
+      if not band_curvature:
+        # No more need for k-space Hamiltonian
+        del arrays['Hksp']
 
       ### PARALLELIZATION
       #gather dHksp on nawf*nawf and scatter on k points
       arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attr['nkpnts'],3,nspin))
       arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attr['npool']), 0, 2)
       arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
+
+      if band_curvature:
+        from .defs.do_band_curvature import do_band_curvature
+        do_band_curvature (self.data_controller)
+      else:
+        # No more need for k-space Hamiltonian
+        del arrays['Hksp']
+
+
     except:
       self.report_exception('gradient_and_momenta')
       if attr['abort_on_exception']:
@@ -1060,7 +1072,7 @@ class PAOFLOW:
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None ):
+  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None, carrier_conc=False):
     '''
     Calculate the Transport Properties
 
@@ -1092,8 +1104,15 @@ class PAOFLOW:
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
 
-      do_transport(self.data_controller, temps, ene, velkp)
+      do_transport(self.data_controller, temps, ene, velkp, carrier_conc)
+
+
+      if carrier_conc:
+        from .defs.do_transport import do_carrier_conc        
+        do_carrier_conc(self.data_controller,velkp,ene,temps)
+
       velkp = None
+
     except:
       self.report_exception('transport')
       if attr['abort_on_exception']:
@@ -1141,3 +1160,6 @@ class PAOFLOW:
         self.comm.Abort()
 
     self.report_module_time('Dielectric Tensor')
+
+
+

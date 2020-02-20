@@ -34,7 +34,6 @@ def do_double_grid ( data_controller ):
     HRs = np.reshape(arrays['HRs'], (nawf**2,nk1,nk2,nk3,attr['nspin']))
   HRs = scatter_full(HRs, attr['npool'])
 
-
   snawf,nk1,nk2,nk3,nspin = HRs.shape
   nk1p = attr['nfft1']
   nk2p = attr['nfft2']

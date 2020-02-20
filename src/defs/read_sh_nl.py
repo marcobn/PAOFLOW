@@ -131,7 +131,6 @@ def read_pseudopotential ( fpp ):
           jchi.append(float(i.attrib["jchi"]))
       except: pass
 
-
   jchi = np.array(jchi)
 
   return sh,jchi

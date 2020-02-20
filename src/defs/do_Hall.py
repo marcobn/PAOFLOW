@@ -304,8 +304,7 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
     fn = intgaussian(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin])
   elif smearing == 'm-p':
     fn = intmetpax(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin]) 
-  if rank==0:
-    print(1,st-time.time())
+
   arry['E_k']  = np.asfortranarray(arry["E_k"])
 
   pksp_i = np.asfortranarray(pksp_i)
@@ -317,8 +316,7 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
       if m != n:
         E_diff_nm[:,n,m] = (arry['E_k'][:,n,ispin]-arry['E_k'][:,m,ispin])**2
         f_nm[:,n,m] = (fn[:,n] - fn[:,m])*np.imag(pksp_j[:,n,m,ispin]*pksp_i[:,m,n,ispin])
-  if rank==0:
-    print(2,st-time.time())
+
   fn = None
 
   E_diff_nm  = np.ascontiguousarray(E_diff_nm)
@@ -329,8 +327,7 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
       sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['deltakp2'][:,:,:,ispin])**2+eps))
     else:
       sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['delta'])**2+eps))
-  if rank==0:
-    print(3,st-time.time())
+
   F_nm = None
   E_diff_nm = None
 

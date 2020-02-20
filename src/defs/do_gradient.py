@@ -58,6 +58,8 @@ def do_gradient ( data_controller ):
         arry['Hksp'][n,:,:,:,ispin] = cuda_ifftn(arry['Hksp'][n,:,:,:,ispin])*1.0j*attr['alat']
       else:
         arry['Hksp'][n,:,:,:,ispin] = FFT.ifftn(arry['Hksp'][n,:,:,:,ispin])*1.0j*attr['alat']
+
       # Compute R*H(R)
       for l in range(3):
         arry['dHksp'][n,:,:,:,l,ispin] = FFT.fftn(arry['Rfft'][:,:,:,l]*arry['Hksp'][n,:,:,:,ispin])
+
