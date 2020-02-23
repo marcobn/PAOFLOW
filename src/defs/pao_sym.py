@@ -1466,7 +1466,6 @@ def reshift_efermi(Hksp,npool,nelec,spin_orb):
         nk=eig.shape[1]
         eig=np.sort(np.ravel(eig))
         efermi=eig[int(nk*nbnd*nspin-1)]
-        print(efermi)
     else:
         efermi=None
 
