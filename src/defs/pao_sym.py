@@ -1222,7 +1222,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                 if i%2 and i>=3:                   
                     break
 
-    Hksp = reshift_efermi(Hksp,npool,nelec,spin_orb)                    
+
     
     # for debugging purposes
     try:
@@ -1341,6 +1341,8 @@ def open_grid_wrapper(data_controller):
         else:
             Hksp=None
 
+    if rank==0:
+        data_arrays['Hks'] = reshift_efermi(data_arrays['Hks'],1,nelec,spin_orb)
 
 ############################################################################################
 ############################################################################################
@@ -1443,12 +1445,15 @@ def correct_roundoff_kp(kp,full_grid):
 def reshift_efermi(Hksp,npool,nelec,spin_orb):
 
 #    Hksp=scatter_full(Hksp,npool)
-    eig = np.zeros((Hksp.shape[0],Hksp.shape[1]))
+    nspin = Hksp.shape[-1]
+
+    eig = np.zeros((Hksp.shape[1],Hksp.shape[2],Hksp.shape[3]))
 
     dinds = np.diag_indices(Hksp.shape[1])
 
-    for kp in range(Hksp.shape[0]):
-        eig[kp] = LA.eigvalsh(Hksp[kp])
+    for ispin in range(Hksp.shape[3]):
+        for kp in range(Hksp.shape[2]):
+            eig[:,kp,ispin] = LA.eigvalsh(Hksp[:,:,kp,ispin])
 
 #    eigs=gather_full(eig,npool)
     
@@ -1458,16 +1463,16 @@ def reshift_efermi(Hksp,npool,nelec,spin_orb):
         nbnd=np.floor(nelec/2.0)
     
     if rank==0:
-        nk=eig.shape[0]
+        nk=eig.shape[1]
         eig=np.sort(np.ravel(eig))
-        efermi=eig[int(nk*nbnd-1)]
-#        print(efermi)
+        efermi=eig[int(nk*nbnd*nspin-1)]
+        print(efermi)
     else:
         efermi=None
 
-    efermi = comm.bcast(efermi)
+#    efermi = comm.bcast(efermi)
 
-    Hksp[:,dinds[0],dinds[1]] -= efermi
+    Hksp[dinds[0],dinds[1]] -= efermi
 #    Hksp=gather_full(Hksp,npool)
     
     return Hksp
