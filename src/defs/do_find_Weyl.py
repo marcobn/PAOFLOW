@@ -25,8 +25,6 @@
 # optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
 # 
 
-
-
 import z2pack
 import tbmodels
 import scipy.optimize as so
@@ -36,33 +34,16 @@ import numpy as np
 import cmath
 import sys
 import scipy
-try:
-    import pyfftw
-except:
-    from scipy import fftpack as FFT
+from scipy import fftpack as FFT
 from mpi4py import MPI
 from mpi4py.MPI import ANY_SOURCE
-from kpnts_interpolation_mesh import *
-from do_non_ortho import *
-import do_momentum
-#import do_gradient
 import os
-#from load_balancing import *
-from get_K_grid_fft import *
-from constants import *
-import time
 import scipy.optimize as OP
 from numpy import linalg as LAN
-from load_balancing import *
-from do_double_grid import *
+from .load_balancing import *
 #import do_bandwarping_calc
-
-from clebsch_gordan import *
-from get_R_grid_fft import *
-#import nxtval
-from communication import gather_full
-#from Gatherv_Scatterv_wrappers import Gatherv_wrap
-
+from .communication import gather_full, scatter_full
+from numpy import linalg as LAN
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -70,15 +51,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 np.set_printoptions(precision=6, threshold=100, edgeitems=50, linewidth=350, suppress=True)
-load=False
 
-from numpy import linalg as LAN
-
-
-en_range=0.50
-#en_range=5.50
-#first_thresh=1.e-4
-first_thresh=0.01
 
 
 def band_loop_H(ini_ik,end_ik,nspin,nawf,nkpi,HRaux,kq,R):
@@ -96,39 +69,57 @@ def band_loop_H(ini_ik,end_ik,nspin,nawf,nkpi,HRaux,kq,R):
 
 
 
-def gen_eigs(HRaux,kq,Rfft,band,b_vectors):
+def gen_eigs(HRaux,kq,R):
     # Load balancing
 
-    kq = np.dot(kq,b_vectors)
-    read_S=False
     nawf,nawf,_,nspin = HRaux.shape
     E_kp = np.zeros((1,nawf,nspin),dtype=np.float64)
-    kq=np.array([kq,],dtype=complex).T
+    kq=kq[None]
     nkpi=1
 
     Hks_int  = np.zeros((nawf,nawf,1,nspin),dtype=complex,order='C') # final data arrays
     Hks_int = band_loop_H(0,1,nspin,nawf,nkpi,HRaux,kq,Rfft)
 
-    v_kp  = np.zeros((1,nawf,nawf,nspin),dtype=np.complex)
+
     for ispin in range(nspin):
-        E_kp[:,:,ispin],v_kp[:,:,:,ispin] =  LAN.eigh(Hks_int[:,:,0,ispin],UPLO='U')
+        E_kp[:,:,ispin] =  LAN.eigvalsh(Hks_int[:,:,0,ispin],UPLO='U')
 
-    return E_kp.real,v_kp
-
-
+    return E_kp
 
 
 
 
 
-def find_egap(HRaux,kq,Rfft,band,b_vectors,ef_index,ispin):
 
-    E_kp,_= gen_eigs(HRaux,kq,Rfft,band,b_vectors)
 
-    egapp = E_kp[0,ef_index,ispin]-E_kp[0,ef_index-1,ispin]
+def find_egap(HR,kq,R,nelec):
 
+    E_kp = gen_eigs(HR,kq,R)
+    egapp = E_kp[0,nelec,ispin]-E_kp[0,nelec-1,ispin]
     return egapp
 
+
+def get_R_grid_fft ( nr1, nr2, nr3):
+
+  R=np.zeros((nr1*nr2*nr3,3))
+
+  for i in range(nr1):
+    for j in range(nr2):
+      for k in range(nr3):
+        n = k + j*nr3 + i*nr2*nr3
+        Rx = float(i)/float(nr1)
+        Ry = float(j)/float(nr2)
+        Rz = float(k)/float(nr3)
+        if Rx >= 0.5: Rx=Rx-1.0
+        if Ry >= 0.5: Ry=Ry-1.0
+        if Rz >= 0.5: Rz=Rz-1.0
+        Rx -= int(Rx)
+        Ry -= int(Ry)
+        Rz -= int(Rz)
+
+        R[n] = Rx*nr1 + Ry*nr2 + Rz*nr3
+
+  return R  
 
 
 
@@ -137,8 +128,6 @@ def do_search_grid(nk1,nk2,nk3,snk1_range=[-0.5,0.5],snk2_range=[-0.5,0.5],snk3_
     nk1_arr   = np.linspace(snk1_range[0],snk1_range[1],num=nk1,   endpoint=endpoint)
     nk2_arr   = np.linspace(snk2_range[0],snk2_range[1],num=nk2,   endpoint=endpoint)
     nk3_arr   = np.linspace(snk3_range[0],snk3_range[1],num=nk3,   endpoint=endpoint)
-
-
 
     nk_str = np.zeros((nk1*nk2*nk3,3),order='C')
     nk_str  = np.array(np.meshgrid(nk1_arr,nk2_arr,nk3_arr,indexing='ij')).T.reshape(-1,3)
@@ -149,18 +138,14 @@ def do_search_grid(nk1,nk2,nk3,snk1_range=[-0.5,0.5],snk2_range=[-0.5,0.5],snk3_
 
 
 
-def loop_min(ef_index,HRaux,SRaux,read_S,alat,velkp1,nk1,nk2,nk3,bnd,nspin,a_vectors,b_vectors,v_k,snk1_range=[-0.5,0.5],snk2_range=[-0.5,0.5],snk3_range=[-0.5,0.5],npool=1,shift=0.0,nl=None,sh=None):
+def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
-    ini=[[0.25,0.25,0.25],[0.25,0.25,0.75],[0.25,0.75,0.25],[0.25,0.75,0.75],[0.75,0.25,0.25],[0.75,0.25,0.75],[0.75,0.75,0.25],[0.75,0.75,0.75]]
-    CANDIDATES = {}
 
-    candidates = 0
+#    HRs,nk1,nk2,nk3 = interp_odd(HRs,nk1,nk2,nk3)
 
-    for initial in ini:
+    R= get_R_grid_fft ( nk1, nk2, nk3)
 
-        CANDIDATES = find_min(initial,CANDIDATES,candidates,ef_index,HRaux,SRaux,read_S,alat,velkp1,nk1,nk2,nk3,bnd,nspin,)
-    band =bnd
-
+    CANDIDATES = find_min(HRs,nelec,R)
     WEYL = {}
 
     model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
@@ -193,179 +178,61 @@ def loop_min(ef_index,HRaux,SRaux,read_S,alat,velkp1,nk1,nk2,nk3,bnd,nspin,a_vec
         print("No Candidate found.")
 
 
-def sym_test(Candidates,NewCandidates,candidates,HRaux,Rfft,band,b_vectors,ef_index,ispin):
-    print ('starting sym test')
-    for i in NewCandidates.keys():
-        p=list(map(float, i[1:-1].split( )))
-        p=np.dot(p,b_vectors)
-        for x in [-1,1]:
-            for y in [-1,1]:
-                for z in [-1,1]:
-                    kq = np.dot([p[0]*x,p[1]*y,p[2]*z],np.linalg.inv(b_vectors))
-                    egap = find_egap(HRaux,kq,Rfft,band,b_vectors,ef_index,ispin)
-                    if egap<0.00001:
-                        new = True
-                        for t in Candidates.keys():
-                            
-                            if np.linalg.norm(np.asarray(kq)-list(map(float, t[1:-1].split( ))))<0.0001:
-                                new = False
+def find_min(HRs,nelec,R):
 
-                        if new:
-                            candidates += 1
-                            print ('Sym Candidate No.{} found at {} with gap:{} eV'.format(candidates,str(kq).replace(",", ""),egap))
-                            Candidates[str(kq).replace(",", "")] = [egap]
-    return Candidates,candidates
-
-
-
-
-
-def find_min(initial,Candidates,candidates,ef_index,HRaux,SRaux,read_S,alat,velkp1,nk1,nk2,nk3,bnd,nspin,a_vectors,b_vectors,v_k):
-
-    snk1_range=[-0.5,0.5]
-    snk2_range=[-0.5,0.5]
-    snk3_range=[-0.5,0.5]
-    npool=1
-    shift=0.0
-
-    band = bnd
-    np.set_printoptions(precision=6, threshold=100, edgeitems=50, linewidth=350, suppress=True)
-    comm.Barrier()
-
-    nk1+=1
-    nk2+=1
-    nk3+=1
-
-    snk1=snk2=snk3=10
-
-
+    search_grid = do_search_grid(8,8,8)
+    
     #do the bounds for each search subsection of FBZ
     bounds_K  = np.zeros((search_grid.shape[0],3,2))
     guess_K   = np.zeros((search_grid.shape[0],3))
     #full grid
 
     #get the search grid off possible HSP
+    
+    start1=-0.5
+    start2=-0.5
+    start3=-0.5
+    end1  = 0.5
+    end2  = 0.5
+    end3  = 0.5
 
     #search in boxes
     bounds_K[:,:,0] = search_grid
-    bounds_K[:,:,1] = search_grid+1.0*np.array([1.02/(snk1),1.02/(snk2),1.02/(snk3)])
-
+    bounds_K[:,:,1] = search_grid+1.0*np.array([(end1-start1)/(snk1),(end2-start2)/(snk2),(end3-start3)/(snk3)])
     #initial guess is in the middle of each box
-    guess_K = search_grid+np.array([initial[0]/snk1,initial[1]/snk2,initial[2]/snk3])
-
-    #partial grid
+    guess_K = search_grid+0.5*np.array([(end1-start1)/(snk1),(end2-start2)/(snk2),(end3-start3)/(snk3)])
 
     #swap bounds axes to put in the root finder
     bounds_K=np.swapaxes(bounds_K,1,2)
 
-    #add two extra columns for info on which band and what spin for the extrema
-    #so we don't lose informatioen we reshape to reduce the duplicate entries
+    lam_XiP = lambda kq: get_gap(HR,kq,R)
 
-    all_extrema_shape = [snk1*snk2*snk3,bnd,nspin,6]
-    all_extrema_shape[0] =snk1*snk2*snk3
+    sgi = np.arange(bounds_K.shape[0],dtype=int)
 
-    vk_mesh = None
-    velkp   = None
-    velkp1  = None
-    velkp1p = None
-    velkp1=None
-    comm.Barrier()
+    sgi=scatter_full(sgi,1)
 
-    sst=0
+    for i in sgi:
 
-    if rank==0:
-        nawf,nawf,nr1,nr2,nr3,nspin = HRaux.shape
-        HRaux = HRaux.reshape((nawf,nawf,nr1*nr2*nr3,nspin))
-    else:
-        nspin=nawf=nr1=nr2=nr3=None
-
-    nspin = comm.bcast(nspin)
-    nawf  = comm.bcast(nawf)
-    nr1   = comm.bcast(nr1)
-    nr2   = comm.bcast(nr2)
-    nr3   = comm.bcast(nr3)
-
-
-    if rank!=0:
-        HRaux=np.zeros((nawf,nawf,nr1*nr2*nr3,nspin),dtype=complex,order='C')
-
-    comm.Barrier()
-    comm.Bcast(HRaux)
-    comm.Barrier()
-
-    NewCandidates = {}
-    R,_,_,_,_ = get_R_grid_fft(nr1,nr2,nr3,)
-    Rfft=R
-
-    ll=30
-    st=0:
-
-    sg = np.array(np.meshgrid(range(guess_K.shape[0]),list(range(1)),range(nspin),indexing='ij')).T.reshape(-1,3)
-
-    comm.Barrier()
-
-    fold_coord = lambda x: ((x+0.5)%1.0-0.5)
-
-    extrema=[]
-    timer_avg = 0.0
-
-    fp=0
-    sp=0
-    ep=0
-    
-    c = -1
-    for i in range(sg.shape[0]//size+1):
-
-        c+=1
-
-        if c>=sg.shape[0]:
-            continue
-
-        i     = sg[c][0]
-        b     = sg[c][1]
-        ispin = sg[c][2]
-
-
-        lam_XiP  = lambda K: find_egap(HRaux,K,Rfft,band,b_vectors,ef_index,ispin)
-        #loop over the search grid 
-
-
-        startt = time.time()
-        #fist pass
-        x0 = np.asarray(guess_K[i]).ravel()
-        n, = x0.shape
-
-        current_bounds=[(bounds_K[i,0,0],bounds_K[i,1,0]),
-                        (bounds_K[i,0,1],bounds_K[i,1,1]),
-                        (bounds_K[i,0,2],bounds_K[i,1,2])]
-
-        solx = OP.fmin_l_bfgs_b(lam_XiP,guess_K[i],bounds=current_bounds,
-                                approx_grad=True,maxiter=3000)
-
+        solx = OP.minimize(lam_XiP,guess_K[i],bounds=bounds_K[i],method="L-BFGS-B")
+                                
         if np.abs(solx[1]<0.00001):
 
-            if len(Candidates.keys()) == 0:
-                Candidates[str(solx[0])] = [solx[1]]
-                NewCandidates[str(solx[0])] = [solx[1]]
-                candidates += 1
-            else:
-                real = True
-                for i in Candidates.keys():
-                    if np.linalg.norm(solx[0]-list(map(float, i[1:-1].split( ))))<0.0001:
-                        real = False
-                if real:
-                    candidates += 1
-
-                    Candidates[str(solx[0])] = [solx[1]]
-                    NewCandidates[str(solx[0])] = [solx[1]]
-
-        else:
-            fp+=1
-            continue
-
-
+            candidates.append(solx.x)
 
     comm.Barrier()
+    candidates = gather_full(candidates)
 
-    return (Candidates,Rfft)
+    return (Candidates)
 
+
+def zp_HR ( HRs,nk1,nk2,nk3 ):
+
+  nfft1=nk1%2
+  nfft2=nk2%2
+  nfft3=nk3%2
+
+  HRs_pad=np.zeros((int(nawf**2),nk1,nk2,nk3,nspin),dtype=complex)
+
+  for ispin in range(nspin):
+    for n in range(HRs.shape[0]):
+        HRs_pad[n,:,:,:,ispin] = zero_pad(HRs[n,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)

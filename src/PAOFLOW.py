@@ -1162,4 +1162,10 @@ mo    '''
     self.report_module_time('Dielectric Tensor')
 
 
+  def find_weyl_points(self):
+    from .defs.do_find_Weyl import find_weyl
+
+    arrays,attr = self.data_controller.data_dicts()
+
+    find_weyl(arrays["HR"],attr["nelec"],arrays["nk1"],arrays["nk2"],arrays["nk3"])
 
