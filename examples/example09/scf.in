@@ -18,7 +18,7 @@
          ntyp            =        2
          ecutwfc         =       50.00000000
          occupations     =  'smearing'
-         smearing        =  'gauss'
+         smearing        =  'mv'
          degauss         =        1.00000000e-03
          noncolin        =  .true.
          lspinorb        =  .true.
@@ -38,4 +38,4 @@ P        0.70190000       0.70190000       0.80150000
 P        0.42990000       0.42990000       0.61880000
 P        0.57010000       0.57010000       0.11880000
 K_POINTS automatic
-8 8 5 0 0 0
+12 12 6 0 0 0

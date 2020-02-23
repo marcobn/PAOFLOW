@@ -1167,5 +1167,5 @@ mo    '''
 
     arrays,attr = self.data_controller.data_dicts()
 
-    find_weyl(arrays["HR"],attr["nelec"],arrays["nk1"],arrays["nk2"],arrays["nk3"])
+    find_weyl(arrays["HRs"],attr["nelec"],attr["nk1"],attr["nk2"],attr["nk3"])
 

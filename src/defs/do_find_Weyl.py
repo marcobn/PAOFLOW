@@ -75,6 +75,7 @@ def gen_eigs(HRaux,kq,R):
     nawf,nawf,_,nspin = HRaux.shape
     E_kp = np.zeros((1,nawf,nspin),dtype=np.float64)
     kq=kq[:,None]
+
     nkpi=1
 
     Hks_int  = np.zeros((nawf,nawf,1,nspin),dtype=complex,order='C') # final data arrays
@@ -95,6 +96,7 @@ def gen_eigs(HRaux,kq,R):
 def get_gap(HR,kq,R,nelec):
     E_kp = gen_eigs(HR,kq,R)
     egapp = E_kp[0,nelec,0]-E_kp[0,nelec-1,0]
+
 
     return egapp
 
@@ -117,7 +119,9 @@ def get_R_grid_fft ( nr1, nr2, nr3):
         Ry -= int(Ry)
         Rz -= int(Rz)
 
-        R[n] = Rx*nr1 + Ry*nr2 + Rz*nr3
+        R[n,0] = Rx*nr1 
+        R[n,1] = Ry*nr2 
+        R[n,2] = Rz*nr3
 
   return R  
 
@@ -143,10 +147,11 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
 #    HRs,nk1,nk2,nk3 = interp_odd(HRs,nk1,nk2,nk3)
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
+    R= get_R_grid_fft ( nk1, nk2, nk3)
 
     HRs=np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin))
 
-    R= get_R_grid_fft ( nk1, nk2, nk3)
+
 
     CANDIDATES = find_min(HRs,nelec,R)
     WEYL = {}
@@ -183,10 +188,7 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
 def find_min(HRs,nelec,R):
 
-
-
-
-    snk1=snk2=snk3=8
+    snk1=snk2=snk3=10
     search_grid = do_search_grid(snk1,snk2,snk3)
     
     #do the bounds for each search subsection of FBZ
@@ -211,31 +213,41 @@ def find_min(HRs,nelec,R):
 
     #swap bounds axes to put in the root finder
     bounds_K=np.swapaxes(bounds_K,1,2)
+#    print(R)
 
-    lam_XiP = lambda kq: get_gap(HRs,kq,R,nelec)
+    lam_XiP = lambda K: get_gap(HRs,K,R,nelec)
 
     sgi = np.arange(bounds_K.shape[0],dtype=int)
 
     sgi=scatter_full(sgi,1)
+
+#    print(sgi)
+
 
     candidates=[]
 
     for i in sgi:
 
 
-        solx = OP.minimize(lam_XiP,guess_K[i],bounds=bounds_K[i].T,method="L-BFGS-B")
-        print(solx.fun)                                
+#        solx = OP.fmin_l_bfgs_b(lam_XiP,guess_K[i],bounds=bounds_K[i].T,
+#                                pgtol=1.e-10,approx_grad=True)
+        # if np.abs(solx[1]<0.00001):
+        #     candidates.append(solx[0])
+        solx = OP.shgo(lam_XiP,bounds=bounds_K[i].T,n=250,iters=4,options={"f_tol":1.e-10})
         if np.abs(solx.fun<0.00001):
-
+            print(solx.fun,solx.x)
             candidates.append(solx.x)
             
-    comm.Barrier()
+
     
-    if len(candidates)==0:
+    if len(candidates)!=0:
        candidates = np.array(candidates)
     else:
-       candidates=np.array([[]])
+       candidates=np.array([])
 
+    comm.Barrier()
+    if rank==0:
+       print("done")
     candidates = gather_full(candidates,1)
     if rank==0:
        print(candidates)
