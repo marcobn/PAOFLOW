@@ -74,11 +74,11 @@ def gen_eigs(HRaux,kq,R):
 
     nawf,nawf,_,nspin = HRaux.shape
     E_kp = np.zeros((1,nawf,nspin),dtype=np.float64)
-    kq=kq[None]
+    kq=kq[:,None]
     nkpi=1
 
     Hks_int  = np.zeros((nawf,nawf,1,nspin),dtype=complex,order='C') # final data arrays
-    Hks_int = band_loop_H(0,1,nspin,nawf,nkpi,HRaux,kq,Rfft)
+    Hks_int = band_loop_H(0,1,nspin,nawf,nkpi,HRaux,kq,R)
 
 
     for ispin in range(nspin):
@@ -92,10 +92,10 @@ def gen_eigs(HRaux,kq,R):
 
 
 
-def find_egap(HR,kq,R,nelec):
-
+def get_gap(HR,kq,R,nelec):
     E_kp = gen_eigs(HR,kq,R)
-    egapp = E_kp[0,nelec,ispin]-E_kp[0,nelec-1,ispin]
+    egapp = E_kp[0,nelec,0]-E_kp[0,nelec-1,0]
+
     return egapp
 
 
@@ -142,6 +142,9 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
 
 #    HRs,nk1,nk2,nk3 = interp_odd(HRs,nk1,nk2,nk3)
+    nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
+
+    HRs=np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin))
 
     R= get_R_grid_fft ( nk1, nk2, nk3)
 
@@ -180,7 +183,11 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
 def find_min(HRs,nelec,R):
 
-    search_grid = do_search_grid(8,8,8)
+
+
+
+    snk1=snk2=snk3=8
+    search_grid = do_search_grid(snk1,snk2,snk3)
     
     #do the bounds for each search subsection of FBZ
     bounds_K  = np.zeros((search_grid.shape[0],3,2))
@@ -205,24 +212,34 @@ def find_min(HRs,nelec,R):
     #swap bounds axes to put in the root finder
     bounds_K=np.swapaxes(bounds_K,1,2)
 
-    lam_XiP = lambda kq: get_gap(HR,kq,R)
+    lam_XiP = lambda kq: get_gap(HRs,kq,R,nelec)
 
     sgi = np.arange(bounds_K.shape[0],dtype=int)
 
     sgi=scatter_full(sgi,1)
 
+    candidates=[]
+
     for i in sgi:
 
-        solx = OP.minimize(lam_XiP,guess_K[i],bounds=bounds_K[i],method="L-BFGS-B")
-                                
-        if np.abs(solx[1]<0.00001):
+
+        solx = OP.minimize(lam_XiP,guess_K[i],bounds=bounds_K[i].T,method="L-BFGS-B")
+        print(solx.fun)                                
+        if np.abs(solx.fun<0.00001):
 
             candidates.append(solx.x)
-
+            
     comm.Barrier()
-    candidates = gather_full(candidates)
+    
+    if len(candidates)==0:
+       candidates = np.array(candidates)
+    else:
+       candidates=np.array([[]])
 
-    return (Candidates)
+    candidates = gather_full(candidates,1)
+    if rank==0:
+       print(candidates)
+    return (candidates)
 
 
 def zp_HR ( HRs,nk1,nk2,nk3 ):
