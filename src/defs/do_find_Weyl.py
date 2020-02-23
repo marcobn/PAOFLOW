@@ -188,7 +188,7 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
 def find_min(HRs,nelec,R):
 
-    snk1=snk2=snk3=10
+    snk1=snk2=snk3=8
     search_grid = do_search_grid(snk1,snk2,snk3)
     
     #do the bounds for each search subsection of FBZ
@@ -233,21 +233,25 @@ def find_min(HRs,nelec,R):
 #                                pgtol=1.e-10,approx_grad=True)
         # if np.abs(solx[1]<0.00001):
         #     candidates.append(solx[0])
-        solx = OP.shgo(lam_XiP,bounds=bounds_K[i].T,n=250,iters=4,options={"f_tol":1.e-10})
+        solx = OP.shgo(lam_XiP,bounds=bounds_K[i].T,options={"f_tol":1.e-10})#,n=250,iters=4)
         if np.abs(solx.fun<0.00001):
             print(solx.fun,solx.x)
             candidates.append(solx.x)
             
 
     
-    if len(candidates)!=0:
+    if len(candidates)==1:
+       candidates = np.array(candidates)[None]
+    elif len(candidates)>1:
        candidates = np.array(candidates)
     else:
-       candidates=np.array([])
+       candidates=np.array([[]])
 
     comm.Barrier()
     if rank==0:
        print("done")
+
+    candidates = np.ascontiguousarray(candidates)
     candidates = gather_full(candidates,1)
     if rank==0:
        print(candidates)
