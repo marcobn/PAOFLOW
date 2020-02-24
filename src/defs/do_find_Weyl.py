@@ -150,34 +150,34 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
     CANDIDATES = find_min(HRs,nelec,R)
     WEYL = {}
+    if rank==0:
+       model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
+       system = z2pack.tb.System(model,bands=nelec)
 
-    model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
-    system = z2pack.tb.System(model,bands=nelec)
+       candidates=0
 
-    candidates=0
+       for kq in CANDIDATES:
 
-    for kq in CANDIDATES:
+           result_1 = z2pack.surface.run(system=system,surface=z2pack.shape.Sphere(center=tuple(kq), radius=0.005))
+           invariant = z2pack.invariant.chern(result_1)
 
-        result_1 = z2pack.surface.run(system=system,surface=z2pack.shape.Sphere(center=tuple(kq), radius=0.005))
-        invariant = z2pack.invariant.chern(result_1)
+           if invariant != 0:
+               new = True
+               for t in WEYL.keys():
+                   if np.linalg.norm(np.asarray(kq)-list(map(float, t[1:-1].split( ))))<0.005:
+                       new=False
+               if new:
+                   candidates += 1
+                   WEYL[str(kq).replace(",", "")]=invariant
 
-        if invariant != 0:
-            new = True
-            for t in WEYL.keys():
-                if np.linalg.norm(np.asarray(kq)-list(map(float, t[1:-1].split( ))))<0.005:
-                    new=False
-            if new:
-                candidates += 1
-                WEYL[str(kq).replace(",", "")]=invariant
+       if bool(WEYL):
+           j = 1
+           for k in WEYL.keys():
+               print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))
+               j = j + 1
 
-    if bool(WEYL):
-        j = 1
-        for k in WEYL.keys():
-            print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))
-            j = j + 1
-
-    else:
-        print("No Candidate found.")
+       else:
+           print("No Candidate found.")
 
 
 def find_min(HRs,nelec,R):
