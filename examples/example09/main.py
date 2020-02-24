@@ -27,7 +27,7 @@ from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW.PAOFLOW(savedir='MoP2.save',verbose=True)
+  paoflow = PAOFLOW.PAOFLOW(savedir='MoP2.save',verbose=True,outputdir="./")
   paoflow.projectability(pthr=.95)
   paoflow.pao_hamiltonian(symmetrize=True,thresh=1.e-10,max_iter=64)
   paoflow.bands(ibrav=1)

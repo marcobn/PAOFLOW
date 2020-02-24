@@ -148,7 +148,7 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
 
 
-    CANDIDATES = find_min(HRs,nelec,R)
+    CAND,ene = find_min(HRs,nelec,R)
     WEYL = {}
     if rank==0:
        model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
@@ -156,7 +156,7 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
        candidates=0
 
-       for kq in CANDIDATES:
+       for kq in CAND:
 
            result_1 = z2pack.surface.run(system=system,surface=z2pack.shape.Sphere(center=tuple(kq), radius=0.005))
            invariant = z2pack.invariant.chern(result_1)
@@ -169,11 +169,11 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
                if new:
                    candidates += 1
                    WEYL[str(kq).replace(",", "")]=invariant
-
+                   
        if bool(WEYL):
            j = 1
            for k in WEYL.keys():
-               print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))
+               print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))               
                j = j + 1
 
        else:
@@ -230,17 +230,20 @@ def find_min(HRs,nelec,R):
     candidates=gather_full(candidates,1)
     
 
-
+    ene=None
     if rank==0:
     
        candidates=candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
-       print(candidates)
+       ene=np.zeros((candidates.shape[0]))
+       for i in range(ene.shape[0]):
+          ene[i] = gen_eigs(HRs,candidates[i],R)
+
       
     comm.Barrier()
     
 
+    return (candidates,ene)
 
-    return (candidates)
 
 
 def zp_HR ( HRs,nk1,nk2,nk3 ):

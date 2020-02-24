@@ -415,8 +415,9 @@ class DataController:
                     # l+1,m+1 just to start from 1 not zero
 
                     f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,
-                                                               HRS[l,m,i,j,k,0].real+HRS[l,m,i,j,k,0].imag,
-                                                               0.0))
+                                                               HRS[l,m,i,j,k,0].real,
+                                                               HRS[l,m,i,j,k,0].imag,))
+                                                               
     except:
       self.report_exception('z2_pack')
       if self.data_attributes['abort_on_exception']:
