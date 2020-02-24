@@ -29,8 +29,9 @@ def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='MoP2.save',verbose=True)
   paoflow.projectability(pthr=.95)
-  paoflow.pao_hamiltonian(symmetrize=False,thresh=1.e-10,max_iter=64)
-#  paoflow.z2_pack()
+  paoflow.pao_hamiltonian(symmetrize=True,thresh=1.e-10,max_iter=64)
+  paoflow.bands(ibrav=1)
+  paoflow.z2_pack()
   paoflow.find_weyl_points()
   paoflow.finish_execution()
 

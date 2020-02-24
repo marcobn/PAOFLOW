@@ -1337,7 +1337,7 @@ def open_grid_wrapper(data_controller):
                 data_arrays['Hks'][:,:,:,ispin]=np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0)))
             else:
                 data_arrays['Hks']=np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))[...,None])
-            np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
+#            np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
         else:
             Hksp=None
 

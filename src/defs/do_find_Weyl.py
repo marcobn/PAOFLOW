@@ -50,7 +50,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-np.set_printoptions(precision=6, threshold=100, edgeitems=50, linewidth=350, suppress=True)
+np.set_printoptions(precision=8, threshold=100, edgeitems=50, linewidth=350, suppress=True)
 
 
 
@@ -86,11 +86,6 @@ def gen_eigs(HRaux,kq,R):
         E_kp[:,:,ispin] =  LAN.eigvalsh(Hks_int[:,:,0,ispin],UPLO='U')
 
     return E_kp
-
-
-
-
-
 
 
 def get_gap(HR,kq,R,nelec):
@@ -157,12 +152,11 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
     WEYL = {}
 
     model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
-    system = z2pack.tb.System(model,bands=ef_index)
+    system = z2pack.tb.System(model,bands=nelec)
 
     candidates=0
 
-    for i in CANDIDATES.keys():
-        kq=list(map(float, i[1:-1].split( )))
+    for kq in CANDIDATES:
 
         result_1 = z2pack.surface.run(system=system,surface=z2pack.shape.Sphere(center=tuple(kq), radius=0.005))
         invariant = z2pack.invariant.chern(result_1)
@@ -212,7 +206,7 @@ def find_min(HRs,nelec,R):
     guess_K = search_grid+0.5*np.array([(end1-start1)/(snk1),(end2-start2)/(snk2),(end3-start3)/(snk3)])
 
     #swap bounds axes to put in the root finder
-    bounds_K=np.swapaxes(bounds_K,1,2)
+#    bounds_K=np.swapaxes(bounds_K,1,2)
 #    print(R)
 
     lam_XiP = lambda K: get_gap(HRs,K,R,nelec)
@@ -221,40 +215,31 @@ def find_min(HRs,nelec,R):
 
     sgi=scatter_full(sgi,1)
 
-#    print(sgi)
+    candidates=np.zeros((sgi.shape[0],3))
 
+    for i in range(sgi.shape[0]):
 
-    candidates=[]
-
-    for i in sgi:
-
-
-#        solx = OP.fmin_l_bfgs_b(lam_XiP,guess_K[i],bounds=bounds_K[i].T,
-#                                pgtol=1.e-10,approx_grad=True)
-        # if np.abs(solx[1]<0.00001):
-        #     candidates.append(solx[0])
-        solx = OP.shgo(lam_XiP,bounds=bounds_K[i].T,options={"f_tol":1.e-10})#,n=250,iters=4)
-        if np.abs(solx.fun<0.00001):
-            print(solx.fun,solx.x)
-            candidates.append(solx.x)
+       solx = OP.minimize(lam_XiP,guess_K[sgi[i]],bounds=bounds_K[sgi[i]],method="L-BFGS-B",
+                           options={"ftol":1.e-14,"gtol":1.e-12})
+   
+       if np.abs(solx.fun<0.00001):
+            candidates[i]=solx.x
             
 
+
+    candidates=gather_full(candidates,1)
     
-    if len(candidates)==1:
-       candidates = np.array(candidates)[None]
-    elif len(candidates)>1:
-       candidates = np.array(candidates)
-    else:
-       candidates=np.array([[]])
 
-    comm.Barrier()
-    if rank==0:
-       print("done")
 
-    candidates = np.ascontiguousarray(candidates)
-    candidates = gather_full(candidates,1)
     if rank==0:
+    
+       candidates=candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
        print(candidates)
+      
+    comm.Barrier()
+    
+
+
     return (candidates)
 
 

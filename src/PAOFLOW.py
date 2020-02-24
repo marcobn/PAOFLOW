@@ -339,7 +339,7 @@ class PAOFLOW:
     self.comm.Barrier()
     
 
-  def z2_pack ( self, fname='z2pack_hamiltonian.hm' ):
+  def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
     '''
     Write 'HRs' to file for use with Z2 Pack
 
