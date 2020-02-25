@@ -812,11 +812,9 @@ mo    '''
       if band_curvature:
         from .defs.do_band_curvature import do_band_curvature
         do_band_curvature (self.data_controller)
-      else:
         # No more need for k-space Hamiltonian
         del arrays['Hksp']
-
-
+      
     except:
       self.report_exception('gradient_and_momenta')
       if attr['abort_on_exception']:
