@@ -139,18 +139,20 @@ def do_search_grid(nk1,nk2,nk3,snk1_range=[-0.5,0.5],snk2_range=[-0.5,0.5],snk3_
 
 def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
-
-#    HRs,nk1,nk2,nk3 = interp_odd(HRs,nk1,nk2,nk3)
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
     R= get_R_grid_fft ( nk1, nk2, nk3)
 
     HRs=np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin))
 
-
-
     CAND,ene = find_min(HRs,nelec,R)
+    
     WEYL = {}
     if rank==0:
+
+
+#       np.unique(,return_index)
+
+
        model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
        system = z2pack.tb.System(model,bands=nelec)
 
@@ -158,31 +160,26 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
 
        for kq in CAND:
 
-           result_1 = z2pack.surface.run(system=system,surface=z2pack.shape.Sphere(center=tuple(kq), radius=0.005))
+           result_1 = z2pack.surface.run(system=system,
+                                         surface=z2pack.shape.Sphere(center=tuple(kq),
+                                                                     radius=0.001))
            invariant = z2pack.invariant.chern(result_1)
-
+           print(invariant)
            if invariant != 0:
-               new = True
-               for t in WEYL.keys():
-                   if np.linalg.norm(np.asarray(kq)-list(map(float, t[1:-1].split( ))))<0.005:
-                       new=False
-               if new:
-                   candidates += 1
-                   WEYL[str(kq).replace(",", "")]=invariant
+              candidates += 1
+              WEYL[str(kq).replace(",", "")]=invariant
                    
-       if bool(WEYL):
-           j = 1
-           for k in WEYL.keys():
-               print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))               
-               j = j + 1
 
-       else:
-           print("No Candidate found.")
+       j=1
+       for k in WEYL.keys():
+          print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))
+          j = j + 1
+
 
 
 def find_min(HRs,nelec,R):
 
-    snk1=snk2=snk3=8
+    snk1=snk2=snk3=12
     search_grid = do_search_grid(snk1,snk2,snk3)
     
     #do the bounds for each search subsection of FBZ
@@ -231,14 +228,32 @@ def find_min(HRs,nelec,R):
     
 
     ene=None
-    if rank==0:
-    
-       candidates=candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
-       ene=np.zeros((candidates.shape[0]))
-       for i in range(ene.shape[0]):
-          ene[i] = gen_eigs(HRs,candidates[i],R)
+    if rank==0:    
 
-      
+       candidates=candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
+#       print("found %s candidates"%candidates.shape[0])
+       ene=np.zeros((candidates.shape[0]))
+       gaps=np.zeros((candidates.shape[0]))
+       for i in range(ene.shape[0]):
+          eigs = gen_eigs(HRs,candidates[i],R)[0,:,0]
+          ene[i] = eigs[nelec]
+          gaps[i]=eigs[nelec]-eigs[nelec-1]
+       # sort by gap size (should be nearly zero)
+       idx = np.argsort(gaps)
+       ene= ene[idx]
+       candidates = candidates[idx]
+#       for i in range(ene.shape[0]):
+#          print(candidates[i],"% 4.4f"%ene[i])
+       print()
+       # filter out duplicates by degeneracy
+       _,idx=np.unique(np.around(ene,decimals=4),return_index=True)
+       ene=ene[idx]
+       candidates = candidates[idx]
+       print("found %s non-equivilent candidates"%candidates.shape[0])
+       for i in range(ene.shape[0]):
+          print(candidates[i],"% 4.4f"%ene[i])
+       print()
+
     comm.Barrier()
     
 

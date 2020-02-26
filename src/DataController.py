@@ -366,15 +366,39 @@ class DataController:
       if self.rank == 0:
         import numpy as np
         from os.path import join
-  
+        from .defs.zero_pad import zero_pad
+
         arry,attr = self.data_dicts()
 
         HRS=np.fft.ifftn(arry["Hks"],axes=(2,3,4))
 
+        nawf,_,nk1,nk2,nk3,nspin=HRS.shape
+        # how to pad HR to make sure it's odd for z2pack
+        if nk1%2:
+          pad1=0
+        else: pad1=1
+        if nk2%2:
+          pad2=0
+        else: pad2=1
+        if nk3%2:
+          pad3=0
+        else: pad3=1
+
+
+        HRS_interp=np.zeros((nawf,nawf,nk1+pad1,nk2+pad2,nk3+pad3,nspin),dtype=complex)
+        for n in range(nawf):
+          for m in range(nawf):
+            for ispin in range(nspin):
+              HRS_interp[n,m,:,:,:,ispin] = zero_pad(HRS[n,m,:,:,:,ispin],nk1,nk2,nk3,pad1,pad2,pad3)
+
+        nk1+=pad1
+        nk2+=pad2
+        nk3+=pad3
+        HRS=HRS_interp
+        HRS_interp=None
+
         with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
   
-          nawf = attr['nawf']
-          nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
           nkpts = nk1*nk2*nk3
           f.write("PAOFLOW Generated \n")
           f.write('%5d \n'%nawf)
