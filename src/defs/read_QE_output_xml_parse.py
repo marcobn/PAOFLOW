@@ -104,6 +104,64 @@ def read_QE_output_xml( data_controller ):
                     atoms.append(aux.attrib['SPECIES'][:-1])
                     tau[n,:] = np.array(aux.attrib['tau'].split(), dtype="float32")
 
+
+            # checking for magnetic calc (for symmetry stuff)
+            if elem.tag=='SPIN':
+                try:
+                    aux = elem.findall("SPIN-ORBIT_DOMAG")
+                    mag = aux[0].text
+                    if mag.lower()=="T":
+                        dftMAG=True
+                    else:
+                        dftMAG=False
+                except: pass
+
+            if elem.tag == 'SYMMETRIES':
+                # read in info on symmetry operations
+                sym_list=[]
+                shift_list=[]
+                equiv_atom=[]
+                sym_info=[]
+                time_rev=[]
+
+                aux=elem.findall("NUMBER_OF_SYMMETRIES")[0]
+                nsym = int(aux.text)
+
+                for i in range(1,nsym+1):
+                    aux=elem.findall("SYMM.%s"%i)[0]
+                    
+                    try:                            
+                        shift_txt = aux.findall('FRACTIONAL_TRANSLATION')[0].text
+                        shift_list.append(list(map(float,shift_txt.split())))
+
+                        equiv_atom_txt = aux.findall('EQUIVALENT_IONS')[0].text
+                        equiv_atom.append(list(map(int,equiv_atom_txt.split())))
+
+                        sym_info.append(aux.findall('INFO')[0].attrib['NAME'])
+
+                        time_rev.append(aux.findall('INFO')[0].attrib['T_REV'])
+
+                        sym_list.append([list(map(float,x.split())) for x in aux.findall\
+                                         ('ROTATION')[0].text.split('\n') if len(x.split())!=0] )
+
+                    except Exception as e: print(e)
+
+                sym_rot=np.transpose(np.array(sym_list),axes=(0,2,1))
+                sym_shift=np.array(shift_list)
+                equiv_atom=np.array(equiv_atom)-1
+                sym_info=np.array(sym_info)
+
+                if len(time_rev)!=0:
+                    for i in range(len(time_rev)):
+                        if time_rev[i]=="true":
+                            time_rev[i]=True
+                        else:
+                            time_rev[i]=False
+                    time_rev=np.array(time_rev)
+                else:
+                    time_rev=np.zeros(sym_info.shape[0],dtype=bool)
+                
+
     # Reading atomic_proj.xml
 
     group_nesting = 0
@@ -294,14 +352,20 @@ def read_QE_output_xml( data_controller ):
     data_attributes['omega'] = omega
     data_attributes['Efermi'] = Efermi
     data_attributes['dftSO'] = dftSO
+    data_attributes['dftMAG'] = dftMAG
     data_arrays['tau'] = tau
     data_arrays['kpnts'] = kpnts
     data_arrays['atoms'] = atoms
-    data_arrays['species'] = zip(species,pseudos)
+    data_arrays['species'] = [[species[i],pseudos[i]] for i in range(len(species))]
     data_arrays['kpnts_wght'] = kpnts_wght
     data_arrays['a_vectors'] = a_vectors
     data_arrays['b_vectors'] = b_vectors
     data_arrays['my_eigsmat'] = my_eigsmat
     data_arrays['U'] = U
+    data_arrays['equiv_atom'] = equiv_atom
+    data_arrays['sym_rot'] = sym_rot
+    data_arrays['sym_shift'] = sym_shift
+    data_arrays['sym_info'] = sym_info 
+    data_arrays['sym_TR'] = time_rev
     if Sks is not None:
       data_arrays['Sks'] = Sks
