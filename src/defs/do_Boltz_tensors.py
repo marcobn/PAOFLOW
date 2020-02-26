@@ -192,6 +192,9 @@ def H_loop(ene,E_k,velkp,d2Ed2k,kq_wght,temp):
                   if a==b and b==g: continue                                           
                   R[a,b,g,n] = np.sum(sig_xyz[a,b,g]*Eaux)
 
+  if rank==0:
+    print(kq_wght)
+    print(kq_wght.shape)
   return(R*kq_wght[0]*0.5)
 
 
