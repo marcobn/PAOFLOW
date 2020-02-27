@@ -102,7 +102,6 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
 
   bnd = attributes['bnd']
   kq_wght = 1./attributes['nkpnts']
-
   if smearing is not None and smearing != 'gauss' and smearing != 'm-p':
     print('%s Smearing Not Implemented.'%smearing)
     comm.Abort()
@@ -192,9 +191,6 @@ def H_loop(ene,E_k,velkp,d2Ed2k,kq_wght,temp):
                   if a==b and b==g: continue                                           
                   R[a,b,g,n] = np.sum(sig_xyz[a,b,g]*Eaux)
 
-  if rank==0:
-    print(kq_wght)
-    print(kq_wght.shape)
-  return(R*kq_wght[0]*0.5)
+  return(R*kq_wght[0]*0.5/temp)
 
 

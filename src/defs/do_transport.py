@@ -188,67 +188,67 @@ def do_carrier_conc( data_controller,velkp,ene,temps ):
   velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])
   d2Ed2k_range = np.ascontiguousarray(d2Ed2k[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])    
 
-  # writing the effective masses to file
-  #scale factor
-  sf = 11.055095423844927*0.003324201
-  em_flat = d2Ed2k*sf
-  em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(1,2,3,0)))
-  em_flat = gather_full(em_flat,attr['npool'])
+  write_masses=False
+  if write_masses:
+    # writing the effective masses to file
+    #scale factor
+    sf = 11.055095423844927*0.003324201
+    em_flat = d2Ed2k*sf
+    em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(1,2,3,0)))
+    em_flat = gather_full(em_flat,attr['npool'])
 
-  if rank==0:
-    nk,bnd,nspin,_ = em_flat.shape
-    em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(2,0,1,3)))
+    if rank==0:
+      nk,bnd,nspin,_ = em_flat.shape
+      em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(2,0,1,3)))
 
-    em_tens=np.zeros((nspin,nk,bnd,3,3))
-    e_mass =np.zeros((nspin,nk,bnd,8))
+      em_tens=np.zeros((nspin,nk,bnd,3,3))
+      e_mass =np.zeros((nspin,nk,bnd,8))
 
-    # build the effective mass tensors from the flattened version
-    em_tens[...,0,0]=em_flat[...,0]
-    em_tens[...,1,1]=em_flat[...,1]
-    em_tens[...,2,2]=em_flat[...,2]
-    em_tens[...,0,1]=em_flat[...,3]
-    em_tens[...,1,0]=em_flat[...,3]
-    em_tens[...,1,2]=em_flat[...,4]
-    em_tens[...,2,1]=em_flat[...,4]
-    em_tens[...,0,2]=em_flat[...,5]
-    em_tens[...,2,0]=em_flat[...,5]
-    # diagonalize
-    for sp in range(nspin):
-      for k in range(nk):
-        for b in range(bnd):
-          effm =  np.linalg.eigvals(np.linalg.inv(em_tens[sp,k,b]))
-          e_mass[sp,k,b,[4,5,6]] = effm
+      # build the effective mass tensors from the flattened version
+      em_tens[...,0,0]=em_flat[...,0]
+      em_tens[...,1,1]=em_flat[...,1]
+      em_tens[...,2,2]=em_flat[...,2]
+      em_tens[...,0,1]=em_flat[...,3]
+      em_tens[...,1,0]=em_flat[...,3]
+      em_tens[...,1,2]=em_flat[...,4]
+      em_tens[...,2,1]=em_flat[...,4]
+      em_tens[...,0,2]=em_flat[...,5]
+      em_tens[...,2,0]=em_flat[...,5]
+      # diagonalize
+      for sp in range(nspin):
+        for k in range(nk):
+          for b in range(bnd):
+            effm =  np.linalg.eigvals(np.linalg.inv(em_tens[sp,k,b]))
+            e_mass[sp,k,b,[4,5,6]] = effm
 
-          if np.prod(effm)<0:                                                  
-            dos_em = -np.prod(np.abs(effm))**(1.0/3.0)                           
-          else:                                                                  
-            dos_em =  np.prod(np.abs(effm))**(1.0/3.0) 
+            if np.prod(effm)<0:                                                  
+              dos_em = -np.prod(np.abs(effm))**(1.0/3.0)                           
+            else:                                                                  
+              dos_em =  np.prod(np.abs(effm))**(1.0/3.0) 
 
-          e_mass[sp,k,b,7] = dos_em
+            e_mass[sp,k,b,7] = dos_em
 
-  effm=dos_em=em_tens=em_flat=None
+    effm=dos_em=em_tens=em_flat=None
 
-  E_k_temp=gather_full(E_k,attr['npool'])
-  if rank==0:    
-    E_k_temp = np.transpose(E_k_temp,axes=(2,0,1))
-    e_mass[...,3]  = E_k_temp[:,:,:attr['bnd']]
-    e_mass[...,:3] = get_K_grid_fft_crystal(attr['nk1'],attr['nk2'],attr['nk3'])[None,:,None]
+    E_k_temp=gather_full(E_k,attr['npool'])
+    if rank==0:    
+      E_k_temp = np.transpose(E_k_temp,axes=(2,0,1))
+      e_mass[...,3]  = E_k_temp[:,:,:attr['bnd']]
+      e_mass[...,:3] = get_K_grid_fft_crystal(attr['nk1'],attr['nk2'],attr['nk3'])[None,:,None]
 
-    for sp in range(nspin):
-      fpath = join(attr['opath'],'effective_masses_%d.dat'%sp)
-      with open(fpath,'w') as ofo:
-        ofo.write('    k_1     k_2     k_3     E-E_f              m_1              m_2              m_3            m_dos\n')
-        ofo.write('-'*101)
-        ofo.write('\n')
+      for sp in range(nspin):
+        fpath = join(attr['opath'],'effective_masses_%d.dat'%sp)
+        with open(fpath,'w') as ofo:
+          ofo.write('    k_1     k_2     k_3     E-E_f              m_1              m_2              m_3            m_dos\n')
+          ofo.write('-'*101)
+          ofo.write('\n')
 
-        for sp in range(nspin):
-          for k in range(nk):
-            for b in range(bnd):
-              ofo.write('% 4.4f % 4.4f % 4.4f % 9.4f % 16.4f % 16.4f % 16.4f % 16.4f\n'%tuple(e_mass[sp,k,b].tolist()))
+          for sp in range(nspin):
+            for k in range(nk):
+              for b in range(bnd):
+                ofo.write('% 4.4f % 4.4f % 4.4f % 9.4f % 16.4f % 16.4f % 16.4f % 16.4f\n'%tuple(e_mass[sp,k,b].tolist()))
 
-  E_k_temp=None
-
-
+    E_k_temp=None
 
   # combine spin channels
   L0_temps = np.sum(ary['boltz_L0'],axis=0)/nspin
@@ -267,8 +267,6 @@ def do_carrier_conc( data_controller,velkp,ene,temps ):
         inv_L0[:,:,n]= 0.0
 
 
-    inv_L0*=siemen_conv/attr['omega']
-
     # get sig_ijk
     sig_ijk = do_Hall_tensors( E_k_range,velkp_range,d2Ed2k_range,
                                kq_wght,itemp,ene)
@@ -276,14 +274,8 @@ def do_carrier_conc( data_controller,velkp,ene,temps ):
 
     # calculate hall conductivity
     if rank==0:
-      
         R_ijk = np.zeros_like(sig_ijk)
         
-        #scale by cell size 
-
-        #multiply by spin multiplier
-        sig_ijk *= spin_mult
-
         # loop over 27 components of R_ijk
         for i in range(3):
             for j in range(3):
@@ -293,6 +285,8 @@ def do_carrier_conc( data_controller,velkp,ene,temps ):
                             R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
 
 
+
+#        R_ijk*=0.510998950*1.e6
         # take average 
         for n in range(ene.size):
             pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
