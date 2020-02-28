@@ -1164,6 +1164,7 @@ mo    '''
     from .defs.do_find_Weyl import find_weyl
 
     arrays,attr = self.data_controller.data_dicts()
+    mag_so=np.logical_and(attr["dftMAG"],attr["dftSO"])
 
-    find_weyl(arrays["HRs"],attr["nelec"],attr["nk1"],attr["nk2"],attr["nk3"])
+    find_weyl(arrays["HRs"],attr["nelec"],attr["nk1"],attr["nk2"],attr["nk3"],arrays["b_vectors"],arrays["sym_rot"],arrays["sym_TR"],mag_so)
 

@@ -25,8 +25,7 @@
 # optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
 # 
 
-import z2pack
-import tbmodels
+
 import scipy.optimize as so
 #import matplotlib.pyplot as plt
 from scipy import fftpack as FFT
@@ -137,20 +136,35 @@ def do_search_grid(nk1,nk2,nk3,snk1_range=[-0.5,0.5],snk2_range=[-0.5,0.5],snk3_
 
 
 
-def find_weyl(HRs,nelec,nk1,nk2,nk3):
+def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.01):
+
 
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
     R= get_R_grid_fft ( nk1, nk2, nk3)
 
     HRs=np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin))
 
-    CAND,ene = find_min(HRs,nelec,R)
+    CAND,ene = find_min(HRs,nelec,R,b_vectors)
     
     WEYL = {}
     if rank==0:
+       
+       # get all equiv k
+       CAND = get_equiv_k(CAND,symops,TR_flag,mag_soc)
+       print(CAND)
+       print(CAND.shape)
 
+       try:
+          import z2pack
+          import tbmodels
+       except:
+         print('Could not load z2pack to verify chirality of weyl points')
+         return
 
-#       np.unique(,return_index)
+       for i in range(CAND.shape[0]):
+            print('Weyl point candidate #%s:'%(i+1))
+            print("coord crys: %s"%CAND[i])
+            print("coord cart: %s"%(b_vectors.dot(CAND[i])))
 
 
        model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
@@ -159,27 +173,31 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3):
        candidates=0
 
        for kq in CAND:
+           # if distance between two candidates is very small
+           k_rad=np.amin(np.sqrt(np.sum((kq - CAND)**2,axis=1)))*0.9
+           if k_rad>test_rad:
+              k_rad=test_rad
 
+           
            result_1 = z2pack.surface.run(system=system,
                                          surface=z2pack.shape.Sphere(center=tuple(kq),
-                                                                     radius=0.001))
+                                                                     radius=k_rad))
            invariant = z2pack.invariant.chern(result_1)
-           print(invariant)
+
            if invariant != 0:
               candidates += 1
               WEYL[str(kq).replace(",", "")]=invariant
-                   
+
 
        j=1
        for k in WEYL.keys():
           print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))
           j = j + 1
+      
 
+def find_min(HRs,nelec,R,a_vectors):
 
-
-def find_min(HRs,nelec,R):
-
-    snk1=snk2=snk3=12
+    snk1=snk2=snk3=8
     search_grid = do_search_grid(snk1,snk2,snk3)
     
     #do the bounds for each search subsection of FBZ
@@ -202,10 +220,6 @@ def find_min(HRs,nelec,R):
     #initial guess is in the middle of each box
     guess_K = search_grid+0.5*np.array([(end1-start1)/(snk1),(end2-start2)/(snk2),(end3-start3)/(snk3)])
 
-    #swap bounds axes to put in the root finder
-#    bounds_K=np.swapaxes(bounds_K,1,2)
-#    print(R)
-
     lam_XiP = lambda K: get_gap(HRs,K,R,nelec)
 
     sgi = np.arange(bounds_K.shape[0],dtype=int)
@@ -216,22 +230,22 @@ def find_min(HRs,nelec,R):
 
     for i in range(sgi.shape[0]):
 
+#       solx = OP.shgo(lam_XiP,bounds_K[sgi[i]], n=60, sampling_method='sobol')
+
        solx = OP.minimize(lam_XiP,guess_K[sgi[i]],bounds=bounds_K[sgi[i]],method="L-BFGS-B",
                            options={"ftol":1.e-14,"gtol":1.e-12})
-   
-       if np.abs(solx.fun<0.00001):
+
+       if np.abs(solx.fun)<1.e-5:
             candidates[i]=solx.x
             
-
-
     candidates=gather_full(candidates,1)
     
 
     ene=None
     if rank==0:    
-
+       # filter out non hits
        candidates=candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
-#       print("found %s candidates"%candidates.shape[0])
+       # calculate energy at each candidate to reduce equiv ones
        ene=np.zeros((candidates.shape[0]))
        gaps=np.zeros((candidates.shape[0]))
        for i in range(ene.shape[0]):
@@ -242,8 +256,6 @@ def find_min(HRs,nelec,R):
        idx = np.argsort(gaps)
        ene= ene[idx]
        candidates = candidates[idx]
-#       for i in range(ene.shape[0]):
-#          print(candidates[i],"% 4.4f"%ene[i])
        print()
        # filter out duplicates by degeneracy
        _,idx=np.unique(np.around(ene,decimals=4),return_index=True)
@@ -255,20 +267,41 @@ def find_min(HRs,nelec,R):
        print()
 
     comm.Barrier()
-    
-
+      
     return (candidates,ene)
 
 
 
-def zp_HR ( HRs,nk1,nk2,nk3 ):
 
-  nfft1=nk1%2
-  nfft2=nk2%2
-  nfft3=nk3%2
+def get_equiv_k(kp,symop,sym_TR,mag_soc):
+    from .pao_sym import correct_roundoff
 
-  HRs_pad=np.zeros((int(nawf**2),nk1,nk2,nk3,nspin),dtype=complex)
+    # if we have time inversion sym
+    if not mag_soc:
+       kp=np.vstack([kp,-kp])
+    
 
-  for ispin in range(nspin):
-    for n in range(HRs.shape[0]):
-        HRs_pad[n,:,:,:,ispin] = zero_pad(HRs[n,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3)
+    kp = correct_roundoff(kp)
+    newk_tot = np.copy(kp)
+
+    for isym in range(symop.shape[0]):
+        #transform k -> k' with the sym op
+        if sym_TR[isym]:
+            newk = ((((-symop[isym] @ (kp.T%1.0))%1.0)+0.5)%1.0)-0.5
+        else:
+            newk = (((( symop[isym] @ (kp.T%1.0))%1.0)+0.5)%1.0)-0.5
+
+        newk = correct_roundoff(newk)
+        newk[np.where(np.isclose(newk,0.5))]=-0.5
+        newk[np.where(np.isclose(newk,-1.0))]=0.0
+        newk[np.where(np.isclose(newk,1.0))]=0.0
+
+        newk_tot=np.vstack([newk_tot,newk.T])
+
+    # filter duplicates
+    newk_r=np.around(newk_tot,decimals=5)
+    b_pos = np.ascontiguousarray(newk_r).view(np.dtype((np.void,newk_r.dtype.itemsize *newk_r.shape[1])))
+    _, idx = np.unique(b_pos, return_index=True)
+    newk_tot=newk_tot[idx]
+
+    return newk_tot
