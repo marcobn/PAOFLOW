@@ -27,6 +27,8 @@ from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
 import time
+from  scipy.special import eval_chebyt
+
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -128,23 +130,30 @@ def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,e
 
 def LPF(nk1,nk2,nk3,cutoff=0.90):
 
+#    fg = get_full_grid(nk1,nk2,nk3)
+#    fg = np.reshape(fg,(nk1,nk2,nk3,3))
+
+
+
+    # gfilter=np.ones((nk1,nk2,nk3),dtype=float)
+
+    # dist = np.sum(fg**2,axis=3)
+    # D_0=0.3
+    # n=1
+
+    # gfilter=1.0/(1+(dist/(3*(D_0**2)))**(2.0/n))
+    # fg = np.reshape(fg,(nk1*nk2*nk3,3))
+
+    # eps=0.3
+    # n=8
+    # D_0=0.3
+    # g_filter=1.0/np.sqrt(1.0+((eps*eval_chebyt(n,dist/D_0)**2)))
+
     fg = get_full_grid(nk1,nk2,nk3)
-    fg = np.reshape(fg,(nk1,nk2,nk3,3))
-
-
-
-    gfilter=np.ones((nk1,nk2,nk3),dtype=float)
-
-    dist = np.sqrt(np.sum(fg**2,axis=3))
-    D_0=0.5
-    n=1
-
-#    gfilter=1.0/(1+(dist/D_0)**(2.0/n))
-    fg = np.reshape(fg,(nk1*nk2*nk3,3))
     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
-#    gfilter[np.where(np.abs(dist)>0.40)]=0.0
-    gfilter[np.where(np.any(np.abs(fg)>0.3,axis=1))]=0.5
+    gfilter[np.where(np.any(np.abs(fg)>0.40,axis=1))]=0.5
     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+
     return(gfilter)
 
 ############################################################################################
@@ -1343,8 +1352,8 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
 
     if rank==0:
         Hksp=gather_full(Hksp_d,npool)
-        if not (spin_orb and mag_calc):
-             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+#        if not (spin_orb and mag_calc):
+#             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
     else:
         gather_full(Hksp_d,npool)
