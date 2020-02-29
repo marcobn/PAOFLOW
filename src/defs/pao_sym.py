@@ -151,7 +151,7 @@ def LPF(nk1,nk2,nk3,cutoff=0.90):
 
     fg = get_full_grid(nk1,nk2,nk3)
     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
-    gfilter[np.where(np.any(np.abs(fg)>0.40,axis=1))]=0.5
+    gfilter[np.where(np.any(np.abs(fg)>0.40,axis=1))]=0.8
     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
 
     return(gfilter)
