@@ -894,11 +894,9 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
                     Hksp_s[i,j,k]    = (Hksp_s[i,j,k]    + temp2)/2.0
                 else:
                     temp1=np.conj(U_inv*(U_TR @ Hksp_s[i,j,k] @ np.conj(U_TR.T)))
-#                    temp2=np.conj(U_inv*(U_TR @ Hksp_s[iv,jv,kv] @ np.conj(U_TR.T)))
-#                    Hksp_s[iv,jv,kv] = (Hksp_s[iv,jv,kv] + temp1)/2.0
-#                    Hksp_s[i,j,k]    = (Hksp_s[i,j,k]    + temp2)/2.0
-                    Hksp_s[iv,jv,kv] = temp1
-
+                    temp2=np.conj(U_inv*(U_TR @ Hksp_s[iv,jv,kv] @ np.conj(U_TR.T)))
+                    Hksp_s[iv,jv,kv] = (Hksp_s[iv,jv,kv] + temp1)/2.0
+                    Hksp_s[i,j,k]    = (Hksp_s[i,j,k]    + temp2)/2.0
 
     Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf),order="C")
 
@@ -1135,66 +1133,23 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
             HRs = np.fft.ifftn(Hksp,axes=(1,2,3))
 
-            switch=True
-            if switch==True:
+            Hksp=None
+            Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
 
-                Hksp=None
-                Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
+            for m in range(Hksp.shape[0]):                    
+                Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                            
 
-                for m in range(Hksp.shape[0]):
-                    
-                    Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                            
-#                     if not i%2:
-#                         Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                        
-#                     else:
-# #                        Hksp[m,:,:,:]=np.fft.fftn(LPF(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                        
-#                         Hksp[m,:,:,:]=np.fft.fftn(down_samp(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                        
+            HRs  = None
+            Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
+            Hksp = gather_full(Hksp,npool)
 
-                HRs  = None
-                Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
-                Hksp = gather_full(Hksp,npool)
-
-                if rank==0:
-                    Hksp = np.ascontiguousarray(Hksp.T)
-                    Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
-                else:
-                    Hksp=np.zeros((nfft1*nfft2*nfft3,nawf,nawf),dtype=complex)
-
-                comm.Bcast(Hksp)
-
-
-                # Hksp=None
-                # Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
-
-                # for m in range(Hksp.shape[0]):
-                #     Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))
-
-                # HRs  = None
-                # Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
-                # Hksp = gather_full(Hksp,npool)
-                # if rank==0:
-                #     Hksp = np.ascontiguousarray(Hksp.T)
-                #     Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
-                # else:
-                #     Hksp=np.zeros((nfft1*nfft2*nfft3,nawf,nawf),dtype=complex)
-                # comm.Bcast(Hksp)
-
-            else:
-                HRs=np.zeros((Hksp.shape[0],nfft1,nfft2,nfft3),dtype=complex)
-                for m in range(Hksp.shape[0]):
-                    HRs[m,:,:,:]=zero_pad(Hksp[m,:,:,:],nk1,nk2,nk3,add1,add2,add3)
-                Hksp=None
-                Hksp=np.fft.fftn(HRs,axes=(1,2,3))
-                HRs=None
-                Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
-                Hksp = gather_scatter(Hksp,1,npool)
+            if rank==0:
                 Hksp = np.ascontiguousarray(Hksp.T)
-                Hksp = gather_full(Hksp,npool)
-                if rank==0:
-                    Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))            
-                    print(Hksp[0,:8,:8].real)
-                
-                Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))            
+                Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
+            else:
+                Hksp=np.zeros((nfft1*nfft2*nfft3,nawf,nawf),dtype=complex)
+
+            comm.Bcast(Hksp)
 
             # if it's the non interpolated grid
             if i%2:
