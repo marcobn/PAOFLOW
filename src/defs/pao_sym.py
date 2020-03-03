@@ -27,6 +27,7 @@ from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
 import time
+import scipy.ndimage as ndi
 from  scipy.special import eval_chebyt
 
 
@@ -37,13 +38,19 @@ rank = comm.Get_rank()
 ############################################################################################
 ############################################################################################
 
-def LPF(nk1,nk2,nk3,cutoff=0.40,scale=0.5):
+def LPF(nk1,nk2,nk3,a_vectors,alat,cutoff=0.40,scale=0.5):
 
     fg = get_full_grid(nk1,nk2,nk3)
+    fg *=np.array([nk1,nk2,nk3])
+
+    fg = (a_vectors @ fg.T).T
+    fg*=alat
 
     # gfilter=np.ones((nk1,nk2,nk3),dtype=float)
 
-    dist = np.sum(fg**2,axis=1)
+    dist = np.sqrt(np.sum(fg**2,axis=1))
+    if rank==0:
+        print(dist)
     # D_0=0.3
     # n=1
 
@@ -54,14 +61,20 @@ def LPF(nk1,nk2,nk3,cutoff=0.40,scale=0.5):
 #    n=8
 #    D_0=0.3
 #    gfilter=1.0/np.sqrt(1.0+((eps*eval_chebyt(n,dist/D_0)**2)))
-
-
-    fg = get_full_grid(nk1,nk2,nk3)
+#    if rank==0:
+#        print(dist)
+    scale=0.5
+    cutoff=0.5
+    fil=50
     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
-    gfilter[np.where(np.any(np.abs(fg)>cutoff,axis=1))]=scale
-#    gfilter[np.where(np.abs(dist)>cutoff)]=scale
-    gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+    gfilter[np.where(np.any(fg==fil,axis=1))]=scale
 
+    gfilter[np.where(np.abs(dist)>cutoff)]=scale
+#    gfilter=(1.0-dist)**(0.1)
+    gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+#    if rank==0:
+#        print(gfilter)
+#        print(np.amin(gfilter))
     return(gfilter)
 
 ############################################################################################
@@ -890,7 +903,7 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,symm_grid,thresh,max_iter,nelec,verbose):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,symm_grid,thresh,max_iter,nelec,verbose,a_vectors,alat):
     # calculates full H(k) grid from wedge
 
     nawf = Hksp.shape[1]
@@ -977,9 +990,11 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         tmax=1
 
         # filter for high freq noise
-        filt=LPF(nk1,nk2,nk3)
+        filt=LPF(nk1,nk2,nk3,a_vectors,alat)
 
 #        Hksp1=gather_full(Hksp,npool)
+        num_samp=10
+        kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=4)
 
         for i in range(int(max_iter)):
             
@@ -998,11 +1013,15 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
             # check how symmetric Hksp is after interpolation
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
-            tmax = check_sym(Hksp,R,symop,sym_TR,npool)
+            tmax = check_sym(Hksp,R,symop,sym_TR,npool,kp_check)
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
 
-            # filter
+#            for m in range(Hksp.shape[0]):
+#                Hksp[m] = ndi.median_filter(Hksp[m].real,size=2,mode="wrap")
+
             Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                            
+            # filter
+#            Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                            
 
 
             # split on bands -> split on k
@@ -1137,7 +1156,7 @@ def open_grid_wrapper(data_controller):
         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
                          shells,a_index,equiv_atom,sym_info,sym_shift,
                          nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,
-                         symm_grid,thresh,max_iter,nelec,verbose)
+                         symm_grid,thresh,max_iter,nelec,verbose,a_vectors,alat)
 
 
         if rank==0:
@@ -1292,16 +1311,13 @@ def reshift_efermi(Hksp,npool,nelec,spin_orb):
 
 
 
-def check_sym(HRs,R,symop,sym_TR,npool):
+def check_sym(HRs,R,symop,sym_TR,npool,kp):
 
     #get randomly selected k points between
-    num_samp=1
+    num_samp=10
 
     if rank==0:    
-        kp = np.around(np.random.rand(num_samp,3)-0.5,decimals=3)
         kp_all=np.zeros((3,0))
-        kp = np.around([[0.425,0.325,0.275]],decimals=3)
-
         # get equivalent k
         for isym in range(symop.shape[0]):
             #transform k -> k' with the sym op
@@ -1310,18 +1326,9 @@ def check_sym(HRs,R,symop,sym_TR,npool):
             else:
                 newk =  symop[isym] @ kp.T
 
-#            newk = correct_roundoff(newk)
-#            newk[np.where(np.isclose(newk,0.5))]=-0.5
-#            newk[np.where(np.isclose(newk,-1.0))]=0.0
-#            newk[np.where(np.isclose(newk,1.0))]=0.0
-
             kp_all=np.hstack([kp_all,newk])
-
-
-#        kp_all = np.reshape(kp_all,(3,symop.shape[0]*num_samp))
-
     else:
-        kp_all=np.zeros((3,symop.shape[0]*num_samp))
+        kp_all=np.zeros((3,symop.shape[0]*kp.shape[0]))
 
     comm.Bcast(kp_all)
 
@@ -1337,6 +1344,7 @@ def check_sym(HRs,R,symop,sym_TR,npool):
     eigs=gather_full(eigs,npool)
     if rank==0:
         eigs = np.reshape(eigs,(symop.shape[0],num_samp,eigs.shape[1]))
+#        print(np.diff(eigs[0,0]))
         tmax=np.amax(np.abs(np.ptp(eigs,axis=0)))
     
     tmax=comm.bcast(tmax)
