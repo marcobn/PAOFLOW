@@ -64,8 +64,8 @@ def LPF(nk1,nk2,nk3,a_vectors,alat,cutoff=0.40,scale=0.5):
 #    if rank==0:
 #        print(dist)
     scale=0.5
-    cutoff=0.5
-    fil=50
+    cutoff=0.0
+    fil=100
     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
     gfilter[np.where(np.any(fg==fil,axis=1))]=scale
 
@@ -957,10 +957,6 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,npool)
 
     
-    # if rank==0:
-    #     # enforce time reversion where appropriate
-    #     if not (spin_orb and mag_calc):
-    #         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
     if symm_grid:            
         R = full_grid*np.array([nk1,nk2,nk3])
@@ -992,11 +988,13 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         # filter for high freq noise
         filt=LPF(nk1,nk2,nk3,a_vectors,alat)
 
-#        Hksp1=gather_full(Hksp,npool)
-        num_samp=10
-        kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=4)
+
+
 
         for i in range(int(max_iter)):
+
+            num_samp=10
+            kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=5)
             
             st=time.time()
             # split on k -> split on bands
@@ -1006,7 +1004,6 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
             Hksp = np.transpose(Hksp,axes=(1,0))
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
             Hksp = np.ascontiguousarray(Hksp)
-
 
             #actually HRs
             Hksp = np.fft.ifftn(Hksp,axes=(1,2,3))
@@ -1020,10 +1017,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 #                Hksp[m] = ndi.median_filter(Hksp[m].real,size=2,mode="wrap")
 
             Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                            
-            # filter
-#            Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                            
-
-
+         
             # split on bands -> split on k
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
             Hksp = np.ascontiguousarray(Hksp)
@@ -1037,10 +1031,10 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
             if rank!=0:
                 Hksp=np.zeros((full_grid.shape[0],nawf,nawf),dtype=complex)
-            # else:
-            #     # enforce time reversion where appropriate
-            #     if not (spin_orb and mag_calc):
-            #         Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+            else:
+                # enforce time reversion where appropriate
+                if not (spin_orb and mag_calc):
+                    Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
             comm.Bcast(Hksp)
 
@@ -1238,16 +1232,16 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
     # make sure of hermiticity of each H(k)
     Hksp_d = enforce_hermaticity(Hksp_d)
 
-    # if rank==0:
-    #     Hksp=gather_full(Hksp_d,npool)
-    #     if not (spin_orb and mag_calc):
-    #          Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)       
+    if rank==0:
+         Hksp=gather_full(Hksp_d,npool)
+         if not (spin_orb and mag_calc):
+              Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)       
 
-    # else:
-    #     gather_full(Hksp_d,npool)
-    #     Hksp = None
+    else:
+         gather_full(Hksp_d,npool)
+         Hksp = None
     
-    # Hksp_d = scatter_full(Hksp,npool)
+    Hksp_d = scatter_full(Hksp,npool)
 
     try:
         tm=np.array([np.amax(tmax)])

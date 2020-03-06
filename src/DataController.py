@@ -438,7 +438,7 @@ class DataController:
                   for l in range(nawf):
                     # l+1,m+1 just to start from 1 not zero
 
-                    f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,
+                    f.write('%3d %3d %3d %5d %5d %28.14f %28.14f\n'%(ix,iy,iz,l+1,m+1,
                                                                HRS[l,m,i,j,k,0].real,
                                                                HRS[l,m,i,j,k,0].imag,))
                                                                

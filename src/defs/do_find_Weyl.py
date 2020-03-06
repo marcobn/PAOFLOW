@@ -174,7 +174,7 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.
 
        for kq in CAND:
            # if distance between two candidates is very small
-           k_rad=np.amin(np.sqrt(np.sum((kq - CAND)**2,axis=1)))*0.9
+           k_rad=np.amin(np.sqrt(np.sum((kq - CAND)**2,axis=1)))*0.5
            if k_rad>test_rad:
               k_rad=test_rad
 
