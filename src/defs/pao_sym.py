@@ -22,7 +22,7 @@ import scipy.linalg as LA
 from scipy.special import factorial as fac
 from tempfile import NamedTemporaryFile
 import re
-from .communication import scatter_full, gather_full,allgather_full,gather_scatter
+from .communication import scatter_full, gather_full,gather_scatter
 from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
