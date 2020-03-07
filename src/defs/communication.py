@@ -27,8 +27,8 @@ size = comm.Get_size()
 def load_balancing ( size, rank, n ):
     # Load balancing
     splitsize = float(n)/float(size)
-    start = int(round(rank*splitsize))
-    stop = int(round((rank+1)*splitsize))
+    start = int(np.around(rank*splitsize,decimals=2))
+    stop = int(np.around((rank+1)*splitsize,decimals=2))
     return(start, stop)
 
 # For each processor calculate 3 values:
@@ -39,8 +39,8 @@ def load_sizes ( size, n, dim):
     sizes = np.empty((size,3), dtype=int)
     splitsize = float(n)/float(size)
     for i in range(size):
-        start = int(round(i*splitsize))
-        stop = int(round((i+1)*splitsize))
+        start = int(np.around(i*splitsize,decimals=2))
+        stop = int(np.around((i+1)*splitsize,decimals=2))
         sizes[i][0] = dim*(stop-start)
         sizes[i][1] = dim*start
         sizes[i][2] = stop-start
@@ -99,8 +99,7 @@ def gather_array ( arr, arraux, sroot=0 ):
     lsizes = np.empty((size,3), dtype=int)
     if rank == sroot:
         lsizes = load_sizes(size, arr.shape[0], np.prod(arr.shape[1:]))
-#        print(lsizes)
-#        print()
+
     # Broadcast the data offsets
     comm.Bcast([lsizes, MPI.INT], root=sroot)
 
@@ -209,11 +208,6 @@ def gather_scatter(arr,scatter_axis,npool):
     #broadcast indices that for scattered array to proc with rank 'r'
     size_r = np.zeros((size),dtype=int,order='C')
     scatter_ind = np.zeros((arr.shape[scatter_axis]),dtype=int,order='C')
-    time.sleep(0.1*rank)
-    print()
-    print(rank)
-    print(np.array(axis_ind.size,dtype=int))
-    print(np.array(axis_ind,dtype=int))
     
     if rank==0:
         gather_array(size_r,np.array(axis_ind.size,dtype=int))
@@ -236,9 +230,6 @@ def gather_scatter(arr,scatter_axis,npool):
         comm.Barrier()
         #gather array from each proc with indices for each proc on scatter_axis
         if r == rank:
-            print(start)
-            print(end)
-            print()
             temp = gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
         else:
             gather_full(np.take(arr,scatter_ind[start[r]:end[r]],axis=scatter_axis),npool,sroot=r)
