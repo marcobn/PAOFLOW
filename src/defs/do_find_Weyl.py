@@ -91,7 +91,6 @@ def get_gap(HR,kq,R,nelec):
     E_kp = gen_eigs(HR,kq,R)
     egapp = E_kp[0,nelec,0]-E_kp[0,nelec-1,0]
 
-
     return egapp
 
 
@@ -177,7 +176,7 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.
            k_rad=np.amin(np.sqrt(np.sum((kq - CAND)**2,axis=1)))*0.5
            if k_rad>test_rad:
               k_rad=test_rad
-
+           k_rad=0.005
            
            result_1 = z2pack.surface.run(system=system,
                                          surface=z2pack.shape.Sphere(center=tuple(kq),

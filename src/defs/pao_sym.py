@@ -104,9 +104,8 @@ def LPF(nk1,nk2,nk3):
     fg = get_full_grid(nk1,nk2,nk3)
 
     dist=np.sqrt(np.sum(fg**2,axis=1))
-
     
-    n=4
+    n=2
 
 #    cutoff=np.sqrt(np.sum(np.array([c,c,c])**2))
     cutoff=0.4
