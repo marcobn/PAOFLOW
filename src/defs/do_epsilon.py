@@ -199,7 +199,7 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol):
 def epsr_kramerskronig ( data_controller, ene, epsi ):
   from .smearing import intmetpax
   from scipy.integrate import simps
-  from .load_balancing import load_balancing
+  from .communication import load_balancing
 
   arrays,attributes = data_controller.data_dicts()
 

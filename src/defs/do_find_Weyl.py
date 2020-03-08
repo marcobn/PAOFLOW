@@ -39,7 +39,7 @@ from mpi4py.MPI import ANY_SOURCE
 import os
 import scipy.optimize as OP
 from numpy import linalg as LAN
-from .load_balancing import *
+#from .load_balancing import *
 #import do_bandwarping_calc
 from .communication import gather_full, scatter_full
 from numpy import linalg as LAN

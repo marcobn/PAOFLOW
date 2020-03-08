@@ -22,7 +22,7 @@ import scipy.linalg as LA
 from scipy.special import factorial as fac
 from tempfile import NamedTemporaryFile
 import re
-from .communication import scatter_full, gather_full,allgather_full,gather_scatter
+from .communication import scatter_full, gather_full,gather_scatter
 from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
@@ -38,44 +38,84 @@ rank = comm.Get_rank()
 ############################################################################################
 ############################################################################################
 
-def LPF(nk1,nk2,nk3,a_vectors,alat,cutoff=0.40,scale=0.5):
+# def LPF(nk1,nk2,nk3,a_vectors,alat,cutoff=0.40,scale=0.5):
+
+#     fg = get_full_grid(nk1,nk2,nk3)
+
+# #    fg *=np.array([nk1,nk2,nk3])
+# #    fg = (a_vectors @ fg.T).T
+# #    fg*=alat
+
+#     # gfilter=np.ones((nk1,nk2,nk3),dtype=float)
+
+#     dist = np.sqrt(np.sum(fg**2,axis=1))
+#     if rank==0:
+#         print(np.amax(dist))
+#     # D_0=0.3
+#     # n=1
+
+#     # gfilter=1.0/(1+(dist/(3*(D_0**2)))**(2.0/n))
+#     # fg = np.reshape(fg,(nk1*nk2*nk3,3))
+
+# #    eps=0.3
+# #    n=8
+# #    D_0=0.3
+# #    gfilter=1.0/np.sqrt(1.0+((eps*eval_chebyt(n,dist/D_0)**2)))
+# #    if rank==0:
+# #        print(dist)
+#     scale=0.5
+#     cutoff=0.5
+#     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
+#     inds=np.where(np.abs(fg)>=cutoff)
+#     for i in range(len(inds[0])):
+#         gfilter[inds[0][i]]*=scale
+
+
+# # #    gfilter[np.where(np.any(fg==fil,axis=1))]=scale
+# #     filt_ind=np.where(np.abs(dist)>cutoff)
+# #     min_filt_dist=np.amin(np.abs(dist[filt_ind]))
+# #     gfilter[filt_ind]=1-(min_filt_dist-dist[filt_ind])/min_filt_dist
+# # #    gfilter=(1.0-dist)**(0.1)
+# #     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+# #    if rank==0:
+# #        print(gfilter)
+# #        print(np.amin(gfilter))
+#     return(gfilter)
+
+
+# def LPF(nk1,nk2,nk3):
+
+#     fg = get_full_grid(nk1,nk2,nk3)
+    
+
+#     scale=0.5
+#     cutoff=0.4
+#     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
+#     inds=np.where(np.abs(fg)>=cutoff)
+#     for i in range(len(inds[0])):
+#         gfilter[inds[0][i]]*=scale
+
+#     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+
+#     return(gfilter)
+
+def LPF(nk1,nk2,nk3):
 
     fg = get_full_grid(nk1,nk2,nk3)
-    fg *=np.array([nk1,nk2,nk3])
 
-    fg = (a_vectors @ fg.T).T
-    fg*=alat
+    dist=np.sqrt(np.sum(fg**2,axis=1))
 
-    # gfilter=np.ones((nk1,nk2,nk3),dtype=float)
+    
+    n=4
 
-    dist = np.sqrt(np.sum(fg**2,axis=1))
-    if rank==0:
-        print(dist)
-    # D_0=0.3
-    # n=1
+#    cutoff=np.sqrt(np.sum(np.array([c,c,c])**2))
+    cutoff=0.4
+    gfilter=1.0/(1+((dist)/(cutoff))**(2*n))
 
-    # gfilter=1.0/(1+(dist/(3*(D_0**2)))**(2.0/n))
-    # fg = np.reshape(fg,(nk1*nk2*nk3,3))
-
-#    eps=0.3
-#    n=8
-#    D_0=0.3
-#    gfilter=1.0/np.sqrt(1.0+((eps*eval_chebyt(n,dist/D_0)**2)))
-#    if rank==0:
-#        print(dist)
-    scale=0.5
-    cutoff=0.0
-    fil=100
-    gfilter=np.ones((nk1*nk2*nk3),dtype=float)
-    gfilter[np.where(np.any(fg==fil,axis=1))]=scale
-
-    gfilter[np.where(np.abs(dist)>cutoff)]=scale
-#    gfilter=(1.0-dist)**(0.1)
     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
-#    if rank==0:
-#        print(gfilter)
-#        print(np.amin(gfilter))
+
     return(gfilter)
+
 
 ############################################################################################
 ############################################################################################
@@ -986,15 +1026,15 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         tmax=1
 
         # filter for high freq noise
-        filt=LPF(nk1,nk2,nk3,a_vectors,alat)
+        filt=LPF(nk1,nk2,nk3)#,a_vectors,alat)
 
 
-
+        num_samp=10
+        kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=5)
 
         for i in range(int(max_iter)):
 
-            num_samp=10
-            kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=5)
+
             
             st=time.time()
             # split on k -> split on bands
@@ -1006,6 +1046,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
             Hksp = np.ascontiguousarray(Hksp)
 
             #actually HRs
+
             Hksp = np.fft.ifftn(Hksp,axes=(1,2,3))
 
             # check how symmetric Hksp is after interpolation
@@ -1013,11 +1054,11 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
             tmax = check_sym(Hksp,R,symop,sym_TR,npool,kp_check)
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
 
-#            for m in range(Hksp.shape[0]):
-#                Hksp[m] = ndi.median_filter(Hksp[m].real,size=2,mode="wrap")
+            if i//2:
+                Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                
+            else:
+                Hksp = np.fft.fftn(Hksp/filt[None],axes=(1,2,3))                
 
-            Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                            
-         
             # split on bands -> split on k
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
             Hksp = np.ascontiguousarray(Hksp)
@@ -1217,8 +1258,10 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
 
     max_iter=1
     tmax=[]
-    Hksp_d=np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[2]),dtype=complex)
 
+
+
+    Hksp_d=np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[2]),dtype=complex)
     for i in range(partial_grid.shape[0]):
         new_k_ind,orig_k_ind,si_per_k=nkl[i]
 
@@ -1240,7 +1283,7 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
     else:
          gather_full(Hksp_d,npool)
          Hksp = None
-    
+
     Hksp_d = scatter_full(Hksp,npool)
 
     try:
