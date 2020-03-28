@@ -17,7 +17,6 @@
 #
 
 def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp ):
-#def do_transport ( data_controller, temps,ene, velkp ):
   import numpy as np
   import scipy.optimize as sp
   import scipy.integrate

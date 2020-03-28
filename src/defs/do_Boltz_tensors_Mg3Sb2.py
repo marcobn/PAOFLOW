@@ -88,86 +88,91 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
   
   return L0
 
+def fermi(E,temp,Ef):
+
+    return 1./(np.exp((E-Ef)/temp)+1.)
+
+def planck(hwlo,temp):
+    
+    return 1/(np.exp(hwlo/temp)-1)
 
 def get_tau (temp,data_controller, channels ):
 
   import numpy as np
   import scipy.constants as cp
-  h = cp.hbar
-  kb = cp.Boltzmann
-  hw0 = 0.0248*1.60217662e-19 #joules
-  rho = 3.9375e3   #kg/m^3 
-  a = 8.6883e-10 #metres
-  Ea = 6.4*1.60217662e-19 #joules
-  #Eo = 10*1.60217662e-19
-  temp *= 1.60217662e-19
-  nI = 1e2 #no.of impuritites/m^3
-  e = 1.60217662e-19
-  nd = 1e23 #doping in /m^3
   arry,attr = data_controller.data_dicts()
+  hbar = cp.hbar
+  kb = cp.Boltzmann
+  temp *= 1.60217662e-19
+  nd = attr['doping_conc']*1e6 #doping in /m^3
   snktot = arry['E_k'].shape[0]
   nspin = arry['E_k'].shape[2]
   bnd = attr['bnd']
-  taus = []
-  di_inf = 14.2*8.854187817e-12 #CoSb3
-  di_0 = 26.7*8.854187817e-12 #CoSb3
-  et =di_0*8.854187817e-12 # dielectric constant*permitivtty of free space
+  rate = []
+  e = 1.60217662e-19
+  ev2j= 1.60217662e-19
+  epso = 8.854187817e-12
+  tpi = np.pi*2
+  fpi = np.pi*4
+  me = 9.10938e-31
+  E = abs(ev2j*(arry['E_k'][:,:bnd]))
+  Ef = 0.04*ev2j
+  D = 6.5*ev2j
+  rho = 3.9375e3   #kg/m^3 
+  a = 8.6883e-10 #metres    
+  nd = attr['doping_conc']*1e6 #doping in /m^3
+  nI = nd #no.of impuritites/m^3
+  eps_inf = 14.2*epso
+  eps_0 = 26.7*epso
+  eps = eps_inf+eps_0
+  eps_inv = 1/eps_inf - 1/eps
   v = 2.7e3
-  ms = 0.3
-  me = ms*9.10938e-31*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
-  E = abs(1.60217662e-19*(arry['E_k'][:,:bnd]))
+  Zi = 1.
+  ms = 0.3*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
+  hwlo = ev2j * np.array([0.0205,0.0248,0.031])
   for c in channels:
 
       if c == 'impurity':
-          qo = np.sqrt(((e**2)*nI)/(et*temp))
-          epso = ((h**2)*(qo**2))/(2*me)
-          i_tau = (16*np.pi*np.sqrt(2*me)*(et**2)*(E**1.5))/((np.log(1+(4*E/epso))-((4*E/epso)/(1+(4*E/epso))))*(e**4)*nI)
-          taus.append(i_tau)
+          qo = np.sqrt(e**2*nI/(eps*temp))
+          x = (hbar*qo)**2/(8*ms*E)
+          P_imp = (np.pi*nI*Zi**2*(e**4)/(E**1.5*np.sqrt(2*ms)*(fpi*eps)**2))
+          P_imp *= (np.log(1+1./x)-1./(1+x))
+          rate.append(P_imp)
 
       if c == 'accoustic':
-          a_tau = (2*np.pi*(h**4)*rho*v**2*((E/temp)**-0.5))/((np.power(2*me*temp,1.5)*Ea**2))
-          taus.append(a_tau)
-
-      #if c == 'optical':
-          #Nop = (temp/hw0)-0.5
-          #x = E/temp
-          #xo = hw0/temp
-          #X = x-xo
-          #X[X<0] = 0
-          #o_tau = (np.sqrt(2*temp)*np.pi*xo*(h**2)*rho)/((me**1.5)*(DtK**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))#elastic +inelastic
-          #o_tau = (2/np.pi)*((hw0/Eo)**2)*(h**2*a**2*rho)*((E/temp)**-0.5)/((2*me*temp)**1.5)
-#          #o_tau = (np.sqrt(2*temp)*np.pi*xo*(h**2)*rho)/((me**1.5)*(DtK**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X))) + (np.sqrt(2*temp)*np.pi*xo*(h**2)*rho)/((me**1.5)*Zf*(DtK**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))#intervalley
-          #taus.append(o_tau)
-
+          P_ac = ((2*ms)**1.5*(D**2)*np.sqrt(E)*temp)/(tpi*hbar**4*rho*v**2)
+          rate.append(P_ac)
 
       if c == 'polar optical':
-          ro = ((di_inf*temp)/(4*np.pi*e**2*nd))**0.5
-          deltap = (2*me*E*(2*ro)**2)/h**2
-          F_scr = 1 - ((2/deltap)*np.log(deltap+1))+1/(deltap+1)
-          F_scr2 = 1 
-          di = abs(((1/di_inf)-(1/di_0))**-1)
-          po_tau = (di*h**2*np.power(E/(temp),(0.5)))/((np.power(2*me*temp,0.5))*F_scr*e**2)
-          po_tau2 = (di*h**2*np.power(E/(temp),(0.5)))/((np.power(2*me*temp,0.5))*F_scr2*e**2)
-          taus.append(po_tau)
+	  P_pol=0.
+          for i in range(len(hwlo)):
+            ff = fermi(E+hwlo[i],temp,Ef)
+            fff= fermi(E-hwlo[i],temp,Ef)
+            f = fermi(E,temp,Ef)
+            n = planck(hwlo[i],temp)
+            nn = planck(hwlo[i]+1,temp)
+            Wo = e**2/(fpi*hbar)*np.sqrt(2*ms*hwlo[i]/hbar**2)*eps_inv
+            Z = 2/(Wo*np.sqrt(hwlo[i]))
+            A = (n+1)*ff/f*((2*E+hwlo[i])*np.arcsinh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E+hwlo[i])))
+            B = np.heaviside(E-hwlo[i],1)*n*fff/f*((2*E-hwlo[i])*np.arccosh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E-hwlo[i])))  
+            where_are_NaNs = np.isnan(B)
+            B[where_are_NaNs] = 0
+            C = (n+1)*ff/f*np.arcsinh(np.sqrt(E/hwlo[i]))
+            t2 = np.heaviside(E-hwlo[i],1)*n*fff/f*np.arccosh(np.sqrt(E/hwlo[i]))
+            where_are_NaNs = np.isnan(t2)
+            t2[where_are_NaNs] = 0 
+            C = (2*E)*(C+t2)
+            P = (C-A-B)/(Z*(E**1.5))
+            P_pol += P            
+          rate.append(P_pol)
+      
+      if c == None:
+	tau = np.ones((snktot,bnd,nspin), dtype=float)
 
       tau = np.zeros((snktot,bnd,nspin), dtype=float)
-      for t in taus:
-          tau += 1./t
+      for r in rate:
+          tau += r
       tau = 1/tau
-  #tau_new = np.reshape(tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  #o_tau_new = np.reshape(o_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  #a_tau_new = np.reshape(a_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  #i_tau_new = np.reshape(i_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  #po_tau_new = np.reshape(po_tau,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  #po_tau_new2 = np.reshape(po_tau2,(snktot,bnd))   #i do this because i am not able to saave 3d arrays to a file
-  #E_re = np.reshape(E/1.60217662e-19,(snktot,bnd)) #i do this because i am not able to saave 3d arrays to a file
-  #np.savetxt('tau.dat',tau_new)
-  #np.savetxt('o_tau.dat',o_tau_new)
-  #np.savetxt('a_tau.dat',a_tau_new)
-  #np.savetxt('i_tau.dat',i_tau_new)
-  #np.savetxt('po_tau_scr.dat',po_tau_new)
-  #np.savetxt('po_tau_no_scr.dat',po_tau_new2)
-  #np.savetxt('E.dat',E_re)
   return tau
 
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):

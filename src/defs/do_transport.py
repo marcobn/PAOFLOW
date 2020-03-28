@@ -23,6 +23,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp ):
   from os.path import join
   from numpy import linalg as npl
   from .do_Boltz_tensors import do_Boltz_tensors_no_smearing
+  from .do_Boltz_tensors import do_Boltz_tensors_smearing
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
