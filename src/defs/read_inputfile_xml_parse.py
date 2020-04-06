@@ -26,39 +26,41 @@ import xml.etree.cElementTree as ET
 def read_attribute ( aroot, default_value, attr, atype, alen=1 ):
     txt = aroot.findall(attr)
     read_value = None
-    if len(txt) == alen:
-        if atype == 'logical':
-            read_value = (str(txt[0].text) == 'T')
-        elif atype == 'integer':
-            read_value = int(txt[0].text)
-        elif atype == 'decimal':
-            read_value = float(txt[0].text)
-        elif atype == 'array':
-            ntxt = aroot.findall(attr+'/a')
-            m = len(ntxt)
-            if m > 0:
-                n = len(ntxt[0].text.split())
-                read_value = np.zeros((m,n), dtype=float)
-                for i in range(m):
+    try:
+        if len(txt) == alen:
+            if atype == 'logical':
+                read_value = (str(txt[0].text) == 'T')
+            elif atype == 'integer':
+                read_value = int(txt[0].text)
+            elif atype == 'decimal':
+                read_value = float(txt[0].text)
+            elif atype == 'array':
+                ntxt = aroot.findall(attr+'/a')
+                m = len(ntxt)
+                if m > 0:
+                    n = len(ntxt[0].text.split())
+                    read_value = np.zeros((m,n), dtype=float)
+                    for i in range(m):
+                        line = ntxt[i].text.split()
+                        for j in range(n):
+                            read_value[i,j] = line[j]
+            elif atype == 'string_array':
+                tmp_dict = {}
+                ntxt = aroot.findall(attr+'/a')
+                m = len(ntxt)
+                if m > 0:
+                  for i in range(m):
                     line = ntxt[i].text.split()
-                    for j in range(n):
-                        read_value[i,j] = line[j]
-        elif atype == 'string_array':
-            tmp_dict = {}
-            ntxt = aroot.findall(attr+'/a')
-            m = len(ntxt)
-            if m > 0:
-              for i in range(m):
-                line = ntxt[i].text.split()
-                tmp_dict[line[0]] = np.asarray(line[1:], dtype=float)
-            read_value = tmp_dict
+                    tmp_dict[line[0]] = np.asarray(line[1:], dtype=float)
+                read_value = tmp_dict
 
-    if atype == 'string':
-      if len(txt) == 1:
-        read_value = str(txt[0].text)
-      elif len(txt) > 0:
-        ov = []
-        read_value = [ov.append(str(t.text)) for t in txt]
+        if atype == 'string':
+          if len(txt) == 1:
+            read_value = str(txt[0].text)
+          elif len(txt) > 0:
+            ov = []
+            read_value = [ov.append(str(t.text)) for t in txt]
+    except: pass
     if read_value is not None:
         return read_value
     else:
@@ -312,6 +314,6 @@ def read_inputfile_xml ( fpath, inputfile, data_controller ):
     # symmetrization and wedge -> grid
     data_attributes['expand_wedge'] = read_attribute(aroot, expand_wedge, 'expand_wedge', 'logical')
     data_attributes['symmetrize'] = read_attribute(aroot, symmetrize, 'symmetrize', 'logical')
-    data_attributes['symm_thresh'] = read_attribute(aroot,symm_thresh, 'symm_thresh', 'integer')
+    data_attributes['symm_thresh'] = read_attribute(aroot,symm_thresh, 'symm_thresh', 'decimal')
     data_attributes['symm_max_iter'] = read_attribute(aroot, symm_max_iter, 'symm_max_iter', 'integer')
 

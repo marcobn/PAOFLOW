@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps, ene, velkp ):
+def do_transport ( data_controller, temps, ene, velkp, save_L0=False ):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -37,8 +37,13 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
   spin_mult = 1. if nspin==2 or attr['dftSO'] else 2.
 
-  for ispin in range(nspin):
+  # if we are doing carrier concentration we need to save
+  # the sigma tensors for when we calculate the hall tensor
+  if save_L0:
+    arrays['boltz_L0']=np.zeros((nspin,temps.size,3,3,esize))
 
+  for ispin in range(nspin):
+    counter=0
     # Quick function opens file in output folder with name 's'
     ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)),'w')
 
@@ -76,6 +81,11 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
       L0,L1,L2 = do_Boltz_tensors(data_controller, None, itemp, ene, velkp, ispin)
       if rank == 0:
+        #save before any converstion and scaling for use later in R_H calc
+        if save_L0:            
+          arrays['boltz_L0'][ispin,counter,:]=np.copy(L0)
+          counter+=1
+
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
         # convert in units of 10*21 siemens m^-1 s^-1
@@ -85,6 +95,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
         for i in range(esize):
           wtup(fsigma, gtup(sigma,i))
+
         sigma = None
 
         #----------------------
@@ -138,3 +149,155 @@ def do_transport ( data_controller, temps, ene, velkp ):
     fSeebeck.close()
     if attr['smearing'] is not None:
       fsigmadk.close()
+
+
+def do_carrier_conc( data_controller,velkp,ene,temps ):
+
+  from mpi4py import MPI
+  from .do_Boltz_tensors import do_Hall_tensors
+  import numpy as np
+  from os.path import join
+  from numpy import linalg as npl
+  from .communication import gather_full
+  from .get_K_grid_fft import get_K_grid_fft_crystal
+  from os.path import join
+
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
+
+  ary,attr = data_controller.data_dicts()    
+
+  omega = attr['omega']
+  bnd   = attr['bnd']
+  nspin = attr['nspin']
+  spin_mult = 1. if nspin==2 or attr['dftSO'] else 2.
+  E_k   = ary['E_k']
+  d2Ed2k= ary['d2Ed2k']
+  kq_wght= ary['kq_wght']  
+
+  siemen_conv,temp_conv = 6.9884,11604.52500617  
+  eminBT =np.amin(ene)
+  emaxBT =np.amax(ene)
+
+  en_buff=1.0
+
+  #only count the states from emin-en_buff emin+en_buff
+  E_k_mask = np.where(np.logical_and(E_k[:,:bnd,:]>=(eminBT-en_buff),E_k[:,:bnd,:]<=(emaxBT+en_buff)))
+  E_k_range = np.ascontiguousarray(E_k[E_k_mask[0],E_k_mask[1],E_k_mask[2]])
+  velkp_range = np.swapaxes(velkp,1,0)
+  velkp_range = np.ascontiguousarray(velkp_range[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])
+  d2Ed2k_range = np.ascontiguousarray(d2Ed2k[:,E_k_mask[0],E_k_mask[1],E_k_mask[2]])    
+
+  write_masses=False
+  if write_masses:
+    # writing the effective masses to file
+    #scale factor
+    sf = 11.055095423844927*0.003324201
+    em_flat = d2Ed2k*sf
+    em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(1,2,3,0)))
+    em_flat = gather_full(em_flat,attr['npool'])
+
+    if rank==0:
+      nk,bnd,nspin,_ = em_flat.shape
+      em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(2,0,1,3)))
+
+      em_tens=np.zeros((nspin,nk,bnd,3,3))
+      e_mass =np.zeros((nspin,nk,bnd,8))
+
+      # build the effective mass tensors from the flattened version
+      em_tens[...,0,0]=em_flat[...,0]
+      em_tens[...,1,1]=em_flat[...,1]
+      em_tens[...,2,2]=em_flat[...,2]
+      em_tens[...,0,1]=em_flat[...,3]
+      em_tens[...,1,0]=em_flat[...,3]
+      em_tens[...,1,2]=em_flat[...,4]
+      em_tens[...,2,1]=em_flat[...,4]
+      em_tens[...,0,2]=em_flat[...,5]
+      em_tens[...,2,0]=em_flat[...,5]
+      # diagonalize
+      for sp in range(nspin):
+        for k in range(nk):
+          for b in range(bnd):
+            effm =  np.linalg.eigvals(np.linalg.inv(em_tens[sp,k,b]))
+            e_mass[sp,k,b,[4,5,6]] = effm
+
+            if np.prod(effm)<0:                                                  
+              dos_em = -np.prod(np.abs(effm))**(1.0/3.0)                           
+            else:                                                                  
+              dos_em =  np.prod(np.abs(effm))**(1.0/3.0) 
+
+            e_mass[sp,k,b,7] = dos_em
+
+    effm=dos_em=em_tens=em_flat=None
+
+    E_k_temp=gather_full(E_k,attr['npool'])
+    if rank==0:    
+      E_k_temp = np.transpose(E_k_temp,axes=(2,0,1))
+      e_mass[...,3]  = E_k_temp[:,:,:attr['bnd']]
+      e_mass[...,:3] = get_K_grid_fft_crystal(attr['nk1'],attr['nk2'],attr['nk3'])[None,:,None]
+
+      for sp in range(nspin):
+        fpath = join(attr['opath'],'effective_masses_%d.dat'%sp)
+        with open(fpath,'w') as ofo:
+          ofo.write('    k_1     k_2     k_3     E-E_f              m_1              m_2              m_3            m_dos\n')
+          ofo.write('-'*101)
+          ofo.write('\n')
+
+          for sp in range(nspin):
+            for k in range(nk):
+              for b in range(bnd):
+                ofo.write('% 4.4f % 4.4f % 4.4f % 9.4f % 16.4f % 16.4f % 16.4f % 16.4f\n'%tuple(e_mass[sp,k,b].tolist()))
+
+    E_k_temp=None
+
+  # combine spin channels
+  L0_temps = np.sum(ary['boltz_L0'],axis=0)/nspin
+
+  cc_str = ''
+
+  for temp in range(temps.shape[0]):
+
+    itemp = temps[temp]/temp_conv   
+    inv_L0=np.zeros_like(L0_temps[0])
+
+    for n in range(ene.size):
+      try:
+        inv_L0[:,:,n] = npl.inv(L0_temps[temp,:,:,n])
+      except:
+        inv_L0[:,:,n]= 0.0
+
+
+    # get sig_ijk
+    sig_ijk = do_Hall_tensors( E_k_range,velkp_range,d2Ed2k_range,
+                               kq_wght,itemp,ene)
+
+
+    # calculate hall conductivity
+    if rank==0:
+        R_ijk = np.zeros_like(sig_ijk)
+        
+        # loop over 27 components of R_ijk
+        for i in range(3):
+            for j in range(3):
+                for k in range(3):
+                    for a in range(3):
+                        for b in range(3):
+                            R_ijk[i,j,k,:] += -inv_L0[a,j,:]*sig_ijk[a,b,k,:]*inv_L0[i,b,:]
+
+
+
+#        R_ijk*=0.510998950*1.e6
+        # take average 
+        for n in range(ene.size):
+            pcp = 3.0/(R_ijk[1,2,0,n]+R_ijk[2,0,1,n]+R_ijk[0,1,2,n])
+            pcpm = pcp/(omega*(5.29177249e-9**3))
+
+            cc_str+='%8.2f % .5f % 9.5e % 9.5e \n' \
+                %(temps[temp],ene[n],pcp,pcpm)
+
+  if rank==0:
+    with open(join(attr['opath'],'carrier_conc.dat'),'w') as ofo:
+      ofo.write(cc_str)
+        
+
+        

@@ -25,7 +25,7 @@ def build_Pn ( nawf, nkpnts, nspin, U ):
       UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
       Pn[ik] = np.real(np.sum(np.conj(UU)*UU,axis=0))
 
-  return np.amin(Pn,axis=0)
+  return np.mean(Pn,axis=0)
 
 
 def do_projectability ( data_controller ):

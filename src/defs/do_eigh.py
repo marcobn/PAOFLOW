@@ -20,6 +20,7 @@ import numpy as np
 from scipy import linalg as spl
 from numpy import linalg as npl
 
+
 def get_degeneracies ( E_k, bnd ):
 
   all_degen = []
@@ -31,11 +32,14 @@ def get_degeneracies ( E_k, bnd ):
     by_spin = []
     for ik in range(E_k_round.shape[0]):
       by_kp = []
-      eV = np.unique(E_k_round[ik,:,ispin][:-1][np.isclose(E_k_round[ik,:,ispin][1:],E_k_round[ik,:,ispin][:-1],atol=1.e-5)])
+      eV = np.unique(E_k_round[ik,:,ispin][:-1][np.isclose(E_k_round[ik,:,ispin][1:],
+                                                           E_k_round[ik,:,ispin][:-1],
+                                                           atol=1.e-5)])
 
       for i in range(len(eV)):
         inds = np.where(np.isclose(E_k_round[ik,:,ispin],eV[i],atol=1.e-5))[0]
-        if len(inds) > 1:# and np.all(inds < bnd):                    
+
+        if len(inds) > 1 and np.all(inds < bnd):                    
           by_kp.append(inds)
 
       by_spin.append(by_kp)

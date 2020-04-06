@@ -96,7 +96,7 @@ class DataController:
 
       # Ensure that the number of k-points from QE matches the grid size
       nkpnts = attr['nk1']*attr['nk2']*attr['nk3']
-#      if nkpnts != attr['nkpnts']:
+#      if nkpnts != attr['nkpnty6s']:
 #        print('\nERROR: Number of QE k-points does not match the MP grid size. Calculate nscf with nosym=.true. & noinv=.true.\n')
 #        self.comm.Abort()
 
@@ -366,36 +366,55 @@ class DataController:
       if self.rank == 0:
         import numpy as np
         from os.path import join
-  
+        from .defs.zero_pad import zero_pad
+
         arry,attr = self.data_dicts()
-  
+
+        HRS=np.fft.ifftn(arry["Hks"],axes=(2,3,4))
+
+        nawf,_,nk1,nk2,nk3,nspin=HRS.shape
+        # how to pad HR to make sure it's odd for z2pack
+        if nk1%2:
+          pad1=0
+        else: pad1=1
+        if nk2%2:
+          pad2=0
+        else: pad2=1
+        if nk3%2:
+          pad3=0
+        else: pad3=1
+
+
+        HRS_interp=np.zeros((nawf,nawf,nk1+pad1,nk2+pad2,nk3+pad3,nspin),dtype=complex)
+        for n in range(nawf):
+          for m in range(nawf):
+            for ispin in range(nspin):
+              HRS_interp[n,m,:,:,:,ispin] = zero_pad(HRS[n,m,:,:,:,ispin],nk1,nk2,nk3,pad1,pad2,pad3)
+
+        nk1+=pad1
+        nk2+=pad2
+        nk3+=pad3
+        HRS=HRS_interp
+        HRS_interp=None
+
         with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
   
-          nawf,nkpts = attr['nawf'],attr['nkpnts']
-          nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
-  
+          nkpts = nk1*nk2*nk3
           f.write("PAOFLOW Generated \n")
           f.write('%5d \n'%nawf)
   
-          f.write('%5d \n'%nkpts)
-  
+          f.write('%5d \n'%(nk1*nk2*nk3))
+
           nl = 15 # z2pack read the weights in lines of 15 items
   
           nlines = nkpts//nl # number of lines
           nlast = nkpts%nl   # number of items of laste line if needed
   
-          kq_wght_int = np.zeros(arry['kq_wght'].shape,dtype=int)
-          for kn in range(arry['kq_wght'].shape[0]):
-              kq_wght_int[kn] = int(round(arry['kq_wght'][kn]*attr['nkpnts']))
-
-          # print each cell weight
-          for i in range(nlines):
-            jp = i * nl
-            f.write('   '.join('{:d} '.format(j) for j in kq_wght_int[jp:jp+nl]) + '\n')
-  
-          # Last line if needed
-          if nlast != 0:
-            f.write('   '.join('{:d} '.format(j) for j in kq_wght_int[nlines*nl:nkpts]) + '\n')
+          for j in range(nlines):
+            f.write("1 "*nl)
+            f.write("\n")
+          f.write("1 "*nlast)
+          f.write("\n")
   
   #### Can be condensed
           for i in range(nk1):
@@ -418,7 +437,11 @@ class DataController:
                 for m in range(nawf):
                   for l in range(nawf):
                     # l+1,m+1 just to start from 1 not zero
-                    f.write('%3d %3d %3d %5d %5d %14f %14f\n'%(ix,iy,iz,l+1,m+1,arry['HRs'][l,m,i,j,k,0].real,arry['HRs'][l,m,i,j,k,0].imag))
+
+                    f.write('%3d %3d %3d %5d %5d %28.14f %28.14f\n'%(ix,iy,iz,l+1,m+1,
+                                                               HRS[l,m,i,j,k,0].real,
+                                                               HRS[l,m,i,j,k,0].imag,))
+                                                               
     except:
       self.report_exception('z2_pack')
       if self.data_attributes['abort_on_exception']:
@@ -432,7 +455,7 @@ class DataController:
     '''
     Broadcast array from 'data_arrays' with 'key' from 'root' to all other ranks
 
-    Arguments:
+,    Arguments:
         key (str): The key for the array to broadcast (key must exist in dictionary 'data_arrays')
         dtype (dtype): The data type of the array to broadcast
         root (int): The rank which is the source of the broadcasted array

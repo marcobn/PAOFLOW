@@ -46,6 +46,7 @@ def get_R_grid_fft ( data_controller, nr1, nr2, nr3):
         Rx -= int(Rx)
         Ry -= int(Ry)
         Rz -= int(Rz)
+
         arrays['R'][n,:] = Rx*nr1*a_vectors[0,:] + Ry*nr2*a_vectors[1,:] + Rz*nr3*a_vectors[2,:]
         arrays['Rfft'][i,j,k,:] = arrays['R'][n,:]
         arrays['idx'][i,j,k] = n
