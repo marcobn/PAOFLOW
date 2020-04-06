@@ -27,170 +27,94 @@ from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
 import time
+import scipy.ndimage as ndi
+from  scipy.special import eval_chebyt
+
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-
-def check(Hksp_s,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,a_index,inv_flag,equiv_atom,kp,symop,fg,isl,sym_TR):
-
-    # compares saved full grid hamiltonain to one generated 
-    # from wedge... only for debugging purposes
-    nawf=Hksp_s.shape[1]
-    # load for testing
-    Hksp_f = np.load("ONLY_FOR_TESTING_kham.npy")
-    Hksp_f = np.reshape(Hksp_f,(nawf,nawf,Hksp_s.shape[0]))
-    Hksp_f = np.transpose(Hksp_f,axes=(2,0,1))
-
-    print(np.allclose(Hksp_f,Hksp_s,atol=1.e-4,rtol=1.e-4))
-
-    bad_symop=np.ones(symop.shape[0],dtype=bool)
-    good_symop=np.ones(symop.shape[0],dtype=bool)
-    good=[]
-    bad=[]
-    print(a_index)
-    st=0
-    fn=8
-#    for j in range(20):        
-    for j in range(Hksp_s.shape[0]):        
-        isym = si_per_k[j]
-        nki  = new_k_ind[j]
-        oki  = orig_k_ind[j]
-
-        HP = Hksp_f[nki]
-        THP=Hksp_s[nki]
-
-        U_k     = get_U_k(kp[oki],phase_shifts[isym],a_index,U[isym])
-
-        good.append(isym)
-
-        if np.all(np.isclose(HP,THP,rtol=1.e-4,atol=1.e-4)):
-            bad.append(isym)   
-        else:
- 
-            good_symop[isym]=False
-            continue
-            print(j,isym)
-            print('old_k=',kp[oki])
-            print('new_k=',fg[nki])
-            print(equiv_atom[isym])
-            print(symop[isym])
-            print()
-            print("inv:",inv_flag[isym])
-            print()
-            print("*"*50)
-            print("REAL "*10)
-            print("*"*50)
-            print()
- #           print(U_k[st:fn,st:fn])
-            print()
-            print("CORRECT")
-            print(HP[st:fn,st:fn].real)
-            print("NEW")
-            print(THP[st:fn,st:fn].real)
-            print("EQUAL?")
-            print(np.isclose(HP[st:fn,st:fn].real,THP[st:fn,st:fn].real,
-                             rtol=1.e-4,atol=1.e-4))
-
-            print("*"*50)
-            print("IMAG "*10)
-            print("*"*50)
-            print("CORRECT")
-            print(HP[st:fn,st:fn].imag)
-            print("NEW")
-            print(THP[st:fn,st:fn].imag)
-            print("EQUAL?")
-            print(np.isclose(HP[st:fn,st:fn].imag,THP[st:fn,st:fn].imag,
-                             rtol=1.e-4,atol=1.e-4))
-
-
-            print("*"*100)
-            print("*"*100)
-            print("*"*100)
-#            raise SystemExit
-    print(len(good)-kp.shape[0],len(bad)-kp.shape[0])
-
-
-    print()
-    for i in range(symop.shape[0]):
-        if i in si_per_k:
-            if not  good_symop[i]:
-                print("%2d"%(i+1),"BAD ",isl[i],sym_TR[i])
-            else:
-                print("%2d"%(i+1),"GOOD",isl[i],sym_TR[i])
-
-
-
-
 ############################################################################################
 ############################################################################################
 ############################################################################################
 
-def LPF(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
-    '''
-    Pad frequency domain with zeroes, such that any relationship between
-        aux[k] and aux[N-k] is preserved.
+# def LPF(nk1,nk2,nk3,a_vectors,alat,cutoff=0.40,scale=0.5):
 
-    Arguments:
-        aux (ndarray): unpadded frequency domain data
-        nk1 (int): current size of aux along axis 0
-        nk2 (int): current size of aux along axis 1
-        nk3 (int): current size of aux along axis 2
-        nfft1 (int): number of zeroes to pad axis 0 by
-        nfft1 (int): number of zeroes to pad axis 1 by
-        nfft1 (int): number of zeroes to pad axis 2 by
+#     fg = get_full_grid(nk1,nk2,nk3)
 
-    Returns:
-        auxp3 (ndarray): padded frequency domain data
-    '''
+# #    fg *=np.array([nk1,nk2,nk3])
+# #    fg = (a_vectors @ fg.T).T
+# #    fg*=alat
 
-    # post-padding dimensions
-    nk1p = nfft1+nk1
-    nk2p = nfft2+nk2
-    nk3p = nfft3+nk3
-    # halfway points
-    sk1 = int((nk1+1)/2)
-    sk2 = int((nk2+1)/2)
-    sk3 = int((nk3+1)/2)
-    # parities (even <-> p==1)
-    p1 = (nk1 & 1)^1
-    p2 = (nk2 & 1)^1
-    p3 = (nk3 & 1)^1
+#     # gfilter=np.ones((nk1,nk2,nk3),dtype=float)
 
-    # accomodate nfft==0
-    if nfft1 == 0:  p1 = 0
-    if nfft2 == 0:  p2 = 0
-    if nfft3 == 0:  p3 = 0
+#     dist = np.sqrt(np.sum(fg**2,axis=1))
+#     if rank==0:
+#         print(np.amax(dist))
+#     # D_0=0.3
+#     # n=1
 
-    # first dimension
-    auxp1 = np.zeros((nk1,nk2,nk3p),dtype=complex)
-    auxp1[:,:,:sk3+p3]=aux[:,:,:sk3+p3]
-    auxp1[:,:,nfft3+sk3:]=aux[:,:,sk3:]
-    # second dimension
-    auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=complex)
-    auxp2[:,:sk2+p2,:]=auxp1[:,:sk2+p2,:]
-    auxp2[:,nfft2+sk2:,:]=auxp1[:,sk2:,:]
-    # third dimension
-    auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=complex)
-    auxp3[:sk1+p1,:,:]=auxp2[:sk1+p1,:,:]
-    auxp3[nfft1+sk1:,:,:]=auxp2[sk1:,:,:]
+#     # gfilter=1.0/(1+(dist/(3*(D_0**2)))**(2.0/n))
+#     # fg = np.reshape(fg,(nk1*nk2*nk3,3))
 
-    if rank==0:
-        print(sk1)
-    # halve Nyquist axes
-    if p1:
-        auxp3[ sk1-1,:,:] = 0.0
-        auxp3[-sk1+1,:,:] = 0.0
-        auxp3[sk1,:,:]    = 0.0
-    if p2:
-        auxp3[:, sk2-1,:] = 0.0
-        auxp3[:,-sk2+1,:] = 0.0
-        auxp3[:,-sk2,:]   = 0.0
-    if p3:
-        auxp3[:,:, sk3-1] = 0.0
-        auxp3[:,:,-sk3+1] = 0.0
-        auxp3[:,:,-sk3]   = 0.0
-    return(auxp3)
+# #    eps=0.3
+# #    n=8
+# #    D_0=0.3
+# #    gfilter=1.0/np.sqrt(1.0+((eps*eval_chebyt(n,dist/D_0)**2)))
+# #    if rank==0:
+# #        print(dist)
+#     scale=0.5
+#     cutoff=0.5
+#     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
+#     inds=np.where(np.abs(fg)>=cutoff)
+#     for i in range(len(inds[0])):
+#         gfilter[inds[0][i]]*=scale
+
+
+# # #    gfilter[np.where(np.any(fg==fil,axis=1))]=scale
+# #     filt_ind=np.where(np.abs(dist)>cutoff)
+# #     min_filt_dist=np.amin(np.abs(dist[filt_ind]))
+# #     gfilter[filt_ind]=1-(min_filt_dist-dist[filt_ind])/min_filt_dist
+# # #    gfilter=(1.0-dist)**(0.1)
+# #     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+# #    if rank==0:
+# #        print(gfilter)
+# #        print(np.amin(gfilter))
+#     return(gfilter)
+
+
+# def LPF(nk1,nk2,nk3):
+
+#     fg = get_full_grid(nk1,nk2,nk3)
+    
+
+#     scale=0.5
+#     cutoff=0.4
+#     gfilter=np.ones((nk1*nk2*nk3),dtype=float)
+#     inds=np.where(np.abs(fg)>=cutoff)
+#     for i in range(len(inds[0])):
+#         gfilter[inds[0][i]]*=scale
+
+#     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+
+#     return(gfilter)
+
+def LPF(nk1,nk2,nk3):
+
+    fg = get_full_grid(nk1,nk2,nk3)
+
+    dist=np.sqrt(np.sum(fg**2,axis=1))
+    
+    n=1
+
+#    cutoff=np.sqrt(np.sum(np.array([c,c,c])**2))
+    cutoff=0.5
+    gfilter=1.0/(1+((dist)/(cutoff))**(2*n))
+
+    gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
+
+    return(gfilter)
+
 
 ############################################################################################
 ############################################################################################
@@ -894,11 +818,9 @@ def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
                     Hksp_s[i,j,k]    = (Hksp_s[i,j,k]    + temp2)/2.0
                 else:
                     temp1=np.conj(U_inv*(U_TR @ Hksp_s[i,j,k] @ np.conj(U_TR.T)))
-#                    temp2=np.conj(U_inv*(U_TR @ Hksp_s[iv,jv,kv] @ np.conj(U_TR.T)))
-#                    Hksp_s[iv,jv,kv] = (Hksp_s[iv,jv,kv] + temp1)/2.0
-#                    Hksp_s[i,j,k]    = (Hksp_s[i,j,k]    + temp2)/2.0
-                    Hksp_s[iv,jv,kv] = temp1
-
+                    temp2=np.conj(U_inv*(U_TR @ Hksp_s[iv,jv,kv] @ np.conj(U_TR.T)))
+                    Hksp_s[iv,jv,kv] = (Hksp_s[iv,jv,kv] + temp1)/2.0
+                    Hksp_s[i,j,k]    = (Hksp_s[i,j,k]    + temp2)/2.0
 
     Hksp_s= np.reshape(Hksp_s,(nk1*nk2*nk3,nawf,nawf),order="C")
 
@@ -1020,12 +942,14 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,symm_grid,thresh,max_iter,nelec,verbose):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,symm_grid,thresh,max_iter,nelec,verbose,a_vectors,alat):
     # calculates full H(k) grid from wedge
-    npool=4
-
 
     nawf = Hksp.shape[1]
+
+    # in case the hamiltonian is massive
+    int_max = 2147483647.0
+    npool= int(np.ceil((nk1*nk2*nk3*nawf*nawf)/int_max))
 
     # get inversion operator
     U_inv = get_inv_op(shells)
@@ -1071,17 +995,15 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
     Hksp = wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,
                          new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,npool)
 
-    if rank==0:
-        # enforce time reversion where appropriate
-        if not (spin_orb and mag_calc):
-            Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+    
 
-    else:
-        Hksp=np.zeros((full_grid.shape[0],nawf,nawf),dtype=complex)
+    if symm_grid:            
+        R = full_grid*np.array([nk1,nk2,nk3])
 
-    comm.Bcast(Hksp)
+        if rank!=0:
+            Hksp=np.zeros((full_grid.shape[0],nawf,nawf),dtype=complex)
+        comm.Bcast(Hksp)
 
-    if symm_grid:
 
         symop_inv=np.zeros_like(symop)
         for i in range(symop.shape[0]):
@@ -1097,139 +1019,81 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                                     full_grid,symop,jchia,spin_orb,mag_calc,nk1,nk2,nk3,
                                     nkl_no_interp,partial_grid,npool)
 
-        upscale1=int(0.25*nk1)
-        upscale2=int(0.25*nk2)
-        upscale3=int(0.25*nk3)
-        
 
-        nfft1=nk1+upscale1
-        nfft2=nk2+upscale2
-        nfft3=nk3+upscale3
-
-        full_grid_interp = get_full_grid(nfft1,nfft2,nfft3)
-        nkl=[]
-        partial_grid_interp = scatter_full(full_grid_interp,npool)
-        for i in range(partial_grid_interp.shape[0]):
-            nkl.append(find_equiv_k(partial_grid_interp[i][None],symop_inv,full_grid_interp,sym_TR,check=False,include_self=True))
-        nkl_interp=np.array(nkl)
 
         #max difference bewtween H(k) and H(k*)
-        tmax=999999
+        tmax=1
+
+        # filter for high freq noise
+        filt=LPF(nk1,nk2,nk3)#,a_vectors,alat)
+
+
+        num_samp=10
+        kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=5)
 
         for i in range(int(max_iter*2)):
+
+
+            
             st=time.time()
-            add1=upscale1*((-1)**i)
-            add2=upscale2*((-1)**i)
-            add3=upscale3*((-1)**i)
-
-            nfft1=nk1+add1
-            nfft2=nk2+add2
-            nfft3=nk3+add3
-
-            if rank==0:
-                Hksp = np.reshape(Hksp,(nk1*nk2*nk3,nawf*nawf))
-                Hksp = np.ascontiguousarray(Hksp.T)
-
-            Hksp = scatter_full(Hksp,npool)                    
-
+            # split on k -> split on bands
+            Hksp = np.reshape(Hksp,(Hksp.shape[0],nawf*nawf))
+            Hksp = np.ascontiguousarray(Hksp)
+            Hksp = gather_scatter(Hksp,1,npool) 
+            Hksp = np.transpose(Hksp,axes=(1,0))
             Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
-            HRs = np.fft.ifftn(Hksp,axes=(1,2,3))
+            Hksp = np.ascontiguousarray(Hksp)
 
-            switch=True
-            if switch==True:
+            #actually HRs
 
-                Hksp=None
-                Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
+            Hksp = np.fft.ifftn(Hksp,axes=(1,2,3))
 
-                for m in range(Hksp.shape[0]):
-                    
-                    Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                            
-#                     if not i%2:
-#                         Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                        
-#                     else:
-# #                        Hksp[m,:,:,:]=np.fft.fftn(LPF(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                        
-#                         Hksp[m,:,:,:]=np.fft.fftn(down_samp(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))                        
+            if i//2:
+                # check how symmetric Hksp is after interpolation
+                Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
+                tmax = check_sym(Hksp,R,symop,sym_TR,npool,kp_check)
+                Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
 
-                HRs  = None
-                Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
-                Hksp = gather_full(Hksp,npool)
-
-                if rank==0:
-                    Hksp = np.ascontiguousarray(Hksp.T)
-                    Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
-                else:
-                    Hksp=np.zeros((nfft1*nfft2*nfft3,nawf,nawf),dtype=complex)
-
-                comm.Bcast(Hksp)
-
-
-                # Hksp=None
-                # Hksp=np.zeros((HRs.shape[0],nfft1,nfft2,nfft3),dtype=complex)
-
-                # for m in range(Hksp.shape[0]):
-                #     Hksp[m,:,:,:]=np.fft.fftn(zero_pad(HRs[m,:,:,:],nk1,nk2,nk3,add1,add2,add3))
-
-                # HRs  = None
-                # Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
-                # Hksp = gather_full(Hksp,npool)
-                # if rank==0:
-                #     Hksp = np.ascontiguousarray(Hksp.T)
-                #     Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))
-                # else:
-                #     Hksp=np.zeros((nfft1*nfft2*nfft3,nawf,nawf),dtype=complex)
-                # comm.Bcast(Hksp)
-
+            if i//2:
+                Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                
             else:
-                HRs=np.zeros((Hksp.shape[0],nfft1,nfft2,nfft3),dtype=complex)
-                for m in range(Hksp.shape[0]):
-                    HRs[m,:,:,:]=zero_pad(Hksp[m,:,:,:],nk1,nk2,nk3,add1,add2,add3)
-                Hksp=None
-                Hksp=np.fft.fftn(HRs,axes=(1,2,3))
-                HRs=None
-                Hksp = np.reshape(Hksp,(Hksp.shape[0],nfft1*nfft2*nfft3))
-                Hksp = gather_scatter(Hksp,1,npool)
-                Hksp = np.ascontiguousarray(Hksp.T)
-                Hksp = gather_full(Hksp,npool)
-                if rank==0:
-                    Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))            
-                    print(Hksp[0,:8,:8].real)
-                
-                Hksp = np.reshape(Hksp,(nfft1*nfft2*nfft3,nawf,nawf))            
+                Hksp = np.fft.fftn(Hksp/filt[None],axes=(1,2,3))                
 
-            # if it's the non interpolated grid
-            if i%2:
-                Hksp,_ = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,
+            # split on bands -> split on k
+            Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
+            Hksp = np.ascontiguousarray(Hksp)
+            Hksp = gather_scatter(Hksp,1,npool)
+            Hksp = np.transpose(Hksp,axes=(1,0))
+            Hksp = np.reshape(Hksp,(Hksp.shape[0],nawf,nawf))
+            Hksp = np.ascontiguousarray(Hksp)
+
+            # distribute Hksp to all proc
+            Hksp = gather_full(Hksp,npool)
+
+            if rank!=0:
+                Hksp=np.zeros((full_grid.shape[0],nawf,nawf),dtype=complex)
+            else:
+                # enforce time reversion where appropriate
+                if not (spin_orb and mag_calc):
+                    Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+
+            comm.Bcast(Hksp)
+
+
+
+            Hksp,_ = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,
                                          sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,
-                                         nfft1,nfft2,nfft3,nkl_no_interp,partial_grid,npool)
+                                         nk1,nk2,nk3,nkl_no_interp,partial_grid,npool)
 
-            # if it's the interpolated grid
-            else:
-                Hksp,tmax = symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,
-                                            sym_TR,full_grid_interp,symop,jchia,spin_orb,
-                                            mag_calc,nfft1,nfft2,nfft3,nkl_interp,partial_grid_interp,npool)
-
-            nk1+=add1
-            nk2+=add2
-            nk3+=add3
-
-
-
-            if rank==0 and i%2 and verbose:
-                print("Sym iter #%2d: %6.4e"%((i//2)+1,tmax[0]))
+            if rank==0 and i%2 and i>1:
+                print("Sym iter #%2d: %6.4e"%((i+1)//2-1,tmax))
 
             # stop if we hit threshold
-            if tmax<thresh:                
-                if i%2 and i>=3:                   
-                    break
+            if tmax<thresh and i%2:                
+                break
 
+        Hksp = gather_full(Hksp,npool)
 
-    
-    # for debugging purposes
-    try:
-        if rank==0:
-            check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-                  a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
-    except: pass
 
     return Hksp
 
@@ -1238,9 +1102,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 ############################################################################################
 
 def open_grid_wrapper(data_controller):
-#    np.set_printoptions(precision=3,suppress=True,linewidth=220)
-
-
+#    np.set_printoptions(precision=4,suppress=True,linewidth=220,edgeitems=10)
 
     # wrapper function to unload everything from
     # data controller and do a few conversions
@@ -1329,7 +1191,7 @@ def open_grid_wrapper(data_controller):
         Hksp = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
                          shells,a_index,equiv_atom,sym_info,sym_shift,
                          nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,
-                         symm_grid,thresh,max_iter,nelec,verbose)
+                         symm_grid,thresh,max_iter,nelec,verbose,a_vectors,alat)
 
 
         if rank==0:
@@ -1396,8 +1258,10 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
 
     max_iter=1
     tmax=[]
-    Hksp_d=np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[2]),dtype=complex)
 
+
+
+    Hksp_d=np.zeros((partial_grid.shape[0],Hksp.shape[1],Hksp.shape[2]),dtype=complex)
     for i in range(partial_grid.shape[0]):
         new_k_ind,orig_k_ind,si_per_k=nkl[i]
 
@@ -1412,20 +1276,26 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
     Hksp_d = enforce_hermaticity(Hksp_d)
 
     if rank==0:
-        Hksp=gather_full(Hksp_d,npool)
-        if not (spin_orb and mag_calc):
-             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
+         Hksp=gather_full(Hksp_d,npool)
+         if not (spin_orb and mag_calc):
+              Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)       
 
     else:
-        gather_full(Hksp_d,npool)
+         gather_full(Hksp_d,npool)
+         Hksp = None
 
-    tm=np.array([np.amax(tmax)])
+    Hksp_d = scatter_full(Hksp,npool)
+
+    try:
+        tm=np.array([np.amax(tmax)])
+    except:
+        tm=np.array([0.0])
+
     tmax=np.copy(tm)
     comm.Reduce(tm,tmax,op=MPI.MAX)
     comm.Bcast(tmax)
 
-
-    return Hksp,tmax
+    return Hksp_d,tmax
 
 ############################################################################################
 ############################################################################################
@@ -1475,3 +1345,109 @@ def reshift_efermi(Hksp,npool,nelec,spin_orb):
 #    Hksp=gather_full(Hksp,npool)
     
     return Hksp
+
+
+
+def check_sym(HRs,R,symop,sym_TR,npool,kp):
+
+    #get randomly selected k points between
+    num_samp=10
+
+    if rank==0:    
+        kp_all=np.zeros((3,0))
+        # get equivalent k
+        for isym in range(symop.shape[0]):
+            #transform k -> k' with the sym op
+            if sym_TR[isym]:
+                newk = -symop[isym] @ kp.T
+            else:
+                newk =  symop[isym] @ kp.T
+
+            kp_all=np.hstack([kp_all,newk])
+
+    else:
+        kp_all=np.zeros((3,symop.shape[0]*kp.shape[0]))
+
+    comm.Bcast(kp_all)
+
+
+    Hk_b = get_eq_Hksp( HRs,R,kp_all,npool)
+    tmax=999
+
+    eigs=np.zeros((Hk_b.shape[2],Hk_b.shape[1]))
+    for i in range(Hk_b.shape[2]):
+        eigs[i] = LA.eigvalsh(Hk_b[:,:,i])
+
+
+    eigs=gather_full(eigs,npool)
+    if rank==0:
+        eigs = np.reshape(eigs,(symop.shape[0],num_samp,eigs.shape[1]))
+#        print(np.diff(eigs[0,0]))
+        tmax=np.amax(np.abs(np.ptp(eigs,axis=0)))
+    
+    tmax=comm.bcast(tmax)
+
+    return tmax
+
+
+def get_eq_Hksp ( HRs, R, kq ,npool ):
+
+
+  kdot = np.tensordot(R, 2.0j*np.pi*kq, axes=([1],[0]))
+  np.exp(kdot, kdot)
+  Haux = np.zeros((HRs.shape[0],kq.shape[1]), dtype=complex, order="C")
+
+
+  Haux = np.tensordot(HRs, kdot, axes=([1],[0]))
+
+  kdot  = None
+
+  Hk_b = gather_scatter(Haux,1,npool)
+  
+  nawf=int(np.sqrt(Hk_b.shape[0]))
+  Hk_b = np.ascontiguousarray(Hk_b)
+  Hk_b = np.reshape(Hk_b,(nawf,nawf,Hk_b.shape[1]))
+
+  return Hk_b
+      
+def get_transformed_Hk(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,reverse=False):
+    # generates full grid from k points in IBZ
+    nawf     = Hksp.shape[1]
+    Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
+
+    for j in range(new_k_ind.shape[0]):
+        isym = si_per_k[j]
+        oki  = orig_k_ind[j]
+        nki  = new_k_ind[j]
+
+        # if symop is identity
+        if isym==0:
+            Hksp_s[j]=Hksp[nki]
+            continue
+
+        # other cases
+        H  = Hksp[nki]
+
+        # get k dependent U
+        U_k     = get_U_k(full_grid[nki],phase_shifts[isym],a_index,U[isym])
+
+        #transformated H(k)            
+        if not reverse:
+            THP = U_k @ H @ np.conj(U_k.T)
+        else:
+            THP = np.conj(U_k.T) @ H @ U_k
+
+        # apply inversion operator if needed
+        if inv_flag[isym]:
+            THP*=U_inv
+
+        # time inversion is anti-unitary
+        if sym_TR[isym]:
+            THP*= U_inv
+            THP = np.conj(THP)
+
+        Hksp_s[j]=THP
+    
+    return Hksp_s
+
+
