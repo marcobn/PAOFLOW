@@ -105,10 +105,10 @@ def LPF(nk1,nk2,nk3):
 
     dist=np.sqrt(np.sum(fg**2,axis=1))
     
-    n=2
+    n=1
 
 #    cutoff=np.sqrt(np.sum(np.array([c,c,c])**2))
-    cutoff=0.4
+    cutoff=0.5
     gfilter=1.0/(1+((dist)/(cutoff))**(2*n))
 
     gfilter = np.reshape(gfilter,(nk1,nk2,nk3))
@@ -1031,7 +1031,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         num_samp=10
         kp_check = np.around(np.random.rand(num_samp,3)-0.5,decimals=5)
 
-        for i in range(int(max_iter)):
+        for i in range(int(max_iter*2)):
 
 
             
@@ -1048,10 +1048,11 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
             Hksp = np.fft.ifftn(Hksp,axes=(1,2,3))
 
-            # check how symmetric Hksp is after interpolation
-            Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
-            tmax = check_sym(Hksp,R,symop,sym_TR,npool,kp_check)
-            Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
+            if i//2:
+                # check how symmetric Hksp is after interpolation
+                Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1*nk2*nk3))
+                tmax = check_sym(Hksp,R,symop,sym_TR,npool,kp_check)
+                Hksp = np.reshape(Hksp,(Hksp.shape[0],nk1,nk2,nk3))
 
             if i//2:
                 Hksp = np.fft.fftn(Hksp*filt[None],axes=(1,2,3))                
@@ -1084,11 +1085,11 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
                                          sym_TR,full_grid,symop,jchia,spin_orb,mag_calc,
                                          nk1,nk2,nk3,nkl_no_interp,partial_grid,npool)
 
-            if rank==0:
-                print("Sym iter #%2d: %6.4e"%(i+1,tmax))
+            if rank==0 and i%2 and i>1:
+                print("Sym iter #%2d: %6.4e"%((i+1)//2-1,tmax))
 
             # stop if we hit threshold
-            if tmax<thresh:                
+            if tmax<thresh and i%2:                
                 break
 
         Hksp = gather_full(Hksp,npool)
@@ -1363,6 +1364,7 @@ def check_sym(HRs,R,symop,sym_TR,npool,kp):
                 newk =  symop[isym] @ kp.T
 
             kp_all=np.hstack([kp_all,newk])
+
     else:
         kp_all=np.zeros((3,symop.shape[0]*kp.shape[0]))
 

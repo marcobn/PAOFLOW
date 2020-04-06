@@ -161,9 +161,17 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.
          return
 
        for i in range(CAND.shape[0]):
-            print('Weyl point candidate #%s:'%(i+1))
-            print("coord crys: %s"%CAND[i])
-            print("coord cart: %s"%(b_vectors.dot(CAND[i])))
+            print("Weyl point candidate #%s crystal coord: % 5.4f % 5.4f % 5.4f "%((i+1),
+                                                                                   CAND[i][0],
+                                                                                   CAND[i][1],
+                                                                                   CAND[i][2],))
+       print()
+       for i in range(CAND.shape[0]):
+          in_cart=b_vectors.T.dot(CAND[i])
+          print("Weyl point candidate #%s 2pi/alat: % 5.4f % 5.4f % 5.4f "%((i+1),
+                                                                            in_cart[0],
+                                                                            in_cart[1],
+                                                                            in_cart[2],))
 
 
        model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
