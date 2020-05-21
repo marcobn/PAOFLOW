@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,write_to_file ):
+def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,write_to_file):
   import numpy as np
   import scipy.optimize as sp
   import scipy.integrate
@@ -33,33 +33,31 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
-
   arrays,attr = data_controller.data_dicts()
   siemen_conv,temp_conv,omega_conv = 6.9884,11604.52500617,1.481847093e-25
 
   nspin,t_tensor = attr['nspin'],arrays['t_tensor']
   nelec,omega = attr['nelec'],attr['omega']*omega_conv
   spin_mult = 1. if nspin==2 or attr['dftSO'] else 2.
-  
+  doping = attr['doping_conc']
   attr['delta'] = 0.01
-  dos = arrays['dos']
+  dos = do_dos(data_controller, emin, emax,ne)
+  if rank == 0:
+    arrays['sigma'] = np.empty((len(temps),npsin,3,3), dtype=float)
   for ispin in range(nspin):
 
     # Quick function opens file in output folder with name 's'
-    
+    ojf = lambda st,sp,sf1,sf2,sf3 : open(join(attr['opath'],'%s_%d_%.2f_%.2f_%.2f.dat'%(st,sp,sf1,sf2,sf3)),'w')
+    #fPF = ojf('PF', ispin,a_imp,a_ac,a_pop)
+    #fkappa = ojf('kappa', ispin,a_imp,a_ac,a_pop)
     if write_to_file == True:
-      ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)),'w')
-    
-      fPF = ojf('PF', ispin)
-      fkappa = ojf('kappa', ispin)
-      fsigma = ojf('sigma', ispin)
-      fSeebeck = ojf('Seebeck', ispin)
-      fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
+      fsigma = ojf('sigma', ispin,a_imp,a_ac,a_pop)
+    #fSeebeck = ojf('Seebeck', ispin,a_imp,a_ac,a_pop)
+    #fsigmadk = ojf('sigmadk', ispin,a_imp,a_ac,a_pop) if attr['smearing']!=None else None
     margin = 9. * temps.max()
     mumin = ene.min() + margin
     mumax = ene.max() - margin
     nT = len(temps)
-    doping = attr['doping_conc']
     mur = np.empty(nT)
     msize = mur.size
     Nc = np.empty(nT)
@@ -73,19 +71,14 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
       # Quick function to get tuple elements to write
       gtup = lambda tu,i : (temp,mur[iT],Nc[iT],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
-      if rank == 0:
-        #dopingmin = calc_N(data_controller,ene, dos, mumax, temp,dosweight=2.) + nelec
-        #dopingmin /= omega
-        #dopingmax = calc_N(data_controller,ene, dos, mumin, temp,dosweight=2.) + nelec
-        #dopingmax /= omega
-        mur[iT] = solve_for_mu(ene,dos,N,temp,refine=False,try_center=False)
 
+      if rank == 0:
+        mur[iT] = solve_for_mu(ene,dos,N,temp,refine=False,try_center=False)
         for imu,mu in enumerate(mur):
           Nc[iT] = calc_N(ene, dos, mu, temp) + nelec
       mur[iT] = comm.bcast(mur[iT], root=0)
-
       if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, mur[iT], velkp, ispin)
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -97,7 +90,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
           # convert in units of siemens m^-1 s^-1
           sigma = L0*1.e21
 
-          wtup(fsigmadk, gtup(sigma,0))
+       #   wtup(fsigmadk, gtup(sigma,0))
         comm.Barrier()
       L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop)
       if rank == 0:
@@ -109,6 +102,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
         L0 *= spin_mult*siemen_conv/attr['omega']
 
         sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
+        arrays['sigma'][iT,ispin,:,:] = sigma[:,:]
         if write_to_file == True:
           wtup(fsigma, gtup(sigma,0))
       comm.Barrier()
@@ -132,7 +126,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
           report_exception()
           comm.Abort()
 
-        wtup(fSeebeck, gtup(S,0))
+        #wtup(fSeebeck, gtup(S,0))
       comm.Barrier()
 
       PF = None
@@ -149,21 +143,21 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
         kappa[:,:,0] = (L2[:,:,0] - temp*L1[:,:,0]*npl.inv(L0[:,:,0])*L1[:,:,0])*1.e6
         L1 = L2 = None
 
-        wtup(fkappa, gtup(kappa,0))
+      #  wtup(fkappa, gtup(kappa,0))
         kappa = None
 
         PF = np.zeros((3,3,1), dtype=float)
         PF[:,:,0] = np.dot(np.dot(S[:,:,0],L0[:,:,0]),S[:,:,0])*1.e21
         S = L0 = None
 
-        wtup(fPF, gtup(PF,0))
+     #   wtup(fPF, gtup(PF,0))
         PF = None
       comm.Barrier()
 
-    fPF.close()
-    fkappa.close()
+    #fPF.close()
+    #fkappa.close()
     fsigma.close()
     if attr['smearing'] != None:
       fsigmadk.close()
-    fSeebeck.close()
-
+    #fSeebeck.close()
+    data_controller.broadcast_single_array('sigma', dtype=float)

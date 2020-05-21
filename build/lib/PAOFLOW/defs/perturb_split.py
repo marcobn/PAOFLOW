@@ -15,14 +15,18 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
-
 def perturb_split ( rot_op1, rot_op2, v_k, degen ):
   import numpy as np
   from scipy import linalg as spl
 
   op1 = np.dot(np.conj(v_k.T), np.dot(rot_op1,v_k))
+  op2 = None
+
   if len(degen) == 0:
-    op2 = np.dot(np.conj(v_k.T), np.dot(rot_op2,v_k))
+    if rot_op2 is not None: 
+      op2 = np.dot(np.conj(v_k.T), np.dot(rot_op2,v_k))
+      return op1,op2
+
     return op1,op2
 
   v_k_temp = np.copy(v_k)
@@ -41,6 +45,7 @@ def perturb_split ( rot_op1, rot_op2, v_k, degen ):
 
   # return new operator in non degenerate basis
   op1 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op1,v_k_temp))
-  op2 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op2,v_k_temp))
+  if rot_op2 is not None:
+    op2 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op2,v_k_temp))
 
   return(op1, op2)

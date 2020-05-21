@@ -61,6 +61,7 @@ class DataController:
       self.data_attributes = attr = {}
 
       # Set or update attributes
+      attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
@@ -85,6 +86,8 @@ class DataController:
           if not exists(attr['fpath']):
             raise Exception('ERROR: Inputfile does not exist\n%s'%attr['fpath'])
           self.read_pao_inputfile()
+        else:
+          attr['do_spin_orbit'] = False
         self.read_qe_output()
       except:
         print('\nERROR: Could not read QE xml data file')
@@ -101,8 +104,8 @@ class DataController:
 
     # Broadcast Data
     try:
-      self.broadcast_data_arrays()
-      self.broadcast_data_attributes()
+      self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
+      self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
     except:
       print('ERROR: MPI was unable to broadcast')
       self.report_exception('Initialization Broadcast')
@@ -137,6 +140,7 @@ class DataController:
       print(self.data_attributes.keys())
       print('\nData Arrays:')
       print(self.data_arrays.keys())
+      print('\n')
 
 
   def add_default_arrays ( self ):
@@ -144,7 +148,7 @@ class DataController:
 
     # Band Path
     self.data_attributes['band_path'] = ''
-    self.data_arrays['high_sym_points'] = np.array([[]])
+    self.data_arrays['high_sym_points'] = {}
 
     # Electric Field
     self.data_arrays['Efield'] = np.zeros(3, dtype=float)
@@ -206,7 +210,7 @@ class DataController:
 
       with open(join(attr['opath'],fname), 'w') as f:
         for i in range(len(col1)):
-          f.write('%.5f %.5e\n'%(col1[i],col2[i]))
+          f.write('%.5f %.15e\n'%(col1[i],col2[i]))
     self.comm.Barrier()
 
 

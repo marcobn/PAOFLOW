@@ -32,7 +32,10 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
   esize = ene.size
 
-  L0dw = L0up = L1dw = L1up = None
+  L0dw = np.empty((len(temps),3,3,esize), dtype=float)
+  L0up = np.empty((len(temps),3,3,esize), dtype=float)
+  L1dw = np.empty((len(temps),3,3,esize), dtype=float)
+  L1up = np.empty((len(temps),3,3,esize), dtype=float)
 
   siemen_conv,temp_conv = 6.9884,11604.52500617
 
@@ -51,7 +54,7 @@ def do_transport ( data_controller, temps, ene, velkp ):
     fSeebeck = ojf('Seebeck', ispin)
     fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
 
-    for temp in temps:
+    for indx,temp in enumerate(temps):
 
       itemp = temp/temp_conv
 
@@ -81,16 +84,17 @@ def do_transport ( data_controller, temps, ene, velkp ):
 
       L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
       if ispin == 0:
-        L0dw = L0
-        L1dw = L1
+        L0dw[indx] = L0
+        L1dw[indx] = L1
       elif ispin == 1:
-        L0up = L0
-        L1up = L1
-      if nspin == 2:
-        with open(join(attr['opath'],'Seebeck_avg.dat'),'w') as f:
-          for n in range(esize):
-            SA = (L1dw[:,:,n]+L1up[:,:,n])*npl.inv(L0dw[:,:,n]+L0up[:,:,n])
-            wtup(f, (temp,ene[n],SA[0,0],SA[1,1],SA[2,2],SA[0,1],SA[0,2],SA[1,2]))
+        L0up[indx] = L0
+        L1up[indx] = L1
+      #if nspin == 2:
+      #  with open(join(attr['opath'],'Seebeck_avg.dat'),'w') as f:
+      #    for n in range(esize):
+      #      SA = (L1dw[:,:,n]+L1up[:,:,n])*npl.inv(L0dw[:,:,n]+L0up[:,:,n])
+      #      LSave[indx,n,:] = [SA[0,0],SA[1,1],SA[2,2],SA[0,1],SA[0,2],SA[1,2]]
+            #wtup(f, (temp,ene[n],SA[0,0],SA[1,1],SA[2,2],SA[0,1],SA[0,2],SA[1,2]))
 
       if rank == 0:
         #----------------------
@@ -167,11 +171,11 @@ def do_transport ( data_controller, temps, ene, velkp ):
       fsigmadk.close()
     fSeebeck.close()
 
-  #if rank == 0 and nspin == 2:
-   # for temp in temps:
-   #   with open(join(attr['opath'],'Seebeck_avg.dat'),'w') as f:
-   #     for n in range(esize):
-   #       SA = (L1dw[:,:,n]+L1up[:,:,n])*npl.inv(L0dw[:,:,n]+L0up[:,:,n])
-   #       wtup(f, (temp,ene[n],SA[0,0],SA[1,1],SA[2,2],SA[0,1],SA[0,2],SA[1,2]))
+    if rank == 0 and nspin == 2:
+      with open(join(attr['opath'],'Seebeck_avg.dat'),'w') as f:
+       	for i,temp in enumerate(temps):
+          for n in range(esize):
+            SA = (L1dw[i,:,:,n]+L1up[i,:,:,n])*npl.inv(L0dw[i,:,:,n]+L0up[i,:,:,n])
+            wtup(f, (temp,ene[n],SA[0,0],SA[1,1],SA[2,2],SA[0,1],SA[0,2],SA[1,2]))
 
 

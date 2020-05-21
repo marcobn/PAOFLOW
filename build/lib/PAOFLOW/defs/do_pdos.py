@@ -22,7 +22,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_pdos ( data_controller, emin=-10., emax=2. ):
+def do_pdos ( data_controller, emin=-10., emax=2., ne=1000 ):
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -34,22 +34,21 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
 
   emax = np.amin(np.array([attributes['shift'], emax]))
 ## Hardcoded 'de'
-  esize = 1000
-  ene = np.linspace(emin, emax, esize)
+  ene = np.linspace(emin, emax, ne)
 
   for ispin in range(nspin):
 
-    pdosaux = np.zeros((nawf,esize), dtype=float)
+    pdosaux = np.zeros((nawf,ne), dtype=float)
     v_kaux = np.real(np.abs(arrays['v_k'][:,:,:,ispin])**2)
 
     E_k = arrays['E_k'][:,:,ispin]
 
-    for e in range(esize):
+    for e in range(ne):
       taux = np.exp(-((ene[e]-E_k)/attributes['delta'])**2)/np.sqrt(np.pi)
       for m in range(nawf):
         pdosaux[m,e] += np.sum(taux*v_kaux[:,m,:])
 
-    pdos = (np.zeros((nawf,esize),dtype=float) if rank==0 else None)
+    pdos = (np.zeros((nawf,ne),dtype=float) if rank==0 else None)
 
     comm.Reduce(pdosaux, pdos, op=MPI.SUM)
     pdosaux = None
@@ -57,7 +56,7 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
     if rank == 0:
       pdos /= (float(nktot)*np.sqrt(np.pi)*attributes['delta'])
 
-    pdos_sum = (np.zeros(esize, dtype=float) if rank==0 else None)
+    pdos_sum = (np.zeros(ne, dtype=float) if rank==0 else None)
 
     for m in range(nawf):
       if rank == 0:
@@ -69,7 +68,7 @@ def do_pdos ( data_controller, emin=-10., emax=2. ):
     data_controller.write_file_row_col(fpdos, ene, pdos_sum)
 
 
-def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
+def do_pdos_adaptive ( data_controller, emin=-10., emax=2., ne=1000 ):
   from .smearing import metpax, gaussian
 
   arrays = data_controller.data_arrays
@@ -78,8 +77,7 @@ def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
   # PDoS Calculation with Gaussian Smearing
   emax = np.amin(np.array([attributes['shift'], emax]))
 #### Hardcoded 'de'
-  esize = 1000
-  ene = np.linspace(emin, emax, esize)
+  ene = np.linspace(emin, emax, ne)
 
   nawf = attributes['nawf']
 
@@ -87,7 +85,7 @@ def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
 
     E_k = np.real(arrays['E_k'][:,:,ispin])
 
-    pdosaux = np.zeros((nawf,esize), dtype=float)
+    pdosaux = np.zeros((nawf,ne), dtype=float)
 
     v_kaux = np.real(np.abs(arrays['v_k'][:,:,:,ispin])**2)
 
@@ -103,7 +101,7 @@ def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
           # Adaptive Gaussian Smearing
           pdosaux[i,e] += np.sum(taux*v_kaux[:,i,:])
 
-    pdos = (np.zeros((nawf,esize), dtype=float) if rank==0 else None)
+    pdos = (np.zeros((nawf,ne), dtype=float) if rank==0 else None)
 
     comm.Reduce(pdosaux, pdos, op=MPI.SUM)
     pdosaux = None
@@ -111,7 +109,7 @@ def do_pdos_adaptive ( data_controller, emin=-10., emax=2. ):
     if rank == 0:
       pdos /= float(attributes['nkpnts'])
 
-    pdos_sum = (np.zeros(esize, dtype=float) if rank==0 else None)
+    pdos_sum = (np.zeros(ne, dtype=float) if rank==0 else None)
 
     for m in range(nawf):
       if rank == 0:

@@ -29,7 +29,7 @@ def do_dos ( data_controller, emin=-10., emax=2., ne=1000 ):
   bnd = attr['bnd']
   netot = attr['nkpnts']*bnd
   emax = np.amin(np.array([attr['shift'], emax]))
-
+  arry['dos'] = np.empty((ne,), dtype=float)
   # DOS calculation with gaussian smearing
   ene = np.linspace(emin, emax, ne)
 
@@ -52,10 +52,11 @@ def do_dos ( data_controller, emin=-10., emax=2., ne=1000 ):
 
     if rank == 0:
       dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attr['delta'])
-
+      arry['dos'] = dos
     fdos = 'dos_%s.dat'%str(ispin)
-    data_controller.write_file_row_col(fdos, ene, dos)
-    return dos if rank==0 else None
+    #data_controller.write_file_row_col(fdos, ene, dos)
+    data_controller.broadcast_single_array('dos', dtype=float)
+    #return dos if rank==0 else None
 
 def do_dos_adaptive ( data_controller, emin=-10., emax=2.,ne=1000 ):
   from .smearing import gaussian, metpax
@@ -100,5 +101,5 @@ def do_dos_adaptive ( data_controller, emin=-10., emax=2.,ne=1000 ):
       dos *= float(bnd)/netot
     fdosdk = 'dosdk_%s.dat'%str(ispin)
     data_controller.write_file_row_col(fdosdk, ene,dos)
-    return dos if rank==0 else None
+    #return dos if rank==0 else None
 

@@ -18,6 +18,7 @@
 
 def do_momentum ( data_controller ):
   import numpy as np
+  from .perturb_split import perturb_split
 
   arry,attr = data_controller.data_dicts()
 
@@ -28,11 +29,7 @@ def do_momentum ( data_controller ):
   for ispin in range(nspin):
     for ik in range(nktot):
       for l in range(3):
-        arry['pksp'][ik,l,:,:,ispin] = arry['dHksp'][ik,l,:,:,ispin].dot(arry['v_k'][ik,:,:,ispin])
+        arry['pksp'][ik,l,:,:,ispin],_ = perturb_split(arry['dHksp'][ik,l,:,:,ispin],None,
+                                                       arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
 
-  vec_cross = np.ascontiguousarray(np.conj(np.swapaxes(arry['v_k'],1,2)))
 
-  for ispin in range(nspin):
-    for ik in range(nktot):
-      for l in range(3):
-        arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])
