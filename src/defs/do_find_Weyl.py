@@ -341,7 +341,9 @@ def get_equiv_k(kp,symop,sym_TR,mag_soc):
         newk_tot=np.vstack([newk_tot,newk.T])
 
     # filter duplicates
-    newk_r=np.around(newk_tot,decimals=5)
+    newk_r=np.around(newk_tot,decimals=4)
+    newk_r[np.where(np.abs(newk_r)<1.e-4)]=0
+
     b_pos = np.ascontiguousarray(newk_r).view(np.dtype((np.void,newk_r.dtype.itemsize *newk_r.shape[1])))
     _, idx = np.unique(b_pos, return_index=True)
     newk_tot=newk_tot[idx]

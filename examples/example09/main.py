@@ -32,7 +32,7 @@ def main():
   paoflow.pao_hamiltonian(symmetrize=True,thresh=1.e-10,max_iter=64)
   paoflow.bands(ibrav=1)
   paoflow.z2_pack()
-  paoflow.find_weyl_points()
+  paoflow.find_weyl_points(symmetrize=True,search_grid=[3,3,3])
   paoflow.finish_execution()
 
 if __name__== '__main__':
