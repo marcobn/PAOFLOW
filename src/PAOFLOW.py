@@ -135,7 +135,7 @@ class PAOFLOW:
     if self.rank == 0:
 
       # White spacing between module name and reported time
-      spaces = 40
+      spaces = 35
       lmn = len(mname)
       if len(mname) > spaces:
         print('DEBUG: Please use a shorter module tag.')
@@ -144,7 +144,7 @@ class PAOFLOW:
       # Format string and print
       lms = spaces-lmn
       dt = time() - self.reset_time
-      print('%s in: %s %.3f sec'%(mname,lms*' ',dt))
+      print('%s in: %s %8.3f sec'%(mname,lms*' ',dt))
       self.reset_time = time()
 
 
@@ -186,7 +186,7 @@ class PAOFLOW:
 
     if self.rank == 0:
       tt = time() - self.start_time
-      print('Total CPU time =%s%.3f sec'%(27*' ',tt))
+      print('Total CPU time =%s%8.3f sec'%(25*' ',tt))
 
     verbose = self.data_controller.data_attributes['verbose']
 
@@ -1160,11 +1160,12 @@ mo    '''
     self.report_module_time('Dielectric Tensor')
 
 
-  def find_weyl_points(self):
+  def find_weyl_points(self,search_grid=[8,8,8],symmetrize=False):
     from .defs.do_find_Weyl import find_weyl
 
     arrays,attr = self.data_controller.data_dicts()
     mag_so=np.logical_and(attr["dftMAG"],attr["dftSO"])
 
-    find_weyl(arrays["HRs"],attr["nelec"],attr["nk1"],attr["nk2"],attr["nk3"],arrays["b_vectors"],arrays["sym_rot"],arrays["sym_TR"],mag_so)
+    find_weyl(arrays["HRs"],attr["nelec"],attr["nk1"],attr["nk2"],attr["nk3"],arrays["b_vectors"],arrays["sym_rot"],arrays["sym_TR"],mag_so,self.outputdir,symmetrize,attr['verbose'],search_grid=search_grid)
 
+    self.report_module_time('Weyl Search')

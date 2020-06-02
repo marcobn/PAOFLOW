@@ -135,7 +135,7 @@ def do_search_grid(nk1,nk2,nk3,snk1_range=[-0.5,0.5],snk2_range=[-0.5,0.5],snk3_
 
 
 
-def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.01):
+def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,ofn,symf,verbose,test_rad=0.01,search_grid=[8,8,8],):
 
 
     nawf,nawf,nk1,nk2,nk3,nspin = HRs.shape
@@ -143,68 +143,97 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.
 
     HRs=np.reshape(HRs,(nawf,nawf,nk1*nk2*nk3,nspin))
 
-    CAND,ene = find_min(HRs,nelec,R,b_vectors)
+
+    CAND,ene = find_min(HRs,nelec,R,b_vectors,symf,verbose,search_grid)
     
     WEYL = {}
     if rank==0:
-       
-       # get all equiv k
-       CAND = get_equiv_k(CAND,symops,TR_flag,mag_soc)
-#       print(CAND)
+       if symf:
+          # get all equiv k
+          CAND = get_equiv_k(CAND,symops,TR_flag,mag_soc)
 
-
-       try:
-          import z2pack
-          import tbmodels
-       except:
-         print('Could not load z2pack to verify chirality of weyl points')
-         return
-
-       for i in range(CAND.shape[0]):
-            print("Weyl point candidate #%s crystal coord: % 5.4f % 5.4f % 5.4f "%((i+1),
+       if verbose:
+          for i in range(CAND.shape[0]):
+             print("Weyl point candidate #%s crystal coord: [ % 5.4f % 5.4f % 5.4f ]"%((i+1),
                                                                                    CAND[i][0],
                                                                                    CAND[i][1],
                                                                                    CAND[i][2],))
-       print()
-       for i in range(CAND.shape[0]):
-          in_cart=b_vectors.T.dot(CAND[i])
-          print("Weyl point candidate #%s 2pi/alat: % 5.4f % 5.4f % 5.4f "%((i+1),
+          print()
+          for i in range(CAND.shape[0]):
+             in_cart=b_vectors.T.dot(CAND[i])
+             print("Weyl point candidate #%s 2pi/alat: [ % 5.4f % 5.4f % 5.4f ]"%((i+1),
                                                                             in_cart[0],
                                                                             in_cart[1],
                                                                             in_cart[2],))
+          print()
 
+       try:
+          import z2pack
+          import tbmodels          
 
-       model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
-       system = z2pack.tb.System(model,bands=nelec)
+          model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
+          system = z2pack.tb.System(model,bands=nelec)
 
-       candidates=0
+          candidates=0
 
-       for kq in CAND:
-           # if distance between two candidates is very small
-           k_rad=np.amin(np.sqrt(np.sum((kq - CAND)**2,axis=1)))*0.5
-           if k_rad>test_rad:
-              k_rad=test_rad
-           k_rad=0.005
-           
-           result_1 = z2pack.surface.run(system=system,
-                                         surface=z2pack.shape.Sphere(center=tuple(kq),
-                                                                     radius=k_rad))
-           invariant = z2pack.invariant.chern(result_1)
+          if not verbose:
+             import logging
+             logging.getLogger('z2pack').setLevel(logging.WARNING)
 
-           if invariant != 0:
-              candidates += 1
-              WEYL[str(kq).replace(",", "")]=invariant
+          for kq in CAND:
+              # if distance between two candidates is very small
+              k_rad=np.amin(np.sqrt(np.sum((kq - CAND)**2,axis=1)))*0.5
+              if k_rad>test_rad:
+                 k_rad=test_rad
+              k_rad=0.005
 
+              result_1 = z2pack.surface.run(system=system,
+                                            surface=z2pack.shape.Sphere(center=tuple(kq),
+                                                                        radius=k_rad))
+              invariant = z2pack.invariant.chern(result_1)
+
+              if invariant != 0:
+                 candidates += 1
+                 WEYL[str(kq).replace(",", "")]=invariant
+
+       except:
+          print('Could not load z2pack to verify chirality of weyl points')
+          for kq in CAND:
+             WEYL[str(kq).replace(",", "")]="?"
+                                                                        
+       if verbose:
+          print()
 
        j=1
+       wcs="{0:>3} {1:>10} {2:>10} {3:>10} {4:>2}\n".format("#","2pi/a","2pi/b","2pi/c","C")
+       wcs+="-"*39
+       wcs+="\n"
+
        for k in WEYL.keys():
-          print ('Found Candidate No. {} at {} with Chirality:{}'.format(j,k,WEYL[k]))
+          fm=np.array(list(map(float,k[1:-1].split())))         
+          fm=b_vectors.T.dot(fm[:,None])[:,0]
+          try:
+             if verbose:
+                print ('Found Candidate No. {0} at [{1:>7.4f} {2:>7.4f} {3:>7.4f}] with Chirality:{4:>2}'.format(j,fm[0],fm[1],fm[2],int(WEYL[k]),))
+                                                                         
+                                                                         
+             wcs+='{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2}\n'.format(j,fm[0],fm[1],
+                                                                             fm[2],int(WEYL[k]),)
+          except:
+             wcs+='{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2}\n'.format(j,fm[0],fm[1],
+                                                                             fm[2],WEYL[k],)
+         
           j = j + 1
-      
+                                                                        
 
-def find_min(HRs,nelec,R,a_vectors):
+       with open(os.path.join(ofn,"weyl_points.dat"),"w") as ofo:
+          ofo.write(wcs)
 
-    snk1=snk2=snk3=8
+def find_min(HRs,nelec,R,a_vectors,symf,verbose,search_grid=[8,8,8]):
+
+    snk1=search_grid[0]
+    snk2=search_grid[1]
+    snk3=search_grid[2]
     search_grid = do_search_grid(snk1,snk2,snk3)
     
     #do the bounds for each search subsection of FBZ
@@ -247,7 +276,7 @@ def find_min(HRs,nelec,R,a_vectors):
             
     candidates=gather_full(candidates,1)
     
-
+    
     ene=None
     if rank==0:    
        # filter out non hits
@@ -259,19 +288,25 @@ def find_min(HRs,nelec,R,a_vectors):
           eigs = gen_eigs(HRs,candidates[i],R)[0,:,0]
           ene[i] = eigs[nelec]
           gaps[i]=eigs[nelec]-eigs[nelec-1]
-       # sort by gap size (should be nearly zero)
-       idx = np.argsort(gaps)
-       ene= ene[idx]
-       candidates = candidates[idx]
-       print()
-       # filter out duplicates by degeneracy
-       _,idx=np.unique(np.around(ene,decimals=4),return_index=True)
-       ene=ene[idx]
-       candidates = candidates[idx]
-       print("found %s non-equivilent candidates"%candidates.shape[0])
-       for i in range(ene.shape[0]):
-          print(candidates[i],"% 4.4f"%ene[i])
-       print()
+       if symf:
+          # sort by gap size (should be nearly zero)
+          idx = np.argsort(gaps)
+          ene= ene[idx]
+          candidates = candidates[idx]         
+          # filter out duplicates by degeneracy
+          _,idx=np.unique(np.around(ene,decimals=4),return_index=True)
+          ene=ene[idx]
+          candidates = candidates[idx]
+          if verbose:
+             print()
+             print("found %s non-equivilent candidates"%candidates.shape[0])
+             for i in range(ene.shape[0]):
+                print("[ % 7.4f % 7.4f % 7.4f ] % 4.4f"%(candidates[i][0],
+                                                         candidates[i][1],
+                                                         candidates[i][2],ene[i]))
+
+
+             print()
 
     comm.Barrier()
       
