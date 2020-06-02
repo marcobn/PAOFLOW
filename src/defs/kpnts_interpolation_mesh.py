@@ -555,7 +555,6 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,special_points):
         totalK+=numK
 
         path_file+="%s %s\n"%(point1,numK)
-        numK = str(numK)
 
         a0 = np.linspace(p1[0],p2[0],numK,endpoint=False).astype(np.float16)
         a1 = np.linspace(p1[1],p2[1],numK,endpoint=False).astype(np.float16)
