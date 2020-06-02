@@ -310,7 +310,7 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   pksp_i = np.asfortranarray(pksp_i)
   pksp_j = np.asfortranarray(pksp_j)
   # Collapsing the sum over k points
-  st=time.time()
+
   for n in range(nawf):
     for m in range(nawf):
       if m != n:
