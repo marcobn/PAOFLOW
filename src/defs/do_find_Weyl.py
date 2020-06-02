@@ -49,7 +49,7 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-np.set_printoptions(precision=8, threshold=100, edgeitems=50, linewidth=350, suppress=True)
+#np.set_printoptions(precision=8, threshold=100, edgeitems=50, linewidth=350, suppress=True)
 
 
 
@@ -150,8 +150,8 @@ def find_weyl(HRs,nelec,nk1,nk2,nk3,b_vectors,symops,TR_flag,mag_soc,test_rad=0.
        
        # get all equiv k
        CAND = get_equiv_k(CAND,symops,TR_flag,mag_soc)
-       print(CAND)
-       print(CAND.shape)
+#       print(CAND)
+
 
        try:
           import z2pack
