@@ -1026,7 +1026,7 @@ class PAOFLOW:
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None,doping_conc=0. ,fit=False, a_imp =1, a_ac=1, a_pop=1, write_to_file=True):
+  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None,doping_conc=0. ,fit=False, a_imp =1, a_ac=1, a_pop=1,scattering_channels=None,tau_dict={'Ef':None,'D':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None},write_to_file=True):
     '''
     Calculate the Transport Properties
 
@@ -1044,7 +1044,6 @@ class PAOFLOW:
     '''
    
     arrays,attr = self.data_controller.data_dicts()
-    #if doping_conc is not None:
     if fit == True: 
       if doping_conc !=0:
         from .defs.do_transport_fitting import do_transport
@@ -1052,6 +1051,8 @@ class PAOFLOW:
         if 'a_ac' not in attr: attr['a_ac'] = a_ac
         if 'a_pop' not in attr: attr['a_pop'] = a_pop
         if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
+        if 'scattering_channels' not in attr: attr['scattering_channels'] = scattering_channels
+        if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
       else:
         from .defs.do_transport import do_transport
     else:
@@ -1061,6 +1062,8 @@ class PAOFLOW:
         if 'a_ac' not in attr: attr['a_ac'] = a_ac
         if 'a_pop' not in attr: attr['a_pop'] = a_pop
         if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
+        if 'scattering_channels' not in attr: attr['scattering_channels'] = scattering_channels
+        if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
       else:
         from .defs.do_transport import do_transport
     
@@ -1082,7 +1085,6 @@ class PAOFLOW:
         self.comm.Abort()
 
     self.report_module_time('Transport')
-
 
 
   def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):

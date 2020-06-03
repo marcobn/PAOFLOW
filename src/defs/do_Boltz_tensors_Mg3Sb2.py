@@ -22,12 +22,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
+def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop ):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','polar optical'])
+  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','polar optical'],a_imp,a_ac,a_pop)
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -74,11 +74,11 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin ):
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin ):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop ):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','polar optical'])
+  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','polar optical'],a_imp,a_ac,a_pop)
 
   t_tensor = arrays['t_tensor']
   L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
@@ -96,7 +96,7 @@ def planck(hwlo,temp):
     
     return 1/(np.exp(hwlo/temp)-1)
 
-def get_tau (temp,data_controller, channels ):
+def get_tau (temp,data_controller, channels,a_imp,a_ac,a_pop):
 
   import numpy as np
   import scipy.constants as cp
@@ -121,7 +121,7 @@ def get_tau (temp,data_controller, channels ):
   rho = 3.9375e3   #kg/m^3 
   a = 8.6883e-10 #metres    
   nd = attr['doping_conc']*1e6 #doping in /m^3
-  nI = nd #no.of impuritites/m^3
+  nI = abs(nd) #no.of impuritites/m^3
   eps_inf = 14.2*epso
   eps_0 = 26.7*epso
   eps = eps_inf+eps_0
@@ -137,11 +137,11 @@ def get_tau (temp,data_controller, channels ):
           x = (hbar*qo)**2/(8*ms*E)
           P_imp = (np.pi*nI*Zi**2*(e**4)/(E**1.5*np.sqrt(2*ms)*(fpi*eps)**2))
           P_imp *= (np.log(1+1./x)-1./(1+x))
-          rate.append(P_imp)
+          rate.append(P_imp/a_imp)
 
       if c == 'accoustic':
           P_ac = ((2*ms)**1.5*(D**2)*np.sqrt(E)*temp)/(tpi*hbar**4*rho*v**2)
-          rate.append(P_ac)
+          rate.append(P_ac/a_ac)
 
       if c == 'polar optical':
 	  P_pol=0.
@@ -164,15 +164,15 @@ def get_tau (temp,data_controller, channels ):
             C = (2*E)*(C+t2)
             P = (C-A-B)/(Z*(E**1.5))
             P_pol += P            
-          rate.append(P_pol)
+          rate.append(P_pol/a_pop)
       
       if c == None:
 	tau = np.ones((snktot,bnd,nspin), dtype=float)
-
-      tau = np.zeros((snktot,bnd,nspin), dtype=float)
-      for r in rate:
-          tau += r
-      tau = 1/tau
+      else:
+        tau = np.zeros((snktot,bnd,nspin), dtype=float)
+        for r in rate:
+            tau += r
+        tau = 1/tau
   return tau
 
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
