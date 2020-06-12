@@ -28,7 +28,7 @@ from PAOFLOW import PAOFLOW
 def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='silicon.save',verbose=True)
-  paoflow.projectability(pthr=.90)
+  paoflow.projectability(pthr=.95)
   paoflow.pao_hamiltonian()
   paoflow.interpolated_hamiltonian()
   paoflow.pao_eigh()
