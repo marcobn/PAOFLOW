@@ -1120,7 +1120,7 @@ mo    '''
 
 
 
-  def dielectric_tensor ( self, metal=False, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
+  def dielectric_tensor ( self, metal=False, temp=None, delta=0.01, emin=0., emax=10., ne=500, d_tensor=None ):
     '''
     Calculate the Dielectric Tensor
 
