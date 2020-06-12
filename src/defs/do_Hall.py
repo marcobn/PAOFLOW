@@ -19,7 +19,7 @@
 
 import numpy as np
 from mpi4py import MPI
-import time
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
@@ -297,7 +297,6 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   eps = 1.0e-16
   delta = 0.05
 
-  st=time.time()
   if attr['smearing'] == None:
     fn = 1.0/(np.exp(arry['E_k'][:,:,ispin]/attr['temp'])+1)
   elif attr['smearing'] == 'gauss':
@@ -305,12 +304,7 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
   elif smearing == 'm-p':
     fn = intmetpax(arry['E_k'][:,:,ispin], Ef, arry['deltakp'][:,:,ispin]) 
 
-  arry['E_k']  = np.asfortranarray(arry["E_k"])
-
-  pksp_i = np.asfortranarray(pksp_i)
-  pksp_j = np.asfortranarray(pksp_j)
   # Collapsing the sum over k points
-
   for n in range(nawf):
     for m in range(nawf):
       if m != n:
@@ -319,12 +313,9 @@ def smear_sigma_loop ( data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol )
 
   fn = None
 
-  E_diff_nm  = np.ascontiguousarray(E_diff_nm)
-  f_nm  = np.ascontiguousarray(f_nm)
-
   for e in range(esize):
     if attr['smearing'] != None:
-      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['deltakp2'][:,:,:,ispin])**2+eps))
+      sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['deltakp2'][:,:nawf,:nawf,ispin])**2+eps))
     else:
       sigxy[e] = np.sum(f_nm[:,:,:]/(E_diff_nm[:,:,:]-(ene[e]+1.j*arry['delta'])**2+eps))
 
