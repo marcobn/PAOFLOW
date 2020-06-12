@@ -8,7 +8,7 @@
     <write2file type="logical" size="1">F</write2file><!-- write data formatted for acbn0 calculations -->
     <shift_type type="integer" size="1">1</shift_type><!-- Use GPU to perform FFTs -->
     <shift>auto</shift><!-- if 'auto' shift is selected automatically; else, give numerical value (eV) -->
-    <pthr type="decimal" size="1">0.90</pthr>
+    <pthr type="decimal" size="1">0.95</pthr>
     <npool type="integer" size="1">8</npool>
 
     <!-- Return Requests -->
