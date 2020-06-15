@@ -236,7 +236,7 @@ class PAOFLOW:
 
 
 
-  def pao_hamiltonian ( self, non_ortho=False, shift_type=1,expand_wedge=True,symmetrize=False,thresh=1.e-6,max_iter=16 ):
+  def pao_hamiltonian ( self, non_ortho=False, shift_type=1, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
     '''
     Construct the Tight Binding Hamiltonian
     Yields 'HRs', 'Hks' and 'kq_wght'
@@ -258,10 +258,10 @@ class PAOFLOW:
     if 'non_ortho' not in attr: attr['non_ortho'] = non_ortho
     if 'shift_type' not in attr: attr['shift_type'] = shift_type
 
-    attr['symm_thresh']=thresh
-    attr['symm_max_iter']=max_iter
-    attr['symmetrize']=symmetrize
-    attr['expand_wedge']=expand_wedge
+    attr['symm_thresh'] = thresh
+    attr['symm_max_iter'] = max_iter
+    attr['symmetrize'] = symmetrize
+    attr['expand_wedge'] = expand_wedge
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
@@ -1160,12 +1160,9 @@ mo    '''
     self.report_module_time('Dielectric Tensor')
 
 
-  def find_weyl_points(self,search_grid=[8,8,8],symmetrize=False):
+  def find_weyl_points ( self, search_grid=[8,8,8], symmetrize=False ):
     from .defs.do_find_Weyl import find_weyl
 
-    arrays,attr = self.data_controller.data_dicts()
-    mag_so=np.logical_and(attr["dftMAG"],attr["dftSO"])
-
-    find_weyl(arrays["HRs"],attr["nelec"],attr["nk1"],attr["nk2"],attr["nk3"],arrays["b_vectors"],arrays["sym_rot"],arrays["sym_TR"],mag_so,self.outputdir,symmetrize,attr['verbose'],search_grid=search_grid)
+    find_weyl(self.data_controller, symmetrize, search_grid)
 
     self.report_module_time('Weyl Search')
