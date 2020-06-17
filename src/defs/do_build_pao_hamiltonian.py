@@ -128,12 +128,6 @@ def do_build_pao_hamiltonian ( data_controller ):
   
   arry['Hks'] = build_Hks(data_controller)
 
-  if attr['expand_wedge']:
-    open_grid_wrapper(data_controller)
-
-  if rank != 0:
-    return
-
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
   # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
@@ -155,6 +149,9 @@ def do_build_pao_hamiltonian ( data_controller ):
 
     data_controller.write_Hk_acbn0()
 
+  if attr['expand_wedge']:
+    open_grid_wrapper(data_controller)
+
   arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
 
@@ -171,8 +168,3 @@ def do_Hks_to_HRs ( data_controller ):
     # Original k grid to R grid
     arry['HRs'] = np.zeros_like(arry['Hks'])
     arry['HRs'] = FFT.ifftn(arry['Hks'], axes=[2,3,4])
-
-    if attr['non_ortho']:
-      arry['SRs'] = np.zeros_like(arry['Sks'])
-      arry['SRs'] = FFT.ifftn(arry['Sks'], axes=[2,3,4])
-      del arry['Sks']

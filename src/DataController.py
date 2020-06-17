@@ -289,67 +289,71 @@ class DataController:
     import numpy as np
     import os,sys
 
-    arry,attr    = self.data_dicts()
-    nspin        = attr['nspin']
-    inputpath    = attr['opath']
-    write_binary = attr['write_binary']
-    nawf         = attr['nawf']
-    non_ortho    = attr['non_ortho']
-    kpnts_wght   = arry['kpnts_wght']
-    kpnts        = arry['kpnts']
-    Hks          = arry['Hks']
-    Sks          = arry['Sks']
-    nkpnts       = kpnts.shape[0]
+    # Termporary hotfix
+    if self.rank == 0:
+
+      arry,attr    = self.data_dicts()
+      nspin        = attr['nspin']
+      inputpath    = attr['opath']
+      write_binary = attr['write_binary']
+      nawf         = attr['nawf']
+      non_ortho    = attr['non_ortho']
+      kpnts_wght   = arry['kpnts_wght']
+      kpnts        = arry['kpnts']
+      Hks          = arry['Hks']
+      Sks          = arry['Sks']
+      nkpnts       = kpnts.shape[0]
     
 
 
-    if write_binary:# or whatever you want to call it            
+      if write_binary:# or whatever you want to call it            
         if nspin==1:#postfix .npy just to make it clear what they are
-            np.save('kham.npy',np.ravel(Hks[...,0],order='C'))
+          np.save('kham.npy',np.ravel(Hks[...,0],order='C'))
         if nspin==2:
-            np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
-            np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
+          np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
+          np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
         if non_ortho:
-            np.save('kovp.npy',np.ravel(Sks,order='C'))
-    else:
+          np.save('kovp.npy',np.ravel(Sks,order='C'))
+      else:
         if nspin == 1:
-            f=open(os.path.join(inputpath,'kham.txt'),'w')
-            for ik in range(nkpnts):
-                for i in range(nawf):
-                    for j in range(nawf):
-                        f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
-            f.close()
+          f=open(os.path.join(inputpath,'kham.txt'),'w')
+          for ik in range(nkpnts):
+            for i in range(nawf):
+              for j in range(nawf):
+                f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
+          f.close()
         elif nspin == 2:
-            f=open(os.path.join(inputpath,'kham_up.txt'),'w')
-            for ik in range(nkpnts):
-                for i in range(nawf):
-                    for j in range(nawf):
-                        f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
-            f.close()
-            f=open(os.path.join(inputpath,'kham_down.txt'),'w')
-            for ik in range(nkpnts):
-                for i in range(nawf):
-                    for j in range(nawf):
-                        f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
-            f.close()
-        if non_ortho:
-            f=open(os.path.join(inputpath,'kovp.txt'),'w')
-            for ik in range(nkpnts):
-                for i in range(nawf):
-                    for j in range(nawf):
-                        f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
-            f.close()
-    f=open(os.path.join(inputpath,'k.txt'),'w')
-    for ik in range(nkpnts):
+          f=open(os.path.join(inputpath,'kham_up.txt'),'w')
+          for ik in range(nkpnts):
+            for i in range(nawf):
+              for j in range(nawf):
+                f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,0]),np.imag(Hks[i,j,ik,0])))
+          f.close()
+          f=open(os.path.join(inputpath,'kham_down.txt'),'w')
+          for ik in range(nkpnts):
+            for i in range(nawf):
+              for j in range(nawf):
+                f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
+          f.close()
+      if non_ortho:
+          f=open(os.path.join(inputpath,'kovp.txt'),'w')
+          for ik in range(nkpnts):
+            for i in range(nawf):
+              for j in range(nawf):
+                f.write('%20.13f %20.13f \n' %(np.real(Sks[i,j,ik]),np.imag(Sks[i,j,ik])))
+          f.close()
+      f=open(os.path.join(inputpath,'k.txt'),'w')
+      for ik in range(nkpnts):
         f.write('%20.13f %20.13f %20.13f \n' %(kpnts[ik,0],kpnts[ik,1],kpnts[ik,2]))
-    f.close()
-    f=open(os.path.join(inputpath,'wk.txt'),'w')
-    for ik in range(nkpnts):
+      f.close()
+      f=open(os.path.join(inputpath,'wk.txt'),'w')
+      for ik in range(nkpnts):
         f.write('%20.13f \n' %(kpnts_wght[ik]))
-    f.close()
+      f.close()
 
-    print('H(k),S(k),k,wk written to file')
-    sys.exit()
+      print('H(k),S(k),k,wk written to file')
+      ##sys.exit() Why sys.exit()?? This code was being run by rank 0 only, leading to undefined behaviou.....
+    self.comm.Barrier()
 
 
   def write_z2pack ( self, fname ):

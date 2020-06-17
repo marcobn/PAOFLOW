@@ -236,7 +236,7 @@ class PAOFLOW:
 
 
 
-  def pao_hamiltonian ( self, non_ortho=False, shift_type=1, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
+  def pao_hamiltonian ( self, non_ortho=False, shift_type=1, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
     '''
     Construct the Tight Binding Hamiltonian
     Yields 'HRs', 'Hks' and 'kq_wght'
@@ -257,6 +257,7 @@ class PAOFLOW:
 
     if 'non_ortho' not in attr: attr['non_ortho'] = non_ortho
     if 'shift_type' not in attr: attr['shift_type'] = shift_type
+    if 'write_binary' not in attr: attr['write_binary'] = write_binary
 
     attr['symm_thresh'] = thresh
     attr['symm_max_iter'] = max_iter
@@ -271,16 +272,15 @@ class PAOFLOW:
         self.comm.Abort()
     self.report_module_time('Building Hks')
 
-    # Done with U
+    # Done with U and Sks
     del arrays['U']
+    del arrays['Sks']
 
     try:
       do_Hks_to_HRs(self.data_controller)
 
       ### PARALLELIZATION
       self.data_controller.broadcast_single_array('HRs')
-      if attr['non_ortho']:
-        self.data_controller.broadcast_single_array('SRs')
 
       get_K_grid_fft(self.data_controller)
     except:
@@ -288,18 +288,6 @@ class PAOFLOW:
       if attr['abort_on_exception']:
         self.comm.Abort()
     self.report_module_time('k -> R')
-
-    # Orthogonalization
-    if non_ortho:
-      try:
-        from .defs.do_ortho import do_orthogonalize
-
-        do_orthogonalize(self.data_controller)
-      except:
-        self.report_exception('pao_hamiltonian')
-        if attr['abort_on_exception']:
-          self.comm.Abort()
-      self.report_module_time('Orthogonalize')
 
 
 
