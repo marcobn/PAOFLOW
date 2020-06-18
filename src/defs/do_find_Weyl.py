@@ -55,10 +55,11 @@ def band_loop_H ( ini_ik, end_ik, HRaux, kq, R ):
   kdot = np.tensordot(R, 2.0j*np.pi*kq[:,ini_ik:end_ik], axes=([1],[0]))
   np.exp(kdot, kdot)
 
- auxh = np.zeros((nawf,nawf,1,nspin), dtype=complex, order='C')
- for ispin in range(nspin):
-   auxh[:,:,ini_ik:end_ik,ispin] = np.tensordot(HRaux[:,:,:,ispin], kdot, axes=([2],[0]))
- return auxh
+  auxh = np.zeros((nawf,nawf,1,nspin), dtype=complex, order='C')
+  for ispin in range(nspin):
+    auxh[:,:,ini_ik:end_ik,ispin] = np.tensordot(HRaux[:,:,:,ispin], kdot, axes=([2],[0]))
+  return auxh
+
 
 def gen_eigs ( HRaux, kq, R ):
   # Load balancing
@@ -76,33 +77,36 @@ def gen_eigs ( HRaux, kq, R ):
 
   return E_kp
 
+
 def get_gap ( HR, kq, R, nelec ):
   E_kp = gen_eigs(HR, kq, R)
   return E_kp[0,nelec,0] - E_kp[0,nelec-1,0]
+
 
 def get_R_grid_fft ( nr1, nr2, nr3 ):
 
   R = np.zeros((nr1*nr2*nr3,3))
 
   for i in range(nr1):
-  for j in range(nr2):
-    for k in range(nr3):
-    n = k + j*nr3 + i*nr2*nr3
-    Rx = float(i)/float(nr1)
-    Ry = float(j)/float(nr2)
-    Rz = float(k)/float(nr3)
-    if Rx >= 0.5: Rx=Rx-1.0
-    if Ry >= 0.5: Ry=Ry-1.0
-    if Rz >= 0.5: Rz=Rz-1.0
-    Rx -= int(Rx)
-    Ry -= int(Ry)
-    Rz -= int(Rz)
+    for j in range(nr2):
+      for k in range(nr3):
+        n = k + j*nr3 + i*nr2*nr3
+        Rx = float(i)/float(nr1)
+        Ry = float(j)/float(nr2)
+        Rz = float(k)/float(nr3)
+        if Rx >= 0.5: Rx=Rx-1.0
+        if Ry >= 0.5: Ry=Ry-1.0
+        if Rz >= 0.5: Rz=Rz-1.0
+        Rx -= int(Rx)
+        Ry -= int(Ry)
+        Rz -= int(Rz)
 
-    R[n,0] = Rx*nr1 
-    R[n,1] = Ry*nr2 
-    R[n,2] = Rz*nr3
+        R[n,0] = Rx*nr1 
+        R[n,1] = Ry*nr2 
+        R[n,2] = Rz*nr3
 
   return R  
+
 
 def get_search_grid ( nk1, nk2, nk3, snk1_range=[-0.5,0.5], snk2_range=[-0.5,0.5], snk3_range=[-0.5,0.5], endpoint=False ):
 
@@ -112,6 +116,7 @@ def get_search_grid ( nk1, nk2, nk3, snk1_range=[-0.5,0.5], snk2_range=[-0.5,0.5
 
   #nk_str = np.zeros((nk1*nk2*nk3,3), order='C')
   return np.array(np.meshgrid(nk1_arr,nk2_arr,nk3_arr,indexing='ij')).T.reshape(-1,3)
+
 
 def find_weyl ( data_controller, symf, test_rad=0.01, search_grid=[8,8,8] ):
 
@@ -235,6 +240,7 @@ def find_min ( HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8,8,8] ):
       
   candidates = gather_full(candidates,1)
 
+  ene = None
   if rank == 0:  
     # filter out non hits
     candidates = candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
@@ -264,8 +270,6 @@ def find_min ( HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8,8,8] ):
 
   comm.Barrier()
   return (candidates, ene)
-
-
 
 
 def get_equiv_k(kp,symop,sym_TR,mag_soc):
