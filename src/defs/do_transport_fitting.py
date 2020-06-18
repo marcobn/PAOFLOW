@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,write_to_file):
+def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,write_to_file):
   import numpy as np
   import scipy.optimize as sp
   import scipy.integrate
@@ -50,8 +50,8 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
     # Quick function opens file in output folder with name 's'
     if write_to_file == True:
 
-      ojf = lambda st,sp,sf1,sf2,sf3 : open(join(attr['opath'],'%s_%d_%.2f_%.2f_%.2f.dat'%(st,sp,sf1,sf2,sf3)),'w')
-      fsigma = ojf('sigma', ispin,a_imp,a_ac,a_pop)
+      ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)),'w')
+      fsigma = ojf('sigma', ispin)
 
     margin = 9. * temps.max()
     mumin = ene.min() + margin
@@ -65,11 +65,10 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
       itemp = temp/temp_conv
 
-      wtup = lambda fn,tu : fn.write('%8.2f % .5f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
+      wtup = lambda fn,tu : fn.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
 
       # Quick function to get tuple elements to write
-      gtup = lambda tu,i : (temp,mur[iT],Nc[iT],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
-
+      gtup = lambda tu,i : (temp,mur[iT],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
       if rank == 0:
         mur[iT] = solve_for_mu(ene,dos,N,temp,refine=False,try_center=False)
@@ -77,7 +76,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
           Nc[iT] = calc_N(ene, dos, mu, temp) + nelec
       mur[iT] = comm.bcast(mur[iT], root=0)
       if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop)
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -91,7 +90,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
        #   wtup(fsigmadk, gtup(sigma,0))
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv)
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
