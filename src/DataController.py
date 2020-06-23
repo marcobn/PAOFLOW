@@ -96,9 +96,6 @@ class DataController:
 
       # Ensure that the number of k-points from QE matches the grid size
       nkpnts = attr['nk1']*attr['nk2']*attr['nk3']
-#      if nkpnts != attr['nkpnty6s']:
-#        print('\nERROR: Number of QE k-points does not match the MP grid size. Calculate nscf with nosym=.true. & noinv=.true.\n')
-#        self.comm.Abort()
 
     self.comm.Barrier()
 
@@ -289,7 +286,6 @@ class DataController:
     import numpy as np
     import os,sys
 
-    # Termporary hotfix
     if self.rank == 0:
 
       arry,attr    = self.data_dicts()
@@ -303,8 +299,6 @@ class DataController:
       Hks          = arry['Hks']
       Sks          = arry['Sks']
       nkpnts       = kpnts.shape[0]
-    
-
 
       if write_binary:# or whatever you want to call it            
         if nspin==1:#postfix .npy just to make it clear what they are
@@ -352,7 +346,6 @@ class DataController:
       f.close()
 
       print('H(k),S(k),k,wk written to file')
-      ##sys.exit() Why sys.exit()?? This code was being run by rank 0 only, leading to undefined behaviou.....
     self.comm.Barrier()
 
 

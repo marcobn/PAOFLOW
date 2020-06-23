@@ -202,9 +202,6 @@ class PAOFLOW:
         print("Memory usage on rank 0:  %6.4f GB"%(mem[0]/1024.0**2))
         print("Maximum concurrent memory usage:  %6.4f GB"%(mem0[0]/1024.0**2))
 
-    MPI.Finalize()
-    quit()
-
 
 
   def projectability ( self, pthr=0.95, shift='auto' ):
@@ -260,8 +257,8 @@ class PAOFLOW:
     if 'write_binary' not in attr: attr['write_binary'] = write_binary
 
     attr['symm_thresh'] = thresh
-    attr['symm_max_iter'] = max_iter
     attr['symmetrize'] = symmetrize
+    attr['symm_max_iter'] = max_iter
     attr['expand_wedge'] = expand_wedge
 
     try:
@@ -274,7 +271,6 @@ class PAOFLOW:
 
     # Done with U and Sks
     del arrays['U']
-    del arrays['Sks']
 
     try:
       do_Hks_to_HRs(self.data_controller)
@@ -760,10 +756,10 @@ mo    '''
     Yields 'dHksp'
 
     Arguments:
-        None
+      None
 
     Returns:
-        None
+      None
     '''
     from .defs.do_gradient import do_gradient
     from .defs.do_momentum import do_momentum
@@ -834,9 +830,6 @@ mo    '''
 
     if smearing != 'gauss' and 'smearing' != 'm-p':
       raise ValueError('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
-      #if self.rank == 0:
-      #  print('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(attr['smearing']))
-      #quit()
 
     try:
       do_adaptive_smearing(self.data_controller, smearing)
@@ -1148,9 +1141,16 @@ mo    '''
     self.report_module_time('Dielectric Tensor')
 
 
-  def find_weyl_points ( self, search_grid=[8,8,8], symmetrize=False ):
+  def find_weyl_points ( self, search_grid=[8,8,8] ):
     from .defs.do_find_Weyl import find_weyl
 
-    find_weyl(self.data_controller, symmetrize, search_grid)
+    try:
+      find_weyl(self.data_controller, search_grid)
+
+    except:
+      self.report_exception('pao_hamiltonian')
+      if self.data_controller.data_attributes['abort_on_exception']:
+        self.comm.Abort()
+
 
     self.report_module_time('Weyl Search')

@@ -16,44 +16,50 @@ import numpy
 import subprocess
 from check_test import verifyData
 
-def get_exeCmd(engine, calcType,inputFile):
+def get_exeCmd ( engine, calcType, inputFile ):
 
 #################### User defined parameters ####################
-    execPrefix = "mpirun -np 16"
-    execPostfix = " "
-    QE_path = "/Users/marco/Local/Programs/qe-6.2.1/bin/"
-    python_path = "python"
+    prefix_QE = '/Users/marco/Local/Programs/openmpi/bin/mpirun -np 16'
+    prefix_Python = '/Users/marco/Local/Programs/anaconda3/bin/mpirun -np 8'
 
+    path_QE = '/Users/marco/Local/Programs/qe-6.2.1/bin/'
+    path_Python = '/Users/marco/Local/Programs/anaconda3/bin/'
 
     if engine=='qe':
-        execDict={'scf':'pw.x -npool 2 ','nscf':'pw.x -npool 2 ','proj':'projwfc.x -npool 2 '}
-        exeDir = QE_path
+        execDict={'scf':'pw.x -npool 2','nscf':'pw.x -npool 2','proj':'projwfc.x -npool 2'}
+        exeDir = path_QE
 ################ end of user defined parameters #################
 ################ DO NOT MODIFY BELOW THIS POINT #################
 
     if engine=='PAO':
-        execDict={'PAO':'main.py '}
-        exeDir = python_path
+        execDict={'PAO':'main.py'}
+        exeDir = path_Python
 
     executable = execDict[calcType]
     outputFile = inputFile.split('.')[0] + '.out'
 
 
-    if engine=='qe':
-        command  = '%s %s < %s %s > %s'%(execPrefix, os.path.join(exeDir,executable), inputFile, execPostfix, outputFile)
+    if engine == 'qe':
+        command  = '%s %s < %s > %s'%(prefix_QE, os.path.join(exeDir,executable), inputFile, outputFile)
+    elif engine == 'PAO':
+        command  = '%s %s %s > %s'%(prefix_Python, os.path.join(exeDir,'python'), executable, outputFile)
     else:
-        command  = '%s %s %s %s > %s'%(execPrefix, exeDir, executable, execPostfix, outputFile)
+      raise ValueError('No engine type: %s'%engine)
 
     return command
 
 def oneRun(subdir):
 
+    calcList = []
+    fileList = []
     if len(glob.glob('*.save')) == 0:
-        calcList = ['scf','nscf','proj','PAO']
-        fileList = ['scf.in','nscf.in','proj.in','inputfile.xml']
-    else: 
-        calcList = ['PAO']
-        fileList = ['inputfile.xml']
+        calcList = ['scf','nscf','proj']
+        fileList = ['scf.in','nscf.in','proj.in']
+        if 'example01' in subdir:
+          calcList = 2*calcList
+          fileList += ['scf_nosym.in', 'nscf_nosym.in', 'proj_nosym.in']
+    calcList += ['PAO']
+    fileList += ['inputfile.xml']
 
     engine = {'scf':'qe',
               'nscf':'qe',
@@ -63,13 +69,13 @@ def oneRun(subdir):
     n = 0
     for calc in calcList:
 
-        command = get_exeCmd(engine[calc.split("_")[0]],calc.split("_")[0],fileList[n])
+        command = get_exeCmd(engine[calc.split('_')[0]],calc.split('_')[0],fileList[n])
         n += 1
         try:
-            print("%s in %s"%(command, subdir))
+            print('%s in %s'%(command, subdir))
             subprocess.check_output([command],shell=True)
         except subprocess.CalledProcessError as e:
-            print("######### SEQUENCE ######### \n FAILED %s in %s\n %s\n"%(command, subdir,e))
+            print('######### SEQUENCE ######### \n FAILED %s in %s\n %s\n'%(command, subdir,e))
             raise SystemExit
     return
 
@@ -94,18 +100,19 @@ def main():
         subdir = str(os.getcwd()).split('/')[len(str(os.getcwd()).split('/'))-1]
         try:
             oneRun(subdir)
-        except:
+        except Exception as e:
             print(('Exception in %s'%subdir))
-            quit()
+            raise e
         try:
             verifyData(subdir, datPattern, refPattern)
-        except:
+        except Exception as e:
             print(('Exception in %s'%subdir))
+            raise e
         os.chdir('../')
-        print(('test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10)))
+        print(('Test run in %5s sec ' %str('%.3f' %(time.time()-reset)).rjust(10)))
         reset=time.time()
 
-    print(('all test runs in %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10)))
+    print(('All test runs in %5s sec ' %str('%.3f' %(time.time()-start)).rjust(10)))
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
