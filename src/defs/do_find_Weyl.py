@@ -76,9 +76,11 @@ def gen_eigs ( HRaux, kq, R ):
 
   return E_kp
 
+
 def get_gap ( HR, kq, R, nelec ):
   E_kp = gen_eigs(HR, kq, R)
   return E_kp[0,nelec,0] - E_kp[0,nelec-1,0]
+
 
 def get_R_grid_fft ( nr1, nr2, nr3 ):
 
@@ -103,6 +105,7 @@ def get_R_grid_fft ( nr1, nr2, nr3 ):
         R[n,2] = Rz*nr3
 
   return R  
+
 
 def get_search_grid ( nk1, nk2, nk3, snk1_range=[-0.5,0.5], snk2_range=[-0.5,0.5], snk3_range=[-0.5,0.5], endpoint=False ):
 
@@ -236,6 +239,7 @@ def find_min ( HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8,8,8] ):
       
   candidates = gather_full(candidates,1)
 
+  ene = None
   if rank == 0:  
     # filter out non hits
     candidates = candidates[np.where(np.sum(candidates,axis=1)!=0.0)]
@@ -265,8 +269,6 @@ def find_min ( HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8,8,8] ):
 
   comm.Barrier()
   return (candidates, ene)
-
-
 
 
 def get_equiv_k(kp,symop,sym_TR,mag_soc):
