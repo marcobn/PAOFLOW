@@ -111,7 +111,7 @@ def read_new_QE_output_xml ( data_controller ):
                 tau = np.zeros((natoms,3), dtype=float)
                 latoms = elem.findall("atomic_structure/atomic_positions/atom")
                 for n in range(natoms):
-                    atoms.append(latoms[n].attrib['name'])
+                    atoms.append(latoms[n].attrib['name'].split())
                     tau[n,:] = np.array(latoms[n].text.split(), dtype="float32")
 
 
