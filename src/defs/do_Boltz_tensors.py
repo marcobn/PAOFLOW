@@ -38,30 +38,20 @@ def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp
   # Quick call function for Zeros on rank Zero
   zol = lambda r,l: (np.zeros_like(l) if r==0 else None)
 
-  L0aux, tau_aux, norm_aux = fLloop(0)
+  L0aux = fLloop(0)
   L0 = zol(rank, L0aux) 
-  tau = zol(rank, tau_aux) 
-  norm = zol(rank, norm_aux) 
   comm.Reduce(L0aux, L0, op=MPI.SUM)
-  comm.Reduce(tau_aux, tau, op=MPI.SUM)
-  comm.Reduce(norm_aux, norm, op=MPI.SUM)
-  L0aux = norm_aux = tau_aux = None
-  if rank == 0:
-    arrays['tau_avg'] = []
-    arrays['tau_avg'].append(tau/norm)
-    arrays['tau_avg'] = np.array(arrays['tau_avg'])
+  L0aux =  None
 
-  L1aux, tau_aux, norm_aux = fLloop(1)
+  L1aux = fLloop(1)
   L1 = zol(rank,L1aux)
   comm.Reduce(L1aux, L1, op=MPI.SUM)
   L1aux = None
 
-
-  L2aux, tau_aux, norm_aux = fLloop(2)
+  L2aux = fLloop(2)
   L2 = zol(rank,L2aux)
   comm.Reduce(L2aux, L2, op=MPI.SUM)
   L2aux = None
-  tau = norm = None
 
   if rank == 0:
     # Assign lower triangular to upper triangular
@@ -175,7 +165,8 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
           rate.append(P_pol/a_pop)
 
       if c == 'optical':
-          Nop = (temp/hwlo)-0.5
+          #Nop = (temp/hwlo)-0.5
+          Nop=1/(np.exp(hwlo/temp)-1)
           x = E/temp
           xo = hwlo/temp
           X = x-xo
@@ -188,7 +179,8 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
        #   rate.append(P_pac/a_pac)     
 
       if c == 'intervalley':
-          Nop = (temp/hwlo)-0.5
+          #Nop = (temp/hwlo)-0.5
+          Nop=1/(np.exp(hwlo/temp)-1)
           x = E/temp
           xo = hwlo/temp
           X = x-xo
@@ -217,7 +209,6 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
     print('%s Smearing Not Implemented.'%smearing)
     comm.Abort()
   L = np.zeros((3,3,esize), dtype=float)
-  tau_avg = np.zeros((3,3,esize), dtype=float)
   Nm = np.zeros((3,3,esize), dtype=float)
   for n in range(bnd):
     Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
@@ -236,6 +227,4 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
       i = t_tensor[l][0]
       j = t_tensor[l][1]
       L[i,j,:] += np.sum(kq_wght*velkp[:,i,n,ispin]*tau_re[:,n]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
-      tau_avg += np.sum(kq_wght*tau_re[:,n]*(smearA*EtoAlpha).T, axis=1)
-      Nm += np.sum(kq_wght*(smearA*EtoAlpha).T, axis=1)
-  return(L, tau_avg, Nm)
+  return(L)

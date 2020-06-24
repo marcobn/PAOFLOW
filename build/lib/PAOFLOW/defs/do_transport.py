@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_pop,write_to_file):
+def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_pop,a_op,a_iv,write_to_file):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -38,6 +38,9 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
 
   spin_mult = 1. if nspin==2 or attr['dftSO'] else 2.
 
+  if rank == 0:
+    arrays['sigma'] = np.empty((3,3), dtype=float)
+
   for ispin in range(nspin):
 
     # Quick function opens file in output folder with name 's'
@@ -57,7 +60,6 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
       # Quick function to get tuple elements to write
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
-
       if attr['smearing'] != None:
         L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin)
 
@@ -70,12 +72,12 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
 
           # convert in units of siemens m^-1 s^-1
           sigma = L0*1.e21
-
+          arrays['sigma'][:,:] = sigma[:,:,0]
           for i in range(esize):
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv)
 
 
       if rank == 0:
@@ -87,10 +89,11 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
         L0 *= spin_mult*siemen_conv/attr['omega']
 
         sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
-        
-        for i in range(esize):
-          wtup(fsigma, gtup(sigma,i))
-        sigma = None
+        arrays['sigma'][:,:] = sigma[:,:,0]
+        if write_to_file == True:           
+          for i in range(esize):
+            wtup(fsigma, gtup(sigma,i))
+          sigma = None
       comm.Barrier()
 
       S = None
@@ -152,3 +155,4 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
     if attr['smearing'] != None:
       fsigmadk.close()
     fSeebeck.close()
+    data_controller.broadcast_single_array('sigma', dtype=float)

@@ -1026,7 +1026,7 @@ class PAOFLOW:
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None,doping_conc=0. ,fit=False, a_imp =1, a_ac=1, a_pop=1, write_to_file=True):
+  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None,doping_conc=0. ,fit=False, a_imp =1, a_ac=1, a_pop=1, a_op=1, a_iv=1, scattering_channels=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None,'Zf':None,'D_op':None}, write_to_file=True):
     '''
     Calculate the Transport Properties
 
@@ -1044,23 +1044,24 @@ class PAOFLOW:
     '''
    
     arrays,attr = self.data_controller.data_dicts()
-    #if doping_conc is not None:
+    if 'a_imp' not in attr: attr['a_imp'] = a_imp
+    if 'a_ac' not in attr: attr['a_ac'] = a_ac
+    if 'a_pop' not in attr: attr['a_pop'] = a_pop
+    if 'a_op' not in attr: attr['a_op'] = a_op
+    if 'a_iv' not in attr: attr['a_iv'] = a_iv
+    if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
+    if 'scattering_channels' not in attr: attr['scattering_channels'] = scattering_channels
+    if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
+
     if fit == True: 
       if doping_conc !=0:
         from .defs.do_transport_fitting import do_transport
-        if 'a_imp' not in attr: attr['a_imp'] = a_imp
-        if 'a_ac' not in attr: attr['a_ac'] = a_ac
-        if 'a_pop' not in attr: attr['a_pop'] = a_pop
-        if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
       else:
         from .defs.do_transport import do_transport
+
     else:
       if doping_conc != 0.:
         from .defs.do_transport_doping import do_transport
-        if 'a_imp' not in attr: attr['a_imp'] = a_imp
-        if 'a_ac' not in attr: attr['a_ac'] = a_ac
-        if 'a_pop' not in attr: attr['a_pop'] = a_pop
-        if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
       else:
         from .defs.do_transport import do_transport
     
@@ -1074,7 +1075,7 @@ class PAOFLOW:
       velkp = np.zeros((arrays['pksp'].shape[0],3,bnd,attr['nspin']))
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
-      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,write_to_file)
+      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,write_to_file)
       velkp = None
     except:
       self.report_exception('transport')
@@ -1082,7 +1083,6 @@ class PAOFLOW:
         self.comm.Abort()
 
     self.report_module_time('Transport')
-
 
 
   def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):

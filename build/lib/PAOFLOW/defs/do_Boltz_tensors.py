@@ -22,12 +22,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop ):
+def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','polar optical'],a_imp,a_ac,a_pop)
+  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv)
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -38,30 +38,20 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin,a_im
   # Quick call function for Zeros on rank Zero
   zol = lambda r,l: (np.zeros_like(l) if r==0 else None)
 
-  L0aux, tau_aux, norm_aux = fLloop(0)
+  L0aux = fLloop(0)
   L0 = zol(rank, L0aux) 
-  tau = zol(rank, tau_aux) 
-  norm = zol(rank, norm_aux) 
   comm.Reduce(L0aux, L0, op=MPI.SUM)
-  comm.Reduce(tau_aux, tau, op=MPI.SUM)
-  comm.Reduce(norm_aux, norm, op=MPI.SUM)
-  L0aux = norm_aux = tau_aux = None
-  if rank == 0:
-    arrays['tau_avg'] = []
-    arrays['tau_avg'].append(tau/norm)
-    arrays['tau_avg'] = np.array(arrays['tau_avg'])
+  L0aux =  None
 
-  L1aux, tau_aux, norm_aux = fLloop(1)
+  L1aux = fLloop(1)
   L1 = zol(rank,L1aux)
   comm.Reduce(L1aux, L1, op=MPI.SUM)
   L1aux = None
 
-
-  L2aux, tau_aux, norm_aux = fLloop(2)
+  L2aux = fLloop(2)
   L2 = zol(rank,L2aux)
   comm.Reduce(L2aux, L2, op=MPI.SUM)
   L2aux = None
-  tau = norm = None
 
   if rank == 0:
     # Assign lower triangular to upper triangular
@@ -74,11 +64,11 @@ def do_Boltz_tensors_no_smearing ( data_controller, temp, ene, velkp, ispin,a_im
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop ):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,['impurity','accoustic','polar optical'],a_imp,a_ac,a_pop)
+  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv)
 
   t_tensor = arrays['t_tensor']
   L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
@@ -96,55 +86,63 @@ def planck(hwlo,temp):
     
     return 1/(np.exp(hwlo/temp)-1)
 
-def get_tau (temp,data_controller, channels,a_imp,a_ac,a_pop):
+def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
 
   import numpy as np
   import scipy.constants as cp
   arry,attr = data_controller.data_dicts()
-  hbar = cp.hbar
-  kb = cp.Boltzmann
-  temp *= 1.60217662e-19
+  channels = attr['scattering_channels']
   nd = attr['doping_conc']*1e6 #doping in /m^3
   snktot = arry['E_k'].shape[0]
-  nspin = arry['E_k'].shape[2]
   bnd = attr['bnd']
-  rate = []
-  e = 1.60217662e-19
-  ev2j= 1.60217662e-19
-  epso = 8.854187817e-12
-  tpi = np.pi*2
-  fpi = np.pi*4
-  me = 9.10938e-31
-  E = abs(ev2j*(arry['E_k'][:,:bnd]))
-  Ef = 0.04*ev2j
-  D = 6.5*ev2j
-  rho = 3.9375e3   #kg/m^3 
-  a = 8.6883e-10 #metres    
-  nd = attr['doping_conc']*1e6 #doping in /m^3
-  nI = abs(nd) #no.of impuritites/m^3
-  eps_inf = 14.2*epso
-  eps_0 = 26.7*epso
-  eps = eps_inf+eps_0
-  eps_inv = 1/eps_inf - 1/eps
-  v = 2.7e3
-  Zi = 1.
-  ms = 0.3*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
-  hwlo = ev2j * np.array([0.0205,0.0248,0.031])
-  for c in channels:
+  nspin = arry['E_k'].shape[2]
 
-      if c == 'impurity':
+  if channels == None:
+    tau = np.ones((snktot,bnd,nspin), dtype=float) #constant relaxation time approximation with tau = 1
+
+  else:
+    hbar = cp.hbar
+    kb = cp.Boltzmann
+    rate = []
+    e = 1.60217662e-19
+    ev2j= 1.60217662e-19
+    epso = 8.854187817e-12
+    tpi = np.pi*2
+    fpi = np.pi*4
+    me = 9.10938e-31
+    temp *= ev2j 
+    E = abs(arry['E_k'][:,:bnd])*ev2j
+    Ef = attr['tau_dict']['Ef']*ev2j #fermi energy
+    D_ac = attr['tau_dict']['D_ac']*ev2j #acoustic deformation potential in J
+    rho = attr['tau_dict']['rho']   #mass density kg/m^3 
+    a = attr['tau_dict']['a'] # lattice constant metres    
+    eps_inf = attr['tau_dict']['eps_inf']*epso #high freq dielectirc const
+    eps_0 = attr['tau_dict']['eps_0']*epso #low freq dielectric const
+    v = attr['tau_dict']['v'] #velocity in m/s
+    Zi = attr['tau_dict']['Zi'] #number of charge units of impurity
+    ms = attr['tau_dict']['ms']*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
+    hwlo = np.array(attr['tau_dict']['hwlo'])*ev2j #phonon freq
+    Zf = attr['tau_dict']['Zf'] #number of equivalent valleys if considering interevalley scattering
+    D_op = attr['tau_dict']['D_op']*ev2j #optical deformation potential in J/m
+    nI = attr['tau_dict']['nI'] #no.of impuritites/m^3
+     
+    for c in channels: 
+
+      if c == 'impurity':                                       
+          eps = eps_inf+eps_0
           qo = np.sqrt(e**2*nI/(eps*temp))
           x = (hbar*qo)**2/(8*ms*E)
-          P_imp = (np.pi*nI*Zi**2*(e**4)/(E**1.5*np.sqrt(2*ms)*(fpi*eps)**2))
+          P_imp = (np.pi*nI*Zi**2*(e**4)/(E**1.5*np.sqrt(2*ms)*(fpi*eps)**2))   #formula from fiorentini paper on Mg3Sb2
           P_imp *= (np.log(1+1./x)-1./(1+x))
           rate.append(P_imp/a_imp)
 
-      if c == 'accoustic':
-          P_ac = ((2*ms)**1.5*(D**2)*np.sqrt(E)*temp)/(tpi*hbar**4*rho*v**2)
+      if c == 'acoustic':
+          P_ac = ((2*ms)**1.5*(D_ac**2)*np.sqrt(E)*temp)/(tpi*hbar**4*rho*v**2) #formula from fiorentini paper on Mg3Sb2
           rate.append(P_ac/a_ac)
 
       if c == 'polar optical':
 	  P_pol=0.
+          eps_inv = 1/eps_inf - 1/eps
           for i in range(len(hwlo)):
             ff = fermi(E+hwlo[i],temp,Ef)
             fff= fermi(E-hwlo[i],temp,Ef)
@@ -163,16 +161,39 @@ def get_tau (temp,data_controller, channels,a_imp,a_ac,a_pop):
             t2[where_are_NaNs] = 0 
             C = (2*E)*(C+t2)
             P = (C-A-B)/(Z*(E**1.5))
-            P_pol += P            
+            P_pol += P            #formula from fiorentini paper on Mg3Sb2
           rate.append(P_pol/a_pop)
+
+      if c == 'optical':
+          #Nop = (temp/hwlo)-0.5
+          Nop=1/(np.exp(hwlo/temp)-1)
+          x = E/temp
+          xo = hwlo/temp
+          X = x-xo
+          X[X<0] = 0
+          P_op = ((me**1.5)*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
+          rate.append(P_op/a_op)
+
+      #if c == 'polar acoustic':
+       #   P_pac = (p**2*e**2*me**0.5*temp)/
+       #   rate.append(P_pac/a_pac)     
+
+      if c == 'intervalley':
+          #Nop = (temp/hwlo)-0.5
+          Nop=1/(np.exp(hwlo/temp)-1)
+          x = E/temp
+          xo = hwlo/temp
+          X = x-xo
+          X[X<0] = 0
+          P_iv =  ((me**1.5)*Zf*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
+          rate.append(P_iv/a_iv)
+
       
-      if c == None:
-	tau = np.ones((snktot,bnd,nspin), dtype=float)
-      else:
-        tau = np.zeros((snktot,bnd,nspin), dtype=float)
-        for r in rate:
-            tau += r
-        tau = 1/tau
+      tau = np.zeros((snktot,bnd,nspin), dtype=float)
+      for r in rate:
+          tau += r
+      tau = 1/tau
+
   return tau
 
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
@@ -188,7 +209,6 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
     print('%s Smearing Not Implemented.'%smearing)
     comm.Abort()
   L = np.zeros((3,3,esize), dtype=float)
-  tau_avg = np.zeros((3,3,esize), dtype=float)
   Nm = np.zeros((3,3,esize), dtype=float)
   for n in range(bnd):
     Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
@@ -207,6 +227,4 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
       i = t_tensor[l][0]
       j = t_tensor[l][1]
       L[i,j,:] += np.sum(kq_wght*velkp[:,i,n,ispin]*tau_re[:,n]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
-      tau_avg += np.sum(kq_wght*tau_re[:,n]*(smearA*EtoAlpha).T, axis=1)
-      Nm += np.sum(kq_wght*(smearA*EtoAlpha).T, axis=1)
-  return(L, tau_avg, Nm)
+  return(L)

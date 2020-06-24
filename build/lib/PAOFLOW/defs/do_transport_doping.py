@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,write_to_file ):
+def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,write_to_file ):
   import numpy as np
   import scipy.optimize as sp
   import scipy.integrate
@@ -43,6 +43,10 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
   
   attr['delta'] = 0.01
   dos = arrays['dos']
+
+  if rank == 0:
+    arrays['sigma'] = np.empty((3,3), dtype=float)
+
   for ispin in range(nspin):
 
     # Quick function opens file in output folder with name 's'
@@ -68,17 +72,17 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
       itemp = temp/temp_conv
 
-      wtup = lambda fn,tu : fn.write('%8.2f % .5f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
+      wtup = lambda fn,tu : fn.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
 
       # Quick function to get tuple elements to write
-      gtup = lambda tu,i : (temp,mur[iT],Nc[iT],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
+      gtup = lambda tu,i : (temp,mur[iT],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
       if rank == 0:
         #dopingmin = calc_N(data_controller,ene, dos, mumax, temp,dosweight=2.) + nelec
         #dopingmin /= omega
         #dopingmax = calc_N(data_controller,ene, dos, mumin, temp,dosweight=2.) + nelec
         #dopingmax /= omega
-        mur[iT] = solve_for_mu(ene,dos,N,temp,refine=False,try_center=False)
+        mur[iT] = solve_for_mu(ene,dos,N,temp,refine=True,try_center=True)
 
         for imu,mu in enumerate(mur):
           Nc[iT] = calc_N(ene, dos, mu, temp) + nelec
@@ -99,7 +103,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
           wtup(fsigmadk, gtup(sigma,0))
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, mur[iT], velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv)
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
@@ -109,6 +113,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
         L0 *= spin_mult*siemen_conv/attr['omega']
 
         sigma = L0*1.e21 # convert in units of siemens m^-1 s^-1
+        arrays['sigma'][:,:] = sigma[:,:,0]
         if write_to_file == True:
           wtup(fsigma, gtup(sigma,0))
       comm.Barrier()
@@ -166,4 +171,4 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
     if attr['smearing'] != None:
       fsigmadk.close()
     fSeebeck.close()
-
+    data_controller.broadcast_single_array('sigma', dtype=float)

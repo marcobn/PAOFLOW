@@ -82,7 +82,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
         #dopingmin /= omega
         #dopingmax = calc_N(data_controller,ene, dos, mumin, temp,dosweight=2.) + nelec
         #dopingmax /= omega
-        mur[iT] = solve_for_mu(ene,dos,N,temp,refine=False,try_center=False)
+        mur[iT] = solve_for_mu(ene,dos,N,temp,refine=True,try_center=True)
 
         for imu,mu in enumerate(mur):
           Nc[iT] = calc_N(ene, dos, mu, temp) + nelec

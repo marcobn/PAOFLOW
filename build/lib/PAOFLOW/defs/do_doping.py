@@ -36,7 +36,10 @@ def _fd_criterion_gen(threshold):
 def FD(ene,mu,temp):
   
   _FD_THRESHOLD = 1e-8
+#  _FD_THRESHOLD_GAP = 1e-3
   _FD_XMAX = scipy.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD), 0.)
+#  _FD_XMAX_GAP = sp.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD_GAP), 0.)
+
   temp_ev = temp*8.617332478e-5
   if temp == 0.:
     dela = ene-mu
@@ -62,6 +65,9 @@ def calc_N(ene,dos, mu, temp, dosweight=2.):
   return -dosweight * scipy.integrate.simps(dos_occ,ene)
   
 def solve_for_mu(ene,dos,N0,temp,refine=False,try_center=False,dosweight=2.):
+
+  _FD_THRESHOLD_GAP = 1e-3
+  _FD_XMAX_GAP = scipy.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD_GAP), 0.)
 
   dela = np.empty_like(ene)
 
@@ -93,9 +99,31 @@ def solve_for_mu(ene,dos,N0,temp,refine=False,try_center=False,dosweight=2.):
     lene = ene[lpos]
     pos = int(round(.5 * (lpos + hpos)))
     mu = ene[pos]
-    center = True
+    if (try_center and min(hene - mu, mu - lene) >= _FD_XMAX_GAP * temp / 2.):
+        pos = int(round(.5 * (lpos + hpos)))
+        mu = ene[pos]
+        center = True
   if refine:
     if center:
       mu = .5 * (lene + hene)
+    else:
+      residual = calc_N(ene, dos, mu, temp, dosweight) + N0
+      if np.isclose(residual, 0):
+         lpos = pos
+         hpos = pos
+      elif residual > 0:
+         lpos = pos
+         hpos = min(pos + 1, ene.size - 1)
+      else:
+         lpos = max(0, pos - 1)
+         hpos = pos
+      if hpos != lpos:
+         lmu = ene[lpos]
+         hmu = ene[hpos]
+
+         def calc_abs_residual(muarg):
+            return abs(calc_N(ene, dos, muarg, temp, dosweight) + N0)
+         result = scipy.optimize.minimize_scalar(calc_abs_residual,bounds=(lmu, hmu),method="bounded")
+         mu = result.x
   return mu
 	
