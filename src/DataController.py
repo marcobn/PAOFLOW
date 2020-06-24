@@ -346,7 +346,6 @@ class DataController:
       f.close()
 
       print('H(k),S(k),k,wk written to file')
-    self.comm.Barrier()
 
 
   def write_z2pack ( self, fname ):

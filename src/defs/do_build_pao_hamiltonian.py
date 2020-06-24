@@ -125,7 +125,13 @@ def do_build_pao_hamiltonian ( data_controller ):
   
   arry['Hks'] = build_Hks(data_controller)
 
-  if rank != 0: return
+  if attr['expand_wedge']:
+    from .pao_sym import open_grid_wrapper
+    open_grid_wrapper(data_controller)
+
+  if rank != 0:
+    return
+
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
   # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
@@ -133,7 +139,7 @@ def do_build_pao_hamiltonian ( data_controller ):
   # non_ortho flag == 1 - makes H orthogonal (rotated basis) 
   #  Hks = do_non_ortho(Hks,Sks)
   #  Hks = do_ortho(Hks,Sks)
-  if rank == 0 and attr['non_ortho']:
+  if attr['non_ortho']:
     from .do_non_ortho import do_non_ortho
 
     # This is needed for consistency of the ordering of the matrix elements
@@ -145,15 +151,6 @@ def do_build_pao_hamiltonian ( data_controller ):
       arry['Sks'] = np.reshape(arry['Sks'], ashape[:-1])
     except: pass
 
-  data_controller.broadcast_single_array('Hks')
-  if attr['non_ortho']:
-    data_controller.broadcast_single_array('Sks')
-
-  if attr['expand_wedge']:
-    from .pao_sym import open_grid_wrapper
-    open_grid_wrapper(data_controller)
-
-  if attr['non_ortho']:
     data_controller.write_Hk_acbn0()
 
   arry['Hks'] = np.reshape(arry['Hks'], ashape)
