@@ -1,4 +1,4 @@
-#import setuptools
+import setuptools
 from distutils.core import setup
 import os
 
@@ -13,5 +13,5 @@ setup(name='PAOFLOW',
       url='http://aflowlib.org/src/paoflow/',
       packages=['PAOFLOW', 'PAOFLOW.defs'],
       package_dir={'PAOFLOW':'src'},
-#      install_requires=["numpy","scipy","mpi4py","z2pack","tbmodels"]
+      install_requires=["numpy","scipy","mpi4py","z2pack","tbmodels"]
 )
