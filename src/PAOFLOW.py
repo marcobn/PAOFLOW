@@ -261,6 +261,10 @@ class PAOFLOW:
     attr['symm_max_iter'] = max_iter
     attr['expand_wedge'] = expand_wedge
 
+    if attr['symmetrize'] and attr['non_ortho']:
+      if rank == 0:
+        print('WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true.')
+
     try:
       do_build_pao_hamiltonian(self.data_controller)
     except:
