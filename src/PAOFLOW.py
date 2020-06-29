@@ -261,6 +261,10 @@ class PAOFLOW:
     attr['symm_max_iter'] = max_iter
     attr['expand_wedge'] = expand_wedge
 
+    if attr['symmetrize'] and attr['non_ortho']:
+      if rank == 0:
+        print('WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true.')
+
     try:
       do_build_pao_hamiltonian(self.data_controller)
     except:
@@ -1141,10 +1145,12 @@ mo    '''
     self.report_module_time('Dielectric Tensor')
 
 
-  def find_weyl_points ( self, search_grid=[8,8,8] ):
+  def find_weyl_points ( self, symmetrize=None, search_grid=[8,8,8] ):
     from .defs.do_find_Weyl import find_weyl
 
     try:
+      if symmetrize is not None:
+        self.data_controller.data_attributes['symmetrize'] = symmetrize
       find_weyl(self.data_controller, search_grid)
 
     except:
