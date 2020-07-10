@@ -2,11 +2,9 @@
 
  Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 
- Copyright 2016-2017 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
+ Copyright 2016-2020 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 
- This package is part of AFLOW software.
-
- AFLOW is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
+ PAOFLOW is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
  This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -44,6 +42,8 @@
  AFLOW𝛑: A minimalist approach to high-throughput ab initio calculations including the generation 
  of tight-binding hamiltonians, Computational Materials Science, 136 (2017) 76-84. doi:10.1016/j.commatsci.2017.03.055
  also at www.aflow.org/src/aflowpi
+
+Contributions to PAOFLOW were made by the following developers: Frank Cerasoli, Andrew Supka, Marcio Costa, Laalitha Liyanage, Haihang Wang, Anooja Jayaraj, Jagoda Slawinska, Priya Gopal, Ilaria Siloi
 
  Other references:
 
