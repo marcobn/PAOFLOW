@@ -3,13 +3,18 @@ import os
 
 defs = os.path.join('src','defs')
 
+with open('README.md', 'r') as f:
+    long_description = f.read()
+
 setup(name='PAOFLOW',
-      version='2.0.1',
-      description='Electronic Structure Post-processing Tools',
+      version='2.0.3',
+      description='Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)',
       author='Marco Buongiorno Nardelli',
       author_email='mbn@unt.edu',
       platforms='Linux',
       url='http://aflowlib.org/src/paoflow/',
+      long_description=long_description,
+      long_description_content_type="text/markdown",
       packages=['PAOFLOW', 'PAOFLOW.defs'],
       package_dir={'PAOFLOW':'src'},
       install_requires=['numpy','scipy'],
