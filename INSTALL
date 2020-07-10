@@ -2,7 +2,7 @@
 GENERAL NOTES ON INSTALLATION
 -----------------------------------------------------------------------------------
 
-Instruction to install the python package, PAOFLOW, and package prerequisites:
+The Anaconda package is recommended for PAOFLOW. mpi4py is a prerequisite which must be installed through the conda package manager or installed manually.
 
 Python:
 wget https://repo.continuum.io/archive/Anaconda2-4.2.0-Linux-x86_64.sh
@@ -11,9 +11,21 @@ bash Anaconda2-4.2.0-Linux-x86_64.sh
 MPI:
 conda install mpi4py
 
-PAOFLOW:
+
+Automatic installation through PyPI:
+
+pip install PAOFLOW
+
+
+Instruction for manual install of PAOFLOW:
 python setup.py install
+
+If you dont have administrator privalage for your python distribution:
 python setup.py install --user
+
+
+Optional dependencies for the Weyl Search feature are listed in the setup.py tool. They can be installed through PyPI as follows:
+pip install PAOFLOW[weyl_search]
 
 
 Intel Distribution for python:
