@@ -12,6 +12,7 @@
 
  You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+
  PAOFLOW's capabilities:
 
  - Construction of PAO Hamiltonians from the DFT wavefunctions onto pseudo atomic orbitals
@@ -29,11 +30,17 @@
  - spin Berry curvature and spin Hall conductivity (including spin circular dichroism spectra) 
  - Band topology (Z2 invariants, Berry and spin Berry curvature along standard paths in BZ, critical points
 
+
+Example code for PAOFLOW is available on GitHub:
+https://github.com/marcobn/PAOFLOW/examples/
+
+
  Use of PAOFLOW should reference:
 
  M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
  PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
  Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+
 
  PAOFLOW is integrated in AFLOW𝛑:
 
@@ -43,7 +50,9 @@
  of tight-binding hamiltonians, Computational Materials Science, 136 (2017) 76-84. doi:10.1016/j.commatsci.2017.03.055
  also at www.aflow.org/src/aflowpi
 
+
 Contributions to PAOFLOW were made by the following developers: Frank Cerasoli, Andrew Supka, Marcio Costa, Laalitha Liyanage, Haihang Wang, Anooja Jayaraj, Jagoda Slawinska, Priya Gopal, Ilaria Siloi
+
 
  Other references:
 
