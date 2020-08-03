@@ -101,7 +101,7 @@ def read_QE_output_xml( data_controller ):
                 for n in range(natoms):
                     string = "ATOM."+str(n+1)
                     aux = elem.findall(string)[0]
-                    atoms.append(aux.attrib['SPECIES'][:-1].strip())
+                    atoms.extend(aux.attrib['SPECIES'][:-1].strip())
                     tau[n,:] = np.array(aux.attrib['tau'].split(), dtype="float32")
 
 
