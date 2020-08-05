@@ -36,9 +36,7 @@ def _fd_criterion_gen(threshold):
 def FD(ene,mu,temp):
   
   _FD_THRESHOLD = 1e-8
-#  _FD_THRESHOLD_GAP = 1e-3
   _FD_XMAX = scipy.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD), 0.)
-#  _FD_XMAX_GAP = sp.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD_GAP), 0.)
 
   temp_ev = temp*8.617332478e-5
   if temp == 0.:
@@ -50,7 +48,6 @@ def FD(ene,mu,temp):
     nruter = np.where(x < 0., 1., 0.)
     indices = np.logical_and(x > -_FD_XMAX, x < _FD_XMAX)
     nruter[indices] = 1. / (np.exp(x[indices]) + 1.)
-    #nruter = 1. / (np.exp(x) + 1.)
   return nruter
 
 def calc_N(ene,dos, mu, temp, dosweight=2.):
@@ -126,4 +123,45 @@ def solve_for_mu(ene,dos,N0,temp,refine=False,try_center=False,dosweight=2.):
          result = scipy.optimize.minimize_scalar(calc_abs_residual,bounds=(lmu, hmu),method="bounded")
          mu = result.x
   return mu
-	
+
+def do_doping( data_controller, temps, ene):
+
+  comm = MPI.COMM_WORLD
+  rank = comm.Get_rank()
+
+  arry,attr = data_controller.data_dicts()
+  temp_conv,omega_conv = 11604.52500617,1.481847093e-25
+
+  dos = arry['dos']
+  doping = attr['doping_conc']
+  nelec,omega = attr['nelec'],attr['omega']*omega_conv
+
+  margin = 9. * temps.max()
+  mumin = ene.min() + margin
+  mumax = ene.max() - margin
+  nT = len(temps)
+  mur = np.empty(nT)
+  msize = mur.size
+  Nc = np.empty(nT)
+  N = nelec - doping * omega
+  fdope = 'dope_TvsE_%s.dat'%doping
+
+  for iT,temp in enumerate(temps):
+
+    itemp = temp/temp_conv
+
+    if rank == 0:
+      #dopingmin = calc_N(data_controller,ene, dos, mumax, temp,dosweight=2.) + nelec
+      #dopingmin /= omega
+      #dopingmax = calc_N(data_controller,ene, dos, mumin, temp,dosweight=2.) + nelec
+      #dopingmax /= omega
+      mur[iT] = solve_for_mu(ene,dos,N,temp,refine=True,try_center=True)
+
+      #for imu,mu in enumerate(mur):
+        #Nc[iT] = calc_N(ene, dos, mu, temp) + nelec
+        #print(calc_N(ene, dos, mu, temp) + nelec)
+    mur[iT] = comm.bcast(mur[iT], root=0)
+
+  data_controller.write_file_row_col(fdope, temps, mur)
+
+    

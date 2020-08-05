@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_pop,a_op,a_iv,write_to_file):
+def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -77,7 +77,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
 
       if rank == 0:
@@ -115,9 +115,9 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
             print('check t_tensor components - matrix cannot be singular')
             report_exception()
             comm.Abort()
-
-        for i in range(esize):
-          wtup(fSeebeck, gtup(S,i))
+        if write_to_file == True:
+          for i in range(esize):
+            wtup(fSeebeck, gtup(S,i))
       comm.Barrier()
 
       PF = None
@@ -134,18 +134,20 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
         for n in range(esize):
           kappa[:,:,n] = (L2[:,:,n] - temp*L1[:,:,n]*npl.inv(L0[:,:,n])*L1[:,:,n])*1.e6
         L1 = L2 = None
-
-        for i in range(esize):
-          wtup(fkappa, gtup(kappa,i))
+         
+        if write_to_file == True:
+          for i in range(esize):
+            wtup(fkappa, gtup(kappa,i))
         kappa = None
 
         PF = np.zeros((3,3,esize), dtype=float)
         for n in range(esize):
           PF[:,:,n] = np.dot(np.dot(S[:,:,n],L0[:,:,n]),S[:,:,n])*1.e21
         S = L0 = None
-
-        for i in range(esize):
-          wtup(fPF, gtup(PF,i))
+  
+        if write_to_file == True:
+          for i in range(esize):
+            wtup(fPF, gtup(PF,i))
         PF = None
       comm.Barrier()
 

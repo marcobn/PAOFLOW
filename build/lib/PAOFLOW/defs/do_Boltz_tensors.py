@@ -22,12 +22,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv):
+def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv)
+  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -64,11 +64,11 @@ def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv)
+  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
   t_tensor = arrays['t_tensor']
   L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
@@ -86,7 +86,7 @@ def planck(hwlo,temp):
     
     return 1/(np.exp(hwlo/temp)-1)
 
-def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
+def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
 
   import numpy as np
   import scipy.constants as cp
@@ -116,6 +116,7 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
     D_ac = attr['tau_dict']['D_ac']*ev2j #acoustic deformation potential in J
     rho = attr['tau_dict']['rho']   #mass density kg/m^3 
     a = attr['tau_dict']['a'] # lattice constant metres    
+    piezo = attr['tau_dict']['piezo']  #piezoelectric constant
     eps_inf = attr['tau_dict']['eps_inf']*epso #high freq dielectirc const
     eps_0 = attr['tau_dict']['eps_0']*epso #low freq dielectric const
     v = attr['tau_dict']['v'] #velocity in m/s
@@ -124,7 +125,7 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
     hwlo = np.array(attr['tau_dict']['hwlo'])*ev2j #phonon freq
     Zf = attr['tau_dict']['Zf'] #number of equivalent valleys if considering interevalley scattering
     D_op = attr['tau_dict']['D_op']*ev2j #optical deformation potential in J/m
-    nI = attr['tau_dict']['nI'] #no.of impuritites/m^3
+    nI = attr['tau_dict']['nI']*1e6
      
     for c in channels: 
 
@@ -142,6 +143,7 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
 
       if c == 'polar optical':
 	  P_pol=0.
+          eps = eps_inf+eps_0
           eps_inv = 1/eps_inf - 1/eps
           for i in range(len(hwlo)):
             ff = fermi(E+hwlo[i],temp,Ef)
@@ -152,10 +154,14 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
             Wo = e**2/(fpi*hbar)*np.sqrt(2*ms*hwlo[i]/hbar**2)*eps_inv
             Z = 2/(Wo*np.sqrt(hwlo[i]))
             A = (n+1)*ff/f*((2*E+hwlo[i])*np.arcsinh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E+hwlo[i])))
+            where_are_NaNs = np.isnan(A)
+            A[where_are_NaNs] = 0
             B = np.heaviside(E-hwlo[i],1)*n*fff/f*((2*E-hwlo[i])*np.arccosh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E-hwlo[i])))  
             where_are_NaNs = np.isnan(B)
             B[where_are_NaNs] = 0
             C = (n+1)*ff/f*np.arcsinh(np.sqrt(E/hwlo[i]))
+            where_are_NaNs = np.isnan(C)
+            C[where_are_NaNs] = 0
             t2 = np.heaviside(E-hwlo[i],1)*n*fff/f*np.arccosh(np.sqrt(E/hwlo[i]))
             where_are_NaNs = np.isnan(t2)
             t2[where_are_NaNs] = 0 
@@ -171,12 +177,18 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
           xo = hwlo/temp
           X = x-xo
           X[X<0] = 0
-          P_op = ((me**1.5)*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
+          P_op = ((ms**1.5)*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
           rate.append(P_op/a_op)
 
-      #if c == 'polar acoustic':
-       #   P_pac = (p**2*e**2*me**0.5*temp)/
-       #   rate.append(P_pac/a_pac)     
+      if c == 'polar acoustic':
+
+          eps = eps_inf+eps_0
+          qo = np.sqrt(((e**2)*abs(nd))/(eps*temp))
+          eps_o = ((hbar**2)*(qo**2))/(2*ms)
+          P_pac = ((piezo**2*e**2*ms**0.5*temp)/(np.sqrt(2*E)*2*np.pi*eps**2*hbar**2*rho*v**2))*(1-(eps_o/(2*E))*np.log(1+4*E/eps_o)+1/(1+4*E/eps_o))
+          where_are_NaNs = np.isnan(P_pac)
+          P_pac[where_are_NaNs] = 0
+          rate.append(P_pac/a_pac)     
 
       if c == 'intervalley':
           #Nop = (temp/hwlo)-0.5
@@ -188,7 +200,6 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv):
           P_iv =  ((me**1.5)*Zf*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
           rate.append(P_iv/a_iv)
 
-      
       tau = np.zeros((snktot,bnd,nspin), dtype=float)
       for r in rate:
           tau += r

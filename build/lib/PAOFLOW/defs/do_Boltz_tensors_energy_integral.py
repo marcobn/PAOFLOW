@@ -207,6 +207,21 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
 
   return tau
 
+def transport_dos():
+
+  arrays,attributes = data_controller.data_dicts()
+  esize = ene.size
+  snktot = arrays['E_k'].shape[0]
+  bnd = attributes['bnd']
+  kq_wght = 1./attributes['nkpnts']
+
+  for n in range(bnd):
+  
+    for l in range(t_tensor.shape[0]):
+      i = t_tensor[l][0]
+      j = t_tensor[l][1]
+
+
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
   from .smearing import gaussian,metpax
   # We assume tau=1 in the constant relaxation time approximation

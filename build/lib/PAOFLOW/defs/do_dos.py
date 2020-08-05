@@ -54,9 +54,9 @@ def do_dos ( data_controller, emin=-10., emax=2., ne=1000 ):
       dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*attr['delta'])
       arry['dos'] = dos
     fdos = 'dos_%s.dat'%str(ispin)
-    #data_controller.write_file_row_col(fdos, ene, dos)
+    data_controller.write_file_row_col(fdos, ene, dos)
     data_controller.broadcast_single_array('dos', dtype=float)
-    #return dos if rank==0 else None
+    return dos if rank==0 else None
 
 def do_dos_adaptive ( data_controller, emin=-10., emax=2.,ne=1000 ):
   from .smearing import gaussian, metpax

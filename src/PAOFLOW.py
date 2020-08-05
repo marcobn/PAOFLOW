@@ -823,7 +823,6 @@ class PAOFLOW:
     self.report_module_time('Adaptive Smearing')
 
 
-
   def dos ( self, do_dos=True, do_pdos=True, delta=0.01, emin=-10., emax=2.,ne=1000 ):
     '''
     Calculate the Density of States and Projected Density of States
@@ -872,8 +871,6 @@ class PAOFLOW:
 
     mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
     self.report_module_time(mname)
-
-
 
   def trim_non_projectable_bands ( self ):
 
@@ -1026,7 +1023,40 @@ class PAOFLOW:
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None,doping_conc=0. ,fit=False, a_imp =1, a_ac=1, a_pop=1, a_op=1, a_iv=1, scattering_channels=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None,'Zf':None,'D_op':None}, write_to_file=True):
+  def doping(self,tmin=300,tmax=300,tstep=100,delta=0.01,emin=-1.,emax=1.,ne=1000,doping_conc=0.):
+
+    '''
+    Calculate the chemical potential that corresponds to specified doping for different temperatures
+
+    Arguments:
+        tmin (float): The minimum temperature in the range
+        tmax (float): The maximum temperature in the range
+        tstep (float): The step size for temperature increments
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        ne (float): The number of energy increments
+
+    Returns:
+        None
+    '''
+
+
+    from .defs.do_doping import do_doping
+    from .defs.do_dos import do_dos
+
+    
+    arrays,attr = self.data_controller.data_dicts()
+
+    if 'delta' not in attr: attr['delta'] = delta
+    if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
+
+    ene = np.linspace(emin, emax, ne)
+    temps = np.arange(tmin, tmax+1.e-10, tstep)
+
+    do_dos(self.data_controller, emin=emin, emax=emax, ne=ne)
+    do_doping(self.data_controller,temps,ene)
+
+  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, a_imp =1, a_ac=1, a_pop=1, a_op=1, a_iv=1, a_pac=1, scattering_channels=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None}, write_to_file=True):
     '''
     Calculate the Transport Properties
 
@@ -1049,6 +1079,7 @@ class PAOFLOW:
     if 'a_pop' not in attr: attr['a_pop'] = a_pop
     if 'a_op' not in attr: attr['a_op'] = a_op
     if 'a_iv' not in attr: attr['a_iv'] = a_iv
+    if 'a_pac' not in attr: attr['a_pac'] = a_pac
     if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
     if 'scattering_channels' not in attr: attr['scattering_channels'] = scattering_channels
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
@@ -1057,7 +1088,8 @@ class PAOFLOW:
       if doping_conc !=0:
         from .defs.do_transport_fitting import do_transport
       else:
-        from .defs.do_transport import do_transport
+        from .defs.do_transport_fitting import do_transport
+        #from .defs.do_transport import do_transport
 
     else:
       if doping_conc != 0.:
@@ -1075,7 +1107,7 @@ class PAOFLOW:
       velkp = np.zeros((arrays['pksp'].shape[0],3,bnd,attr['nspin']))
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
-      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,write_to_file)
+      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file)
       velkp = None
     except:
       self.report_exception('transport')
