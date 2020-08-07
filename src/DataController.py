@@ -24,7 +24,7 @@ class DataController:
 
   error_handler = report_exception = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose ):
+  def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose, restart ):
     '''
     Initialize the DataController
 
@@ -35,6 +35,7 @@ class DataController:
         savedir (str): QE .save directory
         smearing (str): Smearing type (None, m-p, gauss)
         verbose (bool): False supresses debugging output
+        restart (bool): True if the run is being restarted from a .json data dump.
 
     Returns:
         None
@@ -48,7 +49,7 @@ class DataController:
     self.rank = self.comm.Get_rank()
     self.size = self.comm.Get_size()
 
-    if inputfile is None and savedir is None:
+    if not restart and inputfile is None and savedir is None:
       if self.rank == 0:
         print('\nERROR: Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
       quit()
@@ -56,11 +57,12 @@ class DataController:
     self.error_handler = ErrorHandler()
     self.report_exception = self.error_handler.report_exception
 
-    if self.rank == 0:
+    if not restart and self.rank == 0:
       self.data_arrays = arrays = {}
       self.data_attributes = attr = {}
 
       # Set or update attributes
+      attr['mpisize'] = self.size
       attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
@@ -94,19 +96,17 @@ class DataController:
         self.report_exception('Data Controller Initialization')
         self.comm.Abort()
 
-      # Ensure that the number of k-points from QE matches the grid size
-      nkpnts = attr['nk1']*attr['nk2']*attr['nk3']
-
     self.comm.Barrier()
 
-    # Broadcast Data
-    try:
-      self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
-      self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
-    except:
-      print('ERROR: MPI was unable to broadcast')
-      self.report_exception('Initialization Broadcast')
-      self.comm.Abort()
+    if not restart:
+      # Broadcast Data
+      try:
+        self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
+        self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
+      except:
+        print('ERROR: MPI was unable to broadcast')
+        self.report_exception('Initialization Broadcast')
+        self.comm.Abort()
 
 
   def data_dicts ( self ):

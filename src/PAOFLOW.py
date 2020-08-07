@@ -24,8 +24,6 @@ class PAOFLOW:
 
   comm = rank = size = None
 
-  workpath = inputfile = None
-
   start_time = reset_time = None
 
   # Overestimate factor for guessing memory requirements
@@ -52,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing='gauss', npool=1, verbose=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing='gauss', npool=1, verbose=False, restart=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -64,6 +62,7 @@ class PAOFLOW:
         smearing (str): Smearing type (None, m-p, gauss)
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         verbose (bool): False supresses debugging output
+        restart (bool): True if the run is being restarted from a .json data dump.
 
     Returns:
         None
@@ -72,10 +71,6 @@ class PAOFLOW:
     from mpi4py import MPI
     from .defs.header import header
     from .DataController import DataController
-
-    self.workpath = workpath
-    self.outputdir = outputdir
-    self.inputfile = inputfile
 
     #-------------------------------
     # Initialize Parallel Execution
@@ -93,33 +88,38 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose)
+    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose, restart)
 
-    # Data Attributes
-    attr = self.data_controller.data_attributes
     self.report_exception = self.data_controller.report_exception
 
-    # Check for CUDA FFT Libraries
-## CUDA not yet supported in PAOFLOW_CLASS
-    attr['use_cuda'] = False
-    attr['scipyfft'] = True
-    if attr['use_cuda']:
-      attr['scipyfft'] = False
-    if self.rank == 0 and attr['verbose']:
+    if not restart:
+      # Data Attributes
+      attr = self.data_controller.data_attributes
+
+      # Check for CUDA FFT Libraries
+      ## CUDA not yet supported in PAOFLOW_CLASS
+      attr['use_cuda'] = False
+      attr['scipyfft'] = True
       if attr['use_cuda']:
-        print('CUDA will perform FFTs on %d GPUs'%1)
-      else:
-        print('SciPy will perform FFTs')
+        attr['scipyfft'] = False
+      if self.rank == 0 and attr['verbose']:
+        if attr['use_cuda']:
+          print('CUDA will perform FFTs on %d GPUs'%1)
+        else:
+          print('SciPy will perform FFTs')
 
     # Report execution information
     if self.rank == 0:
-      if self.size == 1:
-        print('Serial execution')
+      if restart:
+        print('Run starting from Restart data.')
       else:
-        print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
+        if self.size == 1:
+          print('Serial execution')
+        else:
+          print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
 
     # Do memory checks
-    if self.rank == 0:
+    if not restart and self.rank == 0:
       gbyte = self.memory_check()
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
@@ -146,6 +146,57 @@ class PAOFLOW:
       dt = time() - self.reset_time
       print('%s in: %s %8.3f sec'%(mname,lms*' ',dt))
       self.reset_time = time()
+
+
+
+  def restart_dump ( self, fname_prefix='paoflow_dump' ):
+    '''
+      Saves the necessary information to restart a PAOFLOW run from any step in calculation.
+
+      Arguments:
+          fname_prefix (str): Prefix of the filenames which will be written. Files are written to the directory housing the python script which instantiates PAOFLOW, unless otherwise specified in this argument.
+
+      Returns:
+          None
+    '''
+    from pickle import dump,HIGHEST_PROTOCOL
+
+    fname = fname_prefix + '_%d'%self.rank + '.json'
+
+    arry,attr = self.data_controller.data_dicts()
+    with open(fname, 'wb') as f:
+      dump([arry,attr], f, HIGHEST_PROTOCOL)
+
+
+
+  def restart_load ( self, fname_prefix ):
+    '''
+      Loads the previously dumped save files and populates the DataController with said data.
+
+      Arguments:
+          fname_prefix (str): Prefix of the filenames which will be written. Files are written to the directory housing the python script which instantiates PAOFLOW, unless otherwise specified in this argument.
+
+      Returns:
+          None
+    '''
+    from os.path import exists
+    from pickle import load
+
+    fname = fname_prefix + '_%d'%self.rank + '.json'
+    if not exists(fname):
+      print('Restart file named %s does not exist.'%fname)
+      raise OSError('File: %s not found.'%fname)
+
+    arry,attr = None,None
+    with open(fname, 'rb') as f:
+      arry,attr = load(f)
+
+    if self.size != attr['mpisize']:
+      print('Restarted runs must use the same number of cores as the original run.')
+      raise ValueError('Number of processors does not match that of the previous run.')
+
+    self.data_controller.data_arrays = arry
+    self.data_controller.data_attributes = attr
 
 
 
