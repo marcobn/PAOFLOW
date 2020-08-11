@@ -24,7 +24,7 @@ class DataController:
 
   error_handler = report_exception = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, savedir, smearing, npool, verbose ):
+  def __init__ ( self, workpath, outputdir, inputfile, savedir, npool, smearing, non_ortho, verbose ):
     '''
     Initialize the DataController
 
@@ -32,7 +32,9 @@ class DataController:
         workpath (str): Path to the working directory
         outputdir (str): Name of the output directory (created in the working directory path)
         inputfile (str): (optional) Name of the xml inputfile
+        npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         savedir (str): QE .save directory
+        non_ortho (bool): If True the Hamiltonian will be Orthogonalized after construction
         smearing (str): Smearing type (None, m-p, gauss)
         verbose (bool): False supresses debugging output
 
@@ -64,6 +66,7 @@ class DataController:
       attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
+      attr['non_ortho'] = non_ortho
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
       attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
       attr['opath'] = join(workpath, outputdir)
@@ -93,9 +96,6 @@ class DataController:
         print('\nERROR: Could not read QE xml data file')
         self.report_exception('Data Controller Initialization')
         self.comm.Abort()
-
-      # Ensure that the number of k-points from QE matches the grid size
-      nkpnts = attr['nk1']*attr['nk2']*attr['nk3']
 
     self.comm.Barrier()
 
@@ -168,22 +168,28 @@ class DataController:
 
 
   def read_pao_inputfile ( self ):
-    if self.rank == 0:
-      from .defs.read_inputfile_xml_parse import read_inputfile_xml
-      read_inputfile_xml(self.data_attributes['workpath'], self.data_attributes['inputfile'], self)
+    from .defs.read_inputfile_xml_parse import read_inputfile_xml
+    read_inputfile_xml(self.data_attributes['workpath'], self.data_attributes['inputfile'], self)
 
   def read_qe_output ( self ):
-    if self.rank == 0:
-      from os.path import exists
-      fpath = self.data_attributes['fpath']
-      if exists(fpath+'/data-file.xml'):
-        from .defs.read_QE_output_xml_parse import read_QE_output_xml
-        read_QE_output_xml(self)
-      elif exists(fpath+'/data-file-schema.xml'):
-        from .defs.read_new_QE_output_xml_parse import read_new_QE_output_xml
-        read_new_QE_output_xml(self)
-      else:
-        raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
+    from os.path import exists
+    fpath = self.data_attributes['fpath']
+
+    if exists(fpath+'/data-file-schema.xml'):
+      from .defs.read_QE_xml import parse_qe_data_file_schema
+      parse_qe_data_file_schema(self, fpath+'/data-file-schema.xml')
+    elif exists(fpath+'/data-file.xml'):
+      from .defs.read_QE_xml import parse_qe_data_file
+      parse_qe_data_file(self, fpath+'/data-file.xml')
+    else:
+      raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
+
+    if exists(fpath+'/atomic_proj.xml'):
+      from .defs.read_QE_xml import parse_qe_atomic_proj
+      parse_qe_atomic_proj(self, fpath+'/atomic_proj.xml')
+    else:
+      raise Exception('atomic_proj.xml was not found.\n')
+   
 
 
   def write_file_row_col ( self, fname, col1, col2 ):
@@ -299,6 +305,13 @@ class DataController:
       Hks          = arry['Hks']
       Sks          = arry['Sks']
       nkpnts       = kpnts.shape[0]
+
+      Skss = Sks.shape
+      if len(Skss) > 3:
+        if len(Skss) == 5:
+          Sks = Sks.reshape((Skss[0],Skss[1],Skss[2]*Skss[3]*Skss[4]))
+        else:
+          Sks = Sks.reshape((Skss[0],Skss[1],Skss[2]*Skss[3]*Skss[4],Skss[5]))
 
       if write_binary:# or whatever you want to call it            
         if nspin==1:#postfix .npy just to make it clear what they are

@@ -52,7 +52,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing='gauss', npool=1, verbose=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, npool=1, smearing='gauss', non_ortho=False, verbose=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -61,8 +61,9 @@ class PAOFLOW:
         outputdir (str): Name of the output directory (created in the working directory path)
         inputfile (str): (optional) Name of the xml inputfile
         savedir (str): QE .save directory
-        smearing (str): Smearing type (None, m-p, gauss)
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
+        smearing (str): Smearing type (None, m-p, gauss)
+        non_ortho (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
 
     Returns:
@@ -93,7 +94,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose)
+    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, npool, smearing, non_ortho, verbose)
 
     # Data Attributes
     attr = self.data_controller.data_attributes
@@ -233,13 +234,12 @@ class PAOFLOW:
 
 
 
-  def pao_hamiltonian ( self, non_ortho=False, shift_type=1, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
+  def pao_hamiltonian ( self, shift_type=1, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
     '''
     Construct the Tight Binding Hamiltonian
     Yields 'HRs', 'Hks' and 'kq_wght'
 
     Arguments:
-        non_ortho (bool): If True the Hamiltonian will be Orthogonalized after construction
         shift_type (int): Shift type [ 0-(PRB 2016), 1-(PRB 2013), 2-No Shift ] 
 
     Returns:
@@ -252,7 +252,6 @@ class PAOFLOW:
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
 
-    if 'non_ortho' not in attr: attr['non_ortho'] = non_ortho
     if 'shift_type' not in attr: attr['shift_type'] = shift_type
     if 'write_binary' not in attr: attr['write_binary'] = write_binary
 

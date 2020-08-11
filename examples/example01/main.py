@@ -27,8 +27,14 @@ from PAOFLOW import PAOFLOW
 
 def main():
 
+  sym_and_nosym = False
+
+  labels = ['sym']
+  if sym_and_nosym:
+    labels += ['nosym']
+
   # Run PAOFLOW, reading from QE .save directories both with and without symmetry.
-  for label in ['sym', 'nosym']:
+  for label in labels:
     outdir = 'output_%s'%label
     savedir = 'silicon_%s.save'%label
     # Initialize PAOFLOW, indicating the name of the QE save directory.
