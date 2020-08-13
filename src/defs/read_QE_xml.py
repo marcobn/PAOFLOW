@@ -253,7 +253,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
 
   tree = ET.parse(fname)
   root = tree.getroot()
-  qe_version = 6.6 if root.tag == 'PROJECTIONS' else 6.3
+  qe_version = attr['qe_version']
 
   Ry2eV = 13.60569193
   Efermi = attr['Efermi']
@@ -285,9 +285,9 @@ def parse_qe_atomic_proj ( data_controller, fname ):
     nawf = int(elem.find('NUMBER_OF_ATOMIC_WFC').text)
     nelec = int(float(elem.find('NUMBER_OF_ELECTRONS').text))
 
-  #### How does this work?
+  #### POSSIBLE UNDEFINED BEHAVIOR FOR qe_version > 6.5
   dftSO = False
-  if nspin == 4:
+  if nspin == 4 or qe_version > 6.5:
     nspin = 1
     dftSO = True
 

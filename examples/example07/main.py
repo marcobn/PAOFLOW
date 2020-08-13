@@ -27,9 +27,9 @@ from PAOFLOW import PAOFLOW
 
 def main():
 
-  paoflow = PAOFLOW.PAOFLOW(savedir='al.save', npool=8)
+  paoflow = PAOFLOW.PAOFLOW(savedir='al.save', npool=8, non_ortho=True)
   paoflow.projectability(pthr=.97)
-  paoflow.pao_hamiltonian(non_ortho=True)
+  paoflow.pao_hamiltonian()
   paoflow.add_external_fields()
   paoflow.bands(ibrav=2, nk=2000)
   paoflow.interpolated_hamiltonian()
