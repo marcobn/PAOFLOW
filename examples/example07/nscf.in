@@ -10,6 +10,8 @@
     ecutwfc =25.0, ecutrho=250.0,
     occupations='smearing', smearing='methfessel-paxton', degauss=0.05
     nbnd=16
+    nosym=.t.
+    noinv=.t.
  /
  &electrons
     conv_thr =  1.0d-8
