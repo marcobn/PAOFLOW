@@ -1,7 +1,7 @@
  &control
     calculation = 'scf'
     restart_mode='from_scratch',
-    prefix='silicon_sym',
+    prefix='silicon',
     pseudo_dir = './'
     outdir = './'
  /

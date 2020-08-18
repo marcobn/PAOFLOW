@@ -1,6 +1,6 @@
  &control
     calculation = 'nscf'
-    prefix='silicon_sym',
+    prefix='silicon',
     pseudo_dir = './'
     outdir = './'
  /
