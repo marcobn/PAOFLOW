@@ -11,6 +11,7 @@ def parse_qe_data_file_schema ( data_controller, fname ):
     data_controller (DataController): Data controller to populate
     fname (str): Path and name of the xml file.
   '''
+  import re
 
   arry,attr = data_controller.data_dicts()
   comm = MPI.COMM_WORLD
@@ -23,7 +24,9 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   tree = ET.parse(fname)
   root = tree.getroot()
 
-  qe_version = float(root.find('general_info/creator').attrib['VERSION'])
+  qe_version = float(re.findall('\d+\.\d+', root.find('general_info/creator').attrib['VERSION'])[0])
+
+  dftSO = True if root.find('input/spin/spinorbit').text=='true' else False
 
   elem = root.find('output')
 
@@ -110,7 +113,8 @@ def parse_qe_data_file_schema ( data_controller, fname ):
     time_rev = np.array([True if v=='true' else False for v in time_rev])
 
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('Efermi',Efermi),('omega',omega),('dftMAG',dftMag)]
+
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
   for s,v in attrs:
     attr[s] = v
 
@@ -129,6 +133,7 @@ def parse_qe_data_file ( data_controller, fname ):
     data_controller (DataController): Data controller to populate
     fname (str): Path and name of the xml file.
   '''
+  import re
 
   arry,attr = data_controller.data_dicts()
   comm = MPI.COMM_WORLD
@@ -141,7 +146,10 @@ def parse_qe_data_file ( data_controller, fname ):
   tree = ET.parse(fname)
   root = tree.getroot()
 
-  qe_version = root.find('HEADER/CREATOR').attrib['VERSION']
+  qe_version = float(re.findall('\d+\.\d+', root.find('HEADER/CREATOR').attrib['VERSION'])[0])
+
+  dftSO = root.find('SPIN/SPIN-ORBIT_CALCULATION').text.replace('\n','').strip()
+  dftSO = True if dftSO=='T' else False
 
   species,pseudos = [],[]
   alat = float(root.find('CELL/LATTICE_PARAMETER').text)
@@ -223,7 +231,7 @@ def parse_qe_data_file ( data_controller, fname ):
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
   # Add the attributes and arrays to the data controller
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('Efermi',Efermi),('omega',omega),('dftMAG',dftMag)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
   for s,v in attrs:
     attr[s] = v
 
@@ -285,11 +293,8 @@ def parse_qe_atomic_proj ( data_controller, fname ):
     nawf = int(elem.find('NUMBER_OF_ATOMIC_WFC').text)
     nelec = int(float(elem.find('NUMBER_OF_ELECTRONS').text))
 
-  #### POSSIBLE UNDEFINED BEHAVIOR FOR qe_version > 6.5
-  dftSO = False
-  if nspin == 4 or qe_version > 6.5:
+  if nspin == 4:
     nspin = 1
-    dftSO = True
 
   kpnts = np.empty((nkpnts,3), dtype=float)
   eigs = np.empty((nbnds,nkpnts,nspin), dtype=float)
@@ -392,7 +397,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             v1,v2 = float(text[k2]),float(text[k2+1])
             add_overlap(i, k0, k1, ispin, complex(v1,v2))
 
-  attrs = [('nawf',nawf),('nspin',nspin),('nelec',nelec),('nbnds',nbnds),('dftSO',dftSO),('nkpnts',nkpnts)]
+  attrs = [('nawf',nawf),('nspin',nspin),('nelec',nelec),('nbnds',nbnds),('nkpnts',nkpnts)]
   for s,v in attrs:
     attr[s] = v
 

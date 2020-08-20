@@ -1035,7 +1035,7 @@ mo    '''
     attr['eminH'] = emin
     attr['emaxH'] = emax
 
-    if 'a_tensor' is not None: arrays['a_tensor'] = np.array(a_tensor)
+    if a_tensor is not None: arrays['a_tensor'] = np.array(a_tensor)
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
