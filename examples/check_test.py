@@ -29,13 +29,13 @@ def verifyData ( subdir, datPattern, refPattern ):
     ########## User Defined Variables ##########
     showFileResult = False  # Show PASS or FAIL for each file
     showErrors = False  # Flag to print out error values
-    tolerance = 0.005  # Percentage that error can deviate from average to pass tests
+    tolerance = 0.01  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
 
     print(('Verifying .dat files for %s' % subdir))
 
     # Get new data files and existing reference data files
-    datFiles = glob.glob(datPattern+'*/*.dat')
+    datFiles = glob.glob(datPattern+'/*.dat')
     refFiles = glob.glob(refPattern+'/*.dat')
 
     # Verify that .dat files exist in reference directory

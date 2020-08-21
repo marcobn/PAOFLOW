@@ -11,6 +11,8 @@
     occupations='smearing', smearing='methfessel-paxton', degauss=0.05
     nosym=.t., noinv=.t.
     nbnd=16
+    nosym=.t.
+    noinv=.t.
  /
  &electrons
     conv_thr =  1.0d-8

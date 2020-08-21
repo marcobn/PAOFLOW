@@ -17,9 +17,6 @@
 #
 
 import numpy as np
-import numpy.random as rd
-from scipy import linalg as spl
-from numpy import linalg as npl
 
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
@@ -27,6 +24,9 @@ rank = comm.Get_rank()
 
 ### Reformat
 def build_Hks ( data_controller ):
+  from scipy import linalg as spl
+
+  minimal = False
 
   arrays,attributes = data_controller.data_dicts()
 
@@ -39,8 +39,7 @@ def build_Hks ( data_controller ):
 
   U = arrays['U'] 
   my_eigsmat = arrays['my_eigsmat']
-  
-  minimal = False
+
   Hksaux = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
   if minimal:
     Hks = np.zeros((bnd,bnd,nkpnts,nspin), dtype=complex)
@@ -90,6 +89,8 @@ def build_Hks ( data_controller ):
       Hksaux[:,:,ik,ispin] = 0.5*(Hksaux[:,:,ik,ispin] + np.conj(Hksaux[:,:,ik,ispin].T))
 
       if minimal:
+        import numpy.random as rd
+        from numpy import linalg as npl
         Sbd = np.zeros((nawf,nawf),dtype=complex)
         Sbdi = np.zeros((nawf,nawf),dtype=complex)
         S = sv = np.zeros((nawf,nawf),dtype=complex)

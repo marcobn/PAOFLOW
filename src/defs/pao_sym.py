@@ -1270,7 +1270,6 @@ def open_grid_wrapper(data_controller):
     symop       = data_arrays['sym_rot']
     sym_TR      = data_arrays['sym_TR']
 
-
     a_vectors   = a_vectors
     b_vectors   = b_vectors
     nspin       = Hks.shape[3]
