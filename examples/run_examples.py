@@ -55,9 +55,9 @@ def oneRun(subdir):
     if len(glob.glob('*.save')) == 0:
         calcList = ['scf','nscf','proj']
         fileList = ['scf.in','nscf.in','proj.in']
-        if 'example01' in subdir:
-          calcList = 2*calcList
-          fileList += ['scf_nosym.in', 'nscf_nosym.in', 'proj_nosym.in']
+#        if 'example01' in subdir:
+#          calcList = 2*calcList
+#          fileList += ['scf_nosym.in', 'nscf_nosym.in', 'proj_nosym.in']
     calcList += ['PAO']
     fileList += ['inputfile.xml']
 
