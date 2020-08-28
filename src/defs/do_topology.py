@@ -254,8 +254,6 @@ def do_topology ( data_controller ):
   lrng = (list(range(nkpi)) if rank==0 else None)
 
   pks = gather_full(pks, npool)
-  if attributes['do_spin_orbit']:
-    bnd *= 2
   velk = np.zeros((nkpi,3,bnd,nspin), dtype=float) if rank==0 else None
   if rank == 0:
     for n in range(bnd):

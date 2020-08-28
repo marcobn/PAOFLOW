@@ -471,6 +471,45 @@ class PAOFLOW:
 
 
 
+
+  def adhoc_spin_orbit ( self, spin_orbit=False, naw=[1], phi=.0, theta=.0, lambda_p=[.0], lambda_d=[.0], orb_pseudo=['s']  ):
+    '''
+    Include spin-orbit coupling  
+
+    Arguments:
+        theta (float)             :  Spin orbit angle
+        phi (float)               :  Spin orbit azimuthal angle
+        lambda_p (list of floats) :  p orbitals SOC strengh for each atom 
+        lambda_d (list of float)  :  d orbitals SOC strengh for each atom
+        orb_pseudo (list of str)  :  Orbitals included in the Pseudopotential
+
+    Returns:
+        None
+
+    '''
+    from .defs.do_spin_orbit import do_spin_orbit_H
+
+    arry,attr = self.data_controller.data_dicts()
+    attr['do_spin_orbit']=spin_orbit
+    natoms = attr['natoms']
+
+    if 'phi' not in attr: attr['phi'] = phi
+    if 'theta' not in attr: attr['theta'] = theta
+    if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
+    if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
+    if 'orb_pseudo' not in arry: arry['orb_pseudo'] = orb_pseudo[:]
+    if 'naw' not in arry: arry['naw'] = naw[:]
+
+    if len(arry['lambda_p']) != natoms or len(arry['lambda_p']) != natoms:
+      print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
+      self.comm.Abort()
+
+    attr['bnd'] *= 2
+    attr['dftSO'] = True
+    do_spin_orbit_H(self.data_controller)
+
+
+
   def wave_function_projection ( self, dimension=3 ):
     '''
     Marcio, can you write something here please?
