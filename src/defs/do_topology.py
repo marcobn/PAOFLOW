@@ -86,7 +86,18 @@ def do_topology ( data_controller ):
     E_ktrim,v_ktrim = do_eigh_calc(HRs, SRs, ktrim, arrays['R'], non_ortho)
 
     # Define time reversal operator
-    theta = -1.0j*clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], 1)
+    if 'adhoc_SO' in attributes and attributes['adhoc_SO'] == True:
+      Sjy = np.zeros((nawf,nawf), dtype=complex)
+      sP = 0.5*np.array([[0.0,-1.0j],[1.0j,0.0]])
+      for i in range(nawf//2):
+        Sjy[i,i] = sP[0,0]
+        Sjy[i,i+1] = sP[0,1]
+      for i in range(nawf//2, nawf):
+        Sjy[i,i-1] = sP[1,0]
+        Sjy[i,i] = sP[1,1]
+      theta = -1.0j*Sjy
+    else:
+      theta = -1.0j*clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], 1)
 
     nkt = nktrim // 2
 

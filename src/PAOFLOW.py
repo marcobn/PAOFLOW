@@ -396,7 +396,7 @@ class PAOFLOW:
         self.comm.Abort()
 
 
-  def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 , theta=0., phi=0., lambda_p=[0.], lambda_d=[0.], orb_pseudo=['s'] ):
+  def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 ):
     '''
     Compute the electronic band structure
 
@@ -407,11 +407,6 @@ class PAOFLOW:
         spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
         fname (str): File name for the band output
         nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
-        theta (int): Spin orbit angle
-        phi (int): Spin orbit azimuthal angle
-        lambda_p (list of floats):
-        lambda_d (list of float):
-        orb_pseudo (list of str): Orbitals included in the Pseudopotential
 
     Returns:
         None
@@ -437,20 +432,6 @@ class PAOFLOW:
 
     # Prepare HRs for band computation with spin-orbit coupling
     try:
-      if self.rank == 0 and attr['do_spin_orbit']:
-        from .defs.do_spin_orbit import do_spin_orbit_bands
-
-        natoms = attr['natoms']
-        if 'phi' not in attr: attr['phi'] = phi
-        if 'theta' not in attr: attr['theta'] = theta
-        if 'lambda_p' not in arrays: arrays['lambda_p'] = lambda_p[:]
-        if 'lambda_d' not in arrays: arrays['lambda_d'] = lambda_d[:]
-        if 'orb_pseudo' not in arrays: arrays['orb_pseudo'] = orb_pseudo[:]
-        if len(arrays['lambda_p']) != natoms or len(arrays['lambda_p']) != natoms:
-          print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
-          self.comm.Abort()
-
-        do_spin_orbit_bands(self.data_controller)
 
       # Calculate the bands
       do_bands(self.data_controller)
@@ -472,7 +453,7 @@ class PAOFLOW:
 
 
 
-  def adhoc_spin_orbit ( self, spin_orbit=False, naw=[1], phi=.0, theta=.0, lambda_p=[.0], lambda_d=[.0], orb_pseudo=['s']  ):
+  def adhoc_spin_orbit ( self, naw=[1], phi=.0, theta=.0, lambda_p=[.0], lambda_d=[.0], orb_pseudo=['s']  ):
     '''
     Include spin-orbit coupling  
 
@@ -490,8 +471,7 @@ class PAOFLOW:
     from .defs.do_spin_orbit import do_spin_orbit_H
 
     arry,attr = self.data_controller.data_dicts()
-    attr['do_spin_orbit']=spin_orbit
-    natoms = attr['natoms']
+    attr['do_spin_orbit'] = attr['adhoc_SO'] = True
 
     if 'phi' not in attr: attr['phi'] = phi
     if 'theta' not in attr: attr['theta'] = theta
@@ -500,6 +480,7 @@ class PAOFLOW:
     if 'orb_pseudo' not in arry: arry['orb_pseudo'] = orb_pseudo[:]
     if 'naw' not in arry: arry['naw'] = naw[:]
 
+    natoms = attr['natoms']
     if len(arry['lambda_p']) != natoms or len(arry['lambda_p']) != natoms:
       print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
       self.comm.Abort()
@@ -625,8 +606,9 @@ mo    '''
     arrays,attr = self.data_controller.data_dicts()
 
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
+    adhoc_SO = 'adhoc_SO' in attr and attr['adhoc_SO']
 
-    if 'sh_l' not in arrays and 'sh_j' not in arrays:
+    if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
       if sh_l is None and sh_j is None:
         from .defs.read_sh_nl import read_sh_nl
         arrays['sh_l'],arrays['sh_j'] = read_sh_nl(self.data_controller)
