@@ -1,26 +1,28 @@
  &control
-    calculation='nscf'
+    calculation = 'nscf'
     restart_mode='from_scratch',
-    prefix='al',
-    pseudo_dir = './'
+    prefix='pt',
+    pseudo_dir = './',
     outdir='./'
  /
  &system
-    ibrav=  2, celldm(1) =7.5, nat= 1, ntyp= 1,
-    ecutwfc =25.0, ecutrho=250.0,
-    occupations='smearing', smearing='methfessel-paxton', degauss=0.05
-    nosym=.t., noinv=.t.
-    nbnd=16
-    nosym=.t.
-    noinv=.t.
+    ibrav=  2, celldm(1) =7.42, nat=  1, ntyp= 1,
+    occupations='smearing',
+    smearing = 'marzari-vanderbilt'
+    degauss=0.02,
+    ecutwfc =40.0,
+    ecutrho =467.0,
+    nosym = .true.
+    noinv = .true.
  /
  &electrons
-    conv_thr =  1.0d-8
-    mixing_beta = 0.7
+    mixing_beta = 0.7,
+    conv_thr =  1.0d-10
  /
 ATOMIC_SPECIES
- Al  26.98 Al.pbe-mt_fhi.UPF
+Pt  0.0   Pt.pz-n-rrkjus_psl.0.1.UPF
 ATOMIC_POSITIONS
- Al 0.00 0.00 0.00
-K_POINTS {automatic}
- 12 12 12  0 0 0
+Pt  0.0000000   0.00000000   0.0
+K_POINTS AUTOMATIC
+12 12 12 0 0 0
+
