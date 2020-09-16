@@ -70,7 +70,7 @@ def parse_qe_data_file_schema ( data_controller, fname ):
     except Exception as e:
       print('Fermi energy not located in QE data file.')
       raise e
-  Efermi = float(ef_text)*Ry2eV
+  Efermi = float(ef_text)*2*Ry2eV
 
   dftMag = False
   if elem.find('magnetization/do_magnetization').text == 'true':
@@ -188,7 +188,7 @@ def parse_qe_data_file ( data_controller, fname ):
 
   if root.find('MAGNETIZATION_INIT').text.replace('\n','') == 'T':
     raise NotImplementedError('Two Fermi energies unhandled')
-  Efermi = float(root.find('BAND_STRUCTURE_INFO/FERMI_ENERGY').text)*Ry2eV
+  Efermi = float(root.find('BAND_STRUCTURE_INFO/FERMI_ENERGY').text)*2*Ry2eV
 
   dftMag = False
   if root.find('SPIN/SPIN-ORBIT_DOMAG').text.replace('\n','').strip() == 'T':
