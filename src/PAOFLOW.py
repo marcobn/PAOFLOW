@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, npool=1, smearing='gauss', non_ortho=False, verbose=False, restart=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -61,7 +61,7 @@ class PAOFLOW:
         savedir (str): QE .save directory
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         smearing (str): Smearing type (None, m-p, gauss)
-        non_ortho (bool): If True the Hamiltonian will be Orthogonalized after construction
+        acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
 
@@ -89,7 +89,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, npool, smearing, non_ortho, verbose, restart)
+    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, npool, smearing, acbn0, verbose, restart)
 
     self.report_exception = self.data_controller.report_exception
 
@@ -170,7 +170,7 @@ class PAOFLOW:
 
 
 
-  def restart_load ( self, fname_prefix ):
+  def restart_load ( self, fname_prefix='paoflow_dump' ):
     '''
       Loads the previously dumped save files and populates the DataController with said data.
 
@@ -311,12 +311,14 @@ class PAOFLOW:
     attr['symm_max_iter'] = max_iter
     attr['expand_wedge'] = expand_wedge
 
-    if attr['symmetrize'] and attr['non_ortho']:
+    if attr['symmetrize'] and attr['acbn0']:
       if rank == 0:
         print('WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true.')
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
+    except SystemExit as se:
+      quit()
     except:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:

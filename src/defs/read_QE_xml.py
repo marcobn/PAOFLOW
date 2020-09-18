@@ -256,7 +256,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
   rank = comm.Get_rank()
 
   verbose = attr['verbose']
-  non_ortho = attr['non_ortho']
+  acbn0 = attr['acbn0']
 
   tree = ET.parse(fname)
   root = tree.getroot()
@@ -264,18 +264,6 @@ def parse_qe_atomic_proj ( data_controller, fname ):
 
   Ry2eV = 13.60569193
   Efermi = attr['Efermi']
-
-  nawf = None
-  nspin = None
-  nelec = None
-  nbnds = None
-  nkpnts = None
-
-  eigs = None
-  kpnts = None
-  overlaps = None
-  kpnt_weights = None
-  wavefunctions = None
 
   elem = root.find('HEADER')
   if qe_version > 6.5:
@@ -286,6 +274,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
     nawf = int(header['NUMBER_OF_ATOMIC_WFC'])
     nelec = int(float(header['NUMBER_OF_ELECTRONS']))
   else:
+    header = None
     nbnds = int(elem.find('NUMBER_OF_BANDS').text)
     nkpnts = int(elem.find('NUMBER_OF_K-POINTS').text)
     nspin = int(elem.find('NUMBER_OF_SPIN_COMPONENTS').text)
@@ -299,17 +288,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
   eigs = np.empty((nbnds,nkpnts,nspin), dtype=float)
   kpnt_weights = np.empty((nkpnts), dtype=float)
   wavefunctions = np.empty((nbnds,nawf,nkpnts,nspin), dtype=complex)
-  if non_ortho:
-    oshape = (nawf,nbnds,nkpnts)
-    if nspin > 1:
-      oshape = oshape + (nspin,)
-    overlaps = np.empty(oshape, dtype=complex)
-
-  def add_overlap ( i0, i1, i2, iS, val ):
-    if nspin > 1:
-      overlaps[i1,i2,i0,iS] = val
-    else:
-      overlaps[i1,i2,i0] = val
+  overlaps = np.empty((nawf,nbnds,nkpnts), dtype=complex) if acbn0 else None
 
   if rank == 0 and verbose:
     print('Number of kpoints: {0:d}'.format(nkpnts))
@@ -339,7 +318,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             wavefunctions[k,ind,i,ispin] = complex(text[k2],text[k2+1])
     eigs = eigs * Ry2eV - Efermi
 
-    if non_ortho:
+    if acbn0:
       elem = root.find('OVERLAPS')
       for i,ovp in enumerate(elem.findall('OVPS')):
         dim = int(ovp.attrib['dim'])
@@ -350,7 +329,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
           i1 = j//dim
           i2 = j%dim
           v1,v2 = float(text[j2]),float(text[j2+1])
-          add_overlap(i, i1, i2, ispin, complex(v1,v2))
+          overlaps[i1,i2,i] = complex(v1,v2)
 
   else:
     elem = root.find('K-POINTS')
@@ -386,7 +365,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
           nele = kpnt.find('SPIN.%d'%(ispin+1))
           read_wf(nele, i, ispin)
 
-    if non_ortho:
+    if acbn0:
       elem = root.find('OVERLAPS')
       for i,kpnt in enumerate(elem):
         for j,ovp in enumerate(kpnt):
@@ -396,14 +375,14 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             k0,k1 = k//nbnds,k%nbnds
             k2 = 2*k
             v1,v2 = float(text[k2]),float(text[k2+1])
-            add_overlap(i, k0, k1, ispin, complex(v1,v2))
+            overlaps[k0,k1,i] = complex(v1,v2)
 
   attrs = [('nawf',nawf),('nspin',nspin),('nelec',nelec),('nbnds',nbnds),('nkpnts',nkpnts)]
   for s,v in attrs:
     attr[s] = v
 
   arrys = [('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),('U',wavefunctions)]
-  if non_ortho:
+  if acbn0:
     arrys += [('Sks',overlaps)]
   for s,v in arrys:
     arry[s] = v

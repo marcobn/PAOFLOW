@@ -24,7 +24,7 @@ class DataController:
 
   error_handler = report_exception = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, savedir, npool, smearing, non_ortho, verbose, restart ):
+  def __init__ ( self, workpath, outputdir, inputfile, savedir, npool, smearing, acbn0, verbose, restart ):
     '''
     Initialize the DataController
 
@@ -34,7 +34,7 @@ class DataController:
         inputfile (str): (optional) Name of the xml inputfile
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         savedir (str): QE .save directory
-        non_ortho (bool): If True the Hamiltonian will be Orthogonalized after construction
+        acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         smearing (str): Smearing type (None, m-p, gauss)
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
@@ -68,7 +68,7 @@ class DataController:
       attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
-      attr['non_ortho'] = non_ortho
+      attr['acbn0'] = acbn0
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
       attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
       attr['opath'] = join(workpath, outputdir)
@@ -302,7 +302,7 @@ class DataController:
       inputpath    = attr['opath']
       write_binary = attr['write_binary']
       nawf         = attr['nawf']
-      non_ortho    = attr['non_ortho']
+      acbn0    = attr['acbn0']
       kpnts_wght   = arry['kpnts_wght']
       kpnts        = arry['kpnts']
       Hks          = arry['Hks']
@@ -322,7 +322,7 @@ class DataController:
         if nspin==2:
           np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
           np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
-        if non_ortho:
+        if acbn0:
           np.save('kovp.npy',np.ravel(Sks,order='C'))
       else:
         if nspin == 1:
@@ -345,7 +345,7 @@ class DataController:
               for j in range(nawf):
                 f.write('%20.13f %20.13f \n' %(np.real(Hks[i,j,ik,1]),np.imag(Hks[i,j,ik,1])))
           f.close()
-      if non_ortho:
+      if acbn0:
           f=open(os.path.join(inputpath,'kovp.txt'),'w')
           for ik in range(nkpnts):
             for i in range(nawf):

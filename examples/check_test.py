@@ -40,7 +40,7 @@ def verifyData ( subdir, datPattern, refPattern ):
 
     # Verify that .dat files exist in reference directory
     if len(refFiles) == 0:
-        print('\tReference directory is empty or does not exist.')
+        print('\tReference directory is empty or does not exist.\n')
         return
 
     # Sort the lists of files
@@ -51,12 +51,12 @@ def verifyData ( subdir, datPattern, refPattern ):
     rp = lambda f, p : [r.replace(p,'') for r in f]
 
     if len(datFiles) == 0:
-      print('\tNo output files found')
+      print('\tNo output files found\n')
       return
 
     # Ensure that the lists are identical
     if rp(datFiles, datFiles[0].split('/')[0]) != rp(refFiles, refFiles[0].split('/')[0]):
-        print('\tList of calculated .dat files does not match reference files.')
+        print('\tList of calculated .dat files does not match reference files.\n')
         return
 
     # Compare data files

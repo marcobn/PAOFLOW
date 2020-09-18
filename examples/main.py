@@ -45,7 +45,7 @@ def main():
   #
   # PAOFLOW will us data attributes read from 
   #   inputfile.xml for the following calculations 
-  paoflow = PAOFLOW.PAOFLOW(workpath=arg1, inputfile=arg2, verbose=True,outputdir="")
+  paoflow = PAOFLOW.PAOFLOW(workpath=arg1, inputfile=arg2, outputdir="")
 
   # Get dictionary containers with the
   #   attributes and arrays read from inputfiles
@@ -53,7 +53,7 @@ def main():
 
   paoflow.projectability()
 
-  paoflow.pao_hamiltonian(non_ortho=attr['non_ortho'],expand_wedge=attr['expand_wedge'],thresh=attr['symm_thresh'],
+  paoflow.pao_hamiltonian(expand_wedge=attr['expand_wedge'],thresh=attr['symm_thresh'],
                           symmetrize=attr['symmetrize'],max_iter=attr['symm_max_iter'])
 
   if attr['write2file']:

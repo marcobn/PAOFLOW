@@ -79,11 +79,11 @@ def do_topology ( data_controller ):
 
     # Compute eigenfunctions at the TRIM points
     SRs = None
-    non_ortho = False
+    acbn0 = False
     if 'SRs' in arrays:
       SRs = arrays['SRs']
-      non_ortho = True
-    E_ktrim,v_ktrim = do_eigh_calc(HRs, SRs, ktrim, arrays['R'], non_ortho)
+      acbn0 = True
+    E_ktrim,v_ktrim = do_eigh_calc(HRs, SRs, ktrim, arrays['R'], acbn0)
 
     # Define time reversal operator
     if 'adhoc_SO' in attributes and attributes['adhoc_SO'] == True:

@@ -130,31 +130,28 @@ def do_build_pao_hamiltonian ( data_controller ):
     from .pao_sym import open_grid_wrapper
     open_grid_wrapper(data_controller)
 
-  if rank != 0:
-    return
-
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
   # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
-  # non_ortho flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
-  # non_ortho flag == 1 - makes H orthogonal (rotated basis) 
-  #  Hks = do_non_ortho(Hks,Sks)
-  #  Hks = do_ortho(Hks,Sks)
-  if attr['non_ortho']:
-    from .do_non_ortho import do_non_ortho
+  # acbn0 flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
+  # acbn0 flag == 1 - makes H orthogonal (rotated basis) 
 
-    # This is needed for consistency of the ordering of the matrix elements
-    # Important in ACBN0 file writing
-    arry['Sks'] = np.transpose(arry['Sks'], (1,0,2))
+  if attr['acbn0']:
+    if rank == 0:
+      from .do_non_ortho import do_non_ortho
 
-    arry['Hks'] = do_non_ortho(arry['Hks'],arry['Sks'])
-    try:
-      arry['Sks'] = np.reshape(arry['Sks'], ashape[:-1])
-    except: pass
+      # This is needed for consistency of the ordering of the matrix elements
+      # Important in ACBN0 file writing
+      arry['Sks'] = np.transpose(arry['Sks'], (1,0,2))
 
-    data_controller.write_Hk_acbn0()
+      arry['Hks'] = do_non_ortho(arry['Hks'], arry['Sks'])
 
-  arry['Hks'] = np.reshape(arry['Hks'], ashape)
+      data_controller.write_Hk_acbn0()
+    comm.Barrier()
+    quit()
+
+  if rank == 0:
+    arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
 
 def do_Hks_to_HRs ( data_controller ):

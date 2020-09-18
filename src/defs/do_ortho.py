@@ -68,5 +68,5 @@ def do_orthogonalize ( data_controller ):
 
   data_controller.broadcast_single_array('HRs')
 
-  attributes['non_ortho'] = False
+  attributes['acbn0'] = False
   del arrays['SRs']
