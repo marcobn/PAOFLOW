@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file ):
+def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file ):
   import numpy as np
   import scipy.optimize as sp
   import scipy.integrate
@@ -63,7 +63,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
 
       if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -77,7 +77,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_po
 
           wtup(fsigmadk, gtup(sigma,0))
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)

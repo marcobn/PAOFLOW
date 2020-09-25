@@ -22,12 +22,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+  arrays['tau_t'] = get_tau(temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -64,11 +64,11 @@ def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+  arrays['tau_t'] = get_tau(temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
   t_tensor = arrays['t_tensor']
   L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
@@ -86,7 +86,7 @@ def planck(hwlo,temp):
     
     return 1/(np.exp(hwlo/temp)-1)
 
-def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
 
   import numpy as np
   import scipy.constants as cp
@@ -96,7 +96,7 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
   snktot = arry['E_k'].shape[0]
   bnd = attr['bnd']
   nspin = arry['E_k'].shape[2]
-
+  
   if channels == None:
     tau = np.ones((snktot,bnd,nspin), dtype=float) #constant relaxation time approximation with tau = 1
 
@@ -112,7 +112,7 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
     me = 9.10938e-31
     temp *= ev2j 
     E = abs(arry['E_k'][:,:bnd])*ev2j
-    Ef = attr['tau_dict']['Ef']*ev2j #fermi energy
+    Ef = abs(attr['tau_dict']['Ef'])*ev2j #fermi energy
     D_ac = attr['tau_dict']['D_ac']*ev2j #acoustic deformation potential in J
     rho = attr['tau_dict']['rho']   #mass density kg/m^3 
     a = attr['tau_dict']['a'] # lattice constant metres    
@@ -121,12 +121,11 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
     eps_0 = attr['tau_dict']['eps_0']*epso #low freq dielectric const
     v = attr['tau_dict']['v'] #velocity in m/s
     Zi = attr['tau_dict']['Zi'] #number of charge units of impurity
-    ms = attr['tau_dict']['ms']*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
+    ms = ms*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
     hwlo = np.array(attr['tau_dict']['hwlo'])*ev2j #phonon freq
     Zf = attr['tau_dict']['Zf'] #number of equivalent valleys if considering interevalley scattering
     D_op = attr['tau_dict']['D_op']*ev2j #optical deformation potential in J/m
     nI = attr['tau_dict']['nI']*1e6
-     
     for c in channels: 
 
       if c == 'impurity':                                       
@@ -168,10 +167,10 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
             C = (2*E)*(C+t2)
             P = (C-A-B)/(Z*(E**1.5))
             P_pol += P            #formula from fiorentini paper on Mg3Sb2
+          print('P_pol',P_pol)
           rate.append(P_pol/a_pop)
 
       if c == 'optical':
-          #Nop = (temp/hwlo)-0.5
           Nop=1/(np.exp(hwlo/temp)-1)
           x = E/temp
           xo = hwlo/temp
@@ -181,7 +180,6 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
           rate.append(P_op/a_op)
 
       if c == 'polar acoustic':
-
           eps = eps_inf+eps_0
           qo = np.sqrt(((e**2)*abs(nd))/(eps*temp))
           eps_o = ((hbar**2)*(qo**2))/(2*ms)
@@ -191,7 +189,6 @@ def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
           rate.append(P_pac/a_pac)     
 
       if c == 'intervalley':
-          #Nop = (temp/hwlo)-0.5
           Nop=1/(np.exp(hwlo/temp)-1)
           x = E/temp
           xo = hwlo/temp

@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file):
+def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write_to_file):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -61,7 +61,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
       if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin)
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -77,7 +77,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,a_imp,a_ac,a_p
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict)
 
 
       if rank == 0:

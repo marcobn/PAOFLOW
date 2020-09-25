@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write_to_file):
+def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -32,10 +32,9 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write
 
   esize = ene.size
 
-  siemen_conv,temp_conv = 6.9884,11604.52500617
-
+  siemen_conv,temp_conv,omega_conv = 6.9884,11604.52500617,1.481847093e-25
+  nelec,omega = attr['nelec'],attr['omega']*omega_conv
   nspin,t_tensor = attr['nspin'],arrays['t_tensor']
-
   spin_mult = 1. if nspin==2 or attr['dftSO'] else 2.
 
   if rank == 0:
@@ -44,13 +43,17 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write
   for ispin in range(nspin):
 
     # Quick function opens file in output folder with name 's'
-    ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)),'w')
 
-    fPF = ojf('PF', ispin)
-    fkappa = ojf('kappa', ispin)
-    fsigma = ojf('sigma', ispin)
-    fSeebeck = ojf('Seebeck', ispin)
-    fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
+    if write_to_file == True: 
+
+      ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)),'w')
+
+      fPF = ojf('PF', ispin)
+      fkappa = ojf('kappa', ispin)
+      fsigma = ojf('sigma', ispin)
+      fSeebeck = ojf('Seebeck', ispin)
+      fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
+
     for temp in temps:
 
       itemp = temp/temp_conv
@@ -61,7 +64,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
       if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict)
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -77,7 +80,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
 
 
       if rank == 0:
@@ -96,6 +99,7 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write
           sigma = None
       comm.Barrier()
 
+     
       S = None
       if rank == 0:
         #----------------------
@@ -151,10 +155,11 @@ def do_transport ( data_controller, temps,emin,emax,ne,ene, velkp,tau_dict,write
         PF = None
       comm.Barrier()
 
-    fPF.close()
-    fkappa.close()
-    fsigma.close()
-    if attr['smearing'] != None:
-      fsigmadk.close()
-    fSeebeck.close()
+    if write_to_file == True:
+      fPF.close()
+      fkappa.close()
+      fsigma.close()
+      if attr['smearing'] != None:
+        fsigmadk.close()
+      fSeebeck.close()
     data_controller.broadcast_single_array('sigma', dtype=float)
