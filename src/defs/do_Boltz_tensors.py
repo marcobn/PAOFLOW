@@ -64,12 +64,12 @@ def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,a_imp
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin, weights ):
 
   arrays,attributes = data_controller.data_dicts()
-  esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+  arrays['tau_t'] = get_tau(data_controller, temp, weights)
 
+  esize = ene.size
   t_tensor = arrays['t_tensor']
   L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
   L0 = (np.zeros((3,3,esize), dtype=float) if rank==0 else None)
@@ -78,138 +78,52 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,a_imp,a
   
   return L0
 
-def fermi(E,temp,Ef):
 
-    return 1./(np.exp((E-Ef)/temp)+1.)
-
-def planck(hwlo,temp):
-    
-    return 1/(np.exp(hwlo/temp)-1)
-
-def get_tau (temp,data_controller,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def get_tau ( data_controller, temp, weights ):#a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
 
   import numpy as np
   import scipy.constants as cp
   arry,attr = data_controller.data_dicts()
   channels = attr['scattering_channels']
   nd = attr['doping_conc']*1e6 #doping in /m^3
-  snktot = arry['E_k'].shape[0]
-  bnd = attr['bnd']
-  nspin = arry['E_k'].shape[2]
 
-  if channels == None:
-    tau = np.ones((snktot,bnd,nspin), dtype=float) #constant relaxation time approximation with tau = 1
+  bnd = attr['bnd']
+  eigs = arry['E_k'][:,:bnd,:]
+  snktot,_,nspin = eigs.shape
+
+  models = []
+  if channels != None:
+    if weights == None:
+      weights = np.ones(len(channels))
+    for i,c in enumerate(channels):
+      if isinstance(c,str):
+        models.append(builtin_tau_model(c,attr['tau_dict'],weights[i]))
+      elif isinstance(c,TauModel):
+        c.weight = weights[i]
+        models.append(c)
+      else:
+        print('Invalid channel type.')
+
+  if len(models) == 0:
+    # Constant relaxation time approximation with tau = 1
+    tau = np.ones((snktot,bnd,nspin), dtype=float)
 
   else:
-    hbar = cp.hbar
-    kb = cp.Boltzmann
-    rate = []
-    e = 1.60217662e-19
-    ev2j= 1.60217662e-19
-    epso = 8.854187817e-12
-    tpi = np.pi*2
-    fpi = np.pi*4
-    me = 9.10938e-31
-    temp *= ev2j 
-    E = abs(arry['E_k'][:,:bnd])*ev2j
-    Ef = attr['tau_dict']['Ef']*ev2j #fermi energy
-    D_ac = attr['tau_dict']['D_ac']*ev2j #acoustic deformation potential in J
-    rho = attr['tau_dict']['rho']   #mass density kg/m^3 
-    a = attr['tau_dict']['a'] # lattice constant metres    
-    piezo = attr['tau_dict']['piezo']  #piezoelectric constant
-    eps_inf = attr['tau_dict']['eps_inf']*epso #high freq dielectirc const
-    eps_0 = attr['tau_dict']['eps_0']*epso #low freq dielectric const
-    v = attr['tau_dict']['v'] #velocity in m/s
-    Zi = attr['tau_dict']['Zi'] #number of charge units of impurity
-    ms = attr['tau_dict']['ms']*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
-    hwlo = np.array(attr['tau_dict']['hwlo'])*ev2j #phonon freq
-    Zf = attr['tau_dict']['Zf'] #number of equivalent valleys if considering interevalley scattering
-    D_op = attr['tau_dict']['D_op']*ev2j #optical deformation potential in J/m
-    nI = attr['tau_dict']['nI']*1e6
-     
-    for c in channels: 
-
-      if c == 'impurity':                                       
-          eps = eps_inf+eps_0
-          qo = np.sqrt(e**2*nI/(eps*temp))
-          x = (hbar*qo)**2/(8*ms*E)
-          P_imp = (np.pi*nI*Zi**2*(e**4)/(E**1.5*np.sqrt(2*ms)*(fpi*eps)**2))   #formula from fiorentini paper on Mg3Sb2
-          P_imp *= (np.log(1+1./x)-1./(1+x))
-          rate.append(P_imp/a_imp)
-
-      if c == 'acoustic':
-          P_ac = ((2*ms)**1.5*(D_ac**2)*np.sqrt(E)*temp)/(tpi*hbar**4*rho*v**2) #formula from fiorentini paper on Mg3Sb2
-          rate.append(P_ac/a_ac)
-
-      if c == 'polar optical':
-	  P_pol=0.
-          eps = eps_inf+eps_0
-          eps_inv = 1/eps_inf - 1/eps
-          for i in range(len(hwlo)):
-            ff = fermi(E+hwlo[i],temp,Ef)
-            fff= fermi(E-hwlo[i],temp,Ef)
-            f = fermi(E,temp,Ef)
-            n = planck(hwlo[i],temp)
-            nn = planck(hwlo[i]+1,temp)
-            Wo = e**2/(fpi*hbar)*np.sqrt(2*ms*hwlo[i]/hbar**2)*eps_inv
-            Z = 2/(Wo*np.sqrt(hwlo[i]))
-            A = (n+1)*ff/f*((2*E+hwlo[i])*np.arcsinh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E+hwlo[i])))
-            where_are_NaNs = np.isnan(A)
-            A[where_are_NaNs] = 0
-            B = np.heaviside(E-hwlo[i],1)*n*fff/f*((2*E-hwlo[i])*np.arccosh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E-hwlo[i])))  
-            where_are_NaNs = np.isnan(B)
-            B[where_are_NaNs] = 0
-            C = (n+1)*ff/f*np.arcsinh(np.sqrt(E/hwlo[i]))
-            where_are_NaNs = np.isnan(C)
-            C[where_are_NaNs] = 0
-            t2 = np.heaviside(E-hwlo[i],1)*n*fff/f*np.arccosh(np.sqrt(E/hwlo[i]))
-            where_are_NaNs = np.isnan(t2)
-            t2[where_are_NaNs] = 0 
-            C = (2*E)*(C+t2)
-            P = (C-A-B)/(Z*(E**1.5))
-            P_pol += P            #formula from fiorentini paper on Mg3Sb2
-          rate.append(P_pol/a_pop)
-
-      if c == 'optical':
-          #Nop = (temp/hwlo)-0.5
-          Nop=1/(np.exp(hwlo/temp)-1)
-          x = E/temp
-          xo = hwlo/temp
-          X = x-xo
-          X[X<0] = 0
-          P_op = ((ms**1.5)*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
-          rate.append(P_op/a_op)
-
-      if c == 'polar acoustic':
-
-          eps = eps_inf+eps_0
-          qo = np.sqrt(((e**2)*abs(nd))/(eps*temp))
-          eps_o = ((hbar**2)*(qo**2))/(2*ms)
-          P_pac = ((piezo**2*e**2*ms**0.5*temp)/(np.sqrt(2*E)*2*np.pi*eps**2*hbar**2*rho*v**2))*(1-(eps_o/(2*E))*np.log(1+4*E/eps_o)+1/(1+4*E/eps_o))
-          where_are_NaNs = np.isnan(P_pac)
-          P_pac[where_are_NaNs] = 0
-          rate.append(P_pac/a_pac)     
-
-      if c == 'intervalley':
-          #Nop = (temp/hwlo)-0.5
-          Nop=1/(np.exp(hwlo/temp)-1)
-          x = E/temp
-          xo = hwlo/temp
-          X = x-xo
-          X[X<0] = 0
-          P_iv =  ((me**1.5)*Zf*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
-          rate.append(P_iv/a_iv)
-
-      tau = np.zeros((snktot,bnd,nspin), dtype=float)
-      for r in rate:
-          tau += r
-      tau = 1/tau
+    # Compute tau as a harmonic sum of scattering channel contributions.
+    tau = np.zeros((snktot,bnd,nspin), dtype=float)
+    for m in models:
+      try:
+        tau += m.evaluate(temp, eigs)/m.weight
+      except KeyError as e:
+        print('Ensure that all required parameters are specified in the provided dictionary.')
+        print(e)
+    tau = 1/tau
 
   return tau
 
+
 def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
   from .smearing import gaussian,metpax
-  # We assume tau=1 in the constant relaxation time approximation
  
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
