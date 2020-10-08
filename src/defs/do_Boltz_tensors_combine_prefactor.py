@@ -22,12 +22,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,tau_dict,ms,a_imp1,a_imp2,a_ac,a_pop,a_op,a_iv,a_pac1,a_pac2):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+  arrays['tau_t'] = get_tau(temp,data_controller,tau_dict,ms,a_imp1,a_imp2,a_ac,a_pop,a_op,a_iv,a_pac1,a_pac2)
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -64,11 +64,11 @@ def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,tau_d
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin,tau_dict,ms,a_imp1,a_imp2,a_ac,a_pop,a_op,a_iv,a_pac1,a_pac2):
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+  arrays['tau_t'] = get_tau(temp,data_controller,tau_dict,ms,a_imp1,a_imp2,a_ac,a_pop,a_op,a_iv,a_pac1,a_pac2)
 
   t_tensor = arrays['t_tensor']
   L0aux, t, n = L_loop(data_controller, temp, attributes['smearing'], ene, velkp, t_tensor, 0, ispin)
@@ -86,7 +86,7 @@ def planck(hwlo,temp):
     
     return 1/(np.exp(hwlo/temp)-1)
 
-def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
+def get_tau (temp,data_controller,tau_dict,ms,a_imp1,a_imp2,a_ac,a_pop,a_op,a_iv,a_pac1,a_pac2):
 
   import numpy as np
   import scipy.constants as cp
@@ -129,21 +129,16 @@ def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
     for c in channels: 
 
       if c == 'impurity':                                       
-          eps = eps_inf+eps_0
-          qo = np.sqrt(e**2*nI/(eps*temp))
-          x = (hbar*qo)**2/(8*ms*E)
-          P_imp = (np.pi*nI*Zi**2*(e**4)/(E**1.5*np.sqrt(2*ms)*(fpi*eps)**2))   #formula from fiorentini paper on Mg3Sb2
-          P_imp *= (np.log(1+1./x)-1./(1+x))
-          rate.append(P_imp/a_imp)
+          x = a_imp1*1e-8/(E*temp)
+          P_imp = a_imp2*1e-17*(np.log(1+1./x)-1./(1+x))/(E**1.5)
+          rate.append(P_imp)
 
       if c == 'acoustic':
-          P_ac = ((2*ms)**1.5*(D_ac**2)*np.sqrt(E)*temp)/(tpi*hbar**4*rho*v**2) #formula from fiorentini paper on Mg3Sb2
-          rate.append(P_ac/a_ac)
+          P_ac = a_ac*1e43*np.sqrt(E)*temp #formula from fiorentini paper on Mg3Sb2
+          rate.append(P_ac)
 
       if c == 'polar optical':
 	  P_pol=0.
-          eps = eps_inf+eps_0
-          eps_inv = 1/eps_inf - 1/eps
           for i in range(len(hwlo)):
             ff = fermi(E+hwlo[i],temp,Ef)
             fff= fermi(E-hwlo[i],temp,Ef)
@@ -154,8 +149,8 @@ def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
             ff[where_are_NaNs] = 0
             n = planck(hwlo[i],temp)
             nn = planck(hwlo[i]+1,temp)
-            Wo = e**2/(fpi*hbar)*np.sqrt(2*ms*hwlo[i]/hbar**2)*eps_inv
-            Z = 2/(Wo*np.sqrt(hwlo[i]))
+            a_pop = (8*np.pi*hbar**2)/(e**2*eps_inv*np.sqrt(2*ms))
+            Z = a_pop/np.sqrt(hwlo[i])
             A = (n+1)*ff/f*((2*E+hwlo[i])*np.arcsinh(np.sqrt(E/hwlo[i]))-np.sqrt(E*(E+hwlo[i])))
             where_are_NaNs = np.isnan(A)
             A[where_are_NaNs] = 0
@@ -169,11 +164,9 @@ def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
             where_are_NaNs = np.isnan(t2)
             t2[where_are_NaNs] = 0 
             C = (2*E)*(C+t2)
-            P = (C-A-B)/(Z*(E**1.5))
-            where_are_NaNs = np.isnan(P)
-            P[where_are_NaNs] = 0 
+            P = (C-A-B)/(a_pop*(E**1.5))
             P_pol += P            #formula from fiorentini paper on Mg3Sb2
-          rate.append(P_pol/a_pop)
+          rate.append(P_pol)
 
       if c == 'optical':
           Nop=1/(np.exp(hwlo/temp)-1)
@@ -181,17 +174,15 @@ def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
           xo = hwlo/temp
           X = x-xo
           X[X<0] = 0
-          P_op = ((ms**1.5)*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
-          rate.append(P_op/a_op)
+          P_op = a_op*1e3*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X))/(np.sqrt(temp)*xo) #formula from jacoboni theory of electron transport in semiconductors
+          rate.append(P_op)
 
       if c == 'polar acoustic':
-          eps = eps_inf+eps_0
-          qo = np.sqrt(((e**2)*abs(nd))/(eps*temp))
-          eps_o = ((hbar**2)*(qo**2))/(2*ms)
-          P_pac = ((piezo**2*e**2*ms**0.5*temp)/(np.sqrt(2*E)*2*np.pi*eps**2*hbar**2*rho*v**2))*(1-(eps_o/(2*E))*np.log(1+4*E/eps_o)+1/(1+4*E/eps_o)) #formula for jacoboni
+          eps_o = a_pac1/temp
+          P_pac = (a_pac2*temp/(np.sqrt(E)))*(1-(eps_o/(2*E))*np.log(1+4*E/eps_o)+1/(1+4*E/eps_o))
           where_are_NaNs = np.isnan(P_pac)
           P_pac[where_are_NaNs] = 0
-          rate.append(P_pac/a_pac)     
+          rate.append(P_pac)     
 
       if c == 'intervalley':
           Nop=1/(np.exp(hwlo/temp)-1)
@@ -199,8 +190,8 @@ def get_tau (temp,data_controller,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac):
           xo = hwlo/temp
           X = x-xo
           X[X<0] = 0
-          P_iv =  ((me**1.5)*Zf*(D_op**2)*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*xo*(hbar**2)*rho) #formula from jacoboni theory of electron transport in semiconductors
-          rate.append(P_iv/a_iv)
+          P_iv =  (a_iv*(Nop*np.sqrt(x+xo)+(Nop+1)*np.sqrt(X)))/(np.sqrt(temp)*xo) #formula from jacoboni theory of electron transport in semiconductors
+          rate.append(P_iv)
 
       tau = np.zeros((snktot,bnd,nspin), dtype=float)
       for r in rate:

@@ -1106,7 +1106,7 @@ class PAOFLOW:
     do_dos(self.data_controller, emin=emin, emax=emax, ne=ne)
     do_doping(self.data_controller,temps,ene)
 
-  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, scattering_channels=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None},ms=1,a_imp =1, a_ac=1, a_pop=1, a_op=1, a_iv=1, a_pac=1, write_to_file=True):
+  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, scattering_channels=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None},ms=1,a_imp=1, a_ac=1, a_pop=1, a_op=1, a_iv=1, a_pac=1, write_to_file=True):
     '''
     Calculate the Transport Properties
 
@@ -1135,7 +1135,7 @@ class PAOFLOW:
     if 'ms' not in attr: attr['ms'] = ms
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
 
-    from .defs.do_transport_combined import do_transport    
+    from .defs.do_transport import do_transport    
   
     '''
     if fit == True: 
