@@ -1075,8 +1075,6 @@ class PAOFLOW:
     from .defs.do_transport import do_transport
    
     arrays,attr = self.data_controller.data_dicts()
-    #if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
-    #if 'scattering_channels' not in attr: attr['scattering_channels'] = scattering_channels
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
     if not t_tensor == None: arrays['t_tensor'] = np.array(t_tensor)
 
@@ -1089,7 +1087,7 @@ class PAOFLOW:
       velkp = np.zeros((arrays['pksp'].shape[0],3,bnd,attr['nspin']))
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
-      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file)
+      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,scattering_weights,write_to_file,fit)
       velkp = None
     except:
       self.report_exception('transport')

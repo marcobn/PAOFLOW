@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file):
+def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,weights,write_to_file,fit):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -48,11 +48,12 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_im
 
       ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)),'w')
 
-      fPF = ojf('PF', ispin)
-      fkappa = ojf('kappa', ispin)
       fsigma = ojf('sigma', ispin)
-      fSeebeck = ojf('Seebeck', ispin)
-      fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
+      if not fit:
+        fPF = ojf('PF', ispin)
+        fkappa = ojf('kappa', ispin)
+        fSeebeck = ojf('Seebeck', ispin)
+        fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
 
     for temp in temps:
 
@@ -63,8 +64,8 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_im
       # Quick function to get tuple elements to write
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
-      if attr['smearing'] != None:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+      if attr['smearing'] != None and not fit:
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,weights)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -80,7 +81,7 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_im
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,weights)
 
 
       if rank == 0:
@@ -98,8 +99,9 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_im
             wtup(fsigma, gtup(sigma,i))
           sigma = None
       comm.Barrier()
+      if fit:
+        continue
 
-     
       S = None
       if rank == 0:
         #----------------------
@@ -156,10 +158,11 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_im
       comm.Barrier()
 
     if write_to_file == True:
-      fPF.close()
-      fkappa.close()
       fsigma.close()
-      if attr['smearing'] != None:
-        fsigmadk.close()
-      fSeebeck.close()
+      if not fit:
+        fPF.close()
+        fkappa.close()
+        if attr['smearing'] != None:
+          fsigmadk.close()
+        fSeebeck.close()
     data_controller.broadcast_single_array('sigma', dtype=float)

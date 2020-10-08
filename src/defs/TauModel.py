@@ -8,4 +8,4 @@ class TauModel:
     self.weight = weight
 
   def evaluate ( self, temp, eigs ):
-    eturn self.function(temp, eigs, self.params)
+    return self.function(temp, eigs, self.params)
