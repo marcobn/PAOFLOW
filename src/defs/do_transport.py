@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,weights,write_to_file,fit):
+def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,channels,weights,write_to_file,fit):
   import numpy as np
   from mpi4py import MPI
   from os.path import join
@@ -65,7 +65,7 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,weights,write_to
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
 
       if attr['smearing'] != None and not fit:
-        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin,weights)
+        L0 = do_Boltz_tensors_smearing(data_controller, itemp, ene, velkp, ispin, channels, weights)
 
         #----------------------
         # Conductivity (in units of 1.e21/Ohm/m/s)
@@ -81,7 +81,7 @@ def do_transport ( data_controller,temps,emin,emax,ne,ene,velkp,weights,write_to
             wtup(fsigmadk, gtup(sigma,i))
           sigma = None
         comm.Barrier()
-      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin,weights)
+      L0,L1,L2 = do_Boltz_tensors_no_smearing(data_controller, itemp, ene, velkp, ispin, channels, weights)
 
 
       if rank == 0:

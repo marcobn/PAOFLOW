@@ -22,12 +22,12 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,weights):
+def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin, channels, weights):
   # Compute the L_alpha tensors for Boltzmann transport
 
   arrays,attributes = data_controller.data_dicts()
   esize = ene.size
-  arrays['tau_t'] = get_tau(data_controller, temp, weights)
+  arrays['tau_t'] = get_tau(data_controller, temp, channels, weights)
 
 #### Forced t_tensor to have all components
   t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
@@ -64,10 +64,10 @@ def do_Boltz_tensors_no_smearing (data_controller, temp, ene, velkp, ispin,weigh
 
 
 # Compute the L_0 tensor for Boltzmann Transport with Smearing
-def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin, weights ):
+def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin, channels, weights ):
 
   arrays,attributes = data_controller.data_dicts()
-  arrays['tau_t'] = get_tau(data_controller, temp, weights)
+  arrays['tau_t'] = get_tau(data_controller, temp, channels, weights)
 
   esize = ene.size
   t_tensor = arrays['t_tensor']
@@ -79,13 +79,13 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin, weight
   return L0
 
 
-
-def get_tau ( data_controller, temp, weights ):
+def get_tau ( data_controller, temp, channels, weights ):
 
   import numpy as np
   import scipy.constants as cp
+  from .tau_models import builtin_tau_model
+
   arry,attr = data_controller.data_dicts()
-  channels = attr['scattering_channels']
 
   bnd = attr['bnd']
   eigs = arry['E_k'][:,:bnd,:]

@@ -1,9 +1,11 @@
 
+import numpy as np
 from scipy.constants import hbar
-from scipy.constants import Boltzman as kb
+from scipy.constants import Boltzmann as kb
 
-epso = 8.854187817e-12
+e = 1.60217662e-19
 ev2j = 1.60217662e-19
+epso = 8.854187817e-12
 
 def acoustic_model ( temp, eigs, params ):
   # Formula from fiorentini paper on Mg3Sb2
@@ -21,7 +23,7 @@ def optical ( temp, eigs, params ):
   # Formula from jacoboni theory of electron transport in semiconductors
   temp *= ev2j
   E = eigs * ev2j
-  hwlo = params['hwlo']*ev2j # Phonon freq
+  hwlo = np.array(params['hwlo'])*ev2j # Phonon freq
   ms = params['ms'] # Effective mass tensor
   rho = params['rho'] # Mass density kg/m^3
   D_op = params['D_op']*ev2j # Acoustic deformation potential in J
@@ -35,12 +37,29 @@ def optical ( temp, eigs, params ):
   return ((ms**1.5)*(D_op**2)*(Nop*np.sqrt(x+x0)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*x0*rho*hbar**2)
 
 
+def polar_acoustic ( temp, eigs, params ):
+
+  temp *= ev2j
+  E = eigs * ev2j
+  ms = params['ms'] # Effective mass tensor
+  piezo = params['piezo']  # Piezoelectric constant
+  nd = params['doping_conc'] # Doping concentration
+  eps_0 = params['eps_0']*epso # Low freq dielectric const
+  eps_inf = params['eps_inf']*epso # High freq dielectirc const
+
+  eps = eps_inf + eps_0
+  qo = np.sqrt(abs(nd)*e**2/(eps*temp))
+  eps_o = ((hbar*qo)**2)/(2*ms)
+  P_pac = (((piezo*e)**2*ms**0.5*temp)/(np.sqrt(2*E)*2*np.pi*eps**2*hbar**2*rho*v**2))*(1-(eps_o/(2*E))*np.log(1+4*E/eps_o)+1/(1+4*E/eps_o))
+  P_pac[np.isnan(P_pac)] = 0
+  return P_pac
+
 def polar_optical ( temp, eigs, params ):
   # Formula from fiorentini paper on Mg3Sb2
   temp *= ev2j
   E = eigs * ev2j
   Ef = params['Ef']*ev2j #fermi energy
-  hwlo = params['hwlo']*ev2j # Phonon freq
+  hwlo = np.array(params['hwlo'])*ev2j # Phonon freq
   eps_0 = params['eps_0']*epso #low freq dielectric const
   eps_inf = params['eps_inf']*epso #high freq dielectirc const
 
@@ -61,8 +80,7 @@ def polar_optical ( temp, eigs, params ):
     Z = 2/(Wo*np.sqrt(hw))
 
     def remove_NaN ( arr ):
-      isNaN = np.isnan(arr)
-      arr[isNaN] = 0
+      arr[np.isnan(arr)] = 0
       return arr
 
     A = remove_NaN((n+1)*fp/f * ((2*E+hw)*np.arcsinh(np.sqrt(E/hw))-np.sqrt(E*(E+hw))))
@@ -77,6 +95,7 @@ def polar_optical ( temp, eigs, params ):
 
 
 def builtin_tau_model ( label, params, weight ):
+  from .TauModel import TauModel
 
   model = TauModel(params=params, weight=weight)
 

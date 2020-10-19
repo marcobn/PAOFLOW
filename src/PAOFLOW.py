@@ -1106,7 +1106,9 @@ class PAOFLOW:
     do_dos(self.data_controller, emin=emin, emax=emax, ne=ne)
     do_doping(self.data_controller,temps,ene)
 
-  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, scattering_channels=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None},ms=1,a_imp=1, a_ac=1, a_pop=1, a_op=1, a_iv=1, a_pac=1, write_to_file=True):
+
+
+  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, scattering_channels=None, scattering_weights=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None}, write_to_file=True):
     '''
     Calculate the Transport Properties
 
@@ -1122,43 +1124,24 @@ class PAOFLOW:
     Returns:
         None
     '''
+    from .defs.do_transport import do_transport
    
     arrays,attr = self.data_controller.data_dicts()
-    if 'a_imp' not in attr: attr['a_imp'] = a_imp
-    if 'a_ac' not in attr: attr['a_ac'] = a_ac
-    if 'a_pop' not in attr: attr['a_pop'] = a_pop
-    if 'a_op' not in attr: attr['a_op'] = a_op
-    if 'a_iv' not in attr: attr['a_iv'] = a_iv
-    if 'a_pac' not in attr: attr['a_pac'] = a_pac
-    if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
-    if 'scattering_channels' not in attr: attr['scattering_channels'] = scattering_channels
-    if 'ms' not in attr: attr['ms'] = ms
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
-
-    from .defs.do_transport import do_transport    
-  
-    '''
-    if fit == True: 
-      from .defs.do_transport_fitting import do_transport
-
-    else:
-      if doping_conc != 0.:
-        from .defs.do_transport_doping import do_transport
-      else:
-        from .defs.do_transport import do_transport
-    '''
+    if not t_tensor == None: arrays['t_tensor'] = np.array(t_tensor)
+    #attr['tau_dict']['scattering_channels'] = scattering_channels
 
     ene = np.linspace(emin, emax, ne)
     temps = np.arange(tmin, tmax+1.e-10, tstep)
+    sc,sw = scattering_channels,scattering_weights
 
-    if t_tensor is not None: arrays['t_tensor'] = np.array(t_tensor)
     try:
       # Compute Velocities for Spin 0 Only
       bnd = attr['bnd']
       velkp = np.zeros((arrays['pksp'].shape[0],3,bnd,attr['nspin']))
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
-      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,tau_dict,ms,a_imp,a_ac,a_pop,a_op,a_iv,a_pac,write_to_file)
+      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,sc,sw,write_to_file,fit)
       velkp = None
     except:
       self.report_exception('transport')
@@ -1166,6 +1149,7 @@ class PAOFLOW:
         self.comm.Abort()
 
     self.report_module_time('Transport')
+
 
 
   def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
