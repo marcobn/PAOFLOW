@@ -3,6 +3,7 @@ import numpy as np
 from scipy.constants import hbar
 from scipy.constants import Boltzmann as kb
 
+me = 9.10938e-31
 e = 1.60217662e-19
 ev2j = 1.60217662e-19
 epso = 8.854187817e-12
@@ -12,21 +13,21 @@ def acoustic_model ( temp, eigs, params ):
   temp *= ev2j
   E = eigs * ev2j # Eigenvalues in J
   v = params['v'] # Velocity in m/s
-  ms = params['ms'] # Effective mass tensor
   rho = params['rho'] # Mass density kg/m^3
+  ms = params['ms']*me #effective mass tensor in kg 
   D_ac = params['D_ac']*ev2j # Acoustic deformation potential in J
 
   return (2*ms)**1.5*(D_ac**2)*np.sqrt(E)*temp/(2*np.pi*rho*(hbar**2*v)**2)
 
 
-def optical ( temp, eigs, params ):
+def optical_model ( temp, eigs, params ):
   # Formula from jacoboni theory of electron transport in semiconductors
   temp *= ev2j
   E = eigs * ev2j
   hwlo = np.array(params['hwlo'])*ev2j # Phonon freq
-  ms = params['ms'] # Effective mass tensor
   rho = params['rho'] # Mass density kg/m^3
   D_op = params['D_op']*ev2j # Acoustic deformation potential in J
+  ms = params['ms']*me #effective mass tensor in kg 
 
   x = E/temp
   x0 = hwlo/temp
@@ -34,18 +35,18 @@ def optical ( temp, eigs, params ):
   X[X<0] = 0
 
   Nop = 1/(np.exp(x0)-1)
+
   return ((ms**1.5)*(D_op**2)*(Nop*np.sqrt(x+x0)+(Nop+1)*np.sqrt(X)))/(np.sqrt(2*temp)*np.pi*x0*rho*hbar**2)
 
-
-def polar_acoustic ( temp, eigs, params ):
+def polar_acoustic_model ( temp, eigs, params ):
 
   temp *= ev2j
   E = eigs * ev2j
-  ms = params['ms'] # Effective mass tensor
   piezo = params['piezo']  # Piezoelectric constant
   nd = params['doping_conc'] # Doping concentration
   eps_0 = params['eps_0']*epso # Low freq dielectric const
   eps_inf = params['eps_inf']*epso # High freq dielectirc const
+  ms = params['ms']*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
 
   eps = eps_inf + eps_0
   qo = np.sqrt(abs(nd)*e**2/(eps*temp))
@@ -54,7 +55,7 @@ def polar_acoustic ( temp, eigs, params ):
   P_pac[np.isnan(P_pac)] = 0
   return P_pac
 
-def polar_optical ( temp, eigs, params ):
+def polar_optical_model ( temp, eigs, params ):
   # Formula from fiorentini paper on Mg3Sb2
   temp *= ev2j
   E = eigs * ev2j
@@ -93,6 +94,21 @@ def polar_optical ( temp, eigs, params ):
 
   return P_pol
 
+def impurity_model ( temp, eigs, params ):
+  #formula from fiorentini paper on Mg3Sb2
+  temp *= ev2j
+  E = eigs * ev2j
+  nI = params['nI']
+  Zi = params['Zi']
+  ms = params['ms']*me #effective mass tensor in kg 
+  eps_0 = params['eps_0']*epso #low freq dielectric const
+  eps_inf = params['eps_inf']*epso #high freq dielectirc const
+
+  eps = eps_inf+eps_0
+  qo = np.sqrt(e**2*nI/(eps*temp))
+  x = (hbar*qo)**2/(8*ms*E)
+  P_imp = np.pi*nI*Zi**2*e**4/(E**1.5*np.sqrt(2*ms)*(4*np.pi*eps)**2)
+  return P_imp * (np.log(1+1./x)-1./(1+x))
 
 def builtin_tau_model ( label, params, weight ):
   from .TauModel import TauModel
@@ -102,9 +118,13 @@ def builtin_tau_model ( label, params, weight ):
   if label == 'acoustic':
     model.function = acoustic_model
   elif label == 'optical':
-    model.function = optical
+    model.function = optical_model
   elif label == 'polar_optical':
-    model.function = polar_optical
+    model.function = polar_optical_model
+  elif label == 'polar_acoustic':
+    model.function = polar_acoustic_model
+  elif label == 'impurity':
+    model.function = impurity_model
   else:
     print('Model not implemented.')
     return None

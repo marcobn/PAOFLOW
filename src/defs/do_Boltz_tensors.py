@@ -80,7 +80,6 @@ def do_Boltz_tensors_smearing ( data_controller, temp, ene, velkp, ispin, channe
 
 
 def get_tau ( data_controller, temp, channels, weights ):
-
   import numpy as np
   import scipy.constants as cp
   from .tau_models import builtin_tau_model
@@ -88,12 +87,12 @@ def get_tau ( data_controller, temp, channels, weights ):
   arry,attr = data_controller.data_dicts()
 
   bnd = attr['bnd']
-  eigs = arry['E_k'][:,:bnd,:]
+  eigs = np.abs(arry['E_k'][:,:bnd,:])
   snktot,_,nspin = eigs.shape
 
   models = []
   if channels != None:
-    if weights == None:
+    if weights is None:
       weights = np.ones(len(channels))
     for i,c in enumerate(channels):
       if isinstance(c,str):

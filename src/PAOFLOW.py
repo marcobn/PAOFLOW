@@ -1108,7 +1108,7 @@ class PAOFLOW:
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, scattering_channels=None, scattering_weights=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None}, write_to_file=True):
+  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None, doping_conc=0., fit=False, scattering_channels=None, scattering_weights=None, tau_dict={}, write_to_file=True ):
     '''
     Calculate the Transport Properties
 
