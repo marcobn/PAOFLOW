@@ -234,9 +234,6 @@ class PAOFLOW:
         print("Memory usage on rank 0:  %6.4f GB"%(mem[0]/1024.0**2))
         print("Maximum concurrent memory usage:  %6.4f GB"%(mem0[0]/1024.0**2))
 
-    MPI.Finalize()
-    quit()
-
 
 
   def projectability ( self, pthr=0.95, shift='auto' ):
@@ -1108,7 +1105,7 @@ class PAOFLOW:
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None, doping_conc=0., fit=False, scattering_channels=None, scattering_weights=None, tau_dict={}, write_to_file=True ):
+  def transport ( self, tmin=300, tmax=300, nt=1, emin=1., emax=10., ne=1000, t_tensor=None, doping_conc=0., fit=False, scattering_channels=None, scattering_weights=None, tau_dict={}, write_to_file=True ):
     '''
     Calculate the Transport Properties
 
@@ -1129,10 +1126,9 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
     if not t_tensor == None: arrays['t_tensor'] = np.array(t_tensor)
-    #attr['tau_dict']['scattering_channels'] = scattering_channels
 
     ene = np.linspace(emin, emax, ne)
-    temps = np.arange(tmin, tmax+1.e-10, tstep)
+    temps = np.linspace(tmin, tmax, nt)
     sc,sw = scattering_channels,scattering_weights
 
     try:
