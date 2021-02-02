@@ -1,0 +1,32 @@
+&control 
+    calculation = 'scf' 
+    prefix      = 'co' 
+    pseudo_dir = './' 
+    outdir='./'    
+/    
+&system      
+    ibrav=  0  
+    nat=  1  
+    ntyp=  1  
+    celldm(1) =  1.88972612  
+    ecutwfc =  60.000  
+    ecutrho =  600.000  
+    occupations='smearing', smearing='methfessel-paxton', degauss=0.0073529411765      
+    starting_magnetization=  0.000  
+    noinv=  .false.  
+    nosym=  .false. 
+    nspin=1 
+/    
+&electrons      
+mixing_beta=0.1
+/    
+CELL_PARAMETERS cubic      
+2.50000000 0.00000000 0.00000000 
+0.00000000 2.50000000 0.00000000 
+0.00000000 0.00000000 20.0000000
+ATOMIC_SPECIES      
+Co  0.0 Co.pbe-n-kjpaw_psl.1.0.0.UPF    
+ATOMIC_POSITIONS crystal   
+Co 0.00000000 0.00000000 0.50000000 
+K_POINTS (automatic)      
+ 13 13 1 0 0 0 
