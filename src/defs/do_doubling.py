@@ -40,9 +40,10 @@ def doubling_HRs ( data_controller, ndx, ndy, ndz ):
   min_inds = np.amin(new_index, axis=1)
   max_inds = np.amax(new_index, axis=1)
 
-  for dim in range(-2,1,1):
-    # This construction is doubling along the X direction nx times    
-    for dx in range(nx[dim]):
+  # Loop across dimnsions in the order y,z,x
+  for dim in range(-2,1):
+    # Constructi the doubled Hamiltonian nx[dim] times for this dimension    
+    for _ in range(nx[dim]):
 
       nawf = attr['nawf']
       HR_double = np.zeros((2*nawf,2*nawf,nk[0],nk[1],nk[2],nspin), dtype=complex)
