@@ -42,7 +42,7 @@ def doubling_HRs ( data_controller, ndx, ndy, ndz ):
 
   # Loop across dimnsions in the order y,z,x
   for dim in range(-2,1):
-    # Constructi the doubled Hamiltonian nx[dim] times for this dimension    
+    # Construct the doubled Hamiltonian nx[dim] times for this dimension    
     for _ in range(nx[dim]):
 
       nawf = attr['nawf']
