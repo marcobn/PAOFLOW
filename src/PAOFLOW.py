@@ -516,7 +516,7 @@ mo    '''
     self.report_module_time('wave_function_projection')
 
 
-  def doubling_Hamiltonian ( self, nx , ny, nz, spin_orbit=False ):
+  def doubling_Hamiltonian ( self, nx , ny, nz ):
     '''
     Marcio, can you write something here please?
     Please check the argument descriptions also
@@ -532,80 +532,21 @@ mo    '''
     from .defs.do_doubling import doubling_HRs
 
     arrays,attr = self.data_controller.data_dicts()
-    #attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
+    attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
 
-    attr['do_spin_orbit']=spin_orbit
-    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
+    try:
+      if self.rank == 0:
+        doubling_HRs(self.data_controller)
+    except:
+      self.report_exception('doubling_Hamiltonian')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
 
-
-    if self.rank == 0:
-
-      try:
-        x_reduced=False
-        y_reduced=False
-        z_reduced=False
-        if (nx!=0):
-            if self.rank==0:
-              for i in range(nx):
-                  attr['nx']=1
-                  attr['ny']=0
-                  attr['nz']=0
-                  doubling_HRs(self.data_controller)
-                  # Reduces the Hamiltoninan dimension if the lattice vectos becomes very large
-                  if (np.linalg.norm(arrays['a_vectors'][0,:]) > 15.0 and x_reduced == False):
-                      x_reduced=True
-                      idx_x, idx_y, idx_z = self.reducing_dimensionality_HRs ( True, False, False )
-                      for n in range(len(idx_x)):
-                          arrays['HRs'] = np.delete(arrays['HRs'],len(idx_x)-n+1,2)
-                      attr['nawf'],_,attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin'] = arrays['HRs'].shape
-                      attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
-            #self.broadcasting_modification()
-            attr['nx']=0
-
-
-        if (ny!=0):
-            if self.rank==0:
-              for i in range(ny):
-                  attr['nx']=0
-                  attr['ny']=1
-                  attr['nz']=0
-                  doubling_HRs(self.data_controller)
-                  # Reduces the Hamiltoninan dimension if the lattice vectos becomes very large
-                  if (np.linalg.norm(arrays['a_vectors'][1,:]) > 15.0 and y_reduced == False):
-                      y_reduced=True
-                      idx_x, idx_y, idx_z = self.reducing_dimensionality_HRs ( False, True, False )
-                      for n in range(len(idx_y)):
-                          arrays['HRs'] = np.delete(arrays['HRs'],len(idx_y)-n+1,3)
-                      attr['nawf'],_,attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin'] = arrays['HRs'].shape
-                      attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
-            #self.broadcasting_modification()
-            attr['ny']=0
-
-        if (nz!=0):
-            if self.rank==0:
-              for i in range(nz):
-                  attr['nx']=0
-                  attr['ny']=0
-                  attr['nz']=1
-                  doubling_HRs(self.data_controller)
-                  # Reduces the Hamiltoninan dimension if the lattice vectos becomes very large
-                  if (np.linalg.norm(arrays['a_vectors'][2,:]) > 15.0 and z_reduced == False):
-                      z_reduced=True
-                      idx_x, idx_y, idx_z = self.reducing_dimensionality_HRs ( False, False, True )
-                      for n in range(len(idx_z)):
-                          arrays['HRs'] = np.delete(arrays['HRs'],len(idx_z)-n+1,4)
-                      attr['nawf'],_,attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin'] = arrays['HRs'].shape
-                      attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
-            #self.broadcasting_modification()
-            attr['nz']=0
-      except:
-        self.report_exception('doubling_Hamiltonian')
-        if attr['abort_on_exception']:
-          self.comm.Abort()
-
+    self.comm.Barrier()
     #self.broadcasting_modification()
 
     self.report_module_time('doubling_Hamiltonian')
+
 
   def cutting_Hamiltonian ( self, x=False , y=False, z=False ):
     '''

@@ -27,13 +27,12 @@ import numpy as np
 
 def main():
 
-  paoflow = PAOFLOW.PAOFLOW(workpath='./',outputdir='./',savedir='co.save',verbose=True)
-  arry,attr = paoflow.data_controller.data_dicts()
+  paoflow = PAOFLOW.PAOFLOW(savedir='co.save', verbose=True)
   paoflow.projectability()
   paoflow.pao_hamiltonian()
 
   # This routine double the Hamiltonian one time along x and y resulting in 2x2 supercell
-  paoflow.doubling_Hamiltonian(nx=1,ny=1,nz=0)
+  paoflow.doubling_Hamiltonian(nx=1, ny=1, nz=0)
  
   path = 'G-X-M-G'
   special_points = {'G':[0.0, 0.0, 0.0],'X':[0.5, 0.0, 0.0],'M':[0.5, 0.5, 0.0]}
