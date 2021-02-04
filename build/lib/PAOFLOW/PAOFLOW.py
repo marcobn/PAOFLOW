@@ -525,8 +525,8 @@ mo    '''
         if 't' not in attr: attr['t'] = t
         graphene(self.data_controller)
 
-    else:
-        print("None",model)
+    #else:
+    #    print("None",model)
     self.report_module_time('TBmodels')
 
 
