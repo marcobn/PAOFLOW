@@ -515,6 +515,20 @@ mo    '''
 
     self.report_module_time('wave_function_projection')
 
+  def TBmodels ( self, model=None, t=0.0 ):
+
+    arry,attr = self.data_controller.data_dicts()
+
+    if(model=="Graphene"):
+        from .defs.models import graphene
+
+        if 't' not in attr: attr['t'] = t
+        graphene(self.data_controller)
+
+    else:
+        print("None",model)
+    self.report_module_time('TBmodels')
+
 
   def doubling_Hamiltonian ( self, nx , ny, nz ):
     '''
