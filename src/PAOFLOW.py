@@ -531,12 +531,9 @@ mo    '''
     '''
     from .defs.do_doubling import doubling_HRs
 
-    arrays,attr = self.data_controller.data_dicts()
-    attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
-
     try:
       if self.rank == 0:
-        doubling_HRs(self.data_controller)
+        doubling_HRs(self.data_controller, nx, ny, nz)
     except:
       self.report_exception('doubling_Hamiltonian')
       if attr['abort_on_exception']:

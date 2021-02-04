@@ -10,14 +10,13 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-def doubling_HRs ( data_controller ):
-  from scipy.fftpack import fftshift
+def doubling_HRs ( data_controller, ndx, ndy, ndz ):
   import numpy as np
 
   arry,attr = data_controller.data_dicts()
 
   nspin = attr['nspin']
-  nx = np.array([attr['nx'],attr['ny'],attr['nz']])
+  nx = np.array([ndx,ndy,ndz])
   nk = np.array([attr['nk1'],attr['nk2'],attr['nk3']])
 
   nkpts = np.prod(nk)
@@ -56,21 +55,20 @@ def doubling_HRs ( data_controller ):
             i2w = 2*iwa[dim]
 
             if i2w+1 >= min_inds[dim] and i2w-1 <= max_inds[dim]:
-              iwat = iwa.copy()
               if i2w >= min_inds[dim] and i2w <= max_inds[dim]:
-                iwat[dim] = i2w
-                m,n,l = cell_index[tuple(iwat)][:]
+                iwa[dim] = i2w
+                m,n,l = cell_index[tuple(iwa)][:]
                 # Upper Left and Lower Right HR_double block
                 HR_double[:nawf,:nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
                 HR_double[nawf:2*nawf,nawf:2*nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]    
               if i2w+1 >= min_inds[dim] and i2w+1 <= max_inds[dim]:
                 # Upper Right HR_double block                
-                iwat[dim] = i2w+1
-                m,n,l = cell_index[tuple(iwat)][:]
+                iwa[dim] = i2w+1
+                m,n,l = cell_index[tuple(iwa)][:]
                 HR_double[:nawf,nawf:2*nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
               if i2w-1 >= min_inds[dim] and i2w-1 <= max_inds[dim]:
-                iwat[dim] = i2w-1
-                m,n,l = cell_index[tuple(iwat)][:]
+                iwa[dim] = i2w-1
+                m,n,l = cell_index[tuple(iwa)][:]
                 # Lower Left HR_double block
                 HR_double[nawf:2*nawf,:nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
 
