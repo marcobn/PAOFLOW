@@ -53,33 +53,36 @@ def doubling_HRs ( data_controller ):
 
             i,j,k = cell_index[ix,iy,iz,:] # Doubled cell index
             iwa = np.array([ix,iy,iz])
-            iwat = iwa.copy()
-            iw = 2*iwa[dim]
+            i2w = 2*iwa[dim]
 
-            if iw+1 >= min_inds[dim] and iw-1 <= max_inds[dim]:
-              if iw >= min_inds[dim] and iw <= max_inds[dim]:
-                iwat[dim] = iw
+            if i2w+1 >= min_inds[dim] and i2w-1 <= max_inds[dim]:
+              iwat = iwa.copy()
+              if i2w >= min_inds[dim] and i2w <= max_inds[dim]:
+                iwat[dim] = i2w
                 m,n,l = cell_index[tuple(iwat)][:]
                 # Upper Left and Lower Right HR_double block
                 HR_double[:nawf,:nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
                 HR_double[nawf:2*nawf,nawf:2*nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]    
-              if iw+1 >= min_inds[dim] and iw+1 <= max_inds[dim]:
-                #Upper Right HR_double block                
-                iwat[dim] = iw+1
+              if i2w+1 >= min_inds[dim] and i2w+1 <= max_inds[dim]:
+                # Upper Right HR_double block                
+                iwat[dim] = i2w+1
                 m,n,l = cell_index[tuple(iwat)][:]
                 HR_double[:nawf,nawf:2*nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
-              if iw-1 >= min_inds[dim] and iw-1 <= max_inds[dim]:
-                iwat[dim] = iw-1
+              if i2w-1 >= min_inds[dim] and i2w-1 <= max_inds[dim]:
+                iwat[dim] = i2w-1
                 m,n,l = cell_index[tuple(iwat)][:]
-                #Lower Left HR_double block
+                # Lower Left HR_double block
                 HR_double[nawf:2*nawf,:nawf,i,j,k,:] = arry['HRs'][:,:,m,n,l,:]
 
       arry['HRs'] = HR_double
       doubling_attr_arry(data_controller, dim)
 
-  arry['b_vectors'][0,:] =  (np.cross(arry['a_vectors'][1,:],arry['a_vectors'][2,:]))/attr['omega']*attr['alat']**3
-  arry['b_vectors'][1,:] =  (np.cross(arry['a_vectors'][2,:],arry['a_vectors'][0,:]))/attr['omega']*attr['alat']**3
-  arry['b_vectors'][2,:] =  (np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]))/attr['omega']*attr['alat']**3
+  omega,alat = attr['omega'],attr['alat']
+  a_vec = lambda n : arry['a_vectors'][n,:]
+  arry['b_vectors'][0,:] = (np.cross(a_vec(1),a_vec(2)))/omega*alat**3
+  arry['b_vectors'][1,:] = (np.cross(a_vec(2),a_vec(0)))/omega*alat**3
+  arry['b_vectors'][2,:] = (np.cross(a_vec(0),a_vec(1)))/omega*alat**3
+
 
 def doubling_attr_arry ( data_controller, dimension ):
   import numpy as np
@@ -92,13 +95,11 @@ def doubling_attr_arry ( data_controller, dimension ):
   arry,attr = data_controller.data_dicts()
   tau,a_vecs = arry['tau'],arry['a_vectors']
 
-
   # Increassing nawf/natoms
   attr['bnd'] *= 2
   attr['nawf'] *= 2
   attr['nelec'] *= 2
   attr['natoms'] *= 2
-
 
   # Add new atom species and positions
   double_array(arry, 'species')
