@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -59,6 +59,7 @@ class PAOFLOW:
         outputdir (str): Name of the output directory (created in the working directory path)
         inputfile (str): (optional) Name of the xml inputfile
         savedir (str): QE .save directory
+        model (dict): Dictionary with 'label' key and parameters to build Hamiltonian from TB model
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         smearing (str): Smearing type (None, m-p, gauss)
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
@@ -89,7 +90,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, npool, smearing, acbn0, verbose, restart)
+    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart)
 
     self.report_exception = self.data_controller.report_exception
 
@@ -120,7 +121,7 @@ class PAOFLOW:
           print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
 
     # Do memory checks
-    if not restart and self.rank == 0:
+    if model is None and not restart and self.rank == 0:
       gbyte = self.memory_check()
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
@@ -438,7 +439,7 @@ class PAOFLOW:
       # Calculate the bands
       do_bands(self.data_controller)
 
-      if self.rank == 0 and arrays['kq'].shape[1] == attr['nkpnts']:
+      if self.rank == 0 and 'nkpnts' in attr and arrays['kq'].shape[1] == attr['nkpnts']:
         print('WARNING: The bands kpath and nscf calculations have the same size.')
         print('Spin Texture calculation should be performed after \'pao_eigh\' to ensure integration across the entire BZ.\n')
 
@@ -514,18 +515,6 @@ mo    '''
         self.comm.Abort()
 
     self.report_module_time('wave_function_projection')
-
-  def TBmodels ( self, model=None, t=0.0 ):
-
-    arry,attr = self.data_controller.data_dicts()
-
-    if(model=="Graphene"):
-        from .defs.models import graphene
-
-        if 't' not in attr: attr['t'] = t
-        graphene(self.data_controller)
-
-    self.report_module_time('TBmodels')
 
 
   def doubling_Hamiltonian ( self, nx , ny, nz ):

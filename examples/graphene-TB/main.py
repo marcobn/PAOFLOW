@@ -27,14 +27,8 @@ import numpy as np
 
 def main():
 
-  # Fake call to initiallize PAOFLOW
-  paoflow = PAOFLOW.PAOFLOW(workpath='./',outputdir='./',savedir='./co.save',verbose=True)
-  arry,attr = paoflow.data_controller.data_dicts()
-  paoflow.projectability()
-  paoflow.pao_hamiltonian()
-
-  # TB model for a Graphene nearest naeighbors only with pz orbitals
-  paoflow.TBmodels(model="Graphene",t=2.7)
+  model = {'label':'Graphene', 't':2.7}
+  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./', verbose=True)
 
   path = 'G-M-K-G'
   special_points = {'G':[0.0, 0.0, 0.0],'K':[2.0/3.0, 1.0/3.0, 0.0],'M':[1.0/2.0, 0.0/2.0, 0.0]}
