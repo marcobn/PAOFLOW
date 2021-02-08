@@ -73,8 +73,10 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   Efermi = float(ef_text)*2*Ry2eV
 
   dftMag = False
-  if elem.find('magnetization/do_magnetization').text == 'true':
-    dftMag = True
+  mag_elem = elem.find('magnetization/do_magnetization')
+  if mag_elem is not None:
+    if mag_elem.text == 'true':
+      dftMag = True
 
   sym_rot,shifts = [],[]
   eq_atoms,sym_info,time_rev = [],[],[]
