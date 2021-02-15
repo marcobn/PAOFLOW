@@ -24,7 +24,7 @@ class DataController:
 
   error_handler = report_exception = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, savedir, npool, smearing, acbn0, verbose, restart ):
+  def __init__ ( self, workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart ):
     '''
     Initialize the DataController
 
@@ -33,6 +33,7 @@ class DataController:
         outputdir (str): Name of the output directory (created in the working directory path)
         inputfile (str): (optional) Name of the xml inputfile
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
+        model (dict): A dictionary containing a model label and parameters
         savedir (str): QE .save directory
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         smearing (str): Smearing type (None, m-p, gauss)
@@ -51,7 +52,10 @@ class DataController:
     self.rank = self.comm.Get_rank()
     self.size = self.comm.Get_size()
 
-    if not restart and inputfile is None and savedir is None:
+    if model is not None:
+      if (inputfile is not None or savedir is not None) and self.rank == 0:
+        print('\nWARNING: Model specified in addition to inputfile or savedir. Model will be used.')
+    elif not restart and inputfile is None and savedir is None:
       if self.rank == 0:
         print('\nERROR: Must specify \'.save\' directory path, either in PAOFLOW constructor or in an inputfile.')
       quit()
@@ -86,18 +90,22 @@ class DataController:
       attr['abort_on_exception'] = True
 
       # Read inputfile, if it exsts
-      try:
-        if inputfile != None:
-          if not exists(attr['fpath']):
-            raise Exception('ERROR: Inputfile does not exist\n%s'%attr['fpath'])
-          self.read_pao_inputfile()
-        else:
-          attr['do_spin_orbit'] = False
-        self.read_qe_output()
-      except:
-        print('\nERROR: Could not read QE xml data file')
-        self.report_exception('Data Controller Initialization')
-        self.comm.Abort()
+      if model is not None:
+        from .defs.models import build_TB_model
+        build_TB_model(self, model)
+      else:
+        try:
+          if inputfile != None:
+            if not exists(attr['fpath']):
+              raise Exception('ERROR: Inputfile does not exist\n%s'%attr['fpath'])
+            self.read_pao_inputfile()
+          else:
+            attr['do_spin_orbit'] = False
+          self.read_qe_output()
+        except:
+          print('\nERROR: Could not read QE xml data file')
+          self.report_exception('Data Controller Initialization')
+          self.comm.Abort()
 
     self.comm.Barrier()
 
