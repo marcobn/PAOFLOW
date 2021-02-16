@@ -27,14 +27,12 @@ import numpy as np
 
 def main():
 
-  model = {'label':'simple_cubic', 't':2.7}
-  #paoflow = PAOFLOW.PAOFLOW(savedir='co.save',verbose=False,outputdir="./output")
-  #paoflow = PAOFLOW.PAOFLOW(savedir='./co.save', outputdir='./', verbose=True)
+  model = {'label':'simple_cubic', 't':-1.5}
   paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./', verbose=True)
 
-  path = 'G-M-K-G'
-  special_points = {'G':[0.0, 0.0, 0.0],'K':[2.0/3.0, 1.0/3.0, 0.0],'M':[1.0/2.0, 0.0/2.0, 0.0]}
-  paoflow.bands(ibrav=4, nk=100, band_path=path, high_sym_points=special_points)
+  path = 'G-X-M-G-R'
+  special_points = {'G':[0.0, 0.0, 0.0],'X':[0.0, 0.5, 0.0],'M':[0.5, 0.5, 0.0],'R':[0.5,0.5,0.5]}
+  paoflow.bands(ibrav=1, nk=100, band_path=path, high_sym_points=special_points)
 
   paoflow.finish_execution()
 
