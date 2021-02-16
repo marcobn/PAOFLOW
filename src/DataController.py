@@ -74,7 +74,7 @@ class DataController:
       attr['workpath'] = workpath
       attr['acbn0'] = acbn0
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
-      #attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
+      attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
       attr['opath'] = join(workpath, outputdir)
 
       if inputfile == None:
