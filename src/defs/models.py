@@ -108,7 +108,7 @@ def simple_cubic( data_controller, params ):
   arry['HRs'][0,0,0,0,1,0] = params['t']
 
   #H002
-  arry['HRs'][:,:,0,0,1,0] = np.conj(arry['HRs'][:,:,0,0,1,0]).T
+  arry['HRs'][:,:,0,0,2,0] = np.conj(arry['HRs'][:,:,0,0,1,0]).T
 
   # Lattice Vectors
   arry['a_vectors'] = np.zeros((3,3),dtype=float)
@@ -126,7 +126,7 @@ def simple_cubic( data_controller, params ):
   arry['b_vectors'][1,:] = (np.cross(arry['a_vectors'][2,:],arry['a_vectors'][0,:]))/volume
   arry['b_vectors'][2,:] = (np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]))/volume 
 
-  arry['species']=["NN"]
+  arry['atoms']=["NN"]
 
 
 def Kane_Mele( data_controller, params ):
