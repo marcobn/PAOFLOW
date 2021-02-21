@@ -17,6 +17,7 @@
 #
 
 import numpy as np
+from scipy import signal
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -48,22 +49,22 @@ def do_Boltz_tensors ( data_controller, smearing, temp, ene, velkp, ispin ):
     sym = lambda L : (L[0,1], L[0,2], L[1,2])
     L0[1,0],L0[2,0],L0[2,1] = sym(L0)
 
-  L1 = L2 = None
-  if smearing is None:
+#  L1 = L2 = None
+#  if smearing is None:
 
-    L1 = zoz(rank)
-    L1aux = fLloop(1)
-    comm.Reduce(L1aux, L1, op=MPI.SUM)
-    L1aux = None
+  L1 = zoz(rank)
+  L1aux = fLloop(1)
+  comm.Reduce(L1aux, L1, op=MPI.SUM)
+  L1aux = None
 
-    L2 = zoz(rank)
-    L2aux = fLloop(2)
-    comm.Reduce(L2aux, L2, op=MPI.SUM)
-    L2aux = None
+  L2 = zoz(rank)
+  L2aux = fLloop(2)
+  comm.Reduce(L2aux, L2, op=MPI.SUM)
+  L2aux = None
 
-    if rank == 0:
-      L1[1,0],L1[2,0],L1[2,1] = sym(L1)
-      L2[1,0],L2[2,0],L2[2,1] = sym(L2)
+  if rank == 0:
+    L1[1,0],L1[2,0],L1[2,1] = sym(L1)
+    L2[1,0],L2[2,0],L2[2,1] = sym(L2)
 
   return (L0, L1, L2) if rank==0 else (None, None, None)
 
@@ -114,10 +115,14 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
     EtoAlpha = np.power(Eaux[:,:]-ene, alpha)
     if smearing is None:
       Eaux -= ene
-      smearA = .5/(temp*(1.+.5*(np.exp(Eaux/temp)+np.exp(-Eaux/temp))))
+#      smearA = .5/(temp*(1.+.5*(np.exp(Eaux/temp)+np.exp(-Eaux/temp))))
+      smearA = 1/(4*temp*(np.cosh(Eaux/(2*temp))**2))
     else:
       if smearing == 'gauss':
+#        if rank == 0 and n == 0: print('new smearing')
+#        smearA = np.exp(-((ene-Eaux)/delk)**2)/temp)/np.sqrt(np.pi)
         smearA = gaussian(Eaux, ene, delk)
+#        smearA = gaussian(Eaux, ene, delk)
       elif smearing == 'm-p':
         smearA = metpax(Eaux, ene, delk)
     for l in range(t_tensor.shape[0]):
@@ -125,7 +130,14 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
       j = t_tensor[l][1]
       tau = get_tau(data_controller, ['acoustic', 'optical'])
       L[i,j,:] += np.sum(kq_wght*tau*velkp[:,i,n,ispin]*velkp[:,j,n,ispin]*(smearA*EtoAlpha).T, axis=1)
-
+  # noise reduction using a running average (correlation function)
+  win = int(esize*0.025)
+  N = esize
+  for l in range(t_tensor.shape[0]):
+    i = t_tensor[l][0]
+    j = t_tensor[l][1]
+    L[i,j,:] = signal.correlate(L[i,j,:] , np.ones(win), mode='same', method='fft')/win
+  
   return L
 
 
