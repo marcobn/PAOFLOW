@@ -215,8 +215,8 @@ def build_TB_model ( data_controller, parameters ):
 
   if parameters['label'].upper() == 'GRAPHENE':
     graphene(data_controller, parameters)
-  elif parameters['label'].upper() == 'SIMPLE_CUBIC':
-    simple_cubic(data_controller, parameters)
+  elif parameters['label'].upper() == 'CUBIUM':
+    cubium(data_controller, parameters)
   elif parameters['label'].upper() == 'KANE_MELE':
     Kane_Mele(data_controller, parameters)
   else:
