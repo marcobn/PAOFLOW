@@ -84,6 +84,12 @@ def cubium( data_controller, params ):
   attr['nawf'] = 1
   attr['nspin'] = 1
   attr['natoms'] = 1
+  attr['bnd']=1
+  attr['shift']=0
+  attr['omega']=1
+  attr['dftSO']=False
+  attr['nkpnts']=attr['nk1']*attr['nk2']*attr['nk3']
+  attr['nbnds']=1
 
   attr['alat'] = 1.0
 
@@ -118,7 +124,6 @@ def cubium( data_controller, params ):
   # Atomic coordinates
   arry['tau'] = np.zeros((1,3),dtype=float) 
 
-
   # Reciprocal Lattice
   arry['b_vectors'] = np.zeros((3,3),dtype=float)
   volume = np.dot(np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]),arry['a_vectors'][2,:])
@@ -127,7 +132,6 @@ def cubium( data_controller, params ):
   arry['b_vectors'][2,:] = (np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]))/volume 
 
   arry['atoms']=["Cu"]
-
 
 def Kane_Mele( data_controller, params ):
   from .constants import ANGSTROM_AU
