@@ -69,7 +69,7 @@ def graphene( data_controller, params ):
   arry['species']=["C","C"]
 
 
-def simple_cubic( data_controller, params ):
+def cubium( data_controller, params ):
   from .constants import ANGSTROM_AU
   from scipy.fftpack import fftshift
   from mpi4py import MPI
