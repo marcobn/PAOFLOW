@@ -152,6 +152,7 @@ def do_build_pao_hamiltonian ( data_controller ):
 
   if rank == 0:
     arry['Hks'] = np.reshape(arry['Hks'], ashape)
+  attr['nkpnts'] = np.prod(ashape[2:5])
 
 
 def do_Hks_to_HRs ( data_controller ):
