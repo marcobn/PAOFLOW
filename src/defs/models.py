@@ -57,7 +57,9 @@ def Slater_Koster( data_controller, params ):
   for ia in range(natoms):
     norbitals[ia] = len(params['model']['atoms'][str(ia)]['orbitals']) 
   
-  nawf = natoms*np.prod(norbitals)
+  nawf = 0
+  for ia in range(natoms):
+    nawf += norbitals[ia]
   attr['nawf'] = nawf
   attr['bnd'] = nawf
   attr['nbnds'] = nawf
@@ -85,7 +87,6 @@ def Slater_Koster( data_controller, params ):
   arry['sctau'] = sctau
   attr['cutoff'] = cutoff
   arry['norbitals'] = norbitals
-  attr['natoms']
   
   HRs = np.zeros((nawf,nawf,nk1,nk2,nk3,1),dtype=complex)
 
@@ -105,9 +106,10 @@ def Slater_Koster( data_controller, params ):
               lx = cosines(tau[ia],sctau[ib,i,j,k,:])[0]
               ly = cosines(tau[ia],sctau[ib,i,j,k,:])[1]
               lz = cosines(tau[ia],sctau[ib,i,j,k,:])[2]
-              print(tau[ia],sctau[ib,i,j,k,:],lx,ly,lz)
+              
               for noa in range(norbitals[ia]):
                 for nob in range(norbitals[ib]):
+#                  print(ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k)
                   if noa == 0 and nob == 0:
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = params['model']['hoppings']['sss']
                   elif noa == 0 and nob == 1:
@@ -132,6 +134,30 @@ def Slater_Koster( data_controller, params ):
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
                     ly*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
                   elif noa == 1 and nob == 3:
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
+                    lx*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])                  
+                  elif (noa == 1 and nob == 0): 
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = -lx*params['model']['hoppings']['sps']
+                  elif (noa == 2 and nob == 0):
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = -ly*params['model']['hoppings']['sps']
+                  elif (noa == 3 and nob == 0):
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = -lz*params['model']['hoppings']['sps']
+                  elif noa == 1 and nob == 1:
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
+                    lx**2*params['model']['hoppings']['pps']+(1.0-lx**2)*params['model']['hoppings']['ppp']
+                  elif noa == 2 and nob == 2:
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
+                    ly**2*params['model']['hoppings']['pps'] + (1.0-ly**2)*params['model']['hoppings']['ppp']
+                  elif noa == 3 and nob == 3:
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
+                    lz**2*params['model']['hoppings']['pps'] + (1.0-lz**2)*params['model']['hoppings']['ppp']
+                  elif (noa == 2 and nob == 1):
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
+                    lx*ly*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
+                  elif (noa == 3 and nob == 2):
+                    HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
+                    ly*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
+                  elif (noa == 3 and nob == 1):
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
                     lx*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
                   
