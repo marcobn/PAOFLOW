@@ -26,7 +26,7 @@ def Slater_Koster( data_controller, params ):
   natoms = len(params['model']['atoms'])
   tau = np.zeros((natoms,3),dtype=float)
   for ia in range(natoms):
-    tau = np.array(params['model']['atoms'][str(ia)]['tau'])  
+    tau[ia] = np.array(params['model']['atoms'][str(ia)]['tau'])  
   atoms = []
   for ia in range(natoms):
     atoms.append(params['model']['atoms'][str(ia)]['name'])
