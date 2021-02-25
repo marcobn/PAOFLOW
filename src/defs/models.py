@@ -135,7 +135,7 @@ def Slater_Koster( data_controller, params ):
                     ly*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
                   elif noa == 1 and nob == 3:
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
-                    lx*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])                  
+                    lx*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
                   elif (noa == 1 and nob == 0): 
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = -lx*params['model']['hoppings']['sps']
                   elif (noa == 2 and nob == 0):
