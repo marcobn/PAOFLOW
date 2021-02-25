@@ -81,6 +81,10 @@ def Slater_Koster( data_controller, params ):
   cutoff = np.sort(np.unique(dist))[1]+(np.sort(np.unique(dist))[2]-np.sort(np.unique(dist))[1])/2
   sctau = np.reshape(sctau,(natoms,nk1,nk2,nk3,3),order='C')
   
+  # debug
+  arry['sctau'] = sctau
+  attr['cutoff'] = cutoff
+  
   HRs = np.zeros((nawf,nawf,nk1,nk2,nk3,1),dtype=complex)
 
   # on-site matrix elements
@@ -90,14 +94,15 @@ def Slater_Koster( data_controller, params ):
       params['model']['atoms'][str(ia)][params['model']['atoms'][str(ia)]['orbitals'][no]]
 
   # hopping matrix elements
-  for i in range(2):
-    for j in range(2):
-      for k in range(2):
+  for i in range(-1,2):
+    for j in range(-1,2):
+      for k in range(-1,2):
         for ia in range(natoms):
           for noa in range(norbitals[ia]):
             for ib in range(natoms):
               for nob in range(norbitals[ib]):
                 if distance(tau[ia],sctau[ib,i,j,k,:]) > 0 and distance(tau[ia],sctau[ib,i,j,k,:]) < cutoff:
+#                  print(tau[ia],sctau[ib,i,j,k,:])
                   lx = cosines(tau[ia],sctau[ib,i,j,k,:])[0]
                   ly = cosines(tau[ia],sctau[ib,i,j,k,:])[1]
                   lz = cosines(tau[ia],sctau[ib,i,j,k,:])[2]
@@ -128,9 +133,9 @@ def Slater_Koster( data_controller, params ):
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
                     lx*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
     
-    HRs[:,:,2,0,0,0] = np.conj(HRs[:,:,1,0,0,0]).T
-    HRs[:,:,0,2,0,0] = np.conj(HRs[:,:,0,1,0,0]).T
-    HRs[:,:,0,0,2,0] = np.conj(HRs[:,:,0,0,1,0]).T
+#    HRs[:,:,2,0,0,0] = np.conj(HRs[:,:,1,0,0,0]).T
+#    HRs[:,:,0,2,0,0] = np.conj(HRs[:,:,0,1,0,0]).T
+#    HRs[:,:,0,0,2,0] = np.conj(HRs[:,:,0,0,1,0]).T
     arry['HRs'] = HRs
 
 def graphene( data_controller, params ):
