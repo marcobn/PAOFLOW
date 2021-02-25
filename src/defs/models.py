@@ -84,6 +84,8 @@ def Slater_Koster( data_controller, params ):
   # debug
   arry['sctau'] = sctau
   attr['cutoff'] = cutoff
+  arry['norbitals'] = norbitals
+  attr['natoms']
   
   HRs = np.zeros((nawf,nawf,nk1,nk2,nk3,1),dtype=complex)
 
@@ -98,14 +100,14 @@ def Slater_Koster( data_controller, params ):
     for j in range(-1,2):
       for k in range(-1,2):
         for ia in range(natoms):
-          for noa in range(norbitals[ia]):
-            for ib in range(natoms):
-              for nob in range(norbitals[ib]):
-                if distance(tau[ia],sctau[ib,i,j,k,:]) > 0 and distance(tau[ia],sctau[ib,i,j,k,:]) < cutoff:
-#                  print(tau[ia],sctau[ib,i,j,k,:])
-                  lx = cosines(tau[ia],sctau[ib,i,j,k,:])[0]
-                  ly = cosines(tau[ia],sctau[ib,i,j,k,:])[1]
-                  lz = cosines(tau[ia],sctau[ib,i,j,k,:])[2]
+          for ib in range(natoms):
+            if distance(tau[ia],sctau[ib,i,j,k,:]) > 0 and distance(tau[ia],sctau[ib,i,j,k,:]) < cutoff:
+              lx = cosines(tau[ia],sctau[ib,i,j,k,:])[0]
+              ly = cosines(tau[ia],sctau[ib,i,j,k,:])[1]
+              lz = cosines(tau[ia],sctau[ib,i,j,k,:])[2]
+              print(tau[ia],sctau[ib,i,j,k,:],lx,ly,lz)
+              for noa in range(norbitals[ia]):
+                for nob in range(norbitals[ib]):
                   if noa == 0 and nob == 0:
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = params['model']['hoppings']['sss']
                   elif noa == 0 and nob == 1:
@@ -132,10 +134,7 @@ def Slater_Koster( data_controller, params ):
                   elif noa == 1 and nob == 3:
                     HRs[ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k,0] = \
                     lx*lz*(params['model']['hoppings']['pps'] - params['model']['hoppings']['ppp'])
-    
-#    HRs[:,:,2,0,0,0] = np.conj(HRs[:,:,1,0,0,0]).T
-#    HRs[:,:,0,2,0,0] = np.conj(HRs[:,:,0,1,0,0]).T
-#    HRs[:,:,0,0,2,0] = np.conj(HRs[:,:,0,0,1,0]).T
+                  
     arry['HRs'] = HRs
 
 def graphene( data_controller, params ):
