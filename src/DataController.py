@@ -76,7 +76,8 @@ class DataController:
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
       attr['opath'] = join(workpath, outputdir)
       if model is None:
-         attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
+        print('QE data')
+        attr['fpath'] = join(workpath, (savedir if inputfile==None else inputfile))
 
       if inputfile == None:
         attr['temp'] = .025852
