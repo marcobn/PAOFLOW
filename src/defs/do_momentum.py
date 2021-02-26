@@ -36,9 +36,9 @@ def do_momentum ( data_controller ):
   for ispin in range(nspin):
     for ik in range(nktot):
       for l in range(3):
-         arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])
+#         arry['pksp'][ik,l,:,:,ispin] = vec_cross[ik,:,:,ispin].dot(arry['pksp'][ik,l,:,:,ispin])
 
-         # arry['pksp'][ik,l,:,:,ispin],_ = perturb_split(arry['dHksp'][ik,l,:,:,ispin], 
-         #                                                arry['dHksp'][ik,l,:,:,ispin], 
-         #                                                arry['v_k'][ik,:,:,ispin],
-         #                                                arry['degen'][ispin][ik])
+         arry['pksp'][ik,l,:,:,ispin],_ = perturb_split(arry['dHksp'][ik,l,:,:,ispin], 
+                                                        arry['dHksp'][ik,l,:,:,ispin], 
+                                                        arry['v_k'][ik,:,:,ispin],
+                                                        arry['degen'][ispin][ik])
