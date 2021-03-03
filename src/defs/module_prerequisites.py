@@ -5,6 +5,7 @@ report_pre_reqs = 'SUGGESTION: %s must be called before %s'
 module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
                     'pao_hamiltonian'          : ['projectability'],\
                     'z2_pack'                  : ['pao_hamiltonian'],\
+                    'atomic_orbitals'           : ['pao_hamiltonian'], \
                     'doubling_Hamiltonian'     : ['pao_hamiltonian'],\
                     'cutting_Hamiltonian'      : ['pao_hamiltonian'],\
                     'wave_function_projection' : ['pao_hamiltonian'],\
@@ -16,6 +17,7 @@ module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
                     'fermi_surface'            : ['pao_eigh'],\
                     'spin_texture'             : ['pao_eigh'],
                     'gradient_and_momenta'     : ['pao_eigh'],\
+                    'real_space_wfc'           : ['gradient_and_momenta', 'atomic_orbitals'], \
                     'adaptive_smearing'        : ['gradient_and_momenta'],\
                     'anomalous_Hall'           : ['gradient_and_momenta'],\
                     'spin_Hall'                : ['gradient_and_momenta', 'spin_operator'],\

@@ -277,10 +277,10 @@ class PAOFLOW:
 
     try:
       do_projectability(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('projectability')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Projectability')
 
@@ -318,12 +318,10 @@ class PAOFLOW:
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
-    except SystemExit as se:
-      quit()
-    except:
+    except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
     self.report_module_time('Building Hks')
 
     # Done with U and Sks
@@ -336,12 +334,39 @@ class PAOFLOW:
       self.data_controller.broadcast_single_array('HRs')
 
       get_K_grid_fft(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
     self.report_module_time('k -> R')
 
+
+
+  def atomic_orbitals ( self, nr1=10, nr2=10, nr3=10, cutoff=20., fprefix='orbital' ):
+    '''
+      Build the atomic orbitals in realspace from pseudopotentials.
+
+      Arguments:
+        nr1 (int): Number of grid points in the x direction
+        nr2 (int): Number of grid points in the y direction
+        nr3 (int): Number of grid points in the z direction
+        cutoff (float): Cutoff radius for periodic images, in atomic units.
+        fprefix (str): Prefix for orbital .xsf filenames. Supress file output by setting fprefix to None
+    '''
+    from .defs.do_atomic_orbitals import do_atomic_orbitals
+    arry,attr = self.data_controller.data_dicts()
+    attr['nr1'],attr['nr2'],attr['nr3'] = nr1,nr2,nr3
+
+    try:
+      do_atomic_orbitals(self.data_controller, cutoff, fprefix)
+    except Exception as e:
+      self.report_exception('atomic_orbitals')
+      if attr['abort_on_exception']:
+        raise e
+
+    self.report_module_time('Atomic Orbitals')
+    self.comm.Barrier()
+    
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
@@ -372,10 +397,10 @@ class PAOFLOW:
         add_ext_field(self.data_controller)
         if self.rank == 0 and attr['verbose']:
           print('External Fields Added')
-    except:
+    except Exception as e:
       self.report_exception('add_external_fields')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.comm.Barrier()
     
@@ -393,10 +418,10 @@ class PAOFLOW:
     '''
     try:
       self.data_controller.write_z2pack(fname)
-    except:
+    except Exception as e:
       self.report_exception('z2_pack')
       if self.data_controller.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
   def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 ):
@@ -446,10 +471,10 @@ class PAOFLOW:
       E_kp = gather_full(arrays['E_k'], attr['npool'])
       self.data_controller.write_bands(fname, E_kp)
       E_kp = None
-    except:
+    except Exception as e:
       self.report_exception('bands')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Bands')
 
@@ -509,10 +534,10 @@ mo    '''
 
     try:
       wave_function_site_projection(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('wave_function_projection')
       if self.data_controller.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('wave_function_projection')
 
@@ -537,10 +562,10 @@ mo    '''
     
     try:
       doubling_HRs(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('doubling_Hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     # Broadcasting the modified arrays
     #self.data_controller.broadcast_single_array('HRs')
@@ -584,10 +609,10 @@ mo    '''
 
       _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
       attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
-    except:
+    except Exception as e:
       self.report_exception('cutting_Hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
 
@@ -640,11 +665,10 @@ mo    '''
           Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
 
       arrays['Sj'] = Sj
-    except:
+    except Exception as e:
       self.report_exception('spin_operator')
       if attr['abort_on_exception']:
-        self.comm.Abort()
-
+        raise e
 
 
 
@@ -689,10 +713,10 @@ mo    '''
 
     try:
       do_topology(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('topology')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Band Topology')
 
@@ -764,10 +788,10 @@ mo    '''
           print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nko1,nfft1,nko2,nfft2,nko3,nfft3))
         print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
-    except:
+    except Exception as e:
       self.report_exception('interpolated_hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('R -> k with Zero Padding')
 
@@ -818,10 +842,10 @@ mo    '''
           arrays['E_k'] -= np.amax(arrays['E_k'][:,attr['bval'],:])
         self.comm.Barrier()
         arrays['E_k'] = scatter_full(arrays['E_k'], attr['npool'])
-    except:
+    except Exception as e:
       self.report_exception('pao_eigh')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Eigenvalues')
 
@@ -877,10 +901,10 @@ mo    '''
         # No more need for k-space Hamiltonian
         del arrays['Hksp']
       
-    except:
+    except Exception as e:
       self.report_exception('gradient_and_momenta')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Gradient')
 
@@ -911,10 +935,10 @@ mo    '''
 
     try:
       do_adaptive_smearing(self.data_controller, smearing)
-    except:
+    except Exception as e:
       self.report_exception('adaptive_smearing')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
     self.report_module_time('Adaptive Smearing')
 
 
@@ -960,10 +984,10 @@ mo    '''
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
           do_pdos_adaptive(self.data_controller, emin, emax, ne)
-    except:
+    except Exception as e:
       self.report_exception('dos')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
     self.report_module_time(mname)
@@ -1004,10 +1028,10 @@ mo    '''
 
     try:
       do_fermisurf(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('fermi_surface')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Fermi Surface')
 
@@ -1040,10 +1064,10 @@ mo    '''
       else:
         if self.rank == 0:
           print('Cannot compute spin texture with nspin=2')
-    except:
+    except Exception as e:
       self.report_exception('spin_texture')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
     self.comm.Barrier()
@@ -1083,10 +1107,10 @@ mo    '''
 
     try:
       do_spin_Hall(self.data_controller, twoD, do_ac)
-    except:
+    except Exception as e:
       self.report_exception('spin_Hall')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Spin Hall Conductivity')
 
@@ -1120,10 +1144,10 @@ mo    '''
 
     try:
       do_anomalous_Hall(self.data_controller, do_ac)
-    except:
+    except Exception as e:
       self.report_exception('anomalous_Hall')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Anomalous Hall Conductivity')
 
@@ -1170,10 +1194,10 @@ mo    '''
 
       velkp = None
 
-    except:
+    except Exception as e:
       self.report_exception('transport')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Transport')
 
@@ -1214,10 +1238,10 @@ mo    '''
     try:
       ene = np.linspace(emin, emax, ne)
       do_dielectric_tensor(self.data_controller, ene)
-    except:
+    except Exception as e:
       self.report_exception('dielectric_tensor')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Dielectric Tensor')
 
@@ -1230,10 +1254,10 @@ mo    '''
         self.data_controller.data_attributes['symmetrize'] = symmetrize
       find_weyl(self.data_controller, search_grid)
 
-    except:
+    except Exception as e:
       self.report_exception('pao_hamiltonian')
       if self.data_controller.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
     self.report_module_time('Weyl Search')
