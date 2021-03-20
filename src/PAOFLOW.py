@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
 
@@ -257,6 +257,38 @@ class PAOFLOW:
 
 
 
+  def projections(self):
+    '''
+    Calculate the projections on the atomic basis provided by the pseudopotential.
+    Replaces projwfc.
+    TODO  generalize to arbitrary atomic basis set
+    '''
+    from .defs.do_atwfc_proj import build_pswfc_basis_all
+    from .defs.do_atwfc_proj import calc_proj_k
+    
+    arry, attr = self.data_controller.data_dicts()
+    
+    verbose = self.data_controller.data_attributes['verbose']
+    basis = build_pswfc_basis_all(self.data_controller, verbose=verbose)
+    kpnts = arry['kpnts']
+    nkpnts = len(arry['kpnts'])
+    nbnds = attr['nbnds']
+    nspin = attr['nspin']
+    natwfc = len(basis)
+    
+    verbose = False
+    Unew = np.zeros((nbnds,natwfc,nkpnts,nspin), dtype=complex)
+    for ispin in range(nspin):
+      for ik in range(nkpnts):
+        if verbose: print(str(ik)+'... ', end='', flush=True)
+        proj_k = calc_proj_k(self.data_controller, basis, ik)
+        Unew[:,:,ik,ispin] = proj_k.copy()
+    arry['U'] = Unew.copy()
+    
+    self.report_module_time('Projections')
+    
+    
+    
   def projectability ( self, pthr=0.95, shift='auto' ):
     '''
     Calculate the Projectability Matrix to determine how many states need to be shifted
@@ -283,7 +315,7 @@ class PAOFLOW:
         raise e
 
     self.report_module_time('Projectability')
-
+    
 
 
   def pao_hamiltonian ( self, shift_type=1, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
@@ -1219,9 +1251,9 @@ mo    '''
     Returns:
         None
     '''
-    if self.rank == 0:
-      print('Epsilon routine is currently under construction.')
-    return
+#    if self.rank == 0:
+#      print('Epsilon routine is currently under construction.')
+#    return
     from .defs.do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()
