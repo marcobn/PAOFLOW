@@ -203,6 +203,23 @@ def calc_atwfc_k(basis, gkspace):
       elif m == 5:
         ylmg = n2 * kGx * kGy
     else:
+      elif l == 3:
+        n3 = np.sqrt(105.0/(4.0*np.pi))
+        if m == 1:
+          ylmg = n3 * kGz * (2*kGz*kGz - 3*kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(15.0))
+        elif m == 2:
+          ylmg = -n3 * kGx * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
+        elif m == 3:
+          ylmg = -n3 * kGy * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
+        elif m == 4:
+          ylmg = n3 * kGz * (kGx*kGx - kGy*kGy) / 2.0
+        elif m == 5:
+          ylmg = n3 * kGx * kGy * kGz
+        elif m == 6:
+          ylmg = -n3 * kGx * (kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(6.0))
+        elif m == 7:
+          ylmg = -n3 * kGy * (3*kGx*kGx - kGy*kGy) / (2.0*np.sqrt(6.0))
+      else:
       raise NotImplementedError('l>2 not implemented yet')
       
     atwfc = strf * fact * ylmg * (1.0j)**l
