@@ -282,7 +282,7 @@ class PAOFLOW:
     for ispin in range(nspin):
       for ik in range(nkpnts):
         if verbose: print(str(ik)+'... ', end='', flush=True)
-        proj_k = calc_proj_k(self.data_controller, basis, ik)
+        proj_k,_ = calc_proj_k(self.data_controller, basis, ik)
         Unew[:,:,ik,ispin] = proj_k.copy()
     arry['U'] = Unew.copy()
     
