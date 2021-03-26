@@ -257,7 +257,7 @@ class PAOFLOW:
 
 
 
-  def projections(self):
+  def projections ( self ):
     '''
     Calculate the projections on the atomic basis provided by the pseudopotential.
     Replaces projwfc.
@@ -267,11 +267,9 @@ class PAOFLOW:
     from .defs.do_atwfc_proj import build_pswfc_basis_all
     from .defs.do_atwfc_proj import calc_proj_k
     
-    arry, attr = self.data_controller.data_dicts()
+    arry,attr = self.data_controller.data_dicts()
     
-    verbose = self.data_controller.data_attributes['verbose']
-    basis = build_pswfc_basis_all(self.data_controller, verbose=verbose)
-    kpnts = arry['kpnts']
+    basis = build_pswfc_basis_all(self.data_controller)
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
@@ -282,14 +280,30 @@ class PAOFLOW:
     for ispin in range(nspin):
       for ik in range(nkpnts):
         if verbose: print(str(ik)+'... ', end='', flush=True)
-        proj_k = calc_proj_k(self.data_controller, basis, ik)
-        Unew[:,:,ik,ispin] = proj_k.copy()
-    arry['U'] = Unew.copy()
-    
+        Unew[:,:,ik,ispin] = calc_proj_k(self.data_controller, basis, ik)
+    arry['U'] = Unew
+
     self.report_module_time('Projections')
-    
-    
-    
+
+
+
+  def read_atomic_proj_QE ( self ):
+    '''
+      Read the wavefunctions and overlaps from atomic-proj.xml, written by Quantum Espresso
+      in the .save directory specified in PAOFLOW's constructos. They are saved to the 
+      DataController's arrays dictionary with keys 'U' and 'Sks', respectively.
+    '''
+    from os.path import exists,join
+
+    fpath = self.data_controller.data_attributes['fpath']
+    if exists(join(fpath,'atomic_proj.xml')):
+      from .defs.read_QE_xml import parse_qe_atomic_proj
+      parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
+    else:
+      raise Exception('atomic_proj.xml was not found.\n')
+
+
+
   def projectability ( self, pthr=0.95, shift='auto' ):
     '''
     Calculate the Projectability Matrix to determine how many states need to be shifted
