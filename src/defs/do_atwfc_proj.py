@@ -270,8 +270,8 @@ def calc_proj_k(data_controller, basis, ik):
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
   return (proj_k.T,oatwfc_k)
 
-def calc_gkspace(attr,arry,ik,gamma_only=False):
-  
+def calc_gkspace(data_controller,ik,gamma_only=False):
+  arry, attr = data_controller.data_dicts()
   # calculate sphere of Miller indeces for k + G
   gcutm = attr['ecutrho'] / (2*np.pi/attr['alat'])**2
   at = arry['a_vectors']

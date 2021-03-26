@@ -19,7 +19,7 @@ def parse_qe_data_file_schema ( data_controller, fname ):
 
   verbose = attr['verbose']
 
-  Ry2eV = 13.60569193
+  Hart2eV = 2 * 13.60569193
 
   tree = ET.parse(fname)
   root = tree.getroot()
@@ -40,13 +40,10 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   alat = float(astruct.attrib['alat'])
   natoms = int(astruct.attrib['nat'])
 
-  mpg = elem.find('band_structure/starting_k_points/monkhorst_pack').attrib
-  k1,k2,k3 = int(mpg['k1']),int(mpg['k2']),int(mpg['k3'])
-  nk1,nk2,nk3 = int(mpg['nk1']),int(mpg['nk2']),int(mpg['nk3'])
-  if verbose: print('Monkhorst and Pack grid:',nk1,nk2,nk3,k1,k2,k3)
+  basis_elem = elem.find('basis_set')
+  ecutrho = float(basis_elem.find('ecutrho').text)
 
   a_vectors,b_vectors = [],[]
-  basis_elem = elem.find('basis_set')
   vec_array = lambda n,e,s : np.array(e.find('%s%d'%(s,n)).text.split(), dtype=float)
   for i in range(1, 4):
     a_vectors.append(vec_array(i,astruct,'cell/a'))
@@ -61,22 +58,59 @@ def parse_qe_data_file_schema ( data_controller, fname ):
     atoms.append(latoms[i].attrib['name'].strip())
     tau[i,:] = np.array(latoms[i].text.split(), dtype=float)
 
-  ef_text = None
-  try:
-    ef_text = elem.find('band_structure/fermi_energy').text
-  except:
-    try:
-      ef_text = elem.find('band_structure/highestOccupiedLevel').text
-    except Exception as e:
-      print('Fermi energy not located in QE data file.')
-      raise e
-  Efermi = float(ef_text)*2*Ry2eV
-
   dftMag = False
   mag_elem = elem.find('magnetization/do_magnetization')
   if mag_elem is not None:
     if mag_elem.text == 'true':
       dftMag = True
+
+  mpg = elem.find('band_structure/starting_k_points/monkhorst_pack').attrib
+  k1,k2,k3 = int(mpg['k1']),int(mpg['k2']),int(mpg['k3'])
+  nk1,nk2,nk3 = int(mpg['nk1']),int(mpg['nk2']),int(mpg['nk3'])
+  if verbose: print('Monkhorst and Pack grid:',nk1,nk2,nk3,k1,k2,k3)
+
+  bs = elem.find('band_structure')
+  nkpnts = int(bs.find('nks').text)
+  nelec = int(float(bs.find('nelec').text))
+  nawf = int(bs.find('num_of_atomic_wfc').text)
+  lsda = True if bs.find('lsda').text=='true' else False
+  nspin = 2 if lsda else 1
+
+  if nspin == 1:
+    nbnds = int(bs.find('nbnd').text)
+  else:
+    nb_up = int(bs.find('nbnd_up').text)
+    nb_dw = int(bs.find('nbnd_dw').text)
+    if nb_up != nb_dw and verbose: print('nbnd_up (%d) != nbnd_dw (%d)'%(nbnd_up,nbnd_dw))
+    nbnds = np.max([nb_up, nb_dw])
+
+  if rank == 0 and verbose:
+    print('Number of kpoints: {0:d}'.format(nkpnts))
+    print('Number of electrons: {0:d}'.format(nelec))
+    print('Number of bands: {0:d}'.format(nbnds))
+
+  ef_text = None
+  try:
+    ef_text = bs.find('fermi_energy').text
+  except:
+    try:
+      ef_text = bs.find('highestOccupiedLevel').text
+    except Exception as e:
+      print('Fermi energy not located in QE data file.')
+      raise e
+  Efermi = float(ef_text) * Hart2eV
+
+  kpnts = np.empty((nkpnts,3), dtype=float)
+  kpnt_weights = np.empty((nkpnts), dtype=float)
+  eigs = np.empty((nbnds,nkpnts,nspin), dtype=float)
+
+  kse = bs.findall('ks_energies')
+  for i,k in enumerate(kse):
+    kp = k.find('k_point')
+    kpnts[i,:] = np.array(kp.text.split(), dtype=float)
+    kpnt_weights[i] = float(kp.attrib['weight'])
+    eigs[:,i,:] = np.array(k.find('eigenvalues').text.split(), dtype=float).reshape((nspin,nbnds)).T
+  eigs = eigs * Hart2eV - Efermi
 
   sym_rot,shifts = [],[]
   eq_atoms,sym_info,time_rev = [],[],[]
@@ -116,19 +150,19 @@ def parse_qe_data_file_schema ( data_controller, fname ):
 
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
   for s,v in attrs:
     attr[s] = v
 
   spec = [(species[i],pseudos[i]) for i in range(len(species))]
-  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),('equiv_atom',eq_atoms),('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
+  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),('equiv_atom',eq_atoms),('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
   for s,v in arrys:
     arry[s] = v
 
 
-def parse_qe_data_file ( data_controller, fname ):
+def parse_qe_data_file ( data_controller, fpath, fname ):
   '''
-  Parse the data_filw.xml file produced by earlier versions of Quantum Espresso.
+  Parse the data_file.xml file produced by earlier versions of Quantum Espresso.
   Populated the DataController object with all necessay information.
 
   Arugments:
@@ -136,6 +170,7 @@ def parse_qe_data_file ( data_controller, fname ):
     fname (str): Path and name of the xml file.
   '''
   import re
+  from os.path import join
 
   arry,attr = data_controller.data_dicts()
   comm = MPI.COMM_WORLD
@@ -143,9 +178,9 @@ def parse_qe_data_file ( data_controller, fname ):
 
   verbose = attr['verbose']
 
-  Ry2eV = 13.60569193
+  Hart2eV = 2 * 13.60569193
 
-  tree = ET.parse(fname)
+  tree = ET.parse(join(fpath,fname))
   root = tree.getroot()
 
   qe_version = float(re.findall('\d+\.\d+', root.find('HEADER/CREATOR').attrib['VERSION'])[0])
@@ -171,6 +206,8 @@ def parse_qe_data_file ( data_controller, fname ):
 
   if verbose: print('Monkhorst and Pack grid:',nk1,nk2,nk3,k1,k2,k3)
 
+  ecutrho = float(root.find('PLANE_WAVES/RHO_CUTOFF').text.strip())
+
   a_vectors,b_vectors = [],[]
   a_elem = root.find('CELL/DIRECT_LATTICE_VECTORS')
   b_elem = root.find('CELL/RECIPROCAL_LATTICE_VECTORS')
@@ -190,7 +227,36 @@ def parse_qe_data_file ( data_controller, fname ):
 
   if root.find('MAGNETIZATION_INIT').text.replace('\n','') == 'T':
     raise NotImplementedError('Two Fermi energies unhandled')
-  Efermi = float(root.find('BAND_STRUCTURE_INFO/FERMI_ENERGY').text)*2*Ry2eV
+
+  bs = root.find('BAND_STRUCTURE_INFO')
+  nkpnts = int(bs.find('NUMBER_OF_K-POINTS').text.strip())
+  nawf = int(bs.find('NUMBER_OF_ATOMIC_WFC').text.strip())
+  nbnds = int(bs.find('NUMBER_OF_BANDS').text.strip())
+  nelec = int(float(bs.find('NUMBER_OF_ELECTRONS').text.strip()))
+  Efermi = float(bs.find('FERMI_ENERGY').text.strip()) * Hart2eV
+  lsda = True if root.find('SPIN/LSDA').text.strip()=='T' else False
+  nspin = 2 if lsda else 1
+
+  if rank == 0 and verbose:
+    print('Number of kpoints: {0:d}'.format(nkpnts))
+    print('Number of electrons: {0:d}'.format(nelec))
+    print('Number of bands: {0:d}'.format(nbnds))
+
+  kpnts = np.empty((nkpnts,3), dtype=float)
+  kpnt_weights = np.empty((nkpnts), dtype=float)
+  eigs = np.empty((nbnds,nkpnts,nspin), dtype=float)
+
+  ev = root.find('EIGENVALUES')
+  data_tags = ['DATAFILE'] if nspin==1 else ['DATAFILE.1', 'DATAFILE.2']
+  for i in range(nkpnts):
+    k = ev.find('K-POINT.%d'%(i+1))
+    kpnts[i,:] = np.array(k.find('K-POINT_COORDS').text.split(), dtype=float)
+    kpnt_weights[i] = float(k.find('WEIGHT').text)
+    for ispin,ftag in enumerate(data_tags):
+      efname = k.find(ftag).attrib['iotk_link']
+      eroot = ET.parse(join(fpath,efname)).getroot()
+      eigs[:,i,ispin] = np.array(eroot.find('EIGENVALUES').text.split(), dtype=float)
+  eigs = eigs * Hart2eV - Efermi
 
   dftMag = False
   if root.find('SPIN/SPIN-ORBIT_DOMAG').text.replace('\n','').strip() == 'T':
@@ -233,12 +299,12 @@ def parse_qe_data_file ( data_controller, fname ):
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
   # Add the attributes and arrays to the data controller
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
   for s,v in attrs:
     attr[s] = v
 
   spec = [(species[i],pseudos[i]) for i in range(len(species))]
-  arrys = [('tau',tau),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),('atoms',atoms),('equiv_atom',eq_atoms),('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
+  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),('equiv_atom',eq_atoms),('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
   for s,v in arrys:
     arry[s] = v
 
@@ -274,43 +340,25 @@ def parse_qe_atomic_proj ( data_controller, fname ):
     nspin = int(header['NUMBER_OF_SPIN_COMPONENTS'])
     nbnds = int(header['NUMBER_OF_BANDS'])
     nawf = int(header['NUMBER_OF_ATOMIC_WFC'])
-    nelec = int(float(header['NUMBER_OF_ELECTRONS']))
   else:
-    header = None
     nbnds = int(elem.find('NUMBER_OF_BANDS').text)
     nkpnts = int(elem.find('NUMBER_OF_K-POINTS').text)
     nspin = int(elem.find('NUMBER_OF_SPIN_COMPONENTS').text)
     nawf = int(elem.find('NUMBER_OF_ATOMIC_WFC').text)
-    nelec = int(float(elem.find('NUMBER_OF_ELECTRONS').text))
 
   if nspin == 4:
     nspin = 1
 
-  kpnts = np.empty((nkpnts,3), dtype=float)
-  eigs = np.empty((nbnds,nkpnts,nspin), dtype=float)
-  kpnt_weights = np.empty((nkpnts), dtype=float)
   wavefunctions = np.empty((nbnds,nawf,nkpnts,nspin), dtype=complex)
   overlaps = np.empty((nawf,nbnds,nkpnts), dtype=complex) if acbn0 else None
 
-  if rank == 0 and verbose:
-    print('Number of kpoints: {0:d}'.format(nkpnts))
-    print('Number of spin components: {0:d}'.format(nspin))
-    print('Number of electrons: {0:d}'.format(nelec))
-    print('Number of bands: {0:d}'.format(nbnds))
-    print('Number of atomic wavefunctions: {0:d}'.format(nawf))
-
   if qe_version > 6.5:
+
     elem = root.find('EIGENSTATES')
-    ekpnts = elem.findall('K-POINT')
-    eE = elem.findall('E')
     ewfc = elem.findall('PROJS')
     for ispin in range(nspin):
       for i in range(nkpnts):
         ik = ispin*nkpnts + i
-        kpnt_weights[i] = float(ekpnts[ik].attrib['Weight'])
-        kpnts[i,:] = np.array(ekpnts[ik].text.split())
-        for j,v in enumerate(eE[ik].text.split()):
-          eigs[j,i,ispin] = float(v)
         for j,proj in enumerate(ewfc[ik].findall('ATOMIC_WFC')):
           ind = int(proj.attrib['index'])-1
           spin = int(proj.attrib['spin'])-1
@@ -318,7 +366,6 @@ def parse_qe_atomic_proj ( data_controller, fname ):
           for k in range(len(text)//2):
             k2 = 2*k
             wavefunctions[k,ind,i,ispin] = complex(text[k2],text[k2+1])
-    eigs = eigs * Ry2eV - Efermi
 
     if acbn0:
       elem = root.find('OVERLAPS')
@@ -334,23 +381,6 @@ def parse_qe_atomic_proj ( data_controller, fname ):
           overlaps[i1,i2,i] = complex(v1,v2)
 
   else:
-    elem = root.find('K-POINTS')
-    text = elem.text.split()
-    for i in range(len(text)):
-      i1,i2 = i//3,i%3
-      kpnts[i1,i2] = float(text[i])
-
-    elem = root.find('WEIGHT_OF_K-POINTS')
-    kpnt_weights[:] = np.array(elem.text.split(), dtype=float)
-
-    elem = root.find('EIGENVALUES')
-    for i,k in enumerate(elem):
-      for ispin in range(nspin):
-        key = 'EIG' if nspin==1 else 'EIG.%d'%(ispin+1)
-        text = k.find(key).text.split()
-        eigs[:,i,ispin] = np.array(text, dtype=float)
-    eigs = eigs * Ry2eV - Efermi
-
 
     def read_wf ( kpnt, i, ispin ):
       for j,wf in enumerate(kpnt):
@@ -379,11 +409,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             v1,v2 = float(text[k2]),float(text[k2+1])
             overlaps[k0,k1,i] = complex(v1,v2)
 
-  attrs = [('nawf',nawf),('nspin',nspin),('nelec',nelec),('nbnds',nbnds),('nkpnts',nkpnts)]
-  for s,v in attrs:
-    attr[s] = v
-
-  arrys = [('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),('U',wavefunctions)]
+  arrys = [('U',wavefunctions)]
   if acbn0:
     arrys += [('Sks',overlaps)]
   for s,v in arrys:

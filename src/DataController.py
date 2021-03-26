@@ -192,15 +192,9 @@ class DataController:
       parse_qe_data_file_schema(self, fpath+'/data-file-schema.xml')
     elif exists(fpath+'/data-file.xml'):
       from .defs.read_QE_xml import parse_qe_data_file
-      parse_qe_data_file(self, fpath+'/data-file.xml')
+      parse_qe_data_file(self, fpath, 'data-file.xml')
     else:
       raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
-
-    if exists(fpath+'/atomic_proj.xml'):
-      from .defs.read_QE_xml import parse_qe_atomic_proj
-      parse_qe_atomic_proj(self, fpath+'/atomic_proj.xml')
-    else:
-      raise Exception('atomic_proj.xml was not found.\n')
 
 
   def write_file_row_col ( self, fname, col1, col2 ):
