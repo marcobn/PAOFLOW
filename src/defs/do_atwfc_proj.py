@@ -153,7 +153,8 @@ def calc_atwfc_k(basis, gkspace):
     # 1. build the structure factor
     strf = np.zeros((igwx,), dtype=complex)
     
-    hkl = np.array([mill[0,:],mill[1,:],mill[2,:]]).T
+#    hkl = np.array([mill[0,:],mill[1,:],mill[2,:]]).T
+    hkl = mill.T
     k_plus_G = np.dot(hkl, bg.T)
     for ig in range(igwx):
       k_plus_G[ig,:] += xk
@@ -202,24 +203,23 @@ def calc_atwfc_k(basis, gkspace):
         ylmg = n2 * (kGx*kGx - kGy*kGy) / 2.0
       elif m == 5:
         ylmg = n2 * kGx * kGy
+    elif l == 3:
+      n3 = np.sqrt(105.0/(4.0*np.pi))
+      if m == 1:
+        ylmg = n3 * kGz * (2*kGz*kGz - 3*kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(15.0))
+      elif m == 2:
+        ylmg = -n3 * kGx * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
+      elif m == 3:
+        ylmg = -n3 * kGy * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
+      elif m == 4:
+        ylmg = n3 * kGz * (kGx*kGx - kGy*kGy) / 2.0
+      elif m == 5:
+        ylmg = n3 * kGx * kGy * kGz
+      elif m == 6:
+        ylmg = -n3 * kGx * (kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(6.0))
+      elif m == 7:
+        ylmg = -n3 * kGy * (3*kGx*kGx - kGy*kGy) / (2.0*np.sqrt(6.0))
     else:
-      elif l == 3:
-        n3 = np.sqrt(105.0/(4.0*np.pi))
-        if m == 1:
-          ylmg = n3 * kGz * (2*kGz*kGz - 3*kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(15.0))
-        elif m == 2:
-          ylmg = -n3 * kGx * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
-        elif m == 3:
-          ylmg = -n3 * kGy * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
-        elif m == 4:
-          ylmg = n3 * kGz * (kGx*kGx - kGy*kGy) / 2.0
-        elif m == 5:
-          ylmg = n3 * kGx * kGy * kGz
-        elif m == 6:
-          ylmg = -n3 * kGx * (kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(6.0))
-        elif m == 7:
-          ylmg = -n3 * kGy * (3*kGx*kGx - kGy*kGy) / (2.0*np.sqrt(6.0))
-      else:
       raise NotImplementedError('l>2 not implemented yet')
       
     atwfc = strf * fact * ylmg * (1.0j)**l
@@ -264,9 +264,48 @@ def ortho_atwfc_k(atwfc_k):
 
 def calc_proj_k(data_controller, basis, ik):
   gkspace, wfc = read_QE_wfc(data_controller, ik)
-  
   atwfc_k = calc_atwfc_k(basis, gkspace)
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
-  return proj_k.T
+  return (proj_k.T,oatwfc_k)
+
+def calc_gkspace(attr,arry,ik,gamma_only=False):
+  
+  # calculate sphere of Miller indeces for k + G
+  gcutm = attr['ecutrho'] / (2*np.pi/attr['alat'])**2
+  at = arry['a_vectors']
+  nx = 2*int(np.sqrt(gcutm)*np.sqrt(at[0,0]**2 + at[1,0]**2 + at[2,0]**2)) + 1
+  ny = 2*int(np.sqrt(gcutm)*np.sqrt(at[0,1]**2 + at[1,1]**2 + at[2,1]**2)) + 1
+  nz = 2*int(np.sqrt(gcutm)*np.sqrt(at[0,2]**2 + at[1,2]**2 + at[2,2]**2)) + 1
+  nx = int((nx+1)/2)
+  ny = int((ny+1)/2)
+  nz = int((nz+1)/2)
+  # sphere of Miller indeces 
+  mill_g = []
+  for i in range(-nx, nx+1):
+    for j in range(-ny, ny+1):
+      for k in range(-nz, nz+1):
+        k_plus_G = np.array([i,j,k])@arry['b_vectors']
+        if np.linalg.norm(k_plus_G)**2 <= attr['ecutrho']/(2*np.pi/attr['alat'])**2:
+          mill_g.append(np.array([i,j,k]))
+  mill_g = np.swapaxes(np.array(mill_g),1,0)
+  igwx_g = mill_g.shape[1]
+  
+  mill = []
+  for ig in range(igwx_g):
+    k_plus_G = mill_g[:,ig]@arry['b_vectors'] + arry['kpnts'][ik]
+    if np.linalg.norm(k_plus_G)**2 <= attr['ecutwfc']/(2*np.pi/attr['alat'])**2:
+      mill.append(mill_g[:,ig])
+  mill = np.swapaxes(np.array(mill),1,0)
+  igwx = mill.shape[1]
+  
+  xk = arry['kpnts'][ik] * 2*np.pi/attr['alat']
+  
+  bg = arry['b_vectors'].T*2*np.pi/attr['alat']
+  
+  names = ['xk','igwx','mill','bg','gamma_only']
+  arrays = [xk,igwx,mill,bg,gamma_only]
+  gkspace = dict(zip(names,arrays))
+  
+  return(gkspace)
