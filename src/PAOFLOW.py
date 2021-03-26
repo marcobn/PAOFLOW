@@ -279,7 +279,7 @@ class PAOFLOW:
     Unew = np.zeros((nbnds,natwfc,nkpnts,nspin), dtype=complex)
     for ispin in range(nspin):
       for ik in range(nkpnts):
-        if verbose: print(str(ik)+'... ', end='', flush=True)
+        if self.rank==0 and verbose: print(str(ik)+'... ', end='', flush=True)
         Unew[:,:,ik,ispin] = calc_proj_k(self.data_controller, basis, ik)
     arry['U'] = Unew
 
