@@ -268,7 +268,7 @@ def calc_proj_k(data_controller, basis, ik):
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
-  return (proj_k.T,oatwfc_k)
+  return (proj_k.T)
 
 def calc_gkspace(data_controller,ik,gamma_only=False):
   arry, attr = data_controller.data_dicts()
