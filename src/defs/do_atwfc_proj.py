@@ -87,7 +87,7 @@ def build_pswfc_basis_all(data_controller, verbose=False):
           
   return basis
 
-def fft_wfc_G2R(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
+def fft_wfc_G2R_old(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
   wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
   
   for ig in range(igwx):
@@ -98,6 +98,47 @@ def fft_wfc_G2R(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
   wfcr = FFT.ifftn(wfcg) * nr1 * nr2 * nr3 / np.sqrt(omega)
   return wfcr
 
+def fft_wfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
+  igwx = gkspace['igwx']
+  gamma_only = gkspace['gamma_only']
+  mill = gkspace['mill']
+  wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
+  
+  for ig in range(igwx):
+    wfcg[mill[0,ig],mill[1,ig],mill[2,ig]] = wfc[ig]
+    if gamma_only:
+      wfcg[-mill[0,ig],-mill[1,ig],-mill[2,ig]] = np.conj(wfc[ig])
+      
+  wfcr = FFT.ifftn(wfcg) * nr1 * nr2 * nr3 / np.sqrt(omega)
+  return wfcr
+
+def fft_allwfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
+  igwx = gkspace['igwx']
+  gamma_only = gkspace['gamma_only']
+  mill = gkspace['mill']
+  try: 
+    nox = wfc.shape[0]
+    nwx = wfc.shape[1]
+    wfcg = np.zeros((nwx,nr1,nr2,nr3), dtype=complex)
+  except:
+    nox = 0
+    wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
+  if nox == 0:
+    for ig in range(igwx):
+      wfcg[:,mill[0,ig],mill[1,ig],mill[2,ig]] = wfc[:,ig]
+      if gamma_only:
+        wfcg[:,-mill[0,ig],-mill[1,ig],-mill[2,ig]] = np.conj(wfc[:,ig])
+    wfcr = FFT.ifftn(wfcg) * nr1 * nr2 * nr3 / np.sqrt(omega)
+  else:
+    wfcr = np.zeros((nox,nr1,nr2,nr3), dtype=complex)
+    for no in range(nox):
+      for ig in range(igwx):
+        wfcg[no,mill[0,ig],mill[1,ig],mill[2,ig]] = wfc[no,ig]
+        if gamma_only:
+          wfcg[no,-mill[0,ig],-mill[1,ig],-mill[2,ig]] = np.conj(wfc[no,ig])
+      wfcr[no] = FFT.ifftn(wfcg[no]) * nr1 * nr2 * nr3 / np.sqrt(omega)
+  return wfcr
+  
 def fft_wfc_R2G(wfc, igwx, mill, omega):
   tmp = FFT.fftn(wfc) / np.sqrt(omega)
   
@@ -294,18 +335,19 @@ def calc_gkspace(data_controller,ik,gamma_only=False):
   
   mill = []
   for ig in range(igwx_g):
-    k_plus_G = mill_g[:,ig]@arry['b_vectors'] + arry['kpnts'][ik]
+    k_plus_G = mill_g[:,ig]@arry['b_vectors'] + arry['kgrid'][:,ik]
     if np.linalg.norm(k_plus_G)**2 <= attr['ecutwfc']/(2*np.pi/attr['alat'])**2:
       mill.append(mill_g[:,ig])
   mill = np.swapaxes(np.array(mill),1,0)
   igwx = mill.shape[1]
   
-  xk = arry['kpnts'][ik] * 2*np.pi/attr['alat']
+  xk = arry['kgrid'][:,ik] * 2*np.pi/attr['alat']
   
   bg = arry['b_vectors'].T*2*np.pi/attr['alat']
   
   names = ['xk','igwx','mill','bg','gamma_only']
   arrays = [xk,igwx,mill,bg,gamma_only]
   gkspace = dict(zip(names,arrays))
+  arry['gkspace'] = gkspace
   
   return(gkspace)

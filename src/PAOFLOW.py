@@ -1041,6 +1041,23 @@ mo    '''
 
 
 
+  def density ( self, nr1=48, nr2=48, nr3=48):
+    '''
+    Calculate the Electron Density in real space
+    Arguments:
+        nr1,nr2,nr3: real space grid
+
+    Returns:
+        None
+    '''
+    from .defs.do_real_space import do_density
+
+    do_density(self.data_controller, nr1,nr2,nr3)
+    
+    self.report_module_time('Density')
+
+
+  
   def trim_non_projectable_bands ( self ):
 
     arrays = self.data_controller.data_arrays
