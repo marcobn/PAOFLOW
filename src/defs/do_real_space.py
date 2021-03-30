@@ -34,7 +34,6 @@ def do_density ( data_controller, nr1, nr2, nr3 ):
 
   if rank == 0 and attr['verbose']:
     print('Writing density files')
-    print(comm.Get_size())
 
   rhoaux = np.zeros((nr1,nr2,nr3,attr['nspin']),dtype=complex,order="C")
 
@@ -59,6 +58,7 @@ def do_density ( data_controller, nr1, nr2, nr3 ):
     rhoaux = None
 
     if rank == 0:
-      if attr['verbose']: print('Total charge = ',np.real(np.sum(rho)))
       fdensity = attr['outputdir']+'/density_%s.xsf'%str(ispin)
       write2xsf(data_controller,filename=fdensity,data=np.real(rho[:,:,:,ispin]))
+  if rank == 0:
+    if attr['verbose']: print('Total charge = ',np.real(np.sum(rho)))
