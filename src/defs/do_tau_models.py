@@ -43,10 +43,12 @@ def polar_acoustic_model ( temp, eigs, params ):
   temp *= ev2j
   E = eigs * ev2j
   piezo = params['piezo']  # Piezoelectric constant
-  nd = params['doping_conc'] # Doping concentration
+  nd = params['doping_conc']*1e6 # Doping concentration in /m^3
   eps_0 = params['eps_0']*epso # Low freq dielectric const
   eps_inf = params['eps_inf']*epso # High freq dielectirc const
-  ms = params['ms']*me*np.ones((snktot,bnd,nspin), dtype=float) #effective mass tensor in kg 
+  ms = params['ms']*me #effective mass tensor in kg 
+  rho = params['rho']
+  v = params['v']
 
   eps = eps_inf + eps_0
   qo = np.sqrt(abs(nd)*e**2/(eps*temp))
@@ -63,6 +65,8 @@ def polar_optical_model ( temp, eigs, params ):
   hwlo = np.array(params['hwlo'])*ev2j # Phonon freq
   eps_0 = params['eps_0']*epso #low freq dielectric const
   eps_inf = params['eps_inf']*epso #high freq dielectirc const
+  ms = params['ms']*me #effective mass tensor in kg
+
 
   fermi = lambda E,Ef,T : 1/(np.exp((E-Ef)/T)+1.)
   planck = lambda hwlo,T : 1/(np.exp(hwlo/T)-1)
@@ -75,8 +79,7 @@ def polar_optical_model ( temp, eigs, params ):
     f = fermi(E, Ef, temp)
     fp = fermi(E+hw, Ef, temp)
     fm = fermi(E-hw, Ef, temp)
-    n = planch(hw, temp)
-    np = planch(hw+1, temp)
+    n = planck(hw, temp)
     Wo = e**2/(4*np.pi*hbar**2) * np.sqrt(2*ms*hw)*eps_inv
     Z = 2/(Wo*np.sqrt(hw))
 
@@ -86,7 +89,7 @@ def polar_optical_model ( temp, eigs, params ):
 
     A = remove_NaN((n+1)*fp/f * ((2*E+hw)*np.arcsinh(np.sqrt(E/hw))-np.sqrt(E*(E+hw))))
     B = remove_NaN(np.heaviside(E-hw,1)*n*fm/f * ((2*E-hw)*np.arccosh(np.sqrt(E/hw))-np.sqrt(E*(E-hw))))
-    t1 = remove_NaN((n+1)*ff/f * np.arcsinh(np.sqrt(E/hw)))
+    t1 = remove_NaN((n+1)*fp/f * np.arcsinh(np.sqrt(E/hw)))
     t2 = remove_NaN(np.heaviside(E-hw,1)*n*fm/f * np.arccosh(np.sqrt(E/hw)))
     C = 2*E*(t1+t2)
     P = (C-A-B)/(Z*E**1.5)
@@ -94,11 +97,12 @@ def polar_optical_model ( temp, eigs, params ):
 
   return P_pol
 
+
 def impurity_model ( temp, eigs, params ):
   #formula from fiorentini paper on Mg3Sb2
   temp *= ev2j
   E = eigs * ev2j
-  nI = params['nI']
+  nI = params['nI']*1e6 # impurity conc in /m^3
   Zi = params['Zi']
   ms = params['ms']*me #effective mass tensor in kg 
   eps_0 = params['eps_0']*epso #low freq dielectric const

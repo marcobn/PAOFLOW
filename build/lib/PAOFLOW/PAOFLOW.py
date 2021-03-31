@@ -35,10 +35,11 @@ class PAOFLOW:
   report_exception = None
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing=None, npool=1, verbose=False ):
+
+
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, smearing='gauss', npool=1, verbose=False, restart=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
-
     Arguments:
         workpath (str): Path to the working directory
         outputdir (str): Name of the output directory (created in the working directory path)
@@ -47,7 +48,7 @@ class PAOFLOW:
         smearing (str): Smearing type (None, m-p, gauss)
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         verbose (bool): False supresses debugging output
-
+        restart (bool): True if the run is being restarted from a .json data dump.
     Returns:
         None
     '''
@@ -55,10 +56,6 @@ class PAOFLOW:
     from mpi4py import MPI
     from .defs.header import header
     from .DataController import DataController
-
-    self.workpath = workpath
-    self.outputdir = outputdir
-    self.inputfile = inputfile
 
     #-------------------------------
     # Initialize Parallel Execution
@@ -76,33 +73,38 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose)
+    self.data_controller = DataController(workpath, outputdir, inputfile, savedir, smearing, npool, verbose, restart)
 
-    # Data Attributes
-    attr = self.data_controller.data_attributes
     self.report_exception = self.data_controller.report_exception
 
-    # Check for CUDA FFT Libraries
-## CUDA not yet supported in PAOFLOW_CLASS
-    attr['use_cuda'] = False
-    attr['scipyfft'] = True
-    if attr['use_cuda']:
-      attr['scipyfft'] = False
-    if self.rank == 0 and attr['verbose']:
+    if not restart:
+      # Data Attributes
+      attr = self.data_controller.data_attributes
+
+      # Check for CUDA FFT Libraries
+      ## CUDA not yet supported in PAOFLOW_CLASS
+      attr['use_cuda'] = False
+      attr['scipyfft'] = True
       if attr['use_cuda']:
-        print('CUDA will perform FFTs on %d GPUs'%1)
-      else:
-        print('SciPy will perform FFTs')
+        attr['scipyfft'] = False
+      if self.rank == 0 and attr['verbose']:
+        if attr['use_cuda']:
+          print('CUDA will perform FFTs on %d GPUs'%1)
+        else:
+          print('SciPy will perform FFTs')
 
     # Report execution information
     if self.rank == 0:
-      if self.size == 1:
-        print('Serial execution')
+      if restart:
+        print('Run starting from Restart data.')
       else:
-        print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
+        if self.size == 1:
+          print('Serial execution')
+        else:
+          print('Parallel execution on %d processors and %d pool'%(self.size,attr['npool']) + ('' if attr['npool']==1 else 's'))
 
     # Do memory checks
-    if self.rank == 0:
+    if not restart and self.rank == 0:
       gbyte = self.memory_check()
       print('Estimated maximum array size: %.2f GBytes\n' %(gbyte))
 
@@ -129,6 +131,53 @@ class PAOFLOW:
       dt = time() - self.reset_time
       print('%s in: %s %.3f sec'%(mname,lms*' ',dt))
       self.reset_time = time()
+
+
+
+  def restart_dump ( self, fname_prefix='paoflow_dump' ):
+    '''
+      Saves the necessary information to restart a PAOFLOW run from any step in calculation.
+      Arguments:
+          fname_prefix (str): Prefix of the filenames which will be written. Files are written to the directory housing the python script which instantiates PAOFLOW, unless otherwise specified in this argument.
+      Returns:
+          None
+    '''
+    from pickle import dump,HIGHEST_PROTOCOL
+
+    fname = fname_prefix + '_%d'%self.rank + '.json'
+
+    arry,attr = self.data_controller.data_dicts()
+    with open(fname, 'wb') as f:
+      dump([arry,attr], f, HIGHEST_PROTOCOL)
+
+
+
+  def restart_load ( self, fname_prefix ):
+    '''
+      Loads the previously dumped save files and populates the DataController with said data.
+      Arguments:
+          fname_prefix (str): Prefix of the filenames which will be written. Files are written to the directory housing the python script which instantiates PAOFLOW, unless otherwise specified in this argument.
+      Returns:
+          None
+    '''
+    from os.path import exists
+    from pickle import load
+
+    fname = fname_prefix + '_%d'%self.rank + '.json'
+    if not exists(fname):
+      print('Restart file named %s does not exist.'%fname)
+      raise OSError('File: %s not found.'%fname)
+
+    arry,attr = None,None
+    with open(fname, 'rb') as f:
+      arry,attr = load(f)
+
+    if self.size != attr['mpisize']:
+      print('Restarted runs must use the same number of cores as the original run.')
+      raise ValueError('Number of processors does not match that of the previous run.')
+
+    self.data_controller.data_arrays = arry
+    self.data_controller.data_attributes = attr
 
 
 
@@ -1023,7 +1072,7 @@ class PAOFLOW:
 
 
 
-  def doping(self,tmin=300,tmax=300,tstep=100,delta=0.01,emin=-1.,emax=1.,ne=1000,doping_conc=0.):
+  def doping(self,tmin=300,tmax=300,nt=1,delta=0.01,emin=-1.,emax=1.,ne=1000,doping_conc=0.,core_electrons=0.):
 
     '''
     Calculate the chemical potential that corresponds to specified doping for different temperatures
@@ -1035,6 +1084,8 @@ class PAOFLOW:
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
         ne (float): The number of energy increments
+        doping_conc(float): The amount of doping in 1/cm^3. Positive value for p type and negative value for n type
+        core_electrons(float): The number of core electrons in a system. Adding this to integrated dos allows for integration over a narrower energy window
 
     Returns:
         None
@@ -1042,21 +1093,26 @@ class PAOFLOW:
 
 
     from .defs.do_doping import do_doping
-    from .defs.do_dos import do_dos
+    from .defs.do_dos import do_dos,do_dos_adaptive
 
     
     arrays,attr = self.data_controller.data_dicts()
 
     if 'delta' not in attr: attr['delta'] = delta
     if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
+    if 'core_electrons' not in attr: attr['core_electrons'] = core_electrons
 
     ene = np.linspace(emin, emax, ne)
-    temps = np.arange(tmin, tmax+1.e-10, tstep)
-
-    do_dos(self.data_controller, emin=emin, emax=emax, ne=ne)
+    temps = np.linspace(tmin, tmax, nt)
+    if attr['smearing'] == None:
+      do_dos(self.data_controller, emin=emin, emax=emax, ne=ne)
+    else:
+      do_dos_adaptive(self.data_controller, emin=emin, emax=emax, ne=ne)
     do_doping(self.data_controller,temps,ene)
 
-  def transport ( self, tmin=300, tmax=300, tstep=-1., emin=1., emax=10., ne=1000, t_tensor=None,doping_conc=0. ,fit=False, scattering_channels=None, scattering_weights=None, tau_dict={'Ef':None,'D_ac':None,'rho':None,'a':None,'nI':None,'eps_inf':None,'eps_0':None,'v':None,'Zi':None,'ms':None,'hwlo':None,'Zf':None,'D_op':None,'piezo':None}, write_to_file=True):
+
+  def transport ( self, tmin=300., tmax=300., nt=1, emin=1., emax=10., ne=1000, t_tensor=None, carrier_conc=False,save_L0=False,fit=False, scattering_channels=None, scattering_weights=None, tau_dict={}, write_to_file=True ):
+
     '''
     Calculate the Transport Properties
 
@@ -1073,28 +1129,37 @@ class PAOFLOW:
         None
     '''
     from .defs.do_transport import do_transport
-   
+
     arrays,attr = self.data_controller.data_dicts()
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
     if not t_tensor == None: arrays['t_tensor'] = np.array(t_tensor)
 
     ene = np.linspace(emin, emax, ne)
-    temps = np.arange(tmin, tmax+1.e-10, tstep)
-
+    temps = np.linspace(tmin, tmax, nt)
+    sc,sw = scattering_channels,scattering_weights
     try:
       # Compute Velocities for Spin 0 Only
       bnd = attr['bnd']
       velkp = np.zeros((arrays['pksp'].shape[0],3,bnd,attr['nspin']))
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
-      do_transport(self.data_controller, temps,emin,emax,ne,ene,velkp,scattering_weights,write_to_file,fit)
+
+      do_transport(self.data_controller, temps, ene, velkp, carrier_conc, save_L0, sc, sw, write_to_file, fit)
+
+
+      if carrier_conc:
+        from .defs.do_transport import do_carrier_conc
+        do_carrier_conc(self.data_controller,velkp,ene,temps)
+
       velkp = None
+
     except:
       self.report_exception('transport')
       if attr['abort_on_exception']:
         self.comm.Abort()
 
     self.report_module_time('Transport')
+
 
 
   def dielectric_tensor ( self, metal=False, kramerskronig=True, temp=None, delta=0.01, emin=0., emax=10., ne=500., d_tensor=None ):
