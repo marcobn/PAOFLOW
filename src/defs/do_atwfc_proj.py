@@ -25,6 +25,9 @@ import scipy.interpolate
 from scipy.io import FortranFile
 import scipy.fft as FFT
 
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
 from .read_upf import UPF
 
 # Unitility functions to build atomic wfc from the pseudopotential and build the projections U (and overlaps if needed)
@@ -68,7 +71,7 @@ def build_pswfc_basis_all(data_controller):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
     r, pswfc, pseudo = read_pswfc_from_upf(data_controller, atom)
-    if verbose:
+    if verbose and rank == 0:
       print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
       
       # loop over pswfc'c
@@ -83,7 +86,7 @@ def build_pswfc_basis_all(data_controller):
       for m in range(1, 2*l+2):
         basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': pao['label'],
           'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
-        if verbose:
+        if verbose and rank == 0:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
           
   return basis
@@ -119,7 +122,7 @@ def build_aewfc_basis(data_controller):
       data = np.loadtxt(aebasis[na][shell])    
       aewfc.append({shell : data[:,1], 'r' : data[:,0]})
       
-      if verbose:
+      if verbose and rank == 0:
         print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, aebasis[na][shell], tau))
         
     for n in range(len(aewfc)):
@@ -133,7 +136,7 @@ def build_aewfc_basis(data_controller):
         basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': list(aewfc[n].items())[0][0],
           'r': aewfc[n]['r'], 'wfc': aewfc[n][list(aewfc[n].items())[0][0]].copy(), 
           'qmesh': qmesh, 'wfc_g': wfc_g})
-        if verbose:
+        if verbose and rank == 0:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, 
             list(aewfc[n].items())[0][0]))
           
