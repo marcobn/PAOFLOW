@@ -39,7 +39,7 @@ def do_density ( data_controller, nr1, nr2, nr3 ):
 
   ini_ik,end_ik = load_balancing(comm.Get_size(), rank, attr['nkpnts'])
   
-  basis = attr['basis']
+  basis = arry['basis']
   eps = 1.e-5
   for ispin in range(attr['nspin']):
     for ik in range(ini_ik,end_ik):
@@ -50,7 +50,7 @@ def do_density ( data_controller, nr1, nr2, nr3 ):
       for nb in range(attr['bnd']):
         if arry['E_k'][ik-ini_ik,nb,ispin] <= 0.0+eps:
           tmp = np.tensordot(arry['v_k'][ik-ini_ik,:,nb,ispin],atwfcr[:,:,:,:],axes=(0,0))
-          rhoaux[:,:,:,ispin] += 2*np.conj(tmp)*tmp/attr['nkpnts']
+          rhoaux[:,:,:,ispin] += 2*np.conj(tmp)*tmp/attr['nkpnts']*attr['omega']/(nr1*nr2*nr3)
 
     rho = np.zeros((nr1,nr2,nr3,attr['nspin']),dtype=complex,order="C") if rank == 0 else None
     
@@ -61,4 +61,4 @@ def do_density ( data_controller, nr1, nr2, nr3 ):
       fdensity = attr['outputdir']+'/density_%s.xsf'%str(ispin)
       write2xsf(data_controller,filename=fdensity,data=np.real(rho[:,:,:,ispin]))
   if rank == 0:
-    if attr['verbose']: print('Total charge = ',np.real(np.sum(rho)))
+    if attr['verbose']: print('Total charge = ',np.real(np.sum(rho)).round(3))

@@ -25,6 +25,7 @@ import scipy.interpolate
 from scipy.io import FortranFile
 import scipy.fft as FFT
 
+from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 

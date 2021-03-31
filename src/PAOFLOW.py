@@ -268,6 +268,7 @@ class PAOFLOW:
     from .defs.do_atwfc_proj import build_pswfc_basis_all
     from .defs.do_atwfc_proj import build_aewfc_basis
     from .defs.do_atwfc_proj import calc_proj_k
+    from .defs.communication import load_balancing, gather_array
     
     arry,attr = self.data_controller.data_dicts()
     
@@ -281,12 +282,20 @@ class PAOFLOW:
     natwfc = len(basis)
     attr['nawf'] = natwfc
     
-    verbose = False
-    Unew = np.zeros((nbnds,natwfc,nkpnts,nspin), dtype=complex)
+    ini_ik,end_ik = load_balancing(self.size, self.rank,nkpnts)
+#    verbose = False
+    Unewaux = np.zeros((end_ik-ini_ik,nbnds,natwfc,nspin), dtype=complex)
     for ispin in range(nspin):
-      for ik in range(nkpnts):
-        if self.rank==0 and verbose: print(str(ik)+'... ', end='', flush=True)
-        Unew[:,:,ik,ispin] = calc_proj_k(self.data_controller, basis, ik)
+      for ik in range(ini_ik,end_ik):
+#        if self.rank==0 and verbose: print(str(ik)+'... ', end='', flush=True)
+        Unewaux[ik-ini_ik,:,:,ispin] = calc_proj_k(self.data_controller, basis, ik)
+    
+    Unew = np.zeros((nkpnts,nbnds,natwfc,nspin), dtype=complex) if self.rank == 0 else None
+    gather_array(Unew,Unewaux)
+    if self.rank == 0: Unew = np.moveaxis(Unew,0,2)
+    Unew = self.comm.bcast(Unew, root=0)
+    Unewaux = None
+    
     arry['U'] = Unew
     arry['basis'] = basis
     
