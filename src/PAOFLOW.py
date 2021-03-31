@@ -257,23 +257,29 @@ class PAOFLOW:
 
 
 
-  def projections ( self ):
+  def projections ( self, internal=False ):
     '''
-    Calculate the projections on the atomic basis provided by the pseudopotential.
+    Calculate the projections on the atomic basis provided by the pseudopotential or 
+    on the all-electron internal basis sets.
     Replaces projwfc.
-    TODO  * generalize to arbitrary atomic basis set
-          * add spin-orbit and non-collinear cases
+    TODO  * add spin-orbit and non-collinear cases
     '''
+
     from .defs.do_atwfc_proj import build_pswfc_basis_all
+    from .defs.do_atwfc_proj import build_aewfc_basis
     from .defs.do_atwfc_proj import calc_proj_k
     
     arry,attr = self.data_controller.data_dicts()
     
-    basis = build_pswfc_basis_all(self.data_controller)
+    if internal:
+      basis = build_aewfc_basis(self.data_controller)
+    else:
+      basis = build_pswfc_basis_all(self.data_controller)
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
     natwfc = len(basis)
+    attr['nawf'] = natwfc
     
     verbose = False
     Unew = np.zeros((nbnds,natwfc,nkpnts,nspin), dtype=complex)
@@ -282,7 +288,8 @@ class PAOFLOW:
         if self.rank==0 and verbose: print(str(ik)+'... ', end='', flush=True)
         Unew[:,:,ik,ispin] = calc_proj_k(self.data_controller, basis, ik)
     arry['U'] = Unew
-
+    arry['basis'] = basis
+    
     self.report_module_time('Projections')
 
 

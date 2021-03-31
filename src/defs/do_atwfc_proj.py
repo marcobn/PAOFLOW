@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import os, sys
+import os, sys, glob
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate
@@ -52,8 +52,9 @@ def radialfft_simpson(r, f, l, qmesh, volume):
     fq[iq] = scipy.integrate.simps(aux, r)*fact
   return fq
 
-def build_pswfc_basis_all(data_controller, verbose=False):
+def build_pswfc_basis_all(data_controller):
   arry, attr = data_controller.data_dicts()
+  verbose = attr['verbose']
   basis = []
   
   # build the mesh in q space
@@ -84,6 +85,57 @@ def build_pswfc_basis_all(data_controller, verbose=False):
           'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
         if verbose:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
+          
+  return basis
+
+def build_aewfc_basis(data_controller):
+  
+  arry, attr = data_controller.data_dicts()
+  verbose = attr['verbose']
+  
+  # read the atomic bases
+  aebasis = []
+  for na in range(len(arry['atoms'])):
+    elem = arry['atoms'][na]
+    aefiles = glob.glob(attr['basispath']+str(elem)+'/*.dat')
+    label = []
+    for entry in aefiles:
+      label.append(entry.split('/')[-1].split('.')[0])
+    aebasis.append(dict(zip(label,aefiles)))
+  
+  # build the mesh in q space
+  ecutrho = attr['ecutrho']
+  dq = 0.01
+  qmesh = np.arange(0, np.sqrt(ecutrho) + 4, dq)
+  volume = attr['omega']
+  
+  # loop over atoms
+  basis = []
+  for na in range(len(arry['atoms'])):
+    atom = arry['atoms'][na]
+    tau = arry['tau'][na]
+    aewfc = []
+    for shell in arry['shells'][atom]:
+      data = np.loadtxt(aebasis[na][shell])    
+      aewfc.append({shell : data[:,1], 'r' : data[:,0]})
+      
+      if verbose:
+        print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, aebasis[na][shell], tau))
+        
+    for n in range(len(aewfc)):
+      l = 'SPDF'.find(list(aewfc[n].items())[0][0][1])
+      #### CHECK IF THERE IS A BETTER WAY ####
+      if l == -1:
+        l = 'spdf'.find(list(aewfc[n].items())[0][0][1])
+      wfc_g = radialfft_simpson(aewfc[n]['r'], aewfc[n][list(aewfc[n].items())[0][0]], l, qmesh, volume)
+      
+      for m in range(1, 2*l+2):
+        basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': list(aewfc[n].items())[0][0],
+          'r': aewfc[n]['r'], 'wfc': aewfc[n][list(aewfc[n].items())[0][0]].copy(), 
+          'qmesh': qmesh, 'wfc_g': wfc_g})
+        if verbose:
+          print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, 
+            list(aewfc[n].items())[0][0]))
           
   return basis
 
