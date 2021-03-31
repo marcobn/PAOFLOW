@@ -39,7 +39,7 @@ def do_density ( data_controller, nr1, nr2, nr3 ):
 
   ini_ik,end_ik = load_balancing(comm.Get_size(), rank, attr['nkpnts'])
   
-  basis = build_pswfc_basis_all(data_controller)
+  basis = attr['basis']
   eps = 1.e-5
   for ispin in range(attr['nspin']):
     for ik in range(ini_ik,end_ik):
