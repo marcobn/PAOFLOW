@@ -16,7 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
-import os, sys
+import os, sys, glob
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate
@@ -24,6 +24,10 @@ import scipy.special
 import scipy.interpolate
 from scipy.io import FortranFile
 import scipy.fft as FFT
+
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 from .read_upf import UPF
 
@@ -52,10 +56,10 @@ def radialfft_simpson(r, f, l, qmesh, volume):
     fq[iq] = scipy.integrate.simps(aux, r)*fact
   return fq
 
-def build_pswfc_basis_all ( data_controller ):
-  arry,attr = data_controller.data_dicts()
+def build_pswfc_basis_all(data_controller):
+  arry, attr = data_controller.data_dicts()
   verbose = attr['verbose']
- 
+  
   # build the mesh in q space
   ecutrho = attr['ecutrho']
   dq = 0.01
@@ -68,7 +72,7 @@ def build_pswfc_basis_all ( data_controller ):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
     r, pswfc, pseudo = read_pswfc_from_upf(data_controller, atom)
-    if verbose:
+    if verbose and rank == 0:
       print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
       
     # loop over pswfc'c
@@ -85,14 +89,66 @@ def build_pswfc_basis_all ( data_controller ):
       for m in range(1, 2*l+2):
         basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': pao['label'],
           'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
-        if verbose:
+        if verbose and rank == 0:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
     if atom not in shells:
       shells[atom] = a_shells
           
   return basis,shells
 
-def fft_wfc_G2R(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
+def build_aewfc_basis(data_controller):
+  
+  arry, attr = data_controller.data_dicts()
+  verbose = attr['verbose']
+  
+  # read the atomic bases
+  aebasis = []
+  for na in range(len(arry['atoms'])):
+    elem = arry['atoms'][na]
+    aefiles = glob.glob(attr['basispath']+str(elem)+'/*.dat')
+    label = []
+    for entry in aefiles:
+      label.append(entry.split('/')[-1].split('.')[0])
+    aebasis.append(dict(zip(label,aefiles)))
+  
+  # build the mesh in q space
+  ecutrho = attr['ecutrho']
+  dq = 0.01
+  qmesh = np.arange(0, np.sqrt(ecutrho) + 4, dq)
+  volume = attr['omega']
+  
+  # loop over atoms
+  basis,shells = [],{}
+  for na in range(len(arry['atoms'])):
+    atom = arry['atoms'][na]
+    tau = arry['tau'][na]
+    aewfc = []
+    for shell in arry['shells'][atom]:
+      data = np.loadtxt(aebasis[na][shell])    
+      aewfc.append({shell : data[:,1], 'r' : data[:,0]})
+      
+      if verbose and rank == 0:
+        print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, aebasis[na][shell], tau))
+    ash = []
+    for n in range(len(aewfc)):
+      l = 'SPDF'.find(list(aewfc[n].items())[0][0][1])
+      #### CHECK IF THERE IS A BETTER WAY ####
+      if l == -1:
+        l = 'spdf'.find(list(aewfc[n].items())[0][0][1])
+      ash.append(l)
+      wfc_g = radialfft_simpson(aewfc[n]['r'], aewfc[n][list(aewfc[n].items())[0][0]], l, qmesh, volume)
+
+      for m in range(1, 2*l+2):
+        basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': list(aewfc[n].items())[0][0],
+          'r': aewfc[n]['r'], 'wfc': aewfc[n][list(aewfc[n].items())[0][0]].copy(), 
+          'qmesh': qmesh, 'wfc_g': wfc_g})
+        if verbose and rank == 0:
+          print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, 
+            list(aewfc[n].items())[0][0]))
+    shells[atom] = ash
+  return basis,shells
+
+def fft_wfc_G2R_old(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
   wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
   
   for ig in range(igwx):
@@ -103,6 +159,47 @@ def fft_wfc_G2R(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
   wfcr = FFT.ifftn(wfcg) * nr1 * nr2 * nr3 / np.sqrt(omega)
   return wfcr
 
+def fft_wfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
+  igwx = gkspace['igwx']
+  gamma_only = gkspace['gamma_only']
+  mill = gkspace['mill']
+  wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
+  
+  for ig in range(igwx):
+    wfcg[mill[0,ig],mill[1,ig],mill[2,ig]] = wfc[ig]
+    if gamma_only:
+      wfcg[-mill[0,ig],-mill[1,ig],-mill[2,ig]] = np.conj(wfc[ig])
+      
+  wfcr = FFT.ifftn(wfcg) * nr1 * nr2 * nr3 / np.sqrt(omega)
+  return wfcr
+
+def fft_allwfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
+  igwx = gkspace['igwx']
+  gamma_only = gkspace['gamma_only']
+  mill = gkspace['mill']
+  try: 
+    nox = wfc.shape[0]
+    nwx = wfc.shape[1]
+    wfcg = np.zeros((nwx,nr1,nr2,nr3), dtype=complex)
+  except:
+    nox = 0
+    wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
+  if nox == 0:
+    for ig in range(igwx):
+      wfcg[:,mill[0,ig],mill[1,ig],mill[2,ig]] = wfc[:,ig]
+      if gamma_only:
+        wfcg[:,-mill[0,ig],-mill[1,ig],-mill[2,ig]] = np.conj(wfc[:,ig])
+    wfcr = FFT.ifftn(wfcg) * nr1 * nr2 * nr3 / np.sqrt(omega)
+  else:
+    wfcr = np.zeros((nox,nr1,nr2,nr3), dtype=complex)
+    for no in range(nox):
+      for ig in range(igwx):
+        wfcg[no,mill[0,ig],mill[1,ig],mill[2,ig]] = wfc[no,ig]
+        if gamma_only:
+          wfcg[no,-mill[0,ig],-mill[1,ig],-mill[2,ig]] = np.conj(wfc[no,ig])
+      wfcr[no] = FFT.ifftn(wfcg[no]) * nr1 * nr2 * nr3 / np.sqrt(omega)
+  return wfcr
+  
 def fft_wfc_R2G(wfc, igwx, mill, omega):
   tmp = FFT.fftn(wfc) / np.sqrt(omega)
   
@@ -158,7 +255,8 @@ def calc_atwfc_k(basis, gkspace):
     # 1. build the structure factor
     strf = np.zeros((igwx,), dtype=complex)
     
-    hkl = np.array([mill[0,:],mill[1,:],mill[2,:]]).T
+#    hkl = np.array([mill[0,:],mill[1,:],mill[2,:]]).T
+    hkl = mill.T
     k_plus_G = np.dot(hkl, bg.T)
     for ig in range(igwx):
       k_plus_G[ig,:] += xk
@@ -268,9 +366,49 @@ def ortho_atwfc_k(atwfc_k):
 
 def calc_proj_k(data_controller, basis, ik):
   gkspace, wfc = read_QE_wfc(data_controller, ik)
-  
   atwfc_k = calc_atwfc_k(basis, gkspace)
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
-  return proj_k.T
+  return (proj_k.T)
+
+def calc_gkspace(data_controller,ik,gamma_only=False):
+  arry, attr = data_controller.data_dicts()
+  # calculate sphere of Miller indeces for k + G
+  gcutm = attr['ecutrho'] / (2*np.pi/attr['alat'])**2
+  at = arry['a_vectors']
+  nx = 2*int(np.sqrt(gcutm)*np.sqrt(at[0,0]**2 + at[1,0]**2 + at[2,0]**2)) + 1
+  ny = 2*int(np.sqrt(gcutm)*np.sqrt(at[0,1]**2 + at[1,1]**2 + at[2,1]**2)) + 1
+  nz = 2*int(np.sqrt(gcutm)*np.sqrt(at[0,2]**2 + at[1,2]**2 + at[2,2]**2)) + 1
+  nx = int((nx+1)/2)
+  ny = int((ny+1)/2)
+  nz = int((nz+1)/2)
+  # sphere of Miller indeces 
+  mill_g = []
+  for i in range(-nx, nx+1):
+    for j in range(-ny, ny+1):
+      for k in range(-nz, nz+1):
+        k_plus_G = np.array([i,j,k])@arry['b_vectors']
+        if np.linalg.norm(k_plus_G)**2 <= attr['ecutrho']/(2*np.pi/attr['alat'])**2:
+          mill_g.append(np.array([i,j,k]))
+  mill_g = np.swapaxes(np.array(mill_g),1,0)
+  igwx_g = mill_g.shape[1]
+  
+  mill = []
+  for ig in range(igwx_g):
+    k_plus_G = mill_g[:,ig]@arry['b_vectors'] + arry['kgrid'][:,ik]
+    if np.linalg.norm(k_plus_G)**2 <= attr['ecutwfc']/(2*np.pi/attr['alat'])**2:
+      mill.append(mill_g[:,ig])
+  mill = np.swapaxes(np.array(mill),1,0)
+  igwx = mill.shape[1]
+  
+  xk = arry['kgrid'][:,ik] * 2*np.pi/attr['alat']
+  
+  bg = arry['b_vectors'].T*2*np.pi/attr['alat']
+  
+  names = ['xk','igwx','mill','bg','gamma_only']
+  arrays = [xk,igwx,mill,bg,gamma_only]
+  gkspace = dict(zip(names,arrays))
+  arry['gkspace'] = gkspace
+  
+  return(gkspace)

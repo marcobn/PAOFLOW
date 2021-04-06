@@ -41,7 +41,8 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   natoms = int(astruct.attrib['nat'])
 
   basis_elem = elem.find('basis_set')
-  ecutrho = float(basis_elem.find('ecutrho').text)
+  ecutwfc = float(basis_elem.find('ecutwfc').text)*2
+  ecutrho = float(basis_elem.find('ecutrho').text)*2 # it is read in Ha and must be converted to Ry
 
   a_vectors,b_vectors = [],[]
   vec_array = lambda n,e,s : np.array(e.find('%s%d'%(s,n)).text.split(), dtype=float)
@@ -150,7 +151,7 @@ def parse_qe_data_file_schema ( data_controller, fname ):
 
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag)]
   for s,v in attrs:
     attr[s] = v
 

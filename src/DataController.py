@@ -289,49 +289,50 @@ class DataController:
     self.comm.Barrier()
 
 
-  def write_xsf ( self, data, fname='rs_plot.xsf' ):
-
-    if self.rank == 0:
-      from os.path import join
-
-      fpath = self.data_attributes['opath']
-      if data.dtype == complex:
-        data = np.abs(data)
-      atoms = self.data_arrays['tau']
-      species = self.data_arrays['atoms']
-      a_vecs = self.data_attributes['alat'] * self.data_arrays['a_vectors'] * 0.529177
-
-      with open(join(fpath,fname), 'w') as f:
-        f.write('CRYSTAL\nPRIMVEC\n')
-        for i in range(3):
-          f.write(' %.14f %.14f %.14f\n'%tuple(a_vecs[i]))
-        f.write('PRIMCOORD\n%d 1\n'%atoms.shape[0])
-        for i in range(atoms.shape[0]):
-          tup = (species[i],) + tuple(atoms[i])
-          f.write(' %s %20.14f %20.14f %20.14f\n'%tup)
-
-        f.write('BEGIN_BLOCK_DATAGRID_3D\n data\n BEGIN_DATAGRID_3Dgrid#1\n')
-
-        shape = data.shape
-        f.write(' %d %d %d\n'%shape)
-        f.write(' 0 0 0\n') # Origin
-        for i in range(3):
-          f.write(' %f %f %f\n'%tuple(a_vecs[i] * (shape[i]-1) / shape[i]))
-
-        for k in range(shape[2]):
-          for j in range(shape[1]):
-            f.write(' ' + ' '.join(['%f' % d for d in data[:, j, k]]) + '\n')
-          f.write('\n')
-
-        f.write('END_DATAGRID_3D\nEND_BLOCK_DATAGRID_3D\n')
-
-    self.comm.Barrier()
+#  def write_xsf ( self, data, fname='rs_plot.xsf' ):
+#    import numpy as np
+#    
+#    if self.rank == 0:
+#      from os.path import join
+#
+#      fpath = self.data_attributes['opath']
+#      if data.dtype == complex:
+#        data = np.abs(data)
+#      atoms = self.data_arrays['tau']
+#      species = self.data_arrays['atoms']
+#      a_vecs = self.data_attributes['alat'] * self.data_arrays['a_vectors'] * 0.529177
+#
+#      with open(join(fpath,fname), 'w') as f:
+#        f.write('CRYSTAL\nPRIMVEC\n')
+#        for i in range(3):
+#          f.write(' %.14f %.14f %.14f\n'%tuple(a_vecs[i]))
+#        f.write('PRIMCOORD\n%d 1\n'%atoms.shape[0])
+#        for i in range(atoms.shape[0]):
+#          tup = (species[i],) + tuple(atoms[i])
+#          f.write(' %s %20.14f %20.14f %20.14f\n'%tup)
+#
+#        f.write('BEGIN_BLOCK_DATAGRID_3D\n data\n BEGIN_DATAGRID_3Dgrid#1\n')
+#
+#        shape = data.shape
+#        f.write(' %d %d %d\n'%shape)
+#        f.write(' 0 0 0\n') # Origin
+#        for i in range(3):
+#          f.write(' %f %f %f\n'%tuple(a_vecs[i] * (shape[i]-1) / shape[i]))
+#
+#        for k in range(shape[2]):
+#          for j in range(shape[1]):
+#            f.write(' ' + ' '.join(['%f' % d for d in data[:, j, k]]) + '\n')
+#          f.write('\n')
+#
+#        f.write('END_DATAGRID_3D\nEND_BLOCK_DATAGRID_3D\n')
+#
+#    self.comm.Barrier()
 
 
   def write_Hk_acbn0 ( self ):
     #----------------------
     # write to file Hks,Sks,kpnts,kpnts_wght
-    #----------------------                                                                                                                           
+    #---------------------- 
     import numpy as np
     import os,sys
 

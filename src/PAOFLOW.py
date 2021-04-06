@@ -257,30 +257,45 @@ class PAOFLOW:
 
 
 
-  def projections ( self ):
+  def projections ( self, internal=False ):
     '''
-    Calculate the projections on the atomic basis provided by the pseudopotential.
+    Calculate the projections on the atomic basis provided by the pseudopotential or 
+    on the all-electron internal basis sets.
     Replaces projwfc.
-    TODO  * generalize to arbitrary atomic basis set
-          * add spin-orbit and non-collinear cases
+    TODO  * add spin-orbit and non-collinear cases
     '''
+
     from .defs.do_atwfc_proj import build_pswfc_basis_all
+    from .defs.do_atwfc_proj import build_aewfc_basis
     from .defs.do_atwfc_proj import calc_proj_k
+    from .defs.communication import load_balancing, gather_array
     
     arry,attr = self.data_controller.data_dicts()
     
-    basis,attr['shells'] = build_pswfc_basis_all(self.data_controller)
+    if internal:
+      basis,attr['shells'] = build_aewfc_basis(self.data_controller)
+    else:
+      basis,attr['shells'] = build_pswfc_basis_all(self.data_controller)
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
     natwfc = len(basis)
+    attr['nawf'] = natwfc
     
-    Unew = np.zeros((nbnds,natwfc,nkpnts,nspin), dtype=complex)
+    ini_ik,end_ik = load_balancing(self.size, self.rank,nkpnts)
+    Unewaux = np.zeros((end_ik-ini_ik,nbnds,natwfc,nspin), dtype=complex)
     for ispin in range(nspin):
-      for ik in range(nkpnts):
-        Unew[:,:,ik,ispin] = calc_proj_k(self.data_controller, basis, ik)
+      for ik in range(ini_ik,end_ik):
+        Unewaux[ik-ini_ik,:,:,ispin] = calc_proj_k(self.data_controller, basis, ik)
+    
+    Unew = np.zeros((nkpnts,nbnds,natwfc,nspin), dtype=complex) if self.rank == 0 else None
+    gather_array(Unew,Unewaux)
+    if self.rank == 0: Unew = np.moveaxis(Unew,0,2)
+    Unew = self.comm.bcast(Unew, root=0)
+    
     arry['U'] = Unew
-
+    arry['basis'] = basis
+    
     self.report_module_time('Projections')
 
 
@@ -1061,6 +1076,23 @@ mo    '''
 
 
 
+  def density ( self, nr1=48, nr2=48, nr3=48):
+    '''
+    Calculate the Electron Density in real space
+    Arguments:
+        nr1,nr2,nr3: real space grid
+
+    Returns:
+        None
+    '''
+    from .defs.do_real_space import do_density
+
+    do_density(self.data_controller, nr1,nr2,nr3)
+    
+    self.report_module_time('Density')
+
+
+  
   def trim_non_projectable_bands ( self ):
 
     arrays = self.data_controller.data_arrays
