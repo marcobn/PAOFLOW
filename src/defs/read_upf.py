@@ -1,4 +1,4 @@
-#
+
 # PAOFLOW
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
@@ -138,6 +138,8 @@ class UPF:
 
     # atomic wavefunctions
     self.pswfc = []
+    self.jchia = []
+    self.shells = []
     i = 0
     while True:
       i += 1
@@ -148,7 +150,14 @@ class UPF:
       occ = float(chi.attrib["occupation"])
       wfc = [float(x) for x in chi.text.split()]
       wfc = np.array(wfc)
+      self.shells.append(int(chi.attrib['l']))
       self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
+
+      jchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
+      if jchi is not None:
+        self.jchia.append(float(jchi.attrib['jchi']))
+    self.jchia = self.jchia
+    self.shells = self.shells
 
     # TODO: NLCC, ATRHO
 

@@ -63,7 +63,7 @@ def build_pswfc_basis_all ( data_controller ):
   volume = attr['omega']
   
   # loop over atoms
-  basis = []
+  basis,shells = [],{}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
@@ -71,12 +71,14 @@ def build_pswfc_basis_all ( data_controller ):
     if verbose:
       print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
       
-      # loop over pswfc'c
+    # loop over pswfc'c
+    a_shells = []
     for pao in pswfc:
       l = 'SPDF'.find(pao['label'][1])
       #### CHECK IF THERE IS A BETTER WAY ####
       if l == -1:
         l = 'spdf'.find(pao['label'][1])
+      a_shells.append(l)
         
       wfc_g = radialfft_simpson(r, pao['wfc'], l, qmesh, volume)
       
@@ -85,8 +87,10 @@ def build_pswfc_basis_all ( data_controller ):
           'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
         if verbose:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
+    if atom not in shells:
+      shells[atom] = a_shells
           
-  return basis
+  return basis,shells
 
 def fft_wfc_G2R(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
   wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)

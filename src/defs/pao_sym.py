@@ -756,122 +756,6 @@ def get_inv_op(shells):
 ############################################################################################
 ############################################################################################
 
-def read_shell ( workpath,savedir,species,atoms,spin_orb=False):
-    # reads in shelks from pseudo files
-    from os.path import join,exists
-    import numpy as np
-
-    # Get Shells for each species
-    sdict = {}
-    jchid = {}
-    jchia = None
-
-    for s in species:
-      sdict[s[0]],jchid[s[0]] = read_pseudopotential(join(workpath,savedir,s[1]))
-
-    #double the l=0 if spin orbit
-    if spin_orb:
-        for s,p in sdict.items():
-            tmp_list=[]
-            for o in p:
-                tmp_list.append(o)
-                # if l=0 include it twice
-                if o==0 or len(jchid[s])==0:
-                    tmp_list.append(o)
-            
-            sdict[s] = np.array(tmp_list)
-
-            # when using scalar rel pseido with spin orb..
-            if len(jchid[s])==0:
-                tmp=[]
-                for o in sdict[s][::2]:
-                    if o==0:
-                        tmp.extend([0.5])
-                    if o==1:
-                        tmp.extend([0.5,1.5])
-                    if o==2:
-                        tmp.extend([1.5,2.5])
-                    if o==3:
-                        tmp.extend([2.5,3.5])
-                jchid[s]=np.array(tmp)
-
-
-        jchia = np.hstack([jchid[a] for a in atoms])
-
-
-    # index of which orbitals belong to which atom in the basis
-    a_index = np.hstack([[a]*np.sum((2*sdict[atoms[a]])+1) for a in range(len(atoms))])
-
-    # value of l
-    shell   = np.hstack([sdict[a] for a in atoms])
-    return shell,a_index,jchia
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-def read_pseudopotential ( fpp ):
-  '''
-  Reads a psuedopotential file to determine the included shells and occupations.
-
-  Arguments:
-      fnscf (string) - Filename of the pseudopotential, copied to the .save directory
-
-  Returns:
-      sh, nl (lists) - sh is a list of orbitals (s-0, p-1, d-2, etc)
-                       nl is a list of occupations at each site
-      sh and nl are representative of one atom only
-  '''
-
-  import numpy as np
-  import xml.etree.cElementTree as ET
-  import re
-
-  sh = []
-  # fully rel case
-  jchi=[]
-
-  # clean xnl before reading
-  with open(fpp) as ifo:
-      temp_str=ifo.read()
-
-  temp_str = re.sub('&',' ',temp_str)
-  f = NamedTemporaryFile(mode='w',delete=True)
-  f.write(temp_str)
-
-  try:
-      iterator_obj = ET.iterparse(f.name,events=('start','end'))
-      iterator     = iter(iterator_obj)
-      event,root   = next(iterator)
-
-      for event,elem in iterator:        
-          try:
-              for i in elem.findall("PP_PSWFC/"):
-                  sh.append(int(i.attrib['l']))
-          except Exception as e:
-              pass
-          for i in elem.findall("PP_SPIN_ORB/"):
-              try:
-                  jchi.append(float(i.attrib["jchi"]))
-              except: pass
-              
-      jchi = np.array(jchi)
-      sh   = np.array(sh)
-
-  except Exception as e:
-
-      with open(fpp) as ifo:
-          ifs=ifo.read()
-      res=re.findall("(.*)\s*Wavefunction",ifs)[1:]      
-      sh=np.array(list(map(int,list([x.split()[1] for x in res]))))
-
-
-  return sh,jchi
-
-############################################################################################
-############################################################################################
-############################################################################################
-
 def enforce_t_rev(Hksp_s,nk1,nk2,nk3,spin_orb,U_inv,jchia):
     # enforce time reversal symmetry on H(k)
     nawf=Hksp_s.shape[1]
@@ -1299,18 +1183,27 @@ def open_grid_wrapper(data_controller):
     # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1,nk2,nk3)
 
-    # get shells and atom indices for blocks of the hamiltonian
-    shells,a_index,jchia = read_shell(data_attr['workpath'],data_attr['savedir'],
-                                      data_arrays['species'],atom_lab,
-                                      spin_orb=spin_orb)
+    jchia = []
+    shells = []
+    a_index = []
+    sh = data_attr['shells']
+    if spin_orb:
+      jch = data_attr['jchia']
+    for i,a in enumerate(atom_lab):
+      ash = []
+      for v in sh[a]:
+        ash += [v,v] if v==0 and spin_orb else [v]
+      shells += ash
+      a_index += [i]*np.sum([2*n+1 for n in ash])
+      if spin_orb:
+        jchia += data_attr['jchia'][a]
 
-
-    kp_red = correct_roundoff_kp(kp_red,full_grid)
-
-
+    jchia = np.array(jchia)
+    shells = np.array(shells)
+    a_index = np.array(a_index)
 
     # correct small differences due to conversion
-
+    kp_red = correct_roundoff_kp(kp_red,full_grid)
 
     # we wont need this for now
     if rank==0:

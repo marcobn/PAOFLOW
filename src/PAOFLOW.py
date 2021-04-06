@@ -269,17 +269,15 @@ class PAOFLOW:
     
     arry,attr = self.data_controller.data_dicts()
     
-    basis = build_pswfc_basis_all(self.data_controller)
+    basis,attr['shells'] = build_pswfc_basis_all(self.data_controller)
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
     natwfc = len(basis)
     
-    verbose = False
     Unew = np.zeros((nbnds,natwfc,nkpnts,nspin), dtype=complex)
     for ispin in range(nspin):
       for ik in range(nkpnts):
-        if self.rank==0 and verbose: print(str(ik)+'... ', end='', flush=True)
         Unew[:,:,ik,ispin] = calc_proj_k(self.data_controller, basis, ik)
     arry['U'] = Unew
 
@@ -293,14 +291,27 @@ class PAOFLOW:
       in the .save directory specified in PAOFLOW's constructos. They are saved to the 
       DataController's arrays dictionary with keys 'U' and 'Sks', respectively.
     '''
+    from .defs.read_upf import UPF
     from os.path import exists,join
 
-    fpath = self.data_controller.data_attributes['fpath']
+    arry,attr = self.data_controller.data_dicts()
+    fpath = attr['fpath']
     if exists(join(fpath,'atomic_proj.xml')):
       from .defs.read_QE_xml import parse_qe_atomic_proj
       parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
     else:
       raise Exception('atomic_proj.xml was not found.\n')
+
+    attr['jchia'] = {}
+    attr['shells'] = {}
+    for at,pseudo in arry['species']:
+      fname = join(attr['fpath'], pseudo)
+      if exists(fname):
+        upf = UPF(fname)
+        attr['shells'][at] = upf.shells
+        attr['jchia'][at] = upf.jchia
+      else:
+        raise Exception('Pseudopotential not found: %s'%fname)
 
 
 
@@ -685,8 +696,17 @@ mo    '''
 
     if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
       if sh_l is None and sh_j is None:
-        from .defs.read_sh_nl import read_sh_nl
-        arrays['sh_l'],arrays['sh_j'] = read_sh_nl(self.data_controller)
+        sh = attr['shells']
+        shells,jchia = [],[]
+        for i,a in enumerate(arrays['atoms']):
+          ash = []
+          for v in sh[a]:
+            ash += [v, v] if v==0 else [v]
+          shells += ash[::2]
+          for l in ash[::2]:
+            jchia += [.5, .5] if l==0 else [l-.5, l+.5]
+        arrays['sh_j'] = np.array(jchia)[::2]
+        arrays['sh_l'] = np.array(shells)
       else:
         arrays['sh_l'],arrays['sh_j'] = sh_l,sh_j
     try:
