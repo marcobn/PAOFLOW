@@ -237,10 +237,21 @@ def read_QE_wfc(data_controller, ik):
     wfc = []
     for i in range(nbnd):
       wfc.append(f.read_reals(np.complex128))
-      
+  
+  # compute overlap
+  ovp = np.zeros((nbnd,nbnd),dtype=complex)
+  for n in range(nbnd):
+    for m in range(nbnd):
+      ovp[n,m] = np.sum(np.conj(wfc[n]).dot(wfc[m]))
+  eigs, eigv = np.linalg.eigh(ovp)
+  assert (np.all(eigs>=0))
+
+  X = scipy.linalg.sqrtm(ovp)
+  owfc = np.linalg.solve(X.T, wfc) 
+  
   wfc = np.array(wfc) * scalef
   gkspace = { 'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only }
-  return gkspace, { 'wfc': wfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin }
+  return gkspace, { 'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin }
 
 def calc_atwfc_k(basis, gkspace):
   # construct atomic wfc at k
@@ -388,7 +399,7 @@ def calc_gkspace(data_controller,ik,gamma_only=False):
   for i in range(-nx, nx+1):
     for j in range(-ny, ny+1):
       for k in range(-nz, nz+1):
-        k_plus_G = np.array([i,j,k])@arry['b_vectors']
+        k_plus_G = np.array([i,j,k]) @ arry['b_vectors']
         if np.linalg.norm(k_plus_G)**2 <= attr['ecutrho']/(2*np.pi/attr['alat'])**2:
           mill_g.append(np.array([i,j,k]))
   mill_g = np.swapaxes(np.array(mill_g),1,0)
