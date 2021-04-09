@@ -386,10 +386,9 @@ def ortho_atwfc_k(atwfc_k):
 def calc_proj_k(data_controller, basis, ik, ispin):
   arry, attr = data_controller.data_dicts()
   gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
-  if not attr['dftSO']:
-    atwfc_k = calc_atwfc_k(basis, gkspace)
-    oatwfc_k = ortho_atwfc_k(atwfc_k)
-    proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
+  atwfc_k = calc_atwfc_k(basis, gkspace)
+  oatwfc_k = ortho_atwfc_k(atwfc_k)
+  proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
   return (proj_k.T)
 
 def calc_gkspace(data_controller,ik,gamma_only=False):
