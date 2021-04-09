@@ -25,12 +25,10 @@ rank = comm.Get_rank()
 def do_dos ( data_controller, emin, emax, ne, delta ):
 
   arry,attr = data_controller.data_dicts()
-
   bnd = attr['bnd']
   netot = attr['nkpnts']*bnd
-
   emax = np.amin(np.array([attr['shift'], emax]))
-
+  arry['dos'] = np.empty((ne,), dtype=float)
   # DOS calculation with gaussian smearing
   ene = np.linspace(emin, emax, ne)
 
@@ -53,10 +51,11 @@ def do_dos ( data_controller, emin, emax, ne, delta ):
 
     if rank == 0:
       dos *= float(bnd)/(float(netot)*np.sqrt(np.pi)*delta)
-
+      arry['dos'] = dos
     fdos = 'dos_%s.dat'%str(ispin)
     data_controller.write_file_row_col(fdos, ene, dos)
-
+    data_controller.broadcast_single_array('dos', dtype=float)
+    #return dos if rank==0 else None
 
 def do_dos_adaptive ( data_controller, emin, emax, ne ):
   from .smearing import gaussian, metpax
@@ -68,6 +67,7 @@ def do_dos_adaptive ( data_controller, emin, emax, ne ):
 
   # DOS calculation with adaptive smearing
   ene = np.linspace(emin, emax, ne)
+  arry['dosdk'] = np.empty((ne,), dtype=float)
 
   bnd = attr['bnd']
   netot = attr['nkpnts']*bnd
@@ -97,6 +97,8 @@ def do_dos_adaptive ( data_controller, emin, emax, ne ):
 
     if rank == 0:
       dos *= float(bnd)/netot
-
+      arry['dosdk'] = dos
     fdosdk = 'dosdk_%s.dat'%str(ispin)
-    data_controller.write_file_row_col(fdosdk, ene, dos)
+    data_controller.write_file_row_col(fdosdk, ene,dos)
+    data_controller.broadcast_single_array('dosdk', dtype=float)
+

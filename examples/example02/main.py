@@ -35,8 +35,7 @@ def main():
   paoflow.gradient_and_momenta()
   paoflow.adaptive_smearing()
   paoflow.dos(do_pdos=False, delta=.1, emin=-12., emax=3.)
-  paoflow.transport(emin=-12., emax=3., t_tensor=[[0,0]])
-  paoflow.dielectric_tensor(metal=True, emin=.05, emax=6., d_tensor=[[0,0]])
+  paoflow.transport(emin=-12., emax=3.)
   paoflow.finish_execution()
 
 if __name__== '__main__':

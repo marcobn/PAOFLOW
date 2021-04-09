@@ -46,7 +46,7 @@ def get_degeneracies ( E_k, bnd ):
 
     all_degen.append(by_spin)
 
-  return np.asarray(all_degen)
+  return all_degen
 
 
 def do_pao_eigh ( data_controller ):

@@ -1,0 +1,33 @@
+ &control
+    calculation = 'scf',
+    prefix='GaAs',
+    outdir='./',
+    pseudo_dir = './',
+    verbosity = 'high' , 
+
+/
+
+ &system
+    ibrav =  2, 
+    celldm(1) = 10.6827,
+    nat =  2, 
+    ntyp = 2,
+    nbnd = 25,
+    ecutwfc = 60,
+    ecutrho = 600,
+ /
+ &electrons
+    mixing_beta = 0.7
+    conv_thr =  1.0d-8 
+/
+
+ATOMIC_SPECIES
+ Ga   69.723   Ga.pbe-dn-kjpaw_psl.1.0.0_extDW.UPF
+ As   74.92160 As.pbe-dn-kjpaw_psl.1.0.0_extDW.UPF
+
+ATOMIC_POSITIONS (alat)
+ Ga 0.0   0.0   0.0
+ As 0.25  0.25  0.25
+
+K_POINTS (automatic)
+  6 6 6 1 1 1

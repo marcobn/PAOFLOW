@@ -53,7 +53,6 @@ class PAOFLOW:
   def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False ):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
-
     Arguments:
         workpath (str): Path to the working directory
         outputdir (str): Name of the output directory (created in the working directory path)
@@ -65,7 +64,6 @@ class PAOFLOW:
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
-
     Returns:
         None
     '''
@@ -169,6 +167,8 @@ class PAOFLOW:
     with open(fname, 'wb') as f:
       dump([arry,attr], f, HIGHEST_PROTOCOL)
 
+    self.report_module_time('Restart DUMP')
+
 
 
   def restart_load ( self, fname_prefix='paoflow_dump' ):
@@ -199,6 +199,8 @@ class PAOFLOW:
 
     self.data_controller.data_arrays = arry
     self.data_controller.data_attributes = attr
+
+    self.report_module_time('Restart LOAD')
 
 
 
@@ -542,17 +544,6 @@ mo    '''
       if attr['abort_on_exception']:
         self.comm.Abort()
 
-    # Broadcasting the modified arrays
-    #self.data_controller.broadcast_single_array('HRs')
-    #self.data_controller.broadcast_single_array('tau')
-    #self.data_controller.broadcast_single_array('a_vectors')
-    #self.data_controller.broadcast_single_array('naw')
-    #self.data_controller.broadcast_single_array('sh')
-    #if (attr['do_spin_orbit']):
-    #    self.data_controller.broadcast_single_array('lambda_p')
-    #    self.data_controller.broadcast_single_array('lambda_d')
-    #    self.data_controller.broadcast_single_array('orb_pseudo')
-
     self.report_module_time('doubling_Hamiltonian')
   
 
@@ -873,7 +864,7 @@ mo    '''
 
       if band_curvature:
         from .defs.do_band_curvature import do_band_curvature
-        do_band_curvature (self.data_controller)
+        do_band_curvature(self.data_controller)
         # No more need for k-space Hamiltonian
         del arrays['Hksp']
       
@@ -960,6 +951,7 @@ mo    '''
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
           do_pdos_adaptive(self.data_controller, emin, emax, ne)
+
     except:
       self.report_exception('dos')
       if attr['abort_on_exception']:
@@ -967,8 +959,6 @@ mo    '''
 
     mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
     self.report_module_time(mname)
-
-
 
   def trim_non_projectable_bands ( self ):
 
@@ -1129,18 +1119,62 @@ mo    '''
 
 
 
-  def transport ( self, tmin=300, tmax=300, tstep=1, emin=0., emax=10., ne=500, t_tensor=None, carrier_conc=False):
+  def doping( self, tmin=300, tmax=300, nt=1, delta=0.01, emin=-1., emax=1., ne=1000, doping_conc=0., core_electrons=0., fname='doping_' ):
+    '''
+    Calculate the chemical potential that corresponds to specified doping for different temperatures
+
+    Arguments:
+        tmin (float): The minimum temperature in the range
+        tmax (float): The maximum temperature in the range
+        nt (float): The number of temperature increments
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        ne (float): The number of energy increments
+        doping_conc(float): The amount of doping in 1/cm^3. Positive value for p type and negative value for n type
+        core_electrons(float): The number of core electrons in a system. Adding this to integrated dos allows for integration over a narrower energy window
+        fname (str): Prefix for the filename containg Doping vs Temperature
+
+    Returns:
+        None
+    '''
+    from .defs.do_doping import do_doping
+    from .defs.do_dos import do_dos,do_dos_adaptive
+    
+    arrays,attr = self.data_controller.data_dicts()
+
+    if 'delta' not in attr: attr['delta'] = delta
+    if 'doping_conc' not in attr: attr['doping_conc'] = doping_conc
+    if 'core_electrons' not in attr: attr['core_electrons'] = core_electrons
+
+    ene = np.linspace(emin, emax, ne)
+    temps = np.linspace(tmin, tmax, nt)
+    if attr['smearing'] == None:
+      do_dos(self.data_controller, emin, emax, ne, delta)
+    else:
+      do_dos_adaptive(self.data_controller, emin, emax, ne, delta)
+    do_doping(self.data_controller, temps, ene, fname)
+
+    self.report_module_time('Doping')
+
+
+
+  def transport ( self, tmin=300., tmax=300., nt=1, emin=1., emax=10., ne=500, scattering_channels=[], scattering_weights=[], tau_dict={}, write_to_file=True, save_tensors=False ):
     '''
     Calculate the Transport Properties
 
     Arguments:
         tmin (float): The minimum temperature in the range
         tmax (float): The maximum temperature in the range
-        tstep (float): The step size for temperature increments
+        nt (float): The number of temperatures to evaluate in [tmin,tmax]
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
-        ne (float): The number of energy increments
-        t_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
+        ne (float): The number of energy increments in [emin,emax]
+        fit (bool): fit paoflow output to experiments
+        scattering_channels (list): List of strings specifying a built in model and/or TauModel objects to evaluate
+        scattering_weights (list): List of coefficients weighting components of the harmonic sum when computing tau
+        tau_dict (dict): Dictionary housing parameters required for calculating Tau with built-in models
+        write_to_file (bool): Set True to write tensors to file
+        save_tensors (bool): Set True to save the tensors into the data controller
 
     Returns:
         None
@@ -1148,12 +1182,11 @@ mo    '''
     from .defs.do_transport import do_transport
 
     arrays,attr = self.data_controller.data_dicts()
+    if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
 
     ene = np.linspace(emin, emax, ne)
-    temps = np.arange(tmin, tmax+1.e-10, tstep)
-
-    if t_tensor is not None: arrays['t_tensor'] = np.array(t_tensor)
-
+    temps = np.linspace(tmin, tmax, nt)
+    sc,sw = scattering_channels,scattering_weights
     try:
       # Compute Velocities for Spin 0 Only
       bnd = attr['bnd']
@@ -1161,14 +1194,7 @@ mo    '''
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
 
-      do_transport(self.data_controller, temps, ene, velkp, carrier_conc)
-
-
-      if carrier_conc:
-        from .defs.do_transport import do_carrier_conc        
-        do_carrier_conc(self.data_controller,velkp,ene,temps)
-
-      velkp = None
+      do_transport(self.data_controller, temps, ene, velkp, sc, sw, write_to_file, save_tensors)
 
     except:
       self.report_exception('transport')

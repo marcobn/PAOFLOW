@@ -1,0 +1,11 @@
+
+Transport properties of GaAs with energy and temperature dependent models for the relaxation time, tau. The interpolated k-mesh should be made finer to achieve convergence. To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example the mesh is turned down to 40x40x40.
+
+main.py:
+* Build the PAO Hamiltonian.
+* Interpolate to a finer k-mesh.
+* Compute the eigenvalues, gradient, and momenta.
+* Compute the chemical potential for a range of temperatures at the specified doping concentration.
+* Define a user-defined tau model.
+* Calculate the transport properties with a combination of built-in and user-defined models for tau.
+

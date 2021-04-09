@@ -18,14 +18,13 @@
 import numpy as np
 from mpi4py import MPI
 
-def build_Pn ( nawf, nkpnts, nspin, U ):
-  Pn = np.zeros((nkpnts,U.shape[0]), dtype=float)
+def build_Pn ( nawf, nbnds, nkpnts, nspin, U ):
+  Pn = 0.
   for ispin in range(nspin):
     for ik in range(nkpnts):
       UU = np.transpose(U[:,:,ik,ispin]) #transpose of U. Now the columns of UU are the eigenvector of length nawf
-      Pn[ik] = np.real(np.sum(np.conj(UU)*UU,axis=0))
-
-  return np.mean(Pn,axis=0)
+      Pn += np.real(np.sum(np.conj(UU)*UU,axis=0))/nkpnts/nspin
+  return Pn
 
 
 def do_projectability ( data_controller ):
@@ -42,29 +41,30 @@ def do_projectability ( data_controller ):
   if rank != 0:
     attr['shift'] = None
   else:
-    Pn = build_Pn(attr['nawf'], attr['nkpnts'], attr['nspin'], arry['U'])
+    Pn = build_Pn(attr['nawf'], attr['nbnds'], attr['nkpnts'], attr['nspin'], arry['U'])
 
     if attr['verbose']:
       print('Projectability vector ', Pn)
 
-    # Count the number of projectable states
-    bnd = len(np.where(Pn>attr['pthr'])[0])
+    # Check projectability and decide bnd
+    bnd = 0
+    for n in range(attr['nbnds']):
+      if Pn[n] > attr['pthr']:
+        bnd += 1
     Pn = None
+    attr['bnd'] = maxbnd = bnd
+    if bnd == attr['nawf']:
+      maxbnd = bnd-1
+      print('WARNING: All bands meet the projectability threshold. Consider increasing nbnd in QE.')
 
-    if bnd == 0:
-      raise Exception('No projectable bands!')
-
-    if bnd >= arry['my_eigsmat'].shape[0]:
-      print('\nWARNING: Number of projectable states is equal to the number of bands.\n\tIncrease nbnd in nscf calculation to include the required Null space, to where the states with bad projectability are shifted.\n')
-
-    attr['bnd'] = bnd
-
-    attr['shift'] = (np.amin(arry['my_eigsmat'][bnd,:,:]) if shift=='auto' else shift)
+    if 'shift' not in attr or attr['shift']=='auto':
+      shift_v = np.max([np.amin(arry['my_eigsmat'][maxbnd,:,:]), np.amax(arry['my_eigsmat'][bnd-1,:,:])])
+      attr['shift'] = (shift_v if shift=='auto' else shift)
 
     if attr['verbose']:
       print('# of bands with good projectability > {} = {}'.format(attr['pthr'],bnd))
-      if attr['bnd'] < attr['nbnds']:
-        print('Range of suggested shift ', np.amin(arry['my_eigsmat'][bnd,:,:]), ' , ', np.amax(arry['my_eigsmat'][bnd,:,:]))
+    if attr['verbose'] and bnd < attr['nbnds']:
+      print('Range of suggested shift ', np.amax(arry['my_eigsmat'][bnd-1,:,:]), ' , ', np.amax(arry['my_eigsmat'][maxbnd,:,:]))
 
   # Broadcast 
   data_controller.broadcast_attribute('bnd')

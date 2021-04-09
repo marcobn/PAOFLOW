@@ -27,7 +27,7 @@ import numpy as np
 def verifyData ( subdir, datPattern, refPattern ):
 
     ########## User Defined Variables ##########
-    showFileResult = False  # Show PASS or FAIL for each file
+    showFileResult = False   # Show PASS or FAIL for each file
     showErrors = False  # Flag to print out error values
     tolerance = 0.01  # Percentage that error can deviate from average to pass tests
     ######### End User Defined Variables ########
@@ -70,8 +70,8 @@ def verifyData ( subdir, datPattern, refPattern ):
         # Gather data from files
         df = open(datFiles[i], 'r')
         rf = open(refFiles[i], 'r')
-        dl = np.array([[np.float(s) for s in l.split()] for l in df.readlines()]).transpose()
-        rl = np.array([[np.float(s) for s in l.split()] for l in rf.readlines()]).transpose()
+        dl = np.array([[float(s) for s in l.split()] for l in df.readlines()]).transpose()
+        rl = np.array([[float(s) for s in l.split()] for l in rf.readlines()]).transpose()
         df.close()
         rf.close()
 

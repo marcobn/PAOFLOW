@@ -27,7 +27,6 @@ class DataController:
   def __init__ ( self, workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart ):
     '''
     Initialize the DataController
-
     Arguments:
         workpath (str): Path to the working directory
         outputdir (str): Name of the output directory (created in the working directory path)
@@ -39,7 +38,6 @@ class DataController:
         smearing (str): Smearing type (None, m-p, gauss)
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
-
     Returns:
         None
     '''
@@ -227,7 +225,7 @@ class DataController:
 
       with open(join(attr['opath'],fname), 'w') as f:
         for i in range(len(col1)):
-          f.write('%.5f %.5e\n'%(col1[i],col2[i]))
+          f.write('%.5f %.15e\n'%(col1[i],col2[i]))
     self.comm.Barrier()
 
 
@@ -476,7 +474,7 @@ class DataController:
     '''
     Broadcast array from 'data_arrays' with 'key' from 'root' to all other ranks
 
-,    Arguments:
+    Arguments:
         key (str): The key for the array to broadcast (key must exist in dictionary 'data_arrays')
         dtype (dtype): The data type of the array to broadcast
         root (int): The rank which is the source of the broadcasted array

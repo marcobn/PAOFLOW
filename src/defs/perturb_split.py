@@ -50,4 +50,3 @@ def perturb_split(rot_op1,rot_op2,v_k,degen,return_v_k=False):
       return(op1, op2, v_k_temp)
     else:
       return(op1, op2)
-  
