@@ -286,7 +286,7 @@ class PAOFLOW:
     Unewaux = np.zeros((end_ik-ini_ik,nbnds,natwfc,nspin), dtype=complex)
     for ispin in range(nspin):
       for ik in range(ini_ik,end_ik):
-        Unewaux[ik-ini_ik,:,:,ispin] = calc_proj_k(self.data_controller, basis, ik)
+        Unewaux[ik-ini_ik,:,:,ispin] = calc_proj_k(self.data_controller, basis, ik, ispin)
     
     Unew = np.zeros((nkpnts,nbnds,natwfc,nspin), dtype=complex) if self.rank == 0 else None
     gather_array(Unew,Unewaux)

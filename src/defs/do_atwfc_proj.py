@@ -209,10 +209,18 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
     
   return wfcg
 
-def read_QE_wfc(data_controller, ik):
+def read_QE_wfc(data_controller, ik, ispin):
   arry, attr = data_controller.data_dicts()
   
-  wfcfile = 'wfc{0}.dat'.format(ik+1)
+  if attr['nspin'] == 1:
+    wfcfile = 'wfc{0}.dat'.format(ik+1)
+  elif attr['nspin'] == 2 and ispin == 0:
+    wfcfile = 'wfcdw{0}.dat'.format(ik+1)
+  elif attr['nspin'] == 2 and ispin == 1:
+    wfcfile = 'wfcup{0}.dat'.format(ik+1)
+  else:
+    print('no wfc file found')
+    
   with FortranFile(os.path.join(attr['fpath'], wfcfile), 'r') as f:
     record = f.read_ints(np.int32)
     assert len(record) == 11, 'something wrong reading fortran binary file'
@@ -375,12 +383,13 @@ def ortho_atwfc_k(atwfc_k):
     
   return oatwfc_k
 
-def calc_proj_k(data_controller, basis, ik):
-  gkspace, wfc = read_QE_wfc(data_controller, ik)
-  atwfc_k = calc_atwfc_k(basis, gkspace)
-  oatwfc_k = ortho_atwfc_k(atwfc_k)
-  
-  proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
+def calc_proj_k(data_controller, basis, ik, ispin):
+  arry, attr = data_controller.data_dicts()
+  gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
+  if not attr['dftSO']:
+    atwfc_k = calc_atwfc_k(basis, gkspace)
+    oatwfc_k = ortho_atwfc_k(atwfc_k)
+    proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
   return (proj_k.T)
 
 def calc_gkspace(data_controller,ik,gamma_only=False):
