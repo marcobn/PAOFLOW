@@ -219,7 +219,7 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
 
   for i in range(esize):
     if attributes['smearing'] == 'gauss':
-      Om_zkaux[:,i] = np.sum((Om_znkaux[:,:]*intgaussian(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0]))[36:54], axis=1)
+      Om_zkaux[:,i] = np.sum((Om_znkaux[:,:]*intgaussian(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0])), axis=1)
     elif attributes['smearing'] == 'm-p':
       Om_zkaux[:,i] = np.sum(Om_znkaux[:,:]*intmetpax(arrays['E_k'][:,:,0],ene[i],arrays['deltakp'][:,:,0]), axis=1)
     else:

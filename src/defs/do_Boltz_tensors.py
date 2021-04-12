@@ -110,7 +110,7 @@ def get_tau ( data_controller, temp, channels, weights ):
     tau = np.zeros((snktot,bnd,nspin), dtype=float)
     for m in models:
       try:
-        tau += m.evaluate(temp, eigs)/m.weight
+        tau += m.weight/m.evaluate(temp, eigs)
       except KeyError as e:
         print('Ensure that all required parameters are specified in the provided dictionary.')
         print(e)
