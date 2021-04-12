@@ -309,7 +309,7 @@ def calc_ylmg(k_plus_G, q):
     return ylmg
 
 
-def calc_atwfc_k(basis, gkspace):
+def calc_atwfc_k(basis, gkspace, npol=1):
   # construct atomic wfc at k
   atwfc_k = []
   natwfc = len(basis)
@@ -391,7 +391,7 @@ def ortho_atwfc_k(atwfc_k):
 def calc_proj_k(data_controller, basis, ik, ispin):
   arry, attr = data_controller.data_dicts()
   gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
-  atwfc_k = calc_atwfc_k(basis, gkspace)
+  atwfc_k = calc_atwfc_k(basis, gkspace, npol=wfc['npol'])
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
   return (proj_k.T)
