@@ -261,6 +261,54 @@ def read_QE_wfc(data_controller, ik, ispin):
   gkspace = { 'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only }
   return gkspace, { 'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin }
 
+
+def calc_ylmg(k_plus_G, q):
+    # build the angular part, no spin orbit
+    kGx = np.zeros_like(q)
+    kGy = np.zeros_like(q)
+    kGz = np.zeros_like(q)
+    for ig in range(len(q)):
+      if abs(q[ig]) > 1e-6:
+        kGx[ig] = k_plus_G[ig,0] / q[ig]
+        kGy[ig] = k_plus_G[ig,1] / q[ig]
+        kGz[ig] = k_plus_G[ig,2] / q[ig]
+    
+    lmax = 3
+    ylmg = np.zeros((len(q), (lmax+1)*(lmax+1)))
+
+    # normalization factors for l=0,1,2,3
+    n0 = np.sqrt(1.0/(4.0*np.pi))
+    n1 = np.sqrt(3.0/(4.0*np.pi))
+    n2 = np.sqrt(15.0/(4.0*np.pi))
+    n3 = np.sqrt(105.0/(4.0*np.pi))
+
+    # l = 0
+    ylmg[:,0] = n0 * np.ones_like(q)
+
+    # l = 1
+    ylmg[:,1] = n1 * kGz
+    ylmg[:,2] = -n1 * kGx
+    ylmg[:,3] = -n1 * kGy
+
+    # l = 2
+    ylmg[:,4] = n2 * (3*kGz*kGz - 1)/(2*np.sqrt(3))
+    ylmg[:,5] = -n2 * kGz*kGx
+    ylmg[:,6] = -n2 * kGy*kGz
+    ylmg[:,7] = n2 * (kGx*kGx - kGy*kGy) / 2.0
+    ylmg[:,8] = n2 * kGx * kGy
+
+    # l = 3
+    ylmg[:,9] = n3 * kGz * (2*kGz*kGz - 3*kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(15.0))
+    ylmg[:,10]= -n3 * kGx * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
+    ylmg[:,11]= -n3 * kGy * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
+    ylmg[:,12]= n3 * kGz * (kGx*kGx - kGy*kGy) / 2.0
+    ylmg[:,13]= n3 * kGx * kGy * kGz
+    ylmg[:,14]= -n3 * kGx * (kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(6.0))
+    ylmg[:,15]= -n3 * kGy * (3*kGx*kGx - kGy*kGy) / (2.0*np.sqrt(6.0))
+
+    return ylmg
+
+
 def calc_atwfc_k(basis, gkspace):
   # construct atomic wfc at k
   atwfc_k = []
@@ -286,68 +334,25 @@ def calc_atwfc_k(basis, gkspace):
     
     # 2. build the form factor
     l, m = basis[i]['l'], basis[i]['m']
+    if l > 3: raise NotImplementedError('l>3 not implemented yet')
+
     qmesh, wfc_g = basis[i]['qmesh'], basis[i]['wfc_g']
     q = np.linalg.norm(k_plus_G, axis=1)
     #fact = InterpolatedUnivariateSpline(qmesh, wfc_g)(q)
     fact = scipy.interpolate.interp1d(qmesh, wfc_g, kind='linear')(q)
     
     # 3. build the angular part
-    kGx = np.zeros_like(q)
-    kGy = np.zeros_like(q)
-    kGz = np.zeros_like(q)
-    for ig in range(igwx):
-      if abs(q[ig]) > 1e-6:
-        kGx[ig] = k_plus_G[ig,0] / q[ig]
-        kGy[ig] = k_plus_G[ig,1] / q[ig]
-        kGz[ig] = k_plus_G[ig,2] / q[ig]
-        
-    if l == 0:
-      n0 = np.sqrt(1.0/(4.0*np.pi))
-      ylmg = n0 * np.ones_like(q)
-    elif l == 1:
-      n1 = np.sqrt(3.0/(4.0*np.pi))
-      if m == 1:
-        ylmg = n1 * kGz
-      elif m == 2:
-        ylmg = -n1 * kGx
-      elif m == 3:
-        ylmg = -n1 * kGy
-    elif l == 2:
-      n2 = np.sqrt(15.0/(4.0*np.pi))
-      if m == 1:
-        ylmg = n2 * (3*kGz*kGz - 1)/(2*np.sqrt(3))
-      elif m == 2:
-        ylmg = -n2 * kGz*kGx
-      elif m == 3:
-        ylmg = -n2 * kGy*kGz
-      elif m == 4:
-        ylmg = n2 * (kGx*kGx - kGy*kGy) / 2.0
-      elif m == 5:
-        ylmg = n2 * kGx * kGy
-    elif l == 3:
-      n3 = np.sqrt(105.0/(4.0*np.pi))
-      if m == 1:
-        ylmg = n3 * kGz * (2*kGz*kGz - 3*kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(15.0))
-      elif m == 2:
-        ylmg = -n3 * kGx * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
-      elif m == 3:
-        ylmg = -n3 * kGy * (4*kGz*kGz - kGx*kGx - kGy*kGy) / (2.0*np.sqrt(10.0))
-      elif m == 4:
-        ylmg = n3 * kGz * (kGx*kGx - kGy*kGy) / 2.0
-      elif m == 5:
-        ylmg = n3 * kGx * kGy * kGz
-      elif m == 6:
-        ylmg = -n3 * kGx * (kGx*kGx - 3*kGy*kGy) / (2.0*np.sqrt(6.0))
-      elif m == 7:
-        ylmg = -n3 * kGy * (3*kGx*kGx - kGy*kGy) / (2.0*np.sqrt(6.0))
-    else:
-      raise NotImplementedError('l>2 not implemented yet')
-      
-    atwfc = strf * fact * ylmg * (1.0j)**l
+    lm = l*l + (m-1)
+    ylmg = calc_ylmg(k_plus_G, q)
+    
+    # 4. final
+    atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
     
     atwfc_k.append(atwfc)
     
   return np.array(atwfc_k)
+
+
 
 def ortho_atwfc_k(atwfc_k):
   # orthonormalize atwfcs
