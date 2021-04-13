@@ -263,7 +263,7 @@ def read_QE_wfc(data_controller, ik, ispin):
 
 
 def calc_ylmg(k_plus_G, q):
-    # build the angular part, no spin orbit
+    # cubic harmonics: build the angular part, no spin orbit
     kGx = np.zeros_like(q)
     kGy = np.zeros_like(q)
     kGz = np.zeros_like(q)
@@ -307,6 +307,147 @@ def calc_ylmg(k_plus_G, q):
     ylmg[:,15]= -n3 * kGy * (3*kGx*kGx - kGy*kGy) / (2.0*np.sqrt(6.0))
 
     return ylmg
+
+
+def calc_ylmg_complex(ylmg):
+    # complex spherical harmonics
+    ylmgc = np.zeros_like(ylmg)
+
+    sqrt2 = np.sqrt(2.0)
+
+    # l = 0
+    ylmgc[:,0] = ylmg[:,0]
+
+    # l = 1
+    ylmgc[:,1] = ylmg[:,1]
+    ylmgc[:,2] = -(ylmg[:,2] + 1j*ylmg[:,3])/sqrt2   # m=1
+    ylmgc[:,3] =  (ylmg[:,2] - 1j*ylmg[:,3])/sqrt2   # m=-1
+
+    # l = 2
+    ylmgc[:,4] = ylmg[:,4]
+    ylmgc[:,5] = -(ylmg[:,5] + 1j*ylmg[:,6])/sqrt2   # m=1
+    ylmgc[:,6] =  (ylmg[:,5] - 1j*ylmg[:,6])/sqrt2   # m=-1
+    ylmgc[:,7] = +(ylmg[:,7] + 1j*ylmg[:,8])/sqrt2   # m=2
+    ylmgc[:,8] =  (ylmg[:,7] - 1j*ylmg[:,8])/sqrt2   # m=-2
+    
+    # l = 3
+    ylmgc[:,9] = ylmg[:,9]
+    ylmgc[:,10] = -(ylmg[:,10] + 1j*ylmg[:,11])/sqrt2   # m=1
+    ylmgc[:,10] =  (ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
+    ylmgc[:,12] = +(ylmg[:,12] + 1j*ylmg[:,13])/sqrt2   # m=2
+    ylmgc[:,13] =  (ylmg[:,12] - 1j*ylmg[:,13])/sqrt2   # m=-2
+    ylmgc[:,14] = -(ylmg[:,14] + 1j*ylmg[:,15])/sqrt2   # m=3
+    ylmgc[:,15] =  (ylmg[:,14] - 1j*ylmg[:,15])/sqrt2   # m=-3
+
+    rerturn ylmgc
+
+
+def calc_ylmg_so(ylmgc):
+    # spinor spherical harmonics
+    npw = ylmgc.shape[0]
+    nylm = ylmgc.shape[1]
+    ylmgso = np.zeros((2*npw,2*nylm))
+    sqrt = np.sqrt
+
+    # generated automatically by cb.py
+    #l=0, j=0.5 m_j=-0.5 upper=sqrt(0)*Y(0,-1) 	 lower=sqrt(1)*Y(0,0)
+    ylmgso[:npw,0]=0.0; ylmgso[npw:,0]=sqrt(1)*ylmgc[:npw,0]; 
+
+    #l=0, j=0.5 m_j= 0.5 upper=sqrt(1)*Y(0,0) 	 lower=sqrt(0)*Y(0,1)
+    ylmgso[:npw,1]=sqrt(1)*ylmgc[:npw,0]; ylmgso[npw:,1]=0.0; 
+
+    #l=1, j=1.5 m_j=-1.5 upper=sqrt(0)*Y(1,-2) 	 lower=sqrt(1)*Y(1,-1)
+    ylmgso[:npw,2]=0.0; ylmgso[npw:,2]=sqrt(1)*ylmgc[:npw,2]; 
+
+    #l=1, j=1.5 m_j=-0.5 upper=sqrt(1/3)*Y(1,-1) 	 lower=sqrt(2/3)*Y(1,0)
+    ylmgso[:npw,3]=sqrt(1/3)*ylmgc[:npw,2]; ylmgso[npw:,3]=sqrt(2/3)*ylmgc[:npw,1]; 
+
+    #l=1, j=1.5 m_j= 0.5 upper=sqrt(2/3)*Y(1,0) 	 lower=sqrt(1/3)*Y(1,1)
+    ylmgso[:npw,4]=sqrt(2/3)*ylmgc[:npw,1]; ylmgso[npw:,4]=sqrt(1/3)*ylmgc[:npw,3]; 
+
+    #l=1, j=1.5 m_j= 1.5 upper=sqrt(1)*Y(1,1) 	 lower=sqrt(0)*Y(1,2)
+    ylmgso[:npw,5]=sqrt(1)*ylmgc[:npw,3]; ylmgso[npw:,5]=0.0; 
+
+    #l=1, j=0.5 m_j=-0.5 upper=sqrt(2/3)*Y(1,-1) 	 lower=-sqrt(1/3)*Y(1,0))
+    ylmgso[:npw,6]=sqrt(2/3)*ylmgc[:npw,1]; ylmgso[npw:,6]=-sqrt(1/3)*ylmgc[:npw,2]; 
+
+    #l=1, j=0.5 m_j= 0.5 upper=sqrt(1/3)*Y(1,0) 	 lower=-sqrt(2/3)*Y(1,1))
+    ylmgso[:npw,7]=sqrt(1/3)*ylmgc[:npw,3]; ylmgso[npw:,7]=-sqrt(2/3)*ylmgc[:npw,1]; 
+
+    #l=2, j=2.5 m_j=-2.5 upper=sqrt(0)*Y(2,-3) 	 lower=sqrt(1)*Y(2,-2)
+    ylmgso[:npw,8]=0.0; ylmgso[npw:,8]=sqrt(1)*ylmgc[:npw,8]; 
+
+    #l=2, j=2.5 m_j=-1.5 upper=sqrt(1/5)*Y(2,-2) 	 lower=sqrt(4/5)*Y(2,-1)
+    ylmgso[:npw,9]=sqrt(1/5)*ylmgc[:npw,8]; ylmgso[npw:,9]=sqrt(4/5)*ylmgc[:npw,6]; 
+
+    #l=2, j=2.5 m_j=-0.5 upper=sqrt(2/5)*Y(2,-1) 	 lower=sqrt(3/5)*Y(2,0)
+    ylmgso[:npw,10]=sqrt(2/5)*ylmgc[:npw,6]; ylmgso[npw:,10]=sqrt(3/5)*ylmgc[:npw,4]; 
+
+    #l=2, j=2.5 m_j= 0.5 upper=sqrt(3/5)*Y(2,0) 	 lower=sqrt(2/5)*Y(2,1)
+    ylmgso[:npw,11]=sqrt(3/5)*ylmgc[:npw,4]; ylmgso[npw:,11]=sqrt(2/5)*ylmgc[:npw,5]; 
+
+    #l=2, j=2.5 m_j= 1.5 upper=sqrt(4/5)*Y(2,1) 	 lower=sqrt(1/5)*Y(2,2)
+    ylmgso[:npw,12]=sqrt(4/5)*ylmgc[:npw,5]; ylmgso[npw:,12]=sqrt(1/5)*ylmgc[:npw,7]; 
+
+    #l=2, j=2.5 m_j= 2.5 upper=sqrt(1)*Y(2,2) 	 lower=sqrt(0)*Y(2,3)
+    ylmgso[:npw,13]=sqrt(1)*ylmgc[:npw,7]; ylmgso[npw:,13]=0.0; 
+
+    #l=2, j=1.5 m_j=-1.5 upper=sqrt(4/5)*Y(2,-2) 	 lower=-sqrt(1/5)*Y(2,-1))
+    ylmgso[:npw,14]=sqrt(4/5)*ylmgc[:npw,6]; ylmgso[npw:,14]=-sqrt(1/5)*ylmgc[:npw,8]; 
+
+    #l=2, j=1.5 m_j=-0.5 upper=sqrt(3/5)*Y(2,-1) 	 lower=-sqrt(2/5)*Y(2,0))
+    ylmgso[:npw,15]=sqrt(3/5)*ylmgc[:npw,4]; ylmgso[npw:,15]=-sqrt(2/5)*ylmgc[:npw,6]; 
+
+    #l=2, j=1.5 m_j= 0.5 upper=sqrt(2/5)*Y(2,0) 	 lower=-sqrt(3/5)*Y(2,1))
+    ylmgso[:npw,16]=sqrt(2/5)*ylmgc[:npw,5]; ylmgso[npw:,16]=-sqrt(3/5)*ylmgc[:npw,4]; 
+
+    #l=2, j=1.5 m_j= 1.5 upper=sqrt(1/5)*Y(2,1) 	 lower=-sqrt(4/5)*Y(2,2))
+    ylmgso[:npw,17]=sqrt(1/5)*ylmgc[:npw,7]; ylmgso[npw:,17]=-sqrt(4/5)*ylmgc[:npw,5]; 
+
+    #l=3, j=3.5 m_j=-3.5 upper=sqrt(0)*Y(3,-4) 	 lower=sqrt(1)*Y(3,-3)
+    ylmgso[:npw,18]=0.0; ylmgso[npw:,18]=sqrt(1)*ylmgc[:npw,15]; 
+
+    #l=3, j=3.5 m_j=-2.5 upper=sqrt(1/7)*Y(3,-3) 	 lower=sqrt(6/7)*Y(3,-2)
+    ylmgso[:npw,19]=sqrt(1/7)*ylmgc[:npw,15]; ylmgso[npw:,19]=sqrt(6/7)*ylmgc[:npw,13]; 
+
+    #l=3, j=3.5 m_j=-1.5 upper=sqrt(2/7)*Y(3,-2) 	 lower=sqrt(5/7)*Y(3,-1)
+    ylmgso[:npw,20]=sqrt(2/7)*ylmgc[:npw,13]; ylmgso[npw:,20]=sqrt(5/7)*ylmgc[:npw,11]; 
+
+    #l=3, j=3.5 m_j=-0.5 upper=sqrt(3/7)*Y(3,-1) 	 lower=sqrt(4/7)*Y(3,0)
+    ylmgso[:npw,21]=sqrt(3/7)*ylmgc[:npw,11]; ylmgso[npw:,21]=sqrt(4/7)*ylmgc[:npw,9]; 
+
+    #l=3, j=3.5 m_j= 0.5 upper=sqrt(4/7)*Y(3,0) 	 lower=sqrt(3/7)*Y(3,1)
+    ylmgso[:npw,22]=sqrt(4/7)*ylmgc[:npw,9]; ylmgso[npw:,22]=sqrt(3/7)*ylmgc[:npw,10]; 
+
+    #l=3, j=3.5 m_j= 1.5 upper=sqrt(5/7)*Y(3,1) 	 lower=sqrt(2/7)*Y(3,2)
+    ylmgso[:npw,23]=sqrt(5/7)*ylmgc[:npw,10]; ylmgso[npw:,23]=sqrt(2/7)*ylmgc[:npw,12]; 
+
+    #l=3, j=3.5 m_j= 2.5 upper=sqrt(6/7)*Y(3,2) 	 lower=sqrt(1/7)*Y(3,3)
+    ylmgso[:npw,24]=sqrt(6/7)*ylmgc[:npw,12]; ylmgso[npw:,24]=sqrt(1/7)*ylmgc[:npw,14]; 
+
+    #l=3, j=3.5 m_j= 3.5 upper=sqrt(1)*Y(3,3) 	 lower=sqrt(0)*Y(3,4)
+    ylmgso[:npw,25]=sqrt(1)*ylmgc[:npw,14]; ylmgso[npw:,25]=0.0; 
+
+    #l=3, j=2.5 m_j=-2.5 upper=sqrt(6/7)*Y(3,-3) 	 lower=-sqrt(1/7)*Y(3,-2))
+    ylmgso[:npw,26]=sqrt(6/7)*ylmgc[:npw,13]; ylmgso[npw:,26]=-sqrt(1/7)*ylmgc[:npw,15]; 
+
+    #l=3, j=2.5 m_j=-1.5 upper=sqrt(5/7)*Y(3,-2) 	 lower=-sqrt(2/7)*Y(3,-1))
+    ylmgso[:npw,27]=sqrt(5/7)*ylmgc[:npw,11]; ylmgso[npw:,27]=-sqrt(2/7)*ylmgc[:npw,13]; 
+
+    #l=3, j=2.5 m_j=-0.5 upper=sqrt(4/7)*Y(3,-1) 	 lower=-sqrt(3/7)*Y(3,0))
+    ylmgso[:npw,28]=sqrt(4/7)*ylmgc[:npw,9]; ylmgso[npw:,28]=-sqrt(3/7)*ylmgc[:npw,11]; 
+
+    #l=3, j=2.5 m_j= 0.5 upper=sqrt(3/7)*Y(3,0) 	 lower=-sqrt(4/7)*Y(3,1))
+    ylmgso[:npw,29]=sqrt(3/7)*ylmgc[:npw,10]; ylmgso[npw:,29]=-sqrt(4/7)*ylmgc[:npw,9]; 
+
+    #l=3, j=2.5 m_j= 1.5 upper=sqrt(2/7)*Y(3,1) 	 lower=-sqrt(5/7)*Y(3,2))
+    ylmgso[:npw,30]=sqrt(2/7)*ylmgc[:npw,12]; ylmgso[npw:,30]=-sqrt(5/7)*ylmgc[:npw,10]; 
+
+    #l=3, j=2.5 m_j= 2.5 upper=sqrt(1/7)*Y(3,2) 	 lower=-sqrt(6/7)*Y(3,3))
+    ylmgso[:npw,31]=sqrt(1/7)*ylmgc[:npw,14]; ylmgso[npw:,31]=-sqrt(6/7)*ylmgc[:npw,12]; 
+
+    return ylmgso    
+
 
 
 def calc_atwfc_k(basis, gkspace, npol=1):
