@@ -530,20 +530,17 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
     fact = scipy.interpolate.interp1d(qmesh, wfc_g, kind='linear')(q)
     
     # 3. build the angular part
-    if not dftSO:
-        l, m = basis[i]['l'], basis[i]['m']
-        if l > 3: raise NotImplementedError('l>3 not implemented yet')
-        lm = l*l + (m-1)
-    else:
-        l, m = basis[i]['l'], basis[i]['m']
-        if l > 3: raise NotImplementedError('l>3 not implemented yet')
+    l, m = basis[i]['l'], basis[i]['m']
+    if l > 3: raise NotImplementedError('l>3 not implemented yet')
+    lm = l*l + (m-1)
+    if dftSO:
         lm = basis[i]['lm']
 
     # 4. final
     if not dftSO:
         atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
     else:
-        atwfc = np.repeat(strf,2) * np.repeat(fact,2) * ylmgso[:,lm] * (1.0j)**l
+        atwfc = np.hstack((strf,strf)) * np.hstack((fact,fact)) * ylmgso[:,lm] * (1.0j)**l
  
     atwfc_k.append(atwfc)
     
