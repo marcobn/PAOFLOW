@@ -543,7 +543,7 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
     if not dftSO:
         atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
     else:
-        atwfc = np.repeat(strf,2) * np.repeat(strf,2) * ylmgso[:,lm] * (1.0j)**l
+        atwfc = np.repeat(strf,2) * np.repeat(fact,2) * ylmgso[:,lm] * (1.0j)**l
  
     atwfc_k.append(atwfc)
     
@@ -585,6 +585,7 @@ def ortho_atwfc_k(atwfc_k):
     
   return oatwfc_k
 
+
 def calc_proj_k(data_controller, basis, ik, ispin):
   arry, attr = data_controller.data_dicts()
   gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
@@ -592,6 +593,7 @@ def calc_proj_k(data_controller, basis, ik, ispin):
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
   return (proj_k.T)
+
 
 def calc_gkspace(data_controller,ik,gamma_only=False):
   arry, attr = data_controller.data_dicts()
