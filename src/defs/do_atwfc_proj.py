@@ -56,6 +56,38 @@ def radialfft_simpson(r, f, l, qmesh, volume):
     fq[iq] = scipy.integrate.simps(aux, r)*fact
   return fq
 
+
+
+def assign_jm(basis):
+    ib = 0
+    while ib < len(basis):
+        b = basis[ib]
+        l, m = b['l'], b['m']
+        
+        if l == 0:
+            for c,lm in enumerate((0,1)):
+                basis[ib+c]['lm'] = lm
+            ib += 2
+        
+        elif l == 1:
+            for c,lm in enumerate((4,5,6,7,2,3)):
+                basis[ib+c]['lm'] = lm
+            ib += 6
+            
+        elif l == 2:
+            for c,lm in enumerate((12,13,14,15,16,17,8,9,10,11)):
+                basis[ib+c]['lm'] = lm
+            ib += 10
+            
+        elif l == 3:
+            for c,lm in enumerate((24,25,26,27,28,29,30,31,18,19,20,21,22,23)):
+                basis[ib+c]['lm'] = lm
+            ib += 14
+        
+        else:
+            raise NotImplemented('l > 3 not implemented')
+        
+
 def build_pswfc_basis_all(data_controller):
   arry, attr = data_controller.data_dicts()
   verbose = attr['verbose']
@@ -78,10 +110,8 @@ def build_pswfc_basis_all(data_controller):
     # loop over pswfc'c
     a_shells = []
     for pao in pswfc:
-      l = 'SPDF'.find(pao['label'][1])
-      #### CHECK IF THERE IS A BETTER WAY ####
-      if l == -1:
-        l = 'spdf'.find(pao['label'][1])
+      l = 'SPDF'.find(pao['label'][1].upper())
+      assert l != -1
       a_shells.append(l)
         
       wfc_g = radialfft_simpson(r, pao['wfc'], l, qmesh, volume)
@@ -91,15 +121,30 @@ def build_pswfc_basis_all(data_controller):
           'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
         if verbose and rank == 0:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
+
+      if attr['dftSO'] and l==0:
+        basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': pao['label'],
+          'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
+        if verbose and rank == 0:
+          print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
+
     if atom not in shells:
       shells[atom] = a_shells
-          
+    
+  # in case of SO: assign the jm index
+  if attr['dftSO']:
+    assign_jm(basis)
+
   return basis,shells
+
+
 
 def build_aewfc_basis(data_controller):
   
   arry, attr = data_controller.data_dicts()
   verbose = attr['verbose']
+  if attr['dftSO']:
+      raise NotImplementedError('SO not implemented yet!')
   
   # read the atomic bases
   aebasis = []
@@ -212,7 +257,7 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
 def read_QE_wfc(data_controller, ik, ispin):
   arry, attr = data_controller.data_dicts()
   
-  if attr['nspin'] == 1:
+  if attr['nspin'] == 1 or attr['nspin'] == 4:
     wfcfile = 'wfc{0}.dat'.format(ik+1)
   elif attr['nspin'] == 2 and ispin == 0:
     wfcfile = 'wfcdw{0}.dat'.format(ik+1)
@@ -311,7 +356,7 @@ def calc_ylmg(k_plus_G, q):
 
 def calc_ylmg_complex(ylmg):
     # complex spherical harmonics
-    ylmgc = np.zeros_like(ylmg)
+    ylmgc = np.zeros_like(ylmg, np.complex)
 
     sqrt2 = np.sqrt(2.0)
 
@@ -346,7 +391,7 @@ def calc_ylmg_so(ylmgc):
     # spinor spherical harmonics
     npw = ylmgc.shape[0]
     nylm = ylmgc.shape[1]
-    ylmgso = np.zeros((2*npw,2*nylm))
+    ylmgso = np.zeros((2*npw,2*nylm), np.complex)
     sqrt = np.sqrt
 
     # generated automatically by cb.py
@@ -450,7 +495,7 @@ def calc_ylmg_so(ylmgc):
 
 
 
-def calc_atwfc_k(basis, gkspace, npol=1):
+def calc_atwfc_k(basis, gkspace, dftSO=False):
   # construct atomic wfc at k
   atwfc_k = []
   natwfc = len(basis)
@@ -467,9 +512,12 @@ def calc_atwfc_k(basis, gkspace, npol=1):
   # pre-calculate spherical harmonics
   q = np.linalg.norm(k_plus_G, axis=1)
   ylmg = calc_ylmg(k_plus_G, q)
-  
+  if dftSO:
+      ylmgc = calc_ylmg_complex(ylmg)
+      ylmgso = calc_ylmg_so(ylmgc)
+ 
+  # loop over atoms 
   for i in range(natwfc):
-    
     # 1. build the structure factor
     strf = np.zeros((igwx,), dtype=complex)
     tau = basis[i]['tau']
@@ -477,19 +525,26 @@ def calc_atwfc_k(basis, gkspace, npol=1):
     strf = np.exp(-1j*k_plus_G_dot_tau)
     
     # 2. build the form factor
-    l, m = basis[i]['l'], basis[i]['m']
-    if l > 3: raise NotImplementedError('l>3 not implemented yet')
-
     qmesh, wfc_g = basis[i]['qmesh'], basis[i]['wfc_g']
     #fact = InterpolatedUnivariateSpline(qmesh, wfc_g)(q)
     fact = scipy.interpolate.interp1d(qmesh, wfc_g, kind='linear')(q)
     
     # 3. build the angular part
-    lm = l*l + (m-1)
-    
+    if not dftSO:
+        l, m = basis[i]['l'], basis[i]['m']
+        if l > 3: raise NotImplementedError('l>3 not implemented yet')
+        lm = l*l + (m-1)
+    else:
+        l, m = basis[i]['l'], basis[i]['m']
+        if l > 3: raise NotImplementedError('l>3 not implemented yet')
+        lm = basis[i]['lm']
+
     # 4. final
-    atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
-    
+    if not dftSO:
+        atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
+    else:
+        atwfc = np.repeat(strf,2) * np.repeat(strf,2) * ylmgso[:,lm] * (1.0j)**l
+ 
     atwfc_k.append(atwfc)
     
   return np.array(atwfc_k)
@@ -533,7 +588,7 @@ def ortho_atwfc_k(atwfc_k):
 def calc_proj_k(data_controller, basis, ik, ispin):
   arry, attr = data_controller.data_dicts()
   gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
-  atwfc_k = calc_atwfc_k(basis, gkspace, npol=wfc['npol'])
+  atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
   return (proj_k.T)
