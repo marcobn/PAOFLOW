@@ -339,7 +339,7 @@ def calc_ylmg_complex(ylmg):
     ylmgc[:,14] = -(ylmg[:,14] + 1j*ylmg[:,15])/sqrt2   # m=3
     ylmgc[:,15] =  (ylmg[:,14] - 1j*ylmg[:,15])/sqrt2   # m=-3
 
-    rerturn ylmgc
+    return ylmgc
 
 
 def calc_ylmg_so(ylmgc):
@@ -458,17 +458,20 @@ def calc_atwfc_k(basis, gkspace, npol=1):
   xk, igwx, mill, bg, gamma_only = [gkspace[s] for s in ('xk', 'igwx', 'mill', 'bg', 'gamma_only')]
   #print('xk=', xk)
   
+  # build k+G vectors
+  hkl = mill.T
+  k_plus_G = np.dot(hkl, bg.T)
+  for ig in range(igwx):
+      k_plus_G[ig,:] += xk
+
+  # pre-calculate spherical harmonics
+  q = np.linalg.norm(k_plus_G, axis=1)
+  ylmg = calc_ylmg(k_plus_G, q)
+  
   for i in range(natwfc):
     
     # 1. build the structure factor
     strf = np.zeros((igwx,), dtype=complex)
-    
-#    hkl = np.array([mill[0,:],mill[1,:],mill[2,:]]).T
-    hkl = mill.T
-    k_plus_G = np.dot(hkl, bg.T)
-    for ig in range(igwx):
-      k_plus_G[ig,:] += xk
-      
     tau = basis[i]['tau']
     k_plus_G_dot_tau = np.dot(k_plus_G, tau)
     strf = np.exp(-1j*k_plus_G_dot_tau)
@@ -478,13 +481,11 @@ def calc_atwfc_k(basis, gkspace, npol=1):
     if l > 3: raise NotImplementedError('l>3 not implemented yet')
 
     qmesh, wfc_g = basis[i]['qmesh'], basis[i]['wfc_g']
-    q = np.linalg.norm(k_plus_G, axis=1)
     #fact = InterpolatedUnivariateSpline(qmesh, wfc_g)(q)
     fact = scipy.interpolate.interp1d(qmesh, wfc_g, kind='linear')(q)
     
     # 3. build the angular part
     lm = l*l + (m-1)
-    ylmg = calc_ylmg(k_plus_G, q)
     
     # 4. final
     atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
