@@ -40,6 +40,7 @@ def read_pswfc_from_upf(data_controller, atom):
   for (at, pseudo) in arry['species']:
     if atom == at:
       upf = UPF(os.path.join(attr['fpath'], pseudo))
+      attr['jchia'][at] = upf.jchia
       return upf.r, upf.pswfc, pseudo
     
   raise RuntimeError('atom not found')
@@ -100,6 +101,7 @@ def build_pswfc_basis_all(data_controller):
   
   # loop over atoms
   basis,shells = [],{}
+  attr['jchia'] = {}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
@@ -123,6 +125,7 @@ def build_pswfc_basis_all(data_controller):
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
 
       if attr['dftSO'] and l==0:
+        a_shells.append(l)
         basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': pao['label'],
           'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
         if verbose and rank == 0:
