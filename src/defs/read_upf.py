@@ -18,6 +18,7 @@
 
 import numpy as np
 import xml.etree.ElementTree as ET
+from io import StringIO
 
 # read UPF utility from Davide Ceresoli
 class UPF:
@@ -80,6 +81,8 @@ class UPF:
     # atomic wavefunctions
     self.pswfc = []
     chis = root.find('PP_PSWFC')
+    self.shells = []
+    self.jchia = []
     if chis is not None:
       data = StringIO(chis.text)
       nlines = self.npoints//4
@@ -95,6 +98,7 @@ class UPF:
         for i in range(nlines):
           wfc.extend(map(float, data.readline().split()))
         wfc = np.array(wfc)
+        self.shells.append(int(l))
         self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
 
     # atomic rho
