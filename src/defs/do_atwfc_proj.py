@@ -66,28 +66,28 @@ def assign_jm(basis):
         l, m = b['l'], b['m']
         
         if l == 0:
-            for c,lm in enumerate((0,1)):
-                basis[ib+c]['lm'] = lm
+            for c,jm in enumerate((0,1)):
+                basis[ib+c]['jm'] = jm
             ib += 2
-        
+
         elif l == 1:
-            for c,lm in enumerate((4,5,6,7,2,3)):
-                basis[ib+c]['lm'] = lm
+            for c,jm in enumerate((2,3,4,5,6,7,)):
+                basis[ib+c]['jm'] = jm
             ib += 6
             
         elif l == 2:
-            for c,lm in enumerate((12,13,14,15,16,17,8,9,10,11)):
-                basis[ib+c]['lm'] = lm
+            for c,jm in enumerate((8,9,10,11,12,13,14,15,16,17)):
+                basis[ib+c]['jm'] = jm
             ib += 10
             
         elif l == 3:
-            for c,lm in enumerate((24,25,26,27,28,29,30,31,18,19,20,21,22,23)):
-                basis[ib+c]['lm'] = lm
+            for c,jm in enumerate((18,19,20,21,22,23,24,25,26,27,28,29,30,31)):
+                basis[ib+c]['jm'] = jm
             ib += 14
         
         else:
             raise NotImplemented('l > 3 not implemented')
-        
+
 
 def build_pswfc_basis_all(data_controller):
   arry, attr = data_controller.data_dicts()
@@ -111,11 +111,21 @@ def build_pswfc_basis_all(data_controller):
       
     # loop over pswfc'c
     a_shells = []
+    jchia = []
+
+    s = 0.5
     for pao in pswfc:
       l = 'SPDF'.find(pao['label'][1].upper())
       assert l != -1
+
       a_shells.append(l)
-        
+      if l == 0:
+         jchia.append(0.5)
+         s = 0.5
+      else:
+         jchia.append(l-s)
+         s = -s
+
       wfc_g = radialfft_simpson(r, pao['wfc'], l, qmesh, volume)
       
       for m in range(1, 2*l+2):
@@ -124,19 +134,23 @@ def build_pswfc_basis_all(data_controller):
         if verbose and rank == 0:
           print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
 
-      if attr['dftSO'] and l==0:
-        a_shells.append(l)
-        basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': pao['label'],
-          'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
-        if verbose and rank == 0:
-          print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
+      if attr['dftSO']:
+        if l == 0:
+            basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': pao['label'],
+              'r': r, 'wfc': pao['wfc'].copy(), 'qmesh': qmesh, 'wfc_g': wfc_g})
+            if verbose and rank == 0:
+              print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, pao['label']))
 
     if atom not in shells:
       shells[atom] = a_shells
+      attr['jchia'][atom] = jchia
     
   # in case of SO: assign the jm index
   if attr['dftSO']:
     assign_jm(basis)
+    #for b in basis:
+    #    l,m,jm = b['l'], b['m'], b['jm']
+    #    print(l,m,jm)
 
   return basis,shells
 
@@ -404,95 +418,95 @@ def calc_ylmg_so(ylmgc):
     #l=0, j=0.5 m_j= 0.5 upper=sqrt(1)*Y(0,0) 	 lower=sqrt(0)*Y(0,1)
     ylmgso[:npw,1]=sqrt(1)*ylmgc[:npw,0]; ylmgso[npw:,1]=0.0; 
 
-    #l=1, j=1.5 m_j=-1.5 upper=sqrt(0)*Y(1,-2) 	 lower=sqrt(1)*Y(1,-1)
-    ylmgso[:npw,2]=0.0; ylmgso[npw:,2]=sqrt(1)*ylmgc[:npw,2]; 
-
-    #l=1, j=1.5 m_j=-0.5 upper=sqrt(1/3)*Y(1,-1) 	 lower=sqrt(2/3)*Y(1,0)
-    ylmgso[:npw,3]=sqrt(1/3)*ylmgc[:npw,2]; ylmgso[npw:,3]=sqrt(2/3)*ylmgc[:npw,1]; 
-
-    #l=1, j=1.5 m_j= 0.5 upper=sqrt(2/3)*Y(1,0) 	 lower=sqrt(1/3)*Y(1,1)
-    ylmgso[:npw,4]=sqrt(2/3)*ylmgc[:npw,1]; ylmgso[npw:,4]=sqrt(1/3)*ylmgc[:npw,3]; 
-
-    #l=1, j=1.5 m_j= 1.5 upper=sqrt(1)*Y(1,1) 	 lower=sqrt(0)*Y(1,2)
-    ylmgso[:npw,5]=sqrt(1)*ylmgc[:npw,3]; ylmgso[npw:,5]=0.0; 
-
     #l=1, j=0.5 m_j=-0.5 upper=sqrt(2/3)*Y(1,-1) 	 lower=-sqrt(1/3)*Y(1,0))
-    ylmgso[:npw,6]=sqrt(2/3)*ylmgc[:npw,1]; ylmgso[npw:,6]=-sqrt(1/3)*ylmgc[:npw,2]; 
+    ylmgso[:npw,2]=sqrt(2/3)*ylmgc[:npw,3]; ylmgso[npw:,2]=-sqrt(1/3)*ylmgc[:npw,1]; 
 
     #l=1, j=0.5 m_j= 0.5 upper=sqrt(1/3)*Y(1,0) 	 lower=-sqrt(2/3)*Y(1,1))
-    ylmgso[:npw,7]=sqrt(1/3)*ylmgc[:npw,3]; ylmgso[npw:,7]=-sqrt(2/3)*ylmgc[:npw,1]; 
+    ylmgso[:npw,3]=sqrt(1/3)*ylmgc[:npw,1]; ylmgso[npw:,3]=-sqrt(2/3)*ylmgc[:npw,2]; 
 
-    #l=2, j=2.5 m_j=-2.5 upper=sqrt(0)*Y(2,-3) 	 lower=sqrt(1)*Y(2,-2)
-    ylmgso[:npw,8]=0.0; ylmgso[npw:,8]=sqrt(1)*ylmgc[:npw,8]; 
+    #l=1, j=1.5 m_j=-1.5 upper=sqrt(0)*Y(1,-2) 	 lower=sqrt(1)*Y(1,-1)
+    ylmgso[:npw,4]=0.0; ylmgso[npw:,4]=sqrt(1)*ylmgc[:npw,3]; 
 
-    #l=2, j=2.5 m_j=-1.5 upper=sqrt(1/5)*Y(2,-2) 	 lower=sqrt(4/5)*Y(2,-1)
-    ylmgso[:npw,9]=sqrt(1/5)*ylmgc[:npw,8]; ylmgso[npw:,9]=sqrt(4/5)*ylmgc[:npw,6]; 
+    #l=1, j=1.5 m_j=-0.5 upper=sqrt(1/3)*Y(1,-1) 	 lower=sqrt(2/3)*Y(1,0)
+    ylmgso[:npw,5]=sqrt(1/3)*ylmgc[:npw,3]; ylmgso[npw:,5]=sqrt(2/3)*ylmgc[:npw,1]; 
 
-    #l=2, j=2.5 m_j=-0.5 upper=sqrt(2/5)*Y(2,-1) 	 lower=sqrt(3/5)*Y(2,0)
-    ylmgso[:npw,10]=sqrt(2/5)*ylmgc[:npw,6]; ylmgso[npw:,10]=sqrt(3/5)*ylmgc[:npw,4]; 
+    #l=1, j=1.5 m_j= 0.5 upper=sqrt(2/3)*Y(1,0) 	 lower=sqrt(1/3)*Y(1,1)
+    ylmgso[:npw,6]=sqrt(2/3)*ylmgc[:npw,1]; ylmgso[npw:,6]=sqrt(1/3)*ylmgc[:npw,2]; 
 
-    #l=2, j=2.5 m_j= 0.5 upper=sqrt(3/5)*Y(2,0) 	 lower=sqrt(2/5)*Y(2,1)
-    ylmgso[:npw,11]=sqrt(3/5)*ylmgc[:npw,4]; ylmgso[npw:,11]=sqrt(2/5)*ylmgc[:npw,5]; 
-
-    #l=2, j=2.5 m_j= 1.5 upper=sqrt(4/5)*Y(2,1) 	 lower=sqrt(1/5)*Y(2,2)
-    ylmgso[:npw,12]=sqrt(4/5)*ylmgc[:npw,5]; ylmgso[npw:,12]=sqrt(1/5)*ylmgc[:npw,7]; 
-
-    #l=2, j=2.5 m_j= 2.5 upper=sqrt(1)*Y(2,2) 	 lower=sqrt(0)*Y(2,3)
-    ylmgso[:npw,13]=sqrt(1)*ylmgc[:npw,7]; ylmgso[npw:,13]=0.0; 
+    #l=1, j=1.5 m_j= 1.5 upper=sqrt(1)*Y(1,1) 	 lower=sqrt(0)*Y(1,2)
+    ylmgso[:npw,7]=sqrt(1)*ylmgc[:npw,2]; ylmgso[npw:,7]=0.0; 
 
     #l=2, j=1.5 m_j=-1.5 upper=sqrt(4/5)*Y(2,-2) 	 lower=-sqrt(1/5)*Y(2,-1))
-    ylmgso[:npw,14]=sqrt(4/5)*ylmgc[:npw,6]; ylmgso[npw:,14]=-sqrt(1/5)*ylmgc[:npw,8]; 
+    ylmgso[:npw,8]=sqrt(4/5)*ylmgc[:npw,8]; ylmgso[npw:,8]=-sqrt(1/5)*ylmgc[:npw,6]; 
 
     #l=2, j=1.5 m_j=-0.5 upper=sqrt(3/5)*Y(2,-1) 	 lower=-sqrt(2/5)*Y(2,0))
-    ylmgso[:npw,15]=sqrt(3/5)*ylmgc[:npw,4]; ylmgso[npw:,15]=-sqrt(2/5)*ylmgc[:npw,6]; 
+    ylmgso[:npw,9]=sqrt(3/5)*ylmgc[:npw,6]; ylmgso[npw:,9]=-sqrt(2/5)*ylmgc[:npw,4]; 
 
     #l=2, j=1.5 m_j= 0.5 upper=sqrt(2/5)*Y(2,0) 	 lower=-sqrt(3/5)*Y(2,1))
-    ylmgso[:npw,16]=sqrt(2/5)*ylmgc[:npw,5]; ylmgso[npw:,16]=-sqrt(3/5)*ylmgc[:npw,4]; 
+    ylmgso[:npw,10]=sqrt(2/5)*ylmgc[:npw,4]; ylmgso[npw:,10]=-sqrt(3/5)*ylmgc[:npw,5]; 
 
     #l=2, j=1.5 m_j= 1.5 upper=sqrt(1/5)*Y(2,1) 	 lower=-sqrt(4/5)*Y(2,2))
-    ylmgso[:npw,17]=sqrt(1/5)*ylmgc[:npw,7]; ylmgso[npw:,17]=-sqrt(4/5)*ylmgc[:npw,5]; 
+    ylmgso[:npw,11]=sqrt(1/5)*ylmgc[:npw,5]; ylmgso[npw:,11]=-sqrt(4/5)*ylmgc[:npw,7]; 
 
-    #l=3, j=3.5 m_j=-3.5 upper=sqrt(0)*Y(3,-4) 	 lower=sqrt(1)*Y(3,-3)
-    ylmgso[:npw,18]=0.0; ylmgso[npw:,18]=sqrt(1)*ylmgc[:npw,15]; 
+    #l=2, j=2.5 m_j=-2.5 upper=sqrt(0)*Y(2,-3) 	 lower=sqrt(1)*Y(2,-2)
+    ylmgso[:npw,12]=0.0; ylmgso[npw:,12]=sqrt(1)*ylmgc[:npw,8]; 
 
-    #l=3, j=3.5 m_j=-2.5 upper=sqrt(1/7)*Y(3,-3) 	 lower=sqrt(6/7)*Y(3,-2)
-    ylmgso[:npw,19]=sqrt(1/7)*ylmgc[:npw,15]; ylmgso[npw:,19]=sqrt(6/7)*ylmgc[:npw,13]; 
+    #l=2, j=2.5 m_j=-1.5 upper=sqrt(1/5)*Y(2,-2) 	 lower=sqrt(4/5)*Y(2,-1)
+    ylmgso[:npw,13]=sqrt(1/5)*ylmgc[:npw,8]; ylmgso[npw:,13]=sqrt(4/5)*ylmgc[:npw,6]; 
 
-    #l=3, j=3.5 m_j=-1.5 upper=sqrt(2/7)*Y(3,-2) 	 lower=sqrt(5/7)*Y(3,-1)
-    ylmgso[:npw,20]=sqrt(2/7)*ylmgc[:npw,13]; ylmgso[npw:,20]=sqrt(5/7)*ylmgc[:npw,11]; 
+    #l=2, j=2.5 m_j=-0.5 upper=sqrt(2/5)*Y(2,-1) 	 lower=sqrt(3/5)*Y(2,0)
+    ylmgso[:npw,14]=sqrt(2/5)*ylmgc[:npw,6]; ylmgso[npw:,14]=sqrt(3/5)*ylmgc[:npw,4]; 
 
-    #l=3, j=3.5 m_j=-0.5 upper=sqrt(3/7)*Y(3,-1) 	 lower=sqrt(4/7)*Y(3,0)
-    ylmgso[:npw,21]=sqrt(3/7)*ylmgc[:npw,11]; ylmgso[npw:,21]=sqrt(4/7)*ylmgc[:npw,9]; 
+    #l=2, j=2.5 m_j= 0.5 upper=sqrt(3/5)*Y(2,0) 	 lower=sqrt(2/5)*Y(2,1)
+    ylmgso[:npw,15]=sqrt(3/5)*ylmgc[:npw,4]; ylmgso[npw:,15]=sqrt(2/5)*ylmgc[:npw,5]; 
 
-    #l=3, j=3.5 m_j= 0.5 upper=sqrt(4/7)*Y(3,0) 	 lower=sqrt(3/7)*Y(3,1)
-    ylmgso[:npw,22]=sqrt(4/7)*ylmgc[:npw,9]; ylmgso[npw:,22]=sqrt(3/7)*ylmgc[:npw,10]; 
+    #l=2, j=2.5 m_j= 1.5 upper=sqrt(4/5)*Y(2,1) 	 lower=sqrt(1/5)*Y(2,2)
+    ylmgso[:npw,16]=sqrt(4/5)*ylmgc[:npw,5]; ylmgso[npw:,16]=sqrt(1/5)*ylmgc[:npw,7]; 
 
-    #l=3, j=3.5 m_j= 1.5 upper=sqrt(5/7)*Y(3,1) 	 lower=sqrt(2/7)*Y(3,2)
-    ylmgso[:npw,23]=sqrt(5/7)*ylmgc[:npw,10]; ylmgso[npw:,23]=sqrt(2/7)*ylmgc[:npw,12]; 
-
-    #l=3, j=3.5 m_j= 2.5 upper=sqrt(6/7)*Y(3,2) 	 lower=sqrt(1/7)*Y(3,3)
-    ylmgso[:npw,24]=sqrt(6/7)*ylmgc[:npw,12]; ylmgso[npw:,24]=sqrt(1/7)*ylmgc[:npw,14]; 
-
-    #l=3, j=3.5 m_j= 3.5 upper=sqrt(1)*Y(3,3) 	 lower=sqrt(0)*Y(3,4)
-    ylmgso[:npw,25]=sqrt(1)*ylmgc[:npw,14]; ylmgso[npw:,25]=0.0; 
+    #l=2, j=2.5 m_j= 2.5 upper=sqrt(1)*Y(2,2) 	 lower=sqrt(0)*Y(2,3)
+    ylmgso[:npw,17]=sqrt(1)*ylmgc[:npw,7]; ylmgso[npw:,17]=0.0; 
 
     #l=3, j=2.5 m_j=-2.5 upper=sqrt(6/7)*Y(3,-3) 	 lower=-sqrt(1/7)*Y(3,-2))
-    ylmgso[:npw,26]=sqrt(6/7)*ylmgc[:npw,13]; ylmgso[npw:,26]=-sqrt(1/7)*ylmgc[:npw,15]; 
+    ylmgso[:npw,18]=sqrt(6/7)*ylmgc[:npw,15]; ylmgso[npw:,18]=-sqrt(1/7)*ylmgc[:npw,13]; 
 
     #l=3, j=2.5 m_j=-1.5 upper=sqrt(5/7)*Y(3,-2) 	 lower=-sqrt(2/7)*Y(3,-1))
-    ylmgso[:npw,27]=sqrt(5/7)*ylmgc[:npw,11]; ylmgso[npw:,27]=-sqrt(2/7)*ylmgc[:npw,13]; 
+    ylmgso[:npw,19]=sqrt(5/7)*ylmgc[:npw,13]; ylmgso[npw:,19]=-sqrt(2/7)*ylmgc[:npw,11]; 
 
     #l=3, j=2.5 m_j=-0.5 upper=sqrt(4/7)*Y(3,-1) 	 lower=-sqrt(3/7)*Y(3,0))
-    ylmgso[:npw,28]=sqrt(4/7)*ylmgc[:npw,9]; ylmgso[npw:,28]=-sqrt(3/7)*ylmgc[:npw,11]; 
+    ylmgso[:npw,20]=sqrt(4/7)*ylmgc[:npw,11]; ylmgso[npw:,20]=-sqrt(3/7)*ylmgc[:npw,9]; 
 
     #l=3, j=2.5 m_j= 0.5 upper=sqrt(3/7)*Y(3,0) 	 lower=-sqrt(4/7)*Y(3,1))
-    ylmgso[:npw,29]=sqrt(3/7)*ylmgc[:npw,10]; ylmgso[npw:,29]=-sqrt(4/7)*ylmgc[:npw,9]; 
+    ylmgso[:npw,21]=sqrt(3/7)*ylmgc[:npw,9]; ylmgso[npw:,21]=-sqrt(4/7)*ylmgc[:npw,10]; 
 
     #l=3, j=2.5 m_j= 1.5 upper=sqrt(2/7)*Y(3,1) 	 lower=-sqrt(5/7)*Y(3,2))
-    ylmgso[:npw,30]=sqrt(2/7)*ylmgc[:npw,12]; ylmgso[npw:,30]=-sqrt(5/7)*ylmgc[:npw,10]; 
+    ylmgso[:npw,22]=sqrt(2/7)*ylmgc[:npw,10]; ylmgso[npw:,22]=-sqrt(5/7)*ylmgc[:npw,12]; 
 
     #l=3, j=2.5 m_j= 2.5 upper=sqrt(1/7)*Y(3,2) 	 lower=-sqrt(6/7)*Y(3,3))
-    ylmgso[:npw,31]=sqrt(1/7)*ylmgc[:npw,14]; ylmgso[npw:,31]=-sqrt(6/7)*ylmgc[:npw,12]; 
+    ylmgso[:npw,23]=sqrt(1/7)*ylmgc[:npw,12]; ylmgso[npw:,23]=-sqrt(6/7)*ylmgc[:npw,14]; 
+
+    #l=3, j=3.5 m_j=-3.5 upper=sqrt(0)*Y(3,-4) 	 lower=sqrt(1)*Y(3,-3)
+    ylmgso[:npw,24]=0.0; ylmgso[npw:,24]=sqrt(1)*ylmgc[:npw,15]; 
+
+    #l=3, j=3.5 m_j=-2.5 upper=sqrt(1/7)*Y(3,-3) 	 lower=sqrt(6/7)*Y(3,-2)
+    ylmgso[:npw,25]=sqrt(1/7)*ylmgc[:npw,15]; ylmgso[npw:,25]=sqrt(6/7)*ylmgc[:npw,13]; 
+
+    #l=3, j=3.5 m_j=-1.5 upper=sqrt(2/7)*Y(3,-2) 	 lower=sqrt(5/7)*Y(3,-1)
+    ylmgso[:npw,26]=sqrt(2/7)*ylmgc[:npw,13]; ylmgso[npw:,26]=sqrt(5/7)*ylmgc[:npw,11]; 
+
+    #l=3, j=3.5 m_j=-0.5 upper=sqrt(3/7)*Y(3,-1) 	 lower=sqrt(4/7)*Y(3,0)
+    ylmgso[:npw,27]=sqrt(3/7)*ylmgc[:npw,11]; ylmgso[npw:,27]=sqrt(4/7)*ylmgc[:npw,9]; 
+
+    #l=3, j=3.5 m_j= 0.5 upper=sqrt(4/7)*Y(3,0) 	 lower=sqrt(3/7)*Y(3,1)
+    ylmgso[:npw,28]=sqrt(4/7)*ylmgc[:npw,9]; ylmgso[npw:,28]=sqrt(3/7)*ylmgc[:npw,10]; 
+
+    #l=3, j=3.5 m_j= 1.5 upper=sqrt(5/7)*Y(3,1) 	 lower=sqrt(2/7)*Y(3,2)
+    ylmgso[:npw,29]=sqrt(5/7)*ylmgc[:npw,10]; ylmgso[npw:,29]=sqrt(2/7)*ylmgc[:npw,12]; 
+
+    #l=3, j=3.5 m_j= 2.5 upper=sqrt(6/7)*Y(3,2) 	 lower=sqrt(1/7)*Y(3,3)
+    ylmgso[:npw,30]=sqrt(6/7)*ylmgc[:npw,12]; ylmgso[npw:,30]=sqrt(1/7)*ylmgc[:npw,14]; 
+
+    #l=3, j=3.5 m_j= 3.5 upper=sqrt(1)*Y(3,3) 	 lower=sqrt(0)*Y(3,4)
+    ylmgso[:npw,31]=sqrt(1)*ylmgc[:npw,14]; ylmgso[npw:,31]=0.0; 
 
     return ylmgso    
 
@@ -537,13 +551,13 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
     if l > 3: raise NotImplementedError('l>3 not implemented yet')
     lm = l*l + (m-1)
     if dftSO:
-        lm = basis[i]['lm']
+        jm = basis[i]['jm']
 
     # 4. final
     if not dftSO:
         atwfc = strf * fact * ylmg[:,lm] * (1.0j)**l
     else:
-        atwfc = np.hstack((strf,strf)) * np.hstack((fact,fact)) * ylmgso[:,lm] * (1.0j)**l
+        atwfc = np.hstack((strf,strf)) * np.hstack((fact,fact)) * ylmgso[:,jm] * (1.0j)**l
  
     atwfc_k.append(atwfc)
     
