@@ -19,7 +19,7 @@ for l in range(0,4):
         pass
     else:
         mj = -j
-        for i in range(2*(2*l+1)):
+        while mj <= j:
             m = mj + 0.5
             if mj <= j:
                 fact1 = Fraction(int(l-m+1), denom)
@@ -48,7 +48,7 @@ for l in range(0,4):
         pass
     else:
         mj = -j
-        for i in range(2*(2*l+1)):
+        while mj <= j:
             m = mj - 0.5
             if mj <= j:
                 fact1 = Fraction(int(l+m+1), denom)

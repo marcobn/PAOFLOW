@@ -371,7 +371,7 @@ def calc_ylmg(k_plus_G, q):
     return ylmg
 
 
-def calc_ylmg_complex(ylmg):
+def calc_ylmg_complex_0(ylmg):
     # complex spherical harmonics
     ylmgc = np.zeros_like(ylmg, np.complex)
 
@@ -382,24 +382,32 @@ def calc_ylmg_complex(ylmg):
 
     # l = 1
     ylmgc[:,1] = ylmg[:,1]
-    ylmgc[:,2] = -(ylmg[:,2] + 1j*ylmg[:,3])/sqrt2   # m=1
-    ylmgc[:,3] =  (ylmg[:,2] - 1j*ylmg[:,3])/sqrt2   # m=-1
+    #ylmgc[:,2] = -(ylmg[:,2] + 1j*ylmg[:,3])/sqrt2   # m=1
+    #ylmgc[:,3] =  (ylmg[:,2] - 1j*ylmg[:,3])/sqrt2   # m=-1
+    ylmgc[:,2] =  (ylmg[:,2] + 1j*ylmg[:,3])/sqrt2   # m=1     # because QE cub. harm. have opposite sign
+    ylmgc[:,3] = -(ylmg[:,2] - 1j*ylmg[:,3])/sqrt2   # m=-1
 
     # l = 2
     ylmgc[:,4] = ylmg[:,4]
-    ylmgc[:,5] = -(ylmg[:,5] + 1j*ylmg[:,6])/sqrt2   # m=1
-    ylmgc[:,6] =  (ylmg[:,5] - 1j*ylmg[:,6])/sqrt2   # m=-1
+    #ylmgc[:,5] = -(ylmg[:,5] + 1j*ylmg[:,6])/sqrt2   # m=1
+    #ylmgc[:,6] =  (ylmg[:,5] - 1j*ylmg[:,6])/sqrt2   # m=-1
+    ylmgc[:,5] =  (ylmg[:,5] + 1j*ylmg[:,6])/sqrt2   # m=1     # because QE cub. harm. have opposite sign
+    ylmgc[:,6] = -(ylmg[:,5] - 1j*ylmg[:,6])/sqrt2   # m=-1
     ylmgc[:,7] = +(ylmg[:,7] + 1j*ylmg[:,8])/sqrt2   # m=2
     ylmgc[:,8] =  (ylmg[:,7] - 1j*ylmg[:,8])/sqrt2   # m=-2
     
     # l = 3
     ylmgc[:,9] = ylmg[:,9]
-    ylmgc[:,10] = -(ylmg[:,10] + 1j*ylmg[:,11])/sqrt2   # m=1
-    ylmgc[:,10] =  (ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
+    #ylmgc[:,10] = -(ylmg[:,10] + 1j*ylmg[:,11])/sqrt2   # m=1
+    #ylmgc[:,10] =  (ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
+    ylmgc[:,10] =  (ylmg[:,10] + 1j*ylmg[:,11])/sqrt2   # m=1     # because QE cub. harm. have opposite sign
+    ylmgc[:,10] = -(ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
     ylmgc[:,12] = +(ylmg[:,12] + 1j*ylmg[:,13])/sqrt2   # m=2
     ylmgc[:,13] =  (ylmg[:,12] - 1j*ylmg[:,13])/sqrt2   # m=-2
-    ylmgc[:,14] = -(ylmg[:,14] + 1j*ylmg[:,15])/sqrt2   # m=3
-    ylmgc[:,15] =  (ylmg[:,14] - 1j*ylmg[:,15])/sqrt2   # m=-3
+    #ylmgc[:,14] = -(ylmg[:,14] + 1j*ylmg[:,15])/sqrt2   # m=3
+    #ylmgc[:,15] =  (ylmg[:,14] - 1j*ylmg[:,15])/sqrt2   # m=-3
+    ylmgc[:,14] =  (ylmg[:,14] + 1j*ylmg[:,15])/sqrt2   # m=3     # because QE cub. harm. have opposite sign
+    ylmgc[:,15] = -(ylmg[:,14] - 1j*ylmg[:,15])/sqrt2   # m=-3
 
     return ylmgc
 
@@ -530,7 +538,7 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
   q = np.linalg.norm(k_plus_G, axis=1)
   ylmg = calc_ylmg(k_plus_G, q)
   if dftSO:
-      ylmgc = calc_ylmg_complex(ylmg)
+      ylmgc = calc_ylmg_complex_0(ylmg)
       ylmgso = calc_ylmg_so(ylmgc)
  
   # loop over atoms 
