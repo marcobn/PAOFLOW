@@ -74,6 +74,6 @@ def E_Fermi(data_controller,ham='Hks'):
 	
 	# rescale Hksp
 	Hksp[dinds[0],dinds[1]] -= Ef
-	arry[ham] = Hksp
+	arry[ham] = Hksp.reshape((nawf,nawf,nk1,nk2,nk3,nspin),order='C')
 	return(Ef)
 	

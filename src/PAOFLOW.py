@@ -392,7 +392,7 @@ class PAOFLOW:
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
-#      E_Fermi(self.data_controller,ham='Hks')
+      _ = E_Fermi(self.data_controller,ham='Hks')
     except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
