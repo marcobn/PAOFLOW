@@ -225,9 +225,9 @@ def build_aewfc_basis(data_controller):
   # in case of SO: assign the jm index
   if attr['dftSO']:
     assign_jm(basis)
-    for b in basis:
-        l,m,jm = b['l'], b['m'], b['jm']
-        print(l,m,jm)
+    #for b in basis:
+    #    l,m,jm = b['l'], b['m'], b['jm']
+    #    print(l,m,jm)
 
   return basis,shells
 
