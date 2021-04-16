@@ -373,6 +373,7 @@ class PAOFLOW:
     '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
+    from .defs.do_Efermi import E_Fermi
 
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
@@ -391,6 +392,7 @@ class PAOFLOW:
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
+#      E_Fermi(self.data_controller,ham='Hks')
     except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:

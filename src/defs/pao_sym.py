@@ -811,6 +811,7 @@ def apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia):
             if not spin_orb:
                 new_Hk_list.append(np.conj(Hksp[i]))
             else:
+#                print(U_inv.shape,U_TR.shape,Hksp.shape)
                 new_Hk_list.append(np.conj(U_inv*(U_TR @ Hksp[i] @ np.conj(U_TR.T))))
 
     if len(new_kp_list)==0:
@@ -910,7 +911,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
 
     nawf = Hksp.shape[1]
-
+#    print(shells)
     # get inversion operator
     U_inv = get_inv_op(shells)
 
@@ -1233,8 +1234,8 @@ def open_grid_wrapper(data_controller):
         else:
             Hksp=None
 
-    if rank==0:
-        data_arrays['Hks'] = reshift_efermi(data_arrays['Hks'],1,nelec,spin_orb)
+#    if rank==0:
+#        data_arrays['Hks'] = reshift_efermi(data_arrays['Hks'],1,nelec,spin_orb)
 
 ############################################################################################
 ############################################################################################
@@ -1367,3 +1368,38 @@ def reshift_efermi(Hksp,npool,nelec,spin_orb):
 #    Hksp=gather_full(Hksp,npool)
     
     return Hksp
+  
+def reshift_efermi(Hksp,npool,nelec,spin_orb):
+
+#    Hksp=scatter_full(Hksp,npool)
+    nspin = Hksp.shape[-1]
+
+    eig = np.zeros((Hksp.shape[1],Hksp.shape[2],Hksp.shape[3]))
+
+    dinds = np.diag_indices(Hksp.shape[1])
+
+    for ispin in range(Hksp.shape[3]):
+        for kp in range(Hksp.shape[2]):
+            eig[:,kp,ispin] = LA.eigvalsh(Hksp[:,:,kp,ispin])
+
+#    eigs=gather_full(eig,npool)
+    
+
+    nbnd=nelec
+    if not spin_orb:
+        nbnd=np.floor(nelec/2.0)
+    
+    if rank==0:
+        nk=eig.shape[1]
+        eig=np.sort(np.ravel(eig))
+        efermi=eig[int(nk*nbnd*nspin-1)]
+    else:
+        efermi=None
+
+#    efermi = comm.bcast(efermi)
+
+    Hksp[dinds[0],dinds[1]] -= efermi
+#    Hksp=gather_full(Hksp,npool)
+    
+    return Hksp
+

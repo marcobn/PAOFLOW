@@ -183,7 +183,7 @@ def build_aewfc_basis(data_controller):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
     aewfc = []
-    for shell in arry['shells'][atom]:
+    for shell in arry['configuration'][atom]:
       data = np.loadtxt(aebasis[na][shell])    
       aewfc.append({shell : data[:,1], 'r' : data[:,0]})
       
