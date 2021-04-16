@@ -157,11 +157,8 @@ def build_pswfc_basis_all(data_controller):
 
 
 def build_aewfc_basis(data_controller):
-  
   arry, attr = data_controller.data_dicts()
   verbose = attr['verbose']
-  if attr['dftSO']:
-      raise NotImplementedError('SO not implemented yet!')
   
   # read the atomic bases
   aebasis = []
@@ -181,6 +178,7 @@ def build_aewfc_basis(data_controller):
   
   # loop over atoms
   basis,shells = [],{}
+  attr['jchia'] = {}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
@@ -191,24 +189,49 @@ def build_aewfc_basis(data_controller):
       
       if verbose and rank == 0:
         print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, aebasis[na][shell], tau))
+
     ash = []
+    jchia = []
     for n in range(len(aewfc)):
-      l = 'SPDF'.find(list(aewfc[n].items())[0][0][1])
-      #### CHECK IF THERE IS A BETTER WAY ####
-      if l == -1:
-        l = 'spdf'.find(list(aewfc[n].items())[0][0][1])
+      l = 'SPDF'.find(list(aewfc[n].items())[0][0][1].upper())
+      assert l != -1
       ash.append(l)
+
+      if attr['dftSO']:
+         if l == 0:
+             jchia.append(0.5)
+         else:
+             ash.append(l)
+             jchia.append(l-0.5)
+             jchia.append(l+0.5)
+
       wfc_g = radialfft_simpson(aewfc[n]['r'], aewfc[n][list(aewfc[n].items())[0][0]], l, qmesh, volume)
 
-      for m in range(1, 2*l+2):
-        basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': list(aewfc[n].items())[0][0],
-          'r': aewfc[n]['r'], 'wfc': aewfc[n][list(aewfc[n].items())[0][0]].copy(), 
-          'qmesh': qmesh, 'wfc_g': wfc_g})
-        if verbose and rank == 0:
-          print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, 
-            list(aewfc[n].items())[0][0]))
-    shells[atom] = ash
+      twice = 1
+      if attr['dftSO']: twice = 2
+
+      for _ in range(twice):
+        for m in range(1, 2*l+2):
+          basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': list(aewfc[n].items())[0][0],
+                        'r': aewfc[n]['r'], 'wfc': aewfc[n][list(aewfc[n].items())[0][0]].copy(), 
+                        'qmesh': qmesh, 'wfc_g': wfc_g})
+          if verbose and rank == 0:
+              print('      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(len(basis), l, m, list(aewfc[n].items())[0][0]))
+
+    if atom not in shells:
+      shells[atom] = ash
+      attr['jchia'][atom] = jchia
+    
+  # in case of SO: assign the jm index
+  if attr['dftSO']:
+    assign_jm(basis)
+    for b in basis:
+        l,m,jm = b['l'], b['m'], b['jm']
+        print(l,m,jm)
+
   return basis,shells
+
+
 
 def fft_wfc_G2R_old(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
   wfcg = np.zeros((nr1,nr2,nr3), dtype=complex)
@@ -349,8 +372,8 @@ def calc_ylmg(k_plus_G, q):
 
     # l = 1
     ylmg[:,1] = n1 * kGz
-    ylmg[:,2] = -n1 * kGx
-    ylmg[:,3] = -n1 * kGy
+    ylmg[:,2] = -n1 * kGx         # note the '-' sign, due to the (lack of) Condon–Shortley phase
+    ylmg[:,3] = -n1 * kGy         # the same in the l=2 and l=3 blocks, when |m| is odd
 
     # l = 2
     ylmg[:,4] = n2 * (3*kGz*kGz - 1)/(2*np.sqrt(3))
