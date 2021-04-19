@@ -41,7 +41,7 @@ def acoustic_model ( temp, eigs, params ):
   ms = params['ms']*me #effective mass tensor in kg 
   D_ac = params['D_ac']*ev2j # Acoustic deformation potential in J
 
-  return (2*np.pi*rho*(hbar**2*v)**2)/(2*ms)**1.5*(D_ac**2)*np.sqrt(E)*temp
+  return (2*np.pi*rho*(hbar**2*v)**2)/((2*ms)**1.5*(D_ac**2)*np.sqrt(E)*temp)
 
 
 def optical_model ( temp, eigs, params ):
@@ -67,7 +67,7 @@ def polar_acoustic_model ( temp, eigs, params ):
   temp *= ev2j
   E = eigs * ev2j
   piezo = params['piezo']  # Piezoelectric constant
-  nd = params['doping_conc']*1e6 # Doping concentration in /m^3
+  nd = np.abs(params['doping_conc'])*1e6 # Doping concentration in /m^3
   eps_0 = params['eps_0']*epso # Low freq dielectric const
   eps_inf = params['eps_inf']*epso # High freq dielectirc const
   ms = params['ms']*me #effective mass tensor in kg 
@@ -126,7 +126,7 @@ def impurity_model ( temp, eigs, params ):
   #formula from fiorentini paper on Mg3Sb2
   temp *= ev2j
   E = eigs * ev2j
-  nI = params['nI']*1e6 # impurity conc in /m^3
+  nI = np.abs(params['nI'])*1e6 # impurity conc in /m^3
   Zi = params['Zi']
   ms = params['ms']*me #effective mass tensor in kg 
   eps_0 = params['eps_0']*epso #low freq dielectric const
