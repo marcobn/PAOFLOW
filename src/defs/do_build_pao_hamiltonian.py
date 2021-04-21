@@ -130,6 +130,8 @@ def do_build_pao_hamiltonian ( data_controller ):
     from .pao_sym import open_grid_wrapper
     open_grid_wrapper(data_controller)
 
+  attr['nkpnts'] = nkpnts = np.prod(ashape[2:5])
+
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
   # apply a basis change to Hks as Hks -> Sks^(1/2)+*Hks*Sks^(1/2)
@@ -151,8 +153,15 @@ def do_build_pao_hamiltonian ( data_controller ):
     quit()
 
   if rank == 0:
+    from .do_Efermi import E_Fermi
     arry['Hks'] = np.reshape(arry['Hks'], ashape)
-  attr['nkpnts'] = np.prod(ashape[2:5])
+
+    # Shift the Fermi energy to zero
+    tshape = (ashape[0],ashape[1],nkpnts,ashape[5])
+    Ef = E_Fermi(arry['Hks'].reshape(tshape), nkpnts, attr['bnd'], attr['nelec'], attr['dftSO'])
+    dinds = np.diag_indices(attr['nawf'])
+    arry['Hks'][dinds[0],dinds[1]] -= Ef
+
 
 
 def do_Hks_to_HRs ( data_controller ):

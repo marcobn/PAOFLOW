@@ -392,7 +392,6 @@ class PAOFLOW:
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
-      _ = E_Fermi(self.data_controller,ham='Hks')
     except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
@@ -811,7 +810,7 @@ mo    '''
 
 
 
-  def interpolated_hamiltonian ( self, nfft1=0, nfft2=0, nfft3=0 ):
+  def interpolated_hamiltonian ( self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False ):
     '''
     Calculate the interpolated Hamiltonian with the method of zero padding
     Yields 'Hksp'
@@ -827,6 +826,7 @@ mo    '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_double_grid import do_double_grid
     from .defs.communication import gather_scatter
+    from .defs.do_Efermi import E_Fermi
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -859,8 +859,16 @@ mo    '''
       snawf,_,_,_,nspin = arrays['Hksp'].shape
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nkpnts'],nspin))
       arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
+
       snktot = arrays['Hksp'].shape[1]
-      arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
+      if reshift_Ef:
+        Hksp = arrays['Hksp'].reshape((nawf,nawf,snktot,nspin))
+        Ef = E_Fermi(Hksp, attr['nkpnts'], attr['bnd'], attr['nelec'], attr['dftSO'], parallel=True)
+        dinds = np.diag_indices(nawf)
+        Hksp[dinds[0], dinds[1]] -= Ef
+        arrays['Hksp'] = np.moveaxis(Hksp, 2, 0)
+      else:
+        arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
 
       get_K_grid_fft(self.data_controller)
 
