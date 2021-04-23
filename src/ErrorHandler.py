@@ -34,7 +34,6 @@ class ErrorHandler:
     '''
     import sys
     import traceback
-    #from .defs.module_prerequisites import key_error_strings
     from .defs.module_prerequisites import report_pre_reqs,module_pre_reqs
 
     etype, evalue, etb = sys.exc_info()

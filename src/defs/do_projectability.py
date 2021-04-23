@@ -58,13 +58,14 @@ def do_projectability ( data_controller ):
       print('WARNING: All bands meet the projectability threshold. Consider increasing nbnd in QE.')
 
     if 'shift' not in attr or attr['shift']=='auto':
-      shift_v = np.max([np.amin(arry['my_eigsmat'][maxbnd,:,:]), np.amax(arry['my_eigsmat'][bnd-1,:,:])])
+      #shift_v = np.max([np.amin(arry['my_eigsmat'][maxbnd,:,:]), np.amax(arry['my_eigsmat'][bnd-1,:,:])])
+      shift_v = np.amin(arry['my_eigsmat'][maxbnd,:,:])
       attr['shift'] = (shift_v if shift=='auto' else shift)
 
     if attr['verbose']:
       print('# of bands with good projectability > {} = {}'.format(attr['pthr'],bnd))
     if attr['verbose'] and bnd < attr['nbnds']:
-      print('Range of suggested shift ', np.amax(arry['my_eigsmat'][bnd-1,:,:]), ' , ', np.amax(arry['my_eigsmat'][maxbnd,:,:]))
+      print('Range of suggested shift ', np.amin(arry['my_eigsmat'][maxbnd,:,:]), ' , ', np.amax(arry['my_eigsmat'][maxbnd,:,:]))
 
   # Broadcast 
   data_controller.broadcast_attribute('bnd')

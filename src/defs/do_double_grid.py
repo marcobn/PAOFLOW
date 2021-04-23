@@ -49,9 +49,6 @@ def do_double_grid ( data_controller ):
     for n in range(HRs.shape[0]):
       arrays['Hksp'][n,:,:,:,ispin] = FFT.fftn(zero_pad(HRs[n,:,:,:,ispin],nk1,nk2,nk3,nfft1,nfft2,nfft3))
 
-#### When to shift?
-####  arrays['Hksp'] = FFT.fftshift(arrays['Hksp'], axes=(1,2,3))
-
   attr['nk1'] = nk1p
   attr['nk2'] = nk2p
   attr['nk3'] = nk3p

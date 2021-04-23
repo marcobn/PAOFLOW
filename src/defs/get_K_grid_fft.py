@@ -29,7 +29,7 @@ def get_K_grid_fft ( data_controller ):
 
   nktot = nk1*nk2*nk3
   arrays['kq_wght'] = np.ones((nktot), dtype=float)/nktot
-  return
+#  return
 
 ### Not used
   Kint = np.zeros((3,nktot), dtype=float)
@@ -50,8 +50,8 @@ def get_K_grid_fft ( data_controller ):
         Rz -= int(Rz)
         idk[i,j,k]=n
         Kint[:,n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
-
-
+  arrays['kgrid'] = Kint
+  return
 
 def get_K_grid_fft_crystal ( nk1,nk2,nk3 ):
   import numpy as np

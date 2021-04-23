@@ -28,8 +28,10 @@ from PAOFLOW import PAOFLOW
 def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='pt.save', smearing='m-p')
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability()
   paoflow.pao_hamiltonian()
+  paoflow.bands(ibrav=2)
   paoflow.interpolated_hamiltonian()
   paoflow.pao_eigh()
   paoflow.gradient_and_momenta()

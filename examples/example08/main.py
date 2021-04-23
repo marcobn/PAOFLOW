@@ -28,8 +28,11 @@ def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='SnTe.save', npool=4, verbose=1)
 
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability(pthr=0.90)
-  paoflow.pao_hamiltonian()
+
+  # Smearing is specified in QE for convergence, force PAOFLOW to treat it as an insulator
+  paoflow.pao_hamiltonian(insulator=True)
 
   # Define high symmetry points and the path comprised of such points
   # '-' defines a continuous transition to the next high symmetry point

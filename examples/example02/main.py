@@ -28,6 +28,7 @@ from PAOFLOW import PAOFLOW
 def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='al.save',verbose=True)
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability(pthr=.97)
   paoflow.pao_hamiltonian()
   paoflow.interpolated_hamiltonian()

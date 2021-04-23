@@ -32,6 +32,7 @@ def main():
   # Start PAOFLOW, interpolate Hamiltonian, compute gradient an momenta
   paoflow = PAOFLOW.PAOFLOW(savedir='GaAs.save', smearing=None, npool=1, verbose=True)
   arrays,attr = paoflow.data_controller.data_dicts()
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability()
   paoflow.pao_hamiltonian()
   paoflow.interpolated_hamiltonian(nfft1=40, nfft2=40, nfft3=40)

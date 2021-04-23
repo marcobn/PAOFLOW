@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False ):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
     Arguments:
@@ -259,6 +259,79 @@ class PAOFLOW:
 
 
 
+  def projections ( self, internal=False ):
+    '''
+    Calculate the projections on the atomic basis provided by the pseudopotential or 
+    on the all-electron internal basis sets.
+    Replaces projwfc.
+    TODO  * add spin-orbit and non-collinear cases
+    '''
+
+    from .defs.do_atwfc_proj import build_pswfc_basis_all
+    from .defs.do_atwfc_proj import build_aewfc_basis
+    from .defs.do_atwfc_proj import calc_proj_k
+    from .defs.communication import load_balancing, gather_array
+    
+    arry,attr = self.data_controller.data_dicts()
+    
+    if internal:
+      basis,attr['shells'] = build_aewfc_basis(self.data_controller)
+    else:
+      basis,attr['shells'] = build_pswfc_basis_all(self.data_controller)
+    nkpnts = len(arry['kpnts'])
+    nbnds = attr['nbnds']
+    nspin = attr['nspin']
+    natwfc = len(basis)
+    attr['nawf'] = natwfc
+    
+    ini_ik,end_ik = load_balancing(self.size, self.rank,nkpnts)
+    Unewaux = np.zeros((end_ik-ini_ik,nbnds,natwfc,nspin), dtype=complex)
+    for ispin in range(nspin):
+      for ik in range(ini_ik,end_ik):
+        Unewaux[ik-ini_ik,:,:,ispin] = calc_proj_k(self.data_controller, basis, ik, ispin)
+    
+    Unew = np.zeros((nkpnts,nbnds,natwfc,nspin), dtype=complex) if self.rank == 0 else None
+    gather_array(Unew,Unewaux)
+    if self.rank == 0: Unew = np.moveaxis(Unew,0,2)
+    Unew = self.comm.bcast(Unew, root=0)
+    
+    arry['U'] = Unew
+    arry['basis'] = basis
+    
+    self.report_module_time('Projections')
+
+
+
+  def read_atomic_proj_QE ( self ):
+    '''
+      Read the wavefunctions and overlaps from atomic-proj.xml, written by Quantum Espresso
+      in the .save directory specified in PAOFLOW's constructos. They are saved to the 
+      DataController's arrays dictionary with keys 'U' and 'Sks', respectively.
+    '''
+    from .defs.read_upf import UPF
+    from os.path import exists,join
+
+    arry,attr = self.data_controller.data_dicts()
+    fpath = attr['fpath']
+    if exists(join(fpath,'atomic_proj.xml')):
+      from .defs.read_QE_xml import parse_qe_atomic_proj
+      parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
+    else:
+      raise Exception('atomic_proj.xml was not found.\n')
+
+    attr['jchia'] = {}
+    attr['shells'] = {}
+    for at,pseudo in arry['species']:
+      fname = join(attr['fpath'], pseudo)
+      if exists(fname):
+        upf = UPF(fname)
+        attr['shells'][at] = upf.shells
+        attr['jchia'][at] = upf.jchia
+      else:
+        raise Exception('Pseudopotential not found: %s'%fname)
+
+
+
   def projectability ( self, pthr=0.95, shift='auto' ):
     '''
     Calculate the Projectability Matrix to determine how many states need to be shifted
@@ -279,16 +352,16 @@ class PAOFLOW:
 
     try:
       do_projectability(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('projectability')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Projectability')
+    
 
 
-
-  def pao_hamiltonian ( self, shift_type=1, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
+  def pao_hamiltonian ( self, shift_type=1, insulator=False, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
     '''
     Construct the Tight Binding Hamiltonian
     Yields 'HRs', 'Hks' and 'kq_wght'
@@ -302,10 +375,12 @@ class PAOFLOW:
     '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
+    from .defs.do_Efermi import E_Fermi
 
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
 
+    if insulator: attr['insulator'] = True
     if 'shift_type' not in attr: attr['shift_type'] = shift_type
     if 'write_binary' not in attr: attr['write_binary'] = write_binary
 
@@ -320,12 +395,11 @@ class PAOFLOW:
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
-    except SystemExit as se:
-      quit()
-    except:
+    except Exception as e:
+      raise e
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
     self.report_module_time('Building Hks')
 
     # Done with U and Sks
@@ -338,10 +412,10 @@ class PAOFLOW:
       self.data_controller.broadcast_single_array('HRs')
 
       get_K_grid_fft(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
     self.report_module_time('k -> R')
 
 
@@ -374,10 +448,10 @@ class PAOFLOW:
         add_ext_field(self.data_controller)
         if self.rank == 0 and attr['verbose']:
           print('External Fields Added')
-    except:
+    except Exception as e:
       self.report_exception('add_external_fields')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.comm.Barrier()
     
@@ -395,10 +469,10 @@ class PAOFLOW:
     '''
     try:
       self.data_controller.write_z2pack(fname)
-    except:
+    except Exception as e:
       self.report_exception('z2_pack')
       if self.data_controller.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
   def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 ):
@@ -448,10 +522,10 @@ class PAOFLOW:
       E_kp = gather_full(arrays['E_k'], attr['npool'])
       self.data_controller.write_bands(fname, E_kp)
       E_kp = None
-    except:
+    except Exception as e:
       self.report_exception('bands')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Bands')
 
@@ -511,10 +585,10 @@ mo    '''
 
     try:
       wave_function_site_projection(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('wave_function_projection')
       if self.data_controller.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('wave_function_projection')
 
@@ -539,10 +613,10 @@ mo    '''
     
     try:
       doubling_HRs(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('doubling_Hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('doubling_Hamiltonian')
   
@@ -575,10 +649,10 @@ mo    '''
 
       _,_,attr['nk1'],attr['nk2'],attr['nk3'],_ = arry['HRs'].shape
       attr['nkpnts'] = attr['nk1']*attr['nk2']*attr['nk3']
-    except:
+    except Exception as e:
       self.report_exception('cutting_Hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
 
@@ -604,8 +678,17 @@ mo    '''
 
     if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
       if sh_l is None and sh_j is None:
-        from .defs.read_sh_nl import read_sh_nl
-        arrays['sh_l'],arrays['sh_j'] = read_sh_nl(self.data_controller)
+        sh = attr['shells']
+        shells,jchia = [],[]
+        for i,a in enumerate(arrays['atoms']):
+          ash = []
+          for v in sh[a]:
+            ash += [v, v] if v==0 else [v]
+          shells += ash[::2]
+          for l in ash[::2]:
+            jchia += [.5, .5] if l==0 else [l-.5, l+.5]
+        arrays['sh_j'] = np.array(jchia)[::2]
+        arrays['sh_l'] = np.array(shells)
       else:
         arrays['sh_l'],arrays['sh_j'] = sh_l,sh_j
     try:
@@ -631,11 +714,10 @@ mo    '''
           Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
 
       arrays['Sj'] = Sj
-    except:
+    except Exception as e:
       self.report_exception('spin_operator')
       if attr['abort_on_exception']:
-        self.comm.Abort()
-
+        raise e
 
 
 
@@ -680,10 +762,10 @@ mo    '''
 
     try:
       do_topology(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('topology')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Band Topology')
 
@@ -694,7 +776,7 @@ mo    '''
 
 
 
-  def interpolated_hamiltonian ( self, nfft1=0, nfft2=0, nfft3=0 ):
+  def interpolated_hamiltonian ( self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False ):
     '''
     Calculate the interpolated Hamiltonian with the method of zero padding
     Yields 'Hksp'
@@ -710,6 +792,7 @@ mo    '''
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_double_grid import do_double_grid
     from .defs.communication import gather_scatter
+    from .defs.do_Efermi import E_Fermi
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -742,8 +825,16 @@ mo    '''
       snawf,_,_,_,nspin = arrays['Hksp'].shape
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nkpnts'],nspin))
       arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
+
       snktot = arrays['Hksp'].shape[1]
-      arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
+      if reshift_Ef:
+        Hksp = arrays['Hksp'].reshape((nawf,nawf,snktot,nspin))
+        Ef = E_Fermi(data_controller, Hksp, parallel=True)
+        dinds = np.diag_indices(nawf)
+        Hksp[dinds[0], dinds[1]] -= Ef
+        arrays['Hksp'] = np.moveaxis(Hksp, 2, 0)
+      else:
+        arrays['Hksp'] = np.reshape(np.moveaxis(arrays['Hksp'],0,1), (snktot,nawf,nawf,nspin))
 
       get_K_grid_fft(self.data_controller)
 
@@ -755,10 +846,10 @@ mo    '''
           print('d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'%(nko1,nfft1,nko2,nfft2,nko3,nfft3))
         print('New estimated maximum array size: %.2f GBytes'%gbyte)
 
-    except:
+    except Exception as e:
       self.report_exception('interpolated_hamiltonian')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('R -> k with Zero Padding')
 
@@ -809,10 +900,10 @@ mo    '''
           arrays['E_k'] -= np.amax(arrays['E_k'][:,attr['bval'],:])
         self.comm.Barrier()
         arrays['E_k'] = scatter_full(arrays['E_k'], attr['npool'])
-    except:
+    except Exception as e:
       self.report_exception('pao_eigh')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Eigenvalues')
 
@@ -868,10 +959,10 @@ mo    '''
         # No more need for k-space Hamiltonian
         del arrays['Hksp']
       
-    except:
+    except Exception as e:
       self.report_exception('gradient_and_momenta')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Gradient')
 
@@ -902,10 +993,10 @@ mo    '''
 
     try:
       do_adaptive_smearing(self.data_controller, smearing)
-    except:
+    except Exception as e:
       self.report_exception('adaptive_smearing')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
     self.report_module_time('Adaptive Smearing')
 
 
@@ -951,15 +1042,33 @@ mo    '''
         if do_pdos:
           from .defs.do_pdos import do_pdos_adaptive
           do_pdos_adaptive(self.data_controller, emin, emax, ne)
-
-    except:
+    except Exception as e:
       self.report_exception('dos')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
     self.report_module_time(mname)
 
+
+
+  def density ( self, nr1=48, nr2=48, nr3=48):
+    '''
+    Calculate the Electron Density in real space
+    Arguments:
+        nr1,nr2,nr3: real space grid
+
+    Returns:
+        None
+    '''
+    from .defs.do_real_space import do_density
+
+    do_density(self.data_controller, nr1,nr2,nr3)
+    
+    self.report_module_time('Density')
+
+
+  
   def trim_non_projectable_bands ( self ):
 
     arrays = self.data_controller.data_arrays
@@ -994,10 +1103,10 @@ mo    '''
 
     try:
       do_fermisurf(self.data_controller)
-    except:
+    except Exception as e:
       self.report_exception('fermi_surface')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Fermi Surface')
 
@@ -1030,10 +1139,10 @@ mo    '''
       else:
         if self.rank == 0:
           print('Cannot compute spin texture with nspin=2')
-    except:
+    except Exception as e:
       self.report_exception('spin_texture')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
     self.comm.Barrier()
@@ -1073,10 +1182,10 @@ mo    '''
 
     try:
       do_spin_Hall(self.data_controller, twoD, do_ac)
-    except:
+    except Exception as e:
       self.report_exception('spin_Hall')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Spin Hall Conductivity')
 
@@ -1110,10 +1219,10 @@ mo    '''
 
     try:
       do_anomalous_Hall(self.data_controller, do_ac)
-    except:
+    except Exception as e:
       self.report_exception('anomalous_Hall')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Anomalous Hall Conductivity')
 
@@ -1196,10 +1305,10 @@ mo    '''
 
       do_transport(self.data_controller, temps, ene, velkp, sc, sw, write_to_file, save_tensors)
 
-    except:
+    except Exception as e:
       self.report_exception('transport')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Transport')
 
@@ -1240,10 +1349,10 @@ mo    '''
     try:
       ene = np.linspace(emin, emax, ne)
       do_dielectric_tensor(self.data_controller, ene)
-    except:
+    except Exception as e:
       self.report_exception('dielectric_tensor')
       if attr['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.report_module_time('Dielectric Tensor')
 
@@ -1256,10 +1365,10 @@ mo    '''
         self.data_controller.data_attributes['symmetrize'] = symmetrize
       find_weyl(self.data_controller, search_grid)
 
-    except:
+    except Exception as e:
       self.report_exception('pao_hamiltonian')
       if self.data_controller.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
 
     self.report_module_time('Weyl Search')

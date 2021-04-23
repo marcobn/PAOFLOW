@@ -31,6 +31,7 @@ def main():
   #   outputdir is named 'output' by default
   #   smearing is 'gauss' by default
   paoflow = PAOFLOW.PAOFLOW(savedir='silicon.save', outputdir='output', smearing='gauss', npool=1, verbose=True)
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability()
   paoflow.pao_hamiltonian()
 

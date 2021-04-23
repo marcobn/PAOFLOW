@@ -30,6 +30,7 @@ def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='alp.save')
 
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability()
   paoflow.pao_hamiltonian()
 

@@ -29,6 +29,7 @@ from PAOFLOW import PAOFLOW
 def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='./fe.save')
+  paoflow.read_atomic_proj_QE()
   paoflow.projectability(pthr=0.95)
   paoflow.pao_hamiltonian()
   paoflow.bands(ibrav=3, nk=2000)
