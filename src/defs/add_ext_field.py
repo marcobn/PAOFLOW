@@ -41,6 +41,12 @@ def add_ext_field ( data_controller ):
     for n in range(nawf):
       arrays['HRs'][n,n,0,:] -= arrays['Efield'].dot(tau_wf[n,:])
 
+  if arrays['Bfield'].any() != 0.0:
+    field = arrays['Bfield'][0] * arrays['Sj'][0] + arrays['Bfield'][1] * arrays['Sj'][1] + arrays['Bfield'][2] * arrays['Sj'][2]
+    for n in range(nawf):
+      for m in range(nawf):
+        arrays['HRs'][n,m,0,:] -= field[n,m]
+
   if arrays['HubbardU'].any() != 0:
     for n in range(nawf):
       arrays['HRs'][n,n,0,:] -= arrays['HubbardU'][n]/2.0
