@@ -112,8 +112,10 @@ def get_tau ( data_controller, temp, channels, weights ):
       try:
         tau += m.weight/m.evaluate(temp, eigs)
       except KeyError as e:
+        from .report_exception import report_exception
         print('Ensure that all required parameters are specified in the provided dictionary.')
-        print(e)
+        report_exception()
+        raise e
     tau = 1/tau
 
   return tau

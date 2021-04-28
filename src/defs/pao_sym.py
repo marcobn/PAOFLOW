@@ -1110,11 +1110,12 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     
     # for debugging purposes
-    try:
-        if rank==0:
-            check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
-                  a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
-    except: pass
+    #try:
+    #    if rank==0:
+    #        check(Hksp,si_per_k,new_k_ind,orig_k_ind,phase_shifts,U,
+    #              a_index,inv_flag,equiv_atom,kp,symop,full_grid,sym_info,sym_TR)        
+    #except Exception as e:
+    #    print(('Exception in pao_sym, check.', e), flush=True)
 
     return Hksp
 

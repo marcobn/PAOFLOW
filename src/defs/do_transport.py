@@ -101,7 +101,7 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
             from .report_exception import report_exception
             print('check t_tensor components - matrix cannot be singular')
             report_exception()
-            comm.Abort()
+            raise e
         if write_to_file:
           for i in range(esize):
             wtup(fSeebeck, gtup(S,i))

@@ -101,10 +101,10 @@ class DataController:
           else:
             attr['do_spin_orbit'] = False
           self.read_qe_output()
-        except:
+        except Exception as e:
           print('\nERROR: Could not read QE xml data file')
           self.report_exception('Data Controller Initialization')
-          self.comm.Abort()
+          raise e
 
     self.comm.Barrier()
 
@@ -113,10 +113,10 @@ class DataController:
       try:
         self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
         self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
-      except:
+      except Exception as e:
         print('ERROR: MPI was unable to broadcast')
         self.report_exception('Initialization Broadcast')
-        self.comm.Abort()
+        raise e
 
 
   def data_dicts ( self ):
@@ -493,10 +493,10 @@ class DataController:
                                                                HRS[l,m,i,j,k,0].real,
                                                                HRS[l,m,i,j,k,0].imag,))
                                                                
-    except:
+    except Exception as e:
       self.report_exception('z2_pack')
       if self.data_attributes['abort_on_exception']:
-        self.comm.Abort()
+        raise e
 
     self.comm.Barrier()
 

@@ -22,6 +22,6 @@ def report_exception ( ):
 
   etype, evalue, etb = sys.exc_info()
   print('Exception: ', etype)
-  print(evalue)
+  print(evalue, flush=True)
   traceback.print_tb(etb)
  

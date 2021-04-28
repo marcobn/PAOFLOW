@@ -564,9 +564,9 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,special_points):
         ky = np.concatenate((ky,a1))
         kz = np.concatenate((kz,a2))
         
-        ### Why print?? Just a test?? print("%s %s %s %s %s %s"%(p1[0],p1[0],p1[0],numK,"#",point1))
+        ### Why print? Is this just a test? print("%s %s %s %s %s %s"%(p1[0],p1[0],p1[0],numK,"#",point1))
       except Exception as e:
-        print(e)
+        print('Exception in kpnts_interpolation_mesh', e)
 
     """ last point """
     point1 = a[-1]
