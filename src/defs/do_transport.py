@@ -96,7 +96,7 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
 
         for n in range(esize):
           try:
-            S[:,:,n] = -1.*npl.inv(L0[:,:,n])*L1[:,:,n]
+            S[:,:,n] = -1.*npl.inv(L0[:,:,n]) @ L1[:,:,n]
           except:
             from .report_exception import report_exception
             print('check t_tensor components - matrix cannot be singular')
@@ -116,7 +116,7 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
 
         kappa = np.zeros((3,3,esize),dtype=float)
         for n in range(esize):
-          kappa[:,:,n] = (L2[:,:,n] - temp*L1[:,:,n]*npl.inv(L0[:,:,n])*L1[:,:,n])*1.e6
+          kappa[:,:,n] = (L2[:,:,n] - temp*L1[:,:,n] @ npl.inv(L0[:,:,n]) @ L1[:,:,n])*1.e6
         L1 = L2 = None
         if write_to_file:
           for i in range(esize):
