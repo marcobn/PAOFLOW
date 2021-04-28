@@ -144,7 +144,7 @@ class PAOFLOW:
       # Format string and print
       lms = spaces-lmn
       dt = time() - self.reset_time
-      print('%s in: %s %8.3f sec'%(mname,lms*' ',dt))
+      print('%s in: %s %8.3f sec'%(mname,lms*' ',dt), flush=True)
       self.reset_time = time()
 
 
