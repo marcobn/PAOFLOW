@@ -396,7 +396,6 @@ class PAOFLOW:
     try:
       do_build_pao_hamiltonian(self.data_controller)
     except Exception as e:
-      raise e
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
         raise e
