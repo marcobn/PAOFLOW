@@ -25,6 +25,6 @@ module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
                     'dielectric_tensor'        : ['gradient_and_momenta'] }
 
 
-key_error_strings = { 'HRs'  : 'HRs must first be calculated with \'build_pao_hamiltonian\'',\
-                      'Hks'  : 'Hks must first be calculated with \'build_pao_hamiltonian\'',\
-                      '1' : '2' }
+key_error_strings = { 'U' : 'Projections must be computed before projectability. Call \'read_atomic_proj_QE\' to read projections from the output of projwfc.x',\
+                      'HRs'  : 'HRs must first be calculated with \'build_pao_hamiltonian\'',\
+                      'Hks'  : 'Hks must first be calculated with \'build_pao_hamiltonian\''}

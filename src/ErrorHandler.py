@@ -34,20 +34,25 @@ class ErrorHandler:
     '''
     import sys
     import traceback
-    from .defs.module_prerequisites import report_pre_reqs,module_pre_reqs
+    from .defs.module_prerequisites import key_error_strings,report_pre_reqs,module_pre_reqs
 
     etype, evalue, etb = sys.exc_info()
-    print('Exception: ', etype)
-    print(evalue)
+    print('Exception: ', etype, evalue, flush=True)
     traceback.print_tb(etb)
 
     if etype is KeyError:
-      pre_reqs = module_pre_reqs[mname] if mname in module_pre_reqs else '<%s>'%mname
 
-      if len(pre_reqs) > 1:
-        pr_str = ', '.join(pre_reqs[:-1]) + ' and %s'%pre_reqs[-1]
-      else:
-        pr_str = pre_reqs[0]
+      if mname in module_pre_reqs:
+        print('HHH',mname, type(mname))
+        pre_reqs = module_pre_reqs[mname]
+        if len(pre_reqs) > 1:
+          pr_str = ', '.join(pre_reqs[:-1]) + ' and %s'%pre_reqs[-1]
+        else:
+          pr_str = pre_reqs[0]
 
-      print('')
-      print(report_pre_reqs%(pr_str,mname))
+        print('')
+        print(report_pre_reqs%(pr_str,mname), flush=True)
+
+      if evalue.args[0] in key_error_strings:
+        print('')
+        print('SUGGESTION: %s\n'%key_error_strings[evalue.args[0]], flush=True)
