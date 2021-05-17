@@ -27,7 +27,7 @@ import numpy as np
 
 def main():
 
-  model = {'label':'simple_cubic', 't':2.7}
+  model = {'label':'graphene', 't':2.7}
   paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./graphene', verbose=True)
 
   path = 'G-M-K-G'
