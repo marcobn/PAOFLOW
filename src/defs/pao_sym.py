@@ -1188,9 +1188,7 @@ def open_grid_wrapper(data_controller):
     jchia = []
     shells = []
     a_index = []
-    sh = data_attr['shells']
-    if spin_orb:
-      jch = data_attr['jchia']
+    sh = data_arrays['shells']
     for i,a in enumerate(atom_lab):
       ash = []
       for v in sh[a]:
@@ -1198,7 +1196,7 @@ def open_grid_wrapper(data_controller):
       shells += ash
       a_index += [i]*np.sum([2*n+1 for n in ash])
       if spin_orb:
-        jchia += data_attr['jchia'][a]
+        jchia += data_arrays['jchia'][a]
 
     jchia = np.array(jchia)
     shells = np.array(shells)
