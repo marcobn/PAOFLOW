@@ -747,9 +747,9 @@ mo    '''
     if 'spin_Hall' not in attr: attr['spin_Hall'] = spin_Hall
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
-    if 'spol' not in attr: attr['spol'] = spol
-    if 'ipol' not in attr: attr['ipol'] = ipol
-    if 'jpol' not in attr: attr['jpol'] = jpol
+    attr['spol'] = spol
+    attr['ipol'] = ipol
+    attr['jpol'] = jpol
 
     if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
       if self.rank == 0:
