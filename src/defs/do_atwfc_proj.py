@@ -40,7 +40,7 @@ def read_pswfc_from_upf(data_controller, atom):
   for (at, pseudo) in arry['species']:
     if atom == at:
       upf = UPF(os.path.join(attr['fpath'], pseudo))
-      attr['jchia'][at] = upf.jchia
+      arry['jchia'][at] = upf.jchia
       return upf.r, upf.pswfc, pseudo
     
   raise RuntimeError('atom not found')
@@ -101,7 +101,7 @@ def build_pswfc_basis_all(data_controller):
   
   # loop over atoms
   basis,shells = [],{}
-  attr['jchia'] = {}
+  arry['jchia'] = {}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
@@ -143,7 +143,7 @@ def build_pswfc_basis_all(data_controller):
 
     if atom not in shells:
       shells[atom] = a_shells
-      attr['jchia'][atom] = jchia
+      arry['jchia'][atom] = jchia
     
   # in case of SO: assign the jm index
   if attr['dftSO']:
@@ -178,7 +178,7 @@ def build_aewfc_basis(data_controller):
   
   # loop over atoms
   basis,shells = [],{}
-  attr['jchia'] = {}
+  arry['jchia'] = {}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
     tau = arry['tau'][na]
@@ -220,7 +220,7 @@ def build_aewfc_basis(data_controller):
 
     if atom not in shells:
       shells[atom] = ash
-      attr['jchia'][atom] = jchia
+      arry['jchia'][atom] = jchia
     
   # in case of SO: assign the jm index
   if attr['dftSO']:

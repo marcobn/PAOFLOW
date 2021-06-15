@@ -28,11 +28,14 @@ def Slater_Koster( data_controller, params ):
   for ia in range(natoms):
     tau[ia] = np.array(params['model']['atoms'][str(ia)]['tau'])  
   atoms = []
+  shells = []
   for ia in range(natoms):
     atoms.append(params['model']['atoms'][str(ia)]['name'])
+    shells.append(params['model']['atoms'][str(ia)])
   arry['tau'] = tau
   arry['atoms'] = atoms
   attr['natoms'] = natoms
+  arry['shells'] = shells
   attr['nspin'] = 1 # only unpolarized case for now
   attr['dftSO'] = False # no spin-orbit
   
@@ -218,7 +221,7 @@ def graphene( data_controller, params ):
   arry['b_vectors'][1,:] = (np.cross(arry['a_vectors'][2,:],arry['a_vectors'][0,:]))/volume
   arry['b_vectors'][2,:] = (np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]))/volume 
 
-  arry['species']=["C","C"]
+  arry['atoms']=['C','C']
 
 
 def cubium( data_controller, params ):

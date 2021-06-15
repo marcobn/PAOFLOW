@@ -275,9 +275,9 @@ class PAOFLOW:
     arry,attr = self.data_controller.data_dicts()
     
     if internal:
-      basis,attr['shells'] = build_aewfc_basis(self.data_controller)
+      basis,arry['shells'] = build_aewfc_basis(self.data_controller)
     else:
-      basis,attr['shells'] = build_pswfc_basis_all(self.data_controller)
+      basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
@@ -319,14 +319,14 @@ class PAOFLOW:
     else:
       raise Exception('atomic_proj.xml was not found.\n')
 
-    attr['jchia'] = {}
-    attr['shells'] = {}
+    arry['jchia'] = {}
+    arry['shells'] = {}
     for at,pseudo in arry['species']:
       fname = join(attr['fpath'], pseudo)
       if exists(fname):
         upf = UPF(fname)
-        attr['shells'][at] = upf.shells
-        attr['jchia'][at] = upf.jchia
+        arry['shells'][at] = upf.shells
+        arry['jchia'][at] = upf.jchia
       else:
         raise Exception('Pseudopotential not found: %s'%fname)
 
@@ -396,7 +396,6 @@ class PAOFLOW:
     try:
       do_build_pao_hamiltonian(self.data_controller)
     except Exception as e:
-      raise e
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
         raise e
@@ -678,7 +677,7 @@ mo    '''
 
     if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
       if sh_l is None and sh_j is None:
-        sh = attr['shells']
+        sh = arrays['shells']
         shells,jchia = [],[]
         for i,a in enumerate(arrays['atoms']):
           ash = []
@@ -748,9 +747,9 @@ mo    '''
     if 'spin_Hall' not in attr: attr['spin_Hall'] = spin_Hall
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
-    if 'spol' not in attr: attr['spol'] = spol
-    if 'ipol' not in attr: attr['ipol'] = ipol
-    if 'jpol' not in attr: attr['jpol'] = jpol
+    attr['spol'] = spol
+    attr['ipol'] = ipol
+    attr['jpol'] = jpol
 
     if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
       if self.rank == 0:

@@ -29,14 +29,13 @@ def do_fermisurf ( data_controller ):
   arry,attr = data_controller.data_dicts()
 
   #maximum number of bands crossing fermi surface
-###### PAR!!!!!
+  ###### PARALLELIZATION
   E_kf = gather_full(arry['E_k'], attr['npool'])
 
   if rank == 0:
     if attr['verbose']:
       print('Writing bxsf file for Fermi Surface')
 
-    Efermi = 0,0.0
     nawf,nktot = attr['nawf'],attr['nkpnts']
     nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
     fermi_up,fermi_dw = attr['fermi_up'],attr['fermi_dw']
@@ -62,8 +61,8 @@ def do_fermisurf ( data_controller ):
       eigband = np.array(eigband)
       data_controller.write_bxsf(feig, np.moveaxis(eigband,0,3), len(ind_plot), indices=ind_plot)
 
-      for ib in range(len(eigband)):
-        np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=eigband[ib])
+      for ib in eigband:
+        np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=ib)
 
   comm.Barrier()
   E_kf = E_ks = None
