@@ -1227,8 +1227,35 @@ mo    '''
     self.report_module_time('Anomalous Hall Conductivity')
 
 
+  def effective_mass ( self, emin=-1., emax=1., ne=1000 ):
 
-  def doping( self, tmin=300, tmax=300, nt=1, delta=0.01, emin=-1., emax=1., ne=1000, doping_conc=0., core_electrons=0., fname='doping_' ):
+    '''
+    Calculate effective mass components for kx,ky and kz
+
+    Arguments:
+        tmin (float): The minimum temperature in the range
+        tmax (float): The maximum temperature in the range
+        nt (float): The number of temperature increments
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        ne (float): The number of energy increments
+
+    Returns:
+        None
+    '''
+    from .defs.do_effective_mass import do_effective_mass
+
+    arrays,attr = self.data_controller.data_dicts()
+
+    ene = np.linspace(emin, emax, ne)
+
+    do_effective_mass(self.data_controller, ene)
+
+    self.report_module_time('Effective mass')
+
+
+
+  def doping ( self, tmin=300, tmax=300, nt=1, delta=0.01, emin=-1., emax=1., ne=1000, doping_conc=0., core_electrons=0., fname='doping_' ):
     '''
     Calculate the chemical potential that corresponds to specified doping for different temperatures
 

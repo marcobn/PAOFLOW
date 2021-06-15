@@ -64,7 +64,7 @@ def do_d2Hd2k_ij(Hksp,Rfft,alat,npool,v_kp,bnd,degen):
     _,nk1,nk2,nk3,nspin = Hksp.shape
     
     M_ij   = np.zeros((6,v_kp.shape[0],bnd,v_kp.shape[3]),dtype=float,order="C")
-    ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[1,2],[0,2]],dtype=int)
+    ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]],dtype=int)
 
     nktot = nk1*nk2*nk3
 

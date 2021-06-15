@@ -67,6 +67,29 @@ def do_Boltz_tensors ( data_controller, smearing, temp, ene, velkp, ispin, chann
   return (L0, L1, L2) if rank==0 else (None, None, None)
 
 
+def do_Boltz_tensors_hall ( data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
+
+  arrays,attributes = data_controller.data_dicts()
+
+  esize = ene.size
+  arrays['scattering_tau'] = get_tau(data_controller, temp, channels, weights)
+
+#### Forced t_tensor to have all components
+  t_tensor = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]], dtype=int)
+
+  # Quick call function for L_loop (None is smearing type)
+
+  # Quick call function for Zeros on rank Zero
+  zoz = lambda r: (np.zeros((3,3,3,esize), dtype=float) if r==0 else None)
+
+  L0_hall = zoz(rank)
+  L0_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 0, ispin)
+  comm.Reduce(L0_hall_aux, L0_hall, op=MPI.SUM)
+  L0_hall_aux = None
+  
+  return L0_hall if rank==0 else None
+
+
 def get_tau ( data_controller, temp, channels, weights ):
   import numpy as np
   import scipy.constants as cp
@@ -167,3 +190,63 @@ def L_loop ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin
     L[i,j,:] = signal.correlate(L[i,j,:] , np.ones(win), mode='same', method='fft')/win
   '''
   return L
+
+def L_loop_hall ( data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin ):
+  from scipy.constants import hbar
+  from sympy import Eijk
+  from .smearing import gaussian,metpax
+  from os.path import join
+
+  arrays,attributes = data_controller.data_dicts()
+
+  esize = ene.size
+
+  snktot = arrays['E_k'].shape[0]
+  bohr2m = 5.29177e-11
+  ev2J = 1.60218e-19
+  bnd = attributes['bnd']
+  nspin = attributes['nspin']
+  kq_wght = 1./attributes['nkpnts']
+  if smearing is not None and smearing != 'gauss' and smearing != 'm-p':
+    print('%s Smearing Not Implemented.'%smearing)
+    comm.Abort()
+
+  L_hall = np.zeros((3,3,3,esize), dtype=float)
+  sig_hall = np.zeros((3,3,3,snktot,bnd,nspin))
+
+  M_inv = np.zeros((3,3,snktot,bnd,nspin))
+  eff_mass_inv = arrays['d2Ed2k']
+  for l in range(t_tensor.shape[0]):
+    i = t_tensor[l][0]
+    j = t_tensor[l][1]
+    if i==j:
+      M_inv[i,j]=eff_mass_inv[i]
+    elif i==0 and j==1:
+      M_inv[i,j]=eff_mass_inv[3]
+      M_inv[j,i]=eff_mass_inv[3]
+    elif i==0 and j==2:
+      M_inv[i,j]=eff_mass_inv[4]
+      M_inv[j,i]=eff_mass_inv[4]
+    elif i==1 and j==2:
+      M_inv[i,j]=eff_mass_inv[5]
+      M_inv[j,i]=eff_mass_inv[5]
+
+  for n in range(bnd):
+    Eaux = np.reshape(np.repeat(arrays['E_k'][:,n,ispin],esize), (snktot,esize))
+    delk = (np.reshape(np.repeat(arrays['deltakp'][:,n,ispin],esize), (snktot,esize)) if smearing!=None else None)
+    if smearing is None:
+      Eaux -= ene
+      smearA = 1/(4*temp*(np.cosh(Eaux/(2*temp))**2))
+    else:
+      if smearing == 'gauss':
+        smearA = gaussian(Eaux, ene, delk)
+      elif smearing == 'm-p':
+        smearA = metpax(Eaux, ene, delk)
+    for i in range(3):
+      for j in range(3):
+        for p in range(3):
+          for q in range(3):
+            for r  in range(3):
+              sig_hall[i,j,p,:,n,ispin] += (int(Eijk(p,q,r))*velkp[:,i,n,ispin]*velkp[:,r,n,ispin]*M_inv[j,q,:,n,ispin])
+          L_hall[i,j,p,:] += np.sum(kq_wght*arrays['scattering_tau'][:,n,ispin]**2*sig_hall[i,j,p,:,n,ispin]*(smearA).T, axis=1)
+  return L_hall

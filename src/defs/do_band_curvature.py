@@ -59,11 +59,10 @@ def do_band_curvature ( data_controller ):
                                     attr['npool'],ary['v_k'],
                                     bnd,ary['degen'])
 
-
     
     # d2Ed2k is only the 6 unique components of the curvature  
     # (inverse effective mass ) tensor. This is one to save memory.
-    ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[1,2],[0,2]],dtype=int)
+    ij_ind = np.array([[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]],dtype=int)
     E_temp = np.zeros((bnd,nawf),order="C")
 
     #----------------------
@@ -91,13 +90,9 @@ def do_band_curvature ( data_controller ):
             
             pksp_i=np.conj(v_k.T).dot(ary['dHksp'][ik,ipol,:,:,ispin]).dot(v_k)
             pksp_j=np.conj(v_k.T).dot(ary['dHksp'][ik,jpol,:,:,ispin]).dot(v_k)
-            #pksp_i=ary['pksp'][ik,ipol,:,:,ispin]
-            #pksp_j=ary['pksp'][ik,jpol,:,:,ispin]
+
             # this is where d2Ed2k becomes the actual curvature tensor
             d2Ed2k[ij,ik,:,ispin] += np.sum((((pksp_i*pksp_j.T +\
                                                pksp_j*pksp_i.T) / E_temp).real),axis=1)[:bnd]
 
-
     ary['d2Ed2k']=d2Ed2k
-      
-              
