@@ -64,7 +64,7 @@ def do_effective_mass( data_controller,ene ):
       em_flat = np.ascontiguousarray(np.transpose(em_flat,axes=(2,0,1,3)))
 
       em_tens=np.zeros((nspin,nk,bnd,3,3))
-      e_mass =np.zeros((nspin,nk,bnd,11))
+      e_mass =np.zeros((nspin,nk,bnd,8))
 
       # build the effective mass tensors from the flattened version
       em_tens[...,0,0]=em_flat[...,0]
@@ -81,7 +81,7 @@ def do_effective_mass( data_controller,ene ):
         for k in range(nk):
           for b in range(bnd):
             effm =  np.linalg.eigvals(np.linalg.inv(em_tens[sp,k,b]))
-            e_mass[sp,k,b,[4,5,6]] = 1/(em_flat[sp,k,b,[0,1,2]])
+            e_mass[sp,k,b,[4,5,6]] = effm
 
             if np.prod(effm)<0:
               dos_em = -np.prod(np.abs(effm))**(1.0/3.0)
