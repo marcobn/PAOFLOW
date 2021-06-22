@@ -1293,7 +1293,7 @@ mo    '''
 
 
 
-  def transport ( self, tmin=300., tmax=300., nt=1, emin=1., emax=10., ne=500, scattering_channels=[], scattering_weights=[], tau_dict={}, write_to_file=True, save_tensors=False ):
+  def transport ( self, tmin=300., tmax=300., nt=1, emin=1., emax=10., ne=500, scattering_channels=[], scattering_weights=[], tau_dict={}, do_hall=False, write_to_file=True, save_tensors=False ):
     '''
     Calculate the Transport Properties
 
@@ -1308,6 +1308,7 @@ mo    '''
         scattering_channels (list): List of strings specifying a built in model and/or TauModel objects to evaluate
         scattering_weights (list): List of coefficients weighting components of the harmonic sum when computing tau
         tau_dict (dict): Dictionary housing parameters required for calculating Tau with built-in models
+        do_hall (bool): Set True to calculate hall coefficient
         write_to_file (bool): Set True to write tensors to file
         save_tensors (bool): Set True to save the tensors into the data controller
 
@@ -1329,7 +1330,7 @@ mo    '''
       for n in range(bnd):
         velkp[:,:,n,:] = np.real(arrays['pksp'][:,:,n,n,:])
 
-      do_transport(self.data_controller, temps, ene, velkp, sc, sw, write_to_file, save_tensors)
+      do_transport(self.data_controller, temps, ene, velkp, sc, sw, do_hall, write_to_file, save_tensors)
 
     except Exception as e:
       self.report_exception('transport')

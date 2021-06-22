@@ -17,7 +17,7 @@
 #
 
 
-def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_to_file, save_tensors ):
+def do_transport ( data_controller, temps, ene, velkp, channels, weights, do_hall, write_to_file, save_tensors ):
   import numpy as np
   from os.path import join
   from numpy import linalg as npl
@@ -38,11 +38,12 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
       ojf = lambda st,sp : open(join(attr['opath'],'%s_%d.dat'%(st,sp)), 'w')
 
       fsigma = ojf('sigma', ispin)
-      fhall = ojf('hall_trace', ispin)
       fPF = ojf('PF', ispin)
       fkappa = ojf('kappa', ispin)
       fSeebeck = ojf('Seebeck', ispin)
       fsigmadk = ojf('sigmadk', ispin) if attr['smearing']!=None else None
+      if do_hall:
+        fhall = ojf('hall_trace', ispin)
 
     for iT,temp in enumerate(temps):
 
@@ -50,11 +51,13 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
 
       # Quick function to write Transport Formatted line to file
       wtup = lambda fn,tu : fn.write('%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
-      wtup_hall = lambda fn,tu : fn.write('%8.2f % .5f % 9.5e \n'%tu)
 
       # Quick function to get tuple elements to write
       gtup = lambda tu,i : (temp,ene[i],tu[0,0,i],tu[1,1,i],tu[2,2,i],tu[0,1,i],tu[0,2,i],tu[1,2,i])
-      gtup_hall = lambda tu,i : (temp,ene[i],tu[i])
+
+      if do_hall:
+        wtup_hall = lambda fn,tu : fn.write('%8.2f % .5f % 9.5e \n'%tu)
+        gtup_hall = lambda tu,i : (temp,ene[i],tu[i])
 
       if attr['smearing'] is not None:
         L0,_,_ = do_Boltz_tensors(data_controller, attr['smearing'], itemp, ene, velkp, ispin, channels, weights)
@@ -75,7 +78,7 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
         comm.Barrier()
 
       L0,L1,L2 = do_Boltz_tensors(data_controller, None, itemp, ene, velkp, ispin, channels, weights)
-      L0_hall = do_Boltz_tensors_hall(data_controller, None, itemp, ene, velkp, ispin, channels, weights)
+
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
@@ -90,29 +93,34 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
           sigma = None
         if save_tensors:
           arrays['sigma'] = sigma
-        L0_hall *= spin_mult/(attr['omega'])
-        R_hall = np.zeros((3,3,3,esize), dtype=float)
-        R_hall_trace = np.zeros((esize), dtype=float)
-        for n in range(esize):
-          try:
-            for r in range(3):
-              R_hall[:,:,r,n] = npl.inv(L0_unconverted[:,:,n]) @ L0_hall[:,:,r,n] @ npl.inv(L0_unconverted[:,:,n])
-              #----------------------   
-              # The equivalent to the trace of the Hall tensor is an average
-              # over the even permutations of [0, 1, 2].
-              #----------------------  
-            R_hall_trace[n] = (R_hall[0,1,2,n]+R_hall[2,0,1,n]+R_hall[1,2,0,n])*hall_SI/3
 
-          except:
-            from .report_exception import report_exception
-            print('check t_tensor components - matrix cannot be singular')
-            report_exception()
-            raise e
-        if write_to_file:
-          for i in range(esize):
-            wtup_hall(fhall, gtup_hall(R_hall_trace,i))
-        if save_tensors:
-          arrays['R_hall_trace'] = R_hall_trace
+        if do_hall:
+
+          L0_hall = do_Boltz_tensors_hall(data_controller, None, itemp, ene, velkp, ispin, channels, weights)
+          L0_hall *= spin_mult/(attr['omega'])
+          R_hall = np.zeros((3,3,3,esize), dtype=float)
+          R_hall_trace = np.zeros((esize), dtype=float)
+          for n in range(esize):
+            try:
+              for r in range(3):
+                R_hall[:,:,r,n] = npl.inv(L0_unconverted[:,:,n]) @ L0_hall[:,:,r,n] @ npl.inv(L0_unconverted[:,:,n])
+                #----------------------   
+                # The equivalent to the trace of the Hall tensor is an average
+                # over the even permutations of [0, 1, 2].
+                #----------------------  
+              R_hall_trace[n] = (R_hall[0,1,2,n]+R_hall[2,0,1,n]+R_hall[1,2,0,n])*hall_SI/3
+
+            except:
+              from .report_exception import report_exception
+              print('check t_tensor components - matrix cannot be singular')
+              report_exception()
+              raise e
+          if write_to_file:
+            for i in range(esize):
+              wtup_hall(fhall, gtup_hall(R_hall_trace,i))
+          if save_tensors:
+            arrays['R_hall_trace'] = R_hall_trace
+
         #----------------------
         # Seebeck (in units of V/K)
         # convert in units of 10^21 Amperes m^-1 s^-1
@@ -164,15 +172,17 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, write_
 
     if write_to_file:
       fsigma.close()
-      fhall.close()
       fPF.close()
       fkappa.close()
       fSeebeck.close()
       if attr['smearing'] is not None:
         fsigmadk.close()
+      if do_hall:
+        fhall.close()
 
     if save_tensors:
       data_controller.broadcast_single_array('sigma', dtype=float)
-      data_controller.broadcast_single_array('R_hall_trace', dtype=float)
       data_controller.broadcast_single_array('S', dtype=float)
       data_controller.broadcast_single_array('kappa', dtype=float)
+      if do_hall:
+        data_controller.broadcast_single_array('R_hall_trace', dtype=float)
