@@ -235,7 +235,7 @@ def cubium( data_controller, params ):
   attr['nk1'] = 3
   attr['nk2'] = 3
   attr['nk3'] = 3
-
+  attr['Efermi'] = 6
   attr['nawf'] = 1
   attr['nspin'] = 1
   attr['natoms'] = 1
@@ -251,7 +251,7 @@ def cubium( data_controller, params ):
   arry['HRs'] = np.zeros((attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin']),dtype=complex)
 
   # H000
-  arry['HRs'][0,0,0,0,0,0] = 0.0
+  arry['HRs'][0,0,0,0,0,0] = 0.0 - attr['Efermi']
 
   # H100
   arry['HRs'][0,0,1,0,0,0] = params['t']
