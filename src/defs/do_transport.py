@@ -79,6 +79,9 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, do_hal
 
       L0,L1,L2 = do_Boltz_tensors(data_controller, None, itemp, ene, velkp, ispin, channels, weights)
 
+      if do_hall: 
+        L0_hall = do_Boltz_tensors_hall(data_controller, None, itemp, ene, velkp, ispin, channels, weights)
+
       if rank == 0:
         #----------------------
         # Conductivity (in units of /Ohm/m/s)
@@ -95,8 +98,6 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, do_hal
           arrays['sigma'] = sigma
 
         if do_hall:
-
-          L0_hall = do_Boltz_tensors_hall(data_controller, None, itemp, ene, velkp, ispin, channels, weights)
           L0_hall *= spin_mult/(attr['omega'])
           R_hall = np.zeros((3,3,3,esize), dtype=float)
           R_hall_trace = np.zeros((esize), dtype=float)
