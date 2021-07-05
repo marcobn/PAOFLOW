@@ -241,12 +241,13 @@ def cubium( data_controller, params ):
   attr['natoms'] = 1
   attr['bnd']=1
   attr['shift']=0
-  attr['omega']=1
   attr['dftSO']=False
   attr['nkpnts']=attr['nk1']*attr['nk2']*attr['nk3']
   attr['nbnds']=1
+  attr['nelec']=2
 
-  attr['alat'] = 1.0
+  attr['alat'] = 1.0*ANGSTROM_AU
+  attr['omega'] = attr['alat']**3
 
   arry['HRs'] = np.zeros((attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin']),dtype=complex)
 
@@ -274,7 +275,6 @@ def cubium( data_controller, params ):
   # Lattice Vectors
   arry['a_vectors'] = np.zeros((3,3),dtype=float)
   arry['a_vectors'] = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-  arry['a_vectors'] = arry['a_vectors']/ANGSTROM_AU
 
   # Atomic coordinates
   arry['tau'] = np.zeros((1,3),dtype=float) 
@@ -305,12 +305,12 @@ def cubium2( data_controller, params ):
   attr['natoms'] = 1
   attr['bnd']=2
   attr['shift']=0
-  attr['omega']=1
   attr['dftSO']=False
   attr['nkpnts']=attr['nk1']*attr['nk2']*attr['nk3']
   attr['nbnds']=2
-
-  attr['alat'] = 1.0
+  attr['nelec']=2
+  attr['alat'] = 1.0*ANGSTROM_AU
+  attr['omega'] = attr['alat']**3
 
   arry['HRs'] = np.zeros((attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin']),dtype=complex)
 
@@ -342,7 +342,6 @@ def cubium2( data_controller, params ):
   # Lattice Vectors
   arry['a_vectors'] = np.zeros((3,3),dtype=float)
   arry['a_vectors'] = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-  arry['a_vectors'] = arry['a_vectors']/ANGSTROM_AU
 
   # Atomic coordinates
   arry['tau'] = np.zeros((1,3),dtype=float) 
