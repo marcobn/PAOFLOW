@@ -61,8 +61,8 @@ def do_fermisurf ( data_controller ):
       eigband = np.array(eigband)
       data_controller.write_bxsf(feig, np.moveaxis(eigband,0,3), len(ind_plot), indices=ind_plot)
 
-      for ib in eigband:
-        np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ib,ispin)), nameband=ib)
+      for i,ib in enumerate(eigband):
+        np.savez(join(attr['opath'],'Fermi_surf_band_%d_%d'%(ind_plot[i],ispin)), nameband=ib)
 
   comm.Barrier()
   E_kf = E_ks = None
