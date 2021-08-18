@@ -265,6 +265,27 @@ class DataController:
             f.write(' '.join(['%6d'%ik]+['% 14.8f'%j for j in bands[ik,:,ispin]])+'\n') 
     self.comm.Barrier()
 
+  def write_berry_bands ( self, fname, berry_bands ):
+    '''
+    Write electronic band structure file
+
+    Arguments:
+        fname (str): Name of the file (written to outputdir)
+        bands (ndarray): Band data array (shape: (nk,nbnd,nspin))
+
+    Returns:
+        None
+    '''
+    if self.rank == 0:
+      from os.path import join
+
+      arry,attr = self.data_dicts()
+      nkpi = berry_bands.shape[0]
+
+      with open(join(attr['opath'],fname+'.dat'), 'w') as f:
+        for ik in range(nkpi):
+          f.write('\t'.join(['%6d'%ik]+['% 14.8f'%j for j in berry_bands[ik,:]])+'\n')
+    self.comm.Barrier()
 
   def write_kpnts_path ( self, fname, path, kpnts, b_vectors ):
     '''
