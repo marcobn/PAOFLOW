@@ -182,7 +182,7 @@ def graphene( data_controller, params ):
   attr['nspin'] = 1
   attr['natoms'] = 2
 
-  attr['alat'] = 2.46
+  attr['alat'] = 2.46 * ANGSTROM_AU
 
   arry['HRs'] = np.zeros((attr['nawf'],attr['nawf'],attr['nk1'],attr['nk2'],attr['nk3'],attr['nspin']),dtype=complex)
 
@@ -200,12 +200,12 @@ def graphene( data_controller, params ):
   arry['HRs'][1,0,0,1,0,0] = params['t']
 
   #H02
-  arry['HRs'][:,:,0,1,0,0] = np.conj(arry['HRs'][:,:,0,1,0,0]).T
+  arry['HRs'][:,:,0,2,0,0] = np.conj(arry['HRs'][:,:,0,1,0,0]).T
 
   # Lattice Vectors
   arry['a_vectors'] = np.zeros((3,3),dtype=float)
   arry['a_vectors'] = np.array([[1., 0, 0], [0.5, 3 ** .5 / 2, 0], [0, 0, 10]])
-  arry['a_vectors'] = arry['a_vectors']/ANGSTROM_AU
+  arry['a_vectors'] = arry['a_vectors']
 
   # Atomic coordinates
   arry['tau'] = np.zeros((2,3),dtype=float) 
