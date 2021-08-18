@@ -90,6 +90,7 @@ def do_spin_orbit_H ( data_controller ):
     arry['HRs'] = HR_double
     attr['nawf'] = arry['HRs'].shape[0]
 
+  arry['naw'] = np.append(arry['naw'],arry['naw'])
 
 ################### PSEUDOPOTENTIAL PS ##############################33
 def soc_p_ps ( theta, phi, norb ):

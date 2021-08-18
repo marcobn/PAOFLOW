@@ -1070,7 +1070,7 @@ mo    '''
   
   def trim_non_projectable_bands ( self ):
 
-    arrays = self.data_controller.data_arrays
+    arrays, attributes = self.data_controller.data_dicts()
 
     bnd = attributes['nawf'] = attributes['bnd']
 
