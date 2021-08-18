@@ -17,6 +17,7 @@ module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
                     'fermi_surface'            : ['pao_eigh'],\
                     'spin_texture'             : ['pao_eigh'],
                     'gradient_and_momenta'     : ['pao_eigh'],\
+                    'ipr'                      : ['pao_eigh'],\
                     'real_space_wfc'           : ['gradient_and_momenta', 'atomic_orbitals'], \
                     'adaptive_smearing'        : ['gradient_and_momenta'],\
                     'anomalous_Hall'           : ['gradient_and_momenta'],\

@@ -1399,3 +1399,41 @@ mo    '''
 
 
     self.report_module_time('Weyl Search')
+
+  def ipr(self, fname='ipr'):
+    '''
+    Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
+
+                 \sum_n |v_nk|^4
+    IPR_nk = -----------------------
+              ( \sum_n |v_nk|^2 )^2
+
+    where n is the band index and k the k-point
+
+    The final shape is (nspin,nkpts,nbands,3),
+    where the last axis gives: 0 as the k-point coordinate,
+                               1 the band energy, and
+                               2 the inverse partition ratio
+
+    The result in saved to a ipr.npy file.
+    To open the file one should use:
+    `ipr = np.load('ipr.npy')`
+
+    '''
+
+    from .defs.do_ipr import inverse_participation_ratio
+    from os.path import join
+
+    arry, attr = self.data_controller.data_dicts()
+
+    try:
+      arry['ipr'] = inverse_participation_ratio(self.data_controller)
+      np.save(join(attr['opath'],fname+'.npy'),arry['ipr'])
+
+    except Exception as e:
+      self.report_exception('ipr')
+      if attr['abort_on_exception']:
+        raise e
+
+    self.report_module_time('Inverse Participation Ratio (IPR)')
+
