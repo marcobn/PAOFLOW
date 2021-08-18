@@ -1437,3 +1437,90 @@ mo    '''
 
     self.report_module_time('Inverse Participation Ratio (IPR)')
 
+  def berry_phase (self, kspace_method='path', berry_path=None, high_sym_points=None, kpath_funct=None, nk1=100, nk2=100, closed=True, method='berry', sub=None, occupied=True, kradius=None, kcenter=[0.,0.,0.],kxlim=(-0.5,0.5),kylim=(-0.5,0.5),eigvals=False,fname='berry_phase',contin=False):
+    '''
+    Compute the Berry phase using the discretized formula.
+    See R. Resta, Rev. Mod. Phys. 66, 899 (1994) and R. Resta, J. Phys.: Condens. Matter 22, 123201 (2010)
+
+    Arguments:
+        kspace_method (str): method used to sample the BZ:
+                             *'path': 1D path along the BZ;
+                             *'track': 1D path along x direction for several points in the y direction;
+                             *'circle': circular path around a k-point, given center and radius;
+                             *'square': retangular region with nk1 points along x and nk2 points along y. Region defined given x and y start and end points or full BZ.
+        berry_path (str): A string representing the band path to follow. The first and last k-point must not be the same.
+        berry_high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
+        nk (int): Number of k-points to include in the path
+        closed (bool, optional): whether or not to include the connection of the last and first points in the loop
+        method (str, {'berry','zak'}): 'berry' returns the usual berry phase. 'zak' includes the Zak phase for 1D systems which takes into account the Bloch factor exp(-iG.r)
+                                        accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+        sub (None or list of int, optional): index of selected bands to calculate the Berry phase
+        occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None)
+        kxlim (tuple, float): start and end points in x direction for sampling the BZ, used when kspace_method='square' .
+        kylim (tuple, float): start and end points in y direction for sampling the BZ, used when kspace_method='square' .
+        eigvals (bool, optional): write overlap matrix eigenvalues
+        eigvecs (bool, optional): write overlap matrix eigenvectors
+        save_prd (bool, optional): save overlap matrix
+        fname (str, optional): filename to save the berry phase results
+        contin (bool, optional): make berry phase continuous by fixing 2pi shifts
+
+    Returns:
+        Berry/Zak phase
+
+    '''
+    from .defs.do_berry_phase import do_berry_phase
+
+    arry,attr = self.data_controller.data_dicts()
+
+    kspace_method = kspace_method.lower()
+    attr['berry_kspace_method'] = kspace_method
+
+    attr['berry_path'] = berry_path
+    arry['berry_high_sym_points'] = high_sym_points
+
+    attr['berry_nk'] = nk1
+    attr['berry_nk1'] = nk1
+    attr['berry_nk2'] = nk2
+
+    attr['berry_kpath_funct'] = kpath_funct
+
+    arry['berry_kxlim'] = kxlim
+    arry['berry_kylim'] = kylim
+
+    if kspace_method != 'square':
+      attr['berry_eigvals'] = eigvals
+    else:
+      attr['berry_eigvals'] = False
+
+    attr['berry_kradius'] = kradius
+    arry['berry_kcenter'] = np.array(kcenter)
+    attr['berry_eigvals'] = eigvals
+
+    method = method.lower()
+    if method in ['berry','zak']:
+      attr['berry_method'] = method
+    else:
+      print('method should be either berry or zak. Falling back to method = \'berry\'')
+      attr['berry_method'] = 'berry'
+
+    arry['berry_sub'] = sub
+    if sub != None or (sub == None and not occupied):
+      attr['berry_occupied'] = False
+    else:
+      attr['berry_occupied'] = occupied
+
+    attr['berry_closed'] = closed
+    attr['berry_contin'] = contin
+    attr['berry_fname'] = fname
+
+    try:
+
+      do_berry_phase(self)
+
+    except Exception as e:
+      self.report_exception('berry_phase')
+      if attr['abort_on_exception']:
+        raise e
+
+    self.report_module_time('Berry phase')
+
