@@ -15,14 +15,16 @@ def main ():
   print(hamiltonian.shape)
 
   bands = []
-  kq = [[i,0] for i in range(50,0,-1)] + [[i,i] for i in range(51)]
+#  kq = [[i,0] for i in range(50,0,-1)] + [[i,i] for i in range(51)]
+  kq = [[i,0] for i in range(50,0,-1)] + [[i,i] for i in range(51)] + [[50,i] for i in range(49,0,-1)]
   for k in kq:
     ham = hamiltonian[:,:,k[0],k[1],0,0]
     E,v_k = np.linalg.eigh(ham)
     bands.append(E)
   bands = np.array(bands)
-
+  
   plt.plot(bands)
+  plt.ylim(-1.3,0.0)
   plt.show()
 
   quit()
