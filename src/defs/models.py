@@ -514,6 +514,9 @@ def build_TB_model ( data_controller, parameters ):
     Kane_Mele(data_controller, parameters)
   elif parameters['label'].upper() == 'SLATER_KOSTER':
     Slater_Koster(data_controller, parameters)
+  elif parameters['label'].upper() == 'MAGNETIC_BILAYER':
+    from .magnetic_bilayer import magnetic_bilayer
+    magnetic_bilayer(data_controller, parameters)
   else:
     print('ERROR: Label "%s" not found in builtin models.'%label)
 
