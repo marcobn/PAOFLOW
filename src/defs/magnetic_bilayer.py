@@ -8,7 +8,6 @@ def magnetic_bilayer ( data_controller, params ):
   cos = np.cos
   sin = np.sin
   pi = np.pi
-  i = complex(0,1)
   sqrt = np.sqrt
 
   ## Parameters
@@ -58,17 +57,17 @@ def magnetic_bilayer ( data_controller, params ):
   nawf = attr['nawf'] = 36
   nspin = attr['nspin'] = 1
 
-  nk1 = attr['nk1'] = 11
-  nk2 = attr['nk2'] = 11
+  nk1 = attr['nk1'] = 51
+  nk2 = attr['nk2'] = 51
   nk3 = attr['nk3'] = 1
 
   nx,ny = (nk1,nk2)
-  kxGM = np.linspace(-pi,pi,nx)
-  kyGM = np.linspace(-pi,pi,ny)
+  kxGM = np.linspace(0,pi,nx)
+  kyGM = np.linspace(0,pi,ny)
 
   #Diagonal components of H^NM_2d(0)
   def Es_k(kx,ky):
-    return Es - 2*ts*(np.cos(kx*a) + np.cos(ky*a))
+    return Es - 2*ts*(cos(kx*a) + cos(ky*a))
 
   def Epx_k(kx,ky):
     return Epx + 2*tps*cos(kx*a) - 2*tpp*cos(ky*a)
@@ -87,30 +86,21 @@ def magnetic_bilayer ( data_controller, params ):
   def Ed_zx(kx,ky):
     return Edzx + 2*tdp*cos(kx*a) - 2*tdd*cos(ky*a)
   def Ed_x2_y2(kx,ky):
-    return Edx2y2 - ((3.0/2)*tds + (1.0/2)*tdd)*(cos(kx*a) + cos(ky*a))
+    return Edx2y2 - (3*tds + tdd)/2*(cos(kx*a) + cos(ky*a))
   def Ed_z2(kx,ky):
-    return Edz2 - ((1/2)*tds + (3/2)*tdd)*(cos(kx*a) + cos(ky*a))
+    return Edz2 - (tds + 3*tdd)/2*(cos(kx*a) + cos(ky*a))
 
   ### Hamiltonian for normal metal
-
   def H_nm_2d0(kx, ky):
-    r1 = np.array([Es_k(kx, ky), 2*i*gsp*sin(kx*a), 2*i*gsp*sin(ky*a), 0])
-    r2 = np.array([-2*i*gsp*sin(kx*a), Epx_k(kx, ky), 0, 0])
-    r3 = np.array([-2*i*gsp*sin(ky*a), 0, Epy_k(kx, ky), 0])
+    r1 = np.array([Es_k(kx, ky), 2j*gsp*sin(kx*a), 2j*gsp*sin(ky*a), 0])
+    r2 = np.array([-2j*gsp*sin(kx*a), Epx_k(kx, ky), 0, 0])
+    r3 = np.array([-2j*gsp*sin(ky*a), 0, Epy_k(kx, ky), 0])
     r4 = np.array([0, 0, 0, Epz_k(kx, ky)])
-    h1 = np.array([r1, r2, r3, r4]).T
-    h2 = np.array(np.eye(2))
-    h = np.kron(h2,h1)
-    hnm = np.array(h).astype(complex)
-    return hnm
-
-  def H_nm(kx,ky):
-    return (H_nm_2d0(kx,ky) + LS_sp)
-    
-  def En_nm_2d(kx,ky):
-    t1 = np.array((H_nm_2d0(kx,ky) + LS_sp), dtype = 'complex64')
-    w1,v1 = LA.eig(t1) #calculate eigen-values and eigen-vectors
-    return np.sort(w1.real)
+    h1 = np.array([r1, r2, r3, r4])
+    return np.kron(h1, np.eye(2))
+#    h = np.kron(h1, np.eye(2))
+#    hnm = np.array(h).astype(complex)
+#    return hnm
 
   def H_fm_2d0(kx, ky):
     r1f = np.array([Ed_xy(kx, ky), 0, 0, 0, 0])
@@ -118,23 +108,23 @@ def magnetic_bilayer ( data_controller, params ):
     r3f = np.array([0, 0, Ed_zx(kx, ky), 0, 0])
     r4f = np.array([0, 0, 0, Ed_x2_y2(kx, ky), 0])
     r5f = np.array([0, 0, 0, 0, Ed_z2(kx, ky)])
-    h1 = np.array([r1f.T, r2f.T, r3f.T, r4f.T, r5f.T])
-    h2 = np.array(np.identity(2))
-    h4 = np.kron(h1,h2)
-    hfm = np.array(h4)
-    return hfm
+    h1 = np.array([r1f, r2f, r3f, r4f, r5f])
+    return np.kron(h1,np.eye(2))
+#    h4 = np.kron(h1,np.eye(2))
+#    hfm = np.array(h4)
+#    return hfm
 
 
   Lpx = hbar* np.array([[0, 0, 0],
-                        [0, 0, -i],
-                        [0, i, 0]])
+                        [0, 0, -1j],
+                        [0, 1j, 0]])
 
-  Lpy = hbar* np.array([[0, 0, i],
+  Lpy = hbar* np.array([[0, 0, 1j],
                         [0, 0, 0],
-                        [-i, 0, 0]])
+                        [-1j, 0, 0]])
             
-  Lpz = hbar* np.array([[0, -i, 0],
-                        [i, 0, 0],
+  Lpz = hbar* np.array([[0, -1j, 0],
+                        [1j, 0, 0],
                         [0, 0, 0]])
 
   Lp = np.array([Lpx, Lpy, Lpz])
@@ -142,7 +132,7 @@ def magnetic_bilayer ( data_controller, params ):
   Sx =(hbar/2)*np.array([[0, 1],
                          [1, 0]])
 
-  Sy =(hbar/(2*i))*np.array([[0, 1],
+  Sy =(hbar/(2j))*np.array([[0, 1],
                              [-1, 0]])
 
   Sz = (hbar/2)*np.array([[1, 0],
@@ -155,6 +145,7 @@ def magnetic_bilayer ( data_controller, params ):
   LpS = (alpha_nm_so/hbar**2)*(np.kron(Lpx, Sx) + np.kron(Lpy, Sy) + np.kron(Lpz, Sz))
   LpS = np.array(LpS).astype(complex)
 
+  print(LpS.shape)
   LS_sp = np.zeros((8,8)).astype(complex)
   LS_sp[2:2+LpS.shape[0], 2:2+LpS.shape[1]] = LpS #why adding at the left and top of the matrix?why not right and bottomn?
 
@@ -175,28 +166,28 @@ def magnetic_bilayer ( data_controller, params ):
   Tnm_temp = np.kron(tn, np.eye(2))
   Tnm = np.array(Tnm_temp).astype(complex)
 
-  Ldx = hbar* np.array([[0, 0, -i, -i, -sqrt(3)*i],
+  Ldx = hbar* np.array([[0, 0, -1j, -1j, -sqrt(3)*1j],
                         [0, 0, 0, 0, 0],
-                        [i, 0, 0, 0, 0],
-                        [i, 0, 0, 0, 0],
-                        [sqrt(3)*i, 0, 0, 0, 0]])
+                        [1j, 0, 0, 0, 0],
+                        [1j, 0, 0, 0, 0],
+                        [sqrt(3)*1j, 0, 0, 0, 0]])
 
-  Ldy = hbar* np.array([[0, i, 0, 0, 0],
-                        [-i, 0, 0, 0, 0],
-                        [0, 0, 0, -i, sqrt(3)*i],
-                        [0, 0, i, 0, 0],
-                        [0, 0, -sqrt(3)*i, 0, 0]])
+  Ldy = hbar* np.array([[0, 1j, 0, 0, 0],
+                        [-1j, 0, 0, 0, 0],
+                        [0, 0, 0, -1j, sqrt(3)*1j],
+                        [0, 0, 1j, 0, 0],
+                        [0, 0, -sqrt(3)*1j, 0, 0]])
 
-  Ldz = hbar* np.array([[0, 0, 0, 2*i, 0],
-                        [0, 0, i, 0, 0],
-                        [0, -i, 0, 0, 0],
-                        [-2*i, 0, 0, 0, 0],
+  Ldz = hbar* np.array([[0, 0, 0, 2j, 0],
+                        [0, 0, 1j, 0, 0],
+                        [0, -1j, 0, 0, 0],
+                        [-2j, 0, 0, 0, 0],
                         [0, 0, 0, 0, 0]])
 
   Sx =(hbar/2)*np.array([[0, 1],
                          [1, 0]])
 
-  Sy =(hbar/(2*i))*np.array([[0, 1],
+  Sy =(hbar/(2j))*np.array([[0, 1],
                              [-1, 0]])
 
   Sz = hbar*np.array([[1, 0],
@@ -226,7 +217,7 @@ def magnetic_bilayer ( data_controller, params ):
   Sx =(hbar/2)*np.array([[0, 1],
                          [1, 0]])
 
-  Sy =(hbar/(2*i))*np.array([[0, 1],
+  Sy =(hbar/(2j))*np.array([[0, 1],
                              [-1, 0]])
 
   Sz =(hbar/2)*np.array([[1, 0],
