@@ -1293,7 +1293,7 @@ mo    '''
 
 
 
-  def transport ( self, tmin=300., tmax=300., nt=1, emin=1., emax=10., ne=500, scattering_channels=[], scattering_weights=[], tau_dict={}, do_hall=False, write_to_file=True, save_tensors=False ):
+  def transport ( self, tmin=300., tmax=300., nt=1, emin=-2., emax=2., ne=500, scattering_channels=[], scattering_weights=[], tau_dict={}, do_hall=False, write_to_file=True, save_tensors=False ):
     '''
     Calculate the Transport Properties
 
