@@ -1384,13 +1384,13 @@ mo    '''
     self.report_module_time('Dielectric Tensor')
 
 
-  def find_weyl_points ( self, symmetrize=None, search_grid=[8,8,8] ):
+  def find_weyl_points ( self, symmetrize=None, test_rad=0.01, search_grid=[8,8,8] ):
     from .defs.do_find_Weyl import find_weyl
 
     try:
       if symmetrize is not None:
         self.data_controller.data_attributes['symmetrize'] = symmetrize
-      find_weyl(self.data_controller, search_grid)
+      find_weyl(self.data_controller, test_rad, search_grid)
 
     except Exception as e:
       self.report_exception('pao_hamiltonian')

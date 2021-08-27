@@ -116,7 +116,7 @@ def get_search_grid ( nk1, nk2, nk3, snk1_range=[-0.5,0.5], snk2_range=[-0.5,0.5
   #nk_str = np.zeros((nk1*nk2*nk3,3), order='C')
   return np.array(np.meshgrid(nk1_arr,nk2_arr,nk3_arr,indexing='ij')).T.reshape(-1,3)
 
-def find_weyl ( data_controller, test_rad=0.01, search_grid=[8,8,8] ):
+def find_weyl ( data_controller, test_rad, search_grid ):
 
   arry,attr = data_controller.data_dicts()
 
@@ -151,8 +151,8 @@ def find_weyl ( data_controller, test_rad=0.01, search_grid=[8,8,8] ):
     try:
       import z2pack
       import tbmodels      
-
-      model = tbmodels.Model.from_wannier_files(hr_file='z2pack_hamiltonian.dat')
+      import os
+      model = tbmodels.Model.from_wannier_files(hr_file=os.path.join(attr['opath'],'z2pack_hamiltonian.dat'))
       system = z2pack.tb.System(model,bands=nelec)
 
       candidates=0
@@ -168,7 +168,7 @@ def find_weyl ( data_controller, test_rad=0.01, search_grid=[8,8,8] ):
           k_rad = test_rad
         k_rad = 0.005
 
-        surface = z2pack.shape.Sphere(center=tuple(kq), radius=krad)
+        surface = z2pack.shape.Sphere(center=tuple(kq), radius=k_rad)
         result_1 = z2pack.surface.run(system=system, surface=surface)
         invariant = z2pack.invariant.chern(result_1)
 
