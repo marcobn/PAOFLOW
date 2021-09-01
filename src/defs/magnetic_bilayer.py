@@ -49,17 +49,29 @@ def magnetic_bilayer ( data_controller, params ):
   arry['a_vectors'] = alat*np.array([[1,0,0],[0,1,0],[0,0,1]])
   arry['b_vectors'] = np.zeros((3,3),dtype=float)
 
+  attr['omega'] = 1
+  attr['Efermi'] = -0.15
+
   volume = np.dot(np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]),arry['a_vectors'][2,:])
   arry['b_vectors'][0,:] = (np.cross(arry['a_vectors'][1,:],arry['a_vectors'][2,:]))/volume
   arry['b_vectors'][1,:] = (np.cross(arry['a_vectors'][2,:],arry['a_vectors'][0,:]))/volume
   arry['b_vectors'][2,:] = (np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]))/volume 
 
   nawf = attr['nawf'] = 36
+  attr['bnd'] = 36
   nspin = attr['nspin'] = 1
 
   nk1 = attr['nk1'] = 51
   nk2 = attr['nk2'] = 51
   nk3 = attr['nk3'] = 1
+
+  attr['nkpnts'] = nk1*nk2*nk3
+
+  attr['dftSO'] = True
+
+  arry['shells'] = [0,1,1,1]*4 + [2,2,2,2,2]*4
+  arry['sh_l'] = [0,1,1,1]*4 + [2,2,2,2,2]*4
+  arry['sh_j'] = [1,]*36
 
   nx,ny = (nk1,nk2)
   kxGM = np.linspace(0,pi,nx)
@@ -327,6 +339,6 @@ def magnetic_bilayer ( data_controller, params ):
 
 #      print(np.array(H))
 
-  arry['HRs'] = H
-#  arry['HRs'] = FFT.ifftn(H, axes=(2,3,4))
+  arry['Hks'] = H
+#  arry['HRs'] = FFT.ifftn(H, axes=(2,3,4)).
 

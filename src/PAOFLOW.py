@@ -873,7 +873,8 @@ mo    '''
     if 'bval' not in attr: attr['bval'] = bval
 
     # HRs and Hks are replaced with Hksp
-    del arrays['HRs']
+    if 'HRs' in arrays:
+      del arrays['HRs']
 
     try:
       if 'Hksp' not in arrays:

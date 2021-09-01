@@ -210,7 +210,9 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
     Om_znkaux[ik] = -2.0*np.sum(np.imag(jksp[ik,:,:,0]*pksp[ik,:,:,0].T)/E_nm, axis=1)
   E_nm = None
 
-  attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
+  if 'shift' in attributes:
+    attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
+
   ### Hardcoded 'de'
   esize = 500
   ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
