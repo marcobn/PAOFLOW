@@ -16,10 +16,12 @@
  PAOFLOW's capabilities:
 
  - Construction of PAO Hamiltonians from the DFT wavefunctions onto pseudo atomic orbitals
+ - Construction of PAO Hamiltonians from analytical tight binding models
  - Hamiltonian data for further processing (ACBN0, PAOtransport, etc.)
  - External fields and non scf ACBN0 correction
  - Spin orbit correction of non SO calculations
  - Bands along standard paths in the BZ
+ - Real space electronic charge density
  - Interpolation of Hamiltonians on arbitrary Monkhorst and Pack k-meshes
  - Adaptive smearing for BZ and Fermi surface integration
  - Density of states (and projected DOS)
@@ -34,6 +36,7 @@
 Example code for PAOFLOW is available on GitHub:
 https://github.com/marcobn/PAOFLOW/examples/
 
+For installation instructions, see the INSTALL file.
 
  Use of PAOFLOW should reference:
 

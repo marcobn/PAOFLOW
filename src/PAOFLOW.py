@@ -364,7 +364,7 @@ class PAOFLOW:
   def pao_hamiltonian ( self, shift_type=1, insulator=False, write_binary=False, expand_wedge=True, symmetrize=False, thresh=1.e-6, max_iter=16 ):
     '''
     Construct the Tight Binding Hamiltonian
-    Yields 'HRs', 'Hks' and 'kq_wght'
+    Populates DataController with 'HRs', 'Hks' and 'kq_wght'
 
     Arguments:
         shift_type (int): Shift type [ 0-(PRB 2016), 1-(PRB 2013), 2-No Shift ] 
@@ -778,7 +778,7 @@ mo    '''
   def interpolated_hamiltonian ( self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False ):
     '''
     Calculate the interpolated Hamiltonian with the method of zero padding
-    Yields 'Hksp'
+    Populates DataController with 'Hksp'
 
     Arguments:
         nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
@@ -857,7 +857,7 @@ mo    '''
   def pao_eigh ( self, bval=0 ):
     '''
     Calculate the Eigen values and vectors of k-space Hamiltonian 'Hksp'
-    Yields 'E_k' and 'v_k'
+    Populates DataController with 'E_k' and 'v_k'
 
     Arguments:
         bval (int): Top valence band number (nelec/2) to correctly shift Eigenvalues
@@ -873,7 +873,8 @@ mo    '''
     if 'bval' not in attr: attr['bval'] = bval
 
     # HRs and Hks are replaced with Hksp
-    del arrays['HRs']
+    if 'HRs' in arrays:
+      del arrays['HRs']
 
     try:
       if 'Hksp' not in arrays:
@@ -912,7 +913,7 @@ mo    '''
     '''
     Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
     Requires 'Hksp'
-    Yields 'dHksp'
+    Populates DataController with 'dHksp'
 
     Arguments:
       None
@@ -975,7 +976,7 @@ mo    '''
   def adaptive_smearing ( self, smearing='gauss' ):
     '''
     Calculate the Adaptive Smearing parameters
-    Yields 'deltakp' and 'deltakp2'
+    Populates DataController with 'deltakp' and 'deltakp2'
 
     Arguments:
         smearing (str): Smearing type (m-p and gauss)
