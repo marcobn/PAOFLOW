@@ -138,7 +138,7 @@ def do_build_pao_hamiltonian ( data_controller ):
   # acbn0 flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
   # acbn0 flag == 1 - makes H orthogonal (rotated basis) 
 
-  if rank == 0:
+  if rank == 0 and attr['expand_wedge']:
     from .do_Efermi import E_Fermi
     arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
@@ -149,6 +149,7 @@ def do_build_pao_hamiltonian ( data_controller ):
     arry['Hks'][dinds[0],dinds[1]] -= Ef
 
   if attr['acbn0']:
+    import sys
     if rank == 0:
       from .do_non_ortho import do_non_ortho
 
@@ -159,6 +160,7 @@ def do_build_pao_hamiltonian ( data_controller ):
       arry['Hks'] = do_non_ortho(arry['Hks'], arry['Sks'])
 
       data_controller.write_Hk_acbn0()
+    sys.exit(0)
     comm.Barrier()
 
 
