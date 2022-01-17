@@ -29,4 +29,5 @@ module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
 
 key_error_strings = { 'U' : 'Projections must be computed before projectability. Call \'read_atomic_proj_QE\' to read projections from the output of projwfc.x',\
                       'HRs'  : 'HRs must first be calculated with \'build_pao_hamiltonian\'',\
+                      'd2Ed2k'  : 'd2Ed2k must first be calculated using band_curvature set to True in \'gradient_and_momenta\'',\
                       'Hks'  : 'Hks must first be calculated with \'build_pao_hamiltonian\''}
