@@ -157,7 +157,8 @@ def do_build_pao_hamiltonian ( data_controller ):
       # Important in ACBN0 file writing
       arry['Sks'] = np.transpose(arry['Sks'], (1,0,2))
 
-      arry['Hks'] = do_non_ortho(arry['Hks'], arry['Sks'])
+      tshape = (ashape[0],ashape[1],nkpnts,ashape[5])
+      arry['Hks'] = do_non_ortho(arry['Hks'].reshape(tshape), arry['Sks'])
 
       data_controller.write_Hk_acbn0()
     sys.exit(0)
