@@ -359,12 +359,12 @@ class DataController:
 
       if write_binary:# or whatever you want to call it            
         if nspin==1:#postfix .npy just to make it clear what they are
-          np.save('kham.npy',np.ravel(Hks[...,0],order='C'))
+          np.save(os.path.join(inputpath,'kham.npy'),np.ravel(Hks[...,0],order='C'))
         if nspin==2:
-          np.save('kham_up.npy',np.ravel(Hks[...,0],order='C'))
-          np.save('kham_dn.npy',np.ravel(Hks[...,1],order='C'))
+          np.save(os.path.join(inputpath,'kham_up.npy'),np.ravel(Hks[...,0],order='C'))
+          np.save(os.path.join(inputpath,'kham_dn.npy'),np.ravel(Hks[...,1],order='C'))
         if acbn0:
-          np.save('kovp.npy',np.ravel(Sks,order='C'))
+          np.save(os.path.join(inputpath,'kovp.npy'),np.ravel(Sks,order='C'))
       else:
         if nspin == 1:
           f=open(os.path.join(inputpath,'kham.txt'),'w')
