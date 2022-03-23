@@ -3,19 +3,15 @@
 #
 # Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
 #
-# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright (C) 2016-2022 - ERMES Group (http://ermes.unt.edu, mbn@unt.edu)
 #
-# Reference:
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
-# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
+# PAOFLOW is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 #
-# This file is distributed under the terms of the
-# GNU General Public License. See the file `License'
-# in the root directory of the present distribution,
-# or http://www.gnu.org/copyleft/gpl.txt .
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 #
-
+# You should have received a copy of the GNU General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 def header ( ):
   print('')
@@ -26,5 +22,5 @@ def header ( ):
   print('#                  Utility to construct and operate on Hamiltonians from                    #')
   print('#                 the Projections of DFT wfc on Atomic Orbital bases (PAO)                  #')
   print('#                                                                                           #')
-  print('#                       (c)2016-2018 ERMES group (http://ermes.unt.edu)                     #')
+  print('#                       (c)2016-2022 ERMES group (http://ermes.unt.edu)                     #')
   print('#############################################################################################\n')
