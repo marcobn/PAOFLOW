@@ -105,7 +105,7 @@ def plot_dos_beside_bands ( es, dos, bands, sym_points, title, x_lim, y_lim, col
   plt.show()
 
 
-def plot_tensor ( enes, tensors, eles, title, x_lim, y_lim, x_lab, y_lab, col, min_zero=False ):
+def plot_tensor ( enes, tensors, eles, title, x_lim, y_lim, x_lab, y_lab, col, legend, min_zero=False ):
   '''
   '''
   import numpy as np
@@ -118,19 +118,21 @@ def plot_tensor ( enes, tensors, eles, title, x_lim, y_lim, x_lab, y_lab, col, m
 
   ax = fig.add_subplot(111)
 
+  lmap = {0:'x', 1:'y', 2:'z'}
+  lkey = lambda a,b : lmap[a] + lmap[b]
   if len(eles) == 0:
     tval = np.empty(tensors.shape[0], dtype=float)
     for i,v in enumerate(tensors):
       tval[i] = np.sum([v[j,j] for j in range(3)])
     col = col if type(col) is str else col[0]
-    ax.plot(enes, tval, color=col)
+    ax.plot(enes, tval, color=col, label='Avg.')
   else:
     if len(col) >= len(eles):
       for i,e in enumerate(eles):
-        ax.plot(enes, tensors[:,e[0],e[1]], color=col[i])
+        ax.plot(enes, tensors[:,e[0],e[1]], color=col[i], label=lkey(*e))
     else:
       for e in eles:
-        ax.plot(enes, tensors[:,e[0],e[1]])
+        ax.plot(enes, tensors[:,e[0],e[1]], label=lkey(*e))
 
   if not x_lim is None:
     ax.set_xlim(*x_lim)
@@ -142,29 +144,8 @@ def plot_tensor ( enes, tensors, eles, title, x_lim, y_lim, x_lab, y_lab, col, m
   ax.set_xlabel(x_lab)
   ax.set_ylabel(y_lab)
 
+  if legend:
+    ax.legend()
+
   plt.show()
 
-  pass
-
-
-def plot_tensor_vs_temperature( temps, temp, enes, tensors, eles, x_lim, y_lim, col ):
-  '''
-  '''
-  pass
-
-  fig.suptitle(tit)
-
-  ax = fig.add_subplot(111)
-
-  enes,temps,tensors = read_transport_PAO(fname)
-  
-
-  fig = plt.figure()
-
-  tit = 'Band Structure and DoS' if title is None else title
-  fig.suptitle(tit)
-
-  ax = fig.add_subplot(111)
-
-
-  print(temps, enes, tensors.shape)

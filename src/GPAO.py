@@ -74,7 +74,7 @@ class GPAO:
     plot_dos_beside_bands(es, dos, bands, sym_points, title, x_lim, y_lim, col, dos_ticks)    
 
 
-  def plot_electrical_conductivity ( self, fname, t_ele=[(0,0),(1,1),(2,2)], vE=None, title='Sigma vs Energy', x_lim=None, y_lim=None, col=[(1,0,0),(0,1,0),(0,0,1)] ):
+  def plot_electrical_conductivity ( self, fname, t_ele=[(0,0),(1,1),(2,2)], vE=None, title='Sigma vs Energy', x_lim=None, y_lim=None, col=[(1,0,0),(0,1,0),(0,0,1)], legend=True ):
     '''
       Plot the electrical conductivity. If multiple Temperatures are computed the default behavior is to plot the full energy range for every temperature. If a conductivity vs temperature plot is desired, set vE to the energy at which conductivity should be collected for each temperature.
 
@@ -95,10 +95,10 @@ class GPAO:
     enes, temps, tensors = read_transport_PAO(fname)
     for i,temp in enumerate(temps):
       ttitle = title + ', T={}'.format(temp)
-      plot_tensor(enes, tensors[i], t_ele, ttitle, x_lim, y_lim, x_label, y_label, col, min_zero=True)
+      plot_tensor(enes, tensors[i], t_ele, ttitle, x_lim, y_lim, x_label, y_label, col, legend, min_zero=True)
 
 
-  def plot_seebeck ( self, fname, t_ele=[(0,0),(1,1),(2,2)], vE=None, title='Seebeck vs Energy', x_lim=None, y_lim=None, col=[(1,0,0),(0,1,0),(0,0,1)] ):
+  def plot_seebeck ( self, fname, t_ele=[(0,0),(1,1),(2,2)], vE=None, title='Seebeck vs Energy', x_lim=None, y_lim=None, col=[(1,0,0),(0,1,0),(0,0,1)], legend=True ):
     '''
       Plot the Seebeck coefficient. If multiple Temperatures are computed the default behavior is to plot the full energy range for every temperature. If a conductivity vs temperature plot is desired, set vE to the energy at which conductivity should be collected for each temperature.
 
@@ -119,5 +119,5 @@ class GPAO:
     enes, temps, tensors = read_transport_PAO(fname)
     for i,temp in enumerate(temps):
       ttitle = title + ', T={}'.format(temp)
-      plot_tensor(enes, tensors[i]*1e6, t_ele, ttitle, x_lim, y_lim, x_label, y_label, col, min_zero=False)
+      plot_tensor(enes, tensors[i]*1e6, t_ele, ttitle, x_lim, y_lim, x_label, y_label, col, legend, min_zero=False)
 
