@@ -117,6 +117,7 @@ def get_search_grid ( nk1, nk2, nk3, snk1_range=[-0.5,0.5], snk2_range=[-0.5,0.5
   return np.array(np.meshgrid(nk1_arr,nk2_arr,nk3_arr,indexing='ij')).T.reshape(-1,3)
 
 def find_weyl ( data_controller, test_rad, search_grid ):
+  import os
 
   arry,attr = data_controller.data_dicts()
 
@@ -151,7 +152,6 @@ def find_weyl ( data_controller, test_rad, search_grid ):
     try:
       import z2pack
       import tbmodels      
-      import os
       model = tbmodels.Model.from_wannier_files(hr_file=os.path.join(attr['opath'],'z2pack_hamiltonian.dat'))
       system = z2pack.tb.System(model,bands=nelec)
 
