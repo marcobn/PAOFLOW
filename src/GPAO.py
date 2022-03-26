@@ -25,6 +25,19 @@ class GPAO:
     plot_dos(es, dos, title, x_lim, y_lim, vertical, col)
 
 
+  def plot_pdos ( self, fnames, title=None, x_lim=None, y_lim=None, vertical=False, cols=None, labels=None, legend=True ):
+    from .defs.read_pao_output import read_dos_PAO
+    from .graphics.plot_functions import plot_pdos
+
+    es = None
+    dos = []
+    for fn in fnames:
+      es,ds = read_dos_PAO(fn)
+      dos.append(ds)
+
+    plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend)
+
+
   def plot_bands ( self, fname, sym_points=None, title=None, y_lim=None, col='black' ):
     '''
       Plot the band structure

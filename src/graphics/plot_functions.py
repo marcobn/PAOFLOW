@@ -35,6 +35,63 @@ def plot_dos ( es, dos, title, x_lim, y_lim, vertical, col ):
   plt.show()
 
 
+def plot_pdos ( es, dos, title, x_lim, y_lim, vertical, cols, labels, legend ):
+  '''
+  '''
+  import numpy as np
+
+  if labels is None:
+    labels = list(range(len(dos)))
+  else:
+    if len(labels) != len(dos):
+      raise Exception('Must provide one label for each pdos file')
+
+  if cols is None:
+    cols = [None] * len(dos)
+  else:
+    cols = np.array(cols)
+    cs = cols.shape
+    if len(cs) == 1:
+      cols = [cols] * len(dos)
+    elif cs[0] != len(labels):
+      raise Exception('Must provide one color for each pdos file')
+
+  fig = plt.figure()
+
+  tit = 'PDoS' if title is None else title
+  fig.suptitle(tit)
+
+  ax = fig.add_subplot(111)
+
+  if vertical:
+    for i,d in enumerate(dos):
+      ax.plot(d, es, color=cols[i], label=labels[i])
+  else:
+    for i,d in enumerate(dos):
+      ax.plot(es, d, color=cols[i], label=labels[i])
+  if not x_lim is None:
+    ax.set_xlim(*x_lim)
+  elif vertical:
+    ax.set_xlim(0, ax.get_xlim()[1])
+  if not y_lim is None:
+    ax.set_ylim(*y_lim)
+  elif not vertical:
+    ax.set_ylim(0, ax.get_ylim()[1])
+
+  el = 'Energy (eV)'
+  dl = 'electrons/eV'
+  xl = el if not vertical else dl
+  yl = dl if not vertical else el
+
+  ax.set_xlabel(xl, fontsize=12)
+  ax.set_ylabel(yl, fontsize=12)
+
+  if legend:
+    ax.legend()
+
+  plt.show()
+
+
 def plot_bands ( bands, sym_points, title, y_lim, col ):
   '''
   '''
