@@ -4,8 +4,12 @@ if __name__ == '__main__':
   from glob import glob
 
   f_pdos_pat = '../example01/Reference/*_pdosdk*'
-
   fnames = sorted(glob(f_pdos_pat))
+
+  pplt = GPAO.GPAO()
+
+  # Display a default plot of all pdos files
+  pplt.plot_pdos(fnames)
 
   # Create labels and colros, to override default indices and color wheel
   ind = 0
@@ -15,15 +19,15 @@ if __name__ == '__main__':
   psums = []
 
   # Iterate over the shell levels for each shell of each atom
-  for i,a in enumerate(['Si', 'Si']):
-    for j,o in enumerate(['s', 'p', 'd']):
-      ps = []
+  for i,atom in enumerate(['Si', 'Si']):
+    for j,orbital in enumerate(['s', 'p', 'd']):
+      sum_inds = []
       for _ in range(2*j+1):
-        ps.append(ind)
+        sum_inds.append(ind)
         ind += 1
-      psums.append(ps)
+      psums.append(sum_inds)
       cols.append([i/2+.5, j/3+.2, 0])
-      labels.append('{}{}_{}'.format(a,i,o))
+      labels.append('{}{}_{}'.format(atom,i,orbital))
 
   # Add the elements for summing total dos
   psums.append(list(range(ind)))
@@ -31,5 +35,4 @@ if __name__ == '__main__':
   labels.append('Total')
 
   # Plot each shell for each atom
-  pplt = GPAO.GPAO()
   pplt.plot_pdos(fnames, cols=cols, labels=labels, psum_inds=psums)
