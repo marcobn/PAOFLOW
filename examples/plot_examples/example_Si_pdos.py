@@ -13,6 +13,8 @@ if __name__ == '__main__':
   labels = []
   # Also create a table indicating how the pdos should be summed prior to plotting
   psums = []
+
+  # Iterate over the shell levels for each shell of each atom
   for i,a in enumerate(['Si', 'Si']):
     for j,o in enumerate(['s', 'p', 'd']):
       ps = []
@@ -22,6 +24,11 @@ if __name__ == '__main__':
       psums.append(ps)
       cols.append([i/2+.5, j/3+.2, 0])
       labels.append('{}{}_{}'.format(a,i,o))
+
+  # Add the elements for summing total dos
+  psums.append(list(range(ind)))
+  cols.append([0,0,0])
+  labels.append('Total')
 
   # Plot each shell for each atom
   pplt = GPAO.GPAO()
