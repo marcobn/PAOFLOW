@@ -209,3 +209,43 @@ class GPAO:
       ttitle = title + ', T={}'.format(temp)
       plot_tensor(enes, tensors[i]*1e6, t_ele, ttitle, x_lim, y_lim, x_label, y_label, col, legend, min_zero=False)
 
+
+  def plot_shc ( self, fname, title='SHC vs Energy', x_lim=None, y_lim=None, cols=None, legend=True ):
+    '''
+      Plot the Seebeck coefficient. If multiple Temperatures are computed the default behavior is to plot the full energy range for every temperature. If a conductivity vs temperature plot is desired, set vE to the energy at which conductivity should be collected for each temperature.
+
+      Arguments:
+        fname (str): File name (including relative path)
+        title (str): A title for the plot
+        x_lim (tuple): Pair of axis limits (x_min, x_max)
+        y_lim (tuple): Pair of axis limits (y_min, y_max)
+        cols (list): A list of 3-tuples (R,G,B), one for each tensor element.
+    '''
+    from .defs.read_pao_output import read_dos_PAO
+    import numpy as np
+
+    x_label = 'Energy (eV)'
+    y_label = '$\sigma$ ($\Omega$cm)$^{-1}$'
+
+    if isinstance(fname, str):
+      from .graphics.plot_functions import plot_dos
+      es,shc = read_dos_PAO(fname)
+      if y_lim is None:
+        y_lim = 1.1*np.array([np.min(shc),np.max(shc)])
+      plot_dos(es, shc, title, x_lim, y_lim, False, cols, x_label, y_label)
+
+    elif isinstance(fname, list):
+      from .graphics.plot_functions import plot_shc_tensor
+      es = None
+      data = []
+      t_ele = []
+      labels = []
+      if not isinstance(cols, list):
+        cols = [cols] * len(fname)
+      for fn in fname:
+        tag = fn.split('.')[-2][-4:]
+        es,shc = read_dos_PAO(fn)
+        data.append(shc)
+        labels.append(tag)
+      plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
+

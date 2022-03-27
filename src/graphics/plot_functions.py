@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 
-def plot_dos ( es, dos, title, x_lim, y_lim, vertical, col ):
+def plot_dos ( es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=None ):
   '''
   '''
 
@@ -24,8 +24,8 @@ def plot_dos ( es, dos, title, x_lim, y_lim, vertical, col ):
   elif not vertical:
     ax.set_ylim(0, ax.get_ylim()[1])
 
-  el = 'Energy (eV)'
-  dl = 'electrons/eV'
+  el = 'Energy (eV)' if x_label is None else x_label
+  dl = 'electrons/eV' if y_label is None else y_label
   xl = el if not vertical else dl
   yl = dl if not vertical else el
 
@@ -46,8 +46,8 @@ def plot_pdos ( es, dos, title, x_lim, y_lim, vertical, cols, labels, legend ):
     if len(labels) != len(dos):
       raise Exception('Must provide one label for each pdos file')
 
-  if cols is None:
-    cols = [None] * len(dos)
+  if cols is None or isinstance(cols, str):
+    cols = [cols] * len(dos)
   else:
     cols = np.array(cols)
     cs = cols.shape
@@ -262,6 +262,39 @@ def plot_tensor ( enes, tensors, eles, title, x_lim, y_lim, x_lab, y_lab, col, l
     ax.set_ylim(*y_lim)
   elif min_zero:
     ax.set_ylim(0, ax.get_ylim()[1])
+
+  ax.set_xlabel(x_lab)
+  ax.set_ylabel(y_lab)
+
+  if legend:
+    ax.legend()
+
+  plt.show()
+
+
+def plot_shc_tensor ( enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend ):
+  '''
+  '''
+  import numpy as np
+
+  fig = plt.figure()
+
+  if title is None:
+    raise ValueError('\'title\' cannot be None in plot_tensor')
+  fig.suptitle(title)
+
+  ax = fig.add_subplot(111)
+
+  if len(cols) >= len(shc):
+    for i,s in enumerate(shc):
+      ax.plot(enes, s, color=cols[i], label=labels[i])
+  else:
+    raise Exception('Dimensions of colors are incorrect. Blame GPAO.py')
+
+  if not x_lim is None:
+    ax.set_xlim(*x_lim)
+  if not y_lim is None:
+    ax.set_ylim(*y_lim)
 
   ax.set_xlabel(x_lab)
   ax.set_ylabel(y_lab)
