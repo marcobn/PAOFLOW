@@ -92,7 +92,7 @@ def plot_pdos ( es, dos, title, x_lim, y_lim, vertical, cols, labels, legend ):
   plt.show()
 
 
-def plot_bands ( bands, sym_points, title, y_lim, col ):
+def plot_bands ( bands, sym_points, title, label, y_lim, col ):
   '''
   '''
 
@@ -115,12 +115,14 @@ def plot_bands ( bands, sym_points, title, y_lim, col ):
     ax.set_xticks(sym_points[0])
     ax.set_xticklabels(sym_points[1])
     ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
-  ax.set_ylabel('Energy (eV)', fontsize=12)
+  if label is None:
+    label = '$\epsilon$($\\bf{k}$)'
+  ax.set_ylabel(label, fontsize=12)
 
   plt.show()
 
 
-def plot_dos_beside_bands ( es, dos, bands, sym_points, title, x_lim, y_lim, col, dos_ticks ):
+def plot_dos_beside_bands ( es, dos, bands, sym_points, title, band_label, x_lim, y_lim, col, dos_ticks ):
   '''
   '''
   from matplotlib import gridspec
@@ -146,8 +148,68 @@ def plot_dos_beside_bands ( es, dos, bands, sym_points, title, x_lim, y_lim, col
     ax_b.set_xticks(sym_points[0])
     ax_b.set_xticklabels(sym_points[1])
     ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
-  ax_b.set_ylabel('Energy (eV)', fontsize=12)
+  if band_label is None:
+    band_label = '$\epsilon$($\\bf{k}$)'
+  ax_b.set_ylabel(band_label, fontsize=12)
   
+  ax_d.plot(dos, es, color=col)
+  if not x_lim is None:
+    ax_d.set_xlim(*x_lim)
+  else:
+    ax_d.set_xlim(0, ax_d.get_xlim()[1])
+  if not y_lim is None:
+    ax_d.set_ylim(*y_lim)
+  if not dos_ticks:
+    ax_d.yaxis.set_visible(False)
+    plt.tight_layout()
+
+  plt.show()
+
+
+def plot_berry_under_bands ( berry, bands, sym_points, title, band_label, berry_label, x_lim, y_lim, col, dos_ticks ):
+  '''
+  '''
+  from matplotlib import gridspec
+
+  fig = plt.figure()
+  spec = gridspec.GridSpec(ncols=1, nrows=2, height_ratios=[3,1])
+
+  tit = 'Band Structure and Berry Phase' if title is None else title
+  fig.suptitle(tit)
+
+  ax_ba = fig.add_subplot(spec[0])
+  ax_be = fig.add_subplot(spec[1])
+
+  ax_be.plot(berry, color=col)
+  for b in bands:
+    ax_ba.plot(b, color=col)
+  if y_lim is None:
+    y_lim = ax_ba.get_ylim()
+  ax_be.set_xlim(0, bands.shape[1]-1)
+  ax_ba.set_xlim(0, bands.shape[1]-1)
+  ax_ba.set_ylim(*y_lim)
+  if sym_points is None:
+    ax_be.xaxis.set_visible(False)
+    ax_ba.xaxis.set_visible(False)
+  else:
+    tlim = ax_be.get_ylim()
+    ax_be.set_ylim(*tlim)
+    ax_be.set_xticks(sym_points[0])
+    ax_be.set_xticklabels(sym_points[1])
+    ax_be.vlines(sym_points[0], tlim[0], tlim[1], color='gray')
+    ax_ba.set_xticks(sym_points[0])
+    ax_ba.set_xticklabels(sym_points[1])
+    ax_ba.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
+
+  if berry_label is None:
+    berry_label = '$\Omega$($\\bf{k}$)'
+  if band_label is None:
+    band_label = '$\epsilon$($\\bf{k}$)'
+  ax_be.set_ylabel(berry_label, fontsize=12)
+  ax_ba.set_ylabel(band_label, fontsize=12)
+
+  plt.show()
+  quit()
   ax_d.plot(dos, es, color=col)
   if not x_lim is None:
     ax_d.set_xlim(*x_lim)
@@ -184,7 +246,10 @@ def plot_tensor ( enes, tensors, eles, title, x_lim, y_lim, x_lab, y_lab, col, l
     col = col if type(col) is str else col[0]
     ax.plot(enes, tval, color=col, label='Avg.')
   else:
-    if len(col) >= len(eles):
+    if type(col) is str:
+      for e in eles:
+        ax.plot(enes, tensors[:,e[0],e[1]], color=col, label=lkey(*e))
+    elif len(col) >= len(eles):
       for i,e in enumerate(eles):
         ax.plot(enes, tensors[:,e[0],e[1]], color=col[i], label=lkey(*e))
     else:
