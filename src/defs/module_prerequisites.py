@@ -24,6 +24,7 @@ module_pre_reqs = { 'add_external_fields'      : ['projectability'],\
                     'anomalous_Hall'           : ['gradient_and_momenta'],\
                     'spin_Hall'                : ['gradient_and_momenta', 'spin_operator'],\
                     'transport'                : ['gradient_and_momenta'],\
+                    'effective_mass'           : ['gradient_and_momenta'],\
                     'dielectric_tensor'        : ['gradient_and_momenta'] }
 
 

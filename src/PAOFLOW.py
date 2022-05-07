@@ -1249,7 +1249,13 @@ mo    '''
 
     ene = np.linspace(emin, emax, ne)
 
-    do_effective_mass(self.data_controller, ene)
+    try:
+      do_effective_mass(self.data_controller, ene)
+
+    except Exception as e:
+      self.report_exception('effective_mass')
+      if attr['abort_on_exception']:
+        raise e
 
     self.report_module_time('Effective mass')
 
