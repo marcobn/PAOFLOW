@@ -54,10 +54,11 @@ def E_Fermi ( Hksp, data_controller, parallel=False ):
     eps = 1.0e-10
     degauss = 0.01
 
+    nmbnd = nbnd-1 if nbnd == nawf else nbnd
     for ispin in range(nspin):
       for kp in range(snktot):
         Elw = min(Elw,eig[0,kp,ispin])
-        Eup = max(Elw,eig[nbnd,kp,ispin])
+        Eup = max(Elw,eig[nmbnd,kp,ispin])
 
     Eup = Eup + 2 * degauss
     Elw = Elw - 2 * degauss
