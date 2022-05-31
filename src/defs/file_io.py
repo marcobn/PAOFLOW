@@ -266,3 +266,14 @@ def create_atomic_inputfile ( calculation, blocks, cards ):
       for s in vc:
         f.write(s + '\n')
       f.write('\n')
+
+
+def create_acbn0_inputfile ( prefix, pthr ):
+
+  with open('main.py', 'w') as f:
+    f.write('from PAOFLOW import PAOFLOW\n\n')
+    f.write(f'paoflow = PAOFLOW.PAOFLOW(savedir=\'{prefix}.save\', acbn0=True)\n')
+    f.write('paoflow.read_atomic_proj_QE()\n')
+    f.write(f'paoflow.projectability(pthr={pthr})\n')
+    f.write('paoflow.pao_hamiltonian(write_binary=True)\n')
+    f.write('paoflow.finish_execution()\n')

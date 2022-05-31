@@ -1,20 +1,28 @@
 
+######### USER PRESETS #########
+exec_prefix_QE = 'mpirun -np 4'
+exec_postfix_QE = '-npool 8'
+path_QE = '/home/ftc/Programs/qe-6.8/bin'
+
+pthr_PAO = 0.95
+exec_prefix_PAO = 'mpirun -np 4'
+exec_postfix_PAO = ''
+
+path_python = '/home/ftc/Programs/anaconda3/bin'
+
+
 def exec_QE ( executable, fname ):
+  from os.path import join
 
-  ### USER PRESETS ###
-  exec_prefix_QE = 'mpirun -np 4'
-  exec_postfix_QE = '-npool 8'
-
+  exe = join(path_QE, executable)
   fout = fname.replace('in', 'out')
-  return f'{exec_prefix_QE} {executable} < {fname} > {fout}'
+  return f'{exec_prefix_QE} {exe} < {fname} > {fout}'
 
 
 def exec_PAOFLOW ( ):
+  from os.path import join
 
-  ### USER PRESETS ###
-  exec_prefix_PAO = ''
-  exec_postfix_PAO = ''
-
+  prefix = join(path_python, 'python')
   return f'{exec_prefix_PAO} python main.py > paoflow.out'
 
 
@@ -45,9 +53,24 @@ def run_dft ( prefix, species, uVals ):
   for c in ['scf', 'nscf', 'projwfc']:
     command = exec_QE(executables[c], f'{c}.in')
     print(f'Starting Process: {command}')
-    ecode = system(command)
+    #ecode = system(command)
 
-  #nspin = struct['nspin'] if 'nspin' in struct else 1
+
+def run_paoflow ( prefix, save_prefix, nspin ):
+  from PAOFLOW.defs.file_io import create_acbn0_inputfile
+  from os import system
+
+  fstr = f'{prefix}_PAO_bands' + '{}.in'
+  calcs = []
+  if nspin == 1:
+    calcs.append(fstr.format('')) 
+  else:
+    calcs.append(fstr.format('_up'))
+    calcs.append(fstr.format('_down'))
+
+  create_acbn0_inputfile(save_prefix, pthr_PAO)
+  command = exec_PAOFLOW()
+  ecode = system(command)
 
 
 if __name__ == '__main__':
@@ -63,6 +86,7 @@ if __name__ == '__main__':
   # Get structure information
   prefix = argv[1]
   blocks,cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
+  nspin = int(struct['nspin']) if 'nspin' in blocks['system'] else 1
   print(blocks)
   print(cards)
   uspecies = []
@@ -77,6 +101,9 @@ if __name__ == '__main__':
     uVals[s] = threshold_U
   
   run_dft(prefix, uspecies, uVals)
+
+  save_prefix = blocks['control']['prefix'].strip('"').strip('"')
+  run_paoflow(prefix, save_prefix, nspin)
   # While not converged
   ### Determine LSD
   ###   single scf step?
