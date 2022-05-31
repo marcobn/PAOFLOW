@@ -28,7 +28,7 @@ def do_non_ortho ( Hks, Sks ):
   nawf,_,nkpnts,nspin = Hks.shape
   S2k  = np.zeros((nawf,nawf,nkpnts), dtype=complex)
   for ik in range(nkpnts):
-    S2k[:,:,ik] = spl.sqrtm(Sks[:,:,ik])
+    S2k[:,:,ik] = spl.sqrtm(Sks[:nawf,:nawf,ik])
 
   Hks_no = np.zeros((nawf,nawf,nkpnts,nspin), dtype=complex)
   for ispin in range(nspin):
