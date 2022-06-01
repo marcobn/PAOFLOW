@@ -10,20 +10,36 @@ exec_postfix_PAO = ''
 
 path_python = '/home/ftc/Software/anaconda3/bin'
 
+def exec_command ( command ):
+  from os import system
+
+  print(f'Starting Process: {command}')
+  return system(command)
+
 
 def exec_QE ( executable, fname ):
   from os.path import join
 
   exe = join(path_QE, executable)
   fout = fname.replace('in', 'out')
-  return f'{exec_prefix_QE} {exe} < {fname} > {fout}'
+  command = f'{exec_prefix_QE} {exe} < {fname} > {fout}'
+  return exec_command(command)
 
 
 def exec_PAOFLOW ( ):
   from os.path import join
 
   prefix = join(path_python, 'python')
-  return f'{exec_prefix_PAO} python main.py > paoflow.out'
+  command = f'{exec_prefix_PAO} {prefix} main.py > paoflow.out'
+  return exec_command(command)
+
+
+def exec_ACBN0 ( fname ):
+  from os.path import join
+
+  prefix = join(path_python, 'python')
+  command = f'{prefix} acbn0.py {fname} > /dev/null'
+  return exec_command(command)
 
 
 def assign_Us ( struct, species, uVals ):
@@ -36,7 +52,6 @@ def assign_Us ( struct, species, uVals ):
 def run_dft ( prefix, species, uVals ):
   from PAOFLOW.defs.file_io import create_atomic_inputfile
   from PAOFLOW.defs.file_io import struct_from_inputfile_QE
-  from os import system
 
   blocks,cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
   blocks['system'] = assign_Us(blocks['system'], species, uVals)
@@ -51,9 +66,7 @@ def run_dft ( prefix, species, uVals ):
 
   executables = {'scf':'pw.x', 'nscf':'pw.x', 'projwfc':'projwfc.x'}
   for c in ['scf', 'nscf', 'projwfc']:
-    command = exec_QE(executables[c], f'{c}.in')
-    print(f'Starting Process: {command}')
-    #ecode = system(command)
+    ecode = exec_QE(executables[c], f'{c}.in')
 
 
 def run_paoflow ( prefix, save_prefix, nspin ):
@@ -69,8 +82,7 @@ def run_paoflow ( prefix, save_prefix, nspin ):
     calcs.append(fstr.format('_down'))
 
   create_acbn0_inputfile(save_prefix, pthr_PAO)
-  command = exec_PAOFLOW()
-  #ecode = system(command)
+  ecode = exec_PAOFLOW()
 
 
 def read_cell_atoms ( fname ):
@@ -139,8 +151,58 @@ def run_acbn0 ( prefix, nspin ):
   position_string = ','.join([str(v) for a in positions for v in a])
   species_string = ','.join(species)
 
-  for s in species:
-    print(hubbard_orbital(s))
+  sind = 0
+  state_lines = open('proj.out', 'r').readlines()
+  while 'state #' not in state_lines[sind]:
+    sind += 1
+  send = sind
+  while 'state #' in state_lines[send]:
+    send += 1
+  state_lines = state_lines[sind:send]
+
+  uVals = {}
+  for s in list(set(species)):
+    ostates = []
+    ustates = []
+    horb = hubbard_orbital(s)
+    for n,sl in enumerate(state_lines):
+      stateN = re.findall('\(([^\)]+)\)', sl)
+      oele = stateN[0].strip()
+      oL = int(re.split('=| ', stateN[1])[1])
+      if s in oele and oL == horb:
+        ostates.append(n)
+        if s == oele:
+          ustates.append(n)
+    sstates = [ustates[0]]
+    for i,us in enumerate(ustates[1:]):
+      if us == 1 + sstates[i]:
+        sstates.append(us)
+      else:
+        break
+
+    print(ostates)
+    print(ustates)
+    print(sstates)
+    basis_dm = ','.join(ostates)
+    basis_2e = ','.join(sstates)
+
+    fname = f'{prefix}_acbn0_infile_{s}.txt'
+    with open(fname, 'w') as f:
+      f.write(f'latvects = {lattice_string}\n')
+      f.write(f'coords = {position_string}\n')
+      f.write(f'atlabels = {species_string}\n')
+      f.write(f'nspin = {nspin}\n')
+      f.write(f'fpath = ./\n')
+      f.write(f'outfile = {prefix}_acbn0_outfile_{s}.txt\n')
+      f.write(f'reduced_basis_dm = {basis_dm}\n')
+      f.write(f'reduced_basis_2e = {basis_2e}\n')
+
+    exec_ACBN0(fname)
+    def read_U(ff):
+      return 0
+    uVals[s] = read_U(fname)
+
+  return uVals
 
 
 if __name__ == '__main__':
@@ -166,19 +228,21 @@ if __name__ == '__main__':
   threshold_U = 0.01
   for i,s in enumerate(uspecies):
     uVals[s] = threshold_U
-	  
-  run_dft(prefix, uspecies, uVals)
 
-  save_prefix = blocks['control']['prefix'].strip('"').strip('"')
-  run_paoflow(prefix, save_prefix, nspin)
+  # Perform self consistent calculation of Hubbard parameters
+  converged = False
+  while not converged:
 
-  run_acbn0(prefix, nspin)
-  # While not converged
-  ### Determine LSD
-  ###   single scf step?
-  ### Run SCF, NSCF, PROJ, PAOFLOW
-  ### ACBN0
-  ##### generate inputfile
-  ##### Run ACBN0
-  ### Get new UJ
-  ### Check for convergence
+    run_dft(prefix, uspecies, uVals)
+
+    save_prefix = blocks['control']['prefix'].strip('"').strip('"')
+    run_paoflow(prefix, save_prefix, nspin)
+
+    new_U = run_acbn0(prefix, nspin)
+    converged = True
+    for k,v in uVals.items():
+      if np.abs(v-new_U[k]) > threshold_U:
+        converged = False
+        break
+
+    uVals = new_U
