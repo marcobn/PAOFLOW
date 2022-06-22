@@ -124,123 +124,269 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
 
 
 #======================================================================
-# Construct basis string for orbitals
+# Construct basis string for orbitals and write it to file
 #======================================================================
-def basis_string ( label, l, coeffs, expon ):
+def write_basis_file ( fname, atom_no, labels, ls, coefficients, exponents ):
 
-  nzeta = len(coeffs)
-  rstr = f'# label= {label} l= {l}\n[[\n'
+  rstr = 'basis_data = {{ {atom_no} : [\n'
 
-  fcon = '], [\n'
-  fbuf = '   {},\n'
-  fpat = '({},{},{},{:20.10f},{:20.10f})'
-  fline = lambda *arg : fbuf.format(fpat.format(*arg))
+  for il,label in enumerate(labels):
 
-  if l == 0:
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 0, 0, c, expon[i])
+    expon = exponents[il]
+    coeffs = coefficients[il]
 
-  elif l == 1:
-    for n in range(3):
-      lind = [0]*3
-      lind[2-n] = 1
+    nzeta = len(coeffs)
+    rstr += f'# label= {label} l= {l}\n[[\n'
+
+    fcon = '], [\n'
+    fbuf = '   {},\n'
+    fpat = '({},{},{},{:20.10f},{:20.10f})'
+    fline = lambda *arg : fbuf.format(fpat.format(*arg))
+
+    if l == 0:
       for i,c in enumerate(coeffs):
-        rstr += fline(*lind, c, expon[i])
-      if n < 2:
-        rstr += fcon
+        rstr += fline(0, 0, 0, c, expon[i])
 
-  elif l == 2:
+    elif l == 1:
+      for n in range(3):
+        lind = [0]*3
+        lind[2-n] = 1
+        for i,c in enumerate(coeffs):
+          rstr += fline(*lind, c, expon[i])
+        if n < 2:
+          rstr += fcon
 
-    # 1/(2*sqrt(3))*(2*z2 - x2 - y2)
-    for n in range(3):
-      lind = [0]*3
-      lind[2-n] = 2
-      fact = (1 if n==0 else -0.5) / np.sqrt(3)
+    elif l == 2:
+
+      # 1/(2*sqrt(3))*(2*z2 - x2 - y2)
+      for n in range(3):
+        lind = [0]*3
+        lind[2-n] = 2
+        fact = (1 if n==0 else -0.5) / np.sqrt(3)
+        for i,c in enumerate(coeffs):
+          rstr += fline(*lind, fact*c, expon[i])
+      rstr += fcon
+
+      # xz
       for i,c in enumerate(coeffs):
-        rstr += fline(*lind, fact*c, expon[i])
-    rstr += fcon
+        rstr += fline(1, 0, 1, c, expon[i])
+      rstr += fcon
 
-    # xz
-    for i,c in enumerate(coeffs):
-      rstr += fline(1, 0, 1, c, expon[i])
-    rstr += fcon
+      # yz
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 1, 1, c, expon[i])
+      rstr += fcon
 
-    # yz
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 1, 1, c, expon[i])
-    rstr += fcon
+      # 1/2 * (x2 - y2)
+      for i,c in enumerate(coeffs):
+        rstr += fline(2, 0, 0, 0.5*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 2, 0, -0.5*c, expon[i])
+      rstr += fcon
 
-    # 1/2 * (x2 - y2)
-    for i,c in enumerate(coeffs):
-      rstr += fline(2, 0, 0, 0.5*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 2, 0, -0.5*c, expon[i])
-    rstr += fcon
+      # xy
+      for i,c in enumerate(coeffs):
+        rstr += fline(1, 1, 0, c, expon[i])
 
-    # xy
-    for i,c in enumerate(coeffs):
-      rstr += fline(1, 1, 0, c, expon[i])
+    elif l == 3:
+      # fz3, fxz2, fyz2, fz(x2-y2), fxyz, fx(x3-3y2), fy(3x2-y2)
 
-  elif l == 3:
-    # fz3, fxz2, fyz2, fz(x2-y2), fxyz, fx(x3-3y2), fy(3x2-y2)
+      # 1/(2*sqrt(15)) * z*(2*z2 - 3*x2 - 3*y2)
+      fact = 0.5 / np.sqrt(15)
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 0, 3, 2*fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(2, 0, 1, -3*fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 2, 1, -3*fact*c, expon[i])
+      rstr += fcon
 
-    # 1/(2*sqrt(15)) * z*(2*z2 - 3*x2 - 3*y2)
-    fact = 0.5 / np.sqrt(15)
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 0, 3, 2*fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(2, 0, 1, -3*fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 2, 1, -3*fact*c, expon[i])
-    rstr += fcon
+      # 1/(2*sqrt(10)) * x*(4*z2 - x2 - y2)
+      fact = 0.5 / np.sqrt(10)
+      for i,c in enumerate(coeffs):
+        rstr += fline(1, 0, 2, 4*fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 0, 3, -fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(1, 2, 0, -fact*c, expon[i])
+      rstr += fcon
 
-    # 1/(2*sqrt(10)) * x*(4*z2 - x2 - y2)
-    fact = 0.5 / np.sqrt(10)
-    for i,c in enumerate(coeffs):
-      rstr += fline(1, 0, 2, 4*fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 0, 3, -fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(1, 2, 0, -fact*c, expon[i])
-    rstr += fcon
+      # 1/(2*sqrt(10)) * y*(4*z2 - x2 - y2)
+      fact = 0.5 / np.sqrt(10)
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 1, 2, 4*fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(2, 1, 0, -fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 3, 0, -fact*c, expon[i])
+      rstr += fcon
 
-    # 1/(2*sqrt(10)) * y*(4*z2 - x2 - y2)
-    fact = 0.5 / np.sqrt(10)
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 1, 2, 4*fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(2, 1, 0, -fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 3, 0, -fact*c, expon[i])
-    rstr += fcon
+      # 1/2 * z*(x2 - y2)
+      fact = 0.5
+      for i,c in enumerate(coeffs):
+        rstr += fline(2, 0, 1, fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 2, 1, -fact*c, expon[i])
+      rstr += fcon
 
-    # 1/2 * z*(x2 - y2)
-    fact = 0.5
-    for i,c in enumerate(coeffs):
-      rstr += fline(2, 0, 1, fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 2, 1, -fact*c, expon[i])
-    rstr += fcon
+      # x*y*z
+      for i,c in enumerate(coeffs):
+        rstr += fline(1, 1, 1, c, expon[i])
+      rstr += fcon
 
-    # x*y*z
-    for i,c in enumerate(coeffs):
-      rstr += fline(1, 1, 1, c, expon[i])
-    rstr += fcon
+      # 1/(2*sqrt(6)) * x*(x2 - 3*y2)
+      fact = 0.5 / np.sqrt(6)
+      for i,c in enumerate(coeffs):
+        rstr += fline(3, 0, 0, fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(1, 2, 0, -3*fact*c, expon[i])
+      rstr += fcon
 
-    # 1/(2*sqrt(6)) * x*(x2 - 3*y2)
-    fact = 0.5 / np.sqrt(6)
-    for i,c in enumerate(coeffs):
-      rstr += fline(3, 0, 0, fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(1, 2, 0, -3*fact*c, expon[i])
-    rstr += fcon
+      # 1/(2*sqrt(6)) * y*(3*x2 - y2)
+      fact = 0.5 / np.sqrt(6)
+      for i,c in enumerate(coeffs):
+        rstr += fline(2, 1, 0, 3*fact*c, expon[i])
+      for i,c in enumerate(coeffs):
+        rstr += fline(0, 3, 0, -fact*c, expon[i])
+      rstr += fcon
 
-    # 1/(2*sqrt(6)) * y*(3*x2 - y2)
-    fact = 0.5 / np.sqrt(6)
-    for i,c in enumerate(coeffs):
-      rstr += fline(2, 1, 0, 3*fact*c, expon[i])
-    for i,c in enumerate(coeffs):
-      rstr += fline(0, 3, 0, -fact*c, expon[i])
-    rstr += fcon
+    rstr += ']],\n'
+  rstr += ']}\n'
 
-  return rstr + ']],\n'
+  with open(fname, 'w') as f:
+    f.write(rstr)
+
+  print(f'INFO: File {fname} created.')
+
+
+def read_atom_no_xml ( upf_version, root ):
+
+  ele = None
+  text = root.find('PP_HEADER')
+  if upf_version == 1:
+    text = text.text.split()
+    ind = text.index('Element')
+    ele = text[ind-1].strip()
+  elif upf_version == 2:
+    ele = text.attrib['element']
+  else:
+    raise Exception('ERROR: Supported UPF version are v1 and v2')
+
+  no = get_atom_no(ele)
+  print('INFO: element={ele}, atomic number={no}\n')
+  return ele, no
+
+def read_upf ( upf_version, root ):
+
+  ls = []
+  wfcs = []
+  labels = []
+  text = root.find('PP_MESH/PP_R').text
+  r = np.array([float(v) for v in text.split()])
+  text = root.find('PP_MESH/PP_R').text
+  rab = np.array([float(v) for v in text.split()])
+
+  if upf_version == 1
+    from io import StringIO
+
+    chi = root.find('PP_PSWFC')
+    if chi is None:
+      raise Exception('ERROR: Cannot locate PP_PSWFC tag.')
+
+    nlines = r.shape[0]//4
+    if r.shape[0] % 4 != 0:
+      nlines += 1
+
+    text = StringIO(chi.text)
+    line = text.readline()
+    while line != '':
+
+      if line == '\n':
+        continue
+
+      label,l,occ,_ = line.split()
+      l,occ = int(l),float(occ)
+
+      wfc = []
+      for _ in range(nlines):
+        wfc += list(map(float, text.readline().split()))
+
+      ls.append(l)
+      wfcs.append(wfc)
+      labels.append(label)
+
+      line = text.readline()
+
+  elif upf_version == 2:
+    ind = 1
+    fstr = 'PP_PSWFC/PP_CHI.{}'
+    chi = root.find(fstr.format(ind))
+    while chi is not None:
+
+      label = chi.attrib['label']
+      l = int(chi.attrib['l'])
+      wfc = [float(v) for v in chi.text.split()]
+      if len(wfc) != r.shape[0]:
+        msg = 'ERROR: wfc and radial grid have different dimension'
+        raise Exception(msg)
+
+      ls.append(l)
+      wfcs.append(wfc)
+      labels.append(label)
+
+      ind += 1
+      chi = root.find(fstr.format(ind))
+
+  else:
+    raise Exception('ERROR: Supported UPF version are v1 and v2')
+
+  wfcs = np.array(wfcs)
+  for i,w in enumerate(wfcs):
+    l = ls[i]
+    label = labels[i]
+    norm = np.sum(rab * w**2)
+    print('INFO: Fitting pswfc {label} l={l} norm={norm}')
+
+  return r,rab,labels,ls,wfcs
+
+def gauss_fit ( xml_file, threshold=0.5 ):
+  from os.path import dirname,join
+
+  nzeta = 2
+  optimized = False
+  while not optimized and nzeta < 6:
+
+    root = None
+    try:
+      with open(xml_file, 'r') as f:
+        xml_content = f.read()
+        root = ET.fromstring(xml_content)
+
+      upf_version = int(root.attrib['version'].split('.')[0])
+    except Exception as e:
+      print(f'ERROR: Could not read the xml file: {xml_file}')
+      raise e
+
+    ele,atno = get_atom_no_xml(upf_version, root)
+    r,rab,labels,ls,wfcs = read_upf(upf_version, root)
+
+    failed = False
+    coeffs,exponents = [],[]
+    for i,lab in enumerate(labels):
+      coef,expon,exit_code = fit(nzeta, lab, ls[i], r,
+                                   rab, wfcs[i], threshold)
+      if exit_code != 0:
+        failed = True
+        break
+
+    if failed:
+      nzeta += 1
+      continue
+
+    optimized = True
+    base_dir = dirname(xml_file)
+    fname = join(base_dir, f'{ele}_basis.py')
+    write_basis_file(fname, ele, labels, ls, coeffs, exponents)
+
+  if nzeta >= 6:
+    raise Exception('Could not optimize the wfcs')
