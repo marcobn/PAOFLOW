@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 #######################################################################
 # Fit UPF radial pseudowavefunctions with gaussian orbitals
-# Davide Ceresoli - May 2016
-# Frank Cerasoli - June 2022
+# Authored: Davide Ceresoli - May 2016
+# Revised:  Frank Cerasoli - June 2022
 #
 # Notes:
 # - UPFv1 files must be embedded in <UPF version="1.0">...</UPF> element
@@ -30,7 +30,7 @@ spn_map = {'H':1,'He':2,'Li':3,'Be':4,'B':5,'C':6,'N':7,'O':8,'F':9,
 
 def get_atom_no ( n ):
   if n not in spn_map:
-    raise Exception(f'Invalid atomic number: {n}')
+    raise Exception(f'Invalid atomic symbol: {n}')
   return spn_map[n]
 
 # Double factorial (n!!)
@@ -85,7 +85,7 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
     from scipy.optimize import leastsq
 
     params,fc,info,msg,ier = leastsq(target, params0, full_output=1,
-                                     args=(r,rab,wfc,l), maxfev=5e4,
+                                     args=(r,rab,wfc,l), maxfev=50000,
                                      ftol=1e-10, xtol=1e-10)
     if ier > 0:
       print(f'ERROR: ier={ier}\nmesg={msg}')
@@ -106,21 +106,21 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
       print('ERROR: opt.fun={}'.format(opt.fun))
 
   alpha,beta = params[:2]
-  coeffs = np.sqrt(fact2(2*l+1)/(4*np.pi)) * params[2:]
-  expon = []
   print(f'alpha = {alpha}, beta = {beta}')
+
+  expon = []
+  coeffs = np.sqrt(fact2(2*l+1)/(4*np.pi)) * params[2:]
   for j,c in enumerate(coeffs):
     zeta = alpha / beta**j
     expon.append(zeta)
     print(f'coeff = {c}, zeta = {zeta}')
 
   res = target_squared(params, r, rab, wfc, l)
-  print('Fit result: {res}')
+  print(f'Fit result: {res}')
 
-  if np.abs(res) > threshold:
-    raise Exception('Fit did not meet the threshold resolution.')
+  exit_code = 0 if np.abs(res) <= threshold else 1
 
-  return coeffs, expon
+  return coeffs, expon, exit_code
 
 
 #======================================================================
@@ -128,20 +128,21 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
 #======================================================================
 def write_basis_file ( fname, atom_no, labels, ls, coefficients, exponents ):
 
-  rstr = 'basis_data = {{ {atom_no} : [\n'
+  rstr = f'basis_data = {{ {atom_no} : [\n'
 
   for il,label in enumerate(labels):
 
+    l = ls[il]
     expon = exponents[il]
     coeffs = coefficients[il]
 
     nzeta = len(coeffs)
     rstr += f'# label= {label} l= {l}\n[[\n'
 
-    fcon = '], [\n'
+    fcon = '],  [\n'
     fbuf = '   {},\n'
-    fpat = '({},{},{},{:20.10f},{:20.10f})'
-    fline = lambda *arg : fbuf.format(fpat.format(*arg))
+    fpat = '({},{},{},{:.10f},{:.10f})'
+    fline = lambda x,y,z,a,b : fbuf.format(fpat.format(x,y,z,a,b))
 
     if l == 0:
       for i,c in enumerate(coeffs):
@@ -251,7 +252,7 @@ def write_basis_file ( fname, atom_no, labels, ls, coefficients, exponents ):
       rstr += fcon
 
     rstr += ']],\n'
-  rstr += ']}\n'
+  rstr = rstr[:-1] + ']}\n'
 
   with open(fname, 'w') as f:
     f.write(rstr)
@@ -268,7 +269,7 @@ def read_atom_no_xml ( upf_version, root ):
     ind = text.index('Element')
     ele = text[ind-1].strip()
   elif upf_version == 2:
-    ele = text.attrib['element']
+    ele = text.attrib['element'].strip()
   else:
     raise Exception('ERROR: Supported UPF version are v1 and v2')
 
@@ -286,7 +287,7 @@ def read_upf ( upf_version, root ):
   text = root.find('PP_MESH/PP_R').text
   rab = np.array([float(v) for v in text.split()])
 
-  if upf_version == 1
+  if upf_version == 1:
     from io import StringIO
 
     chi = root.find('PP_PSWFC')
@@ -349,7 +350,8 @@ def read_upf ( upf_version, root ):
 
   return r,rab,labels,ls,wfcs
 
-def gauss_fit ( xml_file, threshold=0.5 ):
+def gaussian_fit ( xml_file, threshold=0.5 ):
+  from xml.etree import ElementTree as ET
   from os.path import dirname,join
 
   nzeta = 2
@@ -367,15 +369,18 @@ def gauss_fit ( xml_file, threshold=0.5 ):
       print(f'ERROR: Could not read the xml file: {xml_file}')
       raise e
 
-    ele,atno = get_atom_no_xml(upf_version, root)
+    ele,atno = read_atom_no_xml(upf_version, root)
     r,rab,labels,ls,wfcs = read_upf(upf_version, root)
 
     failed = False
     coeffs,exponents = [],[]
     for i,lab in enumerate(labels):
       coef,expon,exit_code = fit(nzeta, lab, ls[i], r,
-                                   rab, wfcs[i], threshold)
-      if exit_code != 0:
+                                 rab, wfcs[i], threshold)
+      if exit_code == 0:
+        coeffs.append(coef)
+        exponents.append(expon)
+      else:
         failed = True
         break
 
@@ -386,7 +391,7 @@ def gauss_fit ( xml_file, threshold=0.5 ):
     optimized = True
     base_dir = dirname(xml_file)
     fname = join(base_dir, f'{ele}_basis.py')
-    write_basis_file(fname, ele, labels, ls, coeffs, exponents)
+    write_basis_file(fname, atno, labels, ls, coeffs, exponents)
 
   if nzeta >= 6:
     raise Exception('Could not optimize the wfcs')

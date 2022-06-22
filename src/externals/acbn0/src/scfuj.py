@@ -1,5 +1,5 @@
 
-######### USER PRESETS #########
+############ USER PRESETS ############
 exec_prefix_QE = 'mpirun -np 4'
 exec_postfix_QE = '-npool 8'
 path_QE = '/home/ftc/Software/qe-6.8/bin'
@@ -9,6 +9,7 @@ exec_prefix_PAO = 'mpirun -np 4'
 exec_postfix_PAO = ''
 
 path_python = '/home/ftc/Software/anaconda3/bin'
+########## END USER PRESETS ##########
 
 def exec_command ( command ):
   from os import system
@@ -207,31 +208,49 @@ def run_acbn0 ( prefix, nspin ):
 
 if __name__ == '__main__':
   from PAOFLOW.defs.file_io import struct_from_inputfile_QE
+  from upf_gaussfit import gaussian_fit
+  from os.path import join
+  from os import getcwd
   from sys import argv
 
   argc = len(argv)
   if argc < 2:
     print('Usage:\n  python scfuj.py <prefix>')
-    print('\nFiles prefix.scf.in, prefix.nscf.in, and prefix.proj.in must exist in current directory.')
+    print('\nFiles prefix.scf.in, prefix.nscf.in, prefix.proj.in, and all relevant pseudoptnetials must exist in current directory.')
     quit()
 
   # Get structure information
+  cwd = getcwd()
   prefix = argv[1]
   blocks,cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
   nspin = int(struct['nspin']) if 'nspin' in blocks['system'] else 1
+
+  # Generate gaussian fits
   uspecies = []
   for s in cards['ATOMIC_SPECIES'][1:]:
-    uspecies.append(s.split()[0])
+    ele,_,pp = s.split()
+    uspecies.append(ele)
+    gaussian_fit(join(cwd,pp))
 
   # Set initial UJ
   uVals = {}
   threshold_U = 0.01
+  blocks['lda_plus_u'] = '.true.'
   for i,s in enumerate(uspecies):
     uVals[s] = threshold_U
+  
+  # Generate gaussian fits
+  print(blocks)
+  print(cards)
+  quit()
 
   # Perform self consistent calculation of Hubbard parameters
   converged = False
   while not converged:
+
+    # Update U values provided to inputfiles
+    for i,s in enumerate(uspecies):
+      blocks['Hubbard_U({})'.format(i+1)] = str(uVals[s])
 
     run_dft(prefix, uspecies, uVals)
 
