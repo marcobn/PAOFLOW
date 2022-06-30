@@ -90,7 +90,7 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
     if ier > 0:
       print(f'ERROR: ier={ier}\nmesg={msg}')
       print('ERROR: info[nfev]={}'.format(info['nfev']))
-      print('ERROR: info[fvec]='.format(np.sum(info['fvec']**2)))
+      print('ERROR: info[fvec]={}'.format(np.sum(info['fvec']**2)))
 
   # Minimize
   else:
@@ -257,7 +257,7 @@ def write_basis_file ( fname, atom_no, labels, ls, coefficients, exponents ):
   with open(fname, 'w') as f:
     f.write(rstr)
 
-  print(f'INFO: File {fname} created.')
+  print(f'INFO: File {fname} created.\n')
 
 
 def read_atom_no_xml ( upf_version, root ):
@@ -274,7 +274,7 @@ def read_atom_no_xml ( upf_version, root ):
     raise Exception('ERROR: Supported UPF version are v1 and v2')
 
   no = get_atom_no(ele)
-  print('INFO: element={ele}, atomic number={no}\n')
+  print(f'INFO: element={ele}, atomic number={no}')
   return ele, no
 
 def read_upf ( upf_version, root ):
@@ -284,7 +284,7 @@ def read_upf ( upf_version, root ):
   labels = []
   text = root.find('PP_MESH/PP_R').text
   r = np.array([float(v) for v in text.split()])
-  text = root.find('PP_MESH/PP_R').text
+  text = root.find('PP_MESH/PP_RAB').text
   rab = np.array([float(v) for v in text.split()])
 
   if upf_version == 1:
@@ -346,9 +346,10 @@ def read_upf ( upf_version, root ):
     l = ls[i]
     label = labels[i]
     norm = np.sum(rab * w**2)
-    print('INFO: Fitting pswfc {label} l={l} norm={norm}')
+    print(f'INFO: Fitting pswfc {label} l={l} norm={norm}')
 
   return r,rab,labels,ls,wfcs
+
 
 def gaussian_fit ( xml_file, threshold=0.5 ):
   from xml.etree import ElementTree as ET
@@ -360,6 +361,7 @@ def gaussian_fit ( xml_file, threshold=0.5 ):
 
     root = None
     try:
+      print(f'INFO: Fitting file {xml_file} with {nzeta} gaussians')
       with open(xml_file, 'r') as f:
         xml_content = f.read()
         root = ET.fromstring(xml_content)

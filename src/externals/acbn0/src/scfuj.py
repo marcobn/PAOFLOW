@@ -146,6 +146,7 @@ def hubbard_orbital ( ele ):
 
 
 def run_acbn0 ( prefix, nspin ):
+  import re
 
   lattice,species,positions = read_cell_atoms('scf.out')
   lattice_string = ','.join([str(v) for a in lattice for v in a])
@@ -153,7 +154,7 @@ def run_acbn0 ( prefix, nspin ):
   species_string = ','.join(species)
 
   sind = 0
-  state_lines = open('proj.out', 'r').readlines()
+  state_lines = open('projwfc.out', 'r').readlines()
   while 'state #' not in state_lines[sind]:
     sind += 1
   send = sind
@@ -181,11 +182,8 @@ def run_acbn0 ( prefix, nspin ):
       else:
         break
 
-    print(ostates)
-    print(ustates)
-    print(sstates)
-    basis_dm = ','.join(ostates)
-    basis_2e = ','.join(sstates)
+    basis_dm = ','.join(list(map(str,ostates)))
+    basis_2e = ','.join(list(map(str,sstates)))
 
     fname = f'{prefix}_acbn0_infile_{s}.txt'
     with open(fname, 'w') as f:
@@ -212,6 +210,7 @@ if __name__ == '__main__':
   from os.path import join
   from os import getcwd
   from sys import argv
+  import numpy as np
 
   argc = len(argv)
   if argc < 2:
@@ -239,11 +238,6 @@ if __name__ == '__main__':
   for i,s in enumerate(uspecies):
     uVals[s] = threshold_U
   
-  # Generate gaussian fits
-  print(blocks)
-  print(cards)
-  quit()
-
   # Perform self consistent calculation of Hubbard parameters
   converged = False
   while not converged:
