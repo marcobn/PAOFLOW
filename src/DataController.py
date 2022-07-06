@@ -364,6 +364,7 @@ class DataController:
           np.save(os.path.join(inputpath,'kham_up.npy'),np.ravel(Hks[...,0],order='C'))
           np.save(os.path.join(inputpath,'kham_dn.npy'),np.ravel(Hks[...,1],order='C'))
         if acbn0:
+          Sks = Sks[:Sks.shape[1],:,:]
           np.save(os.path.join(inputpath,'kovp.npy'),np.ravel(Sks,order='C'))
       else:
         if nspin == 1:

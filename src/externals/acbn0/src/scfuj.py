@@ -187,6 +187,7 @@ def run_acbn0 ( prefix, nspin ):
 
     fname = f'{prefix}_acbn0_infile_{s}.txt'
     with open(fname, 'w') as f:
+      f.write(f'symbol = {s}\n')
       f.write(f'latvects = {lattice_string}\n')
       f.write(f'coords = {position_string}\n')
       f.write(f'atlabels = {species_string}\n')
@@ -197,9 +198,10 @@ def run_acbn0 ( prefix, nspin ):
       f.write(f'reduced_basis_2e = {basis_2e}\n')
 
     exec_ACBN0(fname)
-    def read_U(ff):
-      return 0
-    uVals[s] = read_U(fname)
+    with open(f'{s}_UJ.txt', 'r') as f:
+      lines = f.readlines()
+      uVals[s] = float(lines[0].split(':')[1])
+    print(uVals[s])
 
   return uVals
 
@@ -252,9 +254,12 @@ if __name__ == '__main__':
     run_paoflow(prefix, save_prefix, nspin)
 
     new_U = run_acbn0(prefix, nspin)
+    print(new_U)
     converged = True
-    for k,v in uVals.items():
-      if np.abs(v-new_U[k]) > threshold_U:
+    print('New U values:')
+    for k,v in new_U.items():
+      print(f'  {k} : {v}')
+      if np.abs(uVals[k]-v) > threshold_U:
         converged = False
         break
 
