@@ -1,7 +1,7 @@
 
 ############ USER PRESETS ############
-exec_prefix_QE = 'mpirun -np 4'
-exec_postfix_QE = '-npool 8'
+exec_prefix_QE = 'mpirun -np 8'
+exec_postfix_QE = '-npool 4 -northo 1'
 path_QE = '/home/ftc/Software/qe-6.8/bin'
 
 pthr_PAO = 0.95
@@ -23,7 +23,7 @@ def exec_QE ( executable, fname ):
 
   exe = join(path_QE, executable)
   fout = fname.replace('in', 'out')
-  command = f'{exec_prefix_QE} {exe} < {fname} > {fout}'
+  command = f'{exec_prefix_QE} {exe} {exec_postfix_QE} < {fname} > {fout}'
   return exec_command(command)
 
 
@@ -31,7 +31,7 @@ def exec_PAOFLOW ( ):
   from os.path import join
 
   prefix = join(path_python, 'python')
-  command = f'{exec_prefix_PAO} {prefix} main.py > paoflow.out'
+  command = f'{exec_prefix_PAO} {prefix} {exec_postfix_PAO} main.py > paoflow.out'
   return exec_command(command)
 
 
@@ -200,8 +200,7 @@ def run_acbn0 ( prefix, nspin ):
     exec_ACBN0(fname)
     with open(f'{s}_UJ.txt', 'r') as f:
       lines = f.readlines()
-      uVals[s] = float(lines[0].split(':')[1])
-    print(uVals[s])
+      uVals[s] = float(lines[2].split(':')[1])
 
   return uVals
 
@@ -254,13 +253,11 @@ if __name__ == '__main__':
     run_paoflow(prefix, save_prefix, nspin)
 
     new_U = run_acbn0(prefix, nspin)
-    print(new_U)
     converged = True
     print('New U values:')
     for k,v in new_U.items():
       print(f'  {k} : {v}')
-      if np.abs(uVals[k]-v) > threshold_U:
+      if converged and np.abs(uVals[k]-v) > threshold_U:
         converged = False
-        break
 
     uVals = new_U

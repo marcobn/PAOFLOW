@@ -56,9 +56,8 @@ def band_loop_H ( data_controller, kq_aux ):
   Haux = np.zeros((nawf,nawf,nksize,nspin), dtype=complex, order="C")
 
   for ispin in range(nspin):
-    Haux[:,:,:,ispin] = np.tensordot(HRs[:,:,:,ispin], kdot, axes=([2],[0]))
+    Haux[...,ispin] = np.tensordot(HRs[...,ispin], kdot, axes=([2],[0]))
 
-  kdot  = None
   return Haux
 
 
