@@ -166,7 +166,10 @@ def run_acbn0 ( prefix, nspin ):
   for s in list(set(species)):
     ostates = []
     ustates = []
-    horb = hubbard_orbital(s)
+    sn = s
+    while sn[-1].isdigit():
+      sn = sn[:-1]
+    horb = hubbard_orbital(sn)
     for n,sl in enumerate(state_lines):
       stateN = re.findall('\(([^\)]+)\)', sl)
       oele = stateN[0].strip()
@@ -249,7 +252,7 @@ if __name__ == '__main__':
 
     run_dft(prefix, uspecies, uVals)
 
-    save_prefix = blocks['control']['prefix'].strip('"').strip('"')
+    save_prefix = blocks['control']['prefix'].strip('"').strip("'")
     run_paoflow(prefix, save_prefix, nspin)
 
     new_U = run_acbn0(prefix, nspin)

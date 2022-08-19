@@ -1,5 +1,5 @@
 &PROJWFC
-    prefix='mgo'
+    prefix='MgO'
     outdir='./'
     filpdos='./proj'
     lwrite_overlaps=.TRUE.

@@ -1,26 +1,26 @@
 MgO FCC
 &control
     calculation = 'scf',
-    restart_mode = "from_scratch",
-    prefix = "mgo",
-    wf_collect=.true.
-    PSEUDO_DIR ="./"
+    restart_mode = 'from_scratch',
+    prefix = 'MgO',
+    wf_collect= .true.
+    PSEUDO_DIR = './'
  /
 
  &system
-    occupations = "fixed",
+    occupations = 'fixed',
     ecutwfc = 100,
     ecutrho = 400,
     ibrav = 0,
-    nat=2,
-    ntyp=2,
+    nat = 2,
+    ntyp = 2,
     celldm(1) = 8.0379167413,
-    nosym=.t.
-    noinv=.t.
+    nosym = .t.
+    noinv = .t.
  /   
 
 &electrons
-    mixing_mode = "plain"
+    mixing_mode = 'plain'
     mixing_beta = 0.5
     conv_thr =  1.0d-8
     electron_maxstep = 200 
