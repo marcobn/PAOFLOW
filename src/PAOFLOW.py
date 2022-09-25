@@ -376,6 +376,7 @@ class PAOFLOW:
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
     from .defs.do_Efermi import E_Fermi
+    
 
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
@@ -400,6 +401,16 @@ class PAOFLOW:
       if attr['abort_on_exception']:
         raise e
     self.report_module_time('Building Hks')
+    
+#   try:
+#     minimal = attr['minimal']
+#   except:
+#     minimal = False
+#   
+#   if minimal: 
+#     from .defs.do_minimal import do_minimal
+#     do_minimal(self.data_controller)
+
 
     # Done with U and Sks
     del arrays['U']
@@ -417,6 +428,18 @@ class PAOFLOW:
         raise e
     self.report_module_time('k -> R')
 
+
+  def minimal(self,R=False):
+      from .defs.do_minimal import do_minimal
+      do_minimal(self.data_controller)
+      if R:
+        from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
+        do_Hks_to_HRs(self.data_controller)
+        self.data_controller.broadcast_single_array('HRs')
+  
+  def minimal2(self):
+      from .defs.do_minimal import do_minimal2
+      do_minimal2(self.data_controller)
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
