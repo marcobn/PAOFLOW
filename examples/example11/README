@@ -1,0 +1,15 @@
+
+Compute the Hubbard U parameters for Magnesium and Oxygen in the compound MgO.
+
+Parallel options are set inside of the main.py script.
+* main.py should always be run in serial, as it will spawn the mpi processes for QE and PAOFLOW runs
+
+The workdir argument, provided to ACBN0 in main.py, specifies the working directory.
+* Template files must be provided inside of the working directory, with names: prefix.scf.in, prefix.nscf.in, and prefix.projwfc.in. 'prefix' can be an arbitrary name, and is provided to ACBN0 in the main.py script
+
+* All necessary pseudopotentials must be placed in the working directory
+
+Other arguments allow control of mpi process spawning.
+* Arguments for specifying independent mpi options for python and QE processes are named mpi_python and mpi_qe.
+* The argument qe_options allows QE flags to be passed to pw.x
+* The python_path and qe_path arguments can point to specific installations
