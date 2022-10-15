@@ -18,6 +18,7 @@
  - Construction of PAO Hamiltonians from the DFT wavefunctions onto pseudo atomic orbitals
  - Construction of PAO Hamiltonians from analytical tight binding models
  - Hamiltonian data for further processing (ACBN0, PAOtransport, etc.)
+ - Calculation of the Hubbard-U parameter through the ACBN0 method
  - External fields and non scf ACBN0 correction
  - Spin orbit correction of non SO calculations
  - Bands along standard paths in the BZ
