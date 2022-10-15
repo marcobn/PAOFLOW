@@ -7,6 +7,8 @@ Parallel options are set inside of the main.py script.
 The workdir argument, provided to ACBN0 in main.py, specifies the working directory.
 * Template files must be provided inside of the working directory, with names: prefix.scf.in, prefix.nscf.in, and prefix.projwfc.in. 'prefix' can be an arbitrary name, and is provided to ACBN0 in the main.py script
 
+* Hubbard occupation information must be provided to Quantum ESPRESSO per species. The necessary files are included in the directory qe-mods. Copy the files to their respective directories in the QE root directory and recompile.
+
 * All necessary pseudopotentials must be placed in the working directory
 
 Other arguments allow control of mpi process spawning.

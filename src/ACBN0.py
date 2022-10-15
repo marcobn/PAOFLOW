@@ -36,6 +36,8 @@ class ACBN0:
     self.ppath = python_path
     self.qoption = qe_options
 
+    self.uVals = {}
+
     chdir(self.workdir)
 
     # Get structure information
@@ -52,11 +54,10 @@ class ACBN0:
       self.basis[ele] = basis
 
     # Set initial UJ
-    uVals = {}
     threshold_U = 0.01
     blocks['lda_plus_u'] = '.true.'
     for i,s in enumerate(uspecies):
-      uVals[s] = threshold_U
+      self.uVals[s] = threshold_U
   
     # Perform self consistent calculation of Hubbard parameters
     converged = False
@@ -64,9 +65,9 @@ class ACBN0:
 
       # Update U values provided to inputfiles
       for i,s in enumerate(uspecies):
-        blocks['Hubbard_U({})'.format(i+1)] = str(uVals[s])
+        blocks['Hubbard_U({})'.format(i+1)] = str(self.uVals[s])
 
-      self.run_dft(self.prefix, uspecies, uVals)
+      self.run_dft(self.prefix, uspecies, self.uVals)
 
       save_prefix = blocks['control']['prefix'].strip('"').strip("'")
       self.run_paoflow(self.prefix, save_prefix, nspin)
@@ -76,10 +77,10 @@ class ACBN0:
       print('New U values:')
       for k,v in new_U.items():
         print(f'  {k} : {v}')
-        if converged and np.abs(uVals[k]-v) > threshold_U:
+        if converged and np.abs(self.uVals[k]-v) > threshold_U:
           converged = False
 
-      uVals = new_U
+      self.uVals = new_U
 
 
   def acbn0 ( self, fname ):
