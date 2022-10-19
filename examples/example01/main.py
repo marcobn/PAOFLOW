@@ -4,7 +4,7 @@
 # *                                                                                   *
 # *************************************************************************************
 #
-#  Copyright 2016-2018 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
+#  Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 #
 #  This file is part of AFLOW software.
 #
