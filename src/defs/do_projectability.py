@@ -55,12 +55,11 @@ def do_projectability ( data_controller ):
         bnd += 1
     Pn = None
     attr['bnd'] = maxbnd = bnd
-    if bnd == attr['nawf']:
+    if bnd <= attr['nawf']:
       maxbnd = bnd-1
       print('WARNING: All bands meet the projectability threshold. Consider increasing nbnd in QE.')
 
     if 'shift' not in attr or attr['shift']=='auto':
-      #shift_v = np.max([np.amin(arry['my_eigsmat'][maxbnd,:,:]), np.amax(arry['my_eigsmat'][bnd-1,:,:])])
       shift_v = np.amin(arry['my_eigsmat'][maxbnd,:,:])
       attr['shift'] = (shift_v if shift=='auto' else shift)
 
