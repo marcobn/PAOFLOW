@@ -1,0 +1,45 @@
+&control
+   calculation = 'nscf',
+   verbosity = 'high',
+   restart_mode = 'restart',
+   prefix = 'pds',
+   outdir = './',
+   pseudo_dir = '../',
+/
+&system
+   lspinorb = .true.,
+   noncolin = .true.,
+   ibrav = 6,
+   nat = 10,
+   ntyp = 2,
+   occupations = 'smearing',
+   smearing = 'gaussian',
+   degauss = 0.001,
+   ecutwfc = 60.0,
+   ecutrho = 480.0,
+   nbnd = 190,
+   celldm(1)=9.88780298,
+   celldm(3)=1.07923706,
+/
+&electrons
+   mixing_beta = 0.5,
+   conv_thr = 1.0d-8,
+/
+ATOMIC_SPECIES
+Se  78.96 Se.rel-pbe-n-kjpaw_psl.1.0.0.UPF
+Pd 106.42 Pd.rel-pbe-n-kjpaw_psl.1.0.0.UPF
+
+ATOMIC_POSITIONS (crystal)
+  Pd      0.36993915240999   0.23061901544644   0.15643966149112  ! // Pd 
+  Pd      0.63006084759001   0.76938098455356   0.15643966149112  ! // Pd 
+  Pd      0.23061901544644   0.63006084759001   0.84356033850888  ! // Pd 
+  Pd      0.76938098455356   0.36993915240999   0.84356033850888  ! // Pd 
+  Pd      0.13006084759001   0.73061901544644   0.34356033850888  ! // Pd 
+  Pd      0.86993915240999   0.26938098455356   0.34356033850888  ! // Pd 
+  Pd      0.26938098455356   0.13006084759001   0.65643966149112  ! // Pd 
+  Pd      0.73061901544644   0.86993915240999   0.65643966149112  ! // Pd 
+  Se     -0.00000000000000   0.00000000000000   0.00000000000000  ! // Se 
+  Se      0.50000000000000   0.50000000000000   0.50000000000000  ! // Se 
+
+K_POINTS {automatic}
+16 16 14 0 0 0
