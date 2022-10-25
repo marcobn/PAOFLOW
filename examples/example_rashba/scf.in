@@ -1,10 +1,10 @@
 &control
    calculation = 'scf',
    verbosity = 'high',
-   restart_mode = 'restart',
+   restart_mode = 'from_scratch',
    prefix = 'pds',
    outdir = './',
-   pseudo_dir = '../',
+   pseudo_dir = './',
 /
 &system
    lspinorb = .true.,
