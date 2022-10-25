@@ -1,4 +1,4 @@
-Calculating Rashba-Edelstein tensor elements. The interpolated k-mesh should be made finer to achieve convergence. To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example the mesh is turned down to 16x16x14. However, for more accurate results nfft mesh needs to be converged with much denser mesh.
+Calculating Rashba-Edelstein tensor elements for Pd4Se. The interpolated k-mesh should be made finer to achieve convergence. To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example the mesh is turned down to 16x16x14. However, for more accurate results nfft mesh needs to be converged with much denser mesh.
 
 main.py:
 * Build the PAO Hamiltonian.
