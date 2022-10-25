@@ -1,0 +1,9 @@
+Calculating Rashba-Edelstein tensor elements. The interpolated k-mesh should be made finer to achieve convergence. To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example the mesh is turned down to 16x16x14. However, for more accurate results nfft mesh needs to be converged with much denser mesh.
+
+main.py:
+* Build the PAO Hamiltonian.
+* Interpolate to a finer k-mesh.
+* Compute the eigenvalues, gradient, and momenta.
+* Compute the spin operator and spin texture in the user-defined energy window.
+* Compute the adaptive smearing.
+* Calculate the Rashba-Edelstein tensor, considering user-defined parameters like energy window, regularization, and two dimentional parameters.
