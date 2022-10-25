@@ -5,8 +5,7 @@
 #
 # Reference:
 #
-# F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
-# Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
+#F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli, Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
 #
 # M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
 # PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
@@ -1191,6 +1190,42 @@ mo    '''
     self.report_module_time('Spin Hall Conductivity')
 
 
+  def rashba_edelstein (self, emin=-2, emax=2, ne=500, temps=0.0, reg=1e-30, twoD=False, lt = 1.0, st = 1.0, write_to_file=True):
+    '''
+    Calculate the Rashba-Edelstein tensor
+    Arguments:
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        ne (float): The number of energy increments in [emin,emax]
+        temps (float): Smearing temperature in eV
+        reg (float): The regularization number that is applicable only for materials with band gap (in the order of 1e-30)
+        twoD (bool): set True for two dimnesional materials
+        lt (float): The lattice height of the twoD structure (in cm)
+        st (float): The structure 'effectivce' thickness of the twoD structure (in cm)
+        write_to_file (bool): Set True to write tensors to file
+
+    Returns:
+        None
+    '''
+    from .defs.do_rashba_edelstein import do_rashba_edelstein
+
+    arrays,attr = self.data_controller.data_dicts()
+
+    ene = np.linspace(emin, emax, ne)
+    temperature = temps
+    regularization = reg
+    twoD_structure = twoD
+    lattice_height = lt
+    structure_thickness = st
+    try:
+      do_rashba_edelstein(self.data_controller, ene, temperature, regularization, twoD_structure, lattice_height, structure_thickness, write_to_file)
+
+    except Exception as e:
+      self.report_exception('rashba_edelstein')
+      if attr['abort_on_exception']:
+        raise e
+
+    self.report_module_time('Rashba_Edelstein')
 
   def anomalous_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
     '''
