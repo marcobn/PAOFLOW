@@ -35,7 +35,7 @@ def metpax ( eig, ene, delta ):
     coeff = np.zeros(2*nh)
     coeff[0] = 1.
     for n in range(2,2*nh,2):
-        m = n/2
+        m = n//2
         coeff[n] = (-1.)**m/(factorial(m)*(4.0**m)*np.sqrt(np.pi))
 
     x = (ene-eig)/delta
@@ -58,7 +58,7 @@ def intmetpax ( eig, ene, delta ):
     coeff = np.zeros(2*nh)
     coeff[0] = 0.
     for n in range(2,2*nh,2):
-        m = n/2
+        m = n//2
         coeff[n-1] = (-1.)**m/(factorial(m)*(4.0**m)*np.sqrt(np.pi))
 
     x = (eig-ene)/delta
