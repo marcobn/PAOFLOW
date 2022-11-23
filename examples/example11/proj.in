@@ -1,0 +1,5 @@
+ &projwfc
+    prefix='Te-L'
+    outdir='./'
+    filpdos='./Te-L'
+ /

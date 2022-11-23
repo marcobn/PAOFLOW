@@ -1190,7 +1190,7 @@ mo    '''
     self.report_module_time('Spin Hall Conductivity')
 
 
-  def rashba_edelstein (self, emin=-2, emax=2, ne=500, temps=0.0, reg=1e-30, twoD=False, lt = 1.0, st = 1.0, write_to_file=True):
+  def rashba_edelstein ( self, emin=-2, emax=2, ne=500, temps=0., reg=1e-30, twoD=False, lt=1., st=1., write_to_file=True ):
     '''
     Calculate the Rashba-Edelstein tensor
     Arguments:
@@ -1212,13 +1212,8 @@ mo    '''
     arrays,attr = self.data_controller.data_dicts()
 
     ene = np.linspace(emin, emax, ne)
-    temperature = temps
-    regularization = reg
-    twoD_structure = twoD
-    lattice_height = lt
-    structure_thickness = st
     try:
-      do_rashba_edelstein(self.data_controller, ene, temperature, regularization, twoD_structure, lattice_height, structure_thickness, write_to_file)
+      do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
 
     except Exception as e:
       self.report_exception('rashba_edelstein')
@@ -1226,6 +1221,7 @@ mo    '''
         raise e
 
     self.report_module_time('Rashba_Edelstein')
+
 
   def anomalous_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
     '''

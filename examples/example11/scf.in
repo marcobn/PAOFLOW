@@ -1,0 +1,40 @@
+&control
+   calculation = 'scf'
+   prefix = 'Te-L'
+   pseudo_dir = './'
+   outdir = './'
+/
+&system
+   celldm(1) = 8.53363032959470,
+   celldm(2) = 1.0,
+   celldm(3) = 1.28609532978385,
+   lspinorb = .true.,
+   noncolin = .true.,
+   ibrav = 4,
+   nat = 3,
+   ntyp = 1,
+   occupations = 'smearing',
+   smearing = 'gaussian',
+   degauss = 0.001,
+   ecutwfc = 80.0,
+   ecutrho = 640.,
+   lda_plus_u = .TRUE.,
+   lda_plus_u_kind = 1,
+   hubbard_u(1) = 3.81,   
+/
+
+&electrons
+   mixing_beta = 0.5,
+   conv_thr = 1.0d-8,
+/
+
+ATOMIC_SPECIES
+Te  127.6  Te.rel-pbe-dn-kjpaw_psl.0.2.2.UPF
+
+ATOMIC_POSITIONS angstrom
+Te       1.165564467   0.000036955   3.871936983
+Te      -0.582792386   1.009471867   1.936003986
+Te       1.675127188   2.901404654   0.000113531
+
+K_POINTS automatic
+6 6 4  0 0 0

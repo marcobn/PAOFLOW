@@ -1,7 +1,0 @@
-&PROJWFC
-prefix = 'pds',
-outdir = './',
-degauss = 0.001,
-DeltaE = 0.01,
-/
-
