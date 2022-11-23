@@ -33,7 +33,7 @@ def main():
   paoflow.read_atomic_proj_QE()
   paoflow.projectability()
   paoflow.pao_hamiltonian()
-  paoflow.interpolated_hamiltonian(nfft1=60, nfft2=60, nfft3=40)
+  paoflow.interpolated_hamiltonian(nfft1=20, nfft2=20, nfft3=16)
   paoflow.pao_eigh()
   paoflow.spin_operator()
   paoflow.spin_texture(fermi_up=0.0, fermi_dw=-0.5)
