@@ -35,7 +35,7 @@ def do_rashba_edelstein (data_controller, ene, temperature, regularization, twoD
   ind_plot = arrays['ind_plot']
   nstates = len(ind_plot)
   nktot = attr['nkpnts']
-  tau_const = 1.2e-9 #spin relaxation time (this value is for WTe2)
+  tau_const = 1.2e-9
   esize = ene.size
 
   pksp = np.take(np.diagonal(np.real(arrays['pksp'][:,:,:,:,0]),axis1=2,axis2=3), ind_plot, axis=2)
@@ -83,89 +83,36 @@ def do_rashba_edelstein (data_controller, ene, temperature, regularization, twoD
   comm.Reduce(j_eaux, jc, op=MPI.SUM)
 
   if rank == 0:
-    if not twoD_structure:
-      Ekai_xx = ((-1*kai[0,0]*HBAR) / ((jc[0,0]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_xy = ((-1*kai[0,1]*HBAR) / ((jc[1,1]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_xz = ((-1*kai[0,2]*HBAR) / ((jc[2,2]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_yx = ((-1*kai[1,0]*HBAR) / ((jc[0,0]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_yy = ((-1*kai[1,1]*HBAR) / ((jc[1,1]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_yz = ((-1*kai[1,2]*HBAR) / ((jc[2,2]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_zx = ((-1*kai[2,0]*HBAR) / ((jc[0,0]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_zy = ((-1*kai[2,1]*HBAR) / ((jc[1,1]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-      Ekai_zz = ((-1*kai[2,2]*HBAR) / ((jc[2,2]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))
-    else:
-      Ekai_xx = ((-1*kai[0,0]*HBAR) / ((jc[0,0]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_xy = ((-1*kai[0,1]*HBAR) / ((jc[1,1]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_xz = ((-1*kai[0,2]*HBAR) / ((jc[2,2]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_yx = ((-1*kai[1,0]*HBAR) / ((jc[0,0]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_yy = ((-1*kai[1,1]*HBAR) / ((jc[1,1]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_yz = ((-1*kai[1,2]*HBAR) / ((jc[2,2]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_zx = ((-1*kai[2,0]*HBAR) / ((jc[0,0]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_zy = ((-1*kai[2,1]*HBAR) / ((jc[1,1]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
-      Ekai_zz = ((-1*kai[2,2]*HBAR) / ((jc[2,2]*ELECTRONVOLT_SI*BOHR_RADIUS_CM)+regularization))*(lattice_height / structure_thickness)
+    Ekai = np.empty((3,3,esize), dtype=float)
+    for i in range(3):
+      for j in range(3):
+        Ekai[i,j] = -HBAR * kai[i,j] / (jc[j,j] * ELECTRONVOLT_SI * BOHR_RADIUS_CM + regularization)
 
-    wtup_kai = lambda fn,tu : fn.write('% .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
-    gtup_kai = lambda tu,i : (ene[i],tu[0,0,i],tu[0,1,i],tu[0,2,i],tu[1,0,i],tu[1,1,i],tu[1,2,i],tu[2,0,i],tu[2,1,i],tu[2,2,i])
-    wtup_current = lambda fn,tu : fn.write('% .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
-    gtup_current = lambda tu,i : (ene[i],tu[0,0,i],tu[0,1,i],tu[0,2,i],tu[1,0,i],tu[1,1,i],tu[1,2,i],tu[2,0,i],tu[2,1,i],tu[2,2,i])
+    if twoD_structure:
+      Ekai *= (lattice_height / structure_thickness)
 
-    wtup_Ekai_xx = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_xy = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_xz = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_yx = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_yy = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_yz = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_zx = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_zy = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    wtup_Ekai_zz = lambda fn,tu : fn.write('% .5f % 9.5e\n'%tu)
-    gtup_Ekai_xx = lambda tu,i : (ene[i],tu[i]) 
-    gtup_Ekai_xy = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_xz = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_yx = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_yy = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_yz = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_zx = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_zy = lambda tu,i : (ene[i],tu[i])
-    gtup_Ekai_zz = lambda tu,i : (ene[i],tu[i])
+    sEkai = { 0:'x', 1:'y', 2:'z' }
+    wEkai = lambda fn,e,t : fn.write('% .5f % 9.5e\n'%(e,t))
+    wtup = lambda fn,tu : fn.write('% .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e\n'%tu)
+    gtup = lambda tu,i : (ene[i],tu[0,0,i],tu[0,1,i],tu[0,2,i],tu[1,0,i],tu[1,1,i],tu[1,2,i],tu[2,0,i],tu[2,1,i],tu[2,2,i])
 
     if write_to_file:
       fkai = open(join(attr['opath'],'kai.dat'), 'w')
       fcurrent = open(join(attr['opath'],'current.dat'), 'w')
 
-      fEkai_xx = open(join(attr['opath'],'Ekai_xx.dat'), 'w')
-      fEkai_xy = open(join(attr['opath'],'Ekai_xy.dat'), 'w')
-      fEkai_xz = open(join(attr['opath'],'Ekai_xz.dat'), 'w')
-      fEkai_yx = open(join(attr['opath'],'Ekai_yx.dat'), 'w')
-      fEkai_yy = open(join(attr['opath'],'Ekai_yy.dat'), 'w')
-      fEkai_yz = open(join(attr['opath'],'Ekai_yz.dat'), 'w')
-      fEkai_zx = open(join(attr['opath'],'Ekai_zx.dat'), 'w')
-      fEkai_zy = open(join(attr['opath'],'Ekai_zy.dat'), 'w')
-      fEkai_zz = open(join(attr['opath'],'Ekai_zz.dat'), 'w')
+      ofE = lambda si,sj : open(join(attr['opath'],f'Ekai_{si}{sj}.dat'), 'w')
+      fEkai = [[ofE(sEkai[i],sEkai[j]) for j in range(3)] for i in range(3)]
 
-      for i in range(esize):
-        wtup_kai(fkai,gtup_kai(kai,i))
-        wtup_current(fcurrent,gtup_current(jc,i))
+      for ie in range(esize):
+        wtup(fkai,gtup(kai,ie))
+        wtup(fcurrent,gtup(jc,ie))
+        for i in range(3):
+          for j in range(3):
+            wEkai(fEkai[i][j], ene[ie], Ekai[i,j,ie])
 
-        wtup_Ekai_xx(fEkai_xx, gtup_Ekai_xx(Ekai_xx,i))
-        wtup_Ekai_xy(fEkai_xy, gtup_Ekai_xy(Ekai_xy,i))
-        wtup_Ekai_xz(fEkai_xz, gtup_Ekai_xz(Ekai_xz,i))
-        wtup_Ekai_yx(fEkai_yx, gtup_Ekai_yx(Ekai_yx,i))
-        wtup_Ekai_yy(fEkai_yy, gtup_Ekai_yy(Ekai_yy,i))
-        wtup_Ekai_yz(fEkai_yz, gtup_Ekai_yz(Ekai_yz,i))
-        wtup_Ekai_zx(fEkai_zx, gtup_Ekai_zx(Ekai_zx,i))
-        wtup_Ekai_zy(fEkai_zy, gtup_Ekai_zy(Ekai_zy,i))
-        wtup_Ekai_zz(fEkai_zz, gtup_Ekai_zz(Ekai_zz,i))
-        
       fkai.close()
       fcurrent.close()
-
-      fEkai_xx.close()
-      fEkai_xy.close()
-      fEkai_xz.close()
-      fEkai_yx.close()
-      fEkai_yy.close()
-      fEkai_yz.close()
-      fEkai_zx.close()
-      fEkai_zy.close()
-      fEkai_zz.close()
+      for i in range(3):
+        for j in range(3):
+          fEkai[i][j].close()
 
