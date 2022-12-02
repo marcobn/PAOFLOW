@@ -1,6 +1,6 @@
 Calculating Rashba-Edelstein tensor elements for left handed tellurium.
 The interpolated k-mesh should be made finer to achieve convergence.
-To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example the mesh is dramatically reduced.
+To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example, the mesh is dramatically reduced.
 For accurate results, choose k-meshes with the following specifications.
 scf and nscf: 22 x 22 x 16
 PAOFLOW interpolation: 200 x 200 x 180
