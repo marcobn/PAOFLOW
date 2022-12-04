@@ -5,8 +5,7 @@
 #
 # Reference:
 #
-# F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
-# Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
+#F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli, Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
 #
 # M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
 # PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
@@ -30,6 +29,7 @@ ELECTRONMASS_SI  = 9.10953e-31        # Kg
 ELECTRONMASS_UMA = 5.4858e-4          # uma
 
 ELECTRONVOLT_SI  = 1.6021892e-19      # J
+HBAR             = 6.582119569e-16    # eV
 UMA_SI           = 1.66057e-27        # Kg
 DEBYE_SI         = 3.33564e-30        # Coulomb meter
 DEBYE_AU         = 0.393427228        # e * Bohr

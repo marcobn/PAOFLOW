@@ -1,22 +1,23 @@
 #
 # PAOFLOW
 #
-# Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
+# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
+#
+# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
 #
 # Reference:
-#
-# F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
-# Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
-#
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
 # Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
 #
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
+#
 
+
+### In serious need of update
 def do_spin_texture ( data_controller ):
   import os
   import numpy as np
@@ -61,8 +62,12 @@ def do_spin_texture ( data_controller ):
 
   sktxtaux = np.take(np.diagonal(sktxtaux,axis1=2,axis2=3), ind_plot, axis=2)
   sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
+  # I add the following line, needs to be checked
+  arrays['sktxt'] = sktxtaux
   sktxtaux = None
-
+  # I add the following line
+  arrays['ind_plot'] = ind_plot
+  
   if rank == 0:
     if 'kq' in arrays and E_k_full.shape[0] == arrays['kq'].shape[1]:
       f=open(os.path.join(attributes['opath'],'spin-texture-bands'+'.dat'),'w')
@@ -80,3 +85,4 @@ def do_spin_texture ( data_controller ):
 
   sktxt = None
   E_k_full = None
+

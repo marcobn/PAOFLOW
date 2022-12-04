@@ -1,0 +1,14 @@
+Calculating Rashba-Edelstein tensor elements for left handed tellurium.
+The interpolated k-mesh should be made finer to achieve convergence.
+To facilitate memory capacity of typical machines and ensure a reasonable runtime, in this example, the mesh is dramatically reduced.
+For accurate results, choose k-meshes with the following specifications.
+scf and nscf: 22 x 22 x 16
+PAOFLOW interpolation: 200 x 200 x 180
+
+main.py:
+* Build the PAO Hamiltonian.
+* Interpolate to a finer k-mesh.
+* Compute the eigenvalues, gradient, and momenta.
+* Compute the spin operator and spin texture in the user-defined energy window.
+* Compute the adaptive smearing.
+* Calculate the Rashba-Edelstein tensor, considering user-defined parameters like energy window, regularization, and two dimentional parameters.
