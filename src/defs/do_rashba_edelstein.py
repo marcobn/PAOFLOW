@@ -35,7 +35,7 @@ def do_rashba_edelstein (data_controller, ene, temperature, regularization, twoD
   ind_plot = arrays['ind_plot']
   nstates = len(ind_plot)
   nktot = attr['nkpnts']
-  tau_const = 1.2e-9
+  tau_const = 1.
   esize = ene.size
 
   pksp = np.take(np.diagonal(np.real(arrays['pksp'][:,:,:,:,0]),axis1=2,axis2=3), ind_plot, axis=2)
