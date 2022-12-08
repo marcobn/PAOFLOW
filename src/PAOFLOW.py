@@ -521,8 +521,9 @@ class PAOFLOW:
     if 'ibrav' not in attr:
       if ibrav is None and self.rank == 0:
         if self.rank == 0:
-          print('Must specify \'ibrav\' in the inputfile or as an optional argument to \'calc_bands\'')
-        quit()
+          print('Must specify kq in main.py')
+#         print('Must specify \'ibrav\' in the inputfile or as an optional argument to \'calc_bands\'')
+#       quit()
       else:
         attr['ibrav'] = ibrav
 

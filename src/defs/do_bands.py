@@ -16,6 +16,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 #
 
+import sys
 import numpy as np
 from scipy import linalg as spl
 from numpy import linalg as npl
@@ -31,13 +32,19 @@ def bands_calc ( data_controller ):
   kq_aux = scatter_full(arrays['kq'].T, npool).T
  
   Hks_aux = band_loop_H(data_controller, kq_aux)
-
-  E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float, order="C")
+  
+  if np.iscomplex(arrays['kq']).any():
+    E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=complex, order="C")
+  else:
+    E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float, order="C")
   v_kp_aux = np.zeros((kq_aux.shape[1],nawf,nawf,nspin), dtype=complex, order="C")
 
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
-      E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+      if np.iscomplex(arrays['kq']).any():
+        E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eig(Hks_aux[:,:,ik,ispin], b=(None), overwrite_a=True, overwrite_b=True, check_finite=True)
+      else:
+        E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
 
   Hks_aux = Sks_aux = None
   return E_kp_aux, v_kp_aux
@@ -91,7 +98,10 @@ def do_bands ( data_controller ):
     get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
     # Define k-point mesh for bands interpolation
-    kpnts_interpolation_mesh(data_controller)
+    if 'ibrav' in attributes:
+      kpnts_interpolation_mesh(data_controller)
+    if 'kq' not in arrays:
+      print('need external kq for bands')
 
     nkpi = arrays['kq'].shape[1]
     for n in range(nkpi):
@@ -99,6 +109,15 @@ def do_bands ( data_controller ):
 
     # Compute the bands along the path in the IBZ
     arrays['E_k'],arrays['v_k'] = bands_calc(data_controller)
+    if np.iscomplex(arrays['kq']).any():
+      for ispin in range(nspin):
+        sorted_E_k = []
+        for k in range(arrays['kq'].shape[1]):
+          E = np.array([item for sublist in arrays['E_k'][k] for item in sublist])
+          idx = np.argsort(E)
+          sorted_E_k.append(E[idx])
+        arrays['E_k'][:,:,ispin] = np.array(sorted_E_k)
+      arrays['v_k'] = arrays['v_k'][:,idx]
 
 #### 1D Bands not implemented
   else:
@@ -112,3 +131,4 @@ def do_bands ( data_controller ):
 
   # Angstrom to Bohr
   attributes['alat'] *= ANGSTROM_AU
+  
