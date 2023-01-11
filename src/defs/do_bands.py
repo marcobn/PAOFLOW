@@ -119,15 +119,9 @@ def do_bands ( data_controller ):
         arrays['E_k'][:,:,ispin] = np.array(sorted_E_k)
       arrays['v_k'] = arrays['v_k'][:,idx]
 
-#### 1D Bands not implemented
   else:
     if rank == 0:
-      print('OneDim bands not implemented in PAOFLOW_Class')
-      #----------------------
-      # FFT interpolation along a single directions in the BZ
-      #----------------------
-      #if rank == 0 and verbose: print('... computing bands along a line')
-      #if rank == 0: bands_calc_1D(Hks,inputpath)
+      print('OneDim bands deprecated. Use band_path and high_sym_points')
 
   # Angstrom to Bohr
   attributes['alat'] *= ANGSTROM_AU
