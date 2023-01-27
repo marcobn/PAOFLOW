@@ -488,7 +488,7 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,special_points):
     p1, p2 = np.array(p1), np.array(p2)
     d = p1 - p2
     dist2 = np.dot(d.T, np.dot(g, d).T)
-    return np.sqrt(dist2)
+    return np.linalg.norm(dist2)
 
   def getSegments(path):
     segments = path.split('|')
@@ -551,9 +551,9 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,special_points):
 
         path_file+="%s %s\n"%(point1,numK)
 
-        a0 = np.linspace(p1[0],p2[0],numK,endpoint=False).astype(np.float16)
-        a1 = np.linspace(p1[1],p2[1],numK,endpoint=False).astype(np.float16)
-        a2 = np.linspace(p1[2],p2[2],numK,endpoint=False).astype(np.float16)
+        a0 = np.linspace(p1[0],p2[0],numK,endpoint=False)
+        a1 = np.linspace(p1[1],p2[1],numK,endpoint=False)
+        a2 = np.linspace(p1[2],p2[2],numK,endpoint=False)
 
         kx = np.concatenate((kx,a0))
         ky = np.concatenate((ky,a1))
