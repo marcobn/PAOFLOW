@@ -397,7 +397,7 @@ def calc_ylmg(k_plus_G, q):
 
 def calc_ylmg_complex_0(ylmg):
     # complex spherical harmonics
-    ylmgc = np.zeros_like(ylmg, np.complex)
+    ylmgc = np.zeros_like(ylmg, np.complex128)
 
     sqrt2 = np.sqrt(2.0)
 
@@ -440,7 +440,7 @@ def calc_ylmg_so(ylmgc):
     # spinor spherical harmonics
     npw = ylmgc.shape[0]
     nylm = ylmgc.shape[1]
-    ylmgso = np.zeros((2*npw,2*nylm), np.complex)
+    ylmgso = np.zeros((2*npw,2*nylm), np.complex128)
     sqrt = np.sqrt
 
     # generated automatically by cb.py
@@ -600,7 +600,7 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
 def ortho_atwfc_k(atwfc_k):
   # orthonormalize atwfcs
   natwfc = atwfc_k.shape[0]
-  ovp = np.zeros((natwfc, natwfc), dtype=np.complex)
+  ovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
   
   for i in range(natwfc):
     for j in range(natwfc):
@@ -620,7 +620,7 @@ def ortho_atwfc_k(atwfc_k):
     oatwfc_k = np.dot(X, atwfc_k)
     
     # check ortonormalization
-  oovp = np.zeros((natwfc, natwfc), dtype=np.complex)
+  oovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
   for i in range(natwfc):
     for j in range(natwfc):
       oovp[i,j] = np.dot(np.conj(oatwfc_k[i]), oatwfc_k[j])

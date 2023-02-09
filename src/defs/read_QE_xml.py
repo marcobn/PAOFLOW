@@ -175,7 +175,7 @@ def parse_qe_data_file_schema ( data_controller, fname ):
 
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
   for s,v in attrs:
     attr[s] = v
 
@@ -326,7 +326,7 @@ def parse_qe_data_file ( data_controller, fpath, fname ):
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
   # Add the attributes and arrays to the data controller
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
   for s,v in attrs:
     attr[s] = v
 

@@ -718,11 +718,12 @@ def correct_roundoff(arr,incl_hex=False,atol=1.e-8):
 ############################################################################################
 ############################################################################################
 
-def get_full_grid(nk1,nk2,nk3):
+def get_full_grid(nk1,nk2,nk3,o1,o2,o3):
   # generates full k grid in crystal fractional coords
   nktot=nk1*nk2*nk3
   b_vectors=np.eye(3)
   Kint = np.zeros((nktot,3), dtype=float)
+  offset = np.array([o1, o2, o3]) / (2 * np.array([nk1, nk2, nk3]))
 
   for i in range(nk1):
     for j in range(nk2):
@@ -738,7 +739,7 @@ def get_full_grid(nk1,nk2,nk3):
         Ry -= int(Ry)
         Rz -= int(Rz)
 
-        Kint[n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:]
+        Kint[n] = Rx*b_vectors[0,:]+Ry*b_vectors[1,:]+Rz*b_vectors[2,:] + offset
 
   return Kint
 
@@ -992,7 +993,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         nfft2=nk2+upscale2
         nfft3=nk3+upscale3
 
-        full_grid_interp = get_full_grid(nfft1,nfft2,nfft3)
+        full_grid_interp = get_full_grid(nfft1,nfft2,nfft3,o1,o2,o3)
         nkl=[]
         partial_grid_interp = scatter_full(full_grid_interp,npool)
         for i in range(partial_grid_interp.shape[0]):
@@ -1139,6 +1140,9 @@ def open_grid_wrapper(data_controller):
     nk1         = data_attr['nk1']
     nk2         = data_attr['nk2']
     nk3         = data_attr['nk3']
+    o1          = data_attr['ok1']
+    o2          = data_attr['ok2']
+    o3          = data_attr['ok3']
     spin_orb    = data_attr['dftSO']
     mag_calc    = data_attr['dftMAG']
     symm_grid   = data_attr['symmetrize']
@@ -1184,7 +1188,7 @@ def open_grid_wrapper(data_controller):
     kp_red = correct_roundoff(kp_red)
 
     # get full grid in crystal fractional coords
-    full_grid = get_full_grid(nk1,nk2,nk3)
+    full_grid = get_full_grid(nk1,nk2,nk3,o1,o2,o3)
 
     jchia = []
     shells = []

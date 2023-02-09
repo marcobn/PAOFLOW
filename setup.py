@@ -7,7 +7,7 @@ with open('README.md', 'r') as f:
     long_description = f.read()
 
 setup(name='PAOFLOW',
-      version='2.0.18',
+      version='2.0.24',
       description='Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)',
       author='Marco Buongiorno Nardelli',
       author_email='mbn@unt.edu',
