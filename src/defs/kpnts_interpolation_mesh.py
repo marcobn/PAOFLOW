@@ -488,7 +488,8 @@ def get_path(ibrav,alat,cell,dk,b_vectors,band_path,special_points):
     p1, p2 = np.array(p1), np.array(p2)
     d = p1 - p2
     dist2 = np.dot(d.T, np.dot(g, d).T)
-    return np.linalg.norm(dist2)
+    print('\nsquare root',np.sqrt(dist2),"\n",'norm',np.linalg.norm(dist2),'\n','absolute', np.absolute(np.sqrt(dist2)))
+    return np.absolute(np.sqrt(dist2))
 
   def getSegments(path):
     segments = path.split('|')
