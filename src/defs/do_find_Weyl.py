@@ -32,6 +32,7 @@ import scipy.optimize as OP
 from numpy import linalg as LAN
 from .communication import gather_full, scatter_full
 from numpy import linalg as LAN
+from .constants import BOHR_RADIUS_ANGS
 
 # initialize parallel execution
 comm=MPI.COMM_WORLD
@@ -123,8 +124,8 @@ def find_weyl ( data_controller, test_rad, search_grid ):
 
   mag_soc = np.logical_and(attr["dftMAG"], attr["dftSO"])
 
-  CAND,ene = find_min(HRs, nelec, R, b_vectors, symf, verbose, search_grid)
-  
+  CAND, ene = find_min(HRs, nelec, R, b_vectors, symf, verbose, search_grid)
+
   WEYL = {}
   if rank == 0:
     if symf:
@@ -132,13 +133,18 @@ def find_weyl ( data_controller, test_rad, search_grid ):
       CAND = get_equiv_k(CAND, symops, TR_flag, mag_soc)
 
     if verbose:
+      print()
       for i in range(CAND.shape[0]):
-        tup = (i+1,) + (CAND[i][j] for j in range(3))
-        print('Weyl point candidate #%d crystal coord: [ % 5.4f % 5.4f % 5.4f ]\n'%tup)
-      for i in range(CAND.shape[0]):
+        E_kp = gen_eigs(HRs, CAND[i], R)
+        ene = E_kp[0,nelec,0]
+        gap = E_kp[0,nelec,0] - E_kp[0,nelec-1,0]
+        tup = (i+1,) + tuple(CAND[i][j] for j in range(3)) + (ene,gap)
+        print('Weyl point candidate #%d crystal coord: [ %6.4f %6.4f %6.4f ] ene=%.4f gap=%.6e' % tup)
+
         in_cart = b_vectors.T.dot(CAND[i])
-        tup = (i+1,) + (in_cart[j] for j in range(3))
-        print('Weyl point candidate #%d 2pi/alat: [ % 5.4f % 5.4f % 5.4f ]'%tup)
+        tup = (i+1,) + tuple(in_cart[j] for j in range(3)) + (ene,gap)
+        print('Weyl point candidate #%d 2pi/alat     : [ %6.4f %6.4f %6.4f ] ene=%.4f gap=%.6e' % tup)
+        print()
 
     try:
       import z2pack
@@ -175,19 +181,22 @@ def find_weyl ( data_controller, test_rad, search_grid ):
     if verbose:
       print()
 
-    wcs = '{0:>3} {1:>10} {2:>10} {3:>10} {4:>2}\n'.format('#','2pi/a','2pi/b','2pi/c','C')
-    wcs += '-'*39 + '\n'
+    wcs = '{0:>3} {1:>10} {2:>10} {3:>10} {4:>2} {5:>7}\n'.format('#','2pi/alat','2pi/alat','2pi/alat','C', 'ene')
+    wcs += '  #   alat = {0} angstrom\n'.format(attr['alat']*BOHR_RADIUS_ANGS)
+    wcs += '-'*72 + '\n'
 
     for j,k in enumerate(WEYL.keys()):
-      fm = np.array(list(map(float,k[1:-1].split())))     
+      fm = np.array(list(map(float,k[1:-1].split())))
+      E_kp = gen_eigs(HRs, fm, R)
+      ene = E_kp[0,nelec,0]
       fm = b_vectors.T.dot(fm[:,None])[:,0]
       try:
         if verbose:
-          fstring = 'Found Candidate No. {0} at [{1:>7.4f} {2:>7.4f} {3:>7.4f}] with Chirality:{4:>2}'
-          print(fstring.format(j+1,fm[0],fm[1],fm[2],int(WEYL[k])))
-        wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2}\n'.format(j+1,fm[0],fm[1],fm[2],int(WEYL[k]))
+          fstring = 'Found Candidate No. {0} at [{1:>7.4f} {2:>7.4f} {3:>7.4f}] with Chirality:{4:>2} ene={5:>7.4f}'
+          print(fstring.format(j+1,fm[0],fm[1],fm[2],int(WEYL[k]),ene))
+        wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2} {5:>7.4f}\n'.format(j+1,fm[0],fm[1],fm[2],int(WEYL[k]),ene)
       except:
-        wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2}\n'.format(j+1,fm[0],fm[1],fm[2],WEYL[k])
+        wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2} {5:>7.4f}\n'.format(j+1,fm[0],fm[1],fm[2],WEYL[k],ene)
 
     with open(os.path.join(attr['opath'],'weyl_points.dat'), 'w') as ofo:
       ofo.write(wcs)
@@ -218,6 +227,7 @@ def find_min ( HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8,8,8] ):
 
   sgi = np.arange(bounds_K.shape[0], dtype=int)
   sgi = scatter_full(sgi, 1)
+  print('finding Weyl points... rank={0} npoints={1}'.format(rank, sgi.shape[0]))
 
   candidates = np.zeros((sgi.shape[0],3))
 
@@ -254,7 +264,7 @@ def find_min ( HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8,8,8] ):
       if verbose:
        print('\nfound %s non-equivilent candidates'%candidates.shape[0])
        for i in range(ene.shape[0]):
-         tup = (candidates[i][j] for j in range(3)) + (ene[i],)
+         tup = tuple(candidates[i][j] for j in range(3)) + (ene[i],)
          print("[ % 7.4f % 7.4f % 7.4f ] % 4.4f"%tup)
        print()
 
