@@ -1,0 +1,43 @@
+ &control
+    calculation = 'scf'
+    restart_mode='from_scratch',
+    prefix='cri3',
+    pseudo_dir = './' 
+    outdir='./'
+    wf_collect=.true.
+ /
+ &system
+    ibrav=  0, nat=  8, ntyp= 2,
+    celldm(1) = 1.889726877774355
+    ecutwfc =90.0,
+    ecutrho =900.0,
+    occupations='smearing',    smearing = 'gaussian', degauss=0.001
+    lspinorb=.false.,
+    noncolin=.false.,
+    nspin = 2
+    nbnd = 90
+    starting_magnetization(1)=0.8,
+/
+ &electrons
+    startingpot='file'
+    mixing_mode = 'plain'
+    mixing_beta = 0.3
+/
+CELL_PARAMETERS cubic
+     7.0079441100000004    0.0000000000000000    0.0000000000000000
+    -3.5039720499999998    6.0690574599999998    0.0000000000000000
+     0.0000000000000000    0.0000000000000000   18.0635356899999984
+ATOMIC_SPECIES
+Cr 0.0 Cr.pbe-spn-kjpaw_psl.1.0.0.UPF 
+I  0.0  I.pbe-dn-kjpaw_psl.1.0.0.UPF 
+ATOMIC_POSITIONS crystal
+Cr  0.6666666786223701  0.3333333591473391  0.5000000528689412
+Cr  0.3333333594955334  0.6666667199423770  0.5000000528689412
+I   0.6445581803377323  0.9999977871357970  0.4106430934784626
+I   0.3554396308765675  0.3554418495765717  0.4106430934784626
+I   0.0000022184876443  0.6445603912985689  0.4106430934784626
+I   0.3554397887350191  0.9999980853699171  0.5893569591136796
+I   0.6445582968619874  0.6445602331191509  0.5893569591136796
+I   0.0000019179191497  0.3554416913971536  0.5893569591136796
+K_POINTS (automatic)
+  9 9 1  0 0 0

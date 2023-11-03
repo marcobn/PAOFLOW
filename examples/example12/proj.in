@@ -1,0 +1,7 @@
+&projwfc 
+    prefix      = 'cri3' 
+    outdir='./'    
+    filpdos      = 'cri3' 
+    lwrite_overlaps = .false.    
+    lbinary_data  = .false.    
+/    

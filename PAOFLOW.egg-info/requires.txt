@@ -1,0 +1,6 @@
+numpy
+scipy
+
+[weyl_search]
+z2pack
+tbmodels

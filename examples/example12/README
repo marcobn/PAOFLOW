@@ -1,0 +1,8 @@
+
+Banstructure calculation including spin-orbit coupling in a adHhoc fashion (L.S)
+
+main.py:
+* Build the PAO Hamiltonian.
+* Include spin-orbit coupling 
+* Calculate Bandstructure 
+
