@@ -120,14 +120,12 @@ def order_bands ( E_k, v_k ):
   Routine to re-order the bands according to the wavefunction overlaps, rather than in ascending order.
   '''
 
-  nks = E_k.shape[0]
-  nawf = E_k.shape[1]
-  nspin = E_k.shape[2]
+  nks,nawf,nspin = E_k.shape
   for s in range(nspin):
     ordering_k = [list(range(nawf))]
     for i in range(nks-1):
       dk = []
-      mask = nawf * [True]
+      mask = np.ones(nawf, dtype=bool)
       for j1 in range(nawf):
         max_o,max_i = -1,-1
         psi1 = v_k[i,:,ordering_k[i][j1],s]
@@ -141,9 +139,7 @@ def order_bands ( E_k, v_k ):
             max_i = j2
         dk.append(max_i)
         mask[max_i] = False
-      ordering_k.append(dk)
-
-    ordering_k = np.array(ordering_k)
+      ordering_k.append(np.array(dk))
 
     for i,k in enumerate(ordering_k):
       E_k[i,:,s] = E_k[i,k,s]
