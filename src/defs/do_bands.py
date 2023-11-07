@@ -35,6 +35,7 @@ def bands_calc ( data_controller ):
   E_kp_aux = np.zeros((kq_aux.shape[1],nawf,nspin), dtype=float, order="C")
   v_kp_aux = np.zeros((kq_aux.shape[1],nawf,nawf,nspin), dtype=complex, order="C")
 
+  arrays['Hksaux'] = Hks_aux
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
       E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
@@ -112,3 +113,42 @@ def do_bands ( data_controller ):
 
   # Angstrom to Bohr
   attributes['alat'] *= ANGSTROM_AU
+
+
+def order_bands ( E_k, v_k ):
+  '''
+  Routine to re-order the bands according to the wavefunction overlaps, rather than in ascending order.
+  '''
+
+  nks = E_k.shape[0]
+  nawf = E_k.shape[1]
+  nspin = E_k.shape[2]
+  for s in range(nspin):
+    ordering_k = [list(range(nawf))]
+    for i in range(nks-1):
+      dk = []
+      mask = nawf * [True]
+      for j1 in range(nawf):
+        max_o,max_i = -1,-1
+        psi1 = v_k[i,:,ordering_k[i][j1],s]
+        for j2 in ordering_k[i]:
+          if not mask[j2]:
+            continue
+          psi2 = v_k[i+1,:,j2,s]
+          overlap = np.abs(np.conj(psi1) @ psi2)
+          if overlap > max_o:
+            max_o = overlap
+            max_i = j2
+        dk.append(max_i)
+        mask[max_i] = False
+      ordering_k.append(dk)
+
+    ordering_k = np.array(ordering_k)
+
+    for i,k in enumerate(ordering_k):
+      E_k[i,:,s] = E_k[i,k,s]
+      v2 = v_k[i].copy()
+      for j,k2 in enumerate(k):
+        v_k[i,:,j,s] = v2[:,k2,s]
+
+  return E_k, v_k

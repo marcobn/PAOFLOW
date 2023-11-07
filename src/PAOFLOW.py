@@ -474,7 +474,7 @@ class PAOFLOW:
         raise e
 
 
-  def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 ):
+  def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500, no_overlap=False ):
     '''
     Compute the electronic band structure
 
@@ -519,6 +519,19 @@ class PAOFLOW:
         print('Spin Texture calculation should be performed after \'pao_eigh\' to ensure integration across the entire BZ.\n')
 
       E_kp = gather_full(arrays['E_k'], attr['npool'])
+
+      if no_overlap:
+        from .defs.communication import scatter_full
+        v_kp = gather_full(arrays['v_k'], attr['npool'])
+
+        if self.rank == 0:
+          from .defs.do_bands import order_bands
+          E_kp,v_kp = order_bands(E_kp, v_kp)
+        self.comm.Barrier()
+
+        arrays['E_k'] = scatter_full(E_kp, attr['npool'])
+        arrays['v_k'] = scatter_full(v_kp, attr['npool'])
+
       self.data_controller.write_bands(fname, E_kp)
       E_kp = None
     except Exception as e:
@@ -527,7 +540,6 @@ class PAOFLOW:
         raise e
 
     self.report_module_time('Bands')
-
 
 
 
