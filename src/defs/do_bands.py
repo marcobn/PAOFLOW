@@ -122,25 +122,38 @@ def order_bands ( E_k, v_k ):
 
   nks,nawf,nspin = E_k.shape
   for s in range(nspin):
+
+    # Define the initial ordering
     ordering_k = [list(range(nawf))]
-    for i in range(nks-1):
-      dk = []
-      mask = np.ones(nawf, dtype=bool)
-      for j1 in range(nawf):
+    for i in range(nks-1):  # Iterate k-point pairs
+
+      dk = []  # List of the ordered band indices
+      mask = np.ones(nawf, dtype=bool)  # Mask to remember selected bands
+      for j1 in ordering_k[i]:
+
         max_o,max_i = -1,-1
-        psi1 = v_k[i,:,ordering_k[i][j1],s]
+        psi1 = v_k[i,:,j1,s]
         for j2 in ordering_k[i]:
+
+          # Skip bands that are already selected
           if not mask[j2]:
             continue
           psi2 = v_k[i+1,:,j2,s]
+
+          # Calculate overlap <psi_j1 | psi_j2>
           overlap = np.abs(np.conj(psi1) @ psi2)
+
+          # Save maximum overlap
           if overlap > max_o:
             max_o = overlap
             max_i = j2
+
         dk.append(max_i)
         mask[max_i] = False
+
       ordering_k.append(np.array(dk))
 
+    # Reorder the eigen-values and -vectors
     for i,k in enumerate(ordering_k):
       E_k[i,:,s] = E_k[i,k,s]
       v2 = v_k[i].copy()
