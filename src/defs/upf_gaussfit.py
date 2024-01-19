@@ -1,7 +1,7 @@
 #
 # PAOFLOW
 #
-# Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
+# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
 #
@@ -106,10 +106,11 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
     params,fc,info,msg,ier = leastsq(target, params0, full_output=1,
                                      args=(r,rab,wfc,l), maxfev=50000,
                                      ftol=1e-10, xtol=1e-10)
-    if ier > 0:
-      print(f'ERROR: ier={ier}\nmesg={msg}')
-      print('ERROR: info[nfev]={}'.format(info['nfev']))
-      print('ERROR: info[fvec]={}'.format(np.sum(info['fvec']**2)))
+    print(f'INFO: ier={ier} - mesg={msg}')
+    print('INFO: nfev={}'.format(info['nfev']))
+    print('INFO: |fvec|^2={}'.format((info['fvec']**2).sum()))
+    if ier not in [1, 2, 3, 4]:
+      print('ERROR: Gaussion could not be fit to this state.')
 
   # Minimize
   else:
@@ -135,7 +136,7 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
     print(f'coeff = {c}, zeta = {zeta}')
 
   res = target_squared(params, r, rab, wfc, l)
-  print(f'Fit result: {res}')
+  print(f'Fit result: {res}\n')
 
   exit_code = 0 if np.abs(res) <= threshold else 1
 

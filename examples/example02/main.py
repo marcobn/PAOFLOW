@@ -1,10 +1,10 @@
 # *************************************************************************************
 # *                                                                                   *
-# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2018      *
+# *   PAOFLOW *  Marco BUONGIORNO NARDELLI * University of North Texas 2016-2024      *
 # *                                                                                   *
 # *************************************************************************************
 #
-#  Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
+#  Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu) - AFLOW.ORG consortium
 #
 #  This file is part of AFLOW software.
 #

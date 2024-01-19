@@ -1,7 +1,7 @@
 #
 # PAOFLOW
 #
-# Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
+# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
 #
@@ -24,8 +24,12 @@ class ACBN0:
   def __init__ ( self, prefix, pthr=0.95, workdir='./', mpi_qe='', nproc=1, qe_path='', qe_options='', mpi_python='', python_path='' ):
     from .defs.file_io import struct_from_inputfile_QE
     from .defs.upf_gaussfit import gaussian_fit
+    from .defs.header import header
     from os.path import join
     from os import chdir
+
+    header()
+    print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
 
     self.prefix = prefix
     self.pthr = pthr
@@ -38,48 +42,141 @@ class ACBN0:
     self.qoption = qe_options
 
     self.uVals = {}
+    self.occ_states = {}
+    self.occ_values = {}
+    self.hubbard_occ = {}
+    self.hubbard_tag = 'HUBBARD (ortho-atomic)'
 
     chdir(self.workdir)
 
     # Get structure information
-    blocks,cards = struct_from_inputfile_QE(f'{self.prefix}.scf.in')
-    nspin = int(struct['nspin']) if 'nspin' in blocks['system'] else 1
+    self.blocks,self.cards = struct_from_inputfile_QE(f'{self.prefix}.scf.in')
+    self.nspin = int(struct['nspin']) if 'nspin' in self.blocks['system'] else 1
 
     # Generate gaussian fits
-    uspecies = []
+    print('Generating gaussian fits for pseudopotential basis states.\n')
     self.basis = {}
-    for s in cards['ATOMIC_SPECIES'][1:]:
+    self.uspecies = []
+    for s in self.cards['ATOMIC_SPECIES'][1:]:
       ele,_,pp = s.split()
-      uspecies.append(ele)
+      self.uspecies.append(ele)
       atno,basis = gaussian_fit(pp)
       self.basis[ele] = basis
 
-    # Set initial UJ
-    threshold_U = 0.01
-    blocks['lda_plus_u'] = '.true.'
-    for i,s in enumerate(uspecies):
-      self.uVals[s] = threshold_U
-  
-    # Perform self consistent calculation of Hubbard parameters
+    # Store U values from input template
+    if 'HUBBARD' in self.cards:
+      import re
+
+      self.hubbard_tag = self.cards['HUBBARD'][0]
+      for h in self.cards['HUBBARD'][1:]:
+
+        _,sym,uval = h.split()
+        self.uVals[sym] = float(uval)
+
+        ele,occ = sym.split('-')
+        if ele not in self.occ_states:
+          self.occ_states[ele] = []
+        self.occ_states[ele].append(occ)
+
+      # Store occupations from input template
+      nat = len(self.uspecies)
+      for s in self.blocks['system']:
+        if 'hubbard_occ' in s:
+
+          i,j = map(int, re.findall('\(([^\)]+),([^\)]+)\)', s)[0])
+          if i > nat:
+            msg = f'hubbard_occ index 1 (value:{i}) out of range for {nat} species.'
+            raise ValueError(msg)
+
+          spec = self.uspecies[i-1]
+          nstates = len(self.occ_states[spec])
+          if j > nstates:
+            msg = f'hubbard_occ index 2 (value:{j}) out of range, {nstates} states listed for {spec}.'
+            raise ValueError(msg)
+
+          state = self.occ_states[spec][j-1]
+          self.occ_values[f'{spec}-{state}'] = float(self.blocks['system'][s])
+          self.hubbard_occ[s] = self.blocks['system'][s]
+
+
+  def set_hubbard_parameters ( self, hubbard ):
+
+    htype = type(hubbard)
+    if htype in [list, tuple]:
+
+      for h in hubbard:
+        ele,occ = h.split('-')
+        self.uVals[h] = 0.01
+        if ele not in self.occ_states:
+          self.occ_states[ele] = []
+        self.occ_states[ele].append(occ)
+
+    elif htype is dict:
+
+      for k,v in hubbard.items():
+
+        self.uVals[k] = 0.01
+        if v is None:
+          continue
+
+        try:
+
+          vtype = type(v)
+          if vtype not in [list, tuple]:
+            self.uVals[k] = float(v)
+
+          else:
+            if len(v) >= 1 and v[0] is not None:
+              self.uVals[k] = v[0]
+
+            if len(v) >= 2 and v[1] is not None:
+
+              ele,occ = k.split('-')
+              if ele not in self.occ_states:
+                self.occ_states[ele] = [occ]
+
+              elif occ not in self.occ_states[ele]:
+                self.occ_states[ele].append(occ)
+
+              i = 1 + self.uspecies.index(ele)
+              j = 1 + self.occ_states[ele].index(occ)
+
+              key = f'hubbard_occ({i},{j})'
+              self.hubbard_occ[key] = float(v[1])
+
+        except Exception as e:
+          print('Dictionary values should either be the initial U value, or a list/tuple containing (initial U, hubbard occupation).')
+          raise e
+
+    else:
+      msg = 'Input type should be either list or dict.'
+      raise TypeError(msg)
+
+
+  def optimize_hubbard_U ( self, convergence_threshold=0.01 ):
+
+    print('\nBeginning self-consistent loop.\n')
+    itr = 0
     converged = False
     while not converged:
 
-      # Update U values provided to inputfiles
-      for i,s in enumerate(uspecies):
-        blocks['Hubbard_U({})'.format(i+1)] = str(self.uVals[s])
+      itr += 1
+      print(f'Iteration #{itr}\n')
 
-      self.run_dft(self.prefix, uspecies, self.uVals)
+      self.run_dft(self.prefix, self.uspecies, self.uVals)
 
-      save_prefix = blocks['control']['prefix'].strip('"').strip("'")
-      self.run_paoflow(self.prefix, save_prefix, nspin)
+      save_prefix = self.blocks['control']['prefix'].strip('"').strip("'")
+      self.run_paoflow(self.prefix, save_prefix)
 
-      new_U = self.run_acbn0(self.prefix, nspin)
+      new_U = self.run_acbn0(self.prefix)
+
       converged = True
-      print('New U values:')
+      print('\nNew U values:')
       for k,v in new_U.items():
         print(f'  {k} : {v}')
-        if converged and np.abs(self.uVals[k]-v) > threshold_U:
+        if converged and np.abs(self.uVals[k]-v) > convergence_threshold:
           converged = False
+      print('', flush=True)
 
       self.uVals = new_U
 
@@ -169,7 +266,7 @@ class ACBN0:
   def exec_command ( self, command ):
     from os import system
 
-    print(f'Starting Process: {command}')
+    print(f'Starting Process: {command}', flush=True)
     return system(command)
 
 
@@ -191,11 +288,17 @@ class ACBN0:
     return self.exec_command(command)
 
 
-  def assign_Us ( self, struct, species, uVals ):
-    struct['lda_plus_u'] = '.true.'
-    for i,s in enumerate(species):
-      struct['Hubbard_U({})'.format(i+1)] = uVals[s]
-    return struct
+  def hubbard_card ( self ):
+
+    if len(self.uVals) == 0:
+      msg = 'No U found. Add U to the template inputfiles or with set_hubbard_parameters.'
+      raise ValueError(msg)
+
+    card = [self.hubbard_tag]
+    for k,v in self.uVals.items():
+      card.append(' U {} {}'.format(k, v))
+
+    return card
 
 
   def run_dft ( self, prefix, species, uVals ):
@@ -203,11 +306,15 @@ class ACBN0:
     from .defs.file_io import struct_from_inputfile_QE
 
     blocks,cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
-    blocks['system'] = self.assign_Us(blocks['system'], species, uVals)
+    cards['HUBBARD'] = self.hubbard_card()
+    for k,v in self.hubbard_occ.items():
+      blocks['system'][k] = v
     create_atomic_inputfile('scf', blocks, cards)
 
     blocks,cards = struct_from_inputfile_QE(f'{prefix}.nscf.in')
-    blocks['system'] = self.assign_Us(blocks['system'], species, uVals)
+    cards['HUBBARD'] = self.hubbard_card()
+    for k,v in self.hubbard_occ.items():
+      blocks['system'][k] = v
     create_atomic_inputfile('nscf', blocks, cards)
 
     blocks,cards = struct_from_inputfile_QE(f'{prefix}.projwfc.in')
@@ -218,13 +325,13 @@ class ACBN0:
       ecode = self.exec_QE(executables[c], f'{c}.in')
 
 
-  def run_paoflow ( self, prefix, save_prefix, nspin ):
+  def run_paoflow ( self, prefix, save_prefix ):
     from .defs.file_io import create_acbn0_inputfile
     from os import system
 
     fstr = f'{prefix}_PAO_bands' + '{}.in'
     calcs = []
-    if nspin == 1:
+    if self.nspin == 1:
       calcs.append(fstr.format('')) 
     else:
       calcs.append(fstr.format('_up'))
@@ -270,29 +377,18 @@ class ACBN0:
 
 
   def hubbard_orbital ( self, ele ):
-    #d elements
-    if ele in {'Ti', 'V',  'Cr', 'Mn', 'Fe', 'Co',
-               'Ni', 'Cu', 'Zn', 'Zr', 'Nb', 'Mo',
-               'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd',
-               'Hf', 'Ta', 'W',  'Re', 'Os', 'Ir',
-               'Pt', 'Au', 'Hg','Sc', 'Ga', 'In', 'Y'}:
-      return 2
 
-    #p elements
-    elif ele in {'C', 'N', 'O', 'Se', 'S', 'Te','Sn',
-                 'B','F','Al','Si','P','Cl', 'Ge','As',
-                 'Br','Sb','I','Tl','Pb','Bi','Po','At'}:
-      return 1
+    orb = ele[-1]
+    orbitals = {'s':0, 'p':1, 'd':2}
 
-    #s elements
-    elif ele in {'H', 'Sr','Mg', 'Ba','Li','Be','Na','K','Ca','Rb','Cs'}:
-      return 0
+    if orb in orbitals:
+      return orbitals[orb]
 
     else:
       raise Exception(f'Element {ele} has no defined Hubbard orbital')
 
 
-  def run_acbn0 ( self, prefix, nspin ):
+  def run_acbn0 ( self, prefix ):
     import re
 
     lattice,species,positions = self.read_cell_atoms('scf.out')
@@ -310,13 +406,13 @@ class ACBN0:
     state_lines = state_lines[sind:send]
 
     uVals = {}
-    for s in list(set(species)):
+    #for s in list(set(species)):
+    for k,v in self.uVals.items():
+
       ostates = []
       ustates = []
-      sn = s
-      while sn[-1].isdigit():
-        sn = sn[:-1]
-      horb = self.hubbard_orbital(sn)
+      s = k.split('-')[0]
+      horb = self.hubbard_orbital(k)
       for n,sl in enumerate(state_lines):
         stateN = re.findall('\(([^\)]+)\)', sl)
         oele = stateN[0].strip()
@@ -335,22 +431,23 @@ class ACBN0:
       basis_dm = ','.join(list(map(str,ostates)))
       basis_2e = ','.join(list(map(str,sstates)))
 
-      fname = f'{prefix}_acbn0_infile_{s}.txt'
+      fname = f'{prefix}_acbn0_infile_{k}.txt'
       with open(fname, 'w') as f:
-        f.write(f'symbol = {s}\n')
+        nspin = self.nspin
+        f.write(f'symbol = {k}\n')
         f.write(f'latvects = {lattice_string}\n')
         f.write(f'coords = {position_string}\n')
         f.write(f'atlabels = {species_string}\n')
         f.write(f'nspin = {nspin}\n')
         f.write(f'fpath = ./\n')
-        f.write(f'outfile = {prefix}_acbn0_outfile_{s}.txt\n')
+        f.write(f'outfile = {prefix}_acbn0_outfile_{k}.txt\n')
         f.write(f'reduced_basis_dm = {basis_dm}\n')
         f.write(f'reduced_basis_2e = {basis_2e}\n')
 
       self.acbn0(fname)
-      with open(f'{s}_UJ.txt', 'r') as f:
+      with open(f'{k}_UJ.txt', 'r') as f:
         lines = f.readlines()
-        uVals[s] = float(lines[2].split(':')[1])
+        uVals[k] = float(lines[2].split(':')[1])
 
     return uVals
 
