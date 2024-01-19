@@ -1,7 +1,7 @@
 #
 # PAOFLOW
 #
-# Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
+# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
 #
@@ -197,16 +197,43 @@ def struct_from_inputfile_QE ( fname:str ) -> dict:
   celldm = np.zeros(6, dtype=float)
   comment = lambda v : v != '' and v[0] != '!'
   matches = pattern.findall(fstr.replace(' ', '').replace('\n', '@ '))
-  for m in matches:
-    m = [s.replace(' ', '').split('!')[0] for s in re.split(', |@', m)]
-    mf = []
-    for v in m:
-      mf += v.split(',')
-    block = mf.pop(0).lower()
-    mf = filter(comment, mf)
+  for match in matches:
+
+    match = match.replace(',@', '@')
+    match = [s.replace(' ', '').split('!')[0] for s in re.split(', |@',match) if s!='']
+
+    # Split inline commas without destroying Hubbard_occ tags
+    block_args = []
+    for m in match:
+
+      hcinds = set([s.end(0)-1 for s in list(re.finditer('\(([^\)]+),',m))])
+
+      if len(hcinds) == 0:
+        for s in m.split(','):
+          if s != '':
+            block_args.append(s)
+
+      else:
+
+        cinds = set([i for i,c in enumerate(m) if c==','])
+        if cinds == hcinds:
+          block_args.append(m)
+
+        else:
+          iprev = 0
+          for i in sorted(cinds.difference(hcinds)):
+            block_args.append(m[iprev:i])
+            iprev = i+1
+          block_args.append(m[iprev:])
+
+    match = None
+    block = block_args.pop(0).lower()
+    mf = filter(comment, block_args)
+
     blocks[block] = {}
-    for s in mf:
+    for s in block_args:
       k,v = s.split('=')
+      k = k.lower()
       blocks[block][k] = v
       if k == 'ntyp':
         ntype = int(v)
@@ -239,6 +266,18 @@ def struct_from_inputfile_QE ( fname:str ) -> dict:
     sl = scan_blank_lines(sl)
     for i in range(ntype):
       cards['ATOMIC_SPECIES'].append(fstr[sl+i])
+
+  hl = 0
+  while hl < nf and 'HUBBARD' not in fstr[hl]:
+    hl += 1
+  if hl < nf:
+    cards['HUBBARD'] = [fstr[hl]]
+    hl = scan_blank_lines(hl)
+    for i in range(5):
+      if fstr[hl+i].split()[0] == 'U':
+        cards['HUBBARD'].append(fstr[hl+i])
+      else:
+        break
 
   kl = 0
   while kl < nf and 'K_POINTS' not in fstr[kl]:
@@ -275,11 +314,13 @@ def create_atomic_inputfile ( calculation, blocks, cards ):
       for ks,vs in vb.items():
         f.write(f'  {ks} = {vs}\n')
       f.write(' /\n\n')
+
     if 'ATOMIC_SPECIES' in cards:
       for s in cards['ATOMIC_SPECIES']:
         f.write(s + '\n')
       f.write('\n')
       del cards['ATOMIC_SPECIES']
+
     for kc,vc in cards.items():
       for s in vc:
         f.write(s + '\n')

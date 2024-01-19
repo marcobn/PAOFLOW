@@ -1,15 +1,16 @@
 
 Compute the Hubbard U parameters for Magnesium and Oxygen in the compound MgO.
+The ACBN0 routines are compatibile with QE v7.1 newer.
 
-Parallel options are set inside of the main.py script.
+Initiate the workflow with the main.py script. Parallel options are set inside of this main.py script.
 * main.py should always be run in serial, as it will spawn the mpi processes for QE and PAOFLOW runs
 
 The workdir argument, provided to ACBN0 in main.py, specifies the working directory.
-* Template files must be provided inside of the working directory, with names: prefix.scf.in, prefix.nscf.in, and prefix.projwfc.in. 'prefix' can be an arbitrary name, and is provided to ACBN0 in the main.py script
+* Template files must be provided inside of the working directory, with names: prefix.scf.in, prefix.nscf.in, and prefix.projwfc.in. 'prefix' can be an arbitrary name, and is provided to ACBN0 through the main.py script
 
-* Hubbard occupation information must be provided to Quantum ESPRESSO per species. The necessary files are included in the directory qe-mods. Copy the files to their respective directories in the QE root directory and recompile.
+* Hubbard occupations and initial U values can be provided either in the input templates, or within the main script. Any information provided through the template will be superseded by calls to set_hubbard_parameters within the main.py script.
 
-* All necessary pseudopotentials must be placed in the working directory
+* All necessary pseudopotentials must be placed in the appropriate pseudo_dir directory
 
 Other arguments allow control of mpi process spawning.
 * Arguments for specifying independent mpi options for python and QE processes are named mpi_python and mpi_qe.

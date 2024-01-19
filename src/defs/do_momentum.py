@@ -1,7 +1,7 @@
 #
 # PAOFLOW
 #
-# Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
+# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
 #
