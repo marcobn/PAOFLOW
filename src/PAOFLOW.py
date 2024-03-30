@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False, dft='QE'):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
     Arguments:
@@ -88,7 +88,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart)
+    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart, dft)
 
     self.report_exception = self.data_controller.report_exception
 
@@ -274,7 +274,8 @@ class PAOFLOW:
     
     arry,attr = self.data_controller.data_dicts()
     
-    if internal:
+    # Always use internal basis if VASP
+    if internal or attr['dft']=='VASP':
       basis,arry['shells'] = build_aewfc_basis(self.data_controller)
     else:
       basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
@@ -845,7 +846,7 @@ mo    '''
       snktot = arrays['Hksp'].shape[1]
       if reshift_Ef:
         Hksp = arrays['Hksp'].reshape((nawf,nawf,snktot,nspin))
-        Ef = E_Fermi(data_controller, Hksp, parallel=True)
+        Ef = E_Fermi(Hksp, self.data_controller, parallel=True)
         dinds = np.diag_indices(nawf)
         Hksp[dinds[0], dinds[1]] -= Ef
         arrays['Hksp'] = np.moveaxis(Hksp, 2, 0)

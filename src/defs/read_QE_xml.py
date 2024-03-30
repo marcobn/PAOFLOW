@@ -24,9 +24,9 @@ import numpy as np
 def parse_qe_data_file_schema ( data_controller, fname ):
   '''
   Parse the data_file_schema.xml file produced by Quantum Espresso.
-  Populated the DataController object with all necessay information.
+  Populated the DataController object with all necessary information.
 
-  Arugments:
+  Arguments:
     data_controller (DataController): Data controller to populate
     fname (str): Path and name of the xml file.
   '''

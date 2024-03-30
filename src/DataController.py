@@ -25,7 +25,7 @@ class DataController:
 
   error_handler = report_exception = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart ):
+  def __init__ ( self, workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart, dft ):
     '''
     Initialize the DataController
     Arguments:
@@ -67,6 +67,7 @@ class DataController:
       self.data_attributes = attr = {}
 
       # Set or update attributes
+      attr['dft'] = dft
       attr['mpisize'] = self.size
       attr['savedir'] = savedir
       attr['verbose'] = verbose
@@ -101,9 +102,12 @@ class DataController:
             self.read_pao_inputfile()
           else:
             attr['do_spin_orbit'] = False
-          self.read_qe_output()
+          if dft == 'QE':
+            self.read_qe_output()
+          else:
+            self.read_vasp_output()
         except Exception as e:
-          print('\nERROR: Could not read QE xml data file')
+          print('\nERROR: Could not read xml data file')
           self.report_exception('Data Controller Initialization')
           raise e
 
@@ -194,6 +198,16 @@ class DataController:
       parse_qe_data_file(self, fpath, 'data-file.xml')
     else:
       raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
+
+  def read_vasp_output ( self ):
+    from os.path import exists
+    fpath = self.data_attributes['fpath']
+
+    if exists(fpath+'/vasprun.xml'):
+      from .defs.read_VASP import parse_vasprun_data
+      parse_vasprun_data(self, fpath+'/vasprun.xml')
+    else:
+      raise Exception('vasprun.xml was not found.\n')
 
 
   def write_file_row_col ( self, fname, col1, col2 ):

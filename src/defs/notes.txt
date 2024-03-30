@@ -1,0 +1,29 @@
+REQUIRE
+spglib https://spglib.readthedocs.io/en/stable/python-interface.html
+VASP output files: vasprun.xml WAVECAR
+
+ERRORS
+pao_sym.py
+"def open_grid_wrapper(data_controller):"
+line 1179: symop_cart = np.zeros_like(symop, dtype=float)
+symop_cart originally defined as int array
+line 1182: symop_cart[isym] = (inv_a_vectors @ symop[isym] @ a_vectors)
+ sometimes become all 0 when dtype=float is not set
+
+do_atwfc_proj.py
+"def fft_wfc_R2G(wfc, igwx, mill, omega):"
+line 295: wfgc[tmp] = tmp[mill[0,ig],mill[1,ig],mill[2,ig]]
+corrected typo; function not used though
+wfcg[tmp] = tmp[mill[0,ig],mill[1,ig],mill[2,ig]]
+
+"def build_aewfc_basis(data_controller):"
+line 171: label.append(entry.split('/')[-1].split('.')[0])
+error; change to
+label.append(entry.split('/')[-1].split('.')[0][-2:])
+
+PAOFLOW.py
+report_module_time(self)
+Time not correct.
+
+IMPROVEMENTS
+1. Automatic selection of atomic basis set, with best projectability (not implemented yet)

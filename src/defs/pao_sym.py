@@ -492,6 +492,7 @@ def get_wigner_so(symop):
 
     for i in range(symop.shape[0]):
         # get euler angles alpha,beta,gamma from the symop
+
         AL,BE,GA =  mat2eul(symop[i])
         AL,BE,GA = np.deg2rad(np.around(np.rad2deg([AL,BE,GA]),decimals=0))
         # check if there is an inversion in the symop
@@ -1174,7 +1175,8 @@ def open_grid_wrapper(data_controller):
 
     # get symop crystal -> cartesian
     symop = correct_roundoff(symop)
-    symop_cart = np.zeros_like(symop)
+    # symop_cart = np.zeros_like(symop)
+    symop_cart = np.zeros_like(symop, dtype=float)  # This needs to be changed when using VASP
     inv_a_vectors = LA.inv(a_vectors)
     for isym in range(symop.shape[0]):
         symop_cart[isym] = (inv_a_vectors @ symop[isym] @ a_vectors)
