@@ -25,5 +25,7 @@ PAOFLOW.py
 report_module_time(self)
 Time not correct.
 
-IMPROVEMENTS
+IMPROVEMENTS to do
 1. Automatic selection of atomic basis set, with best projectability (not implemented yet)
+2. Does PAOFLOW work with Gamma-only calculations?
+3. Both QE and VASP's bands are worse reproduced when MP k-grid with shifts are used.

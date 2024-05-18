@@ -389,6 +389,11 @@ class PAOFLOW:
     attr['symmetrize'] = symmetrize
     attr['symm_max_iter'] = max_iter
     attr['expand_wedge'] = expand_wedge
+    #  Skip open_grid when all k-points are included (no symmetry)
+    #  Note expand_wedge is still required for VASP even not using symmetry.
+    #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
+
+
 
     if attr['symmetrize'] and attr['acbn0']:
       if rank == 0:

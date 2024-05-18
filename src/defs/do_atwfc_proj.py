@@ -17,7 +17,7 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-import os, sys, glob
+import os, sys, glob, re
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate
@@ -164,7 +164,8 @@ def build_aewfc_basis(data_controller):
   # read the atomic bases
   aebasis = []
   for na in range(len(arry['atoms'])):
-    elem = arry['atoms'][na]
+    atom_label = arry['atoms'][na]  # CHANGED
+    elem = re.split('\d+', atom_label)[0]
     aefiles = glob.glob(attr['basispath']+str(elem)+'/*.dat')
     label = []
     for entry in aefiles:
@@ -183,10 +184,11 @@ def build_aewfc_basis(data_controller):
   arry['jchia'] = {}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
+    elem = re.split('\d+', atom)[0]
     tau = arry['tau'][na]
     aewfc = []
-    for shell in arry['configuration'][atom]:
-      data = np.loadtxt(aebasis[na][shell])    
+    for shell in arry['configuration'][elem]:
+      data = np.loadtxt(aebasis[na][shell])
       aewfc.append({shell : data[:,1], 'r' : data[:,0]})
       
       if verbose and rank == 0:
@@ -625,7 +627,8 @@ def ortho_atwfc_k(atwfc_k):
   for i in range(natwfc):
     for j in range(natwfc):
       oovp[i,j] = np.dot(np.conj(oatwfc_k[i]), oatwfc_k[j])
-      
+
+  # np.save("oovp",oovp)
   diff = np.linalg.norm(oovp - np.eye(natwfc))
   if np.abs(diff) > 1e-4:
     raise RuntimeError('ortogonalization failed')
@@ -758,6 +761,7 @@ def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
   dump = np.fromfile(wfcfile, dtype=attr['wfc_prec'], count=arry['nplws'][ikpt])
   cg = np.asarray(dump, dtype=attr['wfc_prec'])
   return cg
+
 def read_VASP_wfc(data_controller, ik, ispin):
   arry, attr = data_controller.data_dicts()
   igwx = arry['nplws'][ik] // 2 if attr['dftSO'] else arry['nplws'][ik]

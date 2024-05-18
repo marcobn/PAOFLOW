@@ -44,8 +44,9 @@ def parse_vasprun_data ( data_controller, fname ):
   tree = ET.parse(fname)
   root = tree.getroot()
   
-  version = root.find("./generator/i[@name='version']").text.strip().split(".")
-  qe_version = list(map(int, version))
+  version = root.find("./generator/i[@name='version']").text
+  if verbose: print('VASP version: {0:s}'.format(version))
+  qe_version = list(map(int, version.strip().split(".")))
 
   dftSO = True if root.find(".//i[@name='LSORBIT']").text.strip() == 'T' else False
   ecutwfc = float(root.find(".//i[@name='ENCUT']").text.strip())/Ryd2eV # convert to Ryd
@@ -102,7 +103,13 @@ def parse_vasprun_data ( data_controller, fname ):
   k_elem = root.find("./kpoints")
   kmesh = k_elem.find(".//v[@name='divisions']").text.strip().split()
   nk1, nk2, nk3 = int(kmesh[0]), int(kmesh[1]), int(kmesh[2])
-  k1, k2, k3 = 0, 0, 0  # todo: shift in k-mesh
+  # if Monkhorst-Pack grid with even nk, shift of 0.5
+  # otherwise, no shift # todo: shift in k-mesh
+  mpgrid = k_elem.find("./generation").attrib['param']
+  if mpgrid[0] == "M":
+    k1, k2, k3 = int(nk1%2==0), int(nk2%2==0), int(nk3%2==0)
+  else:
+    k1, k2, k3 = 0, 0, 0
   if verbose: print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
 
   kpnts_temp, kpnt_weights_temp = [], []
@@ -138,50 +145,69 @@ def parse_vasprun_data ( data_controller, fname ):
 
   # read MAGMOM
   # Note: the magnetic moments in vasprun.xml are the values defined in INCAR
+  # The default is ferromagnetic
   magnetization = root.find(".//v[@name='MAGMOM']").text.strip().split()
+  # print(magnetization)
   magmom = np.asarray([float(m) for m in magnetization])
   if dftSO:
     magmom = magmom.reshape((-1,3))
   finite_magmom = np.any(np.abs(magmom)>1e-3)
   dftMag = (nspin == 1 and dftSO and finite_magmom) or (nspin ==2 and finite_magmom)
 
-  #  get symmetry from spglib
-  _, atom_numbers = np.unique(atoms, return_inverse=True)
-  if dftMag:
-    cell = (a_vectors, pos_arry, atom_numbers, magmom)
-    spglib_sym = spglib.get_magnetic_symmetry(cell)
-    sym_rot = spglib_sym['rotations']
-    shifts = spglib_sym['translations']
-    time_rev = spglib_sym['time_reversals']
+  if nkpnts == nk1 * nk2 * nk3:  # Check whether VASP calculation uses symmetry
+    ID = np.identity(3,dtype=int)
+    sym_rot_transpose = ID[np.newaxis, :]
+    shifts = np.zeros((1, 3))
+    sym_info = np.asarray([None])
+    time_rev = np.asarray([False])
+    eq_atoms = np.arange(natoms)
+    eq_atoms = eq_atoms[np.newaxis,:]
+
   else:
-    cell = (a_vectors, pos_arry, atom_numbers)
-    spglib_sym = spglib.get_symmetry(cell)
-    sym_rot = spglib_sym['rotations']
-    shifts = spglib_sym['translations']
-    time_rev = np.asarray([False] * sym_rot.shape[0])
 
-  # Find equivalent atoms
-  tol = 1e-5
-  nops = sym_rot.shape[0]
-  eq_atoms = np.zeros((nops, natoms), dtype=int)
-  sym_rot_transpose = np.zeros((nops,3,3),dtype=int)
-  for i_ops in range(nops):
-    ops = sym_rot[i_ops,:,:].T
-    sym_rot_transpose[i_ops,:,:] = ops
-    new_pos_arry = pos_arry @ ops + shifts[i_ops,:]
-    for i_atm in range(natoms):
-      for j_atm in range(natoms):
-        diff_pos = new_pos_arry[j_atm, :] - pos_arry[i_atm, :]
-        if np.linalg.norm(np.mod(diff_pos + 0.5, 1) - 0.5) < tol:
-          eq_atoms[i_ops, i_atm] = j_atm
+    #  get symmetry from spglib
+    _, atom_numbers = np.unique(atoms, return_inverse=True)
+    if dftMag:
+      cell = (a_vectors, pos_arry, atom_numbers, magmom)
+      spglib_sym = spglib.get_magnetic_symmetry(cell)
+      sym_rot = spglib_sym['rotations']
+      shifts = spglib_sym['translations']
+      time_rev = spglib_sym['time_reversals']
+      if dftSO:
+        sym_rot = sym_rot[~time_rev,:,:]
+        shifts = shifts[~time_rev,:]
+        time_rev = np.asarray([False] * sym_rot.shape[0])
+    else:
+      cell = (a_vectors, pos_arry, atom_numbers)
+      spglib_sym = spglib.get_symmetry(cell)
+      sym_rot = spglib_sym['rotations']
+      shifts = spglib_sym['translations']
+      time_rev = np.asarray([False] * sym_rot.shape[0])
 
-  sym_info = np.asarray([None]*nops)
+
+    # Find equivalent atoms
+    tol = 1e-5
+    nops = sym_rot.shape[0]
+    eq_atoms = np.zeros((nops, natoms), dtype=int)
+    sym_rot_transpose = np.zeros((nops,3,3),dtype=int)
+    for i_ops in range(nops):
+      ops = sym_rot[i_ops,:,:]
+      sym_rot_transpose[i_ops,:,:] = ops.T
+      new_pos_arry = pos_arry @ ops.T + shifts[i_ops,:]
+      for i_atm in range(natoms):
+        for j_atm in range(natoms):
+          diff_pos = new_pos_arry[j_atm,:] - pos_arry[i_atm, :]
+          if np.linalg.norm(np.mod(diff_pos + 0.5, 1) - 0.5) < tol:
+            eq_atoms[i_ops, j_atm] = i_atm
+
+    sym_info = np.asarray([None]*nops)
 
   if rank == 0 and verbose:
     print('Number of kpoints: {0:d}'.format(nkpnts))
     print('Number of electrons: {0:f}'.format(nelec))
     print('Number of bands: {0:d}'.format(nbnds))
-    print('Insulator: {0}; change attr["insulator"] if not correct'.format(insulator))
+    print('Insulator: {0}'.format(insulator))
+    print('Magnetic: {0}'.format(dftMag))
 
   attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
   for s,v in attrs:
