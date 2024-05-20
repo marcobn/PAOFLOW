@@ -31,7 +31,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 from .read_upf import UPF
-
+AUTOA = 0.529177249  # VASP A.U. to Angstrom
 # Unitility functions to build atomic wfc from the pseudopotential and build the projections U (and overlaps if needed)
 
 def read_pswfc_from_upf(data_controller, atom):
@@ -690,12 +690,14 @@ def calc_gkspace(data_controller,ik,gamma_only=False):
   
   return(gkspace)
 
-
 ## Added functions for VASP interface - ZH
 # Credit to Qijing Zheng, https://github.com/QijingZheng/VaspBandUnfolding
 def read_WAVECAR_header(data_controller):
   arry, attr = data_controller.data_dicts()
-  wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
+  try:
+    wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
+  except:
+    print('WAVECAR was not found.')
   # go to the start of the file and read the first record
   wfcfile.seek(0)
   recl, nspin, rtag = np.array(
@@ -704,28 +706,32 @@ def read_WAVECAR_header(data_controller):
   )
   attr['recl'] = recl
   if nspin != attr['nspin']:
-    raise ValueError("NSPIN in vasprun.xml and WAVECAR differ")
+    raise Exception("NSPIN in vasprun.xml and WAVECAR differ")
   if rtag == 45200:
     attr['wfc_prec'] = np.complex64
   elif rtag == 45210:
     attr['wfc_prec'] = np.complex128
   else:
-    raise ValueError("Invalid rtag in WAVECAR")
-  # Read the second record, todo: add more test cases
+    raise Exception("Invalid rtag in WAVECAR")
+
   wfcfile.seek(recl)
   dump = np.fromfile(wfcfile, dtype=np.float64, count=12)
   nkpnts = int(dump[0])
   nbnds = int(dump[1])
   encut = dump[2] # in unit of eV
-  Acell = dump[3:].reshape((3, 3)) # in unit of Angstrom
-  if nkpnts != attr['nkpnts']:
-    raise ValueError("# of k-points in vasprun.xml and WAVECAR differ")
-  if nbnds != attr['nbnds']:
-    raise ValueError("# of bands in vasprun.xml and WAVECAR differ")
-  if abs(encut-attr['ecutwfc']*13.605826) > 1e-6:
-    raise ValueError("ENCUT in vasprun.xml and WAVECAR differ")
+  Acell = dump[3:].reshape((3, 3))/AUTOA # in unit of Bohr
 
-  Anorm = np.linalg.norm(Acell, axis=1)/0.529177249
+  # Check vasprun.xml and WAVECAR are from the same run
+  if nkpnts != attr['nkpnts']:
+    raise Exception("# of k-points in vasprun.xml and WAVECAR differ")
+  if nbnds != attr['nbnds']:
+    raise Exception("# of bands in vasprun.xml and WAVECAR differ")
+  if abs(encut-attr['ecutwfc']*13.605826) > 1e-6:
+    raise Exception("ENCUT in vasprun.xml and WAVECAR differ")
+  if np.linalg.norm(arry['a_vectors']-Acell) > 1e-6:
+    raise Exception("Lattice in vasprun.xml and WAVECAR differ")
+
+  Anorm = np.linalg.norm(Acell, axis=1)
   CUTOF = np.ceil(np.sqrt(attr['ecutwfc']) / (2 * np.pi / Anorm))
   ngrid = np.array(2 * CUTOF + 1, dtype=int)
   arry['ngrid'] = ngrid

@@ -25,6 +25,11 @@ PAOFLOW.py
 report_module_time(self)
 Time not correct.
 
+adaptive_smearing()
+if smearing != 'gauss' and 'smearing' != 'm-p':
+corrected to
+if smearing != 'gauss' and smearing != 'm-p':
+
 IMPROVEMENTS to do
 1. Automatic selection of atomic basis set, with best projectability (not implemented yet)
 2. Does PAOFLOW work with Gamma-only calculations?

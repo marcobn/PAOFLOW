@@ -98,13 +98,12 @@ def parse_vasprun_data ( data_controller, fname ):
   pos_arry = np.array(pos_list)
   tau = pos_arry @ a_vectors  # Atomic coord in cartesian, Bohr
 
-
   # tag = kpoints
   k_elem = root.find("./kpoints")
   kmesh = k_elem.find(".//v[@name='divisions']").text.strip().split()
   nk1, nk2, nk3 = int(kmesh[0]), int(kmesh[1]), int(kmesh[2])
   # if Monkhorst-Pack grid with even nk, shift of 0.5
-  # otherwise, no shift # todo: shift in k-mesh
+  # otherwise, no shift
   mpgrid = k_elem.find("./generation").attrib['param']
   if mpgrid[0] == "M":
     k1, k2, k3 = int(nk1%2==0), int(nk2%2==0), int(nk3%2==0)
@@ -147,14 +146,14 @@ def parse_vasprun_data ( data_controller, fname ):
   # Note: the magnetic moments in vasprun.xml are the values defined in INCAR
   # The default is ferromagnetic
   magnetization = root.find(".//v[@name='MAGMOM']").text.strip().split()
-  # print(magnetization)
   magmom = np.asarray([float(m) for m in magnetization])
   if dftSO:
     magmom = magmom.reshape((-1,3))
   finite_magmom = np.any(np.abs(magmom)>1e-3)
   dftMag = (nspin == 1 and dftSO and finite_magmom) or (nspin ==2 and finite_magmom)
 
-  if nkpnts == nk1 * nk2 * nk3:  # Check whether VASP calculation uses symmetry
+  if nkpnts == nk1 * nk2 * nk3:
+    # Check whether VASP calculation uses symmetry (ISYM = -1 or 2)
     ID = np.identity(3,dtype=int)
     sym_rot_transpose = ID[np.newaxis, :]
     shifts = np.zeros((1, 3))
@@ -164,7 +163,6 @@ def parse_vasprun_data ( data_controller, fname ):
     eq_atoms = eq_atoms[np.newaxis,:]
 
   else:
-
     #  get symmetry from spglib
     _, atom_numbers = np.unique(atoms, return_inverse=True)
     if dftMag:
@@ -186,6 +184,7 @@ def parse_vasprun_data ( data_controller, fname ):
 
 
     # Find equivalent atoms
+    # vasp/src/symlib.F SUBROUTINE POSMAP
     tol = 1e-5
     nops = sym_rot.shape[0]
     eq_atoms = np.zeros((nops, natoms), dtype=int)
@@ -199,6 +198,9 @@ def parse_vasprun_data ( data_controller, fname ):
           diff_pos = new_pos_arry[j_atm,:] - pos_arry[i_atm, :]
           if np.linalg.norm(np.mod(diff_pos + 0.5, 1) - 0.5) < tol:
             eq_atoms[i_ops, j_atm] = i_atm
+
+    if not np.all(np.sum(eq_atoms,axis=1) == natoms*(natoms-1)/2):
+      raise Exception("Fail to find equivalent atoms")
 
     sym_info = np.asarray([None]*nops)
 

@@ -1011,7 +1011,7 @@ mo    '''
 
     attr = self.data_controller.data_attributes
 
-    if smearing != 'gauss' and 'smearing' != 'm-p':
+    if smearing != 'gauss' and smearing != 'm-p':
       raise ValueError('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
 
     try:
