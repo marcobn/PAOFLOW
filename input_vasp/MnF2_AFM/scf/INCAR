@@ -1,0 +1,33 @@
+SYSTEM = MnF2
+
+# parallelization
+NPAR      = 4 
+
+# output
+LWAVE     = .FALSE.         # .TRUE. for WAVECAR
+LCHARG    = .TRUE.         # .TRUE. for CHGCAR 
+
+# electronic relaxation
+PREC      = Accurate      
+ENCUT     = 520
+EDIFF     = 1.0e-8          # Electronic energy convergence criterion.
+ISMEAR    = -5               # 1 : metals
+NELM      = 100
+SIGMA     = 0.2
+GGA       = PE              # The PS flag turns on PBE_sol. (Do not use with LDA.)
+LASPH     = .TRUE.
+ISPIN     = 2
+MAGMOM    = 5 -5 4*0
+#LORBIT    = 10
+LDAU      = .TRUE.
+LDAUTYPE  = 2
+LDAUL     = 2 -1
+LDAUU     = 4 0
+LMAXMIX   = 4
+
+# lattice relaxation
+#ISIF      = 3               # 2 : atoms only, 3 : full relaxation (atoms and volume).
+#NSW       = 100             # Maximum number of atomic relaxation steps.
+#IBRION    = 1               # Minimization scheme for ionic relaxation.
+#EDIFFG    = -1.0e-3         # Lattice energy convergence criterion.
+#NWRITE     = 3
