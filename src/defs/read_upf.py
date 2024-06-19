@@ -84,6 +84,7 @@ class UPF:
     chis = root.find('PP_PSWFC')
     self.shells = []
     self.jchia = []
+    self.lchia = []
     if chis is not None:
       data = StringIO(chis.text)
       nlines = self.npoints//4
@@ -144,6 +145,7 @@ class UPF:
     # atomic wavefunctions
     self.pswfc = []
     self.jchia = []
+    self.lchia = []
     self.shells = []
     i = 0
     while True:
@@ -159,9 +161,13 @@ class UPF:
       self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
 
       jchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
+      lchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
       if jchi is not None:
         self.jchia.append(float(jchi.attrib['jchi']))
+      if lchi is not None:
+        self.lchia.append(float(lchi.attrib['lchi']))
     self.jchia = self.jchia
+    self.lchia = self.lchia
     self.shells = self.shells
 
     # TODO: NLCC, ATRHO

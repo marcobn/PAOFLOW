@@ -1,0 +1,36 @@
+&control 
+    calculation = 'scf' 
+    prefix      = 'MoS2' 
+    pseudo_dir = './' 
+    outdir='./'    
+    verbosity = 'high'    
+/    
+&system      
+    ibrav=  0  
+    nat=  3  
+    ntyp=  2  
+    !celldm(1) =  1.88972612  
+    ecutwfc =  60  
+    ecutrho =  600  
+    occupations='smearing', smearing='gaussian', degauss=0.00073529411765      
+    lspinorb=.true.  
+    noncolin=.true.  
+    starting_magnetization=0.0 
+/    
+&electrons      
+    conv_thr= 1.D-8      
+    mixing_beta = 0.7
+/    
+CELL_PARAMETERS cubic      
+3.18406653 0.00000000 0.00000000 
+-1.59203327 2.75748253 0.00000000 
+0.00000000 0.00000000 18.12711334 
+ATOMIC_SPECIES      
+S  0.0 S.rel-pbe-n-kjpaw_psl.1.0.0.UPF    
+Mo  0.0 Mo.rel-pbe-spn-kjpaw_psl.1.0.0.UPF    
+ATOMIC_POSITIONS angstrom      
+Mo 0.00000000 0.00000000 9.06355667 
+S 1.59203327 0.91916084 10.62711239 
+S 1.59203327 0.91916084 7.50000000 
+K_POINTS (automatic)      
+ 5 5 1 0 0 0 

@@ -188,6 +188,97 @@ def do_anomalous_Hall ( data_controller, do_ac ):
       fsigR = 'MCDr_%s%s.dat'%cart_indices
       data_controller.write_file_row_col(fsigR, ene, sigxyr)
 
+def do_orbital_Hall ( data_controller, twoD, do_ac ):
+  from .perturb_split import perturb_split
+  from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+
+  arry,attr = data_controller.data_dicts()
+
+  o_tensor = arry['o_tensor']
+
+  #-----------------------
+  # Orbital Hall calculation
+  #-----------------------
+  if attr['dftSO'] == False:
+    if rank == 0:
+      print('Relativistic calculation with SO required')
+      comm.Abort()
+    comm.Barrier()
+
+  if rank == 0 and attr['verbose']:
+    print('Writing bxsf files for Orbital Berry Curvature')
+
+  for n in range(o_tensor.shape[0]):
+    ipol = o_tensor[n][0]
+    jpol = o_tensor[n][1]
+    spol = o_tensor[n][2]
+    #----------------------------------------------
+    # Compute the orbital current operator j^l_n,m(k)
+    #----------------------------------------------
+    jdHksp = do_orbital_current(data_controller, spol, ipol)
+
+    jksp_is = np.empty_like(jdHksp)
+    pksp_j = np.empty_like(jdHksp)
+
+    for ik in range(jdHksp.shape[0]):
+      for ispin in range(jdHksp.shape[3]):
+        jksp_is[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+    jdHksp = None
+
+    #---------------------------------
+    # Compute orbital Berry curvature... 
+    #---------------------------------
+    ene,ohc,Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
+
+    if rank == 0:
+      if twoD:
+        av0,av1 = arry['a_vectors'][0,:],arry['a_vectors'][1,:]
+        cgs_conv = 1./(np.linalg.norm(np.cross(av0,av1))*attr['alat']**2)
+      else:
+        cgs_conv = 1.0e8*ANGSTROM_AU*ELECTRONVOLT_SI**2/(H_OVER_TPI*attr['omega'])
+      ohc *= cgs_conv
+
+    cart_indices = (str(LL[spol]),str(LL[ipol]),str(LL[jpol]))
+
+    fBerry = 'Orbital_Berry_%s_%s%s.bxsf'%cart_indices
+    nk1,nk2,nk3 = attr['nk1'],attr['nk2'],attr['nk3']
+    Om_kps = (np.empty((nk1,nk2,nk3,2), dtype=float) if rank==0 else None)
+    if rank == 0:
+      Om_kps[:,:,:,0] = Om_kps[:,:,:,1] = Om_k[:,:,:]
+    data_controller.write_bxsf(fBerry, Om_kps, 2)
+
+    Om_k = Om_kps = None
+
+    fohc = 'ohcEf_%s_%s%s.dat'%cart_indices
+    data_controller.write_file_row_col(fohc, ene, ohc)
+
+    ene = ohc = None
+
+    if do_ac:
+
+      jdHksp = do_orbital_current(data_controller, spol, ipol)
+
+      jksp_js = np.empty_like(jdHksp)
+      pksp_i = np.empty_like(jdHksp)
+
+      for ik in range(jdHksp.shape[0]):
+        for ispin in range(jdHksp.shape[3]):
+          jksp_js[ik,:,:,ispin],pksp_i[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+      jdHksp = None
+
+      ene,sigxy = do_ac_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
+      if rank == 0:
+        sigxy *= cgs_conv
+
+      sigxyi = np.imag(ene*sigxy/105.4571) if rank==0 else None
+      sigxyr = np.real(sigxy) if rank==0 else None
+      sigxy = None
+
+      fsigI = 'OCDi_%s_%s%s.dat'%cart_indices
+      data_controller.write_file_row_col(fsigI, ene, sigxyi)
+
+      fsigR = 'OCDr_%s_%s%s.dat'%cart_indices
+      data_controller.write_file_row_col(fsigR, ene, sigxyr)
 def do_Berry_curvature ( data_controller, jksp, pksp ):
   #----------------------
   # Compute spin Berry curvature
@@ -341,3 +432,19 @@ def do_spin_current ( data_controller, spol, ipol ):
 
   return jdHksp
 
+def do_orbital_current ( data_controller, spol, ipol ):
+
+  arry,attr = data_controller.data_dicts()
+
+  Lj = arry['Lj'][spol]
+  bnd = attr['bnd']
+  snktot,_,nawf,nawf,nspin = arry['dHksp'].shape
+
+  jdHksp = np.empty((snktot,nawf,nawf,nspin), dtype=complex)
+
+  for ispin in range(nspin):
+    for ik in range(snktot):
+      jdHksp[ik,:,:,ispin] = 0.5*(np.dot(Lj,arry['dHksp'][ik,ipol,:,:,ispin])+np.dot(arry['dHksp'][ik,ipol,:,:,ispin],Lj))
+
+
+  return jdHksp

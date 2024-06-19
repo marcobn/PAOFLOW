@@ -1,20 +1,21 @@
-
+#
 # PAOFLOW
 #
-# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
-#
-# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+#
+# F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
+# Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
+#
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
 # Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
 #
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
 
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -83,6 +84,7 @@ class UPF:
     chis = root.find('PP_PSWFC')
     self.shells = []
     self.jchia = []
+    self.lchia = []
     if chis is not None:
       data = StringIO(chis.text)
       nlines = self.npoints//4
@@ -143,6 +145,7 @@ class UPF:
     # atomic wavefunctions
     self.pswfc = []
     self.jchia = []
+    self.lchia = []
     self.shells = []
     i = 0
     while True:
@@ -158,9 +161,13 @@ class UPF:
       self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
 
       jchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
+      lchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
       if jchi is not None:
         self.jchia.append(float(jchi.attrib['jchi']))
+      if lchi is not None:
+        self.lchia.append(float(lchi.attrib['lchi']))
     self.jchia = self.jchia
+    self.lchia = self.lchia
     self.shells = self.shells
 
     # TODO: NLCC, ATRHO

@@ -9,6 +9,7 @@ example08 : 2D SnTe - Spin Hall conductivity
 example09 : Weyl point search in MoP2
 example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
 example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
+example12 : 2D 2H-MoS2 - Orbital Hall conductivity
 acbn0-example: ACBN0 routine for calculating Hubbard parameters in MgO.
 TBmodel-examples : Several examples for constructing analytical Tight Binding model Hamiltonians
 

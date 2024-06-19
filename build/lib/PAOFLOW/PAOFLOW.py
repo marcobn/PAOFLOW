@@ -1,20 +1,20 @@
 #
 # PAOFLOW
 #
-# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
-#
-# Copyright (C) 2016-2018 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
+# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
+#
+#F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli, Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
+#
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
 # Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
 #
 # This file is distributed under the terms of the
 # GNU General Public License. See the file `License'
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
-#
 
 import numpy as np
 
@@ -318,7 +318,7 @@ class PAOFLOW:
       parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
     else:
       raise Exception('atomic_proj.xml was not found.\n')
-
+    arry['lchia'] = {}
     arry['jchia'] = {}
     arry['shells'] = {}
     for at,pseudo in arry['species']:
@@ -327,6 +327,7 @@ class PAOFLOW:
         upf = UPF(fname)
         arry['shells'][at] = upf.shells
         arry['jchia'][at] = upf.jchia
+        arry['lchia'][at] = upf.lchia
       else:
         raise Exception('Pseudopotential not found: %s'%fname)
 
@@ -376,7 +377,6 @@ class PAOFLOW:
     from .defs.get_K_grid_fft import get_K_grid_fft
     from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
     from .defs.do_Efermi import E_Fermi
-    
 
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
@@ -401,16 +401,6 @@ class PAOFLOW:
       if attr['abort_on_exception']:
         raise e
     self.report_module_time('Building Hks')
-    
-#   try:
-#     minimal = attr['minimal']
-#   except:
-#     minimal = False
-#   
-#   if minimal: 
-#     from .defs.do_minimal import do_minimal
-#     do_minimal(self.data_controller)
-
 
     # Done with U and Sks
     del arrays['U']
@@ -429,6 +419,7 @@ class PAOFLOW:
     self.report_module_time('k -> R')
 
 
+
   def minimal(self,R=False):
       from .defs.do_minimal import do_minimal
       do_minimal(self.data_controller)
@@ -436,10 +427,13 @@ class PAOFLOW:
         from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
         do_Hks_to_HRs(self.data_controller)
         self.data_controller.broadcast_single_array('HRs')
-  
+
+
+
   def minimal2(self):
       from .defs.do_minimal import do_minimal2
       do_minimal2(self.data_controller)
+
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
@@ -476,7 +470,8 @@ class PAOFLOW:
         raise e
 
     self.comm.Barrier()
-    
+
+
 
   def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
     '''
@@ -495,6 +490,7 @@ class PAOFLOW:
       self.report_exception('z2_pack')
       if self.data_controller.data_attributes['abort_on_exception']:
         raise e
+
 
 
   def bands ( self, ibrav=None, band_path=None, high_sym_points=None, spin_orbit=False, fname='bands', nk=500 ):
@@ -518,14 +514,13 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-    if 'ibrav' not in attr:
-      if ibrav is None and self.rank == 0:
+    if ibrav is not None:
+      attr['ibrav'] = ibrav
+
+    if 'ibrav' not in attr and 'kq' not in arrays:
+      if band_path is None or high_sym_points is None:
         if self.rank == 0:
-          print('Must specify kq in main.py')
-#         print('Must specify \'ibrav\' in the inputfile or as an optional argument to \'calc_bands\'')
-#       quit()
-      else:
-        attr['ibrav'] = ibrav
+          print('Must specify the high-symmetry path, \'kq\', or \'ibrav\'')
 
     if 'nk' not in attr: attr['nk'] = nk
     if band_path is not None: attr['band_path'] = band_path
@@ -552,19 +547,50 @@ class PAOFLOW:
 
     self.report_module_time('Bands')
 
+  def build_arrays(self):
+    arry,attr = self.data_controller.data_dicts()
+    orb=[]
+    naw=[]
+    for i in range (len(arry['atoms'])):
+      if (arry['shells'][arry['atoms'][i]] == [0]):
+        naw.append(1)
+        orb.append('s')
+      if (arry['shells'][arry['atoms'][i]] == [0,1]):
+        naw.append(4)
+        orb.append('sp')
+      if (arry['shells'][arry['atoms'][i]] == [0,1,2]):
+        naw.append(9)
+        orb.append('spd')
+      if (arry['shells'][arry['atoms'][i]] == [1,0]):
+        naw.append(4)
+        orb.append('ps')
+      if (arry['shells'][arry['atoms'][i]] == [0,0,1,2]):
+        naw.append(10)
+        orb.append('sspd')
+      if (arry['shells'][arry['atoms'][i]] == [0,0,1]):
+        naw.append(5)
+        orb.append('ssp')
+      if (arry['shells'][arry['atoms'][i]] == [0,0,1,1,2]):
+        naw.append(13)
+        orb.append('ssppd')
+    arry['orb_pseudo'] = orb
+    arry['naw'] = naw
 
 
 
-  def adhoc_spin_orbit ( self, naw=[1], phi=.0, theta=.0, lambda_p=[.0], lambda_d=[.0], orb_pseudo=['s']  ):
+  def adhoc_spin_orbit ( self, naw=[1], phi=.0, theta=.0,  lambda_p=[.0], lambda_d=[.0], soc_strengh={}, soc_species=True ):
     '''
     Include spin-orbit coupling  
 
     Arguments:
         theta (float)             :  Spin orbit angle
         phi (float)               :  Spin orbit azimuthal angle
+        soc_strengh(dict)         :  p and d orbitals SOC strengh for each species 
+        
+        If soc_species = False
         lambda_p (list of floats) :  p orbitals SOC strengh for each atom 
         lambda_d (list of float)  :  d orbitals SOC strengh for each atom
-        orb_pseudo (list of str)  :  Orbitals included in the Pseudopotential
+
 
     Returns:
         None
@@ -577,19 +603,59 @@ class PAOFLOW:
 
     if 'phi' not in attr: attr['phi'] = phi
     if 'theta' not in attr: attr['theta'] = theta
-    if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
-    if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
-    if 'orb_pseudo' not in arry: arry['orb_pseudo'] = orb_pseudo[:]
-    if 'naw' not in arry: arry['naw'] = naw[:]
 
-    natoms = attr['natoms']
-    if len(arry['lambda_p']) != natoms or len(arry['lambda_p']) != natoms:
-      print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
-      self.comm.Abort()
+    
+    if (soc_species==True):
 
+      lambda_p=[]
+      lambda_d=[]
+      for i in range (len(arry['atoms'])):
+        lambda_p.append(soc_strengh[arry['atoms'][i]][0])
+        lambda_d.append(soc_strengh[arry['atoms'][i]][1])
+      arry['lambda_p']=lambda_p
+      arry['lambda_d']=lambda_d
+    else:
+      if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
+      if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
+
+    print(arry['lambda_p'])
+    print(arry['lambda_d'])
+    orb=[]
+    naw=[]
+    for i in range (len(arry['atoms'])):
+      if (arry['shells'][arry['atoms'][i]] == [0]):
+        naw.append(1)
+        orb.append('s')
+      if (arry['shells'][arry['atoms'][i]] == [0,1]):
+        naw.append(4)
+        orb.append('sp')
+      if (arry['shells'][arry['atoms'][i]] == [0,1,2]):
+        naw.append(9)
+        orb.append('spd')
+      if (arry['shells'][arry['atoms'][i]] == [1,0]):
+        naw.append(4)
+        orb.append('ps')
+      if (arry['shells'][arry['atoms'][i]] == [0,0,1,2]):
+        naw.append(10)
+        orb.append('sspd')
+      if (arry['shells'][arry['atoms'][i]] == [0,0,1]):
+        naw.append(5)
+        orb.append('ssp')
+      if (arry['shells'][arry['atoms'][i]] == [0,0,1,1,2]):
+        naw.append(13)
+        orb.append('ssppd')
+    arry['orb_pseudo'] = orb
+    arry['naw'] = naw
     attr['bnd'] *= 2
     attr['dftSO'] = True
+
     do_spin_orbit_H(self.data_controller)
+
+    attr['nspin'] = 1
+    attr['nawf'] = arry['HRs'].shape[0]
+
+
+
 
 
 
@@ -631,8 +697,43 @@ mo    '''
     '''
     from .defs.do_doubling import doubling_HRs
     
-    arrays,attr = self.data_controller.data_dicts()
+    arry,attr = self.data_controller.data_dicts()
     attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
+    naw=[]
+    if (attr['dftSO'] == True):
+      for i in range (len(arry['atoms'])):
+        if (arry['shells'][arry['atoms'][i]] == [0]):
+          naw.append(2)
+        if (arry['shells'][arry['atoms'][i]] == [0,1]):
+          naw.append(8)
+        if (arry['shells'][arry['atoms'][i]] == [0,1,2]):
+          naw.append(18)
+        if (arry['shells'][arry['atoms'][i]] == [1,0]):
+          naw.append(8)
+        if (arry['shells'][arry['atoms'][i]] == [0,0,1,2]):
+          naw.append(20)
+        if (arry['shells'][arry['atoms'][i]] == [0,0,1]):
+          naw.append(10)
+        if (arry['shells'][arry['atoms'][i]] == [0,0,1,1,2]):
+          naw.append(26)
+      arry['naw'] = naw
+    else:
+      for i in range (len(arry['atoms'])):
+        if (arry['shells'][arry['atoms'][i]] == [0]):
+          naw.append(1)
+        if (arry['shells'][arry['atoms'][i]] == [0,1]):
+          naw.append(4)
+        if (arry['shells'][arry['atoms'][i]] == [0,1,2]):
+          naw.append(9)
+        if (arry['shells'][arry['atoms'][i]] == [1,0]):
+          naw.append(4)
+        if (arry['shells'][arry['atoms'][i]] == [0,0,1,2]):
+          naw.append(10)
+        if (arry['shells'][arry['atoms'][i]] == [0,0,1]):
+          naw.append(5)
+        if (arry['shells'][arry['atoms'][i]] == [0,0,1,1,2]):
+          naw.append(13)
+      arry['naw'] = naw
     
     try:
       doubling_HRs(self.data_controller)
@@ -743,7 +844,97 @@ mo    '''
         raise e
 
 
+  def orbital_operator ( self, spin_orbit=False):
+    from .defs.j_matrix import j_matrix
 
+    arrays,attr = self.data_controller.data_dicts()
+
+    if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
+
+    if 'Sj' not in arrays:
+      self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+
+    try:
+      nawf = attr['nawf']
+
+      # Compute Total Angular Momentum operators
+      Jj = np.zeros((3,nawf,nawf), dtype=complex)
+      if spin_orbit:
+        print("# Orbital operator matrix in the basis of |l,m,s,s_z> not implemented yet (TB SO)")
+      else:
+        for spol in range(3):
+          Jj[spol,:,:] = j_matrix(self.data_controller, spol)
+
+
+      # Compute Orbital Angular Momentum operators L = J - S
+      Lj = np.zeros((3,nawf,nawf), dtype=complex)
+      arrays['Lj'] = Jj-arrays['Sj']
+
+    except:
+      self.report_exception('angular_momentum_operator')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
+  def conductivity ( self, delta=0.01, emin=-10., emax=2., ne=1000, cond_tensor=None ):
+
+    from .defs.do_conductivity import do_conductivity
+    
+    arrays,attr = self.data_controller.data_dicts()
+
+    if cond_tensor is not None: arrays['cond_tensor'] = np.array(cond_tensor)
+
+    for i in range(arrays['cond_tensor'].shape[0]):
+      ipol=arrays['cond_tensor'][i,0]
+      jpol=arrays['cond_tensor'][i,1]
+  
+      do_conductivity(self.data_controller, emin, emax, ne, delta, ipol, jpol)
+
+    self.report_module_time('Conductivity')
+  def Hall_accumulation ( self, delta=0.01, emin=-10., emax=2., ne=1000, orbital_Hall=False, spin_Hall=False, a_tensor=None ):
+
+    from .defs.do_Hall_accumulation import intra_band
+    
+    arrays,attr = self.data_controller.data_dicts()
+    
+    if (spin_Hall is True and 'Sj' not in arrays):      
+      try:                   
+        if ('Sj' not in arrays):
+          self.spin_operator()
+
+        arrays['a_tensor'] = np.array(a_tensor)
+
+        for i in range(arrays['a_tensor'].shape[0]):
+          ipol=arrays['a_tensor'][i,0]
+          spol=arrays['a_tensor'][i,1]
+          intra_band(self.data_controller,emin, emax, ne, delta, ipol, spol,arrays['Sj'])
+            
+        
+      except Exception as e:
+        self.report_exception('spin Hall accumulation')
+        if attr['abort_on_exception']:
+          raise e
+
+
+    if orbital_Hall is True:
+      try:                   
+        if ('Lj' not in arrays):
+          self.orbital_operator()        
+
+        arrays['a_tensor'] = np.array(a_tensor)
+        
+
+        for i in range(arrays['a_tensor'].shape[0]):
+          ipol=arrays['a_tensor'][i,0]
+          spol=arrays['a_tensor'][i,1]
+          intra_band(self.data_controller,emin, emax, ne, delta, ipol, spol,arrays['Lj'])#,arrays['dHksp'],a_tensor)
+            
+        
+      except Exception as e:
+        self.report_exception('orbital Hall accumulation')
+        if attr['abort_on_exception']:
+          raise e
+      
+    self.report_module_time('Hall Accumulation')
   def topology ( self, eff_mass=False, Berry=False, spin_Hall=False, spin_orbit=False, spol=None, ipol=None, jpol=None ):
     '''
     Calculate the Band Topology along the k-path 'kq'
@@ -752,6 +943,7 @@ mo    '''
         eff_mass (bool): If True calculate the Effective Mass Tensor
         Berry (bool): If True calculate the Berry Curvature
         spin_Hall (bool): If True calculate Spin Hall Conductivity
+        orbital_Hall (bool): If True calculate Orbital Hall Conductivity
         spin_orbit (bool): If True the calculation includes spin_orbit effects for topology.
         spol (int): Spin polarization
         ipol (int): In plane dimension 1
@@ -769,6 +961,7 @@ mo    '''
     if 'Berry' not in attr: attr['Berry'] = Berry
     if 'eff_mass' not in attr: attr['eff_mass'] = eff_mass
     if 'spin_Hall' not in attr: attr['spin_Hall'] = spin_Hall
+    if 'orbital_Hall' not in attr: attr['orbital_Hall'] = orbital_Hall
     if 'do_spin_orbit' not in attr: attr['do_spin_orbit'] = spin_orbit
 
     attr['spol'] = spol
@@ -1172,6 +1365,44 @@ mo    '''
     self.comm.Barrier()
 
 
+  def orbital_texture ( self, fermi_up=1., fermi_dw=-1.,ib_idx=0,fb_idx=0 ):
+    '''
+    Calculate the Spin Texture
+
+    Arguments:
+        fermi_up (float): The upper limit of the occupied energy range
+        fermi_dw (float): The lower limit of the occupied energy range
+        ib_idx (int)    : Initial Band index  
+        fb_idx (int)    : Final Band index  
+
+    Returns:
+        None
+    '''
+    from .defs.do_orbital_texture import do_orbital_texture
+
+    arry,attr = self.data_controller.data_dicts()
+
+    if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
+    if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
+    if 'ib_idx' not in attr: attr['ib_idx'] = ib_idx
+    if 'fb_idx' not in attr: attr['fb_idx'] = fb_idx
+
+    try:
+      if attr['nspin'] == 1:
+        if 'Lj' not in arry:
+          self.orbital_operator()
+        do_orbital_texture(self.data_controller)
+        self.report_module_time('Orbital Texture')
+      else:
+        if self.rank == 0:
+          print('Cannot compute orbital texture with nspin=2')
+    except Exception as e:
+      self.report_exception('orbital_texture')
+      if attr['abort_on_exception']:
+        raise e
+
+
+    self.comm.Barrier()
 
   def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
     '''
@@ -1213,6 +1444,80 @@ mo    '''
 
     self.report_module_time('Spin Hall Conductivity')
 
+  def orbital_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., o_tensor=None ):
+    '''
+    Calculate the Orbital Hall Conductivity
+      Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
+      Thus, do_spin_orbit defaults to False here. If anybody needs the spin_orbit capability here, please contact me and we'll sort it out.
+
+    Arguments:
+        twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
+        do_ac (bool): True to calculate the Spic Circular Dichroism
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        fermi_up (float): The upper limit of the occupied energy range
+        fermi_dw (float): The lower limit of the occupied energy range
+        o_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+
+    Returns:
+        None
+    '''
+    from .defs.do_Hall import do_orbital_Hall
+
+    arrays,attr = self.data_controller.data_dicts()
+
+    attr['eminH'],attr['emaxH'] = emin,emax
+
+    if o_tensor is not None: arrays['o_tensor'] = np.array(o_tensor)
+    if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
+    if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
+
+    if 'Sj' not in arrays:
+      self.spin_operator()
+
+    if 'Lj' not in arrays:
+      self.orbital_operator()
+
+    try:
+      do_orbital_Hall(self.data_controller, twoD, do_ac)
+    except:
+      self.report_exception('orbital_Hall')
+      if attr['abort_on_exception']:
+        self.comm.Abort()
+
+    self.report_module_time('Orbital Hall Conductivity')
+
+  def rashba_edelstein ( self, emin=-2, emax=2, ne=500, temps=0., reg=1e-30, twoD=False, lt=1., st=1., write_to_file=True ):
+    '''
+    Calculate the Rashba-Edelstein tensor
+    Arguments:
+        emin (float): The minimum energy in the range
+        emax (float): The maximum energy in the range
+        ne (float): The number of energy increments in [emin,emax]
+        temps (float): Smearing temperature in eV
+        reg (float): The regularization number that is applicable only for materials with band gap (in the order of 1e-30)
+        twoD (bool): set True for two dimnesional materials
+        lt (float): The lattice height of the twoD structure (in cm)
+        st (float): The structure 'effectivce' thickness of the twoD structure (in cm)
+        write_to_file (bool): Set True to write tensors to file
+
+    Returns:
+        None
+    '''
+    from .defs.do_rashba_edelstein import do_rashba_edelstein
+
+    arrays,attr = self.data_controller.data_dicts()
+
+    ene = np.linspace(emin, emax, ne)
+    try:
+      do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
+
+    except Exception as e:
+      self.report_exception('rashba_edelstein')
+      if attr['abort_on_exception']:
+        raise e
+
+    self.report_module_time('Rashba_Edelstein')
 
 
   def anomalous_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
