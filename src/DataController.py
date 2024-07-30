@@ -105,7 +105,7 @@ class DataController:
           if dft == 'QE':
             self.read_qe_output()
           else:
-            self.read_vasp_output()
+            self.read_vasp_output(symprec=1e-4)
         except Exception as e:
           print('\nERROR: Could not read xml data file')
           self.report_exception('Data Controller Initialization')
@@ -199,13 +199,13 @@ class DataController:
     else:
       raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
 
-  def read_vasp_output ( self ):
+  def read_vasp_output ( self, symprec ):
     from os.path import exists
     fpath = self.data_attributes['fpath']
 
     if exists(fpath+'/vasprun.xml'):
       from .defs.read_VASP import parse_vasprun_data
-      parse_vasprun_data(self, fpath+'/vasprun.xml')
+      parse_vasprun_data(self, fpath+'/vasprun.xml', symprec)
     else:
       raise Exception('vasprun.xml was not found.\n')
 

@@ -22,7 +22,7 @@ from mpi4py import MPI
 import numpy as np
 import spglib
 
-def parse_vasprun_data ( data_controller, fname ):
+def parse_vasprun_data ( data_controller, fname, symprec = 1e-4 ):
   '''
   Parse the data_file_schema.xml file produced by Quantum Espresso.
   Populated the DataController object with all necessary information.
@@ -152,6 +152,9 @@ def parse_vasprun_data ( data_controller, fname ):
   finite_magmom = np.any(np.abs(magmom)>1e-3)
   dftMag = (nspin == 1 and dftSO and finite_magmom) or (nspin ==2 and finite_magmom)
 
+
+  _, atom_numbers = np.unique(atoms, return_inverse=True)
+  cell = (a_vectors, pos_arry, atom_numbers)
   if nkpnts == nk1 * nk2 * nk3:
     # Check whether VASP calculation uses symmetry (ISYM = -1 or 2)
     ID = np.identity(3,dtype=int)
@@ -164,10 +167,9 @@ def parse_vasprun_data ( data_controller, fname ):
 
   else:
     #  get symmetry from spglib
-    _, atom_numbers = np.unique(atoms, return_inverse=True)
     if dftMag:
-      cell = (a_vectors, pos_arry, atom_numbers, magmom)
-      spglib_sym = spglib.get_magnetic_symmetry(cell)
+      cell_mag = (a_vectors, pos_arry, atom_numbers, magmom)
+      spglib_sym = spglib.get_magnetic_symmetry(cell_mag,symprec=symprec)
       sym_rot = spglib_sym['rotations']
       shifts = spglib_sym['translations']
       time_rev = spglib_sym['time_reversals']
@@ -176,8 +178,7 @@ def parse_vasprun_data ( data_controller, fname ):
         shifts = shifts[~time_rev,:]
         time_rev = np.asarray([False] * sym_rot.shape[0])
     else:
-      cell = (a_vectors, pos_arry, atom_numbers)
-      spglib_sym = spglib.get_symmetry(cell)
+      spglib_sym = spglib.get_symmetry(cell,symprec=symprec)
       sym_rot = spglib_sym['rotations']
       shifts = spglib_sym['translations']
       time_rev = np.asarray([False] * sym_rot.shape[0])
@@ -185,7 +186,7 @@ def parse_vasprun_data ( data_controller, fname ):
 
     # Find equivalent atoms
     # vasp/src/symlib.F SUBROUTINE POSMAP
-    tol = 1e-5
+
     nops = sym_rot.shape[0]
     eq_atoms = np.zeros((nops, natoms), dtype=int)
     sym_rot_transpose = np.zeros((nops,3,3),dtype=int)
@@ -196,7 +197,7 @@ def parse_vasprun_data ( data_controller, fname ):
       for i_atm in range(natoms):
         for j_atm in range(natoms):
           diff_pos = new_pos_arry[j_atm,:] - pos_arry[i_atm, :]
-          if np.linalg.norm(np.mod(diff_pos + 0.5, 1) - 0.5) < tol:
+          if np.linalg.norm(np.mod(diff_pos + 0.5, 1) - 0.5) < symprec:
             eq_atoms[i_ops, j_atm] = i_atm
 
     if not np.all(np.sum(eq_atoms,axis=1) == natoms*(natoms-1)/2):
@@ -204,12 +205,14 @@ def parse_vasprun_data ( data_controller, fname ):
 
     sym_info = np.asarray([None]*nops)
 
-  if rank == 0 and verbose:
+  space_group = spglib.get_spacegroup(cell,symprec=symprec)
+  if rank == 0 :
+    print('Space group: {0}'.format(space_group))
+    print('Insulator: {0}'.format(insulator))
+    print('Magnetic: {0}'.format(dftMag))
     print('Number of kpoints: {0:d}'.format(nkpnts))
     print('Number of electrons: {0:f}'.format(nelec))
     print('Number of bands: {0:d}'.format(nbnds))
-    print('Insulator: {0}'.format(insulator))
-    print('Magnetic: {0}'.format(dftMag))
 
   attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
   for s,v in attrs:

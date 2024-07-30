@@ -64,6 +64,7 @@ class PAOFLOW:
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
+        dft (str): 'QE' or 'VASP'
     Returns:
         None
     '''

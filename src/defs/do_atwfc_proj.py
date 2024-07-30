@@ -721,9 +721,9 @@ def read_WAVECAR_header(data_controller):
   encut = dump[2] # in unit of eV
   Acell = dump[3:].reshape((3, 3))/AUTOA # in unit of Bohr
 
-  # Check vasprun.xml and WAVECAR are from the same run
+  # Check vasprun.xml and WAVECAR have the same parameters
   if nkpnts != attr['nkpnts']:
-    raise Exception("# of k-points in vasprun.xml and WAVECAR differ")
+    raise Exception("Incorrect # of k-points. Restart from beginning or check if vasprun.xml and WAVECAR come from the same run")
   if nbnds != attr['nbnds']:
     raise Exception("# of bands in vasprun.xml and WAVECAR differ")
   if abs(encut-attr['ecutwfc']*13.605826) > 1e-6:
@@ -740,14 +740,13 @@ def read_WAVECAR_header(data_controller):
   # kvecs = np.zeros((nkpnts, 3), dtype=float)
   # eigs = np.zeros((nbnds, nkpnts, nspin), dtype=float)
 
-  for ii in range(nspin):
-    for jj in range(nkpnts):
-      rec = 2 + ii * nkpnts * (nbnds + 1) + jj * (nbnds + 1)
+  for ispin in range(nspin):
+    for ik in range(nkpnts):
+      rec = 2 + ispin * nkpnts * (nbnds + 1) + ik * (nbnds + 1)
       wfcfile.seek(rec * recl)
-      dump = np.fromfile(wfcfile, dtype=np.float64,
-                         count=4 + 3 * nbnds)
-      if ii == 0:
-        nplws[jj] = int(dump[0])
+      dump = np.fromfile(wfcfile, dtype=np.float64, count=4 + 3 * nbnds)
+      if ispin == 0:
+        nplws[ik] = int(dump[0])
         # kvecs[jj] = dump[1:4]
       # dump = dump[4:].reshape((-1, 3))
       # eigs[:, jj, ii] = dump[:, 0]
@@ -757,16 +756,13 @@ def read_WAVECAR_header(data_controller):
 
 
 def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
-  '''
-  Read the planewave coefficients of specified KS states.
-  '''
+  # Read the planewave coefficients
   arry, attr = data_controller.data_dicts()
   rec = 3 + ispin * attr['nkpnts'] * (attr['nbnds'] + 1) + ikpt * (attr['nbnds'] + 1) + iband
   wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
   wfcfile.seek(rec * attr['recl'])
   dump = np.fromfile(wfcfile, dtype=attr['wfc_prec'], count=arry['nplws'][ikpt])
-  cg = np.asarray(dump, dtype=attr['wfc_prec'])
-  return cg
+  return np.asarray(dump, dtype=attr['wfc_prec'])
 
 def read_VASP_wfc(data_controller, ik, ispin):
   arry, attr = data_controller.data_dicts()
@@ -790,86 +786,79 @@ def read_VASP_wfc(data_controller, ik, ispin):
   X = scipy.linalg.sqrtm(ovp)
   owfc = np.linalg.solve(X.T, wfc)
 
-  gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': False}  # todo: Gamma-only
+  gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': False}  # Gamma-only not supported yet
   return gkspace, {'wfc': owfc, 'npol': attr['nspin'], 'nbnd': nbnd, 'ispin': ispin}
 
 def calc_gvec_VASP(data_controller, ikpt=0):
-  '''
-  Generate the G-vectors that satisfies the following relation
-      (G + k)**2 / 2 < ENCUT
-  '''
-  # assert 0 <= ikpt <= attr['nkpnts'] - 1, 'Invalid kpoint index!'
+
   arry, attr = data_controller.data_dicts()
   kvec = arry['kpnts'][ikpt]
   nplw = arry['nplws'][ikpt]
   ngrid = arry['ngrid']
-  lgam = False  # todo: add support for Gamma-only calculations
+  lgam = False  # Gamma-only calculations not supported
   # VASP <= 5.2.x
   # parallel: gamma_half = 'z'
   # serial: gamma_half = 'x'
   # VASP >= 5.4
   # gamma_half = 'x'
-  gam_half = 'x'  # !!!
+  # gam_half = 'x'  # !!!
 
   fx, fy, fz = [np.arange(n, dtype=int) for n in ngrid]
   fx[ngrid[0] // 2 + 1:] -= ngrid[0]
   fy[ngrid[1] // 2 + 1:] -= ngrid[1]
   fz[ngrid[2] // 2 + 1:] -= ngrid[2]
-  if lgam:
-    if gam_half == 'x':
-      fx = fx[:ngrid[0] // 2 + 1]
-    else:
-      fz = fz[:ngrid[2] // 2 + 1]
+  # if lgam:
+  #   if gam_half == 'x':
+  #     fx = fx[:ngrid[0] // 2 + 1]
+  #   else:
+  #     fz = fz[:ngrid[2] // 2 + 1]
 
   # In meshgrid, fx run the fastest, fz the slowest
   gz, gy, gx = np.array(
     np.meshgrid(fz, fy, fx, indexing='ij')
   ).reshape((3, -1))
   kgrid = np.array([gx, gy, gz], dtype=float).T
-  if lgam:
-    if gam_half == 'z':
-      kgrid = kgrid[
-        (gz > 0) |
-        ((gz == 0) & (gy > 0)) |
-        ((gz == 0) & (gy == 0) & (gx >= 0))
-        ]
-    else:
-      kgrid = kgrid[
-        (gx > 0) |
-        ((gx == 0) & (gy > 0)) |
-        ((gx == 0) & (gy == 0) & (gz >= 0))
-        ]
+  # if lgam:
+  #   if gam_half == 'z':
+  #     kgrid = kgrid[
+  #       (gz > 0) |
+  #       ((gz == 0) & (gy > 0)) |
+  #       ((gz == 0) & (gy == 0) & (gx >= 0))
+  #       ]
+  #   else:
+  #     kgrid = kgrid[
+  #       (gx > 0) |
+  #       ((gx == 0) & (gy > 0)) |
+  #       ((gx == 0) & (gy == 0) & (gz >= 0))
+  #       ]
 
   # Kinetic_Energy = (G + k)**2 / 2
-  KENERGY = (2 * np.pi * np.linalg.norm(
+  kenergy = (2 * np.pi * np.linalg.norm(
     np.dot(kgrid, arry['b_vectors']) + kvec, axis=1
   )) ** 2
   # find Gvectors where (G + k)**2 / 2 < ENCUT
-  Gvec = kgrid[np.where(KENERGY < attr['ecutwfc'])[0]]
+  Gvec = kgrid[np.where(kenergy < attr['ecutwfc'])[0]]
 
   # Check if the calculated number of planewaves and the one recorded in the
   # WAVECAR are equal
-
   if Gvec.shape[0] != nplw:
     if Gvec.shape[0] * 2 == nplw:
       if not attr['dftSO']:
         raise ValueError('''
-                NO. OF PLANEWAVES NOT CONSISTENT: NONCOLLINEAR calculation
+                No. of planewaves NOT consistent: noncollinear calculation
                 ''')
     elif Gvec.shape[0] == 2 * nplw - 1:
       if not lgam:
         raise ValueError('''
-                NO. OF PLANEWAVES NOT CONSISTENT: GAMMA-ONLY calculation. 
+                No. of planewaves NOT consistent: Gamma-only calculation. 
                 ''')
     else:
       raise ValueError('''
-            NO. OF PLANEWAVES NOT CONSISTENT:
-                THIS CODE -> %d
-                FROM VASP -> %d
-                   NGRIDS -> %d
+            No. of planewaves NOT consistent:
+                this code -> %d
+                from VASP -> %d
             ''' % (Gvec.shape[0],
-                   nplw // 2 if attr['dftSO'] else nplw,
-                   np.prod(ngrid))
-                       )
+                   nplw // 2 if attr['dftSO'] else nplw)
+                  )
 
   return np.asarray(Gvec, dtype=int)

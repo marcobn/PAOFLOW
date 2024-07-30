@@ -1,0 +1,59 @@
+SYSTEM  = CrI3_monolayer
+ISTART  = 0
+ICHARG  = 11    # 11: bands and DOS
+ENCUT   = 520
+ISMEAR  = 0     # 0: general or do not know, 1: metals, -5: semiconductors and insulators
+SIGMA   = 0.02
+ALGO    = Normal
+NBANDS  = 80   # output error said 100 valence bands
+PREC    = Accurate
+EDIFF   = 1.0E-08
+GGA     = PE
+GGA_COMPAT = .FALSE.
+ISYM    = 2
+NELM    = 100
+# NELMDL= -5
+
+# electronic optimization
+LDAU        = .TRUE.
+LDAUTYPE    = 1
+LDAUPRINT   = 1
+LDAUL       = 2 1  
+LDAUU       = 1.989064 3.287382
+LMAXMIX     = 4 # non_Hermitian Hamiltonian issue if it is not set
+
+#LDIPOL  = .TRUE.
+#IDIPOL  = 3
+#LVTOT   = .TRUE.
+#LVHAR   = .TRUE.
+
+# output
+LWAVE   = .TRUE.        # .TRUE. for WAVECAR
+LCHARG  = .FALSE.        # .TRUE. for CHGCAR
+#LORBIT  = 11
+
+# magnetic
+ISPIN   = 1    # 1: non-spin-polarized, 2: collinear spin-polarized
+MAGMOM  = 0 0 3.2 0 0 3.2 18*0
+SAXIS   = 0 0 1
+LSORBIT = .TRUE.  # SOC
+LNONCOLLINEAR = .TRUE.
+
+# Mixing scheme. Important for magnetic materials. 
+# Manual test of AMIX for optimal calculations: AMIXoptimal = AMIXcurrent * Γ
+# Use to choose a small Γ: grep "average eigenvalue" OUTCAR
+#AMIX     = 0.1    ! value tested to be much efficient than others
+#BMIX     = 0.0001 ! almost zero, but 0 will crash some versions
+#AMIX_MAG = 0.8
+#BMIX_MAG = 0.0001 ! almost zero, but 0 will crash some versions
+
+# ionic relaxation
+#IVDW    = 12
+IBRION  = -1        # Minimization scheme for ionic relaxation.
+NSW     = 0       # Maximum number of atomic relaxation steps.
+#ISIF    = 2         # 2: atoms only, 3: full relaxation (atoms and volume).
+#EDIFFG = -1.0E-05   # Lattice energy convergence criterion.
+#POTIM  = 0.6
+
+#parallelization:
+NPAR    = 4

@@ -18,6 +18,4 @@ NELM      = 100
 ISPIN     = 1               # 1 : non spin polarized, 2 : spin polarized
 GGA       = PE              # The PS flag turns on PBE_sol. (Do not use with LDA.)
 NBANDS    = 18
-#LASPH     = .TRUE.
 
-#NWRITE    = 3
