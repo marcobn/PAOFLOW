@@ -855,8 +855,6 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
 
-
-
     fgm        = scatter_full(np.arange(si_per_k.shape[0],dtype=int),npool)
     new_k_ind  = scatter_full(new_k_ind,npool)
     orig_k_ind = scatter_full(orig_k_ind,npool)
@@ -889,6 +887,10 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
             THP*=U_inv
 
         # time inversion is anti-unitary
+        # old version
+        # if sym_TR[isym]:
+        #    THP *= U_inv
+        #    THP = np.conj(THP)
         if sym_TR[isym]:
             if spin_orb:
                 THP*= U_inv
@@ -908,19 +910,16 @@ def wedge_to_grid(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,i
 ############################################################################################
 ############################################################################################
 
-def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,sym_info,sym_shift,nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,symm_grid,thresh,max_iter,nelec,verbose):
+def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_atom,nk1,nk2,nk3,o1,o2,o3,spin_orb,sym_TR,jchia,mag_calc,symm_grid,thresh,max_iter,verbose):
     # calculates full H(k) grid from wedge
     npool=4
 
-
     nawf = Hksp.shape[1]
-#    print(shells)
     # get inversion operator
     U_inv = get_inv_op(shells)
 
     # apply time reversal symmetry H(k) = H(-k)* where appropriate
-    # if not (spin_orb and mag_calc):  # CHANGED
-    if not mag_calc:
+    if not (spin_orb and mag_calc):
         Hksp,kp=apply_t_rev(Hksp,kp,spin_orb,U_inv,jchia)
 
     # get array with wigner_d rotation matrix for each symop
@@ -942,7 +941,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
         U = build_U_matrix(wigner,shells)
 
     # if any symop involve time inversion add the TR to the symop
-    if spin_orb and np.any(sym_TR):
+    if np.any(sym_TR) and spin_orb:
         U = add_U_TR(U,sym_TR,jchia)
 
     # adds transformation to U that maps orbitals from
@@ -965,8 +964,7 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 
     if rank==0:
         # enforce time reversion where appropriate
-        # if not (spin_orb and mag_calc): # CHANGED
-        if not mag_calc:
+        if not (spin_orb and mag_calc):
             Hksp = enforce_t_rev(Hksp,nk1,nk2,nk3,spin_orb,U_inv,jchia)        
 
     else:
@@ -1134,15 +1132,13 @@ def open_grid(Hksp,full_grid,kp,symop,symop_cart,atom_pos,shells,a_index,equiv_a
 def open_grid_wrapper(data_controller):
 #    np.set_printoptions(precision=3,suppress=True,linewidth=220)
 
-
-
     # wrapper function to unload everything from
     # data controller and do a few conversions
 
     data_arrays = data_controller.data_arrays
     data_attr   = data_controller.data_attributes
     alat        = data_attr['alat']
-    nelec       = data_attr['nelec']
+    # nelec       = data_attr['nelec']
     nk1         = data_attr['nk1']
     nk2         = data_attr['nk2']
     nk3         = data_attr['nk3']
@@ -1162,8 +1158,8 @@ def open_grid_wrapper(data_controller):
     kp_red      = data_arrays['kpnts']
     b_vectors   = data_arrays['b_vectors']
     a_vectors   = data_arrays['a_vectors']
-    sym_info    = data_arrays['sym_info']
-    sym_shift   = data_arrays['sym_shift']
+    # sym_info    = data_arrays['sym_info']
+    # sym_shift   = data_arrays['sym_shift']
     symop       = data_arrays['sym_rot']
     sym_TR      = data_arrays['sym_TR']
 
@@ -1225,25 +1221,43 @@ def open_grid_wrapper(data_controller):
     else:
         data_arrays['Hks'] = None
 
+    # expand grid from wedge (older version that works for QE)
+    # for ispin in range(nspin):
+    #     Hksp = np.ascontiguousarray(np.transpose(Hks, axes=(2, 0, 1, 3))[:, :, :, ispin])
+    #
+    #     Hksp = open_grid(Hksp, full_grid, kp_red, symop, symop_cart, atom_pos,
+    #                      shells, a_index, equiv_atom, sym_info, sym_shift,
+    #                      nk1, nk2, nk3, spin_orb, sym_TR, jchia, mag_calc,
+    #                      symm_grid, thresh, max_iter, nelec, verbose)
+    #
+    #     if rank == 0:
+    #         if nspin == 2:
+    #             data_arrays['Hks'][:, :, :, ispin] = np.ascontiguousarray(np.transpose(Hksp, axes=(1, 2, 0)))
+    #         else:
+    #             data_arrays['Hks'] = np.ascontiguousarray(np.transpose(Hksp, axes=(1, 2, 0))[..., None])
+    #     #            np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
+    #     else:
+    #         Hksp = None
+
     # expand grid from wedge
     if nspin == 1:
         Hksp = np.ascontiguousarray(np.transpose(Hks,axes=(2,0,1,3))[:,:,:,0])
 
         Hksp, _ = open_grid(Hksp,full_grid,kp_red,symop,symop_cart,atom_pos,
-                         shells,a_index,equiv_atom,sym_info,sym_shift,
-                         nk1,nk2,nk3,spin_orb,sym_TR,jchia,mag_calc,
-                         symm_grid,thresh,max_iter,nelec,verbose)
+                         shells,a_index,equiv_atom,
+                         nk1,nk2,nk3,o1,o2,o3,spin_orb,sym_TR,jchia,mag_calc,
+                         symm_grid,thresh,max_iter,verbose)
     else:
         Hksp0 = np.ascontiguousarray(np.transpose(Hks, axes=(2, 0, 1, 3))[:, :, :, 0])
         Hksp0, _ = open_grid(Hksp0, full_grid, kp_red, symop, symop_cart, atom_pos,
-                         shells, a_index, equiv_atom, sym_info, sym_shift,
-                         nk1, nk2, nk3, spin_orb, sym_TR, jchia, mag_calc,
-                         symm_grid, thresh, max_iter, nelec, verbose)
+                         shells, a_index, equiv_atom,
+                         nk1, nk2, nk3,o1,o2,o3, spin_orb, sym_TR, jchia, mag_calc,
+                         symm_grid, thresh, max_iter, verbose)
         Hksp1 = np.ascontiguousarray(np.transpose(Hks, axes=(2, 0, 1, 3))[:, :, :, 1])
         Hksp1, k_TR = open_grid(Hksp1, full_grid, kp_red, symop, symop_cart, atom_pos,
-                          shells, a_index, equiv_atom, sym_info, sym_shift,
-                          nk1, nk2, nk3, spin_orb, sym_TR, jchia, mag_calc,
-                          symm_grid, thresh, max_iter, nelec, verbose)
+                          shells, a_index, equiv_atom,
+                          nk1, nk2, nk3,o1,o2,o3, spin_orb, sym_TR, jchia, mag_calc,
+                          symm_grid, thresh, max_iter, verbose)
         # TR exchanges up and down spin
         if np.any(sym_TR) and (not np.all(sym_TR)):
             Hksp_up = np.zeros_like(Hksp0)
@@ -1271,7 +1285,7 @@ def open_grid_wrapper(data_controller):
 ############################################################################################
 ############################################################################################
 
-def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid,reverse=False):
+def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,spin_orb,full_grid,reverse=False):
     # generates full grid from k points in IBZ
     nawf     = Hksp.shape[1]
     Hksp_s=np.zeros((new_k_ind.shape[0],nawf,nawf),dtype=complex)
@@ -1303,8 +1317,13 @@ def symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,orig_k_ind,si_per_k,inv_
             THP*=U_inv
 
         # time inversion is anti-unitary
+        # old version
+        # if sym_TR[isym]:
+        #    THP *= U_inv
+        #    THP = np.conj(THP)
         if sym_TR[isym]:
-            THP*= U_inv
+            if spin_orb:
+                THP *= U_inv
             THP = np.conj(THP)
 
         Hksp_s[j]=THP
@@ -1325,7 +1344,7 @@ def symmetrize_grid(Hksp,U,a_index,phase_shifts,kp,inv_flag,U_inv,sym_TR,full_gr
         new_k_ind,orig_k_ind,si_per_k=nkl[i]
 
         temp = symmetrize(Hksp,U,a_index,phase_shifts,kp,new_k_ind,
-                          orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,full_grid)
+                          orig_k_ind,si_per_k,inv_flag,U_inv,sym_TR,spin_orb,full_grid)
 
         tmax.append(np.amax(np.abs(temp[0][None]-temp)))
         Hksp_d[i]=np.sum(temp,axis=0)/(temp.shape[0])
