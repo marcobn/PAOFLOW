@@ -48,15 +48,17 @@ def parse_vasprun_data ( data_controller, fname, symprec = 1e-4 ):
   if verbose: print('VASP version: {0:s}'.format(version))
   qe_version = list(map(int, version.strip().split(".")))
 
-  dftSO = True if root.find(".//i[@name='LSORBIT']").text.strip() == 'T' else False
-  ecutwfc = float(root.find(".//i[@name='ENCUT']").text.strip())/Ryd2eV # convert to Ryd
-  ecutrho = ecutwfc*5
-  nelec = float(root.find(".//i[@name='NELECT']").text.strip())
-  nbnds = int(float(root.find(".//i[@name='NBANDS']").text.strip()))
-  nawf = nbnds 
-  nspin = int(root.find(".//i[@name='ISPIN']").text.strip())
-  Efermi = float(root.find(".//i[@name='efermi']").text.strip()) # in eV
-
+  '''read parameters'''
+  parameters = root.find('parameters')
+  lsorbit = parameters.find(".//i[@name='LSORBIT']").text.strip()
+  dftSO = True if lsorbit == 'T' else False
+  nelec = float(parameters.find(".//i[@name='NELECT']").text.strip())
+  nspin = int(parameters.find(".//i[@name='ISPIN']").text.strip())
+  nbnds = int(parameters.find(".//i[@name='NBANDS']").text.strip())
+  nawf = nbnds
+  ecutwfc = float(parameters.find(".//i[@name='ENMAX']").text.strip())/Ryd2eV # convert to Ryd
+  ecutrho = ecutwfc * 5
+  '''end'''
 
   # tag = atominfo  
   atom_elem = root.find('atominfo')
@@ -77,7 +79,7 @@ def parse_vasprun_data ( data_controller, fname, symprec = 1e-4 ):
       atoms.append(a.text.strip())
 
   # tag = structure
-  struct_elem = root.find("./structure[@name='initialpos']")
+  struct_elem = root.find("./structure[@name='finalpos']")
   basis = struct_elem.find("./crystal/varray[@name='basis']")
   rec_basis = struct_elem.find("./crystal/varray[@name='rec_basis']")
   a_Angstrom, b_Angstrom = [], []
@@ -86,7 +88,7 @@ def parse_vasprun_data ( data_controller, fname, symprec = 1e-4 ):
   for b_vec in rec_basis.findall("./v"):
     b_Angstrom.append([float(b) for b in b_vec.text.strip().split()])
   # The definitions here are different from read_QE_xml.py
-  # We fix alat = 1.0 Bohr for the VASP.
+  # We fix alat = 1.0 Bohr for VASP structures.
   a_vectors = np.array(a_Angstrom)/AUTOA # Convert Angstrom to Bohr
   b_vectors = np.array(b_Angstrom)*AUTOA
   omega = alat ** 3 * a_vectors[0, :].dot(np.cross(a_vectors[1, :], a_vectors[2, :]))
@@ -121,8 +123,10 @@ def parse_vasprun_data ( data_controller, fname, symprec = 1e-4 ):
     kpnt_weights_temp.append(float(k.text.strip()))
   kpnt_weights = np.array(kpnt_weights_temp)
 
+  # Read eigenvalues
   eigs = np.empty((nbnds,nkpnts,nspin), dtype=float)
   E_elem = root.find("./calculation/eigenvalues")
+  Efermi = float(root.find(".//dos/i[@name='efermi']").text.strip())
   for i, kpt in enumerate(E_elem.findall(".//set[@comment='spin 1']/set")):
     energy_at_k = []
     for e in kpt.findall("./r"):
@@ -156,7 +160,7 @@ def parse_vasprun_data ( data_controller, fname, symprec = 1e-4 ):
   _, atom_numbers = np.unique(atoms, return_inverse=True)
   cell = (a_vectors, pos_arry, atom_numbers)
   if nkpnts == nk1 * nk2 * nk3:
-    # Check whether VASP calculation uses symmetry (ISYM = -1 or 2)
+    # Check whether VASP calculation uses symmetry (ISYM = -1, 0, or 2)
     ID = np.identity(3,dtype=int)
     sym_rot_transpose = ID[np.newaxis, :]
     shifts = np.zeros((1, 3))
