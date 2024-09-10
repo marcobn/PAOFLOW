@@ -423,9 +423,9 @@ def calc_ylmg_complex_0(ylmg):
     # l = 3
     ylmgc[:,9] = ylmg[:,9]
     #ylmgc[:,10] = -(ylmg[:,10] + 1j*ylmg[:,11])/sqrt2   # m=1
-    #ylmgc[:,10] =  (ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
+    #ylmgc[:,11] =  (ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
     ylmgc[:,10] =  (ylmg[:,10] + 1j*ylmg[:,11])/sqrt2   # m=1     # because QE cub. harm. have opposite sign
-    ylmgc[:,10] = -(ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
+    ylmgc[:,11] = -(ylmg[:,10] - 1j*ylmg[:,11])/sqrt2   # m=-1
     ylmgc[:,12] = +(ylmg[:,12] + 1j*ylmg[:,13])/sqrt2   # m=2
     ylmgc[:,13] =  (ylmg[:,12] - 1j*ylmg[:,13])/sqrt2   # m=-2
     #ylmgc[:,14] = -(ylmg[:,14] + 1j*ylmg[:,15])/sqrt2   # m=3
