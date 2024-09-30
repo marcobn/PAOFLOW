@@ -260,7 +260,7 @@ class PAOFLOW:
 
 
 
-  def projections ( self, internal=False ):
+  def projections ( self, internal=False, basispath=None, configuration=None ):
     '''
     Calculate the projections on the atomic basis provided by the pseudopotential or 
     on the all-electron internal basis sets.
@@ -274,12 +274,18 @@ class PAOFLOW:
     from .defs.communication import load_balancing, gather_array
     
     arry,attr = self.data_controller.data_dicts()
-    
+
+    if basispath is not None:
+      attr['basispath'] = basispath
+    if configuration is not None:
+      arry['configuration'] = configuration
+
     # Always use internal basis if VASP
     if internal or attr['dft']=='VASP':
       basis,arry['shells'] = build_aewfc_basis(self.data_controller)
     else:
       basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
+
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
