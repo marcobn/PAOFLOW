@@ -6,12 +6,14 @@ Important Notes:
 (4) PAOFLOW reads "vasprun.xml" and "WAVECAR", make sure they are in the directory.   
 (5) If using VASP, when calling pao_hamiltonian(), DO NOT set "open_wedge=False" even if symmetry is turned off (ISYM = -1). This is because VASP uses a different set of k-mesh and a mapping between the k-points is required.
 
-Example01: Si
-Example02: Pt (with SOC)
-Example03: Fe (with SOC, FM)
-Example04: MnF2 (nspin=2, collinear AFM)
-Example05: Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
-Example06: FeRh (with SOC, FM)
-Example06: FeRh (nspin = 2, FM)
-Example07: CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
+VASP_examples.ipynb: Jupyter Notebook containing all of the examples with interactive plots
+
+example01: Si
+example02: Pt (with SOC)
+example03: Fe (with SOC, FM)
+example04: MnF2 (nspin=2, collinear AFM)
+example05: Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
+example06: FeRh (with SOC, FM)
+example06: FeRh (nspin = 2, FM)
+example07: CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
 
