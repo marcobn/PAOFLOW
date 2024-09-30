@@ -8,12 +8,11 @@ Important Notes:
 
 VASP_examples.ipynb: Jupyter Notebook containing all of the examples with interactive plots
 
-example01: Si
-example02: Pt (with SOC)
-example03: Fe (with SOC, FM)
-example04: MnF2 (nspin=2, collinear AFM)
-example05: Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
-example06: FeRh (with SOC, FM)
-example06: FeRh (nspin = 2, FM)
-example07: CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
+example01 : Si
+example02 : Pt (with SOC)
+example03 : Fe (with SOC, FM)
+example04 : MnF2 (nspin=2, collinear AFM)
+example05 : Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
+example06 : FeRh (with SOC, FM) & (nspin = 2, FM)
+example07 : CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
 

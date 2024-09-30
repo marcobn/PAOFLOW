@@ -15,13 +15,13 @@ Qauntum ESPRESSO Examples: ./qe_examples/
   * example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
 
 VASP Examples: ./vasp_examples
-  * CrI3_monolaryer : 
-  * Fe :
-  * FeRh :
-  * Mn3Ir :
-  * MnF2 :
-  * Pt :
-  * Si :
+  * example01 : Si
+  * example02 : Pt (with SOC)
+  * example03 : Fe (with SOC, FM)
+  * example04 : MnF2 (nspin=2, collinear AFM)
+  * example05 : Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
+  * example06 : FeRh (with SOC, FM) & (nspin = 2, FM)
+  * example07 : CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
 
 ACBN0 Example: ./acbn0-example/
   * ACBN0 routine for calculating Hubbard parameters in MgO.
