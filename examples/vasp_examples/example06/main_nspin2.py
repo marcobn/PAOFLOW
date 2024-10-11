@@ -1,5 +1,4 @@
-from src.PAOFLOW import PAOFLOW
-import numpy as np
+from PAOFLOW import PAOFLOW
 
 paoflow = PAOFLOW(savedir='./nscf_nspin2',  
                   outputdir='./output_nspin2', 
@@ -8,11 +7,11 @@ paoflow = PAOFLOW(savedir='./nscf_nspin2',
 
 
 basis_path = '../../../BASIS/'
-basis_config = { 'Fe': ['3P','3D','4S','4P','4D'],
-                 'Rh': ['4P','4D','5S','5P'] }
+basis_config = {'Fe':['3D','4S','4P','4D','5S','5P'],
+                'Rh':['4D','4F','5S','5P','5D']}
 
 paoflow.projections(basispath=basis_path, configuration=basis_config)
-paoflow.projectability(pthr=0.85)
+paoflow.projectability(pthr=0.90)
 paoflow.pao_hamiltonian()
 paoflow.bands(ibrav=1, nk=500)
 
@@ -32,4 +31,4 @@ for ib in range(1, eband.shape[1]):
 plt.legend()
 plt.xlim([0,eband.shape[0]-1])
 plt.ylabel("E (eV)")
-plt.show()
+plt.savefig('FeRh_nspin2_VASP.png',bbox_inches='tight')  

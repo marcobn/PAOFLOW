@@ -1,14 +1,13 @@
-from src.PAOFLOW import PAOFLOW
-import numpy as np
+from PAOFLOW import PAOFLOW
 
-paoflow = PAOFLOW(savedir='./nscf_nspin2',  
-                  outputdir='./output_nspin2', 
+paoflow = PAOFLOW(savedir='./nscf_nspin2/',  
+                  outputdir='./output_nspin2/', 
                   verbose=True,
                   dft="VASP")
 
 
 basis_path = '../../../BASIS/'
-basis_config = {'Si':['3S','3P','3D','4S','4P','4F']}
+basis_config = {'Si':['3S','3P','3D','4S','4P','4D']}
 paoflow.projections(basispath=basis_path, configuration=basis_config)
 
 paoflow.projectability()
@@ -31,5 +30,5 @@ for ib in range(1,eband.shape[1]):
 plt.legend()
 plt.xlim([0,eband.shape[0]-1])
 plt.ylabel("E (eV)")
-plt.show()
+plt.savefig('Si_nspin2_VASP.png',bbox_inches='tight')
 

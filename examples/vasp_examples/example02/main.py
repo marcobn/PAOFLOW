@@ -1,8 +1,7 @@
-from src.PAOFLOW import PAOFLOW
-import numpy as np
+from PAOFLOW import PAOFLOW
 
-outdir = './output'
-paoflow = PAOFLOW(savedir='./nscf',  
+outdir = './output/'
+paoflow = PAOFLOW(savedir='./nscf/',  
                   outputdir=outdir, 
                   verbose=True,
                   dft="VASP")
@@ -35,7 +34,7 @@ for ib in range(eband.shape[1]):
     plt.plot(eband[:,ib], color='black')
 plt.xlim([0,eband.shape[0]-1])
 plt.ylabel("E (eV)")
-plt.show()
+plt.savefig('Pt_soc_VASP.png',bbox_inches='tight')
 
 # Plot SHC
 shc = np.loadtxt(f'{outdir}/shcEf_z_xy.dat') 
@@ -43,4 +42,6 @@ fig = plt.figure(figsize=(4,3))
 plt.plot(shc[:,0], shc[:,1], color='black')
 plt.xlabel("E (eV)")
 plt.ylabel("SHC_xy")
-plt.show()
+plt.xlim([-8,4])
+plt.axhline(0,color='k',linewidth=0.5)
+plt.savefig('Pt_shc_VASP.png',bbox_inches='tight')

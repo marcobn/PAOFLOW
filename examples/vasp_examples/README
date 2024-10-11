@@ -1,10 +1,10 @@
 
 Important Notes:
 (1) When using VASP, PAOFLOW requires spglib. All examples show below are run with ISYM = 2 in VASP. ISYM = -1 and 0 also work (For LSORBIT=T and Magnetic system, ISYM = -1 and 0 are equivalent, i.e. full grid).  Make sure the PAOFLOW printed space group is correct.   
-(2) Either run VASP SCF with LWAVE=T and a fine K-mesh, or run VASP SCF (LCHARG=T) first with a coarse K-mesh, then non-SCF (ICHARG=11 and LWAVE=T) with finer K-mesh. The later one saves some computational cost.  
+(2) Either run VASP SCF with LWAVE=T and a fine K-mesh, or run VASP SCF (LCHARG=T) first with a coarse K-mesh, then non-SCF (ICHARG=11 and LWAVE=T) with finer K-mesh. The later one may save some computation. Gamma-centered K-mesh is strongly recommended.
 (3) If magnetic, MAGMOM in INCAR is necessary. This is because PAOFLOW reads the MAGMOM tag in vasprun.xml to determine the symmetry, which comes from INCAR.  
 (4) PAOFLOW reads "vasprun.xml" and "WAVECAR", make sure they are in the directory.   
-(5) If using VASP, when calling pao_hamiltonian(), DO NOT set "open_wedge=False" even if symmetry is turned off (ISYM = -1). This is because VASP uses a different set of k-mesh and a mapping between the k-points is required.
+(5) If using VASP, when calling pao_hamiltonian(), DO NOT set "open_wedge=False" even if symmetry is turned off (ISYM = -1). This is because VASP might use a different set of k-mesh from PAOFLOW and a mapping between the k-points is required.
 
 VASP_examples.ipynb: Jupyter Notebook containing all of the examples with interactive plots
 

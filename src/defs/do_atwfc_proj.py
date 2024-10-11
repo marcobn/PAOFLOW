@@ -170,7 +170,7 @@ def build_aewfc_basis(data_controller):
     label = []
     for entry in aefiles:
       # label.append(entry.split('/')[-1].split('.')[0])
-      label.append(entry.split('/')[-1].split('.')[0][-2:])  # CHANGED - ZH !!!
+      label.append(entry[-6:-4])  
     aebasis.append(dict(zip(label,aefiles)))
   
   # build the mesh in q space
@@ -737,8 +737,6 @@ def read_WAVECAR_header(data_controller):
   arry['ngrid'] = ngrid
 
   nplws = np.zeros(nkpnts, dtype=int)
-  # kvecs = np.zeros((nkpnts, 3), dtype=float)
-  # eigs = np.zeros((nbnds, nkpnts, nspin), dtype=float)
 
   for ispin in range(nspin):
     for ik in range(nkpnts):
@@ -747,13 +745,9 @@ def read_WAVECAR_header(data_controller):
       dump = np.fromfile(wfcfile, dtype=np.float64, count=4 + 3 * nbnds)
       if ispin == 0:
         nplws[ik] = int(dump[0])
-        # kvecs[jj] = dump[1:4]
-      # dump = dump[4:].reshape((-1, 3))
-      # eigs[:, jj, ii] = dump[:, 0]
 
   arry['nplws'] = nplws
-  # arry['kvecs'] = kvecs @ arry['b_vectors']
-
+ 
 
 def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
   # Read the planewave coefficients
@@ -796,41 +790,17 @@ def calc_gvec_VASP(data_controller, ikpt=0):
   nplw = arry['nplws'][ikpt]
   ngrid = arry['ngrid']
   lgam = False  # Gamma-only calculations not supported
-  # VASP <= 5.2.x
-  # parallel: gamma_half = 'z'
-  # serial: gamma_half = 'x'
-  # VASP >= 5.4
-  # gamma_half = 'x'
-  # gam_half = 'x'  # !!!
 
   fx, fy, fz = [np.arange(n, dtype=int) for n in ngrid]
   fx[ngrid[0] // 2 + 1:] -= ngrid[0]
   fy[ngrid[1] // 2 + 1:] -= ngrid[1]
   fz[ngrid[2] // 2 + 1:] -= ngrid[2]
-  # if lgam:
-  #   if gam_half == 'x':
-  #     fx = fx[:ngrid[0] // 2 + 1]
-  #   else:
-  #     fz = fz[:ngrid[2] // 2 + 1]
 
   # In meshgrid, fx run the fastest, fz the slowest
   gz, gy, gx = np.array(
     np.meshgrid(fz, fy, fx, indexing='ij')
   ).reshape((3, -1))
   kgrid = np.array([gx, gy, gz], dtype=float).T
-  # if lgam:
-  #   if gam_half == 'z':
-  #     kgrid = kgrid[
-  #       (gz > 0) |
-  #       ((gz == 0) & (gy > 0)) |
-  #       ((gz == 0) & (gy == 0) & (gx >= 0))
-  #       ]
-  #   else:
-  #     kgrid = kgrid[
-  #       (gx > 0) |
-  #       ((gx == 0) & (gy > 0)) |
-  #       ((gx == 0) & (gy == 0) & (gz >= 0))
-  #       ]
 
   # Kinetic_Energy = (G + k)**2 / 2
   kenergy = (2 * np.pi * np.linalg.norm(

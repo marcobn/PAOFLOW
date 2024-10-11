@@ -1,18 +1,17 @@
-from src.PAOFLOW import PAOFLOW
-import numpy as np
+from PAOFLOW import PAOFLOW
 
-paoflow = PAOFLOW(savedir='./nscf',  
-                  outputdir='./output', 
+paoflow = PAOFLOW(savedir='./nscf/',  
+                  outputdir='./output/', 
                   verbose=True,
                   dft="VASP")
 
 
 basis_path = '../../../BASIS/'
-basis_config = { 'Mn': ['3P','3D','4S','4P','4D'],
-                 'F' : ['3S','3P','3D','4F'] }
+basis_config = {'Mn':['3P','3D','4S','4P','4D','4F'],
+                'F':['2P','3S','3P','3D','4S']}
 
 paoflow.projections(basispath=basis_path, configuration=basis_config)
-paoflow.projectability(pthr=0.85)
+paoflow.projectability(pthr=0.90)
 paoflow.pao_hamiltonian()
 paoflow.bands(ibrav=6, nk=500)
 
@@ -36,5 +35,5 @@ ax[0].set_xlim([0,eband.shape[0]-1])
 ax[1].set_xlim([0,eband.shape[0]-1])
 ax[0].set_ylabel("E (eV)")
 ax[0].legend()
-plt.show()
+plt.savefig('MnF2_VASP.png',bbox_inches='tight')
 
