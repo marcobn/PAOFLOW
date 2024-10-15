@@ -56,7 +56,7 @@ def do_projectability ( data_controller ):
 
     Pn = None
     attr['bnd'] = maxbnd = bnd
-    warn_txt = 'WARNING: All bands meet the projectability threshold. Consider increasing nbnd in QE.'
+    warn_txt = 'WARNING: All bands meet the projectability threshold. Consider increasing number of bands.'
     if bnd == attr['nawf']:
       maxbnd = bnd-1
       print(warn_txt)

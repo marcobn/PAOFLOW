@@ -24,9 +24,9 @@ import numpy as np
 def parse_qe_data_file_schema ( data_controller, fname ):
   '''
   Parse the data_file_schema.xml file produced by Quantum Espresso.
-  Populated the DataController object with all necessay information.
+  Populated the DataController object with all necessary information.
 
-  Arugments:
+  Arguments:
     data_controller (DataController): Data controller to populate
     fname (str): Path and name of the xml file.
   '''
@@ -106,12 +106,14 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   else:
     nb_up = int(bs.find('nbnd_up').text)
     nb_dw = int(bs.find('nbnd_dw').text)
-    if nb_up != nb_dw and verbose: print('nbnd_up (%d) != nbnd_dw (%d)'%(nbnd_up,nbnd_dw))
+    if nb_up != nb_dw and verbose: print('nbnd_up (%d) != nbnd_dw (%d)'%(nb_up,nb_dw))
     nbnds = np.max([nb_up, nb_dw])
 
   if rank == 0 and verbose:
+    print('Insulator: {0}'.format(insulator))
+    print('Magnetic: {0}'.format(dftMag))
     print('Number of kpoints: {0:d}'.format(nkpnts))
-    print('Number of electrons: {0:d}'.format(nelec))
+    print('Number of electrons: {0:f}'.format(nelec))
     print('Number of bands: {0:d}'.format(nbnds))
 
   ef_text = None

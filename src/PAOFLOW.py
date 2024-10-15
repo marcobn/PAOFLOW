@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False, dft='QE'):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
     Arguments:
@@ -64,6 +64,7 @@ class PAOFLOW:
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
+        dft (str): 'QE' or 'VASP'
     Returns:
         None
     '''
@@ -88,7 +89,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart)
+    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart, dft)
 
     self.report_exception = self.data_controller.report_exception
 
@@ -259,7 +260,7 @@ class PAOFLOW:
 
 
 
-  def projections ( self, internal=False ):
+  def projections ( self, internal=False, basispath=None, configuration=None ):
     '''
     Calculate the projections on the atomic basis provided by the pseudopotential or 
     on the all-electron internal basis sets.
@@ -273,11 +274,18 @@ class PAOFLOW:
     from .defs.communication import load_balancing, gather_array
     
     arry,attr = self.data_controller.data_dicts()
-    
-    if internal:
+
+    if basispath is not None:
+      attr['basispath'] = basispath
+    if configuration is not None:
+      arry['configuration'] = configuration
+
+    # Always use internal basis if VASP
+    if internal or attr['dft']=='VASP':
       basis,arry['shells'] = build_aewfc_basis(self.data_controller)
     else:
       basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
+
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
@@ -388,6 +396,11 @@ class PAOFLOW:
     attr['symmetrize'] = symmetrize
     attr['symm_max_iter'] = max_iter
     attr['expand_wedge'] = expand_wedge
+    #  Skip open_grid when all k-points are included (no symmetry)
+    #  Note expand_wedge is still required for VASP even not using symmetry.
+    #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
+
+
 
     if attr['symmetrize'] and attr['acbn0']:
       if rank == 0:
@@ -845,7 +858,7 @@ mo    '''
       snktot = arrays['Hksp'].shape[1]
       if reshift_Ef:
         Hksp = arrays['Hksp'].reshape((nawf,nawf,snktot,nspin))
-        Ef = E_Fermi(data_controller, Hksp, parallel=True)
+        Ef = E_Fermi(Hksp, self.data_controller, parallel=True)
         dinds = np.diag_indices(nawf)
         Hksp[dinds[0], dinds[1]] -= Ef
         arrays['Hksp'] = np.moveaxis(Hksp, 2, 0)
@@ -1005,7 +1018,7 @@ mo    '''
 
     attr = self.data_controller.data_attributes
 
-    if smearing != 'gauss' and 'smearing' != 'm-p':
+    if smearing != 'gauss' and smearing != 'm-p':
       raise ValueError('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
 
     try:

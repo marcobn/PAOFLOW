@@ -1,0 +1,24 @@
+SYSTEM = FeRh
+
+ISTART    = 0
+ICHARG    = 11
+# parallelization
+NPAR      = 4
+
+# output
+LWAVE     = .TRUE.         # .TRUE. for WAVECAR
+LCHARG    = .FALSE.         # .TRUE. for CHGCAR 
+
+# electronic relaxation
+PREC      = Accurate      
+ENCUT     = 300
+EDIFF     = 1.0e-8          # Electronic energy convergence criterion.
+ISMEAR    = 1               # 1 : metals
+SIGMA     = 0.1
+NELM      = 100
+ISPIN     = 2               # 1 : non spin polarized, 2 : spin polarized
+GGA       = PE              # The PS flag turns on PBE_sol. (Do not use with LDA.)
+MAGMOM    = 3 0
+NBANDS    = 16
+LASPH     = .TRUE.
+

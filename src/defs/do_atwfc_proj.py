@@ -17,7 +17,7 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-import os, sys, glob
+import os, sys, glob, re
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate
@@ -31,7 +31,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 from .read_upf import UPF
-
+AUTOA = 0.529177249  # VASP A.U. to Angstrom
 # Unitility functions to build atomic wfc from the pseudopotential and build the projections U (and overlaps if needed)
 
 def read_pswfc_from_upf(data_controller, atom):
@@ -164,11 +164,13 @@ def build_aewfc_basis(data_controller):
   # read the atomic bases
   aebasis = []
   for na in range(len(arry['atoms'])):
-    elem = arry['atoms'][na]
+    atom_label = arry['atoms'][na]  # CHANGED
+    elem = re.split('\d+', atom_label)[0]
     aefiles = glob.glob(attr['basispath']+str(elem)+'/*.dat')
     label = []
     for entry in aefiles:
-      label.append(entry.split('/')[-1].split('.')[0])
+      # label.append(entry.split('/')[-1].split('.')[0])
+      label.append(entry[-6:-4])  
     aebasis.append(dict(zip(label,aefiles)))
   
   # build the mesh in q space
@@ -182,10 +184,11 @@ def build_aewfc_basis(data_controller):
   arry['jchia'] = {}
   for na in range(len(arry['atoms'])):
     atom = arry['atoms'][na]
+    elem = re.split('\d+', atom)[0]
     tau = arry['tau'][na]
     aewfc = []
-    for shell in arry['configuration'][atom]:
-      data = np.loadtxt(aebasis[na][shell])    
+    for shell in arry['configuration'][elem]:
+      data = np.loadtxt(aebasis[na][shell])
       aewfc.append({shell : data[:,1], 'r' : data[:,0]})
       
       if verbose and rank == 0:
@@ -291,7 +294,7 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
   
   wfcg = np.zeros((igwx,), dtype=complex)
   for ig in range(igwx):
-    wfgc[tmp] = tmp[mill[0,ig],mill[1,ig],mill[2,ig]]
+    wfcg[tmp] = tmp[mill[0,ig],mill[1,ig],mill[2,ig]]
     
   return wfcg
 
@@ -624,7 +627,8 @@ def ortho_atwfc_k(atwfc_k):
   for i in range(natwfc):
     for j in range(natwfc):
       oovp[i,j] = np.dot(np.conj(oatwfc_k[i]), oatwfc_k[j])
-      
+
+  # np.save("oovp",oovp)
   diff = np.linalg.norm(oovp - np.eye(natwfc))
   if np.abs(diff) > 1e-4:
     raise RuntimeError('ortogonalization failed')
@@ -634,7 +638,11 @@ def ortho_atwfc_k(atwfc_k):
 
 def calc_proj_k(data_controller, basis, ik, ispin):
   arry, attr = data_controller.data_dicts()
-  gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
+  if attr['dft'] == 'QE':
+    gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
+  else:
+    read_WAVECAR_header(data_controller)
+    gkspace, wfc = read_VASP_wfc(data_controller, ik, ispin)
   atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
   oatwfc_k = ortho_atwfc_k(atwfc_k)
   proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
@@ -681,3 +689,146 @@ def calc_gkspace(data_controller,ik,gamma_only=False):
   arry['gkspace'] = gkspace
   
   return(gkspace)
+
+## Added functions for VASP interface - ZH
+# Credit to Qijing Zheng, https://github.com/QijingZheng/VaspBandUnfolding
+def read_WAVECAR_header(data_controller):
+  arry, attr = data_controller.data_dicts()
+  try:
+    wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
+  except:
+    print('WAVECAR was not found.')
+  # go to the start of the file and read the first record
+  wfcfile.seek(0)
+  recl, nspin, rtag = np.array(
+    np.fromfile(wfcfile, dtype=np.float64, count=3),
+    dtype=np.int64
+  )
+  attr['recl'] = recl
+  if nspin != attr['nspin']:
+    raise Exception("NSPIN in vasprun.xml and WAVECAR differ")
+  if rtag == 45200:
+    attr['wfc_prec'] = np.complex64
+  elif rtag == 45210:
+    attr['wfc_prec'] = np.complex128
+  else:
+    raise Exception("Invalid rtag in WAVECAR")
+
+  wfcfile.seek(recl)
+  dump = np.fromfile(wfcfile, dtype=np.float64, count=12)
+  nkpnts = int(dump[0])
+  nbnds = int(dump[1])
+  encut = dump[2] # in unit of eV
+  Acell = dump[3:].reshape((3, 3))/AUTOA # in unit of Bohr
+
+  # Check vasprun.xml and WAVECAR have the same parameters
+  if nkpnts != attr['nkpnts']:
+    raise Exception("Incorrect # of k-points. Restart from beginning or check if vasprun.xml and WAVECAR come from the same run")
+  if nbnds != attr['nbnds']:
+    raise Exception("# of bands in vasprun.xml and WAVECAR differ")
+  if abs(encut-attr['ecutwfc']*13.605826) > 1e-6:
+    raise Exception("ENCUT in vasprun.xml and WAVECAR differ")
+  if np.linalg.norm(arry['a_vectors']-Acell) > 1e-6:
+    raise Exception("Lattice in vasprun.xml and WAVECAR differ")
+
+  Anorm = np.linalg.norm(Acell, axis=1)
+  CUTOF = np.ceil(np.sqrt(attr['ecutwfc']) / (2 * np.pi / Anorm))
+  ngrid = np.array(2 * CUTOF + 1, dtype=int)
+  arry['ngrid'] = ngrid
+
+  nplws = np.zeros(nkpnts, dtype=int)
+
+  for ispin in range(nspin):
+    for ik in range(nkpnts):
+      rec = 2 + ispin * nkpnts * (nbnds + 1) + ik * (nbnds + 1)
+      wfcfile.seek(rec * recl)
+      dump = np.fromfile(wfcfile, dtype=np.float64, count=4 + 3 * nbnds)
+      if ispin == 0:
+        nplws[ik] = int(dump[0])
+
+  arry['nplws'] = nplws
+ 
+
+def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
+  # Read the planewave coefficients
+  arry, attr = data_controller.data_dicts()
+  rec = 3 + ispin * attr['nkpnts'] * (attr['nbnds'] + 1) + ikpt * (attr['nbnds'] + 1) + iband
+  wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
+  wfcfile.seek(rec * attr['recl'])
+  dump = np.fromfile(wfcfile, dtype=attr['wfc_prec'], count=arry['nplws'][ikpt])
+  return np.asarray(dump, dtype=attr['wfc_prec'])
+
+def read_VASP_wfc(data_controller, ik, ispin):
+  arry, attr = data_controller.data_dicts()
+  igwx = arry['nplws'][ik] // 2 if attr['dftSO'] else arry['nplws'][ik]
+  nbnd = attr['nbnds']
+  bg = 2*np.pi*arry['b_vectors'].T
+  xk = 2*np.pi*arry['kpnts'][ik, :]
+  mill = calc_gvec_VASP(data_controller, ik).T
+
+  wfc = []
+  for ibnd in range(nbnd):
+    wfc.append(readBandCoeff(data_controller, ispin, ik, ibnd))
+  # compute overlap
+  ovp = np.zeros((nbnd, nbnd), dtype=complex)
+  for n in range(nbnd):
+    for m in range(nbnd):
+      ovp[n, m] = np.sum(np.conj(wfc[n]).dot(wfc[m]))
+  eigs, eigv = np.linalg.eigh(ovp)
+  assert (np.all(eigs >= 0))
+
+  X = scipy.linalg.sqrtm(ovp)
+  owfc = np.linalg.solve(X.T, wfc)
+
+  gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': False}  # Gamma-only not supported yet
+  return gkspace, {'wfc': owfc, 'npol': attr['nspin'], 'nbnd': nbnd, 'ispin': ispin}
+
+def calc_gvec_VASP(data_controller, ikpt=0):
+
+  arry, attr = data_controller.data_dicts()
+  kvec = arry['kpnts'][ikpt]
+  nplw = arry['nplws'][ikpt]
+  ngrid = arry['ngrid']
+  lgam = False  # Gamma-only calculations not supported
+
+  fx, fy, fz = [np.arange(n, dtype=int) for n in ngrid]
+  fx[ngrid[0] // 2 + 1:] -= ngrid[0]
+  fy[ngrid[1] // 2 + 1:] -= ngrid[1]
+  fz[ngrid[2] // 2 + 1:] -= ngrid[2]
+
+  # In meshgrid, fx run the fastest, fz the slowest
+  gz, gy, gx = np.array(
+    np.meshgrid(fz, fy, fx, indexing='ij')
+  ).reshape((3, -1))
+  kgrid = np.array([gx, gy, gz], dtype=float).T
+
+  # Kinetic_Energy = (G + k)**2 / 2
+  kenergy = (2 * np.pi * np.linalg.norm(
+    np.dot(kgrid, arry['b_vectors']) + kvec, axis=1
+  )) ** 2
+  # find Gvectors where (G + k)**2 / 2 < ENCUT
+  Gvec = kgrid[np.where(kenergy < attr['ecutwfc'])[0]]
+
+  # Check if the calculated number of planewaves and the one recorded in the
+  # WAVECAR are equal
+  if Gvec.shape[0] != nplw:
+    if Gvec.shape[0] * 2 == nplw:
+      if not attr['dftSO']:
+        raise ValueError('''
+                No. of planewaves NOT consistent: noncollinear calculation
+                ''')
+    elif Gvec.shape[0] == 2 * nplw - 1:
+      if not lgam:
+        raise ValueError('''
+                No. of planewaves NOT consistent: Gamma-only calculation. 
+                ''')
+    else:
+      raise ValueError('''
+            No. of planewaves NOT consistent:
+                this code -> %d
+                from VASP -> %d
+            ''' % (Gvec.shape[0],
+                   nplw // 2 if attr['dftSO'] else nplw)
+                  )
+
+  return np.asarray(Gvec, dtype=int)

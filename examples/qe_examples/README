@@ -1,0 +1,34 @@
+
+Instructions for running the Quantum ESPRESSO examples:
+
+For backward compatability with PAOFLOW v1.0 inputfiles, use the 'main.py' in this directory to run PAOFLOW with an xml input file ('inputfile.xml'). Place 'main.py' and the inputfile in the same directory and execute PAOFLOW in one of the standard ways:
+python main.py
+python main.py <work_directory>
+python main.py <work_directory> <inputfile_name>
+
+mpirun -np <num_cores> python main.py
+
+The options have default values:
+<work_directory> - './'
+<inputfile_name> - 'inputfile.xml'
+
+
+Simply run all the tests: 
+python run_test.py
+
+This is equivalent to:
+python run_test.py 'example*' 'output' 'Reference'
+
+Specify pattern for selecting directories containing independent examples or tests:
+python run_test.py [example directory pattern] [output directory] [reference directory]
+
+[example directory pattern], [output directory], and [reference directory] are optional
+arguments and have respective default values: 'example*', 'output', and 'Reference'
+
+The reference directory must be located inside the directory containing inputfile.xml.
+
+
+Tests are verified with 'check_test.py' automatically.
+
+'check_test.py' can be run independently with:
+python check_test.py [example directory pattern] ] [output directory] [reference directory]
