@@ -16,21 +16,25 @@ Automatic installation through PyPI:
 
 pip install PAOFLOW
 
-
 Instruction for manual install of PAOFLOW:
-python setup.py install
+pip install .
 
-If you dont have administrator privalage for your python distribution:
-python setup.py install --user
+If you dont have administrator privilages for your python distribution
+pip install --user .
 
-
-Optional dependencies for the Weyl Search feature are listed in the setup.py tool. They can be installed through PyPI as follows:
+Optional dependencies for the Weyl Search feature are listed in pyproject.toml. They can be installed through PyPI as follows:
 pip install PAOFLOW[weyl_search]
+or manually as
+pip install .[weyl_search]
 
+To install in editable mode, add the -e flag to any of the manual install commands, for example:
+pip install -e .
+This will reflect code changes without having to reinstall.
+Note however that you would need to restart the interpreter, or the notebook if you are using Jupyter.
 
 Intel Distribution for python:
 
-About an order of magnitude in performance boost obtained by installing the Intel distribution for python on my local DELL PowerEdge T630: 
+About an order of magnitude in performance boost obtained by installing the Intel distribution for python on my local DELL PowerEdge T630:
 https://software.intel.com/en-us/articles/using-intel-distribution-for-python-with-anaconda
 The same installation does not seem to improve the performance of python on Stampede (UTexas)
 or Talon2 (UNT).

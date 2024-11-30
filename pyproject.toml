@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PAOFLOW"
+readme = "README.md"
+requires-python = ">=3.6"
+license = { file = "License" }
+authors = [{ name = "Marco Buongiorno Nardelli", email = "mbn@unt.edu" }]
+keywords = ["DFT", "Hamiltonians", "PAO"]
+version = "2.1.0"
+description = "Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = ["numpy", "scipy"]
+
+[project.optional-dependencies]
+weyl_search = ["z2pack", "tbmodels"]
+
+[project.urls]
+Homepage = "https://github.com/marcobn/PAOFLOW"
+
+[tool.setuptools.packages.find]
+where = ["src"]
