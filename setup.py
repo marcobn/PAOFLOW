@@ -17,7 +17,7 @@ setup(name='paoflow',
       long_description_content_type="text/markdown",
       packages=['PAOFLOW', 'PAOFLOW.defs', 'PAOFLOW.graphics'],
       package_dir={'PAOFLOW':'src'},
-      install_requires=['numpy','scipy'],
+      install_requires=['numpy','scipy~=1.9.0'],
       extras_require={'weyl_search':['z2pack', 'tbmodels'], 'graphics':['matplotlib', 'vtk']},
       python_requires='>=3.6'
 )
