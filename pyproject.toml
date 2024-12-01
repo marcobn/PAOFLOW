@@ -1,0 +1,23 @@
+[build-system]
+build-backend = "flit_core.buildapi"
+requires = ["flit_core >=3.2,<4"]
+
+[project]
+name = "PAOFLOW"
+readme = "README.md"
+requires-python = ">=3.6"
+license = { file = "License" }
+authors = [{ name = "Marco Buongiorno Nardelli", email = "mbn@unt.edu" }]
+keywords = ["DFT", "Hamiltonians", "PAO"]
+dynamic = ["version", "description"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = ["numpy", "scipy~=1.9.0"]
+
+[project.optional-dependencies]
+weyl_search = ["z2pack", "tbmodels"]
+
+[project.urls]
+Homepage = "https://github.com/marcobn/PAOFLOW"
