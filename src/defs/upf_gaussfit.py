@@ -1,7 +1,7 @@
 #
 # PAOFLOW
 #
-# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
+# Copyright 2016-2022 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
 #
 # Reference:
 #
@@ -28,6 +28,7 @@
 #   cubic harmonics
 #######################################################################
 
+import sys
 import numpy as np
 
 spn_map = {'H':1,'He':2,'Li':3,'Be':4,'B':5,'C':6,'N':7,'O':8,'F':9,
@@ -136,7 +137,7 @@ def fit ( nzeta, label, l, r, rab, wfc, threshold, least_squares=True ):
     print(f'coeff = {c}, zeta = {zeta}')
 
   res = target_squared(params, r, rab, wfc, l)
-  print(f'Fit result: {res}\n')
+  print(f'Fit result: {res}')
 
   exit_code = 0 if np.abs(res) <= threshold else 1
 
@@ -177,14 +178,15 @@ def build_basis_dict ( fname, labels, ls, coefficients, exponents ):
     elif l == 2:
 
       # 1/(2*sqrt(3))*(2*z2 - x2 - y2)
+      ibasis = []
       for n in range(3):
-        ibasis = []
+        # ibasis = []
         lind = [0]*3
         lind[2-n] = 2
         fact = (1 if n==0 else -0.5) / np.sqrt(3)
         for i,c in enumerate(coeffs):
           ibasis.append((*lind, fact*c, expon[i]))
-        lbasis.append(ibasis)
+      lbasis.append(ibasis)
 
       # xz
       lbasis.append([(1,0,1,c,expon[i]) for i,c in enumerate(coeffs)])
@@ -193,8 +195,12 @@ def build_basis_dict ( fname, labels, ls, coefficients, exponents ):
       lbasis.append([(0,1,1,c,expon[i]) for i,c in enumerate(coeffs)])
 
       # 1/2 * (x2 - y2)
-      lbasis.append([(2,0,0,0.5*c,expon[i]) for i,c in enumerate(coeffs)])
-      lbasis.append([(0,2,0,-0.5*c,expon[i]) for i,c in enumerate(coeffs)])
+      ibasis = []
+      for i,c in enumerate(coeffs):
+        ibasis.append((2,0,0,0.5*c,expon[i]))
+      for i,c in enumerate(coeffs):
+        ibasis.append((0,2,0,-0.5*c,expon[i]))
+      lbasis.append(ibasis)
 
       # xy
       lbasis.append([(1,1,0,c,expon[i]) for i,c in enumerate(coeffs)])
@@ -204,60 +210,71 @@ def build_basis_dict ( fname, labels, ls, coefficients, exponents ):
 
       # 1/(2*sqrt(15)) * z*(2*z2 - 3*x2 - 3*y2)
       fact = 0.5 / np.sqrt(15)
+      ibasis = []
       for i,c in enumerate(coeffs):
-        lbasis.append([(0,0,3,2*fact*c,expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0,0,3,2*fact*c,expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(2,0,1,-3*fact*c,expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((2,0,1,-3*fact*c,expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(0,2,1,-3*fact*c,expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0,2,1,-3*fact*c,expon[i]))
+      lbasis.append(ibasis)
 
       # 1/(2*sqrt(10)) * x*(4*z2 - x2 - y2)
+      ibasis = []
       fact = 0.5 / np.sqrt(10)
       for i,c in enumerate(coeffs):
-        lbasis.append([(1, 0, 2, 4*fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((1, 0, 2, 4*fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(0, 0, 3, -fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0, 0, 3, -fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(1, 2, 0, -fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((1, 2, 0, -fact*c, expon[i]))
+      lbasis.append(ibasis)
 
       # 1/(2*sqrt(10)) * y*(4*z2 - x2 - y2)
+      ibasis = []
       fact = 0.5 / np.sqrt(10)
       for i,c in enumerate(coeffs):
-        lbasis.append([(0, 1, 2, 4*fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0, 1, 2, 4*fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(2, 1, 0, -fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((2, 1, 0, -fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(0, 3, 0, -fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0, 3, 0, -fact*c, expon[i]))
+      lbasis.append(ibasis)
 
       # 1/2 * z*(x2 - y2)
+      ibasis = []
       fact = 0.5
       for i,c in enumerate(coeffs):
-        lbasis.append([(2, 0, 1, fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((2, 0, 1, fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(0, 2, 1, -fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0, 2, 1, -fact*c, expon[i]))
+      lbasis.append(ibasis)
 
       # x*y*z
       for i,c in enumerate(coeffs):
         lbasis.append([(1, 1, 1, c, expon[i]) for i,c in enumerate(coeffs)])
 
       # 1/(2*sqrt(6)) * x*(x2 - 3*y2)
+      ibasis = []
       fact = 0.5 / np.sqrt(6)
       for i,c in enumerate(coeffs):
-        lbasis.append([(3, 0, 0, fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((3, 0, 0, fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(1, 2, 0, -3*fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((1, 2, 0, -3*fact*c, expon[i]))
+      lbasis.append(ibasis)
 
       # 1/(2*sqrt(6)) * y*(3*x2 - y2)
+      ibasis = []
       fact = 0.5 / np.sqrt(6)
       for i,c in enumerate(coeffs):
-        lbasis.append([(2, 1, 0, 3*fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((2, 1, 0, 3*fact*c, expon[i]))
       for i,c in enumerate(coeffs):
-        lbasis.append([(0, 3, 0, -fact*c, expon[i]) for i,c in enumerate(coeffs)])
+        ibasis.append((0, 3, 0, -fact*c, expon[i]))
+      lbasis.append(ibasis)
 
     basis.append(lbasis)
-  
-  return basis
 
+  return basis
 
 def write_basis_file ( fname, atom_no, labels, ls, coefficients, exponents ):
 
