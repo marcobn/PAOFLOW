@@ -1,0 +1,7 @@
+ &projwfc
+    prefix = 'zno'
+    outdir = './'
+    filpdos = './proj'
+    lbinary_data  = .false.
+    lwrite_overlaps = .true.
+ /    

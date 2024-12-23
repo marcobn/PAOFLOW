@@ -1,0 +1,7 @@
+ &projwfc
+    prefix = 'MgO'
+    outdir = './'
+    filpdos = './proj'
+    lbinary_data  = .false.
+    lwrite_overlaps = .true.
+ /    
