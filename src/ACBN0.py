@@ -45,7 +45,7 @@ class ACBN0:
     self.occ_states = {}
     self.occ_values = {}
     self.hubbard_occ = {}
-    self.hubbard_tag = 'HUBBARD (ortho-atomic)'
+    self.hubbard_tag = 'HUBBARD (atomic)'
 
     chdir(self.workdir)
 

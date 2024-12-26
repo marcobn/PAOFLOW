@@ -15,9 +15,9 @@ setup(name='PAOFLOW',
       url='https://github.com/marcobn/PAOFLOW',
       long_description=long_description,
       long_description_content_type="text/markdown",
-      packages=['PAOFLOW', 'PAOFLOW.defs'],
+      packages=['PAOFLOW', 'PAOFLOW.defs', 'PAOFLOW.graphics'],
       package_dir={'PAOFLOW':'src'},
       install_requires=['numpy','scipy'],
-      extras_require={'weyl_search':['z2pack', 'tbmodels']},
+      extras_require={'weyl_search':['z2pack', 'tbmodels'], 'graphics':['matplotlib', 'vtk']},
       python_requires='>=3.6'
 )
