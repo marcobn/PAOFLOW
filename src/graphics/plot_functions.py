@@ -116,7 +116,7 @@ def plot_bands ( bands, sym_points, title, label, y_lim, col ):
     ax.set_xticklabels(sym_points[1])
     ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
   if label is None:
-    label = '$\epsilon$($\\bf{k}$)'
+    label = '$\epsilon$($\\bf{k}$) (eV)'
   ax.set_ylabel(label, fontsize=12)
 
   plt.show()
@@ -149,7 +149,7 @@ def plot_dos_beside_bands ( es, dos, bands, sym_points, title, band_label, x_lim
     ax_b.set_xticklabels(sym_points[1])
     ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
   if band_label is None:
-    band_label = '$\epsilon$($\\bf{k}$)'
+    band_label = '$\epsilon$($\\bf{k}$) (eV)'
   ax_b.set_ylabel(band_label, fontsize=12)
   
   ax_d.plot(dos, es, color=col)
@@ -161,6 +161,7 @@ def plot_dos_beside_bands ( es, dos, bands, sym_points, title, band_label, x_lim
     ax_d.set_ylim(*y_lim)
   if not dos_ticks:
     ax_d.yaxis.set_visible(False)
+    ax_d.xaxis.set_visible(False)
     plt.tight_layout()
 
   plt.show()
@@ -204,7 +205,7 @@ def plot_berry_under_bands ( berry, bands, sym_points, title, band_label, berry_
   if berry_label is None:
     berry_label = '$\Omega$($\\bf{k}$)'
   if band_label is None:
-    band_label = '$\epsilon$($\\bf{k}$)'
+    band_label = '$\epsilon$($\\bf{k}$) (eV)'
   ax_be.set_ylabel(berry_label, fontsize=12)
   ax_ba.set_ylabel(band_label, fontsize=12)
 
