@@ -21,7 +21,8 @@ import numpy as np
 
 class ACBN0:
 
-  def __init__ ( self, prefix, pthr=0.95, workdir='./', mpi_qe='', nproc=1, qe_path='', qe_options='', mpi_python='', python_path='' ):
+  def __init__ ( self, prefix, pthr=0.95, workdir='./', mpi_qe='', nproc=1, qe_path='', qe_options='', mpi_python='', python_path='',
+                projection='atomic' ):
     from .defs.file_io import struct_from_inputfile_QE
     from .defs.upf_gaussfit import gaussian_fit
     from .defs.header import header
@@ -40,12 +41,13 @@ class ACBN0:
     self.mpi_python = mpi_python
     self.ppath = python_path
     self.qoption = qe_options
+    self.projection = projection
 
     self.uVals = {}
     self.occ_states = {}
     self.occ_values = {}
     self.hubbard_occ = {}
-    self.hubbard_tag = 'HUBBARD (atomic)'
+    self.hubbard_tag = 'HUBBARD ('+self.projection+')'
 
     chdir(self.workdir)
 
