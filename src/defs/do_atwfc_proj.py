@@ -55,7 +55,7 @@ def radialfft_simpson(r, f, l, qmesh, volume):
     q = qmesh[iq]
     bess = scipy.special.spherical_jn(l, r*q)
     aux = f * bess * r
-    fq[iq] = scipy.integrate.simps(aux, r)*fact
+    fq[iq] = scipy.integrate.simpson(aux, x=r)*fact
   return fq
 
 

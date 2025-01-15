@@ -45,7 +45,7 @@ def bands_calc ( data_controller ):
       if np.iscomplex(arrays['kq']).any():
         E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eig(Hks_aux[:,:,ik,ispin], b=(None), overwrite_a=True, overwrite_b=True, check_finite=True)
       else:
-        E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+        E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = spl.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, check_finite=True)
 
   Hks_aux = Sks_aux = None
   return E_kp_aux, v_kp_aux

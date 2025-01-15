@@ -109,6 +109,10 @@ class PAOFLOW:
         else:
           print('SciPy will perform FFTs')
 
+      smearing = attr['smearing']
+      if smearing != None and smearing != 'gauss' and smearing != 'm-p':
+        raise Exception("Smearing should be None, gauss or m-p")
+
     # Report execution information
     if self.rank == 0:
       if restart:
@@ -1409,42 +1413,38 @@ mo    '''
     self.report_module_time('Transport')
 
 
-
-  def dielectric_tensor ( self, metal=False, temp=None, delta=0.01, emin=0., emax=10., ne=500, d_tensor=None ):
+  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None, from_H=True):
     '''
     Calculate the Dielectric Tensor
 
     Arguments:
-        metal (bool): True if system is metallic
-        temp (float): Temperature (default is Room Temperature)
-        delta (float): Smearing width for gaussian (if smearing is None)
+        delta (float): Inter-smearing parameter in eV
+        intrasmear (float): Intra-smearing parameter for metal in eV
         emin (float): The minimum value of energy
         emax (float): The maximum value of energy
         ne (float): Number of energy values between emin and emax
         d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
+        from_H (bool): If true, calculate dipole matrix element from real-space Hamiltonian.
+        If false, from coefficients of wavefunction, following the routine of epsilon.x
 
     Returns:
         None
     '''
-    if self.rank == 0:
-      print('Epsilon routine is currently under construction.')
-    return
+
     from .defs.do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()
 
-    if temp is not None: attr['temp'] = temp
     if 'delta' not in attr: attr['delta'] = delta
-    if 'metal' not in attr: attr['metal'] = metal
+    attr['intrasmear'] = intrasmear
     if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
 
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
-
     try:
       ene = np.linspace(emin, emax, ne)
-      do_dielectric_tensor(self.data_controller, ene)
+      do_dielectric_tensor(self.data_controller, ene, from_H)
     except Exception as e:
       self.report_exception('dielectric_tensor')
       if attr['abort_on_exception']:

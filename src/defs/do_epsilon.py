@@ -23,17 +23,11 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_dielectric_tensor ( data_controller, ene, dipole_from_H=True):
+def do_dielectric_tensor ( data_controller, ene, from_H=True):
   from .constants import LL
 
   arrays,attributes = data_controller.data_dicts()
-
   smearing = attributes['smearing']
-  if smearing != None and smearing != 'gauss' and smearing != 'm-p':
-    if rank == 0:
-      print('%s Smearing Not Implemented.'%smearing)
-    quit()
-
   d_tensor = arrays['d_tensor']
 
   for ispin in range(attributes['nspin']):
@@ -41,7 +35,7 @@ def do_dielectric_tensor ( data_controller, ene, dipole_from_H=True):
       ipol = d_tensor[n][0]
       jpol = d_tensor[n][1]
 
-      epsi,epsr,eels,jdos,ieps = do_epsilon(data_controller, ene, ispin, ipol, jpol,dipole_from_H)
+      epsi,epsr,eels,jdos,ieps = do_epsilon(data_controller, ene, ispin, ipol, jpol,from_H)
 
       # Write files
       indices = (LL[ipol], LL[jpol], ispin)
@@ -51,11 +45,13 @@ def do_dielectric_tensor ( data_controller, ene, dipole_from_H=True):
 
       if rank == 0:
         renorm = np.sqrt((2./np.pi)*(ene[3]-ene[2])*np.sum(epsi*ene))
-        print(ipol,jpol,' plasmon frequency = ',renorm,' eV')
-        print(' integration over JDOS = ', (ene[3]-ene[2])*np.sum(jdos))
+        direction = ['x','y','z']
+        component = direction[int(ipol)]+direction[int(jpol)]
+        print('Component',component,', plasmon frequency = ',renorm,'eV')
+        print('Integration over JDOS = ', (ene[3]-ene[2])*np.sum(jdos))
 
 
-def do_epsilon ( data_controller, ene, ispin, ipol, jpol, dipole_from_H ):
+def do_epsilon ( data_controller, ene, ispin, ipol, jpol, from_H ):
   from .constants import BOHR_RADIUS_ANGS, RYTOEV,ELECTRONVOLT_SI
 
   # Compute the dielectric tensor
@@ -70,7 +66,7 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, dipole_from_H ):
   # dipole matrix element 
   #=======================
   spin_factor = 2 if attributes['nspin']==1 and not attributes['dftSO'] else 1
-  if (not dipole_from_H) or ('pksp' not in arrays):
+  if (not from_H) or ('pksp' not in arrays):
     print("Calculate dipole matrix element from wavefunction")
     bndmax = attributes['nbnds']
     nspin = attributes['nspin']
@@ -86,12 +82,10 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, dipole_from_H ):
     factor = spin_factor*ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
       /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
      
-
   #=======================
   # EPS
   #=======================
-  
-  epsi_aux,epsr_aux,jdos_aux,count_aux = eps_loop(data_controller, ene, ispin, ipol, jpol, dipole_from_H)
+  epsi_aux,epsr_aux,jdos_aux,count_aux = eps_loop(data_controller, ene, ispin, ipol, jpol, from_H)
 
   ### TNeeds revision. Each processor is allocating zeros here, when only rank 0 needs it. 
   ### Can be condensed
@@ -103,25 +97,14 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, dipole_from_H ):
   comm.Allreduce(epsr_aux, epsr, op=MPI.SUM)
   epsr_aux = None
 
-  # epsr_aux = epsr_kramerskronig(data_controller, ene, epsi)
-  # epsr0 = np.zeros(esize, dtype=float)
-  # comm.Allreduce(epsr_aux, epsr0, op=MPI.SUM)
-  # epsr_aux = None
-
   jdos = np.zeros(esize, dtype=float)
   comm.Allreduce(jdos_aux, jdos, op=MPI.SUM)
-  jods_aux = None
 
   count = np.zeros(1,dtype=float)
   comm.Allreduce(count_aux, count, op=MPI.SUM)
   count_aux = None
 
   ieps = np.zeros(esize, dtype=float)
-  # includes correction for apparent rigid shift of epsr - solved by getting the right e -> 0 limit from KK.
-  #if not attributes['metal']:
-  #  epsr =  1. + epsr*64.0*np.pi/(attributes['omega']*attributes['nkpnts']) - (epsr[4]-epsr0[4])*64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
-  #else:
-  #epsr =  1. + epsr*64.0*np.pi/(attributes['omega']*attributes['nkpnts']) 
     
   epsi *= factor
   epsr =  1. + epsr*factor 
@@ -135,9 +118,8 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, dipole_from_H ):
   return(epsi, epsr, eels, jdos, ieps)
 
 
-def eps_loop ( data_controller, ene, ispin, ipol, jpol, dipole_from_H):
-  from .constants import EPS0, EVTORY, RYTOEV, BOHR_RADIUS_ANGS
-  from .smearing import intgaussian,gaussian,intmetpax,metpax
+def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_H):
+  from .constants import RYTOEV
 
 ### What is this?
   orig_over_err = np.geterr()['over']
@@ -146,7 +128,7 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, dipole_from_H):
   arrays,attributes = data_controller.data_dicts()
 
   esize = ene.size
-  if dipole_from_H:
+  if from_H:
     bndmax = attributes['bnd']
     Ek = arrays['E_k'][:,:bndmax,ispin]
   else:
@@ -157,42 +139,33 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, dipole_from_H):
   smearing = attributes['smearing']
   
   spin_factor = 2 if attributes['nspin']==1 and not attributes['dftSO'] else 1
-
-  Ef = 1.e-12
+  Ef = 1.e-9
 
   jdos = np.zeros(esize, dtype=float)
   epsi = np.zeros(esize, dtype=float)
   epsr = np.zeros(esize, dtype=float)
     
-
-  if 'deltakp' in arrays:
-    adaptive_smearing = True
-    degauss = arrays['deltakp'][:,:bndmax,ispin]  # !!!!
+  if smearing == None or attributes['insulator']:
+    print("No smearing, fixed occupation")
   else:
-    adaptive_smearing = False
-    degauss = 0.02*RYTOEV
+    if 'deltakp' in arrays:  # check whether adaptive smearing is used
+      degauss = arrays['deltakp'][:,:bndmax,ispin] 
+      print("Using adaptive smearing")
+    else:
+      degauss = attributes['degauss']
+      print("Using fixed smearing = %.3f eV" %degauss)
 
-  # apparently there are numerical instabilities if energy levels are not completely occupied or completely empty - needs to be tested for metals
-  # if smearing == 'gauss':
-  #   fn = 2.*intgaussian(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
-  # if smearing == 'm-p':
-  #   fn = 2.*intmetpax(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
-  # else: # default to Fermi-Dirac
-  #   fn = 2.*1./(1.+np.exp(arrays['E_k'][:,:bnd,ispin]/temp))
-  if not attributes['metal']:
-    fn = 2.*(Ek <= Ef)  # fixed occupation for insulator
+  if smearing == None or attributes['insulator']:
+    fn = 2.*(Ek <= Ef)  # fixed occupation for insulator, no smearing
   elif smearing == 'gauss':
+    from .smearing import intgaussian,gaussian
     fn = 2.*intgaussian(Ek, Ef, degauss) 
-  elif smearing == 'm-p':
+  else: # smearing == 'm-p':
+    from .smearing import intmetpax,metpax
     fn = 2.*intmetpax(Ek, Ef, degauss)
-  else:
-    fn = 0
-    # fn = 2.*intfd(Ek, Ef, degauss)  #  !!! update this
-  # if not attributes['metal']:
-  #   fn = np.round(fn,0)
+
+  
   count = np.zeros(1,dtype=float)
-
-
   for ik in range(fn.shape[0]):
     for iband2 in range(bndmax):
        for iband1 in range(bndmax):
@@ -201,63 +174,43 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, dipole_from_H):
              f_nm =  fn[ik,iband2]-fn[ik,iband1]
              if np.abs(f_nm) > 2.e-3 and fn[ik,iband1] > 1.e-4 and fn[ik,iband2] < 2.0:
                 pksp2 = np.real(arrays['pksp'][ik,ipol,iband1,iband2,ispin]*arrays['pksp'][ik,jpol,iband2,iband1,ispin])
-                # pksp2 *= attributes['alat']*BOHR_RADIUS_ANGS/(EPS0*RYTOEV)
                 # pksp2 in unit of (AU*eV)^2
                 epsi[:] +=  pksp2*intersmear*ene[:]*fn[ik,iband1]/(((E_diff_nm**2-ene[:]**2)**2+intersmear**2*ene[:]**2)*(E_diff_nm))
                 epsr[:] +=  pksp2*(E_diff_nm**2-ene[:]**2)*fn[ik,iband1]/(((E_diff_nm**2-ene[:]**2)**2+intersmear**2*ene[:]**2)*(E_diff_nm))
                 jdos[:] +=  intersmear*(fn[ik,iband1]-fn[ik,iband2])/(np.pi*((E_diff_nm-ene[:])**2+intersmear**2))
                 count[0] += (fn[ik,iband1]-fn[ik,iband2])
 
-  if attributes['metal']:
+  if not attributes['insulator']:
     epsi_metal = np.zeros_like(epsi)
     epsr_metal = np.zeros_like(epsr)
-#     if rank == 0: print('NOT TESTED - needs different delta for intraband transitions and degauss from QE + check on units!!!')
-#     degauss=0.05
-#     fnF = None
-#     if smearing is None:
-#       fnF = np.empty((snktot,bnd), dtype=float)
-#       for n in range(bnd):
-#         for i in range(snktot):
-#           try:
-#             fnF[i,n] = .5/(1.+np.cosh(arrays['E_k'][i,n,ispin]/temp))
-#           except:
-#             fnF[i,n] = 1e8
-#       fnF /= temp
-#     elif smearing == 'gauss':
-#  ## Why .03* here?
-#       fnF = gaussian(arrays['E_k'][:,:bnd,ispin], Ef, .03*arrays['deltakp'][:,:bnd,ispin])
-#     elif smearing == 'm-p':
-#       fnF = metpax(arrays['E_k'][:,:bnd,ispin], Ef, arrays['deltakp'][:,:bnd,ispin])
+
     if smearing == 'gauss':
       fnF = gaussian(Ek, Ef, degauss)
     elif smearing == 'm-p':
       fnF = metpax(Ek, Ef, degauss)
     else:
-      fnF = 0
-      # fnF = fd(Ek, Ef, degauss)  #  !!! update this
+      print("Smearing is None for a metal, switching to gaussian smearing")
+      fnF = gaussian(Ek, Ef, degauss)
 
     intrasmear = attributes['intrasmear']
 
     for ik in range(fn.shape[0]):
       for iband1 in range(bndmax):
         pksp2 = np.real(arrays['pksp'][ik,ipol,iband1,iband1,ispin]*arrays['pksp'][ik,jpol,iband1,iband1,ispin])
-        # pksp2 *= attributes['alat']*BOHR_RADIUS_ANGS/(EPS0*RYTOEV**3)
         epsi_metal[:] += pksp2*intrasmear*ene[:]*fnF[ik,iband1]/(ene[:]**4+intrasmear**2*ene[:]**2)
         epsr_metal[:] -= pksp2*fnF[ik,iband1]*ene[:]**2/(ene[:]**4+intrasmear**2*ene[:]**2)
 
-    if not dipole_from_H:
+    if not from_H:
       epsi_metal *= spin_factor/RYTOEV*3
       epsr_metal *= spin_factor/RYTOEV*3
 
     epsi += epsi_metal
     epsr += epsr_metal
-    # arrays['epsi_metal'] = epsi_metal
-    # arrays['epsr_metal'] = epsr_metal
 
   np.seterr(over=orig_over_err)
   return(epsi, epsr, jdos, count)
 
-
+"""
 def epsr_kramerskronig ( data_controller, ene, epsi ):
   from .smearing import intmetpax
   from scipy.integrate import simpson
@@ -287,6 +240,7 @@ def epsr_kramerskronig ( data_controller, ene, epsi ):
     epsr[ie] = 2.*(I1+I2)/np.pi
 
   return epsr
+  """
 
 # Function to calculate dipole matrix element from coefficients of wavefunction, 
 # following the routine of epsilon.x

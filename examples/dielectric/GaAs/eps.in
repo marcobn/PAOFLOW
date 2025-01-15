@@ -1,0 +1,13 @@
+
+   &inputpp
+      prefix='gaas',
+      outdir='./'
+      calculation='eps'
+   /
+   &ENERGY_GRID
+      smeartype='gaussian'
+      intersmear=0.125
+      wmax=8.00
+      wmin=0.0
+      nw=801
+   /

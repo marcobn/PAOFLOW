@@ -78,11 +78,6 @@ def parse_qe_data_file_schema ( data_controller, fname ):
     atoms.append(latoms[i].attrib['name'].strip())
     tau[i,:] = np.array(latoms[i].text.split(), dtype=float)
 
-  insulator = True
-  smearing = elem.find('band_structure/smearing')
-  if smearing is not None:
-    insulator = False
-
   dftMag = False
   mag_elem = elem.find('magnetization/do_magnetization')
   if mag_elem is not None:
@@ -100,6 +95,15 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   nawf = int(bs.find('num_of_atomic_wfc').text)
   lsda = True if bs.find('lsda').text=='true' else False
   nspin = 2 if lsda else 1
+
+  insulator = True
+  degauss = 0.0
+  smearing = bs.find('smearing')
+  if smearing is not None:
+    insulator = False
+    degauss = float(smearing.attrib.get("degauss"))
+    degauss *= Hart2eV
+
 
   if nspin == 1:
     nbnds = int(bs.find('nbnd').text)
@@ -177,12 +181,18 @@ def parse_qe_data_file_schema ( data_controller, fname ):
 
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),
+           ('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('ecutwfc',ecutwfc),
+           ('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),
+           ('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),
+           ('insulator',insulator),('degauss',degauss)]
   for s,v in attrs:
     attr[s] = v
 
   spec = [(species[i],pseudos[i]) for i in range(len(species))]
-  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),('equiv_atom',eq_atoms),('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
+  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),
+           ('equiv_atom',eq_atoms),('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),
+           ('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
   for s,v in arrys:
     arry[s] = v
 
@@ -328,12 +338,16 @@ def parse_qe_data_file ( data_controller, fpath, fname ):
   omega = alat**3 * a_vectors[0,:].dot(np.cross(a_vectors[1,:],a_vectors[2,:]))
 
   # Add the attributes and arrays to the data controller
-  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
+  attrs = [('qe_version',qe_version),('alat',alat),('nk1',nk1),('nk2',nk2),('nk3',nk3),('ok1',k1),('ok2',k2),('ok3',k3),
+           ('natoms',natoms),('ecutrho',ecutrho),('nawf',nawf),('nbnds',nbnds),('nspin',nspin),('nkpnts',nkpnts),('nelec',nelec),
+           ('Efermi',Efermi),('omega',omega),('dftSO',dftSO),('dftMAG',dftMag),('insulator',insulator)]
   for s,v in attrs:
     attr[s] = v
 
   spec = [(species[i],pseudos[i]) for i in range(len(species))]
-  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),('equiv_atom',eq_atoms),('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
+  arrys = [('tau',tau),('atoms',atoms),('species',spec),('a_vectors',a_vectors),('b_vectors',b_vectors),
+           ('equiv_atom',eq_atoms),('kpnts',kpnts),('kpnts_wght',kpnt_weights),('my_eigsmat',eigs),
+           ('sym_rot',sym_rot),('sym_shift',shifts),('sym_info',sym_info),('sym_TR',time_rev)]
   for s,v in arrys:
     arry[s] = v
 

@@ -1,0 +1,35 @@
+GaAs zincblende
+   &CONTROL
+      calculation = 'scf'
+      restart_mode='from_scratch',
+      prefix='gaas',
+      nstep=2000,
+      tprnfor = .true.,
+      pseudo_dir = './'
+   /
+   &SYSTEM
+      ibrav=2,
+      celldm(1)=10.58
+      nat=2,
+      ntyp=2,
+      ecutwfc=40.0,
+      nbnd=40
+   /
+   &ELECTRONS
+      electron_maxstep = 50,
+      mixing_mode = 'plain',
+      mixing_beta = 0.3,
+      conv_thr =  1.0d-8,
+   /
+   &IONS
+      ion_dynamics='bfgs',
+      upscale=1000,
+   /
+ATOMIC_SPECIES
+Ga 69.723  Ga.pz-bhs.UPF
+As 74.922 As.pz-bhs.UPF
+ATOMIC_POSITIONS (crystal)
+Ga       0.00   0.00   0.00
+As       0.25   0.25   0.25
+K_POINTS {automatic}
+8 8 8   0  0  0

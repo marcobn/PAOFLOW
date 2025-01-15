@@ -1,0 +1,14 @@
+
+   &inputpp
+      prefix='al',
+      outdir='./'
+      calculation='eps'
+   /
+   &ENERGY_GRID
+      smeartype='gauss'
+      intersmear=0.1
+      intrasmear=0.05
+      wmax=8.00
+      wmin=0.0
+      nw=801
+   /

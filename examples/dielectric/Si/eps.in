@@ -1,0 +1,13 @@
+
+   &inputpp
+      prefix='silicon',
+      outdir='./'
+      calculation='offdiag'
+   /
+   &ENERGY_GRID
+      smeartype='gauss'
+      intersmear=0.1
+      wmax=8.00
+      wmin=0.0
+      nw=801
+   /
