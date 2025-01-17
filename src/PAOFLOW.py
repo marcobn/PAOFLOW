@@ -60,7 +60,7 @@ class PAOFLOW:
         savedir (str): QE .save directory
         model (dict): Dictionary with 'label' key and parameters to build Hamiltonian from TB model
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
-        smearing (str): Smearing type (None, m-p, gauss)
+        smearing (str): Smearing type (None, m-p, gauss), set to None for insulator
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
@@ -111,7 +111,7 @@ class PAOFLOW:
 
       smearing = attr['smearing']
       if smearing != None and smearing != 'gauss' and smearing != 'm-p':
-        raise Exception("Smearing should be None, gauss or m-p")
+        raise ValueError("smearing should be None, 'gauss' or 'm-p' ")
 
     # Report execution information
     if self.rank == 0:
@@ -1413,6 +1413,7 @@ mo    '''
     self.report_module_time('Transport')
 
 
+
   def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None, from_H=True):
     '''
     Calculate the Dielectric Tensor
@@ -1424,8 +1425,10 @@ mo    '''
         emax (float): The maximum value of energy
         ne (float): Number of energy values between emin and emax
         d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
-        from_H (bool): If true, calculate dipole matrix element from real-space Hamiltonian.
-        If false, from coefficients of wavefunction, following the routine of epsilon.x
+        from_H (bool): If true, calculate dipole matrix element from real-space Hamiltonian. 
+        Band energies are also derived from real-space Hamiltonian. 
+        If false, from coefficients of wavefunction, following the routine of epsilon.x. 
+        Band energies read from QE output.
 
     Returns:
         None
@@ -1451,6 +1454,37 @@ mo    '''
         raise e
 
     self.report_module_time('Dielectric Tensor')
+
+  def jdos (self, delta=0.1, emin=0., emax=10., ne=501, jdos_smeartype='gauss', from_H=True):
+    '''
+    Calculate the Dielectric Tensor
+
+    Arguments:
+        delta (float): broadening parameter in eV
+        emin (float): The minimum value of energy
+        emax (float): The maximum value of energy
+        ne (float): Number of energy values between emin and emax
+        jdos_smeartype: 'gauss' or "lorentz"
+        from_H (bool): If true, use energy derived from real-space Hamiltonian.
+        If false, band energies are read from QE output
+        
+    Returns:
+        None
+    '''
+    from .defs.do_epsilon import do_jdos
+    _,attr = self.data_controller.data_dicts()
+    if 'delta' not in attr: attr['delta'] = delta
+
+    try:
+      ene = np.linspace(emin, emax, ne)
+      do_jdos(self.data_controller, ene, jdos_smeartype, from_H)
+    except Exception as e:
+      self.report_exception('joint density of states')
+      if attr['abort_on_exception']:
+        raise e
+
+    self.report_module_time('Joint density of states')
+
 
 
   def find_weyl_points ( self, symmetrize=None, test_rad=0.01, search_grid=[8,8,8] ):
