@@ -125,10 +125,13 @@ def parse_qe_data_file_schema ( data_controller, fname ):
     ef_text = bs.find('fermi_energy').text
   except:
     try:
-      ef_text = bs.find('highestOccupiedLevel').text
-    except Exception as e:
-      print('Fermi energy not located in QE data file.')
-      raise e
+      ef_text = bs.find('two_fermi_energies').text.split()[0]
+    except:
+      try:
+        ef_text = bs.find('highestOccupiedLevel').text
+      except Exception as e:
+        print('Fermi energy not located in QE data file.')
+        raise e
   Efermi = float(ef_text) * Hart2eV
 
   kpnts = np.empty((nkpnts,3), dtype=float)

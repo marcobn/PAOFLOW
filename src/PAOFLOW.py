@@ -70,8 +70,8 @@ class PAOFLOW:
     '''
     from time import time
     from mpi4py import MPI
-    from .defs.header import header
-    from .DataController import DataController
+    from defs.header import header
+    from DataController import DataController
 
     #-------------------------------
     # Initialize Parallel Execution
@@ -272,10 +272,10 @@ class PAOFLOW:
     TODO  * add spin-orbit and non-collinear cases
     '''
 
-    from .defs.do_atwfc_proj import build_pswfc_basis_all
-    from .defs.do_atwfc_proj import build_aewfc_basis
-    from .defs.do_atwfc_proj import calc_proj_k
-    from .defs.communication import load_balancing, gather_array
+    from defs.do_atwfc_proj import build_pswfc_basis_all
+    from defs.do_atwfc_proj import build_aewfc_basis
+    from defs.do_atwfc_proj import calc_proj_k
+    from defs.communication import load_balancing, gather_array
     
     arry,attr = self.data_controller.data_dicts()
 
@@ -320,13 +320,13 @@ class PAOFLOW:
       in the .save directory specified in PAOFLOW's constructos. They are saved to the 
       DataController's arrays dictionary with keys 'U' and 'Sks', respectively.
     '''
-    from .defs.read_upf import UPF
+    from defs.read_upf import UPF
     from os.path import exists,join
 
     arry,attr = self.data_controller.data_dicts()
     fpath = attr['fpath']
     if exists(join(fpath,'atomic_proj.xml')):
-      from .defs.read_QE_xml import parse_qe_atomic_proj
+      from defs.read_QE_xml import parse_qe_atomic_proj
       parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
     else:
       raise Exception('atomic_proj.xml was not found.\n')
@@ -355,7 +355,7 @@ class PAOFLOW:
     Returns:
         None
     '''
-    from .defs.do_projectability import do_projectability
+    from defs.do_projectability import do_projectability
 
     attr = self.data_controller.data_attributes
 
@@ -385,9 +385,9 @@ class PAOFLOW:
         None
     
     '''
-    from .defs.get_K_grid_fft import get_K_grid_fft
-    from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
-    from .defs.do_Efermi import E_Fermi
+    from defs.get_K_grid_fft import get_K_grid_fft
+    from defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian,do_Hks_to_HRs
+    from defs.do_Efermi import E_Fermi
 
     # Data Attributes and Arrays
     arrays,attr = self.data_controller.data_dicts()
@@ -437,17 +437,17 @@ class PAOFLOW:
 
 
   def minimal(self,R=False):
-      from .defs.do_minimal import do_minimal
+      from defs.do_minimal import do_minimal
       do_minimal(self.data_controller)
       if R:
-        from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
+        from defs.do_build_pao_hamiltonian import do_Hks_to_HRs
         do_Hks_to_HRs(self.data_controller)
         self.data_controller.broadcast_single_array('HRs')
 
 
 
   def minimal2(self):
-      from .defs.do_minimal import do_minimal2
+      from defs.do_minimal import do_minimal2
       do_minimal2(self.data_controller)
 
 
@@ -476,7 +476,7 @@ class PAOFLOW:
     try:
       # Add external fields or non scf ACBN0 correction
       if Efield.any() != 0. or Bfield.any() != 0. or HubbardU.any() != 0.:
-        from .defs.add_ext_field import add_ext_field
+        from defs.add_ext_field import add_ext_field
         add_ext_field(self.data_controller)
         if self.rank == 0 and attr['verbose']:
           print('External Fields Added')
@@ -525,8 +525,8 @@ class PAOFLOW:
         None
 
     '''
-    from .defs.do_bands import do_bands
-    from .defs.communication import gather_full
+    from defs.do_bands import do_bands
+    from defs.communication import gather_full
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -580,7 +580,7 @@ class PAOFLOW:
         None
 
     '''
-    from .defs.do_spin_orbit import do_spin_orbit_H
+    from defs.do_spin_orbit import do_spin_orbit_H
 
     arry,attr = self.data_controller.data_dicts()
     attr['do_spin_orbit'] = attr['adhoc_SO'] = True
@@ -614,7 +614,7 @@ class PAOFLOW:
     Returns:
         None
 mo    '''
-    from .defs.do_wave_function_site_projection import wave_function_site_projection
+    from defs.do_wave_function_site_projection import wave_function_site_projection
 
     try:
       wave_function_site_projection(self.data_controller)
@@ -639,7 +639,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_doubling import doubling_HRs
+    from defs.do_doubling import doubling_HRs
     
     arrays,attr = self.data_controller.data_dicts()
     attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
@@ -741,7 +741,7 @@ mo    '''
             Sj[spol,i,i-1] = sP[spol][1,0]
             Sj[spol,i,i] = sP[spol][1,1]
       else:
-        from .defs.clebsch_gordan import clebsch_gordan
+        from defs.clebsch_gordan import clebsch_gordan
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
         for spol in range(3):
           Sj[spol,:,:] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
@@ -770,7 +770,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_topology import do_topology
+    from defs.do_topology import do_topology
     # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
     # curvature operators along the path in the IBZ from do_topology_calc
 
@@ -822,10 +822,10 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.get_K_grid_fft import get_K_grid_fft
-    from .defs.do_double_grid import do_double_grid
-    from .defs.communication import gather_scatter
-    from .defs.do_Efermi import E_Fermi
+    from defs.get_K_grid_fft import get_K_grid_fft
+    from defs.do_double_grid import do_double_grid
+    from defs.communication import gather_scatter
+    from defs.do_Efermi import E_Fermi
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -899,8 +899,8 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_eigh import do_pao_eigh
-    from .defs.communication import gather_scatter,scatter_full,gather_full
+    from defs.do_eigh import do_pao_eigh
+    from defs.communication import gather_scatter,scatter_full,gather_full
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -943,7 +943,7 @@ mo    '''
 
 
 
-  def gradient_and_momenta ( self,band_curvature=False ):
+  def gradient_and_momenta ( self,band_curvature=False):
     '''
     Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
     Requires 'Hksp'
@@ -955,9 +955,9 @@ mo    '''
     Returns:
       None
     '''
-    from .defs.do_gradient import do_gradient
-    from .defs.do_momentum import do_momentum
-    from .defs.communication import gather_scatter
+    from defs.do_gradient import do_gradient
+    from defs.do_momentum import do_momentum
+    from defs.communication import gather_scatter
     import numpy as np 
 
     arrays,attr = self.data_controller.data_dicts()
@@ -988,7 +988,7 @@ mo    '''
       arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
 
       if band_curvature:
-        from .defs.do_band_curvature import do_band_curvature
+        from defs.do_band_curvature import do_band_curvature
         do_band_curvature(self.data_controller)
         # No more need for k-space Hamiltonian
         del arrays['Hksp']
@@ -1018,7 +1018,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_adaptive_smearing import do_adaptive_smearing
+    from defs.do_adaptive_smearing import do_adaptive_smearing
 
     attr = self.data_controller.data_attributes
 
@@ -1058,10 +1058,10 @@ mo    '''
     try:
       if attr['smearing'] is None:
         if do_dos:
-          from .defs.do_dos import do_dos
+          from defs.do_dos import do_dos
           do_dos(self.data_controller, emin, emax, ne, delta)
         if do_pdos:
-          from .defs.do_pdos import do_pdos
+          from defs.do_pdos import do_pdos
           do_pdos(self.data_controller, emin, emax, ne, delta)
       else:
         if 'deltakp' not in arrays:
@@ -1070,11 +1070,11 @@ mo    '''
           quit()
 
         if do_dos:
-          from .defs.do_dos import do_dos_adaptive
+          from defs.do_dos import do_dos_adaptive
           do_dos_adaptive(self.data_controller, emin, emax, ne)
 
         if do_pdos:
-          from .defs.do_pdos import do_pdos_adaptive
+          from defs.do_pdos import do_pdos_adaptive
           do_pdos_adaptive(self.data_controller, emin, emax, ne)
     except Exception as e:
       self.report_exception('dos')
@@ -1095,7 +1095,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_real_space import do_density
+    from defs.do_real_space import do_density
 
     do_density(self.data_controller, nr1,nr2,nr3)
     
@@ -1128,7 +1128,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_fermisurf import do_fermisurf
+    from defs.do_fermisurf import do_fermisurf
 
     attr = self.data_controller.data_attributes
 
@@ -1157,7 +1157,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_spin_texture import do_spin_texture
+    from defs.do_spin_texture import do_spin_texture
 
     arry,attr = self.data_controller.data_dicts()
 
@@ -1201,7 +1201,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_Hall import do_spin_Hall
+    from defs.do_Hall import do_spin_Hall
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -1241,7 +1241,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_rashba_edelstein import do_rashba_edelstein
+    from defs.do_rashba_edelstein import do_rashba_edelstein
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -1272,7 +1272,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_Hall import do_anomalous_Hall
+    from defs.do_Hall import do_anomalous_Hall
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -1309,7 +1309,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_effective_mass import do_effective_mass
+    from defs.do_effective_mass import do_effective_mass
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -1345,8 +1345,8 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_doping import do_doping
-    from .defs.do_dos import do_dos,do_dos_adaptive
+    from defs.do_doping import do_doping
+    from defs.do_dos import do_dos,do_dos_adaptive
     
     arrays,attr = self.data_controller.data_dicts()
 
@@ -1388,7 +1388,7 @@ mo    '''
     Returns:
         None
     '''
-    from .defs.do_transport import do_transport
+    from defs.do_transport import do_transport
 
     arrays,attr = self.data_controller.data_dicts()
     if 'tau_dict' not in attr: attr['tau_dict'] = tau_dict
@@ -1414,7 +1414,7 @@ mo    '''
 
 
 
-  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None, from_H=True):
+  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None):
     '''
     Calculate the Dielectric Tensor
 
@@ -1425,29 +1425,33 @@ mo    '''
         emax (float): The maximum value of energy
         ne (float): Number of energy values between emin and emax
         d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
-        from_H (bool): If true, calculate dipole matrix element from real-space Hamiltonian. 
-        Band energies are also derived from real-space Hamiltonian. 
-        If false, from coefficients of wavefunction, following the routine of epsilon.x. 
-        Band energies read from QE output.
+        Can also use options 'all', 'diag', 'offdiag'.
 
     Returns:
         None
     '''
 
-    from .defs.do_epsilon import do_dielectric_tensor
+    from defs.do_epsilon import do_dielectric_tensor
 
     arrays,attr = self.data_controller.data_dicts()
 
     if 'delta' not in attr: attr['delta'] = delta
     attr['intrasmear'] = intrasmear
-    if d_tensor is not None: arrays['d_tensor'] = np.array(d_tensor)
+    if d_tensor == 'all':
+      pass 
+    elif d_tensor == 'diag':
+      arrays['d_tensor'] = np.array([[0,0],[1,1],[2,2]])
+    elif d_tensor == 'offdiag':
+      arrays['d_tensor'] = np.array([[0,1],[1,0],[0,2],[2,0],[1,2],[2,1]])
+    else:
+      arrays['d_tensor'] = np.array(d_tensor)
 
     #-----------------------------------------------
     # Compute dielectric tensor (Re and Im epsilon)
     #-----------------------------------------------
     try:
       ene = np.linspace(emin, emax, ne)
-      do_dielectric_tensor(self.data_controller, ene, from_H)
+      do_dielectric_tensor(self.data_controller, ene)
     except Exception as e:
       self.report_exception('dielectric_tensor')
       if attr['abort_on_exception']:
@@ -1455,7 +1459,7 @@ mo    '''
 
     self.report_module_time('Dielectric Tensor')
 
-  def jdos (self, delta=0.1, emin=0., emax=10., ne=501, jdos_smeartype='gauss', from_H=True):
+  def jdos (self, delta=0.1, emin=0., emax=10., ne=501, jdos_smeartype='gauss'):
     '''
     Calculate the Dielectric Tensor
 
@@ -1465,19 +1469,17 @@ mo    '''
         emax (float): The maximum value of energy
         ne (float): Number of energy values between emin and emax
         jdos_smeartype: 'gauss' or "lorentz"
-        from_H (bool): If true, use energy derived from real-space Hamiltonian.
-        If false, band energies are read from QE output
         
     Returns:
         None
     '''
-    from .defs.do_epsilon import do_jdos
+    from defs.do_epsilon import do_jdos
     _,attr = self.data_controller.data_dicts()
     if 'delta' not in attr: attr['delta'] = delta
 
     try:
       ene = np.linspace(emin, emax, ne)
-      do_jdos(self.data_controller, ene, jdos_smeartype, from_H)
+      do_jdos(self.data_controller, ene, jdos_smeartype)
     except Exception as e:
       self.report_exception('joint density of states')
       if attr['abort_on_exception']:
@@ -1488,7 +1490,7 @@ mo    '''
 
 
   def find_weyl_points ( self, symmetrize=None, test_rad=0.01, search_grid=[8,8,8] ):
-    from .defs.do_find_Weyl import find_weyl
+    from defs.do_find_Weyl import find_weyl
 
     try:
       if symmetrize is not None:
@@ -1524,7 +1526,7 @@ mo    '''
 
     '''
 
-    from .defs.do_ipr import inverse_participation_ratio
+    from defs.do_ipr import inverse_participation_ratio
     from os.path import join
 
     arry, attr = self.data_controller.data_dicts()
@@ -1571,7 +1573,7 @@ mo    '''
         Berry/Zak phase
 
     '''
-    from .defs.do_berry_phase import do_berry_phase
+    from defs.do_berry_phase import do_berry_phase
 
     arry,attr = self.data_controller.data_dicts()
 
