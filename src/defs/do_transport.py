@@ -112,11 +112,11 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, do_hal
                 #----------------------  
               R_hall_trace[n] = (R_hall[0,1,2,n]+R_hall[2,0,1,n]+R_hall[1,2,0,n])*hall_SI/3
 
-            except:
+            except Exception as e:
               from .report_exception import report_exception
               print('check t_tensor components - matrix cannot be singular')
               report_exception()
-              raise e
+              raise
           if write_to_file:
             for i in range(esize):
               wtup_hall(fhall, gtup_hall(R_hall_trace,i))
@@ -134,11 +134,11 @@ def do_transport ( data_controller, temps, ene, velkp, channels, weights, do_hal
         for n in range(esize):
           try:
             S[:,:,n] = -1.*npl.inv(L0[:,:,n]) @ L1[:,:,n]
-          except:
+          except Exception as e:
             from .report_exception import report_exception
             print('check t_tensor components - matrix cannot be singular')
             report_exception()
-            raise e
+            raise
         if write_to_file:
           for i in range(esize):
             wtup(fSeebeck, gtup(S,i))
