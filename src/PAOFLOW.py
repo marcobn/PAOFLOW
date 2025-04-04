@@ -1061,23 +1061,25 @@ mo    '''
           do_pdos(self.data_controller, emin, emax, ne, delta)
       else:
         if 'deltakp' not in arrays:
-          if self.rank == 0:
-            print('Perform calc_adaptive_smearing() to calculate \'deltakp\' before calling calc_dos_adaptive()')
-          quit()
-
-        if do_dos:
-          from .defs.do_dos import do_dos_adaptive
-          do_dos_adaptive(self.data_controller, emin, emax, ne)
-
-        if do_pdos:
-          from .defs.do_pdos import do_pdos_adaptive
-          do_pdos_adaptive(self.data_controller, emin, emax, ne)
+          if do_dos:
+            from .defs.do_dos import do_dos
+            do_dos(self.data_controller, emin, emax, ne, delta)
+          if do_pdos:
+            from .defs.do_pdos import do_pdos
+            do_pdos(self.data_controller, emin, emax, ne, delta)
+        else:
+          if do_dos:
+            from .defs.do_dos import do_dos_adaptive
+            do_dos_adaptive(self.data_controller, emin, emax, ne)
+          if do_pdos:
+            from .defs.do_pdos import do_pdos_adaptive
+            do_pdos_adaptive(self.data_controller, emin, emax, ne)
     except Exception as e:
       self.report_exception('dos')
       if attr['abort_on_exception']:
         raise e
 
-    mname = 'DoS%s'%('' if attr['smearing'] is None else ' (Adaptive Smearing)')
+    mname = 'DoS%s'%('' if attr['smearing'] is None or 'deltakp' not in arrays else ' (Adaptive Smearing)')
     self.report_module_time(mname)
 
 
@@ -1409,7 +1411,7 @@ mo    '''
     self.report_module_time('Transport')
 
 
-  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None):
+  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None,degauss=0.1):
     '''
     Calculate the Dielectric Tensor
 
@@ -1430,6 +1432,7 @@ mo    '''
 
     arrays,attr = self.data_controller.data_dicts()
 
+    if 'degauss' not in attr: attr['degauss'] = degauss
     if 'delta' not in attr: attr['delta'] = delta
     attr['intrasmear'] = intrasmear
     if d_tensor == 'all':

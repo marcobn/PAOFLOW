@@ -23,14 +23,16 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
+from .smearing import intgaussian,gaussian
+from .smearing import intmetpax,metpax
+
 def do_dielectric_tensor ( data_controller, ene):
   from .constants import LL
 
   arrays,attributes = data_controller.data_dicts()
+  print(attributes['degauss'])
   d_tensor = arrays['d_tensor']
   esize = ene.size
-
-  
   
   nspin = attributes['nspin']
   if nspin == 1:
@@ -168,6 +170,7 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol):
 
   intersmear = attributes['delta']  
   smearing = attributes['smearing']
+  degauss = attributes['degauss']
   
   spin_factor = 2 if attributes['nspin']==1 and not attributes['dftSO'] else 1
   Ef = 1.e-9
@@ -188,10 +191,10 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol):
   if smearing == None or attributes['insulator']:
     fn = spin_factor*(Ek <= Ef)  # fixed occupation for insulator, no smearing
   elif smearing == 'gauss':
-    from .smearing import intgaussian,gaussian
+    
     fn = spin_factor*intgaussian(Ek, Ef, degauss) 
   else: # smearing == 'm-p':
-    from .smearing import intmetpax,metpax
+
     fn = spin_factor*intmetpax(Ek, Ef, degauss)
 
   th0 = 1.e-3*spin_factor
@@ -259,15 +262,12 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
   if smearing == None or attributes['insulator']:
     fn = spin_factor*(Ek <= Ef)  # fixed occupation for insulator, no smearing
   elif smearing == 'gauss':
-    from .smearing import intgaussian
     fn = spin_factor*intgaussian(Ek, Ef, degauss) 
   else: # smearing == 'm-p':
-    from .smearing import intmetpax
     fn = spin_factor*intmetpax(Ek, Ef, degauss)
 
   # count = 0.0
   if jdos_smeartype == 'gauss':
-    from .smearing import gaussian
 
     for ik in range(nkpnts):
       for iband2 in range(bndmax):
