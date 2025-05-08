@@ -97,7 +97,10 @@ def parse_qe_data_file_schema ( data_controller, fname ):
   bs = elem.find('band_structure')
   nkpnts = int(bs.find('nks').text)
   nelec = int(float(bs.find('nelec').text))
-  nawf = int(bs.find('num_of_atomic_wfc').text)
+  if qe_version > 7.3:
+    nawf = int(astruct.attrib['num_of_atomic_wfc'])
+  else:
+    nawf = int(bs.find('num_of_atomic_wfc').text)
   lsda = True if bs.find('lsda').text=='true' else False
   nspin = 2 if lsda else 1
 

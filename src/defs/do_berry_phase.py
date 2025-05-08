@@ -343,7 +343,7 @@ def bands_calc ( data_controller ):
 
   for ispin in range(nspin):
     for ik in range(kq_aux.shape[1]):
-      E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = la.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, turbo=True, check_finite=True)
+      E_kp_aux[ik,:,ispin],v_kp_aux[ik,:,:,ispin] = la.eigh(Hks_aux[:,:,ik,ispin], b=(None), lower=False, overwrite_a=True, overwrite_b=True, check_finite=True)
 
   arry['berry_Hks'] = Hks_aux
 
