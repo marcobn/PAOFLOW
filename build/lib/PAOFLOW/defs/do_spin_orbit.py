@@ -329,6 +329,7 @@ def soc_d_sspd ( theta, phi, norb ):
   HR_soc[9,6] = np.conj(HR_soc[6,9])
   HR_soc[8,7] = np.conj(HR_soc[7,8])
   HR_soc[9,7] = np.conj(HR_soc[7,9])
+# Testing Fixing
   HR_soc[9,8] = np.conj(HR_soc[8,9])        
 
 

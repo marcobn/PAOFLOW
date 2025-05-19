@@ -1,0 +1,10 @@
+numpy
+scipy
+
+[graphics]
+matplotlib
+vtk
+
+[weyl_search]
+z2pack
+tbmodels

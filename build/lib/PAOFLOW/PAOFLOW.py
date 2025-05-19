@@ -1437,7 +1437,7 @@ mo    '''
     self.report_module_time('Transport')
 
 
-  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None,degauss=0.1):
+  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None, degauss=0.1, from_wfc=False):
     '''
     Calculate the Dielectric Tensor
 
@@ -1475,7 +1475,7 @@ mo    '''
     #-----------------------------------------------
     try:
       ene = np.linspace(emin, emax, ne)
-      do_dielectric_tensor(self.data_controller, ene)
+      do_dielectric_tensor(self.data_controller, ene, from_wfc)
     except Exception as e:
       self.report_exception('dielectric_tensor')
       if attr['abort_on_exception']:
@@ -1651,4 +1651,3 @@ mo    '''
         raise e
 
     self.report_module_time('Berry phase')
-
