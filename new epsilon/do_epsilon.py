@@ -42,7 +42,7 @@ def do_dielectric_tensor ( data_controller, ene, from_wfc):
     arrays['pksp'] = np.empty((nkpnts,3,nbnds,nbnds,nspin),dtype=np.complex128)
     for ispin in range(nspin):
       for ik in range(nkpnts):
-        arrays['pksp'][ik,:,:,:,ispin] = calc_dipole(arrays,attributes, ik, ispin, arrays['b_vectors'])
+        arrays['pksp'][ik,:,:,:,ispin] = calc_dipole(attributes, ik, ispin, arrays['b_vectors'])
 
   
   if nspin == 1:
@@ -218,10 +218,6 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
 
   th0 = 1.e-3*spin_factor
   th1 = 0.5e-4*spin_factor
-  if attributes['dftSO'] and not from_wfc: 
-    fac = 1
-  else:
-    fac = 2
   for ik in range(fn.shape[0]):
     for iband2 in range(bndmax):
        for iband1 in range(bndmax):
@@ -232,9 +228,9 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
                 pksp2 = np.real(arrays['pksp'][ik,ipol,iband1,iband2,ispin]\
                         *arrays['pksp'][ik,jpol,iband2,iband1,ispin])
                 # pksp2 in unit of (AU*eV)^2
-                epsi[:] += fac*pksp2*intersmear*ene[:]*fn[ik,iband1]\
+                epsi[:] += 2*pksp2*intersmear*ene[:]*fn[ik,iband1]\
                 /(((E_diff_nm**2-ene[:]**2)**2+intersmear**2*ene[:]**2)*(E_diff_nm))
-                epsr[:] += fac*pksp2*(E_diff_nm**2-ene[:]**2)*fn[ik,iband1]\
+                epsr[:] += 2*pksp2*(E_diff_nm**2-ene[:]**2)*fn[ik,iband1]\
                 /(((E_diff_nm**2-ene[:]**2)**2+intersmear**2*ene[:]**2)*(E_diff_nm))
 
   
@@ -360,7 +356,7 @@ def epsr_kramerskronig ( data_controller, ene, epsi ):
 
 # Function to calculate dipole matrix element from coefficients of wavefunction, 
 # following the routine of epsilon.x
-def calc_dipole(arry,attr, ik, ispin, b_vector):
+def calc_dipole(attr, ik, ispin, b_vector):
   from scipy.io import FortranFile
   import os
   if attr['nspin'] == 1 or attr['nspin'] == 4:
@@ -387,7 +383,7 @@ def calc_dipole(arry,attr, ik, ispin, b_vector):
     ngw, igwx, npol, nbnds = f.read_ints(np.int32)
     f.read_reals(np.float64).reshape(3,3,order='F')
     mill = f.read_ints(np.int32).reshape(3,igwx,order='F')
-    mill = b_vector.T@mill + np.full((igwx,3),arry['kpnts'][ik]).T
+    mill = b_vector.T@mill
 
     wfc = []
     for i in range(nbnds):

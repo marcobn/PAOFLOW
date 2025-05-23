@@ -47,6 +47,8 @@ def get_R_grid_fft ( data_controller, nr1, nr2, nr3):
         Ry -= int(Ry)
         Rz -= int(Rz)
 
+        # evec = np.array([[1,0,0],[0,1,0],[0,0,1]])*attributes['alat']
+        # arrays['R'][n,:] = Rx*nr1*evec[0,:] + Ry*nr2*evec[1,:] + Rz*nr3*evec[2,:]
         arrays['R'][n,:] = Rx*nr1*a_vectors[0,:] + Ry*nr2*a_vectors[1,:] + Rz*nr3*a_vectors[2,:]
         arrays['Rfft'][i,j,k,:] = arrays['R'][n,:]
         arrays['idx'][i,j,k] = n

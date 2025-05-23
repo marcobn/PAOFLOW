@@ -265,6 +265,7 @@ class PAOFLOW:
     Calculate the projections on the atomic basis provided by the pseudopotential or 
     on the all-electron internal basis sets.
     Replaces projwfc.
+    TODO  * add spin-orbit and non-collinear cases
     '''
 
     from .defs.do_atwfc_proj import build_pswfc_basis_all
@@ -399,6 +400,8 @@ class PAOFLOW:
     #  Note expand_wedge is still required for VASP even not using symmetry.
     #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
 
+
+
     if attr['symmetrize'] and attr['acbn0']:
       if rank == 0:
         print('WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true.')
@@ -426,6 +429,7 @@ class PAOFLOW:
       if attr['abort_on_exception']:
         raise e
     self.report_module_time('k -> R')
+
 
 
   def minimal(self,R=False):
@@ -969,13 +973,6 @@ mo    '''
 
       do_gradient(self.data_controller)
 
-      # enforce dH/dk = 0 at zone boundary
-      # for nwf in range(snawf):
-      #   for s in range(nspin):
-      #     arrays['dHksp'][nwf,0,0,0,s] = 0.0
-          # arrays['dHksp'][nwf,:,0,0,s] = 0.0
-          # arrays['dHksp'][nwf,0,:,0,s] = 0.0
-
       if not band_curvature:
         # No more need for k-space Hamiltonian
         del arrays['Hksp']
@@ -985,11 +982,6 @@ mo    '''
       arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf,attr['nkpnts'],3,nspin))
       arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'],1,attr['npool']), 0, 2)
       arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot,3,nawf,nawf,nspin), order="C")
-
-      for nk in range(snktot):
-        for i in range(3):
-          for s in range(nspin):
-            arrays['dHksp'][nk,i,:,:,s] = (arrays['dHksp'][nk,i,:,:,s] + np.conj(arrays['dHksp'][nk,i,:,:,s].T))/2.
 
       if band_curvature:
         from .defs.do_band_curvature import do_band_curvature
