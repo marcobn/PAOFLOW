@@ -25,6 +25,7 @@ rank = comm.Get_rank()
 
 from .smearing import intgaussian,gaussian
 from .smearing import intmetpax,metpax
+from .do_atwfc_proj import *
 
 def do_dielectric_tensor ( data_controller, ene, from_wfc):
   from .constants import LL
@@ -36,13 +37,15 @@ def do_dielectric_tensor ( data_controller, ene, from_wfc):
   nspin = attributes['nspin']
 
   if from_wfc:
-    nbnds = attributes['nbnds']
+    # nbnds = attributes['nbnds']
+    nbnds = attributes['nawf']
     nkpnts = attributes['nkpnts']
     nspin = attributes['nspin']
     arrays['pksp'] = np.empty((nkpnts,3,nbnds,nbnds,nspin),dtype=np.complex128)
     for ispin in range(nspin):
       for ik in range(nkpnts):
-        arrays['pksp'][ik,:,:,:,ispin] = calc_dipole(arrays,attributes, ik, ispin, arrays['b_vectors'])
+        # arrays['pksp'][ik,:,:,:,ispin] = calc_dipole(arrays,attributes, ik, ispin, arrays['b_vectors'])
+        arrays['pksp'][ik,:,:,:,ispin] = calc_dipole_internal(data_controller, ik, ispin)
 
   
   if nspin == 1:
@@ -136,6 +139,8 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, from_wfc):
   if from_wfc:
     factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
       *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
+    # factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
+    #   /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
   else:
     factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
       /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
@@ -179,8 +184,10 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
 
   esize = ene.size
   if from_wfc:
-    bndmax = attributes['nbnds']
+    bndmax = attributes['nawf']
     Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
+    # bndmax = attributes['bnd']
+    # Ek = arrays['E_k'][:,:bndmax,ispin]
   else:
     bndmax = attributes['bnd']
     Ek = arrays['E_k'][:,:bndmax,ispin]
@@ -406,8 +413,9 @@ def calc_dipole(arry,attr, ik, ispin, b_vector):
 
 # Function to calculate dipole matrix element from the eigenvector of the PAO Hamiltonian
 # expanded in the real space of the atomic basis functions
-def calc_dipole_internal(data_controller, ik, ispin, b_vector, nr1,nr2,nr3):
-  
+def calc_dipole_internal(data_controller, ik, ispin):
+  from .constants import RYTOEV
+
   arry, attr = data_controller.data_dicts()
   basis = arry['basis']
   gkspace = calc_gkspace(data_controller,ik,gamma_only=False)
@@ -415,14 +423,25 @@ def calc_dipole_internal(data_controller, ik, ispin, b_vector, nr1,nr2,nr3):
   atwfcgk = calc_atwfc_k(basis,gkspace)
   oatwfcgk = ortho_atwfc_k(atwfcgk) # these are the atomic orbitals on the G vector grid
 
-# build the full wavefunction with the coefficients v_k
+  # build the full wavefunction with the coefficients v_k
+  bnd = attr['nawf']
+  wfc = []
+  # for nb in range(attr['bnd']):
+  for nb in range(bnd):
+    wfc.append(np.tensordot(arry['v_k'][ik,:,nb,ispin],oatwfcgk,axes=(0,0)))
 
+  # build k+G
+  mill = arry['b_vectors'].T@mill + np.full((igwx,3),arry['kgrid'][:,ik]).T
+  # mill = bg.T@mill + np.full((igwx,3),xk).T 
+
+  nbnds = attr['nawf']
   dipole_aux = np.zeros((3,nbnds,nbnds),dtype=np.complex128)
-  for iband2 in range(nbnds):
-    for iband1 in range(nbnds):
+  for iband2 in range(bnd):
+    for iband1 in range(bnd):
       if attr['dftSO']:
+        # check indexing with nbnds and bnd!!!!!
         dipole_aux[:,iband1,iband2] = (wfc[iband2][:igwx]*mill)@np.conjugate(wfc[iband1][:igwx]) 
-        + (wfc[iband2][igwx:]*mill)@np.conjugate(wfc[iband1][igwx:])
+        + (wfc[iband2][bnd:]*mill)@np.conjugate(wfc[iband1][bnd:])
       else:
         dipole_aux[:,iband1,iband2] = (wfc[iband2]*mill)@np.conjugate(wfc[iband1]) 
   return dipole_aux
