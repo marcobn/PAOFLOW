@@ -68,6 +68,7 @@ def do_pao_eigh ( data_controller ):
     for n in range(snktot):
       arrays['E_k'][n,:,ispin],arrays['v_k'][n,:,:,ispin] = eigh(arrays['Hksp'][n,:,:,ispin], UPLO='U')
 
+  # arrays['degen'] = get_degeneracies(arrays['E_k'], attributes['nawf'])
   arrays['degen'] = get_degeneracies(arrays['E_k'], attributes['bnd'])
 
 

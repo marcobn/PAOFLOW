@@ -218,6 +218,10 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
 
   th0 = 1.e-3*spin_factor
   th1 = 0.5e-4*spin_factor
+  if attributes['dftSO'] and not from_wfc: 
+    fac = 1
+  else:
+    fac = 2
   for ik in range(fn.shape[0]):
     for iband2 in range(bndmax):
        for iband1 in range(bndmax):
@@ -228,9 +232,9 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
                 pksp2 = np.real(arrays['pksp'][ik,ipol,iband1,iband2,ispin]\
                         *arrays['pksp'][ik,jpol,iband2,iband1,ispin])
                 # pksp2 in unit of (AU*eV)^2
-                epsi[:] += 2*pksp2*intersmear*ene[:]*fn[ik,iband1]\
+                epsi[:] += fac*pksp2*intersmear*ene[:]*fn[ik,iband1]\
                 /(((E_diff_nm**2-ene[:]**2)**2+intersmear**2*ene[:]**2)*(E_diff_nm))
-                epsr[:] += 2*pksp2*(E_diff_nm**2-ene[:]**2)*fn[ik,iband1]\
+                epsr[:] += fac*pksp2*(E_diff_nm**2-ene[:]**2)*fn[ik,iband1]\
                 /(((E_diff_nm**2-ene[:]**2)**2+intersmear**2*ene[:]**2)*(E_diff_nm))
 
   

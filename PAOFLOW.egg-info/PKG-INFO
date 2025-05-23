@@ -5,12 +5,17 @@ Summary: Utility to construct and operate on Hamiltonians from the Projections o
 Home-page: https://github.com/marcobn/PAOFLOW
 Author: Marco Buongiorno Nardelli
 Author-email: mbn@unt.edu
-License: UNKNOWN
 Platform: Linux
 Requires-Python: >=3.6
 Description-Content-Type: text/markdown
-Provides-Extra: weyl_search
+Requires-Dist: numpy
+Requires-Dist: scipy
+Provides-Extra: weyl-search
+Requires-Dist: z2pack; extra == "weyl-search"
+Requires-Dist: tbmodels; extra == "weyl-search"
 Provides-Extra: graphics
+Requires-Dist: matplotlib; extra == "graphics"
+Requires-Dist: vtk; extra == "graphics"
 
  PAOFLOW
 
@@ -90,6 +95,4 @@ Contributions to PAOFLOW were made by the following developers: Frank Cerasoli, 
  and Arrigo Calzolari, Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and 
  optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
  
-
-
 

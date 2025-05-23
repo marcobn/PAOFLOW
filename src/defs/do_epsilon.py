@@ -403,3 +403,26 @@ def calc_dipole(arry,attr, ik, ispin, b_vector):
       else:
         dipole_aux[:,iband1,iband2] = (wfc[iband2]*mill)@np.conjugate(wfc[iband1]) 
   return dipole_aux
+
+# Function to calculate dipole matrix element from the eigenvector of the PAO Hamiltonian
+# expanded in the real space of the atomic basis functions
+def calc_dipole_internal(data_controller, ik, ispin, b_vector, nr1,nr2,nr3):
+  
+  arry, attr = data_controller.data_dicts()
+  basis = arry['basis']
+  gkspace = calc_gkspace(data_controller,ik,gamma_only=False)
+  xk, igwx, mill, bg, _ = [gkspace[s] for s in ('xk', 'igwx', 'mill', 'bg', 'gamma_only')]
+  atwfcgk = calc_atwfc_k(basis,gkspace)
+  oatwfcgk = ortho_atwfc_k(atwfcgk) # these are the atomic orbitals on the G vector grid
+
+# build the full wavefunction with the coefficients v_k
+
+  dipole_aux = np.zeros((3,nbnds,nbnds),dtype=np.complex128)
+  for iband2 in range(nbnds):
+    for iband1 in range(nbnds):
+      if attr['dftSO']:
+        dipole_aux[:,iband1,iband2] = (wfc[iband2][:igwx]*mill)@np.conjugate(wfc[iband1][:igwx]) 
+        + (wfc[iband2][igwx:]*mill)@np.conjugate(wfc[iband1][igwx:])
+      else:
+        dipole_aux[:,iband1,iband2] = (wfc[iband2]*mill)@np.conjugate(wfc[iband1]) 
+  return dipole_aux
