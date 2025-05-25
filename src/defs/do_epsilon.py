@@ -184,10 +184,10 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
 
   esize = ene.size
   if from_wfc:
-    bndmax = attributes['nawf']
-    Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
     # bndmax = attributes['bnd']
-    # Ek = arrays['E_k'][:,:bndmax,ispin]
+    # Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
+    bndmax = attributes['bnd']
+    Ek = arrays['E_k'][:,:bndmax,ispin]
   else:
     bndmax = attributes['bnd']
     Ek = arrays['E_k'][:,:bndmax,ispin]
@@ -424,7 +424,7 @@ def calc_dipole_internal(data_controller, ik, ispin):
   oatwfcgk = ortho_atwfc_k(atwfcgk) # these are the atomic orbitals on the G vector grid
 
   # build the full wavefunction with the coefficients v_k
-  bnd = attr['nawf']
+  bnd = attr['bnd']
   wfc = []
   # for nb in range(attr['bnd']):
   for nb in range(bnd):
@@ -441,7 +441,7 @@ def calc_dipole_internal(data_controller, ik, ispin):
       if attr['dftSO']:
         # check indexing with nbnds and bnd!!!!!
         dipole_aux[:,iband1,iband2] = (wfc[iband2][:igwx]*mill)@np.conjugate(wfc[iband1][:igwx]) 
-        + (wfc[iband2][bnd:]*mill)@np.conjugate(wfc[iband1][bnd:])
+        + (wfc[iband2][igwx:]*mill)@np.conjugate(wfc[iband1][igwx:])
       else:
         dipole_aux[:,iband1,iband2] = (wfc[iband2]*mill)@np.conjugate(wfc[iband1]) 
   return dipole_aux
