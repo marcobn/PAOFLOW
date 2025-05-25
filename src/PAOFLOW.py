@@ -969,13 +969,6 @@ mo    '''
 
       do_gradient(self.data_controller)
 
-      # enforce dH/dk = 0 at zone boundary
-      # for nwf in range(snawf):
-      #   for s in range(nspin):
-      #     arrays['dHksp'][nwf,0,0,0,s] = 0.0
-          # arrays['dHksp'][nwf,:,0,0,s] = 0.0
-          # arrays['dHksp'][nwf,0,:,0,s] = 0.0
-
       if not band_curvature:
         # No more need for k-space Hamiltonian
         del arrays['Hksp']

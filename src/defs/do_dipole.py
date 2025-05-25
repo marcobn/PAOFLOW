@@ -91,8 +91,7 @@ def calc_dipole_internal(data_controller, ik, ispin):
     wfc.append(np.tensordot(arry['v_k'][ik,:,nb,ispin],oatwfcgk,axes=(0,0)))
 
   # build k+G
-  mill = arry['b_vectors'].T@mill + np.full((igwx,3),arry['kgrid'][:,ik]).T
-  # mill = bg.T@mill + np.full((igwx,3),xk).T 
+  mill = arry['b_vectors'].T@mill + np.full((igwx,3),arry['kgrid'][:,ik]).T 
 
   nbnds = attr['nawf']
   dipole_aux = np.zeros((3,nbnds,nbnds),dtype=np.complex128)
@@ -103,5 +102,5 @@ def calc_dipole_internal(data_controller, ik, ispin):
         dipole_aux[:,iband1,iband2] = (wfc[iband2][:igwx]*mill)@np.conjugate(wfc[iband1][:igwx]) 
         + (wfc[iband2][igwx:]*mill)@np.conjugate(wfc[iband1][igwx:])
       else:
-        dipole_aux[:,iband1,iband2] = (wfc[iband2]*mill)@np.conjugate(wfc[iband1]) 
+        dipole_aux[:,iband1,iband2] = (wfc[iband2]*mill)@np.conjugate(wfc[iband1])
   return dipole_aux
