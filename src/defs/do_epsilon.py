@@ -70,7 +70,7 @@ def do_dielectric_tensor ( data_controller, ene, from_wfc):
         data_controller.write_file_row_col(fn, ene, ep)
 
       if rank == 0 and ipol == jpol:
-        renorm = np.sqrt((2./np.pi)*np.trapz(epsi*ene,x=ene))
+        renorm = np.sqrt((2./np.pi)*np.trapezoid(epsi*ene,x=ene))
         component = LL[ipol]+LL[jpol]
         print('Component', component, ', plasmon frequency = ',renorm,'eV')
 
@@ -94,7 +94,7 @@ def do_dielectric_tensor ( data_controller, ene, from_wfc):
 
       if rank == 0 and ipol == jpol:
         epsi = epsi_0 + epsi_1
-        renorm = np.sqrt((2./np.pi)*np.trapz(epsi*ene,x=ene))
+        renorm = np.sqrt((2./np.pi)*np.trapezoid(epsi*ene,x=ene))
         component = LL[ipol]+LL[jpol]
         print('Component', component, ', plasmon frequency = ',renorm,'eV')
         
@@ -114,7 +114,7 @@ def do_jdos( data_controller, ene, jdos_smeartype):
     data_controller.write_file_row_col(fn, ene, jdos)
 
     if rank == 0:
-      print('Integration over JDOS = ', (np.trapz(jdos,x=ene)))
+      print('Integration over JDOS = ', (np.trapezoid(jdos,x=ene)))
   else:
     jdos_aux0 = jdos_loop(data_controller, ene, 0, jdos_smeartype)
     jdos_aux1 = jdos_loop(data_controller, ene, 1, jdos_smeartype)
@@ -131,7 +131,7 @@ def do_jdos( data_controller, ene, jdos_smeartype):
     data_controller.write_file_row_col(fn1, ene, jdos1)
 
     if rank == 0:
-      print('Integration over JDOS = ', (np.trapz(jdos0+jdos1,x=ene)))
+      print('Integration over JDOS = ', (np.trapezoid(jdos0+jdos1,x=ene)))
 
 
 def do_epsilon ( data_controller, ene, ispin, ipol, jpol, from_wfc):
@@ -146,6 +146,7 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, from_wfc):
     ene[0] = .00001
   
   if from_wfc == None:
+    # 8.8541878188e-12 = \epsilon_0
     factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
       /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
   elif from_wfc == 'external':
