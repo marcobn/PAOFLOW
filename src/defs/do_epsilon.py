@@ -36,18 +36,27 @@ def do_dielectric_tensor ( data_controller, ene, from_wfc):
 
   nspin = attributes['nspin']
 
-  if from_wfc:
-    # nbnds = attributes['nbnds']
+  if from_wfc == None:
+    pass
+  elif from_wfc == 'external':
+    nbnds = attributes['nbnds']
+    nkpnts = attributes['nkpnts']
+    nspin = attributes['nspin']
+    arrays['pksp'] = np.empty((nkpnts,3,nbnds,nbnds,nspin),dtype=np.complex128)
+    for ispin in range(nspin):
+      for ik in range(nkpnts):
+        arrays['pksp'][ik,:,:,:,ispin] = calc_dipole(arrays,attributes, ik, ispin, arrays['b_vectors'])
+  elif from_wfc == 'internal':
     nbnds = attributes['nawf']
     nkpnts = attributes['nkpnts']
     nspin = attributes['nspin']
     arrays['pksp'] = np.empty((nkpnts,3,nbnds,nbnds,nspin),dtype=np.complex128)
     for ispin in range(nspin):
       for ik in range(nkpnts):
-        # arrays['pksp'][ik,:,:,:,ispin] = calc_dipole(arrays,attributes, ik, ispin, arrays['b_vectors'])
         arrays['pksp'][ik,:,:,:,ispin] = calc_dipole_internal(data_controller, ik, ispin)
+  else:
+    raise Exception('ERROR: no dipole mode specified')
 
-  
   if nspin == 1:
     for n in range(d_tensor.shape[0]):
       ipol = d_tensor[n][0]
@@ -136,14 +145,17 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, from_wfc):
   if ene[0] == 0.:
     ene[0] = .00001
   
-  if from_wfc:
-    factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
-      *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
-    # factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
-    #   /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
-  else:
+  if from_wfc == None:
     factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
       /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
+  elif from_wfc == 'external':
+    factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
+      *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
+  elif from_wfc == 'internal':
+    factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
+      *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
+  else:
+    raise Exception('ERROR: no dipole mode specified')
      
   #=======================
   # EPS
@@ -183,14 +195,14 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
   arrays,attributes = data_controller.data_dicts()
 
   esize = ene.size
-  if from_wfc:
-    # bndmax = attributes['bnd']
-    # Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
+  if from_wfc == None or from_wfc == 'internal':
     bndmax = attributes['bnd']
     Ek = arrays['E_k'][:,:bndmax,ispin]
+  elif from_wfc == 'external':
+    bndmax = attributes['bnd']
+    Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
   else:
-    bndmax = attributes['bnd']
-    Ek = arrays['E_k'][:,:bndmax,ispin]
+    raise Exception('ERROR: no dipole mode specified')
   # 
 
   intersmear = attributes['delta']  
@@ -225,7 +237,7 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
 
   th0 = 1.e-3*spin_factor
   th1 = 0.5e-4*spin_factor
-  if attributes['dftSO'] and not from_wfc: 
+  if attributes['dftSO'] and from_wfc == None: 
     fac = 1
   else:
     fac = 2
@@ -266,7 +278,7 @@ def eps_loop ( data_controller, ene, ispin, ipol, jpol, from_wfc):
           epsi_metal[:] += pksp2*intrasmear*ene[:]*fnF[ik,iband1]/(ene[:]**4+intrasmear**2*ene[:]**2)
           epsr_metal[:] -= pksp2*fnF[ik,iband1]*ene[:]**2/(ene[:]**4+intrasmear**2*ene[:]**2)
 
-    if from_wfc:
+    if from_wfc != None:
       from .constants import RYTOEV
       epsi_metal /= RYTOEV/4
       epsr_metal /= RYTOEV/4

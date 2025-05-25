@@ -1419,7 +1419,7 @@ mo    '''
     self.report_module_time('Transport')
 
 
-  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None, degauss=0.1, from_wfc=False):
+  def dielectric_tensor ( self, delta=0.1, intrasmear=0.05, emin=0., emax=10., ne=501, d_tensor=None, degauss=0.1, from_wfc=None):
     '''
     Calculate the Dielectric Tensor
 
