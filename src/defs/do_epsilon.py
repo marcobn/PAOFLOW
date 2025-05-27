@@ -29,7 +29,7 @@ from .do_atwfc_proj import *
 from .do_dipole import *
 
 def do_dielectric_tensor ( data_controller, ene, from_wfc):
-  from .constants import LL
+  from .constants import LL, RYTOEV
 
   arrays,attributes = data_controller.data_dicts()
   d_tensor = arrays['d_tensor']
@@ -55,10 +55,10 @@ def do_dielectric_tensor ( data_controller, ene, from_wfc):
     for ispin in range(nspin):
       for ik in range(nkpnts):
         arrays['pksp'][ik,:,:,:,ispin] = calc_dipole_internal(data_controller, ik, ispin)
-        for n in range(attributes['nawf']):
-          for m in range(attributes['nawf']):
-            for l in range(3):
-              arrays['pksp'][ik,l,n,m,ispin] = 1j*arrays['pksp'][ik,l,n,m,ispin]*(arrays['E_k'][ik,n]-arrays['E_k'][ik,m])
+        # for n in range(attributes['nawf']):
+        #   for m in range(attributes['nawf']):
+        #     for l in range(3):
+        #       arrays['pksp'][ik,l,n,m,ispin] = 1j*arrays['pksp'][ik,l,n,m,ispin]*(arrays['E_k'][ik,n]-arrays['E_k'][ik,m])
   else:
     raise Exception('ERROR: no dipole mode specified')
 
@@ -158,10 +158,10 @@ def do_epsilon ( data_controller, ene, ispin, ipol, jpol, from_wfc):
     factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
       *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
   elif from_wfc == 'internal':
-    factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
-      /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
-    # factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
-    #   *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
+    # factor = ELECTRONVOLT_SI*(1e10)/(8.8541878188e-12)*BOHR_RADIUS_ANGS**2\
+    #   /attributes['nkpnts']/(attributes['omega']*BOHR_RADIUS_ANGS**3)
+    factor = 2*(np.pi/attributes['alat'])**2*RYTOEV**3\
+      *64.0*np.pi/(attributes['omega']*attributes['nkpnts'])
   else:
     raise Exception('ERROR: no dipole mode specified')
      

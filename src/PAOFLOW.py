@@ -281,9 +281,9 @@ class PAOFLOW:
 
     # Always use internal basis if VASP
     if internal or attr['dft']=='VASP':
-      basis,arry['shells'] = build_aewfc_basis(self.data_controller)
+      arry['basis'],arry['shells'] = build_aewfc_basis(self.data_controller)
     else:
-      basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
+      arry['basis'],arry['shells'] = build_pswfc_basis_all(self.data_controller)
 
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
