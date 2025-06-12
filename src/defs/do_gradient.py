@@ -45,6 +45,11 @@ def do_gradient ( data_controller ):
   kdoti = np.tensordot(arry['R'], 2.0j*np.pi*arry['kgrid'], axes=([1],[0]))
   kdoti = np.exp(kdoti, kdoti)
 
+  try:
+    arry['basis'],_ = build_pswfc_basis_all(data_controller)
+  except:
+    arry['basis'],_ = build_aewfc_basis(data_controller)
+
   Dnm = np.empty((attr['nawf'],attr['nawf'],3))
   for i in range(3):
     for n in range(attr['nawf']):
