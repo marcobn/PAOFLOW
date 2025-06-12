@@ -61,7 +61,7 @@ def calc_N(data_controller,ene,dos, mu, temp, dosweight=2.):
   else:
     occ = FD(ene, mu, temp)
   dos_occ = dos*occ
-  return -dosweight * scipy.integrate.simps(dos_occ,ene)-core_electrons
+  return -dosweight * scipy.integrate.simpson(dos_occ,ene)-core_electrons
   
 def solve_for_mu(data_controller,ene,dos,N0,temp,refine=False,try_center=False,dosweight=2.):
 

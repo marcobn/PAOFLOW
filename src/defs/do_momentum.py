@@ -34,3 +34,14 @@ def do_momentum ( data_controller ):
                                                         arry['dHksp'][ik,l,:,:,ispin], 
                                                         arry['v_k'][ik,:,:,ispin],
                                                         arry['degen'][ispin][ik])
+        #  impose hermiticity
+         arry['pksp'][ik,l,:,:,ispin] = (arry['pksp'][ik,l,:,:,ispin] + np.conj(arry['pksp'][ik,l,:,:,ispin].T))/2.
+        #  arry['pksp'][ik,l,attr['bnd']:,attr['bnd']:,ispin] = 0.0
+
+  # for ispin in range(nspin):
+  #   for ik in range(nktot):
+  #     for l in range(3):
+  #        arry['pksp'][ik,l,:,:,ispin] = arry['v_k'][ik,:,:,ispin]@arry['dHksp'][ik,l,:,:,ispin]@ \
+  #                                       np.conj(arry['v_k'][ik,:,:,ispin]).T
+                                                   
+    
