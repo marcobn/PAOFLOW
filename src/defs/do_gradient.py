@@ -21,6 +21,7 @@ def do_gradient ( data_controller ):
   import numpy as np
   from scipy import fftpack as FFT
   from .get_R_grid_fft import get_R_grid_fft
+  from .do_atwfc_proj import build_pswfc_basis_all, build_aewfc_basis
 
   arry,attr = data_controller.data_dicts()
 
