@@ -21,7 +21,7 @@ def do_gradient ( data_controller ):
   import numpy as np
   from scipy import fftpack as FFT
   from .get_R_grid_fft import get_R_grid_fft
-  from .do_atwfc_proj import build_pswfc_basis_all, build_aewfc_basis
+  from .communication import scatter_full
 
   arry,attr = data_controller.data_dicts()
 
@@ -35,29 +35,17 @@ def do_gradient ( data_controller ):
   # fft grid in R shifted to have (0,0,0) in the center
   get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
-  dHaux = np.empty((nk1*nk2*nk3,3), dtype=complex, order='C')
-  Haux = np.empty((nk1,nk2,nk3), dtype=complex, order='C')
+#  dHaux = np.empty((nk1*nk2*nk3,3), dtype=complex, order='C')
+#  Haux = np.empty((nk1,nk2,nk3), dtype=complex, order='C')
   arry['dHksp'] = np.empty((snawf,nk1,nk2,nk3,3,nspin), dtype=complex, order='C')
   HRaux = np.empty((nk1*nk2*nk3))
-  kdot = np.zeros((1,arry['R'].shape[0]), dtype=complex, order='C')
-  kdot = np.tensordot(arry['R'], -2.0j*np.pi*arry['kgrid'], axes=([1],[0]))
-  kdot = np.exp(kdot, kdot)
-  kdoti = np.zeros((1,arry['R'].shape[0]), dtype=complex, order='C')
-  kdoti = np.tensordot(arry['R'], 2.0j*np.pi*arry['kgrid'], axes=([1],[0]))
-  kdoti = np.exp(kdoti, kdoti)
-
-  try:
-    arry['basis'],_ = build_pswfc_basis_all(data_controller)
-  except:
-    arry['basis'],_ = build_aewfc_basis(data_controller)
-
-  Dnm = np.empty((attr['nawf'],attr['nawf'],3))
-  for i in range(3):
-    for n in range(attr['nawf']):
-      for m in range(attr['nawf']):
-        Dnm[n,m,i] = arry['basis'][n]['tau'][i] - arry['basis'][m]['tau'][i]
-  Dnm = np.reshape(Dnm,(attr['nawf']*attr['nawf'],3),order='C')
-
+  Dnm = scatter_full(np.reshape(arry['Dnm'],(attr['nawf']*attr['nawf'],3),order='C'), attr['npool'])
+#  kdot = np.zeros((1,arry['R'].shape[0]), dtype=complex, order='C')
+#  kdot = np.tensordot(arry['R'], -2.0j*np.pi*arry['kgrid'], axes=([1],[0]))
+#  kdot = np.exp(kdot, kdot)
+#  kdoti = np.zeros((1,arry['R'].shape[0]), dtype=complex, order='C')
+#  kdoti = np.tensordot(arry['R'], 2.0j*np.pi*arry['kgrid'], axes=([1],[0]))
+#  kdoti = np.exp(kdoti, kdoti)
   for ispin in range(nspin):
     for n in range(snawf):
       Haux = arry['Hksp'][n,:,:,:,ispin].copy()

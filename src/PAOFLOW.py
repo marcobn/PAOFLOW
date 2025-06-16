@@ -951,6 +951,7 @@ mo    '''
     from .defs.do_momentum import do_momentum
     from .defs.communication import gather_scatter
     import numpy as np 
+    from .defs.do_atwfc_proj import build_pswfc_basis_all, build_aewfc_basis
 
     arrays,attr = self.data_controller.data_dicts()
 
@@ -967,6 +968,16 @@ mo    '''
       snawf,_,nspin = arrays['Hksp'].shape
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nk1'],attr['nk2'],attr['nk3'],nspin))
 
+      try:                         
+        arrays['basis'],_ = build_pswfc_basis_all(self.data_controller)     
+      except:                                                              
+        arrays['basis'],_ = build_aewfc_basis(self.data_controller)    
+
+      arrays['Dnm'] = np.empty((attr['nawf'],attr['nawf'],3))
+      for i in range(3):
+        for n in range(attr['nawf']):
+          for m in range(attr['nawf']):
+              arrays['Dnm'][n,m,i] = arrays['basis'][n]['tau'][i] - arrays['basis'][m]['tau'][i]
       do_gradient(self.data_controller)
 
       if not band_curvature:
@@ -983,7 +994,6 @@ mo    '''
         for i in range(3):
           for s in range(nspin):
             arrays['dHksp'][nk,i,:,:,s] = (arrays['dHksp'][nk,i,:,:,s] + np.conj(arrays['dHksp'][nk,i,:,:,s].T))/2.
-
       if band_curvature:
         from .defs.do_band_curvature import do_band_curvature
         do_band_curvature(self.data_controller)
