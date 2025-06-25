@@ -556,17 +556,17 @@ class PAOFLOW:
     self.report_module_time('Bands')
 
 
-
-  def adhoc_spin_orbit ( self, naw=[1], phi=.0, theta=.0, lambda_p=[.0], lambda_d=[.0], orb_pseudo=['s']  ):
+  def adhoc_spin_orbit ( self, naw=[1], phi=.0, theta=.0,  lambda_p=[.0], lambda_d=[.0], soc_strengh={}, soc_species=True ):
     '''
     Include spin-orbit coupling  
 
     Arguments:
         theta (float)             :  Spin orbit angle
         phi (float)               :  Spin orbit azimuthal angle
+        soc_strengh(dict)         :  p and d orbitals SOC strengh for each species 
+        If soc_species = False
         lambda_p (list of floats) :  p orbitals SOC strengh for each atom 
         lambda_d (list of float)  :  d orbitals SOC strengh for each atom
-        orb_pseudo (list of str)  :  Orbitals included in the Pseudopotential
 
     Returns:
         None
@@ -579,19 +579,35 @@ class PAOFLOW:
 
     if 'phi' not in attr: attr['phi'] = phi
     if 'theta' not in attr: attr['theta'] = theta
-    if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
-    if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
-    if 'orb_pseudo' not in arry: arry['orb_pseudo'] = orb_pseudo[:]
-    if 'naw' not in arry: arry['naw'] = naw[:]
 
-    natoms = attr['natoms']
-    if len(arry['lambda_p']) != natoms or len(arry['lambda_p']) != natoms:
-      print('\'lambda_p\' and \'lambda_d\' must contain \'natoms\' (%d) elements each.'%natoms)
-      self.comm.Abort()
+    if (soc_species==True):
+      lambda_p=[]
+      lambda_d=[]
+      for i in range (len(arry['atoms'])):
+        lambda_p.append(soc_strengh[arry['atoms'][i]][0])
+        lambda_d.append(soc_strengh[arry['atoms'][i]][1])
+      arry['lambda_p']=lambda_p
+      arry['lambda_d']=lambda_d
+    else:
+      if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
+      if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
 
+    try: 
+      if internal or attr['dft']=='VASP':
+        print('Ad-hoc-SOC with inernal basis not implemented')
+    except:
+      self.data_controller.build_arrays_adhoc_soc()
+
+
+    do_spin_orbit_H(self.data_controller)
+
+    # Rezising arrays
     attr['bnd'] *= 2
     attr['dftSO'] = True
-    do_spin_orbit_H(self.data_controller)
+    attr['nspin'] = 1
+    attr['nawf'] = arry['HRs'].shape[0]
+    self.report_module_time('adhoc_spin_orbit')
+
 
 
 
