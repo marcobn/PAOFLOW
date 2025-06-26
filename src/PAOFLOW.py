@@ -606,6 +606,11 @@ class PAOFLOW:
     attr['dftSO'] = True
     attr['nspin'] = 1
     attr['nawf'] = arry['HRs'].shape[0]
+
+
+    del arry["Hks"]
+    arry["Hks"]=np.fft.fftn(arry["HRs"],axes=(2,3,4))
+
     self.report_module_time('adhoc_spin_orbit')
 
 
