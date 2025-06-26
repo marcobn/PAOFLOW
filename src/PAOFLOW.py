@@ -592,11 +592,25 @@ class PAOFLOW:
       if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
       if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
 
-    try: 
-      if internal or attr['dft']=='VASP':
-        print('Ad-hoc-SOC with inernal basis not implemented')
-    except:
-      self.data_controller.build_arrays_adhoc_soc()
+    self.data_controller.build_arrays_adhoc_soc()
+    
+    # Check if the pseudo potential or internal basis configuraton is implemented
+    length = np.chararray(attr['natoms'])
+    try:
+      length[:] = arry['orb_pseudo'][:]
+      do_spin_orbit_H(self.data_controller)
+      # Rezising arrays
+      attr['bnd'] *= 2
+      attr['dftSO'] = True
+      attr['nspin'] = 1
+      attr['nawf'] = arry['HRs'].shape[0]
+    except Exception as e:
+      self.report_module_time('adhoc_spin_orbit')
+      print("Pseudo potential or internal basis configuration not implemented")
+      if self.data_controller.data_attributes['abort_on_exception']:
+        raise e
+    
+    self.report_module_time('adhoc_spin_orbit')
 
 
     do_spin_orbit_H(self.data_controller)
