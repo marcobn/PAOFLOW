@@ -595,20 +595,16 @@ class PAOFLOW:
     self.data_controller.build_arrays_adhoc_soc()
     
     # Check if the pseudo potential or internal basis configuraton is implemented
-    length = np.chararray(attr['natoms'])
-    try:
-      length[:] = arry['orb_pseudo'][:]
+    if (len(arry['orb_pseudo'])==attr['natoms']): 
       do_spin_orbit_H(self.data_controller)
       # Rezising arrays
       attr['bnd'] *= 2
       attr['dftSO'] = True
       attr['nspin'] = 1
       attr['nawf'] = arry['HRs'].shape[0]
-    except Exception as e:
+    else:
       self.report_module_time('adhoc_spin_orbit')
-      print("Pseudo potential or internal basis configuration not implemented")
-      if self.data_controller.data_attributes['abort_on_exception']:
-        raise e
+      raise(NotImplementedError("Pseudo potential or internal basis configuration not implemented"))
     
     self.report_module_time('adhoc_spin_orbit')
 
