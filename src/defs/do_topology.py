@@ -139,6 +139,9 @@ def do_topology ( data_controller ):
   Rfft = np.reshape(arrays['Rfft'], (nk1*nk2*nk3,3), order='C')
   HRs = np.reshape(HRs, (nawf,nawf,nk1*nk2*nk3,nspin), order='C')
   HRs = np.moveaxis(HRs, 2, 0)
+  
+  # Compute H(k) on the path
+  Hks_aux  = band_loop_H(np.moveaxis(HRs,0,2), Rfft, kq_aux, nawf, nspin)
 
   HRs_aux = scatter_full(HRs, npool)
   Rfft_aux = scatter_full(Rfft, npool)
@@ -156,7 +159,6 @@ def do_topology ( data_controller ):
       for n in range(nawf):
         for m in range(nawf):
           dHRs[:,n,m,ispin] = 1.0j*alat*ANGSTROM_AU*Rfft_aux[:,l]*HRs_aux[:,n,m,ispin]
-
     dHRs = gather_full(dHRs, npool)
     if rank != 0:
       dHRs = np.zeros((nk1*nk2*nk3,nawf,nawf,nspin), dtype=complex)
@@ -167,6 +169,10 @@ def do_topology ( data_controller ):
     dHks_aux = band_loop_H(dHRs, Rfft, kq_aux, nawf, nspin)
 
     dHRs = None
+    # including correction Dnm
+    for ik in range(dHks_aux.shape[0]):
+      for ispin in range(nspin):
+        dHks_aux[ik,:,:,ispin] = dHks_aux[ik,:,:,ispin] + 1.0j*Hks_aux[ik,:,:,ispin]*arrays['Dnm'][:,:,l]  
 
     # Compute momenta
     for ik in range(dHks_aux.shape[0]):
