@@ -595,36 +595,22 @@ class PAOFLOW:
     self.data_controller.build_arrays_adhoc_soc()
     
     # Check if the pseudo potential or internal basis configuraton is implemented
-    if (len(arry['orb_pseudo'])==attr['natoms']): 
+    if (len(arry['orb_pseudo'])==attr['natoms']):
+      # add SOC  
       do_spin_orbit_H(self.data_controller)
       # Rezising arrays
       attr['bnd'] *= 2
       attr['dftSO'] = True
       attr['nspin'] = 1
       attr['nawf'] = arry['HRs'].shape[0]
+      # for write_z2pack
+      del arry["Hks"]
+      arry["Hks"]=np.fft.fftn(arry["HRs"],axes=(2,3,4))
     else:
       self.report_module_time('adhoc_spin_orbit')
       raise(NotImplementedError("Pseudo potential or internal basis configuration not implemented"))
     
     self.report_module_time('adhoc_spin_orbit')
-
-
-    do_spin_orbit_H(self.data_controller)
-
-    # Rezising arrays
-    attr['bnd'] *= 2
-    attr['dftSO'] = True
-    attr['nspin'] = 1
-    attr['nawf'] = arry['HRs'].shape[0]
-
-
-    del arry["Hks"]
-    arry["Hks"]=np.fft.fftn(arry["HRs"],axes=(2,3,4))
-
-    self.report_module_time('adhoc_spin_orbit')
-
-
-
 
   def wave_function_projection ( self, dimension=3 ):
     '''
