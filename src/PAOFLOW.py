@@ -285,6 +285,12 @@ class PAOFLOW:
     else:
       basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
 
+    arry['Dnm'] = np.empty((attr['nawf'],attr['nawf'],3))
+    for i in range(3):
+      for n in range(attr['nawf']):
+        for m in range(attr['nawf']):
+          arry['Dnm'][n,m,i] = basis[n]['tau'][i] - basis[m]['tau'][i]
+
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
@@ -317,6 +323,8 @@ class PAOFLOW:
     '''
     from .defs.read_upf import UPF
     from os.path import exists,join
+    from .defs.do_atwfc_proj import build_pswfc_basis_all
+    from .defs.do_atwfc_proj import build_aewfc_basis
 
     arry,attr = self.data_controller.data_dicts()
     fpath = attr['fpath']
@@ -337,6 +345,20 @@ class PAOFLOW:
       else:
         raise Exception('Pseudopotential not found: %s'%fname)
 
+    # Silencing verbose for a moment
+    verbose_status=attr['verbose']
+    if (verbose_status==True) : attr['verbose']=False
+    basis,_ = build_pswfc_basis_all(self.data_controller)     
+    # Restoring verbose
+    if (verbose_status==True) : attr['verbose']=True
+
+    arry['Dnm'] = np.empty((attr['nawf'],attr['nawf'],3))
+    for i in range(3):
+      for n in range(attr['nawf']):
+        for m in range(attr['nawf']):
+          arry['Dnm'][n,m,i] = basis[n]['tau'][i] - basis[m]['tau'][i]
+
+    arry['basis'] = basis
 
 
   def projectability ( self, pthr=0.95, shift='auto' ):
@@ -985,16 +1007,6 @@ mo    '''
       snawf,_,nspin = arrays['Hksp'].shape
       arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf,attr['nk1'],attr['nk2'],attr['nk3'],nspin))
 
-      try:                         
-        arrays['basis'],_ = build_pswfc_basis_all(self.data_controller)     
-      except:                                                              
-        arrays['basis'],_ = build_aewfc_basis(self.data_controller)    
-
-      arrays['Dnm'] = np.empty((attr['nawf'],attr['nawf'],3))
-      for i in range(3):
-        for n in range(attr['nawf']):
-          for m in range(attr['nawf']):
-              arrays['Dnm'][n,m,i] = arrays['basis'][n]['tau'][i] - arrays['basis'][m]['tau'][i]
       do_gradient(self.data_controller)
 
       if not band_curvature:
