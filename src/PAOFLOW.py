@@ -450,20 +450,14 @@ class PAOFLOW:
     self.report_module_time('k -> R')
 
 
-  def minimal(self,R=False):
+  def minimal(self,first_band=None, R=False):
       from .defs.do_minimal import do_minimal
-      do_minimal(self.data_controller)
+      raise Exception('ONLY FOR ARCHIVAL PUTPOSES - DO NOT USE')
+      do_minimal(self.data_controller,first_band)
       if R:
         from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
         do_Hks_to_HRs(self.data_controller)
         self.data_controller.broadcast_single_array('HRs')
-
-
-
-  def minimal2(self):
-      from .defs.do_minimal import do_minimal2
-      do_minimal2(self.data_controller)
-
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
