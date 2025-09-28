@@ -1,0 +1,49 @@
+digraph ACBN0_Workflow {
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fillcolor="#eef4ff", color="#4864c8", fontname="Helvetica"];
+  edge [color="#333333", fontname="Helvetica", fontsize=10];
+
+  start [shape=oval, fillcolor="#d9f0ff", label="User config &\nQE templates"];
+  init [label="__init__\nstruct_from_inputfile_QE\ngaussian_fit\nseed uVals/hubbard_occ"];
+  hubset [label="set_hubbard_parameters (optional)\nadjust uVals/hubbard_occ"];
+  loop [shape=diamond, fillcolor="#ffe8cc", label="optimize_hubbard_U\nself-consistent loop"];
+  runDFT [label="run_dft\nhubbard_card\nstruct_from_inputfile_QE\ncreate_atomic_inputfile\nexec_QE → exec_command"];
+  runPAO [label="run_paoflow\ncreate_acbn0_inputfile\nexec_PAOFLOW → exec_command"];
+  runAC [label="run_acbn0\n(per shell)"];
+  updateU [label="update self.uVals\nwith new shell U_eff"];
+  decision [shape=diamond, fillcolor="#ffe8cc", label="|U_new - U_old| < threshold?"];
+  end [shape=oval, fillcolor="#d9f0ff", label="Converged U values\n+ generated files"];
+
+  start -> init -> hubset -> loop;
+  loop -> runDFT [label="each iteration"];
+  runDFT -> runPAO [label="QE outputs\n(scf.out, projwfc.out)"];
+  runPAO -> runAC [label="PAOFLOW output\n(k.txt, wk.txt, kovp.npy, kham*.npy)"];
+
+  subgraph cluster_shell {
+    label="Per-shell post-processing";
+    fontname="Helvetica";
+    color="#a0b3ff";
+    style="rounded";
+
+    rcells [label="read_cell_atoms"];
+    projparse [label="projwfc.out parsing\n+ hubbard_orbital"];
+    writeMini [label="write prefix_acbn0_infile_*.txt"];
+    acbn0func [label="acbn0()"];
+    gbasis [label="getbasis"];
+    hamdata [label="read_ham_data"];
+    DkBlock [label="Dk → Nmm → DR"];
+    hartree [label="hartree_energy → coulomb"];
+    ujfile [label="write <shell>_UJ.txt"];
+    gather [label="collect U_eff\nper shell"];
+
+    runAC -> rcells -> projparse -> writeMini -> acbn0func;
+    acbn0func -> gbasis;
+    acbn0func -> hamdata;
+    hamdata -> DkBlock -> hartree -> ujfile -> gather;
+    gather -> updateU;
+  }
+
+  updateU -> decision;
+  decision -> runDFT [label="No"];
+  decision -> end [label="Yes"];
+}

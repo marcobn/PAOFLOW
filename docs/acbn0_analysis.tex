@@ -1,0 +1,283 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+
+\title{Explanation of the Projector Selection Loop in \texttt{run\_acbn0}}
+\author{PAOFLOW Documentation Supplement}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Context}
+The ACBN0 workflow constructs reduced bases for the density matrix and two-electron Coulomb integrals prior to evaluating the Hubbard parameters $U$ and $J$. Within \texttt{run\_acbn0}, the highlighted loop processes the Quantum ESPRESSO \texttt{projwfc.out} projectors to identify the contiguous subset of states associated with a given Hubbard shell (e.g.	\texttt{Fe-d}). The loop operates once per entry in \verb|self.uVals|, ensuring that each targeted shell has a consistent set of projectors for subsequent density and two-electron calculations.
+
+\section{Relevant Code}
+\begin{lstlisting}[language=python]
+for k, v in self.uVals.items():
+    ostates = []
+    ustates = []
+    s = k.split('-')[0]
+    horb = self.hubbard_orbital(k)
+    for n, sl in enumerate(state_lines):
+        stateN = re.findall('\(([^")]+)\)', sl)
+        oele = stateN[0].strip()
+        oL = int(re.split('=| ', stateN[1])[1])
+        if s in oele and oL == horb:
+            ostates.append(n)
+            if s == oele:
+                ustates.append(n)
+    sstates = [ustates[0]]
+    for i, us in enumerate(ustates[1:]):
+        if us == 1 + sstates[i]:
+            sstates.append(us)
+        else:
+            break
+\end{lstlisting}
+
+\section{Full Narrative Description}
+Before the highlighted loop is executed, \texttt{state\_lines} has already been trimmed to the portion of \texttt{projwfc.out} that lists projectors in the form
+\begin{lstlisting}
+ state #   1 (Fe  ) l=2 m= -2    ...
+ state #   2 (Fe1 ) l=2 m= -1    ...
+\end{lstlisting}
+so each entry supplies both the chemical symbol (possibly with numeric suffixes distinguishing inequivalent atoms) and the angular momentum channel \(l\).
+
+The outer loop iterates over \texttt{self.uVals}, which contains keys such as \texttt{"Fe-d"} or \texttt{"O-p"} paired with the current Hubbard parameters. Splitting the key at the hyphen isolates the species label \(s\), while \texttt{hubbard\_orbital(k)} converts the orbital letter to the integer angular momentum \(L\) that Quantum ESPRESSO reports in \texttt{projwfc.out}. Two lists are prepared:
+\begin{itemize}
+  \item \texttt{ostates} collects every projector index matching the species (allowing suffixes like \texttt{Fe1}, \texttt{Fe2}) and the requested \(L\). This set will become the reduced basis for the density-matrix calculation.
+  \item \texttt{ustates} retains only those indices whose label is exactly the bare symbol (e.g.\ \texttt{Fe} without numeric decorations). These correspond to the canonical representative of the shell and seed the two-electron basis.
+\end{itemize}
+
+Inside the inner \texttt{for}, each projector line \texttt{sl} is parsed with a regular expression to extract the parenthesized token containing the species identifier, along with the substring reporting \verb|l=|. If both the species and \(L\) criteria are met, the current index \(n\) is appended to \texttt{ostates}. When the species matches exactly (no suffix), the index is also appended to \texttt{ustates}. The distinction ensures that all symmetry-equivalent projectors contribute to the density matrix, while the two-electron block focuses on a single contiguous set of \(2L+1\) magnetic sublevels anchored on one atom.
+
+After scanning all projectors, the code assumes that \texttt{ustates} begins with the first magnetic sublevel and that subsequent sublevels appear in consecutive order. The list \texttt{sstates} is seeded with the first element of \texttt{ustates} and is then extended only while the next entries remain consecutive integers. As soon as a gap is encountered, the growth stops. This protects the downstream Coulomb integrals from inadvertently mixing in projectors belonging to another atom with the same orbital character that may be interleaved later in \texttt{projwfc.out}.
+
+Finally, \texttt{ostates} and \texttt{sstates} are serialized when writing the temporary ACBN0 input file: the first defines \verb|reduced_basis_dm| for the density-matrix reconstruction, and the second defines \verb|reduced_basis_2e| used in the Hartree energy evaluation. By the time \texttt{acbn0()} reads these inputs, each Hubbard shell has a coherent, minimal projector set that mirrors the original logic proposed in the plain-text explanation.
+
+\section{Step-by-Step Explanation}
+\begin{description}[leftmargin=0pt,labelindent=1.5em]
+  \item[Iteration over shells:] Keys \(k\) like \texttt{Fe-d} label the species and orbital. The angular momentum quantum number \(L\) is obtained via \verb|hubbard_orbital|, mapping to the Quantum ESPRESSO conventions (\(L=0\) for s, \(1\) for p, \(2\) for d, etc.).
+  \item[Projector scanning:] Each \texttt{state	extunderscore lines} entry corresponds to a \texttt{projwfc} projector. The regular expression extracts (i) the species label \verb|oele| appearing inside parentheses (e.g.	\texttt{Fe}, \texttt{Fe1}) and (ii) the \(2L\!+\!1\) resolved quantum number reported as \verb|l=|. When the line matches both the species \(s\) (up to suffixes like \texttt{Fe1}) and the desired \(L\), the projector index \(n\) is appended to \verb|ostates|.
+  \item[Exact species matches:] Some projectors may include suffixed species labels (e.g.	\texttt{Fe1}) created by Quantum ESPRESSO to distinguish inequivalent atoms. The subset \verb|ustates| retains only indices where the label equals the bare chemical symbol (e.g.	\verb|s == oele|), ensuring that subsequent two-electron integrals focus on the canonical atom within the shell.
+  \item[Contiguity enforcement:] The list \verb|ustates| is expected to contain consecutively numbered projectors corresponding to the \(2L\!+\!1\) magnetic sublevels. The slice building \verb|sstates| starts from the first exact match and grows the list only while consecutive indices are found. The moment a gap is detected, the loop stops, preserving a contiguous block of projectors. This guards against accidental inclusion of projectors belonging to symmetry-related but distinct atoms or shells.
+  \item[Outputs:] The indices \verb|ostates| feed the reduced density-matrix basis, while \verb|sstates| defines the subset used for two-electron integrals. Both lists are serialized into the ACBN0 input file as comma-separated strings.
+\end{description}
+
+\section{Edge Cases and Assumptions}
+\begin{itemize}
+  \item The code assumes at least one exact species match appears in \verb|ustates|; otherwise \verb|ustates[0]| raises an exception. In practice, QE emits the unsuffixed projector first, so the assumption holds.
+  \item Contiguity is measured in the raw projector indices from \texttt{projwfc}. If Quantum ESPRESSO ever inserted unrelated projectors between magnetic sublevels, the loop would truncate \verb|sstates| prematurely, reducing the two-electron basis.
+  \item Species labels with suffixes (e.g.	\texttt{Fe1}, \texttt{Fe2}) are still recognized for \verb|ostates| membership because the condition checks \verb|s in oele|.
+\end{itemize}
+
+\section{Denominator Formulas}
+\label{sec:denoms}
+The Hartree numerators described above are paired with occupation-based denominators that normalize the on-site interaction strengths. In the notation of Agapito \emph{et al.}\ (Phys.~Rev.~X~\textbf{5},~011006, 2015), the shell-averaged expressions are
+\begin{align}
+  \mathcal{D}_U &= \sum_{\sigma\sigma'} \sum_{m m'} n^{\sigma}_{mm} \, n^{\sigma'}_{m'm'}, \\[2pt]
+  \mathcal{D}_J &= \sum_{\sigma} \sum_{m \ne m'} n^{\sigma}_{mm} \, n^{\sigma}_{m' m'}.
+\end{align}
+The implementation mirrors these formulae by first accumulating the k-averaged occupations returned by \texttt{Nmm}. For the spin-unpolarized case \((n_{\text{spin}}=1)\), the code forms the aggregates
+\begin{align}
+  N_{ab} &= \sum_{m,m'} n_{mm} \, n_{m'm'}, &
+  N_{aa} &= \sum_{m \ne m'} n_{mm} \, n_{m'm'},
+\end{align}
+and combines them as
+\begin{align}
+  \mathcal{D}_U &= 2\,\Re\bigl(N_{aa} + N_{ab}\bigr), &
+  \mathcal{D}_J &= 2\,\Re\bigl(N_{aa}\bigr).
+\end{align}
+When spin polarization is present, separate spin-up and spin-down occupations are accumulated:
+\begin{align}
+  N_{aa} &= \sum_{m \ne m'} n^{\uparrow}_{mm} \, n^{\uparrow}_{m'm'}, &
+  N_{bb} &= \sum_{m \ne m'} n^{\downarrow}_{mm} \, n^{\downarrow}_{m'm'}, &
+  N_{ab} &= \sum_{m,m'} n^{\uparrow}_{mm} \, n^{\downarrow}_{m'm'},
+\end{align}
+which translate directly to the source-code assignments
+\begin{align}
+  \mathcal{D}_U &= \Re\bigl(N_{aa} + N_{bb} + 2 N_{ab}\bigr), &
+  \mathcal{D}_J &= \Re\bigl(N_{aa} + N_{bb}\bigr).
+\end{align}
+These denominators appear in the final ratios
+\( U = (27.2114\,\mathcal{N}_U) / \mathcal{D}_U \) and \( J = (27.2114\,\mathcal{N}_J) / \mathcal{D}_J \), with \(U_{\text{eff}} = U - J\).
+
+\section{Formula Reference by Function}
+The following catalogue restates every analytical expression documented in the \texttt{ACBN0} docstrings, pairing each formula with the variables that realize it in code and a concise excerpt from \texttt{ACBN0.py}. Line numbers refer to the master branch snapshot captured during this analysis.
+
+\subsection{\texttt{optimize\_hubbard\_U} (lines 229--271)}
+\paragraph{Formula.}
+\[\max_k \bigl|U^{(n+1)}_k - U^{(n)}_k\bigr| < \delta_{\text{conv}}\]
+\paragraph{Description.}
+Ensures the self-consistent loop halts once all Hubbard parameters change by less than the user-specified threshold.
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|self.uVals[k]|: previous iteration value $U^{(n)}_k$.
+  \item \verb|v| / \verb|new_U[k]|: newly computed $U^{(n+1)}_k$.
+  \item \verb|convergence_threshold|: tolerance $\delta_{\text{conv}}$.
+  \item \verb|converged| flag updated when any component violates the bound.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+for k, v in new_U.items():  # ACBN0.py lines 263-269
+    print(f'  {k} : {v}')
+    if converged and np.abs(self.uVals[k] - v) > convergence_threshold:
+        converged = False
+\end{lstlisting}
+
+\subsection{\texttt{acbn0} (lines 274--373)}
+\paragraph{Formulas.}
+\begin{align}
+  U &= \frac{\displaystyle\sum_{\sigma\sigma'} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_3 | \hat{v} | m_2 m_4 \rangle\, D^{\sigma}_{m_1 m_2} D^{\sigma'}_{m_3 m_4}}{\displaystyle\sum_{\sigma\sigma'} \sum_{m m'} n^{\sigma}_{mm} n^{\sigma'}_{m'm'}} ,\\[4pt]
+  J &= \frac{\displaystyle\sum_{\sigma} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_4 | \hat{v} | m_3 m_2 \rangle\, D^{\sigma}_{m_1 m_2} D^{\sigma}_{m_3 m_4}}{\displaystyle\sum_{\sigma} \sum_{m \ne m'} n^{\sigma}_{mm} n^{\sigma}_{m'm'}} ,\\[4pt]
+  U_{\mathrm{eff}} &= U - J.
+\end{align}
+Numerators $\mathcal{N}_U$, $\mathcal{N}_J$ are built from the spin-resolved density matrices $D^{\sigma}_{m m'}$ returned by \texttt{DR}, while denominators $\mathcal{D}_U$, $\mathcal{D}_J$ use the on-site occupations $n^{\sigma}_{m m'}$ from \texttt{Nmm} as detailed in Section~\ref{sec:denoms}.
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|num_U|, \verb|num_J|: Hartree numerators $\mathcal{N}_U$, $\mathcal{N}_J$ assembled from $D^{\sigma}_{m m'}$.
+  \item \verb|den_U|, \verb|den_J|: denominators $\mathcal{D}_U$, $\mathcal{D}_J$.
+  \item \verb|U|, \verb|J|, \verb|U_eff|: final interaction strengths.
+  \item \verb|nlm|, \verb|nlmd|: on-site occupations $n^{\sigma}_{mm'}$.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+if nspin == 1:  # ACBN0.py lines 331-340
+    ...  # accumulate Naa, Nab
+    den_U = 2 * (Naa.real + Nab.real)
+    den_J = 2 * Naa.real
+else:  # lines 342-354
+    ...  # accumulate Naa, Nbb, Nab with spin channels
+    den_U = Naa.real + Nbb.real + 2 * Nab.real
+    den_J = Naa.real + Nbb.real
+
+num_U, num_J = self.hartree_energy(DR_0, DR_0_dn, gauss_basis, basis_2e)
+hartree_to_eV = 27.211396132
+U = U_eff = hartree_to_eV * num_U / den_U
+if den_J == 0:
+    J = 'Inf'
+else:
+    J = hartree_to_eV * num_J / den_J
+    U_eff -= J
+\end{lstlisting}
+
+\subsection{\texttt{getbasis} (lines 659--690)}
+\paragraph{Formula.}
+\[\chi_{\mu}(\mathbf{r}) = \sum_p c_{\mu p} (x - x_0)^{\ell_x}(y - y_0)^{\ell_y}(z - z_0)^{\ell_z} e^{-\zeta_{\mu p}\lVert \mathbf{r} - \mathbf{r}_0 \rVert^2}\]
+\paragraph{Description.}
+Constructs contracted Gaussian basis functions by combining primitive Gaussians centered on each atomic site.
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|bf = CGBF(pos*1.88973, a)|: creates basis function centred at $\mathbf{r}_0$.
+  \item \verb|bf.pcoefs|, \verb|bf.pexps|, \verb|bf.powers|: store $c_{\mu p}$, $\zeta_{\mu p}$, and $(\ell_x,\ell_y,\ell_z)$.
+  \item \verb|basis_functions|: collection of all $\chi_{\mu}$.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+bf = CGBF(pos * 1.88973, a)          # ACBN0.py lines 681-688
+for lx, ly, lz, coeff, zeta in subshell:
+    bf.pnorms.append(1.0)
+    bf.pexps.append(zeta)
+    bf.pcoefs.append(coeff)
+    bf.powers.append((lx, ly, lz))
+basis_functions.append(bf)
+\end{lstlisting}
+
+\subsection{\texttt{Dk} (lines 693--746)}
+\paragraph{Formulas.}
+\begin{align}
+  H^{\sigma}(\mathbf{k})\, \mathbf{c}_{\nu\mathbf{k}\sigma} &= \varepsilon_{\nu\mathbf{k}\sigma}\, S(\mathbf{k})\, \mathbf{c}_{\nu\mathbf{k}\sigma},\\[4pt]
+  n^{\sigma}_{mm'}(\mathbf{k}) &= \sum_{\nu} f_{\nu\mathbf{k}\sigma}\, \langle \phi_m | \psi_{\nu\mathbf{k}\sigma} \rangle \langle \psi_{\nu\mathbf{k}\sigma} | \phi_{m'} \rangle,\\[4pt]
+  D^{\sigma}(\mathbf{k}) &= \sum_{\nu} f_{\nu\mathbf{k}\sigma}\, \mathbf{c}_{\nu\mathbf{k}\sigma}\mathbf{c}^{\dagger}_{\nu\mathbf{k}\sigma}.
+\end{align}
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|eig|, \verb|vec|: eigenvalues $\varepsilon_{\nu\mathbf{k}\sigma}$ and eigenvectors $\mathbf{c}_{\nu\mathbf{k}\sigma}$.
+  \item \verb|lm_dm|, \verb|lm_2e|: projected overlaps \(\langle \phi_m | \psi_{\nu\mathbf{k}\sigma}\rangle\).
+  \item \verb|D_k|: assembled $D^{\sigma}(\mathbf{k})$ tensors.
+  \item \verb|nlm_k|: projected occupation matrices $n^{\sigma}_{mm'}(\mathbf{k})$.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+eig, vec = eigh(Hks[:, :, ik], Sks[:, :, ik])  # ACBN0.py lines 724-743
+occ_ind = np.where(eig <= 0.0)[0]
+lm_dm = np.zeros((size_dm, len(occ_ind)), dtype=complex)
+lm_2e = np.zeros((size_2e, len(occ_ind)), dtype=complex)
+...
+nlm_k[:, :len(occ_ind), ik] = lm_2e
+lm_dm = np.sum(lm_dm, axis=0)
+D_k[:, :, ik] = np.tensordot(np.conj(vec[:, occ_ind] * lm_dm),
+                              vec[:, occ_ind], axes=([1], [1]))
+\end{lstlisting}
+
+\subsection{\texttt{Nmm} (lines 749--772)}
+\paragraph{Formula.}
+\[N^{\sigma}_{mm'} = \frac{1}{\sum_{\mathbf{k}} w_{\mathbf{k}}} \sum_{\mathbf{k}} w_{\mathbf{k}}\, n^{\sigma}_{mm'}(\mathbf{k})\]
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|kwght|: k-point weights $w_{\mathbf{k}}$.
+  \item \verb|nlm|: projected coefficients $n^{\sigma}_{mm'}(\mathbf{k})$.
+  \item \verb|nlm_aux|: accumulator for the weighted sum.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+nlm_aux = np.zeros((lm_size, nbasis), dtype=complex)  # ACBN0.py lines 767-772
+for ik, wght in enumerate(kwght):
+    nlm_aux += wght * nlm[:, :, ik]
+return np.sum(nlm_aux / np.sum(kwght), axis=1)
+\end{lstlisting}
+
+\subsection{\texttt{DR} (lines 775--798)}
+\paragraph{Formula.}
+\[D^{\sigma} = \frac{1}{\sum_{\mathbf{k}} w_{\mathbf{k}}} \sum_{\mathbf{k}} w_{\mathbf{k}}\, D^{\sigma}(\mathbf{k})\]
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|Dk|: matrices $D^{\sigma}(\mathbf{k})$.
+  \item \verb|kwght|: k-point weights.
+  \item \verb|D|: accumulator for the weighted density matrix.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+D = np.zeros((nawf, nawf), dtype=complex)  # ACBN0.py lines 794-798
+for ik, wght in enumerate(kwght):
+    D += wght * Dk[:, :, ik]
+return D.real / np.sum(kwght)
+\end{lstlisting}
+
+\subsection{\texttt{hartree\_energy} (lines 801--836)}
+\paragraph{Formulas.}
+\begin{align}
+  \mathcal{N}_U &= \sum_{\sigma\sigma'} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_3 | \hat{v} | m_2 m_4 \rangle\, D^{\sigma}_{m_1 m_2} D^{\sigma'}_{m_3 m_4},\\[4pt]
+  \mathcal{N}_J &= \sum_{\sigma} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_4 | \hat{v} | m_3 m_2 \rangle\, D^{\sigma}_{m_1 m_2} D^{\sigma}_{m_3 m_4}.
+\end{align}
+\paragraph{Variables in code.}
+\begin{itemize}[noitemsep]
+  \item \verb|basis|, \verb|basis_2e|: specify orbital quartet indices entering $\langle m_i m_j | \hat{v} | m_k m_l \rangle$.
+  \item \verb|int_U|, \verb|int_J|: Coulomb integrals computed by \texttt{self.coulomb}.
+  \item \verb|DR_up|, \verb|DR_dn|: spin-resolved density matrices $D^{\sigma}_{m m'}$.
+  \item \verb|tmp_U|, \verb|tmp_J|: accumulated numerators $\mathcal{N}_U$, $\mathcal{N}_J$.
+\end{itemize}
+\paragraph{Relevant snippet.}
+\begin{lstlisting}[language=python]
+for k, l, m, n in itertools.product(basis_2e, repeat=4):  # ACBN0.py lines 826-835
+    int_U = self.coulomb(basis[m], basis[n], basis[k], basis[l])
+    int_J = self.coulomb(basis[m], basis[k], basis[n], basis[l])
+    a_b = DR_up[m, n] * DR_up[k, l] + DR_dn[m, n] * DR_dn[k, l]
+    ab_ba = DR_dn[m, n] * DR_up[k, l] + DR_up[m, n] * DR_dn[k, l]
+    tmp_U += int_U * (a_b + ab_ba)
+    tmp_J += int_J * a_b
+\end{lstlisting}
+
+\section{Summary}
+The highlighted loop filters the \texttt{projwfc} projector list to deliver (i) every projector for the target species and orbital needed in the density-matrix basis and (ii) a contiguous subset anchored on the canonical species for the two-electron basis. This guarantees that each Hubbard shell in \verb|self.uVals| is parameterized by a coherent and minimal projector set before the downstream evaluation of the ACBN0 Hubbard parameters.
+
+\end{document}

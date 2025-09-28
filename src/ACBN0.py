@@ -19,10 +19,64 @@
 
 import numpy as np
 
+"""
+ACBN0 self-consistent Hubbard U driver and utilities.
+
+This module orchestrates a self-consistent determination of Hubbard U (and J)
+parameters using the ACBN0 functional by coupling Quantum ESPRESSO and
+PAOFLOW, parsing their outputs, and evaluating on-site Coulomb integrals from
+Gaussian basis fits to pseudopotentials.
+
+References:
+  - Luis A. Agapito, Stefano Curtarolo, and Marco Buongiorno Nardelli, 
+  Reformulation of DFT+U as a Pseudohybrid Hubbard Density Functional 
+  for Accelerated Materials Discovery, Phys. Rev. X 5, 011006 (2015)
+"""
+
 class ACBN0:
+
+  '''
+  High-level class to run the ACBN0 self-consistent Hubbard U workflow.
+
+  The workflow consists of:
+    1) reading QE input templates, generating Gaussian basis fits from UPF
+       pseudopotentials;
+    2) running QE (scf, nscf, projwfc) with current U values;
+    3) running PAOFLOW ACBN0 post-processing;
+    4) computing updated U (and J) values from density matrices and two-electron
+       integrals; and
+    5) iterating until convergence within a given threshold.
+
+  Attributes are populated at construction time from QE input files and helper
+  routines in `src/defs`.
+  '''
 
   def __init__ ( self, prefix, pthr=0.95, workdir='./', mpi_qe='', nproc=1, qe_path='', qe_options='', mpi_python='', python_path='',
                 projection='atomic' ):
+    '''
+    Initialize the ACBN0 workflow context and parse QE templates.
+
+    Arguments:
+        prefix (str): File prefix used to locate QE input templates (e.g. "<prefix>.scf.in").
+        pthr (float): Projectability threshold used by PAOFLOW when building the PAO basis.
+        workdir (str): Working directory where inputs/outputs are read/written.
+        mpi_qe (str): MPI launcher and options for QE (e.g. "mpirun -np 8").
+        nproc (int): Number of QE processes (informational; not directly used here).
+        qe_path (str): Path to QE executables (pw.x, projwfc.x).
+        qe_options (str): Additional QE command-line options.
+        mpi_python (str): MPI launcher and options for Python (e.g. "mpirun -np 1").
+        python_path (str): Path to the Python interpreter used to run PAOFLOW scripts.
+        projection (str): Projection type tag to label the Hubbard card (e.g. 'atomic').
+
+  Returns:
+    None
+
+  Notes:
+        - QE input blocks/cards are parsed from `<prefix>.scf.in`.
+        - Gaussian fits for pseudopotential basis states are generated for each species.
+        - Initial U values and optional hubbard_occ overrides are collected if present
+          in the input template HUBBARD card and system block.
+    '''
     from .defs.file_io import struct_from_inputfile_QE
     from .defs.upf_gaussfit import gaussian_fit
     from .defs.header import header
@@ -53,7 +107,7 @@ class ACBN0:
 
     # Get structure information
     self.blocks,self.cards = struct_from_inputfile_QE(f'{self.prefix}.scf.in')
-    self.nspin = int(struct['nspin']) if 'nspin' in self.blocks['system'] else 1
+    self.nspin = int(self.blocks['system']['nspin']) if 'nspin' in self.blocks['system'] else 1
 
     # Generate gaussian fits
     print('Generating gaussian fits for pseudopotential basis states.\n')
@@ -102,6 +156,23 @@ class ACBN0:
 
 
   def set_hubbard_parameters ( self, hubbard ):
+    '''
+    Set initial Hubbard U values and optional occupations from user input.
+
+    Arguments:
+        hubbard (list|tuple|dict):
+            - list/tuple of strings like 'Fe-d' to include shells with default
+              small initial U (0.01 eV), or
+            - dict mapping 'El-orb' -> U0 or (U0, occ) where occ sets a
+              hubbard_occ value for that species/state.
+
+    Returns:
+        None
+
+    Raises:
+        TypeError: If the input type is not list/tuple/dict.
+        Exception: If dict values are malformed (not float or (U, occ)).
+    '''
 
     htype = type(hubbard)
     if htype in [list, tuple]:
@@ -156,6 +227,23 @@ class ACBN0:
 
 
   def optimize_hubbard_U ( self, convergence_threshold=0.01 ):
+    '''
+    Run the ACBN0 self-consistent loop until U converges.
+
+    Arguments:
+        convergence_threshold (float): Convergence threshold in eV for |U_new - U_old|.
+
+    Returns:
+        None
+
+  Notes:
+    Implements the convergence criterion used in the self-consistent loop
+    ($\max_k |U^{(n+1)}_k - U^{(n)}_k| < \delta_{\text{conv}}$) as proposed in
+    Agapito et al., Phys. Rev. X 5, 011006 (2015).
+
+    - Updates `self.uVals` at each iteration with newly computed values.
+    - Uses QE and PAOFLOW to compute densities and integrals needed by ACBN0.
+    '''
 
     print('\nBeginning self-consistent loop.\n')
     itr = 0
@@ -184,6 +272,26 @@ class ACBN0:
 
 
   def acbn0 ( self, fname ):
+    '''
+    Compute U and J from an ACBN0 input description.
+
+    Arguments:
+        fname (str): Path to an acbn0 input file describing lattice, coordinates,
+                     species, spin, and reduced bases for density and 2e integrals.
+
+    Returns:
+        None
+
+    Formulas:
+        Implements the shell-averaged Hubbard parameters defined in
+        Agapito et al., Phys. Rev. X 5, 011006 (2015):
+        $U = \dfrac{\sum_{\sigma\sigma'} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_3 | \hat{v} | m_2 m_4 \rangle\, n^{\sigma}_{m_1 m_2} n^{\sigma'}_{m_3 m_4}}{\sum_{\sigma\sigma'} \sum_{m m'} n^{\sigma}_{mm} n^{\sigma'}_{m'm'}}$,
+        $J = \dfrac{\sum_{\sigma} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_4 | \hat{v} | m_3 m_2 \rangle\, n^{\sigma}_{m_1 m_2} n^{\sigma}_{m_3 m_4}}{\sum_{\sigma} \sum_{m \ne m'} n^{\sigma}_{mm} n^{\sigma}_{m'm'}}$,
+        $U_{\mathrm{eff}} = U - J$, with $n^{\sigma}_{mm'}$ supplied by `Nmm` and Coulomb kernels by `hartree_energy`.
+
+    Side Effects:
+        Writes `<symbol>_UJ.txt` with lines: `U`, `J`, and `U_eff` (in eV).
+    '''
 
     data = {}
     with open(fname, 'r') as f:
@@ -266,6 +374,15 @@ class ACBN0:
 
 
   def exec_command ( self, command ):
+    '''
+    Execute a shell command and return its exit status.
+
+    Arguments:
+        command (str): Shell command to run.
+
+    Returns:
+        int: Exit status code returned by the system call.
+    '''
     from os import system
 
     print(f'Starting Process: {command}', flush=True)
@@ -273,6 +390,16 @@ class ACBN0:
 
 
   def exec_QE ( self, executable, fname ):
+    '''
+    Run a Quantum ESPRESSO executable on an input file.
+
+    Arguments:
+        executable (str): Name of the QE executable (e.g., 'pw.x', 'projwfc.x').
+        fname (str): Input filename to feed to the executable.
+
+    Returns:
+        int: Exit status code.
+    '''
     from os.path import join
 
     exe = join(self.qpath, executable)
@@ -283,6 +410,15 @@ class ACBN0:
 
 
   def exec_PAOFLOW ( self ):
+    '''
+    Run PAOFLOW's ACBN0 post-processing using the configured Python.
+
+    Arguments:
+        None
+
+    Returns:
+        int: Exit status code.
+    '''
     from os.path import join
 
     prefix = join(self.ppath, 'python')
@@ -291,6 +427,18 @@ class ACBN0:
 
 
   def hubbard_card ( self ):
+    '''
+    Build the QE HUBBARD card from current U values and tag.
+
+    Arguments:
+        None
+
+    Returns:
+        list[str]: Lines for the HUBBARD card suitable for QE input files.
+
+    Raises:
+        ValueError: If no U values have been defined.
+    '''
 
     if len(self.uVals) == 0:
       msg = 'No U found. Add U to the template inputfiles or with set_hubbard_parameters.'
@@ -304,6 +452,17 @@ class ACBN0:
 
 
   def run_dft ( self, prefix, species, uVals ):
+    '''
+    Prepare QE input files with updated HUBBARD card and run scf/nscf/projwfc.
+
+    Arguments:
+        prefix (str): Prefix to locate `.scf.in`, `.nscf.in`, `.projwfc.in` templates.
+        species (list[str]): Species list (not used; kept for API symmetry).
+        uVals (dict): Current U values per 'El-orb' (not used directly here).
+
+    Returns:
+        None
+    '''
     from .defs.file_io import create_atomic_inputfile
     from .defs.file_io import struct_from_inputfile_QE
 
@@ -328,6 +487,16 @@ class ACBN0:
 
 
   def run_paoflow ( self, prefix, save_prefix ):
+    '''
+    Write PAOFLOW ACBN0 input and run PAOFLOW to generate needed data.
+
+    Arguments:
+        prefix (str): Original QE prefix for labeling.
+        save_prefix (str): QE save directory prefix (QE 'prefix' value).
+
+    Returns:
+        None
+    '''
     from .defs.file_io import create_acbn0_inputfile
     from os import system
 
@@ -344,6 +513,18 @@ class ACBN0:
 
 
   def read_cell_atoms ( self, fname ):
+    '''
+    Parse lattice vectors and atomic positions/species from a QE output file.
+
+    Arguments:
+        fname (str): Path to a QE output file (e.g., 'scf.out').
+
+    Returns:
+        tuple:
+            lattice (ndarray[3,3]): Lattice vectors in bohr units.
+            species (list[str]): Species labels per atom (length natoms).
+            positions (ndarray[natoms,3]): Atomic positions in bohr units.
+    '''
 
     lines = None
     with open(fname, 'r') as f:
@@ -379,6 +560,18 @@ class ACBN0:
 
 
   def hubbard_orbital ( self, ele ):
+    '''
+    Map an 'El-orb' label to angular momentum L used by projwfc states.
+
+    Arguments:
+        ele (str): Label like 'Fe-d', 'O-p', etc.
+
+    Returns:
+        int: Angular momentum quantum number L (0=s,1=p,2=d).
+
+    Raises:
+        Exception: If the orbital suffix is not one of s/p/d.
+    '''
 
     orb = ele[-1]
     orbitals = {'s':0, 'p':1, 'd':2}
@@ -391,6 +584,15 @@ class ACBN0:
 
 
   def run_acbn0 ( self, prefix ):
+    '''
+    Build per-shell ACBN0 input files, run calculations, and collect U values.
+
+    Arguments:
+        prefix (str): Label used for input/output file naming.
+
+    Returns:
+        dict: Mapping 'El-orb' -> U_eff (eV) gathered from `<El-orb>_UJ.txt`.
+    '''
     import re
 
     lattice,species,positions = self.read_cell_atoms('scf.out')
@@ -455,6 +657,20 @@ class ACBN0:
 
 
   def getbasis ( self, basis, species, lattice, coords ):
+    '''
+    Build contracted Gaussian basis functions for all atoms in the cell.
+
+    Arguments:
+        basis (dict): Mapping species -> shells -> contracted Gaussian parameters.
+        species (list[str]): Species labels per atom.
+        lattice (ndarray[3,3]): Lattice vectors (bohr). Currently not used here.
+        coords (ndarray[natoms,3]): Atomic positions (bohr).
+    Formula:
+        $\chi_{\mu}(\mathbf{r}) = \sum_p c_{\mu p}\,(x-x_0)^{\ell_x}(y-y_0)^{\ell_y}(z-z_0)^{\ell_z} 
+        e^{-\zeta_{\mu p}\|\mathbf{r}-\mathbf{r}_0\|^2}$
+    Returns:
+        list[CGBF]: List of contracted Gaussian basis function objects.
+    '''
     from .defs.pyints import CGBF
  
     basis_functions = []
@@ -475,6 +691,26 @@ class ACBN0:
 
 
   def Dk ( self, basis_dm, basis_2e, Hks, Sks ):
+    '''
+    Compute k-resolved density matrix D(k) and projected lm-occupations.
+
+    Arguments:
+        basis_dm (ndarray[int]): Indices of basis functions used for density matrix.
+        basis_2e (ndarray[int]): Indices of basis functions used for two-electron terms.
+        Hks (ndarray[n, n, nk]): k-space Hamiltonians.
+        Sks (ndarray[n, n, nk]): k-space overlap matrices.
+
+    Returns:
+        tuple:
+            D_k (ndarray[n, n, nk]): k-resolved density matrices.
+            nlm_k (ndarray[nlm, n, nk]): Projected lm coefficients per k (first k set to 0).
+
+    Formulas:
+        Solves the generalized eigenproblem $H^{\sigma}(\mathbf{k})\,\mathbf{c}_{\nu\mathbf{k}\sigma} = \varepsilon_{\nu\mathbf{k}\sigma}\,S(\mathbf{k})\,\mathbf{c}_{\nu\mathbf{k}\sigma}$ and assembles the projected occupation matrix introduced in
+        Agapito et al., Phys. Rev. X 5, 011006 (2015):
+        $n^{\sigma}_{mm'}(\mathbf{k}) = \sum_{\nu} f_{\nu\mathbf{k}\sigma}\, \langle \phi_m | \psi_{\nu\mathbf{k}\sigma} \rangle \langle \psi_{\nu\mathbf{k}\sigma} | \phi_{m'} \rangle$,
+        together with the k-resolved density matrix $D^{\sigma}(\mathbf{k}) = \sum_{\nu} f_{\nu\mathbf{k}\sigma}\,\mathbf{c}_{\nu\mathbf{k}\sigma}\mathbf{c}_{\nu\mathbf{k}\sigma}^{\dagger}$.
+    '''
     from scipy.linalg import eigh
 
     nbasis,_,nkpnts = Hks.shape
@@ -511,6 +747,22 @@ class ACBN0:
 
 
   def Nmm ( self, nlm, Hks, kwght ):
+    '''
+    k-average the projected lm coefficients to obtain occupations N_mm.
+
+    Arguments:
+        nlm (ndarray[nlm, n, nk]): Projected lm coefficients over k.
+        Hks (ndarray): Unused placeholder argument (kept for API symmetry).
+        kwght (ndarray[nk]): k-point weights.
+
+    Returns:
+        ndarray[nlm]: k-averaged occupations per (l,m) channel (complex dtype).
+
+    Formula:
+        Implements the Brillouin-zone average of the on-site occupation matrix described in
+        Agapito et al., Phys. Rev. X 5, 011006 (2015):
+        $N^{\sigma}_{mm'} = \dfrac{1}{\sum_{\mathbf{k}} w_{\mathbf{k}}} \sum_{\mathbf{k}} w_{\mathbf{k}}\, n^{\sigma}_{mm'}(\mathbf{k})$.
+    '''
 
     lm_size,nbasis,nkp = nlm.shape
     nlm_aux = np.zeros((lm_size,nbasis), dtype=complex)
@@ -521,6 +773,20 @@ class ACBN0:
 
 
   def DR ( self, Dk, kwght ):
+    '''
+    k-average the density matrix D(k) over the Brillouin zone.
+
+    Arguments:
+        Dk (ndarray[n, n, nk]): Density matrices at each k-point.
+        kwght (ndarray[nk]): k-point weights.
+
+    Returns:
+        ndarray[n, n]: Real part of the k-averaged density matrix.
+
+    Formula:
+        Computes the cell-averaged density matrix $D^{\sigma} = \dfrac{1}{\sum_{\mathbf{k}} w_{\mathbf{k}}} \sum_{\mathbf{k}} w_{\mathbf{k}} D^{\sigma}(\mathbf{k})$
+        entering the Hubbard energy evaluation in Agapito et al., Phys. Rev. X 5, 011006 (2015).
+    '''
 
     nawf = Dk.shape[0]
     nkpnts = kwght.shape[0]
@@ -533,6 +799,25 @@ class ACBN0:
 
 
   def hartree_energy ( self, DR_up, DR_dn, basis, basis_2e ):
+    '''
+    Compute Hartree U and J numerators from density matrices and Coulomb integrals.
+
+    Arguments:
+        DR_up (ndarray[n, n]): Spin-up k-averaged density matrix.
+        DR_dn (ndarray[n, n]): Spin-down k-averaged density matrix (or same as up if nspin=1).
+        basis (list[CGBF]): Contracted Gaussian basis functions.
+        basis_2e (ndarray[int]): Indices subset used for two-electron integrals.
+
+    Returns:
+        tuple[float, float]: (U_num, J_num) in Hartree atomic units.
+
+    Formulas:
+        Evaluates the on-site direct and exchange energy numerators from
+        Agapito et al., Phys. Rev. X 5, 011006 (2015):
+        $\mathcal{N}_U = \sum_{\sigma\sigma'} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_3 | \hat{v} | m_2 m_4 \rangle\, n^{\sigma}_{m_1 m_2} n^{\sigma'}_{m_3 m_4}$,
+        $\mathcal{N}_J = \sum_{\sigma} \sum_{m_1 m_2 m_3 m_4} \langle m_1 m_4 | \hat{v} | m_3 m_2 \rangle\, n^{\sigma}_{m_1 m_2} n^{\sigma}_{m_3 m_4}$,
+        with $n^{\sigma}_{m_1 m_2}$ reconstructed from the spin-resolved density matrices `DR_up`/`DR_dn`.
+    '''
     import itertools
 
     tmp_U,tmp_J = 0,0
@@ -551,6 +836,21 @@ class ACBN0:
     return tmp_U, tmp_J
 
   def read_ham_data ( self, fpath, nspin ):
+    '''
+    Read k-points, weights, overlap, and Hamiltonian(s) from PAOFLOW output.
+
+    Arguments:
+        fpath (str): Directory containing 'k.txt', 'wk.txt', 'kovp.npy', 'kham*.npy'.
+        nspin (int): Number of spin channels (1 or 2).
+
+    Returns:
+        tuple:
+            kpnts (ndarray[nk,3]),
+            kwght (ndarray[nk]),
+            Sks (ndarray[n, n, nk]),
+            Hks_up (ndarray[n, n, nk] or None),
+            Hks_dw (ndarray[n, n, nk] or None)
+    '''
     from os.path import join
 
     kpnts = np.loadtxt(open(join(fpath,'k.txt'),'r'))
@@ -585,8 +885,16 @@ class ACBN0:
 
 
   def coulomb ( self, a, b, c, d ):
+    '''
+    Coulomb interaction between four contracted Gaussians.
+
+    Arguments:
+        a, b, c, d (CGBF): Contracted Gaussian basis functions.
+
+    Returns:
+        float: Two-electron Coulomb integral (a b | c d).
+    '''
     from .defs.pyints import contr_coulomb
-    ' Coulomb interaction between four contracted Gaussians '
     return contr_coulomb(a.pexps,a.pcoefs,a.pnorms,a.origin,a.powers,
                          b.pexps,b.pcoefs,b.pnorms,b.origin,b.powers,
                          c.pexps,c.pcoefs,c.pnorms,c.origin,c.powers,
