@@ -285,17 +285,17 @@ class PAOFLOW:
     else:
       basis,arry['shells'] = build_pswfc_basis_all(self.data_controller)
 
-    arry['Dnm'] = np.empty((attr['nawf'],attr['nawf'],3))
-    for i in range(3):
-      for n in range(attr['nawf']):
-        for m in range(attr['nawf']):
-          arry['Dnm'][n,m,i] = basis[n]['tau'][i] - basis[m]['tau'][i]
-
     nkpnts = len(arry['kpnts'])
     nbnds = attr['nbnds']
     nspin = attr['nspin']
     natwfc = len(basis)
     attr['nawf'] = natwfc
+
+    arry['Dnm'] = np.empty((attr['nawf'],attr['nawf'],3))
+    for i in range(3):
+      for n in range(attr['nawf']):
+        for m in range(attr['nawf']):
+          arry['Dnm'][n,m,i] = basis[n]['tau'][i] - basis[m]['tau'][i]
     
     ini_ik,end_ik = load_balancing(self.size, self.rank,nkpnts)
     Unewaux = np.zeros((end_ik-ini_ik,nbnds,natwfc,nspin), dtype=complex)
