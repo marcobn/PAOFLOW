@@ -114,3 +114,4 @@ src/.PAOFLOW.py.swp
 *.swp
 PAOFLOW.egg-info/SOURCES.txt
 PAOFLOW.egg-info/dependency_links.txt
+*.swp

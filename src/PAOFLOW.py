@@ -450,20 +450,14 @@ class PAOFLOW:
     self.report_module_time('k -> R')
 
 
-  def minimal(self,R=False):
+  def minimal(self,first_band=None, R=False):
       from .defs.do_minimal import do_minimal
-      do_minimal(self.data_controller)
+      raise Exception('ONLY FOR ARCHIVAL PUTPOSES - DO NOT USE')
+      do_minimal(self.data_controller,first_band)
       if R:
         from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
         do_Hks_to_HRs(self.data_controller)
         self.data_controller.broadcast_single_array('HRs')
-
-
-
-  def minimal2(self):
-      from .defs.do_minimal import do_minimal2
-      do_minimal2(self.data_controller)
-
 
 
   def add_external_fields ( self, Efield=[0.], Bfield=[0.], HubbardU=[0.] ):
@@ -671,7 +665,7 @@ mo    '''
         None
     '''
     from .defs.do_doubling import doubling_HRs
-    
+
     arrays,attr = self.data_controller.data_dicts()
     attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
     
@@ -718,6 +712,7 @@ mo    '''
       if attr['abort_on_exception']:
         raise e
 
+    self.report_module_time('cutting_Hamiltonian')
 
 
   def spin_operator ( self, spin_orbit=False, sh_l=None, sh_j=None):
@@ -765,12 +760,20 @@ mo    '''
       if spin_orbit:
         # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
         for spol in range(3):
-          for i in range(nawf//2):
-            Sj[spol,i,i] = sP[spol][0,0]
-            Sj[spol,i,i+1] = sP[spol][0,1]
-          for i in range(nawf//2, nawf):
-            Sj[spol,i,i-1] = sP[spol][1,0]
-            Sj[spol,i,i] = sP[spol][1,1]
+          if spol ==2: # Sz
+            for i in range(nawf//2):
+              Sj[spol,i,i] = sP[spol][0,0]
+              Sj[spol,i,i+1] = sP[spol][0,1]
+            for i in range(nawf//2, nawf):
+              Sj[spol,i,i-1] = sP[spol][1,0]
+              Sj[spol,i,i] = sP[spol][1,1]
+          else:   # Sx and Sy
+            for i in range(nawf//2):
+              Sj[spol,i,i+(nawf//2-1)] = sP[spol][0,0]
+              Sj[spol,i,i+1+(nawf//2-1)] = sP[spol][0,1]
+            for i in range(nawf//2, nawf):
+              Sj[spol,i,i-1-(nawf//2-1)] = sP[spol][1,0]
+              Sj[spol,i,i-(nawf//2-1)] = sP[spol][1,1]
       else:
         from .defs.clebsch_gordan import clebsch_gordan
         # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
