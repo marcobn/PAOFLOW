@@ -1,4 +1,6 @@
 from numpy import ndarray
+import pandas as pd
+from pathlib import Path
 
 def read_band_path_PAO ( fname ):
   '''
@@ -62,6 +64,17 @@ def read_bands_PAO ( fname ):
 
   return np.array(bands).T
 
+def read_site_projected(path: Path) -> pd.DataFrame:
+
+    df = pd.read_csv(path, delim_whitespace=True, header=None)
+
+    df = df.iloc[:, :3].copy()
+    df.columns = ["kindex", "eigenvalue", "site_weight"]
+    
+    for c in ["kindex", "eigenvalue", "site_weight"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    return df.dropna(subset=["kindex", "eigenvalue", "site_weight"]).reset_index(drop=True)
 
 def read_transport_PAO ( fname ):
 

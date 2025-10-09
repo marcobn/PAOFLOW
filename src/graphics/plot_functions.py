@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+import numpy as np
 
 def plot_dos ( es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=None ):
   '''
@@ -89,6 +90,65 @@ def plot_pdos ( es, dos, title, x_lim, y_lim, vertical, cols, labels, legend ):
   if legend:
     ax.legend()
 
+  plt.show()
+
+def normalize_weights(w: np.ndarray) -> np.ndarray:
+    if np.nanmin(w) >= 0 and np.nanmax(w) <= 1:
+        return w.copy()
+    lo, hi = np.nanpercentile(w, [1, 99])
+    if hi - lo > 0:
+        return np.clip((w - lo) / (hi - lo), 0, 1)
+    return np.zeros_like(w)
+
+
+
+def plot_weighted_bands ( outputdir, bands, sym_points, title, cbar_label, label, filename, y_lim, col ):
+  '''
+  '''
+
+  hline_style = {'linestyle':'--', 'linewidth':1, 'color':'blue' }  # horizontal line style
+  vline_style = {'linestyle':'-', 'linewidth':1, 'color':'gray' }  # horizontal line style
+
+
+  w_norm = normalize_weights(bands['site_weight'].to_numpy())
+
+  fig = plt.figure()
+
+  tit = '' if title is None else title
+  fig.suptitle(tit)
+
+  ax = fig.add_subplot(111)
+
+  sizes = 8 + 7 * w_norm  # marker size scaling
+  sc  = ax.scatter(bands['kindex'], bands['eigenvalue'], s=sizes, c=w_norm, cmap='jet', alpha=0.8, edgecolors='none')
+
+  if cbar_label is None:
+      fig.colorbar(sc, ax=ax, label='Weight')
+  else:
+      fig.colorbar(sc, ax=ax, label=cbar_label)
+
+  ax.hlines(0.0, sym_points[0][0],sym_points[0][len(sym_points[0])-1],**hline_style)
+
+  if y_lim is None:
+    y_lim = ax.get_ylim()
+  ax.set_xlim(0, bands.shape[1])
+  ax.set_ylim(*y_lim)
+  if sym_points is None:
+    ax.xaxis.set_visible(False)
+  else:
+    ax.set_xticks(sym_points[0])
+    ax.set_xticklabels(sym_points[1])
+    ax.vlines(sym_points[0], y_lim[0], y_lim[1], **vline_style)
+  if label is None:
+    label = '$\epsilon$($\\bf{k}$) (eV)'
+  ax.set_ylabel(label, fontsize=12)
+
+
+  if filename is not None:
+    if outputdir is None:
+      plt.savefig(filename, dpi=300, bbox_inches='tight')
+    else:
+      plt.savefig(outputdir+filename, dpi=300, bbox_inches='tight')
   plt.show()
 
 

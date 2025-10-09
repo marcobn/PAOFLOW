@@ -13,6 +13,7 @@ Qauntum ESPRESSO Examples: ./qe_examples/
   * example09 : Weyl point search in MoP2
   * example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
   * example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
+  * example12: Bi bilayer nanoribbon site projected band strcture 
 
 VASP Examples: ./vasp_examples
   * example01 : Si

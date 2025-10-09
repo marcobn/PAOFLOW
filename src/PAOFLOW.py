@@ -639,7 +639,7 @@ class PAOFLOW:
 
     Returns:
         None
-mo    '''
+    '''
     from .defs.do_wave_function_site_projection import wave_function_site_projection
 
     try:
@@ -651,6 +651,38 @@ mo    '''
 
     self.report_module_time('wave_function_projection')
 
+
+  def site_projected_bands(self,site_proj=[0]):
+
+    '''
+    This routine calculates the wavefunction square wheights to produce a site projected band
+    structure.
+
+    Arguments:
+        site_proj (list of ints): Incides of the atomic site to project the bands
+
+    Returns:
+        None
+    '''
+
+    from .defs.do_site_projected_bands import site_projeted_bands
+
+    arry,attr = self.data_controller.data_dicts()
+    
+
+    if 'site_proj' not in arry: arry['site_proj'] = site_proj
+
+    if 'naw' not in arry:     
+        self.data_controller.build_arrays_adhoc_soc()
+
+    try:    
+      site_projeted_bands(self.data_controller)    
+    except Exception as e:    
+      self.report_exception('site_projeted_bands')    
+      if self.data_controller.data_attributes['abort_on_exception']:
+        raise e
+
+    self.report_module_time('site_projeted_bands')
 
   def doubling_Hamiltonian ( self, nx , ny, nz ):
     '''

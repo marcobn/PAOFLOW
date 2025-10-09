@@ -1,0 +1,18 @@
+Calculating site projected band structure for Bi bilayer nanoribbon.
+scf : 7 x 1 x 1
+
+
+qe-soc :  Fully Relativistic QE calculation
+main.py:
+* Build the PAO Hamiltonian.
+* Calculate Band Structure. 
+* Calculate Site Projected Band Structure. 
+* Plot Site Projected Band Structure. 
+
+ad_hoc_soc :  Scalar Relativistic QE calculation. The SOC is included in the PAO Hamiltonian.
+main.py:
+* Build the PAO Hamiltonian.
+* Include SOC in the PAO Hamiltonian
+* Calculate Band Structure. 
+* Calculate Site Projected Band Structure. 
+* Plot Site Projected Band Structure. 

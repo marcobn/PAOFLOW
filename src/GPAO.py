@@ -58,6 +58,28 @@ class GPAO:
 
     plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend)
 
+  def plot_weighted_bands ( self, outputdir, fname, sym_points=None, title=None, cbar_label= None, label=None, filename=None, y_lim=None, col='black' ):
+    '''
+      Plot the band structure
+
+      Arguments:
+        fname (str): File name (including relative path)
+        sym_points (str or tuple): File name for the kpath_points produced by PAOFLOW. Otherwise, provide a tuple of two lists. The first contains indices of the high sym points, the second contains labels for the high sym points.
+        title (str): A title for the plot
+        y_lim (tuple): Pair of axis limits (y_min, y_max)
+        col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
+    '''
+    from .graphics.plot_functions import plot_weighted_bands
+    from .defs.read_pao_output import read_bands_PAO
+    from .defs.read_pao_output import read_site_projected 
+    import pandas as pd 
+ 
+    if not sym_points is None:
+      if type(sym_points) is str:
+        from .defs.read_pao_output import read_band_path_PAO
+        sym_points = read_band_path_PAO(sym_points)
+    plot_weighted_bands(outputdir,read_site_projected(fname), sym_points, title,  cbar_label, label, filename,y_lim, col)
+
 
   def plot_bands ( self, fname, sym_points=None, title=None, label=None, y_lim=None, col='black' ):
     '''
