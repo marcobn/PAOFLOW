@@ -590,6 +590,7 @@ class PAOFLOW:
 
     '''
     from .defs.do_spin_orbit import do_spin_orbit_H
+    import scipy.linalg as la
 
     arry,attr = self.data_controller.data_dicts()
     attr['do_spin_orbit'] = attr['adhoc_SO'] = True
@@ -615,11 +616,21 @@ class PAOFLOW:
     if (len(arry['orb_pseudo'])==attr['natoms']):
       # add SOC  
       do_spin_orbit_H(self.data_controller)
-      # Rezising arrays
+      # Rezising 
       attr['bnd'] *= 2
       attr['dftSO'] = True
       attr['nspin'] = 1
       attr['nawf'] = arry['HRs'].shape[0]
+
+      if 'Dnm' in arry:
+        Dnm_double = np.empty((attr['nawf'],attr['nawf'],3))
+      for i in range(3):
+        Dnm = arry['Dnm'][:,:,i]
+        Dnm_double[:,:,i] = la.block_diag(*[Dnm,Dnm])
+      arry['Dnm'] = Dnm_double
+      Dnm_double = None
+      Dnm = None
+
       # for write_z2pack
       del arry["Hks"]
       arry["Hks"]=np.fft.fftn(arry["HRs"],axes=(2,3,4))
@@ -1286,7 +1297,7 @@ class PAOFLOW:
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
     if 'Sj' not in arrays:
-      self.spin_operator()
+      self.spin_operator(spin_orbit=attr['do_spin_orbit'])
 
     try:
       do_spin_Hall(self.data_controller, twoD, do_ac)
