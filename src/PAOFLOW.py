@@ -498,7 +498,7 @@ class PAOFLOW:
 
 
 
-  def z2_pack ( self, fname='z2pack_hamiltonian.dat' ):
+  def write_Hamiltonian ( self, fname='hamiltonian.dat' ):
     '''
     Write 'HRs' to file for use with Z2 Pack
 
@@ -510,11 +510,12 @@ class PAOFLOW:
 
     '''
     try:
-      self.data_controller.write_z2pack(fname)
+      self.data_controller.write_HRs(fname)
     except Exception as e:
-      self.report_exception('z2_pack')
+      self.report_exception('write_Hamiltonian')
       if self.data_controller.data_attributes['abort_on_exception']:
         raise e
+    self.report_module_time('write_Hamiltonian')
 
 
 
@@ -631,7 +632,7 @@ class PAOFLOW:
       Dnm_double = None
       Dnm = None
 
-      # for write_z2pack
+      # for write Hamiltonian
       del arry["Hks"]
       arry["Hks"]=np.fft.fftn(arry["HRs"],axes=(2,3,4))
     else:

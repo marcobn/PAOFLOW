@@ -484,7 +484,7 @@ class DataController:
       print('H(k),S(k),k,wk written to file')
 
 
-  def write_z2pack ( self, fname ):
+  def write_HRs ( self, fname ):
     '''
     Write HRs in the Z2 Pack format
 
@@ -499,6 +499,51 @@ class DataController:
         import numpy as np
         from os.path import join
         from .defs.zero_pad import zero_pad
+
+        def HRs_write(nk1,nk2,nk3,nawf,ispin,f):
+
+            nkpts = nk1*nk2*nk3
+            f.write("PAOFLOW Generated \n")
+            f.write('%5d \n'%nawf)
+    
+            f.write('%5d \n'%(nk1*nk2*nk3))
+  
+            nl = 15 
+    
+            nlines = nkpts//nl # number of lines
+            nlast = nkpts%nl   # number of items of laste line if needed
+    
+            for j in range(nlines):
+              f.write("1 "*nl)
+              f.write("\n")
+            f.write("1 "*nlast)
+            f.write("\n")
+
+            for i in range(nk1):
+              for j in range(nk2):
+                for k in range(nk3):
+                  n = k + j*nk3 + i*nk2*nk3
+                  Rx = float(i)/float(nk1)
+                  Ry = float(j)/float(nk2)
+                  Rz = float(k)/float(nk3)
+                  if Rx >= 0.5: Rx=Rx-1.0
+                  if Ry >= 0.5: Ry=Ry-1.0
+                  if Rz >= 0.5: Rz=Rz-1.0
+                  Rx -= int(Rx)
+                  Ry -= int(Ry)
+                  Rz -= int(Rz)
+                  # the minus sign in Rx*nk1 is due to the Fourier transformation (Ri-Rj)
+                  ix=-round(Rx*nk1,0)
+                  iy=-round(Ry*nk2,0)
+                  iz=-round(Rz*nk3,0)
+                  for m in range(nawf):
+                    for l in range(nawf):
+                      # l+1,m+1 just to start from 1 not zero
+
+                      f.write('%3d %3d %3d %5d %5d %28.14f %28.14f\n'%(ix,iy,iz,l+1,m+1,
+                                                               HRS[l,m,i,j,k,ispin].real,
+                                                               HRS[l,m,i,j,k,ispin].imag,))
+
 
         arry,attr = self.data_dicts()
 
@@ -529,53 +574,17 @@ class DataController:
         HRS=HRS_interp
         HRS_interp=None
 
-        with open(join(attr['opath'],fname), 'w') as f:#'z2pack_hamiltonian.dat','w')
-  
-          nkpts = nk1*nk2*nk3
-          f.write("PAOFLOW Generated \n")
-          f.write('%5d \n'%nawf)
-  
-          f.write('%5d \n'%(nk1*nk2*nk3))
+        if nspin==1:
+          with open(join(attr['opath'],fname), 'w') as f:
+            HRs_write(nk1,nk2,nk3,nawf,0,f)
+        else:
+            for ispin in range(nspin):
+              with open(join(attr['opath'],fname+'_'+str(ispin)), 'w') as f:
+                HRs_write(nk1,nk2,nk3,nawf,ispin,f)
 
-          nl = 15 # z2pack read the weights in lines of 15 items
-  
-          nlines = nkpts//nl # number of lines
-          nlast = nkpts%nl   # number of items of laste line if needed
-  
-          for j in range(nlines):
-            f.write("1 "*nl)
-            f.write("\n")
-          f.write("1 "*nlast)
-          f.write("\n")
-  
-  #### Can be condensed
-          for i in range(nk1):
-            for j in range(nk2):
-              for k in range(nk3):
-                n = k + j*nk3 + i*nk2*nk3
-                Rx = float(i)/float(nk1)
-                Ry = float(j)/float(nk2)
-                Rz = float(k)/float(nk3)
-                if Rx >= 0.5: Rx=Rx-1.0
-                if Ry >= 0.5: Ry=Ry-1.0
-                if Rz >= 0.5: Rz=Rz-1.0
-                Rx -= int(Rx)
-                Ry -= int(Ry)
-                Rz -= int(Rz)
-                # the minus sign in Rx*nk1 is due to the Fourier transformation (Ri-Rj)
-                ix=-round(Rx*nk1,0)
-                iy=-round(Ry*nk2,0)
-                iz=-round(Rz*nk3,0)
-                for m in range(nawf):
-                  for l in range(nawf):
-                    # l+1,m+1 just to start from 1 not zero
-
-                    f.write('%3d %3d %3d %5d %5d %28.14f %28.14f\n'%(ix,iy,iz,l+1,m+1,
-                                                               HRS[l,m,i,j,k,0].real,
-                                                               HRS[l,m,i,j,k,0].imag,))
                                                                
     except Exception as e:
-      self.report_exception('z2_pack')
+      self.report_exception('Write Hamiltonian')
       if self.data_attributes['abort_on_exception']:
         raise e
 
