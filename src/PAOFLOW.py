@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing='gauss', acbn0=False, verbose=False, restart=False, dft='QE'):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing=None, acbn0=False, verbose=False, restart=False, dft='QE'):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
     Arguments:
@@ -1091,13 +1091,14 @@ class PAOFLOW:
 
 
 
-  def adaptive_smearing ( self, smearing='gauss' ):
+  def adaptive_smearing ( self, smearing='gauss', afac=None ):
     '''
     Calculate the Adaptive Smearing parameters
     Populates DataController with 'deltakp' and 'deltakp2'
 
     Arguments:
         smearing (str): Smearing type (m-p and gauss)
+        afac   (float): Smearing control. Small values (<0.01) are equivalent to no smearing
 
     Returns:
         None
@@ -1106,11 +1107,12 @@ class PAOFLOW:
 
     attr = self.data_controller.data_attributes
 
+    attr['smearing'] = smearing
     if smearing != 'gauss' and smearing != 'm-p':
       raise ValueError('Smearing type %s not supported.\nSmearing types are \'gauss\' and \'m-p\''%str(smearing))
 
     try:
-      do_adaptive_smearing(self.data_controller, smearing)
+      do_adaptive_smearing(self.data_controller, smearing, afac)
     except Exception as e:
       self.report_exception('adaptive_smearing')
       if attr['abort_on_exception']:
@@ -1269,7 +1271,7 @@ class PAOFLOW:
 
 
 
-  def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., s_tensor=None ):
+  def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., ne = 501, delta=0.05, fermi_up=1., fermi_dw=-1., s_tensor=None ):
     '''
     Calculate the Spin Hall Conductivity
       Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
@@ -1280,6 +1282,8 @@ class PAOFLOW:
         do_ac (bool): True to calculate the Spic Circular Dichroism
         emin (float): The minimum energy in the range
         emax (float): The maximum energy in the range
+        ne (float): The number of energy increments
+        delta (float) : small imaginary part added to the eigenvalue difference
         fermi_up (float): The upper limit of the occupied energy range
         fermi_dw (float): The lower limit of the occupied energy range
         s_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
@@ -1292,6 +1296,8 @@ class PAOFLOW:
     arrays,attr = self.data_controller.data_dicts()
 
     attr['eminH'],attr['emaxH'] = emin,emax
+    attr['deltaH'] = delta
+    attr['esizeH'] = ne
 
     if s_tensor is not None: arrays['s_tensor'] = np.array(s_tensor)
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up

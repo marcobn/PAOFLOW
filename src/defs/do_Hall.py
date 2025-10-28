@@ -204,7 +204,8 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
   # Compute only Omega_z(k)
   Om_znkaux = np.zeros((snktot,nawf), dtype=float)
 
-  deltap = 0.05
+  deltap = attributes['deltaH']
+
   for ik in range(snktot):
     E_nm = (arrays['E_k'][ik,:,0] - arrays['E_k'][ik,:,0][:,None])**2 + deltap**2
     E_nm[np.where(E_nm<1.e-4)] = np.inf
@@ -213,7 +214,7 @@ def do_Berry_curvature ( data_controller, jksp, pksp ):
 
   attributes['emaxH'] = np.amin(np.array([attributes['shift'],attributes['emaxH']]))
   ### Hardcoded 'de'
-  esize = 500
+  esize = attributes['esizeH']
   ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
 
   Om_zkaux = np.zeros((snktot,esize), dtype=float)
@@ -259,7 +260,7 @@ def do_ac_conductivity ( data_controller, jksp, pksp, ipol, jpol ):
   emin = 0.0
   emax = attr['shift']
   ### Hardcode 'de'
-  esize = 501
+  esize = attr['esizeH']
   ene = np.linspace(emin, emax, esize)
 
   sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
