@@ -17,7 +17,7 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-def do_adaptive_smearing ( data_controller, smearing ):
+def do_adaptive_smearing ( data_controller, smearing, afac ):
   from numpy.linalg import norm
   import numpy as np
 
@@ -38,7 +38,8 @@ def do_adaptive_smearing ( data_controller, smearing ):
 
   dk = (8.*np.pi**3/attributes['omega']/(nkpnts))**(1./3.)
 
-  afac = (1. if smearing=='m-p' else .7)
+  if afac == None:
+    afac = (1. if smearing=='m-p' else .7)
 
 ## DEV: Try to make contiguinuity conditional. Requires benchmark testing
   pksaux = np.ascontiguousarray(arrays['pksp'][:,:,diag[0],diag[1]])
