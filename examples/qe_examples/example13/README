@@ -1,0 +1,2 @@
+qe-soc     : QE calculation with spin-orbit coupling (SOC).
+ad_hoc_soc : QE calculation without SOC. The SOC is included in the PAOFLOW Hamiltonian.

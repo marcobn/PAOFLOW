@@ -1,0 +1,5 @@
+ &projwfc
+    prefix='Bi'
+    outdir='./'
+    filpdos='./Bi'
+ /
