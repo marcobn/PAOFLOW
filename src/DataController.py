@@ -550,7 +550,7 @@ class DataController:
         HRS=np.fft.ifftn(arry["Hks"],axes=(2,3,4))
 
         nawf,_,nk1,nk2,nk3,nspin=HRS.shape
-        # how to pad HR to make sure it's odd for z2pack
+        # how to pad HR to make sure it's odd
         if nk1%2:
           pad1=0
         else: pad1=1
