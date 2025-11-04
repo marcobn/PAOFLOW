@@ -350,7 +350,7 @@ class ACBN0:
       lines = f.readlines()
 
     il = 0
-    while 'lattice parameter' not in lines[il]:
+    while 'lattice parameter (alat)' not in lines[il]:
       il += 1
     alat = float(lines[il].split()[4])
 
