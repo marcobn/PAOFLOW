@@ -53,7 +53,10 @@ class ACBN0:
 
     # Get structure information
     self.blocks,self.cards = struct_from_inputfile_QE(f'{self.prefix}.scf.in')
-    self.nspin = int(struct['nspin']) if 'nspin' in self.blocks['system'] else 1
+    if 'nspin' in self.blocks['system']:
+      self.nspin = int(self.blocks['system']['nspin'])
+    else:
+      self.nspin = 1
 
     # Generate gaussian fits
     print('Generating gaussian fits for pseudopotential basis states.\n')
