@@ -186,88 +186,6 @@ class ACBN0:
       self.uVals = new_U
 
 
-  def acbn0 ( self, fname ):
-
-    data = {}
-    with open(fname, 'r') as f:
-      for l in f.readlines():
-        if l.startswith('#'):
-          continue
-        k,v = (v.strip() for v in l.split('='))
-        data[k] = v
-
-    ang_to_bohr = 1.88973
-    sym = data['symbol']
-    nspin = int(data['nspin'])
-    species = data['atlabels'].split(',')
-
-    lattice = np.array([float(v) for v in data['latvects'].split(',')])
-    lattice = lattice.reshape((3,3)) / ang_to_bohr
-
-    coords = np.array([float(v) for v in data['coords'].split(',')])
-    coords = coords.reshape((coords.shape[0]//3,3)) / ang_to_bohr
-
-    split_bstr = lambda bstr : np.array([int(v) for v in bstr.split(',')])
-    basis_dm = split_bstr(data['reduced_basis_dm'])
-    basis_2e = split_bstr(data['reduced_basis_2e'])
-
-    gauss_basis = self.getbasis(self.basis, species, lattice, coords)
-    nbasis = len(gauss_basis)
-
-    fpath = './output'
-    kpnts,kwght,Sks,Hks_up,Hks_dw = self.read_ham_data(fpath, nspin)
-
-    dk,nlm = self.Dk(basis_dm, basis_2e, Hks_up, Sks)
-    nlm = self.Nmm(nlm, Hks_up, kwght)
-    nnlm = nlm.shape[0]
-
-    dk_dn = None
-    den_U,den_J = 0,0
-    if nspin == 1:
-      Naa,Nab = 0., 0.
-      for i1,m1 in enumerate(nlm):
-        for i2,m2 in enumerate(nlm):
-          nlm12 = m1 * m2
-          Nab += nlm12
-          if i1 != i2:
-            Naa += nlm12
-      den_U = 2 * (Naa.real + Nab.real)
-      den_J = 2 * Naa.real
-
-    else:
-      dk_dn,nlmd = self.Dk(basis_dm, basis_2e, Hks_dw, Sks)
-      nlmd = self.Nmm(nlmd, Hks_dw, kwght)
-
-      Naa,Nbb,Nab = 0., 0., 0.
-      for i1 in range(nnlm):
-        for i2 in range(nnlm):
-          Nab += nlm[i1] * nlmd[i2]
-          if i1 != i2:
-            Naa += nlm[i1] * nlm[i2]
-            Nbb += nlmd[i1] * nlmd[i2]
-      den_U = Naa.real + Nbb.real + 2*Nab.real
-      den_J = Naa.real + Nbb.real
-
-    DR_0 = self.DR(dk, kwght)
-
-    DR_0_dn = DR_0
-    if nspin == 2:
-      DR_0_dn = self.DR(dk_dn, kwght)
-
-    num_U,num_J = self.hartree_energy(DR_0, DR_0_dn, gauss_basis, basis_2e)
-
-    hartree_to_eV = 27.211396132
-    U = U_eff = hartree_to_eV * num_U / den_U
-    if den_J == 0:
-      J = 'Inf'
-    else:
-      J = hartree_to_eV * num_J / den_J
-      U_eff -= J
-
-    with open(f'{sym}_UJ.txt', 'w') as f:
-      f.write(f'U : {U}\nJ : {J}\nU_eff : {U_eff}\n')
-
-
   def exec_command ( self, command ):
     from os import system
 
@@ -369,16 +287,16 @@ class ACBN0:
     while 'site n.' not in lines[il]:
       il += 1
     il += 1
-    species = []
+    # species = []
     positions = np.empty((nat,3), dtype=float)
     for i in range(nat):
       ls = lines[il+i].split()
-      species.append(ls[1])
+      # species.append(ls[1])
       positions[i,:] = np.array([float(v) for v in ls[6:9]])
 
     lattice *= alat
     positions *= alat
-    return lattice,species,positions
+    return lattice,positions
 
 
   def hubbard_orbital ( self, ele ):
@@ -392,14 +310,15 @@ class ACBN0:
     else:
       raise Exception(f'Element {ele} has no defined Hubbard orbital')
 
-
   def run_acbn0 ( self, prefix ):
     import re
+    import itertools
+    BOHR_RADIUS_ANGS = 0.529177e0
 
-    lattice,species,positions = self.read_cell_atoms('scf.out')
-    lattice_string = ','.join([str(v) for a in lattice for v in a])
-    position_string = ','.join([str(v) for a in positions for v in a])
-    species_string = ','.join(species)
+    lattice,coords = self.read_cell_atoms('scf.out')
+    lattice *= BOHR_RADIUS_ANGS
+    coords *= BOHR_RADIUS_ANGS
+    nspin = self.nspin
 
     sind = 0
     state_lines = open('projwfc.out', 'r').readlines()
@@ -410,21 +329,30 @@ class ACBN0:
       send += 1
     state_lines = state_lines[sind:send]
 
+
+    fpath = './output'
+    kpnts,kwght,Sks,Hks_up,Hks_dw = self.read_ham_data(fpath, nspin)
     uVals = {}
+    species = []
     #for s in list(set(species)):
     for k,v in self.uVals.items():
+      species_label = k.split('-')[0]
+      species.append(species_label)
 
+    gauss_basis = self.getbasis(self.basis, species, lattice, coords)
+
+    for orb,v in self.uVals.items():
       ostates = []
       ustates = []
-      s = k.split('-')[0]
-      horb = self.hubbard_orbital(k)
+      species_label = orb.split('-')[0]
+      horb = self.hubbard_orbital(orb)
       for n,sl in enumerate(state_lines):
         stateN = re.findall('\(([^\)]+)\)', sl)
         oele = stateN[0].strip()
         oL = int(re.split('=| ', stateN[1])[1])
-        if s in oele and oL == horb:
+        if species_label in oele and oL == horb:
           ostates.append(n)
-          if s == oele:
+          if species_label == oele:
             ustates.append(n)
       sstates = [ustates[0]]
       for i,us in enumerate(ustates[1:]):
@@ -433,28 +361,76 @@ class ACBN0:
         else:
           break
 
-      basis_dm = ','.join(list(map(str,ostates)))
-      basis_2e = ','.join(list(map(str,sstates)))
+      basis_dm = np.array(ostates)
+      basis_2e = np.array(sstates)
 
-      fname = f'{prefix}_acbn0_infile_{k}.txt'
-      with open(fname, 'w') as f:
-        nspin = self.nspin
-        f.write(f'symbol = {k}\n')
-        f.write(f'latvects = {lattice_string}\n')
-        f.write(f'coords = {position_string}\n')
-        f.write(f'atlabels = {species_string}\n')
-        f.write(f'nspin = {nspin}\n')
-        f.write(f'fpath = ./\n')
-        f.write(f'outfile = {prefix}_acbn0_outfile_{k}.txt\n')
-        f.write(f'reduced_basis_dm = {basis_dm}\n')
-        f.write(f'reduced_basis_2e = {basis_2e}\n')
+      dk,nlm = self.Dk(basis_dm, basis_2e, Hks_up, Sks)
+      nlm = self.Nmm(nlm, Hks_up, kwght)
+      nnlm = nlm.shape[0]
 
-      self.acbn0(fname)
-      with open(f'{k}_UJ.txt', 'r') as f:
-        lines = f.readlines()
-        uVals[k] = float(lines[2].split(':')[1])
+      dk_dn = None
+      den_U,den_J = 0,0
+      if nspin == 1:
+        Naa,Nab = 0., 0.
+        for i1,m1 in enumerate(nlm):
+          for i2,m2 in enumerate(nlm):
+            nlm12 = m1 * m2
+            Nab += nlm12
+            if i1 != i2:
+              Naa += nlm12
+        den_U = 2 * (Naa.real + Nab.real)
+        den_J = 2 * Naa.real
+
+      else:
+        dk_dn,nlmd = self.Dk(basis_dm, basis_2e, Hks_dw, Sks)
+        nlmd = self.Nmm(nlmd, Hks_dw, kwght)
+
+        Naa,Nbb,Nab = 0., 0., 0.
+        for i1 in range(nnlm):
+          for i2 in range(nnlm):
+            Nab += nlm[i1] * nlmd[i2]
+            if i1 != i2:
+              Naa += nlm[i1] * nlm[i2]
+              Nbb += nlmd[i1] * nlmd[i2]
+        den_U = Naa.real + Nbb.real + 2*Nab.real
+        den_J = Naa.real + Nbb.real
+
+      DR_up = self.DR(dk, kwght)
+
+      DR_dn = DR_up
+      if nspin == 2:
+        DR_dn = self.DR(dk_dn, kwght)
+
+      # Hartree energy
+      num_U,num_J = 0,0
+      ind = list(itertools.product(basis_2e,repeat=4))
+
+      for k,l,m,n in ind:
+        int_U = self.coulomb(gauss_basis[m], gauss_basis[n], gauss_basis[k], gauss_basis[l])
+        int_J = self.coulomb(gauss_basis[m], gauss_basis[k], gauss_basis[n], gauss_basis[l])
+
+        a_b = DR_up[m,n]*DR_up[k,l] + DR_dn[m,n]*DR_dn[k,l]
+        ab_ba = DR_dn[m,n]*DR_up[k,l] + DR_up[m,n]*DR_dn[k,l]
+
+        num_U += int_U * (a_b + ab_ba)
+        num_J += int_J * a_b
+
+
+      hartree_to_eV = 27.211396132
+      U = U_eff = hartree_to_eV * num_U / den_U
+      if den_J == 0:
+        J = 'Inf'
+      else:
+        J = hartree_to_eV * num_J / den_J
+        U_eff -= J
+
+      with open(f'{orb}_UJ.txt', 'w') as f:
+        f.write(f'U : {U}\nJ : {J}\nU_eff : {U_eff}\n')
+
+      uVals[orb] = U_eff
 
     return uVals
+
 
 
   def getbasis ( self, basis, species, lattice, coords ):
@@ -535,23 +511,6 @@ class ACBN0:
     return D.real/np.sum(kwght)
 
 
-  def hartree_energy ( self, DR_up, DR_dn, basis, basis_2e ):
-    import itertools
-
-    tmp_U,tmp_J = 0,0
-    ind = list(itertools.product(basis_2e,repeat=4))
-
-    for k,l,m,n in ind:
-      int_U = self.coulomb(basis[m], basis[n], basis[k], basis[l])
-      int_J = self.coulomb(basis[m], basis[k], basis[n], basis[l])
-
-      a_b = DR_up[m,n]*DR_up[k,l] + DR_dn[m,n]*DR_dn[k,l]
-      ab_ba = DR_dn[m,n]*DR_up[k,l] + DR_up[m,n]*DR_dn[k,l]
-
-      tmp_U += int_U * (a_b + ab_ba)
-      tmp_J += int_J * a_b
-
-    return tmp_U, tmp_J
 
   def read_ham_data ( self, fpath, nspin ):
     from os.path import join
