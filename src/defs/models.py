@@ -439,6 +439,9 @@ def Kane_Mele( data_controller, params ):
   attr['nk3'] = 1
 
   attr['nawf'] = 4
+  attr['bnd'] = 4
+  attr['shift'] = 100.0
+  attr['Efermi'] = 0.0
   attr['nspin'] = 1
   attr['natoms'] = 2
 
@@ -526,6 +529,23 @@ def Kane_Mele( data_controller, params ):
   arry['a_vectors'] = np.array([[1., 0, 0], [0.5, 3 ** .5 / 2, 0], [0, 0, 10]])
   arry['a_vectors'] = arry['a_vectors']
 
+  # Spin properties
+  arry['Sj'] = np.zeros((3,4,4),dtype=complex)
+
+  arry['Sj'][2,0,0] =  0.5
+  arry['Sj'][2,1,1] = -0.5
+  arry['Sj'][2,2,2] =  0.5
+  arry['Sj'][2,3,3] = -0.5
+
+  arry['Sj'][0,0,1] =  0.5
+  arry['Sj'][0,1,0] =  0.5
+  arry['Sj'][0,2,3] =  0.5
+  arry['Sj'][0,3,2] =  0.5
+
+  arry['Sj'][1,0,1] =   -complex(0.0,0.5)
+  arry['Sj'][1,1,0] =   complex(0.0,0.5)
+  arry['Sj'][1,2,3] =   -complex(0.0,0.5)
+  arry['Sj'][1,3,2] =   complex(0.0,0.5)
   # Atomic coordinates
   arry['tau'] = np.zeros((2,3),dtype=float)
   arry['tau'][0] = np.dot([1/3,1/3,0.],arry['a_vectors'])
