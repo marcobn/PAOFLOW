@@ -15,6 +15,7 @@ Qauntum ESPRESSO Examples: ./qe_examples/
   * example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
   * example12: Bi bilayer nanoribbon site projected band strcture 
   * example13: Bi bilayer Z2 calculation using Z2Pack inteface : SOC from QE and ad_hoc_SOC
+  * example14: Layer resolved Pt spin Hall conductivity 
 
 VASP Examples: ./vasp_examples
   * example01 : Si

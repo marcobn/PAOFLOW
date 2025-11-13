@@ -24,7 +24,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-def do_spin_Hall ( data_controller, twoD, do_ac ):
+def do_spin_Hall ( data_controller, twoD, do_ac, P ):
   from .perturb_split import perturb_split
   from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
 
@@ -58,7 +58,7 @@ def do_spin_Hall ( data_controller, twoD, do_ac ):
 
     for ik in range(jdHksp.shape[0]):
       for ispin in range(jdHksp.shape[3]):
-        jksp_is[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+        jksp_is[ik,:,:,ispin],pksp_j[ik,:,:,ispin] = perturb_split(0.5*(P@jdHksp[ik,:,:,ispin]+jdHksp[ik,:,:,ispin]@P), arry['dHksp'][ik,jpol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
     jdHksp = None
 
     #---------------------------------

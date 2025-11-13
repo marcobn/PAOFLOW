@@ -1,0 +1,35 @@
+&control 
+    calculation = 'scf' 
+    prefix      = 'pt' 
+    pseudo_dir = './' 
+    outdir='./'    
+/    
+&system      
+    ibrav=  0  
+    nat=  4
+    ntyp=  1  
+    ecutwfc =  59.800  
+    ecutrho =  598.000  
+    occupations='smearing', smearing='methfessel-paxton', degauss=0.000073529411765      
+    lspinorb=  .true.  
+    noncolin=  .true.  
+    starting_magnetization=  0.000  
+    noinv=  .false.  
+    nosym=  .false.  
+/    
+&electrons      
+conv_thr= 1.D-8      
+/    
+CELL_PARAMETERS (angstrom)
+        2.8072099686         0.0000000000         0.0000000000
+        0.0000000000         2.8072099686         0.0000000000
+        0.0000000000         0.0000000000        7.94000000000
+ATOMIC_SPECIES      
+Pt  0.0 Pt.rel-pbe-n-kjpaw_psl.1.0.0.UPF
+ATOMIC_POSITIONS crystal    
+Pt     0.000000000         0.000000000         0.000000000
+Pt     0.500000000         0.500000000         0.250000000
+Pt     0.000000000         0.000000000         0.500000000
+Pt     0.500000000         0.500000000         0.750000000
+K_POINTS (automatic)      
+ 5 5 3 0 0 0

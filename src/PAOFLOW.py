@@ -1271,7 +1271,7 @@ class PAOFLOW:
 
 
 
-  def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., ne = 501, delta=0.05, fermi_up=1., fermi_dw=-1., s_tensor=None ):
+  def spin_Hall ( self, twoD=False, do_ac=False, emin=-1., emax=1., ne = 501, delta=0.05, fermi_up=1., fermi_dw=-1., s_tensor=None, shc_proj=None ):
     '''
     Calculate the Spin Hall Conductivity
       Currently this module does not possess the "spin_orbit" capability of do_topology, because I(Frank) do not know what this modification entails.
@@ -1292,7 +1292,8 @@ class PAOFLOW:
         None
     '''
     from .defs.do_Hall import do_spin_Hall
-
+    from .defs.projection_operator import do_projection_operator, orbital_array
+               
     arrays,attr = self.data_controller.data_dicts()
 
     attr['eminH'],attr['emaxH'] = emin,emax
@@ -1303,11 +1304,20 @@ class PAOFLOW:
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up
     if 'fermi_dw' not in attr: attr['fermi_dw'] = fermi_dw
 
+    if shc_proj is not None: arrays['shc_proj'] = np.array(shc_proj)
+
     if 'Sj' not in arrays:
       self.spin_operator(spin_orbit=attr['do_spin_orbit'])
 
     try:
-      do_spin_Hall(self.data_controller, twoD, do_ac)
+      if shc_proj==None:
+        P = np.eye(attr['nawf'])
+        do_spin_Hall(self.data_controller, twoD, do_ac, P)
+      else:
+        arrays['naw'] = orbital_array (self.data_controller)
+        P = do_projection_operator (self.data_controller)
+        do_spin_Hall(self.data_controller, twoD, do_ac, P)
+        
     except Exception as e:
       self.report_exception('spin_Hall')
       if attr['abort_on_exception']:
