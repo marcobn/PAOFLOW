@@ -711,11 +711,38 @@ class PAOFLOW:
     '''
     from .defs.do_doubling import doubling_HRs
 
-    arrays,attr = self.data_controller.data_dicts()
-    attr['nx'],attr['ny'],attr['nz'] = nx,ny,nz
-    
+    arrays , attributes = self.data_controller.data_dicts()
+    attributes['nx'],attributes['ny'],attributes['nz'] = nx,ny,nz
+   
+
     try:
-      doubling_HRs(self.data_controller)
+      
+      if self.rank==0:
+        doubling_HRs(self.data_controller)
+      
+      # Broadcasting new arrays 
+      array_list= ['HRs','naw','Dnm','a_vectors','atoms','sh','nl','Sj','lambda_p','lambda_d','orb_pseudo']
+      for arry in array_list:
+        if arry in arrays:
+            try:
+              arry_type = a.dtype
+              
+              if(arry_type == 'float64'):
+                self.data_controller.broadcast_single_array(arry,dtype=float)
+              elif(arry_type == 'complex128'):
+                self.data_controller.broadcast_single_array(arry)
+              elif(arry_type == 'int32'):
+                self.data_controller.broadcast_single_array(arry,dtype=int)
+            
+            except:
+              self.data_controller.broadcast_single_list(arry)
+
+      # Broadcasting new attributes
+      attr_list = ['nawf','natoms','nelec','nbnds','bnd']
+      for attr in attr_list:
+        if attr in attributes:
+            self.data_controller.broadcast_attribute(attr)
+
     except Exception as e:
       self.report_exception('doubling_Hamiltonian')
       if attr['abort_on_exception']:

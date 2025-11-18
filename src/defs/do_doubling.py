@@ -24,9 +24,6 @@ def doubling_HRs ( data_controller ):
     from scipy.fftpack import fftshift
     from mpi4py import MPI
 
-    if MPI.COMM_WORLD.Get_rank() != 0:
-       return
-
     arry,attr = data_controller.data_dicts()
 
     nx = attr['nx']   
@@ -70,7 +67,7 @@ def doubling_HRs ( data_controller ):
 
     # This construction is doubling along the X direction nx times    
     for dx in range(nx):
-        
+
         HR_double= np.zeros((2*attr['nawf'],2*attr['nawf'],nk1,nk2,nk3,nspin),dtype=complex)
         for ix in range(min(new_index[0,:]),max(new_index[0,:])+1):
             for iy in range(min(new_index[1,:]),max(new_index[1,:])+1):
@@ -206,6 +203,15 @@ def doubling_attr_arry ( data_controller ):
 
         arry['Sj'] = Sj_double
         Sj_double = None
+
+    if 'Dnm' in arry:
+        Dnm_double = np.zeros((attr['nawf'],attr['nawf'],3),dtype=float)
+        for i in range(3):
+            Dnm = arry['Dnm'][:,:,i]
+            Dnm_double[:,:,spol] = la.block_diag(*[Dnm,Dnm])
+
+        arry['Dnm'] = Dnm_double
+        Dnm_double = None
 
     # If the SOC is included pertubative
     if 'do_spin_orbit' in attr and (attr['do_spin_orbit']):

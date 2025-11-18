@@ -591,6 +591,34 @@ class DataController:
     self.comm.Barrier()
 
 
+  def broadcast_single_list ( self, key, root=0 ):
+    '''
+    Broadcast list from 'data_array' with 'key' from 'root' to all other ranks
+
+    Arguments:
+        key (str): The key for the attribute to broadcast (key must exist in dictionary 'data_attributes')
+        root (int): The rank which is the source of the broadcasted attribut
+
+    Returns:
+        None
+    '''
+    import numpy as np
+    lst = self.data_arrays[key] if self.rank==root else None
+    self.data_arrays[key] = self.comm.bcast(lst, root=root)
+
+  def broadcast_attribute ( self, key, root=0 ):
+    '''
+    Broadcast attribute from 'data_attributes' with 'key' from 'root' to all other ranks
+
+    Arguments:
+        key (str): The key for the attribute to broadcast (key must exist in dictionary 'data_attributes')
+        root (int): The rank which is the source of the broadcasted attribut
+
+    Returns:
+        None
+    '''
+    attr = self.data_attributes[key] if self.rank==root else None
+    self.data_attributes[key] = self.comm.bcast(attr, root=root)
 
   def broadcast_single_array ( self, key, dtype=complex, root=0 ):
     '''
