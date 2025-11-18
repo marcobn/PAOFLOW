@@ -185,6 +185,10 @@ def graphene( data_controller, params ):
   attr['nk2'] = 3
   attr['nk3'] = 1
 
+  attr['bnd'] = 4
+  attr['shift'] = 100.0
+  attr['Efermi'] = 0.0
+  attr['nspin'] = 1
   attr['nawf'] = 2
   attr['nspin'] = 1
   attr['natoms'] = 2
