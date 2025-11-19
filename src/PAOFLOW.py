@@ -725,7 +725,7 @@ class PAOFLOW:
       for arry in array_list:
         if arry in arrays:
             try:
-              arry_type = a.dtype
+              arry_type = arrays[arry].dtype
               
               if(arry_type == 'float64'):
                 self.data_controller.broadcast_single_array(arry,dtype=float)
@@ -738,7 +738,7 @@ class PAOFLOW:
               self.data_controller.broadcast_single_list(arry)
 
       # Broadcasting new attributes
-      attr_list = ['nawf','natoms','nelec','nbnds','bnd']
+      attr_list = ['nawf','natoms','nelec','nbnds','bnd','omega']
       for attr in attr_list:
         if attr in attributes:
             self.data_controller.broadcast_attribute(attr)

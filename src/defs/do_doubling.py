@@ -183,17 +183,19 @@ def doubling_attr_arry ( data_controller ):
 
     arry,attr = data_controller.data_dicts()
 
+    # recalculating volume
+    attr['omega'] = attr['alat']**3 * arry['a_vectors'][0,:].dot(np.cross(arry['a_vectors'][1,:],arry['a_vectors'][2,:]))
     # Increassing nawf/natoms
     attr['nawf'] = 2*attr['nawf']
     if 'natoms' in attr: attr['natoms'] = 2*attr['natoms']
-    if 'nelec' in attr: attr['nelec'] = 2*attr['nelec']
-    if 'nbnds' in attr: attr['nbnds'] = 2*attr['nbnds']
-    if 'bnd' in attr: attr['bnd'] = 2*attr['bnd']
+    if 'nelec'  in attr: attr['nelec'] = 2*attr['nelec']
+    if 'nbnds'  in attr: attr['nbnds'] = 2*attr['nbnds']
+    if 'bnd'    in attr: attr['bnd']   = 2*attr['bnd']
     #doubling the atom number of orbitals / orbital character / multiplicity
-    if 'naw' in arry: arry['naw']   = np.append(arry['naw'],arry['naw'])
-    if 'sh' in arry: arry['sh']   = np.append(arry['sh'],arry['sh'])
-    if 'nl' in arry: arry['nl']   = np.append(arry['nl'],arry['nl'])
-    if 'atoms' in arry: arry['atoms']   = np.append(arry['atoms'],arry['atoms'])
+    if 'naw'   in arry: arry['naw']    = np.append(arry['naw'],arry['naw'])
+    if 'sh'    in arry: arry['sh']     = np.append(arry['sh'],arry['sh'])
+    if 'nl'    in arry: arry['nl']     = np.append(arry['nl'],arry['nl'])
+    if 'atoms' in arry: arry['atoms']  = np.append(arry['atoms'],arry['atoms'])
     # if Sj is already computed, then double it
     if 'Sj' in arry:
         Sj_double = np.zeros((3,attr['nawf'],attr['nawf']),dtype=complex)
@@ -208,7 +210,7 @@ def doubling_attr_arry ( data_controller ):
         Dnm_double = np.zeros((attr['nawf'],attr['nawf'],3),dtype=float)
         for i in range(3):
             Dnm = arry['Dnm'][:,:,i]
-            Dnm_double[:,:,spol] = la.block_diag(*[Dnm,Dnm])
+            Dnm_double[:,:,i] = la.block_diag(*[Dnm,Dnm])
 
         arry['Dnm'] = Dnm_double
         Dnm_double = None
