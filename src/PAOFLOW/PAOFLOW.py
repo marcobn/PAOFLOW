@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing=None, acbn0=False, verbose=False, restart=False, dft='QE'):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing=None, save_overlaps=False, acbn0=False, verbose=False, restart=False, dft='QE'):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
     Arguments:
@@ -61,6 +61,7 @@ class PAOFLOW:
         model (dict): Dictionary with 'label' key and parameters to build Hamiltonian from TB model
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         smearing (str): Smearing type (None, m-p, gauss)
+        save_overlaps (bool): If True the wavefunction overlaps will be saved to the DataController
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.

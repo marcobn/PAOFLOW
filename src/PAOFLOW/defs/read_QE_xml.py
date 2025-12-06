@@ -356,7 +356,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
   rank = comm.Get_rank()
 
   verbose = attr['verbose']
-  acbn0 = attr['acbn0']
+  save_overlaps = attr['save_overlaps']
 
   tree = ET.parse(fname)
   root = tree.getroot()
@@ -382,7 +382,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
     nspin = 1
 
   wavefunctions = np.empty((nbnds,nawf,nkpnts,nspin), dtype=complex)
-  overlaps = np.empty((nawf,nbnds,nkpnts), dtype=complex) if acbn0 else None
+  overlaps = np.empty((nawf,nbnds,nkpnts), dtype=complex) if save_overlaps else None
 
   if qe_version > 6.5:
 
@@ -399,7 +399,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             k2 = 2*k
             wavefunctions[k,ind,i,ispin] = complex(text[k2],text[k2+1])
 
-    if acbn0:
+    if save_overlaps:
       elem = root.find('OVERLAPS')
       for i,ovp in enumerate(elem.findall('OVPS')):
         dim = int(ovp.attrib['dim'])
@@ -429,7 +429,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
           nele = kpnt.find('SPIN.%d'%(ispin+1))
           read_wf(nele, i, ispin)
 
-    if acbn0:
+    if save_overlaps:
       elem = root.find('OVERLAPS')
       for i,kpnt in enumerate(elem):
         for j,ovp in enumerate(kpnt):
@@ -442,7 +442,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             overlaps[k0,k1,i] = complex(v1,v2)
 
   arrys = [('U',wavefunctions)]
-  if acbn0:
+  if save_overlaps:
     arrys += [('Sks',overlaps)]
   for s,v in arrys:
     arry[s] = v
