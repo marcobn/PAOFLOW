@@ -25,7 +25,7 @@ class DataController:
 
   error_handler = report_exception = None
 
-  def __init__ ( self, workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart, dft ):
+  def __init__ ( self, workpath, outputdir, inputfile, model, savedir, npool, smearing, save_overlaps, acbn0, verbose, restart, dft ):
     '''
     Initialize the DataController
     Arguments:
@@ -35,6 +35,7 @@ class DataController:
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         model (dict): A dictionary containing a model label and parameters
         savedir (str): QE .save directory
+        save_overlaps (bool): If True the overlap matrix will be saved in data_arrays
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         smearing (str): Smearing type (None, m-p, gauss)
         verbose (bool): False supresses debugging output
@@ -72,6 +73,7 @@ class DataController:
       attr['savedir'] = savedir
       attr['verbose'] = verbose
       attr['workpath'] = workpath
+      attr['save_overlaps'] = save_overlaps
       attr['acbn0'] = acbn0
       attr['inputfile'],attr['outputdir'] = inputfile,outputdir
       attr['opath'] = join(workpath, outputdir)
