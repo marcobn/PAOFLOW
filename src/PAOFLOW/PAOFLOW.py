@@ -90,7 +90,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart, dft)
+    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, save_overlaps, acbn0, verbose, restart, dft)
 
     self.report_exception = self.data_controller.report_exception
 
@@ -332,6 +332,10 @@ class PAOFLOW:
     fpath = attr['fpath']
     if exists(join(fpath,'atomic_proj.xml')):
       from .defs.read_QE_xml import parse_qe_atomic_proj
+      if attr['acbn0'] and not attr['save_overlaps']:
+        if self.rank == 0:
+          print('WARNING: ACBN0 requires wavefunction overlaps. Setting save_overlaps to True.')
+      attr['save_overlaps'] = True
       parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
     else:
       raise Exception('atomic_proj.xml was not found.\n')
@@ -423,10 +427,6 @@ class PAOFLOW:
     #  Note expand_wedge is still required for VASP even not using symmetry.
     #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
 
-    if attr['acbn0'] and not attr['save_overlaps']:
-      if self.rank == 0:
-        print('WARNING: ACBN0 requires wavefunction overlaps. Setting save_overlaps to True.')
-      attr['save_overlaps'] = True
 
     if attr['symmetrize'] and attr['acbn0']:
       if rank == 0:
