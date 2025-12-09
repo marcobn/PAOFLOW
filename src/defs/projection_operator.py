@@ -40,22 +40,21 @@ def orbital_array ( data_controller):
                     n_atom+=5
                 elif(j==3):
                     n_atom+=7
-
             naw[i] = n_atom
     return naw
 
-def do_projection_operator ( data_controller ):
+def do_projection_operator ( data_controller, proj_array ):
 
     arry,attr = data_controller.data_dicts()
 
     P = np.zeros((attr['nawf'],attr['nawf']),dtype=float)
 
-    for i in range(arry['shc_proj'].shape[0]):
+    for i in range(proj_array.shape[0]):
 
-        idx = np.sum(arry['naw'][0:arry['shc_proj'][i]])
-        fdx = idx + arry['naw'][arry['shc_proj'][i]]
- 
-        P[idx:fdx,idx:fdx]= np.eye(arry['naw'][i])
+        idx = np.sum(arry['naw'][0:proj_array[i]])
+        fdx = idx + arry['naw'][proj_array[i]]
+
+        P[idx:fdx,idx:fdx]= np.eye(arry['naw'][proj_array[i]])
 
     return (P)
 

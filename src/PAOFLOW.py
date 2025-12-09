@@ -1342,7 +1342,7 @@ class PAOFLOW:
         do_spin_Hall(self.data_controller, twoD, do_ac, P)
       else:
         arrays['naw'] = orbital_array (self.data_controller)
-        P = do_projection_operator (self.data_controller)
+        P = do_projection_operator (self.data_controller, arrays['shc_proj'])
         do_spin_Hall(self.data_controller, twoD, do_ac, P)
         
     except Exception as e:
