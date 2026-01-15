@@ -11,8 +11,6 @@ input_conductor:
   transport_direction: 3
   delta: 0.0005
   do_overlap_transformation: false
-  atmproj_sh: 3.5
-  atmproj_thr: 0.9
   do_eigenchannels: true
   neigchnx: 4
   do_eigplot: true
