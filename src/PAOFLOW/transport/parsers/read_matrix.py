@@ -13,7 +13,6 @@ from PAOFLOW.transport.utils.timing import timed_function
 
 @timed_function("read_matrix")
 def read_matrix(
-    filename: str,
     data_controller: DataController,
     ispin: int,
     transport_direction: int,

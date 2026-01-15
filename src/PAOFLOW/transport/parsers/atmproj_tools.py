@@ -77,7 +77,7 @@ def parse_atomic_proj(
 
     arry, _ = data_controller.data_dicts()
 
-    proj_data = parse_atomic_proj_xml(data_controller)
+    proj_data = parse_atomic_proj_data(data_controller)
     proj_data = convert_energy_units(proj_data)
 
     log.log_proj_summary(
@@ -109,7 +109,7 @@ def parse_atomic_proj(
     return hk_data
 
 
-def parse_atomic_proj_xml(data_controller: DataController) -> AtomicProjData:
+def parse_atomic_proj_data(data_controller: DataController) -> AtomicProjData:
     """
     Parse the Quantum ESPRESSO atomic_proj.xml file (from projwfc.x) into structured NumPy arrays.
 
@@ -182,9 +182,7 @@ def parse_atomic_proj_xml(data_controller: DataController) -> AtomicProjData:
     header = parse_header(data_controller)
     kpt_data = parse_kpoints(data_controller)
     eigvals = parse_eigenvalues(data_controller)
-
     proj = parse_projections(data_controller)
-
     overlap = parse_overlaps(data_controller)
 
     return AtomicProjData(

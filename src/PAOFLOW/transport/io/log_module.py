@@ -106,10 +106,6 @@ def log_summary(data: ConductorData) -> None:
     log_rank0(f"           Max iter number :{data.iteration.niterx:>10}")
     log_rank0(f"                    nprint :{data.iteration.nprint:>10}")
     log_rank0("")
-    log_rank0(f"        Conductor datafile :     {data.file_names.datafile_C}")
-    if data.calculation_type.strip().lower() == "conductor":
-        log_rank0(f"           L-lead datafile :     {data.file_names.datafile_L}")
-        log_rank0(f"           R-lead datafile :     {data.file_names.datafile_R}")
     if data.advanced.lhave_corr:
         log_rank0(f"            L-Sgm datafile :     {data.file_names.datafile_L_sgm}")
         log_rank0(f"            C-Sgm datafile :     {data.file_names.datafile_C_sgm}")

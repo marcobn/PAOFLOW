@@ -17,13 +17,10 @@ def initialize_hamiltonian_blocks(
     ivr_par3D: np.ndarray,
     wr_par: np.ndarray,
     table_par: np.ndarray,
-    datafile_C: str,
     ispin: int,
     transport_direction: int,
     calculation_type: CalculationType,
     data_controller: DataController,
-    datafile_L: str = "",
-    datafile_R: str = "",
     conductor_data: ConductorData | None = None,
 ) -> None:
     """
@@ -80,29 +77,15 @@ def initialize_hamiltonian_blocks(
         block.wr_par = wr_par
         block.table_par = table_par
 
-    read_matrix(
-        with_ham_suffix(datafile_C), data_controller, ispin, transport_direction, ham_system.blc_00C
-    )
-    read_matrix(
-        with_ham_suffix(datafile_C), data_controller, ispin, transport_direction, ham_system.blc_CR
-    )
+    read_matrix(data_controller, ispin, transport_direction, ham_system.blc_00C)
+    read_matrix(data_controller, ispin, transport_direction, ham_system.blc_CR)
 
     if calculation_type == "conductor":
-        read_matrix(
-            with_ham_suffix(datafile_C), data_controller, ispin, transport_direction, ham_system.blc_LC
-        )
-        read_matrix(
-            with_ham_suffix(datafile_L), data_controller, ispin, transport_direction, ham_system.blc_00L
-        )
-        read_matrix(
-            with_ham_suffix(datafile_L), data_controller, ispin, transport_direction, ham_system.blc_01L
-        )
-        read_matrix(
-            with_ham_suffix(datafile_R), data_controller, ispin, transport_direction, ham_system.blc_00R
-        )
-        read_matrix(
-            with_ham_suffix(datafile_R), data_controller, ispin, transport_direction, ham_system.blc_01R
-        )
+        read_matrix(data_controller, ispin, transport_direction, ham_system.blc_LC)
+        read_matrix(data_controller, ispin, transport_direction, ham_system.blc_00L)
+        read_matrix(data_controller, ispin, transport_direction, ham_system.blc_01L)
+        read_matrix(data_controller, ispin, transport_direction, ham_system.blc_00R)
+        read_matrix(data_controller, ispin, transport_direction, ham_system.blc_01R)
 
     elif calculation_type == "bulk":
         ham_system.blc_00L = ham_system.blc_00C.copy()
