@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PAOFLOW.DataController import DataController
 import numpy as np
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from PAOFLOW.transport.utils.timing import timed_function
 
 @timed_function("read_matrix")
 def read_matrix(
-    filename: str,
+    data_controller: DataController,
     ispin: int,
     transport_direction: int,
     opr: OperatorBlock,
@@ -63,17 +64,17 @@ def read_matrix(
     if not opr.allocated:
         raise RuntimeError("OperatorBlock is not allocated")
 
-    attr = opr.tag
+    arry, attr = data_controller.data_dicts()
+    tag_attr = opr.tag
     label = opr.name.strip()
 
     # === Defaults and attribute parsing ===
-    filein = filename
-    cols = attr.get("cols", "all").lower()
-    rows = attr.get("rows", "all").lower()
-    cols_sgm = attr.get("cols_sgm", cols).lower()
-    rows_sgm = attr.get("rows_sgm", rows).lower()
-    ivr_input = int(attr.get("ivr", 0))
-    ivr_from_input = "ivr" in attr
+    cols = tag_attr.get("cols", "all").lower()
+    rows = tag_attr.get("rows", "all").lower()
+    cols_sgm = tag_attr.get("cols_sgm", cols).lower()
+    rows_sgm = tag_attr.get("rows_sgm", rows).lower()
+    ivr_input = int(tag_attr.get("ivr", 0))
+    ivr_from_input = "ivr" in tag_attr
 
     dim1, dim2 = opr.dim1, opr.dim2
 
@@ -88,18 +89,16 @@ def read_matrix(
         cols_sgm = f"1-{dim2}"
 
     # === File parsing ===
-    reader = IOTKReader(Path(filein))
-    header = reader.read_header()
 
-    ldimwann = header["dimwann"]
-    nspin = header.get("nspin", 1)
-    nrtot = header["nrtot"]
-    lhave_ovp = header.get("have_overlap", False)
+    nawf = attr["nawf"]
+    nspin = attr["nspin"]
+    nrtot = attr["nrtot"]
+    lhave_ovp = attr["acbn0"]
 
-    irows = parse_index_array(rows, ldimwann)
-    icols = parse_index_array(cols, ldimwann)
-    irows_sgm = parse_index_array(rows_sgm, ldimwann)
-    icols_sgm = parse_index_array(cols_sgm, ldimwann)
+    irows = parse_index_array(rows, nawf)
+    icols = parse_index_array(cols, nawf)
+    irows_sgm = parse_index_array(rows_sgm, nawf)
+    icols_sgm = parse_index_array(cols_sgm, nawf)
 
     opr.irows = irows
     opr.icols = icols
@@ -157,12 +156,12 @@ def read_matrix(
 
         ind = matches[0] + 1
         A_loc = reader.read_array(
-            f"VR.{ind}", shape=(ldimwann, ldimwann), dtype=complex
+            f"VR.{ind}", shape=(nawf, nawf), dtype=complex
         )
 
         if lhave_ovp:
             S_loc = reader.read_array(
-                f"OVERLAP{ind}", shape=(ldimwann, ldimwann), dtype=complex
+                f"OVERLAP{ind}", shape=(nawf, nawf), dtype=complex
             )
         else:
             S_loc = np.zeros_like(A_loc)
@@ -176,7 +175,7 @@ def read_matrix(
                 "block_eb",
                 "block_be",
             } and np.all(ivr_aux == 0):
-                S_loc[:] = np.eye(ldimwann)
+                S_loc[:] = np.eye(nawf)
 
         A_loc_T = A_loc.T
         S_loc_T = S_loc.T

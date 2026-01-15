@@ -1,3 +1,4 @@
+from PAOFLOW.DataController import DataController
 import numpy as np
 import os
 from pathlib import Path
@@ -198,6 +199,7 @@ def iotk_index(n: int) -> str:
 def write_internal_format_files(
     output_dir: Path,
     output_prefix: str,
+    data_controller: DataController,
     hk_data: Dict[str, np.ndarray],
     proj_data: AtomicProjData,
     lattice_data: Dict[str, np.ndarray],
@@ -226,8 +228,8 @@ def write_internal_format_files(
             - "wr": shape (nrtot,), R-vector weights
     `proj_data` : Dict[str, np.ndarray]
         Dictionary containing:
-            - "kpts": shape (nkpts, 3), list of k-points
-            - "wk": shape (nkpts,), k-point weights
+            - "kpts": shape (nkpnts, 3), list of k-points
+            - "wk": shape (nkpnts,), k-point weights
     `lattice_data` : Dict[str, np.ndarray]
         Dictionary containing:
             - "avec": shape (3, 3), direct lattice vectors
@@ -239,13 +241,14 @@ def write_internal_format_files(
     ham_file = (
         output_prefix if output_prefix.endswith(".ham") else output_prefix + ".ham"
     )
+    arry, attr = data_controller.data_dicts()
     Hk = hk_data["Hk"]
     Sk = hk_data.get("S", None)
     ivr = hk_data["ivr"]
     wr = hk_data["wr"]
 
-    avec = lattice_data["avec"]
-    bvec = lattice_data["bvec"]
+    avec = arry["a_vectors"]
+    bvec = arry["b_vectors"]
     kpts = proj_data.kpts
     vkpts_crystal = proj_data.vkpts_crystal
     vkpts_cartesian = proj_data.vkpts_cartesian
@@ -253,7 +256,7 @@ def write_internal_format_files(
     spin_component = "all"
     shift = np.zeros(3, dtype=float)  # No shift in k-point grid for crystal coordinates
     nspin, _, dim, _ = Hk.shape
-    nkpts = kpts.shape[1]
+    nkpnts = kpts.shape[1]
     nrtot = ivr.shape[0]
     nk = hk_data["nk"]
     nr = hk_data["nr"]
@@ -281,7 +284,7 @@ def write_internal_format_files(
         f.write("  <HAMILTONIAN>\n")
 
         f.write(
-            f'    <DATA dimwann="{dim}" nkpts="{nkpts}" nspin="{nspin}" spin_component="{spin_component}" '
+            f'    <DATA dimwann="{dim}" nkpnts="{nkpnts}" nspin="{nspin}" spin_component="{spin_component}" '
         )
         f.write(
             f'nk="{nk[0]} {nk[1]} {nk[2]}" shift="{shift}" nrtot="{nrtot}" nr="{nr[0]} {nr[1]} {nr[2]}" '
@@ -302,7 +305,7 @@ def write_internal_format_files(
         f.write("    </RECIPROCAL_LATTICE>\n")
 
         f.write(
-            f'    <VKPT type="real" size="{3 * nkpts}" columns="3" units="crystal">\n'
+            f'    <VKPT type="real" size="{3 * nkpnts}" columns="3" units="crystal">\n'
         )
         for i in range(vkpts_crystal.shape[1]):
             f.write(
@@ -310,7 +313,7 @@ def write_internal_format_files(
             )
         f.write("    </VKPT>\n")
 
-        f.write(f'    <WK type="real" size="{nkpts}">\n')
+        f.write(f'    <WK type="real" size="{nkpnts}">\n')
         for w in wk:
             f.write(f" {w:.15E}\n")
         f.write("    </WK>\n")
@@ -357,7 +360,7 @@ def write_kham(
 
     Parameters
     ----------
-    `Hk` : (nspin, nkpts, dim, dim) complex ndarray
+    `Hk` : (nspin, nkpnts, dim, dim) complex ndarray
         Hamiltonian matrices in k-space.
     `output_file` : Path
         Destination XML file.
@@ -369,7 +372,7 @@ def write_kham(
         Prefix for matrix block tags (default: "KH" → <KH.1>, <KH.2>, ...)
     """
     f.write("  <HAMILTONIAN>\n")
-    nspin, nkpts, _, _ = Hk.shape
+    nspin, nkpnts, _, _ = Hk.shape
 
     for isp in range(nspin):
         if spin_component == "up" and isp == 1:
@@ -381,7 +384,7 @@ def write_kham(
             f.write(f"    <SPIN.{isp + 1}>\n")
 
         f.write(f"      <{tag}>\n")
-        for ik in range(nkpts):
+        for ik in range(nkpnts):
             tagname = f"{block_prefix}.{ik + 1}"
             mat = Hk[isp, ik]
             dim = mat.shape[0]
@@ -547,17 +550,17 @@ def write_kresolved_operator_xml(
     `filename` : str
         Output path.
     `operator_k` : ndarray
-        Array of shape ``(nkpts, dim, dim)`` with the operator at a fixed energy for all k-points.
+        Array of shape ``(nkpnts, dim, dim)`` with the operator at a fixed energy for all k-points.
     `dimwann` : int
         Operator dimension.
     `vkpt` : ndarray, optional
-        K-points of shape ``(3, nkpts)`` or ``(nkpts, 3)``. Stored only as metadata proxy
+        K-points of shape ``(3, nkpnts)`` or ``(nkpnts, 3)``. Stored only as metadata proxy
         by populating the ``<IVR>`` block with integer indices. Actual k-vectors are not
         written because the base writer does not yet support a dedicated ``<VKPT>`` tag.
 
     Notes
     -----
-    The data are written with ``nomega = 1`` and ``nrtot = nkpts``. To reuse the existing
+    The data are written with ``nomega = 1`` and ``nrtot = nkpnts``. To reuse the existing
     writer unmodified, k-points are enumerated into a 3-column integer array stored under
     ``<IVR>``. The matrix values are exact; only the tag semantics differ from a true
     ``<VKPT>`` representation.
@@ -595,8 +598,8 @@ def write_projectability_files(
 ) -> None:
     proj = proj_data.proj
     eigvals = proj_data.eigvals
-    nspin, nkpts, _, _ = Hk.shape
-    nbnd = proj_data.nbnd
+    nspin, nkpnts, _, _ = Hk.shape
+    nbnds = proj_data.nbnds
 
     for isp in range(nspin):
         proj_file = (
@@ -606,8 +609,8 @@ def write_projectability_files(
         )
         with open(proj_file, "w") as f:
             f.write("# Energy (eV)        Projectability\n")
-            for ik in range(nkpts):
-                for ib in range(nbnd):
+            for ik in range(nkpnts):
+                for ib in range(nbnds):
                     proj_vec = proj[:, ib, ik, isp]
                     weight = np.vdot(proj_vec, proj_vec).real
                     energy = eigvals[ib, ik, isp]
@@ -619,14 +622,14 @@ def write_overlap_files(output_dir: str, Sk: np.ndarray, do_orthoovp: bool) -> N
     if do_orthoovp or Sk is None:
         return
     nR, nspin = Sk.shape[2], Sk.shape[3]
-    natomwfc = Sk.shape[0]
+    nawf = Sk.shape[0]
     kovp_file = os.path.join(output_dir, "kovp.txt")
     with open(kovp_file, "w") as f:
         f.write("# Overlap Real        Overlap Imag\n")
         for ik in range(nR):
             for isp in range(nspin):
                 mat = Sk[:, :, ik, isp]
-                for i in range(natomwfc):
-                    for j in range(natomwfc):
+                for i in range(nawf):
+                    for j in range(nawf):
                         f.write(f"{mat[i, j].real:20.13f}  {mat[i, j].imag:20.13f}\n")
     log_rank0("Printed overlap matrices to kovp.txt")

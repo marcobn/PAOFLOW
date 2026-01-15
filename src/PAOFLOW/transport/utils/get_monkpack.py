@@ -15,7 +15,7 @@ def get_monkhorst_pack_grid(
 
     Parameters
     ----------
-    `kpts` : (3, nkpts) ndarray
+    `kpts` : (3, nkpnts) ndarray
         K-points in reciprocal space. Can be in either crystal or cartesian coordinates.
     `bvec` : (3, 3) ndarray
         Reciprocal lattice vectors in columns (bohr^-1).
@@ -48,8 +48,8 @@ def get_monkhorst_pack_grid(
     if coordinate.lower() == "cartesian":
         kpts = cartesian_to_crystal(kpts, bvec)
 
-    nkpts = kpts.shape[1]
-    print(f"nkpts: {nkpts}")
+    nkpnts = kpts.shape[1]
+    print(f"nkpnts: {nkpnts}")
     nk = np.zeros(3, dtype=int)
     shift = np.ones(3, dtype=int)
 
@@ -88,7 +88,7 @@ def get_monkhorst_pack_grid(
         if np.any(np.all(np.abs(kpt_mp.T - col) < tol, axis=1)):
             matched += 1
 
-    is_mp = matched == nkpts
+    is_mp = matched == nkpnts
     if not is_mp:
         nk[:] = 0
         shift[:] = 0

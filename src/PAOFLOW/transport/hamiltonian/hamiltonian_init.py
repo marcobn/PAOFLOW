@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 
+from PAOFLOW.DataController import DataController
 import numpy as np
 
 from PAOFLOW.transport.hamiltonian.hamiltonian import HamiltonianSystem
@@ -20,6 +21,7 @@ def initialize_hamiltonian_blocks(
     ispin: int,
     transport_direction: int,
     calculation_type: CalculationType,
+    data_controller: DataController,
     datafile_L: str = "",
     datafile_R: str = "",
     conductor_data: ConductorData | None = None,
@@ -79,27 +81,27 @@ def initialize_hamiltonian_blocks(
         block.table_par = table_par
 
     read_matrix(
-        with_ham_suffix(datafile_C), ispin, transport_direction, ham_system.blc_00C
+        with_ham_suffix(datafile_C), data_controller, ispin, transport_direction, ham_system.blc_00C
     )
     read_matrix(
-        with_ham_suffix(datafile_C), ispin, transport_direction, ham_system.blc_CR
+        with_ham_suffix(datafile_C), data_controller, ispin, transport_direction, ham_system.blc_CR
     )
 
     if calculation_type == "conductor":
         read_matrix(
-            with_ham_suffix(datafile_C), ispin, transport_direction, ham_system.blc_LC
+            with_ham_suffix(datafile_C), data_controller, ispin, transport_direction, ham_system.blc_LC
         )
         read_matrix(
-            with_ham_suffix(datafile_L), ispin, transport_direction, ham_system.blc_00L
+            with_ham_suffix(datafile_L), data_controller, ispin, transport_direction, ham_system.blc_00L
         )
         read_matrix(
-            with_ham_suffix(datafile_L), ispin, transport_direction, ham_system.blc_01L
+            with_ham_suffix(datafile_L), data_controller, ispin, transport_direction, ham_system.blc_01L
         )
         read_matrix(
-            with_ham_suffix(datafile_R), ispin, transport_direction, ham_system.blc_00R
+            with_ham_suffix(datafile_R), data_controller, ispin, transport_direction, ham_system.blc_00R
         )
         read_matrix(
-            with_ham_suffix(datafile_R), ispin, transport_direction, ham_system.blc_01R
+            with_ham_suffix(datafile_R), data_controller, ispin, transport_direction, ham_system.blc_01R
         )
 
     elif calculation_type == "bulk":
@@ -127,9 +129,9 @@ def initialize_hamiltonian_blocks(
     else:
         raise ValueError(f"Invalid calculation_type: {calculation_type}")
 
-    nk = ham_system.blc_00C.nkpts
-    if nk != ham_system.blc_00L.nkpts or nk != ham_system.blc_00R.nkpts:
-        raise RuntimeError("Mismatch in nkpts among C, L, R blocks")
+    nk = ham_system.blc_00C.nkpnts
+    if nk != ham_system.blc_00L.nkpnts or nk != ham_system.blc_00R.nkpnts:
+        raise RuntimeError("Mismatch in nkpnts among C, L, R blocks")
 
     for ik in range(nk):
         for block in [ham_system.blc_00C, ham_system.blc_00L, ham_system.blc_00R]:

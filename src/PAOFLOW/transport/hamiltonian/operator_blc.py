@@ -46,7 +46,7 @@ class OperatorBlock:
         self.name: str = name
         self.dim1: int = 0
         self.dim2: int = 0
-        self.nkpts: int = 0
+        self.nkpnts: int = 0
         self.ne_sgm: int = 1
 
         self.nrtot: int = 0
@@ -88,7 +88,7 @@ class OperatorBlock:
         self,
         dim1: int,
         dim2: int,
-        nkpts: int,
+        nkpnts: int,
         ne_sgm: int = 1,
         nrtot: int = 0,
         nrtot_sgm: int = 0,
@@ -107,7 +107,7 @@ class OperatorBlock:
             Number of rows in the block.
         `dim2` : int
             Number of columns in the block.
-        `nkpts` : int
+        `nkpnts` : int
             Number of k-points.
         `ne_sgm` : int
             Number of energy grid points for self-energy.
@@ -131,7 +131,7 @@ class OperatorBlock:
 
         self.dim1 = dim1
         self.dim2 = dim2
-        self.nkpts = nkpts
+        self.nkpnts = nkpnts
         self.ne_sgm = ne_sgm
         self.nrtot = nrtot
         self.nrtot_sgm = nrtot_sgm
@@ -142,19 +142,19 @@ class OperatorBlock:
         self.irows_sgm = np.zeros(dim1, dtype=int)
 
         if lhave_aux:
-            self.aux = np.zeros((dim1, dim2, nkpts), dtype=np.complex128)
+            self.aux = np.zeros((dim1, dim2, nkpnts), dtype=np.complex128)
             self.lhave_aux = True
         if lhave_sgm_aux:
             self.sgm_aux = np.zeros((dim1, dim2), dtype=np.complex128)
             self.lhave_sgm_aux = True
         if lhave_ham:
-            self.H = np.zeros((dim1, dim2, nkpts), dtype=np.complex128)
+            self.H = np.zeros((dim1, dim2, nkpnts), dtype=np.complex128)
             self.lhave_ham = True
         if lhave_ovp:
-            self.S = np.zeros((dim1, dim2, nkpts), dtype=np.complex128)
+            self.S = np.zeros((dim1, dim2, nkpnts), dtype=np.complex128)
             self.lhave_ovp = True
         if lhave_corr:
-            self.sgm = np.zeros((dim1, dim2, nkpts, ne_sgm), dtype=np.complex128)
+            self.sgm = np.zeros((dim1, dim2, nkpnts, ne_sgm), dtype=np.complex128)
             self.lhave_corr = True
         if nrtot > 0:
             self.ivr = np.zeros((3, nrtot), dtype=int)
@@ -166,8 +166,8 @@ class OperatorBlock:
     def at_k(self, ik: int) -> OperatorBlockView:
         if not self.allocated:
             raise RuntimeError(f"Cannot slice unallocated block '{self.name}'")
-        if ik >= self.nkpts:
-            raise IndexError(f"k-point index {ik} out of range (nkpts = {self.nkpts})")
+        if ik >= self.nkpnts:
+            raise IndexError(f"k-point index {ik} out of range (nkpnts = {self.nkpnts})")
         return OperatorBlockView(self, ik)
 
     def deallocate(self) -> None:
@@ -259,7 +259,7 @@ class OperatorBlock:
         self.allocate(
             dim1=other.dim1,
             dim2=other.dim2,
-            nkpts=other.nkpts,
+            nkpnts=other.nkpnts,
             ne_sgm=other.ne_sgm,
             nrtot=other.nrtot,
             nrtot_sgm=other.nrtot_sgm,
@@ -389,7 +389,7 @@ class OperatorBlock:
         return (
             f"\n  OperatorBlock Summary: {self.name}\n"
             f"    dim1, dim2           : {self.dim1}, {self.dim2}\n"
-            f"    nkpts                : {self.nkpts}\n"
+            f"    nkpnts                : {self.nkpnts}\n"
             f"    dimx_sgm             : {self.dimx_sgm}\n"
             f"    nrtot, nrtot_sgm     : {self.nrtot}, {self.nrtot_sgm}\n"
             f"    ne_sgm               : {self.ne_sgm}\n"

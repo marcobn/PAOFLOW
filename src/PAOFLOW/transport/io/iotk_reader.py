@@ -157,7 +157,7 @@ class IOTKReader:
                             header[key.lower()] = np.fromstring(val_clean, sep=" ")
                         elif key in {"have_overlap"}:
                             header[key.lower()] = val.upper() in {"T", ".TRUE."}
-                        elif key in {"dimwann", "nkpts", "nspin", "nrtot"}:
+                        elif key in {"dimwann", "nkpnts", "nspin", "nrtot"}:
                             header[key.lower()] = int(val)
                         elif key in {"fermi_energy"}:
                             header[key.lower()] = float(val)

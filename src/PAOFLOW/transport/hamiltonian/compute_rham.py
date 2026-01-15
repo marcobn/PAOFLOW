@@ -18,11 +18,11 @@ def compute_rham(
     ----------
     `rvec` : (3,) ndarray
         Real-space lattice vector in Cartesian coordinates.
-    `Hk` : (nkpts, n, n) complex ndarray
+    `Hk` : (nkpnts, n, n) complex ndarray
         Hamiltonian matrix at each k-point in reciprocal space.
-    `kpts` : (3, nkpts) ndarray
+    `kpts` : (3, nkpnts) ndarray
         Reciprocal space k-points in Cartesian coordinates.
-    `wk` : (nkpts,) ndarray
+    `wk` : (nkpnts,) ndarray
         Integration weights associated with each k-point.
 
     Returns
@@ -47,10 +47,10 @@ def compute_rham(
     boundary conditions and correctly maps between reciprocal and real-space
     representations of the Hamiltonian.
     """
-    nkpts, n, _ = Hk.shape
+    nkpnts, n, _ = Hk.shape
     Hr = np.zeros((n, n), dtype=np.complex128)
 
-    for ik in range(nkpts):
+    for ik in range(nkpnts):
         arg = np.dot(kpts[:, ik], rvec)
         phase = np.cos(arg) - 1j * np.sin(arg)  # exp(-i * arg)
         weight = phase * wk[ik]

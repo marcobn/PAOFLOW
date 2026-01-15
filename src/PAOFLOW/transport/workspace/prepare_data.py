@@ -194,7 +194,7 @@ def prepare_hamiltonian_system(
 
 
 def prepare_hamiltonian_blocks_and_leads(
-    data: ConductorData, ham_sys: HamiltonianSystem
+    data: ConductorData, ham_sys: HamiltonianSystem, data_controller: DataController
 ) -> None:
     """
     Initialize Hamiltonian blocks and check if leads are identical.
@@ -230,6 +230,7 @@ def prepare_hamiltonian_blocks_and_leads(
         datafile_L=data.file_names.datafile_L,
         datafile_R=data.file_names.datafile_R,
         ispin=data.advanced.ispin,
+        data_controller=data_controller,
         transport_direction=data.transport_direction,
         calculation_type=data.calculation_type,
         conductor_data=data,

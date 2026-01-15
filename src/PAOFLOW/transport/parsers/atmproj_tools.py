@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from PAOFLOW import DataController
+from PAOFLOW.DataController import DataController
 import numpy as np
 from scipy.linalg import eigh, inv
 
@@ -29,7 +29,6 @@ from PAOFLOW.transport.parsers.atmproj_parser_base import (
     parse_overlaps,
     parse_projections,
 )
-from PAOFLOW.transport.parsers.qexml import qexml_read_cell
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -99,13 +98,13 @@ def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> D
         "avec": avec,
         "bvec": bvec,
     }
-    proj_data = parse_atomic_proj_xml(file_proj, lattice_data)
+    proj_data = parse_atomic_proj_xml(file_proj, lattice_data, data_controller)
     proj_data = convert_energy_units(proj_data)
 
-    log_proj_summary(
-        proj_data,
-        data,
-    )
+    # log_proj_summary(
+    #     proj_data,
+    #     data,
+    # )
 
     log_section_start("atmproj_read_ext --massive data")
     hk_data = get_pao_hamiltonian(
@@ -129,15 +128,15 @@ def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> D
         opts.do_orthoovp,
     )
 
-    write_projectability_files(output_dir, proj_data, hk_data["Hk"])
-    write_overlap_files(output_dir, hk_data.get("S"), opts.do_orthoovp)
+    # write_projectability_files(output_dir, proj_data, hk_data["Hk"])
+    # write_overlap_files(output_dir, hk_data.get("S"), opts.do_orthoovp)
 
     log_rank0(f"{file_proj} converted from ATMPROJ to internal format")
 
     return hk_data
 
 
-def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict) -> AtomicProjData:
+def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict, data_controller: DataController) -> AtomicProjData:
     """
     Parse the Quantum ESPRESSO atomic_proj.xml file (from projwfc.x) into structured NumPy arrays.
 
@@ -157,13 +156,13 @@ def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict) -> AtomicProjData:
     -------
     dict
         A dictionary containing:
-        - `nbnd` : int
+        - `nbnds` : int
             Number of bands.
-        - `nkpts` : int
+        - `nkpnts` : int
             Number of k-points.
         - `nspin` : int
             Number of spin components (1 for non-magnetic, 2 for collinear magnetic calculations).
-        - `natomwfc` : int
+        - `nawf` : int
             Number of atomic wavefunctions (projectors) in the system.
         - `nelec` : float
             Number of electrons in the system.
@@ -171,15 +170,15 @@ def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict) -> AtomicProjData:
             Fermi energy in the units specified by `energy_units`.
         - `energy_units` : str
             Units of energy (e.g., 'eV', 'Ha', 'Ry') as specified in the XML file.
-        - `kpts` : ndarray of shape (3, nkpts)
+        - `kpts` : ndarray of shape (3, nkpnts)
             K-point coordinates in crystal units, transposed for consistency with PAOFLOW conventions.
-        - `wk` : ndarray of shape (nkpts,)
+        - `wk` : ndarray of shape (nkpnts,)
             K-point weights.
-        - `eigvals` : ndarray of shape (nbnd, nkpts, nspin)
+        - `eigvals` : ndarray of shape (nbnds, nkpnts, nspin)
             Eigenvalues of the bands at each k-point and spin.
-        - `proj` : ndarray of shape (natomwfc, nbnd, nkpts, nspin), complex
+        - `proj` : ndarray of shape (nawf, nbnds, nkpnts, nspin), complex
             Projection matrix elements ⟨atomic_wfc | Bloch_state⟩.
-        - `overlap` : ndarray of shape (natomwfc, natomwfc, nkpts, nspin), complex or None
+        - `overlap` : ndarray of shape (nawf, nawf, nkpnts, nspin), complex or None
             Overlap matrices S_{ij}(k) = ⟨atomic_wfc_i | atomic_wfc_j⟩ if present in the XML; else None.
 
     Notes
@@ -212,21 +211,21 @@ def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict) -> AtomicProjData:
     tree = ET.parse(file_proj)
     root = tree.getroot()
 
-    header = parse_header(root)
+    header = parse_header(data_controller)
     kpt_data = parse_kpoints(root, lattice_data)
-    eigvals = parse_eigenvalues(root, header["nbnd"], header["nkpts"], header["nspin"])
+    eigvals = parse_eigenvalues(root, header["nbnds"], header["nkpnts"], header["nspin"])
 
     log_section_end("reading eigenvalues")
 
     log_section_start("reading projections")
     proj = parse_projections(
-        root, header["nbnd"], header["nkpts"], header["nspin"], header["natomwfc"]
+        root, header["nbnds"], header["nkpnts"], header["nspin"], header["nawf"]
     )
 
     log_section_end("reading projections")
     log_section_end("atmproj_read_ext")
 
-    overlap = parse_overlaps(root, header["nkpts"], header["nspin"], header["natomwfc"])
+    overlap = parse_overlaps(root, header["nkpnts"], header["nspin"], header["nawf"])
 
     return AtomicProjData(
         **header,
@@ -242,17 +241,17 @@ def get_pao_hamiltonian( data_controller: DataController) -> Dict[str, np.ndarra
     arry,attr = data_controller.data_dicts()
     Hks_raw = arry["Hks"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     nspin = attr['nspin']
-    nkpts = attr['nkpnts']
+    nkpnts = attr['nkpnts']
     nawf = attr['nawf']
     acbn0 = attr['acbn0']
 
-    # reshape to (nawf, nawf, nkpts, nspin)
-    Hks_reshaped = Hks_raw.reshape((nawf, nawf, nkpts, nspin))
-    # transpose to (nspin, nkpts, nawf, nawf)
+    # reshape to (nawf, nawf, nkpnts, nspin)
+    Hks_reshaped = Hks_raw.reshape((nawf, nawf, nkpnts, nspin))
+    # transpose to (nspin, nkpnts, nawf, nawf)
     Hk = np.transpose(Hks_reshaped, (3, 2, 0, 1))
 
     Sks_raw = arry["Sks"] if "Sks" in arry else None
-    Sks_reshaped = Sks_raw.reshape((nawf, nawf, nkpts, nspin)) if Sks_raw is not None else None
+    Sks_reshaped = Sks_raw.reshape((nawf, nawf, nkpnts, nspin)) if Sks_raw is not None else None
     Sk = Sks_reshaped.copy() if acbn0 and Sks_reshaped is not None else None
 
     return {"Hk": Hk, "S": Sk}

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Tuple
 
+from PAOFLOW.DataController import DataController
 import numpy as np
 from mpi4py import MPI
 
@@ -585,14 +586,14 @@ class ConductorCalculator:
 
 class ConductorRunner:
     @classmethod
-    def from_yaml(cls, yaml_file: str):
-        data = prepare_conductor(yaml_file)
+    def from_yaml(cls, yaml_file: str, data_controller: DataController):
+        data = prepare_conductor(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
 
         _ = prepare_smearing(data, memory_tracker)
         _ = prepare_kpoints(data, memory_tracker)
         ham_sys = prepare_hamiltonian_system(data, memory_tracker)
-        prepare_hamiltonian_blocks_and_leads(data, ham_sys)
+        prepare_hamiltonian_blocks_and_leads(data, ham_sys, data_controller)
         _ = prepare_workspace(data, memory_tracker)
 
         calculator = ConductorCalculator(data=data, blc_blocks=ham_sys.blocks)
@@ -829,8 +830,8 @@ class CurrentCalculator:
 
 class CurrentRunner:
     @classmethod
-    def from_yaml(cls, yaml_file: str):
-        data = prepare_current(yaml_file)
+    def from_yaml(cls, yaml_file: str, data_controller: DataController):
+        data = prepare_current(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
 
         calculator = CurrentCalculator(data)

@@ -137,13 +137,13 @@ class AtomicProjData(PydanticBaseModel):
 
     Attributes
     ----------
-    nbnd : int
+    nbnds : int
         Number of bands.
-    nkpts : int
+    nkpnts : int
         Number of k-points.
     nspin : int
         Number of spin components (1 = non-magnetic, 2 = collinear magnetic).
-    natomwfc : int
+    nawf : int
         Number of atomic wavefunctions (projectors).
     nelec : float
         Total number of electrons.
@@ -151,22 +151,22 @@ class AtomicProjData(PydanticBaseModel):
         Fermi energy, in units specified by `energy_units`.
     energy_units : str
         Energy units reported in XML (e.g. 'eV', 'Ha', 'Ry').
-    kpts : (3, nkpts) ndarray of float
+    kpts : (3, nkpnts) ndarray of float
         K-point coordinates in crystal units.
-    wk : (nkpts,) ndarray of float
+    wk : (nkpnts,) ndarray of float
         K-point weights.
-    eigvals : (nbnd, nkpts, nspin) ndarray of float
+    eigvals : (nbnds, nkpnts, nspin) ndarray of float
         Band eigenvalues at each k-point and spin.
-    proj : (natomwfc, nbnd, nkpts, nspin) ndarray of complex
+    proj : (nawf, nbnds, nkpnts, nspin) ndarray of complex
         Projection matrix elements ⟨atomic_wfc | Bloch_state⟩.
-    overlap : (natomwfc, natomwfc, nkpts, nspin) ndarray of complex, optional
+    overlap : (nawf, nawf, nkpnts, nspin) ndarray of complex, optional
         Overlap matrices S_ij(k) = ⟨atomic_wfc_i | atomic_wfc_j⟩ if present.
     """
 
-    nbnd: int
-    nkpts: int
+    nbnds: int
+    nkpnts: int
     nspin: int
-    natomwfc: int
+    nawf: int
     nelec: float
     efermi: float
     energy_units: str

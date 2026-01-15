@@ -189,9 +189,9 @@ def initialize_kpoints(
 
     Returns
     -------
-    `vkpt_par3D` : (nkpts, 3) ndarray
+    `vkpt_par3D` : (nkpnts, 3) ndarray
         Generated 3D k-points in fractional coordinates.
-    `wk_par` : (nkpts,) ndarray
+    `wk_par` : (nkpnts,) ndarray
         Normalized weights for each unique k-point.
 
     Notes
@@ -254,14 +254,14 @@ def compute_fourier_phase_table(
 
     Parameters
     ----------
-    `vkpts` : (nkpts, 2) or (nkpts, 3) ndarray
+    `vkpts` : (nkpnts, 2) or (nkpnts, 3) ndarray
         k-point vectors in fractional reciprocal lattice units.
     `ivr_par` : (nR, 2) or (nR, 3) ndarray
         R-vectors in fractional crystal units (integer multiples of lattice vectors).
 
     Returns
     -------
-    `table_par` : (nR, nkpts) ndarray of complex128
+    `table_par` : (nR, nkpnts) ndarray of complex128
         Phase factors e^{i 2π k · R} used for Fourier transforms or interpolation.
 
     Notes
@@ -282,10 +282,10 @@ def compute_fourier_phase_table(
         k = k_cartesian / (2π)  ->  k_cartesian = 2π * k_fractional
     """
     nR = ivr_par.shape[0]
-    nkpts = vkpts.shape[0]
+    nkpnts = vkpts.shape[0]
 
-    table = np.empty((nR, nkpts), dtype=np.complex128)
-    for ik in range(nkpts):
+    table = np.empty((nR, nkpnts), dtype=np.complex128)
+    for ik in range(nkpnts):
         for ir in range(nR):
             arg = 2 * np.pi * np.dot(vkpts[ik], ivr_par[ir])
             table[ir, ik] = np.exp(1j * arg)
