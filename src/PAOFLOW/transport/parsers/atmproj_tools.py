@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from PAOFLOW import DataController
 import numpy as np
 from scipy.linalg import eigh, inv
 
@@ -80,7 +81,7 @@ def log_proj_summary(proj_data: AtomicProjData, data: ConductorData) -> None:
 
 @timed_function("atmproj_to_internal")
 @headered_function("Conductor Initialization")
-def parse_atomic_proj(data) -> Dict[str, np.ndarray]:
+def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> Dict[str, np.ndarray]:
     file_proj = data.file_names.datafile_C
     output_dir = data.file_names.output_dir
     opts = data.atomic_proj
@@ -88,7 +89,16 @@ def parse_atomic_proj(data) -> Dict[str, np.ndarray]:
     file_data = validate_proj_files(file_proj)
     log_rank0(f"  {file_proj} file fmt: atmproj")
 
-    lattice_data = qexml_read_cell(file_data)
+    arry, attr = data_controller.data_dicts()
+    alat = attr["alat"]
+    avec = arry["a_vectors"]
+    bvec = arry["b_vectors"]
+
+    lattice_data = {
+        "alat": alat,
+        "avec": avec,
+        "bvec": bvec,
+    }
     proj_data = parse_atomic_proj_xml(file_proj, lattice_data)
     proj_data = convert_energy_units(proj_data)
 
@@ -98,9 +108,8 @@ def parse_atomic_proj(data) -> Dict[str, np.ndarray]:
     )
 
     log_section_start("atmproj_read_ext --massive data")
-    hk_data = build_hamiltonian_from_proj(
-        proj_data,
-        data,
+    hk_data = get_pao_hamiltonian(
+        data_controller
     )
     log_section_end("atmproj_read_ext --massive data")
 
@@ -228,226 +237,22 @@ def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict) -> AtomicProjData:
     )
 
 
-def build_hamiltonian_from_proj(
-    proj_data: AtomicProjData,
-    data: ConductorData,
-) -> Dict[str, np.ndarray]:
-    """
-    Construct H(k) from projection data.
+def get_pao_hamiltonian( data_controller: DataController) -> Dict[str, np.ndarray]:
 
-    Parameters
-    ----------
-    `proj_data` : Dict
-        Output from parse_atomic_proj_xml.
-    `atmproj_sh` : float
-        Energy shift used as a band filter.
-    `atmproj_thr` : float
-        Minimum projector weight to include a band.
-    `atmproj_nbnd` : int or None
-        Maximum number of bands to include.
-    `do_orthoovp` : bool
-        If False, include the non-orthogonal overlaps. If True, projector basis has been orthonormalized.
-    `atmproj_do_norm` : bool
-        If True, normalize the projectors.
-    `shifting_scheme` : int
-        1 = direct sum over projectors; 2 = projected subspace with inverse PA
+    arry,attr = data_controller.data_dicts()
+    Hks_raw = arry["Hks"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
+    nspin = attr['nspin']
+    nkpts = attr['nkpts']
+    nawf = attr['nawf']
+    acbn0 = attr['acbn0']
 
-    Returns
-    -------
-    Dict[str, np.ndarray]
-        Includes keys:
-        - 'Hk': complex ndarray, shape (nspin, nkpts, natomwfc, natomwfc)
-        - 'S' : complex ndarray, shape (natomwfc, natomwfc, nkpts, nspin) if available
+    # reshape to (nawf, nawf, nkpts, nspin)
+    Hks_reshaped = Hks_raw.reshape((nawf, nawf, nkpts, nspin))
+    # transpose to (nspin, nkpts, nawf, nawf)
+    Hk = np.transpose(Hks_reshaped, (3, 2, 0, 1))
 
-    Notes
-    -----
-    Two schemes are used for constructing the k-dependent Hamiltonian:
-
-    1. **Shifting scheme 1 (default):**
-
-       The Hamiltonian is constructed from the outer product of the projectors:
-
-           H(k) = ∑_b [eig_b(k) - κ] · |proj_b(k)><proj_b(k)|
-
-       where the summation runs over bands b with eigenvalues below `atmproj_sh` κ.
-       Optional projector normalization is applied before the outer product.
-
-    2. **Shifting scheme 2 (subspace projection):**
-
-       Let A be the matrix whose columns are selected projectors for eigenvalues < κ:
-
-           A_{i b} = <ϕ_i | ψ_b>
-
-       Let E be a diagonal matrix with corresponding eigenvalues:
-
-           E_{bb} = eig_b(k)
-
-       Define the projector overlap:
-
-           PA = A⁺ · A
-
-       Compute its inverse, IPA = (A⁺ A)⁻¹. Then construct:
-
-           H_aux = (E - κ IPA) · A⁺
-           H(k) = A · H_aux = A · (E - κ IPA) · A⁺
-
-       This is a more accurate low-rank projection of the Hamiltonian into the atomic subspace.
-
-    In both cases, a final shift of +κ is added to the Hamiltonian either as:
-    - H(k) += κ · S(k) for non-orthogonal basis
-    - H(k) += κ · I for orthonormal basis
-
-    If `do_orthoovp` is False, an additional transformation is applied:
-        H(k) -> S(k)½ · H(k) · S(k)½
-    where S(k)½ is the square root of the overlap matrix.
-    """
-    eig = proj_data.eigvals
-    proj = proj_data.proj
-    S_raw = proj_data.overlap
-
-    nbnd = proj_data.nbnd
-    nkpts = proj_data.nkpts
-    nspin = proj_data.nspin
-    natomwfc = proj_data.natomwfc
-
-    opts = HamiltonianOptions(
-        sh=data.atomic_proj.atmproj_sh,
-        thr=data.atomic_proj.atmproj_thr,
-        nbnd=data.atomic_proj.atmproj_nbnd,
-        do_norm=data.atomic_proj.atmproj_do_norm,
-        do_orthoovp=data.atomic_proj.do_orthoovp,
-        shifting_scheme=data.advanced.shifting_scheme,
-    )
-
-    atmproj_nbnd_ = (
-        min(data.atomic_proj.atmproj_nbnd, nbnd)
-        if data.atomic_proj.atmproj_nbnd and data.atomic_proj.atmproj_nbnd > 0
-        else nbnd
-    )
-    Hk = np.zeros((nspin, nkpts, natomwfc, natomwfc), dtype=np.complex128)
-    Sk = S_raw.copy() if not opts.do_orthoovp and S_raw is not None else None
-
-    for isp in range(nspin):
-        for ik in range(nkpts):
-            if opts.shifting_scheme == 2:
-                H = build_scheme2(eig, proj, ik, isp, opts)
-            else:
-                H = build_scheme1(eig, proj, ik, isp, opts, atmproj_nbnd_, natomwfc)
-
-            if not opts.do_orthoovp and S_raw is not None:
-                H = apply_overlap_transformation(H, S_raw[:, :, ik, isp])
-
-            if not opts.do_orthoovp and S_raw is not None:
-                H += opts.sh * S_raw[:, :, ik, isp]
-            else:
-                H += opts.sh * np.eye(natomwfc, dtype=np.complex128)
-
-            enforce_hermiticity(H, opts.hermitian_tol, ik, isp)
-            Hk[isp, ik] = H
+    Sks_raw = arry["Sks"] if "Sks" in arry else None
+    Sks_reshaped = Sks_raw.reshape((nawf, nawf, nkpts, nspin)) if Sks_raw is not None else None
+    Sk = Sks_reshaped.copy() if acbn0 and Sks_reshaped is not None else None
 
     return {"Hk": Hk, "S": Sk}
-
-
-@dataclass
-class HamiltonianOptions:
-    sh: float
-    thr: float
-    nbnd: Optional[int]
-    do_norm: bool
-    do_orthoovp: bool
-    shifting_scheme: int = 1
-    hermitian_tol: float = 1e-8
-
-
-def build_scheme1(
-    eig: np.ndarray,
-    proj: np.ndarray,
-    ik: int,
-    isp: int,
-    opts: HamiltonianOptions,
-    atmproj_nbnd: int,
-    natomwfc: int,
-) -> np.ndarray:
-    """
-    Construct H(k) using scheme 1 (direct projector outer product).
-
-    Notes
-    -----
-    Matches Fortran `atmproj_to_internal` behavior:
-    - If `thr > 0.0`, only eigenvalue filtering is applied (`energy > sh`).
-      The projector weight filter present in older versions is commented
-      out in the Fortran code and is therefore disabled here.
-    - If `thr <= 0.0`, only eigenvalue filtering is applied as well.
-    - Normalization is applied if `do_norm` is True and weight > 1e-14.
-    """
-    H = np.zeros((natomwfc, natomwfc), dtype=np.complex128)
-    for ib in range(atmproj_nbnd):
-        energy = eig[ib, ik, isp]
-        proj_b = proj[:, ib, ik, isp]
-        weight = np.vdot(proj_b, proj_b).real
-
-        if opts.thr > 0.0:
-            if energy > opts.sh:
-                continue
-        else:
-            if energy >= opts.sh:
-                continue
-
-        if opts.do_norm and weight > 1e-14:
-            proj_b = proj_b / np.sqrt(weight)
-
-        H += (energy - opts.sh) * np.outer(proj_b, proj_b.conj())
-
-        H = 0.5 * (H + H.conj().T)
-    return H.T
-
-
-def build_scheme2(
-    eig: np.ndarray,
-    proj: np.ndarray,
-    ik: int,
-    isp: int,
-    opts: HamiltonianOptions,
-) -> np.ndarray:
-    """
-    Construct H(k) using scheme 2 (subspace projection).
-
-    Notes
-    -----
-    Matches Fortran `atmproj_to_internal` behavior:
-    - Selects only eigenvalues below the shift (`eig < sh`).
-    - Projector weight (`proj_wgt`) is always computed, even though
-      filtering is based only on eigenvalues.
-    - Normalization is applied if `do_norm` is True and weight > 1e-14.
-    """
-    mask = [ib for ib in range(eig.shape[0]) if eig[ib, ik, isp] < opts.sh]
-    if not mask:
-        raise RuntimeError(f"No eigenvalues below shift at ik={ik}")
-
-    E = np.diag(eig[mask, ik, isp])
-    A = proj[:, mask, ik, isp].copy()
-
-    for ib in range(A.shape[1]):
-        weight = np.vdot(A[:, ib], A[:, ib]).real
-        if opts.do_norm and weight > 1e-14:
-            A[:, ib] /= np.sqrt(weight)
-
-    PA = A.conj().T @ A
-    IPA = inv(PA)
-    H_aux = (E - opts.sh * IPA) @ A.conj().T
-    H = A @ H_aux
-    H = 0.5 * (H + H.conj().T)
-    return H.T
-
-
-def apply_overlap_transformation(H: np.ndarray, S: np.ndarray) -> np.ndarray:
-    w, U = eigh(S)
-    if np.any(w <= 0):
-        raise ValueError("Negative or zero overlap eigenvalue")
-    sqrtS = U @ np.diag(np.sqrt(w)) @ U.conj().T
-    return sqrtS @ H @ sqrtS.conj().T
-
-
-def enforce_hermiticity(H: np.ndarray, tol: float, ik: int, isp: int) -> None:
-    if not np.allclose(H, H.conj().T, atol=tol):
-        raise ValueError(f"H(k) not Hermitian at ik={ik}, isp={isp}")
