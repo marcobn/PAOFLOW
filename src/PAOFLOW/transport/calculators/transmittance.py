@@ -1,3 +1,4 @@
+from typing import Tuple
 import numpy as np
 from numpy.linalg import eigh
 from scipy.linalg import solve
@@ -133,3 +134,46 @@ def evaluate_transmittance(
 
     else:
         raise ValueError("Unexpected combination of eigenchannel flags.")
+
+
+def interpolate_transmittance(
+    egrid: np.ndarray,
+    transm: np.ndarray,
+    i_start: int,
+    i_end: int,
+    ndiv: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Interpolate transmittance linearly onto a finer energy grid.
+
+    Parameters
+    ----------
+    `egrid` : ndarray
+        Original energy grid.
+    `transm` : ndarray
+        Original transmittance values.
+    `i_start` : int
+        Start index of the energy window.
+    `i_end` : int
+        End index of the energy window.
+    `ndiv` : int
+        Number of subdivisions per interval.
+
+    Returns
+    -------
+    `egrid_new` : ndarray
+        Finer energy grid.
+    `transm_new` : ndarray
+        Interpolated transmittance.
+    """
+    if ndiv == 1:
+        return egrid[i_start : i_end + 1], transm[i_start : i_end + 1]
+
+    ndim = i_end - i_start + 1
+    ndim_new = (ndim - 1) * ndiv + 1
+
+    egrid_new = np.linspace(egrid[i_start], egrid[i_end], ndim_new)
+    transm_new = np.interp(
+        egrid_new, egrid[i_start : i_end + 1], transm[i_start : i_end + 1]
+    )
+    return egrid_new, transm_new
