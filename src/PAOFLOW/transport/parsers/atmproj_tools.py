@@ -155,7 +155,7 @@ def parse_atomic_proj_data(
     kpt_data = parse_kpoints(data_controller)
     eigvals = parse_eigenvalues(data_controller)
     proj = parse_projections(data_controller)
-    overlap = parse_overlaps(data)
+    overlap = parse_overlaps(data, data_controller)
 
     return AtomicProjData(
         **header,
@@ -184,8 +184,10 @@ def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray
 
     Sks_raw = arry["Sks"] if "Sks" in arry else None
     Sk = Sks_raw[:, :nawf, :] if Sks_raw is not None else None
+    Sk = np.transpose(Sk, (2, 0, 1)) if Sk is not None else None
 
     SRs_raw = arry["SRs"] if "SRs" in arry else None
     SR = SRs_raw[:, :nawf, :] if SRs_raw is not None else None
+    SR = np.transpose(SR, (2, 0, 1)) if SR is not None else None
 
     return {"Hk": Hk, "Sk": Sk, "HR": HR, "SR": SR}

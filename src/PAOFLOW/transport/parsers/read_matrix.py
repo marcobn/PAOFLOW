@@ -4,6 +4,7 @@ from PAOFLOW.DataController import DataController
 import numpy as np
 
 from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlock
+from PAOFLOW.transport.io.input_parameters import ConductorData
 from PAOFLOW.transport.parsers.parser_base import parse_index_array
 from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_kspace
 from PAOFLOW.transport.utils.timing import timed_function
@@ -13,6 +14,7 @@ from PAOFLOW.transport.utils.timing import timed_function
 
 @timed_function("read_matrix")
 def read_matrix(
+    yaml_data: ConductorData,
     data_controller: DataController,
     ispin: int,
     transport_direction: int,
@@ -90,7 +92,7 @@ def read_matrix(
 
     nawf = attr["nawf"]
     nspin = attr["nspin"]
-    do_overlap_transformation = attr["do_overlap_transformation"]
+    do_overlap_transform = yaml_data.atomic_proj.do_overlap_transformation
     ivr = arry["ivr"]
     nrtot = ivr.shape[0]
     irows = parse_index_array(rows, nawf)
@@ -150,10 +152,10 @@ def read_matrix(
 
         ind = matches[0] + 1
 
-        A_loc = arry["HR"][ispin, ind, :, :]
+        A_loc = arry["HRs"][ir_par, :, :]
 
-        if do_overlap_transformation:
-            S_loc = arry["SR"][ispin, ind, :, :]
+        if do_overlap_transform:
+            S_loc = arry["SRs"][ir_par, :, :]
         else:
             S_loc = np.zeros_like(A_loc)
             if label.lower() in {

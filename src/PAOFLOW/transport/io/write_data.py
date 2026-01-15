@@ -187,7 +187,7 @@ def write_internal_format_files(
             - "avec": shape (3, 3), direct lattice vectors
             - "bvec": shape (3, 3), reciprocal lattice vectors
     `do_overlap_transformation` : bool
-        If False and overlap matrices are provided, overlap blocks will be written to the output.
+        If True and overlap matrices are provided, overlap blocks will be written to the output.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     ham_file = (
@@ -195,7 +195,7 @@ def write_internal_format_files(
     )
     arry, attr = data_controller.data_dicts()
     Hk = hk_data["Hk"]
-    Sk = hk_data.get("S", None)
+    Sk = hk_data["Sk"] if "Sk" in hk_data else None
     ivr = hk_data["ivr"]
     wr = hk_data["wr"]
 
@@ -212,7 +212,7 @@ def write_internal_format_files(
     nrtot = ivr.shape[0]
     nk = hk_data["nk"]
     nr = hk_data["nr"]
-    have_overlap = Sk is not None and not do_overlap_transformation
+    have_overlap = Sk is not None and do_overlap_transformation
     fermi_energy = 0.0
 
     vr_crystal = ivr.astype(np.float64).T
@@ -225,7 +225,12 @@ def write_internal_format_files(
     if have_overlap:
         Sr = np.empty((nrtot, dim, dim), dtype=np.complex128)
         for ir in range(nrtot):
-            Sr[ir] = compute_rham(rgrid_cart[ir], Sk[0], vkpts_cartesian, wk)
+            Sr[ir] = compute_rham(rgrid_cart[ir], Sk, vkpts_cartesian, wk)
+
+    arry["HRs"] = Hr
+
+    if have_overlap:
+        arry["SRs"] = Sr
 
     with open(ham_file, "w") as f:
         f.write('<?xml version="1.0"?>\n')
@@ -515,17 +520,16 @@ def write_projectability_files(
 def write_overlap_files(
     output_dir: str, Sk: np.ndarray, do_overlap_transformation: bool
 ) -> None:
-    if do_overlap_transformation or Sk is None:
+    if not do_overlap_transformation or Sk is None:
         return
-    nR, nspin = Sk.shape[2], Sk.shape[3]
+    nR = Sk.shape[2]
     nawf = Sk.shape[0]
     kovp_file = os.path.join(output_dir, "kovp.txt")
     with open(kovp_file, "w") as f:
         f.write("# Overlap Real        Overlap Imag\n")
         for ik in range(nR):
-            for isp in range(nspin):
-                mat = Sk[:, :, ik, isp]
-                for i in range(nawf):
-                    for j in range(nawf):
-                        f.write(f"{mat[i, j].real:20.13f}  {mat[i, j].imag:20.13f}\n")
+            mat = Sk[:, :, ik]
+            for i in range(nawf):
+                for j in range(nawf):
+                    f.write(f"{mat[i, j].real:20.13f}  {mat[i, j].imag:20.13f}\n")
     log_rank0("Printed overlap matrices to kovp.txt")

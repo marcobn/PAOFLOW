@@ -52,11 +52,13 @@ def parse_projections(data_controller: DataController) -> np.ndarray:
     return proj
 
 
-def parse_overlaps(yaml_data: ConductorData) -> Optional[np.ndarray]:
+def parse_overlaps(
+    yaml_data: ConductorData, data_controller: DataController
+) -> Optional[np.ndarray]:
     do_overlap_transformation = yaml_data.atomic_proj.do_overlap_transformation
     if not do_overlap_transformation:
         return None
     else:
-        raise NotImplementedError(
-            "Current implementaion requires overlap matrix to have dimensions (nawf, nawf, nkpnts, nspin). The overlap matrix in DataController has dimensions (nawf,nbnds,nkpnts)."
-        )
+        arry, _ = data_controller.data_dicts()
+        overlap = arry["Sks"]
+        return overlap
