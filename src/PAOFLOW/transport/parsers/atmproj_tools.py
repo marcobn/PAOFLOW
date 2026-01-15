@@ -80,7 +80,9 @@ def log_proj_summary(proj_data: AtomicProjData, data: ConductorData) -> None:
 
 @timed_function("atmproj_to_internal")
 @headered_function("Conductor Initialization")
-def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> Dict[str, np.ndarray]:
+def parse_atomic_proj(
+    data: ConductorData, data_controller: DataController
+) -> Dict[str, np.ndarray]:
     file_proj = data.file_names.datafile_C
     output_dir = data.file_names.output_dir
     opts = data.atomic_proj
@@ -107,9 +109,7 @@ def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> D
     # )
 
     log_section_start("atmproj_read_ext --massive data")
-    hk_data = get_pao_hamiltonian(
-        data_controller
-    )
+    hk_data = get_pao_hamiltonian(data_controller)
     log_section_end("atmproj_read_ext --massive data")
 
     nk = np.array([1, 1, 4], dtype=int)  # TODO: confirm hardcoded grid
@@ -128,15 +128,17 @@ def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> D
         opts.acbn0,
     )
 
-    # write_projectability_files(output_dir, proj_data, hk_data["Hk"])
-    # write_overlap_files(output_dir, hk_data.get("S"), opts.acbn0)
+    write_projectability_files(output_dir, proj_data, hk_data["Hk"])
+    write_overlap_files(output_dir, hk_data.get("Sk"), opts.acbn0)
 
     log_rank0(f"{file_proj} converted from ATMPROJ to internal format")
 
     return hk_data
 
 
-def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict, data_controller: DataController) -> AtomicProjData:
+def parse_atomic_proj_xml(
+    file_proj: str, lattice_data: Dict, data_controller: DataController
+) -> AtomicProjData:
     """
     Parse the Quantum ESPRESSO atomic_proj.xml file (from projwfc.x) into structured NumPy arrays.
 
@@ -234,15 +236,14 @@ def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict, data_controller: D
     )
 
 
-def get_pao_hamiltonian( data_controller: DataController) -> Dict[str, np.ndarray]:
-
-    arry,attr = data_controller.data_dicts()
+def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:
+    arry, attr = data_controller.data_dicts()
     Hks_raw = arry["Hks"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     HRs_raw = arry["HRs"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
-    nspin = attr['nspin']
-    nkpnts = attr['nkpnts']
-    nawf = attr['nawf']
-    acbn0 = attr['acbn0']
+    nspin = attr["nspin"]
+    nkpnts = attr["nkpnts"]
+    nawf = attr["nawf"]
+    acbn0 = attr["acbn0"]
 
     # reshape to (nawf, nawf, nkpnts, nspin)
     Hks_reshaped = Hks_raw.reshape((nawf, nawf, nkpnts, nspin))
