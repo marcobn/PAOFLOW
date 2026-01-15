@@ -1,8 +1,8 @@
 import yaml
 
 from PAOFLOW import PAOFLOW
-from PAOFLOW.transportPAO.parsers.parser_base import parse_args
-from PAOFLOW.transportPAO import ConductorRunner
+from PAOFLOW.transport.parsers.parser_base import parse_args
+from PAOFLOW.transport import ConductorRunner
 
 
 def main():
