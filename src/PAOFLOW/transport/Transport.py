@@ -561,7 +561,7 @@ class ConductorRunner:
     @classmethod
     def from_yaml(
         cls, yaml_file: str, data_controller: DataController
-    ) -> ConductorCalculator:
+    ) -> "ConductorRunner":
         log.initialize_logger(data_controller, log_file_name="transport.log")
         data = prepare_conductor(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
@@ -579,6 +579,15 @@ class ConductorRunner:
     def __init__(self, calculator: ConductorCalculator, memory_tracker: MemoryTracker):
         self.calculator = calculator
         self.memory_tracker = memory_tracker
+
+    def run(self):
+        self.calculator.run()
+        self.finalize()
+
+    def finalize(self):
+        if self.calculator.rank == 0:
+            global_timing.report()
+            self.memory_tracker.report(include_real_memory=True)
 
 
 class CurrentCalculator:
@@ -808,7 +817,7 @@ class CurrentRunner:
     @classmethod
     def from_yaml(
         cls, yaml_file: str, data_controller: DataController
-    ) -> CurrentCalculator:
+    ) -> "CurrentRunner":
         log.initialize_logger(data_controller, log_file_name="transport.log")
         data = prepare_current(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
@@ -820,3 +829,13 @@ class CurrentRunner:
     def __init__(self, calculator: CurrentCalculator, memory_tracker: MemoryTracker):
         self.calculator = calculator
         self.memory_tracker = memory_tracker
+
+    def run(self):
+        self.calculator.run()
+        self.finalize()
+
+    def finalize(self):
+        rank = MPI.COMM_WORLD.Get_rank()
+        if rank == 0:
+            global_timing.report()
+            self.memory_tracker.report(include_real_memory=True)

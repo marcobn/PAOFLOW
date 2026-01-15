@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-import xml.etree.ElementTree as ET
 from typing import Dict
 
 from PAOFLOW.DataController import DataController
@@ -214,7 +213,6 @@ def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray
     nspin = attr["nspin"]
     nkpnts = attr["nkpnts"]
     nawf = attr["nawf"]
-    acbn0 = attr["acbn0"]
 
     # reshape to (nawf, nawf, nkpnts, nspin)
     Hks_reshaped = Hks_raw.reshape((nawf, nawf, nkpnts, nspin))
