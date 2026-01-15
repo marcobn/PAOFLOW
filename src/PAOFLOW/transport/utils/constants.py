@@ -33,6 +33,7 @@ au_sec = 2.4189e-17  # sec
 rhothr = 1.0e-5  # tolerance
 gsmall = 1.0e-12
 rydcm1 = 13.6058 * 8065.5
+Hart2eV = 2 * 13.60569193
 
 e2 = 2.0  # the square of the electron charge
 eps0 = 1.0 / (4.0 * 3.14159265358979323846)  # vacuum dielectric constant in ry
