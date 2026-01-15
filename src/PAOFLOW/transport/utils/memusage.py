@@ -1,5 +1,4 @@
 from typing import Callable, Dict
-from io import StringIO
 import psutil
 
 from PAOFLOW.transport.io.log_module import log_rank0
@@ -62,7 +61,6 @@ class MemoryTracker:
             log_rank0(f"{'Real allocated. Memory':>24}: {tmem:15.3f} MB")
 
         log_rank0("  </MEMORY_USAGE>\n")
-
 
 
 def hamiltonian_memusage(mode: str) -> float:
