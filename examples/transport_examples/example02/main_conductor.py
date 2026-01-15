@@ -1,4 +1,3 @@
-from math import exp
 import sys
 from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.Transport import ConductorRunner
