@@ -6,10 +6,10 @@ from typing import Dict, Optional
 
 import numpy.typing as npt
 
-from transportPAO.hamiltonian.compute_rham import compute_rham
-from transportPAO.io.input_parameters import AtomicProjData
-from transportPAO.utils.converters import crystal_to_cartesian
-from transportPAO.io.log_module import log_rank0
+from PAOFLOW.transportPAO.hamiltonian.compute_rham import compute_rham
+from PAOFLOW.transportPAO.io.input_parameters import AtomicProjData
+from PAOFLOW.transportPAO.utils.converters import crystal_to_cartesian
+from PAOFLOW.transportPAO.io.log_module import log_rank0
 
 
 def write_dos_and_conductance(
@@ -562,7 +562,7 @@ def write_kresolved_operator_xml(
     ``<IVR>``. The matrix values are exact; only the tag semantics differ from a true
     ``<VKPT>`` representation.
     """
-    from transportPAO.io.write_data import (
+    from PAOFLOW.transportPAO.io.write_data import (
         write_operator_xml,
     )
 

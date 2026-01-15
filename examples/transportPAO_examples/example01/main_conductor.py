@@ -7,8 +7,8 @@ from PAOFLOW.transportPAO import ConductorRunner
 
 def main():
     paoflow = PAOFLOW.PAOFLOW(
-        savedir="al5.save",
-        outputdir="output",
+        savedir="output/qe/al5.save",
+        outputdir="output/paoflow",
         smearing="gauss",
         npool=1,
         verbose=True,

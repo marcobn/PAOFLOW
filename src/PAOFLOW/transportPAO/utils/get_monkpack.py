@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional, Tuple, Literal
 
-from transportPAO.utils.converters import cartesian_to_crystal
+from PAOFLOW.transportPAO.utils.converters import cartesian_to_crystal
 
 
 def get_monkhorst_pack_grid(

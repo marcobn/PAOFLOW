@@ -4,7 +4,7 @@ import os
 
 from mpi4py import MPI
 
-from transportPAO.grid.kpoints import (
+from PAOFLOW.transportPAO.grid.kpoints import (
     KpointsData,
     compute_fourier_phase_table,
     initialize_kpoints,
@@ -12,24 +12,24 @@ from transportPAO.grid.kpoints import (
     initialize_r_vectors,
     kpoints_mask,
 )
-from transportPAO.hamiltonian.hamiltonian import HamiltonianSystem
-from transportPAO.hamiltonian.hamiltonian_init import (
+from PAOFLOW.transportPAO.hamiltonian.hamiltonian import HamiltonianSystem
+from PAOFLOW.transportPAO.hamiltonian.hamiltonian_init import (
     check_leads_are_identical,
     initialize_hamiltonian_blocks,
 )
-from transportPAO.io.get_input_params import (
+from PAOFLOW.transportPAO.io.get_input_params import (
     load_conductor_data_from_yaml,
     load_current_data_from_yaml,
 )
-from transportPAO.io.input_parameters import ConductorData, RuntimeData
-from transportPAO.io.log_module import log_startup
-from transportPAO.io.summary import print_summary
-from transportPAO.parsers.atmproj_tools import parse_atomic_proj
-from transportPAO.parsers.parser_base import read_nr_from_ham
-from transportPAO.smearing.smearing_T import SmearingData
-from transportPAO.smearing.smearing_base import smearing_func
-from transportPAO.utils.memusage import MemoryTracker
-from transportPAO.workspace.workspace import Workspace
+from PAOFLOW.transportPAO.io.input_parameters import ConductorData, RuntimeData
+from PAOFLOW.transportPAO.io.log_module import log_startup
+from PAOFLOW.transportPAO.io.summary import print_summary
+from PAOFLOW.transportPAO.parsers.atmproj_tools import parse_atomic_proj
+from PAOFLOW.transportPAO.parsers.parser_base import read_nr_from_ham
+from PAOFLOW.transportPAO.smearing.smearing_T import SmearingData
+from PAOFLOW.transportPAO.smearing.smearing_base import smearing_func
+from PAOFLOW.transportPAO.utils.memusage import MemoryTracker
+from PAOFLOW.transportPAO.workspace.workspace import Workspace
 
 
 def prepare_conductor(yaml_file: str) -> ConductorData:

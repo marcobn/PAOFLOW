@@ -4,7 +4,7 @@ from typing import Literal
 
 import numpy as np
 
-from transportPAO.grid.kpoints import compute_ivr_par, kpoints_mask
+from PAOFLOW.transportPAO.grid.kpoints import compute_ivr_par, kpoints_mask
 
 
 class OperatorBlockView:

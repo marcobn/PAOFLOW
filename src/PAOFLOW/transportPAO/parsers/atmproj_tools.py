@@ -7,29 +7,29 @@ from typing import Dict, Optional
 import numpy as np
 from scipy.linalg import eigh, inv
 
-from transportPAO.grid.rgrid import get_rgrid
-from transportPAO.io.input_parameters import AtomicProjData, ConductorData
-from transportPAO.io.log_module import (
+from PAOFLOW.transportPAO.grid.rgrid import get_rgrid
+from PAOFLOW.transportPAO.io.input_parameters import AtomicProjData, ConductorData
+from PAOFLOW.transportPAO.io.log_module import (
     log_proj_data,
     log_rank0,
     log_section_end,
     log_section_start,
 )
-from transportPAO.io.write_data import (
+from PAOFLOW.transportPAO.io.write_data import (
     write_internal_format_files,
     write_projectability_files,
     write_overlap_files,
 )
-from transportPAO.io.write_header import headered_function
-from transportPAO.parsers.atmproj_parser_base import (
+from PAOFLOW.transportPAO.io.write_header import headered_function
+from PAOFLOW.transportPAO.parsers.atmproj_parser_base import (
     parse_eigenvalues,
     parse_header,
     parse_kpoints,
     parse_overlaps,
     parse_projections,
 )
-from transportPAO.parsers.qexml import qexml_read_cell
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.parsers.qexml import qexml_read_cell
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 
 def validate_proj_files(file_proj: str) -> str:

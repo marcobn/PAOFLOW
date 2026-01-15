@@ -2,8 +2,8 @@ import numpy as np
 from numpy.linalg import eigh
 from scipy.linalg import solve
 
-from transportPAO.io.input_parameters import ConductFormula
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.io.input_parameters import ConductFormula
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 
 @timed_function("transmittance")

@@ -1,7 +1,7 @@
 import logging
 from typing import Tuple
 import numpy as np
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)

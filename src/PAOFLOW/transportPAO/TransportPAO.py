@@ -7,25 +7,25 @@ from typing import Tuple
 import numpy as np
 from mpi4py import MPI
 
-from transportPAO.grid.egrid import initialize_energy_grid
-from transportPAO.hamiltonian.compute_rham import compute_rham
-from transportPAO.hamiltonian.hamiltonian_setup import hamiltonian_setup
-from transportPAO.io.get_input_params import ConductorData
-from transportPAO.io.write_data import (
+from PAOFLOW.transportPAO.grid.egrid import initialize_energy_grid
+from PAOFLOW.transportPAO.hamiltonian.compute_rham import compute_rham
+from PAOFLOW.transportPAO.hamiltonian.hamiltonian_setup import hamiltonian_setup
+from PAOFLOW.transportPAO.io.get_input_params import ConductorData
+from PAOFLOW.transportPAO.io.write_data import (
     write_data,
     write_eigenchannels,
     write_operator_xml,
 )
-from transportPAO.io.write_header import headered_function
-from transportPAO.transport.green import compute_conductor_green_function
-from transportPAO.transport.leads_self_energy import build_self_energies_from_blocks
-from transportPAO.transport.transmittance import evaluate_transmittance
-from transportPAO.utils.constants import amconv, rydcm1
-from transportPAO.utils.divide_et_impera import divide_work
-from transportPAO.utils.locate import locate
-from transportPAO.utils.memusage import MemoryTracker
-from transportPAO.utils.timing import global_timing, timed_function
-from transportPAO.workspace.prepare_data import (
+from PAOFLOW.transportPAO.io.write_header import headered_function
+from PAOFLOW.transportPAO.transport.green import compute_conductor_green_function
+from PAOFLOW.transportPAO.transport.leads_self_energy import build_self_energies_from_blocks
+from PAOFLOW.transportPAO.transport.transmittance import evaluate_transmittance
+from PAOFLOW.transportPAO.utils.constants import amconv, rydcm1
+from PAOFLOW.transportPAO.utils.divide_et_impera import divide_work
+from PAOFLOW.transportPAO.utils.locate import locate
+from PAOFLOW.transportPAO.utils.memusage import MemoryTracker
+from PAOFLOW.transportPAO.utils.timing import global_timing, timed_function
+from PAOFLOW.transportPAO.workspace.prepare_data import (
     prepare_conductor,
     prepare_current,
     prepare_hamiltonian_blocks_and_leads,

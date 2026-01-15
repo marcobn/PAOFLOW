@@ -1,5 +1,5 @@
 import yaml
-from transportPAO.io.input_parameters import ConductorData, CurrentData
+from PAOFLOW.transportPAO.io.input_parameters import ConductorData, CurrentData
 
 
 def get_input_from_yaml(yaml_file: str) -> dict:

@@ -1,5 +1,5 @@
 import numpy as np
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 
 @timed_function("fourier_par")

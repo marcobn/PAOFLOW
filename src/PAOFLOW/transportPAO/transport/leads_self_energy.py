@@ -1,9 +1,9 @@
 import numpy as np
-from transportPAO.transport.green import compute_surface_green_function
-from transportPAO.transport.transfer import compute_surface_transfer_matrices
+from PAOFLOW.transportPAO.transport.green import compute_surface_green_function
+from PAOFLOW.transportPAO.transport.transfer import compute_surface_transfer_matrices
 
 
-from transportPAO.hamiltonian.operator_blc import OperatorBlockView
+from PAOFLOW.transportPAO.hamiltonian.operator_blc import OperatorBlockView
 
 
 def build_self_energies_from_blocks(

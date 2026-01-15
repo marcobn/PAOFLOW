@@ -1,4 +1,4 @@
-from transportPAO.io.log_module import log_parallelization_info
+from PAOFLOW.transportPAO.io.log_module import log_parallelization_info
 
 
 def divide_work(

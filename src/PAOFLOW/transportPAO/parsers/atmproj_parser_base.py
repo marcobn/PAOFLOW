@@ -3,8 +3,8 @@ import numpy as np
 import xml.etree.ElementTree as ET
 from typing import Dict, Optional
 
-from transportPAO.io.write_data import iotk_index
-from transportPAO.utils.converters import cartesian_to_crystal
+from PAOFLOW.transportPAO.io.write_data import iotk_index
+from PAOFLOW.transportPAO.utils.converters import cartesian_to_crystal
 
 
 def parse_header(root: ET.Element) -> Dict:

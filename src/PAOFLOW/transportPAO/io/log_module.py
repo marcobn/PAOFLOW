@@ -1,8 +1,8 @@
 from mpi4py import MPI
 import datetime
 
-from transportPAO import __version__
-from transportPAO.io.input_parameters import AtomicProjData, ConductorData
+from PAOFLOW.transportPAO import __version__
+from PAOFLOW.transportPAO.io.input_parameters import AtomicProjData, ConductorData
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

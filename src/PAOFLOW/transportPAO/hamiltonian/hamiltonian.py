@@ -1,6 +1,6 @@
 from typing import Literal
 import numpy as np
-from transportPAO.hamiltonian.operator_blc import OperatorBlock
+from PAOFLOW.transportPAO.hamiltonian.operator_blc import OperatorBlock
 
 
 class HamiltonianSystem:

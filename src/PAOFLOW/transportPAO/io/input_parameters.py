@@ -19,7 +19,7 @@ from pydantic import BaseModel as PydanticBaseModel
 from typing_extensions import Annotated
 from yaml import SafeLoader, load
 
-from transportPAO.utils.constants import amconv, rydcm1
+from PAOFLOW.transportPAO.utils.constants import amconv, rydcm1
 
 CalculationType = Literal["conductor", "bulk"]
 ConductFormula = Literal["landauer", "generalized"]

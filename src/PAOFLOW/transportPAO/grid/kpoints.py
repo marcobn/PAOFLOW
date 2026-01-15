@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Tuple, Optional, Union
 
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 
 def kpoints_mask(

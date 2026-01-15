@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Optional, Callable, Tuple
 
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 
 def initialize_smearing_grid(

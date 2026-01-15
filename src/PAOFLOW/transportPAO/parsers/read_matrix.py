@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy as np
 from pathlib import Path
 
-from transportPAO.hamiltonian.operator_blc import OperatorBlock
-from transportPAO.io.iotk_reader import IOTKReader
-from transportPAO.parsers.parser_base import parse_index_array
-from transportPAO.hamiltonian.fourier_par import fourier_transform_real_to_kspace
-from transportPAO.utils.timing import timed_function
+from PAOFLOW.transportPAO.hamiltonian.operator_blc import OperatorBlock
+from PAOFLOW.transportPAO.io.iotk_reader import IOTKReader
+from PAOFLOW.transportPAO.parsers.parser_base import parse_index_array
+from PAOFLOW.transportPAO.hamiltonian.fourier_par import fourier_transform_real_to_kspace
+from PAOFLOW.transportPAO.utils.timing import timed_function
 
 # TODO check if fortran is also meant to skip block VR.1 and only read blocks  VR.2, VR.3 ... Initial tests seem to suggest that this is happening in the fortran version and hence implemented ths same way in python
 
