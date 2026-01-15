@@ -508,37 +508,6 @@ class ConductorCalculator:
                 analyticity="retarded",
             )
 
-    def get_k_resolved_conductance(self, conduct_k: np.ndarray) -> np.ndarray:
-        """
-        Return the k-resolved conductance array.
-
-        Parameters
-        ----------
-        conduct_k : ndarray
-            k-resolved conductance.
-
-        Returns
-        -------
-        ndarray
-            Input array for convenience.
-        """
-        return conduct_k
-
-    def get_k_resolved_dos(self, dos_k: np.ndarray) -> np.ndarray:
-        """
-        Return the k-resolved DOS array.
-
-        Parameters
-        ----------
-        dos_k : ndarray
-            k-resolved DOS.
-
-        Returns
-        -------
-        ndarray
-            Input array for convenience.
-        """
-        return dos_k
 
     @headered_function("Writing data")
     def write_output(self):
