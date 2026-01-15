@@ -562,7 +562,7 @@ class ConductorRunner:
     def from_yaml(
         cls, yaml_file: str, data_controller: DataController
     ) -> "ConductorRunner":
-        log.initialize_logger(data_controller, log_file_name="transport.log")
+        log.initialize_logger(data_controller, log_file_name="transport_conductor.log")
         data = prepare_conductor(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
 
@@ -805,6 +805,7 @@ class CurrentCalculator:
             self.data["mu_R"],
             self.data["sigma"],
         )
+        self.write_output()
 
     def write_output(self) -> None:
         outpath = Path(self.data["fileout"])
@@ -818,8 +819,10 @@ class CurrentRunner:
     def from_yaml(
         cls, yaml_file: str, data_controller: DataController
     ) -> "CurrentRunner":
-        log.initialize_logger(data_controller, log_file_name="transport.log")
-        data = prepare_current(yaml_file, data_controller)
+        log.initialize_logger(
+            data_controller, log_file_name="transport_current.log"
+        )  # TODO allow logging file names to be specified by user. In this current implementation, the log file gets overwritten if there are several runs.
+        data = prepare_current(yaml_file)
         memory_tracker = MemoryTracker()
 
         calculator = CurrentCalculator(data)
