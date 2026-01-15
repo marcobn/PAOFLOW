@@ -23,9 +23,8 @@ from PAOFLOW.transport.io.get_input_params import (
     load_current_data_from_yaml,
 )
 from PAOFLOW.transport.io.input_parameters import ConductorData, RuntimeData
-from PAOFLOW.transport.io.summary import print_summary
+from PAOFLOW.transport.io.log_module import log_summary
 from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj
-from PAOFLOW.transport.parsers.parser_base import read_nr_from_ham
 from PAOFLOW.transport.smearing.smearing_T import SmearingData
 from PAOFLOW.transport.smearing.smearing_base import smearing_func
 from PAOFLOW.transport.utils.memusage import MemoryTracker
@@ -93,7 +92,7 @@ def prepare_conductor(yaml_file: str, data_controller: DataController) -> Conduc
             nrtot_par=ivr_par3D.shape[0],
         )
     )
-    print_summary(data)
+    log_summary(data)
 
     return data
 
