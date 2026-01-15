@@ -1,3 +1,4 @@
+from math import exp
 import sys
 from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.Transport import ConductorRunner
@@ -22,7 +23,7 @@ def main():
 
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
-    paoflow.pao_hamiltonian(shift_type=1)
+    paoflow.pao_hamiltonian(shift_type=1, expand_wedge=False)
     paoflow.projections()
 
     transport = ConductorRunner.from_yaml(
