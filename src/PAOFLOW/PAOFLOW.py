@@ -434,6 +434,8 @@ class PAOFLOW:
 
     try:
       do_build_pao_hamiltonian(self.data_controller)
+      self.data_controller.broadcast_single_array('Hks')
+      
     except Exception as e:
       self.report_exception('pao_hamiltonian')
       if attr['abort_on_exception']:
