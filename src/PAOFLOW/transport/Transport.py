@@ -562,8 +562,11 @@ class ConductorRunner:
     def from_yaml(
         cls, yaml_file: str, data_controller: DataController
     ) -> "ConductorRunner":
-        log.initialize_logger(data_controller, log_file_name="transport_conductor.log")
         data = prepare_conductor(yaml_file, data_controller)
+        postfix = data.file_names.postfix
+        log.initialize_logger(
+            data_controller, log_file_name=f"transport_conductor{postfix}.log"
+        )
         memory_tracker = MemoryTracker()
 
         _ = prepare_smearing(data, memory_tracker)
@@ -796,6 +799,12 @@ class CurrentCalculator:
 
         return currents
 
+    def write_output(self) -> None:
+        outpath = Path(self.data["fileout"])
+        outpath.parent.mkdir(parents=True, exist_ok=True)
+        np.savetxt(outpath, np.column_stack([self.vgrid, self.currents]))
+        log.log_rank0(f"Saved current vs bias to {outpath}")
+
     def run(self) -> None:
         self.currents = self.compute_current_vs_bias(
             self.egrid,
@@ -807,21 +816,13 @@ class CurrentCalculator:
         )
         self.write_output()
 
-    def write_output(self) -> None:
-        outpath = Path(self.data["fileout"])
-        outpath.parent.mkdir(parents=True, exist_ok=True)
-        np.savetxt(outpath, np.column_stack([self.vgrid, self.currents]))
-        log.log_rank0(f"Saved current vs bias to {outpath}")
-
 
 class CurrentRunner:
     @classmethod
     def from_yaml(
         cls, yaml_file: str, data_controller: DataController
     ) -> "CurrentRunner":
-        log.initialize_logger(
-            data_controller, log_file_name="transport_current.log"
-        )  # TODO allow logging file names to be specified by user. In this current implementation, the log file gets overwritten if there are several runs.
+        log.initialize_logger(data_controller, log_file_name="transport_current.log")
         data = prepare_current(yaml_file)
         memory_tracker = MemoryTracker()
 
@@ -833,12 +834,12 @@ class CurrentRunner:
         self.calculator = calculator
         self.memory_tracker = memory_tracker
 
-    def run(self):
-        self.calculator.run()
-        self.finalize()
-
     def finalize(self):
         rank = MPI.COMM_WORLD.Get_rank()
         if rank == 0:
             global_timing.report()
             self.memory_tracker.report(include_real_memory=True)
+
+    def run(self):
+        self.calculator.run()
+        self.finalize()
