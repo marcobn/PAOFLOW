@@ -116,20 +116,20 @@ def parse_atomic_proj(data: ConductorData, data_controller: DataController) -> D
     nr = nk
     ivr, wr = get_rgrid(nr)
     hk_data.update({"ivr": ivr, "wr": wr, "nk": nk, "nr": nr})
-
+    arry.update(hk_data)
     name = Path(file_proj).name
     output_prefix = Path(output_dir) / name
     write_internal_format_files(
         Path(output_dir),
         str(output_prefix),
+        data_controller,
         hk_data,
         proj_data,
-        lattice_data,
-        opts.do_orthoovp,
+        opts.acbn0,
     )
 
     # write_projectability_files(output_dir, proj_data, hk_data["Hk"])
-    # write_overlap_files(output_dir, hk_data.get("S"), opts.do_orthoovp)
+    # write_overlap_files(output_dir, hk_data.get("S"), opts.acbn0)
 
     log_rank0(f"{file_proj} converted from ATMPROJ to internal format")
 
@@ -212,20 +212,18 @@ def parse_atomic_proj_xml(file_proj: str, lattice_data: Dict, data_controller: D
     root = tree.getroot()
 
     header = parse_header(data_controller)
-    kpt_data = parse_kpoints(root, lattice_data)
-    eigvals = parse_eigenvalues(root, header["nbnds"], header["nkpnts"], header["nspin"])
+    kpt_data = parse_kpoints(lattice_data, data_controller)
+    eigvals = parse_eigenvalues(data_controller)
 
     log_section_end("reading eigenvalues")
 
     log_section_start("reading projections")
-    proj = parse_projections(
-        root, header["nbnds"], header["nkpnts"], header["nspin"], header["nawf"]
-    )
+    proj = parse_projections(data_controller)
 
     log_section_end("reading projections")
     log_section_end("atmproj_read_ext")
 
-    overlap = parse_overlaps(root, header["nkpnts"], header["nspin"], header["nawf"])
+    overlap = parse_overlaps(data_controller)
 
     return AtomicProjData(
         **header,
@@ -240,6 +238,7 @@ def get_pao_hamiltonian( data_controller: DataController) -> Dict[str, np.ndarra
 
     arry,attr = data_controller.data_dicts()
     Hks_raw = arry["Hks"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
+    HRs_raw = arry["HRs"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     nspin = attr['nspin']
     nkpnts = attr['nkpnts']
     nawf = attr['nawf']
@@ -250,8 +249,13 @@ def get_pao_hamiltonian( data_controller: DataController) -> Dict[str, np.ndarra
     # transpose to (nspin, nkpnts, nawf, nawf)
     Hk = np.transpose(Hks_reshaped, (3, 2, 0, 1))
 
-    Sks_raw = arry["Sks"] if "Sks" in arry else None
-    Sks_reshaped = Sks_raw.reshape((nawf, nawf, nkpnts, nspin)) if Sks_raw is not None else None
-    Sk = Sks_reshaped.copy() if acbn0 and Sks_reshaped is not None else None
+    HRs_reshaped = HRs_raw.reshape((nawf, nawf, nkpnts, nspin))
+    HR = np.transpose(HRs_reshaped, (3, 2, 0, 1))
 
-    return {"Hk": Hk, "S": Sk}
+    Sks_raw = arry["Sks"] if "Sks" in arry else None
+    Sk = Sks_raw.reshape((nawf, nawf, nkpnts, nspin)) if Sks_raw is not None else None
+
+    SRs_raw = arry["SRs"] if "SRs" in arry else None
+    SR = SRs_raw.reshape((nawf, nawf, nkpnts, nspin)) if SRs_raw is not None else None
+
+    return {"Hk": Hk, "Sk": Sk, "HR": HR, "SR": SR}

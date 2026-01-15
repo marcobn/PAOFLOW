@@ -15,6 +15,7 @@ from PAOFLOW.transport.utils.timing import timed_function
 
 @timed_function("read_matrix")
 def read_matrix(
+    filename: str,
     data_controller: DataController,
     ispin: int,
     transport_direction: int,
@@ -92,9 +93,9 @@ def read_matrix(
 
     nawf = attr["nawf"]
     nspin = attr["nspin"]
-    nrtot = attr["nrtot"]
-    lhave_ovp = attr["acbn0"]
-
+    acbn0 = attr["acbn0"]
+    ivr = arry["ivr"]
+    nrtot = ivr.shape[0]
     irows = parse_index_array(rows, nawf)
     icols = parse_index_array(cols, nawf)
     irows_sgm = parse_index_array(rows_sgm, nawf)
@@ -108,17 +109,13 @@ def read_matrix(
     if nspin == 2 and ispin < 0:
         raise ValueError("Unspecified ispin for spin-polarized case")
 
-    ivr = reader.read_array("IVR", shape=(nrtot, 3), dtype=int).T
+    ivr = ivr.T
 
     # Check grid dimensions
     nrtot_par = opr.H.shape[2]
     A = np.zeros((dim1, dim2, nrtot_par), dtype=complex)
     S = np.zeros((dim1, dim2, nrtot_par), dtype=complex)
 
-    if nspin == 2:
-        reader.find_section(f"SPIN{ispin + 1}")
-
-    reader.find_section("RHAM")
     for ir_par in range(nrtot_par):
         ivr_aux = np.zeros(3, dtype=int)
         j = 0
@@ -155,14 +152,12 @@ def read_matrix(
             raise ValueError(f"3D R-vector {ivr_aux} not found for ir_par={ir_par}")
 
         ind = matches[0] + 1
-        A_loc = reader.read_array(
-            f"VR.{ind}", shape=(nawf, nawf), dtype=complex
-        )
 
-        if lhave_ovp:
-            S_loc = reader.read_array(
-                f"OVERLAP{ind}", shape=(nawf, nawf), dtype=complex
-            )
+
+        A_loc = arry["HR"][ispin,ind,:,:]
+
+        if acbn0:
+            S_loc = arry["SR"][ispin,ind,:,:]
         else:
             S_loc = np.zeros_like(A_loc)
             if label.lower() in {
