@@ -2,7 +2,7 @@ import yaml
 
 from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.parsers.parser_base import parse_args
-from PAOFLOW.transport import ConductorRunner
+from PAOFLOW.transport.Transport import ConductorRunner
 
 
 def main():
