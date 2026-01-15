@@ -109,5 +109,4 @@ def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray
     SRs_raw = arry["SRs"] if "SRs" in arry else None
     SR = SRs_raw[:, :nawf, :] if SRs_raw is not None else None
     SR = np.transpose(SR, (2, 1, 0)) if SR is not None else None
-    print("Hk final", Hk[0, 2, :, :])
     return {"Hk": Hk, "Sk": Sk, "HR": HR, "SR": SR}
