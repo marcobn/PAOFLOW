@@ -75,17 +75,9 @@ def parse_atomic_proj(
     output_dir = data.file_names.output_dir
     opts = data.atomic_proj
 
-    arry, attr = data_controller.data_dicts()
-    alat = attr["alat"]
-    avec = arry["a_vectors"]
-    bvec = arry["b_vectors"]
+    arry, _ = data_controller.data_dicts()
 
-    lattice_data = {
-        "alat": alat,
-        "avec": avec,
-        "bvec": bvec,
-    }
-    proj_data = parse_atomic_proj_xml(file_proj, lattice_data, data_controller)
+    proj_data = parse_atomic_proj_xml(data_controller)
     proj_data = convert_energy_units(proj_data)
 
     log.log_proj_summary(
@@ -117,9 +109,7 @@ def parse_atomic_proj(
     return hk_data
 
 
-def parse_atomic_proj_xml(
-    file_proj: str, lattice_data: Dict, data_controller: DataController
-) -> AtomicProjData:
+def parse_atomic_proj_xml(data_controller: DataController) -> AtomicProjData:
     """
     Parse the Quantum ESPRESSO atomic_proj.xml file (from projwfc.x) into structured NumPy arrays.
 
@@ -190,7 +180,7 @@ def parse_atomic_proj_xml(
     """
 
     header = parse_header(data_controller)
-    kpt_data = parse_kpoints(lattice_data, data_controller)
+    kpt_data = parse_kpoints(data_controller)
     eigvals = parse_eigenvalues(data_controller)
 
     proj = parse_projections(data_controller)
