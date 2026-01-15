@@ -13,53 +13,6 @@ from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 from PAOFLOW.transport.io.log_module import log_rank0
 
 
-def write_dos_and_conductance(
-    egrid: np.ndarray,
-    data: np.ndarray,
-    label: str,
-    output_dir: Path,
-    precision: int = 9,
-    verbose: bool = True,
-) -> Path:
-    """
-    Write energy-resolved data (DOS or conductance) to a plain text file.
-
-    Parameters
-    ----------
-    `egrid` : (ne,) ndarray
-        Energy grid in eV.
-    `data` : (nchannels, ne) ndarray
-        Data array where each row is a channel or observable.
-    `label` : str
-        Label used to construct filename, e.g., 'conductance', 'doscond'.
-    `output_dir` : Path
-        Directory to write output file.
-    `precision` : int
-        Floating-point precision in output.
-    `verbose` : bool
-        If True, print the output file path.
-
-    Returns
-    -------
-    `filepath` : Path
-        Full path to the written file.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{label}.dat"
-    filepath = output_dir / filename
-
-    with filepath.open("w") as f:
-        for i in range(egrid.shape[0]):
-            line = f"{egrid[i]: .{precision}f} " + " ".join(
-                f"{val:.{precision}f}" for val in data[:, i]
-            )
-            f.write(line + "\n")
-
-    if verbose:
-        print(f"[INFO] {label} written to: {filepath}")
-    return filepath
-
-
 def write_data(
     egrid: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
