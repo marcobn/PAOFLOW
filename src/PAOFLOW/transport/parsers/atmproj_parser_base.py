@@ -47,9 +47,7 @@ def parse_kpoints(data_controller: DataController) -> Dict:
 
 def parse_eigenvalues(data_controller: DataController) -> np.ndarray:
     arry, _ = data_controller.data_dicts()
-    eigvals = arry[
-        "my_eigsmat"
-    ]  # TODO This eigenvalue array may already be shifted by the Fermi energy unlike the implementation in paoflow-qtpy
+    eigvals = arry["my_eigsmat"]
     return eigvals
 
 
