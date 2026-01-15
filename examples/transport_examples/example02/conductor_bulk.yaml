@@ -1,0 +1,31 @@
+input_conductor:
+  output_dir: "./output/paoflow"
+  prefix: "alh"
+  postfix: "_bulk"
+  dimC: 41
+  calculation_type: "bulk"
+  ne: 9001
+  emin: -7.0
+  emax: 2.0
+  datafile_C: "./output/qe/alh.save/atomic_proj.xml"
+  transport_direction: 3
+  delta: 0.0005
+  do_overlap_transformation: false
+  atmproj_sh: 3.5
+  atmproj_thr: 0.9
+  do_eigenchannels: true
+  neigchnx: 4
+  do_eigplot: true
+  ie_eigplot: 7001
+  ik_eigplot: 1
+  write_gf: false
+  write_lead_sgm: false
+  use_sym: false
+
+hamiltonian_data:
+  H00_C:
+    cols: "ALL"
+    rows: "ALL"
+  H_CR:
+    cols: "ALL"
+    rows: "ALL"

@@ -1,0 +1,10 @@
+input:
+  output_dir: "./output/paoflow"
+  filein: "./output/paoflow/conductance_lcr.dat"
+  fileout: "./output/paoflow/current.dat"
+  Vmin: -1.0
+  Vmax: 1.0
+  nV: 1500
+  sigma: 0.05
+  mu_L: -0.5
+  mu_R: 0.5
