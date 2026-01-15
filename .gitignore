@@ -117,3 +117,4 @@ pseudo/
 *.xml
 *.log
 *wfc*
+**/*.xml
