@@ -242,7 +242,7 @@ def get_pao_hamiltonian( data_controller: DataController) -> Dict[str, np.ndarra
     arry,attr = data_controller.data_dicts()
     Hks_raw = arry["Hks"]  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     nspin = attr['nspin']
-    nkpts = attr['nkpts']
+    nkpts = attr['nkpnts']
     nawf = attr['nawf']
     acbn0 = attr['acbn0']
 
