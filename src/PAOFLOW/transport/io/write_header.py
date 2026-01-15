@@ -1,3 +1,4 @@
+from PAOFLOW.transport.io.log_module import log_rank0
 from mpi4py import MPI
 
 
@@ -23,9 +24,9 @@ def write_header(msg: str) -> None:
         return
 
     separator = "=" * 70
-    print(f"  {separator}")
-    print(f"  =  {msg:^66s}=")
-    print(f"  {separator}")
+    log_rank0(f"  {separator}")
+    log_rank0(f"  =  {msg:^66s}=")
+    log_rank0(f"  {separator}")
 
 
 def headered_function(name: str):

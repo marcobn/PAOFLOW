@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import log
 import os
 from pathlib import Path
 from typing import Tuple
@@ -18,6 +19,7 @@ from PAOFLOW.transport.io.write_data import (
     write_operator_xml,
 )
 from PAOFLOW.transport.io.write_header import headered_function
+from PAOFLOW.transport.io.log_module import initialize_logger, log_rank0
 from PAOFLOW.transport.transport.green import compute_conductor_green_function
 from PAOFLOW.transport.transport.leads_self_energy import build_self_energies_from_blocks
 from PAOFLOW.transport.transport.transmittance import evaluate_transmittance
@@ -144,6 +146,7 @@ class ConductorCalculator:
             )
         self.reduce_results(self.conduct, self.dos, self.conduct_k, self.dos_k)
         self.write_operators()
+        self.write_output()
 
     def initialize_outputs(self):
         """
@@ -212,9 +215,9 @@ class ConductorCalculator:
         if (ie_g % nprint == 0 or ie_g == 0 or ie_g == self.ne - 1) and self.rank == 0:
             if self.data.carriers == "phonons":
                 omega_val = np.sqrt(self.egrid[ie_g] * rydcm1**2 / amconv)
-                print(f"  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1")
+                log_rank0(f"  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1")
             else:
-                print(f"  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV")
+                log_rank0(f"  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV")
 
         gC_k, sgmL_k, sgmR_k = self.initialize_k_dependent()
         avg_iter = 0.0
@@ -239,7 +242,7 @@ class ConductorCalculator:
             ie_g % nprint == 0 or ie_g == ie_start or ie_g == ie_end
         ) and self.rank == 0:
             avg_iter /= 2 * self.nkpts_par
-            print(f"  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n")
+            log_rank0(f"  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n")
             global_timing.timing_upto_now(
                 "do_conductor", label="Total time spent up to now"
             )
@@ -590,6 +593,8 @@ class ConductorRunner:
         data = prepare_conductor(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
 
+        initialize_logger(data_controller, log_file_name="transport.log")
+
         _ = prepare_smearing(data, memory_tracker)
         _ = prepare_kpoints(data, memory_tracker)
         ham_sys = prepare_hamiltonian_system(data, memory_tracker)
@@ -833,6 +838,8 @@ class CurrentRunner:
     def from_yaml(cls, yaml_file: str, data_controller: DataController):
         data = prepare_current(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
+
+        initialize_logger(data_controller, log_file_name="transport.log")
 
         calculator = CurrentCalculator(data)
 

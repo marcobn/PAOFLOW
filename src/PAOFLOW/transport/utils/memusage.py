@@ -2,6 +2,8 @@ from typing import Callable, Dict
 from io import StringIO
 import psutil
 
+from PAOFLOW.transport.io.log_module import log_rank0
+
 
 class MemoryTracker:
     """
@@ -42,27 +44,25 @@ class MemoryTracker:
         `report` : str
             Formatted memory usage summary.
         """
-        output = StringIO()
-        print("  <MEMORY_USAGE>", file=output)
+        log_rank0("  <MEMORY_USAGE>")
 
         memsum = 0.0
         for section, data in self.sections.items():
             if data["is_allocated"]:
                 usage = data["usage_func"]()
                 memsum += usage
-                print(f"{section:>24}: {usage:15.3f} MB", file=output)
+                log_rank0(f"{section:>24}: {usage:15.3f} MB")
 
-        print("", file=output)  # Equivalent to WRITE(iunit, "()")
-        print(f"{'Total allocated. Memory':>24}: {memsum:15.3f} MB", file=output)
+        log_rank0("")  # Equivalent to WRITE(iunit, "()")
+        log_rank0(f"{'Total allocated. Memory':>24}: {memsum:15.3f} MB")
 
         if include_real_memory:
             process = psutil.Process()
             tmem = process.memory_info().rss / 1024.0 / 1024.0  # Convert bytes to MB
-            print(f"{'Real allocated. Memory':>24}: {tmem:15.3f} MB", file=output)
+            log_rank0(f"{'Real allocated. Memory':>24}: {tmem:15.3f} MB")
 
-        print("  </MEMORY_USAGE>\n", file=output)
+        log_rank0("  </MEMORY_USAGE>\n")
 
-        print(output.getvalue())
 
 
 def hamiltonian_memusage(mode: str) -> float:

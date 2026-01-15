@@ -1,5 +1,6 @@
 from time import perf_counter
 from collections import OrderedDict
+from PAOFLOW.transport.io.log_module import log_rank0
 from mpi4py import MPI
 
 
@@ -139,21 +140,18 @@ class TimingManager:
         if rank != 0:
             return
 
-        print()
-        print(f"{header:>10}")
-        print(f"{'':13}clock number : {len(self.clocks):5}")
-        print()
+        log_rank0(f"{header:>10}")
+        log_rank0(f"{'':13}clock number : {len(self.clocks):5}")
         for clock in self.clocks.values():
             time_s = clock.total_time
             calls = clock.call_count
             avg = clock.avg_time()
             if calls == 1:
-                print(f"{clock.name:>20} : {time_s:8.2f}s CPU")
+                log_rank0(f"{clock.name:>20} : {time_s:8.2f}s CPU")
             else:
-                print(
+                log_rank0(
                     f"{clock.name:>20} : {time_s:8.2f}s CPU ({calls:8d} calls,{avg:8.3f} s avg)"
                 )
-        print()
 
     def timing_upto_now(self, name: str, label: str = None) -> None:
         """
@@ -175,8 +173,7 @@ class TimingManager:
         clock = self.clocks[name]
         elapsed = clock.time_upto_now()
         if elapsed > 0.0:
-            print(f"    {label or name:>20} : {elapsed:8.2f}s")
-            print()
+            log_rank0(f"    {label or name:>20} : {elapsed:8.2f}s")
 
 
 global_timing = TimingManager()

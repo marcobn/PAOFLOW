@@ -1,5 +1,8 @@
+from PAOFLOW.DataController import DataController
 from mpi4py import MPI
 import datetime
+import logging
+from pathlib import Path
 
 from PAOFLOW.transport import __version__
 from PAOFLOW.transport.io.input_parameters import AtomicProjData, ConductorData
@@ -8,15 +11,42 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
+_logger = None
+_logger_path = None
+
+def initialize_logger(data_controller: DataController, log_file_name: str = "transport.log"):
+    global _logger, _logger_path
+
+    if rank != 0 or _logger is not None:
+        return
+
+    _, attr = data_controller.data_dicts()
+    output_dir = attr["outputdir"]
+    if output_dir is None:
+        raise RuntimeError("Logger initialization failed: 'outputdir' not set in data_controller.")
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    log_file = Path(output_dir) / log_file_name
+    _logger_path = str(log_file)
+
+    _logger = logging.getLogger("rank0_logger")
+    _logger.setLevel(logging.INFO)
+    _logger.propagate = False
+
+    file_handler = logging.FileHandler(log_file, mode="w")
+    formatter = logging.Formatter("%(message)s")
+    file_handler.setFormatter(formatter)
+    _logger.addHandler(file_handler)
+
 
 def log_rank0(message: str):
-    if rank == 0:
-        print(message)
+    if rank == 0 and _logger is not None:
+        _logger.info(message)
 
 
 def log_parallelization_info(chunks: int, items: str):
     if rank == 0:
-        print(
+        log_rank0(
             f"Parallelization information: Each rank processes approximately {chunks} {items}."
         )
 
@@ -50,6 +80,6 @@ def log_proj_data(
     lines.append(f"    atmproj_thr  : {data.atomic_proj.atmproj_thr:>12.6f}")
     lines.append(f"    atmproj_sh   : {data.atomic_proj.atmproj_sh:>12.6f}")
     lines.append(f"    atmproj_do_norm:  {data.atomic_proj.atmproj_do_norm}")
-    if data.atomic_proj.acbn0:
-        lines.append("Using an orthogonal basis. acbn0=.true.")
+    if not data.atomic_proj.acbn0:
+        lines.append("Using an orthogonal basis. acbn0=.false.")
     return lines

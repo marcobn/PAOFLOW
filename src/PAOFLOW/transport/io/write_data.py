@@ -71,7 +71,7 @@ def write_data(
                     f.write(f"{fmt.format(egrid[ie])}{values}\n")
 
     if verbose:
-        print(f"Writing {label} to {filepath}")
+        log_rank0(f"Writing {label} to {filepath}")
 
 
 def write_eigenchannels(
