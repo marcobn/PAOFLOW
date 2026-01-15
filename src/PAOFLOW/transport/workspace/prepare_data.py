@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 
+from PAOFLOW.DataController import DataController
 from mpi4py import MPI
 
 from PAOFLOW.transport.grid.kpoints import (
@@ -22,7 +23,6 @@ from PAOFLOW.transport.io.get_input_params import (
     load_current_data_from_yaml,
 )
 from PAOFLOW.transport.io.input_parameters import ConductorData, RuntimeData
-from PAOFLOW.transport.io.log_module import log_startup
 from PAOFLOW.transport.io.summary import print_summary
 from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj
 from PAOFLOW.transport.parsers.parser_base import read_nr_from_ham
@@ -32,7 +32,7 @@ from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.workspace.workspace import Workspace
 
 
-def prepare_conductor(yaml_file: str) -> ConductorData:
+def prepare_conductor(yaml_file: str, data_controller: DataController) -> ConductorData:
     """
     Load input parameters from a YAML file and prepare core conductor data.
 
@@ -52,9 +52,8 @@ def prepare_conductor(yaml_file: str) -> ConductorData:
     work_dir = data.file_names.work_dir
     nproc = MPI.COMM_WORLD.Get_size()
 
-    log_startup("conductor.py")
     if data.carriers == "electrons":
-        hk_data = parse_atomic_proj(data)
+        hk_data = parse_atomic_proj(data, data_controller)
         nr_full = hk_data["nr"]
     elif data.carriers == "phonons":
         nr_full = read_nr_from_ham(data.file_names.datafile_C)
