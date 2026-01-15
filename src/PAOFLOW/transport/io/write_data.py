@@ -155,7 +155,7 @@ def write_internal_format_files(
     data_controller: DataController,
     hk_data: Dict[str, np.ndarray],
     proj_data: AtomicProjData,
-    orthogonalize_overlap: bool,
+    do_overlap_transformation: bool,
 ) -> None:
     """
     Write Hamiltonian and optional overlap matrices in a format that matches the legacy IOTK-style .ham file structure.
@@ -186,7 +186,7 @@ def write_internal_format_files(
         Dictionary containing:
             - "avec": shape (3, 3), direct lattice vectors
             - "bvec": shape (3, 3), reciprocal lattice vectors
-    `orthogonalize_overlap` : bool
+    `do_overlap_transformation` : bool
         If False and overlap matrices are provided, overlap blocks will be written to the output.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -212,7 +212,7 @@ def write_internal_format_files(
     nrtot = ivr.shape[0]
     nk = hk_data["nk"]
     nr = hk_data["nr"]
-    have_overlap = Sk is not None and not orthogonalize_overlap
+    have_overlap = Sk is not None and not do_overlap_transformation
     fermi_energy = 0.0
 
     vr_crystal = ivr.astype(np.float64).T
@@ -513,9 +513,9 @@ def write_projectability_files(
 
 
 def write_overlap_files(
-    output_dir: str, Sk: np.ndarray, orthogonalize_overlap: bool
+    output_dir: str, Sk: np.ndarray, do_overlap_transformation: bool
 ) -> None:
-    if orthogonalize_overlap or Sk is None:
+    if do_overlap_transformation or Sk is None:
         return
     nR, nspin = Sk.shape[2], Sk.shape[3]
     nawf = Sk.shape[0]
