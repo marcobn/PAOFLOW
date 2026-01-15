@@ -99,23 +99,6 @@ class HamiltonianSystem:
 
         self.allocated = True
 
-    def deallocate(self) -> None:
-        """
-        Deallocate all matrix blocks if currently allocated.
-        """
-        if not self.allocated:
-            return
-
-        self.blc_00L.clear()
-        self.blc_01L.clear()
-        self.blc_00R.clear()
-        self.blc_01R.clear()
-        self.blc_00C.clear()
-        self.blc_LC.clear()
-        self.blc_CR.clear()
-
-        self.allocated = False
-
     def memusage(self, memtype: Literal["ham", "corr", "all"] = "all") -> float:
         """
         Estimate total memory usage of all blocks in MB.

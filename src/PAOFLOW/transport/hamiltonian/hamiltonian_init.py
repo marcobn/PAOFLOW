@@ -51,13 +51,6 @@ def initialize_hamiltonian_blocks(
         Whether the left and right lead blocks are structurally and numerically identical.
     """
 
-    def with_ham_suffix(path: str) -> str:
-        name = Path(path).name
-        if not name.endswith(".ham"):
-            return f"{output_dir}/{name}.ham"
-        else:
-            return f"./{name}"
-
     def extract_2D_ivrs(ivr3D: np.ndarray, transport_direction: int) -> np.ndarray:
         if transport_direction == 1:
             return ivr3D[1:, :]

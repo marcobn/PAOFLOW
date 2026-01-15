@@ -139,14 +139,9 @@ def write_eigenchannels(
     )
 
     if verbose:
-        log.log_rank0(f"[INFO] Eigenchannels written to: {filepath}")
+        log_rank0(f"[INFO] Eigenchannels written to: {filepath}")
 
     return filepath
-
-
-def iotk_index(n: int) -> str:
-    """Return IOTK index tag used in XML labels (e.g., 1 → '.1')."""
-    return f".{n}"
 
 
 def write_internal_format_files(

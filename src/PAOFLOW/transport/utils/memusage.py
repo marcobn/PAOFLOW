@@ -61,29 +61,3 @@ class MemoryTracker:
             log_rank0(f"{'Real allocated. Memory':>24}: {tmem:15.3f} MB")
 
         log_rank0("  </MEMORY_USAGE>\n")
-
-
-def hamiltonian_memusage(mode: str) -> float:
-    """
-    Return memory used by the hamiltonian module in MB.
-    Placeholder for actual logic.
-
-    Parameters
-    ----------
-    `mode` : str
-        Either 'ham' for Hamiltonian data or 'corr' for correlation data.
-    """
-    if mode == "ham":
-        return 0.0
-    elif mode == "corr":
-        return 0.0
-    else:
-        raise ValueError("Invalid mode for hamiltonian_memusage")
-
-
-def workspace_memusage() -> float:
-    """
-    Return memory used by the workspace module in MB.
-    Placeholder for actual logic.
-    """
-    return 0.0

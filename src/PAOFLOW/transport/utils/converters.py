@@ -72,18 +72,3 @@ def crystal_to_cartesian(coords: np.ndarray, basis: np.ndarray) -> np.ndarray:
         raise ValueError("Input `coords` must have shape (3,) or (3, N)")
 
     return basis @ coords
-
-
-def complex_matrix_to_text(matrix: np.ndarray) -> str:
-    """Convert complex matrix to text format matching Fortran output."""
-    rows, cols = matrix.shape
-    lines = []
-
-    for i in range(rows):
-        row_parts = []
-        for j in range(cols):
-            val = matrix[i, j]
-            row_parts.append(f"{val.real:18.15E},{val.imag:18.15E}")
-        lines.append("      " + " ".join(row_parts))
-
-    return "\n" + "\n".join(lines) + "\n    "
