@@ -8,15 +8,6 @@ from PAOFLOW.transport.io.iotk_reader import IOTKReader
 comm = MPI.COMM_WORLD
 
 
-def parse_args():
-    if len(sys.argv) != 2:
-        if comm.rank == 0:
-            print("Usage: python main.py <yaml_file>")
-            print("Optional Usage: python main.py <yaml_file> > <log_file>")
-        sys.exit(1)
-    return sys.argv[1]
-
-
 def parse_index_array(index_string: str, max_value: int, xval: int = -1) -> np.ndarray:
     """
     Parse a string representing a range or list of integer indices into a 0-based numpy array.
