@@ -375,7 +375,7 @@ def build_scheme2(
             A[:, ib] /= np.sqrt(weight)
 
     PA = A.conj().T @ A
-    IPA = inv(PA)
+    IPA = np.linalg.inv(PA)
     H_aux = (E - opts.sh * IPA) @ A.conj().T
     H = A @ H_aux
     H = 0.5 * (H + H.conj().T)
@@ -383,7 +383,7 @@ def build_scheme2(
 
 
 def apply_overlap_transformation(H: np.ndarray, S: np.ndarray) -> np.ndarray:
-    w, U = eigh(S)
+    w, U = np.linalg.eigh(S)
     if np.any(w <= 0):
         raise ValueError("Negative or zero overlap eigenvalue")
     sqrtS = U @ np.diag(np.sqrt(w)) @ U.conj().T
