@@ -487,64 +487,6 @@ def write_operator_xml(
             f.write("</OPERATOR>\n")
 
 
-def write_kresolved_operator_xml(
-    filename: str,
-    operator_k: np.ndarray,
-    *,
-    dimwann: int,
-    vkpt: Optional[np.ndarray] = None,
-) -> None:
-    """
-    Write a k-resolved operator snapshot to XML using the existing iotk-like format.
-
-    Parameters
-    ----------
-    `filename` : str
-        Output path.
-    `operator_k` : ndarray
-        Array of shape ``(nkpnts, dim, dim)`` with the operator at a fixed energy for all k-points.
-    `dimwann` : int
-        Operator dimension.
-    `vkpt` : ndarray, optional
-        K-points of shape ``(3, nkpnts)`` or ``(nkpnts, 3)``. Stored only as metadata proxy
-        by populating the ``<IVR>`` block with integer indices. Actual k-vectors are not
-        written because the base writer does not yet support a dedicated ``<VKPT>`` tag.
-
-    Notes
-    -----
-    The data are written with ``nomega = 1`` and ``nrtot = nkpnts``. To reuse the existing
-    writer unmodified, k-points are enumerated into a 3-column integer array stored under
-    ``<IVR>``. The matrix values are exact; only the tag semantics differ from a true
-    ``<VKPT>`` representation.
-    """
-    from PAOFLOW.transport.io.write_data import (
-        write_operator_xml,
-    )
-
-    nk, dim1, dim2 = operator_k.shape
-    if dim1 != dimwann or dim2 != dimwann:
-        raise ValueError("operator_k shape mismatch with `dimwann`")
-
-    ivr_k = np.column_stack(
-        [
-            np.arange(nk, dtype=int),
-            np.zeros(nk, dtype=int),
-            np.zeros(nk, dtype=int),
-        ]
-    )
-
-    write_operator_xml(
-        output_dir=Path(filename).parent,
-        filename=filename,
-        operator_matrix=operator_k[np.newaxis, ...],
-        ivr=ivr_k,
-        dimwann=dimwann,
-        dynamical=False,
-        nomega=1,
-        nrtot=nk,
-    )
-
-
 def write_projectability_files(
     output_dir: str, proj_data: AtomicProjData, Hk: np.ndarray
 ) -> None:
