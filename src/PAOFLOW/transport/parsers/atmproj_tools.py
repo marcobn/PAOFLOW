@@ -95,19 +95,19 @@ def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray
     # reshape to (nawf, nawf, nkpnts, nspin)
     Hks_reshaped = Hks_raw.reshape((nawf, nawf, nkpnts, nspin))
     # transpose to (nspin, nkpnts, nawf, nawf)
-    Hk = np.transpose(Hks_reshaped, (3, 2, 0, 1))
+    Hk = np.transpose(Hks_reshaped, (3, 2, 1, 0))
 
     HRs_reshaped = HRs_raw.reshape((nawf, nawf, nkpnts, nspin))
-    HR = np.transpose(HRs_reshaped, (3, 2, 0, 1))
+    HR = np.transpose(HRs_reshaped, (3, 2, 1, 0))
 
     Sks_raw = (
         arry["Sks"] if "Sks" in arry else None
     )  # TODO Paoflow uses the acbn0 flag to transform Sk in case of non-orthogonality. Check if we need Sks computed with or without the acbn0 flag to get the right answer. In the current implementation, Sks is without the acbn0 flag.
     Sk = Sks_raw[:, :nawf, :] if Sks_raw is not None else None
-    Sk = np.transpose(Sk, (2, 0, 1)) if Sk is not None else None
+    Sk = np.transpose(Sk, (2, 1, 0)) if Sk is not None else None
 
     SRs_raw = arry["SRs"] if "SRs" in arry else None
     SR = SRs_raw[:, :nawf, :] if SRs_raw is not None else None
-    SR = np.transpose(SR, (2, 0, 1)) if SR is not None else None
-
+    SR = np.transpose(SR, (2, 1, 0)) if SR is not None else None
+    print("Hk final", Hk[0, 2, :, :])
     return {"Hk": Hk, "Sk": Sk, "HR": HR, "SR": SR}
