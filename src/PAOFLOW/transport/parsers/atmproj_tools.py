@@ -48,7 +48,7 @@ def parse_atomic_proj(
 
     arry, _ = data_controller.data_dicts()
 
-    proj_data = parse_atomic_proj_data(data_controller)
+    proj_data = parse_atomic_proj_data(data, data_controller)
 
     log.log_proj_summary(
         proj_data,
@@ -70,16 +70,18 @@ def parse_atomic_proj(
         data_controller,
         hk_data,
         proj_data,
-        opts.acbn0,
+        opts.do_orthoovp,
     )
 
     write_projectability_files(output_dir, proj_data, hk_data["Hk"])
-    write_overlap_files(output_dir, hk_data["Sk"], opts.acbn0)
+    write_overlap_files(output_dir, hk_data["Sk"], opts.do_orthoovp)
 
     return hk_data
 
 
-def parse_atomic_proj_data(data_controller: DataController) -> AtomicProjData:
+def parse_atomic_proj_data(
+    data: ConductorData, data_controller: DataController
+) -> AtomicProjData:
     """
     Parse the Quantum ESPRESSO atomic_proj.xml file (from projwfc.x) into structured NumPy arrays.
 
@@ -153,7 +155,7 @@ def parse_atomic_proj_data(data_controller: DataController) -> AtomicProjData:
     kpt_data = parse_kpoints(data_controller)
     eigvals = parse_eigenvalues(data_controller)
     proj = parse_projections(data_controller)
-    overlap = parse_overlaps(data_controller)
+    overlap = parse_overlaps(data)
 
     return AtomicProjData(
         **header,
@@ -181,9 +183,9 @@ def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray
     HR = np.transpose(HRs_reshaped, (3, 2, 0, 1))
 
     Sks_raw = arry["Sks"] if "Sks" in arry else None
-    Sk = Sks_raw.reshape((nawf, nawf, nkpnts, nspin)) if Sks_raw is not None else None
+    Sk = Sks_raw[:, :nawf, :] if Sks_raw is not None else None
 
     SRs_raw = arry["SRs"] if "SRs" in arry else None
-    SR = SRs_raw.reshape((nawf, nawf, nkpnts, nspin)) if SRs_raw is not None else None
+    SR = SRs_raw[:, :nawf, :] if SRs_raw is not None else None
 
     return {"Hk": Hk, "Sk": Sk, "HR": HR, "SR": SR}

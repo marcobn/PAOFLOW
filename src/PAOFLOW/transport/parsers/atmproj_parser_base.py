@@ -3,6 +3,7 @@ from typing import Dict, Optional
 import numpy as np
 
 from PAOFLOW.DataController import DataController
+from PAOFLOW.transport.io.input_parameters import ConductorData
 from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 
 
@@ -51,10 +52,9 @@ def parse_projections(data_controller: DataController) -> np.ndarray:
     return proj
 
 
-def parse_overlaps(data_controller: DataController) -> Optional[np.ndarray]:
-    _, attr = data_controller.data_dicts()
-    acbn0 = attr["acbn0"]
-    if not acbn0:
+def parse_overlaps(yaml_data: ConductorData) -> Optional[np.ndarray]:
+    do_orthoovp = yaml_data.atomic_proj.do_orthoovp
+    if not do_orthoovp:
         return None
     else:
         raise NotImplementedError(

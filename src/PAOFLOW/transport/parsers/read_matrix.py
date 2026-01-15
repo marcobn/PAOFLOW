@@ -90,7 +90,7 @@ def read_matrix(
 
     nawf = attr["nawf"]
     nspin = attr["nspin"]
-    acbn0 = attr["acbn0"]
+    do_orthoovp = attr["do_orthoovp"]
     ivr = arry["ivr"]
     nrtot = ivr.shape[0]
     irows = parse_index_array(rows, nawf)
@@ -152,7 +152,7 @@ def read_matrix(
 
         A_loc = arry["HR"][ispin, ind, :, :]
 
-        if acbn0:
+        if do_orthoovp:
             S_loc = arry["SR"][ispin, ind, :, :]
         else:
             S_loc = np.zeros_like(A_loc)
