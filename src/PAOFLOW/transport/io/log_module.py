@@ -198,7 +198,7 @@ def log_proj_data(
     lines.append(f"    nspin        : {proj_data.nspin:>5}")
     lines.append(f"    nawf         : {proj_data.nawf:>5}")
     lines.append(f"    nelec        : {proj_data.nelec:>12.6f}")
-    lines.append(f"    efermi       : {proj_data.efermi_raw:>12.6f}")
+    lines.append(f"    efermi       : {proj_data.efermi:>12.6f}")
     lines.append(f"    energy_units :  {proj_data.energy_units}   ")
     lines.append("")
     lines.append(

@@ -37,35 +37,6 @@ def validate_proj_files(file_proj: str) -> str:
     return file_data
 
 
-def convert_energy_units(proj_data: AtomicProjData) -> AtomicProjData:
-    eigvals_raw = proj_data.eigvals.copy()
-    efermi_raw = proj_data.efermi
-
-    unit = proj_data.energy_units.lower()
-    factors = {
-        "ha": 27.211386018,
-        "hartree": 27.211386018,
-        "au": 27.211386018,
-        "ry": 13.605693009,
-        "ryd": 13.605693009,
-        "rydberg": 13.605693009,
-        "ev": 1.0,
-        "electronvolt": 1.0,
-    }
-    if unit not in factors:
-        raise ValueError(f"Unknown energy unit: {unit}")
-    factor = factors[unit]
-
-    return proj_data.model_copy(
-        update={
-            "eigvals_raw": eigvals_raw,
-            "efermi_raw": efermi_raw,
-            "eigvals": eigvals_raw * factor - efermi_raw * factor,
-            "efermi": efermi_raw * factor,
-        }
-    )
-
-
 @timed_function("atmproj_to_internal")
 @headered_function("Conductor Initialization")
 def parse_atomic_proj(
@@ -78,7 +49,6 @@ def parse_atomic_proj(
     arry, _ = data_controller.data_dicts()
 
     proj_data = parse_atomic_proj_data(data_controller)
-    proj_data = convert_energy_units(proj_data)
 
     log.log_proj_summary(
         proj_data,
