@@ -1,12 +1,10 @@
 import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict
 
 from PAOFLOW.DataController import DataController
 import numpy as np
-from scipy.linalg import eigh, inv
 
 from PAOFLOW.transport.grid.rgrid import get_rgrid
 from PAOFLOW.transport.io.input_parameters import AtomicProjData, ConductorData
