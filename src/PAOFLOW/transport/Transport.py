@@ -18,9 +18,11 @@ from PAOFLOW.transport.io.write_data import (
     write_operator_xml,
 )
 from PAOFLOW.transport.io.write_header import headered_function
-from PAOFLOW.transport.io.log_module import initialize_logger, log_rank0
+import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.transport.transport.green import compute_conductor_green_function
-from PAOFLOW.transport.transport.leads_self_energy import build_self_energies_from_blocks
+from PAOFLOW.transport.transport.leads_self_energy import (
+    build_self_energies_from_blocks,
+)
 from PAOFLOW.transport.transport.transmittance import evaluate_transmittance
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.divide_et_impera import divide_work
@@ -214,9 +216,9 @@ class ConductorCalculator:
         if (ie_g % nprint == 0 or ie_g == 0 or ie_g == self.ne - 1) and self.rank == 0:
             if self.data.carriers == "phonons":
                 omega_val = np.sqrt(self.egrid[ie_g] * rydcm1**2 / amconv)
-                log_rank0(f"  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1")
+                log.log_rank0(f"  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1")
             else:
-                log_rank0(f"  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV")
+                log.log_rank0(f"  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV")
 
         gC_k, sgmL_k, sgmR_k = self.initialize_k_dependent()
         avg_iter = 0.0
@@ -241,11 +243,12 @@ class ConductorCalculator:
             ie_g % nprint == 0 or ie_g == ie_start or ie_g == ie_end
         ) and self.rank == 0:
             avg_iter /= 2 * self.nkpts_par
-            log_rank0(f"  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n")
+            log.log_rank0(
+                f"  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n"
+            )
             global_timing.timing_upto_now(
                 "do_conductor", label="Total time spent up to now"
             )
-
         return conduct, dos
 
     def initialize_k_dependent(self):
@@ -507,7 +510,6 @@ class ConductorCalculator:
                 analyticity="retarded",
             )
 
-
     @headered_function("Writing data")
     def write_output(self):
         """
@@ -557,11 +559,12 @@ class ConductorCalculator:
 
 class ConductorRunner:
     @classmethod
-    def from_yaml(cls, yaml_file: str, data_controller: DataController):
+    def from_yaml(
+        cls, yaml_file: str, data_controller: DataController
+    ) -> ConductorCalculator:
+        log.initialize_logger(data_controller, log_file_name="transport.log")
         data = prepare_conductor(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
-
-        initialize_logger(data_controller, log_file_name="transport.log")
 
         _ = prepare_smearing(data, memory_tracker)
         _ = prepare_kpoints(data, memory_tracker)
@@ -798,16 +801,17 @@ class CurrentCalculator:
         outpath = Path(self.data["fileout"])
         outpath.parent.mkdir(parents=True, exist_ok=True)
         np.savetxt(outpath, np.column_stack([self.vgrid, self.currents]))
-        print(f"Saved current vs bias to {outpath}")
+        log.log_rank0(f"Saved current vs bias to {outpath}")
 
 
 class CurrentRunner:
     @classmethod
-    def from_yaml(cls, yaml_file: str, data_controller: DataController):
+    def from_yaml(
+        cls, yaml_file: str, data_controller: DataController
+    ) -> CurrentCalculator:
+        log.initialize_logger(data_controller, log_file_name="transport.log")
         data = prepare_current(yaml_file, data_controller)
         memory_tracker = MemoryTracker()
-
-        initialize_logger(data_controller, log_file_name="transport.log")
 
         calculator = CurrentCalculator(data)
 

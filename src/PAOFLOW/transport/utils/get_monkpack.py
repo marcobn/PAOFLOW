@@ -49,7 +49,7 @@ def get_monkhorst_pack_grid(
         kpts = cartesian_to_crystal(kpts, bvec)
 
     nkpnts = kpts.shape[1]
-    print(f"nkpnts: {nkpnts}")
+    log.log_rank0(f"nkpnts: {nkpnts}")
     nk = np.zeros(3, dtype=int)
     shift = np.ones(3, dtype=int)
 
@@ -82,7 +82,7 @@ def get_monkhorst_pack_grid(
         return np.array(grid).T
 
     kpt_mp = generate_mp_grid(nk, shift)
-    print(kpt_mp)
+    log.log_rank0(kpt_mp)
     matched = 0
     for col in kpt_loc.T:
         if np.any(np.all(np.abs(kpt_mp.T - col) < tol, axis=1)):

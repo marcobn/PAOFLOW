@@ -8,12 +8,8 @@ import numpy as np
 
 from PAOFLOW.transport.grid.rgrid import get_rgrid
 from PAOFLOW.transport.io.input_parameters import AtomicProjData, ConductorData
-from PAOFLOW.transport.io.log_module import (
-    log_proj_data,
-    log_rank0,
-    log_section_end,
-    log_section_start,
-)
+import PAOFLOW.transport.io.log_module as log
+
 from PAOFLOW.transport.io.write_data import (
     write_internal_format_files,
     write_projectability_files,
@@ -71,11 +67,6 @@ def convert_energy_units(proj_data: AtomicProjData) -> AtomicProjData:
     )
 
 
-def log_proj_summary(proj_data: AtomicProjData, data: ConductorData) -> None:
-    for line in log_proj_data(proj_data, data):
-        log_rank0(line)
-
-
 @timed_function("atmproj_to_internal")
 @headered_function("Conductor Initialization")
 def parse_atomic_proj(
@@ -84,9 +75,6 @@ def parse_atomic_proj(
     file_proj = data.file_names.datafile_C
     output_dir = data.file_names.output_dir
     opts = data.atomic_proj
-
-    file_data = validate_proj_files(file_proj)
-    log_rank0(f"  {file_proj} file fmt: atmproj")
 
     arry, attr = data_controller.data_dicts()
     alat = attr["alat"]
@@ -101,14 +89,12 @@ def parse_atomic_proj(
     proj_data = parse_atomic_proj_xml(file_proj, lattice_data, data_controller)
     proj_data = convert_energy_units(proj_data)
 
-    # log_proj_summary(
-    #     proj_data,
-    #     data,
-    # )
+    log.log_proj_summary(
+        proj_data,
+        data,
+    )
 
-    log_section_start("atmproj_read_ext --massive data")
     hk_data = get_pao_hamiltonian(data_controller)
-    log_section_end("atmproj_read_ext --massive data")
 
     nk = np.array([1, 1, 4], dtype=int)  # TODO: confirm hardcoded grid
     nr = nk
@@ -127,9 +113,7 @@ def parse_atomic_proj(
     )
 
     write_projectability_files(output_dir, proj_data, hk_data["Hk"])
-    write_overlap_files(output_dir, hk_data.get("Sk"), opts.acbn0)
-
-    log_rank0(f"{file_proj} converted from ATMPROJ to internal format")
+    write_overlap_files(output_dir, hk_data["Sk"], opts.acbn0)
 
     return hk_data
 
@@ -205,23 +189,12 @@ def parse_atomic_proj_xml(
     - EIGENVALUES and PROJECTIONS blocks, nested by k-points and optionally by spin.
     - OVERLAPS block if present.
     """
-    log_section_start("atmproj_read_ext")
-    log_section_start("reading eigenvalues")
-
-    tree = ET.parse(file_proj)
-    root = tree.getroot()
 
     header = parse_header(data_controller)
     kpt_data = parse_kpoints(lattice_data, data_controller)
     eigvals = parse_eigenvalues(data_controller)
 
-    log_section_end("reading eigenvalues")
-
-    log_section_start("reading projections")
     proj = parse_projections(data_controller)
-
-    log_section_end("reading projections")
-    log_section_end("atmproj_read_ext")
 
     overlap = parse_overlaps(data_controller)
 

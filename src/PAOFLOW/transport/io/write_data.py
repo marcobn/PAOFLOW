@@ -139,7 +139,7 @@ def write_eigenchannels(
     )
 
     if verbose:
-        print(f"[INFO] Eigenchannels written to: {filepath}")
+        log.log_rank0(f"[INFO] Eigenchannels written to: {filepath}")
 
     return filepath
 
