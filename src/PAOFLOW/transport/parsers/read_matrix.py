@@ -9,8 +9,6 @@ from PAOFLOW.transport.parsers.parser_base import parse_index_array
 from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_kspace
 from PAOFLOW.transport.utils.timing import timed_function
 
-# TODO check if fortran is also meant to skip block VR.1 and only read blocks  VR.2, VR.3 ... Initial tests seem to suggest that this is happening in the fortran version and hence implemented ths same way in python
-
 
 @timed_function("read_matrix")
 def read_matrix(
@@ -107,7 +105,6 @@ def read_matrix(
 
     if nspin == 2 and ispin < 0:
         raise ValueError("Unspecified ispin for spin-polarized case")
-
     ivr = ivr.T
 
     # Check grid dimensions
@@ -150,12 +147,12 @@ def read_matrix(
         if not matches:
             raise ValueError(f"3D R-vector {ivr_aux} not found for ir_par={ir_par}")
 
-        ind = matches[0] + 1
+        ind = matches[0]
 
-        A_loc = arry["HRs"][ir_par, :, :]
+        A_loc = arry["HRs"][ind, :, :]
 
         if do_overlap_transform:
-            S_loc = arry["SRs"][ir_par, :, :]
+            S_loc = arry["SRs"][ind, :, :]
         else:
             S_loc = np.zeros_like(A_loc)
             if label.lower() in {
@@ -172,7 +169,6 @@ def read_matrix(
 
         A_loc_T = A_loc.T
         S_loc_T = S_loc.T
-
         for j in range(dim2):
             for i in range(dim1):
                 if icols[j] < 0 or irows[i] < 0:
