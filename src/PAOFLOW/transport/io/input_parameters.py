@@ -124,6 +124,10 @@ class IterationConvergenceSettings(PydanticBaseModel):
 
 class AtomicProjectionOverlapSettings(PydanticBaseModel):
     do_overlap_transformation: bool = False
+    atmproj_sh: NonNegativeFloat = 5.0
+    atmproj_thr: Annotated[NonNegativeFloat, confloat(ge=0.0, le=1.0)] = 0.9
+    atmproj_nbnd: NonNegativeInt = 0
+    atmproj_do_norm: bool = False
     # TODO : check if the normalization option is still needed and is responsible for different results
     write_intermediate: bool = True
 
@@ -192,6 +196,7 @@ class AdvancedSettings(PydanticBaseModel):
     lhave_corr: bool = False
     ldynam_corr: bool = False
     leads_are_identical: bool = True
+    shifting_scheme: NonNegativeInt = 1
 
     @field_validator("ispin")
     @classmethod
