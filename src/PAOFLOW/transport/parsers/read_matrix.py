@@ -90,7 +90,7 @@ def read_matrix(
 
     nawf = attr["nawf"]
     nspin = attr["nspin"]
-    do_orthoovp = attr["do_orthoovp"]
+    orthogonalize_overlap = attr["orthogonalize_overlap"]
     ivr = arry["ivr"]
     nrtot = ivr.shape[0]
     irows = parse_index_array(rows, nawf)
@@ -152,7 +152,7 @@ def read_matrix(
 
         A_loc = arry["HR"][ispin, ind, :, :]
 
-        if do_orthoovp:
+        if orthogonalize_overlap:
             S_loc = arry["SR"][ispin, ind, :, :]
         else:
             S_loc = np.zeros_like(A_loc)

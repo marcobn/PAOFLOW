@@ -70,11 +70,11 @@ def parse_atomic_proj(
         data_controller,
         hk_data,
         proj_data,
-        opts.do_orthoovp,
+        opts.orthogonalize_overlap,
     )
 
     write_projectability_files(output_dir, proj_data, hk_data["Hk"])
-    write_overlap_files(output_dir, hk_data["Sk"], opts.do_orthoovp)
+    write_overlap_files(output_dir, hk_data["Sk"], opts.orthogonalize_overlap)
 
     return hk_data
 

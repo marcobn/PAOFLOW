@@ -53,8 +53,8 @@ def parse_projections(data_controller: DataController) -> np.ndarray:
 
 
 def parse_overlaps(yaml_data: ConductorData) -> Optional[np.ndarray]:
-    do_orthoovp = yaml_data.atomic_proj.do_orthoovp
-    if not do_orthoovp:
+    orthogonalize_overlap = yaml_data.atomic_proj.orthogonalize_overlap
+    if not orthogonalize_overlap:
         return None
     else:
         raise NotImplementedError(

@@ -111,7 +111,9 @@ def log_summary(data: ConductorData) -> None:
         log_rank0(f"            C-Sgm datafile :     {data.file_names.datafile_C_sgm}")
         log_rank0(f"            R-Sgm datafile :     {data.file_names.datafile_R_sgm}")
     log_rank0(f"         leads are identical :     {data.advanced.leads_are_identical}")
-    log_rank0(f"           ovp orthogonaliz. :     {data.atomic_proj.do_orthoovp}")
+    log_rank0(
+        f"           ovp orthogonaliz. :     {data.atomic_proj.orthogonalize_overlap}"
+    )
     log_rank0("  </INPUT>")
     log_rank0("")
 
@@ -201,8 +203,8 @@ def log_proj_data(
     lines.append(f"    efermi       : {proj_data.efermi:>12.6f}")
     lines.append(f"    energy_units :  {proj_data.energy_units}   ")
     lines.append("")
-    if not data.atomic_proj.do_orthoovp:
-        lines.append("Using an orthogonal basis. do_orthoovp=.false.")
+    if not data.atomic_proj.orthogonalize_overlap:
+        lines.append("Using an orthogonal basis. orthogonalize_overlap=.false.")
     return lines
 
 

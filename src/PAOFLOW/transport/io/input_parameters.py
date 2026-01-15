@@ -123,7 +123,7 @@ class IterationConvergenceSettings(PydanticBaseModel):
 
 
 class AtomicProjectionOverlapSettings(PydanticBaseModel):
-    do_orthoovp: bool = False
+    orthogonalize_overlap: bool = False
     # TODO : check if the normalization option is still needed and is responsible for different results
     write_intermediate: bool = True
 
