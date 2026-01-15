@@ -4,7 +4,9 @@ import numpy as np
 
 from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.io.input_parameters import ConductorData
-from PAOFLOW.transport.utils.converters import crystal_to_cartesian
+from PAOFLOW.transport.utils.converters import (
+    cartesian_to_crystal,
+)
 
 
 def parse_header(data_controller: DataController) -> Dict:
@@ -22,15 +24,21 @@ def parse_header(data_controller: DataController) -> Dict:
 
 def parse_kpoints(data_controller: DataController) -> Dict:
     arry, attr = data_controller.data_dicts()
-    kpoints = arry["kpnts"].T
+
+    kpts = arry["kpnts"].T
+
     wk = arry["kpnts_wght"]
     wk = wk / np.sum(wk)
-    alat = attr["alat"]
+
+    alat = float(attr["alat"])
+
     bvec = arry["b_vectors"] * (2.0 * np.pi / alat)
-    vkpts_crystal = kpoints
-    vkpts_cartesian = crystal_to_cartesian(vkpts_crystal, bvec)
+
+    vkpts_cartesian = kpts * (2.0 * np.pi / alat)  # bohr^-1
+    vkpts_crystal = cartesian_to_crystal(vkpts_cartesian, bvec)
+
     return {
-        "kpts": kpoints,
+        "kpts": kpts,
         "wk": wk,
         "vkpts_cartesian": vkpts_cartesian,
         "vkpts_crystal": vkpts_crystal,
@@ -42,13 +50,13 @@ def parse_eigenvalues(data_controller: DataController) -> np.ndarray:
     eigvals = arry[
         "my_eigsmat"
     ]  # TODO This eigenvalue array may already be shifted by the Fermi energy unlike the implementation in paoflow-qtpy
-
     return eigvals
 
 
 def parse_projections(data_controller: DataController) -> np.ndarray:
     arry, _ = data_controller.data_dicts()
     proj = arry["U"].swapaxes(0, 1)
+
     return proj
 
 
