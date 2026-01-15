@@ -1,5 +1,5 @@
 input_conductor:
-  output_dir: "./output"
+  output_dir: "./output/paoflow"
   prefix: "al5"
   postfix: "_bulk"
   dimC: 20
@@ -10,7 +10,7 @@ input_conductor:
   datafile_C: "./output/qe/al5.save/atomic_proj.xml"
   transport_direction: 3
   delta: 0.0005
-  do_orthoovp: true
+  do_overlap_transformation: false
   atmproj_sh: 3.5
   atmproj_thr: 0.9
   write_gf: true

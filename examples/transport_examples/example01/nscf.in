@@ -2,8 +2,8 @@
       calculation = 'nscf',
       restart_mode='from_scratch',
       prefix='al5',
-      pseudo_dir = './',
-      outdir = './'
+      pseudo_dir = '../pseudo',
+      outdir = './output/qe'
       wf_collect = .TRUE.
    /
    &SYSTEM

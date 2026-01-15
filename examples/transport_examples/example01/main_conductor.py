@@ -21,11 +21,9 @@ def main():
     paoflow.pao_hamiltonian(shift_type=1)
     paoflow.projections()
 
-    data_controller = paoflow.data_controller
-
     transport = ConductorRunner.from_yaml(
         yaml_file="conductor.yaml",
-        data_controller=data_controller,
+        data_controller=paoflow.data_controller,
     )
     transport.run()
 
