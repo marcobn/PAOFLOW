@@ -56,7 +56,7 @@ def prepare_conductor(yaml_file: str, data_controller: DataController) -> Conduc
         hk_data = parse_atomic_proj(data, data_controller)
         nr_full = hk_data["nr"]
     elif data.carriers == "phonons":
-        nr_full = read_nr_from_ham(data.file_names.datafile_C)
+        raise NotImplementedError("Phonon transport not yet implemented")
 
     nk_par, nr_par = initialize_meshsize(
         nr_full=nr_full, transport_direction=data.transport_direction

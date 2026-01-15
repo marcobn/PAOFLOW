@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from PAOFLOW.DataController import DataController
 import numpy as np
-from pathlib import Path
 
 from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlock
-from PAOFLOW.transport.io.iotk_reader import IOTKReader
 from PAOFLOW.transport.parsers.parser_base import parse_index_array
 from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_kspace
 from PAOFLOW.transport.utils.timing import timed_function
@@ -153,11 +151,10 @@ def read_matrix(
 
         ind = matches[0] + 1
 
-
-        A_loc = arry["HR"][ispin,ind,:,:]
+        A_loc = arry["HR"][ispin, ind, :, :]
 
         if acbn0:
-            S_loc = arry["SR"][ispin,ind,:,:]
+            S_loc = arry["SR"][ispin, ind, :, :]
         else:
             S_loc = np.zeros_like(A_loc)
             if label.lower() in {

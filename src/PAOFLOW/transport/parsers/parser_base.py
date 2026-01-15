@@ -1,9 +1,5 @@
-import sys
-
 import numpy as np
 from mpi4py import MPI
-
-from PAOFLOW.transport.io.iotk_reader import IOTKReader
 
 comm = MPI.COMM_WORLD
 
@@ -71,24 +67,3 @@ def parse_index_array(index_string: str, max_value: int, xval: int = -1) -> np.n
             )
 
     return np.array(indices, dtype=int)
-
-
-def read_nr_from_ham(file_path: str) -> np.ndarray:
-    """
-    Extract the full 3D R-vector mesh (nr1, nr2, nr3) from a .ham file header.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the .ham file.
-
-    Returns
-    -------
-    nr_full : (3,) ndarray of int
-        Full 3D R-vector mesh sizes along (x, y, z).
-    """
-    reader = IOTKReader(file_path)
-    header = reader.read_header()
-    if "nr" not in header:
-        raise ValueError(f"Header of {file_path} does not contain 'nr'")
-    return np.array(header["nr"], dtype=int)
