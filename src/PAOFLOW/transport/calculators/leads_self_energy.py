@@ -1,6 +1,6 @@
 import numpy as np
-from PAOFLOW.transport.transport.green import compute_surface_green_function
-from PAOFLOW.transport.transport.transfer import compute_surface_transfer_matrices
+from PAOFLOW.transport.calculators.green import compute_surface_green_function
+from PAOFLOW.transport.calculators.transfer import compute_surface_transfer_matrices
 
 
 from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlockView

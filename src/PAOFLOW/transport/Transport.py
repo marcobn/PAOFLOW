@@ -19,11 +19,11 @@ from PAOFLOW.transport.io.write_data import (
 )
 from PAOFLOW.transport.io.write_header import headered_function
 import PAOFLOW.transport.io.log_module as log
-from PAOFLOW.transport.transport.green import compute_conductor_green_function
-from PAOFLOW.transport.transport.leads_self_energy import (
+from PAOFLOW.transport.calculators.green import compute_conductor_green_function
+from PAOFLOW.transport.calculators.leads_self_energy import (
     build_self_energies_from_blocks,
 )
-from PAOFLOW.transport.transport.transmittance import evaluate_transmittance
+from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.divide_et_impera import divide_work
 from PAOFLOW.transport.utils.locate import locate
