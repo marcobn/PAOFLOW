@@ -199,8 +199,8 @@ def write_internal_format_files(
     ivr = hk_data["ivr"]
     wr = hk_data["wr"]
 
-    avec = arry["a_vectors"]
-    bvec = arry["b_vectors"]
+    avec = arry["a_vectors"] * attr["alat"]
+    bvec = arry["b_vectors"] * (2.0 * np.pi / attr["alat"])
     kpts = proj_data.kpts
     vkpts_crystal = proj_data.vkpts_crystal
     vkpts_cartesian = proj_data.vkpts_cartesian

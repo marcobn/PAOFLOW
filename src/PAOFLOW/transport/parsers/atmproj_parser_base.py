@@ -3,7 +3,7 @@ from typing import Dict, Optional
 import numpy as np
 
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.utils.converters import cartesian_to_crystal
+from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 
 
 def parse_header(data_controller: DataController) -> Dict:
@@ -25,13 +25,13 @@ def parse_kpoints(data_controller: DataController) -> Dict:
     wk = arry["kpnts_wght"]
     wk = wk / np.sum(wk)
     alat = attr["alat"]
-    bvec = arry["b_vectors"]
-    vkpts = kpoints * 2 * np.pi / alat
-    vkpts_crystal = cartesian_to_crystal(vkpts, bvec)
+    bvec = arry["b_vectors"] * (2.0 * np.pi / alat)
+    vkpts_crystal = kpoints
+    vkpts_cartesian = crystal_to_cartesian(vkpts_crystal, bvec)
     return {
         "kpts": kpoints,
         "wk": wk,
-        "vkpts_cartesian": vkpts,
+        "vkpts_cartesian": vkpts_cartesian,
         "vkpts_crystal": vkpts_crystal,
     }
 
