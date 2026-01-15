@@ -123,7 +123,7 @@ class IterationConvergenceSettings(PydanticBaseModel):
 
 
 class AtomicProjectionOverlapSettings(PydanticBaseModel):
-    do_orthoovp: bool = False
+    acbn0: bool = False
     atmproj_sh: NonNegativeFloat = 5.0
     atmproj_thr: Annotated[NonNegativeFloat, confloat(ge=0.0, le=1.0)] = 0.9
     atmproj_nbnd: NonNegativeInt = 0

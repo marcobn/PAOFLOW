@@ -50,6 +50,6 @@ def log_proj_data(
     lines.append(f"    atmproj_thr  : {data.atomic_proj.atmproj_thr:>12.6f}")
     lines.append(f"    atmproj_sh   : {data.atomic_proj.atmproj_sh:>12.6f}")
     lines.append(f"    atmproj_do_norm:  {data.atomic_proj.atmproj_do_norm}")
-    if data.atomic_proj.do_orthoovp:
-        lines.append("Using an orthogonal basis. do_orthoovp=.true.")
+    if data.atomic_proj.acbn0:
+        lines.append("Using an orthogonal basis. acbn0=.true.")
     return lines

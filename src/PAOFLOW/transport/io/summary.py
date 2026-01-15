@@ -56,7 +56,7 @@ def print_summary(data: ConductorData) -> None:
         log_rank0(f"            C-Sgm datafile :     {data.file_names.datafile_C_sgm}")
         log_rank0(f"            R-Sgm datafile :     {data.file_names.datafile_R_sgm}")
     log_rank0(f"         leads are identical :     {data.advanced.leads_are_identical}")
-    log_rank0(f"           ovp orthogonaliz. :     {data.atomic_proj.do_orthoovp}")
+    log_rank0(f"           ovp orthogonaliz. :     {data.atomic_proj.acbn0}")
     log_rank0("  </INPUT>")
     log_rank0("")
 
