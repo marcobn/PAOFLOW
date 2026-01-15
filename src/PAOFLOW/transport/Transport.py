@@ -225,7 +225,7 @@ class ConductorCalculator:
             else:
                 log.log_rank0(f"  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV")
 
-        gC_k, sgmL_k, sgmR_k = self.initialize_k_dependent()
+        gC_k, sgmL_k, sgmR_k = self.initialize_k_dependent_operators()
         avg_iter = 0.0
 
         for ik in range(self.nkpts_par):
@@ -242,7 +242,7 @@ class ConductorCalculator:
             if self.data.symmetry.write_lead_sgm:
                 sgmL_k[ik], sgmR_k[ik] = sigma_L, sigma_R
 
-        self.finalize_energy(ie_g, gC_k, sgmL_k, sgmR_k)
+        self.transform_k_to_r_at_energy(ie_g, gC_k, sgmL_k, sgmR_k)
 
         if (
             ie_g % nprint == 0 or ie_g == ie_start or ie_g == ie_end
@@ -256,7 +256,7 @@ class ConductorCalculator:
             )
         return conduct, dos
 
-    def initialize_k_dependent(self):
+    def initialize_k_dependent_operators(self):
         """
         Allocate temporary arrays for k-dependent Green's functions and self-energies.
 
@@ -423,16 +423,10 @@ class ConductorCalculator:
                 verbose=True,
             )
 
-    def finalize_energy(self, ie_g, gC_k, sgmL_k, sgmR_k):
+    def transform_k_to_r_at_energy(self, ie_g, gC_k, sgmL_k, sgmR_k):
         """
-        Perform Fourier transforms to obtain real-space operators at this energy.
-
-        Notes
-        -----
-        Uses `compute_rham` to transform k-dependent Green’s functions or
-        self-energies into real-space representations:
-
-        ``O(R, E) = Σ_k w_k e^{-i k·R} O(k, E)``
+        Transform k-space Green’s functions and self-energies into real space
+        for a given energy index.
         """
         if self.data.symmetry.write_gf:
             for ir in range(self.nrtot_par):
