@@ -124,10 +124,7 @@ class IterationConvergenceSettings(PydanticBaseModel):
 
 class AtomicProjectionOverlapSettings(PydanticBaseModel):
     acbn0: bool = False
-    atmproj_sh: NonNegativeFloat = 5.0
-    atmproj_thr: Annotated[NonNegativeFloat, confloat(ge=0.0, le=1.0)] = 0.9
-    atmproj_nbnd: NonNegativeInt = 0
-    atmproj_do_norm: bool = False
+    # TODO : check if the normalization option is still needed and is responsible for different results
     write_intermediate: bool = True
 
 

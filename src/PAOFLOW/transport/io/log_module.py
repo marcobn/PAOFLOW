@@ -201,12 +201,6 @@ def log_proj_data(
     lines.append(f"    efermi       : {proj_data.efermi:>12.6f}")
     lines.append(f"    energy_units :  {proj_data.energy_units}   ")
     lines.append("")
-    lines.append(
-        f"    atmproj_nbnd : {proj_data.nbnds if not data.atomic_proj.atmproj_nbnd else data.atomic_proj.atmproj_nbnd:>5}"
-    )
-    lines.append(f"    atmproj_thr  : {data.atomic_proj.atmproj_thr:>12.6f}")
-    lines.append(f"    atmproj_sh   : {data.atomic_proj.atmproj_sh:>12.6f}")
-    lines.append(f"    atmproj_do_norm:  {data.atomic_proj.atmproj_do_norm}")
     if not data.atomic_proj.acbn0:
         lines.append("Using an orthogonal basis. acbn0=.false.")
     return lines
