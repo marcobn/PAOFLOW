@@ -116,3 +116,4 @@ pseudo/
 *.UPF
 *.xml
 *.log
+*wfc*
