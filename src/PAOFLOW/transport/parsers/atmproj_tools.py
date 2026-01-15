@@ -35,12 +35,12 @@ from PAOFLOW.transport.utils.timing import timed_function
 def validate_proj_files(file_proj: str) -> str:
     """
     Ensure that both atomic_proj.xml and its companion data-file.xml exist.
-    Returns the path to data-file.xml if found.
+    Returns the path to data-file-schema.xml if found.
     """
     savedir = os.path.dirname(file_proj)
-    file_data = os.path.join(savedir, "data-file.xml")
+    file_data = os.path.join(savedir, "data-file-schema.xml")
     if not os.path.exists(file_data):
-        raise FileNotFoundError(f"Expected data-file.xml at: {file_data}")
+        raise FileNotFoundError(f"Expected data-file-schema.xml at: {file_data}")
     return file_data
 
 
