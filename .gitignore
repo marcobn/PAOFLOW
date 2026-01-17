@@ -1,117 +1,117 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-*.swp
-PAOFLOW.egg-info/dependency_links.txt
-paoflow.egg-info/PKG-INFO
-*.swp
-src/.PAOFLOW.py.swp
-paoflow.egg-info/top_level.txt
-PAOFLOW.egg-info/top_level.txt
-paoflow.egg-info/SOURCES.txt
-PAOFLOW.egg-info/SOURCES.txt
-paoflow.egg-info/requires.txt
-PAOFLOW.egg-info/requires.txt
-PAOFLOW.egg-info/PKG-INFO
-paoflow.egg-info/dependency_links.txt
-PAOFLOW.egg-info/dependency_links.txt
-dist/paoflow-2.2.2-py3.8.egg
-dist/PAOFLOW-2.1.3-py3.8.egg
-build/lib/PAOFLOW/PAOFLOW.py
-build/lib/PAOFLOW/graphics/plot_functions.py
-PAOFLOW.egg-info/top_level.txt
-PAOFLOW.egg-info/SOURCES.txt
-PAOFLOW.egg-info/requires.txt
-PAOFLOW.egg-info/PKG-INFO
-PAOFLOW.egg-info/dependency_links.txt
-build/lib/PAOFLOW/graphics/__init__.py
-build/lib/PAOFLOW/GPAO.py
-build/lib/PAOFLOW/ErrorHandler.py
-build/lib/PAOFLOW/defs/zero_pad.py
-build/lib/PAOFLOW/defs/write4bt2.py
-build/lib/PAOFLOW/defs/write2xsf.py
-build/lib/PAOFLOW/defs/write2bxsf4skeaf.py
-build/lib/PAOFLOW/defs/write2bxsf.py
-build/lib/PAOFLOW/defs/upf_gaussfit.py
-build/lib/PAOFLOW/defs/TauModel.py
-build/lib/PAOFLOW/defs/smearing.py
-build/lib/PAOFLOW/defs/report_exception.py
-build/lib/PAOFLOW/defs/read_VASP.py
-build/lib/PAOFLOW/defs/read_upf.py
-build/lib/PAOFLOW/defs/read_sh_nl.py
-build/lib/PAOFLOW/defs/read_QE_xml.py
-build/lib/PAOFLOW/defs/read_pao_output.py
-build/lib/PAOFLOW/defs/read_inputfile_xml_parse.py
-build/lib/PAOFLOW/defs/pyints.py
-build/lib/PAOFLOW/defs/plot_compare_PAO_DFT_eigs.py
-build/lib/PAOFLOW/defs/pfaffian.py
-build/lib/PAOFLOW/defs/perturb_split.py
-build/lib/PAOFLOW/defs/pao_sym.py
-build/lib/PAOFLOW/defs/module_prerequisites.py
-build/lib/PAOFLOW/defs/models.py
-build/lib/PAOFLOW/defs/kpnts_interpolation_mesh.py
-build/lib/PAOFLOW/defs/header.py
-build/lib/PAOFLOW/defs/get_R_grid_fft.py
-build/lib/PAOFLOW/defs/get_K_grid_fft.py
-build/lib/PAOFLOW/defs/file_io.py
-build/lib/PAOFLOW/defs/do_wave_function_site_projection.py
-build/lib/PAOFLOW/defs/do_transport.py
-build/lib/PAOFLOW/defs/do_topology.py
-build/lib/PAOFLOW/defs/do_tau_models.py
-build/lib/PAOFLOW/defs/do_spin_texture.py
-build/lib/PAOFLOW/defs/do_spin_orbit.py
-build/lib/PAOFLOW/defs/do_real_space.py
-build/lib/PAOFLOW/defs/do_rashba_edelstein.py
-build/lib/PAOFLOW/defs/do_projectability.py
-build/lib/PAOFLOW/defs/do_pdos.py
-build/lib/PAOFLOW/defs/do_ortho.py
-build/lib/PAOFLOW/defs/do_non_ortho.py
-build/lib/PAOFLOW/defs/do_momentum.py
-build/lib/PAOFLOW/defs/do_minimal.py
-build/lib/PAOFLOW/defs/do_ipr.py
-build/lib/PAOFLOW/defs/do_Hall.py
-build/lib/PAOFLOW/defs/do_gradient.py
-build/lib/PAOFLOW/defs/do_find_Weyl.py
-build/lib/PAOFLOW/defs/do_fermisurf.py
-build/lib/PAOFLOW/defs/do_epsilon.py
-build/lib/PAOFLOW/defs/do_eigh.py
-build/lib/PAOFLOW/defs/do_effective_mass.py
-build/lib/PAOFLOW/defs/do_Efermi.py
-build/lib/PAOFLOW/defs/do_doubling.py
-build/lib/PAOFLOW/defs/do_double_grid.py
-build/lib/PAOFLOW/defs/do_dos.py
-build/lib/PAOFLOW/defs/do_doping.py
-build/lib/PAOFLOW/defs/do_dipole.py
-build/lib/PAOFLOW/defs/do_d2Hd2k.py
-build/lib/PAOFLOW/defs/do_build_pao_hamiltonian.py
-build/lib/PAOFLOW/defs/do_Boltz_tensors.py
-build/lib/PAOFLOW/defs/do_berry_phase.py
-build/lib/PAOFLOW/defs/do_bands.py
-build/lib/PAOFLOW/defs/do_band_curvature.py
-build/lib/PAOFLOW/defs/do_atwfc_proj.py
-build/lib/PAOFLOW/defs/do_adaptive_smearing.py
-build/lib/PAOFLOW/defs/cuda_fft.py
-build/lib/PAOFLOW/defs/constants.py
-build/lib/PAOFLOW/defs/communication.py
-build/lib/PAOFLOW/defs/clebsch_gordan.py
-build/lib/PAOFLOW/defs/add_ext_field.py
-build/lib/PAOFLOW/defs/__init__.py
-build/lib/PAOFLOW/DataController.py
-build/lib/PAOFLOW/ACBN0.py
-build/lib/PAOFLOW/__init__.py
-PAOFLOW.egg-info/top_level.txt
-PAOFLOW.egg-info/SOURCES.txt
-PAOFLOW.egg-info/requires.txt
-PAOFLOW.egg-info/PKG-INFO
-PAOFLOW.egg-info/dependency_links.txt
-PAOFLOW.egg-info/top_level.txt
-PAOFLOW.egg-info/SOURCES.txt
-PAOFLOW.egg-info/requires.txt
-PAOFLOW.egg-info/PKG-INFO
-PAOFLOW.egg-info/dependency_links.txt
-PAOFLOW.egg-info/top_level.txt
-PAOFLOW.egg-info/SOURCES.txt
-*.swp
-src/.PAOFLOW.py.swp
-*.swp
-PAOFLOW.egg-info/SOURCES.txt
-PAOFLOW.egg-info/dependency_links.txt
-*.swp
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+__pypackages__/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# VS Code settings
+.vscode/
+
+# User defined
+output/
+*.save/
+*.pyc
+*.UPF
+*.xml
+*.log
