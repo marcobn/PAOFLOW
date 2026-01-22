@@ -5,7 +5,7 @@ requires = ["flit_core >=3.2,<4"]
 [project]
 name = "PAOFLOW"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 license = { file = "License" }
 authors = [{ name = "Marco Buongiorno Nardelli", email = "mbn@unt.edu" }]
 keywords = ["DFT", "Hamiltonians", "PAO"]
@@ -14,7 +14,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: POSIX :: Linux",
 ]
-dependencies = ["numpy", "scipy", "mpi4py"]
+dependencies = ["numpy~=2.4", "scipy>=1.17,<2", "mpi4py~=4.1"]
 
 [project.optional-dependencies]
 weyl_search = ["z2pack", "tbmodels"]
