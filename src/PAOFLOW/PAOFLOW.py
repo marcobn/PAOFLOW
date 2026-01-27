@@ -50,7 +50,7 @@ class PAOFLOW:
 
 
 
-  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing=None, acbn0=False, verbose=False, restart=False, dft='QE'):
+  def __init__ ( self, workpath='./', outputdir='output', inputfile=None, savedir=None, model=None, npool=1, smearing=None, save_overlaps=False, acbn0=False, verbose=False, restart=False, dft='QE'):
     '''
     Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
     Arguments:
@@ -61,6 +61,7 @@ class PAOFLOW:
         model (dict): Dictionary with 'label' key and parameters to build Hamiltonian from TB model
         npool (int): The number of pools to use. Increasing npool may reduce memory requirements.
         smearing (str): Smearing type (None, m-p, gauss)
+        save_overlaps (bool): If True the wavefunction overlaps will be saved to the DataController
         acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
         verbose (bool): False supresses debugging output
         restart (bool): True if the run is being restarted from a .json data dump.
@@ -89,7 +90,7 @@ class PAOFLOW:
       self.start_time = self.reset_time = time()
 
     # Initialize Data Controller
-    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, acbn0, verbose, restart, dft)
+    self.data_controller = DataController(workpath, outputdir, inputfile, model, savedir, npool, smearing, save_overlaps, acbn0, verbose, restart, dft)
 
     self.report_exception = self.data_controller.report_exception
 
@@ -331,6 +332,10 @@ class PAOFLOW:
     fpath = attr['fpath']
     if exists(join(fpath,'atomic_proj.xml')):
       from .defs.read_QE_xml import parse_qe_atomic_proj
+      if attr['acbn0'] and not attr['save_overlaps']:
+        if self.rank == 0:
+          print('WARNING: ACBN0 requires wavefunction overlaps. Setting save_overlaps to True.')
+      attr['save_overlaps'] = True
       parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
     else:
       raise Exception('atomic_proj.xml was not found.\n')
@@ -421,6 +426,7 @@ class PAOFLOW:
     #  Skip open_grid when all k-points are included (no symmetry)
     #  Note expand_wedge is still required for VASP even not using symmetry.
     #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
+
 
     if attr['symmetrize'] and attr['acbn0']:
       if rank == 0:
