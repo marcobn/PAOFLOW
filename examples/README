@@ -1,35 +1,45 @@
 PAOFLOW Tutorial: ./PAOFLOW-tutorial/
-  * Jupyter Notebook containing a brief introduction to the PAOFLOW interface
+
+- Jupyter Notebook containing a brief introduction to the PAOFLOW interface
 
 Qauntum ESPRESSO Examples: ./qe_examples/
-  * example01 : Si with spd pseudpotential
-  * example02 : Al with spd pseudpotential
-  * example03 : Pt with lsda (nspin = 2)
-  * example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
-  * example05 : Pt non collinear with spin orbit - Spin Hall conductivity
-  * example06 : AlP with non self consistent ACBN0
-  * example07 : Al starting from projections with overlap matrix of the atomic orbital (prior to orthogonalization)
-  * example08 : 2D SnTe - Spin Hall conductivity
-  * example09 : Weyl point search in MoP2
-  * example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
-  * example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
-  * example12: Bi bilayer nanoribbon site projected band strcture 
-  * example13: Bi bilayer Z2 calculation using Z2Pack inteface : SOC from QE and ad_hoc_SOC
-  * example14: Layer resolved Pt spin Hall conductivity 
+
+- example01 : Si with spd pseudpotential
+- example02 : Al with spd pseudpotential
+- example03 : Pt with lsda (nspin = 2)
+- example04 : Fe non collinear with spin orbit - Anomalous Hall conductivity
+- example05 : Pt non collinear with spin orbit - Spin Hall conductivity
+- example06 : AlP with non self consistent ACBN0
+- example07 : Al starting from projections with overlap matrix of the atomic orbital (prior to orthogonalization)
+- example08 : 2D SnTe - Spin Hall conductivity
+- example09 : Weyl point search in MoP2
+- example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
+- example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
+- example12: Bi bilayer nanoribbon site projected band strcture
+- example13: Bi bilayer Z2 calculation using Z2Pack inteface : SOC from QE and ad_hoc_SOC
+- example14: Layer resolved Pt spin Hall conductivity
 
 VASP Examples: ./vasp_examples
-  * example01 : Si
-  * example02 : Pt (with SOC)
-  * example03 : Fe (with SOC, FM)
-  * example04 : MnF2 (nspin=2, collinear AFM)
-  * example05 : Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
-  * example06 : FeRh (with SOC, FM) & (nspin = 2, FM)
-  * example07 : CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
+
+- example01 : Si
+- example02 : Pt (with SOC)
+- example03 : Fe (with SOC, FM)
+- example04 : MnF2 (nspin=2, collinear AFM)
+- example05 : Mn3Ir (with SOC, noncollinear 120$^\circ$ AFM)
+- example06 : FeRh (with SOC, FM) & (nspin = 2, FM)
+- example07 : CrI3 monolayer (nspin = 2, FM) & (with SOC, FM)
 
 ACBN0 Example: ./acbn0-example/
-  * ACBN0 routine for calculating Hubbard parameters in MgO.
+
+- ACBN0 routine for calculating Hubbard parameters in MgO.
 
 Tight Binding Models: ./TBmodel-examples/
-  * Several examples for constructing analytical Tight Binding model Hamiltonians
 
+- Several examples for constructing analytical Tight Binding model Hamiltonians
 
+Quantum Transport Examples: ./transport_examples/
+
+- Examples for computing conductance and DOS using Green's function method
+
+  - example01 : Transmission through a bulk system (Al)
+  - example02 : Transmission through a left lead-conductor-right lead system (AlH)

@@ -1,0 +1,21 @@
+input_conductor:
+  output_dir: "./output/paoflow"
+  prefix: "alh"
+  postfix: "_lead"
+  dimC: 12
+  calculation_type: "bulk"
+  ne: 1000
+  emin: -7.0
+  emax: 2.0
+  datafile_C: "./output/qe/alh.save/atomic_proj.xml"
+  transport_direction: 3
+  delta: 0.0005
+  do_overlap_transformation: false
+
+hamiltonian_data:
+  H00_C:
+    rows: "1-12"
+    cols: "1-12"
+  H_CR:
+    rows: "30-41"
+    cols: "1-12"
