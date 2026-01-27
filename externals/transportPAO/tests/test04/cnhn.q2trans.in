@@ -1,4 +1,0 @@
- &input
-   fildyn='cnhn.dyn', zasr='one-dim', flfrc='cnhn.fc',
-   fileout='ext.ham', onedim=.false., idir = 1
- /

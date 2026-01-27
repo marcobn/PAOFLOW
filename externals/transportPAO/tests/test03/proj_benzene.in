@@ -1,8 +1,0 @@
-
-&projwfc
-  prefix='benzene'
-  outdir='./SCRATCH'
-  filpdos='./SCRATCH/benzene'
-  lwrite_overlaps = .TRUE.
-  !lbinary_data = .TRUE.
-/

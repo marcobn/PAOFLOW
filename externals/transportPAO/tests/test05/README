@@ -1,2 +1,0 @@
-change atmproj.f90: set efermi_ = to the Fermi energy in the scf calculation
-change conductorf90: comment out Sigma_R from the definition of the Green's function - line 449 
