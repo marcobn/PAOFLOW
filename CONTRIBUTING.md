@@ -1,3 +1,5 @@
+## A Simple Example
+
 ```mermaid
 ---
 config:
@@ -5,8 +7,34 @@ config:
     mainBranchName: 'master'
 ---
     gitGraph TB:
-        commit id: ' ' 
-        branch release
+        commit id: ' '
+        checkout master
+        branch develop
+        checkout master
+        branch feature
+        commit id: 'feature-0'
+        checkout develop
+        merge feature
+        checkout master
+        merge develop
+        checkout feature
+        commit id: 'feature-1'
+        checkout develop
+        merge feature
+        checkout master
+        merge develop
+```
+
+## A More Realistic Example
+
+```mermaid
+---
+config:
+  gitGraph:
+    mainBranchName: 'master'
+---
+    gitGraph TB:
+        commit id: ' '
         branch develop
         branch develop/jon
         commit id: 'jon-0'
@@ -37,18 +65,14 @@ config:
         merge develop id: 'no issues'
         checkout develop/marcio
         merge develop
-        checkout release
-        merge develop tag:'v.1.0.0'
         checkout master
-        merge release
+        merge develop tag:'v.1.0.0'
         checkout develop
         merge develop/marco id: "develop-3"
         checkout develop/marcio
         commit id: 'marcio-1'
-        checkout release
-        merge develop tag:'v.1.0.1'
         checkout master
-        merge release 
+        merge develop tag:'v.1.0.1'
         checkout develop/marco
         commit id: 'marco-3'
 ```
