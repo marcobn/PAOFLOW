@@ -16,13 +16,14 @@ config:
         checkout develop
         merge feature
         checkout master
-        merge develop
+        merge develop tag: 'v1.0.0'
         checkout feature
         commit id: 'feature-1'
-        checkout develop
-        merge feature
+        checkout develop 
+        merge feature 
         checkout master
-        merge develop
+        merge develop  tag: 'v1.0.1'
+        
 ```
 
 ## A More Realistic Example
