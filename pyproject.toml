@@ -23,3 +23,6 @@ transport = ["pyyaml", "psutil", "pydantic"]
 
 [project.urls]
 Homepage = "https://github.com/marcobn/PAOFLOW"
+
+[tool.ruff]
+line-length = 100
