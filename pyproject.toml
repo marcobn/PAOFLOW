@@ -20,6 +20,7 @@ dependencies = ["numpy~=2.4", "scipy>=1.17,<2", "mpi4py~=4.1"]
 weyl_search = ["z2pack", "tbmodels"]
 graphics = ["vtk", "matplotlib"]
 transport = ["pyyaml", "psutil", "pydantic"]
+dev = ["pre-commit>=2.20.0"]
 
 [project.urls]
 Homepage = "https://github.com/marcobn/PAOFLOW"
