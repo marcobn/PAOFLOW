@@ -6,9 +6,6 @@ default_language_version:
 exclude: |
   (?x)^(?:
     BASIS/|
-    build/|
-    externals/transportPAO/|
-    externals/elph/|
     examples/
   )
 
