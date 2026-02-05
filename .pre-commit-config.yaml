@@ -3,10 +3,12 @@ minimum_pre_commit_version: "2.20.0"
 default_language_version:
   python: python3
 
+# TODO: remove this exclusion after discussing with ACBNO maintainers
 exclude: |
   (?x)^(?:
     BASIS/|
-    examples/
+    examples/|
+    src/PAOFLOW/ACBN0\.py$
   )
 
 repos:
@@ -23,7 +25,6 @@ repos:
         args: ["--fix=lf"]
       - id: check-added-large-files
         args: ["--maxkb=1024"]
-      - id: double-quote-string-fixer
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.7.3
