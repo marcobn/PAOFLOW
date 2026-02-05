@@ -179,7 +179,7 @@ def do_berry_phase(self):
                 f'# xlim: ({kpts[0,0,0]},{kpts[-1,0,0]}); ylim: ({kpts[0,0,1]},{kpts[0,-1,1]})\n'
             )
             f.write(f'# phases with shape: ({nk1-1},{nk2-1})\n')
-            f.write(f'# kx,ky are mesh centers\n')
+            f.write('# kx,ky are mesh centers\n')
             f.write('# kx\tky\tphi\n')
             for jk in range(nk2 - 1):
                 for ik in range(nk1 - 1):
