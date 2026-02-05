@@ -32,7 +32,6 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
       data_controller (DataController): Data controller to populate
       fname (str): Path and name of the xml file.
     """
-    import re
 
     arry, attr = data_controller.data_dicts()
     comm = MPI.COMM_WORLD

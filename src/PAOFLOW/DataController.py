@@ -479,7 +479,6 @@ class DataController:
         # ----------------------
         import numpy as np
         import os
-        import sys
 
         if self.rank == 0:
             arry, attr = self.data_dicts()
@@ -697,7 +696,6 @@ class DataController:
         Returns:
             None
         """
-        import numpy as np
 
         lst = self.data_arrays[key] if self.rank == root else None
         self.data_arrays[key] = self.comm.bcast(lst, root=root)

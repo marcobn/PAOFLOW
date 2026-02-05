@@ -22,9 +22,6 @@ import scipy.linalg as la
 
 
 def doubling_HRs(data_controller):
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
-
     arry, attr = data_controller.data_dicts()
 
     nx = attr['nx']

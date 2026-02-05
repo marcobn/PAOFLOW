@@ -78,8 +78,6 @@ def calc_dipole(arry, attr, ik, ispin, b_vector):
 # Function to calculate dipole matrix element from the eigenvector of the PAO Hamiltonian
 # expanded in the real space of the atomic basis functions
 def calc_dipole_internal(data_controller, ik, ispin):
-    from .constants import RYTOEV
-
     arry, attr = data_controller.data_dicts()
     basis = arry['basis']
     gkspace = calc_gkspace(data_controller, ik, gamma_only=False)

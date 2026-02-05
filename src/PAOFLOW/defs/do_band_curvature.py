@@ -33,7 +33,6 @@ def do_band_curvature(data_controller):
 
     from .do_d2Hd2k import do_d2Hd2k_ij
     import numpy as np
-    from .perturb_split import perturb_split
 
     ary, attr = data_controller.data_dicts()
     bnd = attr['bnd']

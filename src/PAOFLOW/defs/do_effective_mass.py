@@ -22,7 +22,6 @@ def do_effective_mass(data_controller, ene):
     from mpi4py import MPI
     import numpy as np
     from os.path import join
-    from numpy import linalg as npl
     from .communication import gather_full
     from .get_K_grid_fft import get_K_grid_fft_crystal
     from os.path import join

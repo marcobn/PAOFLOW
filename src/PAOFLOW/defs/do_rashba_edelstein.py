@@ -36,7 +36,7 @@ def do_rashba_edelstein(
     import numpy as np
     from os.path import join
     from .smearing import gaussian
-    from .constants import ELECTRONVOLT_SI, BOHR_RADIUS_CM, HBAR, LL
+    from .constants import ELECTRONVOLT_SI, BOHR_RADIUS_CM, HBAR
 
     comm, rank = data_controller.comm, data_controller.rank
     arrays, attr = data_controller.data_dicts()

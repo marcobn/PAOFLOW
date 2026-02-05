@@ -20,7 +20,7 @@
 
 def read_sh_nl(data_controller):
     # reads in shelks from pseudo files
-    from os.path import join, exists
+    from os.path import join
     import numpy as np
 
     #    arry,attr = data_controller.data_dicts()

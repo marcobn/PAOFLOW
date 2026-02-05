@@ -18,11 +18,8 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-import scipy.sparse as sprs
 import scipy.linalg as LA
 from scipy.special import factorial as fac
-from tempfile import NamedTemporaryFile
-import re
 from .communication import scatter_full, gather_full, gather_scatter
 from scipy.spatial.distance import cdist
 from mpi4py import MPI

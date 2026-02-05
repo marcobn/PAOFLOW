@@ -28,7 +28,6 @@
 #   cubic harmonics
 #######################################################################
 
-import sys
 import numpy as np
 
 spn_map = {

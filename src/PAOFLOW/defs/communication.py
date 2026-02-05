@@ -18,7 +18,6 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-import time
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD

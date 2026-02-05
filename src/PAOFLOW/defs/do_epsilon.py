@@ -30,7 +30,7 @@ from .do_dipole import *
 
 
 def do_dielectric_tensor(data_controller, ene, from_wfc):
-    from .constants import LL, RYTOEV
+    from .constants import LL
 
     arrays, attributes = data_controller.data_dicts()
     d_tensor = arrays['d_tensor']

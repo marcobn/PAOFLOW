@@ -18,11 +18,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-import sys
-import time
-import multiprocessing
 
-import pycuda.autoinit
 import pycuda.gpuarray as gpuarray
 import skcuda.fft as skfft
 

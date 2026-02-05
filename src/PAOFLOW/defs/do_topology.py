@@ -25,7 +25,6 @@ from numpy import linalg as npl
 # Compute Z2 invariant and topological properties on a selected path in the BZ
 def do_topology(data_controller):
     from mpi4py import MPI
-    from scipy.fftpack import fftshift
     from .constants import LL, ANGSTROM_AU
     from .get_R_grid_fft import get_R_grid_fft
     from .communication import scatter_full, gather_full

@@ -1,6 +1,3 @@
-from matplotlib import pyplot as plt
-
-
 class GPAO:
     def __init__(self):
         pass
@@ -91,9 +88,7 @@ class GPAO:
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
         from .graphics.plot_functions import plot_weighted_bands
-        from .defs.read_pao_output import read_bands_PAO
         from .defs.read_pao_output import read_site_projected
-        import pandas as pd
 
         if sym_points is not None:
             if type(sym_points) is str:
@@ -237,7 +232,6 @@ class GPAO:
         """
         from .defs.read_pao_output import read_dos_PAO, read_bands_PAO
         from .graphics.plot_functions import plot_berry_under_bands
-        import numpy as np
 
         if sym_points is not None:
             if type(sym_points) is str:

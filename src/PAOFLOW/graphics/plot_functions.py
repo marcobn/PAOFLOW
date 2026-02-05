@@ -343,7 +343,6 @@ def plot_tensor(
 
 def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend):
     """ """
-    import numpy as np
 
     fig = plt.figure()
 

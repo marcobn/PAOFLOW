@@ -19,7 +19,6 @@
 
 import numpy as np
 from scipy.constants import hbar
-from scipy.constants import Boltzmann as kb
 
 me = 9.10938e-31
 e = 1.60217662e-19

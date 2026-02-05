@@ -18,9 +18,6 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import os
-import re
-import sys
-import traceback
 import numpy as np
 import xml.etree.cElementTree as ET
 

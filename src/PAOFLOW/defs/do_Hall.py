@@ -279,9 +279,6 @@ def do_Berry_curvature(data_controller, jksp, pksp):
 
 
 def do_ac_conductivity(data_controller, jksp, pksp, ipol, jpol):
-    from .communication import gather_full
-    from .smearing import intgaussian, intmetpax
-
     arry, attr = data_controller.data_dicts()
 
     # Compute the optical conductivity tensor sigma_xy(ene)

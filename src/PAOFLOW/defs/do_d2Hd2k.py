@@ -18,12 +18,8 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-import sys
-import time
-from numpy import linalg as LAN
 
 from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
 
 # from .load_balancing import *
 from .get_R_grid_fft import *

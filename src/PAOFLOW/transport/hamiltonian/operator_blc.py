@@ -4,8 +4,6 @@ from typing import Literal
 
 import numpy as np
 
-from PAOFLOW.transport.grid.kpoints import compute_ivr_par, kpoints_mask
-
 
 class OperatorBlockView:
     def __init__(self, parent: OperatorBlock, ik: int):

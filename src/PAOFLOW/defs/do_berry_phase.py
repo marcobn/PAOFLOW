@@ -19,7 +19,6 @@
 
 import numpy as np
 import scipy.linalg as la
-from numpy import linalg as npl
 from .constants import ANGSTROM_AU
 
 
@@ -333,7 +332,7 @@ def do_phase(data_controller):
 
 
 def bands_calc(data_controller):
-    from .communication import scatter_full, gather_full
+    from .communication import scatter_full
 
     arry, attr = data_controller.data_dicts()
 
@@ -385,7 +384,6 @@ def band_loop_H(data_controller, kq_aux):
 def do_berry_bands(data_controller):
     from mpi4py import MPI
     from .constants import ANGSTROM_AU
-    from .communication import gather_full
     from .get_R_grid_fft import get_R_grid_fft
 
     rank = MPI.COMM_WORLD.Get_rank()

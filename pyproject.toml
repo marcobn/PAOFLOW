@@ -41,7 +41,6 @@ lint.ignore = [
     "F811", # redefinition of unused name from line ...
     "F821", # undefined name '...'
     "E402", # module level import not at top of file
-    "F401", # module imported but unused
 ]
 
 [tool.ruff.format]

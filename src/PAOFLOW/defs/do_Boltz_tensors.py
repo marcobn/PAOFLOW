@@ -18,7 +18,6 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-from scipy import signal
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -93,7 +92,6 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
 def get_tau(data_controller, temp, channels, weights):
     import numpy as np
-    import scipy.constants as cp
     from .TauModel import TauModel
     from .do_tau_models import builtin_tau_model
 
@@ -207,10 +205,8 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
 
 def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
-    from scipy.constants import hbar
     from sympy import Eijk
     from .smearing import gaussian, metpax
-    from os.path import join
 
     arrays, attributes = data_controller.data_dicts()
 

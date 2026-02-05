@@ -1,5 +1,4 @@
 from __future__ import annotations
-from pathlib import Path
 
 from PAOFLOW.DataController import DataController
 import numpy as np

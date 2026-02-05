@@ -18,7 +18,6 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-import scipy.linalg as la
 
 
 def orbital_array(data_controller):

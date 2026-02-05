@@ -20,12 +20,9 @@
 # This module is taken from AFLOWpi
 import numpy as np
 import sys
-import os
-import copy
 
 
 from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
 
 # initialize parallel execution
 comm = MPI.COMM_WORLD

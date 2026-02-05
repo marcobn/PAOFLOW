@@ -1,11 +1,9 @@
-from numpy import ndarray
 import pandas as pd
 from pathlib import Path
 
 
 def read_band_path_PAO(fname):
     """ """
-    import numpy as np
 
     tags = []
     npnts = []

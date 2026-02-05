@@ -12,14 +12,8 @@
 
 
 def site_projeted_bands(data_controller):
-    import cmath
     import numpy as np
-    from mpi4py import MPI
     from os.path import join
-    from scipy import fftpack as FFT
-    from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from .communication import scatter_full, gather_full
 
     arry, attr = data_controller.data_dicts()
 

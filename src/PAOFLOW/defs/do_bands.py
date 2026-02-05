@@ -17,14 +17,12 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-import sys
 import numpy as np
 from scipy import linalg as spl
-from numpy import linalg as npl
 
 
 def bands_calc(data_controller):
-    from .communication import scatter_full, gather_full
+    from .communication import scatter_full
 
     arrays, attributes = data_controller.data_dicts()
 
@@ -85,7 +83,6 @@ def band_loop_H(data_controller, kq_aux):
 def do_bands(data_controller):
     from mpi4py import MPI
     from .constants import ANGSTROM_AU
-    from .communication import gather_full
     from .get_R_grid_fft import get_R_grid_fft
     from .kpnts_interpolation_mesh import kpnts_interpolation_mesh
 

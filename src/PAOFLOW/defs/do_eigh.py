@@ -53,7 +53,6 @@ def get_degeneracies(E_k, bnd):
 
 
 def do_pao_eigh(data_controller):
-    from .communication import gather_scatter
     from numpy.linalg import eigh
     from mpi4py import MPI
 

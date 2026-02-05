@@ -17,8 +17,6 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-from numpy import ndarray
-
 
 def struct_from_outputfile_QE(fname: str):
     """ """
@@ -91,8 +89,6 @@ def read_relaxed_coordinates_QE(fname: str):
     Returns:
       (dict): Dictionary with one or two entries - 'apos' for atomic positions and 'coord' for crystal coordinates.
     """
-    from os.path import isfile, join
-    from os import getcwd
     import numpy as np
     import re
 

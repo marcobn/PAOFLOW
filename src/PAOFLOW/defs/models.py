@@ -20,9 +20,6 @@
 
 def Slater_Koster(data_controller, params):
     # generalized Slater-Koster TB model in the two-center approximation (1st nearest neighbors only)
-    from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
     import numpy as np
 
     arry, attr = data_controller.data_dicts()
@@ -372,8 +369,6 @@ def Slater_Koster(data_controller, params):
 
 def graphene(data_controller, params):
     from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
     import numpy as np
 
     arry, attr = data_controller.data_dicts()
@@ -440,8 +435,6 @@ def graphene(data_controller, params):
 
 def graphene2(data_controller, params):
     from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
     import numpy as np
 
     arry, attr = data_controller.data_dicts()
@@ -510,8 +503,6 @@ def graphene2(data_controller, params):
 
 def cubium(data_controller, params):
     from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
     import numpy as np
 
     arry, attr = data_controller.data_dicts()
@@ -580,8 +571,6 @@ def cubium(data_controller, params):
 
 def cubium2(data_controller, params):
     from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
     import numpy as np
 
     arry, attr = data_controller.data_dicts()
@@ -653,8 +642,6 @@ def cubium2(data_controller, params):
 
 def Kane_Mele(data_controller, params):
     from .constants import ANGSTROM_AU
-    from scipy.fftpack import fftshift
-    from mpi4py import MPI
     import numpy as np
 
     arry, attr = data_controller.data_dicts()

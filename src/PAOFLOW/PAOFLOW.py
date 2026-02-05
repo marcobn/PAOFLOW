@@ -348,7 +348,6 @@ class PAOFLOW:
         from .defs.read_upf import UPF
         from os.path import exists, join
         from .defs.do_atwfc_proj import build_pswfc_basis_all
-        from .defs.do_atwfc_proj import build_aewfc_basis
 
         arry, attr = self.data_controller.data_dicts()
         fpath = attr['fpath']
@@ -445,7 +444,6 @@ class PAOFLOW:
         """
         from .defs.get_K_grid_fft import get_K_grid_fft
         from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian, do_Hks_to_HRs
-        from .defs.do_Efermi import E_Fermi
 
         # Data Attributes and Arrays
         arrays, attr = self.data_controller.data_dicts()
@@ -1109,7 +1107,7 @@ class PAOFLOW:
             None
         """
         from .defs.do_eigh import do_pao_eigh
-        from .defs.communication import gather_scatter, scatter_full, gather_full
+        from .defs.communication import scatter_full, gather_full
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1169,7 +1167,6 @@ class PAOFLOW:
         from .defs.do_momentum import do_momentum
         from .defs.communication import gather_scatter
         import numpy as np
-        from .defs.do_atwfc_proj import build_pswfc_basis_all, build_aewfc_basis
 
         arrays, attr = self.data_controller.data_dicts()
 

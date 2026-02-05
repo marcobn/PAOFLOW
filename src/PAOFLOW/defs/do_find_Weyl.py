@@ -17,18 +17,10 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-import scipy.optimize as so
 
 # import matplotlib.pyplot as plt
-from scipy import fftpack as FFT
 import numpy as np
-import cmath
-import sys
-import scipy
-from scipy import fftpack as FFT
 from mpi4py import MPI
-from mpi4py.MPI import ANY_SOURCE
-import os
 import scipy.optimize as OP
 from numpy import linalg as LAN
 from .communication import gather_full, scatter_full

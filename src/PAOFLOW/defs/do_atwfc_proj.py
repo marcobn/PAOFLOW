@@ -18,11 +18,9 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import os
-import sys
 import glob
 import re
 import numpy as np
-import matplotlib.pyplot as plt
 import scipy.integrate
 import scipy.special
 import scipy.interpolate

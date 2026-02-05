@@ -121,8 +121,6 @@ def do_build_pao_hamiltonian(data_controller):
 
     # if rank == 0 and attr['expand_wedge']:
     if rank == 0:
-        from .do_Efermi import E_Fermi
-
         arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
         # Shift the Fermi energy to zero
