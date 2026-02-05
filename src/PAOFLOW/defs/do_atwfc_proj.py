@@ -17,7 +17,10 @@
 # in the root directory of the present distribution,
 # or http://www.gnu.org/copyleft/gpl.txt .
 
-import os, sys, glob, re
+import os
+import sys
+import glob
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.integrate

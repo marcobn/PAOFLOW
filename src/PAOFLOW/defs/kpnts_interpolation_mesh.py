@@ -19,7 +19,8 @@
 
 # This module is taken from AFLOWpi
 import numpy as np
-import sys, os
+import sys
+import os
 import copy
 
 

@@ -18,7 +18,8 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-import sys, time
+import sys
+import time
 from numpy import linalg as LAN
 
 from mpi4py import MPI

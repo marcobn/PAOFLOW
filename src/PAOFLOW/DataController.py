@@ -478,7 +478,8 @@ class DataController:
         # write to file Hks,Sks,kpnts,kpnts_wght
         # ----------------------
         import numpy as np
-        import os, sys
+        import os
+        import sys
 
         if self.rank == 0:
             arry, attr = self.data_dicts()

@@ -28,7 +28,8 @@
 import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
-import math, cmath
+import math
+import cmath
 
 
 def householder_real(x):
