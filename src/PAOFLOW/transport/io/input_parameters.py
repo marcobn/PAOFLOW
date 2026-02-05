@@ -21,40 +21,40 @@ from yaml import SafeLoader, load
 
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
 
-CalculationType = Literal["conductor", "bulk"]
-ConductFormula = Literal["landauer", "generalized"]
-Carriers = Literal["electrons", "phonons"]
+CalculationType = Literal['conductor', 'bulk']
+ConductFormula = Literal['landauer', 'generalized']
+Carriers = Literal['electrons', 'phonons']
 SmearingType = Literal[
-    "lorentzian",
-    "gaussian",
-    "fermi-dirac",
-    "fd",
-    "methfessel-paxton",
-    "mp",
-    "marzari-vanderbilt",
-    "mv",
+    'lorentzian',
+    'gaussian',
+    'fermi-dirac',
+    'fd',
+    'methfessel-paxton',
+    'mp',
+    'marzari-vanderbilt',
+    'mv',
 ]
-FileFormat = Literal["internal", "crystal", "wannier90", "cp2k", "atmproj"]
+FileFormat = Literal['internal', 'crystal', 'wannier90', 'cp2k', 'atmproj']
 
 
 class FileNamesData(PydanticBaseModel):
-    work_dir: str = "./"
-    output_dir: str = "./"
-    prefix: str = ""
-    postfix: str = ""
-    datafile_L: str = ""
-    datafile_C: str = ""
-    datafile_R: str = ""
-    datafile_sgm: str = ""
-    datafile_L_sgm: str = ""
-    datafile_C_sgm: str = ""
-    datafile_R_sgm: str = ""
+    work_dir: str = './'
+    output_dir: str = './'
+    prefix: str = ''
+    postfix: str = ''
+    datafile_L: str = ''
+    datafile_C: str = ''
+    datafile_R: str = ''
+    datafile_sgm: str = ''
+    datafile_L_sgm: str = ''
+    datafile_C_sgm: str = ''
+    datafile_R_sgm: str = ''
 
-    @field_validator("datafile_C")
+    @field_validator('datafile_C')
     @classmethod
     def check_datafile_C(cls, value: str) -> str:
         if len(value) == 0:
-            raise ValueError("datafile_C unspecified")
+            raise ValueError('datafile_C unspecified')
         return value
 
 
@@ -74,11 +74,11 @@ class KPointGridSettings(PydanticBaseModel):
     nkpts_par: NonNegativeInt = 1
     nrtot_par: NonNegativeInt = 1
 
-    @field_validator("s")
+    @field_validator('s')
     @classmethod
     def check_s(cls, value: list[int]) -> list[int]:
         if any(v < 0 or v > 1 for v in value):
-            raise ValueError("Invalid s: all values must be 0 or 1")
+            raise ValueError('Invalid s: all values must be 0 or 1')
         return value
 
 
@@ -88,18 +88,18 @@ class EnergySettings(PydanticBaseModel):
     ne: Annotated[PositiveInt, conint(gt=1)] = 1000
     ne_buffer: Annotated[PositiveInt, conint(gt=0)] = 1
     delta: Annotated[NonNegativeFloat, confloat(ge=0.0, le=0.3)] = 1e-5
-    smearing_type: SmearingType = "lorentzian"
+    smearing_type: SmearingType = 'lorentzian'
     delta_ratio: Annotated[NonNegativeFloat, confloat(ge=0.0, le=0.1)] = 5.0e-3
     xmax: Annotated[NonNegativeFloat, confloat(ge=10)] = 25.0
     energy_step: NonNegativeFloat = 0.001
     nx_smear: NonNegativeInt = 20000
 
-    @field_validator("emax")
+    @field_validator('emax')
     @classmethod
     def check_emax(cls, value: float, info) -> float:
-        emin = info.data.get("emin", None)
+        emin = info.data.get('emin', None)
         if emin is not None and value <= emin:
-            raise ValueError("emax has to be greater than emin")
+            raise ValueError('emax has to be greater than emin')
         return value
 
 
@@ -194,11 +194,11 @@ class AdvancedSettings(PydanticBaseModel):
     leads_are_identical: bool = True
     shifting_scheme: NonNegativeInt = 1
 
-    @field_validator("ispin")
+    @field_validator('ispin')
     @classmethod
     def check_ispin(cls, value: int) -> int:
         if value < 0 or value > 2:
-            raise ValueError("Invalid ispin")
+            raise ValueError('Invalid ispin')
         return value
 
 
@@ -233,9 +233,9 @@ class ConductorData(PydanticBaseModel):
     dimR: NonNegativeInt = 0
     dimC: NonNegativeInt = 0
     transport_direction: Annotated[int, conint(ge=1, le=3)] = 0
-    calculation_type: CalculationType = "conductor"
-    conduct_formula: ConductFormula = "landauer"
-    carriers: Carriers = "electrons"
+    calculation_type: CalculationType = 'conductor'
+    conduct_formula: ConductFormula = 'landauer'
+    carriers: Carriers = 'electrons'
 
     bias: NonNegativeFloat = 0.0
     shift_L: NonNegativeFloat = 0.0
@@ -266,44 +266,44 @@ class ConductorData(PydanticBaseModel):
             except Exception as e:
                 raise ValueError(f"Error validating block '{fieldname}': {e}") from e
 
-        extract_block(FileNamesData, "file_names")
-        extract_block(HamiltonianData, "hamiltonian")
-        extract_block(KPointGridSettings, "kpoint_grid")
-        extract_block(EnergySettings, "energy")
-        extract_block(SymmetryOutputOptions, "symmetry")
-        extract_block(IterationConvergenceSettings, "iteration")
-        extract_block(AtomicProjectionOverlapSettings, "atomic_proj")
-        extract_block(AdvancedSettings, "advanced")
+        extract_block(FileNamesData, 'file_names')
+        extract_block(HamiltonianData, 'hamiltonian')
+        extract_block(KPointGridSettings, 'kpoint_grid')
+        extract_block(EnergySettings, 'energy')
+        extract_block(SymmetryOutputOptions, 'symmetry')
+        extract_block(IterationConvergenceSettings, 'iteration')
+        extract_block(AtomicProjectionOverlapSettings, 'atomic_proj')
+        extract_block(AdvancedSettings, 'advanced')
 
         top_level_keys = {
-            "dimL",
-            "dimR",
-            "dimC",
-            "transport_direction",
-            "calculation_type",
-            "conduct_formula",
-            "carriers",
-            "ne",
-            "ne_buffer",
-            "bias",
-            "shift_L",
-            "shift_C",
-            "shift_R",
-            "shift_corr",
+            'dimL',
+            'dimR',
+            'dimC',
+            'transport_direction',
+            'calculation_type',
+            'conduct_formula',
+            'carriers',
+            'ne',
+            'ne_buffer',
+            'bias',
+            'shift_L',
+            'shift_C',
+            'shift_R',
+            'shift_corr',
         }
 
         unknown_keys = set(data) - top_level_keys
         if unknown_keys:
-            invalid_fields["input_conductor"] = sorted(unknown_keys)
+            invalid_fields['input_conductor'] = sorted(unknown_keys)
 
         for key in top_level_keys:
             if key in data:
                 validated_data[key] = data[key]
 
         if invalid_fields:
-            message = "Invalid fields found in input YAML:\n"
+            message = 'Invalid fields found in input YAML:\n'
             for section, keys in invalid_fields.items():
-                message += f"  - {section}: {keys}\n"
+                message += f'  - {section}: {keys}\n'
             raise ValueError(message.strip())
 
         super().__init__(**validated_data)
@@ -313,82 +313,80 @@ class ConductorData(PydanticBaseModel):
 
     def validate_input(self) -> None:
         if self.file_names.datafile_C is None:
-            raise ValueError(f"Unable to find {self.file_names.datafile_C}")
+            raise ValueError(f'Unable to find {self.file_names.datafile_C}')
 
         if self.symmetry.ie_eigplot > 0.0 and not self.symmetry.do_eigplot:
-            raise ValueError("ie_eigplot needs do_eigplot")
+            raise ValueError('ie_eigplot needs do_eigplot')
 
         if self.symmetry.ik_eigplot > 0.0 and not self.symmetry.do_eigplot:
-            raise ValueError("ik_eigplot needs do_eigplot")
+            raise ValueError('ik_eigplot needs do_eigplot')
 
         if self.energy.emax <= self.energy.emin:
-            raise ValueError("emax has to be greater than emin")
+            raise ValueError('emax has to be greater than emin')
 
-        if self.calculation_type == "conductor":
+        if self.calculation_type == 'conductor':
             if self.dimL <= 0:
-                raise ValueError("dimL needs to be positive")
+                raise ValueError('dimL needs to be positive')
             if self.dimR <= 0:
-                raise ValueError("dimR needs to be positive")
+                raise ValueError('dimR needs to be positive')
             if len(self.file_names.datafile_L) == 0:
-                raise ValueError("datafile_L unspecified")
+                raise ValueError('datafile_L unspecified')
             if len(self.file_names.datafile_R) == 0:
-                raise ValueError("datafile_R unspecified")
+                raise ValueError('datafile_R unspecified')
             if not self.file_names.datafile_L:
-                raise ValueError(f"Unable to find {self.file_names.datafile_L}")
+                raise ValueError(f'Unable to find {self.file_names.datafile_L}')
             if not self.file_names.datafile_R:
-                raise ValueError(f"Unable to find {self.file_names.datafile_R}")
+                raise ValueError(f'Unable to find {self.file_names.datafile_R}')
 
-        if self.calculation_type == "bulk":
+        if self.calculation_type == 'bulk':
             user_provided_fields = set(self.model_fields_set)
-            if "dimL" in user_provided_fields or "dimR" in user_provided_fields:
-                raise ValueError("dimL and dimR should not be set in bulk mode")
+            if 'dimL' in user_provided_fields or 'dimR' in user_provided_fields:
+                raise ValueError('dimL and dimR should not be set in bulk mode')
             self.dimL = self.dimC
             self.dimR = self.dimC
 
             if len(self.file_names.datafile_L.strip()) != 0:
-                raise ValueError("datafile_L should not be specified in bulk mode")
+                raise ValueError('datafile_L should not be specified in bulk mode')
             if len(self.file_names.datafile_R.strip()) != 0:
-                raise ValueError("datafile_R should not be specified in bulk mode")
+                raise ValueError('datafile_R should not be specified in bulk mode')
 
             self.dimL = self.dimC
             self.dimR = self.dimC
 
         if (
-            self.conduct_formula != "landauer"
+            self.conduct_formula != 'landauer'
             and len(self.file_names.datafile_sgm) == 0
             and len(self.file_names.datafile_C_sgm) == 0
         ):
-            raise ValueError("Invalid conduct formula")
+            raise ValueError('Invalid conduct formula')
 
         if self.symmetry.do_eigplot and not self.symmetry.do_eigenchannels:
-            raise ValueError("do_eigplot needs do_eigenchannels")
+            raise ValueError('do_eigplot needs do_eigenchannels')
 
         if self.symmetry.write_lead_sgm and self.symmetry.use_sym:
-            raise ValueError("use_sym and write_lead_sgm not implemented")
+            raise ValueError('use_sym and write_lead_sgm not implemented')
 
         if self.symmetry.write_gf and self.symmetry.use_sym:
-            raise ValueError("use_sym and write_gf not implemented")
+            raise ValueError('use_sym and write_gf not implemented')
 
-        if self.carriers == "phonons":
+        if self.carriers == 'phonons':
             self.energy.emin = self.energy.emin**2 / (rydcm1 / np.sqrt(amconv)) ** 2
             if self.energy.emin < 0.0:
-                raise ValueError("emin < 0.0, invalid emin")
+                raise ValueError('emin < 0.0, invalid emin')
             self.energy.emax = self.energy.emax**2 / (rydcm1 / np.sqrt(amconv)) ** 2
 
-    @field_validator("transport_direction")
+    @field_validator('transport_direction')
     @classmethod
     def check_transport_direction(cls, value: int) -> int:
         if value < 1 or value > 3:
-            raise ValueError(
-                "Invalid value for transport_direction. Allowed values are 1,2 or 3"
-            )
+            raise ValueError('Invalid value for transport_direction. Allowed values are 1,2 or 3')
         return value
 
-    @field_validator("dimC")
+    @field_validator('dimC')
     @classmethod
     def check_dimC(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("dimC needs to be positive")
+            raise ValueError('dimC needs to be positive')
         return value
 
     @property
@@ -406,23 +404,23 @@ class ConductorData(PydanticBaseModel):
 
         hdata = self.hamiltonian
         name_map = {
-            "H00_C": "block_00C",
-            "H_CR": "block_CR",
-            "H_LC": "block_LC",
-            "H00_L": "block_00L",
-            "H01_L": "block_01L",
-            "H00_R": "block_00R",
-            "H01_R": "block_01R",
+            'H00_C': 'block_00C',
+            'H_CR': 'block_CR',
+            'H_LC': 'block_LC',
+            'H00_L': 'block_00L',
+            'H01_L': 'block_01L',
+            'H00_R': 'block_00R',
+            'H01_R': 'block_01R',
         }
 
         for yaml_name, block_name in name_map.items():
             entry = getattr(hdata, yaml_name)
             if entry is not None:
                 tag_dict[block_name] = {
-                    "rows": entry.get("rows", "all"),
-                    "cols": entry.get("cols", "all"),
-                    "rows_sgm": entry.get("rows_sgm", entry.get("rows", "all")),
-                    "cols_sgm": entry.get("cols_sgm", entry.get("cols", "all")),
+                    'rows': entry.get('rows', 'all'),
+                    'cols': entry.get('cols', 'all'),
+                    'rows_sgm': entry.get('rows_sgm', entry.get('rows', 'all')),
+                    'cols_sgm': entry.get('cols_sgm', entry.get('cols', 'all')),
                 }
 
         return tag_dict
@@ -440,7 +438,7 @@ class CurrentData(PydanticBaseModel):
 
     def __init__(self, filename: str, *, validate: bool = True, **data: Any) -> None:
         input_dict = self.read(filename)
-        data.update(input_dict.get("input", {}))
+        data.update(input_dict.get('input', {}))
         super().__init__(**data)
         if validate:
             self.validate_input()
@@ -451,6 +449,6 @@ class CurrentData(PydanticBaseModel):
 
     def validate_input(self) -> None:
         if self.Vmax <= self.Vmin:
-            raise ValueError("Vmax must be greater than Vmin")
+            raise ValueError('Vmax must be greater than Vmin')
         if self.sigma < 0:
-            raise ValueError("sigma must be non-negative")
+            raise ValueError('sigma must be non-negative')

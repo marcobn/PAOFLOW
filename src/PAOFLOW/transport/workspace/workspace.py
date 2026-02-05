@@ -72,7 +72,7 @@ class Workspace:
             Whether to allocate Green's function storage arrays.
         """
         if self.allocated:
-            raise RuntimeError("Workspace already allocated")
+            raise RuntimeError('Workspace already allocated')
 
         self.tsum = np.zeros((dimx_lead, dimx_lead), dtype=np.complex128)
         self.tsumt = np.zeros((dimx_lead, dimx_lead), dtype=np.complex128)

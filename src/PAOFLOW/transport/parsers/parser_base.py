@@ -42,19 +42,19 @@ def parse_index_array(index_string: str, max_value: int, xval: int = -1) -> np.n
         If the input format is invalid or inconsistent with expected size.
     """
     index_string = index_string.strip().lower()
-    if index_string == "all":
+    if index_string == 'all':
         return np.arange(max_value)
 
-    tokens = index_string.split(",")
+    tokens = index_string.split(',')
     indices = []
 
     for token in tokens:
         token = token.strip()
-        if "x" in token:
-            repeat = int(token.replace("x", "")) if token.replace("x", "") else 1
+        if 'x' in token:
+            repeat = int(token.replace('x', '')) if token.replace('x', '') else 1
             indices.extend([xval] * repeat)
-        elif "-" in token:
-            start_str, end_str = token.split("-")
+        elif '-' in token:
+            start_str, end_str = token.split('-')
             start, end = int(start_str), int(end_str)
             indices.extend(range(start - 1, end))
         else:
@@ -63,7 +63,7 @@ def parse_index_array(index_string: str, max_value: int, xval: int = -1) -> np.n
     for idx in indices:
         if idx >= max_value:
             raise ValueError(
-                f"Index {idx} exceeds max allowed value {max_value - 1} in: {index_string}"
+                f'Index {idx} exceeds max allowed value {max_value - 1} in: {index_string}'
             )
 
     return np.array(indices, dtype=int)

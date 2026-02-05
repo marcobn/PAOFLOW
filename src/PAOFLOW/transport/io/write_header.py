@@ -17,16 +17,16 @@ def write_header(msg: str) -> None:
         If the message exceeds 66 characters.
     """
     if len(msg) >= 66:
-        raise ValueError(f"Message longer than 66 characters: {msg}")
+        raise ValueError(f'Message longer than 66 characters: {msg}')
 
     rank = MPI.COMM_WORLD.Get_rank()
     if rank != 0:
         return
 
-    separator = "=" * 70
-    log_rank0(f"  {separator}")
-    log_rank0(f"  =  {msg:^66s}=")
-    log_rank0(f"  {separator}")
+    separator = '=' * 70
+    log_rank0(f'  {separator}')
+    log_rank0(f'  =  {msg:^66s}=')
+    log_rank0(f'  {separator}')
 
 
 def headered_function(name: str):

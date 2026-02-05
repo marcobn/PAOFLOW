@@ -8,8 +8,8 @@
 # F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
 # Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
 #
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
 # Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
 #
 # This file is distributed under the terms of the
@@ -19,67 +19,68 @@
 
 from numpy import ndarray
 
-def struct_from_outputfile_QE ( fname:str ):
-  '''
-  '''
-  from os.path import isfile,join
-  import numpy as np
 
-  if not isfile(fname):
-    msg = 'File {} does not exist.'.format(join(getcwd(),fname))
-    raise FileNotFoundError(msg)
+def struct_from_outputfile_QE(fname: str):
+    """ """
+    from os.path import isfile, join
+    import numpy as np
 
-  struct = {'lunit':'bohr', 'aunit':'alat'}
-  with open(fname, 'r') as f:
-    lines = f.readlines()
+    if not isfile(fname):
+        msg = 'File {} does not exist.'.format(join(getcwd(), fname))
+        raise FileNotFoundError(msg)
 
-    eL = 0
-    nL = len(lines)
+    struct = {'lunit': 'bohr', 'aunit': 'alat'}
+    with open(fname, 'r') as f:
+        lines = f.readlines()
 
-    try:
-      struct['species'] = []
-      celldm = np.empty(6, dtype=float)
-      while 'bravais-lattice' not in lines[eL]:
-        eL += 1
-      ibrav = int(lines[eL].split()[3])
+        eL = 0
+        nL = len(lines)
 
-      while  'celldm' not in lines[eL]:
-        eL += 1
-      celldm[:3] = [float(v) for i,v in enumerate(lines[eL].split()) if i%2==1]
-      celldm[3:] = [float(v) for i,v in enumerate(lines[eL+1].split()) if i%2==1]
+        try:
+            struct['species'] = []
+            celldm = np.empty(6, dtype=float)
+            while 'bravais-lattice' not in lines[eL]:
+                eL += 1
+            ibrav = int(lines[eL].split()[3])
 
-      if ibrav != 0:
-        from .lattice_format import lattice_format_QE
-        struct['lattice'] = lattice_format_QE(ibrav, celldm)
-      else:
-        while 'crystal axes' not in lines[eL]:
-          eL += 1
-        coord = []
-        for l in lines[eL+1:eL+4]:
-          coord.append([celldm[0]*float(v) for v in l.split()[3:6]])
-        struct['lattice'] = np.array(coord)
+            while 'celldm' not in lines[eL]:
+                eL += 1
+            celldm[:3] = [float(v) for i, v in enumerate(lines[eL].split()) if i % 2 == 1]
+            celldm[3:] = [float(v) for i, v in enumerate(lines[eL + 1].split()) if i % 2 == 1]
 
-      while 'site n.' not in lines[eL]:
-        eL += 1
-      eL += 1
-      apos = []
-      while 'End' not in lines[eL] and lines[eL] != '\n':
-        line = lines[eL].split()
-        struct['species'].append(line[1])
-        apos.append([float(v) for v in line[6:9]])
-        eL += 1
-      apos = celldm[0] * np.array(apos)
-      struct['abc'] = apos @ np.linalg.inv(struct['lattice'])
+            if ibrav != 0:
+                from .lattice_format import lattice_format_QE
 
-    except Exception as e:
-      print('ERROR: Could not read the QE output.')
-      raise e
+                struct['lattice'] = lattice_format_QE(ibrav, celldm)
+            else:
+                while 'crystal axes' not in lines[eL]:
+                    eL += 1
+                coord = []
+                for l in lines[eL + 1 : eL + 4]:
+                    coord.append([celldm[0] * float(v) for v in l.split()[3:6]])
+                struct['lattice'] = np.array(coord)
 
-  return struct
+            while 'site n.' not in lines[eL]:
+                eL += 1
+            eL += 1
+            apos = []
+            while 'End' not in lines[eL] and lines[eL] != '\n':
+                line = lines[eL].split()
+                struct['species'].append(line[1])
+                apos.append([float(v) for v in line[6:9]])
+                eL += 1
+            apos = celldm[0] * np.array(apos)
+            struct['abc'] = apos @ np.linalg.inv(struct['lattice'])
+
+        except Exception as e:
+            print('ERROR: Could not read the QE output.')
+            raise e
+
+    return struct
 
 
-def read_relaxed_coordinates_QE ( fname:str ):
-  '''
+def read_relaxed_coordinates_QE(fname: str):
+    """
     Reads relaxed atomic positions from a QE .out file. If vcrelax is set True, the crystal coordinates are also read.
 
     Arguments:
@@ -89,76 +90,81 @@ def read_relaxed_coordinates_QE ( fname:str ):
 
     Returns:
       (dict): Dictionary with one or two entries - 'apos' for atomic positions and 'coord' for crystal coordinates.
-  '''
-  from os.path import isfile,join
-  from os import getcwd
-  import numpy as np
-  import re
+    """
+    from os.path import isfile, join
+    from os import getcwd
+    import numpy as np
+    import re
 
-  abc = []
-  cell_params = []
-  struct = struct_from_outputfile_QE(fname)
+    abc = []
+    cell_params = []
+    struct = struct_from_outputfile_QE(fname)
 
-  with open(fname, 'r') as f:
-    lines = f.readlines()
+    with open(fname, 'r') as f:
+        lines = f.readlines()
 
-    eL = 0
-    nL = len(lines)
+        eL = 0
+        nL = len(lines)
 
-    try:
-      def read_apos ( sind ):
-        apos = []
-        while lines[sind] != '\n' and not 'End final coordinates' in lines[sind]:
-          apos.append([float(v) for v in lines[sind].split()[1:4]])
-          sind += 1
-        return sind, apos
+        try:
 
-      while eL < nL:
-        while eL < nL and 'CELL_PARAMETERS' not in lines[eL] and 'ATOMIC_POSITIONS' not in lines[eL]:
-          eL += 1
-        if eL >= nL:
-          break
-        if 'ATOMIC_POSITIONS' in lines[eL]:
-          unit = lines[eL].split()[1].strip('(){{}}')
-          if len(unit) > 1:
-            struct['aunit'] = unit
-          eL,apos = read_apos(eL+1)
-          abc.append(apos)
-        elif 'CELL_PARAMETERS' in lines[eL]:
-          coord = []
-          unit = lines[eL].split()[1].strip('(){{}}')
+            def read_apos(sind):
+                apos = []
+                while lines[sind] != '\n' and not 'End final coordinates' in lines[sind]:
+                    apos.append([float(v) for v in lines[sind].split()[1:4]])
+                    sind += 1
+                return sind, apos
 
-          alat = 1
-          if 'alat' in unit or len(unit) == 0:
-            struct['lunit'] = 'alat'
-            if 'alat' in unit:
-              cpattern = re.search('\(([^\)]+)\)', lines[eL])
-              if cpattern is not None:
-                alat = float(cpattern.group(0)[1:-1].split('=')[1])
-          else:
-            struct['lunit'] = unit
-          for l in lines[eL+1:eL+4]:
-            coord.append(alat*np.array([float(v) for v in l.split()]))
-          cell_params.append(coord)
-          eL += 4
+            while eL < nL:
+                while (
+                    eL < nL
+                    and 'CELL_PARAMETERS' not in lines[eL]
+                    and 'ATOMIC_POSITIONS' not in lines[eL]
+                ):
+                    eL += 1
+                if eL >= nL:
+                    break
+                if 'ATOMIC_POSITIONS' in lines[eL]:
+                    unit = lines[eL].split()[1].strip('(){{}}')
+                    if len(unit) > 1:
+                        struct['aunit'] = unit
+                    eL, apos = read_apos(eL + 1)
+                    abc.append(apos)
+                elif 'CELL_PARAMETERS' in lines[eL]:
+                    coord = []
+                    unit = lines[eL].split()[1].strip('(){{}}')
 
-          while 'ATOMIC_POSITIONS' not in lines[eL]:
-            eL += 1
-          eL,apos = read_apos(eL+1)
-          abc.append(apos)
+                    alat = 1
+                    if 'alat' in unit or len(unit) == 0:
+                        struct['lunit'] = 'alat'
+                        if 'alat' in unit:
+                            cpattern = re.search('\(([^\)]+)\)', lines[eL])
+                            if cpattern is not None:
+                                alat = float(cpattern.group(0)[1:-1].split('=')[1])
+                    else:
+                        struct['lunit'] = unit
+                    for l in lines[eL + 1 : eL + 4]:
+                        coord.append(alat * np.array([float(v) for v in l.split()]))
+                    cell_params.append(coord)
+                    eL += 4
 
-    except Exception as e:
-      print('WARNING: No atomic positions or cell coordinates were found.', flush=True)
-      raise e
+                    while 'ATOMIC_POSITIONS' not in lines[eL]:
+                        eL += 1
+                    eL, apos = read_apos(eL + 1)
+                    abc.append(apos)
 
-  struct['lattice'] = np.array([struct['lattice']] + cell_params)
-  struct['abc'] = np.array([struct['abc']] + abc)
+        except Exception as e:
+            print('WARNING: No atomic positions or cell coordinates were found.', flush=True)
+            raise e
 
-  return struct
+    struct['lattice'] = np.array([struct['lattice']] + cell_params)
+    struct['abc'] = np.array([struct['abc']] + abc)
+
+    return struct
 
 
-def struct_from_inputfile_QE ( fname:str ) -> dict:
-  '''
+def struct_from_inputfile_QE(fname: str) -> dict:
+    """
     Generate a dictionary containing all atomic information from a QE inputfile
     WARNING: Currently only the control blocks are read. Atomic cards are not...
 
@@ -167,172 +173,171 @@ def struct_from_inputfile_QE ( fname:str ) -> dict:
 
     Returns:
       (dict): Structure dictionary
-  '''
-  from os.path import isfile
-  import numpy as np
-  import re
+    """
+    from os.path import isfile
+    import numpy as np
+    import re
 
-  if not isfile(fname):
-    raise FileNotFoundError('File {} does not exist.'.format(fname))
+    if not isfile(fname):
+        raise FileNotFoundError('File {} does not exist.'.format(fname))
 
-  fstr = None
-  with open(fname, 'r') as f:
-    fstr = f.read()
+    fstr = None
+    with open(fname, 'r') as f:
+        fstr = f.read()
 
-  # Datatype format helpers for QE input
-  nocomma = lambda s : s.replace(',', '')
-  qebool = lambda s : True if s.split('.')[1][0].lower() == 't' else False
-  qenum = lambda s : s.split('=')[1].replace('d', 'e')
-  qeint = lambda s : int(qenum(s))
-  qefloat = lambda s : float(qenum(s))
-  def inquote ( s ):
-    v = '"' if '"' in s else "'"
-    return s.split(v)[1]
+    # Datatype format helpers for QE input
+    nocomma = lambda s: s.replace(',', '')
+    qebool = lambda s: True if s.split('.')[1][0].lower() == 't' else False
+    qenum = lambda s: s.split('=')[1].replace('d', 'e')
+    qeint = lambda s: int(qenum(s))
+    qefloat = lambda s: float(qenum(s))
 
-  # Process blocks
-  cards = {}
-  blocks = {}
-  natom = ntype = 0
-  pattern = re.compile('&(.*?)/@')
-  celldm = np.zeros(6, dtype=float)
-  comment = lambda v : v != '' and v[0] != '!'
-  matches = pattern.findall(fstr.replace(' ', '').replace('\n', '@ '))
-  for match in matches:
+    def inquote(s):
+        v = '"' if '"' in s else "'"
+        return s.split(v)[1]
 
-    match = match.replace(',@', '@')
-    match = [s.replace(' ', '').split('!')[0] for s in re.split(', |@',match) if s!='']
+    # Process blocks
+    cards = {}
+    blocks = {}
+    natom = ntype = 0
+    pattern = re.compile('&(.*?)/@')
+    celldm = np.zeros(6, dtype=float)
+    comment = lambda v: v != '' and v[0] != '!'
+    matches = pattern.findall(fstr.replace(' ', '').replace('\n', '@ '))
+    for match in matches:
+        match = match.replace(',@', '@')
+        match = [s.replace(' ', '').split('!')[0] for s in re.split(', |@', match) if s != '']
 
-    # Split inline commas without destroying Hubbard_occ tags
-    block_args = []
-    for m in match:
+        # Split inline commas without destroying Hubbard_occ tags
+        block_args = []
+        for m in match:
+            hcinds = set([s.end(0) - 1 for s in list(re.finditer('\(([^\)]+),', m))])
 
-      hcinds = set([s.end(0)-1 for s in list(re.finditer('\(([^\)]+),',m))])
+            if len(hcinds) == 0:
+                for s in m.split(','):
+                    if s != '':
+                        block_args.append(s)
 
-      if len(hcinds) == 0:
-        for s in m.split(','):
-          if s != '':
-            block_args.append(s)
+            else:
+                cinds = set([i for i, c in enumerate(m) if c == ','])
+                if cinds == hcinds:
+                    block_args.append(m)
 
-      else:
+                else:
+                    iprev = 0
+                    for i in sorted(cinds.difference(hcinds)):
+                        block_args.append(m[iprev:i])
+                        iprev = i + 1
+                    block_args.append(m[iprev:])
 
-        cinds = set([i for i,c in enumerate(m) if c==','])
-        if cinds == hcinds:
-          block_args.append(m)
+        match = None
+        block = block_args.pop(0).lower()
+        mf = filter(comment, block_args)
 
+        blocks[block] = {}
+        for s in block_args:
+            k, v = s.split('=')
+            k = k.lower()
+            blocks[block][k] = v
+            if k == 'ntyp':
+                ntype = int(v)
+            elif k == 'nat':
+                natom = int(v)
+
+    # Process CARDS
+    fstr = list(filter(comment, fstr.split('\n')))
+
+    def scan_blank_lines(nl):
+        nl += 1
+        while fstr[nl] == '':
+            nl += 1
+        return nl
+
+    il = 0
+    nf = len(fstr)
+    while il < nf and 'ATOMIC_POSITIONS' not in fstr[il]:
+        il += 1
+    if il < nf:
+        cards['ATOMIC_POSITIONS'] = [fstr[il]]
+        il = scan_blank_lines(il)
+        for i in range(natom):
+            cards['ATOMIC_POSITIONS'].append(fstr[il + i])
+
+    sl = 0
+    while sl < nf and 'ATOMIC_SPECIES' not in fstr[sl]:
+        sl += 1
+    if sl < nf:
+        cards['ATOMIC_SPECIES'] = [fstr[sl]]
+        sl = scan_blank_lines(sl)
+        for i in range(ntype):
+            cards['ATOMIC_SPECIES'].append(fstr[sl + i])
+
+    hl = 0
+    while hl < nf and 'HUBBARD' not in fstr[hl]:
+        hl += 1
+    if hl < nf:
+        cards['HUBBARD'] = [fstr[hl]]
+        hl = scan_blank_lines(hl)
+        for i in range(5):
+            if fstr[hl + i].split()[0] == 'U':
+                cards['HUBBARD'].append(fstr[hl + i])
+            else:
+                break
+
+    kl = 0
+    while kl < nf and 'K_POINTS' not in fstr[kl]:
+        kl += 1
+    if kl < nf:
+        cards['K_POINTS'] = [fstr[kl]]
+        if 'gamma' in fstr[kl].lower():
+            pass
         else:
-          iprev = 0
-          for i in sorted(cinds.difference(hcinds)):
-            block_args.append(m[iprev:i])
-            iprev = i+1
-          block_args.append(m[iprev:])
+            cards['K_POINTS'].append(fstr[kl + 1])
+            if 'automatic' not in fstr[kl]:
+                nk = int(fstr[kl + 1])
+                kl += 2
+                for i in range(nk):
+                    cards['K_POINTS'].append(fstr[kl + i])
 
-    match = None
-    block = block_args.pop(0).lower()
-    mf = filter(comment, block_args)
+    cl = 0
+    while cl < nf and 'CELL_PARAM' not in fstr[cl]:
+        cl += 1
+    if cl < nf:
+        cards['CELL_PARAMETERS'] = []
+        for i in range(4):
+            cards['CELL_PARAMETERS'].append(fstr[cl + i])
 
-    blocks[block] = {}
-    for s in block_args:
-      k,v = s.split('=')
-      k = k.lower()
-      blocks[block][k] = v
-      if k == 'ntyp':
-        ntype = int(v)
-      elif k == 'nat':
-        natom = int(v)
-
-  # Process CARDS
-  fstr = list(filter(comment, fstr.split('\n')))
-  def scan_blank_lines ( nl ):
-    nl += 1
-    while fstr[nl] == '':
-      nl += 1
-    return nl
-
-  il = 0
-  nf = len(fstr)
-  while il < nf and 'ATOMIC_POSITIONS' not in fstr[il]:
-    il += 1
-  if il < nf:
-    cards['ATOMIC_POSITIONS'] = [fstr[il]]
-    il = scan_blank_lines(il)
-    for i in range(natom):
-      cards['ATOMIC_POSITIONS'].append(fstr[il+i])
-
-  sl = 0
-  while sl < nf and 'ATOMIC_SPECIES' not in fstr[sl]:
-    sl += 1
-  if sl < nf:
-    cards['ATOMIC_SPECIES'] = [fstr[sl]]
-    sl = scan_blank_lines(sl)
-    for i in range(ntype):
-      cards['ATOMIC_SPECIES'].append(fstr[sl+i])
-
-  hl = 0
-  while hl < nf and 'HUBBARD' not in fstr[hl]:
-    hl += 1
-  if hl < nf:
-    cards['HUBBARD'] = [fstr[hl]]
-    hl = scan_blank_lines(hl)
-    for i in range(5):
-      if fstr[hl+i].split()[0] == 'U':
-        cards['HUBBARD'].append(fstr[hl+i])
-      else:
-        break
-
-  kl = 0
-  while kl < nf and 'K_POINTS' not in fstr[kl]:
-    kl += 1
-  if kl < nf:
-    cards['K_POINTS'] = [fstr[kl]]
-    if 'gamma' in fstr[kl].lower():
-      pass
-    else:
-      cards['K_POINTS'].append(fstr[kl+1])
-      if 'automatic' not in fstr[kl]:
-        nk = int(fstr[kl+1])
-        kl += 2
-        for i in range(nk):
-          cards['K_POINTS'].append(fstr[kl+i])
-
-  cl = 0
-  while cl < nf and 'CELL_PARAM' not in fstr[cl]:
-    cl += 1
-  if cl < nf:
-    cards['CELL_PARAMETERS'] = []
-    for i in range(4):
-      cards['CELL_PARAMETERS'].append(fstr[cl+i])
-
-  return blocks, cards
+    return blocks, cards
 
 
-def create_atomic_inputfile ( calculation, blocks, cards ):
+def create_atomic_inputfile(calculation, blocks, cards):
+    with open(f'{calculation}.in', 'w') as f:
+        f.write('\n')
+        for kb, vb in blocks.items():
+            f.write(f' &{kb}\n')
+            for ks, vs in vb.items():
+                f.write(f'  {ks} = {vs}\n')
+            f.write(' /\n\n')
 
-  with open(f'{calculation}.in', 'w') as f:
-    f.write('\n')
-    for kb,vb in blocks.items():
-      f.write(f' &{kb}\n')
-      for ks,vs in vb.items():
-        f.write(f'  {ks} = {vs}\n')
-      f.write(' /\n\n')
+        if 'ATOMIC_SPECIES' in cards:
+            for s in cards['ATOMIC_SPECIES']:
+                f.write(s + '\n')
+            f.write('\n')
+            del cards['ATOMIC_SPECIES']
 
-    if 'ATOMIC_SPECIES' in cards:
-      for s in cards['ATOMIC_SPECIES']:
-        f.write(s + '\n')
-      f.write('\n')
-      del cards['ATOMIC_SPECIES']
-
-    for kc,vc in cards.items():
-      for s in vc:
-        f.write(s + '\n')
-      f.write('\n')
+        for kc, vc in cards.items():
+            for s in vc:
+                f.write(s + '\n')
+            f.write('\n')
 
 
-def create_acbn0_inputfile ( prefix, pthr ):
-
-  with open('acbn0.py', 'w') as f:
-    f.write('from PAOFLOW import PAOFLOW\n\n')
-    f.write(f'paoflow = PAOFLOW.PAOFLOW(savedir=\'{prefix}.save\', save_overlaps=True, acbn0=True)\n')
-    f.write('paoflow.read_atomic_proj_QE()\n')
-    f.write(f'paoflow.projectability(pthr={pthr})\n')
-    f.write('paoflow.pao_hamiltonian(write_binary=True)\n')
-    f.write('paoflow.finish_execution()\n')
+def create_acbn0_inputfile(prefix, pthr):
+    with open('acbn0.py', 'w') as f:
+        f.write('from PAOFLOW import PAOFLOW\n\n')
+        f.write(
+            f"paoflow = PAOFLOW.PAOFLOW(savedir='{prefix}.save', save_overlaps=True, acbn0=True)\n"
+        )
+        f.write('paoflow.read_atomic_proj_QE()\n')
+        f.write(f'paoflow.projectability(pthr={pthr})\n')
+        f.write('paoflow.pao_hamiltonian(write_binary=True)\n')
+        f.write('paoflow.finish_execution()\n')

@@ -35,11 +35,11 @@ def initialize_energy_grid(
         egrid[0] = egrid[1] / 100.0
     """
     if ne <= 1:
-        raise ValueError("Energy grid must have at least 2 points.")
+        raise ValueError('Energy grid must have at least 2 points.')
 
     egrid = np.linspace(emin, emax, ne)
 
-    if carriers == "phonons":
+    if carriers == 'phonons':
         if egrid[0] == 0.0:
             egrid[0] = egrid[1] / 100.0
 

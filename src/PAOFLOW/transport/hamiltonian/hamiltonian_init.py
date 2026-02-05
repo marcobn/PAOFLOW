@@ -10,7 +10,7 @@ from PAOFLOW.transport.parsers.read_matrix import read_matrix
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("hamiltonian_init")
+@timed_function('hamiltonian_init')
 def initialize_hamiltonian_blocks(
     output_dir: str,
     ham_system: HamiltonianSystem,
@@ -59,7 +59,7 @@ def initialize_hamiltonian_blocks(
         elif transport_direction == 3:
             return ivr3D[:2, :]
         else:
-            raise ValueError(f"Invalid transport_direction: {transport_direction}")
+            raise ValueError(f'Invalid transport_direction: {transport_direction}')
 
     ham_system.allocate(ivr_par3D, conductor_data.hamiltonian_tags)
 
@@ -70,14 +70,10 @@ def initialize_hamiltonian_blocks(
         block.wr_par = wr_par
         block.table_par = table_par
 
-    read_matrix(
-        conductor_data, data_controller, ispin, transport_direction, ham_system.blc_00C
-    )
-    read_matrix(
-        conductor_data, data_controller, ispin, transport_direction, ham_system.blc_CR
-    )
+    read_matrix(conductor_data, data_controller, ispin, transport_direction, ham_system.blc_00C)
+    read_matrix(conductor_data, data_controller, ispin, transport_direction, ham_system.blc_CR)
 
-    if calculation_type == "conductor":
+    if calculation_type == 'conductor':
         read_matrix(
             conductor_data,
             data_controller,
@@ -114,7 +110,7 @@ def initialize_hamiltonian_blocks(
             ham_system.blc_01R,
         )
 
-    elif calculation_type == "bulk":
+    elif calculation_type == 'bulk':
         ham_system.blc_00L = ham_system.blc_00C.copy()
         ham_system.blc_00R = ham_system.blc_00C.copy()
         ham_system.blc_01L = ham_system.blc_CR.copy()
@@ -129,19 +125,19 @@ def initialize_hamiltonian_blocks(
             ham_system.blc_LC,
         ):
             block.tag = {
-                "rows": "all",
-                "cols": "all",
-                "rows_sgm": "all",
-                "cols_sgm": "all",
+                'rows': 'all',
+                'cols': 'all',
+                'rows_sgm': 'all',
+                'cols_sgm': 'all',
             }
             block.ivr_par = ivr_par2D
 
     else:
-        raise ValueError(f"Invalid calculation_type: {calculation_type}")
+        raise ValueError(f'Invalid calculation_type: {calculation_type}')
 
     nk = ham_system.blc_00C.nkpnts
     if nk != ham_system.blc_00L.nkpnts or nk != ham_system.blc_00R.nkpnts:
-        raise RuntimeError("Mismatch in nkpnts among C, L, R blocks")
+        raise RuntimeError('Mismatch in nkpnts among C, L, R blocks')
 
     for ik in range(nk):
         for block in [ham_system.blc_00C, ham_system.blc_00L, ham_system.blc_00R]:
@@ -155,10 +151,10 @@ def initialize_hamiltonian_blocks(
 
 def check_leads_are_identical(
     ham_system: HamiltonianSystem,
-    datafile_L: str = "",
-    datafile_R: str = "",
-    datafile_L_sgm: str = "",
-    datafile_R_sgm: str = "",
+    datafile_L: str = '',
+    datafile_R: str = '',
+    datafile_L_sgm: str = '',
+    datafile_R_sgm: str = '',
 ) -> bool:
     """
     Determine if left and right leads are structurally and numerically identical.
@@ -186,14 +182,10 @@ def check_leads_are_identical(
     if datafile_L_sgm.strip() != datafile_R_sgm.strip():
         return False
 
-    for key in ("irows", "icols", "irows_sgm", "icols_sgm"):
-        if not np.array_equal(
-            getattr(ham_system.blc_00L, key), getattr(ham_system.blc_00R, key)
-        ):
+    for key in ('irows', 'icols', 'irows_sgm', 'icols_sgm'):
+        if not np.array_equal(getattr(ham_system.blc_00L, key), getattr(ham_system.blc_00R, key)):
             return False
-        if not np.array_equal(
-            getattr(ham_system.blc_01L, key), getattr(ham_system.blc_01R, key)
-        ):
+        if not np.array_equal(getattr(ham_system.blc_01L, key), getattr(ham_system.blc_01R, key)):
             return False
 
     return True

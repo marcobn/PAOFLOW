@@ -2,7 +2,7 @@ import numpy as np
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("fourier_par")
+@timed_function('fourier_par')
 def fourier_transform_real_to_kspace(
     rh: np.ndarray,
     wr: np.ndarray,

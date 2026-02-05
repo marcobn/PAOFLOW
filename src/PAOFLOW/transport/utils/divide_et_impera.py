@@ -1,9 +1,7 @@
 from PAOFLOW.transport.io.log_module import log_parallelization_info
 
 
-def divide_work(
-    start: int, end: int, rank: int, size: int, item: str
-) -> tuple[int, int]:
+def divide_work(start: int, end: int, rank: int, size: int, item: str) -> tuple[int, int]:
     """Divide a 1-indexed range across MPI ranks."""
     total = end - start + 1
     chunk = total // size

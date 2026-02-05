@@ -29,7 +29,7 @@ using the naming convention:
 
 - `develop/<feature_name>`
 
-Branch protections will be enabled on `develop` so that PRs require 
+Branch protections will be enabled on `develop` so that PRs require
 at least one approval.
 
 ## Release cadence and promotion to `master`
