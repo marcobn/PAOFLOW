@@ -31,7 +31,6 @@ def do_gradient(data_controller):
     # Compute the gradient of the k-space Hamiltonian
     # ----------------------
 
-    nktot = attr['nkpnts']
     snawf, nk1, nk2, nk3, nspin = arry['Hksp'].shape
 
     # fft grid in R shifted to have (0,0,0) in the center
@@ -40,7 +39,6 @@ def do_gradient(data_controller):
     #  dHaux = np.empty((nk1*nk2*nk3,3), dtype=complex, order='C')
     #  Haux = np.empty((nk1,nk2,nk3), dtype=complex, order='C')
     arry['dHksp'] = np.empty((snawf, nk1, nk2, nk3, 3, nspin), dtype=complex, order='C')
-    HRaux = np.empty((nk1 * nk2 * nk3))
     Dnm = scatter_full(
         np.reshape(arry['Dnm'], (attr['nawf'] * attr['nawf'], 3), order='C'), attr['npool']
     )

@@ -24,7 +24,6 @@ from .communication import scatter_full, gather_full, gather_scatter
 from scipy.spatial.distance import cdist
 from mpi4py import MPI
 from .zero_pad import zero_pad
-import time
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -56,7 +55,6 @@ def check(
 
     print(np.allclose(Hksp_f, Hksp_s, atol=1.0e-4, rtol=1.0e-4))
 
-    bad_symop = np.ones(symop.shape[0], dtype=bool)
     good_symop = np.ones(symop.shape[0], dtype=bool)
     good = []
     bad = []
@@ -71,8 +69,6 @@ def check(
 
         HP = Hksp_f[nki]
         THP = Hksp_s[nki]
-
-        U_k = get_U_k(kp[oki], phase_shifts[isym], a_index, U[isym])
 
         good.append(isym)
 
@@ -240,7 +236,6 @@ def down_samp(aux, nk1, nk2, nk3, nfft1, nfft2, nfft3):
     # post-padding dimensions
     nk1p = nfft1 + nk1
     nk2p = nfft2 + nk2
-    nk3p = nfft3 + nk3
     # halfway points
     sk1 = int((nk1 + 1) / 2)
     sk2 = int((nk2 + 1) / 2)
@@ -666,7 +661,6 @@ def find_equiv_k(kp, symop, full_grid, sym_TR, check=True, include_self=False):
     new_k_ind = []
     si_per_k = []
     counter = 0
-    kp_track = []
     kp = correct_roundoff(kp)
 
     full_grid_mask = np.copy(full_grid)
@@ -1185,7 +1179,6 @@ def open_grid(
         tmax = 999999
 
         for i in range(int(max_iter * 2)):
-            st = time.time()
             add1 = upscale1 * ((-1) ** i)
             add2 = upscale2 * ((-1) ** i)
             add3 = upscale3 * ((-1) ** i)
@@ -1510,7 +1503,6 @@ def open_grid_nspin2(
         tmax = [999999, 999999]
 
         for i in range(int(max_iter * 2)):
-            st = time.time()
             add1 = upscale1 * ((-1) ** i)
             add2 = upscale2 * ((-1) ** i)
             add3 = upscale3 * ((-1) ** i)
@@ -1811,7 +1803,6 @@ def symmetrize(
 
     for j in range(new_k_ind.shape[0]):
         isym = si_per_k[j]
-        oki = orig_k_ind[j]
         nki = new_k_ind[j]
 
         # if symop is identity
@@ -1874,7 +1865,6 @@ def symmetrize_grid(
     partial_grid,
     npool,
 ):
-    max_iter = 1
     tmax = []
     Hksp_d = np.zeros((partial_grid.shape[0], Hksp.shape[1], Hksp.shape[2]), dtype=complex)
 

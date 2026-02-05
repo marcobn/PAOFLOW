@@ -443,9 +443,6 @@ def parse_qe_atomic_proj(data_controller, fname):
     root = tree.getroot()
     qe_version = attr['qe_version']
 
-    Ry2eV = 13.60569193
-    Efermi = attr['Efermi']
-
     elem = root.find('HEADER')
     if qe_version > 6.5:
         header = elem.attrib
@@ -473,7 +470,6 @@ def parse_qe_atomic_proj(data_controller, fname):
                 ik = ispin * nkpnts + i
                 for j, proj in enumerate(ewfc[ik].findall('ATOMIC_WFC')):
                     ind = int(proj.attrib['index']) - 1
-                    spin = int(proj.attrib['spin']) - 1
                     text = [float(v) for v in proj.text.split()]
                     for k in range(len(text) // 2):
                         k2 = 2 * k

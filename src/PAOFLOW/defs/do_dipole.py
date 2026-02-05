@@ -51,9 +51,7 @@ def calc_dipole(arry, attr, ik, ispin, b_vector):
         # xk = np.frombuffer(record[1:7], np.float64)
         # ispin = record[7]
         # gamma_only = (record[8] != 0)
-        scalef = np.frombuffer(record[9:], np.float64)[0]
-
-        ngw, igwx, npol, nbnds = f.read_ints(np.int32)
+        _, igwx, _, nbnds = f.read_ints(np.int32)
         f.read_reals(np.float64).reshape(3, 3, order='F')
         mill = f.read_ints(np.int32).reshape(3, igwx, order='F')
         mill = b_vector.T @ mill + np.full((igwx, 3), arry['kpnts'][ik]).T
@@ -81,7 +79,7 @@ def calc_dipole_internal(data_controller, ik, ispin):
     arry, attr = data_controller.data_dicts()
     basis = arry['basis']
     gkspace = calc_gkspace(data_controller, ik, gamma_only=False)
-    xk, igwx, mill, bg, _ = [gkspace[s] for s in ('xk', 'igwx', 'mill', 'bg', 'gamma_only')]
+    _, igwx, mill, _, _ = [gkspace[s] for s in ('xk', 'igwx', 'mill', 'bg', 'gamma_only')]
     atwfcgk = calc_atwfc_k(basis, gkspace)
     oatwfcgk = ortho_atwfc_k(atwfcgk)  # these are the atomic orbitals on the G vector grid
 

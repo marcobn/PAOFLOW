@@ -27,7 +27,7 @@ def bands_calc(data_controller):
     arrays, attributes = data_controller.data_dicts()
 
     npool = attributes['npool']
-    nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
+    nawf, _, _, _, _, nspin = arrays['HRs'].shape
 
     kq_aux = scatter_full(arrays['kq'].T, npool).T
 
@@ -59,12 +59,12 @@ def bands_calc(data_controller):
                     check_finite=True,
                 )
 
-    Hks_aux = Sks_aux = None
+    Hks_aux = None
     return E_kp_aux, v_kp_aux
 
 
 def band_loop_H(data_controller, kq_aux):
-    arrays, attributes = data_controller.data_dicts()
+    arrays, _ = data_controller.data_dicts()
 
     nksize = kq_aux.shape[1]
     nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
@@ -100,9 +100,7 @@ def do_bands(data_controller):
         # Compute bands on a selected path in the BZ
         # --------------------------------------------
 
-        alat = attributes['alat']
-        nawf, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
-        nktot = nk1 * nk2 * nk3
+        _, _, nk1, nk2, nk3, nspin = arrays['HRs'].shape
 
         # Define real space lattice vectors
         get_R_grid_fft(data_controller, nk1, nk2, nk3)

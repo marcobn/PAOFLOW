@@ -33,8 +33,6 @@ def do_dielectric_tensor(data_controller, ene, from_wfc):
 
     arrays, attributes = data_controller.data_dicts()
     d_tensor = arrays['d_tensor']
-    esize = ene.size
-
     nspin = attributes['nspin']
 
     if from_wfc == None:

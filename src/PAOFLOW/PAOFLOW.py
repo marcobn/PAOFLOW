@@ -1577,12 +1577,10 @@ class PAOFLOW:
         """
         from .defs.do_effective_mass import do_effective_mass
 
-        arrays, attr = self.data_controller.data_dicts()
-
-        ene = np.linspace(emin, emax, ne)
+        _, attr = self.data_controller.data_dicts()
 
         try:
-            do_effective_mass(self.data_controller, ene)
+            do_effective_mass(self.data_controller)
 
         except Exception as e:
             self.report_exception('effective_mass')

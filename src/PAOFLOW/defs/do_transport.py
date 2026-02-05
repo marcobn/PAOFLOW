@@ -30,9 +30,8 @@ def do_transport(
     arrays, attr = data_controller.data_dicts()
 
     esize = ene.size
-    snktot = arrays['E_k'].shape[0]
     siemen_conv, temp_conv, hall_SI = 6.9884, 11604.52500617, 9.248931724005307e-13
-    nspin, t_tensor = attr['nspin'], arrays['t_tensor']
+    nspin = attr['nspin']
     spin_mult = 1.0 if nspin == 2 or attr['dftSO'] else 2.0
 
     for ispin in range(nspin):
@@ -138,7 +137,7 @@ def do_transport(
                                 / 3
                             )
 
-                        except Exception as e:
+                        except Exception:
                             from .report_exception import report_exception
 
                             print('check t_tensor components - matrix cannot be singular')
@@ -161,7 +160,7 @@ def do_transport(
                 for n in range(esize):
                     try:
                         S[:, :, n] = -1.0 * npl.inv(L0[:, :, n]) @ L1[:, :, n]
-                    except Exception as e:
+                    except Exception:
                         from .report_exception import report_exception
 
                         print('check t_tensor components - matrix cannot be singular')

@@ -29,9 +29,6 @@ def wave_function_site_projection(data_controller):
     naw, v_k = arry['naw'], arry['v_k']
     bands, k_index = arry['bands_proj'], attr['k_proj']
 
-    # sites to project the wave function
-    site = np.copy(tau[:, 0])
-
     do_spin_orbit = attr['do_spin_orbit']
     nawf, dim = attr['nawf'], attr['dimension']
 

@@ -33,8 +33,6 @@ def struct_from_outputfile_QE(fname: str):
         lines = f.readlines()
 
         eL = 0
-        nL = len(lines)
-
         try:
             struct['species'] = []
             celldm = np.empty(6, dtype=float)
@@ -172,7 +170,6 @@ def struct_from_inputfile_QE(fname: str) -> dict:
       (dict): Structure dictionary
     """
     from os.path import isfile
-    import numpy as np
     import re
 
     if not isfile(fname):
@@ -182,23 +179,11 @@ def struct_from_inputfile_QE(fname: str) -> dict:
     with open(fname, 'r') as f:
         fstr = f.read()
 
-    # Datatype format helpers for QE input
-    nocomma = lambda s: s.replace(',', '')
-    qebool = lambda s: True if s.split('.')[1][0].lower() == 't' else False
-    qenum = lambda s: s.split('=')[1].replace('d', 'e')
-    qeint = lambda s: int(qenum(s))
-    qefloat = lambda s: float(qenum(s))
-
-    def inquote(s):
-        v = '"' if '"' in s else "'"
-        return s.split(v)[1]
-
     # Process blocks
     cards = {}
     blocks = {}
     natom = ntype = 0
     pattern = re.compile('&(.*?)/@')
-    celldm = np.zeros(6, dtype=float)
     comment = lambda v: v != '' and v[0] != '!'
     matches = pattern.findall(fstr.replace(' ', '').replace('\n', '@ '))
     for match in matches:
@@ -229,7 +214,6 @@ def struct_from_inputfile_QE(fname: str) -> dict:
 
         match = None
         block = block_args.pop(0).lower()
-        mf = filter(comment, block_args)
 
         blocks[block] = {}
         for s in block_args:

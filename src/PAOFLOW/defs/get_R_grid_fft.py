@@ -22,7 +22,6 @@ def get_R_grid_fft(data_controller, nr1, nr2, nr3):
     import numpy as np
 
     arrays = data_controller.data_arrays
-    attributes = data_controller.data_attributes
 
     nrtot = nr1 * nr2 * nr3
 

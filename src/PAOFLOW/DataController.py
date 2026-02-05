@@ -82,7 +82,7 @@ class DataController:
         self.report_exception = self.error_handler.report_exception
 
         if not restart and self.rank == 0:
-            self.data_arrays = arrays = {}
+            self.data_arrays = {}
             self.data_attributes = attr = {}
 
             # Set or update attributes
@@ -379,7 +379,7 @@ class DataController:
             from .defs.write2bxsf4skeaf import write2bxsf4skeaf
 
             write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
-            write2bxsf4skeaf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
+            write2bxsf4skeaf(self, bands, nbnd, indices)
 
     def write_bands(self, fname, bands):
         """
@@ -601,7 +601,6 @@ class DataController:
                     for i in range(nk1):
                         for j in range(nk2):
                             for k in range(nk3):
-                                n = k + j * nk3 + i * nk2 * nk3
                                 Rx = float(i) / float(nk1)
                                 Ry = float(j) / float(nk2)
                                 Rz = float(k) / float(nk3)

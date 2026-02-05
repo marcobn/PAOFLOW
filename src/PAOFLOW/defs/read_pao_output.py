@@ -14,7 +14,6 @@ def read_band_path_PAO(fname):
             npnts.append(int(ls[1]))
             ls = f.readline().split()
 
-    kcnt = 0
     ftags = []
     findex = [0]
     for i in range(len(tags) - 1):

@@ -33,10 +33,7 @@ lint.ignore = [
     "E722", # do not use bare except, specify exception instead
     "E731", # do not assign a lambda expression, use a def
     "E741", # ambiguous variable name 'l' (lowercase letter el)
-    "F405", # name may be undefined, or defined from star imports
     "E402", # module level import not at top of file
-
-    "F841", # local variable name ... is assigned to but never used
 ]
 
 [tool.ruff.format]

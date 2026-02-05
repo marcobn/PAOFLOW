@@ -18,7 +18,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 
-def do_effective_mass(data_controller, ene):
+def do_effective_mass(data_controller):
     from mpi4py import MPI
     import numpy as np
     from os.path import join
@@ -30,25 +30,10 @@ def do_effective_mass(data_controller, ene):
 
     ary, attr = data_controller.data_dicts()
 
-    omega = attr['omega']
     bnd = attr['bnd']
     nspin = attr['nspin']
-    spin_mult = 1.0 if nspin == 2 or attr['dftSO'] else 2.0
     E_k = ary['E_k']
     d2Ed2k = ary['d2Ed2k']
-    kq_wght = ary['kq_wght']
-    me = 9.1093837015e-31
-    eminBT = np.amin(ene)
-    emaxBT = np.amax(ene)
-
-    en_buff = 1.0
-
-    # only count the states from emin-en_buff emin+en_buff
-    E_k_mask = np.where(
-        np.logical_and(E_k[:, :bnd, :] >= (eminBT - en_buff), E_k[:, :bnd, :] <= (emaxBT + en_buff))
-    )
-    E_k_range = np.ascontiguousarray(E_k[E_k_mask[0], E_k_mask[1], E_k_mask[2]])
-    d2Ed2k_range = np.ascontiguousarray(d2Ed2k[:, E_k_mask[0], E_k_mask[1], E_k_mask[2]])
 
     write_masses = True
     if write_masses:

@@ -39,7 +39,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
     fLloop = lambda spol: L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, spol, ispin)
 
     # Quick call function for Zeros on rank Zero
-    zoz = lambda r: (np.zeros((3, 3, esize), dtype=float) if r == 0 else None)
+    zoz = lambda r: np.zeros((3, 3, esize), dtype=float) if r == 0 else None
 
     L0 = zoz(rank)
     L0aux = fLloop(0)
@@ -80,7 +80,7 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
     # Quick call function for L_loop (None is smearing type)
 
     # Quick call function for Zeros on rank Zero
-    zoz = lambda r: (np.zeros((3, 3, 3, esize), dtype=float) if r == 0 else None)
+    zoz = lambda r: np.zeros((3, 3, 3, esize), dtype=float) if r == 0 else None
 
     L0_hall = zoz(rank)
     L0_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 0, ispin)
@@ -213,8 +213,6 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
     esize = ene.size
 
     snktot = arrays['E_k'].shape[0]
-    bohr2m = 5.29177e-11
-    ev2J = 1.60218e-19
     bnd = attributes['bnd']
     nspin = attributes['nspin']
     kq_wght = 1.0 / attributes['nkpnts']

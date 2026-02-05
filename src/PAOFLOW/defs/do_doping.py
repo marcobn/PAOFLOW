@@ -132,7 +132,7 @@ def solve_for_mu(
 
 def do_doping(data_controller, temps, ene, fname):
     arry, attr = data_controller.data_dicts()
-    temp_conv, omega_conv = 11604.52500617, 1.481847093e-25
+    omega_conv = 1.481847093e-25
 
     if attr['smearing'] is None:
         dos = arry['dos']
@@ -142,19 +142,11 @@ def do_doping(data_controller, temps, ene, fname):
     doping = attr['doping_conc']
     nelec, omega = attr['nelec'], attr['omega'] * omega_conv
 
-    margin = 9.0 * temps.max()
-    mumin = ene.min() + margin
-    mumax = ene.max() - margin
     nT = len(temps)
     mu = np.empty(nT)
-    dos_int = np.empty(nT)
-    msize = mu.size
-    Nc = np.empty(nT)
     N = nelec - doping * omega
 
     for iT, temp in enumerate(temps):
-        itemp = temp / temp_conv
-
         if rank == 0:
             mu[iT] = solve_for_mu(data_controller, ene, dos, N, temp, refine=True, try_center=True)
 

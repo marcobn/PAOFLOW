@@ -18,18 +18,15 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 
-def write2bxsf4skeaf(data_controller, fname, bands, nbnd, indices, fermi_up, fermi_dw):
+def write2bxsf4skeaf(data_controller, bands, nbnd, indices):
     """
     Writes a bxsf File compatible with skeaf to 'opath' (outputdir)
 
     Arguments:
         data_controller (DataController): The current PAOFLOW DataController
-        fname (str): File name
         bands (ndarray): Array with data to write
         nbnd (int): Number of columns of band-like data values to write
         indices (list): A list of included band indices, in ascending order
-        fermi_up (float): Highest acceptable energy
-        fermi_dw (float): Lowest acceptable energy
 
     Returns:
         None
@@ -37,7 +34,6 @@ def write2bxsf4skeaf(data_controller, fname, bands, nbnd, indices, fermi_up, fer
     import numpy as np
     from os.path import join
 
-    pi = np.pi
     arrays, attributes = data_controller.data_dicts()
 
     x0 = np.zeros(3, dtype=float)

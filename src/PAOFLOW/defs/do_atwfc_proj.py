@@ -68,7 +68,7 @@ def assign_jm(basis):
     ib = 0
     while ib < len(basis):
         b = basis[ib]
-        l, m = b['l'], b['m']
+        l = b['l']
 
         if l == 0:
             for c, jm in enumerate((0, 1)):

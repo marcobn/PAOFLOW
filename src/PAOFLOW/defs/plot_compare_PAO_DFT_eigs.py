@@ -36,7 +36,6 @@ def plot_compare_PAO_DFT_eigs(Hks, Sks, my_eigsmat, read_S):
             eigval, _ = npl.eigh(Hks[:, :, ik, ispin], UPLO='U')
         E_k[:, ik, ispin] = np.sort(np.real(eigval))
 
-    fig = plt.figure
     nbnds_dft, _, _ = my_eigsmat.shape
     for i in range(nbnds_dft):
         # print("{0:d}".format(i))

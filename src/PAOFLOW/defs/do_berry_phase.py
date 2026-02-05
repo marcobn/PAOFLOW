@@ -56,7 +56,7 @@ def do_berry_phase(self):
         if not attr['berry_eigvals']:
             # Write 'berry_phase.dat'
             with open(os.path.join(attr['opath'], fname + '.dat'), 'w') as f:
-                f.write(f'1D Berry phase (mod pi): phi = {phase/np.pi: 2.6f} \n')
+                f.write(f'1D Berry phase (mod pi): phi = {phase / np.pi: 2.6f} \n')
         else:
             self.data_controller.write_bands(fname, phase)
 
@@ -175,29 +175,28 @@ def do_berry_phase(self):
 
         with open(os.path.join(attr['opath'], fname + '.dat'), 'w') as f:
             f.write(
-                f'# xlim: ({kpts[0,0,0]},{kpts[-1,0,0]}); ylim: ({kpts[0,0,1]},{kpts[0,-1,1]})\n'
+                f'# xlim: ({kpts[0, 0, 0]},{kpts[-1, 0, 0]}); ylim: ({kpts[0, 0, 1]},{kpts[0, -1, 1]})\n'
             )
-            f.write(f'# phases with shape: ({nk1-1},{nk2-1})\n')
+            f.write(f'# phases with shape: ({nk1 - 1},{nk2 - 1})\n')
             f.write('# kx,ky are mesh centers\n')
             f.write('# kx\tky\tphi\n')
             for jk in range(nk2 - 1):
                 for ik in range(nk1 - 1):
                     f.write(
-                        f'{kgrid_centers[ik,jk][0]: 2.12f}\t{kgrid_centers[ik,jk][1]: 2.12f}\t{phases[ik,jk]: 2.12f}\n'
+                        f'{kgrid_centers[ik, jk][0]: 2.12f}\t{kgrid_centers[ik, jk][1]: 2.12f}\t{phases[ik, jk]: 2.12f}\n'
                     )
 
         with open(os.path.join(attr['opath'], fname + '_kgrid_corners.dat'), 'w') as f:
             f.write('# kx\tky\n')
             for jk in range(nk2):
                 for ik in range(nk1):
-                    f.write(f'{kpts[ik,jk][0]: 2.12f}\t{kpts[ik,jk][1]: 2.12f}\n')
+                    f.write(f'{kpts[ik, jk][0]: 2.12f}\t{kpts[ik, jk][1]: 2.12f}\n')
 
 
 def do_phase(data_controller):
     arry, attr = data_controller.data_dicts()
 
     v_kp = arry['berry_v_k']
-    E_kp = arry['berry_E_k']
 
     nkpts = v_kp.shape[0]
 
@@ -209,7 +208,6 @@ def do_phase(data_controller):
     occupied = attr['berry_occupied']
 
     alat = attr['alat'] / ANGSTROM_AU
-    a_vectors = arry['a_vectors'] * alat
     b_vectors = arry['b_vectors'] * (1 / alat)
 
     tau = arry['tau']
@@ -248,8 +246,8 @@ def do_phase(data_controller):
     for ik in range(nkpts - 1):
         jk = ik + 1
 
-        left_eig, left_states = E_kp[ik, :, 0], v_kp[ik, :, :, 0]
-        right_eig, right_states = E_kp[jk, :, 0], v_kp[jk, :, :, 0]
+        left_states = v_kp[ik, :, :, 0]
+        right_states = v_kp[jk, :, :, 0]
 
         if occupied or sub is not None:
             left_states_idx = occ_idx
@@ -278,8 +276,8 @@ def do_phase(data_controller):
         ik = nkpts - 1
         jk = 0
 
-        left_eig, left_states = E_kp[ik, :, 0], v_kp[ik, :, :, 0]
-        right_eig, right_states = E_kp[jk, :, 0], v_kp[jk, :, :, 0]
+        left_states = v_kp[ik, :, :, 0]
+        right_states = v_kp[jk, :, :, 0]
 
         if method == 'zak':
             axis = contour[:, 1] - contour[:, 0]
@@ -312,7 +310,7 @@ def do_phase(data_controller):
 
         ovr = np.dot(left_states.conj().T, right_states)
 
-        Z_ovr, sig_ovr, W_dag_ovr = la.svd(ovr)
+        Z_ovr, _, W_dag_ovr = la.svd(ovr)
         ovr = np.matmul(Z_ovr, W_dag_ovr)
 
         prd = np.dot(prd, ovr)
@@ -324,7 +322,7 @@ def do_phase(data_controller):
         return ret
 
     else:
-        evals, evecs = la.eig(prd)
+        evals, _ = la.eig(prd)
         ret = -1.0 * np.angle(evals)
         ret = np.sort(ret)
 
@@ -337,7 +335,7 @@ def bands_calc(data_controller):
     arry, attr = data_controller.data_dicts()
 
     npool = attr['npool']
-    nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
+    nawf, _, _, _, _, nspin = arry['HRs'].shape
 
     kq_aux = scatter_full(arry['berry_kq'].T, npool).T
 
@@ -359,12 +357,12 @@ def bands_calc(data_controller):
 
     arry['berry_Hks'] = Hks_aux
 
-    Hks_aux = Sks_aux = None
+    Hks_aux = None
     return E_kp_aux, v_kp_aux
 
 
 def band_loop_H(data_controller, kq_aux):
-    arry, attr = data_controller.data_dicts()
+    arry, _ = data_controller.data_dicts()
 
     nksize = kq_aux.shape[1]
     nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
@@ -382,11 +380,8 @@ def band_loop_H(data_controller, kq_aux):
 
 
 def do_berry_bands(data_controller):
-    from mpi4py import MPI
     from .constants import ANGSTROM_AU
     from .get_R_grid_fft import get_R_grid_fft
-
-    rank = MPI.COMM_WORLD.Get_rank()
 
     arry, attr = data_controller.data_dicts()
 
@@ -397,9 +392,7 @@ def do_berry_bands(data_controller):
     # Compute bands on a selected path in the BZ
     # --------------------------------------------
 
-    alat = attr['alat']
-    nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
-    nktot = nk1 * nk2 * nk3
+    _, _, nk1, nk2, nk3, _ = arry['HRs'].shape
 
     # Define real space lattice vectors
     get_R_grid_fft(data_controller, nk1, nk2, nk3)

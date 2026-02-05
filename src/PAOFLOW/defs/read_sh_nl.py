@@ -115,12 +115,12 @@ def read_pseudopotential(fpp):
             try:
                 for i in elem.findall('PP_PSWFC/'):
                     sh.append(int(i.attrib['l']))
-            except Exception as e:
+            except Exception:
                 pass
 
         sh = np.array(sh)
 
-    except Exception as e:
+    except Exception:
         with open(fpp) as ifo:
             ifs = ifo.read()
         res = re.findall('(.*)\s*Wavefunction', ifs)[1:]

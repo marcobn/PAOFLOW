@@ -178,7 +178,6 @@ def doubling_HRs(data_controller):
         doubling_attr_arry(data_controller)
 
     # This construction is doubling along the Z direction nz times
-    delete_index = 0
     for dz in range(nz):
         HR_double = np.zeros(
             (2 * attr['nawf'], 2 * attr['nawf'], nk1, nk2, nk3, nspin), dtype=complex

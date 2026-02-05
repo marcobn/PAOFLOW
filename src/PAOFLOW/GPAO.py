@@ -368,7 +368,6 @@ class GPAO:
 
             es = None
             data = []
-            t_ele = []
             labels = []
             if not isinstance(cols, list):
                 cols = [cols] * len(fname)

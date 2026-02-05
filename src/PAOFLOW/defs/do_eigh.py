@@ -54,9 +54,6 @@ def get_degeneracies(E_k, bnd):
 
 def do_pao_eigh(data_controller):
     from numpy.linalg import eigh
-    from mpi4py import MPI
-
-    rank = MPI.COMM_WORLD.Get_rank()
 
     arrays, attributes = data_controller.data_dicts()
 

@@ -252,7 +252,6 @@ def coulomb_repulsion(
 
     i = 0
     bsum = 0
-    nl = almn[0]
     for i in range(almn[0] + blmn[0] + clmn[0] + dlmn[0] + 1):
         for j in range(almn[1] + blmn[1] + clmn[1] + dlmn[1] + 1):
             for k in range(almn[2] + blmn[2] + clmn[2] + dlmn[2] + 1):

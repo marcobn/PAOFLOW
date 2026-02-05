@@ -37,7 +37,7 @@ def do_fermisurf(data_controller):
         if attr['verbose']:
             print('Writing bxsf file for Fermi Surface')
 
-        nawf, nktot = attr['nawf'], attr['nkpnts']
+        nawf = attr['nawf']
         nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
         fermi_up, fermi_dw = attr['fermi_up'], attr['fermi_dw']
 

@@ -79,8 +79,8 @@ def do_spin_orbit_H(data_controller):
 
         uui = offset[n]
         uuj = uui + norb
-        duj = udi = ddi = uui + nawf
-        dui = udj = ddj = uuj + nawf
+        udi = ddi = uui + nawf
+        udj = ddj = uuj + nawf
 
         # Up-Up
         HR_double[uui:uuj, uui:uuj, 0, 0, 0, 0] += (

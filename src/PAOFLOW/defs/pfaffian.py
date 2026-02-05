@@ -114,7 +114,6 @@ def skew_tridiagonalize(A, overwrite_a=False, calc_q=True):
     # Check if it's skew-symmetric
     assert abs((A + A.T).max()) < 1e-14
 
-    n = A.shape[0]
     A = np.asarray(A)  # the slice views work only properly for arrays
 
     # Check if we have a complex data type

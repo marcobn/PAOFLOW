@@ -28,8 +28,6 @@ def do_adaptive_smearing(data_controller, smearing, afac):
     # adaptive smearing as in Yates et al. Phys. Rev. B 75, 195121 (2007).
     # ----------------------
 
-    a_vectors = arrays['a_vectors']
-
     nawf = attributes['nawf']
     nspin = attributes['nspin']
     nkpnts = attributes['nkpnts']

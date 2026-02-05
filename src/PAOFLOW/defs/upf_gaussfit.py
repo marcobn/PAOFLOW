@@ -250,16 +250,15 @@ def fit(nzeta, label, l, r, rab, wfc, threshold, least_squares=True):
 # ======================================================================
 # Construct basis string for orbitals and write it to file
 # ======================================================================
-def build_basis_dict(fname, labels, ls, coefficients, exponents):
+def build_basis_dict(labels, ls, coefficients, exponents):
     basis = []
 
-    for il, label in enumerate(labels):
+    for il, _ in enumerate(labels):
         l = ls[il]
         expon = exponents[il]
         coeffs = coefficients[il]
 
         lbasis = []
-        nzeta = len(coeffs)
 
         if l == 0:
             ibasis = []
@@ -385,7 +384,6 @@ def write_basis_file(fname, atom_no, labels, ls, coefficients, exponents):
         expon = exponents[il]
         coeffs = coefficients[il]
 
-        nzeta = len(coeffs)
         rstr += f'# label= {label} l= {l}\n[[\n'
 
         fcon = '],  [\n'
@@ -598,7 +596,6 @@ def read_upf(upf_version, root):
 
 def gaussian_fit(xml_file, threshold=0.5):
     from xml.etree import ElementTree as ET
-    from os.path import dirname, join
 
     atno = -1
     nzeta = 2
@@ -636,9 +633,7 @@ def gaussian_fit(xml_file, threshold=0.5):
             continue
 
         optimized = True
-        base_dir = dirname(xml_file)
-        fname = join(base_dir, f'{ele}_basis.py')
-        basis = build_basis_dict(fname, labels, ls, coeffs, exponents)
+        basis = build_basis_dict(labels, ls, coeffs, exponents)
 
     if nzeta >= 6:
         raise Exception('ERROR: Could not optimize the wfcs')

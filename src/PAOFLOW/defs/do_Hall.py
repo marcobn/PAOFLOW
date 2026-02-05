@@ -326,7 +326,6 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
 
     Ef = 0.0
     eps = 1.0e-16
-    delta = 0.05
 
     if attr['smearing'] == None:
         fn = 1.0 / (np.exp(arry['E_k'][:, :, ispin] / attr['temp']) + 1)
@@ -361,7 +360,6 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
                 f_nm[:, :, :] / (E_diff_nm[:, :, :] - (ene[e] + 1.0j * arry['delta']) ** 2 + eps)
             )
 
-    F_nm = None
     E_diff_nm = None
 
     return np.nan_to_num(sigxy)
@@ -371,7 +369,6 @@ def do_spin_current(data_controller, spol, ipol):
     arry, attr = data_controller.data_dicts()
 
     Sj = arry['Sj'][spol]
-    bnd = attr['bnd']
     snktot, _, nawf, nawf, nspin = arry['dHksp'].shape
 
     jdHksp = np.empty((snktot, nawf, nawf, nspin), dtype=complex)

@@ -45,8 +45,6 @@ def do_d2Hd2k_ij(Hksp, Rfft, alat, npool, v_kp, bnd, degen):
     M_ij = np.zeros((6, v_kp.shape[0], bnd, v_kp.shape[3]), dtype=float, order='C')
     ij_ind = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
 
-    nktot = nk1 * nk2 * nk3
-
     comm.Barrier()
     ########################################
     ### real space grid replaces k space ###
@@ -118,6 +116,6 @@ def do_d2Hd2k_ij(Hksp, Rfft, alat, npool, v_kp, bnd, degen):
 
         comm.Barrier()
 
-    Hksp_aux = d2Hksp = None
+    d2Hksp = None
 
     return M_ij, dvec_list
