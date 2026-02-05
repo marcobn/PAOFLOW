@@ -735,20 +735,6 @@ class DataController:
             self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
         self.comm.Bcast(np.ascontiguousarray(self.data_arrays[key]), root=root)
 
-    def broadcast_attribute(self, key, root=0):
-        """
-        Broadcast attribute from 'data_attributes' with 'key' from 'root' to all other ranks
-
-        Arguments:
-            key (str): The key for the attribute to broadcast (key must exist in dictionary 'data_attributes')
-            root (int): The rank which is the source of the broadcasted attribut
-
-        Returns:
-            None
-        """
-        attr = self.data_attributes[key] if self.rank == root else None
-        self.data_attributes[key] = self.comm.bcast(attr, root=root)
-
     ### This section is under construction
     ### Only 'broadcast_single_array' should be used
     def broadcast_data_attributes(self):

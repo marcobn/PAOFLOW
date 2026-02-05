@@ -39,7 +39,6 @@ lint.ignore = [
     "F841", # local variable name ... is assigned to but never used
     "F403", # '...' may be undefined, or defined from star imports
     "F402", # module level import not at top of file
-    "F811", # redefinition of unused name from line ...
 ]
 
 [tool.ruff.format]

@@ -24,7 +24,6 @@ from mpi4py import MPI
 import scipy.optimize as OP
 from numpy import linalg as LAN
 from .communication import gather_full, scatter_full
-from numpy import linalg as LAN
 from .constants import BOHR_RADIUS_ANGS
 
 # initialize parallel execution
