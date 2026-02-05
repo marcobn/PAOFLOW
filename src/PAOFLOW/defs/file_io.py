@@ -110,7 +110,7 @@ def read_relaxed_coordinates_QE(fname: str):
 
             def read_apos(sind):
                 apos = []
-                while lines[sind] != '\n' and not 'End final coordinates' in lines[sind]:
+                while lines[sind] != '\n' and 'End final coordinates' not in lines[sind]:
                     apos.append([float(v) for v in lines[sind].split()[1:4]])
                     sind += 1
                 return sind, apos

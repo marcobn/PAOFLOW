@@ -48,7 +48,6 @@ lint.ignore = [
     "E701", # multiple statements on one line (colon)
     "F901", # raise NotImplementedError
     "E702", # multiple statements on one line (semicolon)
-    "E713", # test for membership should be 'in' or 'not in'
 ]
 
 [tool.ruff.format]
