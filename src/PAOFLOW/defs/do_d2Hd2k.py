@@ -21,21 +21,14 @@ import numpy as np
 
 from mpi4py import MPI
 
-# from .load_balancing import *
-from .get_R_grid_fft import *
-from .communication import *
-from .constants import *
-from .perturb_split import *
+from .communication import gather_scatter
+from .perturb_split import perturb_split
 
 # initialize parallel execution
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-try:
-    from cuda_fft import *
-except:
-    pass
 from scipy import fftpack as FFT
 
 

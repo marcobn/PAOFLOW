@@ -25,8 +25,7 @@ rank = comm.Get_rank()
 
 from .smearing import intgaussian, gaussian
 from .smearing import intmetpax, metpax
-from .do_atwfc_proj import *
-from .do_dipole import *
+from .do_dipole import calc_dipole, calc_dipole_internal
 
 
 def do_dielectric_tensor(data_controller, ene, from_wfc):

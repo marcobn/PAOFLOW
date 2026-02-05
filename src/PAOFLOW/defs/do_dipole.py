@@ -23,7 +23,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-from .do_atwfc_proj import *
+from .do_atwfc_proj import calc_atwfc_k, ortho_atwfc_k, calc_gkspace
 
 
 # Function to calculate dipole matrix element from coefficients of wavefunction,

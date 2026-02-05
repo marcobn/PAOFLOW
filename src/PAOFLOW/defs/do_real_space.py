@@ -20,7 +20,7 @@
 import numpy as np
 from mpi4py import MPI
 
-from .do_atwfc_proj import *
+from .do_atwfc_proj import calc_atwfc_k, ortho_atwfc_k, fft_allwfc_G2R, calc_gkspace
 from .write2xsf import write2xsf
 from .communication import load_balancing
 
