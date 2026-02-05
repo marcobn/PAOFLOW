@@ -780,9 +780,9 @@ class DataController:
 
         if self.rank == 0:
             for i in range(1, self.size):
-                size1 += comm.recv(source=i)
+                size1 += self.comm.recv(source=i)
         else:
-            comm.send(arr.shape[0], dest=0)
+            self.comm.send(arr.shape[0], dest=0)
 
         if self.rank == 0:
             if len(arr.shape) > 1:

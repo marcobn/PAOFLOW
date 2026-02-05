@@ -278,18 +278,6 @@ def plot_berry_under_bands(
 
     plt.show()
     quit()
-    ax_d.plot(dos, es, color=col)
-    if x_lim is not None:
-        ax_d.set_xlim(*x_lim)
-    else:
-        ax_d.set_xlim(0, ax_d.get_xlim()[1])
-    if y_lim is not None:
-        ax_d.set_ylim(*y_lim)
-    if not dos_ticks:
-        ax_d.yaxis.set_visible(False)
-        plt.tight_layout()
-
-    plt.show()
 
 
 def plot_tensor(

@@ -332,7 +332,7 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
         fn = 1.0 / (np.exp(arry['E_k'][:, :, ispin] / attr['temp']) + 1)
     elif attr['smearing'] == 'gauss':
         fn = intgaussian(arry['E_k'][:, :, ispin], Ef, arry['deltakp'][:, :, ispin])
-    elif smearing == 'm-p':
+    elif attr['smearing'] == 'm-p':
         fn = intmetpax(arry['E_k'][:, :, ispin], Ef, arry['deltakp'][:, :, ispin])
 
     # Collapsing the sum over k points

@@ -20,11 +20,12 @@
 
 def struct_from_outputfile_QE(fname: str):
     """ """
+    import os
     from os.path import isfile, join
     import numpy as np
 
     if not isfile(fname):
-        msg = 'File {} does not exist.'.format(join(getcwd(), fname))
+        msg = 'File {} does not exist.'.format(join(os.getcwd(), fname))
         raise FileNotFoundError(msg)
 
     struct = {'lunit': 'bohr', 'aunit': 'alat'}

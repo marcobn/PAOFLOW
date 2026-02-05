@@ -20,7 +20,7 @@
 # This module is taken from AFLOWpi
 import numpy as np
 import sys
-
+import logging
 
 from mpi4py import MPI
 

@@ -464,7 +464,7 @@ class PAOFLOW:
         #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
 
         if attr['symmetrize'] and attr['acbn0']:
-            if rank == 0:
+            if self.rank == 0:
                 print(
                     'WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true.'
                 )

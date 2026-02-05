@@ -804,4 +804,4 @@ def build_TB_model(data_controller, parameters):
     elif parameters['label'].upper() == 'SLATER_KOSTER':
         Slater_Koster(data_controller, parameters)
     else:
-        print('ERROR: Label "%s" not found in builtin models.' % label)
+        print(f'ERROR: Label "{parameters["label"]}" not found in builtin models.')
