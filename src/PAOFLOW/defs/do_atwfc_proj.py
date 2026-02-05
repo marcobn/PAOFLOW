@@ -99,7 +99,7 @@ def assign_jm(basis):
             ib += 14
 
         else:
-            raise NotImplemented('l > 3 not implemented')
+            raise NotImplementedError('l > 3 not implemented')
 
 
 def build_pswfc_basis_all(data_controller):

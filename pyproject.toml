@@ -46,8 +46,6 @@ lint.ignore = [
     "E703", # statement ends with a semicolon
     "E714", # test for object identity should be 'is' or 'is not'
     "E701", # multiple statements on one line (colon)
-    "F901", # raise NotImplementedError
-    "E702", # multiple statements on one line (semicolon)
 ]
 
 [tool.ruff.format]
