@@ -44,8 +44,6 @@ lint.ignore = [
     "F401", # module imported but unused
     "E401", # multiple imports on one line
     "E703", # statement ends with a semicolon
-    "E714", # test for object identity should be 'is' or 'is not'
-    "E701", # multiple statements on one line (colon)
 ]
 
 [tool.ruff.format]

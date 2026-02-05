@@ -234,7 +234,7 @@ def do_phase(data_controller):
         occ_idx = np.arange(0, attr['nelec'], 1, dtype=int)
         num_occupied = len(occ_idx)
         dim = num_occupied
-    elif not sub is None:
+    elif sub is not None:
         occ_idx = np.copy(sub)
         num_occupied = len(sub)
         dim = len(sub)
@@ -252,7 +252,7 @@ def do_phase(data_controller):
         left_eig, left_states = E_kp[ik, :, 0], v_kp[ik, :, :, 0]
         right_eig, right_states = E_kp[jk, :, 0], v_kp[jk, :, :, 0]
 
-        if occupied or not sub is None:
+        if occupied or sub is not None:
             left_states_idx = occ_idx
             right_states_idx = occ_idx
 
@@ -294,7 +294,7 @@ def do_phase(data_controller):
 
             left_states = right_states * np.exp(-1j * phase)
 
-        if occupied or not sub is None:
+        if occupied or sub is not None:
             left_states_idx = occ_idx
             right_states_idx = occ_idx
 

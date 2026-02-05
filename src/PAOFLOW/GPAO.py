@@ -95,7 +95,7 @@ class GPAO:
         from .defs.read_pao_output import read_site_projected
         import pandas as pd
 
-        if not sym_points is None:
+        if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
 
@@ -126,7 +126,7 @@ class GPAO:
         from .graphics.plot_functions import plot_bands
         from .defs.read_pao_output import read_bands_PAO
 
-        if not sym_points is None:
+        if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
 
@@ -197,7 +197,7 @@ class GPAO:
         from .defs.read_pao_output import read_dos_PAO, read_bands_PAO
         from .graphics.plot_functions import plot_dos_beside_bands
 
-        if not sym_points is None:
+        if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
 
@@ -239,7 +239,7 @@ class GPAO:
         from .graphics.plot_functions import plot_berry_under_bands
         import numpy as np
 
-        if not sym_points is None:
+        if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
 

@@ -16,11 +16,11 @@ def plot_dos(es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=
         ax.plot(dos, es, color=col)
     else:
         ax.plot(es, dos, color=col)
-    if not x_lim is None:
+    if x_lim is not None:
         ax.set_xlim(*x_lim)
     elif vertical:
         ax.set_xlim(0, ax.get_xlim()[1])
-    if not y_lim is None:
+    if y_lim is not None:
         ax.set_ylim(*y_lim)
     elif not vertical:
         ax.set_ylim(0, ax.get_ylim()[1])
@@ -69,11 +69,11 @@ def plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend):
     else:
         for i, d in enumerate(dos):
             ax.plot(es, d, color=cols[i], label=labels[i])
-    if not x_lim is None:
+    if x_lim is not None:
         ax.set_xlim(*x_lim)
     elif vertical:
         ax.set_xlim(0, ax.get_xlim()[1])
-    if not y_lim is None:
+    if y_lim is not None:
         ax.set_ylim(*y_lim)
     elif not vertical:
         ax.set_ylim(0, ax.get_ylim()[1])
@@ -219,11 +219,11 @@ def plot_dos_beside_bands(
     ax_b.set_ylabel(band_label, fontsize=12)
 
     ax_d.plot(dos, es, color=col)
-    if not x_lim is None:
+    if x_lim is not None:
         ax_d.set_xlim(*x_lim)
     else:
         ax_d.set_xlim(0, ax_d.get_xlim()[1])
-    if not y_lim is None:
+    if y_lim is not None:
         ax_d.set_ylim(*y_lim)
     if not dos_ticks:
         ax_d.yaxis.set_visible(False)
@@ -279,11 +279,11 @@ def plot_berry_under_bands(
     plt.show()
     quit()
     ax_d.plot(dos, es, color=col)
-    if not x_lim is None:
+    if x_lim is not None:
         ax_d.set_xlim(*x_lim)
     else:
         ax_d.set_xlim(0, ax_d.get_xlim()[1])
-    if not y_lim is None:
+    if y_lim is not None:
         ax_d.set_ylim(*y_lim)
     if not dos_ticks:
         ax_d.yaxis.set_visible(False)
@@ -325,9 +325,9 @@ def plot_tensor(
             for e in eles:
                 ax.plot(enes, tensors[:, e[0], e[1]], label=lkey(*e))
 
-    if not x_lim is None:
+    if x_lim is not None:
         ax.set_xlim(*x_lim)
-    if not y_lim is None:
+    if y_lim is not None:
         ax.set_ylim(*y_lim)
     elif min_zero:
         ax.set_ylim(0, ax.get_ylim()[1])
@@ -359,9 +359,9 @@ def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, 
     else:
         raise Exception('Dimensions of colors are incorrect. Blame GPAO.py')
 
-    if not x_lim is None:
+    if x_lim is not None:
         ax.set_xlim(*x_lim)
-    if not y_lim is None:
+    if y_lim is not None:
         ax.set_ylim(*y_lim)
 
     ax.set_xlabel(x_lab)
