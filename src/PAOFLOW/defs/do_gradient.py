@@ -23,9 +23,11 @@ def do_gradient(data_controller):
     from scipy import fftpack as FFT
     from .get_R_grid_fft import get_R_grid_fft
     from .communication import scatter_full
-    from .cuda_fft import cuda_ifftn
 
     arry, attr = data_controller.data_dicts()
+
+    if attr['use_cuda']:
+        from .cuda_fft import cuda_ifftn
 
     # ----------------------
     # Compute the gradient of the k-space Hamiltonian
