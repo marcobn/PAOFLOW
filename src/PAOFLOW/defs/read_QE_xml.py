@@ -401,16 +401,22 @@ def parse_qe_atomic_proj ( data_controller, fname ):
 
     if save_overlaps:
       elem = root.find('OVERLAPS')
-      for i,ovp in enumerate(elem.findall('OVPS')):
-        dim = int(ovp.attrib['dim'])
-        ispin = int(ovp.attrib['spin'])-1
-        text = ovp.text.split()
-        for j in range(len(text)//2):
-          j2 = 2*j
-          i1 = j//dim
-          i2 = j%dim
-          v1,v2 = float(text[j2]),float(text[j2+1])
-          overlaps[i1,i2,i] = complex(v1,v2)
+      if elem is None:
+        if rank == 0 and verbose:
+          print("WARNING: save_overlaps=True but <OVERLAPS> not found in atomic_proj.xml. Skipping overlaps.")
+        save_overlaps = False
+        overlaps = None
+      else:
+        for i,ovp in enumerate(elem.findall('OVPS')):
+          dim = int(ovp.attrib['dim'])
+          ispin = int(ovp.attrib['spin'])-1
+          text = ovp.text.split()
+          for j in range(len(text)//2):
+            j2 = 2*j
+            i1 = j//dim
+            i2 = j%dim
+            v1,v2 = float(text[j2]),float(text[j2+1])
+            overlaps[i1,i2,i] = complex(v1,v2)
 
   else:
 

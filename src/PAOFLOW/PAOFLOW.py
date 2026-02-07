@@ -335,7 +335,7 @@ class PAOFLOW:
       if attr['acbn0'] and not attr['save_overlaps']:
         if self.rank == 0:
           print('WARNING: ACBN0 requires wavefunction overlaps. Setting save_overlaps to True.')
-      attr['save_overlaps'] = True
+        attr['save_overlaps'] = True
       parse_qe_atomic_proj(self.data_controller, join(fpath,'atomic_proj.xml'))
     else:
       raise Exception('atomic_proj.xml was not found.\n')
