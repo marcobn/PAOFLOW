@@ -15,36 +15,10 @@ class CompareFailure(Exception):
 
 
 def _load_dat(path: Path) -> np.ndarray:
-    try:
-        data = np.loadtxt(path)
-    except ValueError:
-        rows = []
-        expected_cols = None
-        with path.open('r', encoding='utf-8', errors='ignore') as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-
-                parts = stripped.split()
-                try:
-                    values = [float(token) for token in parts]
-                except ValueError:
-                    continue
-
-                if expected_cols is None:
-                    expected_cols = len(values)
-                if len(values) != expected_cols:
-                    continue
-
-                rows.append(values)
-
-        if not rows:
-            raise ValueError(f'No numeric data rows found in {path}')
-
-        data = np.asarray(rows, dtype=float)
+    data = np.loadtxt(path)
     if data.ndim == 1:
         data = np.atleast_2d(data)
+    # Match your original transpose behavior
     return data.T
 
 
@@ -52,8 +26,14 @@ def compare_dat_dirs(
     outdir: Path,
     refdir: Path,
     *,
-    tolerance: float = 0.01,
+    rtol: float = 1e-2,
+    atol: float = 0.0,
+    ignore_sign: bool = False,
 ) -> None:
+    """
+    Compare all *.dat files in outdir to those in refdir.
+    Raises CompareFailure on mismatch.
+    """
     out_files = sorted(outdir.glob('*.dat'))
     ref_files = sorted(refdir.glob('*.dat'))
 
@@ -76,7 +56,7 @@ def compare_dat_dirs(
             f'  unexpected outputs: {extra}'
         )
 
-    worst = ('', -1.0, -1.0)
+    worst = ('', 0.0)  # (filename, max_abs_diff)
     for outp, refp in zip(out_files, ref_files):
         out = _load_dat(outp)
         ref = _load_dat(refp)
@@ -86,42 +66,34 @@ def compare_dat_dirs(
                 f'Shape mismatch for {outp.name}: out {out.shape} vs ref {ref.shape}'
             )
 
-        n_col = out.shape[0]
-        n_row = out.shape[1]
-        if n_col < 2:
-            raise CompareFailure(f'Not enough columns in {outp.name} for comparison')
+        if ignore_sign:
+            out = np.abs(out)
+            ref = np.abs(ref)
 
-        out_cmp = np.abs(out[1:n_col, :])
-        ref_cmp = np.abs(ref[1:n_col, :])
+        # If you want to ignore the first column like your original script:
+        if out.shape[0] > 1:
+            out_cmp = out[1:, :]
+            ref_cmp = ref[1:, :]
+        else:
+            out_cmp = out
+            ref_cmp = ref
 
-        absolute_error = np.sum(np.abs(out_cmp - ref_cmp), axis=1) / n_row
-        data_range = np.amax(np.amax(out[1:n_col, :], axis=1), axis=0) - np.amin(
-            np.amin(out[1:n_col, :], axis=1), axis=0
-        )
+        diff = np.max(np.abs(out_cmp - ref_cmp))
+        if diff > worst[1]:
+            worst = (outp.name, float(diff))
 
-        relative_error = []
-        valid_data = True
-        for idx in range(n_col - 1):
-            rel_error = absolute_error[idx] / data_range if data_range != 0 else np.nan
-            relative_error.append(rel_error)
-
-            if np.isnan(rel_error) or rel_error > tolerance:
-                valid_data = False
-
-        max_abs = float(np.max(absolute_error)) if absolute_error.size else 0.0
-        max_rel = float(np.max(relative_error)) if relative_error else 0.0
-        if max_rel > worst[2]:
-            worst = (outp.name, max_abs, max_rel)
-
-        if not valid_data:
+        if not np.allclose(out_cmp, ref_cmp, rtol=rtol, atol=atol, equal_nan=False):
+            # Provide a helpful scalar summary
+            abs_err = np.abs(out_cmp - ref_cmp)
+            max_abs = float(np.max(abs_err))
+            mean_abs = float(np.mean(abs_err))
             raise CompareFailure(
                 f'Data mismatch in {outp.name}\n'
                 f'  out: {outp}\n'
                 f'  ref: {refp}\n'
                 f'  max_abs_err: {max_abs:.6e}\n'
-                f'  max_rel_err: {max_rel:.6e}\n'
-                f'  tolerance={tolerance}'
+                f'  mean_abs_err: {mean_abs:.6e}\n'
+                f'  rtol={rtol}, atol={atol}, ignore_sign={ignore_sign}'
             )
 
-    if worst[2] < 0:
-        raise CompareFailure('No comparable data found.')
+    # Optional: you could log worst-case info if desired, but tests should be quiet on pass.

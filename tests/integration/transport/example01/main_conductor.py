@@ -1,15 +1,15 @@
-from mpi4py import MPI
-
 from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.Transport import ConductorRunner
+from mpi4py import MPI
+
 
 comm = MPI.COMM_WORLD
 
 
 def main():
     paoflow = PAOFLOW.PAOFLOW(
-        savedir='al5.save',
-        outputdir='output',
+        savedir='output/qe/al5.save',
+        outputdir='output/paoflow',
         smearing='gauss',
         npool=1,
         verbose=True,

@@ -1,9 +1,7 @@
 import sys
-
-from mpi4py import MPI
-
 from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.Transport import ConductorRunner
+from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 
@@ -14,8 +12,8 @@ def main():
     yaml_file = sys.argv[1] if len(sys.argv) > 1 else 'conductor.yaml'
 
     paoflow = PAOFLOW.PAOFLOW(
-        savedir='alh.save',
-        outputdir='output',
+        savedir='output/qe/alh.save',
+        outputdir='output/paoflow',
         smearing='gauss',
         npool=1,
         verbose=True,
