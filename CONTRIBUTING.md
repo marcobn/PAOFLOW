@@ -8,6 +8,8 @@ This project follows a **Gitflow-inspired** workflow with two long-lived branche
 The goal is simple: keep development work and released work separated so users can
 rely on `master`, while developers can move quickly on `develop`.
 
+
+
 ## Branch roles (invariants)
 
 **`master`**
