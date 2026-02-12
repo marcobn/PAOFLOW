@@ -1,4 +1,4 @@
-# PAOFLOW contribution model (proposed)
+# PAOFLOW contribution model
 
 This project follows a **Gitflow-inspired** workflow with two long-lived branches:
 
