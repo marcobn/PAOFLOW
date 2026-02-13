@@ -99,8 +99,7 @@ def do_build_pao_hamiltonian ( data_controller ):
   if attr['expand_wedge']:
     from .pao_sym import open_grid_wrapper
     open_grid_wrapper(data_controller)
-
-  attr['nkpnts'] = nkpnts = np.prod(ashape[2:5])
+    attr['nkpnts'] = nkpnts = np.prod(ashape[2:5])
 
   # NOTE: Take care of non-orthogonality, if needed
   # Hks from projwfc is orthogonal. If non-orthogonality is required, we have to 
@@ -110,15 +109,15 @@ def do_build_pao_hamiltonian ( data_controller ):
 
   # if rank == 0 and attr['expand_wedge']:
   if rank == 0:
-    from .do_Efermi import E_Fermi
-    arry['Hks'] = np.reshape(arry['Hks'], ashape)
+    # from .do_Efermi import E_Fermi
+    if attr['expand_wedge']:
+      arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
     # Shift the Fermi energy to zero
-    tshape = (ashape[0],ashape[1],nkpnts,ashape[5])
-   # Ef = E_Fermi(arry['Hks'].reshape(tshape), data_controller)
-    Ef = 0
-    dinds = np.diag_indices(attr['nawf'])
-    arry['Hks'][dinds[0],dinds[1]] -= Ef
+    # tshape = (ashape[0],ashape[1],nkpnts,ashape[5]
+    # Ef = E_Fermi(arry['Hks'].reshape(tshape), data_controller)
+    # dinds = np.diag_indices(attr['nawf'])
+    # arry['Hks'][dinds[0],dinds[1]] -= Ef
 
   if attr['acbn0']:
     import sys
@@ -129,8 +128,8 @@ def do_build_pao_hamiltonian ( data_controller ):
       # Important in ACBN0 file writing
       arry['Sks'] = np.transpose(arry['Sks'], (1,0,2))
 
-      tshape = (ashape[0],ashape[1],nkpnts,ashape[5])
-      arry['Hks'] = do_non_ortho(arry['Hks'].reshape(tshape), arry['Sks'])
+      # tshape = (ashape[0],ashape[1],nkpnts,ashape[5])
+      arry['Hks'] = do_non_ortho(arry['Hks'], arry['Sks'])
 
       data_controller.write_Hk_acbn0()
     sys.exit(0)
