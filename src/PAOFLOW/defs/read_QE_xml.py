@@ -416,7 +416,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             i1 = j//dim
             i2 = j%dim
             v1,v2 = float(text[j2]),float(text[j2+1])
-            overlaps[i1,i2,i] = complex(v1,v2)
+            overlaps[i1,i2,ispin] = complex(v1,v2)
 
   else:
 
@@ -445,7 +445,7 @@ def parse_qe_atomic_proj ( data_controller, fname ):
             k0,k1 = k//nbnds,k%nbnds
             k2 = 2*k
             v1,v2 = float(text[k2]),float(text[k2+1])
-            overlaps[k0,k1,i] = complex(v1,v2)
+            overlaps[k0,k1,ispin] = complex(v1,v2)
 
   arrys = [('U',wavefunctions)]
   if save_overlaps:
