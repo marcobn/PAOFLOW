@@ -334,5 +334,5 @@ def create_acbn0_inputfile ( prefix, pthr ):
     f.write(f'paoflow = PAOFLOW.PAOFLOW(savedir=\'{prefix}.save\', save_overlaps=True, acbn0=True)\n')
     f.write('paoflow.read_atomic_proj_QE()\n')
     f.write(f'paoflow.projectability(pthr={pthr})\n')
-    f.write('paoflow.pao_hamiltonian(write_binary=True)\n')
+    f.write('paoflow.pao_hamiltonian(write_binary=True,expand_wedge=False)\n')
     f.write('paoflow.finish_execution()\n')
