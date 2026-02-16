@@ -44,7 +44,7 @@ class Clock:
         Start the timer. Raises an error if already started.
         """
         if self._start_time is not None:
-            raise RuntimeError(f"Clock {self.name} is already running.")
+            raise RuntimeError(f'Clock {self.name} is already running.')
         self._start_time = perf_counter()
         self.call_count += 1
 
@@ -54,7 +54,7 @@ class Clock:
         Raises an error if the timer was never started.
         """
         if self._start_time is None:
-            raise RuntimeError(f"Clock {self.name} was not started.")
+            raise RuntimeError(f'Clock {self.name} was not started.')
         elapsed = perf_counter() - self._start_time
         self.total_time += elapsed
         self._start_time = None
@@ -128,7 +128,7 @@ class TimingManager:
             raise ValueError(f"No clock with name '{name}' was started.")
         self.clocks[name].stop()
 
-    def report(self, header: str = "<global routines>") -> None:
+    def report(self, header: str = '<global routines>') -> None:
         """
         Print a report of all clocked timings.
 
@@ -140,17 +140,17 @@ class TimingManager:
         if rank != 0:
             return
 
-        log_rank0(f"{header:>10}")
+        log_rank0(f'{header:>10}')
         log_rank0(f"{'':13}clock number : {len(self.clocks):5}")
         for clock in self.clocks.values():
             time_s = clock.total_time
             calls = clock.call_count
             avg = clock.avg_time()
             if calls == 1:
-                log_rank0(f"{clock.name:>20} : {time_s:8.2f}s CPU")
+                log_rank0(f'{clock.name:>20} : {time_s:8.2f}s CPU')
             else:
                 log_rank0(
-                    f"{clock.name:>20} : {time_s:8.2f}s CPU ({calls:8d} calls,{avg:8.3f} s avg)"
+                    f'{clock.name:>20} : {time_s:8.2f}s CPU ({calls:8d} calls,{avg:8.3f} s avg)'
                 )
 
     def timing_upto_now(self, name: str, label: str = None) -> None:
@@ -173,7 +173,7 @@ class TimingManager:
         clock = self.clocks[name]
         elapsed = clock.time_upto_now()
         if elapsed > 0.0:
-            log_rank0(f"    {label or name:>20} : {elapsed:8.2f}s")
+            log_rank0(f'    {label or name:>20} : {elapsed:8.2f}s')
 
 
 global_timing = TimingManager()

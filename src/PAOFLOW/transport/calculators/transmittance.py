@@ -7,7 +7,7 @@ from PAOFLOW.transport.io.input_parameters import ConductFormula
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("transmittance")
+@timed_function('transmittance')
 def evaluate_transmittance(
     gamma_L: np.ndarray,
     gamma_R: np.ndarray,
@@ -83,10 +83,8 @@ def evaluate_transmittance(
     else:
         work = G_adv @ work
 
-    if formula == "generalized":
-        assert sgm_corr is not None, (
-            "Correlation self-energy required for generalized formula."
-        )
+    if formula == 'generalized':
+        assert sgm_corr is not None, 'Correlation self-energy required for generalized formula.'
         lambda_corr = 1j * (sgm_corr - sgm_corr.conj().T)
         regularized = gamma_L + gamma_R + 2 * eta * np.eye(dim)
         lambda_mat = solve(regularized, lambda_corr)
@@ -96,7 +94,7 @@ def evaluate_transmittance(
 
     if not do_eigenchannels:
         Tmat = work @ gamma_R
-        if formula == "generalized":
+        if formula == 'generalized':
             Tmat = Tmat @ lambda_mat
         conduct = np.real(np.diag(Tmat))
         return conduct, None
@@ -110,7 +108,7 @@ def evaluate_transmittance(
         sqrt_gamma_R = vecs_R @ np.diag(np.sqrt(evals_R)) @ vecs_R.conj().T
 
         Tmat = sqrt_gamma_R @ A_L @ sqrt_gamma_R
-        if formula == "generalized":
+        if formula == 'generalized':
             Tmat = Tmat @ lambda_mat
 
         evals, _ = eigh(-Tmat) if S_overlap is None else eigh(-Tmat, S_overlap)
@@ -122,7 +120,7 @@ def evaluate_transmittance(
     elif do_eigenchannels and do_eigplot:
         evals, vecs = eigh(A_L, S_overlap) if S_overlap is not None else eigh(A_L)
         if np.any(evals < -1e-6):
-            raise ValueError("A_L not positive semi-definite.")
+            raise ValueError('A_L not positive semi-definite.')
         evals = np.clip(evals, 0.0, None)
 
         sqrt_A_L = vecs @ np.diag(np.sqrt(evals)) @ vecs.conj().T
@@ -133,7 +131,7 @@ def evaluate_transmittance(
         return conduct, vecs
 
     else:
-        raise ValueError("Unexpected combination of eigenchannel flags.")
+        raise ValueError('Unexpected combination of eigenchannel flags.')
 
 
 def interpolate_transmittance(
@@ -173,7 +171,5 @@ def interpolate_transmittance(
     ndim_new = (ndim - 1) * ndiv + 1
 
     egrid_new = np.linspace(egrid[i_start], egrid[i_end], ndim_new)
-    transm_new = np.interp(
-        egrid_new, egrid[i_start : i_end + 1], transm[i_start : i_end + 1]
-    )
+    transm_new = np.interp(egrid_new, egrid[i_start : i_end + 1], transm[i_start : i_end + 1])
     return egrid_new, transm_new

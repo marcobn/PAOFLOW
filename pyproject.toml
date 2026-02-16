@@ -20,6 +20,21 @@ dependencies = ["numpy~=2.4", "scipy>=1.17,<2", "mpi4py~=4.1"]
 weyl_search = ["z2pack", "tbmodels"]
 graphics = ["vtk", "matplotlib"]
 transport = ["pyyaml", "psutil", "pydantic"]
+dev = ["pre-commit>=2.20.0"]
 
 [project.urls]
 Homepage = "https://github.com/marcobn/PAOFLOW"
+
+[tool.ruff]
+line-length = 100
+lint.ignore = [
+    "E711", # comparison to None should be 'if cond is None:'
+    "E712", # comparison to True should be 'if cond is True:' or 'if cond:'
+    "E722", # do not use bare except, specify exception instead
+    "E731", # do not assign a lambda expression, use a def
+    "E741", # ambiguous variable name 'l' (lowercase letter el)
+    "E402", # module level import not at top of file
+]
+
+[tool.ruff.format]
+quote-style = "single"

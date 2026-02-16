@@ -12,48 +12,48 @@ from PAOFLOW.transport.utils.converters import (
 def parse_header(data_controller: DataController) -> Dict:
     _, attr = data_controller.data_dicts()
     return {
-        "nbnds": attr["nbnds"],
-        "nkpnts": attr["nkpnts"],
-        "nspin": attr["nspin"],
-        "nawf": attr["nawf"],
-        "nelec": attr["nelec"],
-        "efermi": attr["Efermi"],
-        "energy_units": attr.get("energy_units", "eV"),
+        'nbnds': attr['nbnds'],
+        'nkpnts': attr['nkpnts'],
+        'nspin': attr['nspin'],
+        'nawf': attr['nawf'],
+        'nelec': attr['nelec'],
+        'efermi': attr['Efermi'],
+        'energy_units': attr.get('energy_units', 'eV'),
     }
 
 
 def parse_kpoints(data_controller: DataController) -> Dict:
     arry, attr = data_controller.data_dicts()
 
-    kpts = arry["kpnts"].T
+    kpts = arry['kpnts'].T
 
-    wk = arry["kpnts_wght"]
+    wk = arry['kpnts_wght']
     wk = wk / np.sum(wk)
 
-    alat = float(attr["alat"])
+    alat = float(attr['alat'])
 
-    bvec = arry["b_vectors"] * (2.0 * np.pi / alat)
+    bvec = arry['b_vectors'] * (2.0 * np.pi / alat)
 
     vkpts_cartesian = kpts * (2.0 * np.pi / alat)  # bohr^-1
     vkpts_crystal = cartesian_to_crystal(vkpts_cartesian, bvec)
 
     return {
-        "kpts": kpts,
-        "wk": wk,
-        "vkpts_cartesian": vkpts_cartesian,
-        "vkpts_crystal": vkpts_crystal,
+        'kpts': kpts,
+        'wk': wk,
+        'vkpts_cartesian': vkpts_cartesian,
+        'vkpts_crystal': vkpts_crystal,
     }
 
 
 def parse_eigenvalues(data_controller: DataController) -> np.ndarray:
     arry, _ = data_controller.data_dicts()
-    eigvals = arry["my_eigsmat"]
+    eigvals = arry['my_eigsmat']
     return eigvals
 
 
 def parse_projections(data_controller: DataController) -> np.ndarray:
     arry, _ = data_controller.data_dicts()
-    proj = arry["U"].swapaxes(0, 1)
+    proj = arry['U'].swapaxes(0, 1)
 
     return proj
 
@@ -66,5 +66,5 @@ def parse_overlaps(
         return None
     else:
         arry, _ = data_controller.data_dicts()
-        overlap = arry["Sks"]
+        overlap = arry['Sks']
         return overlap

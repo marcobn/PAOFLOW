@@ -2,7 +2,7 @@ import numpy as np
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("compute_rham")
+@timed_function('compute_rham')
 def compute_rham(
     rvec: np.ndarray,
     Hk: np.ndarray,

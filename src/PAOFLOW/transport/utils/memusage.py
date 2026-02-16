@@ -12,9 +12,7 @@ class MemoryTracker:
     def __init__(self):
         self.sections: Dict[str, Dict] = {}
 
-    def register_section(
-        self, name: str, usage_func: Callable[[], float], is_allocated: bool
-    ):
+    def register_section(self, name: str, usage_func: Callable[[], float], is_allocated: bool):
         """
         Register a memory-tracked section.
 
@@ -27,7 +25,7 @@ class MemoryTracker:
         `is_allocated` : bool
             Whether the section is currently allocated.
         """
-        self.sections[name] = {"usage_func": usage_func, "is_allocated": is_allocated}
+        self.sections[name] = {'usage_func': usage_func, 'is_allocated': is_allocated}
 
     def report(self, include_real_memory: bool = False) -> str:
         """
@@ -43,16 +41,16 @@ class MemoryTracker:
         `report` : str
             Formatted memory usage summary.
         """
-        log_rank0("  <MEMORY_USAGE>")
+        log_rank0('  <MEMORY_USAGE>')
 
         memsum = 0.0
         for section, data in self.sections.items():
-            if data["is_allocated"]:
-                usage = data["usage_func"]()
+            if data['is_allocated']:
+                usage = data['usage_func']()
                 memsum += usage
-                log_rank0(f"{section:>24}: {usage:15.3f} MB")
+                log_rank0(f'{section:>24}: {usage:15.3f} MB')
 
-        log_rank0("")  # Equivalent to WRITE(iunit, "()")
+        log_rank0('')  # Equivalent to WRITE(iunit, "()")
         log_rank0(f"{'Total allocated. Memory':>24}: {memsum:15.3f} MB")
 
         if include_real_memory:
@@ -60,4 +58,4 @@ class MemoryTracker:
             tmem = process.memory_info().rss / 1024.0 / 1024.0  # Convert bytes to MB
             log_rank0(f"{'Real allocated. Memory':>24}: {tmem:15.3f} MB")
 
-        log_rank0("  </MEMORY_USAGE>\n")
+        log_rank0('  </MEMORY_USAGE>\n')

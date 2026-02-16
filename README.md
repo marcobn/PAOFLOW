@@ -30,7 +30,7 @@
  - Boltzmann transport (conductivity, Seebeck coefficient, electronic contribution to thermal conductivity
  - dielectric function (absorption coefficients and EELS)
  - Berry curvature and anomalous Hall conductivity (including magnetic circular dichroism spectra)
- - spin Berry curvature and spin Hall conductivity (including spin circular dichroism spectra) 
+ - spin Berry curvature and spin Hall conductivity (including spin circular dichroism spectra)
  - Band topology (Z2 invariants, Berry and spin Berry curvature along standard paths in BZ, critical points
 
 
@@ -44,16 +44,16 @@ For installation instructions, see the INSTALL file.
  F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
  Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
 
- M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
- PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
+ M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+ PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
  Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
 
 
  PAOFLOW is integrated in AFLOW𝛑:
 
- A.R. Supka, T.E. Lyons, L. Liyanage, P. D'Amico, R. Al Rahal Al Orabi, S. Mahatara, P. Gopal, C. Toher, 
+ A.R. Supka, T.E. Lyons, L. Liyanage, P. D'Amico, R. Al Rahal Al Orabi, S. Mahatara, P. Gopal, C. Toher,
  D. Ceresoli, A. Calzolari, S. Curtarolo, M. Buongiorno Nardelli, and M. Fornari,
- AFLOW𝛑: A minimalist approach to high-throughput ab initio calculations including the generation 
+ AFLOW𝛑: A minimalist approach to high-throughput ab initio calculations including the generation
  of tight-binding hamiltonians, Computational Materials Science, 136 (2017) 76-84. doi:10.1016/j.commatsci.2017.03.055
  also at www.aflow.org/src/aflowpi
 
@@ -72,8 +72,6 @@ Contributions to PAOFLOW were made by the following developers: Frank Cerasoli, 
  Luis A. Agapito, Marco Fornari, Davide Ceresoli, Andrea Ferretti, Stefano Curtarolo and Marco Buongiorno Nardelli,
  Accurate Tight-Binding Hamiltonians for 2D and Layered Materials, Phys. Rev. B 93, 125137 (2016).
 
- Pino D'Amico, Luis Agapito, Alessandra Catellani, Alice Ruini, Stefano Curtarolo, Marco Fornari, Marco Buongiorno Nardelli, 
- and Arrigo Calzolari, Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and 
+ Pino D'Amico, Luis Agapito, Alessandra Catellani, Alice Ruini, Stefano Curtarolo, Marco Fornari, Marco Buongiorno Nardelli,
+ and Arrigo Calzolari, Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and
  optical spectroscopy from first principles, Phys. Rev. B 94 165166 (2016).
- 
-

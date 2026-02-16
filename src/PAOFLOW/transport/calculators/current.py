@@ -131,9 +131,7 @@ def compute_current_vs_bias(
         de = (egrid[i_end] - egrid[i_start]) / (ndim - 1)
         ndiv = max(1, int(round(de / (2 * sigma))))
 
-        egrid_new, transm_new = interpolate_transmittance(
-            egrid, transm, i_start, i_end, ndiv
-        )
+        egrid_new, transm_new = interpolate_transmittance(egrid, transm, i_start, i_end, ndiv)
         fL = fermi_dirac(egrid_new, muL_v, sigma)
         fR = fermi_dirac(egrid_new, muR_v, sigma)
 

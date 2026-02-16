@@ -51,7 +51,7 @@ def kpoints_mask(
     """
     vect = np.asarray(vect)
     if vect.shape != (2,):
-        raise ValueError("`vect` must be a 2-element tuple or 1D array of shape (2,)")
+        raise ValueError('`vect` must be a 2-element tuple or 1D array of shape (2,)')
 
     out = np.full(3, init, dtype=np.result_type(vect.dtype, type(init)))
 
@@ -63,7 +63,7 @@ def kpoints_mask(
     elif transport_direction == 3:
         out[:2] = vect
     else:
-        raise ValueError(f"Invalid transport direction: {transport_direction}")
+        raise ValueError(f'Invalid transport direction: {transport_direction}')
 
     return out
 
@@ -140,11 +140,11 @@ def initialize_meshsize(
     → nk_par = array([2, 2]) if not provided
     """
     if not isinstance(nr_full, np.ndarray):
-        raise TypeError("`nr_full` must be a NumPy array")
+        raise TypeError('`nr_full` must be a NumPy array')
     if nr_full.shape != (3,):
-        raise ValueError("`nr_full` must have shape (3,)")
+        raise ValueError('`nr_full` must have shape (3,)')
     if transport_direction not in (1, 2, 3):
-        raise ValueError(f"Invalid transport direction: {transport_direction}")
+        raise ValueError(f'Invalid transport direction: {transport_direction}')
 
     axes = [0, 1, 2]
     axes.remove(transport_direction - 1)
@@ -155,13 +155,13 @@ def initialize_meshsize(
     else:
         nk_par = np.asarray(nk_par, dtype=int)
         if nk_par.shape != (2,):
-            raise ValueError("`nk_par` must have shape (2,)")
+            raise ValueError('`nk_par` must have shape (2,)')
         if np.any(nk_par < 1):
-            raise ValueError(f"`nk_par` must be ≥ 1 in both directions, got {nk_par}")
+            raise ValueError(f'`nk_par` must be ≥ 1 in both directions, got {nk_par}')
         if use_safe_kmesh and np.any(nk_par < nr_par):
             raise ValueError(
-                f"`nk_par` must be ≥ `nr_par` when use_safe_kmesh=True. "
-                f"Got nk_par={nk_par}, nr_par={nr_par}"
+                f'`nk_par` must be ≥ `nr_par` when use_safe_kmesh=True. '
+                f'Got nk_par={nk_par}, nr_par={nr_par}'
             )
 
     return nk_par, nr_par
@@ -210,7 +210,7 @@ def initialize_kpoints(
     s_par = np.asarray(s_par, dtype=int)
 
     if nk_par.shape != (2,) or s_par.shape != (2,):
-        raise ValueError("`nk_par` and `s_par` must both be arrays of shape (2,)")
+        raise ValueError('`nk_par` and `s_par` must both be arrays of shape (2,)')
 
     mesh_x, mesh_y = nk_par
     shift_x, shift_y = s_par
@@ -238,13 +238,11 @@ def initialize_kpoints(
     wk_par = np.array(weights, dtype=np.float64)
     wk_par /= wk_par.sum()
 
-    vkpt_par3D = np.array(
-        [kpoints_mask(kpt, 0.0, transport_direction) for kpt in vkpts_2d]
-    )
+    vkpt_par3D = np.array([kpoints_mask(kpt, 0.0, transport_direction) for kpt in vkpts_2d])
     return vkpt_par3D, wk_par
 
 
-@timed_function("cft_1z")
+@timed_function('cft_1z')
 def compute_fourier_phase_table(
     vkpts: np.ndarray,
     ivr_par: np.ndarray,
@@ -364,7 +362,7 @@ def initialize_r_vectors(
         elif transport_direction == 3:
             imask[:2] = ivect
         else:
-            raise ValueError(f"Invalid transport direction: {transport_direction}")
+            raise ValueError(f'Invalid transport direction: {transport_direction}')
         return imask
 
     ivr_par3D = np.array([kpoints_imask(R, transport_direction) for R in R_array])

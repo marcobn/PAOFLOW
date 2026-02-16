@@ -3,7 +3,7 @@ from typing import Optional
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("hamiltonian_setup")
+@timed_function('hamiltonian_setup')
 def hamiltonian_setup(
     ik: int,
     ie_g: int,
@@ -55,9 +55,9 @@ def hamiltonian_setup(
         if not block.allocated:
             continue
 
-        if "00L" in name or "01L" in name:
+        if '00L' in name or '01L' in name:
             shift = shift_L
-        elif "00R" in name or "01R" in name:
+        elif '00R' in name or '01R' in name:
             shift = shift_R
         else:
             shift = shift_C
@@ -68,12 +68,12 @@ def hamiltonian_setup(
 
         if block.sgm is not None:
             sgm_corr = block.sgm[..., ik, ie_bl]
-            if "00C" in name or "LC" in name or "CR" in name:
+            if '00C' in name or 'LC' in name or 'CR' in name:
                 aux -= sgm_corr + shift_C_corr * S_k
             else:
                 aux -= sgm_corr
 
-        if "00" in name:
+        if '00' in name:
             block.aux[..., ik] = aux.conj()
         else:
             block.aux[..., ik] = aux

@@ -51,11 +51,11 @@ def prepare_conductor(yaml_file: str, data_controller: DataController) -> Conduc
     work_dir = data.file_names.work_dir
     nproc = MPI.COMM_WORLD.Get_size()
 
-    if data.carriers == "electrons":
+    if data.carriers == 'electrons':
         hk_data = parse_atomic_proj(data, data_controller)
-        nr_full = hk_data["nr"]
-    elif data.carriers == "phonons":
-        raise NotImplementedError("Phonon transport not yet implemented")
+        nr_full = hk_data['nr']
+    elif data.carriers == 'phonons':
+        raise NotImplementedError('Phonon transport not yet implemented')
 
     nk_par, nr_par = initialize_meshsize(
         nr_full=nr_full, transport_direction=data.transport_direction
@@ -121,9 +121,7 @@ def prepare_smearing(
         delta_ratio=data.energy.delta_ratio,
         xmax=data.energy.xmax,
     )
-    memory_tracker.register_section(
-        "smearing", smearing_data.memory_usage, is_allocated=True
-    )
+    memory_tracker.register_section('smearing', smearing_data.memory_usage, is_allocated=True)
     return smearing_data
 
 
@@ -151,9 +149,7 @@ def prepare_kpoints(data: ConductorData, memory_tracker: MemoryTracker) -> Kpoin
     kpoints_data.ivr_par3D = rt.ivr_par3D
     kpoints_data.wr_par = rt.wr_par
 
-    memory_tracker.register_section(
-        "kpoints", kpoints_data.memory_usage, is_allocated=True
-    )
+    memory_tracker.register_section('kpoints', kpoints_data.memory_usage, is_allocated=True)
     return kpoints_data
 
 
@@ -180,13 +176,13 @@ def prepare_hamiltonian_system(
 
     ham_sys = HamiltonianSystem(dimL, dimC, dimR, nkpts_par)
     memory_tracker.register_section(
-        "hamiltonian data",
-        lambda: ham_sys.memusage("ham"),
+        'hamiltonian data',
+        lambda: ham_sys.memusage('ham'),
         is_allocated=ham_sys.allocated,
     )
     memory_tracker.register_section(
-        "correlation data",
-        lambda: ham_sys.memusage("corr"),
+        'correlation data',
+        lambda: ham_sys.memusage('corr'),
         is_allocated=ham_sys.allocated,
     )
     return ham_sys
@@ -273,7 +269,7 @@ def prepare_workspace(data: ConductorData, memory_tracker: MemoryTracker) -> Wor
         write_gf=data.symmetry.write_gf,
     )
     memory_tracker.register_section(
-        "workspace", workspace.memusage, is_allocated=workspace.allocated
+        'workspace', workspace.memusage, is_allocated=workspace.allocated
     )
     return workspace
 

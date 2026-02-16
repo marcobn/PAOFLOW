@@ -30,7 +30,7 @@ def load_conductor_data_from_yaml(yaml_path: str, comm=None) -> ConductorData:
     """
     full_yaml = get_input_from_yaml(yaml_path)
     merged = {}
-    for section in ("input_conductor", "hamiltonian_data"):
+    for section in ('input_conductor', 'hamiltonian_data'):
         merged.update(full_yaml.get(section, {}))
     validated = ConductorData(filename=yaml_path, validate=True, **merged)
     return validated

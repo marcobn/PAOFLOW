@@ -47,13 +47,13 @@ class HamiltonianSystem:
         self.dimx = max(dimL, dimC, dimR)
         self.dimx_lead = max(dimL, dimR)
 
-        self.blc_00L = OperatorBlock("block_00L")
-        self.blc_01L = OperatorBlock("block_01L")
-        self.blc_00R = OperatorBlock("block_00R")
-        self.blc_01R = OperatorBlock("block_01R")
-        self.blc_00C = OperatorBlock("block_00C")
-        self.blc_LC = OperatorBlock("block_LC")
-        self.blc_CR = OperatorBlock("block_CR")
+        self.blc_00L = OperatorBlock('block_00L')
+        self.blc_01L = OperatorBlock('block_01L')
+        self.blc_00R = OperatorBlock('block_00R')
+        self.blc_01R = OperatorBlock('block_01R')
+        self.blc_00C = OperatorBlock('block_00C')
+        self.blc_LC = OperatorBlock('block_LC')
+        self.blc_CR = OperatorBlock('block_CR')
 
     def allocate(
         self,
@@ -70,9 +70,9 @@ class HamiltonianSystem:
             This is used to match R-slices in the Hamiltonian during read-in.
         """
         if self.allocated:
-            raise RuntimeError("Hamiltonian blocks already allocated.")
+            raise RuntimeError('Hamiltonian blocks already allocated.')
         if min(self.dimL, self.dimC, self.dimR, self.nkpts_par) <= 0:
-            raise ValueError("Invalid dimensions for Hamiltonian allocation.")
+            raise ValueError('Invalid dimensions for Hamiltonian allocation.')
 
         block_specs = [
             (self.blc_00L, self.dimL, self.dimL),
@@ -89,17 +89,17 @@ class HamiltonianSystem:
             block.tag = tag_dict.get(
                 block.name,
                 {
-                    "rows": "all",
-                    "cols": "all",
-                    "rows_sgm": "all",
-                    "cols_sgm": "all",
+                    'rows': 'all',
+                    'cols': 'all',
+                    'rows_sgm': 'all',
+                    'cols_sgm': 'all',
                 },
             )
             block.ivr_par = ivr_par
 
         self.allocated = True
 
-    def memusage(self, memtype: Literal["ham", "corr", "all"] = "all") -> float:
+    def memusage(self, memtype: Literal['ham', 'corr', 'all'] = 'all') -> float:
         """
         Estimate total memory usage of all blocks in MB.
 
@@ -122,11 +122,11 @@ class HamiltonianSystem:
     @property
     def blocks(self) -> dict[str, OperatorBlock]:
         return {
-            "blc_00L": self.blc_00L,
-            "blc_01L": self.blc_01L,
-            "blc_00R": self.blc_00R,
-            "blc_01R": self.blc_01R,
-            "blc_00C": self.blc_00C,
-            "blc_LC": self.blc_LC,
-            "blc_CR": self.blc_CR,
+            'blc_00L': self.blc_00L,
+            'blc_01L': self.blc_01L,
+            'blc_00R': self.blc_00R,
+            'blc_01R': self.blc_01R,
+            'blc_00C': self.blc_00C,
+            'blc_LC': self.blc_LC,
+            'blc_CR': self.blc_CR,
         }
