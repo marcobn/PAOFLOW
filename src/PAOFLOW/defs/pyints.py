@@ -191,7 +191,7 @@ def B_array(l1, l2, l3, l4, p, a, b, q, c, d, g1, g2, delta):
             for r1 in range(i1 // 2 + 1):
                 for r2 in range(i2 // 2 + 1):
                     for u in range((i1 + i2) // 2 - r1 - r2 + 1):
-                        'THO eq. 2.22'
+                        # THO eq. 2.22
                         dm = i1 + i2 - 2 * (r1 + r2)
                         ind = dm - u
                         fr = fact_ratio(dm, u)
