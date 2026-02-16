@@ -19,6 +19,7 @@
 
 import numpy as np
 
+import pycuda.autoinit  # initializes CUDA context
 import pycuda.gpuarray as gpuarray
 import skcuda.fft as skfft
 
