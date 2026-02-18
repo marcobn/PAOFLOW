@@ -112,6 +112,7 @@ cython_debug/
 output/
 pseudo/
 *.save/
+*.UPF
 *.pyc
 *.xml
 *.log
@@ -120,3 +121,10 @@ pseudo/
 
 # MAC files
 .DS_*
+
+# Don't ignore *.save or *.UPF if it is in any subfolders in tests folder
+!tests/
+!tests/**/
+!tests/**/*.save/
+!tests/**/*.save/**
+!tests/**/*.UPF
