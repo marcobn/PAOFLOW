@@ -7,8 +7,8 @@ default_language_version:
 exclude: |
   (?x)^(?:
     BASIS/|
-    examples/|
-    src/PAOFLOW/ACBN0\.py$
+    examples
+    #src/PAOFLOW/ACBN0\.py$
   )
 
 repos:
