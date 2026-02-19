@@ -543,6 +543,7 @@ class DataController:
                                     % (np.real(Hks[i, j, ik, 1]), np.imag(Hks[i, j, ik, 1]))
                                 )
                     f.close()
+            """
             if acbn0:
                 f = open(os.path.join(inputpath, 'kovp.txt'), 'w')
                 for ik in range(nkpnts):
@@ -553,6 +554,7 @@ class DataController:
                                 % (np.real(Sks[i, j, ik]), np.imag(Sks[i, j, ik]))
                             )
                 f.close()
+            """
             f = open(os.path.join(inputpath, 'k.txt'), 'w')
             for ik in range(nkpnts):
                 f.write('%20.13f %20.13f %20.13f \n' % (kpnts[ik, 0], kpnts[ik, 1], kpnts[ik, 2]))

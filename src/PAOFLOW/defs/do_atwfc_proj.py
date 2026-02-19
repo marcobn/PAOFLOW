@@ -207,7 +207,7 @@ def build_aewfc_basis(data_controller):
     aebasis = []
     for na in range(len(arry['atoms'])):
         atom_label = arry['atoms'][na]  # CHANGED
-        elem = re.split('\d+', atom_label)[0]
+        elem = re.split(r'\d+', atom_label)[0]
         aefiles = glob.glob(attr['basispath'] + str(elem) + '/*.dat')
         label = []
         for entry in aefiles:
@@ -226,7 +226,7 @@ def build_aewfc_basis(data_controller):
     arry['jchia'] = {}
     for na in range(len(arry['atoms'])):
         atom = arry['atoms'][na]
-        elem = re.split('\d+', atom)[0]
+        elem = re.split(r'\d+', atom)[0]
         tau = arry['tau'][na]
         aewfc = []
         for shell in arry['configuration'][elem]:

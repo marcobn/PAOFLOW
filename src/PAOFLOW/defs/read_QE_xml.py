@@ -45,7 +45,7 @@ def parse_qe_data_file_schema(data_controller, fname):
     root = tree.getroot()
 
     qe_version = float(
-        re.findall('\d+\.\d+', root.find('general_info/creator').attrib['VERSION'])[0]
+        re.findall(r'\d+\.\d+', root.find('general_info/creator').attrib['VERSION'])[0]
     )
 
     dftSO = True if root.find('input/spin/spinorbit').text == 'true' else False
@@ -258,7 +258,7 @@ def parse_qe_data_file(data_controller, fpath, fname):
     tree = ET.parse(join(fpath, fname))
     root = tree.getroot()
 
-    qe_version = float(re.findall('\d+\.\d+', root.find('HEADER/CREATOR').attrib['VERSION'])[0])
+    qe_version = float(re.findall(r'\d+\.\d+', root.find('HEADER/CREATOR').attrib['VERSION'])[0])
 
     dftSO = root.find('SPIN/SPIN-ORBIT_CALCULATION').text.replace('\n', '').strip()
     dftSO = True if dftSO == 'T' else False
@@ -487,14 +487,14 @@ def parse_qe_atomic_proj(data_controller, fname):
             else:
                 for i, ovp in enumerate(elem.findall('OVPS')):
                     dim = int(ovp.attrib['dim'])
-                    ispin = int(ovp.attrib['spin']) - 1
+                    # ispin = int(ovp.attrib['spin']) - 1
                     text = ovp.text.split()
                     for j in range(len(text) // 2):
                         j2 = 2 * j
                         i1 = j // dim
                         i2 = j % dim
                         v1, v2 = float(text[j2]), float(text[j2 + 1])
-                        overlaps[i1, i2, i] = complex(v1, v2)
+                        overlaps[i1, i2, i // nspin] = complex(v1, v2)
 
     else:
 
@@ -517,13 +517,13 @@ def parse_qe_atomic_proj(data_controller, fname):
             elem = root.find('OVERLAPS')
             for i, kpnt in enumerate(elem):
                 for j, ovp in enumerate(kpnt):
-                    ispin = int(ovp.tag.split('.')[1]) - 1
+                    # ispin = int(ovp.tag.split('.')[1]) - 1
                     text = ovp.text.replace(',', ' ').split()
                     for k in range(len(text) // 2):
                         k0, k1 = k // nbnds, k % nbnds
                         k2 = 2 * k
                         v1, v2 = float(text[k2]), float(text[k2 + 1])
-                        overlaps[k0, k1, i] = complex(v1, v2)
+                        overlaps[k0, k1, i // nspin] = complex(v1, v2)
 
     arrys = [('U', wavefunctions)]
     if save_overlaps:
