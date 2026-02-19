@@ -31,7 +31,7 @@ VASP Examples: ./vasp_examples
 
 ACBN0 Example: ./acbn0-example/
 
-- ACBN0 routine for calculating Hubbard parameters in MgO.
+- ACBN0 routine for calculating Hubbard parameters in MgO, ZnO, MnO (antiferromagnetic).
 
 Tight Binding Models: ./TBmodel-examples/
 
