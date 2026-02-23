@@ -2,7 +2,7 @@
     calculation = 'scf'
     restart_mode='from_scratch',
     prefix='silicon',
-   pseudo_dir = '../../../../examples/qe_examples/example01',
+    pseudo_dir = '../pseudos/'
     outdir = './'
  /
  &system
