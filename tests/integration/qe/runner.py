@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
@@ -24,10 +23,7 @@ def _run_paoflow(example_dir: Path) -> None:
     if not main_py.exists():
         raise RuntimeError(f'No main.py found in {example_dir}')
 
-    env = os.environ.copy()
-    env.setdefault('MPLBACKEND', 'Agg')
-
-    subprocess.run([sys.executable, str(main_py)], cwd=example_dir, check=True, env=env)
+    subprocess.run([sys.executable, str(main_py)], cwd=example_dir, check=True)
 
 
 def _infer_outputdir(job_dir: Path) -> Path:

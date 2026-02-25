@@ -15,34 +15,7 @@ class CompareFailure(Exception):
 
 
 def _load_dat(path: Path) -> np.ndarray:
-    try:
-        data = np.loadtxt(path)
-    except ValueError:
-        rows = []
-        expected_cols = None
-        with path.open('r', encoding='utf-8', errors='ignore') as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-
-                parts = stripped.split()
-                try:
-                    values = [float(token) for token in parts]
-                except ValueError:
-                    continue
-
-                if expected_cols is None:
-                    expected_cols = len(values)
-                if len(values) != expected_cols:
-                    continue
-
-                rows.append(values)
-
-        if not rows:
-            raise ValueError(f'No numeric data rows found in {path}')
-
-        data = np.asarray(rows, dtype=float)
+    data = np.loadtxt(path)
     if data.ndim == 1:
         data = np.atleast_2d(data)
     return data.T
