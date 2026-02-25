@@ -357,12 +357,16 @@ if [[ ${#examples[@]} -eq 0 ]]; then
 fi
 
 failures=0
+failed_examples=()
 
 for ex in "${examples[@]}"; do
+  ex_failed=false
   exdir="$root_dir/$ex"
   if [[ ! -d "$exdir" ]]; then
     log_job "Example $ex not found under $root_dir"
     failures=$((failures + 1))
+    ex_failed=true
+    failed_examples+=("$ex")
     continue
   fi
 
@@ -383,23 +387,32 @@ for ex in "${examples[@]}"; do
       if ! run_qe_dir "$jobdir" "$label"; then
         qe_ok=false
         failures=$((failures + 1))
+        ex_failed=true
       fi
     fi
 
     if [[ "$run_paoflow" = true && "$qe_ok" = true ]]; then
       if ! run_paoflow_dir "$jobdir" "$label"; then
         failures=$((failures + 1))
+        ex_failed=true
       fi
     fi
   done
+
+  if [[ "$ex_failed" = true ]]; then
+    failed_examples+=("$ex")
+  fi
 done
 
-if [[ $failures -gt 0 ]]; then
-  log_job "Completed with $failures failure(s)."
-  exit 1
-fi
-
 if [[ "$build_assets" = true ]]; then
+  if [[ $failures -gt 0 ]]; then
+    if [[ ${#failed_examples[@]} -gt 0 ]]; then
+      log_job "WARNING: $failures failure(s); asset bundle will be incomplete for: ${failed_examples[*]}"
+    else
+      log_job "WARNING: $failures failure(s); asset bundle may be incomplete."
+    fi
+  fi
+
   log_job "Building asset bundle: $assets_out"
   mkdir -p "$(dirname "$assets_out")"
 
@@ -411,6 +424,11 @@ if [[ "$build_assets" = true ]]; then
   fi
 
   log_job "Asset bundle build OK: $assets_out"
+fi
+
+if [[ $failures -gt 0 ]]; then
+  log_job "Completed with $failures failure(s)."
+  exit 1
 fi
 
 log_job "Completed successfully."
