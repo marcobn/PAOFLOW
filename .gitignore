@@ -1,3 +1,4 @@
+tests/integration/qe/_assets/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

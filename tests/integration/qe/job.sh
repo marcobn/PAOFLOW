@@ -17,6 +17,8 @@ Options:
   --qe              Run QE only.
   --paoflow         Run PAOFLOW only.
   --all             Run both QE and PAOFLOW.
+  --build-assets    Build qe_test_assets tar.gz after runs complete.
+  --assets-out PATH Output tar.gz path (default: tests/integration/qe/_assets/qe_test_assets_dev.tar.gz).
   --examples LIST   Comma-separated list of example directories.
   -h, --help        Show this help message.
 
@@ -27,6 +29,7 @@ Environment overrides:
   PW_EXEC       Full path to pw.x.
   PP_EXEC       Full path to projwfc.x.
   PYTHON_EXEC   Python interpreter to run main.py (default: python).
+  ASSETS_OUT    Same as --assets-out.
 EOF
 }
 
@@ -236,6 +239,8 @@ run_paoflow=true
 mode_set=false
 examples_arg=""
 extra_examples=()
+build_assets=false
+assets_out=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -261,6 +266,20 @@ while [[ $# -gt 0 ]]; do
       run_qe=true
       run_paoflow=true
       mode_set=true
+      ;;
+    --build-assets)
+      build_assets=true
+      ;;
+    --assets-out)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --assets-out" >&2
+        exit 2
+      fi
+      assets_out="$2"
+      shift
+      ;;
+    --assets-out=*)
+      assets_out="${1#*=}"
       ;;
     --examples)
       if [[ $# -lt 2 ]]; then
@@ -288,6 +307,9 @@ root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
+# repo root is needed for `python -m tests.integration.qe.build_assets`
+repo_root="$(cd "$root_dir/../../.." && pwd)"
+
 JOB_LOG="$log_dir/job.log"
 QE_LOG="$log_dir/qe.log"
 PAOFLOW_LOG="$log_dir/paoflow.log"
@@ -297,8 +319,10 @@ PAOFLOW_LOG="$log_dir/paoflow.log"
 : > "$PAOFLOW_LOG"
 
 log_job "Root directory: $root_dir"
+log_job "Repo root: $repo_root"
 log_job "Run QE: $run_qe"
 log_job "Run PAOFLOW: $run_paoflow"
+log_job "Build assets: $build_assets"
 
 if [[ "$run_qe" = true ]]; then
   if ! PW_EXEC="$(resolve_exec PW_EXEC pw.x)"; then
@@ -312,6 +336,11 @@ if [[ "$run_qe" = true ]]; then
 fi
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
+
+# Default output tarball path for assets.
+if [[ -z "${assets_out}" ]]; then
+  assets_out="${ASSETS_OUT:-$root_dir/_assets/qe_test_assets_dev.tar.gz}"
+fi
 
 declare -a examples
 if [[ -n "$examples_arg" ]]; then
@@ -368,6 +397,20 @@ done
 if [[ $failures -gt 0 ]]; then
   log_job "Completed with $failures failure(s)."
   exit 1
+fi
+
+if [[ "$build_assets" = true ]]; then
+  log_job "Building asset bundle: $assets_out"
+  mkdir -p "$(dirname "$assets_out")"
+
+  if ! (cd "$repo_root" && "$PYTHON_EXEC" -m tests.integration.qe.build_assets --qe-root "$root_dir" --out "$assets_out") >> "$JOB_LOG" 2>&1; then
+    log_job "Asset bundle build FAILED"
+    echo "--- asset build error (last 60 lines) ---" | tee -a "$JOB_LOG"
+    tail -n 60 "$JOB_LOG" | tee -a "$JOB_LOG"
+    exit 1
+  fi
+
+  log_job "Asset bundle build OK: $assets_out"
 fi
 
 log_job "Completed successfully."
