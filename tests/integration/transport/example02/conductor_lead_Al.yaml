@@ -1,5 +1,5 @@
 input_conductor:
-  output_dir: "./output/paoflow"
+  output_dir: "./output"
   prefix: "alh"
   postfix: "_lead"
   dimC: 12
@@ -7,7 +7,7 @@ input_conductor:
   ne: 500
   emin: -7.0
   emax: 2.0
-  datafile_C: "./output/qe/alh.save/atomic_proj.xml"
+  datafile_C: "./alh.save/atomic_proj.xml"
   transport_direction: 3
   delta: 0.0005
   do_overlap_transformation: false

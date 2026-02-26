@@ -1,7 +1,7 @@
 input:
-  output_dir: "./output/paoflow"
-  filein: "./output/paoflow/conductance_lcr.dat"
-  fileout: "./output/paoflow/current.dat"
+  output_dir: "./output"
+  filein: "./output/conductance_lcr.dat"
+  fileout: "./output/current.dat"
   Vmin: -1.0
   Vmax: 1.0
   nV: 100
