@@ -233,6 +233,18 @@ PY
   printf '[%s] PAOFLOW done: %s\n' "$(timestamp)" "$label" >> "$PAOFLOW_LOG"
 }
 
+cleanup_generated_dirs() {
+  local root="$1"
+
+  while IFS= read -r -d '' refdir; do
+    rm -rf "$refdir"
+  done < <(find "$root" -type d -name "Reference" -print0)
+
+  while IFS= read -r -d '' savedir; do
+    rm -rf "$savedir"
+  done < <(find "$root" -type d -name "*.save" -print0)
+}
+
 # -------- argument parsing --------
 run_qe=false
 run_paoflow=true
@@ -424,6 +436,10 @@ if [[ "$build_assets" = true ]]; then
   fi
 
   log_job "Asset bundle build OK: $assets_out"
+
+  log_job "Cleaning generated Reference and *.save directories under examples"
+  cleanup_generated_dirs "$root_dir"
+  log_job "Cleanup complete"
 fi
 
 if [[ $failures -gt 0 ]]; then
