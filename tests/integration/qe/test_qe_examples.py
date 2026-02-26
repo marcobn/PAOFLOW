@@ -40,6 +40,14 @@ def test_qe_example(job: JobSpec, tmp_path: Path, qe_assets_root, qe_assets_link
             'to a local tar.gz to enable these tests.'
         )
 
+    if qe_assets_root is not None and not repo_has_ref and not repo_has_save:
+        asset_job_root = (qe_assets_root / job.example_root.name / job.job_relpath).resolve()
+        if not asset_job_root.exists():
+            pytest.skip(
+                f'Assets are missing for job {job.id} in configured archive and no local '
+                'Reference/*.save data exists yet.'
+            )
+
     result = run_example_in_sandbox(
         job.example_root,
         sandbox_root,
