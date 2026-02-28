@@ -6,24 +6,23 @@ assets.
 
 TBmodel jobs require:
 
-- `Reference/*.dat` outputs for regression comparison
+- `*.dat` outputs for regression comparison
 
-The pytest suite copies each job into a temporary sandbox, optionally overlays
-`Reference/` from an asset bundle, runs the TBmodel script, then compares output
-`*.dat` against `Reference/*.dat`.
+The pytest suite copies each job into a temporary sandbox, runs the TBmodel
+script, then compares output `*.dat` against the asset bundle.
 
 ## What is a "job"?
 
 A **job** is any top-level Python script in this directory that is not part of
-the test harness (for example: `graphene.py`, `kane_mele.py`).
+the test harness (for example: `graphene.py`, `kane_mele.py`, `slater_koster.py`).
 
 Job discovery is implemented in [jobs.py](jobs.py).
 
 ## Local-first workflow
 
-### 1) Generate Reference outputs
+### 1) Generate outputs
 
-Run the TBmodel scripts and collect `Reference/` outputs in place:
+Run the TBmodel scripts to generate `*.dat` outputs in place:
 
 ```bash
 # From repository root
@@ -40,7 +39,7 @@ When generating assets through [job.sh](job.sh), you can control launch with
 
 ### 2) Build a local asset tarball
 
-Create a tarball containing `Reference/` for all discovered jobs:
+Create a tarball containing output `*.dat` files for all discovered jobs:
 
 ```bash
 # From repository root
@@ -69,8 +68,7 @@ pytest -q tests/integration/TBmodel/test_tbmodel_examples.py \
 
 ## Asset configuration knobs
 
-Assets are optional. If assets are not configured and the working tree does not
-contain `Reference/`, tests skip with a clear message.
+Assets are optional. If assets are not configured, tests skip with a clear message.
 
 You can configure assets via CLI flags or environment variables.
 
@@ -94,9 +92,9 @@ Implementation lives in [assets.py](assets.py).
 
 ## File guide
 
-- [job.sh](job.sh): run TBmodel scripts and collect `Reference/` outputs
+- [job.sh](job.sh): run TBmodel scripts to generate `*.dat` outputs
 - [submit.sh](submit.sh): SLURM wrapper for `job.sh`
-- [build_assets.py](build_assets.py): package `Reference/` into a tar.gz
+- [build_assets.py](build_assets.py): package output `*.dat` files into a tar.gz
 - [assets.py](assets.py): resolve/download/verify/extract the asset tarball
 - [jobs.py](jobs.py): discover runnable TBmodel scripts
 - [runner.py](runner.py): sandbox runner; overlays assets; runs TBmodel scripts
