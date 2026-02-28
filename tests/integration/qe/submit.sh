@@ -10,7 +10,6 @@
 
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
 export MPICH_GPU_SUPPORT_ENABLED=0
-export GPAW_SETUP_PATH=${HOME}/gpaw-setups-24.11.0
 ulimit -s unlimited
 
 MINICONDA_PATH=/home/jayn/miniconda3
@@ -23,5 +22,6 @@ set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 
 export QE_BIN=/home/jayn/qe-7.4.1/bin
+export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 ./job.sh --paoflow example14 example13

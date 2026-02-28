@@ -51,6 +51,10 @@ Notes:
 
 - `job.sh` will run QE in any folder containing `*.in` and PAOFLOW in any folder
   containing `main.py`.
+- QE launch can be controlled via `PARALLEL_EXEC`:
+  - serial (default): unset `PARALLEL_EXEC`
+  - MPI: `PARALLEL_EXEC="mpirun -np 8"`
+  - SLURM: `PARALLEL_EXEC="srun -n 8"`
 - After a successful PAOFLOW run, it moves the PAOFLOW output directory into
   `Reference/` inside the same job folder.
 - It also cleans up QE outputs and trims `*.save/` directories to keep only `*.xml`
