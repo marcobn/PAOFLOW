@@ -19,6 +19,7 @@ conda activate paoflow_new
 
 cd "$SLURM_SUBMIT_DIR"
 
-export QE_BIN=/home/jayn/qe-7.4.1/bin
+export QE_BIN=/home/anooja/Work/software/qe-7.4.1/bin
+export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 ./job.sh --all --build-assets

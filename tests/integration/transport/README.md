@@ -6,11 +6,11 @@ assets, without requiring QE at test runtime.
 
 Transport jobs require:
 
-- `output/qe/*.save` data (used by `read_atomic_proj_QE()`)
+- `*.save` data (used by `read_atomic_proj_QE()`)
 - `Reference/*.dat` outputs for regression comparison
 
 The pytest suite copies each job into a temporary sandbox, optionally overlays
-`output/qe` and `Reference` from an asset bundle, runs the transport Python
+`*.save` and `Reference` from an asset bundle, runs the transport Python
 entrypoint(s), then compares `output/paoflow/*.dat` against `Reference/*.dat`.
 
 ## What is a “job”?
@@ -27,7 +27,7 @@ Job discovery is implemented in [jobs.py](jobs.py).
 
 ### 1) Build a local asset tarball
 
-Create a tarball containing `Reference/` and `output/qe/` directories for all
+Create a tarball containing `Reference/` and `*.save` directories for all
 discovered jobs, preserving their paths relative to this directory:
 
 ```bash
@@ -38,6 +38,13 @@ python -m tests.integration.transport.build_assets \
 ```
 
 The builder is [build_assets.py](build_assets.py).
+
+When generating assets through [job.sh](job.sh), QE launch can be controlled via
+`PARALLEL_EXEC`:
+
+- serial (default): unset `PARALLEL_EXEC`
+- MPI: `PARALLEL_EXEC="mpirun -np 8"`
+- SLURM: `PARALLEL_EXEC="srun -n 8"`
 
 ### 2) Run pytest using the local tarball
 
@@ -58,7 +65,7 @@ pytest -q tests/integration/transport/test_transport_examples.py \
 ## Asset configuration knobs
 
 Assets are optional. If assets are not configured and the working tree does not
-contain `Reference/` and `output/qe/*.save`, tests skip with a clear message.
+contain `Reference/` and `*.save`, tests skip with a clear message.
 
 You can configure assets via CLI flags or environment variables.
 
@@ -82,7 +89,7 @@ Implementation lives in [assets.py](assets.py).
 
 ## File guide
 
-- [build_assets.py](build_assets.py): package `Reference/` + `output/qe/` into tar.gz
+- [build_assets.py](build_assets.py): package `Reference/` + `*.save` into tar.gz
 - [assets.py](assets.py): resolve/download/verify/extract asset tarball into cache
 - [jobs.py](jobs.py): discover runnable transport jobs
 - [runner.py](runner.py): sandbox runner; overlays assets; runs transport scripts
