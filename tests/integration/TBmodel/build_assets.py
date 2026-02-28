@@ -1,14 +1,43 @@
 from __future__ import annotations
 
 import argparse
+import re
 import tarfile
 from pathlib import Path
 
-from .jobs import discover_jobs
+try:
+    from .jobs import discover_jobs
+except ImportError:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    from tests.integration.TBmodel.jobs import discover_jobs
 
 
-def _add_dir(tf: tarfile.TarFile, path: Path, arcname: str) -> None:
-    tf.add(str(path), arcname=arcname, recursive=True)
+def _infer_outputdir(script_path: Path) -> str:
+    try:
+        text = script_path.read_text(encoding='utf-8')
+    except Exception:
+        return script_path.stem
+
+    m = re.search(r"outputdir\s*=\s*['\"]([^'\"]+)['\"]", text)
+    if not m:
+        return script_path.stem
+    return m.group(1).strip()
+
+
+def _resolve_outputdir(script_path: Path) -> tuple[Path, Path]:
+    raw = _infer_outputdir(script_path)
+    base_dir = script_path.parent
+    outp = Path(raw)
+    if not outp.is_absolute():
+        outp = (base_dir / outp).resolve()
+
+    try:
+        rel = outp.relative_to(base_dir)
+    except ValueError:
+        rel = Path(outp.name)
+    return outp, rel
 
 
 def build_assets(*, tbmodel_root: Path, out_tar_gz: Path) -> None:
@@ -19,17 +48,17 @@ def build_assets(*, tbmodel_root: Path, out_tar_gz: Path) -> None:
     out_tar_gz.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(out_tar_gz, 'w:gz') as tf:
         for job in jobs:
-            job_dir = job.job_dir
-            if not job_dir.exists():
+            script_path = job.script_path
+            if not script_path.exists():
                 continue
 
-            refdir = job_dir / 'Reference'
-            if refdir.is_dir():
-                _add_dir(tf, refdir, (Path(job.example_name) / 'Reference').as_posix())
+            outdir, rel_outdir = _resolve_outputdir(script_path)
+            if not outdir.is_dir():
+                continue
 
-            for savedir in sorted(job_dir.glob('*.save')):
-                if savedir.is_dir():
-                    _add_dir(tf, savedir, (Path(job.example_name) / savedir.name).as_posix())
+            base_arc = Path(job.example_name) / rel_outdir
+            for datap in sorted(outdir.glob('*.dat')):
+                tf.add(str(datap), arcname=(base_arc / datap.name).as_posix())
 
 
 def main() -> None:
