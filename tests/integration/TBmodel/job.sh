@@ -87,17 +87,6 @@ run_tbmodel_script() {
     return 1
   fi
 
-  local outdir
-  outdir="$(infer_outputdir "$script_path")"
-
-  if [[ -d "$outdir" ]]; then
-    rm -rf "$(dirname "$script_path")/Reference"
-    mkdir -p "$(dirname "$script_path")/Reference"
-    find "$outdir" -maxdepth 1 -type f -name "*.dat" -exec cp {} "$(dirname "$script_path")/Reference/" \;
-  else
-    log_job "PAOFLOW: $name - WARNING (output directory missing at $outdir)"
-  fi
-
   log_job "PAOFLOW: $name - OK"
 }
 
@@ -174,14 +163,25 @@ fi
 if [[ ${#examples[@]} -eq 0 ]]; then
   while IFS= read -r -d '' script; do
     name="$(basename "$script" .py)"
+    case "$name" in
+      assets|build_assets|compare|conftest|jobs|runner)
+        continue
+        ;;
+    esac
     examples+=("$name")
-  done < <(find "$root_dir" -maxdepth 1 -type f -name "*.py" ! -name "test_*" ! -name "_*" ! -name "__init__.py" -print0 | sort -z)
+  done < <(
+    find "$root_dir" -maxdepth 1 -type f -name "*.py" \
+      ! -name "test_*" ! -name "_*" ! -name "__init__.py" -print0 | sort -z
+  )
 fi
 
 if [[ ${#examples[@]} -eq 0 ]]; then
   echo "No TBmodel examples found under $root_dir" >&2
   exit 1
 fi
+
+failures=0
+failed_examples=()
 
 for name in "${examples[@]}"; do
   script_path="$root_dir/$name.py"
@@ -191,7 +191,8 @@ for name in "${examples[@]}"; do
   fi
 
   if ! run_tbmodel_script "$script_path" "$name"; then
-    exit 1
+    failures=$((failures + 1))
+    failed_examples+=("$name")
   fi
  done
 
@@ -199,3 +200,10 @@ if [[ "$build_assets" = true ]]; then
   "$PYTHON_EXEC" -m tests.integration.TBmodel.build_assets --tbmodel-root "$root_dir" --out "$assets_out"
   log_job "Assets written to $assets_out"
 fi
+
+if [[ $failures -gt 0 ]]; then
+  log_job "Completed with $failures failure(s): ${failed_examples[*]}"
+  exit 1
+fi
+
+log_job "Completed successfully."
