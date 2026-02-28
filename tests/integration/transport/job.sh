@@ -20,12 +20,13 @@ Options:
   --examples LIST   Comma-separated list of example directories.
   -h, --help        Show this help message.
 
-Default behavior: run all examples with PAOFLOW only.
+Default behavior: run all examples with QE + PAOFLOW transport (same as --all).
 
 Environment overrides:
   QE_BIN        Directory containing pw.x and projwfc.x.
   PW_EXEC       Full path to pw.x.
   PP_EXEC       Full path to projwfc.x.
+  PARALLEL_EXEC Optional launcher command (e.g. 'mpirun -np 8' or 'srun -n 8').
   PYTHON_EXEC   Python interpreter to run scripts (default: python).
   ASSETS_OUT    Same as --assets-out.
 EOF
@@ -76,6 +77,17 @@ log_job() {
   echo "[$(timestamp)] $msg" | tee -a "$JOB_LOG"
 }
 
+run_qe_exec() {
+  local exe="$1"
+  local input_file="$2"
+
+  if [[ ${#PARALLEL_EXEC_CMD[@]} -gt 0 ]]; then
+    "${PARALLEL_EXEC_CMD[@]}" "$exe" < "$input_file"
+  else
+    "$exe" < "$input_file"
+  fi
+}
+
 collect_job_dirs() {
   local example_dir="$1"
   local -a dirs=()
@@ -105,8 +117,6 @@ run_qe_dir() {
     return 0
   fi
 
-  mkdir -p "$jobdir/output/qe"
-
   for input in scf.in nscf.in proj.in; do
     if [[ -f "$jobdir/$input" ]]; then
       local cmd
@@ -116,14 +126,16 @@ run_qe_dir() {
       else
         cmd="$PW_EXEC"
       fi
-      out="$jobdir/output/qe/${input%.in}.out"
-      (cd "$jobdir" && "$cmd" < "$input" > "$out")
+      out="$jobdir/${input%.in}.out"
+      (cd "$jobdir" && run_qe_exec "$cmd" "$input" > "$out")
     fi
   done
 
   while IFS= read -r -d '' savedir; do
     find "$savedir" -type f ! -name "*.xml" ! -name "*.UPF" -delete
-  done < <(find "$jobdir/output/qe" -maxdepth 1 -type d -name "*.save" -print0)
+  done < <(find "$jobdir" -maxdepth 1 -type d -name "*.save" -print0)
+
+  find "$jobdir" -maxdepth 1 -type f \( -name "*pdos_*" -o -name "*.wfc*" -o -name "*.xml" \) -delete
 
   log_job "QE: $label - OK"
 }
@@ -177,7 +189,7 @@ run_transport_dir() {
   log_job "PAOFLOW: $label - OK"
 }
 
-run_qe=false
+run_qe=true
 run_paoflow=true
 mode_set=false
 examples_arg=""
@@ -251,6 +263,20 @@ if [[ "$run_qe" = true ]]; then
   if [[ -z "${PW_EXEC:-}" || -z "${PP_EXEC:-}" ]]; then
     echo "QE requested but pw.x/projwfc.x are not configured." >&2
     exit 2
+  fi
+
+  PARALLEL_EXEC="${PARALLEL_EXEC:-}"
+  PARALLEL_EXEC_CMD=()
+  if [[ -n "$PARALLEL_EXEC" ]]; then
+    read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
+    if [[ ${#PARALLEL_EXEC_CMD[@]} -eq 0 ]]; then
+      echo "PARALLEL_EXEC was set but is empty after parsing." >&2
+      exit 2
+    fi
+    if ! command -v "${PARALLEL_EXEC_CMD[0]}" >/dev/null 2>&1; then
+      echo "PARALLEL_EXEC command not found: ${PARALLEL_EXEC_CMD[0]}" >&2
+      exit 2
+    fi
   fi
 fi
 

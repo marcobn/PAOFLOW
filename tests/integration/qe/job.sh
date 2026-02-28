@@ -28,6 +28,7 @@ Environment overrides:
   QE_BIN        Directory containing pw.x and projwfc.x.
   PW_EXEC       Full path to pw.x.
   PP_EXEC       Full path to projwfc.x.
+  PARALLEL_EXEC Optional launcher command (e.g. 'mpirun -np 8' or 'srun -n 8').
   PYTHON_EXEC   Python interpreter to run main.py (default: python).
   ASSETS_OUT    Same as --assets-out.
 EOF
@@ -83,6 +84,17 @@ log_block_start() {
   printf '\n[%s] %s\n' "$(timestamp)" "$label" >> "$JOB_LOG"
 }
 
+run_qe_exec() {
+  local exe="$1"
+  local input_file="$2"
+
+  if [[ ${#PARALLEL_EXEC_CMD[@]} -gt 0 ]]; then
+    "${PARALLEL_EXEC_CMD[@]}" "$exe" < "$input_file"
+  else
+    "$exe" < "$input_file"
+  fi
+}
+
 # Collect "job folders" under an example directory.
 # Includes:
 #   - the example directory itself
@@ -133,7 +145,7 @@ run_qe_dir() {
       else
         cmd="$PW_EXEC"
       fi
-      if ! (cd "$jobdir" && "$cmd" < "$input") >> "$tmp_log" 2>&1; then
+      if ! (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$tmp_log" 2>&1; then
         log_job "QE: $label - FAILED on $input"
         printf '[%s] QE failed: %s (%s)\n' "$(timestamp)" "$label" "$input" >> "$QE_LOG"
         tail -n 200 "$tmp_log" >> "$QE_LOG"
@@ -159,7 +171,7 @@ run_qe_dir() {
       cmd="$PW_EXEC"
     fi
 
-    if ! (cd "$jobdir" && "$cmd" < "$input") >> "$tmp_log" 2>&1; then
+    if ! (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$tmp_log" 2>&1; then
       log_job "QE: $label - FAILED on $input"
       printf '[%s] QE failed: %s (%s)\n' "$(timestamp)" "$label" "$input" >> "$QE_LOG"
       tail -n 200 "$tmp_log" >> "$QE_LOG"
@@ -344,6 +356,20 @@ if [[ "$run_qe" = true ]]; then
   if ! PP_EXEC="$(resolve_exec PP_EXEC projwfc.x)"; then
     echo "QE executable projwfc.x not found (set PP_EXEC or QE_BIN)" | tee -a "$JOB_LOG"
     exit 2
+  fi
+
+  PARALLEL_EXEC="${PARALLEL_EXEC:-}"
+  PARALLEL_EXEC_CMD=()
+  if [[ -n "$PARALLEL_EXEC" ]]; then
+    read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
+    if [[ ${#PARALLEL_EXEC_CMD[@]} -eq 0 ]]; then
+      echo "PARALLEL_EXEC was set but is empty after parsing." | tee -a "$JOB_LOG"
+      exit 2
+    fi
+    if ! command -v "${PARALLEL_EXEC_CMD[0]}" >/dev/null 2>&1; then
+      echo "PARALLEL_EXEC command not found: ${PARALLEL_EXEC_CMD[0]}" | tee -a "$JOB_LOG"
+      exit 2
+    fi
   fi
 fi
 
