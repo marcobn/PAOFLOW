@@ -26,60 +26,31 @@ def _run_paoflow(script_path: Path, workdir: Path) -> None:
     subprocess.run([sys.executable, str(script_path)], cwd=workdir, check=True, env=env)
 
 
-def _infer_outputdir(script_path: Path, workdir: Path) -> Path:
-    """Infer PAOFLOW output directory from a TBmodel script.
-
-    Defaults to a folder with the script stem if not found.
-    """
-
+def _infer_outputdir_raw(script_path: Path) -> str:
     try:
         text = script_path.read_text(encoding='utf-8')
     except Exception:
-        return workdir / script_path.stem
+        return script_path.stem
 
     m = re.search(r"outputdir\s*=\s*['\"]([^'\"]+)['\"]", text)
     if not m:
-        return workdir / script_path.stem
+        return script_path.stem
+    return m.group(1).strip()
 
-    raw = m.group(1).strip()
+
+def _resolve_outputdir(script_path: Path, workdir: Path) -> tuple[Path, Path]:
+    """Return output directory (absolute) and its relative path under workdir."""
+
+    raw = _infer_outputdir_raw(script_path)
     outp = Path(raw)
     if not outp.is_absolute():
-        outp = workdir / outp
-    return outp
+        outp = (workdir / outp).resolve()
 
-
-def _overlay_assets(
-    *,
-    assets_root: Path,
-    example_name: str,
-    job_dir: Path,
-    link_mode: str,
-) -> None:
-    assets_job_root = (assets_root / example_name).resolve()
-    if not assets_job_root.exists():
-        raise RuntimeError(f'Assets missing for job: {example_name}')
-
-    def _link_or_copy(src: Path, dst: Path) -> None:
-        if dst.exists() or dst.is_symlink():
-            if dst.is_dir() and not dst.is_symlink():
-                shutil.rmtree(dst)
-            else:
-                dst.unlink(missing_ok=True)
-
-        if link_mode == 'symlink':
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.symlink_to(src, target_is_directory=True)
-            return
-
-        shutil.copytree(src, dst)
-
-    ref_src = assets_job_root / 'Reference'
-    if ref_src.is_dir():
-        _link_or_copy(ref_src, job_dir / 'Reference')
-
-    for savedir in sorted(assets_job_root.glob('*.save')):
-        if savedir.is_dir():
-            _link_or_copy(savedir, job_dir / savedir.name)
+    try:
+        rel = outp.relative_to(workdir)
+    except ValueError:
+        rel = Path(outp.name)
+    return outp, rel
 
 
 def run_example_in_sandbox(
@@ -87,7 +58,6 @@ def run_example_in_sandbox(
     sandbox_root: Path,
     *,
     assets_root: Optional[Path] = None,
-    assets_link_mode: str = 'symlink',
 ) -> ExampleRunResult:
     """Run a TBmodel integration job in an isolated sandbox."""
 
@@ -101,18 +71,13 @@ def run_example_in_sandbox(
     sandbox_script = sandbox_example_root / script_path.name
     shutil.copy2(script_path, sandbox_script)
 
-    if assets_root is not None:
-        _overlay_assets(
-            assets_root=assets_root,
-            example_name=example_name,
-            job_dir=sandbox_example_root,
-            link_mode=assets_link_mode,
-        )
-
     _run_paoflow(sandbox_script, sandbox_example_root)
 
-    outdir = _infer_outputdir(sandbox_script, sandbox_example_root)
-    refdir = sandbox_example_root / 'Reference'
+    outdir, rel_outdir = _resolve_outputdir(sandbox_script, sandbox_example_root)
+    if assets_root is not None:
+        refdir = (assets_root / example_name / rel_outdir).resolve()
+    else:
+        refdir = outdir
 
     return ExampleRunResult(
         example_name=example_name,
