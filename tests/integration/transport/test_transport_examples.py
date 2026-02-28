@@ -29,7 +29,7 @@ def test_transport_example(
 
     repo_job_dir = job.job_dir
     repo_has_ref = (repo_job_dir / 'Reference').is_dir()
-    repo_has_qe_save = any((repo_job_dir / 'output' / 'qe').glob('*.save'))
+    repo_has_qe_save = any(repo_job_dir.glob('*.save'))
 
     if transport_assets_root is None and not repo_has_ref:
         pytest.skip(
@@ -40,7 +40,7 @@ def test_transport_example(
 
     if transport_assets_root is None and not repo_has_qe_save:
         pytest.skip(
-            'Transport integration assets are not configured and output/qe/*.save is missing. '
+            'Transport integration assets are not configured and no *.save directory exists. '
             'Set PAOFLOW_TRANSPORT_ASSET_ARCHIVE (or --transport-assets-archive) '
             'to a local tar.gz to enable these tests.'
         )
@@ -50,7 +50,7 @@ def test_transport_example(
         if not asset_job_root.exists():
             pytest.skip(
                 f'Assets are missing for job {job.id} in configured archive and no local '
-                'Reference/output-qe data exists yet.'
+                'Reference/*.save data exists yet.'
             )
 
     result = run_example_in_sandbox(

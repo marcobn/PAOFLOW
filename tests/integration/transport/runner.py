@@ -106,11 +106,9 @@ def _overlay_assets(
     if ref_src.is_dir():
         _link_or_copy(ref_src, job_dir / 'Reference')
 
-    output_qe_src = assets_job_root / 'output' / 'qe'
-    if output_qe_src.is_dir():
-        dst_output = job_dir / 'output'
-        dst_output.mkdir(parents=True, exist_ok=True)
-        _link_or_copy(output_qe_src, dst_output / 'qe')
+    for savedir in sorted(assets_job_root.glob('*.save')):
+        if savedir.is_dir():
+            _link_or_copy(savedir, job_dir / savedir.name)
 
 
 def run_example_in_sandbox(
