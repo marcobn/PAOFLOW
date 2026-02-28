@@ -197,7 +197,7 @@ for name in "${examples[@]}"; do
  done
 
 if [[ "$build_assets" = true ]]; then
-  "$PYTHON_EXEC" -m tests.integration.TBmodel.build_assets --tbmodel-root "$root_dir" --out "$assets_out"
+  "$PYTHON_EXEC" "$root_dir/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out"
   log_job "Assets written to $assets_out"
 fi
 
