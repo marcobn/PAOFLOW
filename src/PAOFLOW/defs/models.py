@@ -75,6 +75,17 @@ def Slater_Koster(data_controller, params):
     attr['nbnds'] = nawf
     attr['shift'] = 0
 
+    # Define the Dnm matrix for correct calculation of gradient
+    basis = []
+    for i in range(attr['natoms']):
+        for k in range(len(arry['shells'][i]['orbitals'])):
+            basis.append(arry['shells'][i]['tau'])
+    arry['Dnm'] = np.empty((attr['nawf'], attr['nawf'], 3))
+    for i in range(3):
+        for n in range(attr['nawf']):
+            for m in range(attr['nawf']):
+                arry['Dnm'][n, m, i] = basis[n][i] - basis[m][i]
+
     # generate all the orbitals positions in the supercell
     sctau = np.zeros((natoms, nk1, nk2, nk3, 3), dtype=float)
     for i in range(-1, 2):
