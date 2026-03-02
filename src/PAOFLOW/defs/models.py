@@ -19,7 +19,50 @@
 
 
 def Slater_Koster(data_controller, params):
-    # generalized Slater-Koster TB model in the two-center approximation (1st nearest neighbors only)
+    """Build a generalized Slater-Koster tight-binding model (two-center, 1NN).
+
+    This routine populates the PAOFLOW data containers with a real-space
+    tight-binding Hamiltonian constructed in the two-center approximation,
+    restricted to first nearest neighbors. It uses a simple orbital basis per
+    atom (s and p) and derives hopping matrix elements from the standard
+    Slater-Koster direction-cosine expressions.
+
+    High-level workflow:
+    - Read lattice vectors and atomic positions from params and set up basic
+        attributes (number of atoms, orbitals, bands, spin settings).
+    - Compute reciprocal lattice vectors and the cell volume.
+    - Build a 3x3x3 supercell of atomic positions to identify neighbors and
+        determine a first-neighbor cutoff.
+    - Construct the Dnm matrix (orbital-position differences) for gradient
+        calculations.
+    - Allocate the real-space Hamiltonian array HRs and fill on-site energies
+        and hopping terms using direction cosines and SK parameters.
+
+    Data structure expectations (params):
+    - params['model']['a_vectors']: 3x3 lattice vectors.
+    - params['model']['atoms']: dict keyed by string indices ("0", "1", ...),
+        each containing:
+            - 'name': atomic species label
+            - 'tau': fractional/cartesian position in lattice units
+            - 'orbitals': list of orbital labels used to map on-site terms
+            - on-site energies keyed by orbital label
+    - params['model']['hoppings']: SK parameters with keys
+        'sss', 'sps', 'pps', 'ppp'.
+
+    Output side-effects (data_controller):
+    - arry['a_vectors'], arry['b_vectors'], arry['tau'], arry['atoms'],
+        arry['shells'], arry['norbitals'], arry['sctau'], arry['Dnm'],
+        arry['HRs']
+    - attr['alat'], attr['omega'], attr['natoms'], attr['nawf'], attr['bnd'],
+        attr['nbnds'], attr['nk1'], attr['nk2'], attr['nk3'], attr['nkpnts'],
+        attr['nspin'], attr['dftSO'], attr['shift'], attr['cutoff']
+
+    Notes:
+    - The neighbor search assumes a 3x3x3 supercell and identifies first
+        neighbors via the smallest nonzero distance and the next distinct shell.
+    - Only the unpolarized case is supported; spin-orbit is disabled here.
+    """
+
     import numpy as np
 
     arry, attr = data_controller.data_dicts()
@@ -127,6 +170,266 @@ def Slater_Koster(data_controller, params):
             ][str(ia)][params['model']['atoms'][str(ia)]['orbitals'][no]]
 
     # hopping matrix elements
+    hoppings = params['model']['hoppings']
+    orbital_order = ('s', 'px', 'py', 'pz', 'dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2')
+    p_index_map = {'px': 0, 'py': 1, 'pz': 2}
+    d_orbitals = set(orbital_order[4:])
+    supported_orbitals = set(orbital_order)
+
+    for shell in arry['shells']:
+        for orb in shell['orbitals']:
+            if orb not in supported_orbitals:
+                raise ValueError(f'Unsupported orbital label: {orb}')
+
+    required_keys = ['sss', 'sps', 'pps', 'ppp']
+    has_d = any(orb in d_orbitals for shell in arry['shells'] for orb in shell['orbitals'])
+    if has_d:
+        required_keys.extend(['sds', 'pds', 'pdp', 'dds', 'ddp', 'ddd'])
+    missing_keys = [key for key in required_keys if key not in hoppings]
+    if missing_keys:
+        raise KeyError(f'Missing Slater-Koster hopping keys: {", ".join(missing_keys)}')
+
+    def _sd_value(d_orb, lx, ly, lz):
+        l2 = lx * lx
+        m2 = ly * ly
+        n2 = lz * lz
+        if d_orb == 'dxy':
+            return 3.0 * lx * ly * hoppings['sds']
+        if d_orb == 'dyz':
+            return 3.0 * ly * lz * hoppings['sds']
+        if d_orb == 'dzx':
+            return 3.0 * lz * lx * hoppings['sds']
+        if d_orb == 'dx2-y2':
+            return 1.5 * (l2 - m2) * hoppings['sds']
+        if d_orb == 'dz2':
+            return (n2 - 0.5 * (l2 + m2)) * hoppings['sds']
+        return None
+
+    def _pd_value(p_orb, d_orb, lx, ly, lz):
+        l2 = lx * lx
+        m2 = ly * ly
+        n2 = lz * lz
+        if p_orb == 'px':
+            if d_orb == 'dxy':
+                return 3.0 * l2 * ly * hoppings['pds'] + ly * (1.0 - 2.0 * l2) * hoppings['pdp']
+            if d_orb == 'dyz':
+                return 3.0 * lx * ly * lz * hoppings['pds'] - 2.0 * lx * ly * lz * hoppings['pdp']
+            if d_orb == 'dzx':
+                return 3.0 * l2 * lz * hoppings['pds'] + lz * (1.0 - 2.0 * l2) * hoppings['pdp']
+            if d_orb == 'dx2-y2':
+                return (
+                    1.5 * lx * (l2 - m2) * hoppings['pds'] + lx * (1.0 - l2 + m2) * hoppings['pdp']
+                )
+            if d_orb == 'dz2':
+                return (
+                    lx * (n2 - 0.5 * (l2 + m2)) * hoppings['pds'] - 3.0 * lx * n2 * hoppings['pdp']
+                )
+        if p_orb == 'py':
+            if d_orb == 'dxy':
+                return 3.0 * m2 * lx * hoppings['pds'] + lx * (1.0 - 2.0 * m2) * hoppings['pdp']
+            if d_orb == 'dyz':
+                return 3.0 * m2 * lz * hoppings['pds'] + lz * (1.0 - 2.0 * m2) * hoppings['pdp']
+            if d_orb == 'dzx':
+                return 3.0 * lx * ly * lz * hoppings['pds'] - 2.0 * lx * ly * lz * hoppings['pdp']
+            if d_orb == 'dx2-y2':
+                return (
+                    1.5 * ly * (l2 - m2) * hoppings['pds'] - ly * (1.0 + l2 - m2) * hoppings['pdp']
+                )
+            if d_orb == 'dz2':
+                return (
+                    ly * (n2 - 0.5 * (l2 + m2)) * hoppings['pds'] - 3.0 * ly * n2 * hoppings['pdp']
+                )
+        if p_orb == 'pz':
+            if d_orb == 'dxy':
+                return 3.0 * lx * ly * lz * hoppings['pds'] - 2.0 * lx * ly * lz * hoppings['pdp']
+            if d_orb == 'dyz':
+                return 3.0 * n2 * ly * hoppings['pds'] + ly * (1.0 - 2.0 * n2) * hoppings['pdp']
+            if d_orb == 'dzx':
+                return 3.0 * n2 * lx * hoppings['pds'] + lx * (1.0 - 2.0 * n2) * hoppings['pdp']
+            if d_orb == 'dx2-y2':
+                return 1.5 * lz * (l2 - m2) * hoppings['pds'] - lz * (l2 - m2) * hoppings['pdp']
+            if d_orb == 'dz2':
+                return (
+                    lz * (n2 - 0.5 * (l2 + m2)) * hoppings['pds']
+                    + 3.0 * lz * (l2 + m2) * hoppings['pdp']
+                )
+        return None
+
+    def _dd_value(d_orb_a, d_orb_b, lx, ly, lz):
+        l2 = lx * lx
+        m2 = ly * ly
+        n2 = lz * lz
+        lm = lx * ly
+        ln = lx * lz
+        mn = ly * lz
+        l2m2 = l2 * m2
+        l2n2 = l2 * n2
+        m2n2 = m2 * n2
+        diff_lm = l2 - m2
+
+        if d_orb_a == d_orb_b == 'dxy':
+            return (
+                3.0 * l2m2 * hoppings['dds']
+                + (l2 + m2 - 4.0 * l2m2) * hoppings['ddp']
+                + (n2 + l2m2) * hoppings['ddd']
+            )
+        if d_orb_a == d_orb_b == 'dyz':
+            return (
+                3.0 * m2n2 * hoppings['dds']
+                + (m2 + n2 - 4.0 * m2n2) * hoppings['ddp']
+                + (l2 + m2n2) * hoppings['ddd']
+            )
+        if d_orb_a == d_orb_b == 'dzx':
+            return (
+                3.0 * l2n2 * hoppings['dds']
+                + (l2 + n2 - 4.0 * l2n2) * hoppings['ddp']
+                + (m2 + l2n2) * hoppings['ddd']
+            )
+        if d_orb_a == d_orb_b == 'dx2-y2':
+            return (
+                0.75 * diff_lm**2 * hoppings['dds']
+                + (l2 + m2 - diff_lm**2) * hoppings['ddp']
+                + (n2 + 0.25 * diff_lm**2) * hoppings['ddd']
+            )
+        if d_orb_a == d_orb_b == 'dz2':
+            term = n2 - 0.5 * (l2 + m2)
+            return (
+                term**2 * hoppings['dds']
+                + 3.0 * n2 * (l2 + m2) * hoppings['ddp']
+                + 0.75 * (l2 + m2) ** 2 * hoppings['ddd']
+            )
+
+        if (d_orb_a, d_orb_b) in (('dxy', 'dyz'), ('dyz', 'dxy')):
+            return (
+                3.0 * lx * m2 * lz * hoppings['dds']
+                + ln * (1.0 - 4.0 * m2) * hoppings['ddp']
+                + ln * (m2 - 1.0) * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dxy', 'dzx'), ('dzx', 'dxy')):
+            return (
+                3.0 * l2 * ly * lz * hoppings['dds']
+                + mn * (1.0 - 4.0 * l2) * hoppings['ddp']
+                + mn * (l2 - 1.0) * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dyz', 'dzx'), ('dzx', 'dyz')):
+            return (
+                3.0 * ly * n2 * lx * hoppings['dds']
+                + lm * (1.0 - 4.0 * n2) * hoppings['ddp']
+                + lm * (n2 - 1.0) * hoppings['ddd']
+            )
+
+        if (d_orb_a, d_orb_b) in (('dxy', 'dx2-y2'), ('dx2-y2', 'dxy')):
+            return (
+                1.5 * lm * diff_lm * hoppings['dds']
+                + 2.0 * lm * (m2 - l2) * hoppings['ddp']
+                + 0.5 * lm * diff_lm * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dyz', 'dx2-y2'), ('dx2-y2', 'dyz')):
+            return (
+                1.5 * mn * diff_lm * hoppings['dds']
+                - mn * (1.0 + 2.0 * diff_lm) * hoppings['ddp']
+                + mn * (1.0 + 0.5 * diff_lm) * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dzx', 'dx2-y2'), ('dx2-y2', 'dzx')):
+            return (
+                1.5 * ln * diff_lm * hoppings['dds']
+                + ln * (1.0 - 2.0 * diff_lm) * hoppings['ddp']
+                - ln * (1.0 - 0.5 * diff_lm) * hoppings['ddd']
+            )
+
+        if (d_orb_a, d_orb_b) in (('dxy', 'dz2'), ('dz2', 'dxy')):
+            return 3.0 * (
+                lm * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
+                - 2.0 * lm * n2 * hoppings['ddp']
+                + 0.5 * lm * (1.0 + n2) * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dyz', 'dz2'), ('dz2', 'dyz')):
+            return 3.0 * (
+                mn * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
+                + mn * (l2 + m2 - n2) * hoppings['ddp']
+                - 0.5 * mn * (l2 + m2) * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dzx', 'dz2'), ('dz2', 'dzx')):
+            return 3.0 * (
+                ln * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
+                + ln * (l2 + m2 - n2) * hoppings['ddp']
+                - 0.5 * ln * (l2 + m2) * hoppings['ddd']
+            )
+        if (d_orb_a, d_orb_b) in (('dx2-y2', 'dz2'), ('dz2', 'dx2-y2')):
+            return 3.0 * (
+                0.5 * diff_lm * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
+                + n2 * (m2 - l2) * hoppings['ddp']
+                + 0.25 * (1.0 + n2) * diff_lm * hoppings['ddd']
+            )
+
+        return None
+
+    def _sk_sp_value(orb_a, orb_b, lx, ly, lz):
+        if orb_a == 's' and orb_b in d_orbitals:
+            return _sd_value(orb_b, lx, ly, lz)
+        if orb_b == 's' and orb_a in d_orbitals:
+            return _sd_value(orb_a, lx, ly, lz)
+        if orb_a in p_index_map and orb_b in d_orbitals:
+            return _pd_value(orb_a, orb_b, lx, ly, lz)
+        if orb_b in p_index_map and orb_a in d_orbitals:
+            value = _pd_value(orb_b, orb_a, lx, ly, lz)
+            return -value if value is not None else None
+        if orb_a in d_orbitals and orb_b in d_orbitals:
+            return _dd_value(orb_a, orb_b, lx, ly, lz)
+
+        if orb_a == 's' and orb_b == 's':
+            return hoppings['sss']
+
+        if orb_a == 's' and orb_b in p_index_map:
+            return (lx, ly, lz)[p_index_map[orb_b]] * hoppings['sps']
+
+        if orb_b == 's' and orb_a in p_index_map:
+            return -(lx, ly, lz)[p_index_map[orb_a]] * hoppings['sps']
+
+        if orb_a == orb_b and orb_a in p_index_map:
+            ll = (lx, ly, lz)[p_index_map[orb_a]]
+            return ll**2 * hoppings['pps'] + (1.0 - ll**2) * hoppings['ppp']
+
+        if (orb_a, orb_b) in (('px', 'py'), ('py', 'px')):
+            return lx * ly * (hoppings['pps'] - hoppings['ppp'])
+
+        if (orb_a, orb_b) in (('py', 'pz'), ('pz', 'py')):
+            return ly * lz * (hoppings['pps'] - hoppings['ppp'])
+
+        if (orb_a, orb_b) in (('px', 'pz'), ('pz', 'px')):
+            return lx * lz * (hoppings['pps'] - hoppings['ppp'])
+
+        return None
+
+    def _validate_sk_tables():
+        if not has_d:
+            return
+
+        test_dirs = [
+            np.array([1.0, 0.0, 0.0]),
+            np.array([0.0, 1.0, 0.0]),
+            np.array([0.0, 0.0, 1.0]),
+            np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0),
+            np.array([1.0, 2.0, 3.0]) / np.sqrt(14.0),
+        ]
+
+        for vec in test_dirs:
+            lx, ly, lz = vec
+            for a in d_orbitals:
+                for b in d_orbitals:
+                    v_ab = _dd_value(a, b, lx, ly, lz)
+                    v_ba = _dd_value(b, a, lx, ly, lz)
+                    if v_ab is None or v_ba is None:
+                        continue
+                    if not np.isclose(v_ab, v_ba, atol=1e-12, rtol=1e-12):
+                        raise ValueError(
+                            'Inconsistent d-d SK symmetry for '
+                            f'{a},{b} at direction ({lx:.3f},{ly:.3f},{lz:.3f})'
+                        )
+
+    if params.get('model', {}).get('validate_sk', False):
+        _validate_sk_tables()
+
     for i in range(-1, 2):
         for j in range(-1, 2):
             for k in range(-1, 2):
@@ -140,10 +443,12 @@ def Slater_Koster(data_controller, params):
                             ly = cosines(tau[ia], sctau[ib, i, j, k, :])[1]
                             lz = cosines(tau[ia], sctau[ib, i, j, k, :])[2]
 
-                            for noa in range(norbitals[ia]):
-                                for nob in range(norbitals[ib]):
-                                    #                  print(ia*norbitals[ia]+noa,ib*norbitals[ib]+nob,i,j,k)
-                                    if noa == 0 and nob == 0:
+                            orbitals_a = arry['shells'][ia]['orbitals']
+                            orbitals_b = arry['shells'][ib]['orbitals']
+                            for noa, orb_a in enumerate(orbitals_a):
+                                for nob, orb_b in enumerate(orbitals_b):
+                                    value = _sk_sp_value(orb_a, orb_b, lx, ly, lz)
+                                    if value is not None:
                                         HRs[
                                             ia * norbitals[ia] + noa,
                                             ib * norbitals[ib] + nob,
@@ -151,236 +456,15 @@ def Slater_Koster(data_controller, params):
                                             j,
                                             k,
                                             0,
-                                        ] = params['model']['hoppings']['sss']
-                                    elif noa == 0 and nob == 1:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = lx * params['model']['hoppings']['sps']
-                                    elif noa == 0 and nob == 2:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = ly * params['model']['hoppings']['sps']
-                                    elif noa == 0 and nob == 3:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = lz * params['model']['hoppings']['sps']
-                                    elif noa == 1 and nob == 1:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lx**2 * params['model']['hoppings']['pps']
-                                            + (1.0 - lx**2) * params['model']['hoppings']['ppp']
-                                        )
-                                    elif noa == 2 and nob == 2:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            ly**2 * params['model']['hoppings']['pps']
-                                            + (1.0 - ly**2) * params['model']['hoppings']['ppp']
-                                        )
-                                    elif noa == 3 and nob == 3:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lz**2 * params['model']['hoppings']['pps']
-                                            + (1.0 - lz**2) * params['model']['hoppings']['ppp']
-                                        )
-                                    elif noa == 1 and nob == 2:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lx
-                                            * ly
-                                            * (
-                                                params['model']['hoppings']['pps']
-                                                - params['model']['hoppings']['ppp']
-                                            )
-                                        )
-                                    elif noa == 2 and nob == 3:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            ly
-                                            * lz
-                                            * (
-                                                params['model']['hoppings']['pps']
-                                                - params['model']['hoppings']['ppp']
-                                            )
-                                        )
-                                    elif noa == 1 and nob == 3:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lx
-                                            * lz
-                                            * (
-                                                params['model']['hoppings']['pps']
-                                                - params['model']['hoppings']['ppp']
-                                            )
-                                        )
-                                    elif noa == 1 and nob == 0:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = -lx * params['model']['hoppings']['sps']
-                                    elif noa == 2 and nob == 0:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = -ly * params['model']['hoppings']['sps']
-                                    elif noa == 3 and nob == 0:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = -lz * params['model']['hoppings']['sps']
-                                    elif noa == 1 and nob == 1:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lx**2 * params['model']['hoppings']['pps']
-                                            + (1.0 - lx**2) * params['model']['hoppings']['ppp']
-                                        )
-                                    elif noa == 2 and nob == 2:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            ly**2 * params['model']['hoppings']['pps']
-                                            + (1.0 - ly**2) * params['model']['hoppings']['ppp']
-                                        )
-                                    elif noa == 3 and nob == 3:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lz**2 * params['model']['hoppings']['pps']
-                                            + (1.0 - lz**2) * params['model']['hoppings']['ppp']
-                                        )
-                                    elif noa == 2 and nob == 1:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lx
-                                            * ly
-                                            * (
-                                                params['model']['hoppings']['pps']
-                                                - params['model']['hoppings']['ppp']
-                                            )
-                                        )
-                                    elif noa == 3 and nob == 2:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            ly
-                                            * lz
-                                            * (
-                                                params['model']['hoppings']['pps']
-                                                - params['model']['hoppings']['ppp']
-                                            )
-                                        )
-                                    elif noa == 3 and nob == 1:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = (
-                                            lx
-                                            * lz
-                                            * (
-                                                params['model']['hoppings']['pps']
-                                                - params['model']['hoppings']['ppp']
-                                            )
-                                        )
+                                        ] = value
 
         arry['HRs'] = HRs
 
 
 def graphene(data_controller, params):
-    from .constants import ANGSTROM_AU
     import numpy as np
+
+    from .constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -445,8 +529,9 @@ def graphene(data_controller, params):
 
 
 def graphene2(data_controller, params):
-    from .constants import ANGSTROM_AU
     import numpy as np
+
+    from .constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -513,8 +598,9 @@ def graphene2(data_controller, params):
 
 
 def cubium(data_controller, params):
-    from .constants import ANGSTROM_AU
     import numpy as np
+
+    from .constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -581,8 +667,9 @@ def cubium(data_controller, params):
 
 
 def cubium2(data_controller, params):
-    from .constants import ANGSTROM_AU
     import numpy as np
+
+    from .constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -652,8 +739,9 @@ def cubium2(data_controller, params):
 
 
 def Kane_Mele(data_controller, params):
-    from .constants import ANGSTROM_AU
     import numpy as np
+
+    from .constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
