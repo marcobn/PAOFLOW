@@ -4,7 +4,7 @@ import argparse
 import tarfile
 from pathlib import Path
 
-from .jobs import discover_jobs
+from tests.integration.qe.jobs import discover_jobs
 
 
 def _add_dir(tf: tarfile.TarFile, path: Path, arcname: str) -> None:
@@ -40,14 +40,14 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description=(
             'Build a local qe_test_assets tar.gz from existing *.save/ and Reference/ folders. '
-            'Run tests/integration/qe/job.sh first to generate Reference outputs.'
+            'Run tests/assets_generation/qe/job.sh first to generate Reference outputs.'
         )
     )
     p.add_argument(
         '--qe-root',
         type=Path,
-        default=Path(__file__).resolve().parent,
-        help='Path to tests/integration/qe (default: this directory)',
+        default=Path(__file__).resolve().parents[2] / 'integration' / 'qe',
+        help='Path to tests/integration/qe (default: tests/integration/qe)',
     )
     p.add_argument(
         '--out',

@@ -37,7 +37,7 @@ resolve_root_dir() {
     fi
   fi
 
-  echo "$script_dir"
+  echo "$(cd "$script_dir/../../integration/TBmodel" && pwd)"
 }
 
 log_job() {
@@ -129,6 +129,9 @@ root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
+# repo root is needed for `python -m tests.assets_generation.TBmodel.build_assets`
+repo_root="$(cd "$root_dir/../../.." && pwd)"
+
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
@@ -197,7 +200,7 @@ for name in "${examples[@]}"; do
  done
 
 if [[ "$build_assets" = true ]]; then
-  "$PYTHON_EXEC" "$root_dir/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out"
+  (cd "$repo_root" && "$PYTHON_EXEC" -m tests.assets_generation.TBmodel.build_assets --tbmodel-root "$root_dir" --out "$assets_out")
   log_job "Assets written to $assets_out"
 fi
 

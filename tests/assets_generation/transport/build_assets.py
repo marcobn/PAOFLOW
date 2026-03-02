@@ -4,7 +4,7 @@ import argparse
 import tarfile
 from pathlib import Path
 
-from .jobs import discover_jobs
+from tests.integration.transport.jobs import discover_jobs
 
 
 def _add_dir(tf: tarfile.TarFile, path: Path, arcname: str) -> None:
@@ -34,15 +34,14 @@ def build_assets(*, transport_root: Path, out_tar_gz: Path) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(
         description=(
-            'Build a local transport_test_assets tar.gz from existing *.save and '
-            'Reference folders.'
+            'Build a local transport_test_assets tar.gz from existing *.save and Reference folders.'
         )
     )
     p.add_argument(
         '--transport-root',
         type=Path,
-        default=Path(__file__).resolve().parent,
-        help='Path to tests/integration/transport (default: this directory)',
+        default=Path(__file__).resolve().parents[2] / 'integration' / 'transport',
+        help='Path to tests/integration/transport (default: tests/integration/transport)',
     )
     p.add_argument(
         '--out',
