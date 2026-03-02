@@ -19,17 +19,17 @@
 
 
 def Slater_Koster(data_controller, params):
-    """Build a generalized Slater-Koster tight-binding model (two-center, 1NN).
+    """Build a generalized Slater-Koster tight-binding model (two-center, up to 3NN).
 
     This routine populates the PAOFLOW data containers with a real-space
     tight-binding Hamiltonian constructed in the two-center approximation,
-    restricted to first nearest neighbors. It uses a simple orbital basis per
-    atom (s and p) and derives hopping matrix elements from the standard
+    up to third nearest neighbors. It uses a simple orbital basis per
+    atom (s,p and d) and derives hopping matrix elements from the standard
     Slater-Koster direction-cosine expressions.
 
     High-level workflow:
     - Read lattice vectors and atomic positions from params and set up basic
-        attributes (number of atoms, orbitals, bands, spin settings).
+        attributes (number of atoms, orbitals, hoppings).
     - Compute reciprocal lattice vectors and the cell volume.
     - Build a 3x3x3 supercell of atomic positions to identify neighbors and
         determine a first-neighbor cutoff.
@@ -47,7 +47,7 @@ def Slater_Koster(data_controller, params):
             - 'orbitals': list of orbital labels used to map on-site terms
             - on-site energies keyed by orbital label
     - params['model']['hoppings']: either a flat dict of SK parameters with keys
-        'sss', 'sps', 'pps', 'ppp', or a shell dict with 'nn' and optional
+        'sss', 'sps', 'pps', 'ppp', etc., or a shell dict with 'nn' and optional
         'nnn'/'nnnn' blocks containing those keys.
 
     Output side-effects (data_controller):
