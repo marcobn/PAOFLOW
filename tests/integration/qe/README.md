@@ -29,7 +29,7 @@ to a minimal size:
 
 ```bash
 # From repository root
-cd tests/integration/qe
+cd tests/assets_generation/qe
 
 # Run QE + PAOFLOW for all examples (creates *.save and Reference)
 QE_BIN=/path/to/qe/bin ./job.sh --all
@@ -68,11 +68,11 @@ their paths relative to this directory:
 ```bash
 # From repository root
 mkdir -p tests/integration/qe/_assets
-python -m tests.integration.qe.build_assets \
+python -m tests.assets_generation.qe.build_assets \
   --out tests/integration/qe/_assets/qe_test_assets_dev.tar.gz
 ```
 
-The builder is [build_assets.py](build_assets.py).
+The builder is [tests/assets_generation/qe/build_assets.py](../../assets_generation/qe/build_assets.py).
 
 ### 3) Run pytest using the local tarball
 
@@ -118,7 +118,7 @@ Implementation lives in [assets.py](assets.py).
 ## QE execution
 
 Pytest does **not** run QE. QE is expected to be run on HPC resources via
-[job.sh](job.sh) to generate `*.save/` and `Reference/`, which are then packaged
+[tests/assets_generation/qe/job.sh](../../assets_generation/qe/job.sh) to generate `*.save/` and `Reference/`, which are then packaged
 into the asset tarball.
 
 ## How outputs and comparisons work
@@ -135,14 +135,14 @@ into the asset tarball.
 
 Recommended execution order:
 
-1. Generate QE `*.save/` + PAOFLOW `Reference/` on HPC: [submit.sh](submit.sh) (SLURM) or [job.sh](job.sh) (direct)
-2. Package `*.save/` + `Reference/` into a tarball: [build_assets.py](build_assets.py)
+1. Generate QE `*.save/` + PAOFLOW `Reference/` on HPC: [tests/assets_generation/qe/submit.sh](../../assets_generation/qe/submit.sh) (SLURM) or [tests/assets_generation/qe/job.sh](../../assets_generation/qe/job.sh) (direct)
+2. Package `*.save/` + `Reference/` into a tarball: [tests/assets_generation/qe/build_assets.py](../../assets_generation/qe/build_assets.py)
 3. Run pytest using the tarball (PAOFLOW-only): [test_qe_examples.py](test_qe_examples.py)
 4. Internals used by pytest: [assets.py](assets.py), [runner.py](runner.py), [jobs.py](jobs.py), [compare.py](compare.py), [conftest.py](conftest.py)
 
-- [job.sh](job.sh): generate `*.save/` (QE) and `Reference/` (PAOFLOW) in-place; trims large QE artifacts
-- [submit.sh](submit.sh): SLURM wrapper for `job.sh`
-- [build_assets.py](build_assets.py): package `Reference/` + `*.save/` into a tar.gz (local-first)
+- [tests/assets_generation/qe/job.sh](../../assets_generation/qe/job.sh): generate `*.save/` (QE) and `Reference/` (PAOFLOW) in-place; trims large QE artifacts
+- [tests/assets_generation/qe/submit.sh](../../assets_generation/qe/submit.sh): SLURM wrapper for `job.sh`
+- [tests/assets_generation/qe/build_assets.py](../../assets_generation/qe/build_assets.py): package `Reference/` + `*.save/` into a tar.gz (local-first)
 - [assets.py](assets.py): resolve/download/verify/extract the asset tarball into a cache
 - [jobs.py](jobs.py): discover runnable jobs (any directory with `main.py`)
 - [runner.py](runner.py): sandbox runner; overlays assets; runs PAOFLOW

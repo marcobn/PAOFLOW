@@ -26,11 +26,11 @@ Run the TBmodel scripts to generate `*.dat` outputs in place:
 
 ```bash
 # From repository root
-cd tests/integration/TBmodel
+cd tests/assets_generation/TBmodel
 ./job.sh --build-assets
 ```
 
-When generating assets through [job.sh](job.sh), you can control launch with
+When generating assets through [tests/assets_generation/TBmodel/job.sh](../../assets_generation/TBmodel/job.sh), you can control launch with
 `PARALLEL_EXEC`:
 
 - serial (default): unset `PARALLEL_EXEC`
@@ -44,11 +44,11 @@ Create a tarball containing output `*.dat` files for all discovered jobs:
 ```bash
 # From repository root
 mkdir -p tests/integration/TBmodel/_assets
-python -m tests.integration.TBmodel.build_assets \
+python -m tests.assets_generation.TBmodel.build_assets \
   --out tests/integration/TBmodel/_assets/tbmodel_test_assets_dev.tar.gz
 ```
 
-The builder is [build_assets.py](build_assets.py).
+The builder is [tests/assets_generation/TBmodel/build_assets.py](../../assets_generation/TBmodel/build_assets.py).
 
 ### 3) Run pytest using the local tarball
 
@@ -92,9 +92,9 @@ Implementation lives in [assets.py](assets.py).
 
 ## File guide
 
-- [job.sh](job.sh): run TBmodel scripts to generate `*.dat` outputs
-- [submit.sh](submit.sh): SLURM wrapper for `job.sh`
-- [build_assets.py](build_assets.py): package output `*.dat` files into a tar.gz
+- [tests/assets_generation/TBmodel/job.sh](../../assets_generation/TBmodel/job.sh): run TBmodel scripts to generate `*.dat` outputs
+- [tests/assets_generation/TBmodel/submit.sh](../../assets_generation/TBmodel/submit.sh): SLURM wrapper for `job.sh`
+- [tests/assets_generation/TBmodel/build_assets.py](../../assets_generation/TBmodel/build_assets.py): package output `*.dat` files into a tar.gz
 - [assets.py](assets.py): resolve/download/verify/extract the asset tarball
 - [jobs.py](jobs.py): discover runnable TBmodel scripts
 - [runner.py](runner.py): sandbox runner; overlays assets; runs TBmodel scripts

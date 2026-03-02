@@ -6,7 +6,7 @@ import tarfile
 from pathlib import Path
 
 try:
-    from .jobs import discover_jobs
+    from tests.integration.TBmodel.jobs import discover_jobs
 except ImportError:
     import sys
 
@@ -68,8 +68,8 @@ def main() -> None:
     p.add_argument(
         '--tbmodel-root',
         type=Path,
-        default=Path(__file__).resolve().parent,
-        help='Path to tests/integration/TBmodel (default: this directory)',
+        default=Path(__file__).resolve().parents[2] / 'integration' / 'TBmodel',
+        help='Path to tests/integration/TBmodel (default: tests/integration/TBmodel)',
     )
     p.add_argument(
         '--out',

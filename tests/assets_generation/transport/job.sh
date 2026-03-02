@@ -43,7 +43,7 @@ resolve_root_dir() {
     fi
   fi
 
-  echo "$script_dir"
+  echo "$(cd "$script_dir/../../integration/transport" && pwd)"
 }
 
 resolve_exec() {
@@ -254,6 +254,9 @@ root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
+# repo root is needed for `python -m tests.assets_generation.transport.build_assets`
+repo_root="$(cd "$root_dir/../../.." && pwd)"
+
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
@@ -312,7 +315,7 @@ done
 if [[ "$build_assets" = true ]]; then
   out="${assets_out:-${ASSETS_OUT:-$root_dir/_assets/transport_test_assets_dev.tar.gz}}"
   mkdir -p "$(dirname "$out")"
-  "$PYTHON_EXEC" -m tests.integration.transport.build_assets --transport-root "$root_dir" --out "$out"
+  (cd "$repo_root" && "$PYTHON_EXEC" -m tests.assets_generation.transport.build_assets --transport-root "$root_dir" --out "$out")
   log_job "Built assets: $out"
 fi
 

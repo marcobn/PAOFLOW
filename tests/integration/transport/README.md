@@ -33,13 +33,13 @@ discovered jobs, preserving their paths relative to this directory:
 ```bash
 # From repository root
 mkdir -p tests/integration/transport/_assets
-python -m tests.integration.transport.build_assets \
+python -m tests.assets_generation.transport.build_assets \
   --out tests/integration/transport/_assets/transport_test_assets_dev.tar.gz
 ```
 
-The builder is [build_assets.py](build_assets.py).
+The builder is [tests/assets_generation/transport/build_assets.py](../../assets_generation/transport/build_assets.py).
 
-When generating assets through [job.sh](job.sh), QE launch can be controlled via
+When generating assets through [tests/assets_generation/transport/job.sh](../../assets_generation/transport/job.sh), QE launch can be controlled via
 `PARALLEL_EXEC`:
 
 - serial (default): unset `PARALLEL_EXEC`
@@ -89,7 +89,7 @@ Implementation lives in [assets.py](assets.py).
 
 ## File guide
 
-- [build_assets.py](build_assets.py): package `Reference/` + `*.save` into tar.gz
+- [tests/assets_generation/transport/build_assets.py](../../assets_generation/transport/build_assets.py): package `Reference/` + `*.save` into tar.gz
 - [assets.py](assets.py): resolve/download/verify/extract asset tarball into cache
 - [jobs.py](jobs.py): discover runnable transport jobs
 - [runner.py](runner.py): sandbox runner; overlays assets; runs transport scripts

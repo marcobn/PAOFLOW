@@ -24,4 +24,5 @@ cd "$SLURM_SUBMIT_DIR"
 export QE_BIN=/home/jayn/qe-7.4.1/bin
 export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
-./job.sh --paoflow example14 example13
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$script_dir/job.sh" --paoflow example14 example13

@@ -45,7 +45,7 @@ resolve_root_dir() {
     fi
   fi
 
-  echo "$script_dir"
+  echo "$(cd "$script_dir/../../integration/qe" && pwd)"
 }
 
 resolve_exec() {
@@ -331,7 +331,7 @@ root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
-# repo root is needed for `python -m tests.integration.qe.build_assets`
+# repo root is needed for `python -m tests.assets_generation.qe.build_assets`
 repo_root="$(cd "$root_dir/../../.." && pwd)"
 
 JOB_LOG="$log_dir/job.log"
@@ -454,7 +454,7 @@ if [[ "$build_assets" = true ]]; then
   log_job "Building asset bundle: $assets_out"
   mkdir -p "$(dirname "$assets_out")"
 
-  if ! (cd "$repo_root" && "$PYTHON_EXEC" -m tests.integration.qe.build_assets --qe-root "$root_dir" --out "$assets_out") >> "$JOB_LOG" 2>&1; then
+  if ! (cd "$repo_root" && "$PYTHON_EXEC" -m tests.assets_generation.qe.build_assets --qe-root "$root_dir" --out "$assets_out") >> "$JOB_LOG" 2>&1; then
     log_job "Asset bundle build FAILED"
     echo "--- asset build error (last 60 lines) ---" | tee -a "$JOB_LOG"
     tail -n 60 "$JOB_LOG" | tee -a "$JOB_LOG"

@@ -1,12 +1,12 @@
 #!/bin/bash -l
 #SBATCH --no-requeue
-#SBATCH --job-name="tbmodel-it"
+#SBATCH --job-name="transport-it"
 #SBATCH --get-user-env
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=1
-#SBATCH --time=04:00:00
-#SBATCH --mem=2000
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=2500
 
 set -euo pipefail
 
@@ -19,6 +19,8 @@ conda activate paoflow_new
 
 cd "$SLURM_SUBMIT_DIR"
 
-export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-1}"
+export QE_BIN=/home/anooja/Work/software/qe-7.4.1/bin
+export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
-./job.sh --build-assets
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$script_dir/job.sh" --all --build-assets
