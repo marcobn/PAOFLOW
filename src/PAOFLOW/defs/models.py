@@ -59,8 +59,9 @@ def Slater_Koster(data_controller, params):
         attr['nspin'], attr['dftSO'], attr['shift'], attr['cutoff']
 
     Notes:
-    - The neighbor search assumes a 3x3x3 supercell and identifies first
-        neighbors via the smallest nonzero distance and the next distinct shell.
+    - The neighbor search uses a 3x3x3 supercell for nn only, 5x5x5 when nnn
+        is enabled, and 7x7x7 when nnnn is enabled. Shells are determined from
+        distinct neighbor distances and mid-point cutoffs.
     - Only the unpolarized case is supported; spin-orbit is disabled here.
     """
 
