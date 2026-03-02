@@ -46,8 +46,9 @@ def Slater_Koster(data_controller, params):
             - 'tau': fractional/cartesian position in lattice units
             - 'orbitals': list of orbital labels used to map on-site terms
             - on-site energies keyed by orbital label
-    - params['model']['hoppings']: SK parameters with keys
-        'sss', 'sps', 'pps', 'ppp'.
+    - params['model']['hoppings']: either a flat dict of SK parameters with keys
+        'sss', 'sps', 'pps', 'ppp', or a shell dict with 'nn' (and optional
+        'nnn') blocks containing those keys.
 
     Output side-effects (data_controller):
     - arry['a_vectors'], arry['b_vectors'], arry['tau'], arry['atoms'],
@@ -97,8 +98,16 @@ def Slater_Koster(data_controller, params):
     arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
     arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
+    hoppings = params['model']['hoppings']
+    use_second_neighbors = isinstance(hoppings, dict) and 'nnn' in hoppings
+    if use_second_neighbors and 'nn' not in hoppings:
+        raise ValueError(
+            'Second-neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+        )
+
     # dimensions of the supercell for two-center approximation
-    nk1 = nk2 = nk3 = 3
+    cell_range = 2 if use_second_neighbors else 1
+    nk1 = nk2 = nk3 = 2 * cell_range + 1
     nkpnts = nk1 * nk2 * nk3
     attr['nk1'] = nk1
     attr['nk2'] = nk2
@@ -131,9 +140,9 @@ def Slater_Koster(data_controller, params):
 
     # generate all the orbitals positions in the supercell
     sctau = np.zeros((natoms, nk1, nk2, nk3, 3), dtype=float)
-    for i in range(-1, 2):
-        for j in range(-1, 2):
-            for k in range(-1, 2):
+    for i in range(-cell_range, cell_range + 1):
+        for j in range(-cell_range, cell_range + 1):
+            for k in range(-cell_range, cell_range + 1):
                 for ia in range(natoms):
                     sctau[ia, i, k, j, :] = (
                         tau[ia]
@@ -141,23 +150,44 @@ def Slater_Koster(data_controller, params):
                         + j * arry['a_vectors'][1]
                         + k * arry['a_vectors'][2]
                     )
-    sctau = np.reshape(sctau, (natoms * 27, 3), order='C')
+    sctau = np.reshape(sctau, (natoms * nk1 * nk2 * nk3, 3), order='C')
     # make the list of neighbors and find cutoff for two-center approximation
     distance = lambda x, y: np.sqrt(np.sum((x - y) ** 2))
     cosines = lambda x, y: (y - x) / np.sqrt(np.sum((x - y) ** 2))
     dist = []
     for ia in range(natoms):
-        for n in range(natoms * 27):
+        for n in range(natoms * nk1 * nk2 * nk3):
             dist.append(distance(tau[ia], sctau[n]))
-    cutoff = (
-        np.sort(np.unique(dist))[1]
-        + (np.sort(np.unique(dist))[2] - np.sort(np.unique(dist))[1]) / 2
-    )
+    unique_dist = np.sort(np.unique(dist))
+    if unique_dist.size < 2:
+        raise ValueError('Unable to determine nearest-neighbor distances for Slater-Koster model.')
+
+    dist_1 = unique_dist[1]
+    if use_second_neighbors:
+        if unique_dist.size < 3:
+            raise ValueError(
+                'Unable to determine second-neighbor distances for Slater-Koster model.'
+            )
+        dist_2 = unique_dist[2]
+        cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
+        if unique_dist.size > 3:
+            dist_3 = unique_dist[3]
+            cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
+        else:
+            cutoff_2 = dist_2 + (dist_2 - dist_1) / 2.0
+    else:
+        if unique_dist.size < 3:
+            raise ValueError('Unable to determine cutoff for first-neighbor shell.')
+        cutoff_1 = dist_1 + (unique_dist[2] - dist_1) / 2.0
+        cutoff_2 = None
     sctau = np.reshape(sctau, (natoms, nk1, nk2, nk3, 3), order='C')
 
     # debug
     arry['sctau'] = sctau
-    attr['cutoff'] = cutoff
+    attr['cutoff'] = cutoff_1
+    attr['cutoff_1'] = cutoff_1
+    if cutoff_2 is not None:
+        attr['cutoff_2'] = cutoff_2
     arry['norbitals'] = norbitals
 
     HRs = np.zeros((nawf, nawf, nk1, nk2, nk3, 1), dtype=complex)
@@ -170,7 +200,6 @@ def Slater_Koster(data_controller, params):
             ][str(ia)][params['model']['atoms'][str(ia)]['orbitals'][no]]
 
     # hopping matrix elements
-    hoppings = params['model']['hoppings']
     orbital_order = ('s', 'px', 'py', 'pz', 'dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2')
     p_index_map = {'px': 0, 'py': 1, 'pz': 2}
     d_orbitals = set(orbital_order[4:])
@@ -181,81 +210,128 @@ def Slater_Koster(data_controller, params):
             if orb not in supported_orbitals:
                 raise ValueError(f'Unsupported orbital label: {orb}')
 
+    if 'nn' in hoppings:
+        hoppings_shells = {'nn': hoppings['nn']}
+        if 'nnn' in hoppings:
+            hoppings_shells['nnn'] = hoppings['nnn']
+    else:
+        hoppings_shells = {'nn': hoppings}
+
+    if use_second_neighbors and 'nnn' not in hoppings_shells:
+        raise KeyError('Second-neighbor hoppings requested but no "nnn" block provided.')
+
     required_keys = ['sss', 'sps', 'pps', 'ppp']
     has_d = any(orb in d_orbitals for shell in arry['shells'] for orb in shell['orbitals'])
     if has_d:
         required_keys.extend(['sds', 'pds', 'pdp', 'dds', 'ddp', 'ddd'])
-    missing_keys = [key for key in required_keys if key not in hoppings]
-    if missing_keys:
-        raise KeyError(f'Missing Slater-Koster hopping keys: {", ".join(missing_keys)}')
+    for shell_name, shell_hoppings in hoppings_shells.items():
+        missing_keys = [key for key in required_keys if key not in shell_hoppings]
+        if missing_keys:
+            raise KeyError(
+                f'Missing Slater-Koster hopping keys for {shell_name}: {", ".join(missing_keys)}'
+            )
 
-    def _sd_value(d_orb, lx, ly, lz):
+    def _sd_value(d_orb, lx, ly, lz, shell_hoppings):
         l2 = lx * lx
         m2 = ly * ly
         n2 = lz * lz
         if d_orb == 'dxy':
-            return 3.0 * lx * ly * hoppings['sds']
+            return 3.0 * lx * ly * shell_hoppings['sds']
         if d_orb == 'dyz':
-            return 3.0 * ly * lz * hoppings['sds']
+            return 3.0 * ly * lz * shell_hoppings['sds']
         if d_orb == 'dzx':
-            return 3.0 * lz * lx * hoppings['sds']
+            return 3.0 * lz * lx * shell_hoppings['sds']
         if d_orb == 'dx2-y2':
-            return 1.5 * (l2 - m2) * hoppings['sds']
+            return 1.5 * (l2 - m2) * shell_hoppings['sds']
         if d_orb == 'dz2':
-            return (n2 - 0.5 * (l2 + m2)) * hoppings['sds']
+            return (n2 - 0.5 * (l2 + m2)) * shell_hoppings['sds']
         return None
 
-    def _pd_value(p_orb, d_orb, lx, ly, lz):
+    def _pd_value(p_orb, d_orb, lx, ly, lz, shell_hoppings):
         l2 = lx * lx
         m2 = ly * ly
         n2 = lz * lz
         if p_orb == 'px':
             if d_orb == 'dxy':
-                return 3.0 * l2 * ly * hoppings['pds'] + ly * (1.0 - 2.0 * l2) * hoppings['pdp']
+                return (
+                    3.0 * l2 * ly * shell_hoppings['pds']
+                    + ly * (1.0 - 2.0 * l2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dyz':
-                return 3.0 * lx * ly * lz * hoppings['pds'] - 2.0 * lx * ly * lz * hoppings['pdp']
+                return (
+                    3.0 * lx * ly * lz * shell_hoppings['pds']
+                    - 2.0 * lx * ly * lz * (shell_hoppings['pdp'])
+                )
             if d_orb == 'dzx':
-                return 3.0 * l2 * lz * hoppings['pds'] + lz * (1.0 - 2.0 * l2) * hoppings['pdp']
+                return (
+                    3.0 * l2 * lz * shell_hoppings['pds']
+                    + lz * (1.0 - 2.0 * l2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dx2-y2':
                 return (
-                    1.5 * lx * (l2 - m2) * hoppings['pds'] + lx * (1.0 - l2 + m2) * hoppings['pdp']
+                    1.5 * lx * (l2 - m2) * shell_hoppings['pds']
+                    + lx * (1.0 - l2 + m2) * shell_hoppings['pdp']
                 )
             if d_orb == 'dz2':
                 return (
-                    lx * (n2 - 0.5 * (l2 + m2)) * hoppings['pds'] - 3.0 * lx * n2 * hoppings['pdp']
+                    lx * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['pds']
+                    - 3.0 * lx * n2 * shell_hoppings['pdp']
                 )
         if p_orb == 'py':
             if d_orb == 'dxy':
-                return 3.0 * m2 * lx * hoppings['pds'] + lx * (1.0 - 2.0 * m2) * hoppings['pdp']
+                return (
+                    3.0 * m2 * lx * shell_hoppings['pds']
+                    + lx * (1.0 - 2.0 * m2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dyz':
-                return 3.0 * m2 * lz * hoppings['pds'] + lz * (1.0 - 2.0 * m2) * hoppings['pdp']
+                return (
+                    3.0 * m2 * lz * shell_hoppings['pds']
+                    + lz * (1.0 - 2.0 * m2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dzx':
-                return 3.0 * lx * ly * lz * hoppings['pds'] - 2.0 * lx * ly * lz * hoppings['pdp']
+                return (
+                    3.0 * lx * ly * lz * shell_hoppings['pds']
+                    - 2.0 * lx * ly * lz * (shell_hoppings['pdp'])
+                )
             if d_orb == 'dx2-y2':
                 return (
-                    1.5 * ly * (l2 - m2) * hoppings['pds'] - ly * (1.0 + l2 - m2) * hoppings['pdp']
+                    1.5 * ly * (l2 - m2) * shell_hoppings['pds']
+                    - ly * (1.0 + l2 - m2) * shell_hoppings['pdp']
                 )
             if d_orb == 'dz2':
                 return (
-                    ly * (n2 - 0.5 * (l2 + m2)) * hoppings['pds'] - 3.0 * ly * n2 * hoppings['pdp']
+                    ly * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['pds']
+                    - 3.0 * ly * n2 * shell_hoppings['pdp']
                 )
         if p_orb == 'pz':
             if d_orb == 'dxy':
-                return 3.0 * lx * ly * lz * hoppings['pds'] - 2.0 * lx * ly * lz * hoppings['pdp']
+                return (
+                    3.0 * lx * ly * lz * shell_hoppings['pds']
+                    - 2.0 * lx * ly * lz * (shell_hoppings['pdp'])
+                )
             if d_orb == 'dyz':
-                return 3.0 * n2 * ly * hoppings['pds'] + ly * (1.0 - 2.0 * n2) * hoppings['pdp']
+                return (
+                    3.0 * n2 * ly * shell_hoppings['pds']
+                    + ly * (1.0 - 2.0 * n2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dzx':
-                return 3.0 * n2 * lx * hoppings['pds'] + lx * (1.0 - 2.0 * n2) * hoppings['pdp']
+                return (
+                    3.0 * n2 * lx * shell_hoppings['pds']
+                    + lx * (1.0 - 2.0 * n2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dx2-y2':
-                return 1.5 * lz * (l2 - m2) * hoppings['pds'] - lz * (l2 - m2) * hoppings['pdp']
+                return (
+                    1.5 * lz * (l2 - m2) * shell_hoppings['pds']
+                    - lz * (l2 - m2) * shell_hoppings['pdp']
+                )
             if d_orb == 'dz2':
                 return (
-                    lz * (n2 - 0.5 * (l2 + m2)) * hoppings['pds']
-                    + 3.0 * lz * (l2 + m2) * hoppings['pdp']
+                    lz * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['pds']
+                    + 3.0 * lz * (l2 + m2) * shell_hoppings['pdp']
                 )
         return None
 
-    def _dd_value(d_orb_a, d_orb_b, lx, ly, lz):
+    def _dd_value(d_orb_a, d_orb_b, lx, ly, lz, shell_hoppings):
         l2 = lx * lx
         m2 = ly * ly
         n2 = lz * lz
@@ -269,135 +345,135 @@ def Slater_Koster(data_controller, params):
 
         if d_orb_a == d_orb_b == 'dxy':
             return (
-                3.0 * l2m2 * hoppings['dds']
-                + (l2 + m2 - 4.0 * l2m2) * hoppings['ddp']
-                + (n2 + l2m2) * hoppings['ddd']
+                3.0 * l2m2 * shell_hoppings['dds']
+                + (l2 + m2 - 4.0 * l2m2) * shell_hoppings['ddp']
+                + (n2 + l2m2) * shell_hoppings['ddd']
             )
         if d_orb_a == d_orb_b == 'dyz':
             return (
-                3.0 * m2n2 * hoppings['dds']
-                + (m2 + n2 - 4.0 * m2n2) * hoppings['ddp']
-                + (l2 + m2n2) * hoppings['ddd']
+                3.0 * m2n2 * shell_hoppings['dds']
+                + (m2 + n2 - 4.0 * m2n2) * shell_hoppings['ddp']
+                + (l2 + m2n2) * shell_hoppings['ddd']
             )
         if d_orb_a == d_orb_b == 'dzx':
             return (
-                3.0 * l2n2 * hoppings['dds']
-                + (l2 + n2 - 4.0 * l2n2) * hoppings['ddp']
-                + (m2 + l2n2) * hoppings['ddd']
+                3.0 * l2n2 * shell_hoppings['dds']
+                + (l2 + n2 - 4.0 * l2n2) * shell_hoppings['ddp']
+                + (m2 + l2n2) * shell_hoppings['ddd']
             )
         if d_orb_a == d_orb_b == 'dx2-y2':
             return (
-                0.75 * diff_lm**2 * hoppings['dds']
-                + (l2 + m2 - diff_lm**2) * hoppings['ddp']
-                + (n2 + 0.25 * diff_lm**2) * hoppings['ddd']
+                0.75 * diff_lm**2 * shell_hoppings['dds']
+                + (l2 + m2 - diff_lm**2) * shell_hoppings['ddp']
+                + (n2 + 0.25 * diff_lm**2) * shell_hoppings['ddd']
             )
         if d_orb_a == d_orb_b == 'dz2':
             term = n2 - 0.5 * (l2 + m2)
             return (
-                term**2 * hoppings['dds']
-                + 3.0 * n2 * (l2 + m2) * hoppings['ddp']
-                + 0.75 * (l2 + m2) ** 2 * hoppings['ddd']
+                term**2 * shell_hoppings['dds']
+                + 3.0 * n2 * (l2 + m2) * shell_hoppings['ddp']
+                + 0.75 * (l2 + m2) ** 2 * shell_hoppings['ddd']
             )
 
         if (d_orb_a, d_orb_b) in (('dxy', 'dyz'), ('dyz', 'dxy')):
             return (
-                3.0 * lx * m2 * lz * hoppings['dds']
-                + ln * (1.0 - 4.0 * m2) * hoppings['ddp']
-                + ln * (m2 - 1.0) * hoppings['ddd']
+                3.0 * lx * m2 * lz * shell_hoppings['dds']
+                + ln * (1.0 - 4.0 * m2) * shell_hoppings['ddp']
+                + ln * (m2 - 1.0) * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dxy', 'dzx'), ('dzx', 'dxy')):
             return (
-                3.0 * l2 * ly * lz * hoppings['dds']
-                + mn * (1.0 - 4.0 * l2) * hoppings['ddp']
-                + mn * (l2 - 1.0) * hoppings['ddd']
+                3.0 * l2 * ly * lz * shell_hoppings['dds']
+                + mn * (1.0 - 4.0 * l2) * shell_hoppings['ddp']
+                + mn * (l2 - 1.0) * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dyz', 'dzx'), ('dzx', 'dyz')):
             return (
-                3.0 * ly * n2 * lx * hoppings['dds']
-                + lm * (1.0 - 4.0 * n2) * hoppings['ddp']
-                + lm * (n2 - 1.0) * hoppings['ddd']
+                3.0 * ly * n2 * lx * shell_hoppings['dds']
+                + lm * (1.0 - 4.0 * n2) * shell_hoppings['ddp']
+                + lm * (n2 - 1.0) * shell_hoppings['ddd']
             )
 
         if (d_orb_a, d_orb_b) in (('dxy', 'dx2-y2'), ('dx2-y2', 'dxy')):
             return (
-                1.5 * lm * diff_lm * hoppings['dds']
-                + 2.0 * lm * (m2 - l2) * hoppings['ddp']
-                + 0.5 * lm * diff_lm * hoppings['ddd']
+                1.5 * lm * diff_lm * shell_hoppings['dds']
+                + 2.0 * lm * (m2 - l2) * shell_hoppings['ddp']
+                + 0.5 * lm * diff_lm * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dyz', 'dx2-y2'), ('dx2-y2', 'dyz')):
             return (
-                1.5 * mn * diff_lm * hoppings['dds']
-                - mn * (1.0 + 2.0 * diff_lm) * hoppings['ddp']
-                + mn * (1.0 + 0.5 * diff_lm) * hoppings['ddd']
+                1.5 * mn * diff_lm * shell_hoppings['dds']
+                - mn * (1.0 + 2.0 * diff_lm) * shell_hoppings['ddp']
+                + mn * (1.0 + 0.5 * diff_lm) * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dzx', 'dx2-y2'), ('dx2-y2', 'dzx')):
             return (
-                1.5 * ln * diff_lm * hoppings['dds']
-                + ln * (1.0 - 2.0 * diff_lm) * hoppings['ddp']
-                - ln * (1.0 - 0.5 * diff_lm) * hoppings['ddd']
+                1.5 * ln * diff_lm * shell_hoppings['dds']
+                + ln * (1.0 - 2.0 * diff_lm) * shell_hoppings['ddp']
+                - ln * (1.0 - 0.5 * diff_lm) * shell_hoppings['ddd']
             )
 
         if (d_orb_a, d_orb_b) in (('dxy', 'dz2'), ('dz2', 'dxy')):
             return 3.0 * (
-                lm * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
-                - 2.0 * lm * n2 * hoppings['ddp']
-                + 0.5 * lm * (1.0 + n2) * hoppings['ddd']
+                lm * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['dds']
+                - 2.0 * lm * n2 * shell_hoppings['ddp']
+                + 0.5 * lm * (1.0 + n2) * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dyz', 'dz2'), ('dz2', 'dyz')):
             return 3.0 * (
-                mn * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
-                + mn * (l2 + m2 - n2) * hoppings['ddp']
-                - 0.5 * mn * (l2 + m2) * hoppings['ddd']
+                mn * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['dds']
+                + mn * (l2 + m2 - n2) * shell_hoppings['ddp']
+                - 0.5 * mn * (l2 + m2) * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dzx', 'dz2'), ('dz2', 'dzx')):
             return 3.0 * (
-                ln * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
-                + ln * (l2 + m2 - n2) * hoppings['ddp']
-                - 0.5 * ln * (l2 + m2) * hoppings['ddd']
+                ln * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['dds']
+                + ln * (l2 + m2 - n2) * shell_hoppings['ddp']
+                - 0.5 * ln * (l2 + m2) * shell_hoppings['ddd']
             )
         if (d_orb_a, d_orb_b) in (('dx2-y2', 'dz2'), ('dz2', 'dx2-y2')):
             return 3.0 * (
-                0.5 * diff_lm * (n2 - 0.5 * (l2 + m2)) * hoppings['dds']
-                + n2 * (m2 - l2) * hoppings['ddp']
-                + 0.25 * (1.0 + n2) * diff_lm * hoppings['ddd']
+                0.5 * diff_lm * (n2 - 0.5 * (l2 + m2)) * shell_hoppings['dds']
+                + n2 * (m2 - l2) * shell_hoppings['ddp']
+                + 0.25 * (1.0 + n2) * diff_lm * shell_hoppings['ddd']
             )
 
         return None
 
-    def _sk_sp_value(orb_a, orb_b, lx, ly, lz):
+    def _sk_sp_value(orb_a, orb_b, lx, ly, lz, shell_hoppings):
         if orb_a == 's' and orb_b in d_orbitals:
-            return _sd_value(orb_b, lx, ly, lz)
+            return _sd_value(orb_b, lx, ly, lz, shell_hoppings)
         if orb_b == 's' and orb_a in d_orbitals:
-            return _sd_value(orb_a, lx, ly, lz)
+            return _sd_value(orb_a, lx, ly, lz, shell_hoppings)
         if orb_a in p_index_map and orb_b in d_orbitals:
-            return _pd_value(orb_a, orb_b, lx, ly, lz)
+            return _pd_value(orb_a, orb_b, lx, ly, lz, shell_hoppings)
         if orb_b in p_index_map and orb_a in d_orbitals:
-            value = _pd_value(orb_b, orb_a, lx, ly, lz)
+            value = _pd_value(orb_b, orb_a, lx, ly, lz, shell_hoppings)
             return -value if value is not None else None
         if orb_a in d_orbitals and orb_b in d_orbitals:
-            return _dd_value(orb_a, orb_b, lx, ly, lz)
+            return _dd_value(orb_a, orb_b, lx, ly, lz, shell_hoppings)
 
         if orb_a == 's' and orb_b == 's':
-            return hoppings['sss']
+            return shell_hoppings['sss']
 
         if orb_a == 's' and orb_b in p_index_map:
-            return (lx, ly, lz)[p_index_map[orb_b]] * hoppings['sps']
+            return (lx, ly, lz)[p_index_map[orb_b]] * shell_hoppings['sps']
 
         if orb_b == 's' and orb_a in p_index_map:
-            return -(lx, ly, lz)[p_index_map[orb_a]] * hoppings['sps']
+            return -(lx, ly, lz)[p_index_map[orb_a]] * shell_hoppings['sps']
 
         if orb_a == orb_b and orb_a in p_index_map:
             ll = (lx, ly, lz)[p_index_map[orb_a]]
-            return ll**2 * hoppings['pps'] + (1.0 - ll**2) * hoppings['ppp']
+            return ll**2 * shell_hoppings['pps'] + (1.0 - ll**2) * shell_hoppings['ppp']
 
         if (orb_a, orb_b) in (('px', 'py'), ('py', 'px')):
-            return lx * ly * (hoppings['pps'] - hoppings['ppp'])
+            return lx * ly * (shell_hoppings['pps'] - shell_hoppings['ppp'])
 
         if (orb_a, orb_b) in (('py', 'pz'), ('pz', 'py')):
-            return ly * lz * (hoppings['pps'] - hoppings['ppp'])
+            return ly * lz * (shell_hoppings['pps'] - shell_hoppings['ppp'])
 
         if (orb_a, orb_b) in (('px', 'pz'), ('pz', 'px')):
-            return lx * lz * (hoppings['pps'] - hoppings['ppp'])
+            return lx * lz * (shell_hoppings['pps'] - shell_hoppings['ppp'])
 
         return None
 
@@ -417,8 +493,8 @@ def Slater_Koster(data_controller, params):
             lx, ly, lz = vec
             for a in d_orbitals:
                 for b in d_orbitals:
-                    v_ab = _dd_value(a, b, lx, ly, lz)
-                    v_ba = _dd_value(b, a, lx, ly, lz)
+                    v_ab = _dd_value(a, b, lx, ly, lz, hoppings_shells['nn'])
+                    v_ba = _dd_value(b, a, lx, ly, lz, hoppings_shells['nn'])
                     if v_ab is None or v_ba is None:
                         continue
                     if not np.isclose(v_ab, v_ba, atol=1e-12, rtol=1e-12):
@@ -430,33 +506,40 @@ def Slater_Koster(data_controller, params):
     if params.get('model', {}).get('validate_sk', False):
         _validate_sk_tables()
 
-    for i in range(-1, 2):
-        for j in range(-1, 2):
-            for k in range(-1, 2):
+    for i in range(-cell_range, cell_range + 1):
+        for j in range(-cell_range, cell_range + 1):
+            for k in range(-cell_range, cell_range + 1):
                 for ia in range(natoms):
                     for ib in range(natoms):
-                        if (
-                            distance(tau[ia], sctau[ib, i, j, k, :]) > 0
-                            and distance(tau[ia], sctau[ib, i, j, k, :]) < cutoff
-                        ):
-                            lx = cosines(tau[ia], sctau[ib, i, j, k, :])[0]
-                            ly = cosines(tau[ia], sctau[ib, i, j, k, :])[1]
-                            lz = cosines(tau[ia], sctau[ib, i, j, k, :])[2]
+                        dist_val = distance(tau[ia], sctau[ib, i, j, k, :])
+                        if dist_val <= 0:
+                            continue
+                        if dist_val < cutoff_1:
+                            shell_key = 'nn'
+                        elif cutoff_2 is not None and dist_val < cutoff_2:
+                            shell_key = 'nnn'
+                        else:
+                            continue
 
-                            orbitals_a = arry['shells'][ia]['orbitals']
-                            orbitals_b = arry['shells'][ib]['orbitals']
-                            for noa, orb_a in enumerate(orbitals_a):
-                                for nob, orb_b in enumerate(orbitals_b):
-                                    value = _sk_sp_value(orb_a, orb_b, lx, ly, lz)
-                                    if value is not None:
-                                        HRs[
-                                            ia * norbitals[ia] + noa,
-                                            ib * norbitals[ib] + nob,
-                                            i,
-                                            j,
-                                            k,
-                                            0,
-                                        ] = value
+                        lx = cosines(tau[ia], sctau[ib, i, j, k, :])[0]
+                        ly = cosines(tau[ia], sctau[ib, i, j, k, :])[1]
+                        lz = cosines(tau[ia], sctau[ib, i, j, k, :])[2]
+
+                        shell_hoppings = hoppings_shells[shell_key]
+                        orbitals_a = arry['shells'][ia]['orbitals']
+                        orbitals_b = arry['shells'][ib]['orbitals']
+                        for noa, orb_a in enumerate(orbitals_a):
+                            for nob, orb_b in enumerate(orbitals_b):
+                                value = _sk_sp_value(orb_a, orb_b, lx, ly, lz, shell_hoppings)
+                                if value is not None:
+                                    HRs[
+                                        ia * norbitals[ia] + noa,
+                                        ib * norbitals[ib] + nob,
+                                        i,
+                                        j,
+                                        k,
+                                        0,
+                                    ] = value
 
         arry['HRs'] = HRs
 
