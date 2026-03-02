@@ -47,8 +47,8 @@ def Slater_Koster(data_controller, params):
             - 'orbitals': list of orbital labels used to map on-site terms
             - on-site energies keyed by orbital label
     - params['model']['hoppings']: either a flat dict of SK parameters with keys
-        'sss', 'sps', 'pps', 'ppp', or a shell dict with 'nn' (and optional
-        'nnn') blocks containing those keys.
+        'sss', 'sps', 'pps', 'ppp', or a shell dict with 'nn' and optional
+        'nnn'/'nnnn' blocks containing those keys.
 
     Output side-effects (data_controller):
     - arry['a_vectors'], arry['b_vectors'], arry['tau'], arry['atoms'],
@@ -99,14 +99,22 @@ def Slater_Koster(data_controller, params):
     arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
     hoppings = params['model']['hoppings']
-    use_second_neighbors = isinstance(hoppings, dict) and 'nnn' in hoppings
-    if use_second_neighbors and 'nn' not in hoppings:
+    use_third_neighbors = isinstance(hoppings, dict) and 'nnnn' in hoppings
+    use_second_neighbors = isinstance(hoppings, dict) and ('nnn' in hoppings or use_third_neighbors)
+    if (use_second_neighbors or use_third_neighbors) and 'nn' not in hoppings:
+        raise ValueError('Neighbor hoppings require a "nn" block in params["model"]["hoppings"].')
+    if use_third_neighbors and 'nnn' not in hoppings:
         raise ValueError(
-            'Second-neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+            'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
         )
 
     # dimensions of the supercell for two-center approximation
-    cell_range = 2 if use_second_neighbors else 1
+    if use_third_neighbors:
+        cell_range = 3
+    elif use_second_neighbors:
+        cell_range = 2
+    else:
+        cell_range = 1
     nk1 = nk2 = nk3 = 2 * cell_range + 1
     nkpnts = nk1 * nk2 * nk3
     attr['nk1'] = nk1
@@ -163,7 +171,21 @@ def Slater_Koster(data_controller, params):
         raise ValueError('Unable to determine nearest-neighbor distances for Slater-Koster model.')
 
     dist_1 = unique_dist[1]
-    if use_second_neighbors:
+    if use_third_neighbors:
+        if unique_dist.size < 4:
+            raise ValueError(
+                'Unable to determine third-neighbor distances for Slater-Koster model.'
+            )
+        dist_2 = unique_dist[2]
+        dist_3 = unique_dist[3]
+        cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
+        cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
+        if unique_dist.size > 4:
+            dist_4 = unique_dist[4]
+            cutoff_3 = dist_3 + (dist_4 - dist_3) / 2.0
+        else:
+            cutoff_3 = dist_3 + (dist_3 - dist_2) / 2.0
+    elif use_second_neighbors:
         if unique_dist.size < 3:
             raise ValueError(
                 'Unable to determine second-neighbor distances for Slater-Koster model.'
@@ -175,11 +197,13 @@ def Slater_Koster(data_controller, params):
             cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
         else:
             cutoff_2 = dist_2 + (dist_2 - dist_1) / 2.0
+        cutoff_3 = None
     else:
         if unique_dist.size < 3:
             raise ValueError('Unable to determine cutoff for first-neighbor shell.')
         cutoff_1 = dist_1 + (unique_dist[2] - dist_1) / 2.0
         cutoff_2 = None
+        cutoff_3 = None
     sctau = np.reshape(sctau, (natoms, nk1, nk2, nk3, 3), order='C')
 
     # debug
@@ -188,6 +212,8 @@ def Slater_Koster(data_controller, params):
     attr['cutoff_1'] = cutoff_1
     if cutoff_2 is not None:
         attr['cutoff_2'] = cutoff_2
+    if cutoff_3 is not None:
+        attr['cutoff_3'] = cutoff_3
     arry['norbitals'] = norbitals
 
     HRs = np.zeros((nawf, nawf, nk1, nk2, nk3, 1), dtype=complex)
@@ -214,11 +240,15 @@ def Slater_Koster(data_controller, params):
         hoppings_shells = {'nn': hoppings['nn']}
         if 'nnn' in hoppings:
             hoppings_shells['nnn'] = hoppings['nnn']
+        if 'nnnn' in hoppings:
+            hoppings_shells['nnnn'] = hoppings['nnnn']
     else:
         hoppings_shells = {'nn': hoppings}
 
     if use_second_neighbors and 'nnn' not in hoppings_shells:
         raise KeyError('Second-neighbor hoppings requested but no "nnn" block provided.')
+    if use_third_neighbors and 'nnnn' not in hoppings_shells:
+        raise KeyError('Third-neighbor hoppings requested but no "nnnn" block provided.')
 
     required_keys = ['sss', 'sps', 'pps', 'ppp']
     has_d = any(orb in d_orbitals for shell in arry['shells'] for orb in shell['orbitals'])
@@ -230,6 +260,12 @@ def Slater_Koster(data_controller, params):
             raise KeyError(
                 f'Missing Slater-Koster hopping keys for {shell_name}: {", ".join(missing_keys)}'
             )
+
+    elements = sorted(set(arry['atoms']))
+    shell_names = ', '.join(sorted(hoppings_shells.keys()))
+    print(
+        f'Slater_Koster: elements={elements}, neighbor_shells={len(hoppings_shells)} ({shell_names})'
+    )
 
     def _sd_value(d_orb, lx, ly, lz, shell_hoppings):
         l2 = lx * lx
@@ -518,6 +554,8 @@ def Slater_Koster(data_controller, params):
                             shell_key = 'nn'
                         elif cutoff_2 is not None and dist_val < cutoff_2:
                             shell_key = 'nnn'
+                        elif cutoff_3 is not None and dist_val < cutoff_3:
+                            shell_key = 'nnnn'
                         else:
                             continue
 
