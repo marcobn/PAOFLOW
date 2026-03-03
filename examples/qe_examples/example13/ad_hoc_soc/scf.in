@@ -13,8 +13,8 @@
     ecutwfc =50.0,
     ecutrho =500.0,
     occupations='smearing', smearing='gaussian', degauss=0.000735294117647
-    lspinorb=.true.,
-    noncolin=.true.,
+    lspinorb=.fasle.,
+    noncolin=.false.,
     starting_magnetization=0.0,
  /
  &electrons
