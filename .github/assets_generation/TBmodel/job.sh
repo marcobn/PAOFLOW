@@ -129,7 +129,7 @@ root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
-# repo root is needed for `python -m tests.assets_generation.TBmodel.build_assets`
+# repo root is needed for `.github/assets_generation/TBmodel/build_assets.py`
 repo_root="$(cd "$root_dir/../../.." && pwd)"
 
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
@@ -200,7 +200,7 @@ for name in "${examples[@]}"; do
  done
 
 if [[ "$build_assets" = true ]]; then
-  (cd "$repo_root" && "$PYTHON_EXEC" -m tests.assets_generation.TBmodel.build_assets --tbmodel-root "$root_dir" --out "$assets_out")
+  (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/TBmodel/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out")
   log_job "Assets written to $assets_out"
 fi
 

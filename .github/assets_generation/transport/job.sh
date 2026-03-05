@@ -254,7 +254,7 @@ root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
-# repo root is needed for `python -m tests.assets_generation.transport.build_assets`
+# repo root is needed for `.github/assets_generation/transport/build_assets.py`
 repo_root="$(cd "$root_dir/../../.." && pwd)"
 
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
@@ -315,7 +315,7 @@ done
 if [[ "$build_assets" = true ]]; then
   out="${assets_out:-${ASSETS_OUT:-$root_dir/_assets/transport_test_assets_dev.tar.gz}}"
   mkdir -p "$(dirname "$out")"
-  (cd "$repo_root" && "$PYTHON_EXEC" -m tests.assets_generation.transport.build_assets --transport-root "$root_dir" --out "$out")
+  (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/transport/build_assets.py" --transport-root "$root_dir" --out "$out")
   log_job "Built assets: $out"
 fi
 

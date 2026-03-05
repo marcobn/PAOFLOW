@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 import tarfile
 from pathlib import Path
 
-try:
-    from tests.integration.TBmodel.jobs import discover_jobs
-except ImportError:
-    import sys
+repo_root = Path(__file__).resolve().parents[4]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-    from tests.integration.TBmodel.jobs import discover_jobs
+from tests.integration.TBmodel.jobs import discover_jobs
 
 
 def _infer_outputdir(script_path: Path) -> str:
@@ -68,7 +67,7 @@ def main() -> None:
     p.add_argument(
         '--tbmodel-root',
         type=Path,
-        default=Path(__file__).resolve().parents[2] / 'integration' / 'TBmodel',
+        default=repo_root / 'tests' / 'integration' / 'TBmodel',
         help='Path to tests/integration/TBmodel (default: tests/integration/TBmodel)',
     )
     p.add_argument(

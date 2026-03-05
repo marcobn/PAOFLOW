@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import tarfile
 from pathlib import Path
+
+repo_root = Path(__file__).resolve().parents[4]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 from tests.integration.qe.jobs import discover_jobs
 
@@ -40,13 +45,13 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description=(
             'Build a local qe_test_assets tar.gz from existing *.save/ and Reference/ folders. '
-            'Run tests/assets_generation/qe/job.sh first to generate Reference outputs.'
+            'Run .github/assets_generation/qe/job.sh first to generate Reference outputs.'
         )
     )
     p.add_argument(
         '--qe-root',
         type=Path,
-        default=Path(__file__).resolve().parents[2] / 'integration' / 'qe',
+        default=repo_root / 'tests' / 'integration' / 'qe',
         help='Path to tests/integration/qe (default: tests/integration/qe)',
     )
     p.add_argument(
