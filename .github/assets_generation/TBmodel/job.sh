@@ -27,6 +27,7 @@ EOF
 }
 
 resolve_root_dir() {
+<<<<<<< HEAD
   local script_dir repo_root candidate
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -35,10 +36,19 @@ resolve_root_dir() {
     candidate="$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
     if [[ -d "$candidate" ]]; then
       echo "$candidate"
+=======
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+    if [[ -d "$SLURM_SUBMIT_DIR/tests/integration/TBmodel" ]]; then
+      echo "$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
+>>>>>>> Move asset generation from `tests` to `.github` folder
       return
     fi
   fi
 
+<<<<<<< HEAD
   repo_root="$(cd "$script_dir/../../.." && pwd)"
   candidate="$repo_root/tests/integration/TBmodel"
 
@@ -52,6 +62,9 @@ resolve_root_dir() {
   [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/tests/integration/TBmodel" >&2
   echo "  $candidate" >&2
   exit 1
+=======
+  echo "$(cd "$script_dir/../../integration/TBmodel" && pwd)"
+>>>>>>> Move asset generation from `tests` to `.github` folder
 }
 
 log_job() {
@@ -104,6 +117,7 @@ run_tbmodel_script() {
   log_job "PAOFLOW: $name - OK"
 }
 
+<<<<<<< HEAD
 cleanup_output_dir() {
   local outdir="$1"
 
@@ -124,6 +138,8 @@ cleanup_output_dir() {
   log_job "Removed output directory $outdir"
 }
 
+=======
+>>>>>>> Move asset generation from `tests` to `.github` folder
 build_assets=false
 assets_out=""
 examples_arg=""
@@ -157,12 +173,20 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
   shift
+<<<<<<< HEAD
 done
+=======
+ done
+>>>>>>> Move asset generation from `tests` to `.github` folder
 
 root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
+<<<<<<< HEAD
+=======
+# repo root is needed for `.github/assets_generation/TBmodel/build_assets.py`
+>>>>>>> Move asset generation from `tests` to `.github` folder
 repo_root="$(cd "$root_dir/../../.." && pwd)"
 
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
@@ -218,20 +242,27 @@ fi
 
 failures=0
 failed_examples=()
+<<<<<<< HEAD
 successful_output_dirs=()
+=======
+>>>>>>> Move asset generation from `tests` to `.github` folder
 
 for name in "${examples[@]}"; do
   script_path="$root_dir/$name.py"
   if [[ ! -f "$script_path" ]]; then
     log_job "PAOFLOW: $name - skipped (missing $script_path)"
+<<<<<<< HEAD
     failures=$((failures + 1))
     failed_examples+=("$name")
+=======
+>>>>>>> Move asset generation from `tests` to `.github` folder
     continue
   fi
 
   if ! run_tbmodel_script "$script_path" "$name"; then
     failures=$((failures + 1))
     failed_examples+=("$name")
+<<<<<<< HEAD
   else
     successful_output_dirs+=("$(infer_outputdir "$script_path")")
   fi
@@ -270,3 +301,19 @@ if [[ "$build_assets" = true ]]; then
 else
   log_job "All examples ran successfully."
 fi
+=======
+  fi
+ done
+
+if [[ "$build_assets" = true ]]; then
+  (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/TBmodel/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out")
+  log_job "Assets written to $assets_out"
+fi
+
+if [[ $failures -gt 0 ]]; then
+  log_job "Completed with $failures failure(s): ${failed_examples[*]}"
+  exit 1
+fi
+
+log_job "Completed successfully."
+>>>>>>> Move asset generation from `tests` to `.github` folder
