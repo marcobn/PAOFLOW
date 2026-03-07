@@ -717,6 +717,41 @@ class SKFitter:
 
     # ── 2j. Fitting ───────────────────────────────────────────
 
+    def _run_single_trial(self, p_init, alpha, n_data, max_nfev, ftol, xtol, gtol):
+        """Run one least-squares trial from a given initial point.
+
+        Returns ``(rmse, p_opt, OptimizeResult)``.
+        """
+        use_reg = alpha > 0.0
+        reg_w = self._reg_weights
+        last_jac = [None]
+
+        def fun(p):
+            E_sk, dE_dp = self._eigenvalues_and_jacobian(p)
+            res_data = (E_sk - self.E_pao).ravel()
+            J_data = dE_dp.reshape(n_data, self.n_params)
+            if use_reg:
+                last_jac[0] = np.vstack([J_data, np.diag(alpha * reg_w)])
+                return np.concatenate([res_data, alpha * reg_w * p])
+            last_jac[0] = J_data
+            return res_data
+
+        def jac(p):
+            return last_jac[0]
+
+        res = least_squares(
+            fun,
+            p_init,
+            jac=jac,
+            method="lm",
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            max_nfev=max_nfev,
+        )
+        rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
+        return rmse, res.x.copy(), res
+
     def fit(
         self,
         n_trials: int = 10,
@@ -726,6 +761,7 @@ class SKFitter:
         xtol: float = 1e-12,
         gtol: float = 1e-12,
         alpha: float = 0.0,
+        n_jobs: int = 1,
     ) -> dict:
         """Run multi-start least-squares optimisation.
 
@@ -746,6 +782,10 @@ class SKFitter:
             shells are penalized more).  On-site parameters are not penalized.
             Typical values: 0.01–1.0 (start small, increase if far-neighbor
             hoppings blow up).
+        n_jobs : int
+            Number of parallel workers for multi-start trials
+            (default 1 = sequential).  Use ``-1`` for all available cores.
+            Requires ``joblib`` when ``n_jobs != 1``.
 
         Returns
         -------
@@ -757,101 +797,87 @@ class SKFitter:
             ``param_labels`` : parameter names.
         """
         Nk, nawf = self.Nk, self.nawf
+        n_data = Nk * nawf
 
         # Hopping scale for initialisation
         E_half = 0.5 * (self.E_pao.max() - self.E_pao.min())
         hop_scales = [E_half / np.sqrt(len(bonds)) for bonds in self.shell_bonds_list]
         p0_onsite = self.extract_onsite_from_HR0()
 
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.RandomState(seed)
 
-        # Regularization
-        use_reg = alpha > 0.0
-        reg_w = self._reg_weights  # shape (n_params,)
-        n_data = Nk * nawf
-
-        # Functor with cached Jacobian
-        last_jac = [None]
-
-        def fun(p):
-            E_sk, dE_dp = self._eigenvalues_and_jacobian(p)
-            res_data = (E_sk - self.E_pao).ravel()
-            J_data = dE_dp.reshape(n_data, self.n_params)
-            if use_reg:
-                res_reg = alpha * reg_w * p
-                J_reg = np.diag(alpha * reg_w)
-                last_jac[0] = np.vstack([J_data, J_reg])
-                return np.concatenate([res_data, res_reg])
-            else:
-                last_jac[0] = J_data
-                return res_data
-
-        def jac(p):
-            return last_jac[0]
-
-        best_rmse = np.inf
-        best_p = None
-        best_res = None
-        all_results = []
-
-        if self.verbose:
-            print(f"\n{'=' * 65}")
-            print(f"Multi-start optimisation: {n_trials} trials")
-            print(
-                f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
-                f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
-            )
-            print("-" * 50)
-
+        # Pre-generate all initial points (use the RNG sequentially
+        # so results are reproducible regardless of n_jobs)
+        p_inits = []
         for trial in range(n_trials):
             p_init = np.zeros(self.n_params)
             p_init[: self.n_onsite] = p0_onsite
             for s, sc in enumerate(hop_scales):
                 i0 = self.n_onsite + s * self.n_hop
-                p_init[i0 : i0 + self.n_hop] = np.random.uniform(-sc, sc, self.n_hop)
+                p_init[i0 : i0 + self.n_hop] = rng.uniform(-sc, sc, self.n_hop)
+            p_inits.append(p_init)
 
-            r_init = fun(p_init)
-            rmse_init = np.sqrt(np.mean(r_init**2))
+        # ── Run trials ──
+        use_parallel = n_jobs != 1 and n_trials > 1
+        common_kw = dict(
+            alpha=alpha,
+            n_data=n_data,
+            max_nfev=max_nfev,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+        )
 
-            res = least_squares(
-                fun,
-                p_init,
-                jac=jac,
-                method="lm",
-                ftol=ftol,
-                xtol=xtol,
-                gtol=gtol,
-                max_nfev=max_nfev,
+        if self.verbose:
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
+            print(f"Multi-start optimisation: {n_trials} trials{par_tag}")
+
+        if use_parallel:
+            from joblib import Parallel, delayed
+
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
             )
-            # RMSE on data residuals only (exclude penalty rows)
-            res_data = res.fun[:n_data]
-            rmse_final = np.sqrt(np.mean(res_data**2))
-            all_results.append((rmse_final, res.x.copy(), res))
-
-            tag = " *" if rmse_final < best_rmse else ""
+            all_results = [(r, p, res) for r, p, res in results]
+        else:
             if self.verbose:
                 print(
-                    f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
-                    f"{rmse_final * 1000:16.2f}  {res.nfev:5d}{tag}"
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
+                print("-" * 50)
+            all_results = []
+            best_so_far = np.inf
+            for trial, p_init in enumerate(p_inits):
+                rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
+                all_results.append((rmse, p_opt, res))
+                tag = " *" if rmse < best_so_far else ""
+                if rmse < best_so_far:
+                    best_so_far = rmse
+                if self.verbose:
+                    rmse_init = np.sqrt(
+                        np.mean((self.eigenvalues(p_init) - self.E_pao).ravel() ** 2)
+                    )
+                    print(
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
+                    )
 
-            if rmse_final < best_rmse:
-                best_rmse = rmse_final
-                best_p = res.x.copy()
-                best_res = res
-
+        # ── Collect results ──
         all_results.sort(key=lambda x: x[0])
-
+        best_rmse, best_p, best_res = all_results[0]
         best_data_res = best_res.fun[:n_data]
 
         if self.verbose:
+            if use_parallel:
+                print(f"  Completed {n_trials} trials in parallel")
             print(f"{'=' * 65}")
             msg = (
                 f"Best RMSE = {best_rmse * 1000:.2f} meV, "
                 f"max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV"
             )
-            if use_reg:
+            if alpha > 0:
                 msg += f"  (α = {alpha:.4g})"
             print(msg)
             print(f"\n{'Parameter':<30s}  {'Value':>10s}")
@@ -957,3 +983,580 @@ class SKFitter:
         """
         E_sk, _ = self._eigenvalues_and_jacobian(p)
         return E_sk
+
+
+# ═══════════════════════════════════════════════════════════════
+#  3. SKFitterEDTB — environment-dependent tight-binding
+# ═══════════════════════════════════════════════════════════════
+
+
+class SKFitterEDTB(SKFitter):
+    r"""Environment-dependent tight-binding (EDTB) extension of SKFitter.
+
+    Augments the two-center SK hopping integrals with an
+    environment-dependent screening factor:
+
+    .. math::
+
+        V_\lambda^{\text{eff}}(i,j) =
+            V_\lambda^{(2c)} \exp\!\bigl(-\gamma_\lambda\,S_{ij}\bigr)
+
+    where :math:`S_{ij} = \sum_{k \neq i,j} f_c(d_{ik})\,f_c(d_{jk})` is
+    a bond screening sum and :math:`f_c` is a smooth cosine cutoff
+    that tapers to zero between :math:`0.8\,r_\text{cut}` and
+    :math:`r_\text{cut}`.
+
+    Optionally fits environment-dependent on-site shifts:
+
+    .. math::
+
+        \varepsilon_\alpha \;\to\;
+            \varepsilon_\alpha + \eta_\alpha \sum_k f_c(d_{ik})
+
+    The screening strengths :math:`\gamma` can be parametrised at three
+    granularity levels (``gamma_mode``):
+
+    * ``'global'`` — one :math:`\gamma` for all channels (1 parameter).
+    * ``'per_lpair'`` — one per angular-momentum pair
+      (ss, sp, pp, …; up to 6).
+    * ``'per_channel'`` — one per SK integral
+      (ssσ, spσ, ppσ, ppπ, …; up to 10).
+
+    Parameters
+    ----------
+    arryp, attrp : dict
+        PAOFLOW data dicts (same as :class:`SKFitter`).
+    n_shells : int
+        Number of neighbor shells (default 2).
+    nkfit : int
+        k-mesh subdivision (default 6).
+    r_cut : float
+        Screening cutoff radius **in Bohr**.
+    gamma_mode : {'global', 'per_lpair', 'per_channel'}
+        Granularity of screening parameters (default ``'global'``).
+    fit_onsite_shift : bool
+        Whether to fit :math:`\eta` on-site shift parameters (default False).
+    verbose : bool
+        Print progress information.
+
+    Notes
+    -----
+    For a single crystal structure the screening parameters are partially
+    redundant with the shell-dependent hoppings.  Meaningful :math:`\gamma`
+    values typically require multi-structure training data or external
+    constraints on the two-center integrals (e.g. supply ``p0_sk`` to
+    :meth:`fit` so that only :math:`\gamma` and :math:`\eta` are free to
+    adjust).
+
+    Usage
+    -----
+    >>> fitter = SKFitterEDTB(arry, attr, n_shells=2, nkfit=6, r_cut=8.0)
+    >>> result = fitter.fit(n_trials=10, seed=42)
+    >>> model  = fitter.build_model_dict(result['p_opt'])
+
+    Staged fitting (recommended):
+
+    >>> fitter_sk = SKFitter(arry, attr, n_shells=2)
+    >>> p_sk = fitter_sk.fit(n_trials=20)['p_opt']
+    >>> fitter_edtb = SKFitterEDTB(arry, attr, n_shells=2, r_cut=8.0)
+    >>> result = fitter_edtb.fit(p0_sk=p_sk, n_trials=10)
+    """
+
+    _LPAIR_LABELS = {
+        (0, 0): "ss",
+        (0, 1): "sp",
+        (0, 2): "sd",
+        (1, 1): "pp",
+        (1, 2): "pd",
+        (2, 2): "dd",
+    }
+
+    def __init__(
+        self,
+        arryp: dict,
+        attrp: dict,
+        *,
+        n_shells: int = 2,
+        nkfit: int = 6,
+        r_cut: float,
+        gamma_mode: str = "global",
+        fit_onsite_shift: bool = False,
+        verbose: bool = True,
+    ):
+        # Base SKFitter setup (bonds, design tensors, onsite map, etc.)
+        super().__init__(arryp, attrp, n_shells=n_shells, nkfit=nkfit, verbose=verbose)
+        self.r_cut_bohr = float(r_cut)
+        self.r_cut_alat = self.r_cut_bohr / self.alat
+        self.gamma_mode = gamma_mode
+        self.fit_onsite_shift = fit_onsite_shift
+
+        self._build_screening_geometry()
+        self._build_edtb_parameters()
+        self._build_regularization_weights()  # rebuild with EDTB params
+
+    # ── 3a. Screening geometry ────────────────────────────────
+
+    def _build_screening_geometry(self):
+        """Precompute screening sums S_ij for all bonds and coordination numbers."""
+        r_cut = self.r_cut_alat
+        r_taper = 0.8 * r_cut
+
+        # Supercell for the screening neighbourhood
+        min_a = min(np.linalg.norm(v) for v in self.a_vecs)
+        sc_range = int(np.ceil(r_cut / min_a)) + 1
+        sc_pos = []
+        for i1 in range(-sc_range, sc_range + 1):
+            for i2 in range(-sc_range, sc_range + 1):
+                for i3 in range(-sc_range, sc_range + 1):
+                    R = i1 * self.a_vecs[0] + i2 * self.a_vecs[1] + i3 * self.a_vecs[2]
+                    for iat in range(self.nat):
+                        sc_pos.append(R + self.tau_alat[iat])
+        sc_pos = np.array(sc_pos)
+
+        def _fc_vec(d):
+            """Vectorised smooth cosine cutoff (zero at self-distance)."""
+            fc = np.where(
+                d <= r_taper,
+                1.0,
+                np.where(
+                    d >= r_cut,
+                    0.0,
+                    0.5 * (1.0 + np.cos(np.pi * (d - r_taper) / (r_cut - r_taper))),
+                ),
+            )
+            fc[d < 1e-10] = 0.0  # exclude self
+            return fc
+
+        # f_c(d_{ia,k}) for home atoms → all supercell atoms
+        fc_home = np.zeros((self.nat, len(sc_pos)))
+        for ia in range(self.nat):
+            fc_home[ia] = _fc_vec(np.linalg.norm(sc_pos - self.tau_alat[ia], axis=1))
+
+        self.coord_i = np.sum(fc_home, axis=1)
+
+        # S_ij for every bond in each shell
+        self.S_bonds = []
+        for s in range(self.n_shells):
+            bonds = self.shell_bonds_list[s]
+            S = np.empty(len(bonds))
+            for ib, (R_cart, iat, jat, *_rest) in enumerate(bonds):
+                pos_j = R_cart + self.tau_alat[jat]
+                d_jk = np.linalg.norm(sc_pos - pos_j, axis=1)
+                S[ib] = np.dot(fc_home[iat], _fc_vec(d_jk))
+            self.S_bonds.append(S)
+
+        if self.verbose:
+            for s in range(self.n_shells):
+                sv = self.S_bonds[s]
+                print(
+                    f"  Screening ({self.shell_tags[s]}): "
+                    f"S̄={sv.mean():.3f}, "
+                    f"range=[{sv.min():.3f}, {sv.max():.3f}]"
+                )
+            print("  Coordination: " + ", ".join(f"{c:.2f}" for c in self.coord_i))
+
+    # ── 3b. EDTB parameter registry ──────────────────────────
+
+    def _build_edtb_parameters(self):
+        """Register γ (and optional η) parameters."""
+        gm = self.gamma_mode
+
+        # Active l-pairs and SK channels
+        active_lp, active_ch = set(), set()
+        for ga, gb in self.hop_pair_list:
+            la, lb = self.group_l[ga], self.group_l[gb]
+            active_lp.add((min(la, lb), max(la, lb)))
+            for sk_idx in self.hop_pair_active[(ga, gb)]:
+                active_ch.add(SK_PARAM_NAMES[sk_idx])
+        self.active_lpairs = sorted(active_lp)
+        self.active_channels = sorted(active_ch, key=lambda x: SK_PARAM_NAMES.index(x))
+
+        # hop param index → γ index (same mapping for every shell)
+        self._hop_to_gamma = np.zeros(self.n_hop, dtype=int)
+
+        if gm == "global":
+            self.n_gamma = 1
+            self.gamma_labels = ["γ"]
+        elif gm == "per_lpair":
+            lp2i = {lp: i for i, lp in enumerate(self.active_lpairs)}
+            self.n_gamma = len(self.active_lpairs)
+            self.gamma_labels = [
+                f"γ_{self._LPAIR_LABELS[lp]}" for lp in self.active_lpairs
+            ]
+            for ga, gb in self.hop_pair_list:
+                la, lb = self.group_l[ga], self.group_l[gb]
+                gidx = lp2i[(min(la, lb), max(la, lb))]
+                st = self.hop_pair_start[(ga, gb)]
+                for lk in range(len(self.hop_pair_active[(ga, gb)])):
+                    self._hop_to_gamma[st + lk] = gidx
+        elif gm == "per_channel":
+            ch2i = {ch: i for i, ch in enumerate(self.active_channels)}
+            self.n_gamma = len(self.active_channels)
+            self.gamma_labels = [f"γ_{ch}" for ch in self.active_channels]
+            for ga, gb in self.hop_pair_list:
+                st = self.hop_pair_start[(ga, gb)]
+                for lk, sk_idx in enumerate(self.hop_pair_active[(ga, gb)]):
+                    self._hop_to_gamma[st + lk] = ch2i[SK_PARAM_NAMES[sk_idx]]
+        else:
+            raise ValueError(f"Unknown gamma_mode: {gm!r}")
+
+        # On-site shift η
+        if self.fit_onsite_shift:
+            present = set()
+            for sp in self.unique_species:
+                for l_val in self.shells_dict[sp]:
+                    present.add({0: "s", 1: "p", 2: "d"}[l_val])
+            self.eta_orb_types = sorted(present, key="spd".index)
+            self.n_eta = len(self.eta_orb_types)
+            self.eta_labels = [f"η_{t}" for t in self.eta_orb_types]
+            _otype = {
+                "s": "s",
+                "px": "p",
+                "py": "p",
+                "pz": "p",
+                "dxy": "d",
+                "dyz": "d",
+                "dzx": "d",
+                "dx2-y2": "d",
+                "dz2": "d",
+            }
+            self._eta_diag = np.zeros((self.n_eta, self.nawf))
+            for iat in range(self.nat):
+                bi = self.atom_block_start[iat]
+                for io, orb in enumerate(self.atom_orbitals[iat]):
+                    q = self.eta_orb_types.index(_otype[orb])
+                    self._eta_diag[q, bi + io] = self.coord_i[iat]
+        else:
+            self.n_eta = 0
+            self.eta_labels = []
+
+        # Parameter bookkeeping
+        n_sk = self.n_onsite + self.n_shells * self.n_hop
+        self.n_sk = n_sk
+        self.n_gamma_start = n_sk
+        self.n_eta_start = n_sk + self.n_gamma
+        self.n_params = n_sk + self.n_gamma + self.n_eta
+
+        self.param_labels = self.param_labels[:n_sk]
+        self.param_labels.extend(self.gamma_labels)
+        self.param_labels.extend(self.eta_labels)
+
+        if self.verbose:
+            print(
+                f"  EDTB screening: {self.n_gamma} γ ({self.gamma_mode}), "
+                f"{self.n_eta} η"
+            )
+            print(f"  Total parameters: {self.n_params}")
+
+    # ── 3c. Regularization weights ────────────────────────────
+
+    def _build_regularization_weights(self):
+        """Extend Tikhonov weights to cover γ and η parameters."""
+        if not hasattr(self, "n_gamma_start"):
+            # Called from super().__init__() before EDTB setup
+            super()._build_regularization_weights()
+            return
+        w = np.zeros(self.n_params)
+        for s in range(self.n_shells):
+            d_s = self.shell_dists[s]
+            i0 = self.n_onsite + s * self.n_hop
+            w[i0 : i0 + self.n_hop] = d_s
+        hw = w[self.n_onsite : self.n_sk]
+        if hw.sum() > 0:
+            w[self.n_onsite : self.n_sk] = hw / hw.mean()
+        w[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = 1.0
+        if self.n_eta > 0:
+            w[self.n_eta_start : self.n_eta_start + self.n_eta] = 1.0
+        self._reg_weights = w
+
+    # ── 3d. Forward model (screened eigenvalues + Jacobian) ───
+
+    def _eigenvalues_and_jacobian(self, p):
+        """Eigenvalues and Hellmann-Feynman Jacobian with EDTB screening."""
+        # Guard: during super().__init__(), EDTB attrs are not set yet
+        if not hasattr(self, "n_gamma_start"):
+            return super()._eigenvalues_and_jacobian(p)
+
+        Nk, nawf = self.Nk, self.nawf
+        n_onsite, n_hop = self.n_onsite, self.n_hop
+        gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
+
+        # ── on-site Hamiltonian ──
+        H0 = np.einsum("p,pij->ij", p[:n_onsite], self._onsite_map)
+        if self.n_eta > 0:
+            eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
+            shift = np.einsum("q,qi->i", eta, self._eta_diag)
+            H0[np.arange(nawf), np.arange(nawf)] += shift
+
+        Hk = np.broadcast_to(H0, (Nk, nawf, nawf)).astype(complex).copy()
+
+        # ── screening scales: scale[b,p] = exp(-γ_{q(p)} · S_b) ──
+        gamma_per_hop = gamma[self._hop_to_gamma]  # (n_hop,)
+        scales = []
+        for s in range(self.n_shells):
+            scales.append(np.exp(-gamma_per_hop[None, :] * self.S_bonds[s][:, None]))
+
+        # ── screened dH/dV ──
+        screened_dHk = []
+        for s in range(self.n_shells):
+            M_sc = scales[s][:, :, None, None] * self._M_shells[s]
+            screened_dHk.append(
+                np.einsum("kb,bpij->kpij", self._phases_shells[s], M_sc)
+            )
+
+        # ── hopping contribution to H(k) ──
+        for s in range(self.n_shells):
+            i0 = n_onsite + s * n_hop
+            Hk += np.einsum("p,kpij->kij", p[i0 : i0 + n_hop], screened_dHk[s])
+
+        # ── eigendecomposition ──
+        evals, evecs = np.linalg.eigh(Hk)
+        E_sk = evals.real
+
+        # ── Jacobian (Hellmann-Feynman) ──
+        dE_dp = np.zeros((Nk, nawf, self.n_params))
+        psi2 = np.abs(evecs) ** 2
+
+        # ∂E/∂ε  (on-site)
+        dE_dp[:, :, :n_onsite] = np.einsum("kin,pi->knp", psi2, self._onsite_diag)
+
+        # ∂E/∂V  (hopping — through screened dHk)
+        evecs_bc = evecs[:, np.newaxis, :, :]
+        for s in range(self.n_shells):
+            i0 = n_onsite + s * n_hop
+            tmp = np.matmul(screened_dHk[s], evecs_bc)
+            dE_dp[:, :, i0 : i0 + n_hop] = np.real(
+                np.einsum("kin,kpin->knp", evecs.conj(), tmp)
+            )
+
+        # ∂E/∂γ_q
+        for q in range(self.n_gamma):
+            dH_dg = np.zeros((Nk, nawf, nawf), dtype=complex)
+            mask = self._hop_to_gamma == q
+            if not np.any(mask):
+                continue
+            for s in range(self.n_shells):
+                i0 = n_onsite + s * n_hop
+                V = p[i0 : i0 + n_hop]
+                # VS[b, p'] = V_p' · scale[b,p'] · S_b
+                VS = V[mask] * scales[s][:, mask]
+                VS *= self.S_bonds[s][:, None]
+                wM = np.einsum("bp,bpij->bij", VS, self._M_shells[s][:, mask, :, :])
+                dH_dg -= np.einsum("kb,bij->kij", self._phases_shells[s], wM)
+            # Hellmann-Feynman: ∂E_n/∂γ_q = ⟨n|∂H/∂γ_q|n⟩
+            HFq = np.matmul(dH_dg, evecs)
+            dE_dp[:, :, self.n_gamma_start + q] = np.real(
+                np.einsum("kin,kin->kn", evecs.conj(), HFq)
+            )
+
+        # ∂E/∂η_q  (on-site shift)
+        if self.n_eta > 0:
+            for q in range(self.n_eta):
+                dE_dp[:, :, self.n_eta_start + q] = np.einsum(
+                    "kin,i->kn", psi2, self._eta_diag[q]
+                )
+
+        return E_sk, dE_dp
+
+    # ── 3e. Fitting ───────────────────────────────────────────
+
+    def fit(
+        self,
+        *,
+        p0_sk: np.ndarray | None = None,
+        n_trials: int = 10,
+        seed: int | None = 123,
+        max_nfev: int = 1000,
+        ftol: float = 1e-12,
+        xtol: float = 1e-12,
+        gtol: float = 1e-12,
+        alpha: float = 0.0,
+        n_jobs: int = 1,
+    ) -> dict:
+        """Multi-start least-squares fit including screening parameters.
+
+        Parameters
+        ----------
+        p0_sk : np.ndarray, optional
+            Initial SK parameter vector (length ``n_sk``).  If provided the
+            first trial uses these values directly; subsequent trials add a
+            small random perturbation to the hopping part.  If *None*,
+            on-site energies are extracted from H(R=0) and hoppings are
+            randomised (same behaviour as :class:`SKFitter`).
+        n_trials, seed, max_nfev, ftol, xtol, gtol, alpha
+            Same as :meth:`SKFitter.fit`.
+        n_jobs : int
+            Number of parallel workers for multi-start trials
+            (default 1 = sequential).  Use ``-1`` for all available cores.
+            Requires ``joblib`` when ``n_jobs != 1``.
+
+        Returns
+        -------
+        dict
+            ``p_opt`` : best parameter vector (length ``n_params``).
+            ``rmse`` : best RMSE (eV, data-only).
+            ``max_err`` : max absolute error (eV).
+            ``all_results`` : sorted list of ``(rmse, p, OptimizeResult)``.
+            ``param_labels`` : parameter names.
+        """
+        Nk, nawf = self.Nk, self.nawf
+        n_data = Nk * nawf
+
+        # SK initialisation
+        if p0_sk is not None:
+            p0_sk = np.asarray(p0_sk, dtype=float)
+            if p0_sk.shape[0] != self.n_sk:
+                raise ValueError(f"p0_sk length {p0_sk.shape[0]} != n_sk {self.n_sk}")
+        p0_onsite = self.extract_onsite_from_HR0()
+        E_half = 0.5 * (self.E_pao.max() - self.E_pao.min())
+        hop_scales = [E_half / np.sqrt(len(b)) for b in self.shell_bonds_list]
+
+        rng = np.random.RandomState(seed)
+
+        # Pre-generate all initial points
+        p_inits = []
+        for trial in range(n_trials):
+            p_init = np.zeros(self.n_params)
+            if p0_sk is not None:
+                p_init[: self.n_sk] = p0_sk
+                if trial > 0:
+                    for s in range(self.n_shells):
+                        i0 = self.n_onsite + s * self.n_hop
+                        i1 = i0 + self.n_hop
+                        p_init[i0:i1] *= 1.0 + 0.05 * rng.randn(self.n_hop)
+            else:
+                p_init[: self.n_onsite] = p0_onsite
+                for s, sc in enumerate(hop_scales):
+                    i0 = self.n_onsite + s * self.n_hop
+                    p_init[i0 : i0 + self.n_hop] = rng.uniform(-sc, sc, self.n_hop)
+            # γ: small positive random initialisation
+            p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
+                rng.uniform(0.0, 0.01, self.n_gamma)
+            )
+            p_inits.append(p_init)
+
+        # ── Run trials ──
+        use_parallel = n_jobs != 1 and n_trials > 1
+        common_kw = dict(
+            alpha=alpha,
+            n_data=n_data,
+            max_nfev=max_nfev,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+        )
+
+        if self.verbose:
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
+            print(
+                f"EDTB multi-start optimisation: {n_trials} trials, "
+                f"γ_mode={self.gamma_mode}{par_tag}"
+            )
+
+        if use_parallel:
+            from joblib import Parallel, delayed
+
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
+            )
+            all_results = [(r, p, res) for r, p, res in results]
+        else:
+            if self.verbose:
+                print(
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                )
+                print("-" * 50)
+            all_results = []
+            best_so_far = np.inf
+            for trial, p_init in enumerate(p_inits):
+                rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
+                all_results.append((rmse, p_opt, res))
+                tag = " *" if rmse < best_so_far else ""
+                if rmse < best_so_far:
+                    best_so_far = rmse
+                if self.verbose:
+                    rmse_init = np.sqrt(
+                        np.mean(
+                            (self.eigenvalues(p_init[: self.n_sk]) - self.E_pao).ravel()
+                            ** 2
+                        )
+                    )
+                    print(
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
+                    )
+
+        # ── Collect results ──
+        all_results.sort(key=lambda x: x[0])
+        best_rmse, best_p, best_res = all_results[0]
+        best_data_res = best_res.fun[:n_data]
+
+        if self.verbose:
+            if use_parallel:
+                print(f"  Completed {n_trials} trials in parallel")
+            print(f"{'=' * 65}")
+            msg = (
+                f"Best RMSE = {best_rmse * 1000:.2f} meV, "
+                f"max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV"
+            )
+            if alpha > 0:
+                msg += f"  (α = {alpha:.4g})"
+            print(msg)
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
+            for i, name in enumerate(self.param_labels):
+                print(f"{name:<30s}  {best_p[i]: .5f}")
+
+        return {
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "max_err": np.max(np.abs(best_data_res)),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
+        }
+
+    # ── 3f. Build PAOFLOW model dict ─────────────────────────
+
+    def build_model_dict(self, p: np.ndarray) -> dict:
+        """Convert fitted parameters to a PAOFLOW ``SK_EDTB`` model dict.
+
+        Parameters
+        ----------
+        p : np.ndarray
+            Full parameter vector (length ``n_params``).
+
+        Returns
+        -------
+        dict
+            Model dict with ``label='SK_EDTB'`` and ``screening`` block.
+        """
+        # Base SK dict from the SK portion of p
+        base = super().build_model_dict(p[: self.n_sk])
+        base["label"] = "SK_EDTB"
+
+        # Screening block
+        gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
+        if self.gamma_mode == "global":
+            gamma_out = float(gamma[0])
+        elif self.gamma_mode == "per_lpair":
+            gamma_out = {
+                self._LPAIR_LABELS[lp]: float(gamma[i])
+                for i, lp in enumerate(self.active_lpairs)
+            }
+        elif self.gamma_mode == "per_channel":
+            gamma_out = {
+                ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)
+            }
+
+        screening = {"r_cut": self.r_cut_bohr, "gamma": gamma_out}
+
+        if self.n_eta > 0:
+            eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
+            screening["onsite_shift"] = {
+                self.eta_orb_types[i]: float(eta[i]) for i in range(self.n_eta)
+            }
+
+        base["model"]["screening"] = screening
+        return base
