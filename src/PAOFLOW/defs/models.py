@@ -89,6 +89,59 @@ def Slater_Koster(data_controller, params):
     attr["nspin"] = 1  # only unpolarized case for now
     attr["dftSO"] = False  # no spin-orbit
 
+    # ── Multi-shell support ──────────────────────────────────────
+    # When atoms specify 'configuration' (e.g. ['3S','3P','3D','4S','4P']),
+    # each pair of shell groups gets its own set of SK hopping parameters.
+    _config_l_map = {"S": 0, "P": 1, "D": 2, "F": 3}
+    _l_to_orbitals = {
+        0: ["s"],
+        1: ["px", "py", "pz"],
+        2: ["dxy", "dyz", "dzx", "dx2-y2", "dz2"],
+    }
+    _lpair_required_keys = {
+        (0, 0): ["sss"],
+        (0, 1): ["sps"],
+        (0, 2): ["sds"],
+        (1, 1): ["pps", "ppp"],
+        (1, 2): ["pds", "pdp"],
+        (2, 2): ["dds", "ddp", "ddd"],
+    }
+
+    is_multishell = any(
+        "configuration" in params["model"]["atoms"][str(ia)] for ia in range(natoms)
+    )
+
+    atom_config = []  # config labels per atom
+    atom_angular_orbs = []  # angular orbital names per atom (may have duplicates)
+    atom_orbital_groups = []  # config group index per orbital
+
+    if is_multishell:
+        for ia in range(natoms):
+            atom_dict = params["model"]["atoms"][str(ia)]
+            if "configuration" not in atom_dict:
+                raise ValueError(
+                    f"Atom {ia}: 'configuration' key required when "
+                    "multi-shell mode is used."
+                )
+            config = atom_dict["configuration"]
+            atom_config.append(config)
+            ang_orbs = []
+            groups = []
+            for ig, cfg_label in enumerate(config):
+                l_val = _config_l_map[cfg_label[-1].upper()]
+                if l_val not in _l_to_orbitals:
+                    raise ValueError(
+                        f"Unsupported angular momentum l={l_val} "
+                        f"for config '{cfg_label}'."
+                    )
+                for orb_name in _l_to_orbitals[l_val]:
+                    ang_orbs.append(orb_name)
+                    groups.append(ig)
+            atom_angular_orbs.append(ang_orbs)
+            atom_orbital_groups.append(groups)
+            # Populate 'orbitals' for downstream code
+            atom_dict["orbitals"] = ang_orbs
+
     # Reciprocal Lattice
     arry["b_vectors"] = np.zeros((3, 3), dtype=float)
     volume = np.dot(
@@ -146,6 +199,11 @@ def Slater_Koster(data_controller, params):
     attr["bnd"] = nawf
     attr["nbnds"] = nawf
     attr["shift"] = 0
+
+    # Cumulative orbital block start per atom (correct for heterogeneous norbitals)
+    atom_block_start = np.zeros(natoms, dtype=int)
+    for ia in range(1, natoms):
+        atom_block_start[ia] = atom_block_start[ia - 1] + norbitals[ia - 1]
 
     # Define the Dnm matrix for correct calculation of gradient
     basis = []
@@ -233,11 +291,47 @@ def Slater_Koster(data_controller, params):
     HRs = np.zeros((nawf, nawf, nk1, nk2, nk3, 1), dtype=complex)
 
     # on-site matrix elements
-    for ia in range(natoms):
-        for no in range(norbitals[ia]):
-            HRs[ia * norbitals[ia] + no, ia * norbitals[ia] + no, 0, 0, 0, 0] = params[
-                "model"
-            ]["atoms"][str(ia)][params["model"]["atoms"][str(ia)]["orbitals"][no]]
+    if is_multishell:
+        # Multi-shell: on-site energy per configuration group.
+        # d-shells may optionally be split into t2g/eg.
+        for ia in range(natoms):
+            atom_dict = params["model"]["atoms"][str(ia)]
+            config = atom_config[ia]
+            start = atom_block_start[ia]
+            idx = 0
+            for ig, cfg_label in enumerate(config):
+                l_val = _config_l_map[cfg_label[-1].upper()]
+                norb_l = 2 * l_val + 1
+                if l_val <= 1:
+                    e = atom_dict[cfg_label]
+                    for io in range(norb_l):
+                        HRs[start + idx + io, start + idx + io, 0, 0, 0, 0] = e
+                elif l_val == 2:
+                    key_t2g = f"{cfg_label}_t2g"
+                    key_eg = f"{cfg_label}_eg"
+                    if key_t2g in atom_dict:
+                        e_t2g = atom_dict[key_t2g]
+                        e_eg = atom_dict[key_eg]
+                    else:
+                        e_t2g = e_eg = atom_dict[cfg_label]
+                    for io in range(3):  # dxy, dyz, dzx (t2g)
+                        HRs[start + idx + io, start + idx + io, 0, 0, 0, 0] = e_t2g
+                    for io in range(3, 5):  # dx2-y2, dz2 (eg)
+                        HRs[start + idx + io, start + idx + io, 0, 0, 0, 0] = e_eg
+                idx += norb_l
+    else:
+        for ia in range(natoms):
+            for no in range(norbitals[ia]):
+                HRs[
+                    atom_block_start[ia] + no,
+                    atom_block_start[ia] + no,
+                    0,
+                    0,
+                    0,
+                    0,
+                ] = params["model"]["atoms"][str(ia)][
+                    params["model"]["atoms"][str(ia)]["orbitals"][no]
+                ]
 
     # hopping matrix elements
     orbital_order = ("s", "px", "py", "pz", "dxy", "dyz", "dzx", "dx2-y2", "dz2")
@@ -274,18 +368,51 @@ def Slater_Koster(data_controller, params):
     )
     if has_d:
         required_keys.extend(["sds", "pds", "pdp", "dds", "ddp", "ddd"])
-    for shell_name, shell_hoppings in hoppings_shells.items():
-        missing_keys = [key for key in required_keys if key not in shell_hoppings]
-        if missing_keys:
-            raise KeyError(
-                f"Missing Slater-Koster hopping keys for {shell_name}: {', '.join(missing_keys)}"
-            )
+
+    if is_multishell:
+        # Multi-shell validation: each group-pair sub-dict must contain
+        # the SK keys required by the angular-momentum pair.
+        for shell_name, shell_hop_dict in hoppings_shells.items():
+            for pair_key, pair_hoppings in shell_hop_dict.items():
+                parts = pair_key.split("-")
+                if len(parts) != 2:
+                    raise KeyError(
+                        f"Invalid group-pair key '{pair_key}' in {shell_name}. "
+                        "Expected format: 'GroupA-GroupB' (e.g. '3S-3P')."
+                    )
+                la = _config_l_map[parts[0][-1].upper()]
+                lb = _config_l_map[parts[1][-1].upper()]
+                lpair = (min(la, lb), max(la, lb))
+                needed = _lpair_required_keys[lpair]
+                missing_keys = [k for k in needed if k not in pair_hoppings]
+                if missing_keys:
+                    raise KeyError(
+                        f"Missing SK keys for {shell_name}/'{pair_key}' "
+                        f"(l-pair {lpair}): {', '.join(missing_keys)}"
+                    )
+    else:
+        for shell_name, shell_hoppings in hoppings_shells.items():
+            missing_keys = [key for key in required_keys if key not in shell_hoppings]
+            if missing_keys:
+                raise KeyError(
+                    f"Missing Slater-Koster hopping keys for "
+                    f"{shell_name}: {', '.join(missing_keys)}"
+                )
 
     elements = sorted(set(arry["atoms"]))
     shell_names = ", ".join(sorted(hoppings_shells.keys()))
-    print(
-        f"Slater_Koster: elements={elements}, neighbor_shells={len(hoppings_shells)} ({shell_names})"
-    )
+    if is_multishell:
+        config_str = ", ".join(atom_config[0])
+        print(
+            f"Slater_Koster (multi-shell): elements={elements}, "
+            f"config=[{config_str}], "
+            f"neighbor_shells={len(hoppings_shells)} ({shell_names})"
+        )
+    else:
+        print(
+            f"Slater_Koster: elements={elements}, "
+            f"neighbor_shells={len(hoppings_shells)} ({shell_names})"
+        )
 
     # Standard Slater-Koster normalization factors for cubic harmonics
     # (Slater & Koster, Phys. Rev. 94, 1498, 1954)
@@ -541,6 +668,50 @@ def Slater_Koster(data_controller, params):
     def _validate_sk_tables():
         if not has_d:
             return
+        if is_multishell:
+            # Multi-shell: validate d-d symmetry for each group pair
+            # that involves d-orbitals, in each neighbor shell.
+            dd_pairs = []
+            for ia in range(natoms):
+                config = atom_config[ia]
+                for ga in range(len(config)):
+                    for gb in range(ga, len(config)):
+                        la = _config_l_map[config[ga][-1].upper()]
+                        lb = _config_l_map[config[gb][-1].upper()]
+                        if la == 2 and lb == 2:
+                            pair_key = f"{config[ga]}-{config[gb]}"
+                            if pair_key not in dd_pairs:
+                                dd_pairs.append(pair_key)
+                break  # same config for all atoms
+
+            test_dirs = [
+                np.array([1.0, 0.0, 0.0]),
+                np.array([0.0, 1.0, 0.0]),
+                np.array([0.0, 0.0, 1.0]),
+                np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0),
+                np.array([1.0, 2.0, 3.0]) / np.sqrt(14.0),
+            ]
+            for pair_key in dd_pairs:
+                for shell_name in hoppings_shells:
+                    if pair_key not in hoppings_shells[shell_name]:
+                        continue
+                    sh = hoppings_shells[shell_name][pair_key]
+                    for vec in test_dirs:
+                        lx, ly, lz = vec
+                        for a in d_orbitals:
+                            for b in d_orbitals:
+                                v_ab = _dd_value(a, b, lx, ly, lz, sh)
+                                v_ba = _dd_value(b, a, lx, ly, lz, sh)
+                                if v_ab is None or v_ba is None:
+                                    continue
+                                if not np.isclose(v_ab, v_ba, atol=1e-12, rtol=1e-12):
+                                    raise ValueError(
+                                        f"Inconsistent d-d SK symmetry for "
+                                        f"{a},{b} ({pair_key}/{shell_name}) "
+                                        f"at direction "
+                                        f"({lx:.3f},{ly:.3f},{lz:.3f})"
+                                    )
+            return
 
         test_dirs = [
             np.array([1.0, 0.0, 0.0]),
@@ -588,23 +759,65 @@ def Slater_Koster(data_controller, params):
                         ly = cosines(tau[ia], sctau[ib, i, j, k, :])[1]
                         lz = cosines(tau[ia], sctau[ib, i, j, k, :])[2]
 
-                        shell_hoppings = hoppings_shells[shell_key]
+                        shell_hop_data = hoppings_shells[shell_key]
                         orbitals_a = arry["shells"][ia]["orbitals"]
                         orbitals_b = arry["shells"][ib]["orbitals"]
-                        for noa, orb_a in enumerate(orbitals_a):
-                            for nob, orb_b in enumerate(orbitals_b):
-                                value = _sk_sp_value(
-                                    orb_a, orb_b, lx, ly, lz, shell_hoppings
-                                )
-                                if value is not None:
-                                    HRs[
-                                        ia * norbitals[ia] + noa,
-                                        ib * norbitals[ib] + nob,
-                                        i,
-                                        j,
-                                        k,
-                                        0,
-                                    ] = value
+
+                        if is_multishell:
+                            # Multi-shell: route each orbital pair to
+                            # the group-pair-specific SK parameters.
+                            config_a = atom_config[ia]
+                            config_b = atom_config[ib]
+                            groups_a = atom_orbital_groups[ia]
+                            groups_b = atom_orbital_groups[ib]
+                            for noa, orb_a in enumerate(orbitals_a):
+                                for nob, orb_b in enumerate(orbitals_b):
+                                    ga = groups_a[noa]
+                                    gb = groups_b[nob]
+                                    cfg_ga = config_a[ga]
+                                    cfg_gb = config_b[gb]
+                                    if ga <= gb:
+                                        pair_key = f"{cfg_ga}-{cfg_gb}"
+                                    else:
+                                        pair_key = f"{cfg_gb}-{cfg_ga}"
+                                    pair_hoppings = shell_hop_data[pair_key]
+                                    value = _sk_sp_value(
+                                        orb_a,
+                                        orb_b,
+                                        lx,
+                                        ly,
+                                        lz,
+                                        pair_hoppings,
+                                    )
+                                    if value is not None:
+                                        HRs[
+                                            atom_block_start[ia] + noa,
+                                            atom_block_start[ib] + nob,
+                                            i,
+                                            j,
+                                            k,
+                                            0,
+                                        ] = value
+                        else:
+                            for noa, orb_a in enumerate(orbitals_a):
+                                for nob, orb_b in enumerate(orbitals_b):
+                                    value = _sk_sp_value(
+                                        orb_a,
+                                        orb_b,
+                                        lx,
+                                        ly,
+                                        lz,
+                                        shell_hop_data,
+                                    )
+                                    if value is not None:
+                                        HRs[
+                                            atom_block_start[ia] + noa,
+                                            atom_block_start[ib] + nob,
+                                            i,
+                                            j,
+                                            k,
+                                            0,
+                                        ] = value
 
         arry["HRs"] = HRs
 
