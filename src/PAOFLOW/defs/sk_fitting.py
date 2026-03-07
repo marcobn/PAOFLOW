@@ -300,6 +300,7 @@ class SKFitter:
         self._build_design_tensors()
         self._build_onsite_map()
         self._precompute_dHk()
+        self._build_regularization_weights()
 
     # ── 2a. System setup ──────────────────────────────────────
 
@@ -594,6 +595,26 @@ class SKFitter:
         if self.verbose:
             print(f"  Precomputed dHk arrays: {mem_MB:.1f} MB")
 
+    # ── 2g′. Regularization weights ──────────────────────────
+
+    def _build_regularization_weights(self):
+        """Build per-parameter Tikhonov weights.
+
+        On-site parameters get weight 0 (not penalized).
+        Hopping parameters get weight proportional to the shell distance
+        (farther neighbors are penalized more strongly).
+        """
+        w = np.zeros(self.n_params)
+        for s in range(self.n_shells):
+            d_s = self.shell_dists[s]  # distance in alat units
+            i0 = self.n_onsite + s * self.n_hop
+            w[i0 : i0 + self.n_hop] = d_s
+        # Normalise so the mean hopping weight is 1
+        hop_w = w[self.n_onsite :]
+        if hop_w.sum() > 0:
+            w[self.n_onsite :] = hop_w / hop_w.mean()
+        self._reg_weights = w
+
     # ── 2h. Forward model (eigenvalues + Jacobian) ────────────
 
     def _eigenvalues_and_jacobian(self, p):
@@ -704,6 +725,7 @@ class SKFitter:
         ftol: float = 1e-12,
         xtol: float = 1e-12,
         gtol: float = 1e-12,
+        alpha: float = 0.0,
     ) -> dict:
         """Run multi-start least-squares optimisation.
 
@@ -717,12 +739,19 @@ class SKFitter:
             Max function evaluations per trial.
         ftol, xtol, gtol : float
             Tolerances for ``scipy.optimize.least_squares``.
+        alpha : float
+            Tikhonov regularization strength (default 0 = no penalty).
+            Adds ``alpha * w_i * p_i`` penalty rows to the residual, where
+            ``w_i`` is proportional to the neighbor-shell distance (farther
+            shells are penalized more).  On-site parameters are not penalized.
+            Typical values: 0.01–1.0 (start small, increase if far-neighbor
+            hoppings blow up).
 
         Returns
         -------
         dict
             ``p_opt`` : best parameter vector.
-            ``rmse`` : best RMSE (eV).
+            ``rmse`` : best RMSE (eV) (data-only, excluding penalty).
             ``max_err`` : max absolute error (eV).
             ``all_results`` : list of ``(rmse, p, OptimizeResult)`` sorted by RMSE.
             ``param_labels`` : parameter names.
@@ -737,14 +766,26 @@ class SKFitter:
         if seed is not None:
             np.random.seed(seed)
 
+        # Regularization
+        use_reg = alpha > 0.0
+        reg_w = self._reg_weights  # shape (n_params,)
+        n_data = Nk * nawf
+
         # Functor with cached Jacobian
         last_jac = [None]
 
         def fun(p):
             E_sk, dE_dp = self._eigenvalues_and_jacobian(p)
-            res = (E_sk - self.E_pao).ravel()
-            last_jac[0] = dE_dp.reshape(Nk * nawf, self.n_params)
-            return res
+            res_data = (E_sk - self.E_pao).ravel()
+            J_data = dE_dp.reshape(n_data, self.n_params)
+            if use_reg:
+                res_reg = alpha * reg_w * p
+                J_reg = np.diag(alpha * reg_w)
+                last_jac[0] = np.vstack([J_data, J_reg])
+                return np.concatenate([res_data, res_reg])
+            else:
+                last_jac[0] = J_data
+                return res_data
 
         def jac(p):
             return last_jac[0]
@@ -783,7 +824,9 @@ class SKFitter:
                 gtol=gtol,
                 max_nfev=max_nfev,
             )
-            rmse_final = np.sqrt(np.mean(res.fun**2))
+            # RMSE on data residuals only (exclude penalty rows)
+            res_data = res.fun[:n_data]
+            rmse_final = np.sqrt(np.mean(res_data**2))
             all_results.append((rmse_final, res.x.copy(), res))
 
             tag = " *" if rmse_final < best_rmse else ""
@@ -800,12 +843,17 @@ class SKFitter:
 
         all_results.sort(key=lambda x: x[0])
 
+        best_data_res = best_res.fun[:n_data]
+
         if self.verbose:
             print(f"{'=' * 65}")
-            print(
+            msg = (
                 f"Best RMSE = {best_rmse * 1000:.2f} meV, "
-                f"max|δ| = {np.max(np.abs(best_res.fun)) * 1000:.2f} meV"
+                f"max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV"
             )
+            if use_reg:
+                msg += f"  (α = {alpha:.4g})"
+            print(msg)
             print(f"\n{'Parameter':<30s}  {'Value':>10s}")
             print("-" * 43)
             for i, name in enumerate(self.param_labels):
@@ -814,7 +862,7 @@ class SKFitter:
         return {
             "p_opt": best_p,
             "rmse": best_rmse,
-            "max_err": np.max(np.abs(best_res.fun)),
+            "max_err": np.max(np.abs(best_data_res)),
             "all_results": all_results,
             "param_labels": list(self.param_labels),
         }
@@ -889,6 +937,7 @@ class SKFitter:
 
         return {
             "label": "Slater_Koster",
+            "alat": float(self.alat),
             "model": {
                 "a_vectors": self.a_vecs.tolist(),
                 "atoms": model_atoms,

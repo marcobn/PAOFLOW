@@ -822,6 +822,849 @@ def Slater_Koster(data_controller, params):
         arry["HRs"] = HRs
 
 
+def SK_EDTB(data_controller, params):
+    """Build an environment-dependent Slater-Koster tight-binding model (up to 3NN).
+
+    Extends the two-center ``Slater_Koster`` with environment-dependent
+    screening corrections in the style of Porezag & Frauenheim.
+
+    For each bond (i, j) the two-center SK integrals are modulated by a
+    scalar factor that depends on the local atomic environment:
+
+        V_λ^eff(i,j) = V_λ^(2c) · exp( -γ_λ · S_ij )
+
+    where S_ij = Σ_{k ≠ i,j} f_c(d_ik) · f_c(d_jk) is a screening sum
+    over nearby mediating atoms *k*, and f_c is a smooth cutoff function.
+
+    The γ_λ screening strengths can be specified:
+      - per SK channel  ('sss', 'pps', …)
+      - per l-pair       ('ss', 'sp', 'pp', 'sd', 'pd', 'dd')
+      - as a single global value
+
+    Additional input (on top of ``Slater_Koster`` requirements):
+
+    params['model']['screening'] : dict
+        r_cut : float
+            Cutoff radius (same units as a_vectors) for mediating atoms.
+        gamma : float or dict
+            If float → single global screening strength.
+            If dict  → per-channel {'sss': γ1, 'pps': γ2, …}
+                    or per-l-pair {'ss': γ1, 'sp': γ2, …}.
+        onsite_shift : dict, optional
+            Per-orbital environment-dependent on-site correction strength.
+            Keys are orbital labels ('s', 'p', 'd'); values are floats.
+            Each on-site energy receives Δε = η · Σ_k f_c(d_ik).
+    """
+
+    import numpy as np
+
+    arry, attr = data_controller.data_dicts()
+    # Lattice Vectors
+    arry["a_vectors"] = np.array(params["model"]["a_vectors"])
+    attr["alat"] = 1.0
+
+    # Atomic coordinates
+    natoms = len(params["model"]["atoms"])
+    tau = np.zeros((natoms, 3), dtype=float)
+    for ia in range(natoms):
+        tau[ia] = np.array(params["model"]["atoms"][str(ia)]["tau"])
+    atoms = []
+    shells = []
+    for ia in range(natoms):
+        atoms.append(params["model"]["atoms"][str(ia)]["name"])
+        shells.append(params["model"]["atoms"][str(ia)])
+    arry["tau"] = tau
+    arry["atoms"] = atoms
+    attr["natoms"] = natoms
+    arry["shells"] = shells
+    attr["nspin"] = 1
+    attr["dftSO"] = False
+
+    # ── Multi-shell support ──────────────────────────────────────
+    _config_l_map = {"S": 0, "P": 1, "D": 2, "F": 3}
+    _l_to_orbitals = {
+        0: ["s"],
+        1: ["px", "py", "pz"],
+        2: ["dxy", "dyz", "dzx", "dx2-y2", "dz2"],
+    }
+    _lpair_required_keys = {
+        (0, 0): ["sss"],
+        (0, 1): ["sps"],
+        (0, 2): ["sds"],
+        (1, 1): ["pps", "ppp"],
+        (1, 2): ["pds", "pdp"],
+        (2, 2): ["dds", "ddp", "ddd"],
+    }
+
+    is_multishell = any(
+        "configuration" in params["model"]["atoms"][str(ia)] for ia in range(natoms)
+    )
+
+    atom_config = []
+    atom_angular_orbs = []
+    atom_orbital_groups = []
+
+    if is_multishell:
+        for ia in range(natoms):
+            atom_dict = params["model"]["atoms"][str(ia)]
+            if "configuration" not in atom_dict:
+                raise ValueError(
+                    f"Atom {ia}: 'configuration' key required when "
+                    "multi-shell mode is used."
+                )
+            config = atom_dict["configuration"]
+            atom_config.append(config)
+            ang_orbs = []
+            groups = []
+            for ig, cfg_label in enumerate(config):
+                l_val = _config_l_map[cfg_label[-1].upper()]
+                if l_val not in _l_to_orbitals:
+                    raise ValueError(
+                        f"Unsupported angular momentum l={l_val} "
+                        f"for config '{cfg_label}'."
+                    )
+                for orb_name in _l_to_orbitals[l_val]:
+                    ang_orbs.append(orb_name)
+                    groups.append(ig)
+            atom_angular_orbs.append(ang_orbs)
+            atom_orbital_groups.append(groups)
+            atom_dict["orbitals"] = ang_orbs
+
+    # Reciprocal Lattice
+    arry["b_vectors"] = np.zeros((3, 3), dtype=float)
+    volume = np.dot(
+        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
+        arry["a_vectors"][2, :],
+    )
+    attr["omega"] = volume
+    arry["b_vectors"][0, :] = (
+        np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
+    ) / volume
+    arry["b_vectors"][1, :] = (
+        np.cross(arry["a_vectors"][2, :], arry["a_vectors"][0, :])
+    ) / volume
+    arry["b_vectors"][2, :] = (
+        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :])
+    ) / volume
+
+    hoppings = params["model"]["hoppings"]
+    use_third_neighbors = isinstance(hoppings, dict) and "nnnn" in hoppings
+    use_second_neighbors = isinstance(hoppings, dict) and (
+        "nnn" in hoppings or use_third_neighbors
+    )
+    if (use_second_neighbors or use_third_neighbors) and "nn" not in hoppings:
+        raise ValueError(
+            'Neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+        )
+    if use_third_neighbors and "nnn" not in hoppings:
+        raise ValueError(
+            'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
+        )
+
+    # dimensions of the supercell
+    if use_third_neighbors:
+        cell_range = 3
+    elif use_second_neighbors:
+        cell_range = 2
+    else:
+        cell_range = 1
+    nk1 = nk2 = nk3 = 2 * cell_range + 1
+    nkpnts = nk1 * nk2 * nk3
+    attr["nk1"] = nk1
+    attr["nk2"] = nk2
+    attr["nk3"] = nk3
+    attr["nkpnts"] = nkpnts
+
+    # orbital counts
+    norbitals = np.zeros(natoms, dtype=int)
+    for ia in range(natoms):
+        norbitals[ia] = len(params["model"]["atoms"][str(ia)]["orbitals"])
+
+    nawf = 0
+    for ia in range(natoms):
+        nawf += norbitals[ia]
+    attr["nawf"] = nawf
+    attr["bnd"] = nawf
+    attr["nbnds"] = nawf
+    attr["shift"] = 0
+
+    atom_block_start = np.zeros(natoms, dtype=int)
+    for ia in range(1, natoms):
+        atom_block_start[ia] = atom_block_start[ia - 1] + norbitals[ia - 1]
+
+    # Dnm matrix
+    basis = []
+    for i in range(attr["natoms"]):
+        for k in range(len(arry["shells"][i]["orbitals"])):
+            basis.append(arry["shells"][i]["tau"])
+    arry["Dnm"] = np.empty((attr["nawf"], attr["nawf"], 3))
+    for i in range(3):
+        for n in range(attr["nawf"]):
+            for m in range(attr["nawf"]):
+                arry["Dnm"][n, m, i] = basis[n][i] - basis[m][i]
+
+    # generate supercell positions
+    sctau = np.zeros((natoms, nk1, nk2, nk3, 3), dtype=float)
+    for i in range(-cell_range, cell_range + 1):
+        for j in range(-cell_range, cell_range + 1):
+            for k in range(-cell_range, cell_range + 1):
+                for ia in range(natoms):
+                    sctau[ia, i, k, j, :] = (
+                        tau[ia]
+                        + i * arry["a_vectors"][0]
+                        + j * arry["a_vectors"][1]
+                        + k * arry["a_vectors"][2]
+                    )
+    sctau = np.reshape(sctau, (natoms * nk1 * nk2 * nk3, 3), order="C")
+
+    distance = lambda x, y: np.sqrt(np.sum((x - y) ** 2))
+    cosines = lambda x, y: (y - x) / np.sqrt(np.sum((x - y) ** 2))
+    dist = []
+    for ia in range(natoms):
+        for n in range(natoms * nk1 * nk2 * nk3):
+            dist.append(distance(tau[ia], sctau[n]))
+    unique_dist = np.sort(np.unique(dist))
+    if unique_dist.size < 2:
+        raise ValueError(
+            "Unable to determine nearest-neighbor distances for SK_EDTB model."
+        )
+
+    dist_1 = unique_dist[1]
+    if use_third_neighbors:
+        if unique_dist.size < 4:
+            raise ValueError(
+                "Unable to determine third-neighbor distances for SK_EDTB model."
+            )
+        dist_2 = unique_dist[2]
+        dist_3 = unique_dist[3]
+        cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
+        cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
+        if unique_dist.size > 4:
+            dist_4 = unique_dist[4]
+            cutoff_3 = dist_3 + (dist_4 - dist_3) / 2.0
+        else:
+            cutoff_3 = dist_3 + (dist_3 - dist_2) / 2.0
+    elif use_second_neighbors:
+        if unique_dist.size < 3:
+            raise ValueError(
+                "Unable to determine second-neighbor distances for SK_EDTB model."
+            )
+        dist_2 = unique_dist[2]
+        cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
+        if unique_dist.size > 3:
+            dist_3 = unique_dist[3]
+            cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
+        else:
+            cutoff_2 = dist_2 + (dist_2 - dist_1) / 2.0
+        cutoff_3 = None
+    else:
+        if unique_dist.size < 3:
+            raise ValueError("Unable to determine cutoff for first-neighbor shell.")
+        cutoff_1 = dist_1 + (unique_dist[2] - dist_1) / 2.0
+        cutoff_2 = None
+        cutoff_3 = None
+    sctau = np.reshape(sctau, (natoms, nk1, nk2, nk3, 3), order="C")
+
+    arry["sctau"] = sctau
+    attr["cutoff"] = cutoff_1
+    attr["cutoff_1"] = cutoff_1
+    if cutoff_2 is not None:
+        attr["cutoff_2"] = cutoff_2
+    if cutoff_3 is not None:
+        attr["cutoff_3"] = cutoff_3
+    arry["norbitals"] = norbitals
+
+    HRs = np.zeros((nawf, nawf, nk1, nk2, nk3, 1), dtype=complex)
+
+    # ══════════════════════════════════════════════════════════════
+    #  EDTB: Environment-dependent screening
+    # ══════════════════════════════════════════════════════════════
+
+    screening = params["model"].get("screening", None)
+    if screening is None:
+        raise ValueError(
+            "SK_EDTB requires a 'screening' block in params['model']. "
+            "Use Slater_Koster instead for a pure two-center model."
+        )
+
+    r_cut_input = screening["r_cut"]
+    gamma_spec = screening["gamma"]
+    onsite_shift_spec = screening.get("onsite_shift", None)
+
+    # Convert r_cut from physical units (Bohr) to internal lattice units.
+    # The model stores a_vectors in units of alat; distances in the code
+    # are therefore in alat units.  The user specifies r_cut in Bohr.
+    alat_phys = params.get("alat", 1.0)
+    r_cut = r_cut_input / alat_phys
+
+    # Smooth cutoff: cosine taper in [0.8·r_cut, r_cut]
+    r_taper = 0.8 * r_cut
+
+    def _f_cutoff(r):
+        """Smooth cutoff function: 1 for r < r_taper, cosine taper to 0 at r_cut."""
+        if r <= r_taper:
+            return 1.0
+        if r >= r_cut:
+            return 0.0
+        return 0.5 * (1.0 + np.cos(np.pi * (r - r_taper) / (r_cut - r_taper)))
+
+    # Map from SK parameter name → screening strength γ
+    _sk_param_names = [
+        "sss",
+        "sps",
+        "pps",
+        "ppp",
+        "sds",
+        "pds",
+        "pdp",
+        "dds",
+        "ddp",
+        "ddd",
+    ]
+    _sk_to_lpair = {
+        "sss": "ss",
+        "sps": "sp",
+        "pps": "pp",
+        "ppp": "pp",
+        "sds": "sd",
+        "pds": "pd",
+        "pdp": "pd",
+        "dds": "dd",
+        "ddp": "dd",
+        "ddd": "dd",
+    }
+
+    def _get_gamma(sk_key):
+        """Return the screening strength for a given SK parameter name."""
+        if isinstance(gamma_spec, (int, float)):
+            return float(gamma_spec)
+        if sk_key in gamma_spec:
+            return gamma_spec[sk_key]
+        lp = _sk_to_lpair.get(sk_key)
+        if lp and lp in gamma_spec:
+            return gamma_spec[lp]
+        return 0.0
+
+    gamma_map = {k: _get_gamma(k) for k in _sk_param_names}
+
+    # Build the flat supercell positions for screening sum
+    sctau_flat = sctau.reshape(natoms * nk1 * nk2 * nk3, 3)
+
+    # Precompute screening sums S_ij for every bond (ia, sctau[ib,i,j,k])
+    # and environment-dependent on-site coordination C_i for each atom.
+    #
+    # S_ij = Σ_{k ≠ i,j} f_c(d_ik) · f_c(d_jk)
+    #
+    # We store S for every (ia, ib_sc) pair where ib_sc is the supercell index.
+    # For efficiency, compute f_c(d) for all atom-supercell pairs first.
+
+    n_sc = natoms * nk1 * nk2 * nk3
+
+    # f_c values: f_c_table[ia, n] = f_c(|tau[ia] - sctau_flat[n]|)
+    f_c_table = np.zeros((natoms, n_sc), dtype=float)
+    for ia in range(natoms):
+        for n in range(n_sc):
+            d = distance(tau[ia], sctau_flat[n])
+            if d > 1e-10:
+                f_c_table[ia, n] = _f_cutoff(d)
+
+    # On-site coordination number (for environment-dependent on-site shifts)
+    coord_i = np.zeros(natoms, dtype=float)
+    if onsite_shift_spec is not None:
+        for ia in range(natoms):
+            coord_i[ia] = np.sum(f_c_table[ia])
+
+    # S_ij screening sums
+    # For bond (ia → sctau_flat[n_jsc]), S = Σ_n f_c_table[ia,n] · f_c_table[jat,n]
+    # where jat = n_jsc % (n_sc // natoms ... ) — but we need the home atom index
+    # of the supercell site n_jsc.
+    #
+    # sctau is indexed as (ib, i, j, k) → flat index = ib + natoms*(...)
+    # The home-cell atom index for flat index n is n % natoms (from reshape order='C'
+    # with first axis = natoms).
+    #
+    # We precompute f_c for every supercell atom relative to every supercell atom,
+    # but that is O(n_sc²). Instead, for each bond (ia, n_jsc) we compute S on the fly
+    # using f_c_table for atom ia and the position of sctau_flat[n_jsc].
+
+    def _screening_sum(ia, pos_j):
+        """Compute S_ij = Σ_{k ≠ i,j} f_c(d_ik) · f_c(d_jk)."""
+        S = 0.0
+        for n in range(n_sc):
+            d_jk = distance(pos_j, sctau_flat[n])
+            if d_jk < 1e-10:
+                continue  # exclude j itself
+            fc_ik = f_c_table[ia, n]
+            if fc_ik < 1e-15:
+                continue  # outside cutoff of i
+            fc_jk = _f_cutoff(d_jk)
+            if fc_jk < 1e-15:
+                continue  # outside cutoff of j
+            S += fc_ik * fc_jk
+        return S
+
+    def _screened_hoppings(shell_hoppings, S_ij):
+        """Return a copy of shell_hoppings with screening applied."""
+        screened = {}
+        for key, val in shell_hoppings.items():
+            g = gamma_map.get(key, 0.0)
+            screened[key] = val * np.exp(-g * S_ij)
+        return screened
+
+    # ══════════════════════════════════════════════════════════════
+
+    # on-site matrix elements
+    if is_multishell:
+        for ia in range(natoms):
+            atom_dict = params["model"]["atoms"][str(ia)]
+            config = atom_config[ia]
+            start = atom_block_start[ia]
+            idx = 0
+            for ig, cfg_label in enumerate(config):
+                l_val = _config_l_map[cfg_label[-1].upper()]
+                norb_l = 2 * l_val + 1
+                if l_val <= 1:
+                    e = atom_dict[cfg_label]
+                    # EDTB on-site shift
+                    if onsite_shift_spec is not None:
+                        orb_type = "s" if l_val == 0 else "p"
+                        eta = onsite_shift_spec.get(orb_type, 0.0)
+                        e = e + eta * coord_i[ia]
+                    for io in range(norb_l):
+                        HRs[start + idx + io, start + idx + io, 0, 0, 0, 0] = e
+                elif l_val == 2:
+                    key_t2g = f"{cfg_label}_t2g"
+                    key_eg = f"{cfg_label}_eg"
+                    if key_t2g in atom_dict:
+                        e_t2g = atom_dict[key_t2g]
+                        e_eg = atom_dict[key_eg]
+                    else:
+                        e_t2g = e_eg = atom_dict[cfg_label]
+                    if onsite_shift_spec is not None:
+                        eta = onsite_shift_spec.get("d", 0.0)
+                        e_t2g = e_t2g + eta * coord_i[ia]
+                        e_eg = e_eg + eta * coord_i[ia]
+                    for io in range(3):
+                        HRs[start + idx + io, start + idx + io, 0, 0, 0, 0] = e_t2g
+                    for io in range(3, 5):
+                        HRs[start + idx + io, start + idx + io, 0, 0, 0, 0] = e_eg
+                idx += norb_l
+    else:
+        for ia in range(natoms):
+            for no in range(norbitals[ia]):
+                orb_label = params["model"]["atoms"][str(ia)]["orbitals"][no]
+                e = params["model"]["atoms"][str(ia)][orb_label]
+                # EDTB on-site shift
+                if onsite_shift_spec is not None:
+                    if orb_label == "s":
+                        orb_type = "s"
+                    elif orb_label in ("px", "py", "pz"):
+                        orb_type = "p"
+                    else:
+                        orb_type = "d"
+                    eta = onsite_shift_spec.get(orb_type, 0.0)
+                    e = e + eta * coord_i[ia]
+                HRs[
+                    atom_block_start[ia] + no,
+                    atom_block_start[ia] + no,
+                    0,
+                    0,
+                    0,
+                    0,
+                ] = e
+
+    # hopping matrix elements
+    orbital_order = ("s", "px", "py", "pz", "dxy", "dyz", "dzx", "dx2-y2", "dz2")
+    p_index_map = {"px": 0, "py": 1, "pz": 2}
+    d_orbitals = set(orbital_order[4:])
+    supported_orbitals = set(orbital_order)
+
+    for shell in arry["shells"]:
+        for orb in shell["orbitals"]:
+            if orb not in supported_orbitals:
+                raise ValueError(f"Unsupported orbital label: {orb}")
+
+    if "nn" in hoppings:
+        hoppings_shells = {"nn": hoppings["nn"]}
+        if "nnn" in hoppings:
+            hoppings_shells["nnn"] = hoppings["nnn"]
+        if "nnnn" in hoppings:
+            hoppings_shells["nnnn"] = hoppings["nnnn"]
+    else:
+        hoppings_shells = {"nn": hoppings}
+
+    if use_second_neighbors and "nnn" not in hoppings_shells:
+        raise KeyError(
+            'Second-neighbor hoppings requested but no "nnn" block provided.'
+        )
+    if use_third_neighbors and "nnnn" not in hoppings_shells:
+        raise KeyError(
+            'Third-neighbor hoppings requested but no "nnnn" block provided.'
+        )
+
+    required_keys = ["sss", "sps", "pps", "ppp"]
+    has_d = any(
+        orb in d_orbitals for shell in arry["shells"] for orb in shell["orbitals"]
+    )
+    if has_d:
+        required_keys.extend(["sds", "pds", "pdp", "dds", "ddp", "ddd"])
+
+    if is_multishell:
+        for shell_name, shell_hop_dict in hoppings_shells.items():
+            for pair_key, pair_hoppings in shell_hop_dict.items():
+                parts = pair_key.split("-")
+                if len(parts) != 2:
+                    raise KeyError(
+                        f"Invalid group-pair key '{pair_key}' in {shell_name}. "
+                        "Expected format: 'GroupA-GroupB' (e.g. '3S-3P')."
+                    )
+                la = _config_l_map[parts[0][-1].upper()]
+                lb = _config_l_map[parts[1][-1].upper()]
+                lpair = (min(la, lb), max(la, lb))
+                needed = _lpair_required_keys[lpair]
+                missing_keys = [k for k in needed if k not in pair_hoppings]
+                if missing_keys:
+                    raise KeyError(
+                        f"Missing SK keys for {shell_name}/'{pair_key}' "
+                        f"(l-pair {lpair}): {', '.join(missing_keys)}"
+                    )
+    else:
+        for shell_name, shell_hoppings in hoppings_shells.items():
+            missing_keys = [key for key in required_keys if key not in shell_hoppings]
+            if missing_keys:
+                raise KeyError(
+                    f"Missing Slater-Koster hopping keys for "
+                    f"{shell_name}: {', '.join(missing_keys)}"
+                )
+
+    elements = sorted(set(arry["atoms"]))
+    shell_names = ", ".join(sorted(hoppings_shells.keys()))
+    gamma_str = (
+        f"{gamma_spec:.4g}"
+        if isinstance(gamma_spec, (int, float))
+        else ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
+    )
+    if is_multishell:
+        config_str = ", ".join(atom_config[0])
+        print(
+            f"SK_EDTB (multi-shell): elements={elements}, "
+            f"config=[{config_str}], "
+            f"neighbor_shells={len(hoppings_shells)} ({shell_names}), "
+            f"r_cut={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+            f"gamma=[{gamma_str}]"
+        )
+    else:
+        print(
+            f"SK_EDTB: elements={elements}, "
+            f"neighbor_shells={len(hoppings_shells)} ({shell_names}), "
+            f"r_cut={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+            f"gamma=[{gamma_str}]"
+        )
+
+    # SK angular-integral functions (identical to Slater_Koster)
+    sq3 = np.sqrt(3.0)
+    hsq3 = sq3 / 2.0
+
+    def _sd_value(d_orb, lx, ly, lz, sh):
+        l2 = lx * lx
+        m2 = ly * ly
+        n2 = lz * lz
+        if d_orb == "dxy":
+            return sq3 * lx * ly * sh["sds"]
+        if d_orb == "dyz":
+            return sq3 * ly * lz * sh["sds"]
+        if d_orb == "dzx":
+            return sq3 * lz * lx * sh["sds"]
+        if d_orb == "dx2-y2":
+            return hsq3 * (l2 - m2) * sh["sds"]
+        if d_orb == "dz2":
+            return (n2 - 0.5 * (l2 + m2)) * sh["sds"]
+        return None
+
+    def _pd_value(p_orb, d_orb, lx, ly, lz, sh):
+        l2 = lx * lx
+        m2 = ly * ly
+        n2 = lz * lz
+        if p_orb == "px":
+            if d_orb == "dxy":
+                return sq3 * l2 * ly * sh["pds"] + ly * (1.0 - 2.0 * l2) * sh["pdp"]
+            if d_orb == "dyz":
+                return sq3 * lx * ly * lz * sh["pds"] - 2.0 * lx * ly * lz * sh["pdp"]
+            if d_orb == "dzx":
+                return sq3 * l2 * lz * sh["pds"] + lz * (1.0 - 2.0 * l2) * sh["pdp"]
+            if d_orb == "dx2-y2":
+                return (
+                    hsq3 * lx * (l2 - m2) * sh["pds"] + lx * (1.0 - l2 + m2) * sh["pdp"]
+                )
+            if d_orb == "dz2":
+                return (
+                    lx * (n2 - 0.5 * (l2 + m2)) * sh["pds"] - sq3 * lx * n2 * sh["pdp"]
+                )
+        if p_orb == "py":
+            if d_orb == "dxy":
+                return sq3 * m2 * lx * sh["pds"] + lx * (1.0 - 2.0 * m2) * sh["pdp"]
+            if d_orb == "dyz":
+                return sq3 * m2 * lz * sh["pds"] + lz * (1.0 - 2.0 * m2) * sh["pdp"]
+            if d_orb == "dzx":
+                return sq3 * lx * ly * lz * sh["pds"] - 2.0 * lx * ly * lz * sh["pdp"]
+            if d_orb == "dx2-y2":
+                return (
+                    hsq3 * ly * (l2 - m2) * sh["pds"] - ly * (1.0 + l2 - m2) * sh["pdp"]
+                )
+            if d_orb == "dz2":
+                return (
+                    ly * (n2 - 0.5 * (l2 + m2)) * sh["pds"] - sq3 * ly * n2 * sh["pdp"]
+                )
+        if p_orb == "pz":
+            if d_orb == "dxy":
+                return sq3 * lx * ly * lz * sh["pds"] - 2.0 * lx * ly * lz * sh["pdp"]
+            if d_orb == "dyz":
+                return sq3 * n2 * ly * sh["pds"] + ly * (1.0 - 2.0 * n2) * sh["pdp"]
+            if d_orb == "dzx":
+                return sq3 * n2 * lx * sh["pds"] + lx * (1.0 - 2.0 * n2) * sh["pdp"]
+            if d_orb == "dx2-y2":
+                return hsq3 * lz * (l2 - m2) * sh["pds"] - lz * (l2 - m2) * sh["pdp"]
+            if d_orb == "dz2":
+                return (
+                    lz * (n2 - 0.5 * (l2 + m2)) * sh["pds"]
+                    + sq3 * lz * (l2 + m2) * sh["pdp"]
+                )
+        return None
+
+    def _dd_value(d_orb_a, d_orb_b, lx, ly, lz, sh):
+        l2 = lx * lx
+        m2 = ly * ly
+        n2 = lz * lz
+        lm = lx * ly
+        ln = lx * lz
+        mn = ly * lz
+        l2m2 = l2 * m2
+        l2n2 = l2 * n2
+        m2n2 = m2 * n2
+        diff_lm = l2 - m2
+
+        if d_orb_a == d_orb_b == "dxy":
+            return (
+                3.0 * l2m2 * sh["dds"]
+                + (l2 + m2 - 4.0 * l2m2) * sh["ddp"]
+                + (n2 + l2m2) * sh["ddd"]
+            )
+        if d_orb_a == d_orb_b == "dyz":
+            return (
+                3.0 * m2n2 * sh["dds"]
+                + (m2 + n2 - 4.0 * m2n2) * sh["ddp"]
+                + (l2 + m2n2) * sh["ddd"]
+            )
+        if d_orb_a == d_orb_b == "dzx":
+            return (
+                3.0 * l2n2 * sh["dds"]
+                + (l2 + n2 - 4.0 * l2n2) * sh["ddp"]
+                + (m2 + l2n2) * sh["ddd"]
+            )
+        if d_orb_a == d_orb_b == "dx2-y2":
+            return (
+                0.75 * diff_lm**2 * sh["dds"]
+                + (l2 + m2 - diff_lm**2) * sh["ddp"]
+                + (n2 + 0.25 * diff_lm**2) * sh["ddd"]
+            )
+        if d_orb_a == d_orb_b == "dz2":
+            term = n2 - 0.5 * (l2 + m2)
+            return (
+                term**2 * sh["dds"]
+                + 3.0 * n2 * (l2 + m2) * sh["ddp"]
+                + 0.75 * (l2 + m2) ** 2 * sh["ddd"]
+            )
+
+        if (d_orb_a, d_orb_b) in (("dxy", "dyz"), ("dyz", "dxy")):
+            return (
+                3.0 * lx * m2 * lz * sh["dds"]
+                + ln * (1.0 - 4.0 * m2) * sh["ddp"]
+                + ln * (m2 - 1.0) * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dxy", "dzx"), ("dzx", "dxy")):
+            return (
+                3.0 * l2 * ly * lz * sh["dds"]
+                + mn * (1.0 - 4.0 * l2) * sh["ddp"]
+                + mn * (l2 - 1.0) * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dyz", "dzx"), ("dzx", "dyz")):
+            return (
+                3.0 * ly * n2 * lx * sh["dds"]
+                + lm * (1.0 - 4.0 * n2) * sh["ddp"]
+                + lm * (n2 - 1.0) * sh["ddd"]
+            )
+
+        if (d_orb_a, d_orb_b) in (("dxy", "dx2-y2"), ("dx2-y2", "dxy")):
+            return (
+                1.5 * lm * diff_lm * sh["dds"]
+                + 2.0 * lm * (m2 - l2) * sh["ddp"]
+                + 0.5 * lm * diff_lm * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dyz", "dx2-y2"), ("dx2-y2", "dyz")):
+            return (
+                1.5 * mn * diff_lm * sh["dds"]
+                - mn * (1.0 + 2.0 * diff_lm) * sh["ddp"]
+                + mn * (1.0 + 0.5 * diff_lm) * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dzx", "dx2-y2"), ("dx2-y2", "dzx")):
+            return (
+                1.5 * ln * diff_lm * sh["dds"]
+                + ln * (1.0 - 2.0 * diff_lm) * sh["ddp"]
+                - ln * (1.0 - 0.5 * diff_lm) * sh["ddd"]
+            )
+
+        if (d_orb_a, d_orb_b) in (("dxy", "dz2"), ("dz2", "dxy")):
+            return sq3 * (
+                lm * (n2 - 0.5 * (l2 + m2)) * sh["dds"]
+                - 2.0 * lm * n2 * sh["ddp"]
+                + 0.5 * lm * (1.0 + n2) * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dyz", "dz2"), ("dz2", "dyz")):
+            return sq3 * (
+                mn * (n2 - 0.5 * (l2 + m2)) * sh["dds"]
+                + mn * (l2 + m2 - n2) * sh["ddp"]
+                - 0.5 * mn * (l2 + m2) * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dzx", "dz2"), ("dz2", "dzx")):
+            return sq3 * (
+                ln * (n2 - 0.5 * (l2 + m2)) * sh["dds"]
+                + ln * (l2 + m2 - n2) * sh["ddp"]
+                - 0.5 * ln * (l2 + m2) * sh["ddd"]
+            )
+        if (d_orb_a, d_orb_b) in (("dx2-y2", "dz2"), ("dz2", "dx2-y2")):
+            return sq3 * (
+                0.5 * diff_lm * (n2 - 0.5 * (l2 + m2)) * sh["dds"]
+                + n2 * (m2 - l2) * sh["ddp"]
+                + 0.25 * (1.0 + n2) * diff_lm * sh["ddd"]
+            )
+
+        return None
+
+    def _sk_sp_value(orb_a, orb_b, lx, ly, lz, sh):
+        if orb_a == "s" and orb_b in d_orbitals:
+            return _sd_value(orb_b, lx, ly, lz, sh)
+        if orb_b == "s" and orb_a in d_orbitals:
+            return _sd_value(orb_a, lx, ly, lz, sh)
+        if orb_a in p_index_map and orb_b in d_orbitals:
+            return _pd_value(orb_a, orb_b, lx, ly, lz, sh)
+        if orb_b in p_index_map and orb_a in d_orbitals:
+            value = _pd_value(orb_b, orb_a, lx, ly, lz, sh)
+            return -value if value is not None else None
+        if orb_a in d_orbitals and orb_b in d_orbitals:
+            return _dd_value(orb_a, orb_b, lx, ly, lz, sh)
+
+        if orb_a == "s" and orb_b == "s":
+            return sh["sss"]
+        if orb_a == "s" and orb_b in p_index_map:
+            return (lx, ly, lz)[p_index_map[orb_b]] * sh["sps"]
+        if orb_b == "s" and orb_a in p_index_map:
+            return -(lx, ly, lz)[p_index_map[orb_a]] * sh["sps"]
+
+        if orb_a == orb_b and orb_a in p_index_map:
+            ll = (lx, ly, lz)[p_index_map[orb_a]]
+            return ll**2 * sh["pps"] + (1.0 - ll**2) * sh["ppp"]
+
+        if (orb_a, orb_b) in (("px", "py"), ("py", "px")):
+            return lx * ly * (sh["pps"] - sh["ppp"])
+        if (orb_a, orb_b) in (("py", "pz"), ("pz", "py")):
+            return ly * lz * (sh["pps"] - sh["ppp"])
+        if (orb_a, orb_b) in (("px", "pz"), ("pz", "px")):
+            return lx * lz * (sh["pps"] - sh["ppp"])
+
+        return None
+
+    # ── Hopping loop with EDTB screening ─────────────────────
+    for i in range(-cell_range, cell_range + 1):
+        for j in range(-cell_range, cell_range + 1):
+            for k in range(-cell_range, cell_range + 1):
+                for ia in range(natoms):
+                    for ib in range(natoms):
+                        pos_j = sctau[ib, i, j, k, :]
+                        dist_val = distance(tau[ia], pos_j)
+                        if dist_val <= 0:
+                            continue
+                        if dist_val < cutoff_1:
+                            shell_key = "nn"
+                        elif cutoff_2 is not None and dist_val < cutoff_2:
+                            shell_key = "nnn"
+                        elif cutoff_3 is not None and dist_val < cutoff_3:
+                            shell_key = "nnnn"
+                        else:
+                            continue
+
+                        lx = cosines(tau[ia], pos_j)[0]
+                        ly = cosines(tau[ia], pos_j)[1]
+                        lz = cosines(tau[ia], pos_j)[2]
+
+                        # EDTB: compute screening sum and apply to hoppings
+                        S_ij = _screening_sum(ia, pos_j)
+                        shell_hop_data = _screened_hoppings(
+                            hoppings_shells[shell_key], S_ij
+                        )
+
+                        orbitals_a = arry["shells"][ia]["orbitals"]
+                        orbitals_b = arry["shells"][ib]["orbitals"]
+
+                        if is_multishell:
+                            config_a = atom_config[ia]
+                            config_b = atom_config[ib]
+                            groups_a = atom_orbital_groups[ia]
+                            groups_b = atom_orbital_groups[ib]
+                            for noa, orb_a in enumerate(orbitals_a):
+                                for nob, orb_b in enumerate(orbitals_b):
+                                    ga = groups_a[noa]
+                                    gb = groups_b[nob]
+                                    cfg_ga = config_a[ga]
+                                    cfg_gb = config_b[gb]
+                                    if ga <= gb:
+                                        pair_key = f"{cfg_ga}-{cfg_gb}"
+                                    else:
+                                        pair_key = f"{cfg_gb}-{cfg_ga}"
+                                    # Screen the group-pair hoppings
+                                    pair_hoppings = _screened_hoppings(
+                                        hoppings_shells[shell_key][pair_key], S_ij
+                                    )
+                                    value = _sk_sp_value(
+                                        orb_a,
+                                        orb_b,
+                                        lx,
+                                        ly,
+                                        lz,
+                                        pair_hoppings,
+                                    )
+                                    if value is not None:
+                                        HRs[
+                                            atom_block_start[ia] + noa,
+                                            atom_block_start[ib] + nob,
+                                            i,
+                                            j,
+                                            k,
+                                            0,
+                                        ] = value
+                        else:
+                            for noa, orb_a in enumerate(orbitals_a):
+                                for nob, orb_b in enumerate(orbitals_b):
+                                    value = _sk_sp_value(
+                                        orb_a,
+                                        orb_b,
+                                        lx,
+                                        ly,
+                                        lz,
+                                        shell_hop_data,
+                                    )
+                                    if value is not None:
+                                        HRs[
+                                            atom_block_start[ia] + noa,
+                                            atom_block_start[ib] + nob,
+                                            i,
+                                            j,
+                                            k,
+                                            0,
+                                        ] = value
+
+    arry["HRs"] = HRs
+
+
 def graphene(data_controller, params):
     import numpy as np
 
@@ -1335,5 +2178,7 @@ def build_TB_model(data_controller, parameters):
         Kane_Mele(data_controller, parameters)
     elif parameters["label"].upper() == "SLATER_KOSTER":
         Slater_Koster(data_controller, parameters)
+    elif parameters["label"].upper() == "SK_EDTB":
+        SK_EDTB(data_controller, parameters)
     else:
         print(f'ERROR: Label "{parameters["label"]}" not found in builtin models.')
