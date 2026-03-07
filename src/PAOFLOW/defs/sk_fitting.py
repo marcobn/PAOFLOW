@@ -1560,3 +1560,450 @@ class SKFitterEDTB(SKFitter):
 
         base["model"]["screening"] = screening
         return base
+
+
+# ═══════════════════════════════════════════════════════════════
+#  4. MultiGeomEDTB — multi-geometry EDTB fitting
+# ═══════════════════════════════════════════════════════════════
+
+
+class MultiGeomEDTB:
+    r"""Multi-geometry environment-dependent tight-binding fitter.
+
+    Fits a **single shared** set of parameters
+    :math:`(\varepsilon, V_\lambda, \gamma, \eta)` to DFT band structures
+    from **multiple atomic configurations** simultaneously, which is
+    essential for learning physically meaningful screening strengths
+    :math:`\gamma` that capture the environment dependence of hopping
+    integrals.
+
+    Each geometry is represented internally by an independent
+    :class:`SKFitterEDTB` instance (with its own screening sums
+    :math:`S_{ij}`, design tensors, and reference eigenvalues).  The
+    combined objective is the (optionally weighted) concatenation of
+    eigenvalue residuals over all geometries.
+
+    .. note::
+
+        All geometries must share the **same species, orbital basis, and
+        shell structure** so that the hopping parameter vector is
+        identical.  This is automatically satisfied when the training set
+        consists of the same material at different lattice parameters,
+        strains, surfaces, or defect configurations (with the same
+        pseudopotential and projection basis).
+
+    Typical training sets
+    ---------------------
+    * **Volume scan**: equilibrium ± 2%, ± 5% isotropic expansion
+      (easiest to generate, same symmetry).
+    * **Tetragonal distortion**: c/a ≠ 1 strains that break cubic
+      symmetry.
+    * **Surface slab**: 5–7 layer slab with vacuum; atoms at the
+      surface have reduced coordination → very different
+      :math:`S_{ij}`.
+
+    Parameters
+    ----------
+    geometries : list of (arryp, attrp) tuples
+        PAOFLOW data-dict pairs, one per configuration.
+    n_shells : int
+        Number of neighbor shells (default 2).
+    nkfit : int
+        k-mesh subdivision (default 6).
+    r_cut : float
+        Screening cutoff radius **in Bohr**.
+    gamma_mode : {'global', 'per_lpair', 'per_channel'}
+        Screening parameter granularity.
+    fit_onsite_shift : bool
+        Whether to fit η on-site shift parameters (default False).
+    weights : list of float, optional
+        Per-geometry weights for the loss function.  Default: uniform
+        (all 1.0).  Increase weight on geometries that should be
+        reproduced more accurately (e.g. equilibrium bulk).
+    verbose : bool
+        Print progress information.
+
+    Usage
+    -----
+    >>> from sk_fitting import SKFitter, MultiGeomEDTB
+    >>> # Pre-fit SK on equilibrium geometry
+    >>> fitter_sk = SKFitter(arry_eq, attr_eq, n_shells=3)
+    >>> p_sk = fitter_sk.fit(n_trials=20)['p_opt']
+    >>> # Multi-geometry EDTB
+    >>> geoms = [(arry_eq, attr_eq), (arry_p5, attr_p5), (arry_m5, attr_m5)]
+    >>> mg = MultiGeomEDTB(geoms, n_shells=3, r_cut=8.0, gamma_mode='per_lpair')
+    >>> result = mg.fit(p0_sk=p_sk, n_trials=10, n_jobs=-1)
+    >>> model  = mg.build_model_dict(result['p_opt'])
+    """
+
+    def __init__(
+        self,
+        geometries: list[tuple[dict, dict]],
+        *,
+        n_shells: int = 2,
+        nkfit: int = 6,
+        r_cut: float,
+        gamma_mode: str = "global",
+        fit_onsite_shift: bool = False,
+        weights: list[float] | None = None,
+        verbose: bool = True,
+    ):
+        if len(geometries) < 2:
+            raise ValueError("MultiGeomEDTB requires at least 2 geometries")
+
+        self.n_geom = len(geometries)
+        self.verbose = verbose
+
+        # ── Build one SKFitterEDTB per geometry ──
+        if verbose:
+            print(f"MultiGeomEDTB: building {self.n_geom} sub-fitters …")
+
+        self.fitters: list[SKFitterEDTB] = []
+        for ig, (arry, attr) in enumerate(geometries):
+            if verbose:
+                print(f"\n── Geometry {ig} ──")
+            f = SKFitterEDTB(
+                arry,
+                attr,
+                n_shells=n_shells,
+                nkfit=nkfit,
+                r_cut=r_cut,
+                gamma_mode=gamma_mode,
+                fit_onsite_shift=fit_onsite_shift,
+                verbose=verbose,
+            )
+            self.fitters.append(f)
+
+        # ── Validate compatibility ──
+        ref = self.fitters[0]
+        for ig, f in enumerate(self.fitters[1:], 1):
+            if f.nawf != ref.nawf:
+                raise ValueError(
+                    f"Geometry {ig}: nawf={f.nawf} != reference {ref.nawf}"
+                )
+            if f.n_params != ref.n_params:
+                raise ValueError(
+                    f"Geometry {ig}: n_params={f.n_params} != reference {ref.n_params}"
+                )
+            if f.n_hop != ref.n_hop:
+                raise ValueError(
+                    f"Geometry {ig}: n_hop={f.n_hop} != reference {ref.n_hop}"
+                )
+            if f.param_labels != ref.param_labels:
+                raise ValueError(f"Geometry {ig}: param_labels mismatch with reference")
+
+        # ── Mirror key attributes from the reference fitter ──
+        self.nawf = ref.nawf
+        self.n_params = ref.n_params
+        self.n_onsite = ref.n_onsite
+        self.n_hop = ref.n_hop
+        self.n_shells = ref.n_shells
+        self.n_sk = ref.n_sk
+        self.n_gamma = ref.n_gamma
+        self.n_gamma_start = ref.n_gamma_start
+        self.n_eta = ref.n_eta
+        self.n_eta_start = ref.n_eta_start
+        self.param_labels = list(ref.param_labels)
+        self.gamma_mode = gamma_mode
+
+        # ── Per-geometry weights ──
+        if weights is None:
+            self.weights = np.ones(self.n_geom)
+        else:
+            self.weights = np.asarray(weights, dtype=float)
+            if len(self.weights) != self.n_geom:
+                raise ValueError(
+                    f"len(weights)={len(self.weights)} != n_geom={self.n_geom}"
+                )
+
+        # ── Per-geometry data size ──
+        self.n_data_per_geom = [f.Nk * f.nawf for f in self.fitters]
+        self.n_data_total = sum(self.n_data_per_geom)
+
+        # Regularization weights from the reference geometry
+        self._reg_weights = ref._reg_weights.copy()
+
+        if verbose:
+            print(f"\n{'=' * 65}")
+            print("MultiGeomEDTB summary:")
+            print(f"  {self.n_geom} geometries, {self.n_params} shared parameters")
+            print(f"  n_data_total = {self.n_data_total}")
+            for ig, f in enumerate(self.fitters):
+                print(f"  Geom {ig}: Nk={f.Nk}, nawf={f.nawf}, alat={f.alat:.4f} Bohr")
+
+    # ── 4a. Combined forward model ───────────────────────────
+
+    def _eigenvalues_and_jacobian_all(self, p):
+        """Concatenated weighted residuals and Jacobian over all geometries.
+
+        Returns
+        -------
+        res_all : np.ndarray, shape (n_data_total,)
+            Concatenated weighted eigenvalue residuals.
+        J_all : np.ndarray, shape (n_data_total, n_params)
+            Vertically stacked weighted Jacobians.
+        """
+        residuals = []
+        jacobians = []
+        for ig, f in enumerate(self.fitters):
+            E_sk, dE_dp = f._eigenvalues_and_jacobian(p)
+            res = (E_sk - f.E_pao).ravel()
+            J = dE_dp.reshape(self.n_data_per_geom[ig], self.n_params)
+            w = self.weights[ig]
+            residuals.append(w * res)
+            jacobians.append(w * J)
+        return np.concatenate(residuals), np.vstack(jacobians)
+
+    # ── 4b. Single trial ─────────────────────────────────────
+
+    def _run_single_trial(self, p_init, alpha, max_nfev, ftol, xtol, gtol):
+        """Run one least-squares trial on the multi-geometry objective.
+
+        Returns ``(rmse, p_opt, OptimizeResult)``.
+        """
+        use_reg = alpha > 0.0
+        reg_w = self._reg_weights
+        n_data = self.n_data_total
+        last_jac = [None]
+
+        def fun(p):
+            res_data, J_data = self._eigenvalues_and_jacobian_all(p)
+            if use_reg:
+                last_jac[0] = np.vstack([J_data, np.diag(alpha * reg_w)])
+                return np.concatenate([res_data, alpha * reg_w * p])
+            last_jac[0] = J_data
+            return res_data
+
+        def jac(p):
+            return last_jac[0]
+
+        res = least_squares(
+            fun,
+            p_init,
+            jac=jac,
+            method="lm",
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            max_nfev=max_nfev,
+        )
+        rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
+        return rmse, res.x.copy(), res
+
+    # ── 4c. Initial guesses ──────────────────────────────────
+
+    def extract_onsite_from_HR0(self) -> np.ndarray:
+        """Extract initial on-site energies from the reference geometry."""
+        return self.fitters[0].extract_onsite_from_HR0()
+
+    # ── 4d. Fitting ──────────────────────────────────────────
+
+    def fit(
+        self,
+        *,
+        p0_sk: np.ndarray | None = None,
+        n_trials: int = 10,
+        seed: int | None = 123,
+        max_nfev: int = 2000,
+        ftol: float = 1e-12,
+        xtol: float = 1e-12,
+        gtol: float = 1e-12,
+        alpha: float = 0.0,
+        n_jobs: int = 1,
+    ) -> dict:
+        """Multi-start least-squares fit across all geometries.
+
+        Parameters
+        ----------
+        p0_sk : np.ndarray, optional
+            Initial SK parameter vector (length ``n_sk``).  Typically from
+            a single-geometry :meth:`SKFitter.fit` on the equilibrium
+            configuration.
+        n_trials : int
+            Number of random restarts.
+        seed : int or None
+            Random seed for reproducibility.
+        max_nfev : int
+            Max function evaluations per trial (default 2000, larger than
+            single-geometry because the combined landscape is harder).
+        ftol, xtol, gtol : float
+            Tolerances for ``scipy.optimize.least_squares``.
+        alpha : float
+            Tikhonov regularization strength.
+        n_jobs : int
+            Parallel workers for multi-start trials (``-1`` = all cores).
+
+        Returns
+        -------
+        dict
+            ``p_opt`` : best parameter vector (length ``n_params``).\n
+            ``rmse`` : best combined RMSE (eV).\n
+            ``per_geom_rmse`` : list of per-geometry RMSE values (eV).\n
+            ``max_err`` : max absolute eigenvalue error (eV).\n
+            ``all_results`` : sorted list of ``(rmse, p, OptimizeResult)``.\n
+            ``param_labels`` : parameter names.
+        """
+        ref = self.fitters[0]
+
+        # ── SK initialisation ──
+        if p0_sk is not None:
+            p0_sk = np.asarray(p0_sk, dtype=float)
+            if p0_sk.shape[0] != self.n_sk:
+                raise ValueError(f"p0_sk length {p0_sk.shape[0]} != n_sk {self.n_sk}")
+        p0_onsite = self.extract_onsite_from_HR0()
+        E_half = 0.5 * (ref.E_pao.max() - ref.E_pao.min())
+        hop_scales = [E_half / np.sqrt(len(b)) for b in ref.shell_bonds_list]
+
+        rng = np.random.RandomState(seed)
+
+        # ── Pre-generate initial points ──
+        p_inits = []
+        for trial in range(n_trials):
+            p_init = np.zeros(self.n_params)
+            if p0_sk is not None:
+                p_init[: self.n_sk] = p0_sk
+                if trial > 0:
+                    for s in range(self.n_shells):
+                        i0 = self.n_onsite + s * self.n_hop
+                        i1 = i0 + self.n_hop
+                        p_init[i0:i1] *= 1.0 + 0.05 * rng.randn(self.n_hop)
+            else:
+                p_init[: self.n_onsite] = p0_onsite
+                for s, sc in enumerate(hop_scales):
+                    i0 = self.n_onsite + s * self.n_hop
+                    p_init[i0 : i0 + self.n_hop] = rng.uniform(-sc, sc, self.n_hop)
+            # γ: small positive random initialisation
+            p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
+                rng.uniform(0.0, 0.01, self.n_gamma)
+            )
+            p_inits.append(p_init)
+
+        # ── Run trials ──
+        use_parallel = n_jobs != 1 and n_trials > 1
+        common_kw = dict(
+            alpha=alpha,
+            max_nfev=max_nfev,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+        )
+
+        if self.verbose:
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
+            print(
+                f"Multi-geometry EDTB optimisation: {n_trials} trials, "
+                f"{self.n_geom} geometries{par_tag}"
+            )
+
+        if use_parallel:
+            from joblib import Parallel, delayed
+
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
+            )
+            all_results = [(r, p, res) for r, p, res in results]
+        else:
+            if self.verbose:
+                print(
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                )
+                print("-" * 50)
+            all_results = []
+            best_so_far = np.inf
+            for trial, p_init in enumerate(p_inits):
+                rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
+                all_results.append((rmse, p_opt, res))
+                tag = " *" if rmse < best_so_far else ""
+                if rmse < best_so_far:
+                    best_so_far = rmse
+                if self.verbose:
+                    rmse_init = np.sqrt(
+                        np.mean(
+                            (ref.eigenvalues(p_init[: self.n_sk]) - ref.E_pao).ravel()
+                            ** 2
+                        )
+                    )
+                    print(
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
+                    )
+
+        # ── Collect results ──
+        all_results.sort(key=lambda x: x[0])
+        best_rmse, best_p, best_res = all_results[0]
+
+        # Per-geometry RMSE breakdown (un-weighted)
+        per_geom_rmse = []
+        offset = 0
+        for ig, f in enumerate(self.fitters):
+            nd = self.n_data_per_geom[ig]
+            r_uw = best_res.fun[offset : offset + nd] / self.weights[ig]
+            per_geom_rmse.append(float(np.sqrt(np.mean(r_uw**2))))
+            offset += nd
+
+        if self.verbose:
+            if use_parallel:
+                print(f"  Completed {n_trials} trials in parallel")
+            print(f"{'=' * 65}")
+            print(f"Combined RMSE = {best_rmse * 1000:.2f} meV")
+            for ig, r in enumerate(per_geom_rmse):
+                print(
+                    f"  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})"
+                )
+            if alpha > 0:
+                print(f"  (α = {alpha:.4g})")
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
+            for i, name in enumerate(self.param_labels):
+                print(f"{name:<30s}  {best_p[i]: .5f}")
+
+        return {
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "per_geom_rmse": per_geom_rmse,
+            "max_err": float(np.max(np.abs(best_res.fun[: self.n_data_total]))),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
+        }
+
+    # ── 4e. Build model dict ─────────────────────────────────
+
+    def build_model_dict(self, p: np.ndarray, geom_idx: int = 0) -> dict:
+        """Convert fitted parameters to a PAOFLOW ``SK_EDTB`` model dict.
+
+        Parameters
+        ----------
+        p : np.ndarray
+            Full parameter vector (length ``n_params``).
+        geom_idx : int
+            Which geometry to use for lattice vectors and atom positions
+            (default 0 = first / reference geometry).
+
+        Returns
+        -------
+        dict
+            Model dict with ``label='SK_EDTB'``.
+        """
+        return self.fitters[geom_idx].build_model_dict(p)
+
+    # ── 4f. Convenience: eigenvalues for a specific geometry ─
+
+    def eigenvalues(self, p: np.ndarray, geom_idx: int = 0) -> np.ndarray:
+        """Compute eigenvalues on the fitting k-mesh for geometry *geom_idx*.
+
+        Parameters
+        ----------
+        p : np.ndarray
+            Full parameter vector.
+        geom_idx : int
+            Geometry index (default 0).
+
+        Returns
+        -------
+        np.ndarray
+            Shape ``(Nk, nawf)`` eigenvalues in eV.
+        """
+        E, _ = self.fitters[geom_idx]._eigenvalues_and_jacobian(p)
+        return E
