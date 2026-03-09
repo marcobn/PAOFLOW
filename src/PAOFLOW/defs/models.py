@@ -18,6 +18,94 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Species-pair-keyed format normalizers (backwards compatible)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+def _normalize_species_pair_hoppings(hoppings):
+    """Detect species-pair-keyed hoppings and convert to shell-tag format.
+
+    New format (species-pair-keyed)::
+
+        hoppings = {
+            "Si-Si": [
+                {"r_ref": 4.44, "params": {"sss": -0.1, "sps": 0.2, ...}},
+                {"r_ref": 7.28, "params": {"sss": -0.05, ...}},
+            ]
+        }
+
+    Old format (shell-tag-keyed)::
+
+        hoppings = {"nn": {"sss": -0.1, ...}, "nnn": {"sss": -0.05, ...}}
+        # or flat (single-shell):
+        hoppings = {"sss": -0.1, ...}
+
+    Returns
+    -------
+    (hoppings_norm, n_shells, converted) where:
+      - hoppings_norm : dict  — hoppings in old shell-tag format (ready for
+        the existing parsing logic).  If already in old format, returned as-is.
+      - n_shells : int  — number of neighbour shells (1, 2, or 3).
+      - converted : bool — True if new-format conversion was performed.
+    """
+    if not isinstance(hoppings, dict) or len(hoppings) == 0:
+        return hoppings, 1, False
+
+    first_key = next(iter(hoppings))
+    first_val = hoppings[first_key]
+
+    # New format: top-level key contains "-" and value is a list of shell dicts
+    if isinstance(first_val, list) and "-" in first_key:
+        if len(hoppings) > 1:
+            raise NotImplementedError(
+                "Multi-species-pair hoppings are not yet supported in models.py. "
+                "Found species pairs: " + ", ".join(sorted(hoppings.keys()))
+            )
+        shells = first_val
+        shells_sorted = sorted(shells, key=lambda s: s["r_ref"])
+        n_shells = len(shells_sorted)
+        if n_shells > 3:
+            raise ValueError(
+                f"Too many neighbour shells ({n_shells}); maximum 3 supported."
+            )
+        shell_tags = ["nn", "nnn", "nnnn"]
+        hoppings_norm = {}
+        for idx, shell_data in enumerate(shells_sorted):
+            hoppings_norm[shell_tags[idx]] = shell_data["params"]
+        return hoppings_norm, n_shells, True
+
+    # Old format — pass through unchanged
+    return hoppings, 0, False
+
+
+def _normalize_species_pair_gamma(gamma_spec):
+    """Unwrap species-pair-keyed gamma for single-species systems.
+
+    New format::
+
+        gamma = {"Pt-Pt": {"ss": 0.1, "sp": 0.2, ...}}
+
+    Old format (returned as-is)::
+
+        gamma = {"ss": 0.1, ...}   # per-channel
+        gamma = 0.05               # global scalar
+
+    Returns the bare gamma specification (float or flat dict).
+    """
+    if isinstance(gamma_spec, dict) and len(gamma_spec) > 0:
+        first_key = next(iter(gamma_spec))
+        first_val = gamma_spec[first_key]
+        if isinstance(first_val, dict) and "-" in first_key:
+            if len(gamma_spec) > 1:
+                raise NotImplementedError(
+                    "Multi-species-pair gamma not yet supported. "
+                    "Found species pairs: " + ", ".join(sorted(gamma_spec.keys()))
+                )
+            return first_val
+    return gamma_spec
+
+
 def Slater_Koster(data_controller, params):
     """Build a generalized Slater-Koster tight-binding model (two-center, up to 3NN).
 
@@ -160,18 +248,26 @@ def Slater_Koster(data_controller, params):
     ) / volume
 
     hoppings = params["model"]["hoppings"]
-    use_third_neighbors = isinstance(hoppings, dict) and "nnnn" in hoppings
-    use_second_neighbors = isinstance(hoppings, dict) and (
-        "nnn" in hoppings or use_third_neighbors
-    )
-    if (use_second_neighbors or use_third_neighbors) and "nn" not in hoppings:
-        raise ValueError(
-            'Neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+
+    # ── Species-pair-keyed format auto-detection ──────────────
+    hoppings, _sp_n_shells, _sp_converted = _normalize_species_pair_hoppings(hoppings)
+
+    if _sp_converted:
+        use_second_neighbors = _sp_n_shells >= 2
+        use_third_neighbors = _sp_n_shells >= 3
+    else:
+        use_third_neighbors = isinstance(hoppings, dict) and "nnnn" in hoppings
+        use_second_neighbors = isinstance(hoppings, dict) and (
+            "nnn" in hoppings or use_third_neighbors
         )
-    if use_third_neighbors and "nnn" not in hoppings:
-        raise ValueError(
-            'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
-        )
+        if (use_second_neighbors or use_third_neighbors) and "nn" not in hoppings:
+            raise ValueError(
+                'Neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+            )
+        if use_third_neighbors and "nnn" not in hoppings:
+            raise ValueError(
+                'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
+            )
 
     # dimensions of the supercell for two-center approximation
     if use_third_neighbors:
@@ -948,18 +1044,27 @@ def SK_EDTB(data_controller, params):
     ) / volume
 
     hoppings = params["model"]["hoppings"]
-    use_third_neighbors = isinstance(hoppings, dict) and "nnnn" in hoppings
-    use_second_neighbors = isinstance(hoppings, dict) and (
-        "nnn" in hoppings or use_third_neighbors
-    )
-    if (use_second_neighbors or use_third_neighbors) and "nn" not in hoppings:
-        raise ValueError(
-            'Neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+
+    # ── Species-pair-keyed format auto-detection ──────────────
+    hoppings, _sp_n_shells, _sp_converted = _normalize_species_pair_hoppings(hoppings)
+
+    if _sp_converted:
+        use_second_neighbors = _sp_n_shells >= 2
+        use_third_neighbors = _sp_n_shells >= 3
+    else:
+        use_third_neighbors = isinstance(hoppings, dict) and "nnnn" in hoppings
+        use_second_neighbors = isinstance(hoppings, dict) and (
+            "nnn" in hoppings or use_third_neighbors
         )
-    if use_third_neighbors and "nnn" not in hoppings:
-        raise ValueError(
-            'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
-        )
+        if (use_second_neighbors or use_third_neighbors) and "nn" not in hoppings:
+            raise ValueError(
+                'Neighbor hoppings require a "nn" block in params["model"]["hoppings"].'
+            )
+        if use_third_neighbors and "nnn" not in hoppings:
+            raise ValueError(
+                'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
+                'Third-neighbor hoppings require a "nnn" block in params["model"]["hoppings"].'
+            )
 
     # dimensions of the supercell
     if use_third_neighbors:
@@ -1088,7 +1193,7 @@ def SK_EDTB(data_controller, params):
         )
 
     r_cut_input = screening["r_cut"]
-    gamma_spec = screening["gamma"]
+    gamma_spec = _normalize_species_pair_gamma(screening["gamma"])
     onsite_shift_spec = screening.get("onsite_shift", None)
 
     # Convert r_cut from physical units (Bohr) to internal lattice units.

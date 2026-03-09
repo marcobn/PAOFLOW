@@ -896,7 +896,18 @@ class SKFitter:
     # ── 2k. Build PAOFLOW model dict ─────────────────────────
 
     def build_model_dict(self, p: np.ndarray) -> dict:
-        """Convert a fitted parameter vector into a PAOFLOW-compatible model dict.
+        """Convert a fitted parameter vector into a model dict.
+
+        The output uses species-pair-keyed hoppings with explicit
+        shell reference distances (Bohr), following the ``edtb_params``
+        schema::
+
+            "hoppings": {
+              "Pt-Pt": [
+                {"r_ref": 5.247, "params": {"sss": ..., "sps": ...}},
+                ...
+              ]
+            }
 
         Parameters
         ----------
@@ -906,35 +917,30 @@ class SKFitter:
         Returns
         -------
         dict
-            Model dict suitable for ``PAOFLOW.PAOFLOW(savedir=None, model=...)``.
+            Model dict with species-pair-keyed hoppings.
         """
 
-        # ── Hopping sub-dicts ──
+        # ── Flat SK-param dict for one shell ──
         def _build_hop(p_hop):
-            if self.config_dict:
-                d = {}
-                for ga, gb in self.hop_pair_list:
-                    start = self.hop_pair_start[(ga, gb)]
-                    active = self.hop_pair_active[(ga, gb)]
-                    pair_key = f"{self.cfg_names[ga]}-{self.cfg_names[gb]}"
-                    d[pair_key] = {
-                        SK_PARAM_NAMES[sk_k]: float(p_hop[start + lk])
-                        for lk, sk_k in enumerate(active)
-                    }
-                return d
-            else:
-                d = {}
-                for ga, gb in self.hop_pair_list:
-                    start = self.hop_pair_start[(ga, gb)]
-                    active = self.hop_pair_active[(ga, gb)]
-                    for lk, sk_k in enumerate(active):
-                        d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
-                return d
+            d = {}
+            for ga, gb in self.hop_pair_list:
+                start = self.hop_pair_start[(ga, gb)]
+                active = self.hop_pair_active[(ga, gb)]
+                for lk, sk_k in enumerate(active):
+                    d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+            return d
 
-        hoppings = {}
-        for s, tag in enumerate(self.shell_tags):
+        # ── Species-pair-keyed hoppings ──
+        sp0 = self.unique_species[0]
+        pair_key = f"{sp0}-{sp0}"  # single-species for now
+        shells = []
+        for s in range(len(self.shell_tags)):
             i0 = self.n_onsite + s * self.n_hop
-            hoppings[tag] = _build_hop(p[i0 : i0 + self.n_hop])
+            r_ref = round(float(self.shell_dists[s] * self.alat), 6)  # Bohr
+            shells.append(
+                {"r_ref": r_ref, "params": _build_hop(p[i0 : i0 + self.n_hop])}
+            )
+        hoppings = {pair_key: shells}
 
         # ── Atom dicts ──
         model_atoms = {}
@@ -1520,7 +1526,11 @@ class SKFitterEDTB(SKFitter):
     # ── 3f. Build PAOFLOW model dict ─────────────────────────
 
     def build_model_dict(self, p: np.ndarray) -> dict:
-        """Convert fitted parameters to a PAOFLOW ``SK_EDTB`` model dict.
+        """Convert fitted parameters to an ``SK_EDTB`` model dict.
+
+        The screening ``gamma`` is wrapped in a species-pair key,
+        consistent with the species-pair-keyed hoppings from the
+        base class.
 
         Parameters
         ----------
@@ -1532,25 +1542,29 @@ class SKFitterEDTB(SKFitter):
         dict
             Model dict with ``label='SK_EDTB'`` and ``screening`` block.
         """
-        # Base SK dict from the SK portion of p
+        # Base SK dict (already species-pair-keyed hoppings)
         base = super().build_model_dict(p[: self.n_sk])
         base["label"] = "SK_EDTB"
 
-        # Screening block
+        # Species-pair key
+        sp0 = self.unique_species[0]
+        pair_key = f"{sp0}-{sp0}"
+
+        # Screening block — gamma keyed by species pair
         gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
         if self.gamma_mode == "global":
-            gamma_out = float(gamma[0])
+            gamma_val = float(gamma[0])
         elif self.gamma_mode == "per_lpair":
-            gamma_out = {
+            gamma_val = {
                 self._LPAIR_LABELS[lp]: float(gamma[i])
                 for i, lp in enumerate(self.active_lpairs)
             }
         elif self.gamma_mode == "per_channel":
-            gamma_out = {
+            gamma_val = {
                 ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)
             }
 
-        screening = {"r_cut": self.r_cut_bohr, "gamma": gamma_out}
+        screening = {"r_cut": self.r_cut_bohr, "gamma": {pair_key: gamma_val}}
 
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
