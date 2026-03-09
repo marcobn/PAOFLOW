@@ -1689,12 +1689,11 @@ class MultiGeomEDTB:
             self.fitters.append(f)
 
         # ── Validate compatibility ──
+        # All geometries must share the same parameter vector — same
+        # species, orbital basis, shell count, and screening mode.
+        # System sizes (nawf, Nk) may differ (e.g. bulk + slab).
         ref = self.fitters[0]
         for ig, f in enumerate(self.fitters[1:], 1):
-            if f.nawf != ref.nawf:
-                raise ValueError(
-                    f"Geometry {ig}: nawf={f.nawf} != reference {ref.nawf}"
-                )
             if f.n_params != ref.n_params:
                 raise ValueError(
                     f"Geometry {ig}: n_params={f.n_params} != reference {ref.n_params}"
@@ -1707,7 +1706,8 @@ class MultiGeomEDTB:
                 raise ValueError(f"Geometry {ig}: param_labels mismatch with reference")
 
         # ── Mirror key attributes from the reference fitter ──
-        self.nawf = ref.nawf
+        self.nawf_per_geom = [f.nawf for f in self.fitters]
+        self.nawf = ref.nawf  # backward compat (reference geometry)
         self.n_params = ref.n_params
         self.n_onsite = ref.n_onsite
         self.n_hop = ref.n_hop
