@@ -27,17 +27,31 @@ EOF
 }
 
 resolve_root_dir() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local script_dir repo_root candidate
+
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
   if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    if [[ -d "$SLURM_SUBMIT_DIR/tests/integration/TBmodel" ]]; then
-      echo "$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
+    candidate="$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
+    if [[ -d "$candidate" ]]; then
+      echo "$candidate"
       return
     fi
   fi
 
-  echo "$(cd "$script_dir/../../integration/TBmodel" && pwd)"
+  repo_root="$(cd "$script_dir/../../.." && pwd)"
+  candidate="$repo_root/tests/integration/TBmodel"
+
+  if [[ -d "$candidate" ]]; then
+    echo "$candidate"
+    return
+  fi
+
+  echo "ERROR: could not locate tests/integration/TBmodel." >&2
+  echo "Checked:" >&2
+  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/tests/integration/TBmodel" >&2
+  echo "  $candidate" >&2
+  exit 1
 }
 
 log_job() {
@@ -97,9 +111,11 @@ cleanup_output_dir() {
     return 0
   fi
 
-  local resolved
+  local resolved root_resolved
   resolved="$(realpath "$outdir")"
-  if [[ "$resolved" != "$root_dir"* ]]; then
+  root_resolved="$(realpath "$root_dir")"
+
+  if [[ "$resolved" != "$root_resolved"* ]]; then
     log_job "Skipping output directory outside TBmodel root: $outdir"
     return 0
   fi
@@ -141,13 +157,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
   shift
- done
+done
 
 root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
-# repo root is needed for `.github/assets_generation/TBmodel/build_assets.py`
 repo_root="$(cd "$root_dir/../../.." && pwd)"
 
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
@@ -203,42 +218,55 @@ fi
 
 failures=0
 failed_examples=()
+successful_output_dirs=()
 
 for name in "${examples[@]}"; do
   script_path="$root_dir/$name.py"
   if [[ ! -f "$script_path" ]]; then
     log_job "PAOFLOW: $name - skipped (missing $script_path)"
+    failures=$((failures + 1))
+    failed_examples+=("$name")
     continue
   fi
 
   if ! run_tbmodel_script "$script_path" "$name"; then
     failures=$((failures + 1))
     failed_examples+=("$name")
+  else
+    successful_output_dirs+=("$(infer_outputdir "$script_path")")
   fi
- done
+done
+
+if [[ $failures -gt 0 ]]; then
+  log_job "Completed with $failures failure(s): ${failed_examples[*]}"
+  if [[ "$build_assets" = true ]]; then
+    log_job "Assets were not created and output directories were not removed because one or more examples failed."
+  fi
+  exit 1
+fi
 
 if [[ "$build_assets" = true ]]; then
-  (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/TBmodel/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out")
-  log_job "Assets written to $assets_out"
+  mkdir -p "$(dirname "$assets_out")"
+
+  (cd "$repo_root" && "$PYTHON_EXEC" \
+    "$repo_root/.github/assets_generation/TBmodel/build_assets.py" \
+    --tbmodel-root "$root_dir" \
+    --out "$assets_out")
+
+  if [[ ! -f "$assets_out" ]]; then
+    log_job "All examples ran successfully, but asset tar was not created at $assets_out"
+    exit 1
+  fi
 
   declare -A output_dirs_seen=()
-  for name in "${examples[@]}"; do
-    script_path="$root_dir/$name.py"
-    if [[ ! -f "$script_path" ]]; then
-      continue
-    fi
-
-    outdir="$(infer_outputdir "$script_path")"
+  for outdir in "${successful_output_dirs[@]}"; do
     if [[ -n "$outdir" && -z "${output_dirs_seen[$outdir]:-}" ]]; then
       output_dirs_seen["$outdir"]=1
       cleanup_output_dir "$outdir"
     fi
   done
-fi
 
-if [[ $failures -gt 0 ]]; then
-  log_job "Completed with $failures failure(s): ${failed_examples[*]}"
-  exit 1
+  log_job "All examples ran successfully and asset tar has been created at $assets_out"
+else
+  log_job "All examples ran successfully."
 fi
-
-log_job "Completed successfully."
