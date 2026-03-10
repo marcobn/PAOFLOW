@@ -27,44 +27,17 @@ EOF
 }
 
 resolve_root_dir() {
-<<<<<<< HEAD
-  local script_dir repo_root candidate
-
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-
-  if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    candidate="$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
-    if [[ -d "$candidate" ]]; then
-      echo "$candidate"
-=======
   local script_dir
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
     if [[ -d "$SLURM_SUBMIT_DIR/tests/integration/TBmodel" ]]; then
       echo "$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
->>>>>>> Move asset generation from `tests` to `.github` folder
       return
     fi
   fi
 
-<<<<<<< HEAD
-  repo_root="$(cd "$script_dir/../../.." && pwd)"
-  candidate="$repo_root/tests/integration/TBmodel"
-
-  if [[ -d "$candidate" ]]; then
-    echo "$candidate"
-    return
-  fi
-
-  echo "ERROR: could not locate tests/integration/TBmodel." >&2
-  echo "Checked:" >&2
-  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/tests/integration/TBmodel" >&2
-  echo "  $candidate" >&2
-  exit 1
-=======
   echo "$(cd "$script_dir/../../integration/TBmodel" && pwd)"
->>>>>>> Move asset generation from `tests` to `.github` folder
 }
 
 log_job() {
@@ -118,6 +91,9 @@ run_tbmodel_script() {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Remove output files from TBmodel integration tests after asset generation
 cleanup_output_dir() {
   local outdir="$1"
 
@@ -125,11 +101,17 @@ cleanup_output_dir() {
     return 0
   fi
 
+<<<<<<< HEAD
   local resolved root_resolved
   resolved="$(realpath "$outdir")"
   root_resolved="$(realpath "$root_dir")"
 
   if [[ "$resolved" != "$root_resolved"* ]]; then
+=======
+  local resolved
+  resolved="$(realpath "$outdir")"
+  if [[ "$resolved" != "$root_dir"* ]]; then
+>>>>>>> Remove output files from TBmodel integration tests after asset generation
     log_job "Skipping output directory outside TBmodel root: $outdir"
     return 0
   fi
@@ -138,8 +120,11 @@ cleanup_output_dir() {
   log_job "Removed output directory $outdir"
 }
 
+<<<<<<< HEAD
 =======
 >>>>>>> Move asset generation from `tests` to `.github` folder
+=======
+>>>>>>> Remove output files from TBmodel integration tests after asset generation
 build_assets=false
 assets_out=""
 examples_arg=""
@@ -308,6 +293,20 @@ fi
 if [[ "$build_assets" = true ]]; then
   (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/TBmodel/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out")
   log_job "Assets written to $assets_out"
+
+  declare -A output_dirs_seen=()
+  for name in "${examples[@]}"; do
+    script_path="$root_dir/$name.py"
+    if [[ ! -f "$script_path" ]]; then
+      continue
+    fi
+
+    outdir="$(infer_outputdir "$script_path")"
+    if [[ -n "$outdir" && -z "${output_dirs_seen[$outdir]:-}" ]]; then
+      output_dirs_seen["$outdir"]=1
+      cleanup_output_dir "$outdir"
+    fi
+  done
 fi
 
 if [[ $failures -gt 0 ]]; then
