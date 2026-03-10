@@ -90,6 +90,24 @@ run_tbmodel_script() {
   log_job "PAOFLOW: $name - OK"
 }
 
+cleanup_output_dir() {
+  local outdir="$1"
+
+  if [[ -z "$outdir" || ! -d "$outdir" ]]; then
+    return 0
+  fi
+
+  local resolved
+  resolved="$(realpath "$outdir")"
+  if [[ "$resolved" != "$root_dir"* ]]; then
+    log_job "Skipping output directory outside TBmodel root: $outdir"
+    return 0
+  fi
+
+  rm -rf "$outdir"
+  log_job "Removed output directory $outdir"
+}
+
 build_assets=false
 assets_out=""
 examples_arg=""
@@ -202,6 +220,20 @@ for name in "${examples[@]}"; do
 if [[ "$build_assets" = true ]]; then
   (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/TBmodel/build_assets.py" --tbmodel-root "$root_dir" --out "$assets_out")
   log_job "Assets written to $assets_out"
+
+  declare -A output_dirs_seen=()
+  for name in "${examples[@]}"; do
+    script_path="$root_dir/$name.py"
+    if [[ ! -f "$script_path" ]]; then
+      continue
+    fi
+
+    outdir="$(infer_outputdir "$script_path")"
+    if [[ -n "$outdir" && -z "${output_dirs_seen[$outdir]:-}" ]]; then
+      output_dirs_seen["$outdir"]=1
+      cleanup_output_dir "$outdir"
+    fi
+  done
 fi
 
 if [[ $failures -gt 0 ]]; then
