@@ -35,17 +35,31 @@ EOF
 }
 
 resolve_root_dir() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local script_dir repo_root candidate
+
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
   if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    if [[ -d "$SLURM_SUBMIT_DIR/tests/integration/qe" ]]; then
-      echo "$SLURM_SUBMIT_DIR/tests/integration/qe"
+    candidate="$SLURM_SUBMIT_DIR/tests/integration/qe"
+    if [[ -d "$candidate" ]]; then
+      echo "$candidate"
       return
     fi
   fi
 
-  echo "$(cd "$script_dir/../../integration/qe" && pwd)"
+  repo_root="$(cd "$script_dir/../../.." && pwd)"
+  candidate="$repo_root/tests/integration/qe"
+
+  if [[ -d "$candidate" ]]; then
+    echo "$candidate"
+    return
+  fi
+
+  echo "ERROR: could not locate tests/integration/qe." >&2
+  echo "Checked:" >&2
+  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/tests/integration/TBmodel" >&2
+  echo "  $candidate" >&2
+  exit 1
 }
 
 resolve_exec() {
@@ -454,7 +468,13 @@ if [[ "$build_assets" = true ]]; then
   log_job "Building asset bundle: $assets_out"
   mkdir -p "$(dirname "$assets_out")"
 
-  if ! (cd "$repo_root" && "$PYTHON_EXEC" "$repo_root/.github/assets_generation/qe/build_assets.py" --qe-root "$root_dir" --out "$assets_out") >> "$JOB_LOG" 2>&1; then
+  if ! (
+    cd "$repo_root" &&
+    PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON_EXEC" "$repo_root/.github/assets_generation/qe/build_assets.py" \
+      --qe-root "$root_dir" \
+      --out "$assets_out"
+  ) >> "$JOB_LOG" 2>&1; then
     log_job "Asset bundle build FAILED"
     echo "--- asset build error (last 60 lines) ---" | tee -a "$JOB_LOG"
     tail -n 60 "$JOB_LOG" | tee -a "$JOB_LOG"
