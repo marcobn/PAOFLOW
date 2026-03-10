@@ -188,6 +188,17 @@ def _find_surface_lattice_vectors(
             # Ensure right-handed system:  (v1 × v2) · g_hat > 0
             if np.dot(np.cross(v1, v2), g_hat) < 0:
                 v2 = -v2
+            # ── Enforce obtuse angle for hexagonal lattices ──────
+            # If v1 and v2 have equal length and an acute angle
+            # (~60°), K = (1/3, 1/3) is NOT the correct BZ corner.
+            # Replace v2 → v2 − v1 to obtain the conventional 120°
+            # angle; the cross product (right-handedness) is
+            # invariant: v1 × (v2−v1) = v1 × v2.
+            l1, l2 = norm(v1), norm(v2)
+            cos_angle = np.dot(v1, v2) / (l1 * l2)
+            lengths_equal = abs(l1 - l2) / max(l1, l2) < 0.05
+            if cos_angle > 0.1 and lengths_equal:
+                v2 = v2 - v1
             return v1, v2
 
     raise RuntimeError(

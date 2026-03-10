@@ -505,11 +505,24 @@ class SKFitter:
     # ── 2d. Reference eigenvalues ─────────────────────────────
 
     def _build_reference_eigenvalues(self, nkfit):
+        # Accept nkfit as int (uniform) or tuple/list of 3 ints (anisotropic)
+        if isinstance(nkfit, (tuple, list)):
+            nk1, nk2, nk3 = int(nkfit[0]), int(nkfit[1]), int(nkfit[2])
+        else:
+            nk1 = nk2 = nk3 = int(nkfit)
+        self._nkfit_grid = (nk1, nk2, nk3)
+
         kpts = []
-        for ik1 in range(nkfit):
-            for ik2 in range(nkfit):
-                for ik3 in range(nkfit):
-                    kfrac = np.array([ik1 / nkfit, ik2 / nkfit, ik3 / nkfit])
+        for ik1 in range(nk1):
+            for ik2 in range(nk2):
+                for ik3 in range(nk3):
+                    kfrac = np.array(
+                        [
+                            ik1 / max(nk1, 1),
+                            ik2 / max(nk2, 1),
+                            ik3 / max(nk3, 1),
+                        ]
+                    )
                     kpts.append(kfrac @ self.b_vecs)
         self.kpts = np.array(kpts)
         self.Nk = len(kpts)
@@ -521,8 +534,9 @@ class SKFitter:
             self.E_pao[ik] = np.sort(np.linalg.eigvalsh(Hk).real)
 
         if self.verbose:
+            grid_str = f"{nk1}×{nk2}×{nk3}" if (nk1 != nk2 or nk2 != nk3) else str(nk1)
             print(
-                f"  Reference: {self.Nk} k-points, {self.nawf} bands, "
+                f"  Reference: {self.Nk} k-points (grid {grid_str}), {self.nawf} bands, "
                 f"E ∈ [{self.E_pao.min():.3f}, {self.E_pao.max():.3f}] eV"
             )
 
@@ -1630,6 +1644,13 @@ class MultiGeomEDTB:
         Screening parameter granularity.
     fit_onsite_shift : bool
         Whether to fit η on-site shift parameters (default False).
+    nkfit : int or list of int/tuple
+        Subdivisions along each reciprocal axis for the fitting k-mesh.
+        If an int, applies uniformly to all geometries.  If a list,
+        must have one entry per geometry; each entry can be an int
+        (uniform) or a 3-tuple ``(n1, n2, n3)`` for an anisotropic grid.
+        Use ``'auto'`` (default) to automatically detect slab geometries
+        and reduce the k-grid to 1 along the vacuum direction.
     weights : list of float, optional
         Per-geometry weights for the loss function.  Default: uniform
         (all 1.0).  Increase weight on geometries that should be
@@ -1650,12 +1671,30 @@ class MultiGeomEDTB:
     >>> model  = mg.build_model_dict(result['p_opt'])
     """
 
+    @staticmethod
+    def _detect_nkfit(arry, nkfit_base):
+        """Detect slab dimensionality and return an appropriate (n1, n2, n3).
+
+        Heuristic: if the length of a lattice vector is > 2× the geometric
+        mean of the other two, that direction is vacuum → use nkfit=1.
+        """
+        a_vecs = arry["a_vectors"]
+        lengths = np.array([np.linalg.norm(a_vecs[i]) for i in range(3)])
+        geo_mean = np.cbrt(np.prod(lengths))
+        nk = [nkfit_base, nkfit_base, nkfit_base]
+        for i in range(3):
+            other = [lengths[j] for j in range(3) if j != i]
+            mean_other = 0.5 * (other[0] + other[1])
+            if lengths[i] > 2.0 * mean_other:
+                nk[i] = 1
+        return tuple(nk)
+
     def __init__(
         self,
         geometries: list[tuple[dict, dict]],
         *,
         n_shells: int = 2,
-        nkfit: int = 6,
+        nkfit: int | str | list = "auto",
         r_cut: float,
         gamma_mode: str = "global",
         fit_onsite_shift: bool = False,
@@ -1668,19 +1707,43 @@ class MultiGeomEDTB:
         self.n_geom = len(geometries)
         self.verbose = verbose
 
+        # ── Resolve per-geometry nkfit ──
+        nkfit_base = 6  # default base grid
+        if isinstance(nkfit, str) and nkfit == "auto":
+            nkfit_per_geom = [
+                self._detect_nkfit(arry, nkfit_base) for arry, _ in geometries
+            ]
+        elif isinstance(nkfit, (int, np.integer)):
+            nkfit_base = int(nkfit)
+            nkfit_per_geom = [
+                self._detect_nkfit(arry, nkfit_base) for arry, _ in geometries
+            ]
+        elif isinstance(nkfit, (list, tuple)) and len(nkfit) == len(geometries):
+            nkfit_per_geom = []
+            for nk in nkfit:
+                if isinstance(nk, (int, np.integer)):
+                    nkfit_per_geom.append((int(nk), int(nk), int(nk)))
+                else:
+                    nkfit_per_geom.append(tuple(nk))
+        else:
+            raise ValueError(
+                f"nkfit must be 'auto', an int, or a list of length {len(geometries)}"
+            )
+
         # ── Build one SKFitterEDTB per geometry ──
         if verbose:
             print(f"MultiGeomEDTB: building {self.n_geom} sub-fitters …")
 
         self.fitters: list[SKFitterEDTB] = []
         for ig, (arry, attr) in enumerate(geometries):
+            nk = nkfit_per_geom[ig]
             if verbose:
-                print(f"\n── Geometry {ig} ──")
+                print(f"\n── Geometry {ig} (nkfit={nk[0]}×{nk[1]}×{nk[2]}) ──")
             f = SKFitterEDTB(
                 arry,
                 attr,
                 n_shells=n_shells,
-                nkfit=nkfit,
+                nkfit=nk,
                 r_cut=r_cut,
                 gamma_mode=gamma_mode,
                 fit_onsite_shift=fit_onsite_shift,
@@ -1743,12 +1806,31 @@ class MultiGeomEDTB:
             print(f"  {self.n_geom} geometries, {self.n_params} shared parameters")
             print(f"  n_data_total = {self.n_data_total}")
             for ig, f in enumerate(self.fitters):
-                print(f"  Geom {ig}: Nk={f.Nk}, nawf={f.nawf}, alat={f.alat:.4f} Bohr")
+                nk_str = (
+                    f"grid={'×'.join(str(x) for x in f._nkfit_grid)}"
+                    if hasattr(f, "_nkfit_grid")
+                    else ""
+                )
+                print(
+                    f"  Geom {ig}: Nk={f.Nk}, nawf={f.nawf}, alat={f.alat:.4f} Bohr  {nk_str}"
+                )
 
     # ── 4a. Combined forward model ───────────────────────────
 
+    def _eval_single_geometry(self, ig, p):
+        """Evaluate eigenvalues and Jacobian for one geometry (thread-safe)."""
+        f = self.fitters[ig]
+        E_sk, dE_dp = f._eigenvalues_and_jacobian(p)
+        res = (E_sk - f.E_pao).ravel()
+        J = dE_dp.reshape(self.n_data_per_geom[ig], self.n_params)
+        w = self.weights[ig]
+        return w * res, w * J
+
     def _eigenvalues_and_jacobian_all(self, p):
         """Concatenated weighted residuals and Jacobian over all geometries.
+
+        When ``n_geom >= 3``, evaluations are run in parallel using
+        threads (``np.linalg.eigh`` releases the GIL).
 
         Returns
         -------
@@ -1757,15 +1839,24 @@ class MultiGeomEDTB:
         J_all : np.ndarray, shape (n_data_total, n_params)
             Vertically stacked weighted Jacobians.
         """
-        residuals = []
-        jacobians = []
-        for ig, f in enumerate(self.fitters):
-            E_sk, dE_dp = f._eigenvalues_and_jacobian(p)
-            res = (E_sk - f.E_pao).ravel()
-            J = dE_dp.reshape(self.n_data_per_geom[ig], self.n_params)
-            w = self.weights[ig]
-            residuals.append(w * res)
-            jacobians.append(w * J)
+        if self.n_geom >= 3:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=self.n_geom) as pool:
+                futures = [
+                    pool.submit(self._eval_single_geometry, ig, p)
+                    for ig in range(self.n_geom)
+                ]
+                results = [fut.result() for fut in futures]
+            residuals = [r for r, _ in results]
+            jacobians = [j for _, j in results]
+        else:
+            residuals = []
+            jacobians = []
+            for ig in range(self.n_geom):
+                r, j = self._eval_single_geometry(ig, p)
+                residuals.append(r)
+                jacobians.append(j)
         return np.concatenate(residuals), np.vstack(jacobians)
 
     # ── 4b. Single trial ─────────────────────────────────────
@@ -1911,11 +2002,30 @@ class MultiGeomEDTB:
             )
 
         if use_parallel:
+            import os
+
             from joblib import Parallel, delayed
 
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
-            )
+            # Prevent OMP/MKL thread oversubscription when using
+            # process-level parallelism via joblib.
+            old_omp = os.environ.get("OMP_NUM_THREADS")
+            old_mkl = os.environ.get("MKL_NUM_THREADS")
+            os.environ["OMP_NUM_THREADS"] = "1"
+            os.environ["MKL_NUM_THREADS"] = "1"
+            try:
+                results = Parallel(n_jobs=n_jobs)(
+                    delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
+                )
+            finally:
+                # Restore original thread settings
+                if old_omp is None:
+                    os.environ.pop("OMP_NUM_THREADS", None)
+                else:
+                    os.environ["OMP_NUM_THREADS"] = old_omp
+                if old_mkl is None:
+                    os.environ.pop("MKL_NUM_THREADS", None)
+                else:
+                    os.environ["MKL_NUM_THREADS"] = old_mkl
             all_results = [(r, p, res) for r, p, res in results]
         else:
             if self.verbose:
