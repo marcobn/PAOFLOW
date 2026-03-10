@@ -10,16 +10,12 @@
 
 set -euo pipefail
 
-export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export PARALLEL_EXEC="mpirun -n ${SLURM_NTASKS:-1}"
 
-MINICONDA_PATH=${MINICONDA_PATH:-$HOME/miniconda3}
-
+MINICONDA_PATH="${MINICONDA_PATH:-$HOME/miniconda3}"
 source "$MINICONDA_PATH/etc/profile.d/conda.sh"
 conda activate paoflow_new
 
 cd "$SLURM_SUBMIT_DIR"
-
-export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-1}"
-
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$script_dir/job.sh" --build-assets
+bash "$SLURM_SUBMIT_DIR/job.sh" --build-assets
