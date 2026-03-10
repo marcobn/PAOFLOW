@@ -2044,10 +2044,7 @@ class MultiGeomEDTB:
                     best_so_far = rmse
                 if self.verbose:
                     rmse_init = np.sqrt(
-                        np.mean(
-                            (ref.eigenvalues(p_init[: self.n_sk]) - ref.E_pao).ravel()
-                            ** 2
-                        )
+                        np.mean((ref.eigenvalues(p_init) - ref.E_pao).ravel() ** 2)
                     )
                     print(
                         f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
