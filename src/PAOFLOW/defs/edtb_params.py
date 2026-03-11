@@ -638,19 +638,37 @@ def from_model_dict(
     species_info: Dict[str, dict] = {}
     geom_atoms = []
 
+    # Map configuration label (e.g. '2S', '3P', '3D') → l-channel
+    _CONFIG_TO_L = {"S": "s", "P": "p", "D": "d", "F": "f"}
+
     for ia in range(natoms):
         atom = atoms_old[str(ia)]
         sp = atom["name"]
         geom_atoms.append({"species": sp, "tau": atom["tau"]})
 
         if sp not in species_info:
-            orbitals = list(atom.get("orbitals", []))
-            l_channels = []
-            for orb in orbitals:
-                l = _ORB_TO_L.get(orb)
-                if l and l not in l_channels:
-                    l_channels.append(l)
-            species_info[sp] = {"orbitals": orbitals, "l_channels": l_channels}
+            if "configuration" in atom:
+                # Configuration-based atom (e.g. ['2S', '2P', '3D'])
+                config = atom["configuration"]
+                orbitals = []
+                l_channels = []
+                for cfg_label in config:
+                    l_char = cfg_label[-1].upper()  # '2S' → 'S'
+                    lc = _CONFIG_TO_L.get(l_char)
+                    if lc:
+                        orbitals.extend(L_ORBITALS[lc])
+                        if lc not in l_channels:
+                            l_channels.append(lc)
+                species_info[sp] = {"orbitals": orbitals, "l_channels": l_channels}
+            else:
+                # Orbital-based atom (e.g. orbitals=['s','px','py','pz'])
+                orbitals = list(atom.get("orbitals", []))
+                l_channels = []
+                for orb in orbitals:
+                    l = _ORB_TO_L.get(orb)
+                    if l and l not in l_channels:
+                        l_channels.append(l)
+                species_info[sp] = {"orbitals": orbitals, "l_channels": l_channels}
 
     # ── Basis ──
     basis = {sp: dict(info) for sp, info in species_info.items()}
@@ -664,22 +682,50 @@ def from_model_dict(
             continue
         l_channels = species_info[sp]["l_channels"]
         on: Dict[str, float] = {}
-        for lc in l_channels:
-            if lc in ("s", "p"):
-                rep = L_ORBITALS[lc][0]  # "s" or "px"
-                if rep in atom:
-                    on[lc] = atom[rep]
-            elif lc == "d":
-                val_t2g = atom.get("dxy")
-                val_eg = atom.get("dx2-y2")
-                if val_t2g is not None and val_eg is not None:
-                    if abs(val_t2g - val_eg) > 1e-10:
-                        on["t2g"] = val_t2g
-                        on["eg"] = val_eg
-                    else:
+
+        if "configuration" in atom:
+            # Configuration-based: keys like '2S', '2P', '3D',
+            # and for d-orbitals possibly '3D_t2g' / '3D_eg'
+            config = atom["configuration"]
+            for cfg_label in config:
+                l_char = cfg_label[-1].upper()
+                lc = _CONFIG_TO_L.get(l_char)
+                if not lc:
+                    continue
+                if lc == "d":
+                    key_t2g = f"{cfg_label}_t2g"
+                    key_eg = f"{cfg_label}_eg"
+                    if key_t2g in atom and key_eg in atom:
+                        val_t2g = atom[key_t2g]
+                        val_eg = atom[key_eg]
+                        if abs(val_t2g - val_eg) > 1e-10:
+                            on["t2g"] = val_t2g
+                            on["eg"] = val_eg
+                        else:
+                            on["d"] = val_t2g
+                    elif cfg_label in atom:
+                        on["d"] = atom[cfg_label]
+                else:
+                    if cfg_label in atom:
+                        on[lc] = atom[cfg_label]
+        else:
+            # Orbital-based: keys like 's', 'px', 'dxy'
+            for lc in l_channels:
+                if lc in ("s", "p"):
+                    rep = L_ORBITALS[lc][0]  # "s" or "px"
+                    if rep in atom:
+                        on[lc] = atom[rep]
+                elif lc == "d":
+                    val_t2g = atom.get("dxy")
+                    val_eg = atom.get("dx2-y2")
+                    if val_t2g is not None and val_eg is not None:
+                        if abs(val_t2g - val_eg) > 1e-10:
+                            on["t2g"] = val_t2g
+                            on["eg"] = val_eg
+                        else:
+                            on["d"] = val_t2g
+                    elif val_t2g is not None:
                         on["d"] = val_t2g
-                elif val_t2g is not None:
-                    on["d"] = val_t2g
         onsite[sp] = on
 
     species_list = sorted(species_info.keys())

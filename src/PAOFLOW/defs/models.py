@@ -318,7 +318,7 @@ def Slater_Koster(data_controller, params):
         for j in range(-cell_range, cell_range + 1):
             for k in range(-cell_range, cell_range + 1):
                 for ia in range(natoms):
-                    sctau[ia, i, k, j, :] = (
+                    sctau[ia, i, j, k, :] = (
                         tau[ia]
                         + i * arry["a_vectors"][0]
                         + j * arry["a_vectors"][1]
@@ -333,6 +333,15 @@ def Slater_Koster(data_controller, params):
         for n in range(natoms * nk1 * nk2 * nk3):
             dist.append(distance(tau[ia], sctau[n]))
     unique_dist = np.sort(np.unique(dist))
+    # Merge nearly-degenerate distances (e.g. from floating-point
+    # precision in DFT atomic positions).  Use relative tolerance 1e-3.
+    _merged = [unique_dist[0]]
+    for ud in unique_dist[1:]:
+        if _merged[-1] > 0 and abs(ud - _merged[-1]) / _merged[-1] < 1e-3:
+            continue  # skip — same shell as previous
+        _merged.append(ud)
+    unique_dist = np.array(_merged)
+
     if unique_dist.size < 2:
         raise ValueError(
             "Unable to determine nearest-neighbor distances for Slater-Koster model."

@@ -381,8 +381,17 @@ class SKFitter:
 
     # ── 2b. Bond enumeration ──────────────────────────────────
 
-    def _enumerate_bonds(self):
-        shell_bonds = defaultdict(list)
+    def _enumerate_bonds(self, shell_tol: float = 1e-3):
+        """Enumerate all bonds on the DFT k-grid and group into shells.
+
+        Parameters
+        ----------
+        shell_tol : float
+            Relative tolerance for merging shells.  Two distance keys
+            *d1* and *d2* are merged when ``|d2 - d1| / d1 < shell_tol``.
+            Default 1e-3 (0.1 %).
+        """
+        raw_bonds = defaultdict(list)
         for i1 in range(self.nk1):
             for i2 in range(self.nk2):
                 for i3 in range(self.nk3):
@@ -398,9 +407,26 @@ class SKFitter:
                             d_norm = np.linalg.norm(d_vec)
                             if d_norm < 1e-8:
                                 continue
-                            shell_bonds[round(d_norm, 5)].append(
+                            raw_bonds[round(d_norm, 5)].append(
                                 (R_cart, iat, jat, d_vec, d_norm, i1, i2, i3)
                             )
+
+        # Merge shells whose distance keys differ by less than shell_tol
+        sorted_keys = sorted(raw_bonds.keys())
+        shell_bonds = defaultdict(list)
+        canonical = {}  # map raw key → merged representative key
+        for dk in sorted_keys:
+            merged = False
+            for ck in canonical.values():
+                if abs(dk - ck) / ck < shell_tol:
+                    canonical[dk] = ck
+                    merged = True
+                    break
+            if not merged:
+                canonical[dk] = dk
+        for dk in sorted_keys:
+            shell_bonds[canonical[dk]].extend(raw_bonds[dk])
+
         self._shell_bonds = shell_bonds
         self.shell_dists = sorted(shell_bonds.keys())
 
