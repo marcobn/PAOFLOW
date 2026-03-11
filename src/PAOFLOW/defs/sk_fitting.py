@@ -1994,12 +1994,56 @@ class MultiGeomEDTB:
         )
 
         if self.verbose:
+            import os as _os
+
+            n_cpu = _os.cpu_count() or 1
+            # Intra-trial threads: geometry-level ThreadPoolExecutor
+            # kicks in when n_geom >= 3
+            geom_threads = self.n_geom if self.n_geom >= 3 else 1
+            effective_jobs = (
+                min(n_jobs, n_trials)
+                if n_jobs > 0
+                else min(n_cpu, n_trials)
+                if n_jobs == -1
+                else n_trials
+            )
+            total_threads = effective_jobs * geom_threads
+
             print(f"\n{'=' * 65}")
             par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
             print(
                 f"Multi-geometry EDTB optimisation: {n_trials} trials, "
                 f"{self.n_geom} geometries{par_tag}"
             )
+
+            if use_parallel:
+                print("\n  Parallelism diagnostics:")
+                print(f"    CPU cores available          : {n_cpu}")
+                print(f"    Joblib worker processes       : {effective_jobs}")
+                print(f"    Geometry threads per process  : {geom_threads}")
+                print(f"    Total concurrent threads      : {total_threads}")
+                if total_threads > n_cpu:
+                    import warnings
+
+                    rec = max(1, n_cpu // geom_threads)
+                    msg = (
+                        f"Thread oversubscription detected: {total_threads} "
+                        f"threads on {n_cpu} cores. "
+                        f"Each trial spawns {geom_threads} geometry threads "
+                        f"(ThreadPoolExecutor for {self.n_geom} geometries), "
+                        f"and joblib adds {effective_jobs} worker processes on "
+                        f"top. This causes cores to context-switch and thrash "
+                        f"caches, often making the fit *slower* than sequential. "
+                        f"Recommended: n_jobs={rec} (= {n_cpu} cores / "
+                        f"{geom_threads} geometry threads), or n_jobs=1 for "
+                        f"sequential trials with per-trial progress output."
+                    )
+                    warnings.warn(msg, stacklevel=2)
+                    print(
+                        f"    ⚠ Recommended n_jobs ≤ {rec}  (cores / geometry_threads)"
+                    )
+                else:
+                    print("    ✓ Good: threads ≤ cores, no oversubscription")
 
         if use_parallel:
             import os
