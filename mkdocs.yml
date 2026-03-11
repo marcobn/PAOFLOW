@@ -1,0 +1,27 @@
+site_name: PAOFLOW EDTB Documentation
+site_description: API documentation for PAOFLOW environment-dependent tight-binding modules
+
+theme:
+  name: material
+  palette:
+    primary: teal
+
+nav:
+  - Home: index.md
+  - API Reference:
+    - sk_fitting: api/sk_fitting.md
+    - models: api/models.md
+    - edtb_params: api/edtb_params.md
+    - surface_project: api/surface_project.md
+    - dual_params: api/dual_params.md
+    - band_unfold: api/band_unfold.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            members_order: source
