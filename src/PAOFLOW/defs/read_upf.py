@@ -95,13 +95,16 @@ class UPF:
         if line == '\n': continue
         if line == '': break
         label, l, occ, dummy = line.split()
- 
+
         wfc = []
         for i in range(nlines):
           wfc.extend(map(float, data.readline().split()))
         wfc = np.array(wfc)
-        self.shells.append(int(l))
-        self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
+
+        # add only occupied pswfc
+        if float(occ) > 0.0:
+            self.shells.append(int(l))
+            self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
 
     # atomic rho
     self.atrho = None
@@ -157,15 +160,18 @@ class UPF:
       occ = float(chi.attrib["occupation"])
       wfc = [float(x) for x in chi.text.split()]
       wfc = np.array(wfc)
-      self.shells.append(int(chi.attrib['l']))
-      self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
 
-      jchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
-      lchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
-      if jchi is not None:
-        self.jchia.append(float(jchi.attrib['jchi']))
-      if lchi is not None:
-        self.lchia.append(float(lchi.attrib['lchi']))
+      # add only occupied pswfc
+      if float(occ) > 0.0:
+          self.shells.append(int(chi.attrib['l']))
+          self.pswfc.append( {'label': label, 'occ': float(occ), 'wfc': wfc} )
+
+          jchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
+          lchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d'%i)
+          if jchi is not None:
+              self.jchia.append(float(jchi.attrib['jchi']))
+          if lchi is not None:
+              self.lchia.append(float(lchi.attrib['lchi']))
     self.jchia = self.jchia
     self.lchia = self.lchia
     self.shells = self.shells
