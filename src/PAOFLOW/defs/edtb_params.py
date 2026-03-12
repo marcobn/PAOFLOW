@@ -242,9 +242,40 @@ def validate_params(params: dict) -> List[str]:
                     errors.append(f"hoppings: missing species pair '{key}'")
                 else:
                     shells = params["hoppings"][key]
-                    if not isinstance(shells, list) or len(shells) == 0:
+                    if (
+                        isinstance(shells, dict)
+                        and shells.get("type") == "distance_dependent"
+                    ):
+                        # ── Distance-dependent format ──
+                        for field in ("r_0", "r_c", "n_c", "channels"):
+                            if field not in shells:
+                                errors.append(f"hoppings['{key}']: missing '{field}'")
+                        if "channels" in shells:
+                            lc_a = basis.get(sp1, {}).get("l_channels", [])
+                            lc_b = basis.get(sp2, {}).get("l_channels", [])
+                            expected_sk = set(active_sk_names_for_basis(lc_a, lc_b))
+                            got = set(shells["channels"].keys())
+                            missing = expected_sk - got
+                            if missing:
+                                errors.append(
+                                    f"hoppings['{key}']: missing DD channels "
+                                    f"{sorted(missing)} for "
+                                    f"l_channels {lc_a}\u00d7{lc_b}"
+                                )
+                            for ch_name, ch_val in shells["channels"].items():
+                                if (
+                                    not isinstance(ch_val, dict)
+                                    or "V0" not in ch_val
+                                    or "n" not in ch_val
+                                ):
+                                    errors.append(
+                                        f"hoppings['{key}'].channels['{ch_name}']: "
+                                        f"must have 'V0' and 'n'"
+                                    )
+                    elif not isinstance(shells, list) or len(shells) == 0:
                         errors.append(
-                            f"hoppings['{key}']: must be a non-empty list of shells"
+                            f"hoppings['{key}']: must be a non-empty list of shells "
+                            f"or a distance_dependent dict"
                         )
                     else:
                         # Expected SK param names for this species pair
@@ -629,6 +660,7 @@ def from_model_dict(
 
     # ── Detect hopping format ──
     first_hop_value = next(iter(m["hoppings"].values()))
+    dd_format = isinstance(first_hop_value, dict) and "channels" in first_hop_value
     new_format = isinstance(first_hop_value, list)
 
     # ── Parse atoms ──
@@ -730,7 +762,48 @@ def from_model_dict(
 
     species_list = sorted(species_info.keys())
 
-    if new_format:
+    if dd_format:
+        # ── Distance-dependent format: pass through ──
+        hoppings = {}
+        for k, v in m["hoppings"].items():
+            hoppings[k] = {
+                "type": "distance_dependent",
+                "r_0": v["r_0"],
+                "r_c": v["r_c"],
+                "n_c": v["n_c"],
+                "channels": {ch: dict(cp) for ch, cp in v["channels"].items()},
+            }
+
+        # ── Screening ──
+        screening = None
+        if "screening" in m:
+            scr = m["screening"]
+            gamma_raw = scr["gamma"]
+            if isinstance(gamma_raw, dict):
+                first_g = next(iter(gamma_raw.values()))
+                if isinstance(first_g, (dict, float, int)):
+                    if any("-" in k for k in gamma_raw):
+                        gamma = {
+                            k: (dict(v) if isinstance(v, dict) else v)
+                            for k, v in gamma_raw.items()
+                        }
+                    else:
+                        gamma = {}
+                        for i, sp1 in enumerate(species_list):
+                            for sp2 in species_list[i:]:
+                                key = species_pair_key(sp1, sp2)
+                                gamma[key] = dict(gamma_raw)
+            else:
+                gamma = {}
+                for i, sp1 in enumerate(species_list):
+                    for sp2 in species_list[i:]:
+                        key = species_pair_key(sp1, sp2)
+                        gamma[key] = float(gamma_raw)
+            screening = {"r_cut": scr["r_cut"], "gamma": gamma}
+            if "onsite_shift" in scr:
+                screening["onsite_shift"] = dict(scr["onsite_shift"])
+
+    elif new_format:
         # ── New format: hoppings are already species-pair-keyed ──
         hoppings = {k: list(v) for k, v in m["hoppings"].items()}
 
@@ -891,13 +964,21 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
         atoms_dict[str(ia)] = atom_d
 
     # ── Hoppings (pass-through, species-pair-keyed) ──
-    hoppings = {
-        pair_key: [
-            {"r_ref": shell["r_ref"], "params": dict(shell["params"])}
-            for shell in shells
-        ]
-        for pair_key, shells in params["hoppings"].items()
-    }
+    hoppings = {}
+    for pair_key, shells in params["hoppings"].items():
+        if isinstance(shells, dict) and shells.get("type") == "distance_dependent":
+            hoppings[pair_key] = {
+                "type": "distance_dependent",
+                "r_0": shells["r_0"],
+                "r_c": shells["r_c"],
+                "n_c": shells["n_c"],
+                "channels": {ch: dict(cp) for ch, cp in shells["channels"].items()},
+            }
+        else:
+            hoppings[pair_key] = [
+                {"r_ref": shell["r_ref"], "params": dict(shell["params"])}
+                for shell in shells
+            ]
 
     # ── Model dict ──
     has_screening = "screening" in params

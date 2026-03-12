@@ -55,6 +55,11 @@ def _normalize_species_pair_hoppings(hoppings):
     first_key = next(iter(hoppings))
     first_val = hoppings[first_key]
 
+    # Distance-dependent format: value is a dict with "channels" key
+    if isinstance(first_val, dict) and "channels" in first_val and "-" in first_key:
+        # Return as-is — SK_EDTB handles this format directly
+        return hoppings, -1, True  # n_shells=-1 signals distance-dependent
+
     # New format: top-level key contains "-" and value is a list of shell dicts
     if isinstance(first_val, list) and "-" in first_key:
         if len(hoppings) > 1:
@@ -1057,7 +1062,39 @@ def SK_EDTB(data_controller, params):
     # ── Species-pair-keyed format auto-detection ──────────────
     hoppings, _sp_n_shells, _sp_converted = _normalize_species_pair_hoppings(hoppings)
 
-    if _sp_converted:
+    # ── Distance-dependent hopping mode ──────────────────────
+    _dd_mode = _sp_n_shells == -1
+    alat_phys = params.get("alat", 1.0)
+
+    if _dd_mode:
+        # Extract distance-dependent parameters (still in original dict)
+        _dd_pair_key = next(iter(hoppings))
+        _dd_spec = hoppings[_dd_pair_key]
+        _dd_r_0_alat = _dd_spec["r_0"] / alat_phys
+        _dd_r_c_alat = _dd_spec["r_c"] / alat_phys
+        _dd_n_c = _dd_spec["n_c"]
+        _dd_channels = _dd_spec["channels"]
+
+        def _dd_hop_values(dist_val):
+            """Evaluate Goodwin-style V_λ(r) for all SK channels."""
+            hop = {}
+            ratio = _dd_r_0_alat / dist_val
+            exp_arg = (
+                -((dist_val / _dd_r_c_alat) ** _dd_n_c)
+                + (_dd_r_0_alat / _dd_r_c_alat) ** _dd_n_c
+            )
+            for ch_name, ch_p in _dd_channels.items():
+                V0 = ch_p["V0"]
+                n_ch = ch_p["n"]
+                hop[ch_name] = V0 * ratio**n_ch * np.exp(n_ch * exp_arg)
+            return hop
+
+        # cell_range must cover the hopping cutoff r_c
+        a_norms = np.linalg.norm(arry["a_vectors"], axis=1)
+        cell_range = max(1, int(np.ceil(_dd_r_c_alat / a_norms.min())) + 1)
+        use_second_neighbors = False
+        use_third_neighbors = False
+    elif _sp_converted:
         use_second_neighbors = _sp_n_shells >= 2
         use_third_neighbors = _sp_n_shells >= 3
     else:
@@ -1076,12 +1113,13 @@ def SK_EDTB(data_controller, params):
             )
 
     # dimensions of the supercell
-    if use_third_neighbors:
-        cell_range = 3
-    elif use_second_neighbors:
-        cell_range = 2
-    else:
-        cell_range = 1
+    if not _dd_mode:
+        if use_third_neighbors:
+            cell_range = 3
+        elif use_second_neighbors:
+            cell_range = 2
+        else:
+            cell_range = 1
     nk1 = nk2 = nk3 = 2 * cell_range + 1
     nkpnts = nk1 * nk2 * nk3
     attr["nk1"] = nk1
@@ -1123,7 +1161,7 @@ def SK_EDTB(data_controller, params):
         for j in range(-cell_range, cell_range + 1):
             for k in range(-cell_range, cell_range + 1):
                 for ia in range(natoms):
-                    sctau[ia, i, k, j, :] = (
+                    sctau[ia, i, j, k, :] = (
                         tau[ia]
                         + i * arry["a_vectors"][0]
                         + j * arry["a_vectors"][1]
@@ -1133,50 +1171,65 @@ def SK_EDTB(data_controller, params):
 
     distance = lambda x, y: np.sqrt(np.sum((x - y) ** 2))
     cosines = lambda x, y: (y - x) / np.sqrt(np.sum((x - y) ** 2))
-    dist = []
-    for ia in range(natoms):
-        for n in range(natoms * nk1 * nk2 * nk3):
-            dist.append(distance(tau[ia], sctau[n]))
-    unique_dist = np.sort(np.unique(dist))
-    if unique_dist.size < 2:
-        raise ValueError(
-            "Unable to determine nearest-neighbor distances for SK_EDTB model."
-        )
 
-    dist_1 = unique_dist[1]
-    if use_third_neighbors:
-        if unique_dist.size < 4:
-            raise ValueError(
-                "Unable to determine third-neighbor distances for SK_EDTB model."
-            )
-        dist_2 = unique_dist[2]
-        dist_3 = unique_dist[3]
-        cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
-        cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
-        if unique_dist.size > 4:
-            dist_4 = unique_dist[4]
-            cutoff_3 = dist_3 + (dist_4 - dist_3) / 2.0
-        else:
-            cutoff_3 = dist_3 + (dist_3 - dist_2) / 2.0
-    elif use_second_neighbors:
-        if unique_dist.size < 3:
-            raise ValueError(
-                "Unable to determine second-neighbor distances for SK_EDTB model."
-            )
-        dist_2 = unique_dist[2]
-        cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
-        if unique_dist.size > 3:
-            dist_3 = unique_dist[3]
-            cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
-        else:
-            cutoff_2 = dist_2 + (dist_2 - dist_1) / 2.0
-        cutoff_3 = None
-    else:
-        if unique_dist.size < 3:
-            raise ValueError("Unable to determine cutoff for first-neighbor shell.")
-        cutoff_1 = dist_1 + (unique_dist[2] - dist_1) / 2.0
+    if _dd_mode:
+        # Distance-dependent mode: no shell assignment needed
+        cutoff_1 = _dd_r_c_alat
         cutoff_2 = None
         cutoff_3 = None
+    else:
+        dist = []
+        for ia in range(natoms):
+            for n in range(natoms * nk1 * nk2 * nk3):
+                dist.append(distance(tau[ia], sctau[n]))
+        unique_dist = np.sort(np.unique(dist))
+        # Merge nearly-degenerate distances (e.g. from floating-point
+        # precision in DFT atomic positions).  Use relative tolerance 1e-3.
+        _merged = [unique_dist[0]]
+        for ud in unique_dist[1:]:
+            if _merged[-1] > 0 and abs(ud - _merged[-1]) / _merged[-1] < 1e-3:
+                continue  # skip — same shell as previous
+            _merged.append(ud)
+        unique_dist = np.array(_merged)
+        if unique_dist.size < 2:
+            raise ValueError(
+                "Unable to determine nearest-neighbor distances for SK_EDTB model."
+            )
+
+        dist_1 = unique_dist[1]
+        if use_third_neighbors:
+            if unique_dist.size < 4:
+                raise ValueError(
+                    "Unable to determine third-neighbor distances for SK_EDTB model."
+                )
+            dist_2 = unique_dist[2]
+            dist_3 = unique_dist[3]
+            cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
+            cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
+            if unique_dist.size > 4:
+                dist_4 = unique_dist[4]
+                cutoff_3 = dist_3 + (dist_4 - dist_3) / 2.0
+            else:
+                cutoff_3 = dist_3 + (dist_3 - dist_2) / 2.0
+        elif use_second_neighbors:
+            if unique_dist.size < 3:
+                raise ValueError(
+                    "Unable to determine second-neighbor distances for SK_EDTB model."
+                )
+            dist_2 = unique_dist[2]
+            cutoff_1 = dist_1 + (dist_2 - dist_1) / 2.0
+            if unique_dist.size > 3:
+                dist_3 = unique_dist[3]
+                cutoff_2 = dist_2 + (dist_3 - dist_2) / 2.0
+            else:
+                cutoff_2 = dist_2 + (dist_2 - dist_1) / 2.0
+            cutoff_3 = None
+        else:
+            if unique_dist.size < 3:
+                raise ValueError("Unable to determine cutoff for first-neighbor shell.")
+            cutoff_1 = dist_1 + (unique_dist[2] - dist_1) / 2.0
+            cutoff_2 = None
+            cutoff_3 = None
     sctau = np.reshape(sctau, (natoms, nk1, nk2, nk3, 3), order="C")
 
     arry["sctau"] = sctau
@@ -1208,7 +1261,7 @@ def SK_EDTB(data_controller, params):
     # Convert r_cut from physical units (Bohr) to internal lattice units.
     # The model stores a_vectors in units of alat; distances in the code
     # are therefore in alat units.  The user specifies r_cut in Bohr.
-    alat_phys = params.get("alat", 1.0)
+    # (alat_phys was computed earlier, above the DD-mode block.)
     r_cut = r_cut_input / alat_phys
 
     # Smooth cutoff: cosine taper in [0.8·r_cut, r_cut]
@@ -1398,82 +1451,114 @@ def SK_EDTB(data_controller, params):
             if orb not in supported_orbitals:
                 raise ValueError(f"Unsupported orbital label: {orb}")
 
-    if "nn" in hoppings:
-        hoppings_shells = {"nn": hoppings["nn"]}
-        if "nnn" in hoppings:
-            hoppings_shells["nnn"] = hoppings["nnn"]
-        if "nnnn" in hoppings:
-            hoppings_shells["nnnn"] = hoppings["nnnn"]
+    if _dd_mode:
+        # ── Distance-dependent mode: validate channels ────────
+        hoppings_shells = {}  # not used, but prevent NameError
+        required_keys = ["sss", "sps", "pps", "ppp"]
+        has_d = any(
+            orb in d_orbitals for shell in arry["shells"] for orb in shell["orbitals"]
+        )
+        if has_d:
+            required_keys.extend(["sds", "pds", "pdp", "dds", "ddp", "ddd"])
+        missing_ch = [k for k in required_keys if k not in _dd_channels]
+        if missing_ch:
+            raise KeyError(
+                f"Missing SK channels in distance-dependent hoppings: "
+                f"{', '.join(missing_ch)}"
+            )
+        elements = sorted(set(arry["atoms"]))
+        gamma_str = (
+            f"{gamma_spec:.4g}"
+            if isinstance(gamma_spec, (int, float))
+            else ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
+        )
+        print(
+            f"SK_EDTB (distance-dependent): elements={elements}, "
+            f"r_0={_dd_spec['r_0']:.3f} Bohr, "
+            f"r_c={_dd_spec['r_c']:.3f} Bohr ({_dd_r_c_alat:.4f} alat), "
+            f"n_c={_dd_n_c:.2f}, channels={len(_dd_channels)}, "
+            f"r_cut_screen={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+            f"gamma=[{gamma_str}]"
+        )
     else:
-        hoppings_shells = {"nn": hoppings}
+        if "nn" in hoppings:
+            hoppings_shells = {"nn": hoppings["nn"]}
+            if "nnn" in hoppings:
+                hoppings_shells["nnn"] = hoppings["nnn"]
+            if "nnnn" in hoppings:
+                hoppings_shells["nnnn"] = hoppings["nnnn"]
+        else:
+            hoppings_shells = {"nn": hoppings}
 
-    if use_second_neighbors and "nnn" not in hoppings_shells:
-        raise KeyError(
-            'Second-neighbor hoppings requested but no "nnn" block provided.'
+        if use_second_neighbors and "nnn" not in hoppings_shells:
+            raise KeyError(
+                'Second-neighbor hoppings requested but no "nnn" block provided.'
+            )
+        if use_third_neighbors and "nnnn" not in hoppings_shells:
+            raise KeyError(
+                'Third-neighbor hoppings requested but no "nnnn" block provided.'
+            )
+
+        required_keys = ["sss", "sps", "pps", "ppp"]
+        has_d = any(
+            orb in d_orbitals for shell in arry["shells"] for orb in shell["orbitals"]
         )
-    if use_third_neighbors and "nnnn" not in hoppings_shells:
-        raise KeyError(
-            'Third-neighbor hoppings requested but no "nnnn" block provided.'
-        )
+        if has_d:
+            required_keys.extend(["sds", "pds", "pdp", "dds", "ddp", "ddd"])
 
-    required_keys = ["sss", "sps", "pps", "ppp"]
-    has_d = any(
-        orb in d_orbitals for shell in arry["shells"] for orb in shell["orbitals"]
-    )
-    if has_d:
-        required_keys.extend(["sds", "pds", "pdp", "dds", "ddp", "ddd"])
-
-    if is_multishell:
-        for shell_name, shell_hop_dict in hoppings_shells.items():
-            for pair_key, pair_hoppings in shell_hop_dict.items():
-                parts = pair_key.split("-")
-                if len(parts) != 2:
-                    raise KeyError(
-                        f"Invalid group-pair key '{pair_key}' in {shell_name}. "
-                        "Expected format: 'GroupA-GroupB' (e.g. '3S-3P')."
-                    )
-                la = _config_l_map[parts[0][-1].upper()]
-                lb = _config_l_map[parts[1][-1].upper()]
-                lpair = (min(la, lb), max(la, lb))
-                needed = _lpair_required_keys[lpair]
-                missing_keys = [k for k in needed if k not in pair_hoppings]
+        if is_multishell:
+            for shell_name, shell_hop_dict in hoppings_shells.items():
+                for pair_key, pair_hoppings in shell_hop_dict.items():
+                    parts = pair_key.split("-")
+                    if len(parts) != 2:
+                        raise KeyError(
+                            f"Invalid group-pair key '{pair_key}' in {shell_name}. "
+                            "Expected format: 'GroupA-GroupB' (e.g. '3S-3P')."
+                        )
+                    la = _config_l_map[parts[0][-1].upper()]
+                    lb = _config_l_map[parts[1][-1].upper()]
+                    lpair = (min(la, lb), max(la, lb))
+                    needed = _lpair_required_keys[lpair]
+                    missing_keys = [k for k in needed if k not in pair_hoppings]
+                    if missing_keys:
+                        raise KeyError(
+                            f"Missing SK keys for {shell_name}/'{pair_key}' "
+                            f"(l-pair {lpair}): {', '.join(missing_keys)}"
+                        )
+        else:
+            for shell_name, shell_hoppings in hoppings_shells.items():
+                missing_keys = [
+                    key for key in required_keys if key not in shell_hoppings
+                ]
                 if missing_keys:
                     raise KeyError(
-                        f"Missing SK keys for {shell_name}/'{pair_key}' "
-                        f"(l-pair {lpair}): {', '.join(missing_keys)}"
+                        f"Missing Slater-Koster hopping keys for "
+                        f"{shell_name}: {', '.join(missing_keys)}"
                     )
-    else:
-        for shell_name, shell_hoppings in hoppings_shells.items():
-            missing_keys = [key for key in required_keys if key not in shell_hoppings]
-            if missing_keys:
-                raise KeyError(
-                    f"Missing Slater-Koster hopping keys for "
-                    f"{shell_name}: {', '.join(missing_keys)}"
-                )
 
-    elements = sorted(set(arry["atoms"]))
-    shell_names = ", ".join(sorted(hoppings_shells.keys()))
-    gamma_str = (
-        f"{gamma_spec:.4g}"
-        if isinstance(gamma_spec, (int, float))
-        else ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
-    )
-    if is_multishell:
-        config_str = ", ".join(atom_config[0])
-        print(
-            f"SK_EDTB (multi-shell): elements={elements}, "
-            f"config=[{config_str}], "
-            f"neighbor_shells={len(hoppings_shells)} ({shell_names}), "
-            f"r_cut={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
-            f"gamma=[{gamma_str}]"
+        elements = sorted(set(arry["atoms"]))
+        shell_names = ", ".join(sorted(hoppings_shells.keys()))
+        gamma_str = (
+            f"{gamma_spec:.4g}"
+            if isinstance(gamma_spec, (int, float))
+            else ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
         )
-    else:
-        print(
-            f"SK_EDTB: elements={elements}, "
-            f"neighbor_shells={len(hoppings_shells)} ({shell_names}), "
-            f"r_cut={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
-            f"gamma=[{gamma_str}]"
-        )
+        if is_multishell:
+            config_str = ", ".join(atom_config[0])
+            print(
+                f"SK_EDTB (multi-shell): elements={elements}, "
+                f"config=[{config_str}], "
+                f"neighbor_shells={len(hoppings_shells)} ({shell_names}), "
+                f"r_cut={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+                f"gamma=[{gamma_str}]"
+            )
+        else:
+            print(
+                f"SK_EDTB: elements={elements}, "
+                f"neighbor_shells={len(hoppings_shells)} ({shell_names}), "
+                f"r_cut={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+                f"gamma=[{gamma_str}]"
+            )
 
     # SK angular-integral functions (identical to Slater_Koster)
     sq3 = np.sqrt(3.0)
@@ -1697,14 +1782,21 @@ def SK_EDTB(data_controller, params):
                         dist_val = distance(tau[ia], pos_j)
                         if dist_val <= 0:
                             continue
-                        if dist_val < cutoff_1:
-                            shell_key = "nn"
-                        elif cutoff_2 is not None and dist_val < cutoff_2:
-                            shell_key = "nnn"
-                        elif cutoff_3 is not None and dist_val < cutoff_3:
-                            shell_key = "nnnn"
+
+                        if _dd_mode:
+                            # Distance-dependent: accept all bonds within r_c
+                            if dist_val > _dd_r_c_alat:
+                                continue
                         else:
-                            continue
+                            # Discrete-shell: assign shell by cutoff
+                            if dist_val < cutoff_1:
+                                shell_key = "nn"
+                            elif cutoff_2 is not None and dist_val < cutoff_2:
+                                shell_key = "nnn"
+                            elif cutoff_3 is not None and dist_val < cutoff_3:
+                                shell_key = "nnnn"
+                            else:
+                                continue
 
                         lx = cosines(tau[ia], pos_j)[0]
                         ly = cosines(tau[ia], pos_j)[1]
@@ -1712,14 +1804,20 @@ def SK_EDTB(data_controller, params):
 
                         # EDTB: compute screening sum and apply to hoppings
                         S_ij = _screening_sum(ia, pos_j)
-                        shell_hop_data = _screened_hoppings(
-                            hoppings_shells[shell_key], S_ij
-                        )
+
+                        if _dd_mode:
+                            shell_hop_data = _screened_hoppings(
+                                _dd_hop_values(dist_val), S_ij
+                            )
+                        else:
+                            shell_hop_data = _screened_hoppings(
+                                hoppings_shells[shell_key], S_ij
+                            )
 
                         orbitals_a = arry["shells"][ia]["orbitals"]
                         orbitals_b = arry["shells"][ib]["orbitals"]
 
-                        if is_multishell:
+                        if is_multishell and not _dd_mode:
                             config_a = atom_config[ia]
                             config_b = atom_config[ib]
                             groups_a = atom_orbital_groups[ia]

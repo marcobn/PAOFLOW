@@ -595,13 +595,38 @@ class SKFitter:
                         M[ib, start + local_k, bi + ai, bj + aj] = design[sk_k]
         return M, R_bond
 
+    @staticmethod
+    def _build_bond_groups(bonds, M, atom_block_start, atom_orbitals):
+        """Group bonds by (iat, jat) and extract compact sub-blocks."""
+        from collections import defaultdict
+
+        bg = defaultdict(list)
+        for ib, (_, iat, jat, *_rest) in enumerate(bonds):
+            bg[(iat, jat)].append(ib)
+        groups = []
+        for (iat, jat), blist in bg.items():
+            idx = np.array(blist)
+            bi = atom_block_start[iat]
+            bj = atom_block_start[jat]
+            no_i = len(atom_orbitals[iat])
+            no_j = len(atom_orbitals[jat])
+            M_sub = M[idx][:, :, bi : bi + no_i, bj : bj + no_j].copy()
+            groups.append((idx, bi, bj, no_i, no_j, M_sub))
+        return groups
+
     def _build_design_tensors(self):
         self._M_shells = []
         self._R_shells = []
+        self._bond_groups_shells = []
         for i, bonds in enumerate(self.shell_bonds_list):
             M, R = self._precompute_design_tensor(bonds)
             self._M_shells.append(M)
             self._R_shells.append(R)
+            self._bond_groups_shells.append(
+                self._build_bond_groups(
+                    bonds, M, self.atom_block_start, self.atom_orbitals
+                )
+            )
             if self.verbose:
                 print(f"  Design tensor ({self.shell_tags[i]}): {M.shape}")
 
@@ -625,10 +650,18 @@ class SKFitter:
     def _precompute_dHk(self):
         self._phases_shells = []
         self._dHk_shells = []
-        for M, R in zip(self._M_shells, self._R_shells):
+        Nk = self.Nk
+        nawf = self.nawf
+        n_hop = self.n_hop
+        for s, (M, R) in enumerate(zip(self._M_shells, self._R_shells)):
             phases = np.exp(2j * np.pi * (self.kpts @ R.T))
-            dHk = np.einsum("kb,bpij->kpij", phases, M)
             self._phases_shells.append(phases)
+            # Block-sparse dHk construction
+            dHk = np.zeros((Nk, n_hop, nawf, nawf), dtype=complex)
+            for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
+                dHk[:, :, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                    "kb,bpij->kpij", phases[:, idx], M_sub
+                )
             self._dHk_shells.append(dHk)
 
         mem_MB = sum(d.nbytes for d in self._dHk_shells) / 1e6
@@ -665,14 +698,17 @@ class SKFitter:
         # On-site contribution
         H_onsite = np.einsum("p,pij->ij", p[:n_onsite], self._onsite_map)
 
-        # Build H(k) for all k-points
+        # Build H(k) via block-sparse groups
         Hk_all = np.broadcast_to(H_onsite, (Nk, nawf, nawf)).astype(complex).copy()
 
         for s in range(self.n_shells):
             i0 = n_onsite + s * n_hop
-            i1 = i0 + n_hop
-            HR_s = np.einsum("i,bija->bja", p[i0:i1], self._M_shells[s])
-            Hk_all += np.einsum("kb,bij->kij", self._phases_shells[s], HR_s)
+            V_s = p[i0 : i0 + n_hop]
+            for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
+                wM = np.einsum("p,bpij->bij", V_s, M_sub)
+                Hk_all[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                    "kb,bij->kij", self._phases_shells[s][:, idx], wM
+                )
 
         # Batch eigendecomposition
         evals_all, evecs_all = np.linalg.eigh(Hk_all)
@@ -1318,7 +1354,10 @@ class SKFitterEDTB(SKFitter):
     # ── 3d. Forward model (screened eigenvalues + Jacobian) ───
 
     def _eigenvalues_and_jacobian(self, p):
-        """Eigenvalues and Hellmann-Feynman Jacobian with EDTB screening."""
+        """Eigenvalues and Hellmann-Feynman Jacobian with EDTB screening.
+
+        Uses block-sparse operations via bond_groups for sub-block efficiency.
+        """
         # Guard: during super().__init__(), EDTB attrs are not set yet
         if not hasattr(self, "n_gamma_start"):
             return super()._eigenvalues_and_jacobian(p)
@@ -1342,13 +1381,17 @@ class SKFitterEDTB(SKFitter):
         for s in range(self.n_shells):
             scales.append(np.exp(-gamma_per_hop[None, :] * self.S_bonds[s][:, None]))
 
-        # ── screened dH/dV ──
+        # ── screened dH/dV (block-sparse) ──
         screened_dHk = []
         for s in range(self.n_shells):
-            M_sc = scales[s][:, :, None, None] * self._M_shells[s]
-            screened_dHk.append(
-                np.einsum("kb,bpij->kpij", self._phases_shells[s], M_sc)
-            )
+            sc_s = scales[s]  # (n_bonds_s, n_hop)
+            dHk_s = np.zeros((Nk, n_hop, nawf, nawf), dtype=complex)
+            for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
+                M_sc = sc_s[idx][:, :, None, None] * M_sub
+                dHk_s[:, :, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                    "kb,bpij->kpij", self._phases_shells[s][:, idx], M_sc
+                )
+            screened_dHk.append(dHk_s)
 
         # ── hopping contribution to H(k) ──
         for s in range(self.n_shells):
@@ -1375,21 +1418,23 @@ class SKFitterEDTB(SKFitter):
                 np.einsum("kin,kpin->knp", evecs.conj(), tmp)
             )
 
-        # ∂E/∂γ_q
+        # ∂E/∂γ_q  (block-sparse)
         for q in range(self.n_gamma):
-            dH_dg = np.zeros((Nk, nawf, nawf), dtype=complex)
             mask = self._hop_to_gamma == q
             if not np.any(mask):
                 continue
+            dH_dg = np.zeros((Nk, nawf, nawf), dtype=complex)
             for s in range(self.n_shells):
                 i0 = n_onsite + s * n_hop
                 V = p[i0 : i0 + n_hop]
-                # VS[b, p'] = V_p' · scale[b,p'] · S_b
-                VS = V[mask] * scales[s][:, mask]
-                VS *= self.S_bonds[s][:, None]
-                wM = np.einsum("bp,bpij->bij", VS, self._M_shells[s][:, mask, :, :])
-                dH_dg -= np.einsum("kb,bij->kij", self._phases_shells[s], wM)
-            # Hellmann-Feynman: ∂E_n/∂γ_q = ⟨n|∂H/∂γ_q|n⟩
+                sc_s = scales[s]
+                for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
+                    VS = V[mask] * sc_s[idx][:, mask]
+                    VS *= self.S_bonds[s][idx, None]
+                    wM = np.einsum("bp,bpij->bij", VS, M_sub[:, mask, :, :])
+                    dH_dg[:, bi : bi + no_i, bj : bj + no_j] -= np.einsum(
+                        "kb,bij->kij", self._phases_shells[s][:, idx], wM
+                    )
             HFq = np.matmul(dH_dg, evecs)
             dE_dp[:, :, self.n_gamma_start + q] = np.real(
                 np.einsum("kin,kin->kn", evecs.conj(), HFq)
@@ -2198,3 +2243,1199 @@ class MultiGeomEDTB:
         """
         E, _ = self.fitters[geom_idx]._eigenvalues_and_jacobian(p)
         return E
+
+
+# ═══════════════════════════════════════════════════════════════
+#  5. Distance-dependent EDTB fitter (Goodwin-style hoppings)
+# ═══════════════════════════════════════════════════════════════
+#
+# Hopping function:
+#   V_λ(r) = V0_λ · (r_0/r)^n_λ · exp(n_λ · [-(r/r_c)^n_c + (r_0/r_c)^n_c])
+#
+# Parameter vector layout:
+#   [ε_onsite | V0_channels | n_channels | n_c | γ_screening | η_shift]
+#
+
+
+class MultiGeomEDTB_DD:
+    """Multi-geometry distance-dependent EDTB fitter.
+
+    Fits Goodwin-style hopping parameters shared across multiple
+    geometries (e.g. bulk + slabs at different interlayer distances).
+
+    Parameters
+    ----------
+    geometry_data : list of (arryp, attrp) tuples
+        PAOFLOW arrays/attributes for each geometry.
+    r_0 : float
+        Reference NN distance (Bohr).  Fixed, not fitted.
+    r_c : float
+        Hopping cutoff (Bohr).  Fixed, used in Goodwin exponent and
+        as maximum bond distance.
+    r_cut : float
+        Screening cutoff radius (Bohr).
+    gamma_mode : str
+        ``'global'``, ``'per_lpair'``, or ``'per_channel'``.
+    fit_onsite_shift : bool
+        Whether to fit η on-site coordination-shift parameters.
+    nkfit : int or list of int
+        k-grid density for fitting.  If a list, one per geometry.
+    weights : list of float, optional
+        Per-geometry weights (default: uniform).
+    verbose : bool
+    """
+
+    _LPAIR_LABELS = {
+        (0, 0): "ss",
+        (0, 1): "sp",
+        (0, 2): "sd",
+        (1, 1): "pp",
+        (1, 2): "pd",
+        (2, 2): "dd",
+    }
+
+    def __init__(
+        self,
+        geometry_data,
+        *,
+        r_0,
+        r_c,
+        r_cut,
+        gamma_mode="global",
+        fit_onsite_shift=False,
+        nkfit=6,
+        weights=None,
+        verbose=True,
+    ):
+        self.verbose = verbose
+        self.n_geom = len(geometry_data)
+
+        # ── Physical constants ───────────────────────────────
+        arryp0, attrp0 = geometry_data[0]
+        self.alat = float(attrp0["alat"])
+        self.r_0_bohr = float(r_0)
+        self.r_c_bohr = float(r_c)
+        self.r_cut_bohr = float(r_cut)
+        self.r_0_alat = self.r_0_bohr / self.alat
+        self.r_c_alat = self.r_c_bohr / self.alat
+        self.r_cut_alat = self.r_cut_bohr / self.alat
+        self.gamma_mode = gamma_mode
+        self.fit_onsite_shift = fit_onsite_shift
+
+        # ── Shared atomic structure (from first geometry) ────
+        self.atoms_list = list(arryp0["atoms"])
+        self.unique_species = list(dict.fromkeys(self.atoms_list))
+        self.nat = int(attrp0["natoms"])
+        self.nawf = int(arryp0["HRs"].shape[0])
+        self.shells_dict = arryp0["shells"]
+        self.config_dict = arryp0.get("configuration", None)
+        self._setup_orbital_structure()
+
+        # ── Parameter layout ─────────────────────────────────
+        self._build_group_pair_info()
+        self._build_onsite_info()
+        self._build_dd_param_layout()
+
+        if self.verbose:
+            print(
+                f"\nMultiGeomEDTB_DD: {self.n_geom} geometries, "
+                f"{self.nat} atoms, nawf={self.nawf}"
+            )
+            print(
+                f"  r_0={self.r_0_bohr:.3f} Bohr, "
+                f"r_c={self.r_c_bohr:.3f} Bohr, "
+                f"r_cut={self.r_cut_bohr:.3f} Bohr"
+            )
+            print(f"  Parameters: {self.n_params} total")
+            print(
+                f"    {self.n_onsite} on-site, "
+                f"{self.n_ch} V0, {self.n_ch} n, 1 n_c, "
+                f"{self.n_gamma} γ ({gamma_mode}), "
+                f"{self.n_eta} η"
+            )
+
+        # ── Per-geometry setup ───────────────────────────────
+        if isinstance(nkfit, (list, tuple)) and len(nkfit) == self.n_geom:
+            nkfit_list = list(nkfit)
+        else:
+            nkfit_list = [nkfit] * self.n_geom
+
+        self.weights = list(weights) if weights is not None else [1.0] * self.n_geom
+        self._geom = []
+        for ig, (arryp, attrp) in enumerate(geometry_data):
+            gd = self._setup_one_geometry(arryp, attrp, nkfit_list[ig], ig)
+            self._geom.append(gd)
+
+        self.n_data_per_geom = [g["Nk"] * g["nawf"] for g in self._geom]
+        self.n_data_total = sum(self.n_data_per_geom)
+
+        self._build_regularization_weights()
+
+    # ── Orbital structure ─────────────────────────────────────
+
+    def _setup_orbital_structure(self):
+        sp0 = self.unique_species[0]
+        self.group_l = list(self.shells_dict[sp0])
+        self.n_groups = len(self.group_l)
+        self.cfg_names = (
+            list(self.config_dict[sp0])
+            if self.config_dict
+            else [f"g{i}(l={self.group_l[i]})" for i in range(self.n_groups)]
+        )
+        self.atom_orbitals = []
+        self.atom_orbital_group = []
+        self.atom_block_start = []
+        self.norb_per_atom = []
+        idx = 0
+        for iat in range(self.nat):
+            sp = self.atoms_list[iat]
+            orbs, grps = [], []
+            for ig, l_val in enumerate(self.shells_dict[sp]):
+                for orb in SHELL_TO_ORBITALS[l_val]:
+                    orbs.append(orb)
+                    grps.append(ig)
+            self.atom_orbitals.append(orbs)
+            self.atom_orbital_group.append(grps)
+            self.atom_block_start.append(idx)
+            self.norb_per_atom.append(len(orbs))
+            idx += len(orbs)
+
+    # ── Group-pair hopping structure ──────────────────────────
+
+    def _build_group_pair_info(self):
+        self.hop_pair_list = []
+        self.hop_pair_start = {}
+        self.hop_pair_active = {}
+        self.n_hop = 0
+        self.hop_labels = []
+        for ga in range(self.n_groups):
+            for gb in range(ga, self.n_groups):
+                la, lb = self.group_l[ga], self.group_l[gb]
+                lpair = (min(la, lb), max(la, lb))
+                active = LPAIR_ACTIVE_INDICES[lpair]
+                labels = CHANNEL_LABELS[lpair]
+                self.hop_pair_list.append((ga, gb))
+                self.hop_pair_start[(ga, gb)] = self.n_hop
+                self.hop_pair_active[(ga, gb)] = active
+                tag = f"{self.cfg_names[ga]}-{self.cfg_names[gb]}"
+                for lab in labels:
+                    self.hop_labels.append(f"V({tag}){lab}")
+                self.n_hop += len(active)
+        self.n_ch = self.n_hop  # alias for clarity
+
+    # ── On-site parameter structure ───────────────────────────
+
+    def _build_onsite_info(self):
+        self.species_onsite_groups = {}
+        self.species_param_start = {}
+        self.n_onsite = 0
+        self.onsite_labels = []
+        for sp in self.unique_species:
+            self.species_param_start[sp] = self.n_onsite
+            cfg = (
+                list(self.config_dict[sp])
+                if self.config_dict
+                else [f"g{i}" for i in range(len(self.shells_dict[sp]))]
+            )
+            groups = SKFitter._get_onsite_groups(self.shells_dict[sp], cfg)
+            self.species_onsite_groups[sp] = groups
+            for pname, _ in groups:
+                self.onsite_labels.append(pname)
+            self.n_onsite += len(groups)
+
+    # ── DD parameter layout ───────────────────────────────────
+
+    def _build_dd_param_layout(self):
+        """Build the parameter vector layout for distance-dependent mode.
+
+        Layout: [onsite | V0 | n_exp | n_c | gamma | eta]
+        """
+        # Active channels for gamma mapping
+        active_lp, active_ch = set(), set()
+        for ga, gb in self.hop_pair_list:
+            la, lb = self.group_l[ga], self.group_l[gb]
+            active_lp.add((min(la, lb), max(la, lb)))
+            for sk_idx in self.hop_pair_active[(ga, gb)]:
+                active_ch.add(SK_PARAM_NAMES[sk_idx])
+        self.active_lpairs = sorted(active_lp)
+        self.active_channels = sorted(active_ch, key=lambda x: SK_PARAM_NAMES.index(x))
+
+        # hop index → gamma index
+        self._hop_to_gamma = np.zeros(self.n_ch, dtype=int)
+        gm = self.gamma_mode
+        if gm == "global":
+            self.n_gamma = 1
+            self.gamma_labels = ["γ"]
+        elif gm == "per_lpair":
+            lp2i = {lp: i for i, lp in enumerate(self.active_lpairs)}
+            self.n_gamma = len(self.active_lpairs)
+            self.gamma_labels = [
+                f"γ_{self._LPAIR_LABELS[lp]}" for lp in self.active_lpairs
+            ]
+            for ga, gb in self.hop_pair_list:
+                la, lb = self.group_l[ga], self.group_l[gb]
+                gidx = lp2i[(min(la, lb), max(la, lb))]
+                st = self.hop_pair_start[(ga, gb)]
+                for lk in range(len(self.hop_pair_active[(ga, gb)])):
+                    self._hop_to_gamma[st + lk] = gidx
+        elif gm == "per_channel":
+            ch2i = {ch: i for i, ch in enumerate(self.active_channels)}
+            self.n_gamma = len(self.active_channels)
+            self.gamma_labels = [f"γ_{ch}" for ch in self.active_channels]
+            for ga, gb in self.hop_pair_list:
+                st = self.hop_pair_start[(ga, gb)]
+                for lk, sk_idx in enumerate(self.hop_pair_active[(ga, gb)]):
+                    self._hop_to_gamma[st + lk] = ch2i[SK_PARAM_NAMES[sk_idx]]
+        else:
+            raise ValueError(f"Unknown gamma_mode: {gm!r}")
+
+        # η (on-site shift)
+        if self.fit_onsite_shift:
+            present = set()
+            for sp in self.unique_species:
+                for l_val in self.shells_dict[sp]:
+                    present.add({0: "s", 1: "p", 2: "d"}[l_val])
+            self.eta_orb_types = sorted(present, key="spd".index)
+            self.n_eta = len(self.eta_orb_types)
+            self.eta_labels = [f"η_{t}" for t in self.eta_orb_types]
+        else:
+            self.eta_orb_types = []
+            self.n_eta = 0
+            self.eta_labels = []
+
+        # Index bookkeeping
+        self.V0_start = self.n_onsite
+        self.n_start = self.V0_start + self.n_ch
+        self.nc_idx = self.n_start + self.n_ch
+        self.n_gamma_start = self.nc_idx + 1
+        self.n_eta_start = self.n_gamma_start + self.n_gamma
+        self.n_params = self.n_eta_start + self.n_eta
+
+        # Labels
+        self.param_labels = list(self.onsite_labels)
+        self.param_labels += [f"V0_{l}" for l in self.hop_labels]
+        self.param_labels += [f"n_{l}" for l in self.hop_labels]
+        self.param_labels.append("n_c")
+        self.param_labels += self.gamma_labels
+        self.param_labels += self.eta_labels
+
+    # ── Per-geometry setup ────────────────────────────────────
+
+    def _setup_one_geometry(self, arryp, attrp, nkfit, ig):
+        """Pre-compute bonds, design tensors, screening, phases, ref eigenvalues."""
+        a_vecs = arryp["a_vectors"]
+        tau_bohr = arryp["tau"]
+        alat = float(attrp["alat"])
+        tau_alat = tau_bohr / alat
+        nat = int(attrp["natoms"])
+        nawf = int(arryp["HRs"].shape[0])
+        b_vecs = arryp["b_vectors"]
+
+        # ── Reference eigenvalues ──
+        HRs = arryp["HRs"]
+        nk_dft = (HRs.shape[2], HRs.shape[3], HRs.shape[4])
+        R_list, HR_list = [], []
+        for i1 in range(nk_dft[0]):
+            for i2 in range(nk_dft[1]):
+                for i3 in range(nk_dft[2]):
+                    r1 = i1 if 2 * i1 <= nk_dft[0] else i1 - nk_dft[0]
+                    r2 = i2 if 2 * i2 <= nk_dft[1] else i2 - nk_dft[1]
+                    r3 = i3 if 2 * i3 <= nk_dft[2] else i3 - nk_dft[2]
+                    R_list.append(r1 * a_vecs[0] + r2 * a_vecs[1] + r3 * a_vecs[2])
+                    HR_list.append(HRs[:, :, i1, i2, i3, 0])
+        R_arr = np.array(R_list)
+        HR_arr = np.array(HR_list)
+
+        if isinstance(nkfit, (tuple, list)):
+            nk1, nk2, nk3 = int(nkfit[0]), int(nkfit[1]), int(nkfit[2])
+        else:
+            nk1 = nk2 = nk3 = int(nkfit)
+        kpts = []
+        for ik1 in range(nk1):
+            for ik2 in range(nk2):
+                for ik3 in range(nk3):
+                    kpts.append(
+                        np.array(
+                            [ik1 / max(nk1, 1), ik2 / max(nk2, 1), ik3 / max(nk3, 1)]
+                        )
+                        @ b_vecs
+                    )
+        kpts = np.array(kpts)
+        Nk = len(kpts)
+        phases_dft = np.exp(2j * np.pi * (kpts @ R_arr.T))
+        E_pao = np.zeros((Nk, nawf))
+        for ik in range(Nk):
+            Hk = np.einsum("r,rij->ij", phases_dft[ik], HR_arr)
+            E_pao[ik] = np.sort(np.linalg.eigvalsh(Hk).real)
+
+        # ── Per-geometry atom orbital structure ──
+        atoms_list_g = list(arryp["atoms"])
+        atom_orbitals_g = []
+        atom_orbital_group_g = []
+        atom_block_start_g = []
+        idx = 0
+        for iat in range(nat):
+            sp = atoms_list_g[iat]
+            orbs, grps = [], []
+            for ig_l, l_val in enumerate(self.shells_dict[sp]):
+                for orb in SHELL_TO_ORBITALS[l_val]:
+                    orbs.append(orb)
+                    grps.append(ig_l)
+            atom_orbitals_g.append(orbs)
+            atom_orbital_group_g.append(grps)
+            atom_block_start_g.append(idx)
+            idx += len(orbs)
+
+        # ── Enumerate all bonds within r_c ──
+        r_c_alat = self.r_c_bohr / alat
+        r_cut_alat = self.r_cut_bohr / alat
+        r_0_alat = self.r_0_bohr / alat
+        min_a = min(np.linalg.norm(v) for v in a_vecs)
+        cell_range = int(np.ceil(r_c_alat / min_a)) + 1
+
+        bonds = []
+        for i1 in range(-cell_range, cell_range + 1):
+            for i2 in range(-cell_range, cell_range + 1):
+                for i3 in range(-cell_range, cell_range + 1):
+                    R = i1 * a_vecs[0] + i2 * a_vecs[1] + i3 * a_vecs[2]
+                    for iat in range(nat):
+                        for jat in range(nat):
+                            d_vec = R + tau_alat[jat] - tau_alat[iat]
+                            d_norm = np.linalg.norm(d_vec)
+                            if d_norm < 1e-8 or d_norm > r_c_alat:
+                                continue
+                            bonds.append((R, iat, jat, d_vec, d_norm))
+        n_bonds = len(bonds)
+
+        # ── Design tensors: M[b, p, m, n] ──
+        M = np.zeros((n_bonds, self.n_ch, nawf, nawf))
+        R_bond = np.zeros((n_bonds, 3))
+        d_bonds = np.zeros(n_bonds)
+        for ib, (R_cart, iat, jat, d_vec, d_norm) in enumerate(bonds):
+            lx, ly, lz = d_vec / d_norm
+            R_bond[ib] = R_cart
+            d_bonds[ib] = d_norm
+            bi = atom_block_start_g[iat]
+            bj = atom_block_start_g[jat]
+            oi = atom_orbitals_g[iat]
+            oj = atom_orbitals_g[jat]
+            gi = atom_orbital_group_g[iat]
+            gj = atom_orbital_group_g[jat]
+            for ai, orb_a in enumerate(oi):
+                for aj, orb_b in enumerate(oj):
+                    ga_loc, gb_loc = gi[ai], gj[aj]
+                    canonical = (min(ga_loc, gb_loc), max(ga_loc, gb_loc))
+                    start = self.hop_pair_start[canonical]
+                    active = self.hop_pair_active[canonical]
+                    design = sk_design_row(orb_a, orb_b, lx, ly, lz)
+                    for lk, sk_k in enumerate(active):
+                        M[ib, start + lk, bi + ai, bj + aj] = design[sk_k]
+
+        # ── Screening sums ──
+        sc_range = int(np.ceil(r_cut_alat / min_a)) + 1
+        sc_pos = []
+        for i1 in range(-sc_range, sc_range + 1):
+            for i2 in range(-sc_range, sc_range + 1):
+                for i3 in range(-sc_range, sc_range + 1):
+                    R = i1 * a_vecs[0] + i2 * a_vecs[1] + i3 * a_vecs[2]
+                    for iat in range(nat):
+                        sc_pos.append(R + tau_alat[iat])
+        sc_pos = np.array(sc_pos)
+        r_taper = 0.8 * r_cut_alat
+
+        def _fc_vec(d):
+            fc = np.where(
+                d <= r_taper,
+                1.0,
+                np.where(
+                    d >= r_cut_alat,
+                    0.0,
+                    0.5
+                    * (1.0 + np.cos(np.pi * (d - r_taper) / (r_cut_alat - r_taper))),
+                ),
+            )
+            fc[d < 1e-10] = 0.0
+            return fc
+
+        fc_home = np.zeros((nat, len(sc_pos)))
+        for ia in range(nat):
+            fc_home[ia] = _fc_vec(np.linalg.norm(sc_pos - tau_alat[ia], axis=1))
+        coord_i = np.sum(fc_home, axis=1)
+
+        S_bonds = np.empty(n_bonds)
+        for ib, (R_cart, iat, jat, *_) in enumerate(bonds):
+            pos_j = R_cart + tau_alat[jat]
+            d_jk = np.linalg.norm(sc_pos - pos_j, axis=1)
+            S_bonds[ib] = np.dot(fc_home[iat], _fc_vec(d_jk))
+
+        # ── On-site map ──
+        onsite_map = np.zeros((self.n_onsite, nawf, nawf))
+        for iat in range(nat):
+            sp = atoms_list_g[iat]
+            bi = atom_block_start_g[iat]
+            pstart = self.species_param_start[sp]
+            for ig_param, (_, local_indices) in enumerate(
+                self.species_onsite_groups[sp]
+            ):
+                for li in local_indices:
+                    onsite_map[pstart + ig_param, bi + li, bi + li] = 1.0
+        onsite_diag = np.array([np.diag(onsite_map[p]) for p in range(self.n_onsite)])
+
+        # ── η diag (on-site shift) ──
+        eta_diag = None
+        if self.n_eta > 0:
+            _otype = {
+                "s": "s",
+                "px": "p",
+                "py": "p",
+                "pz": "p",
+                "dxy": "d",
+                "dyz": "d",
+                "dzx": "d",
+                "dx2-y2": "d",
+                "dz2": "d",
+            }
+            eta_diag = np.zeros((self.n_eta, nawf))
+            for iat in range(nat):
+                bi = atom_block_start_g[iat]
+                for io, orb in enumerate(atom_orbitals_g[iat]):
+                    q = self.eta_orb_types.index(_otype[orb])
+                    eta_diag[q, bi + io] = coord_i[iat]
+
+        # ── Phases ──
+        phases = np.exp(2j * np.pi * (kpts @ R_bond.T))  # (Nk, n_bonds)
+
+        # ── Bond groups for block-sparse Jacobian ──
+        from collections import defaultdict
+
+        _bg = defaultdict(list)
+        for ib, (_, iat, jat, _, _) in enumerate(bonds):
+            _bg[(iat, jat)].append(ib)
+        bond_groups = []
+        for (iat, jat), blist in _bg.items():
+            idx = np.array(blist)
+            bi = atom_block_start_g[iat]
+            bj = atom_block_start_g[jat]
+            no_i = len(atom_orbitals_g[iat])
+            no_j = len(atom_orbitals_g[jat])
+            M_sub = M[idx][:, :, bi : bi + no_i, bj : bj + no_j].copy()
+            bond_groups.append((idx, bi, bj, no_i, no_j, M_sub))
+
+        if self.verbose:
+            print(
+                f"  Geom {ig}: {n_bonds} bonds, "
+                f"{Nk} k-pts (grid {nk1}×{nk2}×{nk3}), "
+                f"E ∈ [{E_pao.min():.3f}, {E_pao.max():.3f}] eV"
+            )
+
+        return {
+            "a_vecs": a_vecs,
+            "tau_alat": tau_alat,
+            "alat": alat,
+            "nawf": nawf,
+            "nat": nat,
+            "Nk": Nk,
+            "kpts": kpts,
+            "E_pao": E_pao,
+            "n_bonds": n_bonds,
+            "M": M,  # (n_bonds, n_ch, nawf, nawf)
+            "R_bond": R_bond,
+            "d_bonds": d_bonds,
+            "S_bonds": S_bonds,
+            "coord_i": coord_i,
+            "phases": phases,  # (Nk, n_bonds)
+            "bond_groups": bond_groups,
+            "onsite_map": onsite_map,
+            "onsite_diag": onsite_diag,
+            "eta_diag": eta_diag,
+            "b_vecs": arryp["b_vectors"],
+            "atoms_list": atoms_list_g,
+            "atom_orbitals": atom_orbitals_g,
+            "atom_block_start": atom_block_start_g,
+        }
+
+    # ── Forward model ─────────────────────────────────────────
+
+    def _eigenvalues_and_jacobian(self, p, gd):
+        """Compute eigenvalues and Hellmann-Feynman Jacobian for one geometry.
+
+        Uses block-sparse operations: each bond only touches a small orbital
+        sub-block (e.g. 9×9 for C-C), giving up to (nawf/n_orb)² speed-up
+        over dense (nawf×nawf) operations.
+        """
+        Nk = gd["Nk"]
+        nawf = gd["nawf"]
+        d_bonds = gd["d_bonds"]
+        S_bonds = gd["S_bonds"]
+        phases = gd["phases"]
+        n_bonds = gd["n_bonds"]
+        bond_groups = gd["bond_groups"]
+
+        n_ch = self.n_ch
+        n_onsite = self.n_onsite
+        r_0 = self.r_0_bohr / gd["alat"]
+        r_c = self.r_c_bohr / gd["alat"]
+
+        # Extract parameters
+        V0 = p[self.V0_start : self.V0_start + n_ch]
+        n_exp = p[self.n_start : self.n_start + n_ch]
+        n_c = p[self.nc_idx]
+        gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
+
+        # ── Goodwin function evaluation (vectorized) ──
+        ratio = r_0 / d_bonds  # (n_bonds,)
+        dr_rc = d_bonds / r_c
+        r0_rc = r_0 / r_c
+        g_bonds = -(dr_rc**n_c) + (r0_rc**n_c)  # (n_bonds,)
+
+        # Screening per channel
+        gamma_per_ch = gamma[self._hop_to_gamma]  # (n_ch,)
+        _scr_arg = -gamma_per_ch[None, :] * S_bonds[:, None]
+        np.clip(_scr_arg, -30.0, 30.0, out=_scr_arg)
+        scale = np.exp(_scr_arg)  # (n_bonds, n_ch)
+
+        # base[b, p] -- vectorised over channels (no Python loop)
+        ln_ratio = np.log(ratio)  # (n_bonds,)
+        arg = n_exp[None, :] * (ln_ratio[:, None] + g_bonds[:, None])
+        np.clip(arg, -30.0, 30.0, out=arg)
+        base = np.exp(arg)  # (n_bonds, n_ch)
+        h = V0[None, :] * base * scale  # (n_bonds, n_ch)
+
+        # ── H(k) via block-sparse groups ──
+        H_onsite = np.einsum("p,pij->ij", p[:n_onsite], gd["onsite_map"])
+        if self.n_eta > 0:
+            eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
+            shift = np.einsum("q,qi->i", eta, gd["eta_diag"])
+            H_onsite[np.arange(nawf), np.arange(nawf)] += shift
+        Hk = np.broadcast_to(H_onsite, (Nk, nawf, nawf)).astype(complex).copy()
+        for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
+            h_grp = h[idx]  # (nb, n_ch)
+            wM = np.einsum("bp,bpij->bij", h_grp, M_sub)  # (nb, no_i, no_j)
+            Hk[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                "kb,bij->kij", phases[:, idx], wM
+            )
+
+        # ── Eigendecomposition ──
+        evals, evecs = np.linalg.eigh(Hk)
+        E_sk = evals.real
+
+        # ── Jacobian via Hellmann-Feynman ──
+        dE = np.zeros((Nk, nawf, self.n_params))
+        psi2 = np.abs(evecs) ** 2
+
+        # ∂E/∂ε
+        dE[:, :, :n_onsite] = np.einsum("kin,pi->knp", psi2, gd["onsite_diag"])
+
+        # Block-sparse dHk builder (only populates nonzero sub-blocks)
+        def _dHk_ch(w):
+            dHk = np.zeros((Nk, n_ch, nawf, nawf), dtype=complex)
+            for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
+                w_grp = w[idx]  # (nb, n_ch)
+                wM = M_sub * w_grp[:, :, None, None]  # (nb, n_ch, no_i, no_j)
+                dHk[:, :, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                    "kb,bpij->kpij", phases[:, idx], wM
+                )
+            return dHk
+
+        # ∂E/∂V0_p
+        dHk_V0 = _dHk_ch(base * scale)
+        evecs_bc = evecs[:, np.newaxis, :, :]  # (Nk, 1, nawf, nawf)
+        tmp = np.matmul(dHk_V0, evecs_bc)
+        dE[:, :, self.V0_start : self.V0_start + n_ch] = np.real(
+            np.einsum("kin,kpin->knp", evecs.conj(), tmp)
+        )
+
+        # ∂E/∂n_p
+        dn_factor = ln_ratio + g_bonds  # (n_bonds,)
+        w_n = h * dn_factor[:, None]  # (n_bonds, n_ch)
+        dHk_n = _dHk_ch(w_n)
+        tmp = np.matmul(dHk_n, evecs_bc)
+        dE[:, :, self.n_start : self.n_start + n_ch] = np.real(
+            np.einsum("kin,kpin->knp", evecs.conj(), tmp)
+        )
+
+        # ∂E/∂n_c  (block-sparse, channel-contracted)
+        ln_dr_rc = np.log(np.maximum(dr_rc, 1e-30))
+        ln_r0_rc = np.log(max(r0_rc, 1e-30))
+        dg_dnc = -(dr_rc**n_c) * ln_dr_rc + (r0_rc**n_c) * ln_r0_rc
+        w_nc = h * (n_exp[None, :] * dg_dnc[:, None])  # (n_bonds, n_ch)
+        dHk_nc = np.zeros((Nk, nawf, nawf), dtype=complex)
+        for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
+            F_sub = np.einsum("bp,bpij->bij", w_nc[idx], M_sub)
+            dHk_nc[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                "kb,bij->kij", phases[:, idx], F_sub
+            )
+        tmp_nc = np.matmul(dHk_nc, evecs)
+        dE[:, :, self.nc_idx] = np.real(np.einsum("kin,kin->kn", evecs.conj(), tmp_nc))
+
+        # ∂E/∂γ_q  (block-sparse, channel-contracted)
+        for q in range(self.n_gamma):
+            mask = self._hop_to_gamma == q
+            if not np.any(mask):
+                continue
+            w_g = np.zeros_like(h)
+            w_g[:, mask] = -S_bonds[:, None] * h[:, mask]
+            dHk_g = np.zeros((Nk, nawf, nawf), dtype=complex)
+            for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
+                F_sub = np.einsum("bp,bpij->bij", w_g[idx], M_sub)
+                dHk_g[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                    "kb,bij->kij", phases[:, idx], F_sub
+                )
+            tmp_g = np.matmul(dHk_g, evecs)
+            dE[:, :, self.n_gamma_start + q] = np.real(
+                np.einsum("kin,kin->kn", evecs.conj(), tmp_g)
+            )
+
+        # ∂E/∂η_q
+        if self.n_eta > 0:
+            eta_diag = gd["eta_diag"]
+            for q in range(self.n_eta):
+                dE[:, :, self.n_eta_start + q] = np.einsum(
+                    "kin,i->kn", psi2, eta_diag[q]
+                )
+
+        return E_sk, dE
+
+    # ── Multi-geometry aggregation ────────────────────────────
+
+    def _eval_single_geometry(self, ig, p):
+        gd = self._geom[ig]
+        E_sk, dE = self._eigenvalues_and_jacobian(p, gd)
+        res = (E_sk - gd["E_pao"]).ravel()
+        J = dE.reshape(-1, self.n_params)
+        w = self.weights[ig]
+        return w * res, w * J
+
+    def _eigenvalues_and_jacobian_all(self, p):
+        if self.n_geom >= 3:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=self.n_geom) as pool:
+                futures = [
+                    pool.submit(self._eval_single_geometry, ig, p)
+                    for ig in range(self.n_geom)
+                ]
+                results = [f.result() for f in futures]
+        else:
+            results = [self._eval_single_geometry(ig, p) for ig in range(self.n_geom)]
+        return np.concatenate([r for r, _ in results]), np.vstack(
+            [j for _, j in results]
+        )
+
+    # ── Regularization ────────────────────────────────────────
+
+    def _build_regularization_weights(self):
+        w = np.zeros(self.n_params)
+        w[self.V0_start : self.V0_start + self.n_ch] = 1.0
+        w[self.n_start : self.n_start + self.n_ch] = 0.1
+        w[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = 1.0
+        if self.n_eta > 0:
+            w[self.n_eta_start : self.n_eta_start + self.n_eta] = 1.0
+        self._reg_weights = w
+
+    # ── Single trial helper ─────────────────────────────────
+
+    def _run_single_trial(self, p_init, alpha, max_nfev, ftol, xtol, gtol, bounds):
+        """Run one least-squares trial.  Returns ``(rmse, p_opt, OptimizeResult)``."""
+        use_reg = alpha > 0.0
+        reg_w = self._reg_weights
+        n_data = self.n_data_total
+        use_bounds = bounds is not None
+        last_jac = [None]
+
+        def fun(p):
+            res_data, J_data = self._eigenvalues_and_jacobian_all(p)
+            if use_reg:
+                last_jac[0] = np.vstack([J_data, np.diag(alpha * reg_w)])
+                return np.concatenate([res_data, alpha * reg_w * p])
+            last_jac[0] = J_data
+            return res_data
+
+        def jac(p):
+            return last_jac[0]
+
+        kw = dict(
+            jac=jac,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            max_nfev=max_nfev,
+        )
+        if use_bounds:
+            kw["bounds"] = bounds
+            kw["method"] = "trf"
+        else:
+            kw["method"] = "lm"
+
+        res = least_squares(fun, p_init, **kw)
+        rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
+        return rmse, res.x.copy(), res
+
+    # ── Fitting ───────────────────────────────────────────────
+
+    def fit(
+        self,
+        *,
+        p0=None,
+        n_trials=10,
+        seed=123,
+        max_nfev=2000,
+        ftol=1e-12,
+        xtol=1e-12,
+        gtol=1e-12,
+        alpha=0.0,
+        bounds=None,
+        n_jobs=1,
+    ):
+        """Multi-start least-squares fit.
+
+        Parameters
+        ----------
+        p0 : np.ndarray, optional
+            Initial parameter vector.
+        n_trials : int
+            Number of random restarts.
+        seed : int or None
+        max_nfev : int
+        ftol, xtol, gtol : float
+        alpha : float
+            Tikhonov regularization.
+        bounds : tuple of (lower, upper), optional
+            Bounds for the parameter vector. Each is array of length n_params
+            or ``-np.inf`` / ``np.inf``.
+        n_jobs : int
+            Parallel workers for multi-start trials (``-1`` = all cores).
+            Requires ``joblib`` when ``n_jobs != 1``.
+
+        Returns
+        -------
+        dict
+        """
+        rng = np.random.RandomState(seed)
+        n_data = self.n_data_total
+        reg_w = self._reg_weights
+
+        # ── Default initial guess ──
+        if p0 is None:
+            p0 = np.zeros(self.n_params)
+            # Onsite: from HR0, geometry 0
+            gd = self._geom[0]
+            for iat in range(self.nat):
+                sp = self.atoms_list[iat]
+                bi = self.atom_block_start[iat]
+                pstart = self.species_param_start[sp]
+                for ig_param, (_, local_indices) in enumerate(
+                    self.species_onsite_groups[sp]
+                ):
+                    li0 = local_indices[0]
+                    p0[pstart + ig_param] = (
+                        float(gd["E_pao"][0, bi + li0])
+                        if gd["E_pao"].shape[1] > bi + li0
+                        else 0.0
+                    )
+            # V0: small random, n_exp: ~2, n_c: ~6
+            p0[self.V0_start : self.V0_start + self.n_ch] = rng.uniform(
+                -1.0, 1.0, self.n_ch
+            )
+            p0[self.n_start : self.n_start + self.n_ch] = 2.0
+            p0[self.nc_idx] = 6.5
+            p0[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = 0.005
+        else:
+            p0 = np.asarray(p0, dtype=float)
+
+        # ── Generate trials ──
+        p_inits = []
+        for trial in range(n_trials):
+            pi = p0.copy()
+            if trial > 0:
+                pi[self.V0_start : self.V0_start + self.n_ch] *= 1.0 + 0.3 * rng.randn(
+                    self.n_ch
+                )
+                pi[self.n_start : self.n_start + self.n_ch] += 0.5 * rng.randn(
+                    self.n_ch
+                )
+                pi[self.nc_idx] += 1.0 * rng.randn()
+                pi[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
+                    rng.uniform(0.0, 0.02, self.n_gamma)
+                )
+            p_inits.append(pi)
+
+        # ── Run trials ──
+        use_parallel = n_jobs != 1 and n_trials > 1
+        common_kw = dict(
+            alpha=alpha,
+            max_nfev=max_nfev,
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            bounds=bounds,
+        )
+
+        if self.verbose:
+            import os as _os
+
+            n_cpu = _os.cpu_count() or 1
+            geom_threads = self.n_geom if self.n_geom >= 3 else 1
+            effective_jobs = (
+                min(n_jobs, n_trials)
+                if n_jobs > 0
+                else min(n_cpu, n_trials)
+                if n_jobs == -1
+                else n_trials
+            )
+            total_threads = effective_jobs * geom_threads
+
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
+            print(
+                f"DD EDTB optimisation: {n_trials} trials, "
+                f"{self.n_geom} geometries{par_tag}"
+            )
+
+            if use_parallel:
+                print("\n  Parallelism diagnostics:")
+                print(f"    CPU cores available          : {n_cpu}")
+                print(f"    Joblib worker processes       : {effective_jobs}")
+                print(f"    Geometry threads per process  : {geom_threads}")
+                print(f"    Total concurrent threads      : {total_threads}")
+                if total_threads > n_cpu:
+                    import warnings
+
+                    rec = max(1, n_cpu // geom_threads)
+                    msg = (
+                        f"Thread oversubscription detected: {total_threads} "
+                        f"threads on {n_cpu} cores. "
+                        f"Each trial spawns {geom_threads} geometry threads "
+                        f"(ThreadPoolExecutor for {self.n_geom} geometries), "
+                        f"and joblib adds {effective_jobs} worker processes on "
+                        f"top. This causes cores to context-switch and thrash "
+                        f"caches, often making the fit *slower* than sequential. "
+                        f"Recommended: n_jobs={rec} (= {n_cpu} cores / "
+                        f"{geom_threads} geometry threads), or n_jobs=1 for "
+                        f"sequential trials with per-trial progress output."
+                    )
+                    warnings.warn(msg, stacklevel=2)
+                    print(
+                        f"    \u26a0 Recommended n_jobs \u2264 {rec}  (cores / geometry_threads)"
+                    )
+                else:
+                    print("    \u2713 Good: threads \u2264 cores, no oversubscription")
+
+        if use_parallel:
+            import os
+
+            from joblib import Parallel, delayed
+
+            old_omp = os.environ.get("OMP_NUM_THREADS")
+            old_mkl = os.environ.get("MKL_NUM_THREADS")
+            os.environ["OMP_NUM_THREADS"] = "1"
+            os.environ["MKL_NUM_THREADS"] = "1"
+            try:
+                results = Parallel(n_jobs=n_jobs)(
+                    delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
+                )
+            finally:
+                if old_omp is None:
+                    os.environ.pop("OMP_NUM_THREADS", None)
+                else:
+                    os.environ["OMP_NUM_THREADS"] = old_omp
+                if old_mkl is None:
+                    os.environ.pop("MKL_NUM_THREADS", None)
+                else:
+                    os.environ["MKL_NUM_THREADS"] = old_mkl
+            all_results = [(r, p, res) for r, p, res in results]
+        else:
+            if self.verbose:
+                print(
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                )
+                print("-" * 50)
+            all_results = []
+            best_so_far = np.inf
+            for trial, p_init in enumerate(p_inits):
+                rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
+                all_results.append((rmse, p_opt, res))
+                tag = " *" if rmse < best_so_far else ""
+                if rmse < best_so_far:
+                    best_so_far = rmse
+                if self.verbose:
+                    E0, _ = self._eigenvalues_and_jacobian(p_init, self._geom[0])
+                    rmse_init = np.sqrt(
+                        np.mean((E0 - self._geom[0]["E_pao"]).ravel() ** 2)
+                    )
+                    print(
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
+                    )
+
+        all_results.sort(key=lambda x: x[0])
+        best_rmse, best_p, best_res = all_results[0]
+
+        # Per-geometry RMSE
+        per_geom_rmse = []
+        offset = 0
+        for ig in range(self.n_geom):
+            nd = self.n_data_per_geom[ig]
+            r_uw = best_res.fun[offset : offset + nd] / self.weights[ig]
+            per_geom_rmse.append(float(np.sqrt(np.mean(r_uw**2))))
+            offset += nd
+
+        if self.verbose:
+            print(f"{'=' * 65}")
+            print(f"Combined RMSE = {best_rmse * 1000:.2f} meV")
+            for ig, r in enumerate(per_geom_rmse):
+                print(
+                    f"  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})"
+                )
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
+            for i, name in enumerate(self.param_labels):
+                print(f"{name:<30s}  {best_p[i]: .5f}")
+
+        return {
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "per_geom_rmse": per_geom_rmse,
+            "max_err": float(np.max(np.abs(best_res.fun[:n_data]))),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
+        }
+
+    # ── Build model dict ──────────────────────────────────────
+
+    def build_model_dict(self, p, geom_idx=0):
+        """Convert parameter vector to a PAOFLOW model dict.
+
+        Parameters
+        ----------
+        p : np.ndarray
+            Full parameter vector.
+        geom_idx : int
+            Which geometry to use for lattice/positions.
+
+        Returns
+        -------
+        dict
+        """
+        p = np.asarray(p)
+        gd = self._geom[geom_idx]
+
+        # Atoms dict
+        atoms_list_g = gd["atoms_list"]
+        atom_orbitals_g = gd["atom_orbitals"]
+        atoms_dict = {}
+        for iat in range(gd["nat"]):
+            sp = atoms_list_g[iat]
+            pstart = self.species_param_start[sp]
+            atom_d = {
+                "name": sp,
+                "tau": gd["tau_alat"][iat].tolist(),
+                "orbitals": list(atom_orbitals_g[iat]),
+            }
+            for ig_param, (pname, local_indices) in enumerate(
+                self.species_onsite_groups[sp]
+            ):
+                e_val = float(p[pstart + ig_param])
+                for li in local_indices:
+                    orb = atom_orbitals_g[iat][li]
+                    atom_d[orb] = e_val
+            atoms_dict[str(iat)] = atom_d
+
+        # Hoppings (DD format)
+        V0 = p[self.V0_start : self.V0_start + self.n_ch]
+        n_exp = p[self.n_start : self.n_start + self.n_ch]
+        n_c = float(p[self.nc_idx])
+
+        channels = {}
+        idx = 0
+        for ga, gb in self.hop_pair_list:
+            active = self.hop_pair_active[(ga, gb)]
+            for lk, sk_k in enumerate(active):
+                ch_name = SK_PARAM_NAMES[sk_k]
+                channels[ch_name] = {
+                    "V0": float(V0[idx]),
+                    "n": float(n_exp[idx]),
+                }
+                idx += 1
+
+        sp0 = self.unique_species[0]
+        pair_key = f"{sp0}-{sp0}"
+        hoppings = {
+            pair_key: {
+                "type": "distance_dependent",
+                "r_0": self.r_0_bohr,
+                "r_c": self.r_c_bohr,
+                "n_c": n_c,
+                "channels": channels,
+            }
+        }
+
+        # Screening
+        gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
+        gm = self.gamma_mode
+        if gm == "global":
+            gamma_val = float(gamma[0])
+        elif gm == "per_lpair":
+            gamma_val = {
+                self._LPAIR_LABELS[lp]: float(gamma[i])
+                for i, lp in enumerate(self.active_lpairs)
+            }
+        elif gm == "per_channel":
+            gamma_val = {
+                ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)
+            }
+        else:
+            gamma_val = float(gamma[0])
+
+        screening = {"r_cut": self.r_cut_bohr, "gamma": {pair_key: gamma_val}}
+        if self.n_eta > 0:
+            eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
+            screening["onsite_shift"] = {
+                self.eta_orb_types[i]: float(eta[i]) for i in range(self.n_eta)
+            }
+
+        return {
+            "label": "SK_EDTB",
+            "alat": float(gd["alat"]),
+            "model": {
+                "a_vectors": gd["a_vecs"].tolist(),
+                "atoms": atoms_dict,
+                "hoppings": hoppings,
+                "screening": screening,
+            },
+        }
+
+    # ── Convenience ───────────────────────────────────────────
+
+    def eigenvalues(self, p, geom_idx=0):
+        """Eigenvalues on the fitting k-mesh for a given geometry."""
+        E, _ = self._eigenvalues_and_jacobian(p, self._geom[geom_idx])
+        return E
+
+    def p0_from_discrete_params(self, params, *, n_c_init=6.5, n_default=2.0):
+        """Build an initial parameter vector from discrete-shell EDTB params.
+
+        Parameters
+        ----------
+        params : dict
+            Loaded from a discrete-shell ``*_EDTB_params.json`` file.
+        n_c_init : float
+            Initial value for the Goodwin cutoff exponent n_c.
+        n_default : float
+            Fallback power-law exponent when shell ratio estimation fails.
+
+        Returns
+        -------
+        np.ndarray
+            Parameter vector of length ``n_params``.
+        """
+        p0 = np.zeros(self.n_params)
+
+        # ── On-site energies ──
+        for sp in self.unique_species:
+            pstart = self.species_param_start[sp]
+            onsite_vals = params["onsite"][sp]
+            for ig_param, (pname, _) in enumerate(self.species_onsite_groups[sp]):
+                # pname is like "ε(2S)" — extract the orbital key
+                # Map to the JSON keys: s, p, t2g, eg
+                key = pname.split("(")[-1].rstrip(")")
+                # config names like 2S → look up in onsite dict
+                _key_map = {
+                    "2S": "s",
+                    "3S": "s",
+                    "s": "s",
+                    "2P": "p",
+                    "3P": "p",
+                    "p": "p",
+                    "3D_t2g": "t2g",
+                    "3D_eg": "eg",
+                    "4D_t2g": "t2g",
+                    "4D_eg": "eg",
+                    "5D_t2g": "t2g",
+                    "5D_eg": "eg",
+                    "t2g": "t2g",
+                    "eg": "eg",
+                    "d": "t2g",
+                }
+                json_key = _key_map.get(key, key.lower())
+                if json_key in onsite_vals:
+                    p0[pstart + ig_param] = onsite_vals[json_key]
+
+        # ── Hopping channels: V0 and n ──
+        sp0 = self.unique_species[0]
+        pair_key = f"{sp0}-{sp0}"
+        shells = params["hoppings"][pair_key]
+        r_ref = [s["r_ref"] for s in shells]
+        r0 = self.r_0_bohr
+
+        idx = 0
+        for ga, gb in self.hop_pair_list:
+            active = self.hop_pair_active[(ga, gb)]
+            for sk_k in active:
+                ch_name = SK_PARAM_NAMES[sk_k]
+                # V0 from nearest shell to r_0
+                v_1nn = shells[0]["params"].get(ch_name, 0.0)
+                p0[self.V0_start + idx] = v_1nn
+
+                # Estimate n from 1NN/2NN ratio
+                n_est = n_default
+                if len(shells) >= 2:
+                    v_2nn = shells[1]["params"].get(ch_name, 0.0)
+                    if abs(v_1nn) > 1e-6 and abs(v_2nn) > 1e-6:
+                        # Goodwin at r_0 → V0, at r1 → V0*(r0/r1)^n * exp(n*g)
+                        # With n_c_init and r_c, solve for n:
+                        r1 = r_ref[1]
+                        rc = self.r_c_bohr
+                        g = -((r1 / rc) ** n_c_init) + (r0 / rc) ** n_c_init
+                        ln_ratio = np.log(r0 / r1)
+                        denom = ln_ratio + g
+                        if abs(denom) > 1e-10:
+                            n_est = np.log(abs(v_2nn / v_1nn)) / denom
+                            n_est = np.clip(n_est, 0.5, 15.0)
+                        else:
+                            n_est = n_default
+                p0[self.n_start + idx] = n_est
+                idx += 1
+
+        # ── n_c ──
+        p0[self.nc_idx] = n_c_init
+
+        # ── Gamma (screening) ──
+        gamma_dict = params.get("screening", {}).get("gamma", {}).get(pair_key, {})
+        if isinstance(gamma_dict, dict):
+            gm = self.gamma_mode
+            if gm == "per_lpair":
+                for i, lp in enumerate(self.active_lpairs):
+                    lp_label = self._LPAIR_LABELS[lp]
+                    if lp_label in gamma_dict:
+                        p0[self.n_gamma_start + i] = gamma_dict[lp_label]
+            elif gm == "per_channel":
+                for i, ch in enumerate(self.active_channels):
+                    # Map channel to lpair label to look up gamma
+                    for lp, label in self._LPAIR_LABELS.items():
+                        if ch.startswith(label) or ch in [
+                            c
+                            for c in SK_PARAM_NAMES
+                            if (
+                                min(CHANNEL_L_MAP.get(c, (0, 0))),
+                                max(CHANNEL_L_MAP.get(c, (0, 0))),
+                            )
+                            == lp
+                        ]:
+                            if label in gamma_dict:
+                                p0[self.n_gamma_start + i] = gamma_dict[label]
+                                break
+            elif gm == "global":
+                vals = list(gamma_dict.values())
+                if vals:
+                    p0[self.n_gamma_start] = np.mean(vals)
+        elif isinstance(gamma_dict, (int, float)):
+            p0[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = gamma_dict
+
+        if self.verbose:
+            print(f"\np0 from discrete-shell params ({len(p0)} parameters):")
+            for i, name in enumerate(self.param_labels):
+                print(f"  {name:<30s}  {p0[i]: .5f}")
+
+        return p0
