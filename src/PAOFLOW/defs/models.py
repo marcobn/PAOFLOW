@@ -1178,10 +1178,9 @@ def SK_EDTB(data_controller, params):
         cutoff_2 = None
         cutoff_3 = None
     else:
-        dist = []
-        for ia in range(natoms):
-            for n in range(natoms * nk1 * nk2 * nk3):
-                dist.append(distance(tau[ia], sctau[n]))
+        from scipy.spatial.distance import cdist as _cdist
+
+        dist = _cdist(tau, sctau.reshape(-1, 3)).ravel().tolist()
         unique_dist = np.sort(np.unique(dist))
         # Merge nearly-degenerate distances (e.g. from floating-point
         # precision in DFT atomic positions).  Use relative tolerance 1e-3.
@@ -1328,12 +1327,21 @@ def SK_EDTB(data_controller, params):
     n_sc = natoms * nk1 * nk2 * nk3
 
     # f_c values: f_c_table[ia, n] = f_c(|tau[ia] - sctau_flat[n]|)
-    f_c_table = np.zeros((natoms, n_sc), dtype=float)
-    for ia in range(natoms):
-        for n in range(n_sc):
-            d = distance(tau[ia], sctau_flat[n])
-            if d > 1e-10:
-                f_c_table[ia, n] = _f_cutoff(d)
+    # Vectorized with cdist for performance
+    from scipy.spatial.distance import cdist as _cdist
+
+    _dist_table = _cdist(tau, sctau_flat)  # (natoms, n_sc)
+    f_c_table = np.where(
+        _dist_table <= r_taper,
+        1.0,
+        np.where(
+            _dist_table >= r_cut,
+            0.0,
+            0.5 * (1.0 + np.cos(np.pi * (_dist_table - r_taper) / (r_cut - r_taper))),
+        ),
+    )
+    f_c_table[_dist_table < 1e-10] = 0.0  # exclude self
+    del _dist_table
 
     # On-site coordination number (for environment-dependent on-site shifts)
     coord_i = np.zeros(natoms, dtype=float)
@@ -1341,34 +1349,26 @@ def SK_EDTB(data_controller, params):
         for ia in range(natoms):
             coord_i[ia] = np.sum(f_c_table[ia])
 
-    # S_ij screening sums
-    # For bond (ia → sctau_flat[n_jsc]), S = Σ_n f_c_table[ia,n] · f_c_table[jat,n]
-    # where jat = n_jsc % (n_sc // natoms ... ) — but we need the home atom index
-    # of the supercell site n_jsc.
-    #
-    # sctau is indexed as (ib, i, j, k) → flat index = ib + natoms*(...)
-    # The home-cell atom index for flat index n is n % natoms (from reshape order='C'
-    # with first axis = natoms).
-    #
-    # We precompute f_c for every supercell atom relative to every supercell atom,
-    # but that is O(n_sc²). Instead, for each bond (ia, n_jsc) we compute S on the fly
-    # using f_c_table for atom ia and the position of sctau_flat[n_jsc].
-
-    def _screening_sum(ia, pos_j):
-        """Compute S_ij = Σ_{k ≠ i,j} f_c(d_ik) · f_c(d_jk)."""
-        S = 0.0
-        for n in range(n_sc):
-            d_jk = distance(pos_j, sctau_flat[n])
-            if d_jk < 1e-10:
-                continue  # exclude j itself
-            fc_ik = f_c_table[ia, n]
-            if fc_ik < 1e-15:
-                continue  # outside cutoff of i
-            fc_jk = _f_cutoff(d_jk)
-            if fc_jk < 1e-15:
-                continue  # outside cutoff of j
-            S += fc_ik * fc_jk
-        return S
+    # S_ij screening sums — precomputed via matrix multiply
+    # S_all[ia, jsc] = Σ_{k ≠ j} f_c(d_ik) · f_c(d_jk)
+    # Precompute f_c for all supercell-supercell atom pairs.
+    _dist_sc = _cdist(sctau_flat, sctau_flat)  # (n_sc, n_sc)
+    _f_c_sc = np.where(
+        _dist_sc <= r_taper,
+        1.0,
+        np.where(
+            _dist_sc >= r_cut,
+            0.0,
+            0.5 * (1.0 + np.cos(np.pi * (_dist_sc - r_taper) / (r_cut - r_taper))),
+        ),
+    )
+    _f_c_sc[_dist_sc < 1e-10] = 0.0  # exclude self
+    del _dist_sc
+    # S_all[ia, jsc] = f_c_table[ia, :] · f_c_sc[jsc, :]
+    S_all = f_c_table @ _f_c_sc.T  # (natoms, n_sc)
+    del _f_c_sc
+    _nk123 = nk1 * nk2 * nk3
+    _nk23 = nk2 * nk3
 
     def _screened_hoppings(shell_hoppings, S_ij):
         """Return a copy of shell_hoppings with screening applied."""
@@ -1798,12 +1798,17 @@ def SK_EDTB(data_controller, params):
                             else:
                                 continue
 
-                        lx = cosines(tau[ia], pos_j)[0]
-                        ly = cosines(tau[ia], pos_j)[1]
-                        lz = cosines(tau[ia], pos_j)[2]
+                        _dir = cosines(tau[ia], pos_j)
+                        lx, ly, lz = _dir[0], _dir[1], _dir[2]
 
-                        # EDTB: compute screening sum and apply to hoppings
-                        S_ij = _screening_sum(ia, pos_j)
+                        # EDTB: look up precomputed screening sum
+                        _jsc = (
+                            ib * _nk123
+                            + (i % nk1) * _nk23
+                            + (j % nk2) * nk3
+                            + (k % nk3)
+                        )
+                        S_ij = S_all[ia, _jsc]
 
                         if _dd_mode:
                             shell_hop_data = _screened_hoppings(

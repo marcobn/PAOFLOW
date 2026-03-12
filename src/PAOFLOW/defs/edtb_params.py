@@ -1037,11 +1037,21 @@ def summarize_params(params: dict) -> str:
     lines.append(f"\nHopping blocks: {len(hoppings)} species pairs")
     for key in sorted(hoppings.keys()):
         shells = hoppings[key]
-        lines.append(f"  {key}: {len(shells)} shells")
-        for s, sh in enumerate(shells):
-            r = sh.get("r_ref", "?")
-            npar = len(sh.get("params", {}))
-            lines.append(f"    shell {s + 1}: r_ref={r} Bohr, {npar} params")
+        if isinstance(shells, dict) and shells.get("type") == "distance_dependent":
+            lines.append(
+                f"  {key}: distance-dependent  r_0={shells.get('r_0', '?')}  r_c={shells.get('r_c', '?')} Bohr"
+            )
+            channels = shells.get("channels", {})
+            for ch, cp in sorted(channels.items()):
+                lines.append(f"    {ch}: V0={cp['V0']:.4f}, n={cp['n']:.4f}")
+        elif isinstance(shells, list):
+            lines.append(f"  {key}: {len(shells)} shells")
+            for s, sh in enumerate(shells):
+                r = sh.get("r_ref", "?")
+                npar = len(sh.get("params", {}))
+                lines.append(f"    shell {s + 1}: r_ref={r} Bohr, {npar} params")
+        else:
+            lines.append(f"  {key}: {shells}")
 
     if "screening" in params:
         scr = params["screening"]
