@@ -2,6 +2,112 @@
 
 API documentation for the environment-dependent tight-binding (EDTB) modules in PAOFLOW.
 
+## Table of Contents
+
+- [PAOFLOW.defs.models](#paoflowdefsmodels)
+- [PAOFLOW.defs.sk_fitting](#paoflowdefssk_fitting)
+- [PAOFLOW.defs.edtb_params](#paoflowdefsedtb_params)
+- [PAOFLOW.defs.surface_project](#paoflowdefssurface_project)
+- [PAOFLOW.defs.dual_params](#paoflowdefsdual_params)
+- [PAOFLOW.defs.band_unfold](#paoflowdefsband_unfold)
+
+---
+
+## PAOFLOW.defs.models
+
+### `Kane_Mele(data_controller, params)`
+
+### `SK_EDTB(data_controller, params)`
+
+Build an environment-dependent Slater-Koster tight-binding model (up to 3NN).
+
+Extends the two-center ``Slater_Koster`` with environment-dependent
+screening corrections in the style of Porezag & Frauenheim.
+
+For each bond (i, j) the two-center SK integrals are modulated by a
+scalar factor that depends on the local atomic environment:
+
+    V_λ^eff(i,j) = V_λ^(2c) · exp( -γ_λ · S_ij )
+
+where S_ij = Σ_{k ≠ i,j} f_c(d_ik) · f_c(d_jk) is a screening sum
+over nearby mediating atoms *k*, and f_c is a smooth cutoff function.
+
+The γ_λ screening strengths can be specified:
+  - per SK channel  ('sss', 'pps', …)
+  - per l-pair       ('ss', 'sp', 'pp', 'sd', 'pd', 'dd')
+  - as a single global value
+
+Additional input (on top of ``Slater_Koster`` requirements):
+
+params['model']['screening'] : dict
+    r_cut : float
+        Cutoff radius (same units as a_vectors) for mediating atoms.
+    gamma : float or dict
+        If float → single global screening strength.
+        If dict  → per-channel {'sss': γ1, 'pps': γ2, …}
+                or per-l-pair {'ss': γ1, 'sp': γ2, …}.
+    onsite_shift : dict, optional
+        Per-orbital environment-dependent on-site correction strength.
+        Keys are orbital labels ('s', 'p', 'd'); values are floats.
+        Each on-site energy receives Δε = η · Σ_k f_c(d_ik).
+
+### `Slater_Koster(data_controller, params)`
+
+Build a generalized Slater-Koster tight-binding model (two-center, up to 3NN).
+
+This routine populates the PAOFLOW data containers with a real-space
+tight-binding Hamiltonian constructed in the two-center approximation,
+up to third nearest neighbors. It uses a simple orbital basis per
+atom (s,p and d) and derives hopping matrix elements from the standard
+Slater-Koster direction-cosine expressions.
+
+High-level workflow:
+- Read lattice vectors and atomic positions from params and set up basic
+    attributes (number of atoms, orbitals, hoppings).
+- Compute reciprocal lattice vectors and the cell volume.
+- Build a 3x3x3 supercell of atomic positions to identify neighbors and
+    determine a first-neighbor cutoff.
+- Construct the Dnm matrix (orbital-position differences) for gradient
+    calculations.
+- Allocate the real-space Hamiltonian array HRs and fill on-site energies
+    and hopping terms using direction cosines and SK parameters.
+
+Data structure expectations (params):
+- params['model']['a_vectors']: 3x3 lattice vectors.
+- params['model']['atoms']: dict keyed by string indices ("0", "1", ...),
+    each containing:
+        - 'name': atomic species label
+        - 'tau': fractional/cartesian position in lattice units
+        - 'orbitals': list of orbital labels used to map on-site terms
+        - on-site energies keyed by orbital label
+- params['model']['hoppings']: either a flat dict of SK parameters with keys
+    'sss', 'sps', 'pps', 'ppp', etc., or a shell dict with 'nn' and optional
+    'nnn'/'nnnn' blocks containing those keys.
+
+Output side-effects (data_controller):
+- arry['a_vectors'], arry['b_vectors'], arry['tau'], arry['atoms'],
+    arry['shells'], arry['norbitals'], arry['sctau'], arry['Dnm'],
+    arry['HRs']
+- attr['alat'], attr['omega'], attr['natoms'], attr['nawf'], attr['bnd'],
+    attr['nbnds'], attr['nk1'], attr['nk2'], attr['nk3'], attr['nkpnts'],
+    attr['nspin'], attr['dftSO'], attr['shift'], attr['cutoff']
+
+Notes:
+- The neighbor search uses a 3x3x3 supercell for nn only, 5x5x5 when nnn
+    is enabled, and 7x7x7 when nnnn is enabled. Shells are determined from
+    distinct neighbor distances and mid-point cutoffs.
+- Only the unpolarized case is supported; spin-orbit is disabled here.
+
+### `build_TB_model(data_controller, parameters)`
+
+### `cubium(data_controller, params)`
+
+### `cubium2(data_controller, params)`
+
+### `graphene(data_controller, params)`
+
+### `graphene2(data_controller, params)`
+
 ---
 
 ## PAOFLOW.defs.sk_fitting
@@ -436,103 +542,6 @@ Returns
 -------
 float
     The matrix element value.
-
----
-
-## PAOFLOW.defs.models
-
-### `Kane_Mele(data_controller, params)`
-
-### `SK_EDTB(data_controller, params)`
-
-Build an environment-dependent Slater-Koster tight-binding model (up to 3NN).
-
-Extends the two-center ``Slater_Koster`` with environment-dependent
-screening corrections in the style of Porezag & Frauenheim.
-
-For each bond (i, j) the two-center SK integrals are modulated by a
-scalar factor that depends on the local atomic environment:
-
-    V_λ^eff(i,j) = V_λ^(2c) · exp( -γ_λ · S_ij )
-
-where S_ij = Σ_{k ≠ i,j} f_c(d_ik) · f_c(d_jk) is a screening sum
-over nearby mediating atoms *k*, and f_c is a smooth cutoff function.
-
-The γ_λ screening strengths can be specified:
-  - per SK channel  ('sss', 'pps', …)
-  - per l-pair       ('ss', 'sp', 'pp', 'sd', 'pd', 'dd')
-  - as a single global value
-
-Additional input (on top of ``Slater_Koster`` requirements):
-
-params['model']['screening'] : dict
-    r_cut : float
-        Cutoff radius (same units as a_vectors) for mediating atoms.
-    gamma : float or dict
-        If float → single global screening strength.
-        If dict  → per-channel {'sss': γ1, 'pps': γ2, …}
-                or per-l-pair {'ss': γ1, 'sp': γ2, …}.
-    onsite_shift : dict, optional
-        Per-orbital environment-dependent on-site correction strength.
-        Keys are orbital labels ('s', 'p', 'd'); values are floats.
-        Each on-site energy receives Δε = η · Σ_k f_c(d_ik).
-
-### `Slater_Koster(data_controller, params)`
-
-Build a generalized Slater-Koster tight-binding model (two-center, up to 3NN).
-
-This routine populates the PAOFLOW data containers with a real-space
-tight-binding Hamiltonian constructed in the two-center approximation,
-up to third nearest neighbors. It uses a simple orbital basis per
-atom (s,p and d) and derives hopping matrix elements from the standard
-Slater-Koster direction-cosine expressions.
-
-High-level workflow:
-- Read lattice vectors and atomic positions from params and set up basic
-    attributes (number of atoms, orbitals, hoppings).
-- Compute reciprocal lattice vectors and the cell volume.
-- Build a 3x3x3 supercell of atomic positions to identify neighbors and
-    determine a first-neighbor cutoff.
-- Construct the Dnm matrix (orbital-position differences) for gradient
-    calculations.
-- Allocate the real-space Hamiltonian array HRs and fill on-site energies
-    and hopping terms using direction cosines and SK parameters.
-
-Data structure expectations (params):
-- params['model']['a_vectors']: 3x3 lattice vectors.
-- params['model']['atoms']: dict keyed by string indices ("0", "1", ...),
-    each containing:
-        - 'name': atomic species label
-        - 'tau': fractional/cartesian position in lattice units
-        - 'orbitals': list of orbital labels used to map on-site terms
-        - on-site energies keyed by orbital label
-- params['model']['hoppings']: either a flat dict of SK parameters with keys
-    'sss', 'sps', 'pps', 'ppp', etc., or a shell dict with 'nn' and optional
-    'nnn'/'nnnn' blocks containing those keys.
-
-Output side-effects (data_controller):
-- arry['a_vectors'], arry['b_vectors'], arry['tau'], arry['atoms'],
-    arry['shells'], arry['norbitals'], arry['sctau'], arry['Dnm'],
-    arry['HRs']
-- attr['alat'], attr['omega'], attr['natoms'], attr['nawf'], attr['bnd'],
-    attr['nbnds'], attr['nk1'], attr['nk2'], attr['nk3'], attr['nkpnts'],
-    attr['nspin'], attr['dftSO'], attr['shift'], attr['cutoff']
-
-Notes:
-- The neighbor search uses a 3x3x3 supercell for nn only, 5x5x5 when nnn
-    is enabled, and 7x7x7 when nnnn is enabled. Shells are determined from
-    distinct neighbor distances and mid-point cutoffs.
-- Only the unpolarized case is supported; spin-orbit is disabled here.
-
-### `build_TB_model(data_controller, parameters)`
-
-### `cubium(data_controller, params)`
-
-### `cubium2(data_controller, params)`
-
-### `graphene(data_controller, params)`
-
-### `graphene2(data_controller, params)`
 
 ---
 
