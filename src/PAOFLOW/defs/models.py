@@ -163,7 +163,7 @@ def Slater_Koster(data_controller, params):
     arry, attr = data_controller.data_dicts()
     # Lattice Vectors
     arry["a_vectors"] = np.array(params["model"]["a_vectors"])
-    attr["alat"] = 1.0
+    attr["alat"] = params.get("alat", 1.0)
 
     # Atomic coordinates
     natoms = len(params["model"]["atoms"])
@@ -241,7 +241,7 @@ def Slater_Koster(data_controller, params):
         np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
         arry["a_vectors"][2, :],
     )
-    attr["omega"] = volume
+    attr["omega"] = attr["alat"] ** 3 * volume
     arry["b_vectors"][0, :] = (
         np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
     ) / volume
@@ -931,6 +931,61 @@ def Slater_Koster(data_controller, params):
 
         arry["HRs"] = HRs
 
+    # Reorder orbitals from SK convention to SOC/Abate-Asdente convention
+    # SOC expects m=0,+1,-1 ordering per l-shell:
+    #   p: (pz, px, py)   — SK has (px, py, pz)
+    #   d: (dz2, dxz, dyz, dx2-y2, dxy) — SK has (dxy, dyz, dzx, dx2-y2, dz2)
+    _sk_orb_to_soc = {
+        "s": 0,
+        "pz": 0,
+        "px": 1,
+        "py": 2,
+        "dz2": 0,
+        "dzx": 1,
+        "dyz": 2,
+        "dx2-y2": 3,
+        "dxy": 4,
+    }
+    _l_block_size = {0: 1, 1: 3, 2: 5}
+    _orb_l = {
+        "s": 0,
+        "px": 1,
+        "py": 1,
+        "pz": 1,
+        "dxy": 2,
+        "dyz": 2,
+        "dzx": 2,
+        "dx2-y2": 2,
+        "dz2": 2,
+    }
+    perm = list(range(nawf))
+    for ia in range(natoms):
+        orbs = shells[ia]["orbitals"]
+        # Find starting index of each l-block within this atom
+        l_start = {}  # l -> first absolute index
+        idx = atom_block_start[ia]
+        for orb in orbs:
+            l = _orb_l[orb]
+            if l not in l_start:
+                l_start[l] = idx
+            idx += 1
+        # Build permutation for this atom
+        for orb in orbs:
+            l = _orb_l[orb]
+            old_abs = atom_block_start[ia] + orbs.index(orb)
+            new_abs = l_start[l] + _sk_orb_to_soc[orb]
+            perm[new_abs] = old_abs
+    arry["HRs"] = arry["HRs"][perm, :, :, :, :, :]
+    arry["HRs"] = arry["HRs"][:, perm, :, :, :, :]
+
+    # Convert shells to dict keyed by species name for SOC compatibility
+    shells_dict = {}
+    for sh in shells:
+        name = sh["name"]
+        if name not in shells_dict:
+            shells_dict[name] = list(dict.fromkeys(_orb_l[o] for o in sh["orbitals"]))
+    arry["shells"] = shells_dict
+
 
 def SK_EDTB(data_controller, params):
     """Build an environment-dependent Slater-Koster tight-binding model (up to 3NN).
@@ -971,7 +1026,7 @@ def SK_EDTB(data_controller, params):
     arry, attr = data_controller.data_dicts()
     # Lattice Vectors
     arry["a_vectors"] = np.array(params["model"]["a_vectors"])
-    attr["alat"] = 1.0
+    attr["alat"] = params.get("alat", 1.0)
 
     # Atomic coordinates
     natoms = len(params["model"]["atoms"])
@@ -1046,7 +1101,7 @@ def SK_EDTB(data_controller, params):
         np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
         arry["a_vectors"][2, :],
     )
-    attr["omega"] = volume
+    attr["omega"] = attr["alat"] ** 3 * volume
     arry["b_vectors"][0, :] = (
         np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
     ) / volume
@@ -1880,6 +1935,61 @@ def SK_EDTB(data_controller, params):
                                         ] = value
 
     arry["HRs"] = HRs
+
+    # Reorder orbitals from SK convention to SOC/Abate-Asdente convention
+    # SOC expects m=0,+1,-1 ordering per l-shell:
+    #   p: (pz, px, py)   — SK has (px, py, pz)
+    #   d: (dz2, dxz, dyz, dx2-y2, dxy) — SK has (dxy, dyz, dzx, dx2-y2, dz2)
+    _sk_orb_to_soc = {
+        "s": 0,
+        "pz": 0,
+        "px": 1,
+        "py": 2,
+        "dz2": 0,
+        "dzx": 1,
+        "dyz": 2,
+        "dx2-y2": 3,
+        "dxy": 4,
+    }
+    _l_block_size = {0: 1, 1: 3, 2: 5}
+    _orb_l = {
+        "s": 0,
+        "px": 1,
+        "py": 1,
+        "pz": 1,
+        "dxy": 2,
+        "dyz": 2,
+        "dzx": 2,
+        "dx2-y2": 2,
+        "dz2": 2,
+    }
+    perm = list(range(nawf))
+    for ia in range(natoms):
+        orbs = shells[ia]["orbitals"]
+        # Find starting index of each l-block within this atom
+        l_start = {}  # l -> first absolute index
+        idx = atom_block_start[ia]
+        for orb in orbs:
+            l = _orb_l[orb]
+            if l not in l_start:
+                l_start[l] = idx
+            idx += 1
+        # Build permutation for this atom
+        for orb in orbs:
+            l = _orb_l[orb]
+            old_abs = atom_block_start[ia] + orbs.index(orb)
+            new_abs = l_start[l] + _sk_orb_to_soc[orb]
+            perm[new_abs] = old_abs
+    arry["HRs"] = arry["HRs"][perm, :, :, :, :, :]
+    arry["HRs"] = arry["HRs"][:, perm, :, :, :, :]
+
+    # Convert shells to dict keyed by species name for SOC compatibility
+    shells_dict = {}
+    for sh in shells:
+        name = sh["name"]
+        if name not in shells_dict:
+            shells_dict[name] = list(dict.fromkeys(_orb_l[o] for o in sh["orbitals"]))
+    arry["shells"] = shells_dict
 
 
 def graphene(data_controller, params):
