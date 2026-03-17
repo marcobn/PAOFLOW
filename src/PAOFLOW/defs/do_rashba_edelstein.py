@@ -38,11 +38,12 @@ def do_rashba_edelstein (data_controller, ene, temperature, regularization, twoD
   tau_const = 1.
   esize = ene.size
 
+  
   pksp = np.take(np.diagonal(np.real(arrays['pksp'][:,:,:,:,0]),axis1=2,axis2=3), ind_plot, axis=2)
 
   deltakp = np.take(arrays['deltakp'], ind_plot, axis=1)[:,:,0]
-  E_k = np.take(arrays['E_k'], ind_plot, axis=1)[:,:,0]
-  St = np.real(arrays['sktxt'])
+  E_k     = np.take(arrays['E_k'], ind_plot, axis=1)[:,:,0]
+  St      = np.real(arrays['sktxt']).reshape(snktot, 3, nstates)
 
   kai_aux = np.zeros((snktot,3,3,nstates), dtype=float)
   j_aux = np.zeros((snktot,3,3,nstates), dtype=float)

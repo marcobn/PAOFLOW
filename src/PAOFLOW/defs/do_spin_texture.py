@@ -49,7 +49,8 @@ def do_spin_texture ( data_controller ):
 
   icount = comm.bcast(icount)
   ind_plot = comm.bcast(ind_plot)
-
+  arrays['ind_plot'] = ind_plot
+  
   Sj = arrays['Sj']
   snktot = arrays['v_k'].shape[0]
   sktxtaux = np.zeros((snktot,3,nawf,nawf), dtype=complex)
@@ -77,6 +78,6 @@ def do_spin_texture ( data_controller ):
       for ib in range(icount):
         np.savez(os.path.join(attributes['opath'],'spin_text_band_'+str(ib)), spinband=sktxt[:,:,:,:,ib])
 
-
+  arrays['sktxt'] = sktxt
   sktxt = None
   E_k_full = None

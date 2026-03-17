@@ -34,7 +34,6 @@ def site_projeted_bands(data_controller):
       s=int(attr['nawf']/2)
 
     nspin=arry['v_k'].shape[3]
-   
     for ispin in range(nspin):
       f = open(join(attr['opath'],'site-projected-bands_'+str(ispin)+'.dat'), 'w')
 
@@ -51,5 +50,5 @@ def site_projeted_bands(data_controller):
     
       for i in range(attr['nawf']):
         for k in range(nkpi):
-          f.write(''.join(['%s %s %s\n'%(k,float(arry['E_k'][k,i]),np.sum(np.absolute(np.square((cs[k,:,i])))))]))
+          f.write(''.join(['%s %s %s\n'%(k,float(arry['E_k'][k,i,ispin]),np.sum(np.absolute(np.square((cs[k,:,i])))))]))
       f.close()

@@ -619,8 +619,12 @@ class PAOFLOW:
       if 'lambda_p' not in arry: arry['lambda_p'] = lambda_p[:]
       if 'lambda_d' not in arry: arry['lambda_d'] = lambda_d[:]
 
+
+    #if not arry['orb_pseudo'] or not arry['naw']:
+    #print("-----------IN",arry['orb_pseudo'],arry['naw'])
     self.data_controller.build_arrays_adhoc_soc()
-    
+
+
     # Check if the pseudo potential or internal basis configuraton is implemented
     if (len(arry['orb_pseudo'])==attr['natoms']):
       # add SOC  
@@ -1394,7 +1398,7 @@ class PAOFLOW:
     self.report_module_time('Rashba_Edelstein')
 
 
-  def anomalous_Hall ( self, do_ac=False, emin=-1., emax=1., fermi_up=1., fermi_dw=-1., a_tensor=None ):
+  def anomalous_Hall ( self, do_ac=False, emin=-1., emax=1., ne = 501, delta=0.05, fermi_up=1., fermi_dw=-1., a_tensor=None ):
     '''
     Calculate the Anomalous Hall Conductivity
 
@@ -1413,8 +1417,11 @@ class PAOFLOW:
 
     arrays,attr = self.data_controller.data_dicts()
 
-    attr['eminH'] = emin
-    attr['emaxH'] = emax
+
+    attr['eminH'],attr['emaxH'] = emin,emax
+    attr['deltaH'] = delta
+    attr['esizeH'] = ne
+
 
     if a_tensor is not None: arrays['a_tensor'] = np.array(a_tensor)
     if 'fermi_up' not in attr: attr['fermi_up'] = fermi_up

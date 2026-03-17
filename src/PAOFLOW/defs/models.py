@@ -458,6 +458,7 @@ def Kane_Mele( data_controller, params ):
 
   t = params['t']
   soc_par = params['soc_par']
+  if (soc_par > 0.0): attr['dftSO']=True
   r_par = params['r_par']
   v_par = params['v_par']
 
@@ -479,34 +480,25 @@ def Kane_Mele( data_controller, params ):
   arry['HRs'][2,0,1,0,0,0] = t
   arry['HRs'][3,1,1,0,0,0] = t
 
-  arry['HRs'][0,0,1,0,0,0] = - complex(0.0,soc_par)
+  arry['HRs'][0,0,1,0,0,0] = -complex(0.0,soc_par)
   arry['HRs'][1,1,1,0,0,0] =   complex(0.0,soc_par)
   arry['HRs'][2,2,1,0,0,0] =   complex(0.0,soc_par)
-  arry['HRs'][3,3,1,0,0,0] = - complex(0.0,soc_par)
-
-  ##H20
-  #arry['HRs'][:,:,2,0,0,0] = np.conj(arry['HRs'][:,:,1,0,0,0]).T
+  arry['HRs'][3,3,1,0,0,0] = -complex(0.0,soc_par)
 
   #H01
   arry['HRs'][2,0,0,1,0,0] = t
   arry['HRs'][3,1,0,1,0,0] = t
 
   arry['HRs'][0,0,0,1,0,0] =   complex(0.0,soc_par)
-  arry['HRs'][1,1,0,1,0,0] = - complex(0.0,soc_par)
-  arry['HRs'][2,2,0,1,0,0] = - complex(0.0,soc_par)
+  arry['HRs'][1,1,0,1,0,0] = -complex(0.0,soc_par)
+  arry['HRs'][2,2,0,1,0,0] = -complex(0.0,soc_par)
   arry['HRs'][3,3,0,1,0,0] =   complex(0.0,soc_par)
 
-  ##H02
-  #arry['HRs'][:,:,0,2,0,0] = np.conj(arry['HRs'][:,:,0,1,0,0]).T
-
   #H21
-  arry['HRs'][0,0,2,1,0,0] = - complex(0.0,soc_par)
+  arry['HRs'][0,0,2,1,0,0] = -complex(0.0,soc_par)
   arry['HRs'][1,1,2,1,0,0] =   complex(0.0,soc_par)
   arry['HRs'][2,2,2,1,0,0] =   complex(0.0,soc_par)
-  arry['HRs'][3,3,2,1,0,0] = - complex(0.0,soc_par)
-
-  ##H12
-  ##arry['HRs'][:,:,1,2,0,0] = np.conj(arry['HRs'][:,:,2,1,0,0]).T
+  arry['HRs'][3,3,2,1,0,0] = -complex(0.0,soc_par)
 
   r3h =np.sqrt(3.0)/2.0
 
@@ -555,6 +547,7 @@ def Kane_Mele( data_controller, params ):
   arry['tau'][0] = np.dot([1/3,1/3,0.],arry['a_vectors'])
   arry['tau'][1] = np.dot([2/3,2/3,0.],arry['a_vectors'])
 
+  arry['Dnm']=np.zeros((4,4,3),dtype=float)
   # Reciprocal Lattice
   arry['b_vectors'] = np.zeros((3,3),dtype=float)
   volume = np.dot(np.cross(arry['a_vectors'][0,:],arry['a_vectors'][1,:]),arry['a_vectors'][2,:])
