@@ -31,6 +31,8 @@ from collections import defaultdict
 import numpy as np
 from scipy.optimize import least_squares
 
+from PAOFLOW.defs.kpnts_interpolation_mesh import get_path as _get_path
+
 # ═══════════════════════════════════════════════════════════════
 #  1. Slater-Koster two-center integrals (standard √3 convention)
 # ═══════════════════════════════════════════════════════════════
@@ -323,6 +325,17 @@ class SKFitter:
         self.config_dict = arryp.get("configuration", None)
         self.unique_species = list(dict.fromkeys(self.atoms_list))
 
+        # Canonical group list: union of all species' l-values, sorted.
+        # This ensures the group→l mapping is consistent across species
+        # even when different species list their shells in different order
+        # (e.g. Si: [0,1,2] vs Ge: [2,1,0]).
+        canonical_l = sorted(set(
+            l for sp in self.unique_species for l in self.shells_dict[sp]
+        ))
+        self.n_groups = len(canonical_l)
+        self.group_l = list(canonical_l)
+        _l_to_group = {l_val: g for g, l_val in enumerate(self.group_l)}
+
         # Per-atom orbital structure
         self.atom_orbitals = []
         self.atom_orbital_group = []
@@ -333,10 +346,11 @@ class SKFitter:
         for iat in range(self.nat):
             sp = self.atoms_list[iat]
             orb_list, grp_list = [], []
-            for ig, shell_l in enumerate(self.shells_dict[sp]):
+            for shell_l in self.shells_dict[sp]:
+                cg = _l_to_group[shell_l]
                 for orb_name in SHELL_TO_ORBITALS[shell_l]:
                     orb_list.append(orb_name)
-                    grp_list.append(ig)
+                    grp_list.append(cg)
             self.atom_orbitals.append(orb_list)
             self.atom_orbital_group.append(grp_list)
             self.atom_block_start.append(idx)
@@ -349,12 +363,10 @@ class SKFitter:
             list(self.config_dict[sp0])
             if self.config_dict
             else [
-                f"g{i}(l={self.shells_dict[sp0][i]})"
-                for i in range(len(self.shells_dict[sp0]))
+                f"g{i}(l={self.group_l[i]})"
+                for i in range(self.n_groups)
             ]
         )
-        self.n_groups = len(self.shells_dict[sp0])
-        self.group_l = list(self.shells_dict[sp0])
 
         # R-vectors and H(R) blocks
         R_list, HR_list = [], []
@@ -1007,16 +1019,38 @@ class SKFitter:
             return d
 
         # ── Species-pair-keyed hoppings ──
-        sp0 = self.unique_species[0]
-        pair_key = f"{sp0}-{sp0}"  # single-species for now
-        shells = []
+        from .edtb_params import species_pair_key, compute_pair_shell_distances
+
+        # Build per-shell SK params (species-blind)
+        shell_params = []
         for s in range(len(self.shell_tags)):
             i0 = self.n_onsite + s * self.n_hop
-            r_ref = round(float(self.shell_dists[s] * self.alat), 6)  # Bohr
-            shells.append(
-                {"r_ref": r_ref, "params": _build_hop(p[i0 : i0 + self.n_hop])}
-            )
-        hoppings = {pair_key: shells}
+            shell_params.append(_build_hop(p[i0 : i0 + self.n_hop]))
+
+        # Build atom list in Bohr for per-pair distance computation
+        atoms_bohr = [
+            {
+                "species": self.atoms_list[iat],
+                "tau": (self.tau_alat[iat] * self.alat).tolist(),
+            }
+            for iat in range(self.nat)
+        ]
+        a_vecs_bohr = self.a_vecs * self.alat
+
+        sorted_species = sorted(set(self.unique_species))
+        hoppings = {}
+        for i, sp1 in enumerate(sorted_species):
+            for sp2 in sorted_species[i:]:
+                key = species_pair_key(sp1, sp2)
+                pair_dists = compute_pair_shell_distances(
+                    a_vecs_bohr, atoms_bohr, sp1, sp2,
+                    n_shells=len(self.shell_tags),
+                )
+                shells = []
+                for s in range(len(self.shell_tags)):
+                    r_ref = round(pair_dists[s], 6) if s < len(pair_dists) else round(float(self.shell_dists[s] * self.alat), 6)
+                    shells.append({"r_ref": r_ref, "params": dict(shell_params[s])})
+                hoppings[key] = shells
 
         # ── Atom dicts ──
         model_atoms = {}
@@ -1631,11 +1665,9 @@ class SKFitterEDTB(SKFitter):
         base = super().build_model_dict(p[: self.n_sk])
         base["label"] = "SK_EDTB"
 
-        # Species-pair key
-        sp0 = self.unique_species[0]
-        pair_key = f"{sp0}-{sp0}"
-
         # Screening block — gamma keyed by species pair
+        from .edtb_params import species_pair_key
+
         gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
         if self.gamma_mode == "global":
             gamma_val = float(gamma[0])
@@ -1649,7 +1681,17 @@ class SKFitterEDTB(SKFitter):
                 ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)
             }
 
-        screening = {"r_cut": self.r_cut_bohr, "gamma": {pair_key: gamma_val}}
+        sorted_species = sorted(set(self.unique_species))
+        gamma_dict = {}
+        for i, sp1 in enumerate(sorted_species):
+            for sp2 in sorted_species[i:]:
+                key = species_pair_key(sp1, sp2)
+                if isinstance(gamma_val, dict):
+                    gamma_dict[key] = dict(gamma_val)
+                else:
+                    gamma_dict[key] = gamma_val
+
+        screening = {"r_cut": self.r_cut_bohr, "gamma": gamma_dict}
 
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
@@ -1822,6 +1864,13 @@ class MultiGeomEDTB:
             )
             self.fitters.append(f)
 
+        # ── Harmonize species across sub-fitters ──
+        # When geometries have different species sets (e.g. bulk Si,
+        # bulk Ge, SiGe interface), pad each fitter with dummy onsite
+        # parameters for missing species (zero design tensor → zero
+        # Jacobian → no effect on that geometry's cost).
+        self._harmonize_species()
+
         # ── Validate compatibility ──
         # All geometries must share the same parameter vector — same
         # species, orbital basis, shell count, and screening mode.
@@ -1886,6 +1935,153 @@ class MultiGeomEDTB:
                     f"  Geom {ig}: Nk={f.Nk}, nawf={f.nawf}, alat={f.alat:.4f} Bohr  {nk_str}"
                 )
 
+    # ── 4a-pre. Species harmonisation ────────────────────────
+
+    def _harmonize_species(self):
+        """Pad sub-fitters so all share the same parameter structure.
+
+        Collects the union of species across all geometries.  For each
+        sub-fitter that lacks a species, dummy onsite parameters are
+        injected with a zero design tensor (zero Jacobian ⟹ no effect
+        on that geometry's cost).  ``cfg_names`` and
+        ``hop_param_labels`` are standardised so that ``param_labels``
+        match across all fitters.
+        """
+        # ── collect union of species (first-appearance order) ──
+        all_species: list[str] = []
+        all_shells: dict[str, list[int]] = {}
+        all_config: dict[str, list[str]] = {}
+        has_config = False
+        for f in self.fitters:
+            if f.config_dict:
+                has_config = True
+            for sp in f.unique_species:
+                if sp not in all_species:
+                    all_species.append(sp)
+                    all_shells[sp] = list(f.shells_dict[sp])
+                    if f.config_dict and sp in f.config_dict:
+                        all_config[sp] = list(f.config_dict[sp])
+
+        # ── check whether harmonisation is needed ──
+        species_sets = [set(f.unique_species) for f in self.fitters]
+        if all(s == set(all_species) for s in species_sets):
+            # All fitters already have all species — only fix cfg_names
+            ref_cfg = (
+                list(all_config[all_species[0]])
+                if has_config and all_species[0] in all_config
+                else [
+                    f"g{i}(l={self.fitters[0].group_l[i]})"
+                    for i in range(self.fitters[0].n_groups)
+                ]
+            )
+            labels_ok = all(f.cfg_names == ref_cfg for f in self.fitters)
+            if labels_ok:
+                return  # nothing to do
+            # Fall through to fix cfg_names / hop_param_labels
+
+        if self.verbose:
+            print(
+                f"\n  Harmonising species: "
+                f"{[f.unique_species for f in self.fitters]} → {all_species}"
+            )
+
+        # ── canonical cfg_names from the first species ──
+        sp0 = all_species[0]
+        ref_cfg_names = (
+            list(all_config[sp0])
+            if has_config and sp0 in all_config
+            else [
+                f"g{i}(l={self.fitters[0].group_l[i]})"
+                for i in range(self.fitters[0].n_groups)
+            ]
+        )
+
+        # ── patch each sub-fitter ──
+        for f in self.fitters:
+            # a. register missing species in shells_dict / config_dict
+            for sp in all_species:
+                if sp not in f.shells_dict:
+                    f.shells_dict[sp] = list(all_shells[sp])
+                if has_config:
+                    if f.config_dict is None:
+                        f.config_dict = {}
+                    if sp not in f.config_dict and sp in all_config:
+                        f.config_dict[sp] = list(all_config[sp])
+
+            # b. set canonical species order and cfg_names
+            f.unique_species = list(all_species)
+            f.cfg_names = list(ref_cfg_names)
+
+            # c. rebuild hopping labels (same n_hop, new cfg_names)
+            f.hop_param_labels = []
+            for ga in range(f.n_groups):
+                for gb in range(ga, f.n_groups):
+                    la, lb = f.group_l[ga], f.group_l[gb]
+                    lpair = (min(la, lb), max(la, lb))
+                    labels = CHANNEL_LABELS[lpair]
+                    pair_tag = f"{f.cfg_names[ga]}-{f.cfg_names[gb]}"
+                    for lab in labels:
+                        f.hop_param_labels.append(f"V({pair_tag}){lab}")
+
+            # d. rebuild onsite parameters for the full species set
+            f.n_onsite = 0
+            f.onsite_param_names = []
+            f.species_param_start = {}
+            f.species_onsite_groups = {}
+
+            for sp in all_species:
+                f.species_param_start[sp] = f.n_onsite
+                cfg = (
+                    list(f.config_dict[sp])
+                    if f.config_dict and sp in f.config_dict
+                    else [
+                        f"g{i}"
+                        for i in range(len(f.shells_dict[sp]))
+                    ]
+                )
+                groups = f._get_onsite_groups(f.shells_dict[sp], cfg)
+                f.species_onsite_groups[sp] = groups
+                for pname, _ in groups:
+                    f.onsite_param_names.append(pname)
+                f.n_onsite += len(groups)
+
+            # e. update parameter counts
+            n_sk = f.n_onsite + f.n_shells * f.n_hop
+            f.n_sk = n_sk
+            f.n_gamma_start = n_sk
+            f.n_eta_start = n_sk + f.n_gamma
+            f.n_params = n_sk + f.n_gamma + f.n_eta
+
+            # f. rebuild param_labels
+            f.param_labels = list(f.onsite_param_names)
+            for tag in f.shell_tags:
+                f.param_labels += [
+                    f"{tag.upper()}_{l}" for l in f.hop_param_labels
+                ]
+            f.param_labels.extend(f.gamma_labels)
+            f.param_labels.extend(f.eta_labels)
+
+            # g. rebuild _onsite_map and _onsite_diag
+            f._onsite_map = np.zeros((f.n_onsite, f.nawf, f.nawf))
+            for iat in range(f.nat):
+                sp = f.atoms_list[iat]
+                bi = f.atom_block_start[iat]
+                pstart = f.species_param_start[sp]
+                for ig, (_, local_indices) in enumerate(
+                    f.species_onsite_groups[sp]
+                ):
+                    for li in local_indices:
+                        f._onsite_map[pstart + ig, bi + li, bi + li] = 1.0
+            f._onsite_diag = np.array(
+                [np.diag(f._onsite_map[p]) for p in range(f.n_onsite)]
+            )
+
+            # h. rebuild regularization weights
+            f._build_regularization_weights()
+
+        # ── remember which geometry has which real species ──
+        self._geom_real_species = species_sets
+
     # ── 4a. Combined forward model ───────────────────────────
 
     def _eval_single_geometry(self, ig, p):
@@ -1932,8 +2128,16 @@ class MultiGeomEDTB:
 
     # ── 4b. Single trial ─────────────────────────────────────
 
-    def _run_single_trial(self, p_init, alpha, max_nfev, ftol, xtol, gtol):
+    def _run_single_trial(self, p_init, alpha, max_nfev, ftol, xtol, gtol,
+                          fixed_onsite=None):
         """Run one least-squares trial on the multi-geometry objective.
+
+        Parameters
+        ----------
+        fixed_onsite : np.ndarray or None
+            If given, array of length ``n_onsite`` with fixed on-site
+            energies.  Only the hopping, screening, and shift parameters
+            are optimised.
 
         Returns ``(rmse, p_opt, OptimizeResult)``.
         """
@@ -1941,6 +2145,38 @@ class MultiGeomEDTB:
         reg_w = self._reg_weights
         n_data = self.n_data_total
         last_jac = [None]
+
+        if fixed_onsite is not None:
+            n_on = self.n_onsite
+            p_init_red = p_init[n_on:].copy()
+            reg_w_red = reg_w[n_on:]
+
+            def _expand(p_red):
+                p_full = np.empty(self.n_params)
+                p_full[:n_on] = fixed_onsite
+                p_full[n_on:] = p_red
+                return p_full
+
+            def fun(p_red):
+                p_full = _expand(p_red)
+                res_data, J_full = self._eigenvalues_and_jacobian_all(p_full)
+                J_red = J_full[:, n_on:]
+                if use_reg:
+                    last_jac[0] = np.vstack([J_red, np.diag(alpha * reg_w_red)])
+                    return np.concatenate([res_data, alpha * reg_w_red * p_red])
+                last_jac[0] = J_red
+                return res_data
+
+            def jac(p_red):
+                return last_jac[0]
+
+            res = least_squares(
+                fun, p_init_red, jac=jac, method="lm",
+                ftol=ftol, xtol=xtol, gtol=gtol, max_nfev=max_nfev,
+            )
+            p_opt_full = _expand(res.x)
+            rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
+            return rmse, p_opt_full, res
 
         def fun(p):
             res_data, J_data = self._eigenvalues_and_jacobian_all(p)
@@ -1969,8 +2205,31 @@ class MultiGeomEDTB:
     # ── 4c. Initial guesses ──────────────────────────────────
 
     def extract_onsite_from_HR0(self) -> np.ndarray:
-        """Extract initial on-site energies from the reference geometry."""
-        return self.fitters[0].extract_onsite_from_HR0()
+        """Extract initial on-site energies, merging across geometries.
+
+        After species harmonisation each fitter has the full species
+        set, but dummy-species slots return zero.  This method
+        collects real-species values from whichever geometry actually
+        contains each species.
+        """
+        p0 = np.zeros(self.n_onsite)
+        filled = np.zeros(self.n_onsite, dtype=bool)
+        ref = self.fitters[0]
+        for ig, f in enumerate(self.fitters):
+            p_ig = f.extract_onsite_from_HR0()
+            real_sp = (
+                self._geom_real_species[ig]
+                if hasattr(self, "_geom_real_species")
+                else set(f.unique_species)
+            )
+            for sp in real_sp:
+                pstart = f.species_param_start[sp]
+                n_sp = len(f.species_onsite_groups[sp])
+                idx = slice(pstart, pstart + n_sp)
+                if not filled[idx].any():
+                    p0[idx] = p_ig[idx]
+                    filled[idx] = True
+        return p0
 
     # ── 4d. Fitting ──────────────────────────────────────────
 
@@ -1986,6 +2245,7 @@ class MultiGeomEDTB:
         gtol: float = 1e-12,
         alpha: float = 0.0,
         n_jobs: int = 1,
+        fix_onsite: dict | None = None,
     ) -> dict:
         """Multi-start least-squares fit across all geometries.
 
@@ -2008,6 +2268,13 @@ class MultiGeomEDTB:
             Tikhonov regularization strength.
         n_jobs : int
             Parallel workers for multi-start trials (``-1`` = all cores).
+        fix_onsite : dict, optional
+            Fix on-site energies to given values instead of fitting them.
+            Dict mapping species name to an on-site dict, e.g.
+            ``{'Si': {'s': -3.64, 'p': 2.14, 't2g': 6.30, 'eg': 6.37},
+              'Ge': {'s': -5.30, 'p': 1.68, ...}}``.
+            Typically obtained from independently fitted bulk models via
+            ``model.params['onsite']['Si']``.
 
         Returns
         -------
@@ -2020,6 +2287,40 @@ class MultiGeomEDTB:
             ``param_labels`` : parameter names.
         """
         ref = self.fitters[0]
+
+        # ── Parse fix_onsite ──
+        fixed_onsite_vals = None
+        if fix_onsite is not None:
+            fixed_onsite_vals = np.zeros(self.n_onsite)
+            for sp, on_dict in fix_onsite.items():
+                if sp not in ref.species_param_start:
+                    raise ValueError(f"fix_onsite: unknown species '{sp}'")
+                pstart = ref.species_param_start[sp]
+                for ig, (pname, orb_idx) in enumerate(ref.species_onsite_groups[sp]):
+                    # Determine orbital type from group name suffix and size
+                    if pname.endswith("_t2g)"):
+                        key = "t2g"
+                    elif pname.endswith("_eg)"):
+                        key = "eg"
+                    elif len(orb_idx) == 1:
+                        key = "s"
+                    elif len(orb_idx) == 3:
+                        key = "p"
+                    else:
+                        raise ValueError(
+                            f"fix_onsite['{sp}']: cannot determine orbital "
+                            f"type for group '{pname}' with {len(orb_idx)} orbitals"
+                        )
+                    if key not in on_dict:
+                        raise ValueError(
+                            f"fix_onsite['{sp}']: missing key '{key}' "
+                            f"(available: {sorted(on_dict.keys())})"
+                        )
+                    fixed_onsite_vals[pstart + ig] = on_dict[key]
+            if self.verbose:
+                print(f"\n  Fixing on-site energies (not fitted):")
+                for i, name in enumerate(self.param_labels[:self.n_onsite]):
+                    print(f"    {name} = {fixed_onsite_vals[i]:.6f}")
 
         # ── SK initialisation ──
         if p0_sk is not None:
@@ -2052,6 +2353,8 @@ class MultiGeomEDTB:
             p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
                 rng.uniform(0.0, 0.01, self.n_gamma)
             )
+            if fixed_onsite_vals is not None:
+                p_init[:self.n_onsite] = fixed_onsite_vals
             p_inits.append(p_init)
 
         # ── Run trials ──
@@ -2062,6 +2365,7 @@ class MultiGeomEDTB:
             ftol=ftol,
             xtol=xtol,
             gtol=gtol,
+            fixed_onsite=fixed_onsite_vals,
         )
 
         if self.verbose:
@@ -2190,10 +2494,14 @@ class MultiGeomEDTB:
                 )
             if alpha > 0:
                 print(f"  (α = {alpha:.4g})")
+            n_fitted = self.n_params - self.n_onsite if fixed_onsite_vals is not None else self.n_params
+            print(f"  Parameters: {n_fitted} fitted" +
+                  (f", {self.n_onsite} on-site fixed" if fixed_onsite_vals is not None else ""))
             print(f"\n{'Parameter':<30s}  {'Value':>10s}")
             print("-" * 43)
             for i, name in enumerate(self.param_labels):
-                print(f"{name:<30s}  {best_p[i]: .5f}")
+                tag = " (fixed)" if fixed_onsite_vals is not None and i < self.n_onsite else ""
+                print(f"{name:<30s}  {best_p[i]: .5f}{tag}")
 
         return {
             "p_opt": best_p,
@@ -2206,22 +2514,34 @@ class MultiGeomEDTB:
 
     # ── 4e. Build model dict ─────────────────────────────────
 
-    def build_model_dict(self, p: np.ndarray, geom_idx: int = 0) -> dict:
+    def build_model_dict(self, p: np.ndarray, geom_idx: int | None = None) -> dict:
         """Convert fitted parameters to a PAOFLOW ``SK_EDTB`` model dict.
 
         Parameters
         ----------
         p : np.ndarray
             Full parameter vector (length ``n_params``).
-        geom_idx : int
-            Which geometry to use for lattice vectors and atom positions
-            (default 0 = first / reference geometry).
+        geom_idx : int or None
+            Which geometry to use for lattice vectors and atom positions.
+            If ``None`` (default), the first geometry that contains all
+            harmonised species is chosen automatically; this avoids
+            ``compute_pair_shell_distances`` failing on dummy-species
+            pairs that have no atoms.
 
         Returns
         -------
         dict
             Model dict with ``label='SK_EDTB'``.
         """
+        if geom_idx is None:
+            # Pick the first geometry that has all species
+            all_sp = set(self.fitters[0].unique_species)
+            geom_idx = 0
+            if hasattr(self, "_geom_real_species"):
+                for ig, sp_set in enumerate(self._geom_real_species):
+                    if sp_set >= all_sp:
+                        geom_idx = ig
+                        break
         return self.fitters[geom_idx].build_model_dict(p)
 
     # ── 4f. Convenience: eigenvalues for a specific geometry ─
@@ -3259,17 +3579,26 @@ class MultiGeomEDTB_DD:
                 }
                 idx += 1
 
-        sp0 = self.unique_species[0]
-        pair_key = f"{sp0}-{sp0}"
-        hoppings = {
-            pair_key: {
-                "type": "distance_dependent",
-                "r_0": self.r_0_bohr,
-                "r_c": self.r_c_bohr,
-                "n_c": n_c,
-                "channels": channels,
-            }
+        from .edtb_params import species_pair_key
+        sorted_species = sorted(set(self.unique_species))
+        hoppings = {}
+        dd_entry = {
+            "type": "distance_dependent",
+            "r_0": self.r_0_bohr,
+            "r_c": self.r_c_bohr,
+            "n_c": n_c,
+            "channels": channels,
         }
+        for i, sp1 in enumerate(sorted_species):
+            for sp2 in sorted_species[i:]:
+                key = species_pair_key(sp1, sp2)
+                hoppings[key] = {
+                    "type": dd_entry["type"],
+                    "r_0": dd_entry["r_0"],
+                    "r_c": dd_entry["r_c"],
+                    "n_c": dd_entry["n_c"],
+                    "channels": {k: dict(v) for k, v in dd_entry["channels"].items()},
+                }
 
         # Screening
         gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
@@ -3288,7 +3617,16 @@ class MultiGeomEDTB_DD:
         else:
             gamma_val = float(gamma[0])
 
-        screening = {"r_cut": self.r_cut_bohr, "gamma": {pair_key: gamma_val}}
+        gamma_dict = {}
+        for i, sp1 in enumerate(sorted_species):
+            for sp2 in sorted_species[i:]:
+                key = species_pair_key(sp1, sp2)
+                if isinstance(gamma_val, dict):
+                    gamma_dict[key] = dict(gamma_val)
+                else:
+                    gamma_dict[key] = gamma_val
+
+        screening = {"r_cut": self.r_cut_bohr, "gamma": gamma_dict}
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
             screening["onsite_shift"] = {
@@ -3437,5 +3775,183 @@ class MultiGeomEDTB_DD:
             print(f"\np0 from discrete-shell params ({len(p0)} parameters):")
             for i, name in enumerate(self.param_labels):
                 print(f"  {name:<30s}  {p0[i]: .5f}")
+
+        return p0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  SKFitterEDTBHSP — EDTB fitter with high-symmetry-path k-points
+# ═══════════════════════════════════════════════════════════════════════
+
+class SKFitterEDTBHSP(SKFitterEDTB):
+    """SKFitterEDTB augmented with high-symmetry-path k-points and per-k weights.
+
+    Subclass of :class:`SKFitterEDTB` that augments the fitting k-point pool
+    with points sampled along the canonical high-symmetry band path.
+    Each HSP k-point receives a configurable weight *w_hsp* relative
+    to the uniform BZ-grid points (weight 1).
+
+    Usage
+    -----
+    >>> fitter = SKFitterEDTBHSP(arry, attr, n_shells=3, nkfit=4, ...)
+    >>> nk_added, path_str = fitter.augment_with_bands_path(nk=500, w_hsp=2.0, ibrav=2)
+    >>> result = fitter.fit(n_trials=10, seed=123, alpha=0.1, n_jobs=-1)
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Uniform weight=1 for initial BZ-grid k-points
+        self._kpt_weights = np.ones(self.Nk)
+
+    def augment_with_bands_path(self, nk=500, w_hsp=1.0, ibrav=2,
+                                band_path=None, special_points=None):
+        """Add high-symmetry-path k-points to the fitting pool.
+
+        Parameters
+        ----------
+        nk : int
+            Approximate number of HSP k-points to add.
+        w_hsp : float
+            Weight assigned to each HSP k-point (BZ-grid points have weight 1).
+        ibrav : int
+            PAOFLOW lattice index (2 = FCC). Auto-path when *band_path* is None.
+        band_path : str or None
+            Band path string (e.g. ``'G-L-G-X-W-X-K-G'``). None → auto from ibrav.
+        special_points : dict or None
+            Mapping label → (kx, ky, kz) in fractional coordinates.
+            None → auto-determined from ibrav.
+
+        Returns
+        -------
+        nk_added : int
+            Number of k-points actually added.
+        path_str : str
+            Band-path string returned by :func:`get_path`.
+        """
+        # If nk <= 0, skip augmentation entirely to recover the original fit
+        if nk <= 0:
+            print("  HSP k-points added: 0  (nk=0 → no augmentation); "
+                  f"total Nk = {self.Nk}")
+            return 0, ""
+
+        # 2-pass dk scaling: first pass gets nk_trial, then rescale dk to hit ~nk
+        dk_trial = 0.00001
+        kq_trial, _ = _get_path(ibrav, self.alat, self.a_vecs, dk_trial,
+                                self.b_vecs, band_path, special_points)
+        nk_trial = kq_trial.shape[1]
+        scaled_dk = dk_trial * (nk_trial / max(nk, 1))
+        kq_frac, path_str = _get_path(ibrav, self.alat, self.a_vecs, scaled_dk,
+                                       self.b_vecs, band_path, special_points)
+
+        # Fractional → Cartesian (PAOFLOW convention: kfrac @ b_vecs)
+        kpts_hsp = kq_frac.T @ self.b_vecs        # (nk_new, 3)
+        nk_new   = kpts_hsp.shape[0]
+
+        # PAO reference eigenvalues at the new k-points
+        phases_hsp = np.exp(2j * np.pi * (kpts_hsp @ self.R_arr.T))
+        E_hsp = np.zeros((nk_new, self.nawf))
+        for ik in range(nk_new):
+            Hk = np.einsum("r,rij->ij", phases_hsp[ik], self.HR_arr)
+            E_hsp[ik] = np.sort(np.linalg.eigvalsh(Hk).real)
+
+        # Augment fitting arrays
+        self.kpts         = np.vstack([self.kpts, kpts_hsp])
+        self.E_pao        = np.vstack([self.E_pao, E_hsp])
+        self._kpt_weights = np.concatenate([self._kpt_weights,
+                                            w_hsp * np.ones(nk_new)])
+        self.Nk          += nk_new
+        self._precompute_dHk()   # rebuild k-dependent Hamiltonian tensors
+
+        print(f"  HSP k-points added: {nk_new}  (target ~{nk}); "
+              f"total Nk = {self.Nk}")
+        return nk_new, path_str
+
+    # ── weighted least-squares trial ──────────────────────────────────
+
+    def _run_single_trial(self, p_init, alpha, n_data, max_nfev,
+                          ftol, xtol, gtol):
+        """Weighted least-squares trial: rows scaled by sqrt(w_k).
+
+        Minimises  Σ_k  w_k · ||E_sk[k] − E_ref[k]||²
+        by scaling residuals / Jacobian rows by √w_k.
+        The reported RMSE is the *weighted* RMSE.
+        """
+        use_reg = alpha > 0.0
+        reg_w   = self._reg_weights
+        w_sqrt  = np.sqrt(self._kpt_weights)   # (Nk,)
+        last_jac = [None]
+
+        def fun(p):
+            E_sk, dE_dp = self._eigenvalues_and_jacobian(p)
+            res_data = (w_sqrt[:, None] * (E_sk - self.E_pao)).ravel()
+            J_data   = (w_sqrt[:, None, None] * dE_dp).reshape(n_data,
+                                                                self.n_params)
+            if use_reg:
+                last_jac[0] = np.vstack([J_data,
+                                         np.diag(alpha * reg_w)])
+                return np.concatenate([res_data, alpha * reg_w * p])
+            last_jac[0] = J_data
+            return res_data
+
+        def jac(p):
+            return last_jac[0]
+
+        res  = least_squares(fun, p_init, jac=jac, method='lm',
+                             ftol=ftol, xtol=xtol, gtol=gtol,
+                             max_nfev=max_nfev)
+        rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))   # weighted RMSE
+        return rmse, res.x.copy(), res
+
+    # ── extract initial SK vector from a saved params dict ────────────
+
+    def extract_p0_sk(self, params_dict):
+        """Extract the SK parameter sub-vector from a saved EDTB params dict.
+
+        Reverses ``build_model_dict`` for the SK part (on-site + hoppings),
+        so the returned vector can be fed to ``fit(p0_sk=...)``.
+
+        Parameters
+        ----------
+        params_dict : dict
+            EDTB parameter dict (as stored in ``*_params.json``).
+
+        Returns
+        -------
+        np.ndarray
+            SK parameter vector of length ``n_sk``.
+        """
+        L_TO_KEY = {0: 's', 1: 'p', 2: 'd'}
+
+        p0 = np.zeros(self.n_sk)
+
+        # ── On-site energies ──
+        for sp in sorted(set(self.unique_species)):
+            pstart = self.species_param_start[sp]
+            groups = self.species_onsite_groups[sp]
+            onsite = params_dict['onsite'][sp]
+            for ig, (pname, _) in enumerate(groups):
+                inner = pname[2:-1]            # 'g0', 'g1', 'g2_t2g', ...
+                if '_t2g' in inner:
+                    key = 't2g'
+                elif '_eg' in inner:
+                    key = 'eg'
+                else:
+                    # Use shells_dict (actual l-values) rather than group_l
+                    # (which is just canonical indices 0,1,2,...)
+                    gidx = int(inner[1:])      # group index
+                    actual_l = self.shells_dict[sp][gidx]
+                    key = L_TO_KEY[actual_l]
+                p0[pstart + ig] = onsite[key]
+
+        # ── Hopping integrals ──
+        pair_key = list(params_dict['hoppings'].keys())[0]
+        for s in range(self.n_shells):
+            hop_params = params_dict['hoppings'][pair_key][s]['params']
+            for ga, gb in self.hop_pair_list:
+                start = self.hop_pair_start[(ga, gb)]
+                active = self.hop_pair_active[(ga, gb)]
+                for lk, sk_k in enumerate(active):
+                    idx = self.n_onsite + s * self.n_hop + start + lk
+                    p0[idx] = hop_params[SK_PARAM_NAMES[sk_k]]
 
         return p0

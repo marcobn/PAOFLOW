@@ -45,7 +45,7 @@ import numpy as np
 from numpy.linalg import eigh, inv, norm
 
 # Reuse Hamiltonian extraction from band_unfold
-from band_unfold import _extract_hamiltonian
+from .band_unfold import _extract_hamiltonian
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Data containers

@@ -46,7 +46,11 @@ def _normalize_species_pair_hoppings(hoppings):
     (hoppings_norm, n_shells, converted) where:
       - hoppings_norm : dict  — hoppings in old shell-tag format (ready for
         the existing parsing logic).  If already in old format, returned as-is.
+        For multi-species, returns a dict keyed by species pair, each value
+        being a shell-tag dict: {"Si-Si": {"nn": {...}, "nnn": {...}}, ...}.
       - n_shells : int  — number of neighbour shells (1, 2, or 3).
+        -1 signals distance-dependent mode.
+        -2 signals multi-species shell mode.
       - converted : bool — True if new-format conversion was performed.
     """
     if not isinstance(hoppings, dict) or len(hoppings) == 0:
@@ -62,23 +66,39 @@ def _normalize_species_pair_hoppings(hoppings):
 
     # New format: top-level key contains "-" and value is a list of shell dicts
     if isinstance(first_val, list) and "-" in first_key:
-        if len(hoppings) > 1:
-            raise NotImplementedError(
-                "Multi-species-pair hoppings are not yet supported in models.py. "
-                "Found species pairs: " + ", ".join(sorted(hoppings.keys()))
-            )
-        shells = first_val
-        shells_sorted = sorted(shells, key=lambda s: s["r_ref"])
-        n_shells = len(shells_sorted)
-        if n_shells > 3:
-            raise ValueError(
-                f"Too many neighbour shells ({n_shells}); maximum 3 supported."
-            )
         shell_tags = ["nn", "nnn", "nnnn"]
-        hoppings_norm = {}
-        for idx, shell_data in enumerate(shells_sorted):
-            hoppings_norm[shell_tags[idx]] = shell_data["params"]
-        return hoppings_norm, n_shells, True
+        if len(hoppings) == 1:
+            # Single species pair — flatten to shell-tag format
+            shells = first_val
+            shells_sorted = sorted(shells, key=lambda s: s["r_ref"])
+            n_shells = len(shells_sorted)
+            if n_shells > 3:
+                raise ValueError(
+                    f"Too many neighbour shells ({n_shells}); maximum 3 supported."
+                )
+            hoppings_norm = {}
+            for idx, shell_data in enumerate(shells_sorted):
+                hoppings_norm[shell_tags[idx]] = shell_data["params"]
+            return hoppings_norm, n_shells, True
+        else:
+            # Multi-species pairs — keep species-pair keys, convert each to shell-tag
+            hoppings_norm = {}
+            n_shells = None
+            for pair_key, shells in hoppings.items():
+                shells_sorted = sorted(shells, key=lambda s: s["r_ref"])
+                ns = len(shells_sorted)
+                if ns > 3:
+                    raise ValueError(
+                        f"Too many neighbour shells ({ns}) for pair '{pair_key}'; "
+                        f"maximum 3 supported."
+                    )
+                if n_shells is None:
+                    n_shells = ns
+                pair_dict = {}
+                for idx, shell_data in enumerate(shells_sorted):
+                    pair_dict[shell_tags[idx]] = shell_data["params"]
+                hoppings_norm[pair_key] = pair_dict
+            return hoppings_norm, -2, True  # -2 signals multi-species shell mode
 
     # Old format — pass through unchanged
     return hoppings, 0, False
@@ -96,18 +116,18 @@ def _normalize_species_pair_gamma(gamma_spec):
         gamma = {"ss": 0.1, ...}   # per-channel
         gamma = 0.05               # global scalar
 
-    Returns the bare gamma specification (float or flat dict).
+    For multi-species, returns the full dict keyed by species pair.
+
+    Returns the bare gamma specification (float, flat dict, or species-pair dict).
     """
     if isinstance(gamma_spec, dict) and len(gamma_spec) > 0:
         first_key = next(iter(gamma_spec))
         first_val = gamma_spec[first_key]
-        if isinstance(first_val, dict) and "-" in first_key:
-            if len(gamma_spec) > 1:
-                raise NotImplementedError(
-                    "Multi-species-pair gamma not yet supported. "
-                    "Found species pairs: " + ", ".join(sorted(gamma_spec.keys()))
-                )
-            return first_val
+        if isinstance(first_val, (dict, float, int)) and "-" in first_key:
+            if len(gamma_spec) == 1:
+                return first_val
+            # Multi-species: return the full species-pair-keyed dict
+            return gamma_spec
     return gamma_spec
 
 
@@ -1119,30 +1139,72 @@ def SK_EDTB(data_controller, params):
 
     # ── Distance-dependent hopping mode ──────────────────────
     _dd_mode = _sp_n_shells == -1
+    _multi_species = _sp_n_shells == -2
     alat_phys = params.get("alat", 1.0)
 
     if _dd_mode:
-        # Extract distance-dependent parameters (still in original dict)
-        _dd_pair_key = next(iter(hoppings))
-        _dd_spec = hoppings[_dd_pair_key]
-        _dd_r_0_alat = _dd_spec["r_0"] / alat_phys
-        _dd_r_c_alat = _dd_spec["r_c"] / alat_phys
-        _dd_n_c = _dd_spec["n_c"]
-        _dd_channels = _dd_spec["channels"]
+        _dd_multi = len(hoppings) > 1  # multi-species DD
 
-        def _dd_hop_values(dist_val):
-            """Evaluate Goodwin-style V_λ(r) for all SK channels."""
-            hop = {}
-            ratio = _dd_r_0_alat / dist_val
-            exp_arg = (
-                -((dist_val / _dd_r_c_alat) ** _dd_n_c)
-                + (_dd_r_0_alat / _dd_r_c_alat) ** _dd_n_c
-            )
-            for ch_name, ch_p in _dd_channels.items():
-                V0 = ch_p["V0"]
-                n_ch = ch_p["n"]
-                hop[ch_name] = V0 * ratio**n_ch * np.exp(n_ch * exp_arg)
-            return hop
+        if _dd_multi:
+            # Store per-pair DD specs
+            _dd_pairs = {}
+            _max_r_c_alat = 0.0
+            for pk, spec in hoppings.items():
+                r_0 = spec["r_0"] / alat_phys
+                r_c = spec["r_c"] / alat_phys
+                n_c = spec["n_c"]
+                _dd_pairs[pk] = {
+                    "r_0": r_0, "r_c": r_c, "n_c": n_c,
+                    "channels": spec["channels"],
+                    "spec": spec,
+                }
+                _max_r_c_alat = max(_max_r_c_alat, r_c)
+            _dd_r_c_alat = _max_r_c_alat
+
+            def _dd_hop_values_pair(dist_val, pair_key):
+                """Evaluate Goodwin-style V_λ(r) for a specific species pair."""
+                pd = _dd_pairs[pair_key]
+                hop = {}
+                ratio = pd["r_0"] / dist_val
+                exp_arg = (
+                    -((dist_val / pd["r_c"]) ** pd["n_c"])
+                    + (pd["r_0"] / pd["r_c"]) ** pd["n_c"]
+                )
+                for ch_name, ch_p in pd["channels"].items():
+                    V0 = ch_p["V0"]
+                    n_ch = ch_p["n"]
+                    hop[ch_name] = V0 * ratio**n_ch * np.exp(n_ch * exp_arg)
+                return hop
+
+            # For single-pair compat
+            _dd_spec = next(iter(hoppings.values()))
+            _dd_channels = _dd_spec["channels"]
+            _dd_n_c = _dd_spec["n_c"]
+            _dd_r_0_alat = _dd_spec["r_0"] / alat_phys
+            _dd_hop_values = None  # not used in multi-species DD
+        else:
+            # Single species pair
+            _dd_pair_key = next(iter(hoppings))
+            _dd_spec = hoppings[_dd_pair_key]
+            _dd_r_0_alat = _dd_spec["r_0"] / alat_phys
+            _dd_r_c_alat = _dd_spec["r_c"] / alat_phys
+            _dd_n_c = _dd_spec["n_c"]
+            _dd_channels = _dd_spec["channels"]
+            _dd_multi = False
+
+            def _dd_hop_values(dist_val):
+                """Evaluate Goodwin-style V_λ(r) for all SK channels."""
+                hop = {}
+                ratio = _dd_r_0_alat / dist_val
+                exp_arg = (
+                    -((dist_val / _dd_r_c_alat) ** _dd_n_c)
+                    + (_dd_r_0_alat / _dd_r_c_alat) ** _dd_n_c
+                )
+                for ch_name, ch_p in _dd_channels.items():
+                    V0 = ch_p["V0"]
+                    n_ch = ch_p["n"]
+                    hop[ch_name] = V0 * ratio**n_ch * np.exp(n_ch * exp_arg)
+                return hop
 
         # cell_range must cover the hopping cutoff r_c
         a_norms = np.linalg.norm(arry["a_vectors"], axis=1)
@@ -1150,8 +1212,15 @@ def SK_EDTB(data_controller, params):
         use_second_neighbors = False
         use_third_neighbors = False
     elif _sp_converted:
-        use_second_neighbors = _sp_n_shells >= 2
-        use_third_neighbors = _sp_n_shells >= 3
+        if _multi_species:
+            # Determine n_shells from the first species pair
+            _first_pair_hops = next(iter(hoppings.values()))
+            _eff_n_shells = len(_first_pair_hops)
+            use_second_neighbors = _eff_n_shells >= 2
+            use_third_neighbors = _eff_n_shells >= 3
+        else:
+            use_second_neighbors = _sp_n_shells >= 2
+            use_third_neighbors = _sp_n_shells >= 3
     else:
         use_third_neighbors = isinstance(hoppings, dict) and "nnnn" in hoppings
         use_second_neighbors = isinstance(hoppings, dict) and (
@@ -1355,18 +1424,38 @@ def SK_EDTB(data_controller, params):
         "ddd": "dd",
     }
 
-    def _get_gamma(sk_key):
-        """Return the screening strength for a given SK parameter name."""
-        if isinstance(gamma_spec, (int, float)):
-            return float(gamma_spec)
-        if sk_key in gamma_spec:
-            return gamma_spec[sk_key]
+    def _get_gamma(sk_key, gamma_val=None):
+        """Return the screening strength for a given SK parameter name.
+
+        gamma_val overrides gamma_spec when provided (for per-pair gamma).
+        """
+        gv = gamma_val if gamma_val is not None else gamma_spec
+        if isinstance(gv, (int, float)):
+            return float(gv)
+        if sk_key in gv:
+            return gv[sk_key]
         lp = _sk_to_lpair.get(sk_key)
-        if lp and lp in gamma_spec:
-            return gamma_spec[lp]
+        if lp and lp in gv:
+            return gv[lp]
         return 0.0
 
-    gamma_map = {k: _get_gamma(k) for k in _sk_param_names}
+    # Check if gamma_spec is species-pair-keyed (multi-species)
+    _multi_species_gamma = (
+        isinstance(gamma_spec, dict)
+        and len(gamma_spec) > 0
+        and "-" in next(iter(gamma_spec))
+    )
+
+    if _multi_species_gamma:
+        # Build a gamma_map per species pair
+        _gamma_maps = {}
+        for pair_key, gval in gamma_spec.items():
+            _gamma_maps[pair_key] = {k: _get_gamma(k, gval) for k in _sk_param_names}
+        # Default (fallback) gamma_map — all zeros
+        gamma_map = {k: 0.0 for k in _sk_param_names}
+    else:
+        _gamma_maps = None
+        gamma_map = {k: _get_gamma(k) for k in _sk_param_names}
 
     # Build the flat supercell positions for screening sum
     sctau_flat = sctau.reshape(natoms * nk1 * nk2 * nk3, 3)
@@ -1425,11 +1514,13 @@ def SK_EDTB(data_controller, params):
     _nk123 = nk1 * nk2 * nk3
     _nk23 = nk2 * nk3
 
-    def _screened_hoppings(shell_hoppings, S_ij):
+    def _screened_hoppings(shell_hoppings, S_ij, gmap=None):
         """Return a copy of shell_hoppings with screening applied."""
+        if gmap is None:
+            gmap = gamma_map
         screened = {}
         for key, val in shell_hoppings.items():
-            g = gamma_map.get(key, 0.0)
+            g = gmap.get(key, 0.0)
             screened[key] = val * np.exp(-g * S_ij)
         return screened
 
@@ -1515,28 +1606,62 @@ def SK_EDTB(data_controller, params):
         )
         if has_d:
             required_keys.extend(["sds", "pds", "pdp", "dds", "ddp", "ddd"])
-        missing_ch = [k for k in required_keys if k not in _dd_channels]
-        if missing_ch:
-            raise KeyError(
-                f"Missing SK channels in distance-dependent hoppings: "
-                f"{', '.join(missing_ch)}"
-            )
+
+        if _dd_multi:
+            for pk, pd in _dd_pairs.items():
+                missing_ch = [k for k in required_keys if k not in pd["channels"]]
+                if missing_ch:
+                    raise KeyError(
+                        f"Missing SK channels in distance-dependent hoppings "
+                        f"for pair '{pk}': {', '.join(missing_ch)}"
+                    )
+        else:
+            missing_ch = [k for k in required_keys if k not in _dd_channels]
+            if missing_ch:
+                raise KeyError(
+                    f"Missing SK channels in distance-dependent hoppings: "
+                    f"{', '.join(missing_ch)}"
+                )
+
         elements = sorted(set(arry["atoms"]))
-        gamma_str = (
-            f"{gamma_spec:.4g}"
-            if isinstance(gamma_spec, (int, float))
-            else ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
-        )
-        print(
-            f"SK_EDTB (distance-dependent): elements={elements}, "
-            f"r_0={_dd_spec['r_0']:.3f} Bohr, "
-            f"r_c={_dd_spec['r_c']:.3f} Bohr ({_dd_r_c_alat:.4f} alat), "
-            f"n_c={_dd_n_c:.2f}, channels={len(_dd_channels)}, "
-            f"r_cut_screen={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
-            f"gamma=[{gamma_str}]"
-        )
+        if isinstance(gamma_spec, (int, float)):
+            gamma_str = f"{gamma_spec:.4g}"
+        elif _multi_species_gamma:
+            gamma_str = ", ".join(
+                f"{pk}: {gv:.4g}" if isinstance(gv, (int, float))
+                else f"{pk}: {{{', '.join(f'{kk}={vv:.4g}' for kk, vv in gv.items())}}}"
+                for pk, gv in gamma_spec.items()
+            )
+        else:
+            gamma_str = ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
+
+        if _dd_multi:
+            pair_strs = ", ".join(sorted(_dd_pairs.keys()))
+            print(
+                f"SK_EDTB (distance-dependent, multi-species): elements={elements}, "
+                f"pairs=[{pair_strs}], "
+                f"channels={len(_dd_channels)}, "
+                f"r_cut_screen={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+                f"gamma=[{gamma_str}]"
+            )
+        else:
+            print(
+                f"SK_EDTB (distance-dependent): elements={elements}, "
+                f"r_0={_dd_spec['r_0']:.3f} Bohr, "
+                f"r_c={_dd_spec['r_c']:.3f} Bohr ({_dd_r_c_alat:.4f} alat), "
+                f"n_c={_dd_n_c:.2f}, channels={len(_dd_channels)}, "
+                f"r_cut_screen={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+                f"gamma=[{gamma_str}]"
+            )
     else:
-        if "nn" in hoppings:
+        if _multi_species:
+            # Multi-species mode: hoppings is {pair_key: {shell_tag: {sk_params}}}
+            # We store the full structure and build a flat hoppings_shells from
+            # any pair for validation/cutoff detection.
+            _ms_hoppings = hoppings  # species-pair → {shell_tag → params}
+            _first_pair_hops = next(iter(hoppings.values()))
+            hoppings_shells = dict(_first_pair_hops)
+        elif "nn" in hoppings:
             hoppings_shells = {"nn": hoppings["nn"]}
             if "nnn" in hoppings:
                 hoppings_shells["nnn"] = hoppings["nnn"]
@@ -1580,6 +1705,17 @@ def SK_EDTB(data_controller, params):
                             f"Missing SK keys for {shell_name}/'{pair_key}' "
                             f"(l-pair {lpair}): {', '.join(missing_keys)}"
                         )
+        elif _multi_species:
+            for pair_key, pair_shells in _ms_hoppings.items():
+                for shell_name, shell_hoppings_ms in pair_shells.items():
+                    missing_keys = [
+                        key for key in required_keys if key not in shell_hoppings_ms
+                    ]
+                    if missing_keys:
+                        raise KeyError(
+                            f"Missing Slater-Koster hopping keys for "
+                            f"{pair_key}/{shell_name}: {', '.join(missing_keys)}"
+                        )
         else:
             for shell_name, shell_hoppings in hoppings_shells.items():
                 missing_keys = [
@@ -1593,11 +1729,16 @@ def SK_EDTB(data_controller, params):
 
         elements = sorted(set(arry["atoms"]))
         shell_names = ", ".join(sorted(hoppings_shells.keys()))
-        gamma_str = (
-            f"{gamma_spec:.4g}"
-            if isinstance(gamma_spec, (int, float))
-            else ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
-        )
+        if isinstance(gamma_spec, (int, float)):
+            gamma_str = f"{gamma_spec:.4g}"
+        elif _multi_species_gamma:
+            gamma_str = ", ".join(
+                f"{pk}: {gv:.4g}" if isinstance(gv, (int, float))
+                else f"{pk}: {{{', '.join(f'{k}={v:.4g}' for k, v in gv.items())}}}"
+                for pk, gv in gamma_spec.items()
+            )
+        else:
+            gamma_str = ", ".join(f"{k}={v:.4g}" for k, v in gamma_spec.items())
         if is_multishell:
             config_str = ", ".join(atom_config[0])
             print(
@@ -1866,8 +2007,27 @@ def SK_EDTB(data_controller, params):
                         S_ij = S_all[ia, _jsc]
 
                         if _dd_mode:
+                            if _dd_multi:
+                                sp_a, sp_b = sorted([atoms[ia], atoms[ib]])
+                                _pair_key = f"{sp_a}-{sp_b}"
+                                pd = _dd_pairs[_pair_key]
+                                if dist_val > pd["r_c"]:
+                                    continue
+                                _pair_gmap = _gamma_maps.get(_pair_key, gamma_map) if _gamma_maps else gamma_map
+                                shell_hop_data = _screened_hoppings(
+                                    _dd_hop_values_pair(dist_val, _pair_key), S_ij, gmap=_pair_gmap
+                                )
+                            else:
+                                shell_hop_data = _screened_hoppings(
+                                    _dd_hop_values(dist_val), S_ij
+                                )
+                        elif _multi_species:
+                            # Look up species pair key
+                            sp_a, sp_b = sorted([atoms[ia], atoms[ib]])
+                            _pair_key = f"{sp_a}-{sp_b}"
+                            _pair_gmap = _gamma_maps.get(_pair_key, gamma_map) if _gamma_maps else gamma_map
                             shell_hop_data = _screened_hoppings(
-                                _dd_hop_values(dist_val), S_ij
+                                _ms_hoppings[_pair_key][shell_key], S_ij, gmap=_pair_gmap
                             )
                         else:
                             shell_hop_data = _screened_hoppings(
