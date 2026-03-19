@@ -61,7 +61,7 @@ def read_bands_PAO(fname):
 
 
 def read_site_projected(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path, delim_whitespace=True, header=None)
+    df = pd.read_csv(path, sep=r"\s+", header=None)
 
     df = df.iloc[:, :3].copy()
     df.columns = ['kindex', 'eigenvalue', 'site_weight']
