@@ -679,6 +679,7 @@ def Kane_Mele(data_controller, params):
 
     t = params['t']
     soc_par = params['soc_par']
+    if (soc_par > 0.0): attr['dftSO']=True
     r_par = params['r_par']
     v_par = params['v_par']
 
@@ -784,6 +785,8 @@ def Kane_Mele(data_controller, params):
     arry['tau'] = np.zeros((2, 3), dtype=float)
     arry['tau'][0] = np.dot([1 / 3, 1 / 3, 0.0], arry['a_vectors'])
     arry['tau'][1] = np.dot([2 / 3, 2 / 3, 0.0], arry['a_vectors'])
+
+    arry['Dnm']=np.zeros((4,4,3),dtype=float)
 
     # Reciprocal Lattice
     arry['b_vectors'] = np.zeros((3, 3), dtype=float)

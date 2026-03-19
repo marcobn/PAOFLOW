@@ -28,7 +28,7 @@ import numpy as np
 def main():
 
   model = {'label':'graphene', 't':2.7}
-  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./graphene', verbose=True)
+  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./output', verbose=True)
 
   path = 'G-M-K-G'
   special_points = {'G':[0.0, 0.0, 0.0],'K':[2.0/3.0, 1.0/3.0, 0.0],'M':[1.0/2.0, 0.0/2.0, 0.0]}

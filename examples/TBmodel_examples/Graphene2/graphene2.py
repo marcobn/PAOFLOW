@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 def main():
 
   model = {'label':'graphene2', 't': -1.0, 'delta': -0.2}
-  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./graphene2', verbose=True)
+  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./output', verbose=True)
 
   arry, attr = paoflow.data_controller.data_dicts()
 
@@ -76,10 +76,10 @@ def main():
   nk1 = 51
   nk2 = 51
 
-  berry = np.genfromtxt('graphene2/square_berry_phase_0.dat')
+  berry = np.genfromtxt('./output/square_berry_phase_0.dat')
   berry = berry.reshape((nk1,nk2,3),order='F')
 
-  kgrid = np.genfromtxt('graphene2/square_berry_phase_0_kgrid_corners.dat')
+  kgrid = np.genfromtxt('./output/square_berry_phase_0_kgrid_corners.dat')
   kgrid = kgrid.reshape((nk1+1,nk2+1,2),order='F')
 
   fig, ax = plt.subplots(figsize=(5,5))
@@ -87,7 +87,7 @@ def main():
   ax.set_xlabel(r'$k_x$',fontsize=18)
   ax.set_ylabel(r'$k_y$',fontsize=18)
   fig.tight_layout()
-  fig.savefig('graphene2/berry_phase_k.pdf',bbox_inches='tight')
+  fig.savefig('./output/berry_phase_k.pdf',bbox_inches='tight')
 
   paoflow.finish_execution()
 
