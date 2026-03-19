@@ -1521,8 +1521,7 @@ class PAOFLOW:
         self.report_module_time('Rashba_Edelstein')
 
     def anomalous_Hall(
-        self, do_ac=False, emin=-1.0, emax=1.0, ne=501, delta=0.05, fermi_up=1.0, fermi_dw=-1.0, 
-        a_tensor=None
+        self, do_ac=False, emin=-1.0, emax=1.0, fermi_up=1.0, fermi_dw=-1.0, a_tensor=None
     ):
         """
         Calculate the Anomalous Hall Conductivity
@@ -1531,8 +1530,6 @@ class PAOFLOW:
             do_ac (bool): True to calculate the Magnetic Circular Dichroism
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
-            ne (float): The number of energy increments
-            delta (float): Inter-smearing parameter in eV
             fermi_up (float): The upper limit of the occupied energy range
             fermi_dw (float): The lower limit of the occupied energy range
             a_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
@@ -1544,9 +1541,8 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'],attr['emaxH'] = emin,emax
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
+        attr['eminH'] = emin
+        attr['emaxH'] = emax
 
         if a_tensor is not None:
             arrays['a_tensor'] = np.array(a_tensor)
