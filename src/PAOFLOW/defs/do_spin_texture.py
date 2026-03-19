@@ -55,6 +55,7 @@ def do_spin_texture(data_controller):
 
     icount = comm.bcast(icount)
     ind_plot = comm.bcast(ind_plot)
+    arrays['ind_plot'] = ind_plot
 
     Sj = arrays['Sj']
     snktot = arrays['v_k'].shape[0]
@@ -97,5 +98,6 @@ def do_spin_texture(data_controller):
                     spinband=sktxt[:, :, :, :, ib],
                 )
 
+    arrays['sktxt'] = sktxt
     sktxt = None
     E_k_full = None

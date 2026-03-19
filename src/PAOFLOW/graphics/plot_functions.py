@@ -147,7 +147,8 @@ def plot_weighted_bands(
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], **vline_style)
     if label is None:
-        label = '$\epsilon$($\\bf{k}$) (eV)'
+        label = r'$\epsilon$($\mathbf{k}$) (eV)'
+
     ax.set_ylabel(label, fontsize=12)
 
     if filename is not None:
@@ -181,7 +182,7 @@ def plot_bands(bands, sym_points, title, label, y_lim, col):
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if label is None:
-        label = '$\epsilon$($\\bf{k}$) (eV)'
+        label = r'$\epsilon$($\mathbf{k}$) (eV)'
     ax.set_ylabel(label, fontsize=12)
 
     plt.show()
@@ -215,7 +216,7 @@ def plot_dos_beside_bands(
         ax_b.set_xticklabels(sym_points[1])
         ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if band_label is None:
-        band_label = '$\epsilon$($\\bf{k}$) (eV)'
+        band_label =  r'$\epsilon$($\mathbf{k}$) (eV)'
     ax_b.set_ylabel(band_label, fontsize=12)
 
     ax_d.plot(dos, es, color=col)
@@ -270,9 +271,9 @@ def plot_berry_under_bands(
         ax_ba.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
 
     if berry_label is None:
-        berry_label = '$\Omega$($\\bf{k}$)'
+        berry_label = r'$\Omega$($\mathbf{k}$)'
     if band_label is None:
-        band_label = '$\epsilon$($\\bf{k}$) (eV)'
+        band_label = r'$\epsilon$($\mathbf{k}$) (eV)'
     ax_be.set_ylabel(berry_label, fontsize=12)
     ax_ba.set_ylabel(band_label, fontsize=12)
 
