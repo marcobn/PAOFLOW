@@ -1139,6 +1139,34 @@ class SparseEDTB:
 
         _use_parallel = (n_workers != 1) and _HAS_JOBLIB
 
+        # Auto-scale workers: for large Hamiltonians the per-k-point LU
+        # factorization is memory-bandwidth-limited.  Running many workers
+        # simultaneously thrashes the cache and multiplies peak memory
+        # (each LU creates GB-scale fill-in).  Better to run fewer workers
+        # and let BLAS/SuperLU use wider vectors internally.
+        if _use_parallel and n_workers == -1:
+            import multiprocessing
+
+            n_cpus = multiprocessing.cpu_count()
+            if self.nawf > 20_000:
+                # Very large: serial is fastest (let BLAS use all cores)
+                n_workers = 1
+                _use_parallel = False
+                if self.verbose:
+                    print(
+                        f"  nawf={self.nawf} > 20k: switching to serial "
+                        f"(LU memory per k-point too large for parallel)"
+                    )
+            elif self.nawf > 5_000:
+                # Medium: limit to 2-4 workers
+                n_workers = min(4, max(1, n_cpus // 2))
+                if self.verbose:
+                    print(
+                        f"  nawf={self.nawf} > 5k: limiting to {n_workers} "
+                        f"workers (of {n_cpus} cores)"
+                    )
+            # else: small system — keep n_workers=-1 (all cores)
+
         if _use_parallel:
             if self.verbose:
                 print(f"  Parallel: {n_workers} workers (joblib/threads)")
