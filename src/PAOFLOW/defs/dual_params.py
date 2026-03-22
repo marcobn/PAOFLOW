@@ -52,7 +52,6 @@
 from __future__ import annotations
 
 import copy
-from itertools import combinations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -106,14 +105,14 @@ def _mix_block(
     ndarray
         Mixed block.
     """
-    if rule == "bulk":
+    if rule == 'bulk':
         return block_bulk.copy()
-    elif rule == "arithmetic":
+    elif rule == 'arithmetic':
         return 0.5 * (block_bulk + block_surf)
-    elif rule == "geometric":
+    elif rule == 'geometric':
         return _signed_geom_mean_array(block_bulk, block_surf)
     else:
-        raise ValueError(f"Unknown mixing rule: {rule!r}")
+        raise ValueError(f'Unknown mixing rule: {rule!r}')
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -154,11 +153,11 @@ def label_atoms_coordination(
     coord : ndarray
         Smooth coordination numbers.
     """
-    alat = geometry["alat"]
-    a_vecs = np.array(geometry["a_vectors"])
-    atoms = geometry["atoms"]
+    alat = geometry['alat']
+    a_vecs = np.array(geometry['a_vectors'])
+    atoms = geometry['atoms']
     natoms = len(atoms)
-    tau = np.array([atom["tau"] for atom in atoms])
+    tau = np.array([atom['tau'] for atom in atoms])
 
     # Convert r_cut from Bohr to alat units
     r_cut = r_cut_bohr / alat
@@ -195,7 +194,7 @@ def label_atoms_coordination(
     if threshold is None:
         threshold = 0.5 * (np.max(coord) + np.min(coord))
 
-    labels = ["bulk" if z >= threshold else "surface" for z in coord]
+    labels = ['bulk' if z >= threshold else 'surface' for z in coord]
     return labels, coord
 
 
@@ -225,10 +224,10 @@ def label_atoms_geometric(
     projections : ndarray
         Signed distances along the surface normal.
     """
-    a_vecs = np.array(geometry["a_vectors"])
-    atoms = geometry["atoms"]
+    a_vecs = np.array(geometry['a_vectors'])
+    atoms = geometry['atoms']
     natoms = len(atoms)
-    tau = np.array([atom["tau"] for atom in atoms])
+    tau = np.array([atom['tau'] for atom in atoms])
 
     # Find slab normal: longest lattice vector
     if surface_normal is None:
@@ -264,9 +263,9 @@ def label_atoms_geometric(
     for ia in range(natoms):
         lay = atom_layer[ia]
         if lay < n_surface_layers or lay >= n_layers - n_surface_layers:
-            labels.append("surface")
+            labels.append('surface')
         else:
-            labels.append("bulk")
+            labels.append('bulk')
 
     return labels, projections
 
@@ -288,11 +287,11 @@ def label_atoms_manual(
     -------
     labels : list of str
     """
-    labels = ["bulk"] * n_atoms
+    labels = ['bulk'] * n_atoms
     for i in surface_indices:
         if i < 0 or i >= n_atoms:
-            raise IndexError(f"Surface index {i} out of range [0, {n_atoms})")
-        labels[i] = "surface"
+            raise IndexError(f'Surface index {i} out of range [0, {n_atoms})')
+        labels[i] = 'surface'
     return labels
 
 
@@ -304,60 +303,60 @@ def label_atoms_manual(
 
 _sq3 = np.sqrt(3.0)
 _hsq3 = _sq3 / 2.0
-_p_index_map = {"px": 0, "py": 1, "pz": 2}
-_d_orbitals = {"dxy", "dyz", "dzx", "dx2-y2", "dz2"}
+_p_index_map = {'px': 0, 'py': 1, 'pz': 2}
+_d_orbitals = {'dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2'}
 
 
 def _sd_value(d_orb, lx, ly, lz, sh):
     l2, m2, n2 = lx * lx, ly * ly, lz * lz
-    if d_orb == "dxy":
-        return _sq3 * lx * ly * sh["sds"]
-    if d_orb == "dyz":
-        return _sq3 * ly * lz * sh["sds"]
-    if d_orb == "dzx":
-        return _sq3 * lz * lx * sh["sds"]
-    if d_orb == "dx2-y2":
-        return _hsq3 * (l2 - m2) * sh["sds"]
-    if d_orb == "dz2":
-        return (n2 - 0.5 * (l2 + m2)) * sh["sds"]
+    if d_orb == 'dxy':
+        return _sq3 * lx * ly * sh['sds']
+    if d_orb == 'dyz':
+        return _sq3 * ly * lz * sh['sds']
+    if d_orb == 'dzx':
+        return _sq3 * lz * lx * sh['sds']
+    if d_orb == 'dx2-y2':
+        return _hsq3 * (l2 - m2) * sh['sds']
+    if d_orb == 'dz2':
+        return (n2 - 0.5 * (l2 + m2)) * sh['sds']
     return 0.0
 
 
 def _pd_value(p_orb, d_orb, lx, ly, lz, sh):
     l2, m2, n2 = lx * lx, ly * ly, lz * lz
-    pds, pdp = sh["pds"], sh["pdp"]
-    if p_orb == "px":
-        if d_orb == "dxy":
+    pds, pdp = sh['pds'], sh['pdp']
+    if p_orb == 'px':
+        if d_orb == 'dxy':
             return _sq3 * l2 * ly * pds + ly * (1.0 - 2.0 * l2) * pdp
-        if d_orb == "dyz":
+        if d_orb == 'dyz':
             return _sq3 * lx * ly * lz * pds - 2.0 * lx * ly * lz * pdp
-        if d_orb == "dzx":
+        if d_orb == 'dzx':
             return _sq3 * l2 * lz * pds + lz * (1.0 - 2.0 * l2) * pdp
-        if d_orb == "dx2-y2":
+        if d_orb == 'dx2-y2':
             return _hsq3 * lx * (l2 - m2) * pds + lx * (1.0 - l2 + m2) * pdp
-        if d_orb == "dz2":
+        if d_orb == 'dz2':
             return lx * (n2 - 0.5 * (l2 + m2)) * pds - _sq3 * lx * n2 * pdp
-    elif p_orb == "py":
-        if d_orb == "dxy":
+    elif p_orb == 'py':
+        if d_orb == 'dxy':
             return _sq3 * m2 * lx * pds + lx * (1.0 - 2.0 * m2) * pdp
-        if d_orb == "dyz":
+        if d_orb == 'dyz':
             return _sq3 * m2 * lz * pds + lz * (1.0 - 2.0 * m2) * pdp
-        if d_orb == "dzx":
+        if d_orb == 'dzx':
             return _sq3 * lx * ly * lz * pds - 2.0 * lx * ly * lz * pdp
-        if d_orb == "dx2-y2":
+        if d_orb == 'dx2-y2':
             return _hsq3 * ly * (l2 - m2) * pds - ly * (1.0 + l2 - m2) * pdp
-        if d_orb == "dz2":
+        if d_orb == 'dz2':
             return ly * (n2 - 0.5 * (l2 + m2)) * pds - _sq3 * ly * n2 * pdp
-    elif p_orb == "pz":
-        if d_orb == "dxy":
+    elif p_orb == 'pz':
+        if d_orb == 'dxy':
             return _sq3 * lx * ly * lz * pds - 2.0 * lx * ly * lz * pdp
-        if d_orb == "dyz":
+        if d_orb == 'dyz':
             return _sq3 * n2 * ly * pds + ly * (1.0 - 2.0 * n2) * pdp
-        if d_orb == "dzx":
+        if d_orb == 'dzx':
             return _sq3 * n2 * lx * pds + lx * (1.0 - 2.0 * n2) * pdp
-        if d_orb == "dx2-y2":
+        if d_orb == 'dx2-y2':
             return _hsq3 * lz * (l2 - m2) * pds - lz * (l2 - m2) * pdp
-        if d_orb == "dz2":
+        if d_orb == 'dz2':
             return lz * (n2 - 0.5 * (l2 + m2)) * pds + _sq3 * lz * (l2 + m2) * pdp
     return 0.0
 
@@ -365,78 +364,58 @@ def _pd_value(p_orb, d_orb, lx, ly, lz, sh):
 def _dd_value(da, db, lx, ly, lz, sh):
     l2, m2, n2 = lx * lx, ly * ly, lz * lz
     lm, ln, mn = lx * ly, lx * lz, ly * lz
-    dds, ddp, ddd = sh["dds"], sh["ddp"], sh["ddd"]
+    dds, ddp, ddd = sh['dds'], sh['ddp'], sh['ddd']
     diff_lm = l2 - m2
 
     # Diagonal
     if da == db:
-        if da == "dxy":
-            return (
-                3 * l2 * m2 * dds + (l2 + m2 - 4 * l2 * m2) * ddp + (n2 + l2 * m2) * ddd
-            )
-        if da == "dyz":
-            return (
-                3 * m2 * n2 * dds + (m2 + n2 - 4 * m2 * n2) * ddp + (l2 + m2 * n2) * ddd
-            )
-        if da == "dzx":
-            return (
-                3 * l2 * n2 * dds + (l2 + n2 - 4 * l2 * n2) * ddp + (m2 + l2 * n2) * ddd
-            )
-        if da == "dx2-y2":
+        if da == 'dxy':
+            return 3 * l2 * m2 * dds + (l2 + m2 - 4 * l2 * m2) * ddp + (n2 + l2 * m2) * ddd
+        if da == 'dyz':
+            return 3 * m2 * n2 * dds + (m2 + n2 - 4 * m2 * n2) * ddp + (l2 + m2 * n2) * ddd
+        if da == 'dzx':
+            return 3 * l2 * n2 * dds + (l2 + n2 - 4 * l2 * n2) * ddp + (m2 + l2 * n2) * ddd
+        if da == 'dx2-y2':
             return (
                 0.75 * diff_lm**2 * dds
                 + (l2 + m2 - diff_lm**2) * ddp
                 + (n2 + 0.25 * diff_lm**2) * ddd
             )
-        if da == "dz2":
+        if da == 'dz2':
             t = n2 - 0.5 * (l2 + m2)
             return t**2 * dds + 3 * n2 * (l2 + m2) * ddp + 0.75 * (l2 + m2) ** 2 * ddd
 
     pair = tuple(sorted([da, db]))
     # Off-diagonal (sorted pair)
-    if pair == ("dxy", "dyz"):
+    if pair == ('dxy', 'dyz'):
         return 3 * lx * m2 * lz * dds + ln * (1 - 4 * m2) * ddp + ln * (m2 - 1) * ddd
-    if pair == ("dxy", "dzx"):
+    if pair == ('dxy', 'dzx'):
         return 3 * l2 * ly * lz * dds + mn * (1 - 4 * l2) * ddp + mn * (l2 - 1) * ddd
-    if pair == ("dyz", "dzx"):
+    if pair == ('dyz', 'dzx'):
         return 3 * ly * n2 * lx * dds + lm * (1 - 4 * n2) * ddp + lm * (n2 - 1) * ddd
-    if pair == ("dxy", "dx2-y2"):
+    if pair == ('dxy', 'dx2-y2'):
+        return 1.5 * lm * diff_lm * dds + 2 * lm * (m2 - l2) * ddp + 0.5 * lm * diff_lm * ddd
+    if pair == ('dx2-y2', 'dyz'):
         return (
-            1.5 * lm * diff_lm * dds
-            + 2 * lm * (m2 - l2) * ddp
-            + 0.5 * lm * diff_lm * ddd
+            1.5 * mn * diff_lm * dds - mn * (1 + 2 * diff_lm) * ddp + mn * (1 + 0.5 * diff_lm) * ddd
         )
-    if pair == ("dx2-y2", "dyz"):
+    if pair == ('dx2-y2', 'dzx'):
         return (
-            1.5 * mn * diff_lm * dds
-            - mn * (1 + 2 * diff_lm) * ddp
-            + mn * (1 + 0.5 * diff_lm) * ddd
+            1.5 * ln * diff_lm * dds + ln * (1 - 2 * diff_lm) * ddp - ln * (1 - 0.5 * diff_lm) * ddd
         )
-    if pair == ("dx2-y2", "dzx"):
-        return (
-            1.5 * ln * diff_lm * dds
-            + ln * (1 - 2 * diff_lm) * ddp
-            - ln * (1 - 0.5 * diff_lm) * ddd
-        )
-    if pair == ("dxy", "dz2"):
+    if pair == ('dxy', 'dz2'):
         t = n2 - 0.5 * (l2 + m2)
         return _sq3 * (lm * t * dds - 2 * lm * n2 * ddp + 0.5 * lm * (1 + n2) * ddd)
-    if pair == ("dyz", "dz2"):
+    if pair == ('dyz', 'dz2'):
+        t = n2 - 0.5 * (l2 + m2)
+        return _sq3 * (mn * t * dds + mn * (l2 + m2 - n2) * ddp - 0.5 * mn * (l2 + m2) * ddd)
+    if pair == ('dz2', 'dzx'):
+        t = n2 - 0.5 * (l2 + m2)
+        return _sq3 * (ln * t * dds + ln * (l2 + m2 - n2) * ddp - 0.5 * ln * (l2 + m2) * ddd)
+    if pair == ('dx2-y2', 'dz2'):
         t = n2 - 0.5 * (l2 + m2)
         return _sq3 * (
-            mn * t * dds + mn * (l2 + m2 - n2) * ddp - 0.5 * mn * (l2 + m2) * ddd
-        )
-    if pair == ("dz2", "dzx"):
-        t = n2 - 0.5 * (l2 + m2)
-        return _sq3 * (
-            ln * t * dds + ln * (l2 + m2 - n2) * ddp - 0.5 * ln * (l2 + m2) * ddd
-        )
-    if pair == ("dx2-y2", "dz2"):
-        t = n2 - 0.5 * (l2 + m2)
-        return _sq3 * (
-            0.5 * diff_lm * t * dds
-            + n2 * (m2 - l2) * ddp
-            + 0.25 * (1 + n2) * diff_lm * ddd
+            0.5 * diff_lm * t * dds + n2 * (m2 - l2) * ddp + 0.25 * (1 + n2) * diff_lm * ddd
         )
     return 0.0
 
@@ -444,25 +423,25 @@ def _dd_value(da, db, lx, ly, lz, sh):
 def _sk_value(orb_a, orb_b, lx, ly, lz, sh):
     """Compute a single SK matrix element for orbital pair."""
     # s-s
-    if orb_a == "s" and orb_b == "s":
-        return sh["sss"]
+    if orb_a == 's' and orb_b == 's':
+        return sh['sss']
     # s-p
-    if orb_a == "s" and orb_b in _p_index_map:
-        return (lx, ly, lz)[_p_index_map[orb_b]] * sh["sps"]
-    if orb_b == "s" and orb_a in _p_index_map:
-        return -(lx, ly, lz)[_p_index_map[orb_a]] * sh["sps"]
+    if orb_a == 's' and orb_b in _p_index_map:
+        return (lx, ly, lz)[_p_index_map[orb_b]] * sh['sps']
+    if orb_b == 's' and orb_a in _p_index_map:
+        return -(lx, ly, lz)[_p_index_map[orb_a]] * sh['sps']
     # p-p
     if orb_a in _p_index_map and orb_b in _p_index_map:
         if orb_a == orb_b:
             ll = (lx, ly, lz)[_p_index_map[orb_a]]
-            return ll**2 * sh["pps"] + (1.0 - ll**2) * sh["ppp"]
+            return ll**2 * sh['pps'] + (1.0 - ll**2) * sh['ppp']
         ia = _p_index_map[orb_a]
         ib = _p_index_map[orb_b]
-        return (lx, ly, lz)[ia] * (lx, ly, lz)[ib] * (sh["pps"] - sh["ppp"])
+        return (lx, ly, lz)[ia] * (lx, ly, lz)[ib] * (sh['pps'] - sh['ppp'])
     # s-d
-    if orb_a == "s" and orb_b in _d_orbitals:
+    if orb_a == 's' and orb_b in _d_orbitals:
         return _sd_value(orb_b, lx, ly, lz, sh)
-    if orb_b == "s" and orb_a in _d_orbitals:
+    if orb_b == 's' and orb_a in _d_orbitals:
         return _sd_value(orb_a, lx, ly, lz, sh)
     # p-d
     if orb_a in _p_index_map and orb_b in _d_orbitals:
@@ -485,38 +464,36 @@ def _f_cutoff_vec(r, r_taper, r_cut):
     mask_inner = (r > 1e-10) & (r <= r_taper)
     mask_taper = (r > r_taper) & (r < r_cut)
     result[mask_inner] = 1.0
-    result[mask_taper] = 0.5 * (
-        1.0 + np.cos(np.pi * (r[mask_taper] - r_taper) / (r_cut - r_taper))
-    )
+    result[mask_taper] = 0.5 * (1.0 + np.cos(np.pi * (r[mask_taper] - r_taper) / (r_cut - r_taper)))
     return result
 
 
 # -- SK parameter extraction helpers ----------------------------
 
 _sk_to_lpair = {
-    "sss": "ss",
-    "sps": "sp",
-    "pps": "pp",
-    "ppp": "pp",
-    "sds": "sd",
-    "pds": "pd",
-    "pdp": "pd",
-    "dds": "dd",
-    "ddp": "dd",
-    "ddd": "dd",
+    'sss': 'ss',
+    'sps': 'sp',
+    'pps': 'pp',
+    'ppp': 'pp',
+    'sds': 'sd',
+    'pds': 'pd',
+    'pdp': 'pd',
+    'dds': 'dd',
+    'ddp': 'dd',
+    'ddd': 'dd',
 }
-_sk_param_names = ["sss", "sps", "pps", "ppp", "sds", "pds", "pdp", "dds", "ddp", "ddd"]
+_sk_param_names = ['sss', 'sps', 'pps', 'ppp', 'sds', 'pds', 'pdp', 'dds', 'ddp', 'ddd']
 
 _onsite_group = {
-    "s": "s",
-    "px": "p",
-    "py": "p",
-    "pz": "p",
-    "dxy": "t2g",
-    "dyz": "t2g",
-    "dzx": "t2g",
-    "dx2-y2": "eg",
-    "dz2": "eg",
+    's': 's',
+    'px': 'p',
+    'py': 'p',
+    'pz': 'p',
+    'dxy': 't2g',
+    'dyz': 't2g',
+    'dzx': 't2g',
+    'dx2-y2': 'eg',
+    'dz2': 'eg',
 }
 
 
@@ -536,21 +513,17 @@ def _get_gamma_map(gamma_spec):
 
 def _screened_hoppings(shell_params, S_ij, gamma_map):
     """Apply screening modulation to shell hopping parameters."""
-    return {
-        k: v * np.exp(-gamma_map.get(k, 0.0) * S_ij) for k, v in shell_params.items()
-    }
+    return {k: v * np.exp(-gamma_map.get(k, 0.0) * S_ij) for k, v in shell_params.items()}
 
 
 def _mix_sk_params(params_a, params_b, rule):
     """Mix two sets of SK hopping parameters."""
-    if rule in ("bulk", "first"):
+    if rule in ('bulk', 'first'):
         return dict(params_a)
-    elif rule == "arithmetic":
+    elif rule == 'arithmetic':
         all_keys = set(params_a) | set(params_b)
-        return {
-            k: 0.5 * (params_a.get(k, 0.0) + params_b.get(k, 0.0)) for k in all_keys
-        }
-    elif rule == "geometric":
+        return {k: 0.5 * (params_a.get(k, 0.0) + params_b.get(k, 0.0)) for k in all_keys}
+    elif rule == 'geometric':
         all_keys = set(params_a) | set(params_b)
         mixed = {}
         for k in all_keys:
@@ -558,17 +531,17 @@ def _mix_sk_params(params_a, params_b, rule):
             mixed[k] = np.sign(a + b) * np.sqrt(abs(a * b))
         return mixed
     else:
-        raise ValueError(f"Unknown mixing rule: {rule!r}")
+        raise ValueError(f'Unknown mixing rule: {rule!r}')
 
 
 def _mix_gamma_maps(gmap_a, gmap_b, rule):
     """Mix two gamma maps."""
-    if rule in ("bulk", "first"):
+    if rule in ('bulk', 'first'):
         return dict(gmap_a)
-    elif rule == "arithmetic":
+    elif rule == 'arithmetic':
         all_keys = set(gmap_a) | set(gmap_b)
         return {k: 0.5 * (gmap_a.get(k, 0.0) + gmap_b.get(k, 0.0)) for k in all_keys}
-    elif rule == "geometric":
+    elif rule == 'geometric':
         all_keys = set(gmap_a) | set(gmap_b)
         mixed = {}
         for k in all_keys:
@@ -576,7 +549,7 @@ def _mix_gamma_maps(gmap_a, gmap_b, rule):
             mixed[k] = np.sign(a + b) * np.sqrt(abs(a * b))
         return mixed
     else:
-        raise ValueError(f"Unknown mixing rule: {rule!r}")
+        raise ValueError(f'Unknown mixing rule: {rule!r}')
 
 
 # -- Standalone dual-parameter H(R) builder ---------------------
@@ -587,7 +560,7 @@ def _build_dual_HRs(
     params_surf: dict,
     geometry: dict,
     labels: List[str],
-    mixing: str = "geometric",
+    mixing: str = 'geometric',
 ) -> Tuple[np.ndarray, dict]:
     """Build dual-parameter H(R) with vectorized screening.
 
@@ -614,21 +587,21 @@ def _build_dual_HRs(
         Keys: nawf, natoms, tau, a_vectors, b_vectors, norbitals,
         atom_block_start, nk1, nk2, nk3, cutoffs, atoms, shells.
     """
-    alat = geometry["alat"]
-    a_vecs = np.array(geometry["a_vectors"])
-    atoms_list = geometry["atoms"]
+    alat = geometry['alat']
+    a_vecs = np.array(geometry['a_vectors'])
+    atoms_list = geometry['atoms']
     natoms = len(atoms_list)
 
     # Atom positions (Cartesian / alat units)
-    tau = np.array([a["tau"] for a in atoms_list])
+    tau = np.array([a['tau'] for a in atoms_list])
 
     # Orbital info from bulk params (both must have same basis)
-    basis = params_bulk["basis"]
+    basis = params_bulk['basis']
     orbitals_per_atom = []
     norbitals = np.zeros(natoms, dtype=int)
     for ia, atom in enumerate(atoms_list):
-        sp = atom["species"]
-        orbs = list(basis[sp]["orbitals"])
+        sp = atom['species']
+        orbs = list(basis[sp]['orbitals'])
         orbitals_per_atom.append(orbs)
         norbitals[ia] = len(orbs)
 
@@ -641,31 +614,29 @@ def _build_dual_HRs(
     # Get species pair key (only single-species supported here)
     species_list = sorted(basis.keys())
     if len(species_list) != 1:
-        raise NotImplementedError(
-            "Dual-param builder currently supports single-species systems."
-        )
-    sp_key = f"{species_list[0]}-{species_list[0]}"
+        raise NotImplementedError('Dual-param builder currently supports single-species systems.')
+    sp_key = f'{species_list[0]}-{species_list[0]}'
 
-    hop_shells_bulk = sorted(params_bulk["hoppings"][sp_key], key=lambda s: s["r_ref"])
-    hop_shells_surf = sorted(params_surf["hoppings"][sp_key], key=lambda s: s["r_ref"])
+    hop_shells_bulk = sorted(params_bulk['hoppings'][sp_key], key=lambda s: s['r_ref'])
+    hop_shells_surf = sorted(params_surf['hoppings'][sp_key], key=lambda s: s['r_ref'])
     n_shells = len(hop_shells_bulk)
 
     # Screening
-    scr_bulk = params_bulk.get("screening", {})
-    scr_surf = params_surf.get("screening", {})
-    r_cut_bohr = scr_bulk.get("r_cut", 8.0)
+    scr_bulk = params_bulk.get('screening', {})
+    scr_surf = params_surf.get('screening', {})
+    r_cut_bohr = scr_bulk.get('r_cut', 8.0)
     r_cut = r_cut_bohr / alat
     r_taper = 0.8 * r_cut
 
-    gamma_raw_bulk = scr_bulk.get("gamma", {}).get(sp_key, 0.0)
-    gamma_raw_surf = scr_surf.get("gamma", {}).get(sp_key, 0.0)
+    gamma_raw_bulk = scr_bulk.get('gamma', {}).get(sp_key, 0.0)
+    gamma_raw_surf = scr_surf.get('gamma', {}).get(sp_key, 0.0)
     gmap_bulk = _get_gamma_map(gamma_raw_bulk)
     gmap_surf = _get_gamma_map(gamma_raw_surf)
     gmap_mixed = _mix_gamma_maps(gmap_bulk, gmap_surf, mixing)
 
     # On-site energies
-    onsite_bulk = params_bulk["onsite"][species_list[0]]
-    onsite_surf = params_surf["onsite"][species_list[0]]
+    onsite_bulk = params_bulk['onsite'][species_list[0]]
+    onsite_surf = params_surf['onsite'][species_list[0]]
 
     # ── Supercell ──
     cell_range = min(n_shells, 3)
@@ -680,9 +651,7 @@ def _build_dual_HRs(
                 sc_offsets.append(i * a_vecs[0] + j * a_vecs[1] + k * a_vecs[2])
     sc_offsets = np.array(sc_offsets)  # (nk³, 3)
 
-    sctau_flat = (tau[:, None, :] + sc_offsets[None, :, :]).reshape(
-        -1, 3
-    )  # (natoms*nk³, 3)
+    sctau_flat = (tau[:, None, :] + sc_offsets[None, :, :]).reshape(-1, 3)  # (natoms*nk³, 3)
     n_sc = len(sctau_flat)
 
     # ── Determine shell cutoffs from geometry ──
@@ -715,7 +684,7 @@ def _build_dual_HRs(
 
     # On-site energies
     for ia in range(natoms):
-        on = onsite_bulk if labels[ia] == "bulk" else onsite_surf
+        on = onsite_bulk if labels[ia] == 'bulk' else onsite_surf
         bs = atom_block_start[ia]
         for no, orb in enumerate(orbitals_per_atom[ia]):
             grp = _onsite_group[orb]
@@ -725,9 +694,7 @@ def _build_dual_HRs(
     hop_mixed = []
     for s in range(n_shells):
         hop_mixed.append(
-            _mix_sk_params(
-                hop_shells_bulk[s]["params"], hop_shells_surf[s]["params"], mixing
-            )
+            _mix_sk_params(hop_shells_bulk[s]['params'], hop_shells_surf[s]['params'], mixing)
         )
 
     # Hopping loop
@@ -768,18 +735,16 @@ def _build_dual_HRs(
                         # Select parameters based on labels
                         la = labels[ia]
                         lb = labels[ib]
-                        if la == "bulk" and lb == "bulk":
+                        if la == 'bulk' and lb == 'bulk':
                             sh = _screened_hoppings(
-                                hop_shells_bulk[shell_idx]["params"], S_ij, gmap_bulk
+                                hop_shells_bulk[shell_idx]['params'], S_ij, gmap_bulk
                             )
-                        elif la == "surface" and lb == "surface":
+                        elif la == 'surface' and lb == 'surface':
                             sh = _screened_hoppings(
-                                hop_shells_surf[shell_idx]["params"], S_ij, gmap_surf
+                                hop_shells_surf[shell_idx]['params'], S_ij, gmap_surf
                             )
                         else:
-                            sh = _screened_hoppings(
-                                hop_mixed[shell_idx], S_ij, gmap_mixed
-                            )
+                            sh = _screened_hoppings(hop_mixed[shell_idx], S_ij, gmap_mixed)
 
                         # Fill orbital block
                         orbs_a = orbitals_per_atom[ia]
@@ -819,36 +784,34 @@ def _build_dual_HRs(
                 if Rz >= 0.5:
                     Rz -= 1.0
                 R_grid[n, :] = (
-                    Rx * nk1 * a_vecs[0, :]
-                    + Ry * nk2 * a_vecs[1, :]
-                    + Rz * nk3 * a_vecs[2, :]
+                    Rx * nk1 * a_vecs[0, :] + Ry * nk2 * a_vecs[1, :] + Rz * nk3 * a_vecs[2, :]
                 )
                 R_fft[i, j, k, :] = R_grid[n, :]
                 R_idx[i, j, k] = n
 
     metadata = {
-        "nawf": nawf,
-        "natoms": natoms,
-        "tau": tau,
-        "a_vectors": a_vecs,
-        "b_vectors": b_vecs,
-        "norbitals": norbitals,
-        "orbitals_per_atom": orbitals_per_atom,
-        "atom_block_start": atom_block_start,
-        "nk1": nk1,
-        "nk2": nk2,
-        "nk3": nk3,
-        "R": R_grid,  # (nrtot, 3) lattice vectors in alat units
-        "Rfft": R_fft,  # (nk1, nk2, nk3, 3)
-        "Ridx": R_idx,  # (nk1, nk2, nk3) → flat index
-        "cutoffs": cutoffs,
-        "n_bonds": n_bonds,
-        "species": [a["species"] for a in atoms_list],
-        "alat": alat,
-        "alat_ang": alat / ANGSTROM_AU,
-        "volume": vol,
+        'nawf': nawf,
+        'natoms': natoms,
+        'tau': tau,
+        'a_vectors': a_vecs,
+        'b_vectors': b_vecs,
+        'norbitals': norbitals,
+        'orbitals_per_atom': orbitals_per_atom,
+        'atom_block_start': atom_block_start,
+        'nk1': nk1,
+        'nk2': nk2,
+        'nk3': nk3,
+        'R': R_grid,  # (nrtot, 3) lattice vectors in alat units
+        'Rfft': R_fft,  # (nk1, nk2, nk3, 3)
+        'Ridx': R_idx,  # (nk1, nk2, nk3) → flat index
+        'cutoffs': cutoffs,
+        'n_bonds': n_bonds,
+        'species': [a['species'] for a in atoms_list],
+        'alat': alat,
+        'alat_ang': alat / ANGSTROM_AU,
+        'volume': vol,
     }
-    print(f"  Built H(R): {nawf}x{nawf}, grid {nk1}x{nk2}x{nk3}, {n_bonds} bonds")
+    print(f'  Built H(R): {nawf}x{nawf}, grid {nk1}x{nk2}x{nk3}, {n_bonds} bonds')
     return HRs, metadata
 
 
@@ -861,7 +824,7 @@ def _build_multi_HRs(
     params_map: Dict[str, dict],
     geometry: dict,
     labels: List[str],
-    mixing: str = "geometric",
+    mixing: str = 'geometric',
     ref_label: str = None,
 ) -> Tuple[np.ndarray, dict]:
     """Build H(R) with an arbitrary number of parameter sets.
@@ -897,26 +860,26 @@ def _build_multi_HRs(
         if lbl not in params_map:
             raise ValueError(
                 f"Label '{lbl}' found in labels but not in params_map. "
-                f"Available keys: {sorted(params_map.keys())}"
+                f'Available keys: {sorted(params_map.keys())}'
             )
 
-    alat = geometry["alat"]
-    a_vecs = np.array(geometry["a_vectors"])
-    atoms_list = geometry["atoms"]
+    alat = geometry['alat']
+    a_vecs = np.array(geometry['a_vectors'])
+    atoms_list = geometry['atoms']
     natoms = len(atoms_list)
-    tau = np.array([a["tau"] for a in atoms_list])
+    tau = np.array([a['tau'] for a in atoms_list])
 
     # ── Orbital info (merged from all parameter sets) ──
     basis = {}
     for p in params_map.values():
-        for sp, sp_basis in p["basis"].items():
+        for sp, sp_basis in p['basis'].items():
             if sp not in basis:
                 basis[sp] = sp_basis
     orbitals_per_atom = []
     norbitals = np.zeros(natoms, dtype=int)
     for ia, atom in enumerate(atoms_list):
-        sp = atom["species"]
-        orbs = list(basis[sp]["orbitals"])
+        sp = atom['species']
+        orbs = list(basis[sp]['orbitals'])
         orbitals_per_atom.append(orbs)
         norbitals[ia] = len(orbs)
 
@@ -926,11 +889,11 @@ def _build_multi_HRs(
         atom_block_start[ia] = atom_block_start[ia - 1] + norbitals[ia - 1]
 
     # ── Species pairs present in the geometry ──
-    species_in_geom = sorted(set(a["species"] for a in atoms_list))
+    species_in_geom = sorted(set(a['species'] for a in atoms_list))
 
     # Collect all species-pair keys needed (for any pair of species present)
     def _sp_key(sp1, sp2):
-        return f"{min(sp1, sp2)}-{max(sp1, sp2)}"
+        return f'{min(sp1, sp2)}-{max(sp1, sp2)}'
 
     sp_pair_keys = set()
     for i, s1 in enumerate(species_in_geom):
@@ -938,40 +901,36 @@ def _build_multi_HRs(
             sp_pair_keys.add(_sp_key(s1, s2))
 
     # ── Per-label hopping / screening / on-site data ──
-    hop_data = {}    # {label: {sp_key: [shells sorted by r_ref]}}
-    gmap_data = {}   # {label: {sp_key: gamma_map}}
-    onsite_data = {} # {label: {species: {orb_grp: val}}}
+    hop_data = {}  # {label: {sp_key: [shells sorted by r_ref]}}
+    gmap_data = {}  # {label: {sp_key: gamma_map}}
+    onsite_data = {}  # {label: {species: {orb_grp: val}}}
 
     for lbl in unique_labels:
         p = params_map[lbl]
         hop_data[lbl] = {}
         gmap_data[lbl] = {}
-        onsite_data[lbl] = p["onsite"]
-        scr = p.get("screening", {})
+        onsite_data[lbl] = p['onsite']
+        scr = p.get('screening', {})
         for spk in sp_pair_keys:
-            if spk in p["hoppings"]:
-                shells = sorted(p["hoppings"][spk], key=lambda s: s["r_ref"])
+            if spk in p['hoppings']:
+                shells = sorted(p['hoppings'][spk], key=lambda s: s['r_ref'])
                 hop_data[lbl][spk] = shells
             else:
                 # Try reversed key
-                rk = "-".join(reversed(spk.split("-")))
-                if rk in p["hoppings"]:
-                    hop_data[lbl][spk] = sorted(
-                        p["hoppings"][rk], key=lambda s: s["r_ref"]
-                    )
+                rk = '-'.join(reversed(spk.split('-')))
+                if rk in p['hoppings']:
+                    hop_data[lbl][spk] = sorted(p['hoppings'][rk], key=lambda s: s['r_ref'])
             # Gamma map
-            gamma_raw = scr.get("gamma", {})
-            g_spec = gamma_raw.get(spk, gamma_raw.get(
-                "-".join(reversed(spk.split("-"))), 0.0
-            ))
+            gamma_raw = scr.get('gamma', {})
+            g_spec = gamma_raw.get(spk, gamma_raw.get('-'.join(reversed(spk.split('-'))), 0.0))
             gmap_data[lbl][spk] = _get_gamma_map(g_spec)
 
     # (Pre-mixing of hopping parameters is done after geometry
     #  shell distances are known — see below.)
 
     # ── Screening parameters ──
-    scr_first = next(iter(params_map.values())).get("screening", {})
-    r_cut_bohr = scr_first.get("r_cut", 8.0)
+    scr_first = next(iter(params_map.values())).get('screening', {})
+    r_cut_bohr = scr_first.get('r_cut', 8.0)
     r_cut = r_cut_bohr / alat
     r_taper = 0.8 * r_cut
 
@@ -982,12 +941,11 @@ def _build_multi_HRs(
             if spk in hop_data[lbl]:
                 n_shells = max(n_shells, len(hop_data[lbl][spk]))
     if n_shells == 0:
-        raise ValueError("No hopping shells found in any parameter set.")
+        raise ValueError('No hopping shells found in any parameter set.')
 
     # ── Supercell (anisotropic cell_range per direction) ──
     a_norms = np.array([np.linalg.norm(a_vecs[d]) for d in range(3)])
-    cr = [max(1, min(int(np.ceil(r_cut / a_norms[d])), min(n_shells, 3)))
-          for d in range(3)]
+    cr = [max(1, min(int(np.ceil(r_cut / a_norms[d])), min(n_shells, 3))) for d in range(3)]
     cr1, cr2, cr3 = cr
     nk1 = 2 * cr1 + 1
     nk2 = 2 * cr2 + 1
@@ -1013,11 +971,11 @@ def _build_multi_HRs(
     # mirroring the ordinal shell assignment used by SK_EDTB.
     dists_per_spk = {spk: [] for spk in sp_pair_keys}
     for ia in range(natoms):
-        sp_ia = atoms_list[ia]["species"]
+        sp_ia = atoms_list[ia]['species']
         d_vec = sctau_flat - tau[ia]
         d = np.sqrt(np.sum(d_vec**2, axis=1))
         for ib in range(natoms):
-            sp_ib = atoms_list[ib]["species"]
+            sp_ib = atoms_list[ib]['species']
             spk = _sp_key(sp_ia, sp_ib)
             d_ib = d[ib * n_offsets : (ib + 1) * n_offsets]
             mask = d_ib > 1e-10
@@ -1075,7 +1033,7 @@ def _build_multi_HRs(
                         continue
                     n_s = min(len(fallback_shells), n_cut)
                     hop_mixed_cache[pair][spk] = [
-                        fallback_shells[s]["params"] if s < len(fallback_shells) else None
+                        fallback_shells[s]['params'] if s < len(fallback_shells) else None
                         for s in range(n_s)
                     ]
                     gmap_mixed_cache[pair][spk] = gmap_data[fallback_lbl][spk]
@@ -1084,8 +1042,7 @@ def _build_multi_HRs(
                     # Same environment — ordinal assignment
                     n_s = min(len(shells_a) if shells_a else 0, n_cut)
                     hop_mixed_cache[pair][spk] = [
-                        shells_a[s]["params"] if s < len(shells_a) else None
-                        for s in range(n_s)
+                        shells_a[s]['params'] if s < len(shells_a) else None for s in range(n_s)
                     ]
                     gmap_mixed_cache[pair][spk] = gmap_data[la][spk]
                 else:
@@ -1095,8 +1052,8 @@ def _build_multi_HRs(
                     n_s = min(max(n_a, n_b), n_cut)
                     matched = []
                     for s in range(n_s):
-                        pa = shells_a[s]["params"] if shells_a and s < n_a else None
-                        pb = shells_b[s]["params"] if shells_b and s < n_b else None
+                        pa = shells_a[s]['params'] if shells_a and s < n_a else None
+                        pb = shells_b[s]['params'] if shells_b and s < n_b else None
                         if pa is not None and pb is not None:
                             matched.append(_mix_sk_params(pa, pb, mixing))
                         elif pa is not None:
@@ -1124,7 +1081,7 @@ def _build_multi_HRs(
     # energy reference), otherwise fall back to each atom's own label.
     for ia in range(natoms):
         on_lbl = ref_label if ref_label else labels[ia]
-        sp = atoms_list[ia]["species"]
+        sp = atoms_list[ia]['species']
         on = onsite_data[on_lbl][sp]
         bs = atom_block_start[ia]
         for no, orb in enumerate(orbitals_per_atom[ia]):
@@ -1147,8 +1104,8 @@ def _build_multi_HRs(
                             continue
 
                         # Species pair key
-                        sp_a = atoms_list[ia]["species"]
-                        sp_b = atoms_list[ib]["species"]
+                        sp_a = atoms_list[ia]['species']
+                        sp_b = atoms_list[ib]['species']
                         spk = _sp_key(sp_a, sp_b)
 
                         # Determine shell from per-species-pair cutoffs
@@ -1226,38 +1183,36 @@ def _build_multi_HRs(
                 if Rz >= 0.5:
                     Rz -= 1.0
                 R_grid[n, :] = (
-                    Rx * nk1 * a_vecs[0, :]
-                    + Ry * nk2 * a_vecs[1, :]
-                    + Rz * nk3 * a_vecs[2, :]
+                    Rx * nk1 * a_vecs[0, :] + Ry * nk2 * a_vecs[1, :] + Rz * nk3 * a_vecs[2, :]
                 )
                 R_fft[ii, jj, kk, :] = R_grid[n, :]
                 R_idx[ii, jj, kk] = n
 
     metadata = {
-        "nawf": nawf,
-        "natoms": natoms,
-        "tau": tau,
-        "a_vectors": a_vecs,
-        "b_vectors": b_vecs,
-        "norbitals": norbitals,
-        "orbitals_per_atom": orbitals_per_atom,
-        "atom_block_start": atom_block_start,
-        "nk1": nk1,
-        "nk2": nk2,
-        "nk3": nk3,
-        "R": R_grid,
-        "Rfft": R_fft,
-        "Ridx": R_idx,
-        "cutoffs": cutoffs_per_spk,
-        "n_bonds": n_bonds,
-        "species": [a["species"] for a in atoms_list],
-        "alat": alat,
-        "alat_ang": alat / ANGSTROM_AU,
-        "volume": vol,
-        "labels": list(labels),
-        "unique_labels": unique_labels,
+        'nawf': nawf,
+        'natoms': natoms,
+        'tau': tau,
+        'a_vectors': a_vecs,
+        'b_vectors': b_vecs,
+        'norbitals': norbitals,
+        'orbitals_per_atom': orbitals_per_atom,
+        'atom_block_start': atom_block_start,
+        'nk1': nk1,
+        'nk2': nk2,
+        'nk3': nk3,
+        'R': R_grid,
+        'Rfft': R_fft,
+        'Ridx': R_idx,
+        'cutoffs': cutoffs_per_spk,
+        'n_bonds': n_bonds,
+        'species': [a['species'] for a in atoms_list],
+        'alat': alat,
+        'alat_ang': alat / ANGSTROM_AU,
+        'volume': vol,
+        'labels': list(labels),
+        'unique_labels': unique_labels,
     }
-    print(f"  Built H(R): {nawf}x{nawf}, grid {nk1}x{nk2}x{nk3}, {n_bonds} bonds")
+    print(f'  Built H(R): {nawf}x{nawf}, grid {nk1}x{nk2}x{nk3}, {n_bonds} bonds')
     return HRs, metadata
 
 
@@ -1314,7 +1269,7 @@ class MultiParamModel:
         geometry: dict,
         labels: List[str],
         *,
-        mixing: str = "geometric",
+        mixing: str = 'geometric',
         ref_label: Optional[str] = None,
     ):
         """Create a multi-parameter model.
@@ -1339,17 +1294,14 @@ class MultiParamModel:
         self._mixing = mixing
         self._labels = list(labels)
 
-        natoms = len(geometry["atoms"])
+        natoms = len(geometry['atoms'])
         if len(labels) != natoms:
-            raise ValueError(
-                f"labels has {len(labels)} entries, but geometry has {natoms} atoms."
-            )
+            raise ValueError(f'labels has {len(labels)} entries, but geometry has {natoms} atoms.')
         # Validate labels
         for lbl in labels:
             if lbl not in params_map:
                 raise ValueError(
-                    f"Label '{lbl}' not found in params_map. "
-                    f"Available: {sorted(params_map.keys())}"
+                    f"Label '{lbl}' not found in params_map. Available: {sorted(params_map.keys())}"
                 )
 
         self._ref_label = ref_label or next(iter(params_map))
@@ -1357,10 +1309,8 @@ class MultiParamModel:
         counts = {}
         for lbl in labels:
             counts[lbl] = counts.get(lbl, 0) + 1
-        summary = ", ".join(f"{n} {lbl}" for lbl, n in sorted(counts.items()))
-        print(
-            f"MultiParamModel: {natoms} atoms, {summary}, mixing={mixing!r}"
-        )
+        summary = ', '.join(f'{n} {lbl}' for lbl, n in sorted(counts.items()))
+        print(f'MultiParamModel: {natoms} atoms, {summary}, mixing={mixing!r}')
 
     # ── Class-method constructors ─────────────────────────────
 
@@ -1371,7 +1321,7 @@ class MultiParamModel:
         geometry: Union[str, Path],
         labels: List[str],
         **kwargs,
-    ) -> "MultiParamModel":
+    ) -> 'MultiParamModel':
         """Load from JSON files.
 
         Parameters
@@ -1400,7 +1350,7 @@ class MultiParamModel:
         geometry: dict,
         labels: List[str],
         **kwargs,
-    ) -> "MultiParamModel":
+    ) -> 'MultiParamModel':
         """Create from a dict of EDTBModel objects and a new geometry.
 
         Parameters
@@ -1446,7 +1396,7 @@ class MultiParamModel:
 
         t0 = _time.perf_counter()
         if verbose:
-            print("Building multi-parameter H(R)...")
+            print('Building multi-parameter H(R)...')
         HRs, meta = _build_multi_HRs(
             self._params_map,
             self._geometry,
@@ -1456,7 +1406,7 @@ class MultiParamModel:
         )
         if verbose:
             dt = _time.perf_counter() - t0
-            print(f"  H(R) construction: {dt:.1f} s")
+            print(f'  H(R) construction: {dt:.1f} s')
         return HRs, meta
 
     # ── Access / display ──────────────────────────────────────
@@ -1478,7 +1428,7 @@ class MultiParamModel:
 
     @property
     def n_atoms(self) -> int:
-        return len(self._geometry["atoms"])
+        return len(self._geometry['atoms'])
 
     @property
     def unique_labels(self) -> List[str]:
@@ -1501,25 +1451,22 @@ class MultiParamModel:
         """Return a summary of atom labels."""
         counts = self.label_counts()
         lines = [
-            f"MultiParamModel label summary: {self.n_atoms} atoms",
-            f"Mixing rule: {self._mixing}",
-            f"Labels: {', '.join(f'{n} {lbl}' for lbl, n in sorted(counts.items()))}",
-            "",
-            f"{'Atom':>6s}  {'Species':>8s}  {'Label':>16s}",
-            "-" * 40,
+            f'MultiParamModel label summary: {self.n_atoms} atoms',
+            f'Mixing rule: {self._mixing}',
+            f'Labels: {", ".join(f"{n} {lbl}" for lbl, n in sorted(counts.items()))}',
+            '',
+            f'{"Atom":>6s}  {"Species":>8s}  {"Label":>16s}',
+            '-' * 40,
         ]
-        atoms = self._geometry["atoms"]
+        atoms = self._geometry['atoms']
         for ia, (atom, label) in enumerate(zip(atoms, self._labels)):
-            lines.append(f"{ia:6d}  {atom['species']:>8s}  {label:>16s}")
-        return "\n".join(lines)
+            lines.append(f'{ia:6d}  {atom["species"]:>8s}  {label:>16s}')
+        return '\n'.join(lines)
 
     def __repr__(self) -> str:
         counts = self.label_counts()
-        counts_str = ", ".join(f"{lbl}={n}" for lbl, n in sorted(counts.items()))
-        return (
-            f"MultiParamModel(n_atoms={self.n_atoms}, "
-            f"{counts_str}, mixing={self._mixing!r})"
-        )
+        counts_str = ', '.join(f'{lbl}={n}' for lbl, n in sorted(counts.items()))
+        return f'MultiParamModel(n_atoms={self.n_atoms}, {counts_str}, mixing={self._mixing!r})'
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1567,49 +1514,45 @@ class DualParamModel:
         geometry: dict,
         *,
         labels: Optional[List[str]] = None,
-        mixing: str = "geometric",
-        labeling: str = "coordination",
+        mixing: str = 'geometric',
+        labeling: str = 'coordination',
         label_kwargs: Optional[dict] = None,
     ):
         if label_kwargs is None:
             label_kwargs = {}
 
-        natoms = len(geometry["atoms"])
+        natoms = len(geometry['atoms'])
 
         # Compute labels if not provided
         if labels is not None:
             if len(labels) != natoms:
                 raise ValueError(
-                    f"labels has {len(labels)} entries, but geometry has {natoms} atoms."
+                    f'labels has {len(labels)} entries, but geometry has {natoms} atoms.'
                 )
             self._labels = list(labels)
             self._coord = None
-        elif labeling == "coordination":
-            self._labels, self._coord = label_atoms_coordination(
-                geometry, **label_kwargs
-            )
-        elif labeling == "geometric":
+        elif labeling == 'coordination':
+            self._labels, self._coord = label_atoms_coordination(geometry, **label_kwargs)
+        elif labeling == 'geometric':
             self._labels, self._coord = label_atoms_geometric(geometry, **label_kwargs)
-        elif labeling == "manual":
-            if "surface_indices" not in label_kwargs:
-                raise ValueError(
-                    "labeling='manual' requires surface_indices in label_kwargs."
-                )
-            self._labels = label_atoms_manual(natoms, label_kwargs["surface_indices"])
+        elif labeling == 'manual':
+            if 'surface_indices' not in label_kwargs:
+                raise ValueError("labeling='manual' requires surface_indices in label_kwargs.")
+            self._labels = label_atoms_manual(natoms, label_kwargs['surface_indices'])
             self._coord = None
         else:
-            raise ValueError(f"Unknown labeling method: {labeling!r}")
+            raise ValueError(f'Unknown labeling method: {labeling!r}')
 
         # Map 'bulk' to old mixing alias
-        _mixing = "first" if mixing == "bulk" else mixing
+        _mixing = 'first' if mixing == 'bulk' else mixing
 
         # Delegate to MultiParamModel
         self._multi = MultiParamModel(
-            params_map={"bulk": params_bulk, "surface": params_surf},
+            params_map={'bulk': params_bulk, 'surface': params_surf},
             geometry=geometry,
             labels=self._labels,
             mixing=_mixing,
-            ref_label="bulk",
+            ref_label='bulk',
         )
 
     # ── Class-method constructors ─────────────────────────────
@@ -1621,7 +1564,7 @@ class DualParamModel:
         params_surf: Union[str, Path],
         geometry: Union[str, Path],
         **kwargs,
-    ) -> "DualParamModel":
+    ) -> 'DualParamModel':
         """Load from JSON files."""
         p_bulk = read_params(params_bulk)
         p_surf = read_params(params_surf)
@@ -1635,7 +1578,7 @@ class DualParamModel:
         model_surf: EDTBModel,
         geometry: dict,
         **kwargs,
-    ) -> "DualParamModel":
+    ) -> 'DualParamModel':
         """Create from two EDTBModel objects and a new geometry."""
         return cls(model_bulk.params, model_surf.params, geometry, **kwargs)
 
@@ -1675,35 +1618,35 @@ class DualParamModel:
 
     @property
     def n_bulk(self) -> int:
-        return self._labels.count("bulk")
+        return self._labels.count('bulk')
 
     @property
     def n_surface(self) -> int:
-        return self._labels.count("surface")
+        return self._labels.count('surface')
 
     def label_summary(self) -> str:
         """Return a summary of atom labels with coordination numbers."""
         lines = [
-            f"DualParamModel label summary: "
-            f"{self.n_atoms} atoms, {self.n_bulk} bulk + {self.n_surface} surface",
-            f"Mixing rule: {self.mixing}",
-            "",
-            f"{'Atom':>6s}  {'Species':>8s}  {'Label':>8s}",
-            "-" * 40,
+            f'DualParamModel label summary: '
+            f'{self.n_atoms} atoms, {self.n_bulk} bulk + {self.n_surface} surface',
+            f'Mixing rule: {self.mixing}',
+            '',
+            f'{"Atom":>6s}  {"Species":>8s}  {"Label":>8s}',
+            '-' * 40,
         ]
-        atoms = self._multi.geometry["atoms"]
+        atoms = self._multi.geometry['atoms']
         for ia, (atom, label) in enumerate(zip(atoms, self._labels)):
-            coord_str = ""
+            coord_str = ''
             if self._coord is not None:
-                coord_str = f"  Z={self._coord[ia]:.2f}"
-            lines.append(f"{ia:6d}  {atom['species']:>8s}  {label:>8s}{coord_str}")
-        return "\n".join(lines)
+                coord_str = f'  Z={self._coord[ia]:.2f}'
+            lines.append(f'{ia:6d}  {atom["species"]:>8s}  {label:>8s}{coord_str}')
+        return '\n'.join(lines)
 
     def __repr__(self) -> str:
         return (
-            f"DualParamModel("
-            f"n_atoms={self.n_atoms}, "
-            f"n_bulk={self.n_bulk}, "
-            f"n_surface={self.n_surface}, "
-            f"mixing={self.mixing!r})"
+            f'DualParamModel('
+            f'n_atoms={self.n_atoms}, '
+            f'n_bulk={self.n_bulk}, '
+            f'n_surface={self.n_surface}, '
+            f'mixing={self.mixing!r})'
         )
