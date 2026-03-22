@@ -85,7 +85,7 @@ class SurfaceProjectionResult:
     surf_vectors: np.ndarray
     surf_recip: np.ndarray
     a_bulk: np.ndarray = field(repr=False)
-    lattice_2d: str = ""
+    lattice_2d: str = ''
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -130,8 +130,8 @@ def _find_shortest_parallel_G(
                         best_len = G_len
     if best is None:
         raise RuntimeError(
-            "Could not find a reciprocal-lattice vector parallel to the "
-            "surface normal.  Try increasing max_int."
+            'Could not find a reciprocal-lattice vector parallel to the '
+            'surface normal.  Try increasing max_int.'
         )
     return best
 
@@ -170,9 +170,7 @@ def _find_surface_lattice_vectors(
                     candidates.append(v.copy())
 
     if len(candidates) < 2:
-        raise RuntimeError(
-            "Could not find two in-plane lattice vectors.  Try increasing max_int."
-        )
+        raise RuntimeError('Could not find two in-plane lattice vectors.  Try increasing max_int.')
 
     # Sort by length
     candidates.sort(key=lambda v: norm(v))
@@ -202,8 +200,8 @@ def _find_surface_lattice_vectors(
             return v1, v2
 
     raise RuntimeError(
-        "All in-plane lattice vectors are collinear.  This should not "
-        "happen for a 3D lattice — please verify lattice vectors."
+        'All in-plane lattice vectors are collinear.  This should not '
+        'happen for a 3D lattice — please verify lattice vectors.'
     )
 
 
@@ -237,12 +235,12 @@ def _detect_lattice_type_2d(v1: np.ndarray, v2: np.ndarray, tol: float = 0.05) -
     equal_lengths = abs(l1 - l2) / max(l1, l2) < tol
 
     if equal_lengths and abs(angle_deg - 90) < 5.0:
-        return "square"
+        return 'square'
     if equal_lengths and (abs(angle_deg - 60) < 5.0 or abs(angle_deg - 120) < 5.0):
-        return "hexagonal"
+        return 'hexagonal'
     if abs(angle_deg - 90) < 5.0:
-        return "rectangular"
-    return "oblique"
+        return 'rectangular'
+    return 'oblique'
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -250,34 +248,34 @@ def _detect_lattice_type_2d(v1: np.ndarray, v2: np.ndarray, tol: float = 0.05) -
 # ═══════════════════════════════════════════════════════════════════════
 
 SURFACE_SYM_SQUARE = {
-    "Γ": [0.0, 0.0],
-    "X": [0.5, 0.0],
-    "M": [0.5, 0.5],
+    'Γ': [0.0, 0.0],
+    'X': [0.5, 0.0],
+    'M': [0.5, 0.5],
 }
-SURFACE_PATH_SQUARE = "Γ-X-M-Γ"
+SURFACE_PATH_SQUARE = 'Γ-X-M-Γ'
 
 SURFACE_SYM_HEX = {
-    "Γ": [0.0, 0.0],
-    "M": [0.5, 0.0],
-    "K": [1 / 3, 1 / 3],
+    'Γ': [0.0, 0.0],
+    'M': [0.5, 0.0],
+    'K': [1 / 3, 1 / 3],
 }
-SURFACE_PATH_HEX = "Γ-M-K-Γ"
+SURFACE_PATH_HEX = 'Γ-M-K-Γ'
 
 SURFACE_SYM_RECT = {
-    "Γ": [0.0, 0.0],
-    "X": [0.5, 0.0],
-    "S": [0.5, 0.5],
-    "Y": [0.0, 0.5],
+    'Γ': [0.0, 0.0],
+    'X': [0.5, 0.0],
+    'S': [0.5, 0.5],
+    'Y': [0.0, 0.5],
 }
-SURFACE_PATH_RECT = "Γ-X-S-Y-Γ"
+SURFACE_PATH_RECT = 'Γ-X-S-Y-Γ'
 
 SURFACE_SYM_OBLIQUE = {
-    "Γ": [0.0, 0.0],
-    "X": [0.5, 0.0],
-    "M": [0.5, 0.5],
-    "Y": [0.0, 0.5],
+    'Γ': [0.0, 0.0],
+    'X': [0.5, 0.0],
+    'M': [0.5, 0.5],
+    'Y': [0.0, 0.5],
 }
-SURFACE_PATH_OBLIQUE = "Γ-X-M-Y-Γ"
+SURFACE_PATH_OBLIQUE = 'Γ-X-M-Y-Γ'
 
 
 def _default_surface_bz(
@@ -285,10 +283,10 @@ def _default_surface_bz(
 ) -> Tuple[dict, str]:
     """Return default surface-BZ sym points and path for a lattice type."""
     table = {
-        "square": (SURFACE_SYM_SQUARE, SURFACE_PATH_SQUARE),
-        "hexagonal": (SURFACE_SYM_HEX, SURFACE_PATH_HEX),
-        "rectangular": (SURFACE_SYM_RECT, SURFACE_PATH_RECT),
-        "oblique": (SURFACE_SYM_OBLIQUE, SURFACE_PATH_OBLIQUE),
+        'square': (SURFACE_SYM_SQUARE, SURFACE_PATH_SQUARE),
+        'hexagonal': (SURFACE_SYM_HEX, SURFACE_PATH_HEX),
+        'rectangular': (SURFACE_SYM_RECT, SURFACE_PATH_RECT),
+        'oblique': (SURFACE_SYM_OBLIQUE, SURFACE_PATH_OBLIQUE),
     }
     return table[lattice_type]
 
@@ -329,15 +327,15 @@ def _make_surface_kpath(
     kdist : (nk,)    cumulative k-distance.
     sym_ticks : list of (distance, label).
     """
-    pipe_segs = path_str.split("|")
+    pipe_segs = path_str.split('|')
     kpts, dists, ticks = [], [], []
     d = 0.0
 
     for iseg, seg_str in enumerate(pipe_segs):
-        labels = seg_str.split("-")
+        labels = seg_str.split('-')
         if iseg > 0:
             old_d, old_lbl = ticks[-1]
-            ticks[-1] = (old_d, old_lbl + "|" + labels[0])
+            ticks[-1] = (old_d, old_lbl + '|' + labels[0])
         else:
             ticks.append((d, labels[0]))
 
@@ -413,20 +411,20 @@ def project_bulk_bands(
     g_hat = surface_normal / norm(surface_normal)
 
     # ── 1.  Bulk lattice ─────────────────────────────────────────
-    a = np.array(model_dict["model"]["a_vectors"], dtype=float)
+    a = np.array(model_dict['model']['a_vectors'], dtype=float)
     b = inv(a).T  # reciprocal lattice vectors (rows), 1/alat
 
     if verbose:
-        print("Bulk lattice vectors (rows, in alat):")
+        print('Bulk lattice vectors (rows, in alat):')
         for row in a:
-            print(f"  {row}")
-        print(f"Surface normal direction: {g_hat}")
+            print(f'  {row}')
+        print(f'Surface normal direction: {g_hat}')
 
     # ── 2.  Surface-normal reciprocal vector G₀ ──────────────────
     G_perp = _find_shortest_parallel_G(b, g_hat)
     if verbose:
-        print(f"\nShortest G ∥ n̂:  G₀ = {G_perp}  (|G₀| = {norm(G_perp):.4f} / alat)")
-        print(f"k⊥ BZ extent = {norm(G_perp):.4f} / alat")
+        print(f'\nShortest G ∥ n̂:  G₀ = {G_perp}  (|G₀| = {norm(G_perp):.4f} / alat)')
+        print(f'k⊥ BZ extent = {norm(G_perp):.4f} / alat')
 
     # ── 3.  Surface lattice vectors ──────────────────────────────
     v1, v2 = _find_surface_lattice_vectors(a, g_hat)
@@ -434,16 +432,14 @@ def project_bulk_bands(
     lattice_2d = _detect_lattice_type_2d(v1, v2)
 
     if verbose:
-        print("\nSurface lattice vectors:")
-        print(f"  v₁ = {v1}  (|v₁| = {norm(v1):.4f} alat)")
-        print(f"  v₂ = {v2}  (|v₂| = {norm(v2):.4f} alat)")
-        angle = np.degrees(
-            np.arccos(np.clip(np.dot(v1, v2) / (norm(v1) * norm(v2)), -1, 1))
-        )
-        print(f"  Angle = {angle:.1f}°  →  {lattice_2d} lattice")
-        print("Surface reciprocal vectors:")
-        print(f"  b₁ˢ = {b_s[0]}")
-        print(f"  b₂ˢ = {b_s[1]}")
+        print('\nSurface lattice vectors:')
+        print(f'  v₁ = {v1}  (|v₁| = {norm(v1):.4f} alat)')
+        print(f'  v₂ = {v2}  (|v₂| = {norm(v2):.4f} alat)')
+        angle = np.degrees(np.arccos(np.clip(np.dot(v1, v2) / (norm(v1) * norm(v2)), -1, 1)))
+        print(f'  Angle = {angle:.1f}°  →  {lattice_2d} lattice')
+        print('Surface reciprocal vectors:')
+        print(f'  b₁ˢ = {b_s[0]}')
+        print(f'  b₂ˢ = {b_s[1]}')
 
     # ── 4.  Surface BZ path ──────────────────────────────────────
     if surface_sym_points is None or surface_path is None:
@@ -453,25 +449,23 @@ def project_bulk_bands(
         if surface_path is None:
             surface_path = auto_path
         if verbose:
-            print(f"\nAuto-detected surface BZ path: {surface_path}")
+            print(f'\nAuto-detected surface BZ path: {surface_path}')
 
     kpath, kdist, sym_ticks = _make_surface_kpath(
         surface_sym_points, surface_path, b_s, nk_per_seg=nk_par
     )
     nk_total = len(kpath)
     if verbose:
-        print(f"Surface k-path: {nk_total} points, {len(sym_ticks)} ticks")
+        print(f'Surface k-path: {nk_total} points, {len(sym_ticks)} ticks')
 
     # ── 5.  Extract bulk Hamiltonian ─────────────────────────────
     if verbose:
-        print("\nBuilding bulk Hamiltonian...")
-    HRs, R, nawf, nspin, _ = _extract_hamiltonian(
-        model_dict, "_surf_proj_tmp", verbose=False
-    )
+        print('\nBuilding bulk Hamiltonian...')
+    HRs, R, nawf, nspin, _ = _extract_hamiltonian(model_dict, '_surf_proj_tmp', verbose=False)
     nR = HRs.shape[2]
 
     if verbose:
-        print(f"  nawf = {nawf},  nR = {nR},  nspin = {nspin}")
+        print(f'  nawf = {nawf},  nR = {nR},  nspin = {nspin}')
 
     # ── 6.  Eigenvalue sweep: k = k∥ + t·G₀,  t ∈ [0, 1) ───────
     t_vals = np.linspace(0.0, 1.0, nk_perp, endpoint=False)
@@ -485,8 +479,8 @@ def project_bulk_bands(
 
     if verbose:
         print(
-            f"\nComputing eigenvalues:  {nk_total} k∥ × {nk_perp} k⊥ "
-            f"= {nk_total * nk_perp} points ..."
+            f'\nComputing eigenvalues:  {nk_total} k∥ × {nk_perp} k⊥ '
+            f'= {nk_total * nk_perp} points ...'
         )
 
     for ik in range(nk_total):
@@ -514,8 +508,8 @@ def project_bulk_bands(
     if verbose:
         emin_glob = band_min.min()
         emax_glob = band_max.max()
-        print(f"Energy range: [{emin_glob:.2f}, {emax_glob:.2f}] eV")
-        print("Done.")
+        print(f'Energy range: [{emin_glob:.2f}, {emax_glob:.2f}] eV')
+        print('Done.')
 
     return SurfaceProjectionResult(
         kdist=kdist,
@@ -662,9 +656,7 @@ def find_gaps_at_kpar(
     nk = len(result.kdist)
     gaps_per_k = []
     for ik in range(nk):
-        intervals = [
-            (result.band_min[ik, n], result.band_max[ik, n]) for n in range(result.nawf)
-        ]
+        intervals = [(result.band_min[ik, n], result.band_max[ik, n]) for n in range(result.nawf)]
         merged = _merge_intervals(intervals, tol=tol)
         # Clip
         clipped = []
@@ -695,11 +687,11 @@ def plot_projected(
     result: SurfaceProjectionResult,
     *,
     y_lim: tuple = (-12, 6),
-    color: str = "steelblue",
+    color: str = 'steelblue',
     alpha: float = 0.45,
-    gap_color: str = "lightyellow",
+    gap_color: str = 'lightyellow',
     show_gaps: bool = True,
-    mode: str = "fill",
+    mode: str = 'fill',
     ne: int = 500,
     surface_bands: Optional[np.ndarray] = None,
     surface_kdist: Optional[np.ndarray] = None,
@@ -746,7 +738,7 @@ def plot_projected(
     kdist = result.kdist
 
     # ── Projected bulk bands ─────────────────────────────────────
-    if mode == "fill":
+    if mode == 'fill':
         for n in range(result.nawf):
             # Only plot bands that overlap with y_lim
             if result.band_max[:, n].max() < y_lim[0]:
@@ -759,12 +751,12 @@ def plot_projected(
                 result.band_max[:, n],
                 color=color,
                 alpha=alpha,
-                edgecolor="none",
+                edgecolor='none',
                 linewidth=0,
                 rasterized=True,
             )
 
-    elif mode == "image":
+    elif mode == 'image':
         E_grid = np.linspace(y_lim[0], y_lim[1], ne)
         image = np.zeros((len(kdist), ne))
         for ik in range(len(kdist)):
@@ -796,9 +788,7 @@ def plot_projected(
                     color=gap_color,
                     alpha=0.6,
                     zorder=0,
-                    label=f"gap [{g_lo:.2f}, {g_hi:.2f}] eV"
-                    if g_lo == abs_gaps[0][0]
-                    else None,
+                    label=f'gap [{g_lo:.2f}, {g_hi:.2f}] eV' if g_lo == abs_gaps[0][0] else None,
                 )
 
     # ── Surface bands overlay ────────────────────────────────────
@@ -808,9 +798,9 @@ def plot_projected(
             ax.plot(
                 sk,
                 surface_bands[:, n],
-                "r-",
+                'r-',
                 lw=1.5,
-                label="surface states" if n == 0 else None,
+                label='surface states' if n == 0 else None,
             )
 
     # ── Symmetry ticks ───────────────────────────────────────────
@@ -819,24 +809,24 @@ def plot_projected(
     for t in result.sym_ticks:
         lbl = t[1]
         # Pretty-format: add overline via mathtext
-        parts = lbl.split("|")
+        parts = lbl.split('|')
         formatted = []
         for p in parts:
-            if p == "Γ":
-                formatted.append(r"$\bar{\Gamma}$")
+            if p == 'Γ':
+                formatted.append(r'$\bar{\Gamma}$')
             else:
-                formatted.append(r"$\overline{\mathrm{" + p + r"}}$")
-        tick_lbl.append("|".join(formatted))
+                formatted.append(r'$\overline{\mathrm{' + p + r'}}$')
+        tick_lbl.append('|'.join(formatted))
 
     for x in tick_pos:
-        ax.axvline(x, color="gray", lw=0.5, alpha=0.5)
+        ax.axvline(x, color='gray', lw=0.5, alpha=0.5)
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_lbl, fontsize=12)
 
     ax.set_xlim(kdist[0], kdist[-1])
     ax.set_ylim(*y_lim)
-    ax.set_ylabel("Energy (eV)", fontsize=12)
-    ax.set_xlabel(r"$k_\parallel$", fontsize=12)
+    ax.set_ylabel('Energy (eV)', fontsize=12)
+    ax.set_xlabel(r'$k_\parallel$', fontsize=12)
     if title:
         ax.set_title(title, fontsize=14)
 
@@ -912,55 +902,53 @@ def find_band_lenses(
 
             if mid_bin not in active:
                 active[mid_bin] = {
-                    "start_k": ik,
-                    "end_k": ik,
-                    "energies": [(g_lo, g_hi)],
-                    "max_width": width,
+                    'start_k': ik,
+                    'end_k': ik,
+                    'energies': [(g_lo, g_hi)],
+                    'max_width': width,
                 }
             else:
-                active[mid_bin]["end_k"] = ik
-                active[mid_bin]["energies"].append((g_lo, g_hi))
-                active[mid_bin]["max_width"] = max(active[mid_bin]["max_width"], width)
+                active[mid_bin]['end_k'] = ik
+                active[mid_bin]['energies'].append((g_lo, g_hi))
+                active[mid_bin]['max_width'] = max(active[mid_bin]['max_width'], width)
 
         # Check for gaps that closed (no longer active)
-        closed = [
-            m for m in active if m not in current_mids and active[m]["end_k"] == ik - 1
-        ]
+        closed = [m for m in active if m not in current_mids and active[m]['end_k'] == ik - 1]
         for m in closed:
             info = active.pop(m)
             # Only report if it opened and closed (not at boundary)
-            if info["start_k"] > 0 or info["end_k"] < nk - 1:
-                all_lo = [e[0] for e in info["energies"]]
-                all_hi = [e[1] for e in info["energies"]]
+            if info['start_k'] > 0 or info['end_k'] < nk - 1:
+                all_lo = [e[0] for e in info['energies']]
+                all_hi = [e[1] for e in info['energies']]
                 lenses.append(
                     {
-                        "gap_center": 0.5 * (np.mean(all_lo) + np.mean(all_hi)),
-                        "max_gap": info["max_width"],
-                        "k_range": (
-                            result.kdist[info["start_k"]],
-                            result.kdist[info["end_k"]],
+                        'gap_center': 0.5 * (np.mean(all_lo) + np.mean(all_hi)),
+                        'max_gap': info['max_width'],
+                        'k_range': (
+                            result.kdist[info['start_k']],
+                            result.kdist[info['end_k']],
                         ),
-                        "k_indices": (info["start_k"], info["end_k"]),
+                        'k_indices': (info['start_k'], info['end_k']),
                     }
                 )
 
     # Flush remaining active gaps
     for m, info in active.items():
-        if info["start_k"] > 0 or info["end_k"] < nk - 1:
-            all_lo = [e[0] for e in info["energies"]]
-            all_hi = [e[1] for e in info["energies"]]
+        if info['start_k'] > 0 or info['end_k'] < nk - 1:
+            all_lo = [e[0] for e in info['energies']]
+            all_hi = [e[1] for e in info['energies']]
             lenses.append(
                 {
-                    "gap_center": 0.5 * (np.mean(all_lo) + np.mean(all_hi)),
-                    "max_gap": info["max_width"],
-                    "k_range": (
-                        result.kdist[info["start_k"]],
-                        result.kdist[info["end_k"]],
+                    'gap_center': 0.5 * (np.mean(all_lo) + np.mean(all_hi)),
+                    'max_gap': info['max_width'],
+                    'k_range': (
+                        result.kdist[info['start_k']],
+                        result.kdist[info['end_k']],
                     ),
-                    "k_indices": (info["start_k"], info["end_k"]),
+                    'k_indices': (info['start_k'], info['end_k']),
                 }
             )
 
     # Sort by energy
-    lenses.sort(key=lambda x: x["gap_center"])
+    lenses.sort(key=lambda x: x['gap_center'])
     return lenses
