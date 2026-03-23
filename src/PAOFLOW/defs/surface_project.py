@@ -876,7 +876,7 @@ def find_band_lenses(
     # Cluster across k to find lenses (gaps that exist at some k but not all).
 
     abs_gaps = find_absolute_gaps(result, y_lim=y_lim, tol=tol)
-    abs_gap_set = set(abs_gaps)
+    # abs_gap_set = set(abs_gaps)
 
     lenses = []
     # Track "active gaps" across k using gap midpoints

@@ -82,6 +82,11 @@ CHANNEL_LABELS = {
     (2, 2): ['σ', 'π', 'δ'],
 }
 
+# Map each SK channel name to its (l, l') angular-momentum pair
+CHANNEL_L_MAP = {
+    name: lpair for lpair, names in LPAIR_ACTIVE_NAMES.items() for name in names
+}
+
 
 def sk_element(orb_a: str, orb_b: str, lx: float, ly: float, lz: float, sh: dict) -> float:
     """Slater-Koster two-center hopping matrix element H(orb_a, orb_b).
@@ -1753,7 +1758,7 @@ class MultiGeomEDTB:
         """
         a_vecs = arry['a_vectors']
         lengths = np.array([np.linalg.norm(a_vecs[i]) for i in range(3)])
-        geo_mean = np.cbrt(np.prod(lengths))
+        # geo_mean = np.cbrt(np.prod(lengths))
         nk = [nkfit_base, nkfit_base, nkfit_base]
         for i in range(3):
             other = [lengths[j] for j in range(3) if j != i]
@@ -2153,7 +2158,7 @@ class MultiGeomEDTB:
         """
         p0 = np.zeros(self.n_onsite)
         filled = np.zeros(self.n_onsite, dtype=bool)
-        ref = self.fitters[0]
+        # ref = self.fitters[0]
         for ig, f in enumerate(self.fitters):
             p_ig = f.extract_onsite_from_HR0()
             real_sp = (
@@ -2841,7 +2846,7 @@ class MultiGeomEDTB_DD:
         # ── Enumerate all bonds within r_c ──
         r_c_alat = self.r_c_bohr / alat
         r_cut_alat = self.r_cut_bohr / alat
-        r_0_alat = self.r_0_bohr / alat
+        # r_0_alat = self.r_0_bohr / alat
         min_a = min(np.linalg.norm(v) for v in a_vecs)
         cell_range = int(np.ceil(r_c_alat / min_a)) + 1
 
@@ -3017,7 +3022,7 @@ class MultiGeomEDTB_DD:
         d_bonds = gd['d_bonds']
         S_bonds = gd['S_bonds']
         phases = gd['phases']
-        n_bonds = gd['n_bonds']
+        # n_bonds = gd['n_bonds']
         bond_groups = gd['bond_groups']
 
         n_ch = self.n_ch
@@ -3255,7 +3260,7 @@ class MultiGeomEDTB_DD:
         """
         rng = np.random.RandomState(seed)
         n_data = self.n_data_total
-        reg_w = self._reg_weights
+        # reg_w = self._reg_weights
 
         # ── Default initial guess ──
         if p0 is None:

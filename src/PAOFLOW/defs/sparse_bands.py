@@ -608,7 +608,7 @@ class SparseEDTB:
                         sctau_list.append(tau[ia] + R_vec)
                         R_ints.append([i, j, k])
         sctau_flat = np.array(sctau_list)  # (n_sc, 3)
-        R_ints_flat = np.array(R_ints, dtype=int)  # (n_sc, 3)
+        # R_ints_flat = np.array(R_ints, dtype=int)  # (n_sc, 3)
         n_sc = len(sctau_flat)
 
         if self.verbose:
@@ -624,7 +624,7 @@ class SparseEDTB:
             if self.verbose:
                 print('    Using KDTree-sparse screening')
             tree_sc = cKDTree(sctau_flat)
-            tree_home = cKDTree(tau)
+            # tree_home = cKDTree(tau)
 
             # f_c_table as sparse CSR: (natoms, n_sc)
             fc_rows, fc_cols, fc_vals = [], [], []
@@ -784,7 +784,7 @@ class SparseEDTB:
             # ── Fully vectorised path (homogeneous spd) ─────────
             if self.verbose:
                 print('    (vectorised spd path)')
-            oa_range = np.arange(_norb, dtype=np.int32)
+            # oa_range = np.arange(_norb, dtype=np.int32)
             rows_chunks = []
             cols_chunks = []
             vals_chunks = []

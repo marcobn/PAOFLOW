@@ -1435,7 +1435,7 @@ def SK_EDTB(data_controller, params):
     # We store S for every (ia, ib_sc) pair where ib_sc is the supercell index.
     # For efficiency, compute f_c(d) for all atom-supercell pairs first.
 
-    n_sc = natoms * nk1 * nk2 * nk3
+    # n_sc = natoms * nk1 * nk2 * nk3
 
     # f_c values: f_c_table[ia, n] = f_c(|tau[ia] - sctau_flat[n]|)
     # Vectorized with cdist for performance
