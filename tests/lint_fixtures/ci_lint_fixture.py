@@ -5,8 +5,6 @@ Contains:
 - one unfixable issue (undefined name, F821)
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
 
 def build_message() -> str:
     greeting = 'hello from ci lint fixture'
