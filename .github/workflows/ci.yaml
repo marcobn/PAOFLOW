@@ -36,7 +36,6 @@ jobs:
           pip install pre-commit
 
       - name: Run pre-commit (first pass)
-        id: precommit_first_pass
         continue-on-error: true
         run: |
           pre-commit run --all-files --show-diff-on-failure
