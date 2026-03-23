@@ -37,7 +37,7 @@ jobs:
         id: precommit_first_pass
         continue-on-error: true
         run: |
-          pre-commit run --all-files --show-diff-on-failure | tee .pre-commit-results.txt
+          pre-commit run --all-files --show-diff-on-failure
 
       - name: Commit and push autofixes
         if: github.event.pull_request.head.repo.full_name == github.repository
@@ -61,10 +61,3 @@ jobs:
       - name: Run pre-commit (verification pass)
         run: |
           pre-commit run --all-files --show-diff-on-failure
-
-      - name: Upload pre-commit results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pre-commit-results
-          path: .pre-commit-results.txt
