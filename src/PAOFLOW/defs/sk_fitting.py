@@ -83,9 +83,7 @@ CHANNEL_LABELS = {
 }
 
 # Map each SK channel name to its (l, l') angular-momentum pair
-CHANNEL_L_MAP = {
-    name: lpair for lpair, names in LPAIR_ACTIVE_NAMES.items() for name in names
-}
+CHANNEL_L_MAP = {name: lpair for lpair, names in LPAIR_ACTIVE_NAMES.items() for name in names}
 
 
 def sk_element(orb_a: str, orb_b: str, lx: float, ly: float, lz: float, sh: dict) -> float:
