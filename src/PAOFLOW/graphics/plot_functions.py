@@ -7,7 +7,7 @@ def plot_dos(es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=
 
     fig = plt.figure()
 
-    tit = "DoS" if title is None else title
+    tit = 'DoS' if title is None else title
     fig.suptitle(tit)
 
     ax = fig.add_subplot(111)
@@ -25,8 +25,8 @@ def plot_dos(es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=
     elif not vertical:
         ax.set_ylim(0, ax.get_ylim()[1])
 
-    el = "Energy (eV)" if x_label is None else x_label
-    dl = "electrons/eV" if y_label is None else y_label
+    el = 'Energy (eV)' if x_label is None else x_label
+    dl = 'electrons/eV' if y_label is None else y_label
     xl = el if not vertical else dl
     yl = dl if not vertical else el
 
@@ -44,7 +44,7 @@ def plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend):
         labels = list(range(len(dos)))
     else:
         if len(labels) != len(dos):
-            raise Exception("Must provide one label for each pdos file")
+            raise Exception('Must provide one label for each pdos file')
 
     if cols is None or isinstance(cols, str):
         cols = [cols] * len(dos)
@@ -54,11 +54,11 @@ def plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend):
         if len(cs) == 1:
             cols = [cols] * len(dos)
         elif cs[0] != len(labels):
-            raise Exception("Must provide one color for each pdos file")
+            raise Exception('Must provide one color for each pdos file')
 
     fig = plt.figure()
 
-    tit = "PDoS" if title is None else title
+    tit = 'PDoS' if title is None else title
     fig.suptitle(tit)
 
     ax = fig.add_subplot(111)
@@ -78,8 +78,8 @@ def plot_pdos(es, dos, title, x_lim, y_lim, vertical, cols, labels, legend):
     elif not vertical:
         ax.set_ylim(0, ax.get_ylim()[1])
 
-    el = "Energy (eV)"
-    dl = "electrons/eV"
+    el = 'Energy (eV)'
+    dl = 'electrons/eV'
     xl = el if not vertical else dl
     yl = dl if not vertical else el
 
@@ -107,44 +107,42 @@ def plot_weighted_bands(
     """ """
 
     hline_style = {
-        "linestyle": "--",
-        "linewidth": 1,
-        "color": "blue",
+        'linestyle': '--',
+        'linewidth': 1,
+        'color': 'blue',
     }  # horizontal line style
     vline_style = {
-        "linestyle": "-",
-        "linewidth": 1,
-        "color": "gray",
+        'linestyle': '-',
+        'linewidth': 1,
+        'color': 'gray',
     }  # horizontal line style
 
-    w_norm = normalize_weights(bands["site_weight"].to_numpy())
+    w_norm = normalize_weights(bands['site_weight'].to_numpy())
 
     fig = plt.figure()
 
-    tit = "" if title is None else title
+    tit = '' if title is None else title
     fig.suptitle(tit)
 
     ax = fig.add_subplot(111)
 
     sizes = 8 + 7 * w_norm  # marker size scaling
     sc = ax.scatter(
-        bands["kindex"],
-        bands["eigenvalue"],
+        bands['kindex'],
+        bands['eigenvalue'],
         s=sizes,
         c=w_norm,
-        cmap="jet",
+        cmap='jet',
         alpha=0.8,
-        edgecolors="none",
+        edgecolors='none',
     )
 
     if cbar_label is None:
-        fig.colorbar(sc, ax=ax, label="Weight")
+        fig.colorbar(sc, ax=ax, label='Weight')
     else:
         fig.colorbar(sc, ax=ax, label=cbar_label)
 
-    ax.hlines(
-        0.0, sym_points[0][0], sym_points[0][len(sym_points[0]) - 1], **hline_style
-    )
+    ax.hlines(0.0, sym_points[0][0], sym_points[0][len(sym_points[0]) - 1], **hline_style)
 
     if y_lim is None:
         y_lim = ax.get_ylim()
@@ -157,14 +155,14 @@ def plot_weighted_bands(
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], **vline_style)
     if label is None:
-        label = r"$\epsilon(\mathbf{k})$ (eV)"
+        label = r'$\epsilon(\mathbf{k})$ (eV)'
     ax.set_ylabel(label, fontsize=12)
 
     if filename is not None:
         if outputdir is None:
-            plt.savefig(filename, dpi=300, bbox_inches="tight")
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
         else:
-            plt.savefig(outputdir + filename, dpi=300, bbox_inches="tight")
+            plt.savefig(outputdir + filename, dpi=300, bbox_inches='tight')
     plt.show()
 
 
@@ -188,13 +186,13 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
 
     # --- normalise colours ---
     default_cols = [
-        "black",
-        "tab:red",
-        "tab:blue",
-        "tab:green",
-        "tab:orange",
-        "tab:purple",
-        "tab:brown",
+        'black',
+        'tab:red',
+        'tab:blue',
+        'tab:green',
+        'tab:orange',
+        'tab:purple',
+        'tab:brown',
     ]
     if col is None:
         cols = [default_cols[i % len(default_cols)] for i in range(n_sets)]
@@ -213,7 +211,7 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
 
     fig = plt.figure()
 
-    tit = "Band Structure" if title is None else title
+    tit = 'Band Structure' if title is None else title
     fig.suptitle(tit)
 
     ax = fig.add_subplot(111)
@@ -232,9 +230,9 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
     else:
         ax.set_xticks(sym_points[0])
         ax.set_xticklabels(sym_points[1])
-        ax.vlines(sym_points[0], y_lim[0], y_lim[1], color="gray")
+        ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if label is None:
-        label = r"$\epsilon(\mathbf{k})$ (eV)"
+        label = r'$\epsilon(\mathbf{k})$ (eV)'
     ax.set_ylabel(label, fontsize=12)
 
     if legend and any(l is not None for l in labels):
@@ -252,7 +250,7 @@ def plot_dos_beside_bands(
     fig = plt.figure()
     spec = gridspec.GridSpec(ncols=2, nrows=1, width_ratios=[5, 1])
 
-    tit = "Band Structure and DoS" if title is None else title
+    tit = 'Band Structure and DoS' if title is None else title
     fig.suptitle(tit)
 
     ax_b = fig.add_subplot(spec[0])
@@ -269,9 +267,9 @@ def plot_dos_beside_bands(
     else:
         ax_b.set_xticks(sym_points[0])
         ax_b.set_xticklabels(sym_points[1])
-        ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color="gray")
+        ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if band_label is None:
-        band_label = r"$\epsilon(\mathbf{k})$ (eV)"
+        band_label = r'$\epsilon(\mathbf{k})$ (eV)'
     ax_b.set_ylabel(band_label, fontsize=12)
 
     ax_d.plot(dos, es, color=col)
@@ -307,7 +305,7 @@ def plot_berry_under_bands(
     fig = plt.figure()
     spec = gridspec.GridSpec(ncols=1, nrows=2, height_ratios=[3, 1])
 
-    tit = "Band Structure and Berry Phase" if title is None else title
+    tit = 'Band Structure and Berry Phase' if title is None else title
     fig.suptitle(tit)
 
     ax_ba = fig.add_subplot(spec[0])
@@ -329,15 +327,15 @@ def plot_berry_under_bands(
         ax_be.set_ylim(*tlim)
         ax_be.set_xticks(sym_points[0])
         ax_be.set_xticklabels(sym_points[1])
-        ax_be.vlines(sym_points[0], tlim[0], tlim[1], color="gray")
+        ax_be.vlines(sym_points[0], tlim[0], tlim[1], color='gray')
         ax_ba.set_xticks(sym_points[0])
         ax_ba.set_xticklabels(sym_points[1])
-        ax_ba.vlines(sym_points[0], y_lim[0], y_lim[1], color="gray")
+        ax_ba.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
 
     if berry_label is None:
-        berry_label = r"$\Omega(\mathbf{k})$"
+        berry_label = r'$\Omega(\mathbf{k})$'
     if band_label is None:
-        band_label = r"$\epsilon(\mathbf{k})$ (eV)"
+        band_label = r'$\epsilon(\mathbf{k})$ (eV)'
     ax_be.set_ylabel(berry_label, fontsize=12)
     ax_ba.set_ylabel(band_label, fontsize=12)
 
@@ -359,14 +357,14 @@ def plot_tensor(
 
     ax = fig.add_subplot(111)
 
-    lmap = {0: "x", 1: "y", 2: "z"}
+    lmap = {0: 'x', 1: 'y', 2: 'z'}
     lkey = lambda a, b: lmap[a] + lmap[b]
     if len(eles) == 0:
         tval = np.empty(tensors.shape[0], dtype=float)
         for i, v in enumerate(tensors):
             tval[i] = np.sum([v[j, j] for j in range(3)]) / 3
         col = col if type(col) is str else col[0]
-        ax.plot(enes, tval, color=col, label="Avg.")
+        ax.plot(enes, tval, color=col, label='Avg.')
     else:
         if type(col) is str:
             for e in eles:
@@ -409,7 +407,7 @@ def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, 
         for i, s in enumerate(shc):
             ax.plot(enes, s, color=cols[i], label=labels[i])
     else:
-        raise Exception("Dimensions of colors are incorrect. Blame GPAO.py")
+        raise Exception('Dimensions of colors are incorrect. Blame GPAO.py')
 
     if x_lim is not None:
         ax.set_xlim(*x_lim)

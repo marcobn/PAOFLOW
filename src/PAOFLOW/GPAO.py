@@ -2,9 +2,7 @@ class GPAO:
     def __init__(self):
         pass
 
-    def plot_dos(
-        self, fname, title=None, x_lim=None, y_lim=None, vertical=False, col="black"
-    ):
+    def plot_dos(self, fname, title=None, x_lim=None, y_lim=None, vertical=False, col='black'):
         """
         Plot the density of states.
 
@@ -78,7 +76,7 @@ class GPAO:
         label=None,
         filename=None,
         y_lim=None,
-        col="black",
+        col='black',
     ):
         """
         Plot the band structure
@@ -157,7 +155,7 @@ class GPAO:
         label=None,
         x_lim=None,
         y_lim=None,
-        col="black",
+        col='black',
         dos_ticks=False,
     ):
         """
@@ -176,9 +174,9 @@ class GPAO:
         from .graphics.plot_functions import plot_bands
 
         if title is None:
-            title = "Berry curvature vs k-point"
+            title = 'Berry curvature vs k-point'
         if label is None:
-            label = r"$\Omega(\mathbf{k})$"
+            label = r'$\Omega(\mathbf{k})$'
         if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
@@ -196,7 +194,7 @@ class GPAO:
         band_label=None,
         x_lim=None,
         y_lim=None,
-        col="black",
+        col='black',
         dos_ticks=False,
     ):
         """
@@ -235,7 +233,7 @@ class GPAO:
         title=None,
         x_lim=None,
         y_lim=None,
-        col="black",
+        col='black',
         dos_ticks=False,
         band_label=None,
         berry_label=None,
@@ -282,7 +280,7 @@ class GPAO:
         fname,
         t_ele=[(0, 0), (1, 1), (2, 2)],
         vE=None,
-        title="Sigma vs Energy",
+        title='Sigma vs Energy',
         x_lim=None,
         y_lim=None,
         col=[(1, 0, 0), (0, 1, 0), (0, 0, 1)],
@@ -303,11 +301,11 @@ class GPAO:
         from .defs.read_pao_output import read_transport_PAO
         from .graphics.plot_functions import plot_tensor
 
-        x_label = "$Energy (eV)$"
-        y_label = r"Conductivity $(\Omega\, m\, s)^{-1}$"
+        x_label = '$Energy (eV)$'
+        y_label = r'Conductivity $(\Omega\, m\, s)^{-1}$'
         enes, temps, tensors = read_transport_PAO(fname)
         for i, temp in enumerate(temps):
-            ttitle = title + ", T={}".format(temp)
+            ttitle = title + ', T={}'.format(temp)
             plot_tensor(
                 enes,
                 tensors[i],
@@ -327,7 +325,7 @@ class GPAO:
         fname,
         t_ele=[(0, 0), (1, 1), (2, 2)],
         vE=None,
-        title="Seebeck vs Energy",
+        title='Seebeck vs Energy',
         x_lim=None,
         y_lim=None,
         col=[(1, 0, 0), (0, 1, 0), (0, 0, 1)],
@@ -348,11 +346,11 @@ class GPAO:
         from .defs.read_pao_output import read_transport_PAO
         from .graphics.plot_functions import plot_tensor
 
-        x_label = "Energy (eV)"
-        y_label = r"Seebeck ($\mu$V/K)"
+        x_label = 'Energy (eV)'
+        y_label = r'Seebeck ($\mu$V/K)'
         enes, temps, tensors = read_transport_PAO(fname)
         for i, temp in enumerate(temps):
-            ttitle = title + ", T={}".format(temp)
+            ttitle = title + ', T={}'.format(temp)
             plot_tensor(
                 enes,
                 tensors[i] * 1e6,
@@ -370,7 +368,7 @@ class GPAO:
     def plot_shc(
         self,
         fname,
-        title="SHC vs Energy",
+        title='SHC vs Energy',
         x_lim=None,
         y_lim=None,
         cols=None,
@@ -390,8 +388,8 @@ class GPAO:
 
         from .defs.read_pao_output import read_dos_PAO
 
-        x_label = "Energy (eV)"
-        y_label = r"$\sigma$ ($\Omega$cm)$^{-1}$"
+        x_label = 'Energy (eV)'
+        y_label = r'$\sigma$ ($\Omega$cm)$^{-1}$'
 
         if isinstance(fname, str):
             from .graphics.plot_functions import plot_dos
@@ -410,10 +408,8 @@ class GPAO:
             if not isinstance(cols, list):
                 cols = [cols] * len(fname)
             for fn in fname:
-                tag = fn.split(".")[-2][-4:]
+                tag = fn.split('.')[-2][-4:]
                 es, shc = read_dos_PAO(fn)
                 data.append(shc)
                 labels.append(tag)
-            plot_shc_tensor(
-                es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend
-            )
+            plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
