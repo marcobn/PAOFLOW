@@ -910,7 +910,7 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
     dict
         Model dict with species-pair-keyed hoppings.
     """
-    species_list = sorted(params['basis'].keys())
+    # species_list = sorted(params['basis'].keys())
 
     # ── Atoms ──
     atoms_dict = {}
