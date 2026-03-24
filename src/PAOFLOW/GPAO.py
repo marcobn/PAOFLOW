@@ -46,9 +46,10 @@ class GPAO:
           labels (list): List of strings with same dimension as the number of files
           psum_inds (list): A list of lists. Each inner list contains indices for the dos files elements to sum together. There is one line plotted for each inner list.
         """
+        import numpy as np
+
         from .defs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_pdos
-        import numpy as np
 
         es = None
         dos = []
@@ -87,8 +88,8 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .graphics.plot_functions import plot_weighted_bands
         from .defs.read_pao_output import read_site_projected
+        from .graphics.plot_functions import plot_weighted_bands
 
         if sym_points is not None:
             if type(sym_points) is str:
@@ -107,26 +108,44 @@ class GPAO:
             col,
         )
 
-    def plot_bands(self, fname, sym_points=None, title=None, label=None, y_lim=None, col='black'):
+    def plot_bands(
+        self,
+        fnames,
+        sym_points=None,
+        title=None,
+        label=None,
+        labels=None,
+        y_lim=None,
+        cols=None,
+        legend=True,
+    ):
         """
-        Plot the band structure
+        Plot one or more band structures for comparison.
 
         Arguments:
-          fname (str): File name (including relative path)
+          fnames (str or list): File name or list of file names (including relative path).
           sym_points (str or tuple): File name for the kpath_points produced by PAOFLOW. Otherwise, provide a tuple of two lists. The first contains indices of the high sym points, the second contains labels for the high sym points.
           title (str): A title for the plot
+          label (str): y-axis label
+          labels (list): Legend labels, one per file (e.g. ['DFT','SK model'])
           y_lim (tuple): Pair of axis limits (y_min, y_max)
-          col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
+          cols (list or str): Color(s) for each dataset. A list of strings/3-tuples recognized by matplotlib.
+          legend (bool): Show legend when labels are provided (default True)
         """
-        from .graphics.plot_functions import plot_bands
         from .defs.read_pao_output import read_bands_PAO
+        from .graphics.plot_functions import plot_bands
+
+        if isinstance(fnames, str):
+            fnames = [fnames]
+
+        bands_list = [read_bands_PAO(fn) for fn in fnames]
 
         if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
-        plot_bands(read_bands_PAO(fname), sym_points, title, label, y_lim, col)
+        plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend)
 
     def plot_berry(
         self,
@@ -149,14 +168,15 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .graphics.plot_functions import plot_bands
-        from .defs.read_pao_output import read_dos_PAO
         import numpy as np
+
+        from .defs.read_pao_output import read_dos_PAO
+        from .graphics.plot_functions import plot_bands
 
         if title is None:
             title = 'Berry curvature vs k-point'
         if label is None:
-            label = '$\Omega$($\\bf{k}$)'
+            label = r'$\Omega(\mathbf{k})$'
         if sym_points is not None:
             if type(sym_points) is str:
                 from .defs.read_pao_output import read_band_path_PAO
@@ -189,7 +209,7 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .defs.read_pao_output import read_dos_PAO, read_bands_PAO
+        from .defs.read_pao_output import read_bands_PAO, read_dos_PAO
         from .graphics.plot_functions import plot_dos_beside_bands
 
         if sym_points is not None:
@@ -230,7 +250,7 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .defs.read_pao_output import read_dos_PAO, read_bands_PAO
+        from .defs.read_pao_output import read_bands_PAO, read_dos_PAO
         from .graphics.plot_functions import plot_berry_under_bands
 
         if sym_points is not None:
@@ -243,7 +263,16 @@ class GPAO:
         path, omega = read_dos_PAO(fn_berry)
 
         plot_berry_under_bands(
-            omega, bands, sym_points, title, band_label, berry_label, x_lim, y_lim, col, dos_ticks
+            omega,
+            bands,
+            sym_points,
+            title,
+            band_label,
+            berry_label,
+            x_lim,
+            y_lim,
+            col,
+            dos_ticks,
         )
 
     def plot_electrical_conductivity(
@@ -273,7 +302,7 @@ class GPAO:
         from .graphics.plot_functions import plot_tensor
 
         x_label = '$Energy (eV)$'
-        y_label = 'Conductivity $(\Omega m s)^{-1}$'
+        y_label = r'Conductivity $(\Omega\, m\, s)^{-1}$'
         enes, temps, tensors = read_transport_PAO(fname)
         for i, temp in enumerate(temps):
             ttitle = title + ', T={}'.format(temp)
@@ -318,7 +347,7 @@ class GPAO:
         from .graphics.plot_functions import plot_tensor
 
         x_label = 'Energy (eV)'
-        y_label = 'Seebeck ($\mu$V/K)'
+        y_label = r'Seebeck ($\mu$V/K)'
         enes, temps, tensors = read_transport_PAO(fname)
         for i, temp in enumerate(temps):
             ttitle = title + ', T={}'.format(temp)
@@ -337,7 +366,13 @@ class GPAO:
             )
 
     def plot_shc(
-        self, fname, title='SHC vs Energy', x_lim=None, y_lim=None, cols=None, legend=True
+        self,
+        fname,
+        title='SHC vs Energy',
+        x_lim=None,
+        y_lim=None,
+        cols=None,
+        legend=True,
     ):
         """
         Plot the Seebeck coefficient. If multiple Temperatures are computed the default behavior is to plot the full energy range for every temperature. If a conductivity vs temperature plot is desired, set vE to the energy at which conductivity should be collected for each temperature.
@@ -349,11 +384,12 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           cols (list): A list of 3-tuples (R,G,B), one for each tensor element.
         """
-        from .defs.read_pao_output import read_dos_PAO
         import numpy as np
 
+        from .defs.read_pao_output import read_dos_PAO
+
         x_label = 'Energy (eV)'
-        y_label = '$\sigma$ ($\Omega$cm)$^{-1}$'
+        y_label = r'$\sigma$ ($\Omega$cm)$^{-1}$'
 
         if isinstance(fname, str):
             from .graphics.plot_functions import plot_dos

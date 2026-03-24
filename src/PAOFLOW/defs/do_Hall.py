@@ -26,8 +26,8 @@ rank = comm.Get_rank()
 
 
 def do_spin_Hall(data_controller, twoD, do_ac, P):
+    from .constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from .perturb_split import perturb_split
-    from .constants import ELECTRONVOLT_SI, ANGSTROM_AU, H_OVER_TPI, LL
 
     arry, attr = data_controller.data_dicts()
 
@@ -128,8 +128,8 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
 
 
 def do_anomalous_Hall(data_controller, do_ac):
+    from .constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from .perturb_split import perturb_split
-    from .constants import ELECTRONVOLT_SI, ANGSTROM_AU, H_OVER_TPI, LL
 
     arry, attr = data_controller.data_dicts()
 
@@ -230,7 +230,8 @@ def do_Berry_curvature(data_controller, jksp, pksp):
         )
     E_nm = None
 
-    attributes['emaxH'] = np.amin(np.array([attributes['shift'], attributes['emaxH']]))
+    if attributes['shift'] != 0.0:
+        attributes['emaxH'] = np.amin(np.array([attributes['shift'], attributes['emaxH']]))
     ### Hardcoded 'de'
     esize = attributes['esizeH']
     ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
@@ -254,7 +255,8 @@ def do_Berry_curvature(data_controller, jksp, pksp):
             )
         else:
             Om_zkaux[:, i] = np.sum(
-                Om_znkaux[:, :] * (0.5 * (-np.sign(arrays['E_k'][:, :, 0] - ene[i]) + 1)), axis=1
+                Om_znkaux[:, :] * (0.5 * (-np.sign(arrays['E_k'][:, :, 0] - ene[i]) + 1)),
+                axis=1,
             )
 
     Om_zk = gather_full(Om_zkaux, attributes['npool'])

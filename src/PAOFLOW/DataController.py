@@ -58,8 +58,10 @@ class DataController:
             None
         """
         from os import mkdir
+        from os.path import exists, join
+
         from mpi4py import MPI
-        from os.path import join, exists
+
         from .ErrorHandler import ErrorHandler
 
         self.comm = MPI.COMM_WORLD
@@ -477,8 +479,9 @@ class DataController:
         # ----------------------
         # write to file Hks,Sks,kpnts,kpnts_wght
         # ----------------------
-        import numpy as np
         import os
+
+        import numpy as np
 
         if self.rank == 0:
             arry, attr = self.data_dicts()
@@ -578,8 +581,10 @@ class DataController:
         """
         try:
             if self.rank == 0:
-                import numpy as np
                 from os.path import join
+
+                import numpy as np
+
                 from .defs.zero_pad import zero_pad
 
                 def HRs_write(nk1, nk2, nk3, nawf, ispin, f):
@@ -759,6 +764,7 @@ class DataController:
 
     def gather_data_array(self, key):
         import numpy as np
+
         from .defs.communication import gather_array
 
         arr = self.data_arrays[key]

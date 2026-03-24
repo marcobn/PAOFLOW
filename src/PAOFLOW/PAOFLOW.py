@@ -81,9 +81,11 @@ class PAOFLOW:
             None
         """
         from time import time
+
         from mpi4py import MPI
-        from .defs.header import header
+
         from .DataController import DataController
+        from .defs.header import header
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -184,7 +186,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from pickle import dump, HIGHEST_PROTOCOL
+        from pickle import HIGHEST_PROTOCOL, dump
 
         fname = fname_prefix + '_%d' % self.rank + '.json'
 
@@ -264,6 +266,7 @@ class PAOFLOW:
         """
         import resource
         from time import time
+
         from mpi4py import MPI
 
         if self.rank == 0:
@@ -290,10 +293,12 @@ class PAOFLOW:
         Replaces projwfc.
         """
 
-        from .defs.do_atwfc_proj import build_pswfc_basis_all
-        from .defs.do_atwfc_proj import build_aewfc_basis
-        from .defs.do_atwfc_proj import calc_proj_k
-        from .defs.communication import load_balancing, gather_array
+        from .defs.communication import gather_array, load_balancing
+        from .defs.do_atwfc_proj import (
+            build_aewfc_basis,
+            build_pswfc_basis_all,
+            calc_proj_k,
+        )
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -345,9 +350,10 @@ class PAOFLOW:
         in the .save directory specified in PAOFLOW's constructos. They are saved to the
         DataController's arrays dictionary with keys 'U' and 'Sks', respectively.
         """
-        from .defs.read_upf import UPF
         from os.path import exists, join
+
         from .defs.do_atwfc_proj import build_pswfc_basis_all
+        from .defs.read_upf import UPF
 
         arry, attr = self.data_controller.data_dicts()
         fpath = attr['fpath']
@@ -442,8 +448,11 @@ class PAOFLOW:
             None
 
         """
+        from .defs.do_build_pao_hamiltonian import (
+            do_build_pao_hamiltonian,
+            do_Hks_to_HRs,
+        )
         from .defs.get_K_grid_fft import get_K_grid_fft
-        from .defs.do_build_pao_hamiltonian import do_build_pao_hamiltonian, do_Hks_to_HRs
 
         # Data Attributes and Arrays
         arrays, attr = self.data_controller.data_dicts()
@@ -588,8 +597,8 @@ class PAOFLOW:
             None
 
         """
-        from .defs.do_bands import do_bands
         from .defs.communication import gather_full
+        from .defs.do_bands import do_bands
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -656,8 +665,9 @@ class PAOFLOW:
             None
 
         """
-        from .defs.do_spin_orbit import do_spin_orbit_H
         import scipy.linalg as la
+
+        from .defs.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
         attr['do_spin_orbit'] = attr['adhoc_SO'] = True
@@ -703,7 +713,8 @@ class PAOFLOW:
             Dnm = None
 
             # for write Hamiltonian
-            del arry['Hks']
+            if 'Hks' in arry:
+                del arry['Hks']
             arry['Hks'] = np.fft.fftn(arry['HRs'], axes=(2, 3, 4))
         else:
             self.report_module_time('adhoc_spin_orbit')
@@ -909,7 +920,11 @@ class PAOFLOW:
             # Pauli matrices (x,y,z)
             Sj = np.zeros((3, nawf, nawf), dtype=complex)
             sP = 0.5 * np.array(
-                [[[0.0, 1.0], [1.0, 0.0]], [[0.0, -1.0j], [1.0j, 0.0]], [[1.0, 0.0], [0.0, -1.0]]]
+                [
+                    [[0.0, 1.0], [1.0, 0.0]],
+                    [[0.0, -1.0j], [1.0j, 0.0]],
+                    [[1.0, 0.0], [0.0, -1.0]],
+                ]
             )
             if spin_orbit:
                 # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
@@ -1020,10 +1035,10 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.get_K_grid_fft import get_K_grid_fft
-        from .defs.do_double_grid import do_double_grid
         from .defs.communication import gather_scatter
+        from .defs.do_double_grid import do_double_grid
         from .defs.do_Efermi import E_Fermi
+        from .defs.get_K_grid_fft import get_K_grid_fft
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1106,8 +1121,8 @@ class PAOFLOW:
         Returns:
             None
         """
+        from .defs.communication import gather_full, scatter_full
         from .defs.do_eigh import do_pao_eigh
-        from .defs.communication import scatter_full, gather_full
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1124,7 +1139,9 @@ class PAOFLOW:
                     nktot = attr['nkpnts']
                     nawf, _, nk1, nk2, nk3, nspin = arrays['Hks'].shape
                     arrays['Hks'] = np.moveaxis(
-                        np.reshape(arrays['Hks'], (nawf, nawf, nktot, nspin), order='C'), 2, 0
+                        np.reshape(arrays['Hks'], (nawf, nawf, nktot, nspin), order='C'),
+                        2,
+                        0,
                     )
                 else:
                     arrays['Hks'] = None
@@ -1163,10 +1180,11 @@ class PAOFLOW:
         Returns:
           None
         """
+        import numpy as np
+
+        from .defs.communication import gather_scatter
         from .defs.do_gradient import do_gradient
         from .defs.do_momentum import do_momentum
-        from .defs.communication import gather_scatter
-        import numpy as np
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1521,7 +1539,13 @@ class PAOFLOW:
         self.report_module_time('Rashba_Edelstein')
 
     def anomalous_Hall(
-        self, do_ac=False, emin=-1.0, emax=1.0, fermi_up=1.0, fermi_dw=-1.0, a_tensor=None
+        self,
+        do_ac=False,
+        emin=-1.0,
+        emax=1.0,
+        fermi_up=1.0,
+        fermi_dw=-1.0,
+        a_tensor=None,
     ):
         """
         Calculate the Anomalous Hall Conductivity
@@ -1836,8 +1860,9 @@ class PAOFLOW:
 
         """
 
-        from .defs.do_ipr import inverse_participation_ratio
         from os.path import join
+
+        from .defs.do_ipr import inverse_participation_ratio
 
         arry, attr = self.data_controller.data_dicts()
 
