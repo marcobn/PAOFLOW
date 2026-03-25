@@ -29,7 +29,7 @@ def wave_function_site_projection(data_controller):
     naw, v_k = arry['naw'], arry['v_k']
     bands, k_index = arry['bands_proj'], attr['k_proj']
 
-    do_spin_orbit = attr['do_spin_orbit']
+    adhoc_SO = attr['adhoc_SO']
     nawf, dim = attr['nawf'], attr['dimension']
 
     for idb in range(len(bands)):
@@ -38,7 +38,7 @@ def wave_function_site_projection(data_controller):
         f = open(join(attr['opath'], 'site-projected-wave-function-' + str(bnd_idx) + '.dat'), 'w')
         for n in range(tau.shape[0]):
             # Do to the doubling of the Hamiltonian when SOC is included in the PAO Hamiltonian.
-            if do_spin_orbit:
+            if adhoc_SO == True:
                 # creating masks to consirer only the n site.
                 # seting up the nonzero parts of the mask and the wave-function
                 idx = int(np.sum(naw[0:n]))  # initial

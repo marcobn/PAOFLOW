@@ -23,7 +23,7 @@ def site_projeted_bands(data_controller):
 
     s = 0
     # Only used if ad-hoc SOC
-    if attr['do_spin_orbit']:
+    if attr['adhoc_SO'] == True:
         s = int(attr['nawf'] / 2)
 
     nspin = arry['v_k'].shape[3]

@@ -280,7 +280,7 @@ def doubling_attr_arry(data_controller):
         Dnm_double = None
 
     # If the SOC is included pertubative
-    if 'do_spin_orbit' in attr and (attr['do_spin_orbit']):
+    if 'adhoc_SO' in attr and (attr['adhoc_SO']):
         if 'lambda_p' in arry:
             arry['lambda_p'] = np.append(arry['lambda_p'], arry['lambda_p'])
         if 'lambda_d' in arry:
