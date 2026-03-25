@@ -88,6 +88,7 @@ class DataController:
             self.data_attributes = attr = {}
 
             # Set or update attributes
+            attr['adhoc_SO'] = False
             attr['dft'] = dft
             attr['mpisize'] = self.size
             attr['savedir'] = savedir
@@ -191,7 +192,7 @@ class DataController:
 
         orb = []
         naw = []
-
+        orb_atom = []
         if attr['dftSO'] == True:
             for i in range(len(arry['atoms'])):
                 if arry['shells'][arry['atoms'][i]] == [0]:
@@ -219,26 +220,34 @@ class DataController:
                 if arry['shells'][arry['atoms'][i]] == [0]:
                     naw.append(1)
                     orb.append('s')
+                    orb_atom.append(['s'])
                 if arry['shells'][arry['atoms'][i]] == [0, 1]:
                     naw.append(4)
                     orb.append('sp')
+                    orb_atom.append(['s','p_z','p_x','p_y'])
                 if arry['shells'][arry['atoms'][i]] == [0, 1, 2]:
                     naw.append(9)
                     orb.append('spd')
+                    orb_atom.append(['s','p_z','p_x','p_y','d_3z2_r2','d_zx','d_yz','d_x2_y2','d_xy'])
                 if arry['shells'][arry['atoms'][i]] == [1, 0]:
                     naw.append(4)
                     orb.append('ps')
+                    orb_atom.append(['p_z','p_x','p_y','s'])
                 if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 2]:
                     naw.append(10)
                     orb.append('sspd')
+                    orb_atom.append(['s','s','p_z','p_x','p_y','d_3z2_r2','d_zx','d_yz','d_x2_y2','d_xy'])
                 if arry['shells'][arry['atoms'][i]] == [0, 0, 1]:
                     naw.append(5)
                     orb.append('ssp')
+                    orb_atom.append(['s','s','p_z','p_x','p_y'])
                 if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 1, 2]:
                     naw.append(13)
                     orb.append('ssppd')
+                    orb_atom.append(['s','s','p_z','p_x','p_y','p_z','p_x','p_y','d_3z2_r2','d_zx','d_yz','d_x2_y2','d_xy'])
             arry['orb_pseudo'] = orb
             arry['naw'] = np.array(naw)
+            arry['orb_atom'] = [(a, o) for a, o in zip(arry['atoms'], orb_atom)]
 
     def add_default_arrays(self):
         import numpy as np

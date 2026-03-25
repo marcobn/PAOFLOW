@@ -46,10 +46,16 @@ def do_projection_operator(data_controller, proj_array):
 
     P = np.zeros((attr['nawf'], attr['nawf']), dtype=float)
 
-    for i in range(proj_array.shape[0]):
-        idx = np.sum(arry['naw'][0 : proj_array[i]])
-        fdx = idx + arry['naw'][proj_array[i]]
+    s = 0
+    # Only used if ad-hoc SOC
+    if attr['adhoc_SO'] == True:
+        s = int(attr['nawf'] / 2)
 
+    for i in range(proj_array.shape[0]):
+        idx = int(np.sum(arry['naw'][0 : proj_array[i]]))
+        fdx = int(idx + arry['naw'][proj_array[i]])
+        print(idx, fdx)
         P[idx:fdx, idx:fdx] = np.eye(arry['naw'][proj_array[i]])
+        P[idx+s:fdx+s, idx+s:fdx+s] = np.eye(arry['naw'][proj_array[i]])
 
     return P

@@ -23,7 +23,7 @@ def site_projeted_bands(data_controller):
 
     s = 0
     # Only used if ad-hoc SOC
-    if attr['do_spin_orbit']:
+    if attr['adhoc_SO'] == True:
         s = int(attr['nawf'] / 2)
 
     nspin = arry['v_k'].shape[3]
@@ -48,7 +48,7 @@ def site_projeted_bands(data_controller):
                             '%s %s %s\n'
                             % (
                                 k,
-                                float(arry['E_k'][k, i]),
+                                float(arry['E_k'][k, i, ispin]),
                                 np.sum(np.absolute(np.square((cs[k, :, i])))),
                             )
                         ]

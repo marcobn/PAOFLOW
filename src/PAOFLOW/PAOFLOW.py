@@ -370,6 +370,7 @@ class PAOFLOW:
         else:
             raise Exception('atomic_proj.xml was not found.\n')
 
+        arry['lchia'] = {}
         arry['jchia'] = {}
         arry['shells'] = {}
         for at, pseudo in arry['species']:
@@ -378,6 +379,7 @@ class PAOFLOW:
                 upf = UPF(fname)
                 arry['shells'][at] = upf.shells
                 arry['jchia'][at] = upf.jchia
+                arry['lchia'][at] = upf.lchia
             else:
                 raise Exception('Pseudopotential not found: %s' % fname)
 
@@ -614,8 +616,8 @@ class PAOFLOW:
             attr['nk'] = nk
         if band_path is not None:
             attr['band_path'] = band_path
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if 'adhoc_SO' not in attr:
+            attr['adhoc_SO'] = adhoc_SO
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
 
@@ -670,7 +672,7 @@ class PAOFLOW:
         from .defs.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
-        attr['do_spin_orbit'] = attr['adhoc_SO'] = True
+        attr['adhoc_SO'] = True
 
         if 'phi' not in attr:
             attr['phi'] = phi
@@ -695,6 +697,7 @@ class PAOFLOW:
 
         # Check if the pseudo potential or internal basis configuraton is implemented
         if len(arry['orb_pseudo']) == attr['natoms']:
+            nawf = attr['nawf']            
             # add SOC
             do_spin_orbit_H(self.data_controller)
             # Rezising
@@ -706,8 +709,10 @@ class PAOFLOW:
             if 'Dnm' in arry:
                 Dnm_double = np.empty((attr['nawf'], attr['nawf'], 3))
             for i in range(3):
-                Dnm = arry['Dnm'][:, :, i]
-                Dnm_double[:, :, i] = la.block_diag(*[Dnm, Dnm])
+                Dnm_double[0:nawf, 0:nawf, i]                   = arry['Dnm'][:,:,i]
+                Dnm_double[nawf:2*nawf, nawf:2*nawf, i]         = arry['Dnm'][:,:,i]
+                Dnm_double[0:nawf, nawf:2*nawf, i]              = arry['Dnm'][:,:,i]
+                Dnm_double[nawf:2*nawf,0:nawf, i]               = arry['Dnm'][:,:,i]
             arry['Dnm'] = Dnm_double
             Dnm_double = None
             Dnm = None
@@ -877,14 +882,14 @@ class PAOFLOW:
 
         self.report_module_time('cutting_Hamiltonian')
 
-    def spin_operator(self, spin_orbit=False, sh_l=None, sh_j=None):
+    def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """
         Calculate the Spin Operator for calculations involving spin
           Requires: None
           Yeilds: 'Sj'
 
         Arguments:
-            spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
             fnscf (string): Filename for the QE nscf inputfile, from which to read shell data
             sh (list of ints): The Shell levels
             nl (list of ints): The Shell level occupations
@@ -894,10 +899,8 @@ class PAOFLOW:
         """
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
-        adhoc_SO = 'adhoc_SO' in attr and attr['adhoc_SO']
-
+        if adhoc_SO:
+            attr['adhoc_SO'] = adhoc_SO
         if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
             if sh_l is None and sh_j is None:
                 sh = arrays['shells']
@@ -926,7 +929,7 @@ class PAOFLOW:
                     [[1.0, 0.0], [0.0, -1.0]],
                 ]
             )
-            if spin_orbit:
+            if attr['adhoc_SO']:
                 # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
                 for spol in range(3):
                     if spol == 2:  # Sz
@@ -955,13 +958,58 @@ class PAOFLOW:
             self.report_exception('spin_operator')
             if attr['abort_on_exception']:
                 raise e
+    def orbital_operator ( self, adhoc_SO=False):
+        from .defs.j_matrix import j_matrix, build_orb_list_and_indices, build_L_from_orb
+
+        arrays,attr = self.data_controller.data_dicts()
+
+
+
+        if adhoc_SO:
+            attr['adhoc_SO'] = adhoc_SO
+       
+        try:
+            if attr['adhoc_SO'] == True:         
+                
+                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])                                
+                arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)                
+                
+                for spol in range(3):                
+                    L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+                    arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
+                    arrays['Lj'][spol, len(orb_list):2*len(orb_list), len(orb_list):2*len(orb_list)] = L                        
+
+            elif attr['adhoc_SO'] == False:
+                if 'Sj' not in arrays:
+                    self.spin_operator(adhoc_SO=False)
+                # Compute Total Angular Momentum operators
+                Jj = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
+                for spol in range(3):
+                    Jj[spol,:,:] = j_matrix(self.data_controller, spol)
+                # Compute Orbital Angular Momentum operators L = J - S
+                arrays['Lj'] = Jj-arrays['Sj']
+
+            #elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
+            #    self.data_controller.build_arrays_adhoc_soc()
+            #    # Compute Orbital Angular Momentum operators L in the basis of |l,m> (NO SOC)
+            #    orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+            #    arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
+            #    
+            #    for spol in range(3):                
+            #        L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L                             
+        except:
+            self.report_exception('angular_momentum_operator')
+            if attr['abort_on_exception']:
+                self.comm.Abort()
+        
 
     def topology(
         self,
         eff_mass=False,
         Berry=False,
         spin_Hall=False,
-        spin_orbit=False,
+        adhoc_SO=False,
         spol=None,
         ipol=None,
         jpol=None,
@@ -973,7 +1021,7 @@ class PAOFLOW:
             eff_mass (bool): If True calculate the Effective Mass Tensor
             Berry (bool): If True calculate the Berry Curvature
             spin_Hall (bool): If True calculate Spin Hall Conductivity
-            spin_orbit (bool): If True the calculation includes spin_orbit effects for topology.
+            adhoc_SO (bool): If True the calculation includes spin_orbit effects for topology.
             spol (int): Spin polarization
             ipol (int): In plane dimension 1
             jpol (int): In plane dimension 2
@@ -993,8 +1041,8 @@ class PAOFLOW:
             attr['eff_mass'] = eff_mass
         if 'spin_Hall' not in attr:
             attr['spin_Hall'] = spin_Hall
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if 'adhoc_SO' not in attr:
+            attr['adhoc_SO'] = adhoc_SO
 
         attr['spol'] = spol
         attr['ipol'] = ipol
@@ -1006,7 +1054,7 @@ class PAOFLOW:
             quit()
 
         if spin_Hall and 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
             do_topology(self.data_controller)
@@ -1477,14 +1525,15 @@ class PAOFLOW:
             arrays['shc_proj'] = np.array(shc_proj)
 
         if 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
             if shc_proj == None:
                 P = np.eye(attr['nawf'])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
             else:
-                arrays['naw'] = orbital_array(self.data_controller)
+                if 'naw' not in arrays:
+                    arrays['naw'] = orbital_array(self.data_controller)
                 P = do_projection_operator(self.data_controller, arrays['shc_proj'])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
 
@@ -1495,17 +1544,146 @@ class PAOFLOW:
 
         self.report_module_time('Spin Hall Conductivity')
 
+    def orbital_texture(self, fermi_up=1.0, fermi_dw=-1.0):
+        """
+        Calculate the Orbital Texture
+
+        Arguments:
+            fermi_up (float): The upper limit of the occupied energy range
+            fermi_dw (float): The lower limit of the occupied energy range
+
+        Returns:
+            None
+        """
+        from .defs.do_orbital_texture import do_orbital_texture
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'fermi_up' not in attr:
+            attr['fermi_up'] = fermi_up
+        if 'fermi_dw' not in attr:
+            attr['fermi_dw'] = fermi_dw
+
+        try:
+            if attr['nspin'] == 1:
+                if 'Lj' not in arry:
+                    self.orbital_operator()
+                do_orbital_texture(self.data_controller)
+                self.report_module_time('Orbital Texture')
+            else:
+                if self.rank == 0:
+                    print('Cannot compute orbital texture with nspin=2')
+        except Exception as e:
+            self.report_exception('orbital_texture')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+
+    def orbital_Hall(
+        self,
+        twoD=False,
+        do_ac=False,
+        emin=-1.0,
+        emax=1.0,
+        ne=501,
+        delta=0.05,
+        fermi_up=1.0,
+        fermi_dw=-1.0,
+        o_tensor=None,
+        ohc_proj=None,
+    ):
+        """
+        Calculate the Orbital Hall Conductivity
+
+
+        Arguments:
+            twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
+            do_ac (bool): True to calculate the Orbital Circular Dichroism
+            emin (float): The minimum energy in the range
+            emax (float): The maximum energy in the range
+            ne (float): The number of energy increments
+            delta (float) : small imaginary part added to the eigenvalue difference
+            fermi_up (float): The upper limit of the occupied energy range
+            fermi_dw (float): The lower limit of the occupied energy range
+            o_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+
+        Returns:
+            None
+        """
+        from .defs.do_Hall import do_orbital_Hall
+        from .defs.projection_operator import do_projection_operator, orbital_array
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        attr['eminH'], attr['emaxH'] = emin, emax
+        attr['deltaH'] = delta
+        attr['esizeH'] = ne
+
+        if o_tensor is not None:
+            arrays['o_tensor'] = np.array(o_tensor)
+        if 'fermi_up' not in attr:
+            attr['fermi_up'] = fermi_up
+        if 'fermi_dw' not in attr:
+            attr['fermi_dw'] = fermi_dw
+
+        if ohc_proj is not None:
+            arrays['ohc_proj'] = np.array(ohc_proj)
+
+        if ('Lj' not in arrays):
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+        try:
+            if ohc_proj == None:
+                P = np.eye(attr['nawf'])
+                do_orbital_Hall(self.data_controller, twoD, do_ac, P)
+            else:
+                if 'naw' not in arrays:
+                    arrays['naw'] = orbital_array(self.data_controller)
+                P = do_projection_operator(self.data_controller, arrays['ohc_proj'])
+                do_orbital_Hall(self.data_controller, twoD, do_ac, P)
+
+        except Exception as e:
+            self.report_exception('orbital_Hall')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Orbital Hall Conductivity')
+
+    def conductivity ( self, delta=0.01, emin=-10., emax=2., ne=1000, cond_tensor=None ):
+
+        from .defs.do_conductivity import do_conductivity
+    
+        arrays,attr = self.data_controller.data_dicts()
+
+        if cond_tensor is not None:
+            arrays['cond_tensor'] = np.array(cond_tensor)
+
+        for i in range(arrays['cond_tensor'].shape[0]):
+            ipol=arrays['cond_tensor'][i,0]
+            jpol=arrays['cond_tensor'][i,1]
+  
+            do_conductivity(self.data_controller, emin, emax, ne, delta, ipol, jpol)
+
+        self.report_module_time('Conductivity')
+
     def rashba_edelstein(
         self,
         emin=-2,
         emax=2,
         ne=500,
+        delta=0.05,
         temps=0.0,
         reg=1e-30,
         twoD=False,
         lt=1.0,
         st=1.0,
         write_to_file=True,
+        intra_band=False,
+        spin=True,
+        orbital=False,
+        ree_tensor=None,
+        ree_proj=None,
     ):
         """
         Calculate the Rashba-Edelstein tensor
@@ -1513,23 +1691,72 @@ class PAOFLOW:
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
             ne (float): The number of energy increments in [emin,emax]
+            delta (float) : small imaginary part added to the eigenvalue difference
             temps (float): Smearing temperature in eV
             reg (float): The regularization number that is applicable only for materials with band gap (in the order of 1e-30)
             twoD (bool): set True for two dimnesional materials
             lt (float): The lattice height of the twoD structure (in cm)
             st (float): The structure 'effectivce' thickness of the twoD structure (in cm)
             write_to_file (bool): Set True to write tensors to file
+            intra_band (bool): Set True to calculate intra-band contributions
+            spin (bool): Set True to include spin in the calculation. If True, 'Sj' will be calculated if not already present in the DataController
+            orbital (bool): Set True to include orbital contributions in the calculation. If True, 'L' will be calculated if not already present in the DataController
+            ree_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
 
         Returns:
             None
         """
-        from .defs.do_rashba_edelstein import do_rashba_edelstein
+        from .defs.do_rashba_edelstein import do_rashba_edelstein, do_rashba_edelstein_intra
+        from .defs.projection_operator import do_projection_operator, orbital_array
 
         arrays, attr = self.data_controller.data_dicts()
 
         ene = np.linspace(emin, emax, ne)
+
+        if spin == True and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+
+
+        P = np.eye(attr['nawf'])
+
+
         try:
-            do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
+
+            if intra_band == True:
+                if spin is True:                                         
+                    if ('Sj' not in arrays):
+                        self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+                    arrays['ree_tensor'] = np.array(ree_tensor)
+
+                    for i in range(arrays['ree_tensor'].shape[0]):
+                        ipol=arrays['ree_tensor'][i,0]
+                        spol=arrays['ree_tensor'][i,1]                                            
+
+                        if ree_proj == None:
+                            P = np.eye(attr['nawf'])                            
+                            do_rashba_edelstein_intra(self.data_controller, "spin" , ene, delta, ipol, spol,arrays['Sj'], P)
+                        else:
+                            if 'naw' not in arrays:
+                                arrays['naw'] = orbital_array(self.data_controller)
+                            P = do_projection_operator(self.data_controller, arrays['ree_proj'])
+                            do_rashba_edelstein_intra(self.data_controller, "spin" , ene, delta, ipol, spol,arrays['Sj'], P)
+
+                if orbital is True:
+                    if ('Lj' not in arrays):
+                        self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+                    arrays['ree_tensor'] = np.array(ree_tensor)
+
+                    for i in range(arrays['ree_tensor'].shape[0]):
+                        ipol=arrays['ree_tensor'][i,0]
+                        spol=arrays['ree_tensor'][i,1]
+                        
+                        do_rashba_edelstein_intra(self.data_controller, "orbital" , ene, delta, ipol, spol,arrays['Lj'], P)
+
+
+            #if intra_band == True:
+            #    do_rashba_edelstein_intra(self.data_controller, ene, delta, ipol, spol, Op1)
+            else:
+                do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
 
         except Exception as e:
             self.report_exception('rashba_edelstein')
@@ -1543,6 +1770,8 @@ class PAOFLOW:
         do_ac=False,
         emin=-1.0,
         emax=1.0,
+        ne = 501,
+        delta=0.05,
         fermi_up=1.0,
         fermi_dw=-1.0,
         a_tensor=None,
@@ -1565,8 +1794,9 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'] = emin
-        attr['emaxH'] = emax
+        attr['eminH'],attr['emaxH'] = emin,emax
+        attr['deltaH'] = delta
+        attr['esizeH'] = ne
 
         if a_tensor is not None:
             arrays['a_tensor'] = np.array(a_tensor)
