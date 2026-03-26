@@ -37,11 +37,13 @@ def main():
   paoflow.pao_eigh()
   paoflow.spin_operator()
   paoflow.spin_texture(fermi_up=0.0, fermi_dw=-0.5)
+  paoflow.orbital_operator()
+  paoflow.orbital_texture(fermi_up=0.0, fermi_dw=-0.5)
   paoflow.gradient_and_momenta()
   
   # Compute adaptive smearing and calculate the Rashba-Edelstein tensor elements
   paoflow.adaptive_smearing() 
-  paoflow.rashba_edelstein(emin=-0.5, emax=0.0, ne=501)
+  paoflow.rashba_edelstein(emin=-0.5, emax=0.0, ne=501, spin=True, orbital=True)
 
   paoflow.finish_execution()
 
