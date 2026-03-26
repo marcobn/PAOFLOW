@@ -580,7 +580,7 @@ class PAOFLOW:
         ibrav=None,
         band_path=None,
         high_sym_points=None,
-        spin_orbit=False,
+        adhoc_SO=False,
         fname='bands',
         nk=500,
     ):
@@ -591,7 +591,7 @@ class PAOFLOW:
             ibrav (int): Crystal structure (following the specifications of QE)
             band_path (str): A string representing the band path to follow
             high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
-            spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
             fname (str): File name for the band output
             nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
 
@@ -715,7 +715,6 @@ class PAOFLOW:
                 Dnm_double[nawf:2*nawf,0:nawf, i]               = arry['Dnm'][:,:,i]
             arry['Dnm'] = Dnm_double
             Dnm_double = None
-            Dnm = None
 
             # for write Hamiltonian
             if 'Hks' in arry:
@@ -1715,7 +1714,7 @@ class PAOFLOW:
 
         if spin == True and 'Sj' not in arrays:
             self.spin_operator(adhoc_SO=attr['adhoc_SO'])
-        if spin == True and 'Lj' not in arrays:
+        if orbital == True and 'Lj' not in arrays:
             self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
 
 
