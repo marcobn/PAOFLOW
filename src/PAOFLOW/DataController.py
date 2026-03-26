@@ -308,6 +308,42 @@ class DataController:
                 [2, 2, 2],
             ]
         )
+        # Orbital Berry curvature
+        self.data_arrays['o_tensor'] = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 2, 0],
+                [1, 0, 0],
+                [1, 1, 0],
+                [1, 2, 0],
+                [2, 0, 0],
+                [2, 1, 0],
+                [2, 2, 0],
+                [0, 0, 1],
+                [0, 1, 1],
+                [0, 2, 1],
+                [1, 0, 1],
+                [1, 1, 1],
+                [1, 2, 1],
+                [2, 0, 1],
+                [2, 1, 1],
+                [2, 2, 1],
+                [0, 0, 2],
+                [0, 1, 2],
+                [0, 2, 2],
+                [1, 0, 2],
+                [1, 1, 2],
+                [1, 2, 2],
+                [2, 0, 2],
+                [2, 1, 2],
+                [2, 2, 2],
+            ]
+        )
+        # REE Tensor 
+        self.data_arrays['ree_tensor'] = np.array(
+            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
+        )
 
     def read_pao_inputfile(self):
         from .defs.read_inputfile_xml_parse import read_inputfile_xml

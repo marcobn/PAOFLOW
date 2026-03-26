@@ -18,7 +18,7 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 
-def do_spin_texture(data_controller):
+def do_orbital_texture(data_controller):
     import os
     import numpy as np
     from mpi4py import MPI
@@ -57,26 +57,26 @@ def do_spin_texture(data_controller):
     ind_plot = comm.bcast(ind_plot)
     arrays['ind_plot'] = ind_plot
 
-    Sj = arrays['Sj']
+    Lj = arrays['Lj']
     snktot = arrays['v_k'].shape[0]
-    sktxtaux = np.zeros((snktot, 3, nawf, nawf), dtype=complex)
+    oktxtaux = np.zeros((snktot, 3, nawf, nawf), dtype=complex)
 
-    # Compute matrix elements of the spin operator
+    # Compute matrix elements of the orbital operator
     for ik in range(snktot):
         for l in range(3):
-            sktxtaux[ik, l, :, :] = (
+            oktxtaux[ik, l, :, :] = (
                 np.conj(arrays['v_k'][ik, :, :, 0].T)
-                .dot(Sj[l, :, :])
+                .dot(Lj[l, :, :])
                 .dot(arrays['v_k'][ik, :, :, 0])
             )
 
-    sktxtaux = np.take(np.diagonal(sktxtaux, axis1=2, axis2=3), ind_plot, axis=2)
-    sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
-    sktxtaux = None
+    oktxtaux = np.take(np.diagonal(oktxtaux, axis1=2, axis2=3), ind_plot, axis=2)
+    oktxt = gather_full(np.ascontiguousarray(oktxtaux), attributes['npool'])
+    oktxtaux = None
 
     if rank == 0:
         if 'kq' in arrays and E_k_full.shape[0] == arrays['kq'].shape[1]:
-            f = open(os.path.join(attributes['opath'], 'spin-texture-bands' + '.dat'), 'w')
+            f = open(os.path.join(attributes['opath'], 'orbital-texture-bands' + '.dat'), 'w')
             for ik in range(E_k_full.shape[0]):
                 for ib in range(icount):
                     idx = ind_plot[ib]
@@ -84,20 +84,20 @@ def do_spin_texture(data_controller):
                         '\t'.join(
                             ['%d' % ik]
                             + ['% 5.8f' % E_k_full[ik, idx]]
-                            + ['% 5.8f' % j for j in sktxt[ik, :, ib].real]
+                            + ['% 5.8f' % j for j in oktxt[ik, :, ib].real]
                         )
                         + '\n'
                     )
                 f.write('\n')
             f.close()
         else:
-            sktxt = np.reshape(sktxt, (nk1, nk2, nk3, 3, icount), order='C')
+            oktxt = np.reshape(oktxt, (nk1, nk2, nk3, 3, icount), order='C')
             for ib in range(icount):
                 np.savez(
-                    os.path.join(attributes['opath'], 'spin_text_band_' + str(ib)),
-                    spinband=sktxt[:, :, :, :, ib],
+                    os.path.join(attributes['opath'], 'orbital_text_band_' + str(ib)),
+                    orbitalband=oktxt[:, :, :, :, ib],
                 )
 
-    arrays['sktxt'] = sktxt
-    sktxt = None
+    arrays['oktxt'] = oktxt
+    oktxt = None
     E_k_full = None
