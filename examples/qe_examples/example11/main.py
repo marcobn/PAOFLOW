@@ -35,10 +35,6 @@ def main():
   paoflow.pao_hamiltonian()
   paoflow.interpolated_hamiltonian(nfft1=20, nfft2=20, nfft3=16)
   paoflow.pao_eigh()
-  paoflow.spin_operator()
-  paoflow.spin_texture(fermi_up=0.0, fermi_dw=-0.5)
-  paoflow.orbital_operator()
-  paoflow.orbital_texture(fermi_up=0.0, fermi_dw=-0.5)
   paoflow.gradient_and_momenta()
   
   # Compute adaptive smearing and calculate the Rashba-Edelstein tensor elements

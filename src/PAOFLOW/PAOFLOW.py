@@ -1758,8 +1758,10 @@ class PAOFLOW:
 
             else:
                 if spin == True:
+                  self.spin_texture(fermi_up=emax, fermi_dw=emin)
                   do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file, arrays['sktxt'], 'spin')
                 if orbital == True:
+                  self.orbital_texture(fermi_up=emax, fermi_dw=emin)
                   do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file, arrays['oktxt'],'orbital')
 
         except Exception as e:
