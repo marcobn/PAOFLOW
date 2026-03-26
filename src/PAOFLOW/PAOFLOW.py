@@ -1715,6 +1715,8 @@ class PAOFLOW:
 
         if spin == True and 'Sj' not in arrays:
             self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if spin == True and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
 
 
         P = np.eye(attr['nawf'])
@@ -1723,10 +1725,13 @@ class PAOFLOW:
         try:
 
             if intra_band == True:
+
+                if ree_tensor is not None:
+                    arrays['ree_tensor'] = np.array(ree_tensor)
+
                 if spin is True:                                         
                     if ('Sj' not in arrays):
                         self.spin_operator(adhoc_SO=attr['adhoc_SO'])
-                    arrays['ree_tensor'] = np.array(ree_tensor)
 
                     for i in range(arrays['ree_tensor'].shape[0]):
                         ipol=arrays['ree_tensor'][i,0]
@@ -1744,7 +1749,6 @@ class PAOFLOW:
                 if orbital is True:
                     if ('Lj' not in arrays):
                         self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
-                    arrays['ree_tensor'] = np.array(ree_tensor)
 
                     for i in range(arrays['ree_tensor'].shape[0]):
                         ipol=arrays['ree_tensor'][i,0]
@@ -1752,11 +1756,11 @@ class PAOFLOW:
                         
                         do_rashba_edelstein_intra(self.data_controller, "orbital" , ene, delta, ipol, spol,arrays['Lj'], P)
 
-
-            #if intra_band == True:
-            #    do_rashba_edelstein_intra(self.data_controller, ene, delta, ipol, spol, Op1)
             else:
-                do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
+                if spin == True:
+                  do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file, arrays['sktxt'], 'spin')
+                if orbital == True:
+                  do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file, arrays['oktxt'],'orbital')
 
         except Exception as e:
             self.report_exception('rashba_edelstein')
