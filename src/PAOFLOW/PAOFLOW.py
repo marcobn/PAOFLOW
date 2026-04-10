@@ -697,7 +697,7 @@ class PAOFLOW:
 
         # Check if the pseudo potential or internal basis configuraton is implemented
         if len(arry['orb_pseudo']) == attr['natoms']:
-            nawf = attr['nawf']            
+            nawf = attr['nawf']
             # add SOC
             do_spin_orbit_H(self.data_controller)
             # Rezising
@@ -709,10 +709,10 @@ class PAOFLOW:
             if 'Dnm' in arry:
                 Dnm_double = np.empty((attr['nawf'], attr['nawf'], 3))
             for i in range(3):
-                Dnm_double[0:nawf, 0:nawf, i]                   = arry['Dnm'][:,:,i]
-                Dnm_double[nawf:2*nawf, nawf:2*nawf, i]         = arry['Dnm'][:,:,i]
-                Dnm_double[0:nawf, nawf:2*nawf, i]              = arry['Dnm'][:,:,i]
-                Dnm_double[nawf:2*nawf,0:nawf, i]               = arry['Dnm'][:,:,i]
+                Dnm_double[0:nawf, 0:nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[nawf : 2 * nawf, nawf : 2 * nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[0:nawf, nawf : 2 * nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[nawf : 2 * nawf, 0:nawf, i] = arry['Dnm'][:, :, i]
             arry['Dnm'] = Dnm_double
             Dnm_double = None
 
@@ -957,51 +957,50 @@ class PAOFLOW:
             self.report_exception('spin_operator')
             if attr['abort_on_exception']:
                 raise e
-    def orbital_operator ( self, adhoc_SO=False):
+
+    def orbital_operator(self, adhoc_SO=False):
         from .defs.j_matrix import j_matrix, build_orb_list_and_indices, build_L_from_orb
 
-        arrays,attr = self.data_controller.data_dicts()
-
-
+        arrays, attr = self.data_controller.data_dicts()
 
         if adhoc_SO:
             attr['adhoc_SO'] = adhoc_SO
-       
+
         try:
-            if attr['adhoc_SO'] == True:         
-                
-                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])                                
-                arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)                
-                
-                for spol in range(3):                
+            if attr['adhoc_SO'] == True:
+                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+                arrays['Lj'] = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+
+                for spol in range(3):
                     L, _ = build_L_from_orb(arrays['orb_atom'], spol)
-                    arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
-                    arrays['Lj'][spol, len(orb_list):2*len(orb_list), len(orb_list):2*len(orb_list)] = L                        
+                    arrays['Lj'][spol, 0 : len(orb_list), 0 : len(orb_list)] = L
+                    arrays['Lj'][
+                        spol, len(orb_list) : 2 * len(orb_list), len(orb_list) : 2 * len(orb_list)
+                    ] = L
 
             elif attr['adhoc_SO'] == False:
                 if 'Sj' not in arrays:
                     self.spin_operator(adhoc_SO=False)
                 # Compute Total Angular Momentum operators
-                Jj = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
+                Jj = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
                 for spol in range(3):
-                    Jj[spol,:,:] = j_matrix(self.data_controller, spol)
+                    Jj[spol, :, :] = j_matrix(self.data_controller, spol)
                 # Compute Orbital Angular Momentum operators L = J - S
-                arrays['Lj'] = Jj-arrays['Sj']
+                arrays['Lj'] = Jj - arrays['Sj']
 
-            #elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
+            # elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
             #    self.data_controller.build_arrays_adhoc_soc()
             #    # Compute Orbital Angular Momentum operators L in the basis of |l,m> (NO SOC)
             #    orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
             #    arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
-            #    
-            #    for spol in range(3):                
+            #
+            #    for spol in range(3):
             #        L, _ = build_L_from_orb(arrays['orb_atom'], spol)
-            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L                             
+            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
         except:
             self.report_exception('angular_momentum_operator')
             if attr['abort_on_exception']:
                 self.comm.Abort()
-        
 
     def topology(
         self,
@@ -1472,6 +1471,66 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    def berry_curvature(self, spin_Hall=False, orbital_Hall=False, spol=None, ipol=None, jpol=None):
+        """
+        Calculate the Berry Curvature along the k-path 'kq'
+
+        Arguments:
+            curvature (string) : A string with the Hall effect to be calculated. Charge, spin or orbital.
+            spol (int): Spin polarization
+            ipol (int): In plane dimension 1
+            jpol (int): In plane dimension 2
+
+        Returns:
+            None
+        """
+
+        from .defs.do_berry_curvature import do_berry_curvature
+        # velocity, momentum and charge, spin or orbital Berry curvature and
+        # curvature operators along the path in the IBZ from do_topology_calc
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        attr['spol'] = spol
+        attr['ipol'] = ipol
+        attr['jpol'] = jpol
+
+        if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
+            if self.rank == 0:
+                print("Must specify 'spol', 'ipol', and 'jpol'")
+            quit()
+
+        if spin_Hall == True:
+            attr['curvature'] = 'Spin'
+            if 'Sj' not in arrays:
+                self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            arrays['Oj'] = arrays['Sj']
+            try:
+                do_berry_curvature(self.data_controller)
+            except Exception as e:
+                self.report_exception(attr['curvature'] + ' Berry curvature')
+                if attr['abort_on_exception']:
+                    raise e
+
+        if orbital_Hall == True:
+            attr['curvature'] = 'Orbital'
+            if 'Lj' not in arrays:
+                self.orbital_operator(spin_orbit=attr['do_spin_orbit'])
+            arrays['Oj'] = arrays['Lj']
+            try:
+                do_berry_curvature(self.data_controller)
+            except Exception as e:
+                self.report_exception(attr['curvature'] + ' Berry curvature')
+                if attr['abort_on_exception']:
+                    raise e
+
+        self.report_module_time(attr['curvature'] + ' Berry Curvature')
+
+        del arrays['R']
+        del arrays['idx']
+        del arrays['Rfft']
+        del arrays['R_wght']
+
     def spin_Hall(
         self,
         twoD=False,
@@ -1629,7 +1688,7 @@ class PAOFLOW:
         if ohc_proj is not None:
             arrays['ohc_proj'] = np.array(ohc_proj)
 
-        if ('Lj' not in arrays):
+        if 'Lj' not in arrays:
             self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
@@ -1649,19 +1708,18 @@ class PAOFLOW:
 
         self.report_module_time('Orbital Hall Conductivity')
 
-    def conductivity ( self, delta=0.01, emin=-10., emax=2., ne=1000, cond_tensor=None ):
-
+    def conductivity(self, delta=0.01, emin=-10.0, emax=2.0, ne=1000, cond_tensor=None):
         from .defs.do_conductivity import do_conductivity
-    
-        arrays,attr = self.data_controller.data_dicts()
+
+        arrays, attr = self.data_controller.data_dicts()
 
         if cond_tensor is not None:
             arrays['cond_tensor'] = np.array(cond_tensor)
 
         for i in range(arrays['cond_tensor'].shape[0]):
-            ipol=arrays['cond_tensor'][i,0]
-            jpol=arrays['cond_tensor'][i,1]
-  
+            ipol = arrays['cond_tensor'][i, 0]
+            jpol = arrays['cond_tensor'][i, 1]
+
             do_conductivity(self.data_controller, emin, emax, ne, delta, ipol, jpol)
 
         self.report_module_time('Conductivity')
@@ -1717,51 +1775,89 @@ class PAOFLOW:
         if orbital == True and 'Lj' not in arrays:
             self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
 
-
         P = np.eye(attr['nawf'])
 
-
         try:
-
             if intra_band == True:
-
                 if ree_tensor is not None:
                     arrays['ree_tensor'] = np.array(ree_tensor)
 
-                if spin is True:                                         
-                    if ('Sj' not in arrays):
+                if spin is True:
+                    if 'Sj' not in arrays:
                         self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
                     for i in range(arrays['ree_tensor'].shape[0]):
-                        ipol=arrays['ree_tensor'][i,0]
-                        spol=arrays['ree_tensor'][i,1]                                            
+                        ipol = arrays['ree_tensor'][i, 0]
+                        spol = arrays['ree_tensor'][i, 1]
 
                         if ree_proj == None:
-                            P = np.eye(attr['nawf'])                            
-                            do_rashba_edelstein_intra(self.data_controller, "spin" , ene, delta, ipol, spol,arrays['Sj'], P)
+                            P = np.eye(attr['nawf'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'spin',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Sj'],
+                                P,
+                            )
                         else:
                             if 'naw' not in arrays:
                                 arrays['naw'] = orbital_array(self.data_controller)
                             P = do_projection_operator(self.data_controller, arrays['ree_proj'])
-                            do_rashba_edelstein_intra(self.data_controller, "spin" , ene, delta, ipol, spol,arrays['Sj'], P)
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'spin',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Sj'],
+                                P,
+                            )
 
                 if orbital is True:
-                    if ('Lj' not in arrays):
+                    if 'Lj' not in arrays:
                         self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
 
                     for i in range(arrays['ree_tensor'].shape[0]):
-                        ipol=arrays['ree_tensor'][i,0]
-                        spol=arrays['ree_tensor'][i,1]
-                        
-                        do_rashba_edelstein_intra(self.data_controller, "orbital" , ene, delta, ipol, spol,arrays['Lj'], P)
+                        ipol = arrays['ree_tensor'][i, 0]
+                        spol = arrays['ree_tensor'][i, 1]
+
+                        do_rashba_edelstein_intra(
+                            self.data_controller, 'orbital', ene, delta, ipol, spol, arrays['Lj'], P
+                        )
 
             else:
                 if spin == True:
-                  self.spin_texture(fermi_up=emax, fermi_dw=emin)
-                  do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file, arrays['sktxt'], 'spin')
+                    self.spin_texture(fermi_up=emax, fermi_dw=emin)
+                    do_rashba_edelstein(
+                        self.data_controller,
+                        ene,
+                        temps,
+                        reg,
+                        twoD,
+                        lt,
+                        st,
+                        write_to_file,
+                        arrays['sktxt'],
+                        'spin',
+                    )
                 if orbital == True:
-                  self.orbital_texture(fermi_up=emax, fermi_dw=emin)
-                  do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file, arrays['oktxt'],'orbital')
+                    self.orbital_texture(fermi_up=emax, fermi_dw=emin)
+                    do_rashba_edelstein(
+                        self.data_controller,
+                        ene,
+                        temps,
+                        reg,
+                        twoD,
+                        lt,
+                        st,
+                        write_to_file,
+                        arrays['oktxt'],
+                        'orbital',
+                    )
 
         except Exception as e:
             self.report_exception('rashba_edelstein')
@@ -1775,7 +1871,7 @@ class PAOFLOW:
         do_ac=False,
         emin=-1.0,
         emax=1.0,
-        ne = 501,
+        ne=501,
         delta=0.05,
         fermi_up=1.0,
         fermi_dw=-1.0,
@@ -1799,7 +1895,7 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'],attr['emaxH'] = emin,emax
+        attr['eminH'], attr['emaxH'] = emin, emax
         attr['deltaH'] = delta
         attr['esizeH'] = ne
 
