@@ -460,7 +460,7 @@ def parse_qe_atomic_proj(data_controller, fname):
         nspin = 1
 
     wavefunctions = np.empty((nbnds, nawf, nkpnts, nspin), dtype=complex)
-    overlaps = np.empty((nawf, nbnds, nkpnts), dtype=complex) if save_overlaps else None
+    overlaps = np.empty((nawf, nawf, nkpnts), dtype=complex) if save_overlaps else None
 
     if qe_version > 6.5:
         elem = root.find('EIGENSTATES')
