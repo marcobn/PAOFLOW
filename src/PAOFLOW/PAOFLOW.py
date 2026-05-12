@@ -667,7 +667,6 @@ class PAOFLOW:
             None
 
         """
-        import scipy.linalg as la
 
         from .defs.do_spin_orbit import do_spin_orbit_H
 

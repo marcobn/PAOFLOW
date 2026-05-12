@@ -56,7 +56,7 @@ def do_rashba_edelstein(
 
     deltakp = np.take(arrays['deltakp'], ind_plot, axis=1)[:, :, 0]
     E_k = np.take(arrays['E_k'], ind_plot, axis=1)[:, :, 0]
-    St = np.real(arrays['sktxt']).reshape(snktot, 3, nstates)
+    St = np.real(Op_text).reshape(snktot, 3, nstates)
 
     kai_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
     j_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
@@ -147,22 +147,14 @@ def do_rashba_edelstein(
                 for j in range(3):
                     fEkai[i][j].close()
 
-def do_rashba_edelstein_intra( 
-        data_controller, 
-        prefix_file,
-        ene, 
-        delta, 
-        ipol, 
-        spol, 
-        Op1,
-        P 
-    ):
+
+def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, spol, Op1, P):
     import numpy as np
     from .perturb_split import perturb_split
     from .smearing import metpax, gaussian
-    from .constants import ELECTRONVOLT_SI,ANGSTROM_AU,H_OVER_TPI,LL
+    from .constants import LL
 
-    arrays,attributes = data_controller.data_dicts()
+    arrays, attributes = data_controller.data_dicts()
 
     nawf = attributes['nawf']
     nspin = attributes['nspin']
@@ -170,69 +162,67 @@ def do_rashba_edelstein_intra(
     ne = ene.size
 
     # Hall Magnetization Calculation with Gaussian Smearing
-  
+
     nawf = attributes['nawf']
 
     v_kaux = np.zeros_like(arrays['v_k'])
 
-    O1=np.zeros_like(arrays['pksp'])
-    O2=np.zeros_like(arrays['pksp'])   
-    
-    
+    O1 = np.zeros_like(arrays['pksp'])
+    O2 = np.zeros_like(arrays['pksp'])
+
     for ik in range(nktot):
         for ispin in range(nspin):
-            O1[ik,spol,:,:,ispin],O2[ik,ipol,:,:,ispin]= perturb_split(
-                0.5* (P @ Op1[spol,:,:] + Op1[spol,:,:] @ P),                                            
-                arrays['dHksp'][ik,ipol,:,:,ispin],
-                arrays['v_k'][ik,:,:,ispin], 
-                arrays['degen'][ispin][ik]
+            O1[ik, spol, :, :, ispin], O2[ik, ipol, :, :, ispin] = perturb_split(
+                0.5 * (P @ Op1[spol, :, :] + Op1[spol, :, :] @ P),
+                arrays['dHksp'][ik, ipol, :, :, ispin],
+                arrays['v_k'][ik, :, :, ispin],
+                arrays['degen'][ispin][ik],
             )
 
-
-            #O1[ik,spol,:,:,ispin],O2[ik,ipol,:,:,ispin]= perturb_split(
-            #    arrays['dHksp'][ik,ipol,:,:,ispin], 
-            #    arrays['dHksp'][ik,spol,:,:,ispin], 
-            #    arrays['v_k'][ik,:,:,ispin], 
+            # O1[ik,spol,:,:,ispin],O2[ik,ipol,:,:,ispin]= perturb_split(
+            #    arrays['dHksp'][ik,ipol,:,:,ispin],
+            #    arrays['dHksp'][ik,spol,:,:,ispin],
+            #    arrays['v_k'][ik,:,:,ispin],
             #    arrays['degen'][ispin][ik]
-            #)
+            # )
 
-      
     for ispin in range(attributes['nspin']):
-        E_k = np.real(arrays['E_k'][:,:,ispin])
+        E_k = np.real(arrays['E_k'][:, :, ispin])
 
         accaux = np.zeros((ne), dtype=float)
 
         for ik in range(nktot):
-            v_kaux[ik,:,:,ispin]= O1[ik,spol,:,:,ispin]*O2[ik,ipol,:,:,ispin]
+            v_kaux[ik, :, :, ispin] = O1[ik, spol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
 
-        if attributes['smearing'] != None :
-            taux = np.zeros((arrays['deltakp'].shape[0],nawf), dtype=float)
-      
-        for n in range (ne):
-        # Adaptive Gaussian Smearing
+        if attributes['smearing'] != None:
+            taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
+
+        for n in range(ne):
+            # Adaptive Gaussian Smearing
             if attributes['smearing'] == 'gauss':
-                taux = gaussian(ene[n], E_k, arrays['deltakp'][:,:,ispin]) 
-        # Adaptive M-P smearing
+                taux = gaussian(ene[n], E_k, arrays['deltakp'][:, :, ispin])
+            # Adaptive M-P smearing
             elif attributes['smearing'] == 'm-p':
-                taux = metpax(ene[n], E_k, arrays['deltakp'][:,:,ispin])      
+                taux = metpax(ene[n], E_k, arrays['deltakp'][:, :, ispin])
             elif attributes['smearing'] == None:
-                taux = np.exp(-((ene[n]-E_k[:,:])/delta)**2)/np.sqrt(np.pi)
+                taux = np.exp(-(((ene[n] - E_k[:, :]) / delta) ** 2)) / np.sqrt(np.pi)
 
-            accaux[n]+=np.sum(np.real(taux*np.diagonal(v_kaux[:,:,:,ispin],axis1=1,axis2=2)))
+            accaux[n] += np.sum(
+                np.real(taux * np.diagonal(v_kaux[:, :, :, ispin], axis1=1, axis2=2))
+            )
 
-        acc = (np.zeros((ne), dtype=float) if rank==0 else None)
+        acc = np.zeros((ne), dtype=float) if rank == 0 else None
 
         comm.Reduce(accaux, acc, op=MPI.SUM)
         accaux = None
-        
+
         if rank == 0:
-            if(attributes['smearing']==None):                
-                acc /= (float(attributes['nkpnts'])*np.sqrt(np.pi)*delta)
+            if attributes['smearing'] == None:
+                acc /= float(attributes['nkpnts']) * np.sqrt(np.pi) * delta
             else:
-                acc /= (float(attributes['nkpnts']))
+                acc /= float(attributes['nkpnts'])
 
-        #cart_indices = (str(LL[ipol]),str(LL[spol]),str(ispin))
+        # cart_indices = (str(LL[ipol]),str(LL[spol]),str(ispin))
 
-        facc = '%s_reeEf_%s%s.dat'% (prefix_file, str(LL[ipol]), str(LL[spol]))
+        facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[ipol]), str(LL[spol]))
         data_controller.write_file_row_col(facc, ene, acc)
-

@@ -56,6 +56,6 @@ def do_projection_operator(data_controller, proj_array):
         fdx = int(idx + arry['naw'][proj_array[i]])
         print(idx, fdx)
         P[idx:fdx, idx:fdx] = np.eye(arry['naw'][proj_array[i]])
-        P[idx+s:fdx+s, idx+s:fdx+s] = np.eye(arry['naw'][proj_array[i]])
+        P[idx + s : fdx + s, idx + s : fdx + s] = np.eye(arry['naw'][proj_array[i]])
 
     return P
