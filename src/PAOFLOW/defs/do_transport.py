@@ -46,13 +46,17 @@ def do_transport(
                 fPF = ojf('PF', ispin)
                 fkappa = ojf('kappa', ispin)
                 fSeebeck = ojf('Seebeck', ispin)
+                if do_hall:
+                    fhall = ojf('hall_trace', ispin)
+                    fhall_full = ojf('sigma_hall', ispin)
             else:
-                fsigma = ojf('sigma' + attr['smearing'], ispin)
-                fPF = ojf('PF' + attr['smearing'], ispin)
-                fkappa = ojf('kappa' + attr['smearing'], ispin)
-                fSeebeck = ojf('Seebeck' + attr['smearing'], ispin)
-            if do_hall:
-                fhall = ojf('hall_trace', ispin)
+                fsigma = ojf('sigma_' + attr['smearing'], ispin)
+                fPF = ojf('PF_' + attr['smearing'], ispin)
+                fkappa = ojf('kappa_' + attr['smearing'], ispin)
+                fSeebeck = ojf('Seebeck_' + attr['smearing'], ispin)
+                if do_hall:
+                    fhall = ojf('hall_trace_' + attr['smearing'], ispin)
+                    fhall_full = ojf('sigma_hall_' + attr['smearing'], ispin)
 
         for temp in temps:
             itemp = temp / temp_conv
@@ -77,6 +81,24 @@ def do_transport(
             if do_hall:
                 wtup_hall = lambda fn, tu: fn.write('%8.2f % .5f % 9.5e \n' % tu)
                 gtup_hall = lambda tu, i: (temp, ene[i], tu[i])
+
+                wtup_hall_full = lambda fn, tu: fn.write(
+                    '%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n'
+                    % tu
+                )
+                gtup_hall_full = lambda tu, i: (
+                    temp,
+                    ene[i],
+                    tu[0, 1, 2, i],
+                    tu[0, 2, 1, i],
+                    tu[1, 2, 0, i],
+                    tu[0, 1, 0, i],
+                    tu[0, 1, 1, i],
+                    tu[0, 2, 0, i],
+                    tu[0, 2, 2, i],
+                    tu[1, 2, 1, i],
+                    tu[1, 2, 2, i],
+                )
 
             L0, L1, L2 = do_Boltz_tensors(
                 data_controller, attr['smearing'], itemp, ene, velkp, ispin, channels, weights
@@ -104,6 +126,13 @@ def do_transport(
 
                 if do_hall:
                     L0_hall *= spin_mult / (attr['omega'])
+
+                    if write_to_file:
+                        for i in range(esize):
+                            wtup_hall_full(fhall_full, gtup_hall_full(L0_hall, i))
+                    if save_tensors:
+                        arrays['sigma_hall'] = L0_hall
+
                     R_hall = np.zeros((3, 3, 3, esize), dtype=float)
                     R_hall_trace = np.zeros((esize), dtype=float)
                     for n in range(esize):
@@ -195,10 +224,12 @@ def do_transport(
             fSeebeck.close()
             if do_hall:
                 fhall.close()
+                fhall_full.close()
 
         if save_tensors:
             data_controller.broadcast_single_array('sigma', dtype=float)
             data_controller.broadcast_single_array('S', dtype=float)
             data_controller.broadcast_single_array('kappa', dtype=float)
             if do_hall:
+                data_controller.broadcast_single_array('sigma_hall', dtype=float)
                 data_controller.broadcast_single_array('R_hall_trace', dtype=float)

@@ -36,7 +36,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
     #### Forced t_tensor to have all components
     t_tensor = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
 
-    # Quick call function for L_loop (None is smearing type)
+    # Quick call function for L_loop
     fLloop = lambda spol: L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, spol, ispin)
 
     # Quick call function for Zeros on rank Zero
@@ -119,8 +119,6 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
     #### Forced t_tensor to have all components
     t_tensor = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
-
-    # Quick call function for L_loop (None is smearing type)
 
     # Quick call function for Zeros on rank Zero
     zoz = lambda r: np.zeros((3, 3, 3, esize), dtype=float) if r == 0 else None
