@@ -25,9 +25,10 @@ rank = comm.Get_rank()
 
 
 def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
-    # Compute the L_alpha tensors for Boltzmann transport
+    from scipy.integrate import simpson
 
-    arrays, attributes = data_controller.data_dicts()
+    # Compute the L_alpha tensors for Boltzmann transport
+    arrays, _ = data_controller.data_dicts()
 
     esize = ene.size
     arrays['scattering_tau'] = get_tau(data_controller, temp, channels, weights)
@@ -41,27 +42,69 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
     # Quick call function for Zeros on rank Zero
     zoz = lambda r: np.zeros((3, 3, esize), dtype=float) if r == 0 else None
 
-    L0 = zoz(rank)
-    L0aux = fLloop(0)
-    comm.Reduce(L0aux, L0, op=MPI.SUM)
-    L0aux = None
+    if smearing is None:
+        L0 = zoz(rank)
+        L0aux = fLloop(0)
+        comm.Reduce(L0aux, L0, op=MPI.SUM)
+        L0aux = None
+
+        L1 = zoz(rank)
+        L1aux = fLloop(1)
+        comm.Reduce(L1aux, L1, op=MPI.SUM)
+        L1aux = None
+
+        L2 = zoz(rank)
+        L2aux = fLloop(2)
+        comm.Reduce(L2aux, L2, op=MPI.SUM)
+        L2aux = None
+
+    else:
+        L0 = zoz(rank)
+        L1 = zoz(rank)
+        L2 = zoz(rank)
+
+        # Fixed threshold
+        thresh = 1e-9
+        dE_max = 2 * temp * np.arccosh(1 / np.sqrt(thresh))
+
+        if len(ene) > 1:
+            dE = ene[1] - ene[0]
+        else:
+            dE = 2 * temp * np.arccosh(1 / np.sqrt(thresh)) * 1e-2 + 1e-8
+
+        lower = np.flip(np.arange(ene[0] - dE, ene[0] - dE_max - dE, -dE))
+        upper = np.arange(ene[-1] + dE, ene[-1] + dE_max + dE, dE)
+        ene_aux = np.concatenate((lower, ene, upper))
+
+        L0_ext = np.zeros((3, 3, ene_aux.size), dtype=float) if rank == 0 else None
+        L0aux = L_loop(data_controller, temp, smearing, ene_aux, velkp, t_tensor, 0, ispin)
+        comm.Reduce(L0aux, L0_ext, op=MPI.SUM)
+        L0aux = None
+
+        if rank == 0:
+            # Interpolate
+            ene_int = np.linspace(ene_aux[0], ene_aux[-1], 2 * ene_aux.size - 1)
+            L0_int = np.zeros((3, 3, ene_int.size), dtype=float)
+            for t_comp in t_tensor:
+                L0_int[t_comp[0], t_comp[1], :] = np.interp(
+                    ene_int, ene_aux, L0_ext[t_comp[0], t_comp[1], :]
+                )
+
+            for i, ef in enumerate(ene):
+                fermi_smear = 1 / (4 * temp * (np.cosh((ene_int - ef) / (2 * temp)) ** 2))
+
+                for t_comp in t_tensor:
+                    L_smear_aux = L0_int[t_comp[0], t_comp[1], :] * fermi_smear
+                    L0[t_comp[0], t_comp[1], i] = simpson(L_smear_aux, ene_int)
+                    L1[t_comp[0], t_comp[1], i] = simpson(L_smear_aux * (ene_int - ef), ene_int)
+                    L2[t_comp[0], t_comp[1], i] = simpson(
+                        L_smear_aux * (ene_int - ef) ** 2, ene_int
+                    )
 
     if rank == 0:
         # Assign lower triangular to upper triangular
         sym = lambda L: (L[0, 1], L[0, 2], L[1, 2])
         L0[1, 0], L0[2, 0], L0[2, 1] = sym(L0)
-
-    L1 = zoz(rank)
-    L1aux = fLloop(1)
-    comm.Reduce(L1aux, L1, op=MPI.SUM)
-    L1aux = None
-
-    L2 = zoz(rank)
-    L2aux = fLloop(2)
-    comm.Reduce(L2aux, L2, op=MPI.SUM)
-    L2aux = None
-
-    if rank == 0:
         L1[1, 0], L1[2, 0], L1[2, 1] = sym(L1)
         L2[1, 0], L2[2, 0], L2[2, 1] = sym(L2)
 
@@ -69,7 +112,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
 
 
 def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
-    arrays, attributes = data_controller.data_dicts()
+    arrays, _ = data_controller.data_dicts()
 
     esize = ene.size
     arrays['scattering_tau'] = get_tau(data_controller, temp, channels, weights)
@@ -92,8 +135,9 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
 def get_tau(data_controller, temp, channels, weights):
     import numpy as np
-    from .TauModel import TauModel
+
     from .do_tau_models import builtin_tau_model
+    from .TauModel import TauModel
 
     arry, attr = data_controller.data_dicts()
     snktot = arry['E_k'].shape[0]
@@ -206,6 +250,7 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
 def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
     from sympy import Eijk
+
     from .smearing import gaussian, metpax
 
     arrays, attributes = data_controller.data_dicts()
