@@ -31,18 +31,24 @@ def do_band_curvature(data_controller):
         None
     """
 
-    from .do_d2Hd2k import do_d2Hd2k_ij
     import numpy as np
+
+    from .communication import scatter_full
+    from .do_d2Hd2k import do_d2Hd2k_ij
 
     ary, attr = data_controller.data_dicts()
     bnd = attr['bnd']
     nawf = attr['nawf']
     E_k = ary['E_k']
 
+    Dnm = scatter_full(
+        np.reshape(ary['Dnm'], (attr['nawf'] * attr['nawf'], 3), order='C'), attr['npool']
+    )
+
     # not really the inverse mass tensor..it's actually tksp
     # but we are calling it d2Ed2k for now to save memory.
     d2Ed2k, dvec_list = do_d2Hd2k_ij(
-        ary['Hksp'], ary['Rfft'], attr['alat'], attr['npool'], ary['v_k'], bnd, ary['degen']
+        ary['Hksp'], Dnm, ary['Rfft'], attr['alat'], attr['npool'], ary['v_k'], bnd, ary['degen']
     )
 
     # d2Ed2k is only the 6 unique components of the curvature

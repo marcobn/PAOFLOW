@@ -18,7 +18,6 @@
 # or http://www.gnu.org/copyleft/gpl.txt .
 
 import numpy as np
-
 from mpi4py import MPI
 
 from .communication import gather_scatter
@@ -32,7 +31,7 @@ size = comm.Get_size()
 from scipy import fftpack as FFT
 
 
-def do_d2Hd2k_ij(Hksp, Rfft, alat, npool, v_kp, bnd, degen):
+def do_d2Hd2k_ij(Hksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
     # ----------------------
     # Compute the gradient of the k-space Hamiltonian
     # ----------------------
@@ -77,7 +76,12 @@ def do_d2Hd2k_ij(Hksp, Rfft, alat, npool, v_kp, bnd, degen):
         for ispin in range(d2Hksp.shape[4]):
             for n in range(d2Hksp.shape[0]):
                 # because of the way this is coded...Hksp is actually HR*1.0j*alat
-                d2Hksp[n, :, :, :, ispin] = FFT.fftn(RIJ * Hksp[n, :, :, :, ispin] * 1.0j * alat)
+                d2Hksp[n, :, :, :, ispin] = (
+                    FFT.fftn(RIJ * Hksp[n, :, :, :, ispin] * 1.0j * alat)
+                    + Dnm[n, ipol] * Dnm[n, jpol] * FFT.fftn(Hksp[n, :, :, :, ispin] * 1.0j / alat)
+                    + Dnm[n, ipol] * FFT.fftn(Rfft[jpol] * Hksp[n, :, :, :, ispin] * 1.0j)
+                    + Dnm[n, jpol] * FFT.fftn(Rfft[ipol] * Hksp[n, :, :, :, ispin] * 1.0j)
+                )
 
         #############################################################################################
         #############################################################################################
