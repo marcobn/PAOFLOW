@@ -44,7 +44,6 @@ def do_rashba_edelstein(
     snktot = arrays['v_k'].shape[0]
     ind_plot = arrays['ind_plot']
     nstates = len(ind_plot)
-    nktot = attr['nkpnts']
     tau_const = 1.0
     esize = ene.size
 
