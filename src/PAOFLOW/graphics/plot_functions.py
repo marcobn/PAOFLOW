@@ -270,7 +270,7 @@ def plot_dos_beside_bands(
         ax_b.set_xticklabels(sym_points[1])
         ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if band_label is None:
-        band_label =  r'$\epsilon$($\mathbf{k}$) (eV)'
+        band_label = r'$\epsilon$($\mathbf{k}$) (eV)'
     ax_b.set_ylabel(band_label, fontsize=12)
 
     ax_d.plot(dos, es, color=col)
