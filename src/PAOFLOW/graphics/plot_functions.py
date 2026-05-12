@@ -167,7 +167,7 @@ def plot_weighted_bands(
     plt.show()
 
 
-def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=True):
+def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=True,filename=None,outputdir=None):
     """Plot one or more band structures for comparison.
 
     Arguments:
@@ -238,7 +238,12 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
 
     if legend and any(l is not None for l in labels):
         ax.legend()
-
+    
+    if filename is not None:
+        if outputdir is None:
+            plt.savefig(filename, dpi=300, bbox_inches='tight')
+        else:
+            plt.savefig(outputdir + filename, dpi=300, bbox_inches='tight')
     plt.show()
 
 

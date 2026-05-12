@@ -1874,8 +1874,6 @@ class PAOFLOW:
         delta=0.05,
         fermi_up=1.0,
         fermi_dw=-1.0,
-        ne=501,
-        delta=0.05,
         a_tensor=None,
     ):
         """

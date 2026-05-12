@@ -2565,20 +2565,415 @@ def Kane_Mele(data_controller, params):
     arry['species'] = ['KM', 'KM']
 
 
+def RS_LMTO(data_controller, params):
+
+    from .constants import ANGSTROM_AU
+    from .read_LMTO_hamiltonian import read_RS_LMTO_hamiltonian
+    from .read_poscar import poscar_to_data_controller
+
+    import numpy as np
+
+    arry, attr = data_controller.data_dicts()
+
+    inputpath = params['savedir']
+    filename = params['hamiltonian_file']
+    nawf = params['nawf']
+    nspin = params['nspin']
+    twoD = params['twoD']
+    attr['Efermi'] = params['Efermi']
+    attr['bnd'] = nawf
+    attr['shift'] = 100
+    attr['dftSO'] = params.get('dftSO', False)
+
+    # Read structural information from POSCAR if available
+    if 'poscar_file' in params:
+        poscar_path = inputpath + params['poscar_file']
+        poscar_to_data_controller(data_controller, poscar_path, verbose=attr.get('verbose', False))
+
+    # Reciprocal Lattice
+    arry['b_vectors'] = np.zeros((3, 3), dtype=float)
+    volume = np.dot(
+        np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :]), arry['a_vectors'][2, :]
+    )
+    arry['b_vectors'][0, :] = (np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])) / volume
+    arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
+    arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
+
+    attr['omega'] = np.abs(arry['a_vectors'][0, 0] ** 3 * arry['a_vectors'][0, :].dot(
+        np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])
+    ))
+
+    orb_atom = []
+    naw = []
+    for i in range(len(arry['atoms'])):
+        #orb_atom.append(['s', 'p_x', 'p_y', 'p_z', 'd_xy', 'd_yz', 'd_zx', 'd_x2_y2', 'd_3z2_r2'])
+        orb_atom.append(['p_x', 'p_y', 'p_z'])
+        #naw.append(int(9))
+        naw.append(int(3))
+
+    arry['orb_atom'] = [(a, o) for a, o in zip(arry['atoms'], orb_atom)]
+    arry['naw'] = naw
+
+    try:
+        arry['HRs'] = read_RS_LMTO_hamiltonian(inputpath, filename, nawf, nspin, twoD)
+        attr['nawf'], _, attr['nk1'], attr['nk2'], attr['nk3'], attr['nspin'] = arry['HRs'].shape
+        attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
+        attr['bnd'] = attr['nawf']
+        attr['shift'] = 100
+
+        # Construct Dnm array from atomic positions
+        if 'tau' in arry:
+            natoms = len(arry['atoms'])
+            # Assume uniform orbital distribution per atom per spin
+            orbitals_per_atom_per_spin = attr['nawf'] // (2 * natoms)  # Divide by 2 for spin
+
+            arry['Dnm'] = np.zeros((attr['nawf'], attr['nawf'], 3), dtype=float)
+
+            # Fill Dnm with distance vectors between orbital pairs
+            for n in range(attr['nawf']):
+                # Determine atom and spin for orbital n
+                if n < attr['nawf'] // 2:
+                    # Spin up block
+                    atom_n = (n // orbitals_per_atom_per_spin) % natoms
+                else:
+                    # Spin down block
+                    atom_n = ((n - attr['nawf'] // 2) // orbitals_per_atom_per_spin) % natoms
+
+                for m in range(attr['nawf']):
+                    # Determine atom and spin for orbital m
+                    if m < attr['nawf'] // 2:
+                        # Spin up block
+                        atom_m = (m // orbitals_per_atom_per_spin) % natoms
+                    else:
+                        # Spin down block
+                        atom_m = ((m - attr['nawf'] // 2) // orbitals_per_atom_per_spin) % natoms
+
+                    arry['Dnm'][n, m, :] = arry['tau'][atom_n, :] - arry['tau'][atom_m, :]
+
+    except:
+        print(' Exception in Real Space LMTO Hamiltonian')
+
+def Buckled_Honeycomb_pSOC(data_controller, params):
+  """
+  Buckled honeycomb p_x, p_y, p_z model with atomic SOC.
+
+  Basis:
+    A px up
+    A py up
+    A pz up
+    A px down
+    A py down
+    A pz down
+    B px up
+    B py up
+    B pz up
+    B px down
+    B py down
+    B pz down
+
+  Parameters in params:
+    a            : in-plane nearest-neighbor distance, Angstrom
+    c            : vacuum height, Angstrom
+    ell          : half-buckling height, Angstrom
+    eps_xy       : onsite px/py energy, eV
+    eps_z        : onsite pz energy, eV
+    Vpp_sigma    : pp sigma hopping, eV
+    Vpp_pi       : pp pi hopping, eV
+    lambda_soc   : atomic SOC strength, eV
+    Delta        : sublattice potential, eV
+    Efermi       : Fermi level, eV
+    nelec        : electron count, optional
+  """
+
+  from .constants import ANGSTROM_AU
+  import numpy as np
+
+  arry, attr = data_controller.data_dicts()
+
+  # -----------------------------
+  # Parameters
+  # -----------------------------
+  a = params.get('a', 1.42)
+  c = params.get('c', 20.0)
+  ell = params.get('ell', 0.0)
+
+  eps_xy = params.get('eps_xy', 0.0)
+  eps_z = params.get('eps_z', 0.0)
+
+  Vpp_sigma = params.get('Vpp_sigma', 5.0)
+  Vpp_pi = params.get('Vpp_pi', -2.7)
+
+  lam = params.get('lambda_soc', 0.01)
+  Delta = params.get('Delta', 0.0)
+
+  Efermi = params.get('Efermi', 0.0)
+  nelec = params.get('nelec', 6)
+
+  # PAOFLOW uses dimensionless lattice vectors multiplied by attr['alat']
+  attr['alat'] = a * ANGSTROM_AU
+
+  ell_red = ell / a
+  c_red = c / a
+
+  # -----------------------------
+  # Lattice
+  # -----------------------------
+  # Primitive vectors for honeycomb lattice in units of NN distance a
+  a1 = np.array([np.sqrt(3.0), 0.0, 0.0])
+  a2 = np.array([np.sqrt(3.0) / 2.0, 1.5, 0.0])
+  a3 = np.array([0.0, 0.0, c_red])
+
+  arry['a_vectors'] = np.array([a1, a2, a3], dtype=float)
+
+  volume_red = np.dot(
+      np.cross(arry['a_vectors'][0], arry['a_vectors'][1]),
+      arry['a_vectors'][2]
+  )
+
+  attr['omega'] = volume_red * attr['alat']**3
+
+  arry['b_vectors'] = np.zeros((3, 3), dtype=float)
+  arry['b_vectors'][0, :] = np.cross(a2, a3) / volume_red
+  arry['b_vectors'][1, :] = np.cross(a3, a1) / volume_red
+  arry['b_vectors'][2, :] = np.cross(a1, a2) / volume_red
+
+  # Atomic positions in reduced Cartesian coordinates, not fractional coordinates
+  tau_A = np.array([0.0, 0.0, +ell_red])
+  tau_B = np.array([0.0, 1.0, -ell_red])
+
+  arry['tau'] = np.array([tau_A, tau_B], dtype=float)
+
+
+  # -------------------------------------------------
+  # Orbital-center difference tensor Dnm
+  # Required by gradient_and_momenta()
+  #
+  # PAOFLOW convention:
+  # Dnm[n,m,i] = r_n[i] - r_m[i]
+  #
+  # tau_A and tau_B above are in reduced Cartesian units
+  # of the model length a. Convert to Bohr using attr['alat'].
+  # -------------------------------------------------
+
+  orbital_pos_red = np.zeros((12, 3), dtype=float)
+
+  # A sublattice: 6 spin-orbitals
+  orbital_pos_red[0:6, :] = tau_A
+
+  # B sublattice: 6 spin-orbitals
+  orbital_pos_red[6:12, :] = tau_B
+
+  # Convert reduced coordinates to Bohr
+  orbital_pos_bohr = orbital_pos_red * attr['alat']
+
+  arry['Dnm'] = np.zeros((12, 12, 3), dtype=float)
+
+  for n in range(12):
+    for m in range(12):
+      arry['Dnm'][n, m, :] = orbital_pos_bohr[n, :] - orbital_pos_bohr[m, :]
+
+  arry['atoms'] = ['X', 'X']
+  arry['species'] = ['X', 'X']
+  arry['naw'] = np.array([6, 6])
+
+  # -----------------------------
+  # Dimensions
+  # -----------------------------
+  attr['nk1'] = 3
+  attr['nk2'] = 3
+  attr['nk3'] = 1
+  attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
+
+  attr['nawf'] = 12
+  attr['bnd'] = 12
+  attr['nbnds'] = 12
+  attr['nspin'] = 1
+
+  # We include spin explicitly in the basis.
+  attr['dftSO'] = True
+
+  attr['shift'] = 0.0
+  attr['Efermi'] = Efermi
+  attr['fermi_up'] = Efermi
+  attr['fermi_dw'] = Efermi
+  attr['nelec'] = nelec
+
+  HRs = np.zeros(
+      (
+          attr['nawf'],
+          attr['nawf'],
+          attr['nk1'],
+          attr['nk2'],
+          attr['nk3'],
+          attr['nspin']
+      ),
+      dtype=complex
+  )
+
+  # -----------------------------
+  # Local matrices
+  # -----------------------------
+  I2 = np.eye(2, dtype=complex)
+  I3 = np.eye(3, dtype=complex)
+
+  sx = np.array([[0, 1], [1, 0]], dtype=complex)
+  sy = np.array([[0, -1j], [1j, 0]], dtype=complex)
+  sz = np.array([[1, 0], [0, -1]], dtype=complex)
+
+  Lx = np.array([
+      [0, 0, 0],
+      [0, 0, -1j],
+      [0, 1j, 0]
+  ], dtype=complex)
+
+  Ly = np.array([
+      [0, 0, 1j],
+      [0, 0, 0],
+      [-1j, 0, 0]
+  ], dtype=complex)
+
+  Lz = np.array([
+      [0, -1j, 0],
+      [1j, 0, 0],
+      [0, 0, 0]
+  ], dtype=complex)
+
+  onsite_orb = np.diag([eps_xy, eps_xy, eps_z]).astype(complex)
+
+  H_onsite = np.kron(I2, onsite_orb)
+
+  H_soc = 0.5 * lam * (
+      np.kron(sx, Lx) +
+      np.kron(sy, Ly) +
+      np.kron(sz, Lz)
+  )
+
+  H_A = H_onsite + H_soc + Delta * np.eye(6, dtype=complex)
+  H_B = H_onsite + H_soc - Delta * np.eye(6, dtype=complex)
+
+  HRs[0:6, 0:6, 0, 0, 0, 0] = H_A
+  HRs[6:12, 6:12, 0, 0, 0, 0] = H_B
+
+  def pp_hopping(delta):
+    """
+    Slater-Koster p-p hopping for bond vector delta.
+    delta is given in reduced Cartesian units.
+    """
+    d = np.linalg.norm(delta)
+    lx, ly, lz = delta / d
+
+    D = np.array([
+        [lx * lx, lx * ly, lx * lz],
+        [ly * lx, ly * ly, ly * lz],
+        [lz * lx, lz * ly, lz * lz]
+    ], dtype=complex)
+
+    T = Vpp_pi * np.eye(3, dtype=complex)
+    T += (Vpp_sigma - Vpp_pi) * D
+
+    return T
+
+  def add_block(i0, j0, R, block):
+    """
+    Add hopping block H_{i0,j0}(R).
+
+    R = (R1, R2, R3) in lattice-vector units.
+    Negative values are wrapped onto the 3x3x1 real-space grid.
+    """
+    i, j, k = R
+    ii = i % attr['nk1']
+    jj = j % attr['nk2']
+    kk = k % attr['nk3']
+
+    ni, nj = block.shape
+    HRs[i0:i0 + ni, j0:j0 + nj, ii, jj, kk, 0] += block
+
+  # -----------------------------
+  # Nearest-neighbor hoppings
+  # -----------------------------
+  # B sites connected to A in cells:
+  # R = (0, 0, 0)
+  # R = (0, -1, 0)
+  # R = (1, -1, 0)
+  nearest_neighbors = [
+      (0, 0, 0),
+      (0, -1, 0),
+      (1, -1, 0)
+  ]
+
+  for R in nearest_neighbors:
+    Rvec = R[0] * a1 + R[1] * a2 + R[2] * a3
+    delta = tau_B + Rvec - tau_A
+
+    T_orb = pp_hopping(delta)
+    T_spinorb = np.kron(I2, T_orb)
+
+    # A home cell to B in cell R
+    add_block(0, 6, R, T_spinorb)
+
+    # Hermitian conjugate: B home cell to A in cell -R
+    Rm = (-R[0], -R[1], -R[2])
+    add_block(6, 0, Rm, T_spinorb.conj().T)
+
+  arry['HRs'] = HRs
+
+  # -----------------------------
+  # Spin operator Sj for SHC
+  # -----------------------------
+  Sx_site = 0.5 * np.kron(sx, I3)
+  Sy_site = 0.5 * np.kron(sy, I3)
+  Sz_site = 0.5 * np.kron(sz, I3)
+
+  arry['Sj'] = np.zeros((3, 12, 12), dtype=complex)
+
+  arry['Sj'][0, 0:6, 0:6] = Sx_site
+  arry['Sj'][0, 6:12, 6:12] = Sx_site
+
+  arry['Sj'][1, 0:6, 0:6] = Sy_site
+  arry['Sj'][1, 6:12, 6:12] = Sy_site
+
+  arry['Sj'][2, 0:6, 0:6] = Sz_site
+  arry['Sj'][2, 6:12, 6:12] = Sz_site
+
+  # -----------------------------
+  # Orbital angular momentum operator Lj
+  # Useful for OHC extensions.
+  # PAOFLOW's public SHC routine uses Sj; for OHC use the same idea
+  # with Lj and j^L_i = 1/2 {L, v_i}.
+  # -----------------------------
+  Lx_site = np.kron(I2, Lx)
+  Ly_site = np.kron(I2, Ly)
+  Lz_site = np.kron(I2, Lz)
+
+  arry['Lj'] = np.zeros((3, 12, 12), dtype=complex)
+
+  arry['Lj'][0, 0:6, 0:6] = Lx_site
+  arry['Lj'][0, 6:12, 6:12] = Lx_site
+
+  arry['Lj'][1, 0:6, 0:6] = Ly_site
+  arry['Lj'][1, 6:12, 6:12] = Ly_site
+
+  arry['Lj'][2, 0:6, 0:6] = Lz_site
+  arry['Lj'][2, 6:12, 6:12] = Lz_site
+
+
+
 def build_TB_model(data_controller, parameters):
-    if parameters['label'].upper() == 'GRAPHENE':
-        graphene(data_controller, parameters)
-    elif parameters['label'].upper() == 'GRAPHENE2':
-        graphene2(data_controller, parameters)
-    elif parameters['label'].upper() == 'CUBIUM':
-        cubium(data_controller, parameters)
-    elif parameters['label'].upper() == 'CUBIUM2':
-        cubium2(data_controller, parameters)
-    elif parameters['label'].upper() == 'KANE_MELE':
-        Kane_Mele(data_controller, parameters)
-    elif parameters['label'].upper() == 'SLATER_KOSTER':
-        Slater_Koster(data_controller, parameters)
-    elif parameters['label'].upper() == 'SK_EDTB':
-        SK_EDTB(data_controller, parameters)
-    else:
-        print(f'ERROR: Label "{parameters["label"]}" not found in builtin models.')
+  if parameters['label'].upper() == 'GRAPHENE':
+    graphene(data_controller, parameters)
+  elif parameters['label'].upper() == 'GRAPHENE2':
+    graphene2(data_controller, parameters)
+  elif parameters['label'].upper() == 'CUBIUM':
+    cubium(data_controller, parameters)
+  elif parameters['label'].upper() == 'CUBIUM2':
+    cubium2(data_controller, parameters)
+  elif parameters['label'].upper() == 'KANE_MELE':
+    Kane_Mele(data_controller, parameters)
+  elif parameters['label'].upper() == 'SLATER_KOSTER':
+    Slater_Koster(data_controller, parameters)
+  elif parameters['label'].upper() == 'BUCKLED_HONEYCOMB_PSOC':
+    Buckled_Honeycomb_pSOC(data_controller, parameters)
+  elif parameters['label'].upper() == 'RS_LMTO':
+    RS_LMTO(data_controller, parameters)
+  else:
+    print('ERROR: Label "%s" not found in builtin models.' % parameters['label'])
