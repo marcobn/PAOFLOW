@@ -27,7 +27,7 @@ def main():
   f_band = outputdir + 'site-projected-bands_0.dat'
   f_symp = outputdir + 'kpath_points.txt'
 
-  label       = '$\epsilon-\epsilon_{F}$ (eV)'
+  label = r'$\epsilon$($\mathbf{k}$) (eV)'
   cbar_label  = 'Edge Sites Projection'
   filename    = 'edge_states_projection.png'
 

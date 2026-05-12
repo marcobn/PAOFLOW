@@ -53,7 +53,7 @@ def do_rashba_edelstein(
 
     deltakp = np.take(arrays['deltakp'], ind_plot, axis=1)[:, :, 0]
     E_k = np.take(arrays['E_k'], ind_plot, axis=1)[:, :, 0]
-    St = np.real(arrays['sktxt'])
+    St = np.real(arrays['sktxt']).reshape(snktot, 3, nstates)
 
     kai_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
     j_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)

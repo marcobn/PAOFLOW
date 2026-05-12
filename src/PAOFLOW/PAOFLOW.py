@@ -1545,6 +1545,8 @@ class PAOFLOW:
         emax=1.0,
         fermi_up=1.0,
         fermi_dw=-1.0,
+        ne=501,
+        delta=0.05,
         a_tensor=None,
     ):
         """
@@ -1565,8 +1567,9 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'] = emin
-        attr['emaxH'] = emax
+        attr['eminH'], attr['emaxH'] = emin, emax
+        attr['deltaH'] = delta
+        attr['esizeH'] = ne
 
         if a_tensor is not None:
             arrays['a_tensor'] = np.array(a_tensor)
