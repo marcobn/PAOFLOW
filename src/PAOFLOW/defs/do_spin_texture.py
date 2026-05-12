@@ -56,7 +56,7 @@ def do_spin_texture(data_controller):
     icount = comm.bcast(icount)
     ind_plot = comm.bcast(ind_plot)
     arrays['ind_plot'] = ind_plot
-    
+
     Sj = arrays['Sj']
     snktot = arrays['v_k'].shape[0]
     sktxtaux = np.zeros((snktot, 3, nawf, nawf), dtype=complex)
@@ -83,7 +83,7 @@ def do_spin_texture(data_controller):
                     f.write(
                         '\t'.join(
                             ['%d' % ik]
-                            + ['% 5.8f' % E_k_full[ik, idx,0]]
+                            + ['% 5.8f' % E_k_full[ik, idx, 0]]
                             + ['% 5.8f' % j for j in sktxt[ik, :, ib].real]
                         )
                         + '\n'

@@ -83,7 +83,7 @@ def do_orbital_texture(data_controller):
                     f.write(
                         '\t'.join(
                             ['%d' % ik]
-                            + ['% 5.8f' % E_k_full[ik, idx,0]]
+                            + ['% 5.8f' % E_k_full[ik, idx, 0]]
                             + ['% 5.8f' % j for j in oktxt[ik, :, ib].real]
                         )
                         + '\n'
