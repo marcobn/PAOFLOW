@@ -1682,6 +1682,7 @@ class PAOFLOW:
         do_hall=False,
         write_to_file=True,
         save_tensors=False,
+        site_projection=None,
     ):
         """
         Calculate the Transport Properties
@@ -1705,6 +1706,8 @@ class PAOFLOW:
             None
         """
         from .defs.do_transport import do_transport
+        from .defs.perturb_split import perturb_split
+        from .defs.projection_operator import do_projection_operator, orbital_array
 
         arrays, attr = self.data_controller.data_dicts()
         if 'tau_dict' not in attr:
@@ -1717,8 +1720,29 @@ class PAOFLOW:
             # Compute Velocities for Spin 0 Only
             bnd = attr['bnd']
             velkp = np.zeros((arrays['pksp'].shape[0], 3, bnd, attr['nspin']))
-            for n in range(bnd):
-                velkp[:, :, n, :] = np.real(arrays['pksp'][:, :, n, n, :])
+            if site_projection == None:
+                for n in range(bnd):
+                    velkp[:, :, n, :] = np.real(arrays['pksp'][:, :, n, n, :])
+            else:
+                arrays['naw'] = orbital_array(self.data_controller)
+                P = do_projection_operator(self.data_controller, np.array(site_projection))
+                for ispin in range(attr['nspin']):
+                    for ik in range(arrays['pksp'].shape[0]):
+                        for l in range(3):
+                            vel_aux, _ = perturb_split(
+                                0.5
+                                * (
+                                    P @ arrays['dHksp'][ik, l, :, :, ispin]
+                                    + arrays['dHksp'][ik, l, :, :, ispin] @ P
+                                ),
+                                arrays['dHksp'][ik, l, :, :, ispin],
+                                arrays['v_k'][ik, :, :, ispin],
+                                arrays['degen'][ispin][ik],
+                            )
+                            #  impose hermiticity
+                            vel_aux = (vel_aux + np.conj(vel_aux.T)) / 2.0
+                            for n in range(bnd):
+                                velkp[ik, l, n, ispin] = np.real(vel_aux[n, n])
 
             do_transport(
                 self.data_controller,
