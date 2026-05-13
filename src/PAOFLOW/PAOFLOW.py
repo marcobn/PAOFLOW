@@ -913,21 +913,32 @@ class PAOFLOW:
             )
             if spin_orbit:
                 # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
+                # for spol in range(3):
+                #     if spol == 2:  # Sz
+                #         for i in range(nawf // 2):
+                #             Sj[spol, i, i] = sP[spol][0, 0]
+                #             Sj[spol, i, i + 1] = sP[spol][0, 1]
+                #         for i in range(nawf // 2, nawf):
+                #             Sj[spol, i, i - 1] = sP[spol][1, 0]
+                #             Sj[spol, i, i] = sP[spol][1, 1]
+                #     else:  # Sx and Sy
+                #         for i in range(nawf // 2):
+                #             Sj[spol, i, i + (nawf // 2 - 1)] = sP[spol][0, 0]
+                #             Sj[spol, i, i + 1 + (nawf // 2 - 1)] = sP[spol][0, 1]
+                #         for i in range(nawf // 2, nawf):
+                #             Sj[spol, i, i - 1 - (nawf // 2 - 1)] = sP[spol][1, 0]
+                #             Sj[spol, i, i - (nawf // 2 - 1)] = sP[spol][1, 1]
+
+                Sj = np.zeros((3,nawf,nawf), dtype=complex)
+                sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
                 for spol in range(3):
-                    if spol == 2:  # Sz
-                        for i in range(nawf // 2):
-                            Sj[spol, i, i] = sP[spol][0, 0]
-                            Sj[spol, i, i + 1] = sP[spol][0, 1]
-                        for i in range(nawf // 2, nawf):
-                            Sj[spol, i, i - 1] = sP[spol][1, 0]
-                            Sj[spol, i, i] = sP[spol][1, 1]
-                    else:  # Sx and Sy
-                        for i in range(nawf // 2):
-                            Sj[spol, i, i + (nawf // 2 - 1)] = sP[spol][0, 0]
-                            Sj[spol, i, i + 1 + (nawf // 2 - 1)] = sP[spol][0, 1]
-                        for i in range(nawf // 2, nawf):
-                            Sj[spol, i, i - 1 - (nawf // 2 - 1)] = sP[spol][1, 0]
-                            Sj[spol, i, i - (nawf // 2 - 1)] = sP[spol][1, 1]
+                    for i in range(nawf//2):
+                        i_up = i
+                        i_dn = nawf//2+i
+                        Sj[spol, i_up, i_up] = sP[spol][0,0]
+                        Sj[spol, i_up, i_dn] = sP[spol][0,1]
+                        Sj[spol, i_dn, i_up] = sP[spol][1,0]
+                        Sj[spol, i_dn, i_dn] = sP[spol][1,1]
             else:
                 from .defs.clebsch_gordan import clebsch_gordan
 
@@ -1488,6 +1499,7 @@ class PAOFLOW:
         lt=1.0,
         st=1.0,
         write_to_file=True,
+        delta=0.05
     ):
         """
         Calculate the Rashba-Edelstein tensor
@@ -1508,6 +1520,8 @@ class PAOFLOW:
         from .defs.do_rashba_edelstein import do_rashba_edelstein
 
         arrays, attr = self.data_controller.data_dicts()
+        attr['deltaH'] = delta
+        attr['esizeH'] = ne
 
         ene = np.linspace(emin, emax, ne)
         try:
@@ -1521,7 +1535,7 @@ class PAOFLOW:
         self.report_module_time('Rashba_Edelstein')
 
     def anomalous_Hall(
-        self, do_ac=False, emin=-1.0, emax=1.0, fermi_up=1.0, fermi_dw=-1.0, a_tensor=None
+        self, do_ac=False, emin=-1.0, emax=1.0, fermi_up=1.0, fermi_dw=-1.0, a_tensor=None, delta=0.1
     ):
         """
         Calculate the Anomalous Hall Conductivity
@@ -1543,6 +1557,7 @@ class PAOFLOW:
 
         attr['eminH'] = emin
         attr['emaxH'] = emax
+        attr['deltaH'] = delta
 
         if a_tensor is not None:
             arrays['a_tensor'] = np.array(a_tensor)
@@ -1721,7 +1736,6 @@ class PAOFLOW:
         ne=501,
         d_tensor=None,
         degauss=0.1,
-        from_wfc=None,
     ):
         """
         Calculate the Dielectric Tensor
@@ -1762,7 +1776,7 @@ class PAOFLOW:
         # -----------------------------------------------
         try:
             ene = np.linspace(emin, emax, ne)
-            do_dielectric_tensor(self.data_controller, ene, from_wfc)
+            do_dielectric_tensor(self.data_controller, ene)
         except Exception as e:
             self.report_exception('dielectric_tensor')
             if attr['abort_on_exception']:
