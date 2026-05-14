@@ -20,10 +20,15 @@ dependencies = ["numpy~=2.4", "scipy>=1.17,<2", "mpi4py~=4.1"]
 weyl_search = ["z2pack", "tbmodels"]
 graphics = ["vtk", "matplotlib"]
 transport = ["pyyaml", "psutil", "pydantic"]
-dev = ["pre-commit>=2.20.0"]
+pyskeaf = ["scikit-image>=0.20", "shapely>=2.0", "joblib>=1.2", "pandas>=2.0"]
+fast = ["numba>=0.58"]
+dev = ["pre-commit>=2.20.0", "pytest>=7"]
 
 [project.urls]
 Homepage = "https://github.com/marcobn/PAOFLOW"
+
+[project.scripts]
+pyskeaf = "PAOFLOW.pyskeaf.cli:main"
 
 [tool.ruff]
 line-length = 100
@@ -38,3 +43,7 @@ lint.ignore = [
 
 [tool.ruff.format]
 quote-style = "single"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
