@@ -43,6 +43,14 @@ def do_dielectric_tensor(data_controller, ene):
     #             arrays['pksp'][ik, :, :, :, ispin] = calc_dipole(
     #                 arrays, attributes, ik, ispin, arrays['b_vectors']
     #             )
+    
+    smearing = attributes['smearing']
+    if smearing == None:
+        if rank == 0:
+            print('No smearing, fixed occupation')
+    else:
+        if rank == 0:
+            print('Using fixed smearing = %.3f eV' % attributes['degauss'])
 
 
     if nspin == 1:
@@ -202,7 +210,6 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
 
     intersmear = attributes['delta']
     smearing = attributes['smearing']
-    degauss = attributes['degauss']
 
     spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
     Ef = 1.0e-9
@@ -210,20 +217,16 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     epsi = np.zeros(esize, dtype=float)
     epsr = np.zeros(esize, dtype=float)
 
-    if smearing == None or attributes['insulator']:
-        if rank == 0:
-            print('No smearing, fixed occupation')
-    else:
+    if smearing != None :
+        degauss = attributes['degauss']
+        # Adaptive smearing not implemented
         # if 'deltakp' in arrays:  # check whether adaptive smearing is used
         #     degauss = arrays['deltakp'][:, :bndmax, ispin]
         #     if rank == 0:
         #         print('Using adaptive smearing')
-        # else:
-        degauss = attributes['degauss']
-        if rank == 0:
-            print('Using fixed smearing = %.3f eV' % degauss)
 
-    if smearing == None or attributes['insulator']:
+
+    if smearing == None:
         fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
     elif smearing == 'gauss':
         fn = spin_factor * intgaussian(Ek, Ef, degauss)
@@ -317,24 +320,25 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
     intersmear = attributes['delta']
     smearing = attributes['smearing']
     esize = ene.size
-    bndmax = attributes['bnd']
-    Ek = arrays['E_k'][:, :bndmax, ispin]
-    # bndmax = attributes['nbnds']
-    # Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
+    # bndmax = attributes['bnd']
+    # Ek = arrays['E_k'][:, :bndmax, ispin]
+    bndmax = attributes['nbnds']
+    Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
+    kweights = arrays['kpnts_wght']
     nkpnts = Ek.shape[0]
     jdos = np.zeros(esize, dtype=float)
     Ef = 1.0e-9
-    degauss = attributes['degauss']
 
-    spin_factor = 2 if attributes['nspin']==1 and not attributes['dftSO'] else 1
     if smearing == None or attributes['insulator']:
-        fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
+        fn = 1.0* (Ek <= Ef)  # fixed occupation for insulator, no smearing
     elif smearing == 'gauss':
-        fn = spin_factor * intgaussian(Ek, Ef, degauss)
+        degauss = attributes['degauss']
+        fn = intgaussian(Ek, Ef, degauss)
     else:  # smearing == 'm-p':
-        fn = spin_factor * intmetpax(Ek, Ef, degauss)
+        degauss = attributes['degauss']
+        fn = intmetpax(Ek, Ef, degauss)
 
-    # count = 0.0
+    count = 0.0
     if jdos_smeartype == 'gauss':
         for ik in range(nkpnts):
             for iband2 in range(bndmax):
@@ -342,8 +346,8 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
                     E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
                     if fn[ik, iband1] > 1.0e-4 and fn[ik, iband2] < 2.0 and E_diff_nm > 1e-10:
                         f_nm = fn[ik, iband1] - fn[ik, iband2]
-                        jdos += f_nm * gaussian(E_diff_nm, ene, intersmear)
-                        # count += f_nm
+                        jdos += f_nm * gaussian(E_diff_nm, ene, intersmear) * kweights[ik]
+                        count += f_nm
 
     elif jdos_smeartype == 'lorentz':
         for ik in range(nkpnts):
@@ -352,14 +356,14 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
                     E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
                     if fn[ik, iband1] > 1.0e-4 and fn[ik, iband2] < 2.0 and E_diff_nm > 1e-10:
                         f_nm = fn[ik, iband1] - fn[ik, iband2]
-                        jdos += (
-                            f_nm * intersmear / (np.pi * ((E_diff_nm - ene) ** 2 + intersmear**2))
-                        )
-                        # count += f_nm
+                        jdos += f_nm * intersmear / (np.pi * ((E_diff_nm - ene) ** 2 + intersmear**2)) * kweights[ik]
+                        count += f_nm
 
     else:
         raise ValueError("jdos_smeartype must be 'gauss' or 'lorentz' ")
-    jdos /= nkpnts
+    
+    spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
+    jdos *= nkpnts / count / spin_factor
 
     return jdos
 

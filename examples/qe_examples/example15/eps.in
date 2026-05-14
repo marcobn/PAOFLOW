@@ -1,0 +1,14 @@
+&inputpp
+    outdir='.'
+    prefix='silicon'
+    calculation='eps'
+/
+&energy_grid
+    smeartype='gauss'
+    intersmear=0.1
+    intrasmear=0.0
+    wmax=4.0
+    wmin=0.0
+    nw=801
+    shift=0.0
+/
