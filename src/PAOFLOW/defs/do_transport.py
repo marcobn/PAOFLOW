@@ -21,9 +21,11 @@
 def do_transport(
     data_controller, temps, ene, velkp, channels, weights, do_hall, write_to_file, save_tensors
 ):
-    import numpy as np
     from os.path import join
+
+    import numpy as np
     from numpy import linalg as npl
+
     from .do_Boltz_tensors import do_Boltz_tensors, do_Boltz_tensors_hall
 
     comm, rank = data_controller.comm, data_controller.rank
@@ -39,15 +41,20 @@ def do_transport(
         if write_to_file:
             ojf = lambda st, sp: open(join(attr['opath'], '%s_%d.dat' % (st, sp)), 'w')
 
-            fsigma = ojf('sigma', ispin)
-            fPF = ojf('PF', ispin)
-            fkappa = ojf('kappa', ispin)
-            fSeebeck = ojf('Seebeck', ispin)
-            fsigmadk = ojf('sigmadk', ispin) if attr['smearing'] != None else None
+            if attr['smearing'] is None:
+                fsigma = ojf('sigma', ispin)
+                fPF = ojf('PF', ispin)
+                fkappa = ojf('kappa', ispin)
+                fSeebeck = ojf('Seebeck', ispin)
+            else:
+                fsigma = ojf('sigma' + attr['smearing'], ispin)
+                fPF = ojf('PF' + attr['smearing'], ispin)
+                fkappa = ojf('kappa' + attr['smearing'], ispin)
+                fSeebeck = ojf('Seebeck' + attr['smearing'], ispin)
             if do_hall:
                 fhall = ojf('hall_trace', ispin)
 
-        for iT, temp in enumerate(temps):
+        for temp in temps:
             itemp = temp / temp_conv
 
             # Quick function to write Transport Formatted line to file
@@ -71,28 +78,8 @@ def do_transport(
                 wtup_hall = lambda fn, tu: fn.write('%8.2f % .5f % 9.5e \n' % tu)
                 gtup_hall = lambda tu, i: (temp, ene[i], tu[i])
 
-            if attr['smearing'] is not None:
-                L0, _, _ = do_Boltz_tensors(
-                    data_controller, attr['smearing'], itemp, ene, velkp, ispin, channels, weights
-                )
-                # ----------------------
-                # Conductivity (in units of 1.e21/Ohm/m/s)
-                # ----------------------
-                if rank == 0:
-                    # convert in units of 10*21 siemens m^-1 s^-1
-                    L0 *= spin_mult * siemen_conv / attr['omega']
-                    # convert in units of siemens m^-1 s^-1
-                    sigma = L0 * 1.0e21
-
-                    if write_to_file:
-                        for i in range(esize):
-                            wtup(fsigmadk, gtup(sigma, i))
-                        sigma = None
-
-                comm.Barrier()
-
             L0, L1, L2 = do_Boltz_tensors(
-                data_controller, None, itemp, ene, velkp, ispin, channels, weights
+                data_controller, attr['smearing'], itemp, ene, velkp, ispin, channels, weights
             )
 
             if do_hall:
@@ -206,8 +193,6 @@ def do_transport(
             fPF.close()
             fkappa.close()
             fSeebeck.close()
-            if attr['smearing'] is not None:
-                fsigmadk.close()
             if do_hall:
                 fhall.close()
 

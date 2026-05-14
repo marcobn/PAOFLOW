@@ -28,7 +28,7 @@ import numpy as np
 def main():
 
   model = {'label':'cubium', 't':1.0}
-  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./cubium', verbose=True)
+  paoflow = PAOFLOW.PAOFLOW(model=model, outputdir='./output', verbose=True)
 
   path = 'G-X-M-G-R'
   special_points = {'G':[0.0, 0.0, 0.0],'X':[0.0, 0.5, 0.0],'M':[0.5, 0.5, 0.0],'R':[0.5,0.5,0.5]}

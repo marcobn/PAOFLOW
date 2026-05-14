@@ -2,13 +2,21 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop]
+    branches:
+      - develop
+
+permissions:
+  contents: write
 
 jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -27,13 +35,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install pre-commit
 
-      - name: Run pre-commit
+      - name: Run pre-commit (first pass)
+        continue-on-error: true
         run: |
-          pre-commit run --all-files --show-diff-on-failure | tee .pre-commit-results.txt
+          pre-commit run --all-files --show-diff-on-failure
 
-      - name: Upload pre-commit results
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pre-commit-results
-          path: .pre-commit-results.txt
+      - name: Commit and push autofixes
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "ci: apply pre-commit autofixes"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
+
+      - name: Report autofix status for fork PRs
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          if ! git diff --quiet; then
+            echo "Autofixable changes were found, but this PR comes from a fork so CI cannot push fixes." >> "$GITHUB_STEP_SUMMARY"
+            echo "Please run 'pre-commit run --all-files' locally and push the results." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run pre-commit (verification pass)
+        run: |
+          pre-commit run --all-files --show-diff-on-failure

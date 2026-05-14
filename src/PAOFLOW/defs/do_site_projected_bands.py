@@ -48,7 +48,7 @@ def site_projeted_bands(data_controller):
                             '%s %s %s\n'
                             % (
                                 k,
-                                float(arry['E_k'][k, i]),
+                                float(arry['E_k'][k, i, ispin]),
                                 np.sum(np.absolute(np.square((cs[k, :, i])))),
                             )
                         ]

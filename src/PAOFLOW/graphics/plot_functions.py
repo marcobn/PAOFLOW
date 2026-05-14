@@ -1,5 +1,5 @@
-from matplotlib import pyplot as plt
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 def plot_dos(es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=None):
@@ -106,8 +106,16 @@ def plot_weighted_bands(
 ):
     """ """
 
-    hline_style = {'linestyle': '--', 'linewidth': 1, 'color': 'blue'}  # horizontal line style
-    vline_style = {'linestyle': '-', 'linewidth': 1, 'color': 'gray'}  # horizontal line style
+    hline_style = {
+        'linestyle': '--',
+        'linewidth': 1,
+        'color': 'blue',
+    }  # horizontal line style
+    vline_style = {
+        'linestyle': '-',
+        'linewidth': 1,
+        'color': 'gray',
+    }  # horizontal line style
 
     w_norm = normalize_weights(bands['site_weight'].to_numpy())
 
@@ -147,7 +155,8 @@ def plot_weighted_bands(
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], **vline_style)
     if label is None:
-        label = '$\epsilon$($\\bf{k}$) (eV)'
+        label = r'$\epsilon$($\mathbf{k}$) (eV)'
+
     ax.set_ylabel(label, fontsize=12)
 
     if filename is not None:
@@ -158,8 +167,48 @@ def plot_weighted_bands(
     plt.show()
 
 
-def plot_bands(bands, sym_points, title, label, y_lim, col):
-    """ """
+def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=True):
+    """Plot one or more band structures for comparison.
+
+    Arguments:
+      bands: ndarray (nbands, nkpts) or list of such arrays.
+      col: single color or list of colors, one per dataset.
+      labels: optional list of legend labels, one per dataset.
+      legend: show legend when labels are provided (default True).
+    """
+    import numpy as np
+
+    # --- normalise to list-of-arrays ---
+    if isinstance(bands, np.ndarray):
+        bands_list = [bands]
+    else:
+        bands_list = list(bands)
+    n_sets = len(bands_list)
+
+    # --- normalise colours ---
+    default_cols = [
+        'black',
+        'tab:red',
+        'tab:blue',
+        'tab:green',
+        'tab:orange',
+        'tab:purple',
+        'tab:brown',
+    ]
+    if col is None:
+        cols = [default_cols[i % len(default_cols)] for i in range(n_sets)]
+    elif isinstance(col, (str, tuple)):
+        if n_sets == 1:
+            cols = [col]
+        else:
+            cols = [default_cols[i % len(default_cols)] for i in range(n_sets)]
+            cols[0] = col  # keep user colour for first dataset
+    else:
+        cols = list(col)
+
+    # --- normalise labels ---
+    if labels is None:
+        labels = [None] * n_sets
 
     fig = plt.figure()
 
@@ -168,11 +217,14 @@ def plot_bands(bands, sym_points, title, label, y_lim, col):
 
     ax = fig.add_subplot(111)
 
-    for b in bands:
-        ax.plot(b, color=col)
+    for idx, (bset, c, lbl) in enumerate(zip(bands_list, cols, labels)):
+        for j, b in enumerate(bset):
+            ax.plot(b, color=c, label=lbl if j == 0 else None)
+
+    ref = bands_list[0]
     if y_lim is None:
         y_lim = ax.get_ylim()
-    ax.set_xlim(0, bands.shape[1])
+    ax.set_xlim(0, ref.shape[1])
     ax.set_ylim(*y_lim)
     if sym_points is None:
         ax.xaxis.set_visible(False)
@@ -181,8 +233,11 @@ def plot_bands(bands, sym_points, title, label, y_lim, col):
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if label is None:
-        label = '$\epsilon$($\\bf{k}$) (eV)'
+        label = r'$\epsilon$($\mathbf{k}$) (eV)'
     ax.set_ylabel(label, fontsize=12)
+
+    if legend and any(l is not None for l in labels):
+        ax.legend()
 
     plt.show()
 
@@ -215,7 +270,7 @@ def plot_dos_beside_bands(
         ax_b.set_xticklabels(sym_points[1])
         ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
     if band_label is None:
-        band_label = '$\epsilon$($\\bf{k}$) (eV)'
+        band_label = r'$\epsilon$($\mathbf{k}$) (eV)'
     ax_b.set_ylabel(band_label, fontsize=12)
 
     ax_d.plot(dos, es, color=col)
@@ -234,7 +289,16 @@ def plot_dos_beside_bands(
 
 
 def plot_berry_under_bands(
-    berry, bands, sym_points, title, band_label, berry_label, x_lim, y_lim, col, dos_ticks
+    berry,
+    bands,
+    sym_points,
+    title,
+    band_label,
+    berry_label,
+    x_lim,
+    y_lim,
+    col,
+    dos_ticks,
 ):
     """ """
     from matplotlib import gridspec
@@ -270,9 +334,9 @@ def plot_berry_under_bands(
         ax_ba.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
 
     if berry_label is None:
-        berry_label = '$\Omega$($\\bf{k}$)'
+        berry_label = r'$\Omega$($\mathbf{k}$)'
     if band_label is None:
-        band_label = '$\epsilon$($\\bf{k}$) (eV)'
+        band_label = r'$\epsilon$($\mathbf{k}$) (eV)'
     ax_be.set_ylabel(berry_label, fontsize=12)
     ax_ba.set_ylabel(band_label, fontsize=12)
 
