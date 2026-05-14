@@ -48,7 +48,15 @@ def do_band_curvature(data_controller):
     # not really the inverse mass tensor..it's actually tksp
     # but we are calling it d2Ed2k for now to save memory.
     d2Ed2k, dvec_list = do_d2Hd2k_ij(
-        ary['Hksp'], Dnm, ary['Rfft'], attr['alat'], attr['npool'], ary['v_k'], bnd, ary['degen']
+        ary['Hksp'],
+        ary['dHksp'],
+        Dnm,
+        ary['Rfft'],
+        attr['alat'],
+        attr['npool'],
+        ary['v_k'],
+        bnd,
+        ary['degen'],
     )
 
     # d2Ed2k is only the 6 unique components of the curvature

@@ -31,7 +31,7 @@ size = comm.Get_size()
 from scipy import fftpack as FFT
 
 
-def do_d2Hd2k_ij(Hksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
+def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
     # ----------------------
     # Compute the gradient of the k-space Hamiltonian
     # ----------------------
@@ -101,8 +101,8 @@ def do_d2Hd2k_ij(Hksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
             isp_tmp = []
             for ik in range(tksp.shape[2]):
                 # we save dvec so that it can be used when calculating the second term in d2E/d2k
-                tksp[:, :, ik, ispin], _, dvec = perturb_split(
-                    d2Hksp[:, :, ik, ispin],
+                _, tksp[:, :, ik, ispin], dvec = perturb_split(
+                    dHksp[ik, ipol, :, :, ispin],
                     d2Hksp[:, :, ik, ispin],
                     v_kp[ik, :, :, ispin],
                     degen[ispin][ik],
