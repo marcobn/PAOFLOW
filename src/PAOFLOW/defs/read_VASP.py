@@ -159,7 +159,7 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     dftMag = (nspin == 1 and dftSO and finite_magmom) or (nspin == 2 and finite_magmom)
 
     _, atom_numbers = np.unique(atoms, return_inverse=True)
-    cell = (a_vectors, pos_arry, atom_numbers)
+    cell = (a_Angstrom, pos_arry, atom_numbers)
     if nkpnts == nk1 * nk2 * nk3:
         # Check whether VASP calculation uses symmetry (ISYM = -1, 0, or 2)
         ID = np.identity(3, dtype=int)
@@ -173,7 +173,7 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     else:
         #  get symmetry from spglib
         if dftMag:
-            cell_mag = (a_vectors, pos_arry, atom_numbers, magmom)
+            cell_mag = (a_Angstrom, pos_arry, atom_numbers, magmom)
             spglib_sym = spglib.get_magnetic_symmetry(cell_mag, symprec=symprec)
             sym_rot = spglib_sym['rotations']
             shifts = spglib_sym['translations']

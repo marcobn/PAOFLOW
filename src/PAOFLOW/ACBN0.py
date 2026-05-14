@@ -210,9 +210,11 @@ class ACBN0:
             )
 
     def exec_PAOFLOW(self):
-        prefix = join(self.ppath, 'python')
-        command = f'{self.mpi_python} {prefix}'
-        print(f'Starting Process: {self.mpi_python} {prefix} acbn0.py > paoflow.out', flush=True)
+        python_exec = join(self.ppath, 'python')
+        command = f'{self.mpi_python} {python_exec}'
+        print(
+            f'Starting Process: {self.mpi_python} {python_exec} acbn0.py > paoflow.out', flush=True
+        )
         with open('acbn0.py', 'r') as paoflow_in, open('paoflow.out', 'w') as paoflow_out:
             subprocess.run(
                 command.split(' '),
@@ -407,7 +409,9 @@ class ACBN0:
                 pickle.dump(data, f)
 
             # compute hartree energy in parallel
-            subprocess.run(['srun', 'python', 'compute_hartree.py'])
+            python_exec = join(self.ppath, 'python')
+            command = f'{self.mpi_python} {python_exec} compute_hartree.py'
+            subprocess.run(command.split(' '), check=True)
 
             with open(join(self.outputdir, 'tmp_uj.pkl'), 'rb') as f:
                 uj = pickle.load(f)
