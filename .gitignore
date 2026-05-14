@@ -117,3 +117,6 @@ pseudo/
 *.log
 *wfc*
 **/*.xml
+
+# MAC files
+.DS_store*
