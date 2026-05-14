@@ -176,7 +176,7 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
                     L1_hall[t_comp[0], t_comp[1], i] = simpson(
                         L_hall_smear_aux * (ene_int - ef), ene_int
                     )
-    return (L0_hall, L1_hall) if rank == 0 else None
+    return (L0_hall, L1_hall) if rank == 0 else (None, None)
 
 
 def get_tau(data_controller, temp, channels, weights):
