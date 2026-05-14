@@ -26,6 +26,7 @@ rank = comm.Get_rank()
 from .smearing import intgaussian, gaussian
 from .smearing import intmetpax, metpax
 
+
 def do_dielectric_tensor(data_controller, ene):
     from .constants import LL
 
@@ -43,7 +44,7 @@ def do_dielectric_tensor(data_controller, ene):
     #             arrays['pksp'][ik, :, :, :, ispin] = calc_dipole(
     #                 arrays, attributes, ik, ispin, arrays['b_vectors']
     #             )
-    
+
     smearing = attributes['smearing']
     if smearing == None:
         if rank == 0:
@@ -51,7 +52,6 @@ def do_dielectric_tensor(data_controller, ene):
     else:
         if rank == 0:
             print('Using fixed smearing = %.3f eV' % attributes['degauss'])
-
 
     if nspin == 1:
         for n in range(d_tensor.shape[0]):
@@ -75,12 +75,8 @@ def do_dielectric_tensor(data_controller, ene):
             ipol = d_tensor[n][0]
             jpol = d_tensor[n][1]
 
-            epsi_0, epsr_0, eels_0, ieps_0 = do_epsilon(
-                data_controller, ene, 0, ipol, jpol
-            )
-            epsi_1, epsr_1, eels_1, ieps_1 = do_epsilon(
-                data_controller, ene, 1, ipol, jpol
-            )
+            epsi_0, epsr_0, eels_0, ieps_0 = do_epsilon(data_controller, ene, 0, ipol, jpol)
+            epsi_1, epsr_1, eels_1, ieps_1 = do_epsilon(data_controller, ene, 1, ipol, jpol)
             # Write files
             indices = (LL[ipol], LL[jpol], 0)
             for ep, es in [(epsi_0, 'epsi'), (epsr_0, 'epsr'), (eels_0, 'eels'), (ieps_0, 'ieps')]:
@@ -134,7 +130,7 @@ def do_jdos(data_controller, ene, jdos_smeartype):
 
 
 def do_epsilon(data_controller, ene, ispin, ipol, jpol):
-    from .constants import BOHR_RADIUS_ANGS, RYTOEV, ELECTRONVOLT_SI
+    from .constants import BOHR_RADIUS_ANGS, ELECTRONVOLT_SI
 
     # Compute the dielectric tensor
 
@@ -150,20 +146,19 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
     #         * RYTOEV**3
     #         * 64.0
     #         * np.pi
-    #         / (attributes['omega'] * attributes['nkpnts']) 
+    #         / (attributes['omega'] * attributes['nkpnts'])
     #     )
     # else:
     # 8.8541878188e-12 = \epsilon_0
     factor = (
-        2*ELECTRONVOLT_SI
+        2
+        * ELECTRONVOLT_SI
         * (1e10)
         / (8.8541878188e-12)
         * BOHR_RADIUS_ANGS**2
-        / attributes['nkpnts'] 
+        / attributes['nkpnts']
         / (attributes['omega'] * BOHR_RADIUS_ANGS**3)
     )
-    
-    
 
     # =======================
     # EPS
@@ -217,14 +212,13 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     epsi = np.zeros(esize, dtype=float)
     epsr = np.zeros(esize, dtype=float)
 
-    if smearing != None :
+    if smearing != None:
         degauss = attributes['degauss']
         # Adaptive smearing not implemented
         # if 'deltakp' in arrays:  # check whether adaptive smearing is used
         #     degauss = arrays['deltakp'][:, :bndmax, ispin]
         #     if rank == 0:
         #         print('Using adaptive smearing')
-
 
     if smearing == None:
         fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
@@ -280,12 +274,12 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                                 * (E_diff_nm)
                             )
                         )
-        
+
                 elif not attributes['insulator']:
                     pksp2 = np.real(
-                            arrays['pksp'][ik, ipol, iband1, iband1, ispin]
-                            * arrays['pksp'][ik, jpol, iband1, iband1, ispin]
-                        )
+                        arrays['pksp'][ik, ipol, iband1, iband1, ispin]
+                        * arrays['pksp'][ik, jpol, iband1, iband1, ispin]
+                    )
                     epsi_metal[:] += (
                         pksp2
                         * intrasmear
@@ -323,14 +317,14 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
     # bndmax = attributes['bnd']
     # Ek = arrays['E_k'][:, :bndmax, ispin]
     bndmax = attributes['nbnds']
-    Ek = np.swapaxes(arrays['my_eigsmat'][:,:,ispin],0,1)
+    Ek = np.swapaxes(arrays['my_eigsmat'][:, :, ispin], 0, 1)
     kweights = arrays['kpnts_wght']
     nkpnts = Ek.shape[0]
     jdos = np.zeros(esize, dtype=float)
     Ef = 1.0e-9
 
     if smearing == None or attributes['insulator']:
-        fn = 1.0* (Ek <= Ef)  # fixed occupation for insulator, no smearing
+        fn = 1.0 * (Ek <= Ef)  # fixed occupation for insulator, no smearing
     elif smearing == 'gauss':
         degauss = attributes['degauss']
         fn = intgaussian(Ek, Ef, degauss)
@@ -356,16 +350,22 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
                     E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
                     if fn[ik, iband1] > 1.0e-4 and fn[ik, iband2] < 2.0 and E_diff_nm > 1e-10:
                         f_nm = fn[ik, iband1] - fn[ik, iband2]
-                        jdos += f_nm * intersmear / (np.pi * ((E_diff_nm - ene) ** 2 + intersmear**2)) * kweights[ik]
+                        jdos += (
+                            f_nm
+                            * intersmear
+                            / (np.pi * ((E_diff_nm - ene) ** 2 + intersmear**2))
+                            * kweights[ik]
+                        )
                         count += f_nm
 
     else:
         raise ValueError("jdos_smeartype must be 'gauss' or 'lorentz' ")
-    
+
     spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
     jdos *= nkpnts / count / spin_factor
 
     return jdos
+
 
 """
 # Function to calculate dipole matrix element from coefficients of wavefunction,

@@ -944,16 +944,22 @@ class PAOFLOW:
                 #             Sj[spol, i, i - 1 - (nawf // 2 - 1)] = sP[spol][1, 0]
                 #             Sj[spol, i, i - (nawf // 2 - 1)] = sP[spol][1, 1]
 
-                Sj = np.zeros((3,nawf,nawf), dtype=complex)
-                sP = 0.5*np.array([[[0.0,1.0],[1.0,0.0]],[[0.0,-1.0j],[1.0j,0.0]],[[1.0,0.0],[0.0,-1.0]]])
+                Sj = np.zeros((3, nawf, nawf), dtype=complex)
+                sP = 0.5 * np.array(
+                    [
+                        [[0.0, 1.0], [1.0, 0.0]],
+                        [[0.0, -1.0j], [1.0j, 0.0]],
+                        [[1.0, 0.0], [0.0, -1.0]],
+                    ]
+                )
                 for spol in range(3):
-                    for i in range(nawf//2):
+                    for i in range(nawf // 2):
                         i_up = i
-                        i_dn = nawf//2+i
-                        Sj[spol, i_up, i_up] = sP[spol][0,0]
-                        Sj[spol, i_up, i_dn] = sP[spol][0,1]
-                        Sj[spol, i_dn, i_up] = sP[spol][1,0]
-                        Sj[spol, i_dn, i_dn] = sP[spol][1,1]
+                        i_dn = nawf // 2 + i
+                        Sj[spol, i_up, i_up] = sP[spol][0, 0]
+                        Sj[spol, i_up, i_dn] = sP[spol][0, 1]
+                        Sj[spol, i_dn, i_up] = sP[spol][1, 0]
+                        Sj[spol, i_dn, i_dn] = sP[spol][1, 1]
             else:
                 from .defs.clebsch_gordan import clebsch_gordan
 
@@ -1517,7 +1523,7 @@ class PAOFLOW:
         lt=1.0,
         st=1.0,
         write_to_file=True,
-        delta=0.05
+        delta=0.05,
     ):
         """
         Calculate the Rashba-Edelstein tensor
