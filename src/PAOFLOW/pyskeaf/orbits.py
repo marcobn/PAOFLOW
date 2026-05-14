@@ -40,20 +40,20 @@ from PAOFLOW.pyskeaf.slice_ops import Slice2D
 class SliceOrbit:
     """One closed FS contour found in a single slice."""
 
-    slice_index: int                       # 1-based slice index
-    contour_xy: np.ndarray                 # (N, 2), Å^-1 in slicing frame (x', y')
-    area: float                            # Å^-2
-    inside_area: float                     # Å^-2 (electron < area; hole > area)
+    slice_index: int  # 1-based slice index
+    contour_xy: np.ndarray  # (N, 2), Å^-1 in slicing frame (x', y')
+    area: float  # Å^-2
+    inside_area: float  # Å^-2 (electron < area; hole > area)
     frequency_kT: float
-    effective_mass: float                  # m_e units
-    orbit_type: int                        # +1 electron, −1 hole, 0 ambiguous
-    avg_xy_frac: np.ndarray                # (2,) supercell-fractional centroid
-    std_xy_frac: np.ndarray                # (2,) population std of contour points
-    min_xy_frac: np.ndarray                # (2,) bbox lower
-    max_xy_frac: np.ndarray                # (2,) bbox upper
-    n_points: int                          # number of contour vertices
-    is_open: bool                          # touched supercell boundary
-    is_too_small: bool                     # area < minarea threshold
+    effective_mass: float  # m_e units
+    orbit_type: int  # +1 electron, −1 hole, 0 ambiguous
+    avg_xy_frac: np.ndarray  # (2,) supercell-fractional centroid
+    std_xy_frac: np.ndarray  # (2,) population std of contour points
+    min_xy_frac: np.ndarray  # (2,) bbox lower
+    max_xy_frac: np.ndarray  # (2,) bbox upper
+    n_points: int  # number of contour vertices
+    is_open: bool  # touched supercell boundary
+    is_too_small: bool  # area < minarea threshold
 
 
 def _polygon_area(xy: np.ndarray) -> float:
@@ -173,11 +173,13 @@ def find_closed_orbits_in_slice(
         # Orbit type: sample energy at contour centroid.
         cx_pixel = avg_x / dx
         cy_pixel = avg_y / dy
-        e_centroid = float(_bilinear_sample(
-            slice2d.energies,
-            np.array([cx_pixel]),
-            np.array([cy_pixel]),
-        )[0])
+        e_centroid = float(
+            _bilinear_sample(
+                slice2d.energies,
+                np.array([cx_pixel]),
+                np.array([cy_pixel]),
+            )[0]
+        )
         if e_centroid < fermi_energy:
             orbit_type = +1
             inside_area = area * 0.95
@@ -194,7 +196,7 @@ def find_closed_orbits_in_slice(
         gmag = np.sqrt(gx * gx + gy * gy)
         ds = np.linalg.norm(np.diff(xy, axis=0), axis=1)
         gmag_edge = 0.5 * (gmag[:-1] + gmag[1:])
-        with np.errstate(divide="ignore", invalid="ignore"):
+        with np.errstate(divide='ignore', invalid='ignore'):
             integrand = np.where(gmag_edge > 0, ds / gmag_edge, 0.0)
         fsdAde = float(np.sum(integrand))
         effective_mass = fsdAde * CONV_FSDADE_TO_MSTAR
@@ -206,22 +208,24 @@ def find_closed_orbits_in_slice(
         min_xy_frac = np.array([min_x / xlen, min_y / ylen])
         max_xy_frac = np.array([max_x / xlen, max_y / ylen])
 
-        out.append(SliceOrbit(
-            slice_index=slice2d.slice_index,
-            contour_xy=xy,
-            area=area,
-            inside_area=inside_area,
-            frequency_kT=frequency_kT,
-            effective_mass=effective_mass,
-            orbit_type=orbit_type,
-            avg_xy_frac=avg_xy_frac,
-            std_xy_frac=std_xy_frac,
-            min_xy_frac=min_xy_frac,
-            max_xy_frac=max_xy_frac,
-            n_points=n_pts,
-            is_open=is_open,
-            is_too_small=is_too_small,
-        ))
+        out.append(
+            SliceOrbit(
+                slice_index=slice2d.slice_index,
+                contour_xy=xy,
+                area=area,
+                inside_area=inside_area,
+                frequency_kT=frequency_kT,
+                effective_mass=effective_mass,
+                orbit_type=orbit_type,
+                avg_xy_frac=avg_xy_frac,
+                std_xy_frac=std_xy_frac,
+                min_xy_frac=min_xy_frac,
+                max_xy_frac=max_xy_frac,
+                n_points=n_pts,
+                is_open=is_open,
+                is_too_small=is_too_small,
+            )
+        )
     return out
 
 
@@ -258,11 +262,11 @@ class Chunk:
 class ExtremalOrbit:
     """One extremum found inside a chunk (one local min/max of area vs slice)."""
 
-    slice_orbit: SliceOrbit                 # the orbit at the extremum
-    chunk_index: int                        # 0-based chunk id
-    cfs_index: int                          # 0-based position within chunk
-    curvature_kT_A2: float                  # d²A/dk² · CONV_FSAREA_TO_KT  (kT·Å²)
-    avg_xyz_ruc: np.ndarray                 # (3,) RUC fractional centroid in [0,1)
+    slice_orbit: SliceOrbit  # the orbit at the extremum
+    chunk_index: int  # 0-based chunk id
+    cfs_index: int  # 0-based position within chunk
+    curvature_kT_A2: float  # d²A/dk² · CONV_FSAREA_TO_KT  (kT·Å²)
+    avg_xyz_ruc: np.ndarray  # (3,) RUC fractional centroid in [0,1)
 
 
 @dataclass
@@ -275,12 +279,12 @@ class AveragedOrbit:
     effective_mass_std: float
     curvature_kT_A2: float
     curvature_std_kT_A2: float
-    orbit_type: float                        # mean of ±1 (may be non-integer)
+    orbit_type: float  # mean of ±1 (may be non-integer)
     orbit_type_std: float
-    avg_xyz_ruc: np.ndarray                  # (3,) mean RUC centroid
-    avg_xyz_ruc_std: np.ndarray              # (3,) sample std
-    num_copies: int                          # # orbit copies merged
-    representative: ExtremalOrbit            # the largest copy in the group
+    avg_xyz_ruc: np.ndarray  # (3,) mean RUC centroid
+    avg_xyz_ruc_std: np.ndarray  # (3,) sample std
+    num_copies: int  # # orbit copies merged
+    representative: ExtremalOrbit  # the largest copy in the group
 
 
 # ----------------------------------------------------------------------------
@@ -290,10 +294,12 @@ class AveragedOrbit:
 
 def _bbox_overlap(a: SliceOrbit, b: SliceOrbit) -> bool:
     """True iff two orbit bounding boxes overlap in (x', y') supercell coords."""
-    return (a.min_xy_frac[0] < b.max_xy_frac[0]
-            and a.max_xy_frac[0] > b.min_xy_frac[0]
-            and a.min_xy_frac[1] < b.max_xy_frac[1]
-            and a.max_xy_frac[1] > b.min_xy_frac[1])
+    return (
+        a.min_xy_frac[0] < b.max_xy_frac[0]
+        and a.max_xy_frac[0] > b.min_xy_frac[0]
+        and a.min_xy_frac[1] < b.max_xy_frac[1]
+        and a.max_xy_frac[1] > b.min_xy_frac[1]
+    )
 
 
 def _badness(a: SliceOrbit, b: SliceOrbit) -> float:
@@ -308,10 +314,9 @@ def _badness(a: SliceOrbit, b: SliceOrbit) -> float:
     return float(da @ da + dmax @ dmax + dmin @ dmin)
 
 
-def _match_conditions(slice_orbit: SliceOrbit,
-                      chunk_orbit: SliceOrbit,
-                      slice_no_bif: bool,
-                      chunk_no_bif: bool) -> bool:
+def _match_conditions(
+    slice_orbit: SliceOrbit, chunk_orbit: SliceOrbit, slice_no_bif: bool, chunk_no_bif: bool
+) -> bool:
     """Return True if the 19-condition Fortran predicate holds.
 
     Implements ``mcond(1)…mcond(19)`` from skeaf lines 1620–1655: each side's
@@ -367,9 +372,9 @@ def _match_conditions(slice_orbit: SliceOrbit,
     return slice_no_bif and chunk_no_bif
 
 
-def _detect_forward_bifurcation(chunk_tail: SliceOrbit,
-                                slice_orbits: List[SliceOrbit],
-                                other_chunk_tails: List[SliceOrbit]) -> bool:
+def _detect_forward_bifurcation(
+    chunk_tail: SliceOrbit, slice_orbits: List[SliceOrbit], other_chunk_tails: List[SliceOrbit]
+) -> bool:
     """Translate the forward-bifurcation block (Fortran lines 1423–1521).
 
     Counts how many ``slice_orbits`` give a "unique overlap" with ``chunk_tail``
@@ -416,9 +421,9 @@ def _detect_forward_bifurcation(chunk_tail: SliceOrbit,
     return n_unique > 1
 
 
-def _detect_reverse_bifurcation(slice_orbit: SliceOrbit,
-                                chunk_tails: List[SliceOrbit],
-                                other_slice_orbits: List[SliceOrbit]) -> bool:
+def _detect_reverse_bifurcation(
+    slice_orbit: SliceOrbit, chunk_tails: List[SliceOrbit], other_slice_orbits: List[SliceOrbit]
+) -> bool:
     """Forward/reverse symmetric: count chunk-tails that point uniquely back at this orbit."""
     n_unique = 0
     for ch_idx, ch in enumerate(chunk_tails):
@@ -456,11 +461,13 @@ def _detect_reverse_bifurcation(slice_orbit: SliceOrbit,
     return n_unique > 1
 
 
-def _find_best_match(query: SliceOrbit,
-                     query_no_bif: bool,
-                     query_slice: int,
-                     chunks: List[Chunk],
-                     prior_badnesses: List[List[float]]) -> tuple[int | None, bool, float]:
+def _find_best_match(
+    query: SliceOrbit,
+    query_no_bif: bool,
+    query_slice: int,
+    chunks: List[Chunk],
+    prior_badnesses: List[List[float]],
+) -> tuple[int | None, bool, float]:
     """Pick the chunk whose latest orbit best matches ``query`` from slice ``query_slice``.
 
     Returns ``(chunk_idx, occupied, best_badness)`` where ``occupied`` is True
@@ -500,19 +507,18 @@ def _find_best_match(query: SliceOrbit,
     return best_chunk, best_occupied, best_badness
 
 
-def _append_to_chunk(chunk: Chunk,
-                     orbit: SliceOrbit,
-                     prior_badnesses: List[float],
-                     badness: float) -> None:
+def _append_to_chunk(
+    chunk: Chunk, orbit: SliceOrbit, prior_badnesses: List[float], badness: float
+) -> None:
     """Extend ``chunk`` with a new orbit and record its match badness."""
     chunk.orbits.append(orbit)
     chunk.no_bif.append(True)
     prior_badnesses.append(badness)
 
 
-def _start_new_chunk(chunks: List[Chunk],
-                     prior_badnesses: List[List[float]],
-                     orbit: SliceOrbit) -> None:
+def _start_new_chunk(
+    chunks: List[Chunk], prior_badnesses: List[List[float]], orbit: SliceOrbit
+) -> None:
     chunks.append(Chunk(orbits=[orbit], no_bif=[True]))
     prior_badnesses.append([0.0])
 
@@ -533,14 +539,17 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
     prior_badnesses: List[List[float]] = []
 
     for slice_idx_zero, orbits_this_slice in enumerate(per_slice_orbits):
-        slice_idx = slice_idx_zero + 1                     # 1-based to match Fortran
+        slice_idx = slice_idx_zero + 1  # 1-based to match Fortran
 
         # Reset slfsnobif default (True).
         slice_no_bif = [True] * len(orbits_this_slice)
 
         if chunks:
-            tails_prev = [(i, ch.orbits[-1]) for i, ch in enumerate(chunks)
-                          if ch.orbits[-1].slice_index == slice_idx - 1]
+            tails_prev = [
+                (i, ch.orbits[-1])
+                for i, ch in enumerate(chunks)
+                if ch.orbits[-1].slice_index == slice_idx - 1
+            ]
             tails_prev_only = [t for _, t in tails_prev]
 
             # Forward bifurcation: mark chunk tails that branch into 2+ slice orbits.
@@ -562,14 +571,17 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
                 continue
 
             best_chunk, occupied, badness = _find_best_match(
-                fs, slice_no_bif[fs_idx], slice_idx, chunks, prior_badnesses,
+                fs,
+                slice_no_bif[fs_idx],
+                slice_idx,
+                chunks,
+                prior_badnesses,
             )
             if best_chunk is None:
                 _start_new_chunk(chunks, prior_badnesses, fs)
                 continue
             if not occupied:
-                _append_to_chunk(chunks[best_chunk], fs,
-                                 prior_badnesses[best_chunk], badness)
+                _append_to_chunk(chunks[best_chunk], fs, prior_badnesses[best_chunk], badness)
                 continue
 
             # Floater branch: displace the existing tail of best_chunk.
@@ -582,14 +594,17 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
                 # Try to relocate it; the Fortran loop searches against the
                 # SAME slice it came from.
                 f_chunk, f_occupied, f_bad = _find_best_match(
-                    float_orbit, True, slice_idx, chunks, prior_badnesses,
+                    float_orbit,
+                    True,
+                    slice_idx,
+                    chunks,
+                    prior_badnesses,
                 )
                 if f_chunk is None:
                     _start_new_chunk(chunks, prior_badnesses, float_orbit)
                     break
                 if not f_occupied:
-                    _append_to_chunk(chunks[f_chunk], float_orbit,
-                                     prior_badnesses[f_chunk], f_bad)
+                    _append_to_chunk(chunks[f_chunk], float_orbit, prior_badnesses[f_chunk], f_bad)
                     break
                 # Still occupied — displace again, swap and retry.
                 next_displaced = chunks[f_chunk].orbits[-1]
@@ -599,8 +614,8 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
             else:
                 # Loop did not break — Fortran prints the same warning.
                 import warnings as _warnings
-                _warnings.warn("Float loop got stuck after 500 iterations.",
-                               RuntimeWarning)
+
+                _warnings.warn('Float loop got stuck after 500 iterations.', RuntimeWarning)
 
     return chunks
 
@@ -610,10 +625,9 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
 # ----------------------------------------------------------------------------
 
 
-def _supercell_centroid_to_ruc(geom: SliceGeometry,
-                               avg_xy_frac: np.ndarray,
-                               slice_idx: int,
-                               n_slices: int) -> np.ndarray:
+def _supercell_centroid_to_ruc(
+    geom: SliceGeometry, avg_xy_frac: np.ndarray, slice_idx: int, n_slices: int
+) -> np.ndarray:
     """Map a supercell centroid (slicing-frame x', y') and slice index to RUC fractional.
 
     Mirrors Fortran lines 1990–2009: builds the BZ-frame Cartesian centroid
@@ -621,7 +635,7 @@ def _supercell_centroid_to_ruc(geom: SliceGeometry,
     by ``floor`` to land inside [0, 1).
     """
     M = geom.maxlreciplat
-    z_prime_frac = (slice_idx - 1) / (n_slices - 1)            # 1-based slice → [0,1]
+    z_prime_frac = (slice_idx - 1) / (n_slices - 1)  # 1-based slice → [0,1]
     Xp = (4.0 * avg_xy_frac[0] - 1.0) * M
     Yp = (4.0 * avg_xy_frac[1] - 1.0) * M
     Zp = (4.0 * z_prime_frac - 1.0) * M
@@ -636,11 +650,13 @@ def _supercell_centroid_to_ruc(geom: SliceGeometry,
     return np.array([fx - np.floor(fx), fy - np.floor(fy), fz - np.floor(fz)])
 
 
-def find_extremal(chunks: List[Chunk],
-                  geom: SliceGeometry,
-                  *,
-                  min_freq_kT: float = 0.0,
-                  allow_near_walls: bool = False) -> List[ExtremalOrbit]:
+def find_extremal(
+    chunks: List[Chunk],
+    geom: SliceGeometry,
+    *,
+    min_freq_kT: float = 0.0,
+    allow_near_walls: bool = False,
+) -> List[ExtremalOrbit]:
     """Find extremal orbits within each chunk (Fortran lines 1965–2050).
 
     For each interior position in a chunk (i.e. not at chunk endpoints),
@@ -678,10 +694,12 @@ def find_extremal(chunks: List[Chunk],
             # Reject orbits within 2·std of supercell walls (unless allowed).
             if not allow_near_walls:
                 sx, sy = o.std_xy_frac
-                if not (o.max_xy_frac[0] < 1.0 - 2 * sx
-                        and o.max_xy_frac[1] < 1.0 - 2 * sy
-                        and o.min_xy_frac[0] > 0.0 + 2 * sx
-                        and o.min_xy_frac[1] > 0.0 + 2 * sy):
+                if not (
+                    o.max_xy_frac[0] < 1.0 - 2 * sx
+                    and o.max_xy_frac[1] < 1.0 - 2 * sy
+                    and o.min_xy_frac[0] > 0.0 + 2 * sx
+                    and o.min_xy_frac[1] > 0.0 + 2 * sy
+                ):
                     continue
 
             a_prev = o_prev.area
@@ -689,19 +707,21 @@ def find_extremal(chunks: List[Chunk],
             a_next = o_next.area
             is_min = (a_prev > a) and (a_next > a)
             is_max = (a_prev < a) and (a_next < a)
-            is_flat = (a_prev == a)
+            is_flat = a_prev == a
             if not (is_min or is_max or is_flat):
                 continue
 
             curvature = CONV_FSAREA_TO_KT * (a_prev + a_next - 2.0 * a) / dk2
             ruc = _supercell_centroid_to_ruc(geom, o.avg_xy_frac, o.slice_index, n_slices)
-            out.append(ExtremalOrbit(
-                slice_orbit=o,
-                chunk_index=c_idx,
-                cfs_index=pos,
-                curvature_kT_A2=curvature,
-                avg_xyz_ruc=ruc,
-            ))
+            out.append(
+                ExtremalOrbit(
+                    slice_orbit=o,
+                    chunk_index=c_idx,
+                    cfs_index=pos,
+                    curvature_kT_A2=curvature,
+                    avg_xyz_ruc=ruc,
+                )
+            )
     return out
 
 
@@ -710,8 +730,9 @@ def find_extremal(chunks: List[Chunk],
 # ----------------------------------------------------------------------------
 
 
-def _group_by_centre(extrema: List[ExtremalOrbit],
-                     avg_same_frac: float) -> List[List[ExtremalOrbit]]:
+def _group_by_centre(
+    extrema: List[ExtremalOrbit], avg_same_frac: float
+) -> List[List[ExtremalOrbit]]:
     """Greedy grouping of extrema by similar RUC centroid (with periodic ±1 wrap).
 
     Matches Fortran lines 2188–2266: at each pass the seed is element 0 of the
@@ -731,8 +752,7 @@ def _group_by_centre(extrema: List[ExtremalOrbit],
                 dx = abs(seed.avg_xyz_ruc[axis] - cand.avg_xyz_ruc[axis])
                 dx_neg = abs(seed.avg_xyz_ruc[axis] - (cand.avg_xyz_ruc[axis] - 1.0))
                 dx_pos = abs(seed.avg_xyz_ruc[axis] - (cand.avg_xyz_ruc[axis] + 1.0))
-                if not (dx < avg_same_frac or dx_neg < avg_same_frac
-                        or dx_pos < avg_same_frac):
+                if not (dx < avg_same_frac or dx_neg < avg_same_frac or dx_pos < avg_same_frac):
                     in_same = False
                     break
             if in_same:
@@ -744,8 +764,9 @@ def _group_by_centre(extrema: List[ExtremalOrbit],
     return groups
 
 
-def _average_one_centre_group(group: List[ExtremalOrbit],
-                              freq_same_frac: float) -> List[AveragedOrbit]:
+def _average_one_centre_group(
+    group: List[ExtremalOrbit], freq_same_frac: float
+) -> List[AveragedOrbit]:
     """Sort one centre-group by frequency and merge consecutive entries within ``freq_same_frac``.
 
     Mirrors lines 2284–2453.  Uses a *running tail* comparison: orbit i joins
@@ -763,28 +784,30 @@ def _average_one_centre_group(group: List[ExtremalOrbit],
         masses = np.array([e.slice_orbit.effective_mass for e in cluster])
         curvs = np.array([e.curvature_kT_A2 for e in cluster])
         types = np.array([float(e.slice_orbit.orbit_type) for e in cluster])
-        rucs = np.array([e.avg_xyz_ruc for e in cluster])           # (n, 3)
+        rucs = np.array([e.avg_xyz_ruc for e in cluster])  # (n, 3)
         n = len(cluster)
         ddof = 1 if n > 1 else 0
         mean_xyz = rucs.mean(axis=0)
-        std_xyz = (rucs.std(axis=0, ddof=ddof) if n > 1 else np.zeros(3))
+        std_xyz = rucs.std(axis=0, ddof=ddof) if n > 1 else np.zeros(3)
         # The "representative" is the largest-frequency orbit in the cluster
         # (Fortran picks ``temporbnumarray(numtemp)`` — the last in sort order).
         rep = cluster[-1]
-        out.append(AveragedOrbit(
-            frequency_kT=float(freqs.mean()),
-            frequency_std_kT=float(freqs.std(ddof=ddof) if n > 1 else 0.0),
-            effective_mass=float(masses.mean()),
-            effective_mass_std=float(masses.std(ddof=ddof) if n > 1 else 0.0),
-            curvature_kT_A2=float(curvs.mean()),
-            curvature_std_kT_A2=float(curvs.std(ddof=ddof) if n > 1 else 0.0),
-            orbit_type=float(types.mean()),
-            orbit_type_std=float(types.std(ddof=ddof) if n > 1 else 0.0),
-            avg_xyz_ruc=mean_xyz,
-            avg_xyz_ruc_std=std_xyz,
-            num_copies=n,
-            representative=rep,
-        ))
+        out.append(
+            AveragedOrbit(
+                frequency_kT=float(freqs.mean()),
+                frequency_std_kT=float(freqs.std(ddof=ddof) if n > 1 else 0.0),
+                effective_mass=float(masses.mean()),
+                effective_mass_std=float(masses.std(ddof=ddof) if n > 1 else 0.0),
+                curvature_kT_A2=float(curvs.mean()),
+                curvature_std_kT_A2=float(curvs.std(ddof=ddof) if n > 1 else 0.0),
+                orbit_type=float(types.mean()),
+                orbit_type_std=float(types.std(ddof=ddof) if n > 1 else 0.0),
+                avg_xyz_ruc=mean_xyz,
+                avg_xyz_ruc_std=std_xyz,
+                num_copies=n,
+                representative=rep,
+            )
+        )
 
     for ext in sorted_by_f:
         if not cluster:
@@ -800,10 +823,9 @@ def _average_one_centre_group(group: List[ExtremalOrbit],
     return out
 
 
-def average_orbits(extrema: List[ExtremalOrbit],
-                   *,
-                   freq_same_frac: float = 0.01,
-                   avg_same_frac: float = 0.05) -> List[AveragedOrbit]:
+def average_orbits(
+    extrema: List[ExtremalOrbit], *, freq_same_frac: float = 0.01, avg_same_frac: float = 0.05
+) -> List[AveragedOrbit]:
     """Group supercell-copy extrema, average each group, and return sorted-by-frequency.
 
     Combines the same-centre grouping (lines 2188–2266) with the per-group

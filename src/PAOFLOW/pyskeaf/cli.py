@@ -23,17 +23,25 @@ from PAOFLOW.pyskeaf.runner import run_skeaf
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="pyskeaf",
-        description="Python port of SKEAF — Supercell K-space Extremal Area Finder.",
+        prog='pyskeaf',
+        description='Python port of SKEAF — Supercell K-space Extremal Area Finder.',
     )
-    p.add_argument("config", nargs="?", default="config.in",
-                   help="Path to a SKEAF config.in file (default: ./config.in).")
-    p.add_argument("--bxsf", default=None,
-                   help="Override the BXSF filename listed in config.in.")
-    p.add_argument("--out", default=None,
-                   help="Directory to write output files into (default: cwd).")
-    p.add_argument("--no-write", dest="write", action="store_false",
-                   help="Run the analysis but skip writing output files.")
+    p.add_argument(
+        'config',
+        nargs='?',
+        default='config.in',
+        help='Path to a SKEAF config.in file (default: ./config.in).',
+    )
+    p.add_argument('--bxsf', default=None, help='Override the BXSF filename listed in config.in.')
+    p.add_argument(
+        '--out', default=None, help='Directory to write output files into (default: cwd).'
+    )
+    p.add_argument(
+        '--no-write',
+        dest='write',
+        action='store_false',
+        help='Run the analysis but skip writing output files.',
+    )
     return p
 
 
@@ -41,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     cfg_path = Path(args.config)
     if not cfg_path.exists():
-        print(f"pyskeaf: config file not found: {cfg_path}", file=sys.stderr)
+        print(f'pyskeaf: config file not found: {cfg_path}', file=sys.stderr)
         return 2
 
     cfg = read_config_in(cfg_path)
@@ -51,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         if alt.exists():
             bxsf_path = alt
         else:
-            print(f"pyskeaf: BXSF file not found: {bxsf_path}", file=sys.stderr)
+            print(f'pyskeaf: BXSF file not found: {bxsf_path}', file=sys.stderr)
             return 3
 
     bxsf = read_bxsf(bxsf_path)
@@ -61,15 +69,13 @@ def main(argv: list[str] | None = None) -> int:
     n_orbits = len(result.orbits)
     n_angles = result.angles.shape[0] if result.angles is not None else 1
     print(
-        f"pyskeaf: completed {n_angles} angle(s); "
-        f"found {n_orbits} extremal orbit(s) in total.",
+        f'pyskeaf: completed {n_angles} angle(s); ' f'found {n_orbits} extremal orbit(s) in total.',
         file=sys.stderr,
     )
     if args.write:
-        print(f"pyskeaf: outputs written to {out_dir.resolve()}",
-              file=sys.stderr)
+        print(f'pyskeaf: outputs written to {out_dir.resolve()}', file=sys.stderr)
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

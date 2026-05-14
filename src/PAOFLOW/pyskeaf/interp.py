@@ -39,7 +39,7 @@ Performance
 
 from __future__ import annotations
 
-from typing import Iterable, Sequence, Union
+from typing import Sequence, Union
 
 import numpy as np
 
@@ -49,6 +49,7 @@ ArrayLike = Union[float, Sequence[float], np.ndarray]
 # ---------------------------------------------------------------------------
 # Single-axis Lagrange-4 weights (with Fortran-style periodic wrap).
 # ---------------------------------------------------------------------------
+
 
 def _wrap_indices(i1: int, i4: int, n: int) -> tuple[int, int]:
     """Apply the Fortran periodic-wrap rule to the outer stencil nodes.
@@ -78,7 +79,7 @@ def _lagrange4_weights_1d(u: float, n: int) -> tuple[np.ndarray, np.ndarray]:
     :func:`_lagrange4_weights_padded` for fixed-length output).
     """
     if u < -1e-12 or u > n - 1 + 1e-12:
-        raise ValueError(f"u={u} out of range [0, {n - 1}]")
+        raise ValueError(f'u={u} out of range [0, {n - 1}]')
 
     iu = int(round(u))
     if abs(u - iu) < 1e-12:
@@ -96,12 +97,14 @@ def _lagrange4_weights_1d(u: float, n: int) -> tuple[np.ndarray, np.ndarray]:
     #   L_2(t) =  (t+1)(t-1)(t-2) / 2
     #   L_3(t) = -(t+1) t (t-2) / 2
     #   L_4(t) =  (t+1) t (t-1) / 6
-    w = np.array([
-        -t * (t - 1.0) * (t - 2.0) / 6.0,
-        (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0,
-        -(t + 1.0) * t * (t - 2.0) / 2.0,
-        (t + 1.0) * t * (t - 1.0) / 6.0,
-    ])
+    w = np.array(
+        [
+            -t * (t - 1.0) * (t - 2.0) / 6.0,
+            (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0,
+            -(t + 1.0) * t * (t - 2.0) / 2.0,
+            (t + 1.0) * t * (t - 1.0) / 6.0,
+        ]
+    )
     idx = np.array([i1r, i2, i3, i4r], dtype=np.intp)
     return idx, w
 
@@ -130,12 +133,12 @@ def _lagrange4_axis_weights(us: np.ndarray, n: int) -> tuple[np.ndarray, np.ndar
     """
     us = np.asarray(us, dtype=float)
     if us.ndim != 1:
-        raise ValueError(f"us must be 1-D, got shape {us.shape}")
+        raise ValueError(f'us must be 1-D, got shape {us.shape}')
     if us.size == 0:
         return np.zeros((0, 4), dtype=np.intp), np.zeros((0, 4), dtype=float)
 
     if (us < -1e-9).any() or (us > n - 1 + 1e-9).any():
-        raise ValueError(f"some us outside [0, {n - 1}]: min={us.min()}, max={us.max()}")
+        raise ValueError(f'some us outside [0, {n - 1}]: min={us.min()}, max={us.max()}')
 
     # Snap u == n - 1 inwards so floor(u) <= n - 2.
     us = np.clip(us, 0.0, n - 1 - 1e-12)
@@ -149,18 +152,22 @@ def _lagrange4_axis_weights(us: np.ndarray, n: int) -> tuple[np.ndarray, np.ndar
     idx = np.stack([i1r, i2, i3, i4r], axis=-1)
 
     t = us - i2
-    w = np.stack([
-        -t * (t - 1.0) * (t - 2.0) / 6.0,
-        (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0,
-        -(t + 1.0) * t * (t - 2.0) / 2.0,
-        (t + 1.0) * t * (t - 1.0) / 6.0,
-    ], axis=-1)
+    w = np.stack(
+        [
+            -t * (t - 1.0) * (t - 2.0) / 6.0,
+            (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0,
+            -(t + 1.0) * t * (t - 2.0) / 2.0,
+            (t + 1.0) * t * (t - 1.0) / 6.0,
+        ],
+        axis=-1,
+    )
     return idx, w
 
 
 # ---------------------------------------------------------------------------
 # Public API.
 # ---------------------------------------------------------------------------
+
 
 def interpolate_point(
     energies: np.ndarray,
@@ -178,7 +185,7 @@ def interpolate_point(
     iz, wz = _lagrange4_weights_1d(float(z), nz)
 
     sub = energies[np.ix_(ix, iy, iz)]
-    return float(np.einsum("a,b,c,abc->", wx, wy, wz, sub))
+    return float(np.einsum('a,b,c,abc->', wx, wy, wz, sub))
 
 
 def interpolate_grid(
@@ -211,16 +218,19 @@ def interpolate_grid(
     # indexing one axis at a time to avoid materialising the full outer
     # product before reduction.
     #   step 1: gather along x  -> shape (M, 4, ny, nz)
-    sub_x = energies[ix]                          # (M, 4, ny, nz)
+    sub_x = energies[ix]  # (M, 4, ny, nz)
     #   step 2: gather along y  -> shape (M, 4, N, 4, nz)
-    sub_xy = sub_x[:, :, iy, :]                   # (M, 4, N, 4, nz)
+    sub_xy = sub_x[:, :, iy, :]  # (M, 4, N, 4, nz)
     #   step 3: gather along z  -> shape (M, 4, N, 4, P, 4)
-    sub_xyz = sub_xy[:, :, :, :, iz]              # (M, 4, N, 4, P, 4)
+    sub_xyz = sub_xy[:, :, :, :, iz]  # (M, 4, N, 4, P, 4)
 
     # Contract weights: out[m, n, p] = sum_{a,b,c} wx[m,a] wy[n,b] wz[p,c] sub
     out = np.einsum(
-        "ma,nb,pc,manbpc->mnp",
-        wx, wy, wz, sub_xyz,
+        'ma,nb,pc,manbpc->mnp',
+        wx,
+        wy,
+        wz,
+        sub_xyz,
         optimize=True,
     )
     return out
@@ -246,7 +256,6 @@ def supercell_axis_coords(numint: int, n_axis: int) -> np.ndarray:
         Original BXSF grid size along this axis.
     """
     if numint < 1:
-        raise ValueError(f"numint must be >= 1, got {numint}")
+        raise ValueError(f'numint must be >= 1, got {numint}')
     n_super = 4 * numint
     return np.arange(n_super, dtype=float) * (n_axis - 1) / (n_super - 1)
-

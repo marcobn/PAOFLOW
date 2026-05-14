@@ -22,11 +22,10 @@ Reciprocal-lattice vectors in BXSF files are in units of (atomic units)^-1
 
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Union
 
 import numpy as np
 
@@ -83,35 +82,36 @@ class BXSFData:
 # --- internal helpers --------------------------------------------------------
 
 # Float pattern that tolerates Fortran-style exponents (1.0E+00, 1.0d-3, 1.0).
-_FLOAT_RE = re.compile(r"[-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?")
-_INT_RE = re.compile(r"[-+]?\d+")
-_FERMI_RE = re.compile(r"fermi\s*energy", re.IGNORECASE)
-_BAND_MARKER_RE = re.compile(r"(?:^|[^A-Za-z0-9_])(?:band|prod)\s*:", re.IGNORECASE)
+_FLOAT_RE = re.compile(r'[-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?')
+_INT_RE = re.compile(r'[-+]?\d+')
+_FERMI_RE = re.compile(r'fermi\s*energy', re.IGNORECASE)
+_BAND_MARKER_RE = re.compile(r'(?:^|[^A-Za-z0-9_])(?:band|prod)\s*:', re.IGNORECASE)
 # Matches the BXSF "END_BANDGRID_3D" / "END_BLOCK_BANDGRID_3D" / lone "END" markers.
 # (cannot use \bend\b because the trailing underscore is a word character).
-_END_MARKER_RE = re.compile(r"(?:^|\s)END(?:_|\s|$)", re.IGNORECASE)
+_END_MARKER_RE = re.compile(r'(?:^|\s)END(?:_|\s|$)', re.IGNORECASE)
 
 
 def _to_float(token: str) -> float:
     """Parse a Fortran-style float token (handles ``1.5d-3`` and ``1.5D+10``)."""
-    return float(token.replace("D", "E").replace("d", "e"))
+    return float(token.replace('D', 'E').replace('d', 'e'))
 
 
 def _read_first_int(line: str) -> int:
     m = _INT_RE.search(line)
     if m is None:
-        raise BXSFError(f"Expected an integer, got: {line!r}")
+        raise BXSFError(f'Expected an integer, got: {line!r}')
     return int(m.group(0))
 
 
 def _read_n_floats(line: str, n: int) -> list[float]:
     toks = _FLOAT_RE.findall(line)
     if len(toks) < n:
-        raise BXSFError(f"Expected at least {n} floats, got {len(toks)} in: {line!r}")
+        raise BXSFError(f'Expected at least {n} floats, got {len(toks)} in: {line!r}')
     return [_to_float(t) for t in toks[:n]]
 
 
 # --- public API --------------------------------------------------------------
+
 
 def read_bxsf(path: Union[str, Path]) -> BXSFData:
     """Read a single-band BXSF file and return a :class:`BXSFData`.
@@ -131,7 +131,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
         If ``path`` does not exist.
     """
     path = Path(path)
-    with path.open("r") as fh:
+    with path.open('r') as fh:
         lines = fh.readlines()
 
     it = iter(enumerate(lines))
@@ -142,7 +142,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
         if _FERMI_RE.search(line):
             tokens = _FLOAT_RE.findall(line)
             if not tokens:
-                raise BXSFError(f"Could not parse Fermi energy from line: {line!r}")
+                raise BXSFError(f'Could not parse Fermi energy from line: {line!r}')
             fermi_energy = _to_float(tokens[-1])
             break
     if fermi_energy is None:
@@ -154,45 +154,43 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
         try:
             next(it)
         except StopIteration as exc:
-            raise BXSFError(
-                f"BXSF file {path}: truncated header after Fermi energy."
-            ) from exc
+            raise BXSFError(f'BXSF file {path}: truncated header after Fermi energy.') from exc
 
     # 3. Number of bands — must be exactly 1.
     try:
         _, line = next(it)
     except StopIteration as exc:
-        raise BXSFError(f"BXSF file {path}: missing band-count line.") from exc
+        raise BXSFError(f'BXSF file {path}: missing band-count line.') from exc
     n_bands = _read_first_int(line)
     if n_bands != 1:
         raise BXSFError(
-            f"BXSF file {path}: header indicates {n_bands} bands, but SKEAF "
-            "requires single-band BXSFs (split with XCrysDen first)."
+            f'BXSF file {path}: header indicates {n_bands} bands, but SKEAF '
+            'requires single-band BXSFs (split with XCrysDen first).'
         )
 
     # 4. Grid dimensions.
     try:
         _, line = next(it)
     except StopIteration as exc:
-        raise BXSFError(f"BXSF file {path}: missing grid-dimension line.") from exc
+        raise BXSFError(f'BXSF file {path}: missing grid-dimension line.') from exc
     dims = _read_n_floats(line, 3)
     nx, ny, nz = (int(round(v)) for v in dims)
     if nx < 2 or ny < 2 or nz < 2:
         raise BXSFError(
-            f"BXSF file {path}: grid dimensions ({nx}, {ny}, {nz}) too small; "
-            "need at least 2 in every direction."
+            f'BXSF file {path}: grid dimensions ({nx}, {ny}, {nz}) too small; '
+            'need at least 2 in every direction.'
         )
 
     # 5. Reciprocal-lattice origin (must be 0, 0, 0).
     try:
         _, line = next(it)
     except StopIteration as exc:
-        raise BXSFError(f"BXSF file {path}: missing origin line.") from exc
+        raise BXSFError(f'BXSF file {path}: missing origin line.') from exc
     origin = np.array(_read_n_floats(line, 3), dtype=float)
     if not np.allclose(origin, 0.0):
         raise BXSFError(
-            f"BXSF file {path}: reciprocal-lattice origin is {tuple(origin)}, "
-            "not (0, 0, 0).  SKEAF requires a Brillouin-zone-centred grid."
+            f'BXSF file {path}: reciprocal-lattice origin is {tuple(origin)}, '
+            'not (0, 0, 0).  SKEAF requires a Brillouin-zone-centred grid.'
         )
 
     # 6. Three reciprocal-lattice vectors (a.u.^-1, no 2π factor).
@@ -202,7 +200,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
             _, line = next(it)
         except StopIteration as exc:
             raise BXSFError(
-                f"BXSF file {path}: missing reciprocal-lattice vector {j + 1}."
+                f'BXSF file {path}: missing reciprocal-lattice vector {j + 1}.'
             ) from exc
         recip_au[j] = _read_n_floats(line, 3)
 
@@ -210,7 +208,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
     try:
         next(it)
     except StopIteration as exc:
-        raise BXSFError(f"BXSF file {path}: missing BAND marker.") from exc
+        raise BXSFError(f'BXSF file {path}: missing BAND marker.') from exc
 
     # 8. Energy block — read floats until END marker.  The Fortran reader
     #    detects extra BAND/Prod markers as a multi-band error.
@@ -221,8 +219,8 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
         if _BAND_MARKER_RE.search(line):
             raise BXSFError(
                 f"BXSF file {path}: a 'BAND:' or 'Prod:' marker was found in "
-                "the energy block — file contains multiple bands.  Split it "
-                "with XCrysDen first."
+                'the energy block — file contains multiple bands.  Split it '
+                'with XCrysDen first.'
             )
         if _END_MARKER_RE.search(line):
             break
@@ -233,15 +231,14 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
                 # the first END.  Anything before END but after `expected` is
                 # an error.
                 raise BXSFError(
-                    f"BXSF file {path}: more than {expected} energies found "
-                    "before the END marker."
+                    f'BXSF file {path}: more than {expected} energies found '
+                    'before the END marker.'
                 )
             flat[n_read] = _to_float(tok)
             n_read += 1
     if n_read != expected:
         raise BXSFError(
-            f"BXSF file {path}: read {n_read} energies, expected "
-            f"{expected} ({nx}*{ny}*{nz})."
+            f'BXSF file {path}: read {n_read} energies, expected ' f'{expected} ({nx}*{ny}*{nz}).'
         )
 
     # 9. Reshape to (nx, ny, nz).  BXSF General Grid stores energies with
@@ -267,11 +264,12 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
     )
     if faces_match or e[-1, -1, -1] == e[0, 0, 0]:
         import warnings
-        kind = "all boundary faces match" if faces_match else "corner energies match"
+
+        kind = 'all boundary faces match' if faces_match else 'corner energies match'
         warnings.warn(
-            f"BXSF file {path}: {kind} — possible Periodic Grid layout "
-            "(typical of ELK / exciting).  If the file does not look correct, "
-            "run the ELK_exciting_BXSFconverter utility first.  Continuing.",
+            f'BXSF file {path}: {kind} — possible Periodic Grid layout '
+            '(typical of ELK / exciting).  If the file does not look correct, '
+            'run the ELK_exciting_BXSFconverter utility first.  Continuing.',
             stacklevel=2,
         )
 
@@ -297,7 +295,7 @@ def write_bxsf(
     data: BXSFData,
     *,
     fermi_energy: float | None = None,
-    band_label: str = "band_energies",
+    band_label: str = 'band_energies',
 ) -> None:
     """Write *data* back to a BXSF file (round-trip helper for tests).
 
@@ -308,28 +306,28 @@ def write_bxsf(
     path = Path(path)
     fe = fermi_energy if fermi_energy is not None else data.fermi_energy
 
-    with path.open("w") as fh:
-        fh.write(" BEGIN_INFO\n")
-        fh.write(f"   Fermi Energy:     {fe:.6f}\n")
-        fh.write(" END_INFO\n")
-        fh.write(" BEGIN_BLOCK_BANDGRID_3D\n")
-        fh.write(f" {band_label}\n")
-        fh.write(" BANDGRID_3D_BANDS\n")
-        fh.write(" 1\n")
-        fh.write(f" {data.nx:3d} {data.ny:3d} {data.nz:3d}\n")
+    with path.open('w') as fh:
+        fh.write(' BEGIN_INFO\n')
+        fh.write(f'   Fermi Energy:     {fe:.6f}\n')
+        fh.write(' END_INFO\n')
+        fh.write(' BEGIN_BLOCK_BANDGRID_3D\n')
+        fh.write(f' {band_label}\n')
+        fh.write(' BANDGRID_3D_BANDS\n')
+        fh.write(' 1\n')
+        fh.write(f' {data.nx:3d} {data.ny:3d} {data.nz:3d}\n')
         fh.write(
-            f"      {data.origin_au[0]:.8f}      "
-            f"{data.origin_au[1]:.8f}      {data.origin_au[2]:.8f}\n"
+            f'      {data.origin_au[0]:.8f}      '
+            f'{data.origin_au[1]:.8f}      {data.origin_au[2]:.8f}\n'
         )
         for j in range(3):
             v = data.recip_au[j]
-            fh.write(f"      {v[0]:.8f}      {v[1]:.8f}      {v[2]:.8f}\n")
-        fh.write(" BAND:    1\n")
+            fh.write(f'      {v[0]:.8f}      {v[1]:.8f}      {v[2]:.8f}\n')
+        fh.write(' BAND:    1\n')
 
         flat = data.energies.reshape(-1)
         for i in range(0, flat.size, 6):
-            chunk = flat[i:i + 6]
-            fh.write("  " + "  ".join(f"{v:.6E}" for v in chunk) + "\n")
+            chunk = flat[i : i + 6]
+            fh.write('  ' + '  '.join(f'{v:.6E}' for v in chunk) + '\n')
 
-        fh.write(" END_BANDGRID_3D\n")
-        fh.write(" END_BLOCK_BANDGRID_3D\n")
+        fh.write(' END_BANDGRID_3D\n')
+        fh.write(' END_BLOCK_BANDGRID_3D\n')

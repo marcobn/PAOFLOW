@@ -53,31 +53,34 @@ from PAOFLOW.pyskeaf.io_bxsf import BXSFData
 #   T4 = (3, 6, 7, 8)
 #   T5 = (3, 5, 6, 7)
 #   T6 = (1, 3, 5, 6)
-_TETRA_CORNERS = np.array([
-    [0, 1, 2, 5],
-    [1, 2, 3, 5],
-    [2, 3, 5, 7],
-    [2, 5, 6, 7],
-    [2, 4, 5, 6],
-    [0, 2, 4, 5],
-], dtype=np.intp)
+_TETRA_CORNERS = np.array(
+    [
+        [0, 1, 2, 5],
+        [1, 2, 3, 5],
+        [2, 3, 5, 7],
+        [2, 5, 6, 7],
+        [2, 4, 5, 6],
+        [0, 2, 4, 5],
+    ],
+    dtype=np.intp,
+)
 
 
 @dataclass
 class DosResult:
     """Output of :func:`compute_dos`."""
 
-    fermi_energy: float                      # Ryd
-    unit_cell_volume: float                  # Å^-3
-    one_kpoint_volume: float                 # Å^-3
-    num_occupied_states: int                 # microcells with c1 ≤ EF
-    num_empty_states: int                    # microcells with c1 > EF
-    band_electron_volume: float              # Å^-3
-    band_hole_volume: float                  # Å^-3
-    dos_at_ef: float                         # Å^-3 Ryd^-1 per spin direction
-    band_min: float                          # Ryd
-    band_max: float                          # Ryd
-    fermi_fraction: float                    # (EF - band_min) / (band_max - band_min)
+    fermi_energy: float  # Ryd
+    unit_cell_volume: float  # Å^-3
+    one_kpoint_volume: float  # Å^-3
+    num_occupied_states: int  # microcells with c1 ≤ EF
+    num_empty_states: int  # microcells with c1 > EF
+    band_electron_volume: float  # Å^-3
+    band_hole_volume: float  # Å^-3
+    dos_at_ef: float  # Å^-3 Ryd^-1 per spin direction
+    band_min: float  # Ryd
+    band_max: float  # Ryd
+    fermi_fraction: float  # (EF - band_min) / (band_max - band_min)
 
 
 def _slice_dos_pair(
@@ -130,8 +133,8 @@ def _slice_dos_pair(
     n_empty = int((M - 1) * (M - 1) - n_occ)
 
     # --- per-tetrahedron sorted energies, shape (6, M-1, M-1, 4) ----------
-    tet = c[..., _TETRA_CORNERS]                  # (M-1, M-1, 6, 4)
-    tet = np.moveaxis(tet, -2, 0)                 # (6, M-1, M-1, 4)
+    tet = c[..., _TETRA_CORNERS]  # (M-1, M-1, 6, 4)
+    tet = np.moveaxis(tet, -2, 0)  # (6, M-1, M-1, 4)
 
     e_min = tet.min(axis=-1)
     e_max = tet.max(axis=-1)
@@ -139,11 +142,11 @@ def _slice_dos_pair(
     if not crosses.any():
         return 0.0, n_occ, n_empty
 
-    sel = np.argwhere(crosses)                    # (Nsel, 3) — (tet, i, j)
+    sel = np.argwhere(crosses)  # (Nsel, 3) — (tet, i, j)
     if sel.size == 0:
         return 0.0, n_occ, n_empty
 
-    e_sorted = np.sort(tet[crosses], axis=-1)     # (Nsel, 4)
+    e_sorted = np.sort(tet[crosses], axis=-1)  # (Nsel, 4)
     e1, e2, e3, e4 = e_sorted[:, 0], e_sorted[:, 1], e_sorted[:, 2], e_sorted[:, 3]
     EF = fermi_energy
     V = tetrahedron_volume
@@ -184,9 +187,10 @@ def _slice_dos_pair(
         safe = (d1 != 0.0) & (d2 != 0.0)
         m = B & safe
         bracket = (
-            (e2 - e1) + 2.0 * EF - 2.0 * e2
-            - ((e3 - e1 + e4 - e2) * (EF - e2) ** 2)
-              / np.where(safe, d2, 1.0)
+            (e2 - e1)
+            + 2.0 * EF
+            - 2.0 * e2
+            - ((e3 - e1 + e4 - e2) * (EF - e2) ** 2) / np.where(safe, d2, 1.0)
         )
         contrib = np.where(
             m,
@@ -224,15 +228,15 @@ def compute_dos(
     :class:`DosResult`
     """
     if numint < 1:
-        raise ValueError(f"numint must be >= 1, got {numint}")
+        raise ValueError(f'numint must be >= 1, got {numint}')
 
     EF = bxsf.fermi_energy if fermi_energy is None else float(fermi_energy)
 
     ucv = unit_cell_volume(bxsf.recip_ang)
     M = 4 * numint
     n_microcells_per_axis = M - 1
-    one_kpoint_volume = ucv / (n_microcells_per_axis ** 3)
-    num_tetrahedra = 6 * n_microcells_per_axis ** 3
+    one_kpoint_volume = ucv / (n_microcells_per_axis**3)
+    num_tetrahedra = 6 * n_microcells_per_axis**3
     tet_volume = ucv / num_tetrahedra
 
     # Pre-compute supercell sample coordinates along each axis.
@@ -252,9 +256,7 @@ def compute_dos(
 
     for k in range(M):
         # interpolate_grid expects 1-D arrays; for one z value, pass length-1.
-        cur_slice = interpolate_grid(
-            bxsf.energies, xs, ys, zs[k:k + 1]
-        )[:, :, 0]
+        cur_slice = interpolate_grid(bxsf.energies, xs, ys, zs[k : k + 1])[:, :, 0]
         band_min = min(band_min, float(cur_slice.min()))
         band_max = max(band_max, float(cur_slice.max()))
 
@@ -265,7 +267,7 @@ def compute_dos(
             total_empty += ne
             if progress:
                 pct = 100.0 * (k) / (M - 1)
-                print(f"\r DOS: {pct:5.1f} %", end="", flush=True)
+                print(f'\r DOS: {pct:5.1f} %', end='', flush=True)
 
         prev_slice = cur_slice
 
@@ -275,7 +277,7 @@ def compute_dos(
     band_electron_volume = total_occ * one_kpoint_volume
     band_hole_volume = total_empty * one_kpoint_volume
     bandwidth = band_max - band_min
-    fermi_fraction = (EF - band_min) / bandwidth if bandwidth > 0 else float("nan")
+    fermi_fraction = (EF - band_min) / bandwidth if bandwidth > 0 else float('nan')
 
     # The Fortran prints tetradoscontrib directly in Å^-3 Ryd^-1 per spin
     # direction (line 1160).  The per-tetrahedron volume already encodes the
@@ -296,4 +298,3 @@ def compute_dos(
         band_max=band_max,
         fermi_fraction=fermi_fraction,
     )
-

@@ -36,18 +36,18 @@ from PAOFLOW.pyskeaf.runner import run_skeaf
 # 1 Rydberg in electron-volts.  CODATA 2018 value, matching what PAOFLOW uses.
 RYDBERG_IN_EV = 13.605693122994
 
-EnergyUnit = str   # 'Ry' | 'Ha' | 'eV'
-RecipUnit = str    # 'au' | 'au_2pi' | 'ang' | 'ang_2pi'
+EnergyUnit = str  # 'Ry' | 'Ha' | 'eV'
+RecipUnit = str  # 'au' | 'au_2pi' | 'ang' | 'ang_2pi'
 
 
 def _to_rydberg(energies: np.ndarray, unit: EnergyUnit) -> np.ndarray:
     """Convert a band-energy array to Rydberg from one of the supported units."""
     u = unit.lower()
-    if u in ("ry", "rydberg"):
+    if u in ('ry', 'rydberg'):
         return energies
-    if u in ("ha", "hartree"):
+    if u in ('ha', 'hartree'):
         return energies * 2.0
-    if u in ("ev",):
+    if u in ('ev',):
         return energies / RYDBERG_IN_EV
     raise ValueError(f"Unknown energy_unit {unit!r}; expected 'Ry', 'Ha', or 'eV'.")
 
@@ -65,17 +65,15 @@ def _to_recip_au_no2pi(recip: np.ndarray, unit: RecipUnit) -> np.ndarray:
       ``recip_ang`` field of :class:`PAOFLOW.pyskeaf.io_bxsf.BXSFData`).
     """
     u = unit.lower()
-    if u in ("au", "bohr", "au_no2pi"):
+    if u in ('au', 'bohr', 'au_no2pi'):
         return recip
-    if u in ("au_2pi", "au2pi"):
+    if u in ('au_2pi', 'au2pi'):
         return recip / (2.0 * PI)
-    if u in ("ang", "angstrom", "a", "ang_no2pi"):
+    if u in ('ang', 'angstrom', 'a', 'ang_no2pi'):
         return recip * CONV_AU_TO_ANG
-    if u in ("ang_2pi", "ang2pi", "paoflow"):
+    if u in ('ang_2pi', 'ang2pi', 'paoflow'):
         return recip * CONV_AU_TO_ANG / (2.0 * PI)
-    raise ValueError(
-        f"Unknown recip_unit {unit!r}; expected 'au', 'au_2pi', 'ang', 'ang_2pi'."
-    )
+    raise ValueError(f"Unknown recip_unit {unit!r}; expected 'au', 'au_2pi', 'ang', 'ang_2pi'.")
 
 
 def bxsf_from_arrays(
@@ -83,10 +81,10 @@ def bxsf_from_arrays(
     recip: np.ndarray,
     fermi_energy: float,
     *,
-    energy_unit: EnergyUnit = "Ry",
-    recip_unit: RecipUnit = "au",
+    energy_unit: EnergyUnit = 'Ry',
+    recip_unit: RecipUnit = 'au',
     fermi_unit: Optional[EnergyUnit] = None,
-    filename: str = "paoflow_in_memory",
+    filename: str = 'paoflow_in_memory',
     origin: Optional[Sequence[float]] = None,
     enforce_periodic_endpoint: bool = True,
 ) -> BXSFData:
@@ -131,17 +129,16 @@ def bxsf_from_arrays(
     """
     e = np.asarray(energies, dtype=float)
     if e.ndim != 3:
-        raise ValueError(f"energies must be a 3D array, got shape {e.shape}")
+        raise ValueError(f'energies must be a 3D array, got shape {e.shape}')
     if enforce_periodic_endpoint:
         e = _wrap_periodic(e)
 
     e_ry = _to_rydberg(e, energy_unit)
-    fe_ry = _to_rydberg(np.asarray([fermi_energy], dtype=float),
-                        fermi_unit or energy_unit)[0]
+    fe_ry = _to_rydberg(np.asarray([fermi_energy], dtype=float), fermi_unit or energy_unit)[0]
 
     r = np.asarray(recip, dtype=float)
     if r.shape != (3, 3):
-        raise ValueError(f"recip must have shape (3, 3), got {r.shape}")
+        raise ValueError(f'recip must have shape (3, 3), got {r.shape}')
     recip_au = _to_recip_au_no2pi(r, recip_unit)
     recip_ang = 2.0 * PI * recip_au / CONV_AU_TO_ANG
 
@@ -151,15 +148,17 @@ def bxsf_from_arrays(
         origin_arr = np.asarray(origin, dtype=float).reshape(3)
         if not np.allclose(origin_arr, 0.0):
             raise ValueError(
-                "SKEAF requires the BXSF origin to be the Gamma point "
-                "(0, 0, 0); got non-zero origin."
+                'SKEAF requires the BXSF origin to be the Gamma point '
+                '(0, 0, 0); got non-zero origin.'
             )
 
     nx, ny, nz = e_ry.shape
     return BXSFData(
         filename=filename,
         fermi_energy=float(fe_ry),
-        nx=int(nx), ny=int(ny), nz=int(nz),
+        nx=int(nx),
+        ny=int(ny),
+        nz=int(nz),
         recip_au=recip_au,
         recip_ang=recip_ang,
         energies=np.ascontiguousarray(e_ry),
@@ -192,11 +191,11 @@ def run_from_paoflow(
     numint: int,
     theta: float = 0.0,
     phi: float = 0.0,
-    hvd: str = "n",
-    energy_unit: EnergyUnit = "Ry",
-    recip_unit: RecipUnit = "au",
+    hvd: str = 'n',
+    energy_unit: EnergyUnit = 'Ry',
+    recip_unit: RecipUnit = 'au',
     fermi_unit: Optional[EnergyUnit] = None,
-    filename: str = "paoflow_in_memory",
+    filename: str = 'paoflow_in_memory',
     output_dir: Union[str, Path, None] = None,
     write_files: bool = False,
     config_overrides: Optional[dict] = None,
@@ -234,9 +233,13 @@ def run_from_paoflow(
     from PAOFLOW.pyskeaf.config import SkeafConfig  # local to avoid cycles at import
 
     bxsf = bxsf_from_arrays(
-        energies, recip, fermi_energy,
-        energy_unit=energy_unit, recip_unit=recip_unit,
-        fermi_unit=fermi_unit, filename=filename,
+        energies,
+        recip,
+        fermi_energy,
+        energy_unit=energy_unit,
+        recip_unit=recip_unit,
+        fermi_unit=fermi_unit,
+        filename=filename,
     )
 
     cfg = SkeafConfig(
@@ -251,13 +254,12 @@ def run_from_paoflow(
         for key, val in config_overrides.items():
             if not hasattr(cfg, key):
                 raise AttributeError(
-                    f"SkeafConfig has no field {key!r}; valid fields: "
-                    f"{list(cfg.__dataclass_fields__)}"
+                    f'SkeafConfig has no field {key!r}; valid fields: '
+                    f'{list(cfg.__dataclass_fields__)}'
                 )
             setattr(cfg, key, val)
 
-    return run_skeaf(cfg, bxsf,
-                     write_files=write_files, output_dir=output_dir)
+    return run_skeaf(cfg, bxsf, write_files=write_files, output_dir=output_dir)
 
 
 def run_from_paoflow_object(
@@ -267,10 +269,10 @@ def run_from_paoflow_object(
     numint: int,
     theta: float = 0.0,
     phi: float = 0.0,
-    hvd: str = "n",
+    hvd: str = 'n',
     fermi_energy: Optional[float] = None,
-    energy_unit: EnergyUnit = "eV",
-    recip_unit: RecipUnit = "ang_2pi",
+    energy_unit: EnergyUnit = 'eV',
+    recip_unit: RecipUnit = 'ang_2pi',
     **kwargs,
 ) -> SKEAFResult:
     """Run pyskeaf on one band of a PAOFLOW data container.
@@ -297,32 +299,38 @@ def run_from_paoflow_object(
     **kwargs
         Passed through to :func:`run_from_paoflow`.
     """
-    energies = _get_attr(paoflow, ("E_k", "E_kn", "bands"))
+    energies = _get_attr(paoflow, ('E_k', 'E_kn', 'bands'))
     energies = np.asarray(energies)
     if energies.ndim < 4:
         raise ValueError(
-            f"Expected band-energy array with shape (nx, ny, nz, n_bands [, n_spin]); "
-            f"got shape {energies.shape}."
+            f'Expected band-energy array with shape (nx, ny, nz, n_bands [, n_spin]); '
+            f'got shape {energies.shape}.'
         )
     band_arr = energies[..., band_index]
-    if band_arr.ndim == 4:                        # spin-resolved → take spin 0
+    if band_arr.ndim == 4:  # spin-resolved → take spin 0
         band_arr = band_arr[..., 0]
     if band_arr.ndim != 3:
         raise ValueError(
-            f"After indexing band {band_index}, expected a 3D array; "
-            f"got shape {band_arr.shape}."
+            f'After indexing band {band_index}, expected a 3D array; '
+            f'got shape {band_arr.shape}.'
         )
 
-    recip = np.asarray(_get_attr(paoflow, ("b_vectors", "recip_lattice", "b_lattice")))
+    recip = np.asarray(_get_attr(paoflow, ('b_vectors', 'recip_lattice', 'b_lattice')))
 
     if fermi_energy is None:
-        fermi_energy = float(_get_attr(paoflow, ("E_F", "fermi", "fermi_energy")))
+        fermi_energy = float(_get_attr(paoflow, ('E_F', 'fermi', 'fermi_energy')))
 
     return run_from_paoflow(
-        band_arr, recip, fermi_energy,
-        numint=numint, theta=theta, phi=phi, hvd=hvd,
-        energy_unit=energy_unit, recip_unit=recip_unit,
-        filename=f"paoflow_band_{band_index}",
+        band_arr,
+        recip,
+        fermi_energy,
+        numint=numint,
+        theta=theta,
+        phi=phi,
+        hvd=hvd,
+        energy_unit=energy_unit,
+        recip_unit=recip_unit,
+        filename=f'paoflow_band_{band_index}',
         **kwargs,
     )
 
@@ -335,15 +343,14 @@ def _get_attr(obj: Any, names: Sequence[str]) -> Any:
         if isinstance(obj, dict) and name in obj:
             return obj[name]
     raise AttributeError(
-        f"PAOFLOW container is missing any of: {names!r}.  "
-        f"Pass the arrays directly via run_from_paoflow() or bxsf_from_arrays()."
+        f'PAOFLOW container is missing any of: {names!r}.  '
+        f'Pass the arrays directly via run_from_paoflow() or bxsf_from_arrays().'
     )
 
 
 __all__ = [
-    "RYDBERG_IN_EV",
-    "bxsf_from_arrays",
-    "run_from_paoflow",
-    "run_from_paoflow_object",
+    'RYDBERG_IN_EV',
+    'bxsf_from_arrays',
+    'run_from_paoflow',
+    'run_from_paoflow_object',
 ]
-

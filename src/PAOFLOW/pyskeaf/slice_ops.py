@@ -65,19 +65,19 @@ from PAOFLOW.pyskeaf.io_bxsf import BXSFData
 class SliceGeometry:
     """Geometric metadata for one slicing configuration (independent of slice index)."""
 
-    theta: float                      # rad
-    phi: float                        # rad
+    theta: float  # rad
+    phi: float  # rad
     numint: int
-    numx: int                         # = numy = numslices = 4*(numint-1) + 1
-    xkseparation: float               # Å^-1, spacing along slicing-x
-    ykseparation: float               # Å^-1, spacing along slicing-y
-    zkseparation: float               # Å^-1, spacing along slicing-z (between slices)
-    xlength: float                    # 4 * maxlreciplat, Å^-1
-    ylength: float                    # 4 * maxlreciplat, Å^-1
-    maxlreciplat: float               # max |b_i|
-    rotation: np.ndarray              # (3, 3): slicing-frame → BZ-frame
-    h_vector: np.ndarray              # (3,) unit H-vector in BZ frame
-    plr_inverse: np.ndarray           # (3, 3): BZ-frame Cartesian → fractional
+    numx: int  # = numy = numslices = 4*(numint-1) + 1
+    xkseparation: float  # Å^-1, spacing along slicing-x
+    ykseparation: float  # Å^-1, spacing along slicing-y
+    zkseparation: float  # Å^-1, spacing along slicing-z (between slices)
+    xlength: float  # 4 * maxlreciplat, Å^-1
+    ylength: float  # 4 * maxlreciplat, Å^-1
+    maxlreciplat: float  # max |b_i|
+    rotation: np.ndarray  # (3, 3): slicing-frame → BZ-frame
+    h_vector: np.ndarray  # (3,) unit H-vector in BZ frame
+    plr_inverse: np.ndarray  # (3, 3): BZ-frame Cartesian → fractional
 
 
 @dataclass
@@ -85,9 +85,9 @@ class Slice2D:
     """Energies sampled on a 2D (numx × numy) slice perpendicular to H."""
 
     geometry: SliceGeometry
-    slice_index: int                   # 1-based, in [1, numx]
-    z_prime: float                     # slicing-frame z' coordinate (Å^-1)
-    energies: np.ndarray               # shape (numx, numy), Ryd
+    slice_index: int  # 1-based, in [1, numx]
+    z_prime: float  # slicing-frame z' coordinate (Å^-1)
+    energies: np.ndarray  # shape (numx, numy), Ryd
 
 
 def rotation_matrix(theta: float, phi: float) -> np.ndarray:
@@ -101,11 +101,13 @@ def rotation_matrix(theta: float, phi: float) -> np.ndarray:
     c = float(np.cos(phi))
     s = float(np.sin(phi))
     u = 1.0 - c
-    return np.array([
-        [p * p * u + c,    -p * q * u,         q * s],
-        [-p * q * u,        q * q * u + c,     p * s],
-        [-q * s,           -p * s,             c    ],
-    ])
+    return np.array(
+        [
+            [p * p * u + c, -p * q * u, q * s],
+            [-p * q * u, q * q * u + c, p * s],
+            [-q * s, -p * s, c],
+        ]
+    )
 
 
 def make_slice_geometry(bxsf: BXSFData, numint: int, theta: float, phi: float) -> SliceGeometry:
@@ -114,7 +116,7 @@ def make_slice_geometry(bxsf: BXSFData, numint: int, theta: float, phi: float) -
     Mirrors the bookkeeping at Fortran lines 669–688 plus 1249–1264.
     """
     if numint < 2:
-        raise ValueError(f"numint must be >= 2, got {numint}")
+        raise ValueError(f'numint must be >= 2, got {numint}')
 
     lens = k_axis_lengths(bxsf.recip_ang)
     maxlreciplat = float(lens.max())
@@ -144,10 +146,12 @@ def make_slice_geometry(bxsf: BXSFData, numint: int, theta: float, phi: float) -
 
 def _bxsf_indices_from_slice(
     geom: SliceGeometry,
-    slice_indices: np.ndarray,                         # (numx,)  1-based slice-x grid
-    other_indices: np.ndarray,                         # (numy,)  1-based slice-y grid
-    z_index: int,                                      # 1-based slice-z grid
-    nx: int, ny: int, nz: int,
+    slice_indices: np.ndarray,  # (numx,)  1-based slice-x grid
+    other_indices: np.ndarray,  # (numy,)  1-based slice-y grid
+    z_index: int,  # 1-based slice-z grid
+    nx: int,
+    ny: int,
+    nz: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Map a 2D slice of (slice_x, slice_y) coords to wrapped 0-based BXSF coords.
 
@@ -158,12 +162,12 @@ def _bxsf_indices_from_slice(
     invd = 1.0 / (geom.numint - 1)
 
     # Slicing-frame coordinates (broadcast to 2D mesh).
-    Xp = ((slice_indices - 1) * invd - 1.0) * M           # (numx,)
-    Yp = ((other_indices - 1) * invd - 1.0) * M           # (numy,)
-    Zp = ((z_index - 1) * invd - 1.0) * M                 # scalar
+    Xp = ((slice_indices - 1) * invd - 1.0) * M  # (numx,)
+    Yp = ((other_indices - 1) * invd - 1.0) * M  # (numy,)
+    Zp = ((z_index - 1) * invd - 1.0) * M  # scalar
 
     # 2D mesh: shape (numx, numy)
-    Xp2, Yp2 = np.meshgrid(Xp, Yp, indexing="ij")
+    Xp2, Yp2 = np.meshgrid(Xp, Yp, indexing='ij')
 
     # Rotate into BZ frame: (p1, p2, p3) = R · (X', Y', Z')
     R = geom.rotation
@@ -199,7 +203,7 @@ def build_slice(
     fractional indices.
     """
     if not (1 <= slice_index <= geom.numx):
-        raise ValueError(f"slice_index {slice_index} outside [1, {geom.numx}]")
+        raise ValueError(f'slice_index {slice_index} outside [1, {geom.numx}]')
 
     nx, ny, nz = bxsf.energies.shape
     ti = np.arange(1, geom.numx + 1, dtype=float)
@@ -238,7 +242,7 @@ def _interpolate_per_point(
     flat_y = np.ascontiguousarray(uy).reshape(-1)
     flat_z = np.ascontiguousarray(uz).reshape(-1)
 
-    ix, wx = _lagrange4_axis_weights(flat_x, nx)         # (M, 4)
+    ix, wx = _lagrange4_axis_weights(flat_x, nx)  # (M, 4)
     iy, wy = _lagrange4_axis_weights(flat_y, ny)
     iz, wz = _lagrange4_axis_weights(flat_z, nz)
 

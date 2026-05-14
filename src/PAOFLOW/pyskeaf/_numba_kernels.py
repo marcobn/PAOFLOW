@@ -26,6 +26,7 @@ import numpy as np
 
 try:
     from numba import njit
+
     HAS_NUMBA = True
 except ImportError:  # pragma: no cover — exercised only when Numba absent
     HAS_NUMBA = False
@@ -44,6 +45,7 @@ except ImportError:  # pragma: no cover — exercised only when Numba absent
 # ---------------------------------------------------------------------------
 # Numba kernel — fused gather + 4×4×4 Lagrange contraction.
 # ---------------------------------------------------------------------------
+
 
 @njit(cache=True)
 def _lagrange4_eval_numba(energies, ix, iy, iz, wx, wy, wz):
@@ -91,6 +93,7 @@ def _lagrange4_eval_numba(energies, ix, iy, iz, wx, wy, wz):
 # Pure-NumPy fallback — semantically identical, used when Numba absent.
 # ---------------------------------------------------------------------------
 
+
 def _lagrange4_eval_numpy(energies, ix, iy, iz, wx, wy, wz):
     """Pure-NumPy reference implementation; same signature/semantics as the JIT version."""
     sub = energies[
@@ -98,7 +101,7 @@ def _lagrange4_eval_numpy(energies, ix, iy, iz, wx, wy, wz):
         iy[:, None, :, None],
         iz[:, None, None, :],
     ]
-    return np.einsum("ma,mb,mc,mabc->m", wx, wy, wz, sub, optimize=True)
+    return np.einsum('ma,mb,mc,mabc->m', wx, wy, wz, sub, optimize=True)
 
 
 def lagrange4_eval(energies, ix, iy, iz, wx, wy, wz):

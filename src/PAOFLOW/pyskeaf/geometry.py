@@ -28,7 +28,7 @@ from typing import Literal
 import numpy as np
 
 
-HvdLiteral = Literal["a", "b", "c", "n", "r"]
+HvdLiteral = Literal['a', 'b', 'c', 'n', 'r']
 
 
 def unit_cell_volume(recip: np.ndarray) -> float:
@@ -40,7 +40,7 @@ def unit_cell_volume(recip: np.ndarray) -> float:
         Reciprocal lattice vectors as rows (Å^-1, with 2π factor).
     """
     if recip.shape != (3, 3):
-        raise ValueError(f"recip must be (3, 3), got {recip.shape}")
+        raise ValueError(f'recip must be (3, 3), got {recip.shape}')
     return float(abs(np.linalg.det(recip)))
 
 
@@ -76,13 +76,13 @@ def set_field_angle(
     -------
     (theta_rad, phi_rad) : tuple of float
     """
-    if hvd not in ("a", "b", "c", "n", "r"):
+    if hvd not in ('a', 'b', 'c', 'n', 'r'):
         raise ValueError(f"hvd must be one of 'a','b','c','n','r' — got {hvd!r}")
 
-    if hvd in ("n", "r"):
+    if hvd in ('n', 'r'):
         return float(theta), float(phi)
 
-    idx = {"a": 0, "b": 1, "c": 2}[hvd]
+    idx = {'a': 0, 'b': 1, 'c': 2}[hvd]
     v = recip[idx]
     vx, vy, vz = float(v[0]), float(v[1]), float(v[2])
 
@@ -111,4 +111,3 @@ def k_axis_angles(recip: np.ndarray) -> tuple[float, float, float]:
         return math.acos(max(-1.0, min(1.0, cos)))
 
     return _angle(0, 1), _angle(0, 2), _angle(1, 2)
-

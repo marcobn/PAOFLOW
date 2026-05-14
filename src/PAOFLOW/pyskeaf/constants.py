@@ -7,7 +7,7 @@ to preserve numerical equivalence with the reference implementation.
 import math
 
 # Build identifier — kept identical to Fortran for output-file headers.
-BUILD_NUMBER = "v1.3.0 r149 (Python port)"
+BUILD_NUMBER = 'v1.3.0 r149 (Python port)'
 
 PI = math.pi  # Fortran uses 3.1415926535897932D0 — the same as math.pi to ~16 digits.
 

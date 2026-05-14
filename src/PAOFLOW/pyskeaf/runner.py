@@ -70,8 +70,11 @@ def run_at_angle(
     geom = make_slice_geometry(bxsf, numint, theta, phi)
     n_slices = geom.numx
     logger.info(
-        "run_at_angle: theta=%.4f rad, phi=%.4f rad, numint=%d (%d slices)",
-        theta, phi, numint, n_slices,
+        'run_at_angle: theta=%.4f rad, phi=%.4f rad, numint=%d (%d slices)',
+        theta,
+        phi,
+        numint,
+        n_slices,
     )
 
     per_slice_orbits = []
@@ -81,11 +84,12 @@ def run_at_angle(
         orbs = find_closed_orbits_in_slice(sl, fermi_energy=fermi_energy)
         per_slice_orbits.append(orbs)
         if logger.isEnabledFor(logging.DEBUG) and (s % log_every == 0 or s == n_slices):
-            logger.debug("  slice %d/%d (%d orbits)", s, n_slices, len(orbs))
+            logger.debug('  slice %d/%d (%d orbits)', s, n_slices, len(orbs))
 
     chunks = match_chunks(per_slice_orbits)
     extrema = find_extremal(
-        chunks, geom,
+        chunks,
+        geom,
         min_freq_kT=min_freq_kT,
         allow_near_walls=allow_near_walls,
     )
@@ -95,13 +99,15 @@ def run_at_angle(
         avg_same_frac=avg_same_frac,
     )
     logger.info(
-        "  → %d chunk(s), %d extremum/extrema, %d averaged orbit(s)",
-        len(chunks), len(extrema), len(averaged),
+        '  → %d chunk(s), %d extremum/extrema, %d averaged orbit(s)',
+        len(chunks),
+        len(extrema),
+        len(averaged),
     )
 
     orbits = [_averaged_to_orbit(a, theta, phi, geom, bxsf) for a in averaged]
     return SKEAFResult(
-        config_filename="",
+        config_filename='',
         bxsf_filename=bxsf.filename,
         fermi_energy=fermi_energy,
         orbits=orbits,
@@ -110,8 +116,9 @@ def run_at_angle(
     )
 
 
-def _averaged_to_orbit(av: AveragedOrbit, theta: float, phi: float,
-                       geom: SliceGeometry, bxsf: BXSFData) -> Orbit:
+def _averaged_to_orbit(
+    av: AveragedOrbit, theta: float, phi: float, geom: SliceGeometry, bxsf: BXSFData
+) -> Orbit:
     """Convert an :class:`AveragedOrbit` to a public :class:`Orbit`.
 
     Computes the BZ-frame Cartesian outline (in Å⁻¹ and a.u.⁻¹) of the
@@ -143,8 +150,9 @@ def _averaged_to_orbit(av: AveragedOrbit, theta: float, phi: float,
     )
 
 
-def _compute_outline(slice_orbit, geom: SliceGeometry, bxsf: BXSFData
-                     ) -> tuple[np.ndarray, np.ndarray]:
+def _compute_outline(
+    slice_orbit, geom: SliceGeometry, bxsf: BXSFData
+) -> tuple[np.ndarray, np.ndarray]:
     """Build the BZ-frame Cartesian outline shifted by RUC nearest-vector offset.
 
     Returns ``(outline_ang, outline_au)`` where each is shape ``(npts, 3)``.
@@ -169,13 +177,13 @@ def _compute_outline(slice_orbit, geom: SliceGeometry, bxsf: BXSFData
     centroid_bz = R @ np.array([cx_slc, cy_slc, cz_slc])
     centroid_ruc_frac = geom.plr_inverse @ centroid_bz
     subtractor = np.round(centroid_ruc_frac)
-    shift_bz = bxsf.recip_ang.T @ subtractor       # in Å⁻¹
+    shift_bz = bxsf.recip_ang.T @ subtractor  # in Å⁻¹
 
     # Contour in slicing-frame; promote to (n, 3) by inserting z'.
-    xy = slice_orbit.contour_xy                    # (n, 2)
+    xy = slice_orbit.contour_xy  # (n, 2)
     n = xy.shape[0]
-    pts3 = np.column_stack([xy, np.full(n, cz_slc)])    # (n, 3)
-    bz_pts = pts3 @ R.T                             # (n, 3) Å⁻¹
+    pts3 = np.column_stack([xy, np.full(n, cz_slc)])  # (n, 3)
+    bz_pts = pts3 @ R.T  # (n, 3) Å⁻¹
     bz_pts -= shift_bz[None, :]
     outline_ang = bz_pts.copy()
     outline_au = bz_pts * CONV_AU_TO_ANG
@@ -196,13 +204,12 @@ def run_angle_sweep(
     concatenation of all per-angle orbits, in the order the angles were given.
     """
     all_orbits: List[Orbit] = []
-    fe = kwargs.get("fermi_energy", bxsf.fermi_energy)
+    fe = kwargs.get('fermi_energy', bxsf.fermi_energy)
     for theta, phi in angles_rad:
-        r = run_at_angle(bxsf, float(theta), float(phi),
-                         numint=numint, **kwargs)
+        r = run_at_angle(bxsf, float(theta), float(phi), numint=numint, **kwargs)
         all_orbits.extend(r.orbits)
     return SKEAFResult(
-        config_filename="",
+        config_filename='',
         bxsf_filename=bxsf.filename,
         fermi_energy=fe,
         orbits=all_orbits,
@@ -211,11 +218,13 @@ def run_angle_sweep(
     )
 
 
-def run_skeaf(config: Union[SkeafConfig, str, Path],
-              bxsf: Optional[BXSFData] = None,
-              *,
-              write_files: bool = True,
-              output_dir: Union[str, Path, None] = None) -> SKEAFResult:
+def run_skeaf(
+    config: Union[SkeafConfig, str, Path],
+    bxsf: Optional[BXSFData] = None,
+    *,
+    write_files: bool = True,
+    output_dir: Union[str, Path, None] = None,
+) -> SKEAFResult:
     """Top-level driver: run SKEAF as defined by ``config``.
 
     Parameters
@@ -237,7 +246,7 @@ def run_skeaf(config: Union[SkeafConfig, str, Path],
         bxsf = read_bxsf(config.filename)
 
     # Resolve angle list from the hvd selector.
-    if config.hvd == "r":
+    if config.hvd == 'r':
         n = max(2, int(config.num_rots))
         thetas = np.linspace(config.theta_start, config.theta_end, n)
         phis = np.linspace(config.phi_start, config.phi_end, n)
@@ -245,28 +254,40 @@ def run_skeaf(config: Union[SkeafConfig, str, Path],
         # set_field_angle returns the (theta, phi) for hvd in {a,b,c,n,r};
         # for non-'r' it produces a single angle.
         theta_one, phi_one = set_field_angle(
-            bxsf.recip_ang, config.hvd,
-            theta=config.theta, phi=config.phi,
+            bxsf.recip_ang,
+            config.hvd,
+            theta=config.theta,
+            phi=config.phi,
         )
         thetas = np.array([theta_one])
         phis = np.array([phi_one])
 
     all_orbits: List[Orbit] = []
     n_angles = len(thetas)
-    n_jobs = int(getattr(config, "n_jobs", 1) or 1)
+    n_jobs = int(getattr(config, 'n_jobs', 1) or 1)
     logger.info(
-        "run_skeaf: %d angle(s), numint=%d, hvd=%r, n_jobs=%d",
-        n_angles, config.numint, config.hvd, n_jobs,
+        'run_skeaf: %d angle(s), numint=%d, hvd=%r, n_jobs=%d',
+        n_angles,
+        config.numint,
+        config.hvd,
+        n_jobs,
     )
 
     def _one(idx_theta_phi):
         idx, theta, phi = idx_theta_phi
         logger.info(
-            "Angle %d/%d: theta=%.4f rad (%.3f deg), phi=%.4f rad (%.3f deg)",
-            idx + 1, n_angles, theta, np.degrees(theta), phi, np.degrees(phi),
+            'Angle %d/%d: theta=%.4f rad (%.3f deg), phi=%.4f rad (%.3f deg)',
+            idx + 1,
+            n_angles,
+            theta,
+            np.degrees(theta),
+            phi,
+            np.degrees(phi),
         )
         return run_at_angle(
-            bxsf, float(theta), float(phi),
+            bxsf,
+            float(theta),
+            float(phi),
             numint=config.numint,
             fermi_energy=config.fermi_energy,
             min_freq_kT=config.min_extfreq,
@@ -284,17 +305,15 @@ def run_skeaf(config: Union[SkeafConfig, str, Path],
         # Lazy import — joblib is already a hard dep but we keep the import
         # local so this module is cheap to import in single-thread mode.
         from joblib import Parallel, delayed
-        logger.info("Dispatching %d angle(s) to %d joblib workers (loky backend)",
-                    n_angles, n_jobs)
-        results = Parallel(n_jobs=n_jobs, backend="loky")(
-            delayed(_one)(j) for j in jobs
-        )
+
+        logger.info('Dispatching %d angle(s) to %d joblib workers (loky backend)', n_angles, n_jobs)
+        results = Parallel(n_jobs=n_jobs, backend='loky')(delayed(_one)(j) for j in jobs)
 
     for r in results:
         all_orbits.extend(r.orbits)
 
     result = SKEAFResult(
-        config_filename="",
+        config_filename='',
         bxsf_filename=bxsf.filename,
         fermi_energy=config.fermi_energy,
         orbits=all_orbits,
@@ -306,12 +325,12 @@ def run_skeaf(config: Union[SkeafConfig, str, Path],
     if write_files:
         out = Path(output_dir) if output_dir is not None else Path.cwd()
         out.mkdir(parents=True, exist_ok=True)
-        write_results_freqvsangle(result, out / "results_freqvsangle.out")
-        write_results_short(result, out / "results_short.out")
-        write_results_long(result, out / "results_long.out")
+        write_results_freqvsangle(result, out / 'results_freqvsangle.out')
+        write_results_short(result, out / 'results_short.out')
+        write_results_long(result, out / 'results_long.out')
         write_orbit_outlines(
             result,
-            out / "results_orbitoutlines_invAng.out",
-            out / "results_orbitoutlines_invau.out",
+            out / 'results_orbitoutlines_invAng.out',
+            out / 'results_orbitoutlines_invau.out',
         )
     return result
