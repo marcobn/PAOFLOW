@@ -119,7 +119,9 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
                     v_aux.diagonal().reshape((1, len(v_aux.diagonal()), 1)), bnd
                 )
 
-                vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
+                # vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
+                vel_degen_by_spin.append(vel_degen_by_kp[0][0])
+
                 isp_tmp.append(dvec)
             vel_degen_by_ij.append(vel_degen_by_spin)
             dir_tmp.append(isp_tmp)
@@ -127,13 +129,13 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
         dvec_list.append(dir_tmp)
 
         # get the value for d2H/d2k
-        for ispin in range(d2Hksp.shape[3]):
+        for ispin in range(tksp.shape[3]):
             for n in range(bnd):
                 M_ij[ij, :, n, ispin] = tksp[n, n, :, ispin].real
 
-        for ispin in range(d2Hksp.shape[3]):
+        for ispin in range(tksp.shape[3]):
             degen_M_by_spin = []
-            for ik in range(d2Hksp.shape[2]):
+            for ik in range(tksp.shape[2]):
                 degen_M_by_kp = []
                 for i in range(len(vel_degen[ij][ispin][ik])):
                     # degenerate subspace indices upper and lower lim
