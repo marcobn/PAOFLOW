@@ -119,4 +119,4 @@ pseudo/
 **/*.xml
 
 # MAC files
-.DS_store*
+.DS_*
