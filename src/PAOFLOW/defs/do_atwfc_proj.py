@@ -558,7 +558,8 @@ def read_QE_wfc(data_controller, ik, ispin):
         Wavefunction data with keys ``'wfc'`` (complex array), ``'npol'``,
         ``'nbnd'``, ``'ispin'``.
     """
-    arry, attr = data_controller.data_dicts() or attr['nspin'] == 4:
+    arry, attr = data_controller.data_dicts()
+    if attr['nspin'] == 1 or attr['nspin'] == 4:
         wfcfile = 'wfc{0}.dat'.format(ik + 1)
     elif attr['nspin'] == 2 and ispin == 0:
         wfcfile = 'wfcdw{0}.dat'.format(ik + 1)

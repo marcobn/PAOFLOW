@@ -43,6 +43,7 @@ def do_adaptive_smearing(data_controller, smearing, afac):
     Phys. Rev. B **75**, 195121 (2007).
     """
     from numpy.linalg import norm
+    import numpy as np
 
     arrays, attributes = data_controller.data_dicts()
 
