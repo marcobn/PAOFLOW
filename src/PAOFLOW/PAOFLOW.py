@@ -829,7 +829,7 @@ class PAOFLOW:
         ibrav=None,
         band_path=None,
         high_sym_points=None,
-        spin_orbit=False,
+        adhoc_SO=False,
         fname='bands',
         nk=500,
     ):
@@ -840,7 +840,7 @@ class PAOFLOW:
             ibrav (int): Crystal structure (following the specifications of QE)
             band_path (str): A string representing the band path to follow
             high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
-            spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
             fname (str): File name for the band output
             nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
 
@@ -865,8 +865,8 @@ class PAOFLOW:
             attr['nk'] = nk
         if band_path is not None:
             attr['band_path'] = band_path
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if 'adhoc_SO' not in attr:
+            attr['adhoc_SO'] = adhoc_SO
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
 
@@ -928,7 +928,7 @@ class PAOFLOW:
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
-        attr['do_spin_orbit'] = attr['adhoc_SO'] = True
+        attr['adhoc_SO'] = True
 
         if 'phi' not in attr:
             attr['phi'] = phi
@@ -956,6 +956,7 @@ class PAOFLOW:
 
         # Check if the pseudo potential or internal basis configuraton is implemented
         if len(arry['orb_pseudo']) == attr['natoms']:
+            nawf = attr['nawf']
             # add SOC
             do_spin_orbit_H(self.data_controller)
             # Rezising
@@ -967,11 +968,12 @@ class PAOFLOW:
             if 'Dnm' in arry:
                 Dnm_double = np.empty((attr['nawf'], attr['nawf'], 3))
             for i in range(3):
-                Dnm = arry['Dnm'][:, :, i]
-                Dnm_double[:, :, i] = la.block_diag(*[Dnm, Dnm])
+                Dnm_double[0:nawf, 0:nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[nawf : 2 * nawf, nawf : 2 * nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[0:nawf, nawf : 2 * nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[nawf : 2 * nawf, 0:nawf, i] = arry['Dnm'][:, :, i]
             arry['Dnm'] = Dnm_double
             Dnm_double = None
-            Dnm = None
 
             # for write Hamiltonian
             if 'Hks' in arry:
@@ -1164,14 +1166,14 @@ class PAOFLOW:
 
         self.report_module_time('cutting_Hamiltonian')
 
-    def spin_operator(self, spin_orbit=False, sh_l=None, sh_j=None):
+    def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """
         Calculate the Spin Operator for calculations involving spin
           Requires: None
           Yeilds: 'Sj'
 
         Arguments:
-            spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
             fnscf (string): Filename for the QE nscf inputfile, from which to read shell data
             sh (list of ints): The Shell levels
             nl (list of ints): The Shell level occupations
@@ -1181,10 +1183,8 @@ class PAOFLOW:
         """
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
-        adhoc_SO = 'adhoc_SO' in attr and attr['adhoc_SO']
-
+        if adhoc_SO:
+            attr['adhoc_SO'] = adhoc_SO
         if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
             if sh_l is None and sh_j is None:
                 sh = arrays['shells']
@@ -1213,7 +1213,7 @@ class PAOFLOW:
                     [[1.0, 0.0], [0.0, -1.0]],
                 ]
             )
-            if spin_orbit:
+            if attr['adhoc_SO']:
                 # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
                 # for spol in range(3):
                 #     if spol == 2:  # Sz
@@ -1265,7 +1265,7 @@ class PAOFLOW:
         eff_mass=False,
         Berry=False,
         spin_Hall=False,
-        spin_orbit=False,
+        adhoc_SO=False,
         spol=None,
         ipol=None,
         jpol=None,
@@ -1277,7 +1277,7 @@ class PAOFLOW:
             eff_mass (bool): If True calculate the Effective Mass Tensor
             Berry (bool): If True calculate the Berry Curvature
             spin_Hall (bool): If True calculate Spin Hall Conductivity
-            spin_orbit (bool): If True the calculation includes spin_orbit effects for topology.
+            adhoc_SO (bool): If True the calculation includes spin_orbit effects for topology.
             spol (int): Spin polarization
             ipol (int): In plane dimension 1
             jpol (int): In plane dimension 2
@@ -1297,8 +1297,8 @@ class PAOFLOW:
             attr['eff_mass'] = eff_mass
         if 'spin_Hall' not in attr:
             attr['spin_Hall'] = spin_Hall
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if 'adhoc_SO' not in attr:
+            attr['adhoc_SO'] = adhoc_SO
 
         attr['spol'] = spol
         attr['ipol'] = ipol
@@ -1310,7 +1310,7 @@ class PAOFLOW:
             quit()
 
         if spin_Hall and 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
             do_topology(self.data_controller)
@@ -2082,14 +2082,15 @@ class PAOFLOW:
             arrays['shc_proj'] = np.array(shc_proj)
 
         if 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
             if shc_proj == None:
                 P = np.eye(attr['nawf'])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
             else:
-                arrays['naw'] = orbital_array(self.data_controller)
+                if 'naw' not in arrays:
+                    arrays['naw'] = orbital_array(self.data_controller)
                 P = do_projection_operator(self.data_controller, arrays['shc_proj'])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
 
