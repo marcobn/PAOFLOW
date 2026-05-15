@@ -1215,7 +1215,7 @@ def read_VASP_wfc(data_controller, ik, ispin):
         Wavefunction data with keys ``'wfc'`` (orthonormalised coefficients),
         ``'npol'``, ``'nbnd'``, ``'ispin'``.
     """
-    arry, attr = data_controller.data_dicts() 
+    arry, attr = data_controller.data_dicts()
     igwx = arry['nplws'][ik] // 2 if attr['dftSO'] else arry['nplws'][ik]
     nbnd = attr['nbnds']
     bg = 2 * np.pi * arry['b_vectors'].T
