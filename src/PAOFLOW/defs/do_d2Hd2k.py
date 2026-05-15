@@ -119,7 +119,9 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
                     v_aux.diagonal().reshape((1, len(v_aux.diagonal()), 1)), bnd
                 )
 
-                vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
+                # vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
+                vel_degen_by_spin.append(vel_degen_by_kp)
+
                 isp_tmp.append(dvec)
             vel_degen.append(vel_degen_by_spin)
             dir_tmp.append(isp_tmp)
