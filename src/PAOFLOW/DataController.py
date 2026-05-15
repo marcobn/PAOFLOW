@@ -268,6 +268,7 @@ class DataController:
             self.data_attributes = attr = {}
 
             # Set or update attributes
+            attr['adhoc_SO'] = False
             attr['dft'] = dft
             attr['mpisize'] = self.size
             attr['savedir'] = savedir
