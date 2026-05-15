@@ -103,8 +103,8 @@ def do_band_curvature(data_controller):
 
                         degen_d2Ed2k = (
                             degen_d2Hdk[ij][ispin][ik][i]
-                            + pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul])
-                            + (pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul]))
+                            + pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul, ll:ul])
+                            + (pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul, ll:ul]))
                             .conj()
                             .T
                         )
