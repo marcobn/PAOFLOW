@@ -558,6 +558,7 @@ def get_path(ibrav, alat, cell, dk, b_vectors, band_path, special_points):
     path_file : str
         Formatted string describing the k-path for file output.
     """
+
     def kdistance(hs, p1, p2):
         g = np.dot(hs.T, hs)
         p1, p2 = np.array(p1), np.array(p2)

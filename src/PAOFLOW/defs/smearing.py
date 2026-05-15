@@ -58,7 +58,6 @@ def metpax(eig, ene, delta):
     import numpy as np
     from math import factorial
 
-    import numpy as np
     from numpy.polynomial.hermite import hermval
 
     # Methfessel and Paxton smearing
@@ -129,7 +128,6 @@ def intmetpax(eig, ene, delta):
     import numpy as np
     from math import factorial
 
-    import numpy as np
     from numpy.polynomial.hermite import hermval
     from scipy.special import erf
 
