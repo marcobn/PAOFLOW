@@ -5,6 +5,27 @@ import numpy as np
 
 
 def read_attribute(aroot, default_value, attr, atype, alen=1):
+    """Read and type-cast a single XML element value, returning a default on failure.
+
+    Parameters
+    ----------
+    aroot : xml.etree.ElementTree.Element
+        XML element in which to search.
+    default_value : any
+        Value returned when the attribute is absent or cannot be parsed.
+    attr : str
+        XPath expression identifying the element(s) to read.
+    atype : str
+        Expected data type.  Supported values: ``'logical'``, ``'integer'``,
+        ``'decimal'``, ``'array'``, ``'string_array'``, ``'string'``.
+    alen : int, optional
+        Expected number of matching elements (default ``1``).
+
+    Returns
+    -------
+    any
+        Parsed value of the element, or ``default_value`` if parsing fails.
+    """
     txt = aroot.findall(attr)
     read_value = None
     try:
@@ -50,6 +71,25 @@ def read_attribute(aroot, default_value, attr, atype, alen=1):
 
 
 def read_inputfile_xml(fpath, inputfile, data_controller):
+    """Read and parse a PAOFLOW XML input file, populating the DataController.
+
+    Parameters
+    ----------
+    fpath : str
+        Directory containing the input file.
+    inputfile : str
+        Name of the XML input file.
+    data_controller : DataController
+        Object whose ``data_arrays`` and ``data_attributes`` will be populated
+        with all calculation parameters specified in the input file.
+
+    Returns
+    -------
+    None
+        All recognised parameters from the XML file are stored in
+        ``data_controller.data_arrays`` or
+        ``data_controller.data_attributes``.
+    """
     fname = inputfile
     inputfile = os.path.join(fpath, fname)
     data_arrays = data_controller.data_arrays

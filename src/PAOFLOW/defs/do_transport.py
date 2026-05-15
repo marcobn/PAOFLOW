@@ -1,6 +1,93 @@
 def do_transport(
     data_controller, temps, ene, velkp, channels, weights, do_hall, write_to_file, save_tensors
 ):
+    """Compute electronic transport tensors from Boltzmann transport theory.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``smearing``, ``nspin``, ``dftSO``, ``omega``,
+        ``opath``.
+    temps : array_like of float
+        Sequence of temperatures in Kelvin at which transport properties
+        are evaluated.
+    ene : np.ndarray, shape ``(esize,)``
+        Energy grid (eV) at which the transport tensors are sampled.
+    velkp : np.ndarray
+        Band velocities at each k-point, passed directly to
+        :func:`do_Boltz_tensors`.
+    channels : array_like
+        Channel specification passed to :func:`do_Boltz_tensors`.
+    weights : array_like
+        k-point weights passed to :func:`do_Boltz_tensors`.
+    do_hall : bool
+        If ``True``, also compute the antisymmetric Hall coefficient tensor.
+    write_to_file : bool
+        If ``True``, write all transport tensors to formatted ``.dat`` files
+        in ``opath``.
+    save_tensors : bool
+        If ``True``, store computed tensors in ``data_controller.data_arrays``
+        and broadcast them across MPI ranks.
+
+    Returns
+    -------
+    None
+        On rank 0, writes (when ``write_to_file`` is ``True``) one file per
+        spin channel and transport quantity:
+
+        - ``sigma[smearing]_{ispin}.dat``: electrical conductivity
+          :math:`\\sigma` in S m⁻¹.
+        - ``Seebeck[smearing]_{ispin}.dat``: Seebeck coefficient
+          :math:`S` in V K⁻¹.
+        - ``kappa[smearing]_{ispin}.dat``: electron thermal conductivity
+          :math:`\\kappa` in W m⁻¹ K⁻¹.
+        - ``PF[smearing]_{ispin}.dat``: power factor
+          :math:`S^2 \\sigma` in W m⁻¹ K⁻².
+        - ``hall_trace_{ispin}.dat`` (if ``do_hall``): trace of the Hall
+          coefficient tensor :math:`R_H` in m³ C⁻¹.
+
+        When ``save_tensors`` is ``True``, adds the following keys to
+        ``data_controller.data_arrays``:
+
+        - ``sigma`` : np.ndarray, shape ``(3, 3, esize)`` — conductivity
+          tensor in S m⁻¹.
+        - ``S`` : np.ndarray, shape ``(3, 3, esize)`` — Seebeck tensor
+          in V K⁻¹.
+        - ``kappa`` : np.ndarray, shape ``(3, 3, esize)`` — thermal
+          conductivity tensor in W m⁻¹ K⁻¹.
+        - ``R_hall_trace`` : np.ndarray, shape ``(esize,)`` — averaged
+          Hall coefficient in m³ C⁻¹ (only if ``do_hall``).
+
+    Notes
+    -----
+    The transport tensors are derived from the generalised transport
+    integrals :math:`\\mathcal{L}^{(\\alpha)}` via the Boltzmann transport
+    equation in the relaxation-time approximation:
+
+    .. math::
+
+        \\sigma = e^2 \\mathcal{L}^{(0)}, \\quad
+        S = -\\frac{1}{eT} (\\mathcal{L}^{(0)})^{-1} \\mathcal{L}^{(1)}, \\quad
+        \\kappa = \\frac{1}{T}\\left[
+            \\mathcal{L}^{(2)} - T\\, \\mathcal{L}^{(1)}
+            (\\mathcal{L}^{(0)})^{-1} \\mathcal{L}^{(1)}
+        \\right]
+
+    The Hall coefficient is obtained from the antisymmetric part of the
+    Hall transport tensor :math:`\\mathcal{L}^{(0,\\text{Hall})}` as
+
+    .. math::
+
+        R_H = (\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
+
+    and reported as the average of the three even-permutation components
+    :math:`(R_{012} + R_{201} + R_{120}) / 3`.
+
+    Conversion factors: ``siemen_conv = 6.9884`` converts internal units to
+    S m⁻¹ × 10⁻²¹; ``temp_conv = 11604.525`` converts Kelvin to eV⁻¹;
+    ``hall_SI = 9.249\\times10^{-13}`` converts to m³ C⁻¹.
+    """
     from os.path import join
 
     import numpy as np

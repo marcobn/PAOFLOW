@@ -33,6 +33,58 @@ def do_rashba_edelstein(
     structure_thickness,
     write_to_file,
 ):
+    """Compute the Rashba-Edelstein effect tensor as a function of energy.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``v_k`` (shape ``(nkpnts, nawf, nawf, nspin)``),
+        ``pksp`` (shape ``(nkpnts, 3, nawf, nawf, nspin)``),
+        ``deltakp`` (adaptive smearing widths), ``E_k``,
+        ``sktxt`` (spin texture), ``ind_plot``.
+        Required attributes: ``smearing``, ``opath``.
+    ene : np.ndarray, shape ``(ne,)``
+        Energy grid (eV) at which the tensors are evaluated.
+    temperature : float
+        Electronic temperature (eV).  Use ``0`` to apply the zero-temperature
+        (delta-function) Gaussian smearing.
+    regularization : float
+        Small positive constant (SI units) added to the current denominator
+        to avoid divergences.
+    twoD_structure : bool
+        If ``True``, the tensor is rescaled by ``lattice_height / structure_thickness``
+        to convert from 3-D to 2-D units.
+    lattice_height : float
+        Out-of-plane lattice constant used for 2-D rescaling.
+    structure_thickness : float
+        Physical thickness of the 2-D slab used for 2-D rescaling.
+    write_to_file : bool
+        If ``True``, write ``kai.dat``, ``current.dat``, and
+        ``Ekai_{si}{sj}.dat`` files to ``opath``.
+
+    Returns
+    -------
+    None
+        All output is written to disk when ``write_to_file`` is ``True``.
+
+    Notes
+    -----
+    The Rashba-Edelstein (inverse spin galvanic) tensor component
+    :math:`\\chi_{ij}` and the longitudinal current tensor :math:`j_{ii}`
+    are computed via a Boltzmann-like sum over k-points and bands within
+    the energy window set by ``ind_plot``.  The effective field response is
+
+    .. math::
+
+        E^{\\rm kai}_{ij}(\\varepsilon) =
+            -\\frac{\\hbar\\,\\chi_{ij}(\\varepsilon)}
+            {j_{jj}(\\varepsilon)\\, e a_0}
+
+    Smearing is applied through either the zero-temperature Gaussian or
+    the finite-temperature derivative of the Fermi-Dirac function
+    :math:`-\\partial f / \\partial E`.
+    """
     import numpy as np
     from os.path import join
     from .smearing import gaussian

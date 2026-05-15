@@ -1,4 +1,52 @@
 def get_R_grid_fft(data_controller, nr1, nr2, nr3):
+    """Build the real-space lattice grid for FFT-based Hamiltonian operations.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays``.
+        Required array: ``a_vectors`` (shape ``(3, 3)``), the primitive
+        lattice vectors in units of the lattice constant.
+    nr1 : int
+        Number of grid points along the first lattice vector.
+    nr2 : int
+        Number of grid points along the second lattice vector.
+    nr3 : int
+        Number of grid points along the third lattice vector.
+
+    Returns
+    -------
+    None
+        Adds the following keys to ``data_controller.data_arrays``:
+
+        - ``R`` : np.ndarray, shape ``(nr1*nr2*nr3, 3)`` — Cartesian
+          coordinates of each real-space grid point in units of the lattice
+          constant, centred around the origin (i.e. components folded into
+          :math:`[-0.5, 0.5)`).
+        - ``Rfft`` : np.ndarray, shape ``(nr1, nr2, nr3, 3)`` — same vectors
+          on the 3-D grid layout, used as multiplicative factors in the FFT
+          gradient and curvature routines.
+        - ``idx`` : np.ndarray, shape ``(nr1, nr2, nr3)``, int — linear
+          index mapping the 3-D grid position to a row in ``R``.
+        - ``R_wght`` : np.ndarray, shape ``(nr1*nr2*nr3,)`` — uniform
+          weights, all set to ``1.0``.
+
+    Notes
+    -----
+    Grid coordinates are generated in reduced (crystal) units as
+    :math:`(i/nr_1, j/nr_2, k/nr_3)` and folded into :math:`[-0.5, 0.5)`
+    by subtracting 1 when the component is :math:`\\geq 0.5`.  The Cartesian
+    position is then
+
+    .. math::
+
+        \\mathbf{R}_{ijk} = \\tilde{R}_x \\, nr_1 \\, \\mathbf{a}_1
+            + \\tilde{R}_y \\, nr_2 \\, \\mathbf{a}_2
+            + \\tilde{R}_z \\, nr_3 \\, \\mathbf{a}_3
+
+    where :math:`\\tilde{R}_{x,y,z}` are the folded reduced coordinates
+    and :math:`\\mathbf{a}_{1,2,3}` are the rows of ``a_vectors``.
+    """
     import numpy as np
 
     arrays = data_controller.data_arrays

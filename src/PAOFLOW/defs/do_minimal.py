@@ -32,6 +32,46 @@ pag. 45, sec. 3.1.1 remark n. 5."""
 
 
 def do_minimal(data_controller, first_band):
+    """Remove low-energy bands from the Hamiltonian via block diagonalisation.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required array: ``Hksp`` (shape ``(nkpnts, nawf, nawf, nspin)``).
+        Required attributes: ``nawf``, ``nspin``, ``nkpnts``.
+        Also reads ``basis`` from ``data_arrays``.
+    first_band : int
+        Index of the first band to retain.  Bands with indices
+        ``0, 1, ..., first_band-1`` are projected out.
+
+    Returns
+    -------
+    None
+        Modifies ``data_controller.data_arrays`` and
+        ``data_controller.data_attributes`` in place:
+
+        - ``Hksp`` : np.ndarray, shape ``(nkpnts, nawf-first_band,
+          nawf-first_band, nspin)`` — the reduced Hamiltonian after
+          projecting out the lowest ``first_band`` bands.
+        - ``Dnm`` : np.ndarray, shape ``(nawf-first_band, nawf-first_band, 3)``
+          — position-difference matrix for the retained orbitals.
+
+        Updates attribute: ``nawf = nawf - first_band``.
+
+    Notes
+    -----
+    The block diagonalisation follows the algorithm of Cederbaum, Schirmer,
+    and Meyer (J. Phys. A **22**, 2427, 1989).  At each k-point the full
+    Hamiltonian is diagonalised, its eigenvector matrix is partitioned into
+    a :math:`(2 \\times 2)` block structure, and a similarity transformation
+    :math:`T` is constructed such that :math:`T^\\dagger H T` is block-diagonal.
+    The lower-right ``(nawf - first_band) x (nawf - first_band)`` block is
+    retained as the reduced Hamiltonian.
+
+    Small random perturbations (amplitude :math:`10^{-4}`) are added to the
+    block matrices to break accidental degeneracies before inversion.
+    """
     # this eliminates bands at the bottom
 
     arry, attr = data_controller.data_dicts()

@@ -21,21 +21,44 @@ import numpy as np
 
 
 def zero_pad(aux, nk1, nk2, nk3, nfft1, nfft2, nfft3):
-    """
-    Pad frequency domain with zeroes, such that any relationship between
-        aux[k] and aux[N-k] is preserved.
+    """Zero-pad a 3-D frequency-domain array while preserving Hermitian symmetry.
 
-    Arguments:
-        aux (ndarray): unpadded frequency domain data
-        nk1 (int): current size of aux along axis 0
-        nk2 (int): current size of aux along axis 1
-        nk3 (int): current size of aux along axis 2
-        nfft1 (int): number of zeroes to pad axis 0 by
-        nfft1 (int): number of zeroes to pad axis 1 by
-        nfft1 (int): number of zeroes to pad axis 2 by
+    Parameters
+    ----------
+    aux : np.ndarray, shape ``(nk1, nk2, nk3)``, complex
+        Input frequency-domain data (e.g. a real-space Hamiltonian slice
+        after an inverse FFT).
+    nk1 : int
+        Current size of ``aux`` along axis 0.
+    nk2 : int
+        Current size of ``aux`` along axis 1.
+    nk3 : int
+        Current size of ``aux`` along axis 2.
+    nfft1 : int
+        Number of zeros to insert along axis 0 (``nfft1 = nk1p - nk1``).
+    nfft2 : int
+        Number of zeros to insert along axis 1.
+    nfft3 : int
+        Number of zeros to insert along axis 2.
 
-    Returns:
-        auxp3 (ndarray): padded frequency domain data
+    Returns
+    -------
+    np.ndarray, shape ``(nk1+nfft1, nk2+nfft2, nk3+nfft3)``, complex
+        Zero-padded frequency-domain array.  A forward FFT of this array
+        yields an interpolated real-space representation on a finer grid.
+
+    Notes
+    -----
+    Zeros are inserted at the centre of the spectrum (around the Nyquist
+    frequency) rather than at the end, so that the relationship
+    :math:`A(-k) = A^*(k)` required for real-valued data is preserved.
+    For an even-sized dimension of length :math:`N`, the Nyquist component
+    at index :math:`N/2` is halved and its copy placed at both
+    :math:`sk` and :math:`-sk` to prevent double-counting.
+
+    This is used by :func:`do_double_grid` to perform Fourier interpolation
+    of the PAO Hamiltonian onto a denser k-grid without introducing
+    Gibbs artefacts.
     """
     # post-padding dimensions
     nk1p = nfft1 + nk1
@@ -86,12 +109,35 @@ def zero_pad(aux, nk1, nk2, nk3, nfft1, nfft2, nfft3):
 
 
 def zero_pad_float(aux, nk1, nk2, nk3, nfft1, nfft2, nfft3):
-    """Deprecated. Use zero_pad instead.
+    """Zero-pad a 3-D real-valued frequency-domain array (deprecated).
 
-    Note that this function uses the old padding algorithm, which
-        1) does not (quite) preserve symmetry of DFT for even nk
-        2) puts the zeros in the wrong spot altogether for odd nk...
-    Besides that, it only works with real numbers...
+    .. deprecated::
+        Use :func:`zero_pad` instead.  This function uses a legacy padding
+        algorithm that does not preserve Hermitian symmetry for even-sized
+        grids and inserts zeros at incorrect positions for odd-sized grids.
+        It also accepts only real-valued input.
+
+    Parameters
+    ----------
+    aux : np.ndarray, shape ``(nk1, nk2, nk3)``, float
+        Input frequency-domain data.
+    nk1 : int
+        Current size of ``aux`` along axis 0.
+    nk2 : int
+        Current size of ``aux`` along axis 1.
+    nk3 : int
+        Current size of ``aux`` along axis 2.
+    nfft1 : int
+        Number of zeros to pad along axis 0.
+    nfft2 : int
+        Number of zeros to pad along axis 1.
+    nfft3 : int
+        Number of zeros to pad along axis 2.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nk1+nfft1, nk2+nfft2, nk3+nfft3)``, float
+        Zero-padded array.
     """
     # zero padding for FFT interpolation in 3D
     nk1p = nfft1 + nk1

@@ -20,6 +20,31 @@ AUTOA = 0.529177249  # VASP A.U. to Angstrom
 
 
 def read_pswfc_from_upf(data_controller, atom):
+    """Read pseudopotential wavefunction data from a UPF file for a given atom type.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``species`` (list of ``(label, pseudo_file)`` pairs).
+        Required attributes: ``fpath`` (directory containing UPF files).
+    atom : str
+        Chemical symbol of the atomic species to match.
+
+    Returns
+    -------
+    r : np.ndarray
+        Radial grid of the pseudopotential (Bohr).
+    pswfc : dict
+        Pseudopotential wavefunctions keyed by orbital shell label.
+    pseudo : str
+        Filename of the UPF pseudopotential for the matched species.
+
+    Raises
+    ------
+    RuntimeError
+        If no species matching ``atom`` is found in ``data_arrays['species']``.
+    """
     arry, attr = data_controller.data_dicts()
 
     # loop over species
@@ -33,6 +58,28 @@ def read_pswfc_from_upf(data_controller, atom):
 
 
 def radialfft_simpson(r, f, l, qmesh, volume):
+    """Compute the radial Fourier transform using the spherical Bessel function and Simpson integration.
+
+    Parameters
+    ----------
+    r : np.ndarray
+        Radial grid (Bohr).
+    f : np.ndarray
+        Radial function values on ``r``.
+    l : int
+        Angular momentum quantum number.
+    qmesh : np.ndarray
+        Reciprocal-space grid on which the transform is evaluated.
+    volume : float
+        Unit-cell volume (Bohr³).
+
+    Returns
+    -------
+    np.ndarray, shape ``(len(qmesh),)``
+        Spherical Bessel transform of ``f`` evaluated on ``qmesh``,
+        :math:`f_l(q) = 4\\pi/\\sqrt{\\Omega}
+        \\int_0^\\infty f(r)\\,j_l(qr)\\,r\\,dr`.
+    """
     fq = np.zeros_like(qmesh)
     fact = 4.0 * np.pi / np.sqrt(volume)
 
@@ -46,6 +93,22 @@ def radialfft_simpson(r, f, l, qmesh, volume):
 
 
 def assign_jm(basis):
+    """Assign total-angular-momentum composite index ``jm`` to spin-orbit basis functions.
+
+    Parameters
+    ----------
+    basis : list of dict
+        Atomic basis function records (as built by :func:`build_pswfc_basis_all`).  Each
+        record must contain at least the key ``'l'`` (angular momentum quantum number
+        0–3).  The function expects consecutive records for each :math:`(l, m_j)` pair.
+
+    Returns
+    -------
+    None
+        Each dictionary in ``basis`` is modified in place, gaining the key
+        ``'jm'`` whose integer value encodes the :math:`(j, m_j)` pair
+        used by the spinor spherical-harmonic routines.
+    """
     ib = 0
     while ib < len(basis):
         b = basis[ib]
@@ -85,6 +148,32 @@ def assign_jm(basis):
 
 
 def build_pswfc_basis_all(data_controller):
+    """Construct the pseudopotential wavefunction basis set from UPF files for all atoms.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``atoms``, ``tau``, ``species``.
+        Required attributes: ``ecutrho``, ``omega``, ``verbose``, ``dftSO``,
+        ``fpath``.
+
+    Returns
+    -------
+    basis : list of dict
+        One record per atomic orbital with keys
+        ``atom``, ``tau``, ``l``, ``m``, ``label``, ``r``, ``wfc``,
+        ``qmesh``, ``wfc_g`` (and ``jm`` when ``dftSO`` is ``True``).
+    shells : dict
+        Maps each atomic species label to a list of angular-momentum
+        quantum numbers for its pseudopotential shells.
+
+    Notes
+    -----
+    When ``attr['dftSO']`` is ``True``, an extra spinor entry is appended
+    for :math:`l=0` shells and :func:`assign_jm` is called to set the
+    ``'jm'`` index on every basis entry.
+    """
     arry, attr = data_controller.data_dicts()
     verbose = attr['verbose']
 
@@ -181,6 +270,25 @@ def build_pswfc_basis_all(data_controller):
 
 
 def build_aewfc_basis(data_controller):
+    """Construct the all-electron wavefunction basis set from atomic orbital files.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``atoms``, ``tau``.
+        Required attributes: ``ecutrho``, ``omega``, ``verbose``, ``dftSO``,
+        ``basispath`` (directory containing per-element ``*.dat`` files).
+
+    Returns
+    -------
+    basis : list of dict
+        One record per atomic orbital with the same structure as returned
+        by :func:`build_pswfc_basis_all`.
+    shells : dict
+        Maps each atomic species label to a list of angular-momentum
+        quantum numbers.
+    """
     arry, attr = data_controller.data_dicts()
     verbose = attr['verbose']
 
@@ -279,6 +387,33 @@ def build_aewfc_basis(data_controller):
 
 
 def fft_wfc_G2R_old(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
+    """Transform a wavefunction from G-space to real space (deprecated).
+
+    .. deprecated::
+        Use :func:`fft_wfc_G2R` instead.
+
+    Parameters
+    ----------
+    wfc : np.ndarray, shape ``(igwx,)``, complex
+        Plane-wave coefficients in G-space.
+    igwx : int
+        Number of G-vectors.
+    gamma_only : bool
+        If ``True``, apply Hermitian symmetry to fill the conjugate
+        G-vector automatically.
+    mill : np.ndarray, shape ``(3, igwx)``, int
+        Miller indices for each G-vector.
+    nr1, nr2, nr3 : int
+        FFT grid dimensions.
+    omega : float
+        Unit-cell volume (Bohr³).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nr1, nr2, nr3)``, complex
+        Wavefunction on the real-space FFT grid, normalised by
+        :math:`\\sqrt{\\Omega}`.
+    """
     wfcg = np.zeros((nr1, nr2, nr3), dtype=complex)
 
     for ig in range(igwx):
@@ -291,6 +426,26 @@ def fft_wfc_G2R_old(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
 
 
 def fft_wfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
+    """Transform a wavefunction from G-space to real space via inverse FFT.
+
+    Parameters
+    ----------
+    wfc : np.ndarray, shape ``(igwx,)``, complex
+        Plane-wave coefficients in G-space.
+    gkspace : dict
+        G-space descriptor with keys ``'igwx'`` (int), ``'gamma_only'`` (bool),
+        and ``'mill'`` (ndarray, shape ``(3, igwx)``).
+    nr1, nr2, nr3 : int
+        FFT grid dimensions.
+    omega : float
+        Unit-cell volume (Bohr³).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nr1, nr2, nr3)``, complex
+        Wavefunction on the real-space FFT grid, normalised by
+        :math:`\\sqrt{\\Omega}`.
+    """
     igwx = gkspace['igwx']
     gamma_only = gkspace['gamma_only']
     mill = gkspace['mill']
@@ -306,6 +461,26 @@ def fft_wfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
 
 
 def fft_allwfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
+    """Transform multiple wavefunctions from G-space to real space via inverse FFT.
+
+    Parameters
+    ----------
+    wfc : np.ndarray, complex
+        Plane-wave coefficients.  Shape ``(nwx, igwx)`` for a single
+        spin-component set, or ``(nox, nwx, igwx)`` for spinor bands.
+    gkspace : dict
+        G-space descriptor with keys ``'igwx'``, ``'gamma_only'``, ``'mill'``.
+    nr1, nr2, nr3 : int
+        FFT grid dimensions.
+    omega : float
+        Unit-cell volume (Bohr³).
+
+    Returns
+    -------
+    np.ndarray, complex
+        Wavefunctions on the real-space FFT grid, shape
+        ``(nwx, nr1, nr2, nr3)`` or ``(nox, nr1, nr2, nr3)``.
+    """
     igwx = gkspace['igwx']
     gamma_only = gkspace['gamma_only']
     mill = gkspace['mill']
@@ -334,6 +509,24 @@ def fft_allwfc_G2R(wfc, gkspace, nr1, nr2, nr3, omega):
 
 
 def fft_wfc_R2G(wfc, igwx, mill, omega):
+    """Transform a wavefunction from real space to G-space via forward FFT.
+
+    Parameters
+    ----------
+    wfc : np.ndarray, complex
+        Wavefunction on the real-space FFT grid.
+    igwx : int
+        Number of G-vectors.
+    mill : np.ndarray, shape ``(3, igwx)``, int
+        Miller indices for each G-vector.
+    omega : float
+        Unit-cell volume (Bohr³).
+
+    Returns
+    -------
+    np.ndarray, shape ``(igwx,)``, complex
+        Plane-wave coefficients normalised by :math:`1/\\sqrt{\\Omega}`.
+    """
     tmp = FFT.fftn(wfc) / np.sqrt(omega)
 
     wfcg = np.zeros((igwx,), dtype=complex)
@@ -344,9 +537,28 @@ def fft_wfc_R2G(wfc, igwx, mill, omega):
 
 
 def read_QE_wfc(data_controller, ik, ispin):
-    arry, attr = data_controller.data_dicts()
+    """Read Quantum ESPRESSO wavefunction coefficients from a Fortran binary ``wfc*.dat`` file.
 
-    if attr['nspin'] == 1 or attr['nspin'] == 4:
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``nspin``, ``fpath``.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index (0 = down, 1 = up for ``nspin = 2``).
+
+    Returns
+    -------
+    gkspace : dict
+        G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
+        ``'bg'``, ``'gamma_only'``.
+    wfc : dict
+        Wavefunction data with keys ``'wfc'`` (complex array), ``'npol'``,
+        ``'nbnd'``, ``'ispin'``.
+    """
+    arry, attr = data_controller.data_dicts() or attr['nspin'] == 4:
         wfcfile = 'wfc{0}.dat'.format(ik + 1)
     elif attr['nspin'] == 2 and ispin == 0:
         wfcfile = 'wfcdw{0}.dat'.format(ik + 1)
@@ -397,6 +609,20 @@ def read_QE_wfc(data_controller, ik, ispin):
 
 
 def calc_ylmg(k_plus_G, q):
+    """Compute real cubic harmonics for the k+G vectors up to :math:`l=3`.
+
+    Parameters
+    ----------
+    k_plus_G : np.ndarray, shape ``(npw, 3)``
+        Cartesian k+G vectors.
+    q : np.ndarray, shape ``(npw,)``
+        Magnitudes of the k+G vectors (used to normalise the direction).
+
+    Returns
+    -------
+    np.ndarray, shape ``(npw, 16)``, float
+        Cubic harmonics for :math:`l = 0, 1, 2, 3` (1+3+5+7 = 16 components).
+    """
     # cubic harmonics: build the angular part, no spin orbit
     kGx = np.zeros_like(q)
     kGy = np.zeros_like(q)
@@ -444,6 +670,19 @@ def calc_ylmg(k_plus_G, q):
 
 
 def calc_ylmg_complex_0(ylmg):
+    """Convert real cubic harmonics to complex spherical harmonics.
+
+    Parameters
+    ----------
+    ylmg : np.ndarray, shape ``(npw, 16)``
+        Real cubic harmonics from :func:`calc_ylmg`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(npw, nylm)``, complex128
+        Complex spherical harmonics :math:`Y_l^m` with Condon-Shortley
+        phase convention.
+    """
     # complex spherical harmonics
     ylmgc = np.zeros_like(ylmg, np.complex128)
 
@@ -493,6 +732,20 @@ def calc_ylmg_complex_0(ylmg):
 
 
 def calc_ylmg_so(ylmgc):
+    """Build spinor spherical harmonics from complex spherical harmonics.
+
+    Parameters
+    ----------
+    ylmgc : np.ndarray, shape ``(npw, nylm)``, complex128
+        Complex spherical harmonics from :func:`calc_ylmg_complex_0`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*npw, 2*nylm)``, complex128
+        Spinor spherical harmonics :math:`\\chi_{j,m_j}^{l}` organised as
+        upper (indices ``0:npw``) and lower (indices ``npw:2*npw``) spinor
+        components for all :math:`(j, m_j)` channels.
+    """
     # spinor spherical harmonics
     npw = ylmgc.shape[0]
     nylm = ylmgc.shape[1]
@@ -600,6 +853,27 @@ def calc_ylmg_so(ylmgc):
 
 
 def calc_atwfc_k(basis, gkspace, dftSO=False):
+    """Evaluate atomic wavefunctions in G-space at a given k-point.
+
+    Parameters
+    ----------
+    basis : list of dict
+        Atomic basis function records (from :func:`build_pswfc_basis_all` or
+        :func:`build_aewfc_basis`).  Each record must contain at least
+        ``'atom'``, ``'tau'``, ``'l'``, ``'m'``, ``'qmesh'``, ``'wfc_g'``
+        (and ``'jm'`` when ``dftSO`` is ``True``).
+    gkspace : dict
+        G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
+        ``'bg'``, ``'gamma_only'``.
+    dftSO : bool, optional
+        If ``True``, generate spinor atomic wavefunctions (default ``False``).
+
+    Returns
+    -------
+    np.ndarray, complex
+        Atomic wavefunctions at the k-point, shape ``(natwfc, igwx)``
+        (scalar) or ``(natwfc, 2*igwx)`` (spinor).
+    """
     # construct atomic wfc at k
     atwfc_k = []
     natwfc = len(basis)
@@ -655,6 +929,24 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
 
 
 def ortho_atwfc_k(atwfc_k):
+    """Orthonormalise atomic wavefunctions at a k-point via symmetric orthogonalisation.
+
+    Parameters
+    ----------
+    atwfc_k : np.ndarray, shape ``(natwfc, igwx)``, complex
+        Atomic wavefunctions from :func:`calc_atwfc_k`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(natwfc, igwx)``, complex
+        Orthonormalised wavefunctions satisfying
+        :math:`\\langle i | j \\rangle = \\delta_{ij}`.
+
+    Raises
+    ------
+    RuntimeError
+        If the orthonormalisation residual exceeds ``1e-4``.
+    """
     # orthonormalize atwfcs
     natwfc = atwfc_k.shape[0]
     ovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
@@ -691,8 +983,27 @@ def ortho_atwfc_k(atwfc_k):
 
 
 def calc_proj_k(data_controller, basis, ik, ispin):
+    """Compute projection matrix of crystal wavefunctions onto atomic basis at a k-point.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``dft`` (``'QE'`` or ``'VASP'``), ``dftSO``.
+    basis : list of dict
+        Atomic basis functions.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnd, natwfc)``, complex
+        Projections :math:`\\langle\\psi_{n\\mathbf{k}} | \\phi_i\\rangle`
+        for all bands and basis functions.
+    """
     arry, attr = data_controller.data_dicts()
-    if attr['dft'] == 'QE':
         gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
     else:
         read_WAVECAR_header(data_controller)
@@ -704,6 +1015,26 @@ def calc_proj_k(data_controller, basis, ik, ispin):
 
 
 def calc_gkspace(data_controller, ik, gamma_only=False):
+    """Compute the G-vector set and k+G space parameters for a given k-point.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``a_vectors``, ``b_vectors``, ``kgrid``.
+        Required attributes: ``ecutrho``, ``ecutwfc``, ``alat``.
+    ik : int
+        Zero-based k-point index.
+    gamma_only : bool, optional
+        If ``True``, use the :math:`\\Gamma`-only symmetry (default ``False``).
+
+    Returns
+    -------
+    dict
+        G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
+        ``'bg'``, ``'gamma_only'``.
+        Also stored in ``data_arrays['gkspace']``.
+    """
     arry, attr = data_controller.data_dicts()
     # calculate sphere of Miller indeces for k + G
     gcutm = attr['ecutrho'] / (2 * np.pi / attr['alat']) ** 2
@@ -751,6 +1082,28 @@ def calc_gkspace(data_controller, ik, gamma_only=False):
 ## Added functions for VASP interface - ZH
 # Credit to Qijing Zheng, https://github.com/QijingZheng/VaspBandUnfolding
 def read_WAVECAR_header(data_controller):
+    """Read and validate the VASP WAVECAR file header.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``nspin``, ``fpath``.
+
+    Returns
+    -------
+    None
+        Stores the following in ``data_attributes``:
+
+        - ``recl`` : int — record length of the WAVECAR file.
+        - ``wfc_prec`` : dtype — ``np.complex64`` or ``np.complex128``.
+        - ``ngrid`` : np.ndarray, shape ``(3,)`` — FFT grid dimensions.
+
+        Stores in ``data_arrays``:
+
+        - ``nplws`` : np.ndarray, shape ``(nkpts,)`` — number of plane waves
+          per k-point.
+    """
     arry, attr = data_controller.data_dicts()
     try:
         wfcfile = open(os.path.join(attr['fpath'], 'WAVECAR'), 'rb')
@@ -807,6 +1160,27 @@ def read_WAVECAR_header(data_controller):
 
 
 def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
+    """Read plane-wave coefficients for one band from the VASP WAVECAR file.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``nkpnts``, ``nbnds``, ``recl``, ``wfc_prec``,
+        ``fpath``.
+        Required arrays: ``nplws``.
+    ispin : int, optional
+        Spin index (default ``0``).
+    ikpt : int, optional
+        Zero-based k-point index (default ``0``).
+    iband : int, optional
+        Zero-based band index (default ``0``).
+
+    Returns
+    -------
+    np.ndarray, complex
+        Plane-wave coefficients for the specified state.
+    """
     # Read the planewave coefficients
     arry, attr = data_controller.data_dicts()
     rec = 3 + ispin * attr['nkpnts'] * (attr['nbnds'] + 1) + ikpt * (attr['nbnds'] + 1) + iband
@@ -817,8 +1191,29 @@ def readBandCoeff(data_controller, ispin=0, ikpt=0, iband=0):
 
 
 def read_VASP_wfc(data_controller, ik, ispin):
-    arry, attr = data_controller.data_dicts()
-    igwx = arry['nplws'][ik] // 2 if attr['dftSO'] else arry['nplws'][ik]
+    """Read VASP WAVECAR wavefunction and return orthonormalised coefficients with k+G info.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``dftSO``, ``nbnds``, ``nspin``, ``fpath``.
+        Required arrays: ``nplws``, ``b_vectors``, ``kpnts``.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index.
+
+    Returns
+    -------
+    gkspace : dict
+        G-space descriptor with keys ``'xk'``, ``'igwx'``, ``'mill'``,
+        ``'bg'``, ``'gamma_only'``.
+    wfc : dict
+        Wavefunction data with keys ``'wfc'`` (orthonormalised coefficients),
+        ``'npol'``, ``'nbnd'``, ``'ispin'``.
+    """
+    arry, attr = data_controller.data_dicts() // 2 if attr['dftSO'] else arry['nplws'][ik]
     nbnd = attr['nbnds']
     bg = 2 * np.pi * arry['b_vectors'].T
     xk = 2 * np.pi * arry['kpnts'][ik, :]
@@ -849,6 +1244,28 @@ def read_VASP_wfc(data_controller, ik, ispin):
 
 
 def calc_gvec_VASP(data_controller, ikpt=0):
+    """Compute the G-vector set for a VASP k-point satisfying the energy cutoff.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``ecutwfc``, ``dftSO``.
+        Required arrays: ``kpnts``, ``nplws``, ``b_vectors``, ``ngrid``.
+    ikpt : int, optional
+        Zero-based k-point index (default ``0``).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nplw, 3)``, int
+        Miller indices of the G-vectors satisfying
+        :math:`|\\mathbf{k}+\\mathbf{G}|^2/2 < E_{\\rm cut}`.
+
+    Raises
+    ------
+    ValueError
+        If the number of computed G-vectors does not match ``nplws[ikpt]``.
+    """
     arry, attr = data_controller.data_dicts()
     kvec = arry['kpnts'][ikpt]
     nplw = arry['nplws'][ikpt]

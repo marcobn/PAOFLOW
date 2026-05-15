@@ -8,6 +8,47 @@ rank = comm.Get_rank()
 
 
 def E_Fermi(Hksp, data_controller, parallel=False):
+    """Find the Fermi energy using a bisection bracketing algorithm.
+
+    Parameters
+    ----------
+    Hksp : np.ndarray, shape ``(nawf, nawf, snktot, nspin)`` or ``(nawf, nawf, nk1, nk2, nk3, nspin)``
+        k-space Hamiltonian distributed over MPI pools.  The array is
+        reshaped internally to ``(nawf, nawf, snktot, nspin)`` before
+        diagonalisation.
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``insulator``, ``nkpnts``, ``bnd``, ``nelec``,
+        ``dftSO``.
+    parallel : bool, optional
+        If ``True``, an MPI reduction is performed across ranks to compute
+        the global Fermi energy.  Default is ``False``.
+
+    Returns
+    -------
+    float
+        Fermi energy in eV.
+
+    Notes
+    -----
+    For insulators the Fermi energy is set to the maximum eigenvalue of the
+    highest occupied band, accounting for spin–orbit coupling via ``dftSO``.
+
+    For metals, eigenvalues at each local k-point are first computed by
+    diagonalising ``Hksp``.  The Fermi energy is then located by bisection:
+    upper and lower bounds :math:`E_{\\text{up}}` and :math:`E_{\\text{lw}}` are
+    established such that the integrated occupation at :math:`E_{\\text{up}}`
+    exceeds ``nelec`` and at :math:`E_{\\text{lw}}` is below ``nelec``.  The
+    midpoint is accepted when
+
+    .. math::
+
+        \\left| N(E_F) - N_{\\text{elec}} \\right| < \\epsilon
+
+    where :math:`N(E)` is the smeared electron count computed by
+    :func:`intmetpax` with a fixed Gaussian broadening of 0.01 eV, and
+    :math:`\\epsilon = 10^{-10}`.  A maximum of 100 iterations is performed.
+    """
     # Calculate the Fermi energy using a braketing algorithm
 
     arry, attr = data_controller.data_dicts()

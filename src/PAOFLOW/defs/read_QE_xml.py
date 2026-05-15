@@ -5,13 +5,21 @@ from mpi4py import MPI
 
 
 def parse_qe_data_file_schema(data_controller, fname):
-    """
-    Parse the data_file_schema.xml file produced by Quantum Espresso.
-    Populated the DataController object with all necessary information.
+    """Parse the ``data-file-schema.xml`` file produced by Quantum ESPRESSO (≥7.0).
 
-    Arguments:
-      data_controller (DataController): Data controller to populate
-      fname (str): Path and name of the xml file.
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``verbose``.
+    fname : str
+        Full path to the ``data-file-schema.xml`` file.
+
+    Returns
+    -------
+    None
+        Populates ``data_arrays`` and ``data_attributes`` with all structural,
+        electronic, and k-grid information extracted from the XML file.
     """
     import re
 
@@ -218,13 +226,23 @@ def parse_qe_data_file_schema(data_controller, fname):
 
 
 def parse_qe_data_file(data_controller, fpath, fname):
-    """
-    Parse the data_file.xml file produced by earlier versions of Quantum Espresso.
-    Populated the DataController object with all necessay information.
+    """Parse the legacy ``data-file.xml`` produced by Quantum ESPRESSO (≤6.x).
 
-    Arugments:
-      data_controller (DataController): Data controller to populate
-      fname (str): Path and name of the xml file.
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``verbose``.
+    fpath : str
+        Directory containing the XML file.
+    fname : str
+        Name of the XML file (relative to ``fpath``).
+
+    Returns
+    -------
+    None
+        Populates ``data_arrays`` and ``data_attributes`` with structural,
+        electronic, and k-grid information extracted from the legacy XML format.
     """
     import re
     from os.path import join
@@ -405,13 +423,21 @@ def parse_qe_data_file(data_controller, fpath, fname):
 
 
 def parse_qe_atomic_proj(data_controller, fname):
-    """
-    Parse the atomic_proj.xml file produced by Quantum Espresso.
-    Populated the DataController object with all necessay information.
+    """Parse the ``atomic_proj.xml`` file produced by Quantum ESPRESSO ``projwfc.x``.
 
-    Arugments:
-      data_controller (DataController): Data controller to populate
-      fname (str): Path and name of the xml file.
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``verbose``, ``save_overlaps``, ``qe_version``.
+    fname : str
+        Full path to the ``atomic_proj.xml`` file.
+
+    Returns
+    -------
+    None
+        Populates ``data_arrays`` and ``data_attributes`` with projection
+        matrices, overlap matrices, eigenvalues, and k-grid weights.
     """
 
     arry, attr = data_controller.data_dicts()

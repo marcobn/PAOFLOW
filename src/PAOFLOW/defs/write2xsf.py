@@ -3,6 +3,42 @@ from mendeleev import element
 
 
 def write2xsf(data_controller, filename, data=None):
+    """Write crystal structure and optional 3-D volumetric data in XSF format.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``atoms`` (list of element symbols), ``a_vectors``
+        (shape ``(3, 3)`` in units of ``alat``), ``tau``
+        (shape ``(natoms, 3)`` in Bohr radii).
+        Required attribute: ``alat`` (lattice constant in Bohr radii).
+    filename : str
+        Absolute or relative path of the XSF output file.
+    data : Optional[np.ndarray]
+        Volumetric scalar field on a real-space grid of shape
+        ``(nr1, nr2, nr2)``.  If ``None``, only the crystal structure
+        block is written.  Complex arrays are converted to
+        :math:`|\\psi|^2` before writing.
+
+    Returns
+    -------
+    None
+        Creates (or overwrites) the file at ``filename``.
+
+    Notes
+    -----
+    The file is written in the XCrySDen Structure Format (XSF), which is
+    supported by XCrySDen and VESTA for structure and charge-density
+    visualisation.  The structure block includes primitive cell vectors
+    (in Bohr radii) and atomic positions with atomic numbers obtained from
+    the ``mendeleev`` library.
+
+    When ``data`` is provided, a ``BEGIN_BLOCK_DATAGRID_3D`` section is
+    appended.  The grid is extended by one point in each direction (periodic
+    boundary) to satisfy XSF convention, i.e. the grid size written is
+    ``(nr1+1, nr2+1, nr3+1)``.
+    """
     arry, attr = data_controller.data_dicts()
 
     fileobj = open(filename, 'w')

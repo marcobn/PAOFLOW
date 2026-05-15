@@ -1,5 +1,47 @@
 def do_adaptive_smearing(data_controller, smearing, afac):
-    import numpy as np
+    """Compute adaptive smearing widths for each k-point and band.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required array: ``pksp`` (shape ``(npks, 3, nawf, nawf, nspin)``) —
+        the momentum matrix elements in the Bloch eigenstate basis.
+        Required attributes: ``nawf``, ``nspin``, ``nkpnts``, ``omega``.
+    smearing : str
+        Smearing method identifier.  Pass ``'m-p'`` for Methfessel–Paxton;
+        any other value selects the default prefactor.
+    afac : Optional[float]
+        Adaptive smearing prefactor :math:`\\alpha`.  If ``None``, defaults
+        to ``1.0`` for ``'m-p'`` smearing and ``0.7`` otherwise.
+
+    Returns
+    -------
+    None
+        Adds the following keys to ``data_controller.data_arrays``:
+
+        - ``deltakp`` : np.ndarray, shape ``(npks, nawf, nspin)`` —
+          band-resolved adaptive smearing widths
+          :math:`\\sigma_{nk} = \\alpha \\, |\\nabla_k E_n| \\, \\delta k`.
+        - ``deltakp2`` : np.ndarray, shape ``(npks, nawf, nawf, nspin)`` —
+          interband adaptive smearing widths proportional to
+          :math:`|\\nabla_k E_n - \\nabla_k E_m|`.
+
+    Notes
+    -----
+    The mean k-point spacing is estimated as
+
+    .. math::
+
+        \\delta k = \\left(\\frac{8\\pi^3}{\\Omega \\, N_k}\\right)^{1/3}
+
+    where :math:`\\Omega` is the unit-cell volume and :math:`N_k` is the total
+    number of k-points.  The diagonal elements of ``pksp`` (proportional to
+    the band velocities) are used as a proxy for :math:`\\nabla_k E_n`.
+
+    Reference: J. R. Yates, X. Wang, D. Vanderbilt, I. Souza,
+    Phys. Rev. B **75**, 195121 (2007).
+    """
     from numpy.linalg import norm
 
     arrays, attributes = data_controller.data_dicts()

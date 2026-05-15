@@ -15,6 +15,23 @@ def _fd_criterion_gen(threshold):
 
 
 def FD(ene, mu, temp):
+    """Evaluate the Fermi-Dirac occupation function.
+
+    Parameters
+    ----------
+    ene : np.ndarray
+        Energy grid (eV).
+    mu : float
+        Chemical potential (eV).
+    temp : float
+        Temperature in Kelvin.  When ``0.0``, the step function is used.
+
+    Returns
+    -------
+    np.ndarray
+        Fermi-Dirac occupation :math:`f(\\varepsilon) = [e^{(\\varepsilon-\\mu)/k_BT}+1]^{-1}`
+        clamped to ``[0, 1]``.
+    """
     _FD_THRESHOLD = 1e-8
     _FD_XMAX = scipy.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD), 0.0)
 
@@ -32,6 +49,30 @@ def FD(ene, mu, temp):
 
 
 def calc_N(data_controller, ene, dos, mu, temp, dosweight=2.0):
+    """Integrate the DOS times the Fermi-Dirac function to get the electron count.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_attributes``.
+        Required attribute: ``core_electrons`` (int).
+    ene : np.ndarray
+        Energy grid (eV).
+    dos : np.ndarray, shape ``(ne,)``
+        Density of states on ``ene``.
+    mu : float
+        Trial chemical potential (eV).
+    temp : float
+        Temperature (K).
+    dosweight : float, optional
+        Spin degeneracy weight applied to the integral (default ``2.0``).
+
+    Returns
+    -------
+    float
+        Electron count minus ``core_electrons`` minus the integrated DOS
+        (negative of the total electron number minus ``core_electrons``).
+    """
     arry, attr = data_controller.data_dicts()
     core_electrons = attr['core_electrons']
 
@@ -47,6 +88,41 @@ def calc_N(data_controller, ene, dos, mu, temp, dosweight=2.0):
 def solve_for_mu(
     data_controller, ene, dos, N0, temp, refine=False, try_center=False, dosweight=2.0
 ):
+    """Find the chemical potential that yields a target electron count.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Passed directly to :func:`calc_N`.
+    ene : np.ndarray
+        Energy grid (eV).
+    dos : np.ndarray, shape ``(ne,)``
+        Density of states on ``ene``.
+    N0 : float
+        Target electron count (including doping offset).
+    temp : float
+        Temperature (K).
+    refine : bool, optional
+        When ``True``, perform a bounded scalar minimisation of
+        :math:`|N(\\mu) - N_0|` around the best grid point (default ``False``).
+    try_center : bool, optional
+        When ``True`` and ``mu`` falls inside a band gap, try to place
+        :math:`\\mu` at the gap centre (default ``False``).
+    dosweight : float, optional
+        Spin degeneracy weight forwarded to :func:`calc_N` (default ``2.0``).
+
+    Returns
+    -------
+    float
+        Chemical potential :math:`\\mu` (eV) that satisfies :math:`N(\\mu) = N_0`
+        (computed on rank 0 only; all other ranks return ``None``).
+
+    Notes
+    -----
+    The function first scans the energy grid for the point that minimises
+    :math:`|N(\\mu) - N_0|`, then optionally refines using
+    ``scipy.optimize.minimize_scalar`` with ``method='bounded'``.
+    """
     _FD_THRESHOLD_GAP = 1e-3
     _FD_XMAX_GAP = scipy.optimize.newton(_fd_criterion_gen(_FD_THRESHOLD_GAP), 0.0)
 
@@ -112,6 +188,39 @@ def solve_for_mu(
 
 
 def do_doping(data_controller, temps, ene, fname):
+    """Compute the temperature-dependent chemical potential for a doped system.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``dos`` (fixed-smearing DOS) or ``dosdk``
+        (adaptive-smearing DOS), selected by ``attr['smearing']``.
+        Required attributes: ``smearing``, ``doping_conc``, ``nelec``,
+        ``omega``.
+    temps : array_like of float
+        Temperatures in Kelvin at which :math:`\\mu(T)` is evaluated.
+    ene : np.ndarray
+        Energy grid (eV) over which the DOS is defined.
+    fname : str
+        Base name for the output file.  The sign and magnitude of
+        ``doping_conc`` are appended to produce e.g. ``fname_n1e18.dat``.
+
+    Returns
+    -------
+    None
+        Writes a two-column file ``{fname}{sign}{|doping|}.dat`` via
+        :meth:`DataController.write_file_row_col` with columns
+        temperature and :math:`\\mu(T)`.
+
+    Notes
+    -----
+    The target electron number is
+    :math:`N = N_{\\rm elec} - n_d \\Omega`
+    where :math:`\\Omega` is the unit-cell volume and :math:`n_d` is the
+    carrier concentration in :math:`\\text{cm}^{-3}`.  For each temperature
+    :func:`solve_for_mu` is called on rank 0 and the result broadcast.
+    """
     arry, attr = data_controller.data_dicts()
     omega_conv = 1.481847093e-25
 

@@ -1,4 +1,10 @@
 def header():
+    """Print the PAOFLOW ASCII banner to standard output.
+
+    Returns
+    -------
+    None
+    """
     print('')
     print(
         '#############################################################################################'

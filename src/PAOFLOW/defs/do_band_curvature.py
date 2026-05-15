@@ -1,14 +1,46 @@
 def do_band_curvature(data_controller):
-    """
-    Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
-    Requires 'Hksp' and 'pksp'
-    Yields 'd2Hksp'
+    """Compute the full band curvature (inverse effective mass) tensor :math:`d^2E/dk_i dk_j`.
 
-    Arguments:
-        None
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``Hksp``, ``Rfft``, ``E_k``, ``dHksp``, ``v_k``, ``degen``.
+        Required attributes: ``bnd``, ``nawf``, ``alat``, ``npool``.
 
-    Returns:
-        None
+    Returns
+    -------
+    None
+        Adds the following key to ``data_controller.data_arrays``:
+
+        - ``d2Ed2k`` : np.ndarray, shape ``(6, nkpnts, bnd, nspin)`` —
+          the six unique components of the curvature tensor (in units
+          of :math:`\\hbar^2 / (\\text{eV} \\cdot \\text{Bohr}^2)`).
+          Component ordering: ``xx, yy, zz, xy, xz, yz``.
+
+    Notes
+    -----
+    The curvature tensor is computed in two steps.
+
+    First, the diagonal matrix elements of :math:`d^2H/dk_i dk_j` in the
+    Bloch eigenstate basis are obtained by calling :func:`do_d2Hd2k_ij`.
+
+    Second, the second-order energy correction due to off-diagonal
+    (inter-band) coupling is added via second-order perturbation theory:
+
+    .. math::
+
+        \\frac{d^2 E_n}{dk_i dk_j} = \\langle n | \\partial^2_{k_i k_j} H | n \\rangle
+            + \\sum_{m \\neq n}
+              \\frac{\\langle n | \\partial_{k_i} H | m \\rangle
+                     \\langle m | \\partial_{k_j} H | n \\rangle
+                     + (i \\leftrightarrow j)}
+                    {E_n - E_m}
+
+    Degenerate subspaces are handled by :func:`perturb_split` and the
+    modified eigenvector set returned in ``dvec_list`` is reused here.
+    Pairs with :math:`|E_n - E_m| < 10^{-5}` eV are excluded to avoid
+    numerical divergences.
     """
 
     import numpy as np

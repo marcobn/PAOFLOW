@@ -4,6 +4,41 @@ import numpy as np
 
 
 def do_spin_orbit_H(data_controller):
+    """Construct the tight-binding spin-orbit Hamiltonian in real space.
+
+    Follows the formalism of Abate and Asdente, *Phys. Rev.* **140**, A1303
+    (1965).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
+        ``naw``, ``orb_pseudo``, ``lambda_p``, ``lambda_d``.
+        Required attributes: ``natoms``, ``theta``, ``phi``.
+
+    Returns
+    -------
+    None
+        Modifies ``data_arrays`` in place:
+
+        - ``HRs`` : replaced by the spin-orbit-coupled Hamiltonian of shape
+          ``(2*nawf, 2*nawf, nk1, nk2, nk3, 1)``.
+        - ``naw`` : extended by appending a copy of itself.
+
+        Updates ``data_attributes``:
+
+        - ``nawf`` : set to ``2 * nawf``.
+
+    Notes
+    -----
+    For a non-magnetic system the spin-degenerate block is
+    :math:`H_{\\uparrow\\uparrow} = H_{\\downarrow\\downarrow} = H_0`.  For
+    a magnetic system the two spin channels are taken from the two spin
+    components of ``HRs``.  The SOC term is added only at the
+    :math:`\\mathbf{R}=(0,0,0)` site; p- and d-channel couplings are weighted
+    by ``lambda_p`` and ``lambda_d``, respectively.
+    """
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 
     arry, attr = data_controller.data_dicts()
@@ -94,6 +129,25 @@ def do_spin_orbit_H(data_controller):
 
 ################### PSEUDOPOTENTIAL PS ##############################33
 def soc_p_ps(theta, phi, norb):
+    """Build the p-orbital spin-orbit coupling matrix for the **PS** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        Spin-orbit coupling matrix in the
+        :math:`|\\uparrow\\rangle \\oplus |\\downarrow\\rangle` basis.  The
+        p-state block occupies indices 0–2 (up) and ``norb``–``norb+2``
+        (down).
+    """
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
     sTheta, sPhi = np.sin(theta), np.sin(phi)
@@ -131,6 +185,23 @@ def soc_p_ps(theta, phi, norb):
 
 ################## PSEUDOPOTENTIAL SP ##############################
 def soc_p_sp(theta, phi, norb):
+    """Build the p-orbital spin-orbit coupling matrix for the **SP** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        Spin-orbit coupling matrix; the p-state block occupies indices 1–3
+        (s precedes p in the SP basis).
+    """
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
     sTheta, sPhi = np.sin(theta), np.sin(phi)
@@ -168,6 +239,22 @@ def soc_p_sp(theta, phi, norb):
 
 ################## PSEUDOPOTENTIAL SPD ##############################
 def soc_p_spd(theta, phi, norb):
+    """Build the p-orbital spin-orbit coupling matrix for the **SPD** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        p-channel spin-orbit coupling matrix in the SPD orbital ordering.
+    """
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
     sTheta, sPhi = np.sin(theta), np.sin(phi)
@@ -201,6 +288,23 @@ def soc_p_spd(theta, phi, norb):
 
 
 def soc_d_spd(theta, phi, norb):
+    """Build the d-orbital spin-orbit coupling matrix for the **SPD** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        d-channel spin-orbit coupling matrix in the SPD orbital ordering
+        (d-states occupy indices 4–8).
+    """
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
     sTheta, sPhi = np.sin(theta), np.sin(phi)
@@ -269,6 +373,27 @@ def soc_d_spd(theta, phi, norb):
 
 ################## PSEUDOPOTENTIAL SSPD ##############################
 def soc_p_sspd(theta, phi, norb):
+    """Build the p-orbital spin-orbit coupling matrix for the **SSPD** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        p-channel spin-orbit coupling matrix in the SSPD orbital ordering
+        (p-states occupy indices 2–4).
+
+    Notes
+    -----
+    Orbital layout is hardcoded to the s, s*, p, d basis.
+    """
     # Hardcoded to s,p,d. This must change latter.
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
@@ -303,6 +428,27 @@ def soc_p_sspd(theta, phi, norb):
 
 
 def soc_d_sspd(theta, phi, norb):
+    """Build the d-orbital spin-orbit coupling matrix for the **SSPD** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        d-channel spin-orbit coupling matrix in the SSPD orbital ordering
+        (d-states occupy indices 5–9).
+
+    Notes
+    -----
+    Orbital layout is hardcoded to the s, s*, p, d basis.
+    """
     # Hardcoded to s,p,d. This must change latter.
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
@@ -373,6 +519,23 @@ def soc_d_sspd(theta, phi, norb):
 
 ################## PSEUDOPOTENTIAL SSPPD ##############################
 def soc_p_ssppd(theta, phi, norb):
+    """Build the p-orbital spin-orbit coupling matrix for the **SSPPD** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        p-channel spin-orbit coupling matrix in the SSPPD orbital ordering
+        (p-states occupy indices 5–7).
+    """
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
     sTheta, sPhi = np.sin(theta), np.sin(phi)
@@ -406,6 +569,22 @@ def soc_p_ssppd(theta, phi, norb):
 
 
 def soc_d_ssppd(theta, phi, norb):
+    """Build the d-orbital spin-orbit coupling matrix for the **SSPPD** pseudopotential type.
+
+    Parameters
+    ----------
+    theta : float
+        Polar angle (radians) of the quantisation axis.
+    phi : float
+        Azimuthal angle (radians) of the quantisation axis.
+    norb : int
+        Total number of orbitals per atom (spin-up block size).
+
+    Returns
+    -------
+    np.ndarray, shape ``(2*norb, 2*norb)``, complex
+        d-channel spin-orbit coupling matrix in the SSPPD orbital ordering.
+    """
     HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
 
     sTheta, sPhi = np.sin(theta), np.sin(phi)

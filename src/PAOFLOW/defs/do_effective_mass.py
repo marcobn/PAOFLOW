@@ -1,4 +1,49 @@
 def do_effective_mass(data_controller):
+    """Compute effective mass tensors and write them to a formatted data file.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``d2Ed2k`` (shape ``(6, nkpnts, bnd, nspin)``),
+        ``E_k`` (shape ``(nkpnts, bnd, nspin)``).
+        Required attributes: ``bnd``, ``nspin``, ``nk1``, ``nk2``, ``nk3``,
+        ``npool``, ``opath``.
+
+    Returns
+    -------
+    None
+        Writes one text file per spin channel to ``{opath}/effective_masses_{ispin}.dat``.
+        Each row contains the crystal k-coordinates, energy relative to the Fermi
+        level, the three principal effective masses, and the DOS effective mass.
+
+    Notes
+    -----
+    The six unique components of ``d2Ed2k`` (``xx, yy, zz, xy, xz, yz``) are
+    assembled into the symmetric :math:`3 \\times 3` inverse-mass tensor
+    :math:`(\\hbar^2 M^{-1})_{ij}` for each k-point and band.  The conversion
+    factor ``SI_conv = 0.036749302892341`` converts from PAOFLOW internal units
+    to :math:`\\hbar^2 / (m_e \\cdot \\text{eV} \\cdot \\text{Å}^2)`.  The
+    effective masses are obtained as the eigenvalues of the inverse of the
+    assembled tensor:
+
+    .. math::
+
+        m^*_\\alpha = \\left[ \\text{eig}\\left( M \\right) \\right]_\\alpha
+
+    The DOS effective mass is computed as the signed geometric mean of the
+    three principal masses:
+
+    .. math::
+
+        m^*_{\\text{DOS}} = \\text{sgn}(m^*_1 m^*_2 m^*_3)
+            \\cdot |m^*_1 m^*_2 m^*_3|^{1/3}
+
+    Only rank 0 performs the file I/O after a full gather of the distributed
+    ``d2Ed2k`` and ``E_k`` arrays via :func:`gather_full`.
+    """
+    from mpi4py import MPI
+    import numpy as np
     from os.path import join
 
     import numpy as np

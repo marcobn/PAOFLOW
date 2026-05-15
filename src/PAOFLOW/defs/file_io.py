@@ -1,5 +1,29 @@
 def struct_from_outputfile_QE(fname: str):
-    """ """
+    """Parse structural information from a Quantum ESPRESSO output file.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the QE ``.out`` file.
+
+    Returns
+    -------
+    dict
+        Structure dictionary with keys:
+
+        - ``'lattice'`` : np.ndarray, shape ``(3, 3)`` — lattice vectors
+          in Bohr.
+        - ``'abc'`` : np.ndarray, shape ``(nat, 3)`` — fractional atomic
+          coordinates.
+        - ``'species'`` : list of str — atomic species labels.
+        - ``'lunit'`` : str — length unit (``'bohr'``).
+        - ``'aunit'`` : str — atomic position unit (``'alat'``).
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``fname`` does not exist.
+    """
     import os
     from os.path import isfile, join
 
@@ -58,16 +82,29 @@ def struct_from_outputfile_QE(fname: str):
 
 
 def read_relaxed_coordinates_QE(fname: str):
-    """
-    Reads relaxed atomic positions from a QE .out file. If vcrelax is set True, the crystal coordinates are also read.
+    """Read relaxed atomic positions (and optionally cell parameters) from a QE output file.
 
-    Arguments:
-      fname (str): File name (including path) for the .out file
-      vcrelax (bool): True reads crystal coordinates in addition to atomic positions
-      read_all (bool): True forces all relax steps to be read. If EoF is encountered before 'final coordinates' the last coordinates to appear in the file are retunred. If no coordinates are found, an empty dictionary is returned.
+    Parameters
+    ----------
+    fname : str
+        Path to the QE ``.out`` (relaxation) file.
 
-    Returns:
-      (dict): Dictionary with one or two entries - 'apos' for atomic positions and 'coord' for crystal coordinates.
+    Returns
+    -------
+    dict
+        Updated structure dictionary (from :func:`struct_from_outputfile_QE`)
+        with two additional keys:
+
+        - ``'lattice'`` : np.ndarray, shape ``(nsteps+1, 3, 3)`` —
+          lattice vectors at each ionic step (index 0 is the initial
+          structure).
+        - ``'abc'`` : np.ndarray, shape ``(nsteps+1, nat, 3)`` —
+          fractional atomic positions at each ionic step.
+
+    Raises
+    ------
+    Exception
+        If no atomic positions or cell coordinates are found in the file.
     """
     import re
 
@@ -141,15 +178,27 @@ def read_relaxed_coordinates_QE(fname: str):
 
 
 def struct_from_inputfile_QE(fname: str) -> dict:
-    """
-    Generate a dictionary containing all atomic information from a QE inputfile
-    WARNING: Currently only the control blocks are read. Atomic cards are not...
+    """Parse structural information and Namelist blocks from a Quantum ESPRESSO input file.
 
-    Arguments:
-      fname (str): Name (including path) of the inputfile
+    Parameters
+    ----------
+    fname : str
+        Path to the QE input file (e.g. ``.scf.in``).
 
-    Returns:
-      (dict): Structure dictionary
+    Returns
+    -------
+    blocks : dict
+        Nested dictionary mapping Namelist names (lower-case) to
+        ``{keyword: value}`` dictionaries.
+    cards : dict
+        Dictionary mapping card names (e.g. ``'ATOMIC_POSITIONS'``,
+        ``'ATOMIC_SPECIES'``, ``'K_POINTS'``, ``'CELL_PARAMETERS'``,
+        ``'HUBBARD'``) to lists of raw text lines.
+
+    Notes
+    -----
+    Currently only control Namelist blocks are parsed; inline comments are
+    stripped.  Hubbard cards are limited to five ``U`` entries.
     """
     import re
     from os.path import isfile
@@ -274,6 +323,26 @@ def struct_from_inputfile_QE(fname: str) -> dict:
 
 
 def create_atomic_inputfile(calculation, blocks, cards):
+    """Write a Quantum ESPRESSO input file from Namelist blocks and card data.
+
+    Parameters
+    ----------
+    calculation : str
+        Base name of the output file; the file is written to
+        ``{calculation}.in``.
+    blocks : dict
+        Nested dictionary of Namelist blocks as returned by
+        :func:`struct_from_inputfile_QE`.
+    cards : dict
+        Dictionary of card data as returned by :func:`struct_from_inputfile_QE`.
+        The ``'ATOMIC_SPECIES'`` card, if present, is written first and then
+        removed from the dict before writing the remaining cards.
+
+    Returns
+    -------
+    None
+        Writes a file ``{calculation}.in`` to the current directory.
+    """
     with open(f'{calculation}.in', 'w') as f:
         f.write('\n')
         for kb, vb in blocks.items():
@@ -295,6 +364,23 @@ def create_atomic_inputfile(calculation, blocks, cards):
 
 
 def create_acbn0_inputfile(prefix, pthr, outputdir):
+    """Generate a PAOFLOW Python driver script for an ACBN0 calculation.
+
+    Parameters
+    ----------
+    prefix : str
+        QE calculation prefix; the save directory is ``{prefix}.save``.
+    pthr : float
+        Projectability threshold passed to ``paoflow.projectability()``.
+    outputdir : str
+        Output directory passed to the :class:`~PAOFLOW.PAOFLOW.PAOFLOW`
+        constructor.
+
+    Returns
+    -------
+    None
+        Writes the script ``acbn0.py`` to the current directory.
+    """
     with open('acbn0.py', 'w') as f:
         f.write('from PAOFLOW import PAOFLOW\n\n')
         f.write(
