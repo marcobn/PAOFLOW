@@ -40,7 +40,7 @@ def get_rgrid(
     """
     nr1, nr2, nr3 = mesh_dims
     if any(n <= 0 for n in (nr1, nr2, nr3)):
-        raise ValueError("Mesh dimensions must be strictly positive.")
+        raise ValueError('Mesh dimensions must be strictly positive.')
 
     r_grid = []
     weights = []
@@ -78,8 +78,6 @@ def get_rgrid(
     expected_sum = nr1 * nr2 * nr3
     actual_sum = np.sum(weights)
     if not np.isclose(actual_sum, expected_sum, atol=1e-10):
-        raise ValueError(
-            f"Invalid weight sum rule: got {actual_sum}, expected {expected_sum}"
-        )
+        raise ValueError(f'Invalid weight sum rule: got {actual_sum}, expected {expected_sum}')
 
     return r_grid, weights

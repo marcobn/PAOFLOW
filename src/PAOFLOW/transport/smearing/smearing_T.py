@@ -62,9 +62,7 @@ def initialize_smearing_grid(
     Tmax = xmax + 2 * eps_sx
     nfft = int((Tmax / xmax) * nx) + 1
 
-    fft_grid = np.linspace(
-        -nfft // 2 * dx, (nfft // 2 - 1) * dx, nfft, dtype=np.float64
-    )
+    fft_grid = np.linspace(-nfft // 2 * dx, (nfft // 2 - 1) * dx, nfft, dtype=np.float64)
 
     auxs_in = np.zeros(nfft, dtype=np.complex128)
     auxp_in = np.zeros(nfft, dtype=np.complex128)
@@ -110,7 +108,7 @@ class SmearingData:
         self.g_smear: Optional[np.ndarray] = None
         self.smearing_func = smearing_func
 
-    @timed_function("smearing_init")
+    @timed_function('smearing_init')
     def initialize(
         self,
         smearing_type: str,

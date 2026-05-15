@@ -30,12 +30,12 @@ def cartesian_to_crystal(coords: np.ndarray, basis: np.ndarray) -> np.ndarray:
     """
     coords = np.atleast_2d(coords)
     if coords.shape[0] != 3:
-        raise ValueError("Input `coords` must have shape (3,) or (3, N)")
+        raise ValueError('Input `coords` must have shape (3,) or (3, N)')
 
     try:
         basis_inv = np.linalg.inv(basis)
     except np.linalg.LinAlgError:
-        raise ValueError("Basis matrix is singular or not invertible")
+        raise ValueError('Basis matrix is singular or not invertible')
 
     return basis_inv @ coords
 
@@ -69,6 +69,6 @@ def crystal_to_cartesian(coords: np.ndarray, basis: np.ndarray) -> np.ndarray:
     """
     coords = np.atleast_2d(coords)
     if coords.shape[0] != 3:
-        raise ValueError("Input `coords` must have shape (3,) or (3, N)")
+        raise ValueError('Input `coords` must have shape (3,) or (3, N)')
 
     return basis @ coords

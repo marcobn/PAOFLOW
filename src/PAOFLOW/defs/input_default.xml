@@ -21,7 +21,7 @@
     <out_vals type="character" size="1"></out_vals>
 
     <!-- Calculations -->
-    
+
     <!--> Compare PAO bands with original DFT bands on the original MP mesh -->
     <do_comparison type="logical" size="1">F</do_comparison>
 

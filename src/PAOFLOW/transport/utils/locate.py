@@ -35,6 +35,6 @@ def locate(xx: np.ndarray, x: float) -> int:
             ju = jm
 
     if jl == 0 or jl == n - 1:
-        raise ValueError("Located index out of valid bounds.")
+        raise ValueError('Located index out of valid bounds.')
 
     return jl

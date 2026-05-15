@@ -6,7 +6,7 @@ from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlockView
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("green")
+@timed_function('green')
 def compute_surface_green_function(
     h_eff: np.ndarray,
     s_eff: np.ndarray,
@@ -65,14 +65,12 @@ def compute_surface_green_function(
         A -= t_coupling @ transfer_matrix
         A -= t_coupling.conj().T @ transfer_matrix_conj
     else:
-        raise ValueError(f"Invalid value for `igreen`: {igreen}. Must be -1, 0, or 1.")
+        raise ValueError(f'Invalid value for `igreen`: {igreen}. Must be -1, 0, or 1.')
 
     try:
         g = np.linalg.inv(A)
     except np.linalg.LinAlgError as e:
-        raise RuntimeError(
-            "Green's function inversion failed due to singular matrix."
-        ) from e
+        raise RuntimeError("Green's function inversion failed due to singular matrix.") from e
 
     return g
 
@@ -81,12 +79,12 @@ def compute_conductor_green_function(
     blc_00C: OperatorBlockView,
     sigma_l: np.ndarray,
     sigma_r: Optional[np.ndarray] = None,
-    smearing_type: str = "lorentzian",
+    smearing_type: str = 'lorentzian',
     delta: float = 1e-5,
     delta_ratio: float = 5e-3,
     g_smear: Optional[np.ndarray] = None,
     xgrid: Optional[np.ndarray] = None,
-    calc: Literal["inverse", "direct"] = "inverse",
+    calc: Literal['inverse', 'direct'] = 'inverse',
     surface: bool = False,
 ) -> np.ndarray:
     """
@@ -142,7 +140,7 @@ def compute_conductor_green_function(
         g0inv -= sigma_l
     else:
         if sigma_r is None:
-            raise ValueError("Right self-energy must be provided unless surface=True.")
+            raise ValueError('Right self-energy must be provided unless surface=True.')
         g0inv -= sigma_l + sigma_r
 
     return np.linalg.inv(g0inv)

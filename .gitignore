@@ -113,8 +113,10 @@ output/
 pseudo/
 *.save/
 *.pyc
-*.UPF
 *.xml
 *.log
 *wfc*
 **/*.xml
+
+# MAC files
+.DS_store*

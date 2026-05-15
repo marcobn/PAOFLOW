@@ -8,8 +8,8 @@
 # F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
 # Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
 #
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo, R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang, 
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on 
+# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo, R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
 # Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
 #
 # This file is distributed under the terms of the
@@ -19,8 +19,9 @@
 
 import numpy as np
 
-def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
-    '''
+
+def zero_pad(aux, nk1, nk2, nk3, nfft1, nfft2, nfft3):
+    """
     Pad frequency domain with zeroes, such that any relationship between
         aux[k] and aux[N-k] is preserved.
 
@@ -35,54 +36,57 @@ def zero_pad(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
 
     Returns:
         auxp3 (ndarray): padded frequency domain data
-    '''
+    """
     # post-padding dimensions
-    nk1p = nfft1+nk1
-    nk2p = nfft2+nk2
-    nk3p = nfft3+nk3
+    nk1p = nfft1 + nk1
+    nk2p = nfft2 + nk2
+    nk3p = nfft3 + nk3
     # halfway points
-    sk1 = int((nk1+1)/2)
-    sk2 = int((nk2+1)/2)
-    sk3 = int((nk3+1)/2)
+    sk1 = int((nk1 + 1) / 2)
+    sk2 = int((nk2 + 1) / 2)
+    sk3 = int((nk3 + 1) / 2)
     # parities (even <-> p==1)
-    p1 = (nk1 & 1)^1
-    p2 = (nk2 & 1)^1
-    p3 = (nk3 & 1)^1
+    p1 = (nk1 & 1) ^ 1
+    p2 = (nk2 & 1) ^ 1
+    p3 = (nk3 & 1) ^ 1
 
     # accomodate nfft==0
-    if nfft1 == 0:  p1 = 0
-    if nfft2 == 0:  p2 = 0
-    if nfft3 == 0:  p3 = 0
+    if nfft1 == 0:
+        p1 = 0
+    if nfft2 == 0:
+        p2 = 0
+    if nfft3 == 0:
+        p3 = 0
 
     # first dimension
-    auxp1 = np.zeros((nk1,nk2,nk3p),dtype=complex)
-    auxp1[:,:,:sk3+p3]=aux[:,:,:sk3+p3]
-    auxp1[:,:,nfft3+sk3:]=aux[:,:,sk3:]
+    auxp1 = np.zeros((nk1, nk2, nk3p), dtype=complex)
+    auxp1[:, :, : sk3 + p3] = aux[:, :, : sk3 + p3]
+    auxp1[:, :, nfft3 + sk3 :] = aux[:, :, sk3:]
     # second dimension
-    auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=complex)
-    auxp2[:,:sk2+p2,:]=auxp1[:,:sk2+p2,:]
-    auxp2[:,nfft2+sk2:,:]=auxp1[:,sk2:,:]
+    auxp2 = np.zeros((nk1, nk2p, nk3p), dtype=complex)
+    auxp2[:, : sk2 + p2, :] = auxp1[:, : sk2 + p2, :]
+    auxp2[:, nfft2 + sk2 :, :] = auxp1[:, sk2:, :]
     # third dimension
-    auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=complex)
-    auxp3[:sk1+p1,:,:]=auxp2[:sk1+p1,:,:]
-    auxp3[nfft1+sk1:,:,:]=auxp2[sk1:,:,:]
+    auxp3 = np.zeros((nk1p, nk2p, nk3p), dtype=complex)
+    auxp3[: sk1 + p1, :, :] = auxp2[: sk1 + p1, :, :]
+    auxp3[nfft1 + sk1 :, :, :] = auxp2[sk1:, :, :]
 
     # halve Nyquist axes
     if p1:
-        auxp3[ sk1,:,:] /= 2
-        auxp3[-sk1,:,:] /= 2
+        auxp3[sk1, :, :] /= 2
+        auxp3[-sk1, :, :] /= 2
     if p2:
-        auxp3[:, sk2,:] /= 2
-        auxp3[:,-sk2,:] /= 2
+        auxp3[:, sk2, :] /= 2
+        auxp3[:, -sk2, :] /= 2
     if p3:
-        auxp3[:,:, sk3] /= 2
-        auxp3[:,:,-sk3] /= 2
+        auxp3[:, :, sk3] /= 2
+        auxp3[:, :, -sk3] /= 2
 
-    return(auxp3)
+    return auxp3
 
 
-def zero_pad_float(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
-    """ Deprecated. Use zero_pad instead.
+def zero_pad_float(aux, nk1, nk2, nk3, nfft1, nfft2, nfft3):
+    """Deprecated. Use zero_pad instead.
 
     Note that this function uses the old padding algorithm, which
         1) does not (quite) preserve symmetry of DFT for even nk
@@ -90,20 +94,20 @@ def zero_pad_float(aux,nk1,nk2,nk3,nfft1,nfft2,nfft3):
     Besides that, it only works with real numbers...
     """
     # zero padding for FFT interpolation in 3D
-    nk1p = nfft1+nk1
-    nk2p = nfft2+nk2
-    nk3p = nfft3+nk3
+    nk1p = nfft1 + nk1
+    nk2p = nfft2 + nk2
+    nk3p = nfft3 + nk3
     # first dimension
-    auxp1 = np.zeros((nk1,nk2,nk3p),dtype=float)
-    auxp1[:,:,:int(nk3/2)]=aux[:,:,:int(nk3/2)]
-    auxp1[:,:,int(nfft3+nk3/2):]=aux[:,:,int(nk3/2):]
+    auxp1 = np.zeros((nk1, nk2, nk3p), dtype=float)
+    auxp1[:, :, : int(nk3 / 2)] = aux[:, :, : int(nk3 / 2)]
+    auxp1[:, :, int(nfft3 + nk3 / 2) :] = aux[:, :, int(nk3 / 2) :]
     # second dimension
-    auxp2 = np.zeros((nk1,nk2p,nk3p),dtype=float)
-    auxp2[:,:int(nk2/2),:]=auxp1[:,:int(nk2/2),:]
-    auxp2[:,int(nfft2+nk2/2):,:]=auxp1[:,int(nk2/2):,:]
+    auxp2 = np.zeros((nk1, nk2p, nk3p), dtype=float)
+    auxp2[:, : int(nk2 / 2), :] = auxp1[:, : int(nk2 / 2), :]
+    auxp2[:, int(nfft2 + nk2 / 2) :, :] = auxp1[:, int(nk2 / 2) :, :]
     # third dimension
-    auxp3 = np.zeros((nk1p,nk2p,nk3p),dtype=float)
-    auxp3[:int(nk1/2),:,:]=auxp2[:int(nk1/2),:,:]
-    auxp3[int(nfft1+nk1/2):,:,:]=auxp2[int(nk1/2):,:,:]
+    auxp3 = np.zeros((nk1p, nk2p, nk3p), dtype=float)
+    auxp3[: int(nk1 / 2), :, :] = auxp2[: int(nk1 / 2), :, :]
+    auxp3[int(nfft1 + nk1 / 2) :, :, :] = auxp2[int(nk1 / 2) :, :, :]
 
-    return(auxp3)
+    return auxp3

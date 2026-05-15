@@ -140,7 +140,7 @@ def compute_lead_surface_green_function(
     s_eff: np.ndarray,
     t_coupling: np.ndarray,
     delta: float = 1e-5,
-    direction: str = "right",
+    direction: str = 'right',
     niterx: int = 200,
     transfer_thr: float = 1e-12,
     fail_counter: dict = None,
@@ -201,7 +201,7 @@ def compute_lead_surface_green_function(
         verbose=verbose,
     )
 
-    igreen = 1 if direction == "right" else -1
+    igreen = 1 if direction == 'right' else -1
 
     g_surf = compute_surface_green_function(
         h_eff, s_eff, t_coupling, tot, tott, igreen=igreen, delta=delta

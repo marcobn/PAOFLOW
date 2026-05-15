@@ -10,7 +10,7 @@ from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("read_matrix")
+@timed_function('read_matrix')
 def read_matrix(
     yaml_data: ConductorData,
     data_controller: DataController,
@@ -60,38 +60,38 @@ def read_matrix(
 
     """
     if not opr.allocated:
-        raise RuntimeError("OperatorBlock is not allocated")
+        raise RuntimeError('OperatorBlock is not allocated')
 
     arry, attr = data_controller.data_dicts()
     tag_attr = opr.tag
     label = opr.name.strip()
 
     # === Defaults and attribute parsing ===
-    cols = tag_attr.get("cols", "all").lower()
-    rows = tag_attr.get("rows", "all").lower()
-    cols_sgm = tag_attr.get("cols_sgm", cols).lower()
-    rows_sgm = tag_attr.get("rows_sgm", rows).lower()
-    ivr_input = int(tag_attr.get("ivr", 0))
-    ivr_from_input = "ivr" in tag_attr
+    cols = tag_attr.get('cols', 'all').lower()
+    rows = tag_attr.get('rows', 'all').lower()
+    cols_sgm = tag_attr.get('cols_sgm', cols).lower()
+    rows_sgm = tag_attr.get('rows_sgm', rows).lower()
+    ivr_input = int(tag_attr.get('ivr', 0))
+    ivr_from_input = 'ivr' in tag_attr
 
     dim1, dim2 = opr.dim1, opr.dim2
 
     # Convert "all" to full ranges
-    if rows == "all":
-        rows = f"1-{dim1}"
-    if cols == "all":
-        cols = f"1-{dim2}"
-    if rows_sgm == "all":
-        rows_sgm = f"1-{dim1}"
-    if cols_sgm == "all":
-        cols_sgm = f"1-{dim2}"
+    if rows == 'all':
+        rows = f'1-{dim1}'
+    if cols == 'all':
+        cols = f'1-{dim2}'
+    if rows_sgm == 'all':
+        rows_sgm = f'1-{dim1}'
+    if cols_sgm == 'all':
+        cols_sgm = f'1-{dim2}'
 
     # === File parsing ===
 
-    nawf = attr["nawf"]
-    nspin = attr["nspin"]
+    nawf = attr['nawf']
+    nspin = attr['nspin']
     do_overlap_transform = yaml_data.atomic_proj.do_overlap_transformation
-    ivr = arry["ivr"]
+    ivr = arry['ivr']
     nrtot = ivr.shape[0]
     irows = parse_index_array(rows, nawf)
     icols = parse_index_array(cols, nawf)
@@ -104,7 +104,7 @@ def read_matrix(
     opr.icols_sgm = icols_sgm
 
     if nspin == 2 and ispin < 0:
-        raise ValueError("Unspecified ispin for spin-polarized case")
+        raise ValueError('Unspecified ispin for spin-polarized case')
     ivr = ivr.T
 
     # Check grid dimensions
@@ -118,25 +118,25 @@ def read_matrix(
         for i in range(3):
             if i + 1 == transport_direction:
                 if label.lower() in {
-                    "block_00c",
-                    "block_00r",
-                    "block_00l",
-                    "block_t",
-                    "block_e",
-                    "block_b",
-                    "block_eb",
-                    "block_be",
+                    'block_00c',
+                    'block_00r',
+                    'block_00l',
+                    'block_t',
+                    'block_e',
+                    'block_b',
+                    'block_eb',
+                    'block_be',
                 }:
                     ivr_aux[i] = 0
                 elif label.lower() in {
-                    "block_01r",
-                    "block_01l",
-                    "block_lc",
-                    "block_cr",
+                    'block_01r',
+                    'block_01l',
+                    'block_lc',
+                    'block_cr',
                 }:
                     ivr_aux[i] = 1
                 else:
-                    raise ValueError(f"Invalid block label {label}")
+                    raise ValueError(f'Invalid block label {label}')
                 if ivr_from_input:
                     ivr_aux[i] = ivr_input
             else:
@@ -145,25 +145,25 @@ def read_matrix(
 
         matches = [ir for ir in range(nrtot) if np.array_equal(ivr[:, ir], ivr_aux)]
         if not matches:
-            raise ValueError(f"3D R-vector {ivr_aux} not found for ir_par={ir_par}")
+            raise ValueError(f'3D R-vector {ivr_aux} not found for ir_par={ir_par}')
 
         ind = matches[0]
 
-        A_loc = arry["HRs"][ind, :, :]
+        A_loc = arry['HRs'][ind, :, :]
 
         if do_overlap_transform:
-            S_loc = arry["SRs"][ind, :, :]
+            S_loc = arry['SRs'][ind, :, :]
         else:
             S_loc = np.zeros_like(A_loc)
             if label.lower() in {
-                "block_00c",
-                "block_00r",
-                "block_00l",
-                "block_t",
-                "block_e",
-                "block_b",
-                "block_eb",
-                "block_be",
+                'block_00c',
+                'block_00r',
+                'block_00l',
+                'block_t',
+                'block_e',
+                'block_b',
+                'block_eb',
+                'block_be',
             } and np.all(ivr_aux == 0):
                 S_loc[:] = np.eye(nawf)
 

@@ -4,15 +4,15 @@ from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlockView
 from PAOFLOW.transport.utils.timing import timed_function
 
 
-@timed_function("gzero_maker")
+@timed_function('gzero_maker')
 def compute_non_interacting_gf(
     blc_00C: OperatorBlockView,
-    smearing_type: str = "lorentzian",
+    smearing_type: str = 'lorentzian',
     delta: float = 1e-5,
     delta_ratio: float = 5e-3,
     g_smear: Optional[np.ndarray] = None,
     xgrid: Optional[np.ndarray] = None,
-    calc: Literal["direct", "inverse"] = "inverse",
+    calc: Literal['direct', 'inverse'] = 'inverse',
 ) -> np.ndarray:
     """
     Compute the non-interacting Green's function or its inverse using smearing.
@@ -52,20 +52,20 @@ def compute_non_interacting_gf(
 
     Smearing ensures convergence and causality in retarded Green's functions.
     """
-    if smearing_type in ("lorentzian", "none"):
-        delta_eff = delta if smearing_type == "lorentzian" else delta * delta_ratio
+    if smearing_type in ('lorentzian', 'none'):
+        delta_eff = delta if smearing_type == 'lorentzian' else delta * delta_ratio
         A = blc_00C.aux + 1j * delta_eff * blc_00C.S
-        gzero = np.linalg.inv(A) if calc == "direct" else A
+        gzero = np.linalg.inv(A) if calc == 'direct' else A
 
-    elif smearing_type == "numerical":
+    elif smearing_type == 'numerical':
         A = blc_00C.aux
 
         if g_smear is None or xgrid is None:
-            raise ValueError("Numerical smearing requires `g_smear` and `xgrid`.")
+            raise ValueError('Numerical smearing requires `g_smear` and `xgrid`.')
 
         if not np.allclose(A, A.conj().T, atol=1e-8):
             raise ValueError(
-                "Matrix A is not Hermitian; numerical smearing requires Hermitian matrix."
+                'Matrix A is not Hermitian; numerical smearing requires Hermitian matrix.'
             )
 
         eigvals, eigvecs = np.linalg.eigh(A)
@@ -74,15 +74,13 @@ def compute_non_interacting_gf(
         interpolated = np.empty_like(scaled, dtype=np.complex128)
         for i, x in enumerate(scaled):
             if x < xgrid[0] or x > xgrid[-1]:
-                interpolated[i] = (
-                    1 / (delta * (x + 1j)) if calc == "direct" else x * delta
-                )
+                interpolated[i] = 1 / (delta * (x + 1j)) if calc == 'direct' else x * delta
             else:
                 idx = np.searchsorted(xgrid, x) - 1
                 dx = xgrid[idx + 1] - xgrid[idx]
                 alpha = (x - xgrid[idx]) / dx if dx != 0 else 0.0
                 f1, f2 = g_smear[idx], g_smear[idx + 1]
-                if calc == "direct":
+                if calc == 'direct':
                     interpolated[i] = (1 - alpha) * f1 + alpha * f2
                 else:
                     f1_inv = 1.0 / f1
@@ -92,6 +90,6 @@ def compute_non_interacting_gf(
         gzero = eigvecs @ np.diag(interpolated) @ eigvecs.conj().T
 
     else:
-        raise ValueError(f"Unsupported smearing_type: {smearing_type}")
+        raise ValueError(f'Unsupported smearing_type: {smearing_type}')
 
     return gzero

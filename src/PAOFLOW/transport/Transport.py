@@ -100,8 +100,8 @@ class ConductorCalculator:
             carriers=data.carriers,
         )
 
-    @timed_function("do_conductor")
-    @headered_function("Frequency Loop")
+    @timed_function('do_conductor')
+    @headered_function('Frequency Loop')
     def run(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Execute the full conductor calculation.
@@ -139,7 +139,7 @@ class ConductorCalculator:
            where ``Γ_{L/R} = i (Σ_{L/R} - Σ_{L/R}†)``.
         """
         self.conduct, self.dos, self.conduct_k, self.dos_k = self.initialize_outputs()
-        ie_start, ie_end = divide_work(0, self.ne - 1, self.rank, self.size, "energies")
+        ie_start, ie_end = divide_work(0, self.ne - 1, self.rank, self.size, 'energies')
         for ie_g in range(ie_start, ie_end + 1):
             self.conduct, self.dos = self.process_energy(
                 self.conduct,
@@ -171,9 +171,7 @@ class ConductorCalculator:
         """
         do_eigenchannels = self.data.symmetry.do_eigenchannels
         neigchnx = self.data.symmetry.neigchnx
-        neigchn = (
-            min(self.dimC, self.dimR, self.dimL, neigchnx) if do_eigenchannels else 0
-        )
+        neigchn = min(self.dimC, self.dimR, self.dimL, neigchnx) if do_eigenchannels else 0
 
         conduct = np.zeros((1 + neigchn, self.ne), dtype=np.float64)
         conduct_k = np.zeros((1 + neigchn, self.nkpts_par, self.ne), dtype=np.float64)
@@ -181,32 +179,24 @@ class ConductorCalculator:
         dos_k = np.zeros((self.ne, self.nkpts_par), dtype=np.float64)
 
         self.gf_out = (
-            np.zeros(
-                (self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128
-            )
+            np.zeros((self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128)
             if self.data.symmetry.write_gf
             else None
         )
         self.rsgmL_out = (
-            np.zeros(
-                (self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128
-            )
+            np.zeros((self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128)
             if self.data.symmetry.write_lead_sgm
             else None
         )
         self.rsgmR_out = (
-            np.zeros(
-                (self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128
-            )
+            np.zeros((self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128)
             if self.data.symmetry.write_lead_sgm
             else None
         )
 
         return conduct, dos, conduct_k, dos_k
 
-    def process_energy(
-        self, conduct, dos, conduct_k, dos_k, ie_g: int, ie_start: int, ie_end: int
-    ):
+    def process_energy(self, conduct, dos, conduct_k, dos_k, ie_g: int, ie_start: int, ie_end: int):
         """
         Perform all calculations for a single energy point.
 
@@ -219,11 +209,11 @@ class ConductorCalculator:
         """
         nprint = self.data.iteration.nprint
         if (ie_g % nprint == 0 or ie_g == 0 or ie_g == self.ne - 1) and self.rank == 0:
-            if self.data.carriers == "phonons":
+            if self.data.carriers == 'phonons':
                 omega_val = np.sqrt(self.egrid[ie_g] * rydcm1**2 / amconv)
-                log.log_rank0(f"  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1")
+                log.log_rank0(f'  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1')
             else:
-                log.log_rank0(f"  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV")
+                log.log_rank0(f'  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV')
 
         gC_k, sgmL_k, sgmR_k = self.initialize_k_dependent_operators()
         avg_iter = 0.0
@@ -233,9 +223,7 @@ class ConductorCalculator:
             avg_iter += niter_sum
 
             self.accumulate_dos(dos, dos_k, gC, ie_g, ik)
-            self.accumulate_conductance(
-                conduct, conduct_k, gC, sigma_L, sigma_R, ie_g, ik
-            )
+            self.accumulate_conductance(conduct, conduct_k, gC, sigma_L, sigma_R, ie_g, ik)
 
             if self.data.symmetry.write_gf:
                 gC_k[ik] = gC
@@ -244,16 +232,10 @@ class ConductorCalculator:
 
         self.transform_k_to_r_at_energy(ie_g, gC_k, sgmL_k, sgmR_k)
 
-        if (
-            ie_g % nprint == 0 or ie_g == ie_start or ie_g == ie_end
-        ) and self.rank == 0:
+        if (ie_g % nprint == 0 or ie_g == ie_start or ie_g == ie_end) and self.rank == 0:
             avg_iter /= 2 * self.nkpts_par
-            log.log_rank0(
-                f"  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n"
-            )
-            global_timing.timing_upto_now(
-                "do_conductor", label="Total time spent up to now"
-            )
+            log.log_rank0(f'  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n')
+            global_timing.timing_upto_now('do_conductor', label='Total time spent up to now')
         return conduct, dos
 
     def initialize_k_dependent_operators(self):
@@ -315,18 +297,18 @@ class ConductorCalculator:
             shift_L=self.data.shift_L,
             shift_C=self.data.shift_C,
             shift_R=self.data.shift_R,
-            shift_C_corr=getattr(self.data, "shift_corr", 0.0),
+            shift_C_corr=getattr(self.data, 'shift_corr', 0.0),
             blc_blocks=self.blc_blocks,
             ie_buff=1,
         )
 
         sigma_R, sigma_L, niter_R, niter_L = build_self_energies_from_blocks(
-            blc_00R=self.blc_blocks["blc_00R"].at_k(ik),
-            blc_01R=self.blc_blocks["blc_01R"].at_k(ik),
-            blc_00L=self.blc_blocks["blc_00L"].at_k(ik),
-            blc_01L=self.blc_blocks["blc_01L"].at_k(ik),
-            blc_CR=self.blc_blocks["blc_CR"].at_k(ik),
-            blc_LC=self.blc_blocks["blc_LC"].at_k(ik),
+            blc_00R=self.blc_blocks['blc_00R'].at_k(ik),
+            blc_01R=self.blc_blocks['blc_01R'].at_k(ik),
+            blc_00L=self.blc_blocks['blc_00L'].at_k(ik),
+            blc_01L=self.blc_blocks['blc_01L'].at_k(ik),
+            blc_CR=self.blc_blocks['blc_CR'].at_k(ik),
+            blc_LC=self.blc_blocks['blc_LC'].at_k(ik),
             leads_are_identical=self.data.advanced.leads_are_identical,
             delta=self.delta,
             niterx=self.data.iteration.niterx,
@@ -337,16 +319,14 @@ class ConductorCalculator:
         )
 
         gC = compute_conductor_green_function(
-            blc_00C=self.blc_blocks["blc_00C"].at_k(ik),
+            blc_00C=self.blc_blocks['blc_00C'].at_k(ik),
             sigma_l=sigma_L,
             sigma_r=sigma_R if not self.data.advanced.surface else None,
             delta=self.delta,
             surface=self.data.advanced.surface,
         )
 
-        niter_sum = niter_R + (
-            niter_L if not self.data.advanced.leads_are_identical else 0
-        )
+        niter_sum = niter_R + (niter_L if not self.data.advanced.leads_are_identical else 0)
         return gC, sigma_L, sigma_R, niter_sum
 
     def accumulate_dos(self, dos, dos_k, gC, ie_g, ik):
@@ -363,9 +343,7 @@ class ConductorCalculator:
         dos_k[ie_g, ik] = -self.wk_par[ik] * np.sum(diag_imag) / np.pi
         dos[ie_g] += dos_k[ie_g, ik]
 
-    def accumulate_conductance(
-        self, conduct, conduct_k, gC, sigma_L, sigma_R, ie_g, ik
-    ):
+    def accumulate_conductance(self, conduct, conduct_k, gC, sigma_L, sigma_R, ie_g, ik):
         """
         Accumulate conductance contributions from a given k-point.
 
@@ -417,8 +395,8 @@ class ConductorCalculator:
                 ik=ik,
                 vkpt=self.vkpt_par3D[:, ik],
                 transport_direction=self.data.transport_direction,
-                output_dir=Path("output/eigenchannels"),
-                prefix="eigchn",
+                output_dir=Path('output/eigenchannels'),
+                prefix='eigchn',
                 overwrite=True,
                 verbose=True,
             )
@@ -476,40 +454,40 @@ class ConductorCalculator:
         if self.data.symmetry.write_gf:
             write_operator_xml(
                 output_dir=Path(self.data.file_names.output_dir),
-                filename="greenf.xml",
+                filename='greenf.xml',
                 operator_matrix=self.gf_out,
                 ivr=self.ivr_par3D,
                 grid=self.egrid,
                 dimwann=self.dimC,
                 dynamical=True,
-                eunits="eV",
-                analyticity="retarded",
+                eunits='eV',
+                analyticity='retarded',
             )
         if self.data.symmetry.write_lead_sgm:
             write_operator_xml(
                 output_dir=Path(self.data.file_names.output_dir),
-                filename="lead_L_sgm.xml",
+                filename='lead_L_sgm.xml',
                 operator_matrix=self.rsgmL_out,
                 ivr=self.ivr_par3D,
                 grid=self.egrid,
                 dimwann=self.dimC,
                 dynamical=True,
-                eunits="eV",
-                analyticity="retarded",
+                eunits='eV',
+                analyticity='retarded',
             )
             write_operator_xml(
                 output_dir=Path(self.data.file_names.output_dir),
-                filename="lead_R_sgm.xml",
+                filename='lead_R_sgm.xml',
                 operator_matrix=self.rsgmR_out,
                 ivr=self.ivr_par3D,
                 grid=self.egrid,
                 dimwann=self.dimC,
                 dynamical=True,
-                eunits="eV",
-                analyticity="retarded",
+                eunits='eV',
+                analyticity='retarded',
             )
 
-    @headered_function("Writing data")
+    @headered_function('Writing data')
     def write_output(self):
         """
         Write final conductance and DOS results to disk.
@@ -526,46 +504,42 @@ class ConductorCalculator:
         output_dir.mkdir(parents=True, exist_ok=True)
         postfix = self.data.file_names.postfix
 
-        if self.data.carriers == "phonons":
+        if self.data.carriers == 'phonons':
             egrid_out = np.sqrt(self.egrid * rydcm1**2 / amconv)
         else:
             egrid_out = self.egrid
 
-        write_data(egrid_out, self.conduct, "conductance", output_dir, postfix=postfix)
-        write_data(egrid_out, self.dos, "doscond", output_dir, postfix=postfix)
+        write_data(egrid_out, self.conduct, 'conductance', output_dir, postfix=postfix)
+        write_data(egrid_out, self.dos, 'doscond', output_dir, postfix=postfix)
 
         if self.data.symmetry.write_kdata:
             nkpts_par = self.data.get_runtime_data().nkpts_par
             prefix = os.path.basename(self.data.file_names.datafile_C)
 
             for ik in range(nkpts_par):
-                ik_str = f"{ik + 1:04d}"
-                filename_cond = f"{prefix}_cond-{ik_str}.dat"
-                filename_dos = f"{prefix}_doscond-{ik_str}.dat"
+                ik_str = f'{ik + 1:04d}'
+                filename_cond = f'{prefix}_cond-{ik_str}.dat'
+                filename_dos = f'{prefix}_doscond-{ik_str}.dat'
 
-                with (output_dir / filename_cond).open("w") as f:
+                with (output_dir / filename_cond).open('w') as f:
                     for ie in range(self.egrid.shape[0]):
-                        values = " ".join(
-                            f"{self.conduct_k[ch, ik, ie]:15.9f}"
+                        values = ' '.join(
+                            f'{self.conduct_k[ch, ik, ie]:15.9f}'
                             for ch in range(self.conduct_k.shape[0])
                         )
-                        f.write(f"{self.egrid[ie]:15.9f} {values}\n")
+                        f.write(f'{self.egrid[ie]:15.9f} {values}\n')
 
-                with (output_dir / filename_dos).open("w") as f:
+                with (output_dir / filename_dos).open('w') as f:
                     for ie in range(self.egrid.shape[0]):
-                        f.write(f"{self.egrid[ie]:15.9f} {self.dos_k[ie, ik]:15.9f}\n")
+                        f.write(f'{self.egrid[ie]:15.9f} {self.dos_k[ie, ik]:15.9f}\n')
 
 
 class ConductorRunner:
     @classmethod
-    def from_yaml(
-        cls, yaml_file: str, data_controller: DataController
-    ) -> "ConductorRunner":
+    def from_yaml(cls, yaml_file: str, data_controller: DataController) -> 'ConductorRunner':
         data = prepare_conductor(yaml_file, data_controller)
         postfix = data.file_names.postfix
-        log.initialize_logger(
-            data_controller, log_file_name=f"transport_conductor{postfix}.log"
-        )
+        log.initialize_logger(data_controller, log_file_name=f'transport_conductor{postfix}.log')
         memory_tracker = MemoryTracker()
 
         _ = prepare_smearing(data, memory_tracker)
@@ -595,34 +569,32 @@ class ConductorRunner:
 class CurrentCalculator:
     def __init__(self, data: dict):
         self.data = data
-        self.vgrid = build_bias_grid(data["Vmin"], data["Vmax"], data["nV"])
-        self.egrid, self.transm = read_transmittance(data["filein"])
+        self.vgrid = build_bias_grid(data['Vmin'], data['Vmax'], data['nV'])
+        self.egrid, self.transm = read_transmittance(data['filein'])
         self.currents = None
 
     def write_output(self) -> None:
-        outpath = Path(self.data["fileout"])
+        outpath = Path(self.data['fileout'])
         outpath.parent.mkdir(parents=True, exist_ok=True)
         np.savetxt(outpath, np.column_stack([self.vgrid, self.currents]))
-        log.log_rank0(f"Saved current vs bias to {outpath}")
+        log.log_rank0(f'Saved current vs bias to {outpath}')
 
     def run(self) -> None:
         self.currents = compute_current_vs_bias(
             self.egrid,
             self.transm,
             self.vgrid,
-            self.data["mu_L"],
-            self.data["mu_R"],
-            self.data["sigma"],
+            self.data['mu_L'],
+            self.data['mu_R'],
+            self.data['sigma'],
         )
         self.write_output()
 
 
 class CurrentRunner:
     @classmethod
-    def from_yaml(
-        cls, yaml_file: str, data_controller: DataController
-    ) -> "CurrentRunner":
-        log.initialize_logger(data_controller, log_file_name="transport_current.log")
+    def from_yaml(cls, yaml_file: str, data_controller: DataController) -> 'CurrentRunner':
+        log.initialize_logger(data_controller, log_file_name='transport_current.log')
         data = prepare_current(yaml_file)
         memory_tracker = MemoryTracker()
 

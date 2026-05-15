@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-@timed_function("transfer")
+@timed_function('transfer')
 def compute_surface_transfer_matrices(
     h_eff: np.ndarray,
     s_eff: np.ndarray,
@@ -94,11 +94,11 @@ def compute_surface_transfer_matrices(
 
     except np.linalg.LinAlgError:
         if verbose:
-            logger.warning("Initial inversion failed: singular matrix.")
+            logger.warning('Initial inversion failed: singular matrix.')
         if fail_counter is not None:
-            fail_counter["nfail"] = fail_counter.get("nfail", 0) + 1
-            if fail_counter["nfail"] > fail_limit:
-                raise RuntimeError("Too many failures in transfer matrix convergence.")
+            fail_counter['nfail'] = fail_counter.get('nfail', 0) + 1
+            if fail_counter['nfail'] > fail_limit:
+                raise RuntimeError('Too many failures in transfer matrix convergence.')
         return (
             np.zeros((ndim, ndim), dtype=np.complex128),
             np.zeros((ndim, ndim), dtype=np.complex128),
@@ -123,15 +123,11 @@ def compute_surface_transfer_matrices(
             s2 = np.linalg.solve(s1, np.eye(ndim))
         except np.linalg.LinAlgError:
             if verbose:
-                logger.warning(
-                    f"Singular matrix at iteration {m}; discarding energy point."
-                )
+                logger.warning(f'Singular matrix at iteration {m}; discarding energy point.')
             if fail_counter is not None:
-                fail_counter["nfail"] = fail_counter.get("nfail", 0) + 1
-                if fail_counter["nfail"] > fail_limit:
-                    raise RuntimeError(
-                        "Too many failures in transfer matrix convergence."
-                    )
+                fail_counter['nfail'] = fail_counter.get('nfail', 0) + 1
+                if fail_counter['nfail'] > fail_limit:
+                    raise RuntimeError('Too many failures in transfer matrix convergence.')
             return (
                 np.zeros((ndim, ndim), dtype=np.complex128),
                 np.zeros((ndim, ndim), dtype=np.complex128),
@@ -156,15 +152,15 @@ def compute_surface_transfer_matrices(
         conver2 = np.sum(np.abs(taut) ** 2).real
         if conver < transfer_thr and conver2 < transfer_thr:
             if verbose:
-                logger.info(f"Transfer matrix converged after {m} iterations.")
+                logger.info(f'Transfer matrix converged after {m} iterations.')
             return tot, tott, m
 
     if verbose:
-        logger.warning(f"Transfer matrix did not converge after {niterx} iterations.")
+        logger.warning(f'Transfer matrix did not converge after {niterx} iterations.')
     if fail_counter is not None:
-        fail_counter["nfail"] = fail_counter.get("nfail", 0) + 1
-        if fail_counter["nfail"] > fail_limit:
-            raise RuntimeError("Too many failures in transfer matrix convergence.")
+        fail_counter['nfail'] = fail_counter.get('nfail', 0) + 1
+        if fail_counter['nfail'] > fail_limit:
+            raise RuntimeError('Too many failures in transfer matrix convergence.')
     return (
         np.zeros((ndim, ndim), dtype=np.complex128),
         np.zeros((ndim, ndim), dtype=np.complex128),

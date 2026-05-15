@@ -45,23 +45,19 @@ def smearing_func(x: float, smearing_type: str) -> float:
     """
     smearing_type = smearing_type.strip().lower()
 
-    if smearing_type == "lorentzian":
+    if smearing_type == 'lorentzian':
         return 1.0 / (np.pi * (1.0 + x**2))
 
-    if smearing_type == "gaussian":
+    if smearing_type == 'gaussian':
         return np.exp(-(x**2)) / np.sqrt(np.pi)
 
-    if smearing_type in {"fermi-dirac", "fd"}:
+    if smearing_type in {'fermi-dirac', 'fd'}:
         return 0.5 / (1.0 + np.cosh(x))
 
-    if smearing_type in {"methfessel-paxton", "mp"}:
+    if smearing_type in {'methfessel-paxton', 'mp'}:
         return np.exp(-(x**2)) / np.sqrt(np.pi) * (1.5 - x**2)
 
-    if smearing_type in {"marzari-vanderbilt", "mv"}:
-        return (
-            np.exp(-((x - 1.0 / np.sqrt(2.0)) ** 2))
-            / np.sqrt(np.pi)
-            * (2.0 - np.sqrt(2.0) * x)
-        )
+    if smearing_type in {'marzari-vanderbilt', 'mv'}:
+        return np.exp(-((x - 1.0 / np.sqrt(2.0)) ** 2)) / np.sqrt(np.pi) * (2.0 - np.sqrt(2.0) * x)
 
     raise ValueError(f"Unsupported smearing_type: '{smearing_type}'")

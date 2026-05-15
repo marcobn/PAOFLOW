@@ -4,8 +4,6 @@ from typing import Literal
 
 import numpy as np
 
-from PAOFLOW.transport.grid.kpoints import compute_ivr_par, kpoints_mask
-
 
 class OperatorBlockView:
     def __init__(self, parent: OperatorBlock, ik: int):
@@ -42,7 +40,7 @@ class OperatorBlock:
         Descriptive name of the operator block.
     """
 
-    def __init__(self, name: str = ""):
+    def __init__(self, name: str = ''):
         self.name: str = name
         self.dim1: int = 0
         self.dim2: int = 0
@@ -167,9 +165,7 @@ class OperatorBlock:
         if not self.allocated:
             raise RuntimeError(f"Cannot slice unallocated block '{self.name}'")
         if ik >= self.nkpnts:
-            raise IndexError(
-                f"k-point index {ik} out of range (nkpnts = {self.nkpnts})"
-            )
+            raise IndexError(f'k-point index {ik} out of range (nkpnts = {self.nkpnts})')
         return OperatorBlockView(self, ik)
 
     def deallocate(self) -> None:
@@ -255,7 +251,7 @@ class OperatorBlock:
             The block to copy from.
         """
         if not other.allocated:
-            raise ValueError("Source block is not allocated.")
+            raise ValueError('Source block is not allocated.')
 
         self.clear()
         self.allocate(
@@ -304,7 +300,7 @@ class OperatorBlock:
         new.copy_from(self)
         return new
 
-    def memusage(self, memtype: Literal["ham", "corr", "all"] = "all") -> float:
+    def memusage(self, memtype: Literal['ham', 'corr', 'all'] = 'all') -> float:
         """
         Estimate memory usage in MB for the specified memory type.
 
@@ -321,10 +317,10 @@ class OperatorBlock:
         memtype = memtype.lower()
         cost = 0.0
 
-        if memtype not in {"ham", "corr", "all"}:
-            raise ValueError(f"Invalid memtype: {memtype}")
+        if memtype not in {'ham', 'corr', 'all'}:
+            raise ValueError(f'Invalid memtype: {memtype}')
 
-        if memtype in {"ham", "all"}:
+        if memtype in {'ham', 'all'}:
             if self.icols is not None:
                 cost += self.icols.nbytes
             if self.irows is not None:
@@ -338,7 +334,7 @@ class OperatorBlock:
             if self.aux is not None:
                 cost += self.aux.nbytes
 
-        if memtype in {"corr", "all"}:
+        if memtype in {'corr', 'all'}:
             if self.icols_sgm is not None:
                 cost += self.icols_sgm.nbytes
             if self.irows_sgm is not None:
@@ -362,20 +358,20 @@ class OperatorBlock:
             Multi-line string describing the operator block state.
         """
         return (
-            f"\n  OperatorBlock Summary: {self.name}\n"
-            f"    dim1, dim2           : {self.dim1}, {self.dim2}\n"
-            f"    nkpnts                : {self.nkpnts}\n"
-            f"    dimx_sgm             : {self.dimx_sgm}\n"
-            f"    nrtot, nrtot_sgm     : {self.nrtot}, {self.nrtot_sgm}\n"
-            f"    ne_sgm               : {self.ne_sgm}\n"
-            f"    have_aux             : {self.lhave_aux}\n"
-            f"    have_sgm_aux         : {self.lhave_sgm_aux}\n"
-            f"    have_ham             : {self.lhave_ham}\n"
-            f"    have_ovp             : {self.lhave_ovp}\n"
-            f"    have_corr            : {self.lhave_corr}\n"
-            f"    dyn_corr             : {self.ldynam_corr}\n"
-            f"    energy index (ie)    : {self.ie}\n"
-            f"    energy buffer index  : {self.ie_buff}\n"
-            f"    k-point index        : {self.ik}\n"
-            f"    tag                  : {self.tag}\n"
+            f'\n  OperatorBlock Summary: {self.name}\n'
+            f'    dim1, dim2           : {self.dim1}, {self.dim2}\n'
+            f'    nkpnts                : {self.nkpnts}\n'
+            f'    dimx_sgm             : {self.dimx_sgm}\n'
+            f'    nrtot, nrtot_sgm     : {self.nrtot}, {self.nrtot_sgm}\n'
+            f'    ne_sgm               : {self.ne_sgm}\n'
+            f'    have_aux             : {self.lhave_aux}\n'
+            f'    have_sgm_aux         : {self.lhave_sgm_aux}\n'
+            f'    have_ham             : {self.lhave_ham}\n'
+            f'    have_ovp             : {self.lhave_ovp}\n'
+            f'    have_corr            : {self.lhave_corr}\n'
+            f'    dyn_corr             : {self.ldynam_corr}\n'
+            f'    energy index (ie)    : {self.ie}\n'
+            f'    energy buffer index  : {self.ie_buff}\n'
+            f'    k-point index        : {self.ik}\n'
+            f'    tag                  : {self.tag}\n'
         )

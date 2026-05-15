@@ -14,10 +14,10 @@ Qauntum ESPRESSO Examples: ./qe_examples/
 - example08 : 2D SnTe - Spin Hall conductivity
 - example09 : Weyl point search in MoP2
 - example10 : Transport in GaAs with temperature and energy dependent model for relaxation time
-- example11: Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
-- example12: Bi bilayer nanoribbon site projected band strcture
-- example13: Bi bilayer Z2 calculation using Z2Pack inteface : SOC from QE and ad_hoc_SOC
-- example14: Layer resolved Pt spin Hall conductivity
+- example11 : Calculating Rashba-Edelstein tensor elements in left handed elemental tellurium
+- example12 : Bi bilayer nanoribbon site projected band strcture
+- example13 : Bi bilayer Z2 calculation using Z2Pack inteface : SOC from QE and ad_hoc_SOC
+- example14 : Layer resolved Pt spin Hall conductivity
 
 VASP Examples: ./vasp_examples
 
@@ -31,7 +31,7 @@ VASP Examples: ./vasp_examples
 
 ACBN0 Example: ./acbn0-example/
 
-- ACBN0 routine for calculating Hubbard parameters in MgO.
+- ACBN0 routine for calculating Hubbard parameters in MgO, ZnO, MnO (antiferromagnetic).
 
 Tight Binding Models: ./TBmodel-examples/
 
