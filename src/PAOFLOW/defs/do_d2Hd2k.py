@@ -120,7 +120,7 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
                 )
 
                 # vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
-                vel_degen_by_spin.append(vel_degen_by_kp)
+                vel_degen_by_spin.append(vel_degen_by_kp[0][0])
 
                 isp_tmp.append(dvec)
             vel_degen.append(vel_degen_by_spin)
