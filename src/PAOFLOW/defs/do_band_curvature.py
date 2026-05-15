@@ -97,7 +97,7 @@ def do_band_curvature(data_controller):
 
                 # second order perturbation for degeneracies of E and dEdk
                 if degen_idx[ij][ispin][ik]:
-                    for i in len(degen_idx[ij][ispin][ik]):
+                    for i in range(len(degen_idx[ij][ispin][ik])):
                         ll = degen_idx[ij][ispin][ik][i][0]
                         ul = degen_idx[ij][ispin][ik][i][-1] + 1
 
