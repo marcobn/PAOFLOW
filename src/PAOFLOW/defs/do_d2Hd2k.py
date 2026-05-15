@@ -21,6 +21,7 @@ import numpy as np
 from mpi4py import MPI
 
 from .communication import gather_scatter
+from .do_eigh import get_degeneracies
 from .perturb_split import perturb_split
 
 # initialize parallel execution
@@ -62,9 +63,13 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
     num_n = Hksp.shape[0]
 
     dvec_list = []
+    vel_degen = []
+    degen_M = []
 
     for ij in range(M_ij.shape[0]):
         dir_tmp = []
+        vel_degen_by_ij = []
+        degen_M_by_ij = []
         d2Hksp = None
         d2Hksp = np.zeros((num_n, nk1, nk2, nk3, nspin), dtype=complex, order='C')
 
@@ -99,9 +104,10 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
         # find non-degenerate set of psi(k) for d2H/d2k_ij
         for ispin in range(tksp.shape[3]):
             isp_tmp = []
+            vel_degen_by_spin = []
             for ik in range(tksp.shape[2]):
                 # we save dvec so that it can be used when calculating the second term in d2E/d2k
-                _, tksp[:, :, ik, ispin], dvec = perturb_split(
+                v_aux, tksp[:, :, ik, ispin], dvec = perturb_split(
                     dHksp[ik, ipol, :, :, ispin],
                     d2Hksp[:, :, ik, ispin],
                     v_kp[ik, :, :, ispin],
@@ -109,8 +115,15 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
                     return_v_k=True,
                 )
 
+                vel_degen_by_kp = get_degeneracies(
+                    v_aux.diagonal().reshape((1, len(v_aux.diagonal()), 1)), bnd
+                )
+
+                vel_degen_by_spin.append(vel_degen_by_kp[vel_degen_by_kp == degen[ispin][ik]])
                 isp_tmp.append(dvec)
+            vel_degen.append(vel_degen_by_spin)
             dir_tmp.append(isp_tmp)
+        vel_degen.append(vel_degen_by_ij)
         dvec_list.append(dir_tmp)
 
         # get the value for d2H/d2k
@@ -118,8 +131,21 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
             for n in range(bnd):
                 M_ij[ij, :, n, ispin] = tksp[n, n, :, ispin].real
 
+        for ispin in range(d2Hksp.shape[3]):
+            degen_M_by_spin = []
+            for ik in range(d2Hksp.shape[2]):
+                degen_M_by_kp = []
+                for i in range(len(vel_degen[ij][ispin][ik])):
+                    # degenerate subspace indices upper and lower lim
+                    ll = degen[i][0]
+                    ul = degen[i][-1] + 1
+
+                    degen_M_by_kp.append(tksp[ll:ul, ll:ul, ik, ispin])
+                degen_M_by_spin.append(degen_M_by_kp)
+            degen_M_by_ij.append(degen_M_by_spin)
+        degen_M.append(degen_M_by_ij)
         comm.Barrier()
 
     d2Hksp = None
 
-    return M_ij, dvec_list
+    return M_ij, vel_degen, degen_M, dvec_list
