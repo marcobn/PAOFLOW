@@ -58,9 +58,6 @@ def do_gradient(data_controller):
 
     arry, attr = data_controller.data_dicts()
 
-    if attr['use_cuda']:
-        from .cuda_fft import cuda_ifftn
-
     # ----------------------
     # Compute the gradient of the k-space Hamiltonian
     # ----------------------
@@ -88,17 +85,12 @@ def do_gradient(data_controller):
             ########################################
             ### real space grid replaces k space ###
             ########################################
-            if attr['use_cuda']:
-                arry['Hksp'][n, :, :, :, ispin] = (
-                    cuda_ifftn(arry['Hksp'][n, :, :, :, ispin]) * 1.0j * attr['alat']
-                )
-            else:
-                arry['Hksp'][n, :, :, :, ispin] = (
-                    FFT.ifftn(arry['Hksp'][n, :, :, :, ispin]) * 1.0j * attr['alat']
-                )
-                # HRaux = arry['Hksp'][n,:,:,:,ispin].reshape(attr['nk1']*attr['nk2']*attr['nk3'], order='C')
-                # HRaux = np.tensordot(HRaux, kdoti, axes=([0],[0]))/(attr['nk1']*attr['nk2']*attr['nk3'])
-                # arry['Hksp'][n,:,:,:,ispin] =  HRaux.reshape((nk1,nk2,nk3), order='C')*1.0j*attr['alat']
+            arry['Hksp'][n, :, :, :, ispin] = (
+                FFT.ifftn(arry['Hksp'][n, :, :, :, ispin]) * 1.0j * attr['alat']
+            )
+            # HRaux = arry['Hksp'][n,:,:,:,ispin].reshape(attr['nk1']*attr['nk2']*attr['nk3'], order='C')
+            # HRaux = np.tensordot(HRaux, kdoti, axes=([0],[0]))/(attr['nk1']*attr['nk2']*attr['nk3'])
+            # arry['Hksp'][n,:,:,:,ispin] =  HRaux.reshape((nk1,nk2,nk3), order='C')*1.0j*attr['alat']
 
             # Compute R*H(R) + diagonal TB correction
             for l in range(3):
