@@ -30,6 +30,7 @@ def do_ortho(Hks, Sks):
     :math:`S`, computed via ``scipy.linalg.sqrtm``.
     """
     from scipy import linalg as spl
+    from numpy import linalg as npl
 
     # If orthogonality is required, we have to apply a basis change to Hks as
     # Hks -> Sks^(-1/2)*Hks*Sks^(-1/2)

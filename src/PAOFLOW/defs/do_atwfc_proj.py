@@ -1005,6 +1005,7 @@ def calc_proj_k(data_controller, basis, ik, ispin):
         for all bands and basis functions.
     """
     arry, attr = data_controller.data_dicts()
+    if attr['dft'] == 'QE':
         gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
     else:
         read_WAVECAR_header(data_controller)
