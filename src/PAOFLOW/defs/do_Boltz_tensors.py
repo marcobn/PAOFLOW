@@ -137,6 +137,7 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
         L1_hall_aux = None
     else:
         L0_hall = zoz(rank)
+        L1_hall = zoz(rank)
 
         # Fixed threshold
         thresh = 1e-9
