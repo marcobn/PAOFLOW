@@ -75,7 +75,7 @@ def do_band_curvature(data_controller):
             # ij component of second derivative of the energy is:
             # tksp_ij + sum_i( (pksp_i*pksp_j.T + pksp_j*pksp_i.T)/(E_i-E_j) )
             E_temp = ((E_k[ik, :, ispin] - E_k[ik, :, ispin][:, None])[:, :]).T
-            E_temp[np.where(np.abs(E_temp) < 1.0e-5)] = np.inf
+            E_temp[np.where(np.abs(E_temp) < 1.0e-4)] = np.inf
 
             for ij in range(ij_ind.shape[0]):
                 ipol = ij_ind[ij, 0]

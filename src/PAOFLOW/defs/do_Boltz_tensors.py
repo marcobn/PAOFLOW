@@ -151,7 +151,7 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
         upper = np.arange(ene[-1] + dE, ene[-1] + dE_max + dE, dE)
         ene_aux = np.concatenate((lower, ene, upper))
 
-        L0_hall_ext = np.zeros((3, 3, ene_aux.size), dtype=float) if rank == 0 else None
+        L0_hall_ext = np.zeros((3, 3, 3, ene_aux.size), dtype=float) if rank == 0 else None
         L0_hall_aux = L_loop_hall(
             data_controller, temp, smearing, ene_aux, velkp, t_tensor, 0, ispin
         )
@@ -161,19 +161,19 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
         if rank == 0:
             # Interpolate
             ene_int = np.linspace(ene_aux[0], ene_aux[-1], 2 * ene_aux.size - 1)
-            L0_hall_int = np.zeros((3, 3, ene_int.size), dtype=float)
-            for t_comp in t_tensor:
-                L0_hall_int[t_comp[0], t_comp[1], :] = np.interp(
-                    ene_int, ene_aux, L0_hall_ext[t_comp[0], t_comp[1], :]
+            L0_hall_int = np.zeros((3, 3, 3, ene_int.size), dtype=float)
+            for h_indx in np.ndindex((3, 3, 3)):
+                L0_hall_int[h_indx[0], h_indx[1], h_indx[2], :] = np.interp(
+                    ene_int, ene_aux, L0_hall_ext[h_indx[0], h_indx[1], h_indx[2], :]
                 )
 
             for i, ef in enumerate(ene):
                 fermi_smear = 1 / (4 * temp * (np.cosh((ene_int - ef) / (2 * temp)) ** 2))
 
-                for t_comp in t_tensor:
-                    L_hall_smear_aux = L0_hall_int[t_comp[0], t_comp[1], :] * fermi_smear
-                    L0_hall[t_comp[0], t_comp[1], i] = simpson(L_hall_smear_aux, ene_int)
-                    L1_hall[t_comp[0], t_comp[1], i] = simpson(
+                for h_indx in np.ndindex((3, 3, 3)):
+                    L_hall_smear_aux = L0_hall_int[h_indx[0], h_indx[1], h_indx[2], :] * fermi_smear
+                    L0_hall[h_indx[0], h_indx[1], h_indx[2], i] = simpson(L_hall_smear_aux, ene_int)
+                    L1_hall[h_indx[0], h_indx[1], h_indx[2], i] = simpson(
                         L_hall_smear_aux * (ene_int - ef), ene_int
                     )
     return (L0_hall, L1_hall) if rank == 0 else (None, None)
