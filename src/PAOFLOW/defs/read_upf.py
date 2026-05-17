@@ -164,7 +164,7 @@ class UPF:
                 wfc = np.array(wfc)
 
                 # add only occupied pswfc
-                if float(occ) > 0.0:
+                if float(occ) >= 0.0:
                     self.shells.append(int(l))
                     self.pswfc.append({'label': label, 'occ': float(occ), 'wfc': wfc})
 
@@ -230,7 +230,7 @@ class UPF:
             wfc = np.array(wfc)
 
             # add only occupied pswfc
-            if float(occ) > 0.0:
+            if float(occ) >= 0.0:
                 self.shells.append(int(chi.attrib['l']))
                 self.pswfc.append({'label': label, 'occ': float(occ), 'wfc': wfc})
 
