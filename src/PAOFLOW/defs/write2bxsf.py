@@ -1,18 +1,41 @@
 def write2bxsf(data_controller, fname, bands, nbnd, indices, fermi_up, fermi_dw):
-    """
-    Writes a bxsf File to 'opath' (outputdir)
+    """Write Fermi-surface band data to a BXSF file for visualisation.
 
-    Arguments:
-        data_controller (DataController): The current PAOFLOW DataController
-        fname (str): File name
-        bands (ndarray): Array with data to write
-        nbnd (int): Number of columns of band-like data values to write
-        indices (list): A list of included band indices, in ascending order
-        fermi_up (float): Highest acceptable energy
-        fermi_dw (float): Lowest acceptable energy
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``b_vectors`` (shape ``(3, 3)``).
+        Required attributes: ``alat``, ``nk1``, ``nk2``, ``nk3``,
+        ``Efermi``, ``workpath``, ``outputdir``.
+    fname : str
+        Output filename (written inside ``{workpath}/{outputdir}/``).
+    bands : np.ndarray, shape ``(nk1, nk2, nk3+1, nbnd)``
+        Band eigenvalues on the 3-D k-grid (in eV).
+    nbnd : int
+        Number of bands to write.
+    indices : Optional[array_like of int]
+        1-D array of included band indices (1-based in output).  If
+        ``None``, indices default to zero.
+    fermi_up : float
+        Upper boundary of the Fermi window (eV), written to the file header.
+    fermi_dw : float
+        Lower boundary of the Fermi window (eV), written to the file header.
 
-    Returns:
-        None
+    Returns
+    -------
+    None
+        Creates the BXSF file at ``{workpath}/{outputdir}/{fname}``.
+
+    Notes
+    -----
+    The BXSF format (XCrySDen Band-grid XSF) stores band eigenvalues on a
+    uniform 3-D k-grid together with the reciprocal lattice vectors and the
+    Fermi energy.  It is read by XCrySDen and compatible Fermi-surface
+    visualisation tools.  The grid is written with periodic wrap-around:
+    one extra point is appended in each direction by repeating the first
+    row/column/plane, yielding an ``(nk1+1, nk2+1, nk3+1)`` grid.
+    Reciprocal-lattice vectors are output in units of :math:`2\\pi / a_{\\rm lat}`.
     """
     from os.path import join
 

@@ -8,15 +8,41 @@ rank = comm.Get_rank()
 
 
 def write4bt2(data_controller):
-    """
-    Write data in the GENE format suitable to be read by BoltzTrap2
-    Returns also band derivatives (momentum matix) if available
-    It shuld be called after:
-    paoflow.pao_hamiltonian()
-    paoflow.pao_eigh()
-    paoflow.gradient_and_momenta()
-    optional: call paoflow.interpolated_hamiltonian() to improve on the initial meshh of k-points
+    """Write eigenvalues and structure in GENE format for BoltzTraP2.
 
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``E_k`` (shape ``(nkpnts, nbnds, nspin)``),
+        ``a_vectors`` (shape ``(3, 3)``), ``b_vectors`` (shape ``(3, 3)``),
+        ``atoms`` (list of element symbols), ``tau``
+        (shape ``(natoms, 3)``).  Optionally ``pksp`` for band derivatives.
+        Required attributes: ``nkpnts``, ``nspin``, ``nbnds``, ``natoms``,
+        ``alat``, ``nk1``, ``nk2``, ``nk3``, ``savedir``.
+
+    Returns
+    -------
+    Optional[np.ndarray]
+        If ``pksp`` is available, returns the momentum matrix diagonal
+        converted to Rydberg units as shape ``(nkpnts, nbnds, 3)``.
+        Returns ``None`` if ``pksp`` is not present.
+
+    Notes
+    -----
+    Two files are written to the directory specified by ``savedir``
+    (prefix obtained by removing the file extension):
+
+    - ``{prefix}.energy``: k-point coordinates in crystal units, number
+      of bands, and band eigenvalues converted from eV to Rydberg
+      (``Ry2eV = 13.60569193``).
+    - ``{prefix}.structure``: lattice vectors in Bohr, number of atoms,
+      and atomic positions in crystal coordinates.
+
+    Only MPI rank 0 performs file I/O.  The function must be called
+    after :meth:`pao_hamiltonian`, :meth:`pao_eigh`, and
+    :meth:`gradient_and_momenta` (the last only when band derivatives
+    are needed).
     """
 
     if rank == 0:

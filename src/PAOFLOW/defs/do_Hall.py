@@ -6,6 +6,36 @@ rank = comm.Get_rank()
 
 
 def do_spin_Hall(data_controller, twoD, do_ac, P):
+    """Compute the spin Hall conductivity tensor and optionally the AC spin Hall conductivity.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``s_tensor`` (shape ``(n, 3)`` specifying
+        :math:`(i_{\\rm pol}, j_{\\rm pol}, s_{\\rm pol})` triplets),
+        ``dHksp``, ``v_k``, ``degen``, ``Sj``, ``E_k``, ``deltakp``.
+        Required attributes: ``dftSO``, ``nk1``, ``nk2``, ``nk3``,
+        ``omega``, ``alat``, ``verbose``, ``opath``.
+    twoD : bool
+        If ``True``, normalise by the 2-D cross-sectional area instead of
+        the 3-D volume.
+    do_ac : bool
+        If ``True``, also compute the AC spin Hall conductivity.
+    P : np.ndarray, shape ``(nawf, nawf)``
+        Projection operator used to symmetrize the spin current operator.
+
+    Returns
+    -------
+    None
+        Writes per-component output files to ``opath``:
+
+        - ``Spin_Berry_{spol}_{ipol}{jpol}.bxsf`` — spin Berry curvature on
+          the k-grid.
+        - ``shcEf_{spol}_{ipol}{jpol}.dat`` — spin Hall conductivity vs.
+          Fermi energy.
+        - When ``do_ac``: ``ac_shcr_{...}.dat`` and ``ac_shci_{...}.dat``.
+    """
     from .constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from .perturb_split import perturb_split
 
@@ -108,6 +138,31 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
 
 
 def do_anomalous_Hall(data_controller, do_ac):
+    """Compute the anomalous Hall conductivity and optionally the magneto-optical conductivity.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``a_tensor`` (shape ``(n, 2)`` specifying
+        :math:`(i_{\\rm pol}, j_{\\rm pol})` pairs), ``dHksp``, ``v_k``,
+        ``degen``, ``E_k``, ``deltakp``.
+        Required attributes: ``dftSO``, ``nk1``, ``nk2``, ``nk3``,
+        ``omega``, ``alat``, ``verbose``, ``opath``.
+    do_ac : bool
+        If ``True``, also compute the MCD (magneto-circular dichroism)
+        optical conductivity.
+
+    Returns
+    -------
+    None
+        Writes per-component output files to ``opath``:
+
+        - ``Berry_{ipol}{jpol}.bxsf`` — Berry curvature on the k-grid.
+        - ``ahcEf_{ipol}{jpol}.dat`` — anomalous Hall conductivity vs.
+          Fermi energy.
+        - When ``do_ac``: ``MCDr_{...}.dat`` and ``MCDi_{...}.dat``.
+    """
     from .constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from .perturb_split import perturb_split
 
@@ -185,6 +240,46 @@ def do_anomalous_Hall(data_controller, do_ac):
 
 
 def do_Berry_curvature(data_controller, jksp, pksp):
+    """Compute the Berry curvature and its Fermi-energy integral via the Kubo formula.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``E_k`` (shape ``(snktot, nawf, nspin)``),
+        ``deltakp``, ``deltakp2``.
+        Required attributes: ``npool``, ``nkpnts``, ``nk1``, ``nk2``,
+        ``nk3``, ``fermi_up``, ``fermi_dw``, ``deltaH``, ``smearing``,
+        ``eminH``, ``emaxH``, ``esizeH``, ``shift``.
+    jksp : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Left matrix element (spin current or momentum).
+    pksp : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Right matrix element (momentum).
+
+    Returns
+    -------
+    ene : np.ndarray, shape ``(esizeH,)``
+        Energy grid (eV).
+    shc : np.ndarray or None
+        Berry-curvature integral as a function of Fermi energy (rank 0 only).
+    Om_zk : np.ndarray or None
+        Berry curvature on the k-grid reshaped to ``(nk1, nk2, nk3)``
+        evaluated at ``fermi_up`` minus the value at ``fermi_dw``
+        (rank 0 only).
+
+    Notes
+    -----
+    Uses the Kubo formula
+
+    .. math::
+
+        \\Omega_n(\\mathbf{k}) = -2 \\sum_{m \\ne n}
+            \\frac{\\mathrm{Im}[j_{nm} p_{mn}]}
+            {(\\varepsilon_n - \\varepsilon_m)^2 + \\delta^2}
+
+    summed over occupied bands with occupation determined by the
+    selected smearing scheme.
+    """
     # ----------------------
     # Compute spin Berry curvature
     # ----------------------
@@ -261,6 +356,32 @@ def do_Berry_curvature(data_controller, jksp, pksp):
 
 
 def do_ac_conductivity(data_controller, jksp, pksp, ipol, jpol):
+    """Compute the frequency-dependent (optical) conductivity via the Kubo-Greenwood formula.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``E_k``, ``deltakp``, ``deltakp2``.
+        Required attributes: ``shift``, ``esizeH``, ``nkpnts``, ``smearing``,
+        ``temp``, ``delta``.
+    jksp : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Left matrix element.
+    pksp : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Right matrix element.
+    ipol : int
+        Polarisation index of the left operator (0=x, 1=y, 2=z).
+    jpol : int
+        Polarisation index of the right operator.
+
+    Returns
+    -------
+    ene : np.ndarray or None
+        Frequency grid (eV) on rank 0; ``None`` on other ranks.
+    sigxy : np.ndarray or None
+        Complex optical conductivity :math:`\\sigma_{ij}(\\omega)` on
+        rank 0; ``None`` on other ranks.
+    """
     arry, attr = data_controller.data_dicts()
 
     # Compute the optical conductivity tensor sigma_xy(ene)
@@ -295,6 +416,33 @@ def do_ac_conductivity(data_controller, jksp, pksp, ipol, jpol):
 
 
 def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
+    """Evaluate the smeared off-diagonal conductivity sum for a single spin channel.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``E_k``, ``deltakp``, ``deltakp2``, ``delta``.
+        Required attributes: ``smearing``, ``temp``.
+    ene : np.ndarray, shape ``(esize,)``
+        Frequency grid (eV).
+    pksp_i : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Left matrix elements.
+    pksp_j : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Right matrix elements.
+    ispin : int
+        Spin channel index.
+    ipol : int
+        Left polarisation index.
+    jpol : int
+        Right polarisation index.
+
+    Returns
+    -------
+    np.ndarray, shape ``(esize,)``, complex
+        Per-rank partial sum of the conductivity; call ``MPI.Reduce`` to
+        accumulate the global result.
+    """
     from .smearing import intgaussian, intmetpax
 
     arry, attr = data_controller.data_dicts()
@@ -348,6 +496,26 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
 
 
 def do_spin_current(data_controller, spol, ipol):
+    """Compute the spin current operator :math:`j^{s}_{\\rm pol}` in the band basis.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays``.
+        Required arrays: ``Sj`` (shape ``(3, nawf, nawf)``),
+        ``dHksp`` (shape ``(snktot, 3, nawf, nawf, nspin)``).
+    spol : int
+        Spin polarisation component index (0=x, 1=y, 2=z).
+    ipol : int
+        Momentum/velocity component index.
+
+    Returns
+    -------
+    np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+        Symmetrised spin current matrix elements
+        :math:`j^{s_\\rm pol}_{nm}(\\mathbf{k}) =
+        \\tfrac{1}{2}\\{S^{s_\\rm pol}, \\partial_{i_\\rm pol} H\\}_{nm}`.
+    """
     arry, attr = data_controller.data_dicts()
 
     Sj = arry['Sj'][spol]

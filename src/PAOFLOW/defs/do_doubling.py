@@ -3,6 +3,47 @@ import scipy.linalg as la
 
 
 def doubling_HRs(data_controller):
+    """Double the simulation cell along one or more lattice directions.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
+        ``tau`` (shape ``(natoms, 3)``), ``a_vectors`` (shape ``(3, 3)``).
+        Required attributes: ``nx``, ``ny``, ``nz`` (number of doublings along
+        each axis), ``nk1``, ``nk2``, ``nk3``, ``nspin``, ``nawf``, ``alat``.
+
+    Returns
+    -------
+    None
+        Modifies ``data_controller.data_arrays`` and
+        ``data_controller.data_attributes`` in place.  After each doubling step
+        along a given axis, :func:`doubling_attr_arry` is called to update all
+        derived quantities.  Final modified entries include:
+
+        - ``HRs`` : np.ndarray, shape
+          ``(nawf*2^(nx+ny+nz), nawf*2^(nx+ny+nz), nk1, nk2, nk3, nspin)``
+          — the real-space Hamiltonian of the enlarged cell.
+        - ``tau`` : np.ndarray — atomic positions extended with the new replica.
+        - ``a_vectors`` : np.ndarray — lattice vectors scaled by the doubling
+          factor along each axis.
+
+    Notes
+    -----
+    The doubling is performed axis by axis (x, then y, then z), repeating
+    ``nx``, ``ny``, and ``nz`` times respectively.  At each step the
+    real-space Hamiltonian is assembled in a block-matrix form:
+
+    .. math::
+
+        H^{\\rm doubled}(\\mathbf{R}) = \\begin{pmatrix}
+            H(2\\mathbf{R}) & H(2\\mathbf{R}+\\mathbf{a}_i) \\\\
+            H(2\\mathbf{R}-\\mathbf{a}_i) & H(2\\mathbf{R})
+        \\end{pmatrix}
+
+    where :math:`\\mathbf{a}_i` is the lattice vector being doubled.
+    """
     arry, attr = data_controller.data_dicts()
 
     nx = attr['nx']
@@ -216,6 +257,29 @@ def doubling_HRs(data_controller):
 
 
 def doubling_attr_arry(data_controller):
+    """Update all scalar and array metadata after a cell-doubling step.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Attributes updated: ``omega``, ``nawf``, ``natoms`` (if present),
+        ``nelec`` (if present), ``nbnds`` (if present), ``bnd`` (if present).
+        Arrays updated: ``naw``, ``sh``, ``nl``, ``atoms`` (if present),
+        ``Sj`` (if present), ``Dnm`` (if present).
+
+    Returns
+    -------
+    None
+        All modifications are made in place.
+
+    Notes
+    -----
+    Called automatically by :func:`doubling_HRs` after each doubling step.
+    The cell volume ``omega`` is recomputed from the updated ``a_vectors``
+    and ``alat``.  The spin operator ``Sj`` and the interatomic distance
+    matrix ``Dnm`` are extended block-diagonally if already present.
+    """
     arry, attr = data_controller.data_dicts()
 
     # recalculating volume

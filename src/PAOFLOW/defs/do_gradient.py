@@ -1,4 +1,55 @@
 def do_gradient(data_controller):
+    """Compute the first-order k-space gradient :math:`dH/dk` of the Hamiltonian via FFT.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``Hksp`` (shape ``(snawf, nk1, nk2, nk3, nspin)``),
+        ``Rfft`` (shape ``(nk1, nk2, nk3, 3)``), ``Dnm`` (shape
+        ``(nawf*nawf, 3)``).
+        Required attributes: ``nawf``, ``nk1``, ``nk2``, ``nk3``, ``nspin``,
+        ``alat``, ``npool``, ``use_cuda``.
+
+    Returns
+    -------
+    None
+        Adds the following key to ``data_controller.data_arrays``:
+
+        - ``dHksp`` : np.ndarray, shape ``(snawf, nk1, nk2, nk3, 3, nspin)``,
+          complex — the Cartesian gradient of the k-space Hamiltonian
+          :math:`dH(\\mathbf{k})/dk_l` for each orbital pair and Cartesian
+          direction :math:`l = 0, 1, 2`.
+
+        The in-place computation also overwrites ``Hksp`` with
+        :math:`H(\\mathbf{R}) \\cdot i \\cdot a_{\\text{lat}}` (the intermediate
+        real-space representation).
+
+    Notes
+    -----
+    The gradient is computed in two stages for each orbital index ``n`` and
+    spin channel:
+
+    1. **Real-space transformation**: ``Hksp[n]`` is replaced by
+       :math:`\\mathcal{F}^{-1}[H(\\mathbf{k})] \\cdot i \\cdot a_{\\text{lat}}`
+       using either a CUDA or SciPy inverse FFT.
+
+    2. **Gradient**: for each Cartesian direction :math:`l`,
+
+       .. math::
+
+           dH(\\mathbf{k})/dk_l
+               = \\mathcal{F}\\left[ R_l \\cdot H(\\mathbf{R}) \\right]
+               + i \\cdot H(\\mathbf{k}) \\cdot D^{nm}_l
+
+       where :math:`R_l` is the :math:`l`-th component of the real-space grid
+       ``Rfft`` and :math:`D^{nm}_l` is a diagonal tight-binding correction
+       term from ``Dnm``.
+
+    The FFT grid in real space is constructed by :func:`get_R_grid_fft`.
+    The distributed array ``Dnm`` is scattered across pools by
+    :func:`scatter_full`.
+    """
     import numpy as np
     from scipy import fftpack as FFT
 

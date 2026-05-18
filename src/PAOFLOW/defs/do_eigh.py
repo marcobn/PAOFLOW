@@ -4,6 +4,29 @@ from scipy import linalg as spl
 
 
 def get_degeneracies(E_k, bnd):
+    """Detect degenerate eigenvalue groups for all k-points and spin channels.
+
+    Parameters
+    ----------
+    E_k : np.ndarray, shape ``(nkpnts, nawf, nspin)``
+        Eigenvalues in eV.
+    bnd : int
+        Only bands with indices ``< bnd`` are considered.
+
+    Returns
+    -------
+    list of list of list of np.ndarray
+        ``all_degen[ispin][ik]`` is a list of 1-D integer arrays, each
+        containing the band indices that belong to a degenerate group at
+        k-point ``ik`` and spin channel ``ispin``.  Groups involving at
+        least two bands are reported; singletons are omitted.
+
+    Notes
+    -----
+    Degeneracy is determined by rounding eigenvalues to 5 decimal places
+    and comparing adjacent values with a relative tolerance of
+    :math:`10^{-5}` eV.
+    """
     all_degen = []
 
     E_k_round = np.around(E_k, decimals=5)
@@ -34,6 +57,28 @@ def get_degeneracies(E_k, bnd):
 
 
 def do_pao_eigh(data_controller):
+    """Diagonalise the PAO Hamiltonian on the local k-point subset.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required array: ``Hksp`` (shape ``(snktot, nawf, nawf, nspin)``) —
+        the Hamiltonian on the local k-point slice.
+        Required attribute: ``bnd``.
+
+    Returns
+    -------
+    None
+        Adds the following entries to ``data_controller.data_arrays``:
+
+        - ``E_k`` : np.ndarray, shape ``(snktot, nawf, nspin)`` — eigenvalues
+          in ascending order (eV).
+        - ``v_k`` : np.ndarray, shape ``(snktot, nawf, nawf, nspin)``, complex
+          — corresponding eigenvectors (columns).
+        - ``degen`` : nested list — degenerate band groups, as returned by
+          :func:`get_degeneracies` restricted to the first ``bnd`` bands.
+    """
     from numpy.linalg import eigh
 
     arrays, attributes = data_controller.data_dicts()
@@ -54,6 +99,30 @@ def do_pao_eigh(data_controller):
 
 
 def do_eigh_calc(HRaux, SRaux, kq, R, read_S):
+    """Diagonalise the Hamiltonian on an arbitrary k-mesh via Fourier interpolation.
+
+    Parameters
+    ----------
+    HRaux : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``, complex
+        Real-space PAO Hamiltonian.
+    SRaux : np.ndarray or None
+        Real-space overlap matrix (shape ``(nawf, nawf, nk1, nk2, nk3)``),
+        or ``None`` when ``read_S`` is ``False``.
+    kq : np.ndarray, shape ``(nkpi, 3)``
+        k-points in Cartesian coordinates.
+    R : np.ndarray, shape ``(nrtot, 3)``
+        Real-space lattice vectors.
+    read_S : bool
+        When ``True``, the generalised eigenvalue problem
+        :math:`H v = \\varepsilon S v` is solved.
+
+    Returns
+    -------
+    E_kp : np.ndarray, shape ``(nkpi, nawf, nspin)``
+        Band eigenvalues (eV).
+    v_kp : np.ndarray, shape ``(nkpi, nawf, nawf, nspin)``, complex
+        Corresponding eigenvectors.
+    """
     # Compute bands on a selected mesh in the BZ
 
     nkpi = kq.shape[0]
@@ -84,6 +153,22 @@ def do_eigh_calc(HRaux, SRaux, kq, R, read_S):
 
 ### R_wght assumed to be 1
 def band_loop_H(HRaux, kq, R):
+    """Evaluate the Bloch Hamiltonian :math:`H(\\mathbf{k})` on a set of k-points.
+
+    Parameters
+    ----------
+    HRaux : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``, complex
+        Real-space Hamiltonian.
+    kq : np.ndarray, shape ``(nkpi, 3)``
+        k-points in Cartesian coordinates.
+    R : np.ndarray, shape ``(nrtot, 3)``
+        Real-space lattice vectors in units of :math:`1/a_{\\rm lat}`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, nawf, nkpi, nspin)``, complex
+        :math:`H(\\mathbf{k})` evaluated at each requested k-point.
+    """
     nkpi = kq.shape[0]
     nawf, _, nk1, nk2, nk3, nspin = HRaux.shape
     auxh = np.empty((nawf, nawf, nkpi, nspin), dtype=complex)
@@ -99,6 +184,22 @@ def band_loop_H(HRaux, kq, R):
 
 
 def band_loop_S(SRaux, kq, R):
+    """Evaluate the overlap matrix :math:`S(\\mathbf{k})` on a set of k-points.
+
+    Parameters
+    ----------
+    SRaux : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3)``, complex
+        Real-space overlap matrix.
+    kq : np.ndarray, shape ``(nkpi, 3)``
+        k-points in Cartesian coordinates.
+    R : np.ndarray, shape ``(nrtot, 3)``
+        Real-space lattice vectors in units of :math:`1/a_{\\rm lat}`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, nawf, nkpi)``, complex
+        :math:`S(\\mathbf{k})` evaluated at each requested k-point.
+    """
     nkpi = kq.shape[0]
     nawf, _, nk1, nk2, nk3 = SRaux.shape
     auxs = np.empty((nawf, nawf, nkpi), dtype=complex)

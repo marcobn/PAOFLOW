@@ -1,21 +1,3 @@
-#
-# PAOFLOW
-#
-# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
-#
-# Reference:
-#
-# F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli, Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
-#
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
-# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
-#
-# This file is distributed under the terms of the
-# GNU General Public License. See the file `License'
-# in the root directory of the present distribution,
-# or http://www.gnu.org/copyleft/gpl.txt .
-
 import numpy as np
 
 from mpi4py import MPI
@@ -26,6 +8,37 @@ rank = comm.Get_rank()
 
 ### Reformat
 def build_Hks(data_controller):
+    """Construct the PAO Hamiltonian :math:`H(\\mathbf{k})` from projected DFT eigenstates.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``U`` (shape ``(nawf, nbnds, nkpnts, nspin)``),
+        ``my_eigsmat`` (shape ``(nbnds, nkpnts, nspin)``).
+        Required attributes: ``bnd``, ``nawf``, ``nspin``, ``nkpnts``,
+        ``shift``, ``shift_type``.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, nawf, nkpnts, nspin)``, complex
+        The PAO Hamiltonian in k-space.
+
+    Notes
+    -----
+    The PAO Hamiltonian is built at each k-point and spin channel via
+
+    .. math::
+
+        H(\\mathbf{k}) = A_c \\varepsilon_c A_c^\\dagger
+            + \\eta \\bigl(\\mathbf{1} - A_c (A_c^\\dagger A_c)^{-1} A_c^\\dagger\\bigr)
+
+    where :math:`A_c` contains the ``bnd`` lowest normalised eigenvectors of
+    the DFT overlap matrix and :math:`\\varepsilon_c` the corresponding
+    eigenvalues, following the shift schemes of Buongiorno Nardelli *et al.*
+    PRB 2013 (``shift_type=0``) and PRB 2016 (``shift_type=1``), or no shift
+    (``shift_type=2``).  Hermiticity is enforced after each k-point.
+    """
     from scipy import linalg as spl
 
     arrays, attributes = data_controller.data_dicts()
@@ -97,6 +110,37 @@ def build_Hks(data_controller):
 
 
 def do_build_pao_hamiltonian(data_controller):
+    """Build the PAO Hamiltonian and optionally handle symmetry expansion and non-orthogonality.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``U``, ``my_eigsmat``.
+        Required attributes: ``bnd``, ``nawf``, ``nspin``, ``nkpnts``,
+        ``shift``, ``shift_type``, ``expand_wedge``, ``acbn0``,
+        ``nk1``, ``nk2``, ``nk3``.
+
+    Returns
+    -------
+    None
+        Adds or updates the following entries in ``data_controller.data_arrays``
+        and ``data_controller.data_attributes``:
+
+        - ``Hks`` : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``,
+          complex — the PAO Hamiltonian in k-space.
+
+        Updates attribute: ``nkpnts = nk1 * nk2 * nk3``.
+
+    Notes
+    -----
+    Calls :func:`build_Hks` to construct :math:`H(\\mathbf{k})`.  When
+    ``expand_wedge`` is ``True``, the symmetry-reduced wedge is expanded to
+    the full Brillouin zone via :func:`open_grid_wrapper`.  When ``acbn0``
+    is ``True``, the non-orthogonal correction :math:`H \\to S^{1/2} H S^{1/2}`
+    is applied via :func:`do_non_ortho` on rank 0 and the result is written
+    to disk with :meth:`DataController.write_Hk_acbn0`; execution then exits.
+    """
     # ------------------------------
     # Building the PAO Hamiltonian
     # ------------------------------
@@ -148,6 +192,32 @@ def do_build_pao_hamiltonian(data_controller):
 
 
 def do_Hks_to_HRs(data_controller):
+    """Transform the k-space PAO Hamiltonian to real space via inverse FFT.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``Hks`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``).
+        Optional array: ``Sks`` (shape ``(nawf, nawf, nk1, nk2, nk3)``) —
+        read and transformed if present.
+
+    Returns
+    -------
+    None
+        Adds the following entries to ``data_controller.data_arrays``:
+
+        - ``HRs`` : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``,
+          complex — the real-space Hamiltonian, broadcast to all MPI ranks.
+        - ``SRs`` : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3)`` — the
+          real-space overlap matrix (only when ``Sks`` is available).
+
+    Notes
+    -----
+    Only MPI rank 0 performs the inverse FFT.  The result is broadcast via
+    :meth:`DataController.broadcast_single_array` so that all ranks carry
+    an identical copy of ``HRs``.
+    """
     from scipy import fftpack as FFT
 
     arry, attr = data_controller.data_dicts()

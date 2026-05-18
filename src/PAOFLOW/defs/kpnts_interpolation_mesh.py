@@ -11,20 +11,24 @@ rank = comm.Get_rank()
 
 
 def _getHighSymPoints(ibrav, alat, cellOld):
-    """
-    Searching for the ibrav number in the input file for the calculation
-    to determine the path for the band structure calculation
+    """Determine high-symmetry k-points and band path for a given Bravais lattice type.
 
-    Arguments:
-        oneCalc (dict): a dictionary containing properties about the AFLOWpi calculation
+    Parameters
+    ----------
+    ibrav : int
+        Quantum ESPRESSO Bravais lattice index.
+    alat : float
+        Lattice constant in Bohr (used for trigonal/hexagonal lattices).
+    cellOld : np.ndarray, shape ``(3, 3)``
+        Primitive lattice vectors (rows) in units of ``alat``.
 
-    Keyword Arguments:
-        ID (str): ID string for the particular calculation and step
-
-    Returns:
-        special_points (list): list of the HSP names
-        band_path (str): path in string form
-
+    Returns
+    -------
+    special_points : dict
+        Dictionary mapping high-symmetry point labels to their crystal
+        coordinates as ``np.ndarray`` of shape ``(3,)``.
+    band_path : str
+        Hyphen- and pipe-separated path string (e.g. ``'G-X-M-G|R-A'``).
     """
 
     ###############################################################################
@@ -483,14 +487,25 @@ def _getHighSymPoints(ibrav, alat, cellOld):
 
 
 def kpnts_interpolation_mesh(data_controller):
-    """
-    Get path between HSP
-    Arguments:
-        nk (int): total number of points in path
+    """Build the k-point path for band structure interpolation.
 
-    Returns:
-        kpoints : array of arrays kx,ky,kz
-        numK    : Total no. of k-points
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``a_vectors``, ``b_vectors``, ``high_sym_points``.
+        Required attributes: ``nk``, ``alat``, ``ibrav``, ``band_path``.
+
+    Returns
+    -------
+    None
+        Modifies ``data_arrays`` in place:
+
+        - ``kq`` : np.ndarray, shape ``(3, nkpath)`` — k-path points in
+          crystal coordinates.
+
+        Also writes ``kpath_points.txt`` via
+        :meth:`DataController.write_kpnts_path`.
     """
 
     arrays, attr = data_controller.data_dicts()
@@ -514,6 +529,36 @@ def kpnts_interpolation_mesh(data_controller):
 
 
 def get_path(ibrav, alat, cell, dk, b_vectors, band_path, special_points):
+    """Compute Cartesian k-path points between high-symmetry points.
+
+    Parameters
+    ----------
+    ibrav : int
+        Quantum ESPRESSO Bravais lattice index.
+    alat : float
+        Lattice constant (Bohr).
+    cell : np.ndarray, shape ``(3, 3)``
+        Lattice vectors (rows) in units of ``alat``.
+    dk : float
+        Spacing between consecutive k-points along each segment (in
+        crystal coordinates).
+    b_vectors : np.ndarray, shape ``(3, 3)``
+        Reciprocal lattice vectors (rows) in units of ``2\u03c0/alat``.
+    band_path : str or None
+        Hyphen/pipe-separated path string (e.g. ``'G-X|M-R'``).  If
+        ``None``, the default path for ``ibrav`` is used.
+    special_points : dict or None
+        Mapping of point labels to crystal-coordinate arrays.  If ``None``,
+        the default points for ``ibrav`` are used.
+
+    Returns
+    -------
+    points : np.ndarray, shape ``(3, nkpath)``
+        k-path points in Cartesian coordinates (units of ``2\u03c0/alat``).
+    path_file : str
+        Formatted string describing the k-path for file output.
+    """
+
     def kdistance(hs, p1, p2):
         g = np.dot(hs.T, hs)
         p1, p2 = np.array(p1), np.array(p2)

@@ -1,4 +1,21 @@
 def read_sh_nl(data_controller):
+    """Read angular momentum shells and total-:math:`j` quantum numbers from pseudopotential files.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``species``, ``atoms``.
+        Required attributes: ``workpath``, ``savedir``.
+
+    Returns
+    -------
+    shell : np.ndarray
+        Angular momentum quantum number :math:`l` for each PAO orbital
+        (every other entry of the full shell list, i.e. the unique shells).
+    jchia : np.ndarray
+        Total angular momentum :math:`j` for each PAO orbital.
+    """
     # reads in shelks from pseudo files
     from os.path import join
 
@@ -59,16 +76,22 @@ def read_sh_nl(data_controller):
 
 
 def read_pseudopotential(fpp):
-    """
-    Reads a psuedopotential file to determine the included shells and occupations.
+    """Read orbital shell and total angular momentum data from a UPF pseudopotential file.
 
-    Arguments:
-        fnscf (string) - Filename of the pseudopotential, copied to the .save directory
+    Parameters
+    ----------
+    fpp : str
+        Full path to the UPF pseudopotential file (copied to the ``.save``
+        directory by QE).
 
-    Returns:
-        sh, nl (lists) - sh is a list of orbitals (s-0, p-1, d-2, etc)
-                         nl is a list of occupations at each site
-        sh and nl are representative of one atom only
+    Returns
+    -------
+    sh : np.ndarray
+        Array of angular momentum quantum numbers :math:`l` for each
+        pseudopotential shell.
+    jchi : np.ndarray
+        Array of total angular momentum :math:`j` values for each shell
+        (empty if the pseudopotential has no spin-orbit data).
     """
 
     import re
