@@ -6,6 +6,41 @@ from numpy import linalg as npl
 
 # Compute Z2 invariant and topological properties on a selected path in the BZ
 def do_topology(data_controller):
+    """Compute Berry curvature, spin Hall conductivity, and Z2 invariant on a k-path.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``HRs``, ``kq``, ``v_k``, ``Dnm``, ``b_vectors``,
+        ``R``, ``Rfft``.
+        Required attributes: ``npool``, ``bnd``, ``nawf``, ``nspin``, ``alat``,
+        ``ipol``, ``jpol``, ``spol``, ``Berry``, ``eff_mass``, ``spin_Hall``,
+        ``opath``.
+        For Z2: ``nelec``.  For spin Hall: ``Sj``.
+
+    Returns
+    -------
+    None
+        Writes one or more output files to ``opath`` depending on the
+        flags set in ``data_attributes``:
+
+        - ``Z2.dim`` — 2-D and 3-D Z2 topological invariants
+          (when ``nspin == 1`` and ``spin_Hall`` is ``True``).
+        - Berry curvature, Chern numbers, or spin Hall conductivity files
+          (controlled by ``Berry`` and ``spin_Hall`` flags).
+        - Effective mass tensor files (when ``eff_mass`` is ``True``).
+
+    Notes
+    -----
+    The Z2 invariant is computed at the 8 time-reversal invariant momentum
+    (TRIM) points following Fu, Kane, and Mele, Phys. Rev. B **76**, 045302
+    (2007), using the Pfaffian method of Soluyanov and Vanderbilt, Phys.
+    Rev. B **83**, 235401 (2011).  The Berry curvature and spin Hall
+    conductivity are evaluated via the Kubo-formula approach.  Momentum
+    matrix elements are computed using the Fourier-differentiated Hamiltonian
+    with the Dnm correction for non-primitive bases.
+    """
     from mpi4py import MPI
 
     from .communication import gather_full, scatter_full
@@ -342,6 +377,41 @@ def do_topology(data_controller):
 
 
 def band_loop_H(HRaux, R, kq, nawf, nspin):
+    """Evaluate the Bloch Hamiltonian :math:`H(\\mathbf{k})` from real-space data.
+
+    Parameters
+    ----------
+    HRaux : np.ndarray, shape ``(nawf, nawf, nrtot, nspin)``, complex
+        Real-space Hamiltonian elements, arranged with the lattice index
+        on the last axis before ``nspin``.
+    R : np.ndarray, shape ``(nrtot, 3)``
+        Real-space lattice vectors in units of the lattice constant.
+    kq : np.ndarray, shape ``(3, nksize)``
+        k-points in Cartesian coordinates.
+    nawf : int
+        Number of atomic wave-function projectors.
+    nspin : int
+        Number of spin channels.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nksize, nawf, nawf, nspin)``, complex
+        :math:`H(\\mathbf{k})` evaluated at each requested k-point.
+
+    Notes
+    -----
+    Computes the Fourier sum
+
+    .. math::
+
+        H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
+            H(\\mathbf{R})\\, e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}
+
+    via a tensor contraction between ``HRaux`` and the phase matrix.
+    This is a local variant of the same function in ``do_bands.py``,
+    accepting explicit ``R`` and ``kq`` arrays rather than a
+    ``DataController`` instance.
+    """
     kdot = np.zeros((kq.shape[1], R.shape[0]), dtype=complex, order='C')
     kdot = np.tensordot(R, 2.0j * np.pi * kq, axes=([1], [0]))
     np.exp(kdot, kdot)

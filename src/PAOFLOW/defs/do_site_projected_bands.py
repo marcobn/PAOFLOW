@@ -1,17 +1,38 @@
-#
-# PAOFLOW
-#
-# Utility to construct and operate on Hamiltonians from the Projections of DFT wfc on Atomic Orbital bases (PAO)
-#
-# Copyright (C) 2016,2017 ERMES group (http://ermes.unt.edu, mbn@unt.edu)
-# This file is distributed under the terms of the
-# GNU General Public License. See the file `License'
-# in the root directory of the present distribution,
-# or http://www.gnu.org/copyleft/gpl.txt .
-#
-
-
 def site_projeted_bands(data_controller):
+    """Write site-projected band weights to a data file.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``v_k`` (shape ``(nkpi, nawf, bnd, nspin)``),
+        ``E_k`` (shape ``(nkpi, bnd, nspin)``), ``site_proj``
+        (1-D int array of site indices to project onto), ``naw``
+        (number of atomic orbitals per atom).
+        Required attributes: ``nawf``, ``do_spin_orbit``.
+        Attribute ``opath`` is used for output.
+
+    Returns
+    -------
+    None
+        Writes one text file per spin channel to
+        ``{opath}/site-projected-bands_{ispin}.dat``.
+        Each line contains three whitespace-separated values:
+        k-point index (int), band energy (float, eV), and the
+        site-projected spectral weight (float).
+
+    Notes
+    -----
+    For each selected site in ``site_proj``, the orbital indices
+    :math:`[\\text{idx}, \\text{fdx})` belonging to that site are identified
+    using the cumulative sum of ``naw``.  A complex mask is applied to the
+    eigenvector array ``v_k`` to retain only those orbital components, and
+    the spectral weight is computed as :math:`\\sum_\\mu |v^\\mu_{nk}|^2`.
+
+    When ``do_spin_orbit`` is enabled, the spin-orbit-doubled basis is
+    accounted for by also including the upper spin sector
+    :math:`[\\text{idx}+s, \\text{fdx}+s)` where :math:`s = N_{\\text{wf}}/2`.
+    """
     import numpy as np
     from os.path import join
 

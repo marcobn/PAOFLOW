@@ -1,4 +1,10 @@
 def header():
+    """Print the PAOFLOW ASCII banner to standard output.
+
+    Returns
+    -------
+    None
+    """
     print('')
     print(
         '#############################################################################################'
@@ -20,9 +26,6 @@ def header():
     )
     print(
         '#                                                                                           #'
-    )
-    print(
-        '#                       (c)2016-2024 ERMES group (http://ermes.unt.edu)                     #'
     )
     print(
         '#############################################################################################\n'

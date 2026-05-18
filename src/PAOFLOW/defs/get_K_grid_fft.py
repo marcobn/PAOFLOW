@@ -1,4 +1,24 @@
 def get_K_grid_fft(data_controller):
+    """Build the Cartesian k-grid and uniform k-point weights from the FFT mesh.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``b_vectors`` (shape ``(3, 3)``).
+        Required attributes: ``nk1``, ``nk2``, ``nk3``.
+
+    Returns
+    -------
+    None
+        Adds the following entries to ``data_controller.data_arrays``:
+
+        - ``kgrid`` : np.ndarray, shape ``(3, nktot)`` — Cartesian k-coordinates
+          (in units of :math:`2\\pi/a`) of all ``nktot = nk1*nk2*nk3`` grid
+          points, centred around :math:`\\Gamma` (folded into :math:`[-0.5, 0.5)`).
+        - ``kq_wght`` : np.ndarray, shape ``(nktot,)`` — uniform k-point weights,
+          each equal to ``1 / nktot``.
+    """
     import numpy as np
 
     arrays, attributes = data_controller.data_dicts()
@@ -39,6 +59,23 @@ def get_K_grid_fft(data_controller):
 
 
 def get_K_grid_fft_crystal(nk1, nk2, nk3):
+    """Build the k-grid in reduced crystal coordinates.
+
+    Parameters
+    ----------
+    nk1 : int
+        Number of k-points along the first reciprocal-lattice vector.
+    nk2 : int
+        Number of k-points along the second reciprocal-lattice vector.
+    nk3 : int
+        Number of k-points along the third reciprocal-lattice vector.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nk1*nk2*nk3, 3)``, float
+        k-coordinates in reduced crystal units, centred around
+        :math:`\\Gamma` (each component folded into :math:`[-0.5, 0.5)`).
+    """
     import numpy as np
 
     nktot = nk1 * nk2 * nk3

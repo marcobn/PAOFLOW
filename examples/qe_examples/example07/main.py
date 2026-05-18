@@ -34,11 +34,7 @@ def main():
   paoflow.projectability()
   paoflow.pao_hamiltonian()
 
-  paoflow.adhoc_spin_orbit(phi=0.0,theta=0.0,
-                          naw       = np.array([9]),                   # number of orbitals for each atom
-                          lambda_p  = np.array([0.0]),                 # p orbitals SOC strengh for each atom
-                          lambda_d  = np.array([0.5534]),              # d orbitals SOC strengh for each atom
-                          orb_pseudo = ['spd'])                        # type of pseudo potential for each atom
+  paoflow.adhoc_spin_orbit(phi=0.0,theta=0.0,soc_strengh={ 'Pt': [0.0,0.553] })
 
   path = 'gG-X-W-K-gG-L-U-W-L-K|U-X'
   special_points = {'gG'   : (0.0, 0.0, 0.0),

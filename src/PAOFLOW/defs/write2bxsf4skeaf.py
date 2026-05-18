@@ -1,15 +1,35 @@
 def write2bxsf4skeaf(data_controller, bands, nbnd, indices):
-    """
-    Writes a bxsf File compatible with skeaf to 'opath' (outputdir)
+    """Write per-band BXSF files in SKEAF-compatible format.
 
-    Arguments:
-        data_controller (DataController): The current PAOFLOW DataController
-        bands (ndarray): Array with data to write
-        nbnd (int): Number of columns of band-like data values to write
-        indices (list): A list of included band indices, in ascending order
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``b_vectors`` (shape ``(3, 3)``).
+        Required attributes: ``alat``, ``nk1``, ``nk2``, ``nk3``,
+        ``workpath``, ``outputdir``.
+    bands : np.ndarray, shape ``(nk1, nk2, nk3, nbnd)``
+        Band eigenvalues on the 3-D k-grid (in eV).
+    nbnd : int
+        Number of bands to write; one BXSF file is created per band.
+    indices : Optional[array_like of int]
+        1-D array of included band indices (1-based in output).  If
+        ``None``, indices default to zero.
 
-    Returns:
-        None
+    Returns
+    -------
+    None
+        Creates ``nbnd`` files named ``Fermi_surf_band_{ib+1}.bxsf``
+        inside ``{workpath}/{outputdir}/``.
+
+    Notes
+    -----
+    Unlike :func:`write2bxsf`, this function writes one BXSF file per
+    band to ensure compatibility with SKEAF (Supercell K-space Extremal
+    Area Finder).  Band energies are converted from eV to Rydberg
+    (``Ryd_conv = 0.0734986176``) and the Fermi energy is set to zero.
+    Reciprocal-lattice vectors are written in units of :math:`1/a_{\\rm lat}`
+    (without the :math:`2\\pi` factor required by SKEAF).
     """
     from os.path import join
 

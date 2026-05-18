@@ -3,7 +3,21 @@ from pathlib import Path
 
 
 def read_band_path_PAO(fname):
-    """ """
+    """Read a PAOFLOW k-path file and return tick positions and labels.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the ``kpath_points.txt`` file written by PAOFLOW.
+
+    Returns
+    -------
+    findex : list of int
+        Cumulative k-point indices for each high-symmetry point.
+    ftags : list of str
+        Labels for each high-symmetry point (``'G'`` is replaced by
+        ``r'$\\Gamma$'``).
+    """
 
     tags = []
     npnts = []
@@ -31,7 +45,20 @@ def read_band_path_PAO(fname):
 
 
 def read_dos_PAO(fname):
-    """ """
+    """Read a two-column PAOFLOW DOS output file.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the DOS file (first column energy in eV, second column DOS).
+
+    Returns
+    -------
+    es : np.ndarray
+        Energy values (eV).
+    dos : np.ndarray
+        Density of states.
+    """
     import numpy as np
 
     es = []
@@ -49,7 +76,18 @@ def read_dos_PAO(fname):
 
 
 def read_bands_PAO(fname):
-    """ """
+    """Read a PAOFLOW band structure file.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the band file (each row: k-index followed by band energies).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnd, nkpts)``
+        Band energies (eV) with rows indexed by band and columns by k-point.
+    """
     import numpy as np
 
     bands = []
@@ -61,6 +99,20 @@ def read_bands_PAO(fname):
 
 
 def read_site_projected(path: Path) -> pd.DataFrame:
+    """Read a PAOFLOW site-projected band structure file into a DataFrame.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the whitespace-separated file with columns:
+        k-index, eigenvalue, and site projection weight.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns ``'kindex'``, ``'eigenvalue'``,
+        ``'site_weight'``; rows with non-numeric entries are dropped.
+    """
     df = pd.read_csv(path, sep=r'\s+', header=None)
 
     df = df.iloc[:, :3].copy()
@@ -73,6 +125,24 @@ def read_site_projected(path: Path) -> pd.DataFrame:
 
 
 def read_transport_PAO(fname):
+    """Read a PAOFLOW transport tensor output file.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the transport output file.  Each row contains temperature,
+        energy, and six independent tensor components (diagonal and
+        off-diagonal: xx, yy, zz, xy, xz, yz).
+
+    Returns
+    -------
+    enes : np.ndarray, shape ``(nene,)``
+        Energy grid (eV).
+    temps : np.ndarray, shape ``(ntemp,)``
+        Temperature grid (K).
+    tensors : np.ndarray, shape ``(ntemp, nene, 3, 3)``
+        Symmetric transport tensor at each temperature and energy.
+    """
     import numpy as np
 
     nene = 0

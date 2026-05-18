@@ -8,6 +8,32 @@ epso = 8.854187817e-12
 
 
 def acoustic_model(temp, eigs, params):
+    """Compute electron lifetimes for acoustic phonon deformation-potential scattering.
+
+    Parameters
+    ----------
+    temp : float
+        Temperature (K).
+    eigs : np.ndarray
+        Band eigenvalues (eV) measured from the band edge.
+    params : dict
+        Model parameters:
+
+        - ``'v'`` : float — sound velocity (m/s).
+        - ``'rho'`` : float — mass density (kg/m³).
+        - ``'ms'`` : float — effective mass in units of :math:`m_e`.
+        - ``'D_ac'`` : float — acoustic deformation potential (eV).
+
+    Returns
+    -------
+    np.ndarray
+        Electron lifetime :math:`\\tau_{\\rm ac}` (s) for each eigenvalue.
+
+    Notes
+    -----
+    Formula from Fiorentini *et al.* applied to Mg₃Sb₂-type materials.
+    The scattering rate scales as :math:`\\tau^{-1} \\propto k_BT \\sqrt{E}`.
+    """
     # Formula from fiorentini paper on Mg3Sb2
     temp *= ev2j
     E = eigs * ev2j  # Eigenvalues in J
@@ -22,6 +48,33 @@ def acoustic_model(temp, eigs, params):
 
 
 def optical_model(temp, eigs, params):
+    """Compute electron lifetimes for optical phonon deformation-potential scattering.
+
+    Parameters
+    ----------
+    temp : float
+        Temperature (K).
+    eigs : np.ndarray
+        Band eigenvalues (eV) measured from the band edge.
+    params : dict
+        Model parameters:
+
+        - ``'hwlo'`` : array_like of float — LO phonon energies (eV).
+        - ``'rho'`` : float — mass density (kg/m³).
+        - ``'D_op'`` : float — optical deformation potential (eV).
+        - ``'ms'`` : float — effective mass in units of :math:`m_e`.
+
+    Returns
+    -------
+    np.ndarray
+        Electron lifetime :math:`\\tau_{\\rm op}` (s) for each eigenvalue.
+
+    Notes
+    -----
+    Formula from Jacoboni, *Theory of Electron Transport in Semiconductors*.
+    The emission and absorption channels are weighted by the Bose-Einstein
+    distribution :math:`N_{\\rm op} = [e^{\\hbar\\omega/k_BT}-1]^{-1}`.
+    """
     # Formula from jacoboni theory of electron transport in semiconductors
     temp *= ev2j
     E = eigs * ev2j
@@ -43,6 +96,31 @@ def optical_model(temp, eigs, params):
 
 
 def polar_acoustic_model(temp, eigs, params):
+    """Compute electron lifetimes for polar acoustic phonon (piezoelectric) scattering.
+
+    Parameters
+    ----------
+    temp : float
+        Temperature (K).
+    eigs : np.ndarray
+        Band eigenvalues (eV) measured from the band edge.
+    params : dict
+        Model parameters:
+
+        - ``'piezo'`` : float — piezoelectric constant (C/m²).
+        - ``'doping_conc'`` : float — doping concentration (cm⁻³).
+        - ``'eps_0'`` : float — low-frequency dielectric constant (in units
+          of :math:`\\varepsilon_0`).
+        - ``'eps_inf'`` : float — high-frequency dielectric constant.
+        - ``'ms'`` : float — effective mass in units of :math:`m_e`.
+        - ``'rho'`` : float — mass density (kg/m³).
+        - ``'v'`` : float — sound velocity (m/s).
+
+    Returns
+    -------
+    np.ndarray
+        Electron lifetime :math:`\\tau_{\\rm pac}` (s) for each eigenvalue.
+    """
     temp *= ev2j
     E = eigs * ev2j
     piezo = params['piezo']  # Piezoelectric constant
@@ -65,6 +143,34 @@ def polar_acoustic_model(temp, eigs, params):
 
 
 def polar_optical_model(temp, eigs, params):
+    """Compute electron lifetimes for polar optical (Fr\u00f6hlich) phonon scattering.
+
+    Parameters
+    ----------
+    temp : float
+        Temperature (K).
+    eigs : np.ndarray
+        Band eigenvalues (eV) measured from the band edge.
+    params : dict
+        Model parameters:
+
+        - ``'Ef'`` : float — Fermi energy (eV).
+        - ``'hwlo'`` : array_like of float — LO phonon energies (eV).
+        - ``'eps_0'`` : float — low-frequency dielectric constant.
+        - ``'eps_inf'`` : float — high-frequency dielectric constant.
+        - ``'ms'`` : float — effective mass in units of :math:`m_e`.
+
+    Returns
+    -------
+    np.ndarray
+        Electron lifetime :math:`\\tau_{\\rm pol}` (s) for each eigenvalue.
+
+    Notes
+    -----
+    Formula from Fiorentini *et al.*, Phys. Rev. B (Mg₃Sb₂ paper).  The
+    coupling involves both phonon emission and absorption weighted by Bose
+    and Fermi-Dirac statistics.
+    """
     # Formula from fiorentini paper on Mg3Sb2
     temp *= ev2j
     E = eigs * ev2j
@@ -113,6 +219,34 @@ def polar_optical_model(temp, eigs, params):
 
 
 def impurity_model(temp, eigs, params):
+    """Compute electron lifetimes for ionized impurity scattering.
+
+    Parameters
+    ----------
+    temp : float
+        Temperature (K).
+    eigs : np.ndarray
+        Band eigenvalues (eV) measured from the band edge.
+    params : dict
+        Model parameters:
+
+        - ``'nI'`` : float — impurity concentration (cm⁻³).
+        - ``'Zi'`` : int — charge number of the impurity.
+        - ``'ms'`` : float — effective mass in units of :math:`m_e`.
+        - ``'eps_0'`` : float — low-frequency dielectric constant.
+        - ``'eps_inf'`` : float — high-frequency dielectric constant.
+
+    Returns
+    -------
+    np.ndarray
+        Electron lifetime :math:`\\tau_{\\rm imp}` (s) for each eigenvalue.
+
+    Notes
+    -----
+    Formula from Fiorentini *et al.* (Mg₃Sb₂ paper).  The Brooks-Herring
+    screened Coulomb potential is used with a Thomas-Fermi screening
+    wave-vector :math:`q_0 = \\sqrt{e^2 n_I / (\\varepsilon k_BT)}`.
+    """
     # formula from fiorentini paper on Mg3Sb2
     temp *= ev2j
     E = eigs * ev2j
@@ -130,6 +264,31 @@ def impurity_model(temp, eigs, params):
 
 
 def builtin_tau_model(label, params, weight):
+    """Instantiate a built-in scattering rate model as a :class:`TauModel` object.
+
+    Parameters
+    ----------
+    label : str
+        Name of the built-in model.  Supported values:
+
+        - ``'acoustic'`` — :func:`acoustic_model`
+        - ``'optical'`` — :func:`optical_model`
+        - ``'polar_optical'`` — :func:`polar_optical_model`
+        - ``'polar_acoustic'`` — :func:`polar_acoustic_model`
+        - ``'impurity'`` — :func:`impurity_model`
+    params : dict
+        Parameter dictionary forwarded to the chosen model function.
+    weight : float
+        Multiplicative weight applied to the model scattering rate during
+        Matthiessen\'s-rule combination.
+
+    Returns
+    -------
+    TauModel or None
+        A :class:`~PAOFLOW.defs.TauModel.TauModel` instance with
+        ``.function`` set to the appropriate callable, or ``None`` if
+        ``label`` is not recognised.
+    """
     from .TauModel import TauModel
 
     model = TauModel(params=params, weight=weight)

@@ -6,7 +6,7 @@ requires = ["flit_core >=3.2,<4"]
 name = "PAOFLOW"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "License" }
+license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Marco Buongiorno Nardelli", email = "mbn@unt.edu" }]
 keywords = ["DFT", "Hamiltonians", "PAO"]
 dynamic = ["version", "description"]

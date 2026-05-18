@@ -2,8 +2,35 @@ import numpy as np
 
 
 def do_ortho(Hks, Sks):
-    from numpy import linalg as npl
+    """Apply the orthogonalising similarity transformation to the Hamiltonian.
+
+    Parameters
+    ----------
+    Hks : np.ndarray, shape ``(nawf, nawf, nkpnts, nspin)``, complex
+        Non-orthogonal PAO Hamiltonian in k-space.
+    Sks : np.ndarray, shape ``(nawf, nawf, nkpnts)``, complex
+        Overlap matrix :math:`S(\\mathbf{k})` in k-space.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, nawf, nkpnts, nspin)``, complex
+        Orthogonalised Hamiltonian
+        :math:`\\tilde{H} = S^{-1/2} H S^{-1/2}`.
+
+    Notes
+    -----
+    The transformation is applied k-point by k-point:
+
+    .. math::
+
+        \\tilde{H}(\\mathbf{k}) =
+            S^{-1/2}(\\mathbf{k})\\, H(\\mathbf{k})\\, S^{-1/2}(\\mathbf{k})
+
+    where :math:`S^{-1/2}` is the matrix inverse of the matrix square root of
+    :math:`S`, computed via ``scipy.linalg.sqrtm``.
+    """
     from scipy import linalg as spl
+    from numpy import linalg as npl
 
     # If orthogonality is required, we have to apply a basis change to Hks as
     # Hks -> Sks^(-1/2)*Hks*Sks^(-1/2)
@@ -22,6 +49,40 @@ def do_ortho(Hks, Sks):
 
 
 def do_orthogonalize(data_controller):
+    """Orthogonalise the PAO Hamiltonian and transform back to real space.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
+        ``SRs`` (shape ``(nawf, nawf, nk1, nk2, nk3)``).
+        Required attributes: ``nkpnts``, ``nawf``, ``nk1``, ``nk2``, ``nk3``,
+        ``nspin``, ``use_cuda``.
+
+    Returns
+    -------
+    None
+        Modifies ``data_controller.data_arrays`` and
+        ``data_controller.data_attributes`` in place:
+
+        - ``HRs`` : np.ndarray — replaced with the orthogonalised
+          real-space Hamiltonian, broadcast to all MPI ranks.
+        - ``Hks`` : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``
+          — orthogonalised k-space Hamiltonian (intermediate; may be removed
+          by subsequent steps).
+        - ``Sks`` : np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3)``
+          — overlap matrix in k-space (intermediate).
+
+        Deletes ``SRs``.  Sets attribute ``acbn0 = False``.
+
+    Notes
+    -----
+    The workflow is: ``HRs``, ``SRs`` → FFT → ``Hks``, ``Sks``
+    → :func:`do_ortho` → orthogonal ``Hks`` → inverse FFT → ``HRs``.
+    When CUDA is available the FFTs are delegated to :func:`cuda_fftn` and
+    :func:`cuda_ifftn`.
+    """
     from scipy import fftpack as FFT
 
     arrays, attributes = data_controller.data_dicts()

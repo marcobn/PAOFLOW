@@ -13,6 +13,60 @@ from scipy import fftpack as FFT
 
 
 def do_d2Hd2k_ij(Hksp, Rfft, alat, npool, v_kp, bnd, degen):
+    """Compute the six unique second-order derivatives of the k-space Hamiltonian.
+
+    Parameters
+    ----------
+    Hksp : np.ndarray, shape ``(snawf, nk1, nk2, nk3, nspin)``
+        Distributed real-space Hamiltonian in the FFT representation, where
+        each element already contains the factor :math:`i \\cdot a_{\\text{lat}}`
+        (i.e. ``HR * 1j * alat``).
+    Rfft : np.ndarray, shape ``(nk1, nk2, nk3, 3)``
+        Real-space grid vectors used as multiplication factors in FFT-based
+        gradient computation.
+    alat : float
+        Lattice constant in Bohr radii, used to scale the real-space Hamiltonian
+        prior to the FFT.
+    npool : int
+        Number of MPI pools used for the :func:`gather_scatter` redistribution.
+    v_kp : np.ndarray, shape ``(nkpnts, nawf, bnd, nspin)``
+        Bloch eigenvectors (columns are eigenstates) at each k-point,
+        distributed over pools.
+    bnd : int
+        Number of bands for which the curvature is computed.
+    degen : list
+        Nested list of degenerate subspace indices, one entry per spin channel
+        and k-point, as produced by the eigenvalue solver.
+
+    Returns
+    -------
+    M_ij : np.ndarray, shape ``(6, nkpnts, bnd, nspin)``
+        Diagonal matrix elements
+        :math:`\\langle n | d^2H / dk_i dk_j | n \\rangle` in the Bloch
+        eigenstate basis for the six unique ``ij`` pairs
+        ``xx, yy, zz, xy, xz, yz``.
+    dvec_list : list
+        Nested list of shape ``[6][nspin][nkpnts]`` containing the modified
+        eigenvector arrays after degenerate-subspace diagonalisation (used
+        by :func:`do_band_curvature` to compute the perturbative correction).
+        Each element is either an empty array or an ``np.ndarray`` of shape
+        ``(nawf, nawf)``.
+
+    Notes
+    -----
+    For each of the six unique Cartesian index pairs :math:`(i, j)`, the
+    second derivative is obtained via the FFT convolution
+
+    .. math::
+
+        d^2 H(\\mathbf{k}) / dk_i dk_j
+            = \\mathcal{F}\\left[ R_i R_j \\cdot H(\\mathbf{R}) \\cdot i \\cdot a_{\\text{lat}} \\right]
+
+    where :math:`R_i` is the *i*-th Cartesian component of the real-space
+    lattice vector grid ``Rfft``.  The result is then projected onto the
+    Bloch eigenstate basis using :func:`perturb_split` to correctly handle
+    degenerate bands.
+    """
     # ----------------------
     # Compute the gradient of the k-space Hamiltonian
     # ----------------------

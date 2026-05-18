@@ -6,8 +6,72 @@ import numpy as np
 
 # read UPF utility from Davide Ceresoli
 class UPF:
+    """Parser for Unified Pseudopotential Format (UPF) files.
+
+    Supports both UPF version 1 and version 2.  On construction the file is
+    read and all relevant header, mesh, local-potential, and pseudo-wavefunction
+    data are stored as instance attributes.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the UPF pseudopotential file.
+
+    Attributes
+    ----------
+    version : int
+        UPF format version (1 or 2).
+    element : str
+        Chemical symbol of the element.
+    ptype : str
+        Pseudopotential type (``'NC'`` for norm-conserving, ``'US'`` for
+        ultrasoft).
+    nlcc : bool
+        Whether non-linear core correction is present.
+    qexc : str
+        Exchange-correlation functional label.
+    val : float
+        Number of valence electrons.
+    lmax : int
+        Maximum angular momentum quantum number.
+    npoints : int
+        Number of radial mesh points.
+    nwfc : int
+        Number of pseudo-wavefunctions.
+    nproj : int
+        Number of projectors.
+    r : np.ndarray, shape ``(npoints,)``
+        Radial mesh (Bohr).
+    rab : np.ndarray, shape ``(npoints,)``
+        Radial mesh integration weights.
+    vloc : np.ndarray, shape ``(npoints,)``
+        Local pseudopotential (Hartree).
+    pswfc : list of dict
+        Pseudo-wavefunctions; each entry has keys ``'label'``, ``'occ'``,
+        and ``'wfc'``.
+    shells : list of int
+        Angular momentum quantum numbers :math:`l` of occupied shells.
+    jchia : np.ndarray
+        Total angular momentum :math:`j` values (spin-orbit case).
+    lchia : np.ndarray
+        Angular momentum :math:`l` values from the spin-orbit block.
+    atrho : np.ndarray or None
+        Atomic charge density, or ``None`` if absent.
+    """
+
     def __init__(self, filename):
-        """Open a UPF file, determine version, and read it"""
+        """Open a UPF file, determine version, and read it.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the UPF pseudopotential file.
+
+        Raises
+        ------
+        RuntimeError
+            If the UPF version is not 1 or 2.
+        """
         with open(filename) as f:
             xml_file_content = f.read()
 
@@ -32,7 +96,13 @@ class UPF:
             raise RuntimeError('Wrong UPF version: %s' % upfver)
 
     def _read_upf_v1(self, root):
-        """Read a UPF v1 pseudopotential"""
+        """Read a UPF v1 pseudopotential.
+
+        Parameters
+        ----------
+        root : xml.etree.ElementTree.Element
+            Root element of the parsed UPF XML tree.
+        """
 
         # parse info and header
         self.info = root.find('PP_INFO').text
@@ -94,7 +164,7 @@ class UPF:
                 wfc = np.array(wfc)
 
                 # add only occupied pswfc
-                if float(occ) > 0.0:
+                if float(occ) >= 0.0:
                     self.shells.append(int(l))
                     self.pswfc.append({'label': label, 'occ': float(occ), 'wfc': wfc})
 
@@ -111,7 +181,13 @@ class UPF:
         # TODO: GIPAW data
 
     def _read_upf_v2(self, root):
-        """Read a UPF v2 pseudopotential"""
+        """Read a UPF v2 pseudopotential.
+
+        Parameters
+        ----------
+        root : xml.etree.ElementTree.Element
+            Root element of the parsed UPF XML tree.
+        """
 
         # parse header
         h = root.find('PP_HEADER').attrib
@@ -154,7 +230,7 @@ class UPF:
             wfc = np.array(wfc)
 
             # add only occupied pswfc
-            if float(occ) > 0.0:
+            if float(occ) >= 0.0:
                 self.shells.append(int(chi.attrib['l']))
                 self.pswfc.append({'label': label, 'occ': float(occ), 'wfc': wfc})
 

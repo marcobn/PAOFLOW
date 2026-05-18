@@ -1,8 +1,46 @@
 def do_fermisurf(data_controller):
-    from os.path import join
+    """Identify Fermi-surface bands and write BXSF and NPZ output files.
 
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required array: ``E_k`` (shape ``(nkpnts, nawf, nspin)``), distributed
+        over MPI pools.
+        Required attributes: ``nawf``, ``nk1``, ``nk2``, ``nk3``, ``nspin``,
+        ``fermi_up``, ``fermi_dw``, ``npool``, ``opath``, ``verbose``.
+
+    Returns
+    -------
+    None
+        On rank 0, writes the following output files for each spin channel
+        ``ispin``:
+
+        - ``FermiSurf_{ispin}.bxsf``: BXSF file containing all bands that
+          intersect the Fermi window ``[fermi_dw, fermi_up]``.
+        - ``Fermi_surf_band_{ib}_{ispin}.npz``: compressed NumPy archive with
+          the band eigenvalues on the full 3-D k-grid (key ``nameband``,
+          shape ``(nk1, nk2, nk3)``).
+
+    Notes
+    -----
+    A band is included in the Fermi surface if at least one k-point lies
+    below ``fermi_up`` and at least one lies above ``fermi_dw``, i.e. the
+    band energy range overlaps the window ``[fermi_dw, fermi_up]``.  This
+    covers three cases:
+
+    - the band crosses ``fermi_up`` from below,
+    - the band crosses ``fermi_dw`` from above, or
+    - the band lies entirely within the window.
+
+    The gathered eigenvalue array is reshaped to
+    ``(nk1, nk2, nk3, nawf, nspin)`` before the BXSF writer is called.
+    Only MPI rank 0 performs the band selection, the file I/O, and the NPZ
+    saves; all ranks synchronise at the end via ``MPI.Barrier``.
+    """
     import numpy as np
     from mpi4py import MPI
+    from os.path import join
 
     from .communication import gather_full
 

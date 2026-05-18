@@ -7,6 +7,24 @@ size = comm.Get_size()
 
 
 def load_balancing(size, rank, n):
+    """Compute start and stop indices for a simple 1-D load-balanced partition.
+
+    Parameters
+    ----------
+    size : int
+        Total number of MPI ranks.
+    rank : int
+        Current MPI rank.
+    n : int
+        Total number of items to distribute.
+
+    Returns
+    -------
+    start : int
+        First item index assigned to this rank.
+    stop : int
+        One past the last item index assigned to this rank.
+    """
     # Load balancing
     splitsize = float(n) / float(size)
     start = int(np.around(rank * splitsize, decimals=2))
@@ -19,6 +37,28 @@ def load_balancing(size, rank, n):
 # 1 - Index in complete array where the subarray begins
 # 2 - Dimension of the subarray on this processor
 def load_sizes(size, n, dim):
+    """Compute scatter/gather layout for all MPI ranks.
+
+    Parameters
+    ----------
+    size : int
+        Total number of MPI ranks.
+    n : int
+        Number of elements in the first dimension to distribute.
+    dim : int
+        Product of all remaining dimensions (i.e. the stride per element).
+
+    Returns
+    -------
+    np.ndarray, shape ``(size, 3)``, int
+        Row ``i`` contains:
+
+        - ``sizes[i, 0]`` — number of scalar elements on rank ``i``
+          (first-dimension count times ``dim``).
+        - ``sizes[i, 1]`` — scalar offset in the flat array where rank
+          ``i``\'s sub-array begins.
+        - ``sizes[i, 2]`` — first-dimension count on rank ``i``.
+    """
     sizes = np.empty((size, 3), dtype=int)
     splitsize = float(n) / float(size)
     for i in range(size):
@@ -32,6 +72,29 @@ def load_sizes(size, n, dim):
 
 # Scatters first dimension of an array of arbitrary length
 def scatter_array(arr, sroot=0):
+    """Scatter the first dimension of an array to all MPI ranks.
+
+    Parameters
+    ----------
+    arr : np.ndarray or None
+        Array to scatter (only significant on ``sroot``).  The first
+        dimension is distributed; all remaining dimensions are replicated.
+    sroot : int, optional
+        Rank of the process that holds the data to scatter (default ``0``).
+
+    Returns
+    -------
+    np.ndarray
+        Local sub-array for this rank.  The first dimension has size
+        determined by :func:`load_sizes`; remaining dimensions are
+        identical to those of ``arr``.
+
+    Notes
+    -----
+    Uses ``MPI.Scatterv`` for variable-count scatter so that the array
+    does not need to be exactly divisible by the number of ranks.  Shape
+    and dtype are broadcast from ``sroot`` before the transfer.
+    """
     # Compute data type and shape of the scattered array on this process
     pydtype = None
     auxlen = None
@@ -76,6 +139,29 @@ def scatter_array(arr, sroot=0):
 
 # Gathers first dimension of an array of arbitrary length
 def gather_array(arr, arraux, sroot=0):
+    """Gather local sub-arrays into a full array on ``sroot``.
+
+    Parameters
+    ----------
+    arr : np.ndarray or None
+        Destination array on rank ``sroot`` (only written on ``sroot``).
+        Its shape must match the result of gathering all ``arraux``
+        sub-arrays along the first dimension.
+    arraux : np.ndarray
+        Local sub-array on this rank.
+    sroot : int, optional
+        Rank that collects the gathered result (default ``0``).
+
+    Returns
+    -------
+    None
+        The result is written directly into ``arr`` on ``sroot``.
+
+    Notes
+    -----
+    Uses ``MPI.Gatherv`` with offsets computed from :func:`load_sizes`.
+    The layout is consistent with :func:`scatter_array`.
+    """
     # An array to store the size and dimensions of gathered arrays
     lsizes = np.empty((size, 3), dtype=int)
     if rank == sroot:
@@ -92,6 +178,29 @@ def gather_array(arr, arraux, sroot=0):
 
 
 def scatter_full(arr, npool, sroot=0):
+    """Scatter the first dimension of an array using a chunked pool strategy.
+
+    Parameters
+    ----------
+    arr : np.ndarray or None
+        Array to scatter (only significant on ``sroot``).
+    npool : int
+        Number of scatter pools; the array is chunked into ``npool``
+        groups to avoid large single MPI messages.
+    sroot : int, optional
+        Root rank (default ``0``).
+
+    Returns
+    -------
+    np.ndarray
+        Local sub-array on this rank, sized according to
+        :func:`load_balancing`.
+
+    Notes
+    -----
+    Internally delegates to :func:`scatter_array` for each pool chunk to
+    keep individual MPI message sizes manageable.
+    """
     if rank == sroot:
         nsizes = comm.bcast(arr.shape)
     else:
@@ -142,6 +251,27 @@ def scatter_full(arr, npool, sroot=0):
 
 
 def gather_full(arr, npool, sroot=0):
+    """Gather local sub-arrays from all ranks using a chunked pool strategy.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Local sub-array on this rank.
+    npool : int
+        Number of gather pools.
+    sroot : int, optional
+        Rank that collects the result (default ``0``).
+
+    Returns
+    -------
+    np.ndarray or None
+        Assembled array on ``sroot``; ``None`` on all other ranks.
+
+    Notes
+    -----
+    Internally delegates to :func:`gather_array` for each pool chunk.
+    The inverse operation of :func:`scatter_full`.
+    """
     first_ind_per_proc = np.array([arr.shape[0]])
     nsize = np.zeros_like(first_ind_per_proc)
 
@@ -186,6 +316,31 @@ def gather_full(arr, npool, sroot=0):
 
 
 def gather_scatter(arr, scatter_axis, npool):
+    """Redistribute an array so that ``scatter_axis`` is the distributed axis.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Array to redistribute.  All ranks hold an identical copy on entry.
+    scatter_axis : int
+        Axis along which the output will be scattered across ranks.
+    npool : int
+        Number of pools passed to the underlying :func:`scatter_full` /
+        :func:`gather_full` calls.
+
+    Returns
+    -------
+    np.ndarray
+        Sub-array for this rank, with ``scatter_axis`` distributed.
+
+    Notes
+    -----
+    This is useful when a computation requires a different distribution
+    axis than the one provided by an earlier :func:`scatter_full` call.
+    Each rank first gathers the slices it needs, then the process with
+    ``rank == r`` calls :func:`gather_full` with ``sroot=r`` in a loop
+    over all ranks.
+    """
     # scatter indices for scatter_axis to each proc
     axis_ind = np.array(list(range(arr.shape[scatter_axis])), dtype=int)
     axis_ind = scatter_full(axis_ind, npool)
@@ -229,6 +384,28 @@ def gather_scatter(arr, scatter_axis, npool):
 
 
 def gen_window(array, root=0):
+    """Create a shared-memory window containing a copy of ``array``.
+
+    Parameters
+    ----------
+    array : np.ndarray or None
+        Array to place in shared memory (only significant on ``root``).
+    root : int, optional
+        Rank that owns the source data (default ``0``).
+
+    Returns
+    -------
+    np.ndarray
+        View into the shared-memory buffer.  All ranks on the same
+        compute node can read the data without additional communication
+        after the initial barrier.
+
+    Notes
+    -----
+    Uses ``MPI.Win.Allocate_shared`` to create a one-sided memory window.
+    Non-root ranks allocate zero bytes; the data pointer is obtained on
+    all ranks via ``Shared_query(0)``.
+    """
     # creates a shared memory copy of array on
     # rank == root that all procs can access
 

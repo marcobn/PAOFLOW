@@ -6,6 +6,48 @@ rank = comm.Get_rank()
 
 
 def do_dos(data_controller, emin, emax, ne, delta):
+    """Compute the total electronic density of states with fixed Gaussian smearing.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``E_k`` (shape ``(nkpnts, nawf, nspin)``).
+        Required attributes: ``bnd``, ``nkpnts``, ``nspin``, ``shift``,
+        ``verbose``.
+    emin : float
+        Lower energy bound of the DOS grid (eV).
+    emax : float
+        Upper energy bound; clipped to ``min(shift, emax)`` (eV).
+    ne : int
+        Number of energy grid points.
+    delta : float
+        Gaussian smearing width (eV).
+
+    Returns
+    -------
+    None
+        Adds or updates the following entries in ``data_controller.data_arrays``:
+
+        - ``dos`` : np.ndarray, shape ``(ne,)`` — the DOS on the energy grid
+          (broadcast to all ranks).
+
+        Writes ``dos_{ispin}.dat`` via
+        :meth:`DataController.write_file_row_col`.
+
+    Notes
+    -----
+    The DOS is computed as
+
+    .. math::
+
+        g(E) = \\frac{N_{\\rm bnd}}{N_{\\rm tot} \\sqrt{\\pi}\\,\\delta}
+            \\sum_{\\mathbf{k},n} \\exp\\!\\left(
+            -\\left(\\frac{E - \\varepsilon_{n\\mathbf{k}}}{\\delta}\\right)^2\\right)
+
+    where :math:`N_{\\rm tot} = N_k \\times N_{\\rm bnd}`.  MPI reduction is
+    used to sum partial contributions from each rank.
+    """
     arry, attr = data_controller.data_dicts()
     bnd = attr['bnd']
     netot = attr['nkpnts'] * bnd
@@ -40,6 +82,41 @@ def do_dos(data_controller, emin, emax, ne, delta):
 
 
 def do_dos_adaptive(data_controller, emin, emax, ne):
+    """Compute the total density of states with adaptive smearing.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``E_k`` (shape ``(nkpnts, nawf, nspin)``),
+        ``deltakp`` (per-k adaptive smearing widths).
+        Required attributes: ``bnd``, ``nkpnts``, ``nspin``, ``smearing``
+        (``'gauss'`` or ``'m-p'``), ``verbose``.
+    emin : float
+        Lower energy bound (eV).
+    emax : float
+        Upper energy bound (eV).
+    ne : int
+        Number of energy grid points.
+
+    Returns
+    -------
+    None
+        Adds or updates the following entries in ``data_controller.data_arrays``:
+
+        - ``dosdk`` : np.ndarray, shape ``(ne,)`` — the adaptive DOS
+          (broadcast to all ranks).
+
+        Writes ``dosdk_{ispin}.dat`` via
+        :meth:`DataController.write_file_row_col`.
+
+    Notes
+    -----
+    At each energy point the per-k adaptive smearing width from
+    ``deltakp`` is passed to either :func:`smearing.gaussian` (Gaussian
+    broadening) or :func:`smearing.metpax` (Methfessel-Paxton broadening).
+    This approach follows Yates *et al.*, Phys. Rev. B **75**, 195121 (2007).
+    """
     from .smearing import gaussian, metpax
 
     comm = MPI.COMM_WORLD

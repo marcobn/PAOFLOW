@@ -6,13 +6,24 @@ from mpi4py import MPI
 
 
 def parse_vasprun_data(data_controller, fname, symprec=1e-4):
-    """
-    Parse the data_file_schema.xml file produced by Quantum Espresso.
-    Populated the DataController object with all necessary information.
+    """Parse the ``vasprun.xml`` file produced by VASP.
 
-    Arguments:
-      data_controller (DataController): Data controller to populate
-      fname (str): Path and name of the xml file.
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required attributes: ``verbose``.
+    fname : str
+        Full path to ``vasprun.xml``.
+    symprec : float, optional
+        Symmetry precision passed to ``spglib`` for symmetry analysis
+        (default ``1e-4``).
+
+    Returns
+    -------
+    None
+        Populates ``data_arrays`` and ``data_attributes`` with all structural,
+        electronic, and k-grid information extracted from the VASP XML output.
     """
 
     arry, attr = data_controller.data_dicts()

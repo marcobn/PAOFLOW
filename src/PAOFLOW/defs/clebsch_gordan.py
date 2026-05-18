@@ -1,9 +1,30 @@
 def spinor(l, j, m, spin):
-    # This function calculates the numerical Clebsch-Gordan coefficients of a spinor
-    # with orbital angular momentum l, total angular momentum j,
-    # projection along z of the total angular momentum m+-1/2. Spin selects
-    # the up (spin=0) or down (spin=1) coefficient.
+    """Compute a numerical Clebsch-Gordan coefficient for a spinor.
 
+    Parameters
+    ----------
+    l : int
+        Orbital angular momentum quantum number.
+    j : float
+        Total angular momentum quantum number (:math:`j = l \\pm 1/2`).
+    m : int
+        Projection of the total angular momentum along z
+        (:math:`m_j - 1/2` for the down component).
+    spin : int
+        Selects the spin-up (``0``) or spin-down (``1``) coefficient.
+
+    Returns
+    -------
+    float
+        The Clebsch-Gordan coefficient
+        :math:`\\langle l, m_l; 1/2, \\pm 1/2 \\mid j, m_j \\rangle`.
+
+    Notes
+    -----
+    The function aborts via ``quit()`` when an incompatible combination of
+    ``j``, ``l``, or ``spin`` is supplied, printing a diagnostic message on
+    rank 0.
+    """
     import numpy as np
     from mpi4py import MPI
 
@@ -41,6 +62,42 @@ def spinor(l, j, m, spin):
 
 
 def clebsch_gordan(nawf, sh_l, sh_j, spol):
+    """Build the spin operator matrix in the coupled \u007cj, m_j, l, s\u27e9 basis.
+
+    Parameters
+    ----------
+    nawf : int
+        Total number of atomic wave-function projectors (= 2 * number of
+        spinor components).
+    sh_l : list of int
+        Orbital angular momentum quantum numbers :math:`l` for each shell.
+    sh_j : list of float
+        Total angular momentum quantum numbers :math:`j` for each shell,
+        used to detect descending/ascending ordering in the pseudopotential.
+    spol : int
+        Spin polarisation component: ``0`` for x, ``1`` for y, ``2`` for z.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, nawf)``, complex
+        The spin operator :math:`S^{spol}` expressed in the
+        :math:`|j, m_j, l, s\\rangle` basis.
+
+    Notes
+    -----
+    The transformation matrices :math:`U_l` are built by contracting
+    Clebsch-Gordan coefficients (from :func:`spinor`) for angular momenta
+    :math:`l = 0, 1, 2, 3`.  The full basis-change matrix :math:`T_n` is
+    assembled block-diagonally over all shells.  The spin operator is then
+
+    .. math::
+
+        S_j = T_n \\, S_l \\, T_n^\\top
+
+    where :math:`S_l` is the Pauli spin operator in the
+    :math:`|l, m_l, s, s_z\\rangle` basis.  Raises ``ValueError`` if the
+    shell occupancies implied by ``sh_l`` do not sum to ``nawf``.
+    """
     import numpy as np
 
     # Transformation matrices from the | l m s s_z > basis to the
