@@ -1,4 +1,3 @@
-
 def site_projeted_bands(data_controller):
     """Write site-projected band weights to a data file.
 

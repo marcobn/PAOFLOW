@@ -1,4 +1,3 @@
-
 #######################################################################
 # Fit UPF radial pseudowavefunctions with gaussian orbitals
 # Authored: Davide Ceresoli - May 2016
