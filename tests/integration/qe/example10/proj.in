@@ -1,8 +1,0 @@
- &projwfc
-    prefix='GaAs'
-    outdir='./'
-    filpdos='./'
-    lwrite_overlaps = .false.
-    lbinary_data  = .false.
- /
-~

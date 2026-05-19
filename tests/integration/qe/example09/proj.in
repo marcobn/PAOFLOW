@@ -1,7 +1,0 @@
- &projwfc
-    prefix='MoP2'
-    outdir='./'
-    filpdos='./MoP2'
-    lwrite_overlaps = .false.
-    lbinary_data  = .false.
- /
