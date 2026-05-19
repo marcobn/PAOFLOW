@@ -75,7 +75,11 @@ def transport_assets_root(transport_asset_options: _AssetOptions) -> Optional[Pa
     )
 
     if source.archive_path is None and not source.url:
-        return None
+        raise pytest.UsageError(
+            'Transport integration assets are required. '
+            'Set --transport-assets-archive/--transport-assets-url or '
+            'PAOFLOW_TRANSPORT_ASSET_ARCHIVE/PAOFLOW_TRANSPORT_ASSET_URL.'
+        )
 
     return ensure_assets_extracted(source)
 

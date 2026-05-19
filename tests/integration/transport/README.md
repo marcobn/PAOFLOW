@@ -33,13 +33,14 @@ discovered jobs, preserving their paths relative to this directory:
 ```bash
 # From repository root
 mkdir -p tests/integration/transport/_assets
-python -m tests.assets_generation.transport.build_assets \
+python .github/assets_generation/transport/build_assets.py \
+  --transport-root tests/integration/transport \
   --out tests/integration/transport/_assets/transport_test_assets_dev.tar.gz
 ```
 
-The builder is [tests/assets_generation/transport/build_assets.py](../../assets_generation/transport/build_assets.py).
+The builder is [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py).
 
-When generating assets through [tests/assets_generation/transport/job.sh](../../assets_generation/transport/job.sh), QE launch can be controlled via
+When generating assets through [.github/assets_generation/transport/job.sh](../../../.github/assets_generation/transport/job.sh), QE launch can be controlled via
 `PARALLEL_EXEC`:
 
 - serial (default): unset `PARALLEL_EXEC`
@@ -64,8 +65,8 @@ pytest -q tests/integration/transport/test_transport_examples.py \
 
 ## Asset configuration knobs
 
-Assets are optional. If assets are not configured and the working tree does not
-contain `Reference/` and `*.save`, tests skip with a clear message.
+Assets are required. If assets are not configured, pytest exits with a usage
+error explaining which CLI options or environment variables to set.
 
 You can configure assets via CLI flags or environment variables.
 
@@ -89,10 +90,10 @@ Implementation lives in [assets.py](assets.py).
 
 ## File guide
 
-- [tests/assets_generation/transport/build_assets.py](../../assets_generation/transport/build_assets.py): package `Reference/` + `*.save` into tar.gz
+- [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py): package `Reference/` + `*.save` into tar.gz
 - [assets.py](assets.py): resolve/download/verify/extract asset tarball into cache
 - [jobs.py](jobs.py): discover runnable transport jobs
 - [runner.py](runner.py): sandbox runner; overlays assets; runs transport scripts
 - [test_transport_examples.py](test_transport_examples.py): pytest integration entrypoint
-- [compare.py](compare.py): output-vs-reference `*.dat` comparison logic
+- [compare.py](compare.py): output-vs-reference `*.dat` comparison logic with per-file plot outputs under `_compare_plots`
 - [conftest.py](conftest.py): pytest options and asset fixtures

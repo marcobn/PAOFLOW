@@ -75,8 +75,11 @@ def qe_assets_root(qe_asset_options: _AssetOptions) -> Optional[Path]:
     )
 
     if source.archive_path is None and not source.url:
-        # No assets configured; tests may still pass if Reference/ + *.save exist in-repo.
-        return None
+        raise pytest.UsageError(
+            'QE integration assets are required. '
+            'Set --qe-assets-archive/--qe-assets-url or '
+            'PAOFLOW_QE_ASSET_ARCHIVE/PAOFLOW_QE_ASSET_URL.'
+        )
 
     return ensure_assets_extracted(source)
 

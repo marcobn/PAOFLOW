@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -48,11 +49,54 @@ def _load_dat(path: Path) -> np.ndarray:
     return data.T
 
 
+def _plot_columns(data: np.ndarray) -> list[int]:
+    n_col = data.shape[0]
+    if n_col <= 1:
+        return []
+    if n_col <= 4:
+        return list(range(1, n_col))
+    cols = [1, 2, n_col - 1]
+    return sorted(set(cols))
+
+
+def _write_comparison_plot(out: np.ndarray, ref: np.ndarray, out_name: str, plot_dir: Path) -> Path:
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = plot_dir / f'{Path(out_name).stem}.png'
+
+    x_ref = ref[0, :]
+    x_out = out[0, :]
+    cols = _plot_columns(ref)
+
+    fig, (ax_data, ax_diff) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    for col in cols:
+        ax_data.plot(x_ref, ref[col, :], linewidth=1.5, label=f'ref c{col}')
+        ax_data.plot(x_out, out[col, :], '--', linewidth=1.2, label=f'out c{col}')
+        ax_diff.plot(
+            x_out, np.abs(out[col, :] - ref[col, :]), linewidth=1.2, label=f'|delta| c{col}'
+        )
+
+    ax_data.set_ylabel('Value')
+    ax_data.set_title(f'Output vs Reference: {out_name}')
+    ax_data.grid(True, alpha=0.25)
+    ax_data.legend(loc='best', fontsize=8)
+
+    ax_diff.set_xlabel('X (first column)')
+    ax_diff.set_ylabel('|delta|')
+    ax_diff.grid(True, alpha=0.25)
+    ax_diff.legend(loc='best', fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(plot_path, dpi=140)
+    plt.close(fig)
+    return plot_path
+
+
 def compare_dat_dirs(
     outdir: Path,
     refdir: Path,
     *,
     tolerance: float = 0.01,
+    plot_dir: Path | None = None,
 ) -> None:
     out_files = sorted(outdir.glob('*.dat'))
     ref_files = sorted(refdir.glob('*.dat'))
@@ -86,6 +130,10 @@ def compare_dat_dirs(
                 f'Shape mismatch for {outp.name}: out {out.shape} vs ref {ref.shape}'
             )
 
+        plot_path = None
+        if plot_dir is not None:
+            plot_path = _write_comparison_plot(out, ref, outp.name, plot_dir)
+
         n_col = out.shape[0]
         n_row = out.shape[1]
         if n_col < 2:
@@ -118,6 +166,7 @@ def compare_dat_dirs(
                 f'Data mismatch in {outp.name}\n'
                 f'  out: {outp}\n'
                 f'  ref: {refp}\n'
+                f'  plot: {plot_path}\n'
                 f'  max_abs_err: {max_abs:.6e}\n'
                 f'  max_rel_err: {max_rel:.6e}\n'
                 f'  tolerance={tolerance}'
