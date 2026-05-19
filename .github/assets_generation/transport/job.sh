@@ -16,7 +16,7 @@ Options:
   --paoflow         Run PAOFLOW transport only.
   --all             Run both QE and PAOFLOW transport.
   --build-assets    Build transport_test_assets tar.gz after runs complete.
-  --assets-out PATH Output tar.gz path (default: tests/integration/transport/_assets/transport_test_assets_dev.tar.gz).
+  --assets-out PATH Output tar.gz path (default: examples/transport_examples/_assets/transport_test_assets_dev.tar.gz).
   --examples LIST   Comma-separated list of example directories.
   -h, --help        Show this help message.
 
@@ -33,17 +33,30 @@ EOF
 }
 
 resolve_root_dir() {
-  local script_dir
+  local script_dir repo_root candidate
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    if [[ -d "$SLURM_SUBMIT_DIR/tests/integration/transport" ]]; then
-      echo "$SLURM_SUBMIT_DIR/tests/integration/transport"
+    candidate="$SLURM_SUBMIT_DIR/examples/transport_examples"
+    if [[ -d "$candidate" ]]; then
+      echo "$candidate"
       return
     fi
   fi
 
-  echo "$(cd "$script_dir/../../integration/transport" && pwd)"
+  repo_root="$(cd "$script_dir/../../.." && pwd)"
+  candidate="$repo_root/examples/transport_examples"
+
+  if [[ -d "$candidate" ]]; then
+    echo "$candidate"
+    return
+  fi
+
+  echo "ERROR: could not locate examples/transport_examples." >&2
+  echo "Checked:" >&2
+  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/examples/transport_examples" >&2
+  echo "  $candidate" >&2
+  exit 1
 }
 
 resolve_exec() {

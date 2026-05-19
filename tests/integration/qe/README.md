@@ -67,10 +67,10 @@ their paths relative to this directory:
 
 ```bash
 # From repository root
-mkdir -p tests/integration/qe/_assets
+mkdir -p examples/qe_examples/_assets
 python .github/assets_generation/qe/build_assets.py \
-  --qe-root tests/integration/qe \
-  --out tests/integration/qe/_assets/qe_test_assets_dev.tar.gz
+  --qe-root examples/qe_examples \
+  --out examples/qe_examples/_assets/qe_test_assets_dev.tar.gz
 ```
 
 The builder is [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py).
@@ -79,7 +79,7 @@ The builder is [.github/assets_generation/qe/build_assets.py](../../../.github/a
 
 ```bash
 pytest -q tests/integration/qe/test_qe_examples.py \
-  --qe-assets-archive tests/integration/qe/_assets/qe_test_assets_dev.tar.gz
+  --qe-assets-archive examples/qe_examples/_assets/qe_test_assets_dev.tar.gz
 ```
 
 By default, assets are overlaid into the sandbox via symlinks (fast). To use a
@@ -87,7 +87,7 @@ copy instead:
 
 ```bash
 pytest -q tests/integration/qe/test_qe_examples.py \
-  --qe-assets-archive tests/integration/qe/_assets/qe_test_assets_dev.tar.gz \
+  --qe-assets-archive examples/qe_examples/_assets/qe_test_assets_dev.tar.gz \
   --qe-assets-link copy
 ```
 

@@ -51,8 +51,8 @@ def main() -> None:
     p.add_argument(
         '--qe-root',
         type=Path,
-        default=repo_root / 'tests' / 'integration' / 'qe',
-        help='Path to tests/integration/qe (default: tests/integration/qe)',
+        default=repo_root / 'examples' / 'qe_examples',
+        help='Path to examples/qe_examples (default: examples/qe_examples)',
     )
     p.add_argument(
         '--out',

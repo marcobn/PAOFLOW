@@ -24,4 +24,4 @@ export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 cd "$SLURM_SUBMIT_DIR"
 chmod u+x job.sh
-"./job.sh" --all --build-assets example01
+"./job.sh" --all --build-assets

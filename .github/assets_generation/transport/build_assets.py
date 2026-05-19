@@ -45,8 +45,8 @@ def main() -> None:
     p.add_argument(
         '--transport-root',
         type=Path,
-        default=repo_root / 'tests' / 'integration' / 'transport',
-        help='Path to tests/integration/transport (default: tests/integration/transport)',
+        default=repo_root / 'examples' / 'transport_examples',
+        help='Path to examples/transport_examples (default: examples/transport_examples)',
     )
     p.add_argument(
         '--out',

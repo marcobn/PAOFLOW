@@ -18,7 +18,7 @@ Options:
   --paoflow         Run PAOFLOW only.
   --all             Run both QE and PAOFLOW.
   --build-assets    Build qe_test_assets tar.gz after runs complete.
-  --assets-out PATH Output tar.gz path (default: tests/integration/qe/_assets/qe_test_assets_dev.tar.gz).
+  --assets-out PATH Output tar.gz path (default: examples/qe_examples/_assets/qe_test_assets_dev.tar.gz).
   --examples LIST   Comma-separated list of example directories.
   -h, --help        Show this help message.
 
@@ -40,7 +40,7 @@ resolve_root_dir() {
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
   if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    candidate="$SLURM_SUBMIT_DIR/tests/integration/qe"
+    candidate="$SLURM_SUBMIT_DIR/examples/qe_examples"
     if [[ -d "$candidate" ]]; then
       echo "$candidate"
       return
@@ -48,16 +48,16 @@ resolve_root_dir() {
   fi
 
   repo_root="$(cd "$script_dir/../../.." && pwd)"
-  candidate="$repo_root/tests/integration/qe"
+  candidate="$repo_root/examples/qe_examples"
 
   if [[ -d "$candidate" ]]; then
     echo "$candidate"
     return
   fi
 
-  echo "ERROR: could not locate tests/integration/qe." >&2
+  echo "ERROR: could not locate examples/qe_examples." >&2
   echo "Checked:" >&2
-  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/tests/integration/TBmodel" >&2
+  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/examples/qe_examples" >&2
   echo "  $candidate" >&2
   exit 1
 }
