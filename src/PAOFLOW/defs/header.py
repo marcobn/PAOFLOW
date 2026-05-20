@@ -41,12 +41,12 @@ def header(style='large'):
     """
     large = (
         'PPPPPP\\   AA\\AAAAA\\   OOOOOO\\  FFFFFFFF\\ LLL\\        OOOOOO\\  WW\\   WW\\   WW\\ \n'
-        'PP  __PP\\ AA  __$$\\  OO  __OO\\ FF  ____/ L  |       OO  __OO\\ W  |  W  |  W  |\n'
-        'PP /  P  |AA /  @  | OO /  O  |FF /      L  |       OO /  O  |W  |  W  |  W  |\n'
-        'PPPPPPP  |AAAAAAAA | OO |  O  |FFFFFF    L  |       OO |  O  |W  |  W  |  W  |\n'
-        'PP  ____/ AA  __AA | OO |  O  |FF  _/    L  |       OO |  O  |W |  W |  W | \n'
-        'PP /      AA /  A  | OO \\__O  |FF /      L  |       OO \\__O  |W |  W |  W | \n'
-        'PP/       AA/   A  |  \\OOOOOO  |FF/       LLLLLLLL\\  \\OOOOOO  |\\WWWWWWWWWW /  \n'
+        'PP  __PP\\ AA  __AA\\  OO  __OO\\ FF  ____/ L  |       OO  __OO\\ W  |  W  |  W  |\n'
+        'PP /  P  |AA /  AA | OO /  OO |FF /      L  |       OO /  OO |W  |  W  |  W  |\n'
+        'PPPPPPP  |AAAAAAAA | OO |  OO |FFFFFF    L  |       OO |  OO |W  |  W  |  W  |\n'
+        'PP  ____/ AA  __AA | OO |  OO |FF  _/    L  |       OO |  OO |W |  W |  W | \n'
+        'PP /      AA /  AA | OO \\__OO |FF /      L  |       OO \\__OO |W |  W |  W | \n'
+        'PP/       AA/   AA |  \\OOOOO   |FF/       LLLLLLLL\\  \\OOOOO   |\\WWWWWWWWWW /  \n'
         '\\__|      \\__|  \\__|   \\______/ \\__|      \\________|  \\______/  \\_________/   \n'
     )
     small = (
