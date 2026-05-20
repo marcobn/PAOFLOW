@@ -23,6 +23,6 @@ export QE_BIN=${QE_BIN:-/home/jayn/qe-7.4.1/bin}
 export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 cd "$SLURM_SUBMIT_DIR"
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+script_dir="."
 chmod u+x "$script_dir/job.sh"
-"$script_dir/job.sh" --all
+"$script_dir/job.sh" --qe
