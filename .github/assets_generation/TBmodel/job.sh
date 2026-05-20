@@ -104,10 +104,6 @@ run_tbmodel_script() {
   log_job "PAOFLOW: $name - OK"
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> Remove output files from TBmodel integration tests after asset generation
 cleanup_output_dir() {
   local outdir="$1"
 
@@ -115,25 +111,11 @@ cleanup_output_dir() {
     return 0
   fi
 
-<<<<<<< HEAD
-<<<<<<< HEAD
   local resolved root_resolved
   resolved="$(realpath "$outdir")"
   root_resolved="$(realpath "$root_dir")"
 
   if [[ "$resolved" != "$root_resolved"* ]]; then
-=======
-  local resolved
-  resolved="$(realpath "$outdir")"
-  if [[ "$resolved" != "$root_dir"* ]]; then
->>>>>>> Remove output files from TBmodel integration tests after asset generation
-=======
-  local resolved root_resolved
-  resolved="$(realpath "$outdir")"
-  root_resolved="$(realpath "$root_dir")"
-
-  if [[ "$resolved" != "$root_resolved"* ]]; then
->>>>>>> Add better logging of asset generation
     log_job "Skipping output directory outside TBmodel root: $outdir"
     return 0
   fi
@@ -142,11 +124,6 @@ cleanup_output_dir() {
   log_job "Removed output directory $outdir"
 }
 
-<<<<<<< HEAD
-=======
->>>>>>> Move asset generation from `tests` to `.github` folder
-=======
->>>>>>> Remove output files from TBmodel integration tests after asset generation
 build_assets=false
 assets_out=""
 examples_arg=""
@@ -180,27 +157,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
   shift
-<<<<<<< HEAD
-<<<<<<< HEAD
 done
-=======
- done
->>>>>>> Move asset generation from `tests` to `.github` folder
-=======
-done
->>>>>>> Add better logging of asset generation
 
 root_dir="$(resolve_root_dir)"
 log_dir="$root_dir/logs"
 mkdir -p "$log_dir"
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-# repo root is needed for `.github/assets_generation/TBmodel/build_assets.py`
->>>>>>> Move asset generation from `tests` to `.github` folder
-=======
->>>>>>> Add better logging of asset generation
 repo_root="$(cd "$root_dir/../../.." && pwd)"
 
 JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
@@ -209,6 +171,9 @@ PYTHON_EXEC="${PYTHON_EXEC:-python}"
 export MPLBACKEND="${MPLBACKEND:-Agg}"
 
 PARALLEL_EXEC="${PARALLEL_EXEC:-}"
+if [[ -z "$PARALLEL_EXEC" && -n "${SLURM_NTASKS:-}" ]] && command -v srun >/dev/null 2>&1; then
+  PARALLEL_EXEC="srun -n ${SLURM_NTASKS}"
+fi
 PARALLEL_EXEC_CMD=()
 if [[ -n "$PARALLEL_EXEC" ]]; then
   read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
@@ -256,39 +221,20 @@ fi
 
 failures=0
 failed_examples=()
-<<<<<<< HEAD
-<<<<<<< HEAD
 successful_output_dirs=()
-=======
->>>>>>> Move asset generation from `tests` to `.github` folder
-=======
-successful_output_dirs=()
->>>>>>> Add better logging of asset generation
 
 for name in "${examples[@]}"; do
   script_path="$root_dir/$name.py"
   if [[ ! -f "$script_path" ]]; then
     log_job "PAOFLOW: $name - skipped (missing $script_path)"
-<<<<<<< HEAD
-<<<<<<< HEAD
     failures=$((failures + 1))
     failed_examples+=("$name")
-=======
->>>>>>> Move asset generation from `tests` to `.github` folder
-=======
-    failures=$((failures + 1))
-    failed_examples+=("$name")
->>>>>>> Add better logging of asset generation
     continue
   fi
 
   if ! run_tbmodel_script "$script_path" "$name"; then
     failures=$((failures + 1))
     failed_examples+=("$name")
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> Add better logging of asset generation
   else
     successful_output_dirs+=("$(infer_outputdir "$script_path")")
   fi
@@ -298,7 +244,6 @@ if [[ $failures -gt 0 ]]; then
   log_job "Completed with $failures failure(s): ${failed_examples[*]}"
   if [[ "$build_assets" = true ]]; then
     log_job "Assets were not created and output directories were not removed because one or more examples failed."
-<<<<<<< HEAD
   fi
   exit 1
 fi
@@ -328,41 +273,5 @@ if [[ "$build_assets" = true ]]; then
 else
   log_job "All examples ran successfully."
 fi
-=======
-=======
->>>>>>> Add better logging of asset generation
-  fi
-  exit 1
-fi
-
-if [[ "$build_assets" = true ]]; then
-  mkdir -p "$(dirname "$assets_out")"
-
-  (cd "$repo_root" && "$PYTHON_EXEC" \
-    "$repo_root/.github/assets_generation/TBmodel/build_assets.py" \
-    --tbmodel-root "$root_dir" \
-    --out "$assets_out")
-
-  if [[ ! -f "$assets_out" ]]; then
-    log_job "All examples ran successfully, but asset tar was not created at $assets_out"
-    exit 1
-  fi
-
-  declare -A output_dirs_seen=()
-  for outdir in "${successful_output_dirs[@]}"; do
-    if [[ -n "$outdir" && -z "${output_dirs_seen[$outdir]:-}" ]]; then
-      output_dirs_seen["$outdir"]=1
-      cleanup_output_dir "$outdir"
-    fi
-  done
-
-  log_job "All examples ran successfully and asset tar has been created at $assets_out"
-else
-  log_job "All examples ran successfully."
-fi
-<<<<<<< HEAD
 
 log_job "Completed successfully."
->>>>>>> Move asset generation from `tests` to `.github` folder
-=======
->>>>>>> Add better logging of asset generation

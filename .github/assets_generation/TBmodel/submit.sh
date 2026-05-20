@@ -8,14 +8,18 @@
 #SBATCH --time=04:00:00
 #SBATCH --mem=2000
 
-set -euo pipefail
-
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
-export PARALLEL_EXEC="mpirun -n ${SLURM_NTASKS:-1}"
+export MPICH_GPU_SUPPORT_ENABLED=0
+ulimit -s unlimited
 
-MINICONDA_PATH="${MINICONDA_PATH:-$HOME/miniconda3}"
+MINICONDA_PATH="${MINICONDA_PATH:-/home/jayn/miniconda3}"
 source "$MINICONDA_PATH/etc/profile.d/conda.sh"
 conda activate paoflow_new
 
+set -euo pipefail
+
+export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-1}"
+
 cd "$SLURM_SUBMIT_DIR"
-bash "$SLURM_SUBMIT_DIR/job.sh" --build-assets
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$script_dir/job.sh" --build-assets

@@ -19,9 +19,10 @@ conda activate paoflow_new
 
 set -euo pipefail
 
-export QE_BIN=/home/jayn/qe-7.4.1/bin
+export QE_BIN=${QE_BIN:-/home/jayn/qe-7.4.1/bin}
 export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 cd "$SLURM_SUBMIT_DIR"
-chmod u+x job.sh
-"./job.sh" --all --build-assets
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+chmod u+x "$script_dir/job.sh"
+"$script_dir/job.sh" --all --build-assets

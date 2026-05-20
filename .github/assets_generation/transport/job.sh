@@ -282,6 +282,9 @@ if [[ "$run_qe" = true ]]; then
   fi
 
   PARALLEL_EXEC="${PARALLEL_EXEC:-}"
+  if [[ -z "$PARALLEL_EXEC" && -n "${SLURM_NTASKS:-}" ]] && command -v srun >/dev/null 2>&1; then
+    PARALLEL_EXEC="srun -n ${SLURM_NTASKS}"
+  fi
   PARALLEL_EXEC_CMD=()
   if [[ -n "$PARALLEL_EXEC" ]]; then
     read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
