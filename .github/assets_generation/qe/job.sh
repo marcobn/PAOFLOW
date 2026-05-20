@@ -113,7 +113,7 @@ run_qe_dir() {
   while IFS= read -r -d '' savedir; do
     find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' -delete
   done < <(find "$jobdir" -maxdepth 1 -type d -name '*.save' -print0)
-  find "$jobdir" -maxdepth 1 -type f \( -name '*pdos_*' -o -name '*.wfc*' -o -name '*.xml' \) -delete
+  find "$jobdir" -maxdepth 1 -type f \( -name '*pdos_*' -o -name '*.wfc*' -o \( -name '*.xml' ! -name 'inputfile.xml' \) \) -delete
   log_job "QE: $label - OK"
 }
 
