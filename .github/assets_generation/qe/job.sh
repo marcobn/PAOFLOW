@@ -7,488 +7,289 @@ timestamp() {
 
 usage() {
   cat <<'EOF'
-Usage: [environment variables] job.sh [options] example01 example02 ...
-Example: QE_BIN=/home/anooja/Work/software/qe-7.4.1/bin ./job.sh --all example01 example02
-
-
-Run PAOFLOW and/or QE jobs for the integration examples.
+Usage: [environment variables] job.sh [options] [example01 example02 ...]
 
 Options:
-  --qe              Run QE only.
-  --paoflow         Run PAOFLOW only.
-  --all             Run both QE and PAOFLOW.
-  --build-assets    Build qe_test_assets tar.gz after runs complete.
-  --assets-out PATH Output tar.gz path (default: examples/qe_examples/_assets/qe_test_assets_dev.tar.gz).
-  --examples LIST   Comma-separated list of example directories.
-  -h, --help        Show this help message.
-
-Default behavior: run all examples with PAOFLOW only.
-
-Environment overrides:
-  QE_BIN        Directory containing pw.x and projwfc.x.
-  PW_EXEC       Full path to pw.x.
-  PP_EXEC       Full path to projwfc.x.
-  PARALLEL_EXEC Optional launcher command (e.g. 'mpirun -np 8' or 'srun -n 8').
-  PYTHON_EXEC   Python interpreter to run main.py (default: python).
-  ASSETS_OUT    Same as --assets-out.
+  --qe                   Run QE on examples and create qe_assets.tar.gz.
+  --paoflow-examples     Run PAOFLOW from examples and write Reference folders.
+  --paoflow-test         Run PAOFLOW from tests and create paoflow_assets.tar.gz.
+  --all                  Run --qe + --paoflow-test.
+  --qe-assets-out PATH   Output path for qe assets tar.gz.
+  --paoflow-assets-out PATH
+                         Output path for paoflow assets tar.gz.
+  --examples LIST        Comma-separated list of example directories.
+  -h, --help             Show this help message.
 EOF
 }
 
-resolve_root_dir() {
-  local script_dir repo_root candidate
+log_job() {
+  echo "[$(timestamp)] $1" | tee -a "$JOB_LOG"
+}
 
+resolve_examples_root() {
+  local script_dir repo_root
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-
-  if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    candidate="$SLURM_SUBMIT_DIR/examples/qe_examples"
-    if [[ -d "$candidate" ]]; then
-      echo "$candidate"
-      return
-    fi
-  fi
-
   repo_root="$(cd "$script_dir/../../.." && pwd)"
-  candidate="$repo_root/examples/qe_examples"
-
-  if [[ -d "$candidate" ]]; then
-    echo "$candidate"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/examples/qe_examples" ]]; then
+    echo "$SLURM_SUBMIT_DIR/examples/qe_examples"
     return
   fi
+  echo "$repo_root/examples/qe_examples"
+}
 
-  echo "ERROR: could not locate examples/qe_examples." >&2
-  echo "Checked:" >&2
-  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/examples/qe_examples" >&2
-  echo "  $candidate" >&2
-  exit 1
+resolve_tests_root() {
+  local script_dir repo_root
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+  repo_root="$(cd "$script_dir/../../.." && pwd)"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/tests/integration/qe" ]]; then
+    echo "$SLURM_SUBMIT_DIR/tests/integration/qe"
+    return
+  fi
+  echo "$repo_root/tests/integration/qe"
 }
 
 resolve_exec() {
   local env_var="$1"
   local fallback_name="$2"
   local qe_bin="${QE_BIN:-}"
-
-  if [[ -n "${!env_var:-}" ]]; then
-    if [[ -x "${!env_var}" ]]; then
-      echo "${!env_var}"
-      return
-    fi
-    return 1
+  if [[ -n "${!env_var:-}" && -x "${!env_var}" ]]; then
+    echo "${!env_var}"
+    return
   fi
-
   if [[ -n "$qe_bin" && -x "$qe_bin/$fallback_name" ]]; then
     echo "$qe_bin/$fallback_name"
     return
   fi
-
-  if command -v "$fallback_name" >/dev/null 2>&1; then
-    command -v "$fallback_name"
-    return
-  fi
-
-  return 1
+  command -v "$fallback_name"
 }
 
-log_job() {
-  local msg="$1"
-  echo "[$(timestamp)] $msg" | tee -a "$JOB_LOG"
-}
-
-log_block_start() {
-  local label="$1"
-  printf '\n[%s] %s\n' "$(timestamp)" "$label" >> "$JOB_LOG"
+infer_outputdir_from_main() {
+  local main_py="$1"
+  "$PYTHON_EXEC" - <<'PY' "$main_py"
+import re, sys
+text = open(sys.argv[1], "r", encoding="utf-8").read()
+m = re.search(r"outputdir\s*=\s*['\"]([^'\"]+)['\"]", text)
+print(m.group(1) if m else "output")
+PY
 }
 
 run_qe_exec() {
   local exe="$1"
   local input_file="$2"
-
   if [[ ${#PARALLEL_EXEC_CMD[@]} -gt 0 ]]; then
-    "${PARALLEL_EXEC_CMD[@]}" "$exe" < "$input_file"
+    "${PARALLEL_EXEC_CMD[@]}" "$exe" -in "$input_file"
   else
-    "$exe" < "$input_file"
+    "$exe" -in "$input_file"
   fi
 }
 
-# Collect "job folders" under an example directory.
-# Includes:
-#   - the example directory itself
-#   - any subdirectory (at any depth) containing *.in and/or main.py
-collect_job_dirs() {
-  local example_dir="$1"
-  local -a dirs=()
-
-  dirs+=("$example_dir")
-
-  # QE triggers: any dir containing *.in
-  while IFS= read -r -d '' d; do
-    dirs+=("$d")
-  done < <(find "$example_dir" -type f -name "*.in" -printf '%h\0' | sort -zu)
-
-  # PAOFLOW triggers: any dir containing main.py
-  while IFS= read -r -d '' d; do
-    dirs+=("$d")
-  done < <(find "$example_dir" -type f -name "main.py" -printf '%h\0' | sort -zu)
-
-  # Unique + stable order
+collect_example_jobs() {
+  local base_dir="$1"
+  local -a dirs=("$base_dir")
+  while IFS= read -r -d '' d; do dirs+=("$d"); done < <(find "$base_dir" -type f -name '*.in' -printf '%h\0' | sort -zu)
+  while IFS= read -r -d '' d; do dirs+=("$d"); done < <(find "$base_dir" -type f -name 'main.py' -printf '%h\0' | sort -zu)
   printf '%s\n' "${dirs[@]}" | awk '!seen[$0]++'
 }
 
-run_qe_dir() {
-  local jobdir="$1"
-  local label="$2"   # e.g. example01/subA
-
-  local tmp_log
-  tmp_log="${QE_LOG}.tmp"
-
-  # Collect *.in in THIS jobdir only (not deeper) because jobdir is already discovered by recursion.
-  mapfile -t inputs < <(find "$jobdir" -maxdepth 1 -type f -name "*.in" -printf "%f\n" | sort)
-  if [[ ${#inputs[@]} -eq 0 ]]; then
-    log_job "QE: $label - skipped (no .in files)"
-    return 0
-  fi
-
-  log_block_start "QE: $label"
-  : > "$tmp_log"
-
-  # Run priority inputs first if present in this folder.
-  for input in scf.in nscf.in proj.in; do
-    if [[ -f "$jobdir/$input" ]]; then
-      local cmd
-      if [[ "$input" == *proj* ]]; then
-        cmd="$PP_EXEC"
-      else
-        cmd="$PW_EXEC"
-      fi
-      if ! (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$tmp_log" 2>&1; then
-        log_job "QE: $label - FAILED on $input"
-        printf '[%s] QE failed: %s (%s)\n' "$(timestamp)" "$label" "$input" >> "$QE_LOG"
-        tail -n 200 "$tmp_log" >> "$QE_LOG"
-        echo "--- QE error (last 40 lines) ---" | tee -a "$JOB_LOG"
-        tail -n 40 "$tmp_log" | tee -a "$JOB_LOG"
-        return 1
-      fi
-    fi
-  done
-
-  # Run the rest of the *.in files in this folder.
-  for input in "${inputs[@]}"; do
-    case "$input" in
-      scf.in|nscf.in|proj.in)
-        continue
-        ;;
-    esac
-
-    local cmd
-    if [[ "$input" == *proj* ]]; then
-      cmd="$PP_EXEC"
-    else
-      cmd="$PW_EXEC"
-    fi
-
-    if ! (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$tmp_log" 2>&1; then
-      log_job "QE: $label - FAILED on $input"
-      printf '[%s] QE failed: %s (%s)\n' "$(timestamp)" "$label" "$input" >> "$QE_LOG"
-      tail -n 200 "$tmp_log" >> "$QE_LOG"
-      echo "--- QE error (last 40 lines) ---" | tee -a "$JOB_LOG"
-      tail -n 40 "$tmp_log" | tee -a "$JOB_LOG"
-      return 1
-    fi
-  done
-
-  # Cleanup in this jobdir (and its immediate *.save dirs within it)
-  while IFS= read -r -d '' savedir; do
-    find "$savedir" -type f ! -name "*.xml" ! -name "*.UPF" -delete
-  done < <(find "$jobdir" -maxdepth 1 -type d -name "*.save" -print0)
-
-  find "$jobdir" -maxdepth 1 -type f \( -name "*pdos_*" -o -name "*.wfc*" -o -name "*.xml" \) -delete
-
-  log_job "QE: $label - OK"
-  printf '[%s] QE ok: %s\n' "$(timestamp)" "$label" >> "$QE_LOG"
-  rm -f "$tmp_log"
+collect_test_jobs() {
+  local base_dir="$1"
+  find "$base_dir" -type f -name 'main.py' -printf '%h\n' | sort -u
 }
 
-run_paoflow_dir() {
-  local jobdir="$1"
-  local label="$2"
-
-  local main_py="$jobdir/main.py"
-  local outputdir
-  local output_path
-
-  if [[ ! -f "$main_py" ]]; then
-    log_job "PAOFLOW: $label - skipped (no main.py)"
+run_qe_dir() {
+  local jobdir="$1" label="$2"
+  mapfile -t inputs < <(find "$jobdir" -maxdepth 1 -type f -name '*.in' -printf '%f\n' | sort)
+  if [[ ${#inputs[@]} -eq 0 ]]; then
+    log_job "QE: $label - skipped"
     return 0
   fi
+  for input in scf.in nscf.in proj.in; do
+    if [[ -f "$jobdir/$input" ]]; then
+      local cmd="$PW_EXEC"
+      [[ "$input" == *proj* ]] && cmd="$PP_EXEC"
+      (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$QE_LOG" 2>&1
+    fi
+  done
+  while IFS= read -r -d '' savedir; do
+    find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' -delete
+  done < <(find "$jobdir" -maxdepth 1 -type d -name '*.save' -print0)
+  find "$jobdir" -maxdepth 1 -type f \( -name '*pdos_*' -o -name '*.wfc*' -o -name '*.xml' \) -delete
+  log_job "QE: $label - OK"
+}
 
-  log_block_start "PAOFLOW: $label"
-  printf '[%s] PAOFLOW start: %s\n' "$(timestamp)" "$label" >> "$PAOFLOW_LOG"
-
-  outputdir="$($PYTHON_EXEC - <<'PY' "$main_py"
-import re
-import sys
-text = open(sys.argv[1], "r", encoding="utf-8").read()
-m = re.search(r"outputdir\s*=\s*['\"]([^'\"]+)['\"]", text)
-print(m.group(1) if m else "output")
-PY
-)"
-
+run_paoflow_example_dir() {
+  local jobdir="$1" label="$2"
+  local main_py="$jobdir/main.py"
+  [[ -f "$main_py" ]] || { log_job "PAOFLOW(examples): $label - skipped"; return 0; }
+  local outputdir output_path
+  outputdir="$(infer_outputdir_from_main "$main_py")"
   outputdir="${outputdir%/}"
-  if [[ "$outputdir" = /* ]]; then
-    output_path="$outputdir"
-  else
-    output_path="$jobdir/$outputdir"
-  fi
-
-  if ! (cd "$jobdir" && "$PYTHON_EXEC" "main.py") >> "$PAOFLOW_LOG" 2>&1; then
-    log_job "PAOFLOW: $label - FAILED"
-    printf '[%s] PAOFLOW failed: %s\n' "$(timestamp)" "$label" >> "$PAOFLOW_LOG"
-    echo "--- PAOFLOW error (last 40 lines) ---" | tee -a "$JOB_LOG"
-    tail -n 40 "$PAOFLOW_LOG" | tee -a "$JOB_LOG"
-    return 1
-  fi
-
-  # Move outputdir -> Reference inside the same jobdir
+  if [[ "$outputdir" = /* ]]; then output_path="$outputdir"; else output_path="$jobdir/$outputdir"; fi
+  (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$PAOFLOW_EXAMPLES_LOG" 2>&1
   if [[ -d "$output_path" ]]; then
     rm -rf "$jobdir/Reference"
     mv "$output_path" "$jobdir/Reference"
-  else
-    log_job "PAOFLOW: $label - WARNING (output directory missing at $output_path)"
   fi
-
-  log_job "PAOFLOW: $label - OK"
-  printf '[%s] PAOFLOW done: %s\n' "$(timestamp)" "$label" >> "$PAOFLOW_LOG"
+  log_job "PAOFLOW(examples): $label - OK"
 }
 
-cleanup_generated_dirs() {
-  local root="$1"
-
-  while IFS= read -r -d '' refdir; do
-    rm -rf "$refdir"
-  done < <(find "$root" -type d -name "Reference" -print0)
-
+overlay_qe_save_dirs() {
+  local source_jobdir="$1" test_jobdir="$2" copied_list_file="$3"
+  [[ -d "$source_jobdir" ]] || return 0
   while IFS= read -r -d '' savedir; do
-    rm -rf "$savedir"
-  done < <(find "$root" -type d -name "*.save" -print0)
+    local dst="$test_jobdir/$(basename "$savedir")"
+    [[ -e "$dst" ]] && continue
+    cp -a "$savedir" "$dst"
+    printf '%s\n' "$dst" >> "$copied_list_file"
+  done < <(find "$source_jobdir" -maxdepth 1 -type d -name '*.save' -print0)
 }
 
-# -------- argument parsing --------
+run_paoflow_test_dir() {
+  local jobdir="$1" label="$2" source_jobdir="$3" staging_dir="$4"
+  local copied_list main_py outputdir output_path
+  main_py="$jobdir/main.py"
+  [[ -f "$main_py" ]] || { log_job "PAOFLOW(test): $label - skipped"; return 0; }
+  copied_list="$(mktemp)"
+  overlay_qe_save_dirs "$source_jobdir" "$jobdir" "$copied_list"
+  outputdir="$(infer_outputdir_from_main "$main_py")"
+  outputdir="${outputdir%/}"
+  if [[ "$outputdir" = /* ]]; then output_path="$outputdir"; else output_path="$jobdir/$outputdir"; fi
+  (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$PAOFLOW_TEST_LOG" 2>&1
+  if [[ -d "$output_path" ]]; then
+    mkdir -p "$staging_dir/$label/Reference"
+    cp -a "$output_path/." "$staging_dir/$label/Reference/"
+    rm -rf "$output_path"
+  fi
+  while IFS= read -r p; do [[ -n "$p" ]] && rm -rf "$p"; done < "$copied_list"
+  rm -f "$copied_list"
+  log_job "PAOFLOW(test): $label - OK"
+}
+
+build_qe_assets_tar() {
+  mkdir -p "$(dirname "$QE_ASSETS_OUT")"
+  (cd "$REPO_ROOT" && "$PYTHON_EXEC" "$REPO_ROOT/.github/assets_generation/qe/build_assets.py" --qe-root "$EXAMPLES_ROOT" --out "$QE_ASSETS_OUT")
+  log_job "Built QE assets: $QE_ASSETS_OUT"
+}
+
+build_paoflow_assets_tar() {
+  local staging_dir="$1"
+  mkdir -p "$(dirname "$PAOFLOW_ASSETS_OUT")"
+  tar -C "$staging_dir" -czf "$PAOFLOW_ASSETS_OUT" .
+  log_job "Built PAOFLOW assets: $PAOFLOW_ASSETS_OUT"
+}
+
 run_qe=false
-run_paoflow=true
-mode_set=false
+run_paoflow_examples=false
+run_paoflow_test=false
 examples_arg=""
+qe_assets_out_arg=""
+paoflow_assets_out_arg=""
 extra_examples=()
-build_assets=false
-assets_out=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --qe)
-      if [[ "$mode_set" = false ]]; then
-        run_qe=true
-        run_paoflow=false
-        mode_set=true
-      else
-        run_qe=true
-      fi
-      ;;
-    --paoflow)
-      if [[ "$mode_set" = false ]]; then
-        run_qe=false
-        run_paoflow=true
-        mode_set=true
-      else
-        run_paoflow=true
-      fi
-      ;;
-    --all)
-      run_qe=true
-      run_paoflow=true
-      mode_set=true
-      ;;
-    --build-assets)
-      build_assets=true
-      ;;
-    --assets-out)
-      if [[ $# -lt 2 ]]; then
-        echo "Missing value for --assets-out" >&2
-        exit 2
-      fi
-      assets_out="$2"
-      shift
-      ;;
-    --assets-out=*)
-      assets_out="${1#*=}"
-      ;;
-    --examples)
-      if [[ $# -lt 2 ]]; then
-        echo "Missing value for --examples" >&2
-        exit 2
-      fi
-      examples_arg="$2"
-      shift
-      ;;
-    --examples=*)
-      examples_arg="${1#*=}"
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      extra_examples+=("$1")
-      ;;
+    --qe) run_qe=true ;;
+    --paoflow-examples) run_paoflow_examples=true ;;
+    --paoflow-test) run_paoflow_test=true ;;
+    --all) run_qe=true; run_paoflow_test=true ;;
+    --qe-assets-out) qe_assets_out_arg="$2"; shift ;;
+    --qe-assets-out=*) qe_assets_out_arg="${1#*=}" ;;
+    --paoflow-assets-out) paoflow_assets_out_arg="$2"; shift ;;
+    --paoflow-assets-out=*) paoflow_assets_out_arg="${1#*=}" ;;
+    --examples) examples_arg="$2"; shift ;;
+    --examples=*) examples_arg="${1#*=}" ;;
+    -h|--help) usage; exit 0 ;;
+    *) extra_examples+=("$1") ;;
   esac
   shift
 done
 
-root_dir="$(resolve_root_dir)"
-log_dir="$root_dir/logs"
-mkdir -p "$log_dir"
+if [[ "$run_qe" = false && "$run_paoflow_examples" = false && "$run_paoflow_test" = false ]]; then
+  run_qe=true
+  run_paoflow_examples=true
+  run_paoflow_test=true
+fi
 
-# repo root is needed for `.github/assets_generation/qe/build_assets.py`
-repo_root="$(cd "$root_dir/../../.." && pwd)"
+EXAMPLES_ROOT="$(resolve_examples_root)"
+TESTS_ROOT="$(resolve_tests_root)"
+REPO_ROOT="$(cd "$EXAMPLES_ROOT/../.." && pwd)"
+LOG_DIR="$EXAMPLES_ROOT/logs"
+mkdir -p "$LOG_DIR"
 
-JOB_LOG="$log_dir/job.log"
-QE_LOG="$log_dir/qe.log"
-PAOFLOW_LOG="$log_dir/paoflow.log"
-
+JOB_LOG="$LOG_DIR/job.log"
+QE_LOG="$LOG_DIR/qe.log"
+PAOFLOW_EXAMPLES_LOG="$LOG_DIR/paoflow_examples.log"
+PAOFLOW_TEST_LOG="$LOG_DIR/paoflow_test.log"
 : > "$JOB_LOG"
 : > "$QE_LOG"
-: > "$PAOFLOW_LOG"
+: > "$PAOFLOW_EXAMPLES_LOG"
+: > "$PAOFLOW_TEST_LOG"
 
-log_job "Root directory: $root_dir"
-log_job "Repo root: $repo_root"
-log_job "Run QE: $run_qe"
-log_job "Run PAOFLOW: $run_paoflow"
-log_job "Build assets: $build_assets"
+PYTHON_EXEC="${PYTHON_EXEC:-python}"
+QE_ASSETS_OUT="${qe_assets_out_arg:-${QE_ASSETS_OUT:-$EXAMPLES_ROOT/_assets/qe_assets.tar.gz}}"
+PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$TESTS_ROOT/_assets/paoflow_assets.tar.gz}}"
 
 if [[ "$run_qe" = true ]]; then
-  if ! PW_EXEC="$(resolve_exec PW_EXEC pw.x)"; then
-    echo "QE executable pw.x not found (set PW_EXEC or QE_BIN)" | tee -a "$JOB_LOG"
-    exit 2
-  fi
-  if ! PP_EXEC="$(resolve_exec PP_EXEC projwfc.x)"; then
-    echo "QE executable projwfc.x not found (set PP_EXEC or QE_BIN)" | tee -a "$JOB_LOG"
-    exit 2
-  fi
-
+  PW_EXEC="$(resolve_exec PW_EXEC pw.x)"
+  PP_EXEC="$(resolve_exec PP_EXEC projwfc.x)"
   PARALLEL_EXEC="${PARALLEL_EXEC:-}"
   if [[ -z "$PARALLEL_EXEC" && -n "${SLURM_NTASKS:-}" ]] && command -v srun >/dev/null 2>&1; then
     PARALLEL_EXEC="srun -n ${SLURM_NTASKS}"
   fi
   PARALLEL_EXEC_CMD=()
-  if [[ -n "$PARALLEL_EXEC" ]]; then
-    read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
-    if [[ ${#PARALLEL_EXEC_CMD[@]} -eq 0 ]]; then
-      echo "PARALLEL_EXEC was set but is empty after parsing." | tee -a "$JOB_LOG"
-      exit 2
-    fi
-    if ! command -v "${PARALLEL_EXEC_CMD[0]}" >/dev/null 2>&1; then
-      echo "PARALLEL_EXEC command not found: ${PARALLEL_EXEC_CMD[0]}" | tee -a "$JOB_LOG"
-      exit 2
-    fi
-  fi
+  [[ -n "$PARALLEL_EXEC" ]] && read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
+else
+  PARALLEL_EXEC_CMD=()
 fi
 
-PYTHON_EXEC="${PYTHON_EXEC:-python}"
-
-# Default output tarball path for assets.
-if [[ -z "${assets_out}" ]]; then
-  assets_out="${ASSETS_OUT:-$root_dir/_assets/qe_test_assets_dev.tar.gz}"
-fi
-
-declare -a examples
+declare -a examples=()
 if [[ -n "$examples_arg" ]]; then
   IFS=',' read -r -a examples <<< "$examples_arg"
 elif [[ ${#extra_examples[@]} -gt 0 ]]; then
   examples=("${extra_examples[@]}")
 else
-  mapfile -t examples < <(find "$root_dir" -maxdepth 1 -type d -name "example*" -printf "%f\n" | sort)
-fi
-
-if [[ ${#examples[@]} -eq 0 ]]; then
-  echo "No examples found to run." | tee -a "$JOB_LOG"
-  exit 1
+  mapfile -t examples < <(find "$EXAMPLES_ROOT" -maxdepth 1 -type d -name 'example*' -printf '%f\n' | sort)
 fi
 
 failures=0
-failed_examples=()
 
 for ex in "${examples[@]}"; do
-  ex_failed=false
-  exdir="$root_dir/$ex"
-  if [[ ! -d "$exdir" ]]; then
-    log_job "Example $ex not found under $root_dir"
-    failures=$((failures + 1))
-    ex_failed=true
-    failed_examples+=("$ex")
-    continue
+  exdir="$EXAMPLES_ROOT/$ex"
+  test_exdir="$TESTS_ROOT/$ex"
+
+  if [[ "$run_qe" = true ]]; then
+    while IFS= read -r jobdir; do
+      label="${jobdir#"$EXAMPLES_ROOT"/}"
+      run_qe_dir "$jobdir" "$label" || failures=$((failures + 1))
+    done < <(collect_example_jobs "$exdir")
   fi
 
-  # Collect all sub-job directories under this example
-  mapfile -t jobdirs < <(collect_job_dirs "$exdir")
-
-  if [[ ${#jobdirs[@]} -eq 0 ]]; then
-    log_job "Example $ex - skipped (no job folders found)"
-    continue
+  if [[ "$run_paoflow_examples" = true ]]; then
+    while IFS= read -r jobdir; do
+      label="${jobdir#"$EXAMPLES_ROOT"/}"
+      run_paoflow_example_dir "$jobdir" "$label" || failures=$((failures + 1))
+    done < <(collect_example_jobs "$exdir")
   fi
 
-  for jobdir in "${jobdirs[@]}"; do
-    # Label in logs relative to root_dir, e.g. example01/subA
-    label="${jobdir#"$root_dir"/}"
-
-    qe_ok=true
-    if [[ "$run_qe" = true ]]; then
-      if ! run_qe_dir "$jobdir" "$label"; then
-        qe_ok=false
-        failures=$((failures + 1))
-        ex_failed=true
-      fi
+  if [[ "$run_paoflow_test" = true && -d "$test_exdir" ]]; then
+    if [[ -z "${PAOFLOW_TEST_STAGING_DIR:-}" ]]; then
+      PAOFLOW_TEST_STAGING_DIR="$(mktemp -d)"
+      trap 'rm -rf "$PAOFLOW_TEST_STAGING_DIR"' EXIT
     fi
-
-    if [[ "$run_paoflow" = true && "$qe_ok" = true ]]; then
-      if ! run_paoflow_dir "$jobdir" "$label"; then
-        failures=$((failures + 1))
-        ex_failed=true
-      fi
-    fi
-  done
-
-  if [[ "$ex_failed" = true ]]; then
-    failed_examples+=("$ex")
+    while IFS= read -r test_jobdir; do
+      label="${test_jobdir#"$TESTS_ROOT"/}"
+      source_jobdir="$EXAMPLES_ROOT/$label"
+      run_paoflow_test_dir "$test_jobdir" "$label" "$source_jobdir" "$PAOFLOW_TEST_STAGING_DIR" || failures=$((failures + 1))
+    done < <(collect_test_jobs "$test_exdir")
   fi
 done
 
-if [[ "$build_assets" = true ]]; then
-  if [[ $failures -gt 0 ]]; then
-    if [[ ${#failed_examples[@]} -gt 0 ]]; then
-      log_job "WARNING: $failures failure(s); asset bundle will be incomplete for: ${failed_examples[*]}"
-    else
-      log_job "WARNING: $failures failure(s); asset bundle may be incomplete."
-    fi
-  fi
+if [[ "$run_qe" = true && $failures -eq 0 ]]; then
+  build_qe_assets_tar
+fi
 
-  log_job "Building asset bundle: $assets_out"
-  mkdir -p "$(dirname "$assets_out")"
-
-  if ! (
-    cd "$repo_root" &&
-    PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" \
-    "$PYTHON_EXEC" "$repo_root/.github/assets_generation/qe/build_assets.py" \
-      --qe-root "$root_dir" \
-      --out "$assets_out"
-  ) >> "$JOB_LOG" 2>&1; then
-    log_job "Asset bundle build FAILED"
-    echo "--- asset build error (last 60 lines) ---" | tee -a "$JOB_LOG"
-    tail -n 60 "$JOB_LOG" | tee -a "$JOB_LOG"
-    exit 1
-  fi
-
-  log_job "Asset bundle build OK: $assets_out"
-
-  log_job "Cleaning generated Reference and *.save directories under examples"
-  cleanup_generated_dirs "$root_dir"
-  log_job "Cleanup complete"
+if [[ "$run_paoflow_test" = true && $failures -eq 0 && -n "${PAOFLOW_TEST_STAGING_DIR:-}" ]]; then
+  build_paoflow_assets_tar "$PAOFLOW_TEST_STAGING_DIR"
 fi
 
 if [[ $failures -gt 0 ]]; then

@@ -22,4 +22,4 @@ export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-1}"
 
 cd "$SLURM_SUBMIT_DIR"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$script_dir/job.sh" --build-assets
+"$script_dir/job.sh" --paoflow-test

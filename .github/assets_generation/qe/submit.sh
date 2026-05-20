@@ -25,4 +25,4 @@ export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 cd "$SLURM_SUBMIT_DIR"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chmod u+x "$script_dir/job.sh"
-"$script_dir/job.sh" --all --build-assets
+"$script_dir/job.sh" --all

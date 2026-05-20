@@ -25,4 +25,4 @@ export QE_BIN=${QE_BIN:-/home/jayn/qe-7.4.1/bin}
 export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$script_dir/job.sh" --all --build-assets
+"$script_dir/job.sh" --all

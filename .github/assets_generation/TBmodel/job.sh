@@ -7,165 +7,158 @@ timestamp() {
 
 usage() {
   cat <<'EOF'
-Usage: [environment variables] job.sh [options] graphene graphene2 ...
-
-Run TBmodel PAOFLOW jobs for selected examples.
+Usage: [environment variables] job.sh [options] [example names...]
 
 Options:
-  --build-assets    Build tbmodel_test_assets tar.gz after runs complete.
-  --assets-out PATH Output tar.gz path (default: tests/integration/TBmodel/_assets/tbmodel_test_assets_dev.tar.gz).
-  --examples LIST   Comma-separated list of example scripts (without .py extension).
-  -h, --help        Show this help message.
-
-Default behavior: run all TBmodel examples.
-
-Environment overrides:
-  PYTHON_EXEC   Python interpreter to run scripts (default: python).
-  PARALLEL_EXEC Optional launcher command (e.g. 'mpirun -np 8' or 'srun -n 8').
-  ASSETS_OUT    Same as --assets-out.
+  --paoflow-examples     Run PAOFLOW from examples/TBmodel_examples and write Reference folders.
+  --paoflow-test         Run PAOFLOW from tests/integration/TBmodel and create paoflow_assets.tar.gz.
+  --all                  Run --paoflow-test.
+  --paoflow-assets-out PATH
+                         Output path for paoflow assets tar.gz.
+  --examples LIST        Comma-separated list of example names.
+  -h, --help             Show this help message.
 EOF
 }
 
-resolve_root_dir() {
-  local script_dir repo_root candidate
+log_job() {
+  echo "[$(timestamp)] $1" | tee -a "$JOB_LOG"
+}
 
+resolve_examples_root() {
+  local script_dir repo_root
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-
-  if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    candidate="$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
-    if [[ -d "$candidate" ]]; then
-      echo "$candidate"
-      return
-    fi
-  fi
-
   repo_root="$(cd "$script_dir/../../.." && pwd)"
-  candidate="$repo_root/tests/integration/TBmodel"
-
-  if [[ -d "$candidate" ]]; then
-    echo "$candidate"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/examples/TBmodel_examples" ]]; then
+    echo "$SLURM_SUBMIT_DIR/examples/TBmodel_examples"
     return
   fi
-
-  echo "ERROR: could not locate tests/integration/TBmodel." >&2
-  echo "Checked:" >&2
-  [[ -n "${SLURM_SUBMIT_DIR:-}" ]] && echo "  $SLURM_SUBMIT_DIR/tests/integration/TBmodel" >&2
-  echo "  $candidate" >&2
-  exit 1
+  echo "$repo_root/examples/TBmodel_examples"
 }
 
-log_job() {
-  local msg="$1"
-  echo "[$(timestamp)] $msg" | tee -a "$JOB_LOG"
+resolve_tests_root() {
+  local script_dir repo_root
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+  repo_root="$(cd "$script_dir/../../.." && pwd)"
+  if [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "$SLURM_SUBMIT_DIR/tests/integration/TBmodel" ]]; then
+    echo "$SLURM_SUBMIT_DIR/tests/integration/TBmodel"
+    return
+  fi
+  echo "$repo_root/tests/integration/TBmodel"
 }
 
-infer_outputdir() {
+infer_outputdir_from_script() {
   local script_path="$1"
-  local script_dir
-  script_dir="$(dirname "$script_path")"
-
-  local outdir
-  outdir="$($PYTHON_EXEC - <<'PY' "$script_path"
-import os
-import re
-import sys
-
+  "$PYTHON_EXEC" - <<'PY' "$script_path"
+import os, re, sys
 text = open(sys.argv[1], "r", encoding="utf-8").read()
 m = re.search(r"outputdir\s*=\s*['\"]([^'\"]+)['\"]", text)
-stem = os.path.splitext(os.path.basename(sys.argv[1]))[0]
-print(m.group(1) if m else stem)
+if m:
+    print(m.group(1))
+else:
+    print(os.path.splitext(os.path.basename(sys.argv[1]))[0])
 PY
-)"
-
-  outdir="${outdir%/}"
-  if [[ "$outdir" = /* ]]; then
-    echo "$outdir"
-  else
-    echo "$script_dir/$outdir"
-  fi
 }
 
-run_tbmodel_script() {
-  local script_path="$1"
-  local name="$2"
-
-  log_job "PAOFLOW: $name - start"
-
+run_python_script() {
+  local script_path="$1" logfile="$2"
   if [[ ${#PARALLEL_EXEC_CMD[@]} -gt 0 ]]; then
-    if ! (cd "$(dirname "$script_path")" && "${PARALLEL_EXEC_CMD[@]}" "$PYTHON_EXEC" "$(basename "$script_path")"); then
-      log_job "PAOFLOW: $name - FAILED"
-      return 1
-    fi
-  elif ! (cd "$(dirname "$script_path")" && "$PYTHON_EXEC" "$(basename "$script_path")"); then
-    log_job "PAOFLOW: $name - FAILED"
-    return 1
+    (cd "$(dirname "$script_path")" && "${PARALLEL_EXEC_CMD[@]}" "$PYTHON_EXEC" "$(basename "$script_path")") >> "$logfile" 2>&1
+  else
+    (cd "$(dirname "$script_path")" && "$PYTHON_EXEC" "$(basename "$script_path")") >> "$logfile" 2>&1
   fi
-
-  log_job "PAOFLOW: $name - OK"
 }
 
-cleanup_output_dir() {
-  local outdir="$1"
-
-  if [[ -z "$outdir" || ! -d "$outdir" ]]; then
-    return 0
+collect_example_script() {
+  local examples_root="$1" ex_name="$2"
+  if [[ -f "$examples_root/$ex_name/$ex_name.py" ]]; then
+    echo "$examples_root/$ex_name/$ex_name.py"
+  elif [[ -f "$examples_root/$ex_name.py" ]]; then
+    echo "$examples_root/$ex_name.py"
+  else
+    find "$examples_root" -type f -name "$ex_name.py" | head -n 1
   fi
-
-  local resolved root_resolved
-  resolved="$(realpath "$outdir")"
-  root_resolved="$(realpath "$root_dir")"
-
-  if [[ "$resolved" != "$root_resolved"* ]]; then
-    log_job "Skipping output directory outside TBmodel root: $outdir"
-    return 0
-  fi
-
-  rm -rf "$outdir"
-  log_job "Removed output directory $outdir"
 }
 
-build_assets=false
-assets_out=""
+collect_test_script() {
+  local tests_root="$1" ex_name="$2"
+  if [[ -f "$tests_root/$ex_name.py" ]]; then
+    echo "$tests_root/$ex_name.py"
+  fi
+}
+
+run_paoflow_example_script() {
+  local script_path="$1" label="$2"
+  run_python_script "$script_path" "$PAOFLOW_EXAMPLES_LOG"
+  local outputdir outputpath
+  outputdir="$(infer_outputdir_from_script "$script_path")"
+  outputdir="${outputdir%/}"
+  if [[ "$outputdir" = /* ]]; then outputpath="$outputdir"; else outputpath="$(dirname "$script_path")/$outputdir"; fi
+  if [[ -d "$outputpath" ]]; then
+    rm -rf "$(dirname "$script_path")/Reference"
+    mv "$outputpath" "$(dirname "$script_path")/Reference"
+  fi
+  log_job "PAOFLOW(examples): $label - OK"
+}
+
+run_paoflow_test_script() {
+  local script_path="$1" label="$2" staging_dir="$3"
+  run_python_script "$script_path" "$PAOFLOW_TEST_LOG"
+  local outputdir outputpath
+  outputdir="$(infer_outputdir_from_script "$script_path")"
+  outputdir="${outputdir%/}"
+  if [[ "$outputdir" = /* ]]; then outputpath="$outputdir"; else outputpath="$(dirname "$script_path")/$outputdir"; fi
+  if [[ -d "$outputpath" ]]; then
+    mkdir -p "$staging_dir/$label/Reference"
+    cp -a "$outputpath/." "$staging_dir/$label/Reference/"
+    rm -rf "$outputpath"
+  fi
+  log_job "PAOFLOW(test): $label - OK"
+}
+
+build_paoflow_assets_tar() {
+  local staging_dir="$1"
+  mkdir -p "$(dirname "$PAOFLOW_ASSETS_OUT")"
+  tar -C "$staging_dir" -czf "$PAOFLOW_ASSETS_OUT" .
+  log_job "Built PAOFLOW assets: $PAOFLOW_ASSETS_OUT"
+}
+
+run_paoflow_examples=false
+run_paoflow_test=false
 examples_arg=""
+paoflow_assets_out_arg=""
 extra_examples=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --build-assets)
-      build_assets=true
-      ;;
-    --assets-out)
-      assets_out="$2"
-      shift
-      ;;
-    --assets-out=*)
-      assets_out="${1#*=}"
-      ;;
-    --examples)
-      examples_arg="$2"
-      shift
-      ;;
-    --examples=*)
-      examples_arg="${1#*=}"
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      extra_examples+=("$1")
-      ;;
+    --paoflow-examples) run_paoflow_examples=true ;;
+    --paoflow-test) run_paoflow_test=true ;;
+    --all) run_paoflow_test=true ;;
+    --paoflow-assets-out) paoflow_assets_out_arg="$2"; shift ;;
+    --paoflow-assets-out=*) paoflow_assets_out_arg="${1#*=}" ;;
+    --examples) examples_arg="$2"; shift ;;
+    --examples=*) examples_arg="${1#*=}" ;;
+    -h|--help) usage; exit 0 ;;
+    *) extra_examples+=("$1") ;;
   esac
   shift
 done
 
-root_dir="$(resolve_root_dir)"
-log_dir="$root_dir/logs"
-mkdir -p "$log_dir"
+if [[ "$run_paoflow_examples" = false && "$run_paoflow_test" = false ]]; then
+  run_paoflow_examples=true
+  run_paoflow_test=true
+fi
 
-repo_root="$(cd "$root_dir/../../.." && pwd)"
+EXAMPLES_ROOT="$(resolve_examples_root)"
+TESTS_ROOT="$(resolve_tests_root)"
+LOG_DIR="$TESTS_ROOT/logs"
+mkdir -p "$LOG_DIR"
 
-JOB_LOG="$log_dir/job.$(date +%Y%m%d_%H%M%S).log"
+JOB_LOG="$LOG_DIR/job.log"
+PAOFLOW_EXAMPLES_LOG="$LOG_DIR/paoflow_examples.log"
+PAOFLOW_TEST_LOG="$LOG_DIR/paoflow_test.log"
+: > "$JOB_LOG"
+: > "$PAOFLOW_EXAMPLES_LOG"
+: > "$PAOFLOW_TEST_LOG"
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
 export MPLBACKEND="${MPLBACKEND:-Agg}"
@@ -175,103 +168,54 @@ if [[ -z "$PARALLEL_EXEC" && -n "${SLURM_NTASKS:-}" ]] && command -v srun >/dev/
   PARALLEL_EXEC="srun -n ${SLURM_NTASKS}"
 fi
 PARALLEL_EXEC_CMD=()
-if [[ -n "$PARALLEL_EXEC" ]]; then
-  read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
-  if [[ ${#PARALLEL_EXEC_CMD[@]} -eq 0 ]]; then
-    echo "PARALLEL_EXEC was set but is empty after parsing." >&2
-    exit 2
-  fi
-  if ! command -v "${PARALLEL_EXEC_CMD[0]}" >/dev/null 2>&1; then
-    echo "PARALLEL_EXEC command not found: ${PARALLEL_EXEC_CMD[0]}" >&2
-    exit 2
-  fi
-fi
+[[ -n "$PARALLEL_EXEC" ]] && read -r -a PARALLEL_EXEC_CMD <<< "$PARALLEL_EXEC"
 
-if [[ -z "$assets_out" ]]; then
-  assets_out="${ASSETS_OUT:-$root_dir/_assets/tbmodel_test_assets_dev.tar.gz}"
-fi
+PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$TESTS_ROOT/_assets/paoflow_assets.tar.gz}}"
 
-examples=()
+declare -a examples=()
 if [[ -n "$examples_arg" ]]; then
   IFS=',' read -r -a examples <<< "$examples_arg"
-fi
-if [[ ${#extra_examples[@]} -gt 0 ]]; then
-  examples+=("${extra_examples[@]}")
-fi
-
-if [[ ${#examples[@]} -eq 0 ]]; then
-  while IFS= read -r -d '' script; do
-    name="$(basename "$script" .py)"
-    case "$name" in
-      assets|build_assets|compare|conftest|jobs|runner)
-        continue
-        ;;
-    esac
-    examples+=("$name")
-  done < <(
-    find "$root_dir" -maxdepth 1 -type f -name "*.py" \
-      ! -name "test_*" ! -name "_*" ! -name "__init__.py" -print0 | sort -z
-  )
-fi
-
-if [[ ${#examples[@]} -eq 0 ]]; then
-  echo "No TBmodel examples found under $root_dir" >&2
-  exit 1
+elif [[ ${#extra_examples[@]} -gt 0 ]]; then
+  examples=("${extra_examples[@]}")
+else
+  mapfile -t examples < <(find "$TESTS_ROOT" -maxdepth 1 -type f -name '*.py' ! -name 'test_*' ! -name '__init__.py' ! -name 'assets.py' ! -name 'compare.py' ! -name 'conftest.py' ! -name 'jobs.py' ! -name 'runner.py' -printf '%f\n' | sed 's/\.py$//' | sort)
 fi
 
 failures=0
-failed_examples=()
-successful_output_dirs=()
 
-for name in "${examples[@]}"; do
-  script_path="$root_dir/$name.py"
-  if [[ ! -f "$script_path" ]]; then
-    log_job "PAOFLOW: $name - skipped (missing $script_path)"
-    failures=$((failures + 1))
-    failed_examples+=("$name")
-    continue
+for ex in "${examples[@]}"; do
+  if [[ "$run_paoflow_examples" = true ]]; then
+    ex_script="$(collect_example_script "$EXAMPLES_ROOT" "$ex")"
+    if [[ -z "$ex_script" || ! -f "$ex_script" ]]; then
+      log_job "PAOFLOW(examples): $ex - missing script"
+      failures=$((failures + 1))
+    else
+      run_paoflow_example_script "$ex_script" "$ex" || failures=$((failures + 1))
+    fi
   fi
 
-  if ! run_tbmodel_script "$script_path" "$name"; then
-    failures=$((failures + 1))
-    failed_examples+=("$name")
-  else
-    successful_output_dirs+=("$(infer_outputdir "$script_path")")
+  if [[ "$run_paoflow_test" = true ]]; then
+    test_script="$(collect_test_script "$TESTS_ROOT" "$ex")"
+    if [[ -z "$test_script" || ! -f "$test_script" ]]; then
+      log_job "PAOFLOW(test): $ex - missing script"
+      failures=$((failures + 1))
+      continue
+    fi
+    if [[ -z "${PAOFLOW_TEST_STAGING_DIR:-}" ]]; then
+      PAOFLOW_TEST_STAGING_DIR="$(mktemp -d)"
+      trap 'rm -rf "$PAOFLOW_TEST_STAGING_DIR"' EXIT
+    fi
+    run_paoflow_test_script "$test_script" "$ex" "$PAOFLOW_TEST_STAGING_DIR" || failures=$((failures + 1))
   fi
 done
 
-if [[ $failures -gt 0 ]]; then
-  log_job "Completed with $failures failure(s): ${failed_examples[*]}"
-  if [[ "$build_assets" = true ]]; then
-    log_job "Assets were not created and output directories were not removed because one or more examples failed."
-  fi
-  exit 1
+if [[ "$run_paoflow_test" = true && $failures -eq 0 && -n "${PAOFLOW_TEST_STAGING_DIR:-}" ]]; then
+  build_paoflow_assets_tar "$PAOFLOW_TEST_STAGING_DIR"
 fi
 
-if [[ "$build_assets" = true ]]; then
-  mkdir -p "$(dirname "$assets_out")"
-
-  (cd "$repo_root" && "$PYTHON_EXEC" \
-    "$repo_root/.github/assets_generation/TBmodel/build_assets.py" \
-    --tbmodel-root "$root_dir" \
-    --out "$assets_out")
-
-  if [[ ! -f "$assets_out" ]]; then
-    log_job "All examples ran successfully, but asset tar was not created at $assets_out"
-    exit 1
-  fi
-
-  declare -A output_dirs_seen=()
-  for outdir in "${successful_output_dirs[@]}"; do
-    if [[ -n "$outdir" && -z "${output_dirs_seen[$outdir]:-}" ]]; then
-      output_dirs_seen["$outdir"]=1
-      cleanup_output_dir "$outdir"
-    fi
-  done
-
-  log_job "All examples ran successfully and asset tar has been created at $assets_out"
-else
-  log_job "All examples ran successfully."
+if [[ $failures -gt 0 ]]; then
+  log_job "Completed with $failures failure(s)."
+  exit 1
 fi
 
 log_job "Completed successfully."
