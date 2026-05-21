@@ -167,7 +167,7 @@ run_paoflow_test_dir() {
 
 build_qe_assets_tar() {
   mkdir -p "$(dirname "$QE_ASSETS_OUT")"
-  (cd "$REPO_ROOT" && "$PYTHON_EXEC" "$REPO_ROOT/.github/assets_generation/qe/build_assets.py" --qe-root "$EXAMPLES_ROOT" --out "$QE_ASSETS_OUT")
+  (cd "$REPO_ROOT" && PYTHONPATH="$REPO_ROOT" "$PYTHON_EXEC" "$REPO_ROOT/.github/assets_generation/qe/build_assets.py" --qe-root "$EXAMPLES_ROOT" --out "$QE_ASSETS_OUT")
   log_job "Built QE assets: $QE_ASSETS_OUT"
 }
 
