@@ -85,7 +85,10 @@ run_qe_exec() {
 
 collect_example_jobs() {
   local base_dir="$1"
-  local -a dirs=("$base_dir")
+  local -a dirs=()
+  if find "$base_dir" -maxdepth 1 -type f \( -name '*.in' -o -name 'main.py' \) | grep -q .; then
+    dirs+=("$base_dir")
+  fi
   while IFS= read -r -d '' d; do dirs+=("$d"); done < <(find "$base_dir" -type f -name '*.in' -printf '%h\0' | sort -zu)
   while IFS= read -r -d '' d; do dirs+=("$d"); done < <(find "$base_dir" -type f -name 'main.py' -printf '%h\0' | sort -zu)
   printf '%s\n' "${dirs[@]}" | awk '!seen[$0]++'
@@ -103,16 +106,21 @@ run_qe_dir() {
     log_job "QE: $label - skipped"
     return 0
   fi
-  for input in scf.in nscf.in proj.in; do
+  for input in scf.in nscf.in proj.in eps.in; do
     if [[ -f "$jobdir/$input" ]]; then
       local cmd="$PW_EXEC"
       [[ "$input" == *proj* ]] && cmd="$PP_EXEC"
-      (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$QE_LOG" 2>&1
+      [[ "$input" == "eps.in" ]] && cmd="$EPSILON_EXEC"
+      if ! (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$QE_LOG" 2>&1; then
+        log_job "QE: $label - FAILED on $input"
+        return 1
+      fi
     fi
   done
   while IFS= read -r -d '' savedir; do
     find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' -delete
   done < <(find "$jobdir" -maxdepth 1 -type d -name '*.save' -print0)
+  find "$jobdir" -type f -name '.hub*' -delete
   find "$jobdir" -maxdepth 1 -type f \( -name '*pdos_*' -o -name '*.wfc*' -o \( -name '*.xml' ! -name 'inputfile.xml' \) \) -delete
   log_job "QE: $label - OK"
 }
@@ -125,7 +133,10 @@ run_paoflow_example_dir() {
   outputdir="$(infer_outputdir_from_main "$main_py")"
   outputdir="${outputdir%/}"
   if [[ "$outputdir" = /* ]]; then output_path="$outputdir"; else output_path="$jobdir/$outputdir"; fi
-  (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$PAOFLOW_EXAMPLES_LOG" 2>&1
+  if ! (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$PAOFLOW_EXAMPLES_LOG" 2>&1; then
+    log_job "PAOFLOW(examples): $label - FAILED"
+    return 1
+  fi
   if [[ -d "$output_path" ]]; then
     rm -rf "$jobdir/Reference"
     mv "$output_path" "$jobdir/Reference"
@@ -154,7 +165,12 @@ run_paoflow_test_dir() {
   outputdir="$(infer_outputdir_from_main "$main_py")"
   outputdir="${outputdir%/}"
   if [[ "$outputdir" = /* ]]; then output_path="$outputdir"; else output_path="$jobdir/$outputdir"; fi
-  (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$PAOFLOW_TEST_LOG" 2>&1
+  if ! (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$PAOFLOW_TEST_LOG" 2>&1; then
+    while IFS= read -r p; do [[ -n "$p" ]] && rm -rf "$p"; done < "$copied_list"
+    rm -f "$copied_list"
+    log_job "PAOFLOW(test): $label - FAILED"
+    return 1
+  fi
   if [[ -d "$output_path" ]]; then
     mkdir -p "$staging_dir/$label/Reference"
     cp -a "$output_path/." "$staging_dir/$label/Reference/"
@@ -232,6 +248,7 @@ PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$TESTS_ROOT/
 if [[ "$run_qe" = true ]]; then
   PW_EXEC="$(resolve_exec PW_EXEC pw.x)"
   PP_EXEC="$(resolve_exec PP_EXEC projwfc.x)"
+  EPSILON_EXEC="$(resolve_exec EPSILON_EXEC epsilon.x)"
   PARALLEL_EXEC="${PARALLEL_EXEC:-}"
   if [[ -z "$PARALLEL_EXEC" && -n "${SLURM_NTASKS:-}" ]] && command -v srun >/dev/null 2>&1; then
     PARALLEL_EXEC="srun -n ${SLURM_NTASKS}"
