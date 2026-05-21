@@ -1,6 +1,6 @@
 from PAOFLOW import PAOFLOW
 
-paoflow = PAOFLOW.PAOFLOW(savedir='./silicon.save/', outputdir='./output_Si/',
+paoflow = PAOFLOW.PAOFLOW(savedir='./silicon.save/', outputdir='./output/',
                           smearing=None, verbose=True)
 paoflow.jdos(delta=0.1, emin=0.0, emax=4.0, ne=801, jdos_smeartype='gauss')
 
