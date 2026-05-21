@@ -119,6 +119,7 @@ pseudo/
 *wfc*
 **/*.xml
 *.out
+*tar.gz
 
 # MAC files
 .DS_*
