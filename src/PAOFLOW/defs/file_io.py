@@ -198,7 +198,8 @@ def struct_from_inputfile_QE(fname: str) -> dict:
     Notes
     -----
     Currently only control Namelist blocks are parsed; inline comments are
-    stripped.  Hubbard cards are limited to five ``U`` entries.
+    stripped.  The ``HUBBARD`` card accepts an arbitrary number of entries
+    (``U``, ``V``, ``J``, ...), terminated by the next card or end of file.
     """
     import re
     from os.path import isfile
@@ -290,11 +291,25 @@ def struct_from_inputfile_QE(fname: str) -> dict:
     if hl < nf:
         cards['HUBBARD'] = [fstr[hl]]
         hl = scan_blank_lines(hl)
-        for i in range(5):
-            if fstr[hl + i].split()[0] == 'U':
-                cards['HUBBARD'].append(fstr[hl + i])
-            else:
+        # Accept an arbitrary number of HUBBARD entries (U, V, J, J0, B, E, ...)
+        # until the next card keyword or EOF.
+        _card_keywords = {
+            'K_POINTS',
+            'CELL_PARAMETERS',
+            'ATOMIC_POSITIONS',
+            'ATOMIC_SPECIES',
+            'OCCUPATIONS',
+            'CONSTRAINTS',
+            'ADDITIONAL_K_POINTS',
+            'SOLVENTS',
+            'HUBBARD',
+        }
+        while hl < nf:
+            tokens = fstr[hl].split()
+            if not tokens or tokens[0] in _card_keywords:
                 break
+            cards['HUBBARD'].append(fstr[hl])
+            hl += 1
 
     kl = 0
     while kl < nf and 'K_POINTS' not in fstr[kl]:

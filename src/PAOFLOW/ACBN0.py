@@ -1,3 +1,151 @@
+"""ACBN0 self-consistent Hubbard U driver.
+
+This module implements the ACBN0 pseudo-hybrid self-consistent
+determination of on-site Hubbard U corrections from first principles,
+following
+
+    L. A. Agapito, S. Curtarolo and M. Buongiorno Nardelli,
+    *Reformulation of DFT+U as a pseudo-hybrid Hubbard density
+    functional for accelerated materials discovery*,
+    Phys. Rev. X **5**, 011006 (2015).
+
+The driver is exposed through the :class:`ACBN0` class.  An instance
+orchestrates the full self-consistent cycle:
+
+1. Parse a user-supplied Quantum ESPRESSO ``<prefix>.scf.in`` template
+   (and the matching ``<prefix>.nscf.in`` / ``<prefix>.projwfc.in``).
+2. Fit each pseudopotential's atomic wavefunctions to a contracted
+   Gaussian basis (:mod:`PAOFLOW.defs.upf_gaussfit`) so the Coulomb
+   integrals required by the ACBN0 formula can be evaluated
+   analytically.
+3. On every outer iteration, inject the current ``HUBBARD`` card into
+   the SCF/NSCF templates and run ``pw.x`` (scf), ``pw.x`` (nscf),
+   ``projwfc.x``, PAOFLOW and finally :mod:`PAOFLOW.ACBN0_Hartree`
+   (under MPI).
+4. Recompute U for every Hubbard-active orbital from the ACBN0
+   numerator (renormalized two-electron integrals) and denominator
+   (occupation-matrix invariants).
+5. Iterate until ``max |Δ U| < convergence_threshold``.
+
+The class is also the base of :class:`PAOFLOW.eACBN0.eACBN0`, which
+adds intersite Hubbard V to the same workflow.
+
+Typical usage
+-------------
+::
+
+    from PAOFLOW.ACBN0 import ACBN0
+
+    a = ACBN0('MgO', workdir='./',
+              mpi_qe='mpirun -np 8',
+              mpi_python='mpirun -np 1',
+              mpi_hartree='mpirun -np 8',
+              qe_path='/path/to/qe/bin',
+              python_path='/path/to/python/bin',
+              outputdir='./tmp/')
+
+    # Equivalent ways to declare Hubbard-active orbitals:
+    a.set_hubbard_parameters(['Mg-3s', 'O-2p'])             # default U
+    a.set_hubbard_parameters({'Mg-3s': 1.0, 'O-2p': 8.0})   # custom U
+    a.set_hubbard_parameters({'O-2p': (8.0, 4.0)})          # +occupation
+
+    a.optimize_hubbard_U(convergence_threshold=0.01)
+
+    print(a.uVals)   # {'Mg-3s': ..., 'O-2p': ...}
+
+Public API
+----------
+- :meth:`ACBN0.set_hubbard_parameters` — declare Hubbard-active
+  orbitals.  Accepts a list of ``'species-orbital'`` labels (default
+  seed U), a dict mapping labels to seed U (eV), or a dict with
+  ``(U, occupation)`` tuples to also fix ``hubbard_occ`` in the
+  ``&system`` namelist.
+- :meth:`ACBN0.set_intersite_V_parameters` — seed entries in
+  :attr:`vVals` so the ``HUBBARD`` card emits ``V`` lines; used by
+  :class:`eACBN0` and for fixed-V runs.
+- :meth:`ACBN0.optimize_hubbard_U` — outer self-consistent loop.
+- :meth:`ACBN0.run_dft` — one shot of pw.x (scf) + pw.x (nscf) +
+  projwfc.x with the current ``HUBBARD`` card injected.
+- :meth:`ACBN0.run_paoflow` — invoke PAOFLOW on the QE save folder to
+  produce the PAO Hamiltonian/overlap and k-point dumps consumed by
+  the ACBN0 numerator/denominator.
+- :meth:`ACBN0.run_acbn0` — single ACBN0 evaluation pass on the
+  current PAOFLOW dump.
+- :meth:`ACBN0.hubbard_card` — render the current
+  ``self.uVals`` / ``self.vVals`` into a QE ``HUBBARD`` card.
+- :meth:`ACBN0.read_cell_atoms`, :meth:`ACBN0.read_ham_data` —
+  helpers for parsing QE ``scf.out`` and the PAOFLOW dumps.
+
+Internal helpers (prefixed with an underscore convention via their
+naming) handle Gaussian basis assembly per atom
+(:meth:`ACBN0.getbasis`), construction of the k-resolved density
+matrix (:meth:`ACBN0.Dk`), the back-Fourier transform to real space
+(:meth:`ACBN0.DR`) and the on-site occupation invariants used in the
+ACBN0 denominator (:meth:`ACBN0.Nmm`).
+
+External tools
+--------------
+The driver shells out to several commands.  The launchers are
+configured at construction time:
+
+- ``pw.x`` and ``projwfc.x`` from ``qe_path``, optionally prefixed by
+  ``mpi_qe`` (e.g. ``'mpirun -np 8'``) with extra options in
+  ``qe_options`` (e.g. ``'-npool 4'``).
+- PAOFLOW is launched as a separate Python process under
+  ``mpi_python`` (typically ``'mpirun -np 1'`` because PAOFLOW's MPI
+  scaling is workflow-dependent and the call here is short).
+- The Hartree integrals (:mod:`PAOFLOW.ACBN0_Hartree`) are launched
+  as a separate Python process under ``mpi_hartree``, which defaults
+  to ``mpi_python`` but can be overridden — typically with a *larger*
+  ``-np`` because the pure-Python four-centre Coulomb integrals
+  dominate the wall time for heavy d/f shells.
+
+Conventions
+-----------
+- Energies are in eV; the input ``celldm(1)`` / lattice quantities are
+  read in their native QE units (Bohr / Å) and converted internally
+  where required.
+- Atom indices follow the QE convention: 1-based, ordered as they
+  appear in the ``ATOMIC_POSITIONS`` card.
+- Orbital labels are written as ``'<element>-<n><l>'``, e.g.
+  ``'Mn-3d'``, ``'O-2p'``.  In magnetic AFM cells with distinct
+  sublattices, the element symbol in the input may be tagged
+  (``'MnA'``, ``'MnB'``) and the same tag must be used in the U keys.
+- The class respects an existing ``HUBBARD`` card in the template:
+  any U/V entries already present are loaded into ``self.uVals`` and
+  ``self.vVals`` at construction time.
+
+Attributes set at construction
+------------------------------
+- :attr:`uVals` (``dict[str, float]``) — current U values, keyed by
+  ``'species-orbital'``.
+- :attr:`vVals` (``dict[tuple, float]``) — current intersite V values
+  (populated by :class:`eACBN0`).
+- :attr:`uspecies` (``list[str]``) — atomic species discovered in the
+  ``ATOMIC_SPECIES`` card.
+- :attr:`basis` (``dict[str, list]``) — per-species fitted Gaussian
+  basis from :func:`PAOFLOW.defs.upf_gaussfit.gaussian_fit`.
+- :attr:`blocks` / :attr:`cards` — parsed namelists / cards of the
+  SCF input template, as returned by
+  :func:`PAOFLOW.defs.file_io.struct_from_inputfile_QE`.
+- :attr:`nspin` — read from the ``&system`` block (defaults to 1).
+- :attr:`hubbard_tag` — header line of the ``HUBBARD`` card
+  (e.g. ``'HUBBARD (atomic)'``).
+- :attr:`hubbard_occ` — fixed ``hubbard_occ(i,j)`` entries to be
+  written back into the ``&system`` namelist.
+
+Notes
+-----
+- The driver does not modify or add symmetry flags.  When using the
+  output ``HUBBARD`` card with intersite V (via :class:`eACBN0`) the
+  user must supply ``nosym = .true., noinv = .true.`` in the SCF/NSCF
+  templates — QE crashes otherwise.
+- The first thing :meth:`__init__` does after parsing the template is
+  to write ``compute_hartree.py`` into the current directory; this
+  small launcher is what gets executed under ``mpi_hartree`` for the
+  Coulomb integrals.
+"""
+
 import numpy as np
 from os.path import join
 import subprocess
@@ -18,6 +166,7 @@ class ACBN0:
         python_path='',
         outputdir='./output/',
         projection='atomic',
+        mpi_hartree=None,
     ):
         from .defs.file_io import struct_from_inputfile_QE
         from .defs.upf_gaussfit import gaussian_fit
@@ -40,12 +189,14 @@ class ACBN0:
         self.nproc = nproc
         self.qpath = qe_path
         self.mpi_python = mpi_python
+        self.mpi_hartree = mpi_hartree if mpi_hartree is not None else mpi_python
         self.ppath = python_path
         self.qoption = qe_options
         self.projection = projection
         self.outputdir = outputdir
 
         self.uVals = {}
+        self.vVals = {}
         self.occ_states = {}
         self.occ_values = {}
         self.hubbard_occ = {}
@@ -67,7 +218,7 @@ class ACBN0:
         for s in self.cards['ATOMIC_SPECIES'][1:]:
             ele, _, pp = s.split()
             self.uspecies.append(ele)
-            atno, basis = gaussian_fit(pp)
+            atno, basis = gaussian_fit(pp, threshold=0.01)
             self.basis[ele] = basis
 
         # Store U values from input template
@@ -76,13 +227,27 @@ class ACBN0:
 
             self.hubbard_tag = self.cards['HUBBARD'][0]
             for h in self.cards['HUBBARD'][1:]:
-                _, sym, uval = h.split()
-                self.uVals[sym] = float(uval)
+                tokens = h.split()
+                kind = tokens[0]
+                if kind == 'U':
+                    _, sym, uval = tokens
+                    self.uVals[sym] = float(uval)
 
-                ele, occ = sym.split('-')
-                if ele not in self.occ_states:
-                    self.occ_states[ele] = []
-                self.occ_states[ele].append(occ)
+                    ele, occ = sym.split('-')
+                    if ele not in self.occ_states:
+                        self.occ_states[ele] = []
+                    self.occ_states[ele].append(occ)
+
+                elif kind == 'V':
+                    # V <label1> <label2> <atom_idx1> <atom_idx2> <value>
+                    _, sym1, sym2, idx1, idx2, vval = tokens
+                    self.vVals[(sym1, sym2, int(idx1), int(idx2))] = float(vval)
+
+                else:
+                    # Other HUBBARD entries (J, J0, B, E, ...) are preserved
+                    # verbatim via self.hubbard_card() only if added by the
+                    # user; not parsed here.
+                    pass
 
             # Store occupations from input template
             nat = len(self.uspecies)
@@ -152,6 +317,40 @@ class ACBN0:
             msg = 'Input type should be either list or dict.'
             raise TypeError(msg)
 
+    def set_intersite_V_parameters(self, vpairs):
+        """Register intersite Hubbard V pairs and their initial values.
+
+        Parameters
+        ----------
+        vpairs : list, tuple, or dict
+            Either an iterable of ``(label1, label2, atom_idx1, atom_idx2,
+            V_init)`` tuples, or a dict mapping
+            ``(label1, label2, atom_idx1, atom_idx2)`` to ``V_init``.
+            ``label*`` follow the QE ``species-orbital`` convention (e.g.
+            ``'Ni-3d'``); ``atom_idx*`` are 1-based atom indices as used in
+            the QE ``HUBBARD`` card.  ``V_init`` may be ``None``, in which
+            case 0.01 eV is used as a seed.
+        """
+        if isinstance(vpairs, dict):
+            items = vpairs.items()
+        elif isinstance(vpairs, (list, tuple)):
+            items = []
+            for entry in vpairs:
+                if len(entry) != 5:
+                    msg = (
+                        'Each V entry must be (label1, label2, atom_idx1, '
+                        'atom_idx2, V_init).'
+                    )
+                    raise ValueError(msg)
+                key = (entry[0], entry[1], int(entry[2]), int(entry[3]))
+                items.append((key, entry[4]))
+        else:
+            msg = 'Input type should be either list/tuple of tuples or dict.'
+            raise TypeError(msg)
+
+        for key, v_init in items:
+            self.vVals[key] = 0.01 if v_init is None else float(v_init)
+
     def optimize_hubbard_U(self, convergence_threshold=0.01):
         print('\nBeginning self-consistent loop.\n')
         itr = 0
@@ -192,27 +391,42 @@ class ACBN0:
 
     def exec_PAOFLOW(self):
         python_exec = join(self.ppath, 'python')
-        command = f'{self.mpi_python} {python_exec}'
-        print(
-            f'Starting Process: {self.mpi_python} {python_exec} acbn0.py > paoflow.out', flush=True
-        )
-        with open('acbn0.py', 'r') as paoflow_in, open('paoflow.out', 'w') as paoflow_out:
+        command = f'{self.mpi_python} {python_exec} acbn0.py'
+        print(f'Starting Process: {command} > paoflow.out', flush=True)
+        with open('paoflow.out', 'w') as paoflow_out:
             subprocess.run(
                 command.split(' '),
-                stdin=paoflow_in,
                 stdout=paoflow_out,
                 stderr=subprocess.STDOUT,
                 check=True,
             )
 
     def hubbard_card(self):
-        if len(self.uVals) == 0:
-            msg = 'No U found. Add U to the template inputfiles or with set_hubbard_parameters.'
+        if len(self.uVals) == 0 and len(self.vVals) == 0:
+            msg = (
+                'No U or V found. Add them to the template inputfiles or '
+                'with set_hubbard_parameters / set_intersite_V_parameters.'
+            )
             raise ValueError(msg)
 
         card = [self.hubbard_tag]
         for k, v in self.uVals.items():
             card.append(' U {} {}'.format(k, v))
+        # Emit each undirected V channel only once.  QE's HUBBARD card
+        # treats two V entries as the same channel whenever they share
+        # the same pair of atoms and the same (unordered) pair of
+        # Hubbard manifolds.  That is, it rejects
+        #   ``V l1 l2 i1 i2`` against ``V l2 l1 i2 i1`` (swap both),
+        # and also ``V l1 l2 i1 i2`` against ``V l2 l1 i1 i2``
+        # (swap only the manifolds on the same atom pair).  We dedup on
+        # the unordered manifold-set paired with the unordered atom-set.
+        emitted = set()
+        for (sym1, sym2, idx1, idx2), v in self.vVals.items():
+            canonical = (frozenset((sym1, sym2)), frozenset((idx1, idx2)))
+            if canonical in emitted:
+                continue
+            emitted.add(canonical)
+            card.append(' V {} {} {} {} {}'.format(sym1, sym2, idx1, idx2, v))
 
         return card
 
@@ -391,7 +605,7 @@ class ACBN0:
 
             # compute hartree energy in parallel
             python_exec = join(self.ppath, 'python')
-            command = f'{self.mpi_python} {python_exec} compute_hartree.py'
+            command = f'{self.mpi_hartree} {python_exec} compute_hartree.py'
             subprocess.run(command.split(' '), check=True)
 
             with open(join(self.outputdir, 'tmp_uj.pkl'), 'rb') as f:
