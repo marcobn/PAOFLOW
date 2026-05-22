@@ -27,10 +27,9 @@ import shutil
 import subprocess
 from os.path import join
 
+from PAOFLOW import GPAO
 from PAOFLOW.ACBN0 import ACBN0
 from PAOFLOW.eACBN0 import eACBN0
-from PAOFLOW import GPAO
-
 
 PREFIX = 'GaAs'
 OUT = './tmp/'
@@ -83,18 +82,25 @@ def run_bare_dft():
         shutil.copy(f'{PREFIX}.{c}.in', f'{c}.in')
     _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='scf.in', stdout='scf.out')
     _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='nscf.in', stdout='nscf.out')
-    _shell(f'{MPI_QE} {QE_PATH}projwfc.x -nd 1',
-           stdin='projwfc.in', stdout='projwfc.out')
+    _shell(f'{MPI_QE} {QE_PATH}projwfc.x -nd 1', stdin='projwfc.in', stdout='projwfc.out')
 
 
 def compute_bands(label):
-    """Build the PAO Hamiltonian from the current ``GaAs.save`` and dump
-    the band structure to ``<OUT>/bands_<label>_0.dat``."""
+    """Build the PAO Hamiltonian from the current ``GaAs.save`` using the
+    internal PAOFLOW basis (as in ``qe_examples/example10``) and dump the
+    band structure to ``<OUT>/bands_<label>_0.dat``."""
     script = (
         'from PAOFLOW import PAOFLOW\n'
         f"p = PAOFLOW.PAOFLOW(outputdir='{OUT}', savedir='{PREFIX}.save',\n"
         "                    smearing='gauss', npool=1, verbose=False)\n"
-        'p.read_atomic_proj_QE()\n'
+        'arry, attr = p.data_controller.data_dicts()\n'
+        "attr['basispath'] = '../../../BASIS/'\n"
+        "arry['configuration'] = {\n"
+        "    'Ga': ['3S', '3P', '4S', '4P', '3D', '4D', '5S', '5P', '5D', '6S', '6P'],\n"
+        "    'As': ['3S', '4S', '4P', '3D', '3P', '4D', '5S', '5P', '5D', '6S', '6P'],\n"
+        '}\n'
+        "p.projections(internal=True, basispath=attr['basispath'],\n"
+        "              configuration=arry['configuration'])\n"
         'p.projectability(pthr=0.95)\n'
         'p.pao_hamiltonian()\n'
         f"p.bands(ibrav={IBRAV}, nk={NK}, fname='bands_{label}')\n"
@@ -130,12 +136,14 @@ a = ACBN0(
 )
 # Both s and p on each species must be declared so that the V_ss, V_sp,
 # V_pp channels exist in the eACBN0 stage; ACBN0 will fit U for all.
-a.set_hubbard_parameters({
-    'Ga-4s': 0.5,
-    'Ga-4p': 0.5,
-    'As-4s': 0.5,
-    'As-4p': 0.5,
-})
+a.set_hubbard_parameters(
+    {
+        'Ga-4s': 0.5,
+        'Ga-4p': 0.5,
+        'As-4s': 0.5,
+        'As-4p': 0.5,
+    }
+)
 a.optimize_hubbard_U(convergence_threshold=0.05)
 compute_bands('U')
 

@@ -176,7 +176,10 @@ def do_build_pao_hamiltonian(data_controller):
     #  Reshape Hks to (nawf, nawf, nk1, nk2, nk3, nspin) for the IFFT.
     #  When expand_wedge=False (full BZ already provided by QE, nosym=noinv=.t.),
     #  open_grid_wrapper is skipped so the reshape must be done unconditionally.
-    if rank == 0:
+    #  Skip the reshape if Hks is still on a reduced (IBZ) grid, as is the
+    #  case for the ACBN0 path (which only needs Hks at the IBZ k-points and
+    #  exits before any FFT to real space).
+    if rank == 0 and arry['Hks'].size == int(np.prod(ashape)):
         arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
         # Shift the Fermi energy to zero
