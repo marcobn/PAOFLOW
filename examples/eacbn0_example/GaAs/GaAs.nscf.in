@@ -1,0 +1,41 @@
+GaAs zincblende
+ &control
+    calculation = 'nscf',
+    restart_mode = 'from_scratch',
+    prefix = 'GaAs',
+    wf_collect = .true.
+    pseudo_dir = './'
+ /
+
+ &system
+    ibrav = 0,
+    nat = 2,
+    ntyp = 2,
+    celldm(1) = 10.6827,
+    ecutwfc = 60.0,
+    ecutrho = 600.0,
+    nbnd = 32,
+ /
+
+ &electrons
+    mixing_mode = 'plain'
+    mixing_beta = 0.7
+    conv_thr = 1.0d-8
+    electron_maxstep = 200
+ /
+
+K_POINTS automatic
+ 16 16 16 0 0 0
+
+ATOMIC_SPECIES
+ Ga  69.723    Ga.pbe-dn-kjpaw_psl.1.0.0.UPF
+ As  74.92160  As.pbe-n-kjpaw_psl.1.0.0.UPF
+
+CELL_PARAMETERS  alat
+-0.500000   0.000000   0.500000
+ 0.000000   0.500000   0.500000
+-0.500000   0.500000   0.000000
+
+ATOMIC_POSITIONS crystal
+ Ga   0.00   0.00   0.00
+ As   0.25   0.25   0.25
