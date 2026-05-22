@@ -120,6 +120,7 @@ pseudo/
 **/*.xml
 *.out
 *tar.gz
+Reference2/
 
 # MAC files
 .DS_*
