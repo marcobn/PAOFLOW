@@ -165,9 +165,28 @@ class ACBN0:
         mpi_python='',
         python_path='',
         outputdir='./output/',
-        projection='atomic',
+        projection='ortho-atomic',
         mpi_hartree=None,
     ):
+        """Initialize the ACBN0 self-consistent U driver.
+
+        Parameters
+        ----------
+        projection : {'ortho-atomic', 'atomic'}, optional
+            Hubbard projector type written to the QE ``HUBBARD`` card.
+
+            - ``'ortho-atomic'`` (default): Löwdin-orthogonalized atomic
+              orbitals.  Matches the QE+U literature standard
+              (``hubbard_projectors = 'ortho-atomic'``) and reproduces
+              the Lee-Son eACBN0 values (PRR 2, 043410 (2020)).
+            - ``'atomic'``: bare atomic orbitals.  Retained for
+              reproducing pre-2018 ACBN0 results; typically yields U
+              values 20-40% lower than ortho-atomic on the same system.
+
+            The choice must be self-consistent: the same projector type
+            is used to build the occupations entering the ACBN0 numerator
+            *and* the +U Hamiltonian in QE.
+        """
         from .defs.file_io import struct_from_inputfile_QE
         from .defs.upf_gaussfit import gaussian_fit
         from .defs.header import header
@@ -413,20 +432,38 @@ class ACBN0:
         for k, v in self.uVals.items():
             card.append(' U {} {}'.format(k, v))
         # Emit each undirected V channel only once.  QE's HUBBARD card
-        # treats two V entries as the same channel whenever they share
-        # the same pair of atoms and the same (unordered) pair of
-        # Hubbard manifolds.  That is, it rejects
-        #   ``V l1 l2 i1 i2`` against ``V l2 l1 i2 i1`` (swap both),
-        # and also ``V l1 l2 i1 i2`` against ``V l2 l1 i1 i2``
-        # (swap only the manifolds on the same atom pair).  We dedup on
-        # the unordered manifold-set paired with the unordered atom-set.
-        emitted = set()
+        # check (PW/src/read_cards.f90, card_hubbard) considers two V
+        # entries to be the same channel whenever they share the same
+        # unordered atom-index pair AND the same unordered (n,l)
+        # manifold pair -- because internally the manifold key strips
+        # the species prefix.  Concretely:
+        #   ``V Ga-4s As-4p 1 2``  and  ``V Ga-4p As-4s 1 2``
+        # both reduce to atom-pair {1,2} with manifold-set {4s,4p} and
+        # are rejected by QE even though they couple physically
+        # different orbital pairs.  We canonicalise on
+        #   (frozenset(atom_indices), frozenset(orbital_labels))
+        # where ``orbital_labels`` is the manifold name stripped of the
+        # species prefix.  When two ACBN0-computed V values collapse
+        # to the same canonical channel we emit their *average* (this
+        # is a QE limitation, not an ACBN0 one).
+        def _orb(sym):
+            return sym.split('-', 1)[1] if '-' in sym else sym
+
+        grouped = {}  # canonical -> (representative entry, [values])
         for (sym1, sym2, idx1, idx2), v in self.vVals.items():
-            canonical = (frozenset((sym1, sym2)), frozenset((idx1, idx2)))
-            if canonical in emitted:
-                continue
-            emitted.add(canonical)
-            card.append(' V {} {} {} {} {}'.format(sym1, sym2, idx1, idx2, v))
+            canonical = (
+                frozenset((idx1, idx2)),
+                frozenset((_orb(sym1), _orb(sym2))),
+            )
+            if canonical in grouped:
+                grouped[canonical][1].append(v)
+            else:
+                grouped[canonical] = ((sym1, sym2, idx1, idx2), [v])
+        for (sym1, sym2, idx1, idx2), vals in grouped.values():
+            v_emit = sum(vals) / len(vals)
+            card.append(' V {} {} {} {} {}'.format(
+                sym1, sym2, idx1, idx2, v_emit,
+            ))
 
         return card
 

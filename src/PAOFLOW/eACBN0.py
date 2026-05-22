@@ -676,23 +676,6 @@ class eACBN0(ACBN0):
             )
 
         scale = 1.0 / total_w
-        # --- diagnostic ------------------------------------------------
-        # Inspect manifold-weight behaviour: Tr(P)/Tr(n) on each site
-        # and on the intersite block (= weighted-average band weight on
-        # the I+J manifold).  Should be in (0, 1].  Tr ≈ 1 means
-        # N_w ≈ 1, i.e. the bands sit fully inside the I+J manifold and
-        # the renormalisation is essentially trivial.
-        tr_nII = float(np.trace(n_II).real * scale)
-        tr_PII = float(np.trace(P_II).real * scale)
-        tr_nJJ = float(np.trace(n_JJ).real * scale)
-        tr_PJJ = float(np.trace(P_JJ).real * scale)
-        print(
-            f'  [DBG _pair_density_matrices] n_I={n_I} n_J={n_J} | '
-            f'Tr(n_II)={tr_nII:.4f} Tr(P_II)={tr_PII:.4f} '
-            f'(<N_w>_II={tr_PII/tr_nII if tr_nII else float("nan"):.4f}) | '
-            f'Tr(n_JJ)={tr_nJJ:.4f} Tr(P_JJ)={tr_PJJ:.4f} '
-            f'(<N_w>_JJ={tr_PJJ/tr_nJJ if tr_nJJ else float("nan"):.4f})'
-        )
         return {
             'P_II': P_II * scale,
             'P_JJ': P_JJ * scale,
