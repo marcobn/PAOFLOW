@@ -18,7 +18,8 @@ wavefunctions, the kernel accumulates
               + D^{\\downarrow}_{mn} D^{\\uparrow}_{kl}
               + D^{\\uparrow}_{mn} D^{\\downarrow}_{kl} \\bigr]
 
-    J_{\\text{num}} = \\sum_{klmn} (mk|nl)\\,
+    J_{\\text{num}} = \\sum_{\\substack{klmn \\\\ (m,n)\\neq(k,l)}}
+        (mk|nl)\\,
         \\bigl[ D^{\\uparrow}_{mn} D^{\\uparrow}_{kl}
               + D^{\\downarrow}_{mn} D^{\\downarrow}_{kl} \\bigr]
 
@@ -28,7 +29,11 @@ Hubbard-active subshell), the two-electron integrals
 evaluated analytically by :func:`PAOFLOW.defs.pyints.contr_coulomb`
 over contracted Cartesian Gaussians, and the spin pre-factors follow
 the (αβ + βα) decomposition used by the ACBN0 formula
-(Agapito *et al.*, Phys. Rev. X **5**, 011006 (2015)).
+(Agapito *et al.*, Phys. Rev. X **5**, 011006 (2015)).  The
+``(m,n) = (k,l)`` term is excluded from the J sum because it
+coincides with the direct Coulomb integral entering U and would
+otherwise inflate J (hence depress ``U_eff = U − J``); see Eq. (11) of
+the same reference.
 
 Parallelization
 ---------------
@@ -78,6 +83,7 @@ takes the full ``basis_2e ** 4`` cost on a single core.
 """
 
 import pickle
+
 from mpi4py import MPI
 
 
@@ -122,9 +128,10 @@ class ACBN0_Hartree:
         )
 
     def hartree_energy(self, outputdir):
-        import numpy as np
         import itertools
         from os.path import join
+
+        import numpy as np
 
         DR_up = self.data['DR_up']
         DR_dn = self.data['DR_dn']

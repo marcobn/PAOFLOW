@@ -144,12 +144,32 @@ Notes
   to write ``compute_hartree.py`` into the current directory; this
   small launcher is what gets executed under ``mpi_hartree`` for the
   Coulomb integrals.
+- The PAOFLOW step launched by :meth:`run_paoflow` calls
+  ``pao_hamiltonian(write_binary=True, expand_wedge=False)``: ``Hks``
+  is kept on whichever k-grid QE produced (IBZ when symmetries are on,
+  full BZ when ``nosym = noinv = .true.``) and is written to disk
+  without any FFT to real space.  The reshape to
+  ``(nawf, nawf, nk1, nk2, nk3, nspin)`` in
+  :func:`PAOFLOW.defs.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
+  is therefore skipped for ACBN0; both IBZ and full-BZ k-grids are
+  accepted.
+- :func:`PAOFLOW.defs.do_build_pao_hamiltonian.build_Hks` now applies a
+  *per-k* projectability filter (``pthr_local``, defaulting to
+  ``0.5 * pthr``) in addition to the global ``pthr``.  Bands whose
+  local PAO projection at a given k vanishes (typically one of a
+  degenerate set at high-symmetry points such as Γ, where QE's gauge
+  choice can leave it with near-zero atomic-orbital content) are
+  dropped from the construction at that k-point only.  Without this
+  guard the previous code renormalised the vanishing projection vector
+  to unit norm, corrupting ``H(k)`` at high-symmetry points and, in
+  turn, the occupations entering the ACBN0 numerator/denominator.
 """
 
-import numpy as np
-from os.path import join
-import subprocess
 import pickle
+import subprocess
+from os.path import join
+
+import numpy as np
 
 
 class ACBN0:
@@ -187,10 +207,11 @@ class ACBN0:
             is used to build the occupations entering the ACBN0 numerator
             *and* the +U Hamiltonian in QE.
         """
-        from .defs.file_io import struct_from_inputfile_QE
-        from .defs.upf_gaussfit import gaussian_fit
-        from .defs.header import header
         from os import chdir
+
+        from .defs.file_io import struct_from_inputfile_QE
+        from .defs.header import header
+        from .defs.upf_gaussfit import gaussian_fit
 
         header()
         print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
@@ -356,10 +377,7 @@ class ACBN0:
             items = []
             for entry in vpairs:
                 if len(entry) != 5:
-                    msg = (
-                        'Each V entry must be (label1, label2, atom_idx1, '
-                        'atom_idx2, V_init).'
-                    )
+                    msg = 'Each V entry must be (label1, label2, atom_idx1, atom_idx2, V_init).'
                     raise ValueError(msg)
                 key = (entry[0], entry[1], int(entry[2]), int(entry[3]))
                 items.append((key, entry[4]))
@@ -431,6 +449,7 @@ class ACBN0:
         card = [self.hubbard_tag]
         for k, v in self.uVals.items():
             card.append(' U {} {}'.format(k, v))
+
         # Emit each undirected V channel only once.  QE's HUBBARD card
         # check (PW/src/read_cards.f90, card_hubbard) considers two V
         # entries to be the same channel whenever they share the same
@@ -461,15 +480,20 @@ class ACBN0:
                 grouped[canonical] = ((sym1, sym2, idx1, idx2), [v])
         for (sym1, sym2, idx1, idx2), vals in grouped.values():
             v_emit = sum(vals) / len(vals)
-            card.append(' V {} {} {} {} {}'.format(
-                sym1, sym2, idx1, idx2, v_emit,
-            ))
+            card.append(
+                ' V {} {} {} {} {}'.format(
+                    sym1,
+                    sym2,
+                    idx1,
+                    idx2,
+                    v_emit,
+                )
+            )
 
         return card
 
     def run_dft(self, prefix, species, uVals):
-        from .defs.file_io import create_atomic_inputfile
-        from .defs.file_io import struct_from_inputfile_QE
+        from .defs.file_io import create_atomic_inputfile, struct_from_inputfile_QE
 
         blocks, cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
         cards['HUBBARD'] = self.hubbard_card()

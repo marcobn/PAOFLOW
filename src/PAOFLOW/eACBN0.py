@@ -127,12 +127,31 @@ Notes
   for both spin channels by halving the doubly-occupied DM, so that the
   on-site limit (I = J, R = 0) reproduces the standard
   :class:`ACBN0.ACBN0` result exactly.
+- The underlying PAOFLOW call uses
+  ``pao_hamiltonian(write_binary=True, expand_wedge=False)``.  Because
+  ``nosym = noinv = .true.`` is mandatory for V, the resulting ``Hks``
+  is on the full BZ produced by QE and no symmetry expansion is
+  applied.  The reshape to ``(nawf, nawf, nk1, nk2, nk3, nspin)`` in
+  :func:`PAOFLOW.defs.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
+  is now guarded by an array-size check, so the same code path also
+  handles the IBZ k-grid that arises from the bare ACBN0 (U-only)
+  stage when run without ``nosym/noinv``.
+- :func:`PAOFLOW.defs.do_build_pao_hamiltonian.build_Hks` now applies a
+  *per-k* projectability filter (``pthr_local``, defaulting to
+  ``0.5 * pthr``) in addition to the global ``pthr``.  Bands whose
+  local PAO projection at a given k vanishes (typically one of a
+  degenerate set at high-symmetry points such as Γ, where QE's gauge
+  choice can leave it with near-zero atomic-orbital content) are
+  dropped from the construction at that k-point only.  Without this
+  guard the previous code renormalised the vanishing projection vector
+  to unit norm, corrupting ``H(k)`` at high-symmetry points and, in
+  turn, the occupations entering the ACBN0 / eACBN0 numerators and
+  denominators.
 """
 
 import numpy as np
 
 from .ACBN0 import ACBN0
-
 
 BOHR_RADIUS_ANGS = 0.529177210903
 ANGS_TO_BOHR = 1.0 / BOHR_RADIUS_ANGS
@@ -214,8 +233,7 @@ class eACBN0(ACBN0):
             alat_bohr = self._alat_bohr()
             if alat_bohr is None:
                 raise ValueError(
-                    "CELL_PARAMETERS in 'alat' but no celldm(1)/A "
-                    'found in &system block.'
+                    "CELL_PARAMETERS in 'alat' but no celldm(1)/A found in &system block."
                 )
             lattice *= alat_bohr * BOHR_RADIUS_ANGS
 
@@ -250,8 +268,7 @@ class eACBN0(ACBN0):
             alat_bohr = self._alat_bohr()
             if alat_bohr is None:
                 raise ValueError(
-                    "ATOMIC_POSITIONS in 'alat' but no celldm(1)/A "
-                    'found in &system block.'
+                    "ATOMIC_POSITIONS in 'alat' but no celldm(1)/A found in &system block."
                 )
             positions = raw * alat_bohr * BOHR_RADIUS_ANGS
         else:
@@ -311,9 +328,7 @@ class eACBN0(ACBN0):
 
         # Build the set of (label1, label2) pairs to search for.
         if species_pairs is None:
-            labels = sorted({f'{ele}-{orb}'
-                             for ele, orbs in species_orbs.items()
-                             for orb in orbs})
+            labels = sorted({f'{ele}-{orb}' for ele, orbs in species_orbs.items() for orb in orbs})
             wanted_pairs = set()
             for i, a in enumerate(labels):
                 for b in labels[i:]:
@@ -327,8 +342,7 @@ class eACBN0(ACBN0):
         atom_labels = []
         for ele in species:
             if ele in species_orbs:
-                atom_labels.append([f'{ele}-{orb}'
-                                    for orb in species_orbs[ele]])
+                atom_labels.append([f'{ele}-{orb}' for orb in species_orbs[ele]])
             else:
                 atom_labels.append([])
 
@@ -345,17 +359,9 @@ class eACBN0(ACBN0):
                 for na in range(-n_a, n_a + 1):
                     for nb in range(-n_b, n_b + 1):
                         for nc in range(-n_c, n_c + 1):
-                            if (
-                                not include_onsite
-                                and i == j
-                                and na == 0
-                                and nb == 0
-                                and nc == 0
-                            ):
+                            if not include_onsite and i == j and na == 0 and nb == 0 and nc == 0:
                                 continue
-                            R = (na * lattice[0]
-                                 + nb * lattice[1]
-                                 + nc * lattice[2])
+                            R = na * lattice[0] + nb * lattice[1] + nc * lattice[2]
                             d_vec = positions[j] + R - positions[i]
                             d2 = float(d_vec @ d_vec)
                             if d2 > cutoff2:
@@ -365,10 +371,17 @@ class eACBN0(ACBN0):
                                 for l2 in atom_labels[j]:
                                     if (l1, l2) not in wanted_pairs:
                                         continue
-                                    pairs.append((
-                                        l1, l2, i + 1, j + 1,
-                                        (na, nb, nc), R, dist,
-                                    ))
+                                    pairs.append(
+                                        (
+                                            l1,
+                                            l2,
+                                            i + 1,
+                                            j + 1,
+                                            (na, nb, nc),
+                                            R,
+                                            dist,
+                                        )
+                                    )
         return pairs
 
     # ------------------------------------------------------------------ #
@@ -420,7 +433,10 @@ class eACBN0(ACBN0):
 
         if cutoff is not None:
             self._register_cutoff_pairs(
-                cutoff, species_pairs, include_onsite, V_init,
+                cutoff,
+                species_pairs,
+                include_onsite,
+                V_init,
             )
 
     def _register_explicit_pairs(self, pairs, V_init_default):
@@ -439,9 +455,7 @@ class eACBN0(ACBN0):
                     'or an 8-tuple including the (n_a, n_b, n_c) image.'
                 )
             i1, i2 = int(i1), int(i2)
-            R = (image[0] * lattice[0]
-                 + image[1] * lattice[1]
-                 + image[2] * lattice[2])
+            R = image[0] * lattice[0] + image[1] * lattice[1] + image[2] * lattice[2]
             d_vec = positions[i2 - 1] + R - positions[i1 - 1]
             dist = float(np.linalg.norm(d_vec))
 
@@ -452,12 +466,14 @@ class eACBN0(ACBN0):
                 'R_cart': R,
                 'distance': dist,
             }
-            self.vVals[key] = (
-                float(V_init_default) if v is None else float(v)
-            )
+            self.vVals[key] = float(V_init_default) if v is None else float(v)
 
     def _register_cutoff_pairs(
-        self, cutoff, species_pairs, include_onsite, V_init,
+        self,
+        cutoff,
+        species_pairs,
+        include_onsite,
+        V_init,
     ):
         found = self._enumerate_pairs(cutoff, species_pairs, include_onsite)
         for l1, l2, i1, i2, image, R, dist in found:
@@ -487,8 +503,7 @@ class eACBN0(ACBN0):
             f'  {"label1":>10s} {"label2":>10s} {"i1":>4s} {"i2":>4s} '
             f'{"image":>12s} {"d (A)":>9s} {"V_init (eV)":>12s}'
         )
-        for key, meta in sorted(self.vPairs.items(),
-                                key=lambda kv: kv[1]['distance']):
+        for key, meta in sorted(self.vPairs.items(), key=lambda kv: kv[1]['distance']):
             l1, l2, i1, i2, na, nb, nc = key
             v = self.vVals[(l1, l2, i1, i2)]
             print(
@@ -535,7 +550,9 @@ class eACBN0(ACBN0):
 
         out = []
         for n, sl in enumerate(state_lines):
-            mat = re.search(r'atom\s+(\d+)\s*\(\s*\S+\s*\)\s*,\s*wfc\s+\d+\s*\(\s*l\s*=\s*(\d+)', sl)
+            mat = re.search(
+                r'atom\s+(\d+)\s*\(\s*\S+\s*\)\s*,\s*wfc\s+\d+\s*\(\s*l\s*=\s*(\d+)', sl
+            )
             if mat is None:
                 continue
             if int(mat.group(1)) == atom_idx and int(mat.group(2)) == L:
@@ -565,7 +582,14 @@ class eACBN0(ACBN0):
         return gauss
 
     def _pair_density_matrices(
-        self, basis_I, basis_J, Hks, Sks, kpnts, kwght, R_bohr,
+        self,
+        basis_I,
+        basis_J,
+        Hks,
+        Sks,
+        kpnts,
+        kwght,
+        R_bohr,
     ):
         """Compute spin-channel pair density matrices following Eqs. (2),
         (4) and (5) of Phys. Rev. Research 2, 043410 (2020).
@@ -637,28 +661,26 @@ class eACBN0(ACBN0):
             # implementation did) yields the S·D·S block, which is
             # orbital-character dependent and produces unphysical
             # manifold weights N_w > 1 in a non-orthonormal basis.
-            Sv = Sks[:, :, ik] @ evec     # (nbasis, nocc) = S c
-            cI = evec[basis_I, :]         # c[basis_I]
-            sI = Sv[basis_I, :]           # (S c)[basis_I]
+            Sv = Sks[:, :, ik] @ evec  # (nbasis, nocc) = S c
+            cI = evec[basis_I, :]  # c[basis_I]
+            sI = Sv[basis_I, :]  # (S c)[basis_I]
             cJ = evec[basis_J, :]
             sJ = Sv[basis_J, :]
 
             # Mulliken band weight on the (I+J) manifold (Eq. 4):
             #   N_w[m] = Σ_{α∈I+J} Re( c*_α (S c)_α ) ∈ [0, 1].
-            N_w = (np.einsum('im,im->m', np.conj(cI), sI).real
-                   + np.einsum('jm,jm->m', np.conj(cJ), sJ).real)
+            N_w = (
+                np.einsum('im,im->m', np.conj(cI), sI).real
+                + np.einsum('jm,jm->m', np.conj(cJ), sJ).real
+            )
 
             # Bare on-site / intersite occupation matrix blocks (Eq. 2),
             # Hermitianised (½ [c*·(Sc)^T + (Sc)*·c^T]) so they are
             # real-symmetric (resp. Hermitian) by construction:
             n_II += 0.5 * w * (np.conj(cI) @ sI.T + np.conj(sI) @ cI.T)
             n_JJ += 0.5 * w * (np.conj(cJ) @ sJ.T + np.conj(sJ) @ cJ.T)
-            n_IJ += 0.5 * w * phase_pos * (
-                np.conj(cI) @ sJ.T + np.conj(sI) @ cJ.T
-            )
-            n_JI += 0.5 * w * phase_neg * (
-                np.conj(cJ) @ sI.T + np.conj(sJ) @ cI.T
-            )
+            n_IJ += 0.5 * w * phase_pos * (np.conj(cI) @ sJ.T + np.conj(sI) @ cJ.T)
+            n_JI += 0.5 * w * phase_neg * (np.conj(cJ) @ sI.T + np.conj(sJ) @ cI.T)
 
             # Renormalized P matrices (Eq. 5): same expressions weighted
             # by N_w[m].
@@ -668,12 +690,8 @@ class eACBN0(ACBN0):
             sJ_w = sJ * N_w
             P_II += 0.5 * w * (np.conj(cI) @ sI_w.T + np.conj(sI) @ cI_w.T)
             P_JJ += 0.5 * w * (np.conj(cJ) @ sJ_w.T + np.conj(sJ) @ cJ_w.T)
-            P_IJ += 0.5 * w * phase_pos * (
-                np.conj(cI) @ sJ_w.T + np.conj(sI) @ cJ_w.T
-            )
-            P_JI += 0.5 * w * phase_neg * (
-                np.conj(cJ) @ sI_w.T + np.conj(sJ) @ cI_w.T
-            )
+            P_IJ += 0.5 * w * phase_pos * (np.conj(cI) @ sJ_w.T + np.conj(sI) @ cJ_w.T)
+            P_JI += 0.5 * w * phase_neg * (np.conj(cJ) @ sI_w.T + np.conj(sJ) @ cI_w.T)
 
         scale = 1.0 / total_w
         return {
@@ -727,9 +745,7 @@ class eACBN0(ACBN0):
         # possible).
         for full_key, meta in self.vPairs.items():
             na, nb, nc = full_key[4], full_key[5], full_key[6]
-            R_A = (na * lattice_A[0]
-                   + nb * lattice_A[1]
-                   + nc * lattice_A[2])
+            R_A = na * lattice_A[0] + nb * lattice_A[1] + nc * lattice_A[2]
             i1, i2 = full_key[2], full_key[3]
             d_vec = coords_A[i2 - 1] + R_A - coords_A[i1 - 1]
             meta['R_cart'] = R_A
@@ -777,11 +793,23 @@ class eACBN0(ACBN0):
 
             # --- σ = up (and σ = dn when spin-polarized) -----------------
             up = self._pair_density_matrices(
-                basis_I, basis_J, Hks_up, Sks, k_cart, kwght, R_bohr,
+                basis_I,
+                basis_J,
+                Hks_up,
+                Sks,
+                k_cart,
+                kwght,
+                R_bohr,
             )
             if self.nspin == 2:
                 dn = self._pair_density_matrices(
-                    basis_I, basis_J, Hks_dn, Sks, k_cart, kwght, R_bohr,
+                    basis_I,
+                    basis_J,
+                    Hks_dn,
+                    Sks,
+                    k_cart,
+                    kwght,
+                    R_bohr,
                 )
             else:
                 # Spin-restricted: split the doubly-occupied DM in half
@@ -801,19 +829,17 @@ class eACBN0(ACBN0):
             den = 0.0
             for nII in (up['n_II'], dn['n_II']):
                 for nJJ in (up['n_JJ'], dn['n_JJ']):
-                    den += float(
-                        (np.diag(nII).real[:, None]
-                         * np.diag(nJJ).real[None, :]).sum()
-                    )
-            for nIJ, nJI in [(up['n_IJ'], up['n_JI']),
-                             (dn['n_IJ'], dn['n_JI'])]:
+                    den += float((np.diag(nII).real[:, None] * np.diag(nJJ).real[None, :]).sum())
+            for nIJ, nJI in [(up['n_IJ'], up['n_JI']), (dn['n_IJ'], dn['n_JI'])]:
                 # Σ_{ij} n^{IJ}_{ij} n^{JI}_{ji}  (note the transpose)
                 den -= float((nIJ * nJI.T).real.sum())
 
             # --- Numerator (Eq. 8 num): launch the MPI kernel -----------
             gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1)
             gauss_J = self._atom_shell_gaussians(
-                ele2, coords_A[i2 - 1] + meta['R_cart'], L2,
+                ele2,
+                coords_A[i2 - 1] + meta['R_cart'],
+                L2,
             )
             if len(gauss_I) != basis_I.size or len(gauss_J) != basis_J.size:
                 raise RuntimeError(
@@ -826,10 +852,14 @@ class eACBN0(ACBN0):
             data = {
                 'gauss_I': gauss_I,
                 'gauss_J': gauss_J,
-                'P_II_up': up['P_II'], 'P_II_dn': dn['P_II'],
-                'P_JJ_up': up['P_JJ'], 'P_JJ_dn': dn['P_JJ'],
-                'P_IJ_up': up['P_IJ'], 'P_IJ_dn': dn['P_IJ'],
-                'P_JI_up': up['P_JI'], 'P_JI_dn': dn['P_JI'],
+                'P_II_up': up['P_II'],
+                'P_II_dn': dn['P_II'],
+                'P_JJ_up': up['P_JJ'],
+                'P_JJ_dn': dn['P_JJ'],
+                'P_IJ_up': up['P_IJ'],
+                'P_IJ_dn': dn['P_IJ'],
+                'P_JI_up': up['P_JI'],
+                'P_JI_dn': dn['P_JI'],
             }
             datapath = join(self.outputdir, 'data_v.pkl')
             with open(datapath, 'wb') as f:
@@ -920,8 +950,7 @@ class eACBN0(ACBN0):
 
             self.run_dft(self.prefix, self.uspecies, self.uVals)
 
-            save_prefix = self.blocks['control']['prefix']\
-                .strip('"').strip("'")
+            save_prefix = self.blocks['control']['prefix'].strip('"').strip("'")
             self.run_paoflow(self.prefix, save_prefix)
 
             new_U = self.run_acbn0(self.prefix)
@@ -943,10 +972,7 @@ class eACBN0(ACBN0):
                 old = self.vVals.get(k, 0.0)
                 mixed = mixing * v + (1.0 - mixing) * old
                 l1, l2, i1, i2 = k
-                print(
-                    f'  {l1} {l2} {i1} {i2} : old={old:.4f}  '
-                    f'new={v:.4f}  mixed={mixed:.4f}'
-                )
+                print(f'  {l1} {l2} {i1} {i2} : old={old:.4f}  new={v:.4f}  mixed={mixed:.4f}')
                 if abs(mixed - old) > convergence_threshold:
                     converged = False
                 new_V[k] = mixed
@@ -960,6 +986,4 @@ class eACBN0(ACBN0):
                 print(f'Converged after {itr} iteration(s).')
                 return
 
-        raise RuntimeError(
-            f'Joint U+V loop did not converge in {max_iter} iterations.'
-        )
+        raise RuntimeError(f'Joint U+V loop did not converge in {max_iter} iterations.')
