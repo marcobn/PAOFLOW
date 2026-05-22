@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-import numpy as np
-
-from PAOFLOW import PAOFLOW
+import numpy as npfrom PAOFLOW import PAOFLOW
 
 Ry2eV = 13.60569193
 
