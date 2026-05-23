@@ -1,3 +1,73 @@
+"""pyints — Two-electron Coulomb repulsion integrals over Gaussian-type orbitals.
+
+This module provides a pure-Python implementation of the analytical
+two-electron electron-repulsion integrals (ERIs) needed by the
+ACBN0 and eACBN0 Hartree exchange-correlation routines in PAOFLOW.
+The algorithms follow the Obara–Saika / THO (Taketa–Huzinaga–O-Ohata)
+recurrence-relation formalism.
+
+Overview
+--------
+The central quantity computed is the four-centre two-electron
+repulsion integral over *contracted* Gaussian-type orbitals (cGTOs):
+
+.. math::
+
+    J_{\\mu\\nu\\lambda\\sigma} =
+        \\int\\!\\int \\phi_\\mu(\\mathbf{r}_1)\\,\\phi_\\nu(\\mathbf{r}_1)\\,
+        \\frac{1}{r_{12}}\\,
+        \\phi_\\lambda(\\mathbf{r}_2)\\,\\phi_\\sigma(\\mathbf{r}_2)\\,
+        d\\mathbf{r}_1\\,d\\mathbf{r}_2
+
+The evaluation chain is:
+
+1. **Primitive ERI** — :func:`coulomb_repulsion` computes the integral
+   for a single Gaussian primitive on each of the four centres, using
+   the Boys function :func:`Fgamma` and the Cartesian *B*-array
+   expansion (:func:`B_array`, :func:`fB`, :func:`B0`) from THO eq. 2.22.
+
+2. **Contraction** — :func:`contr_coulomb` sums the primitive integrals
+   over all contraction coefficients and normalisation factors, yielding
+   the contracted ERI used by ACBN0.
+
+Special functions
+-----------------
+:func:`gammln`
+    Natural logarithm of the Gamma function via the Lanczos
+    approximation (Numerical Recipes sect. 6.1).
+:func:`gammp`
+    Incomplete Gamma function :math:`P(a; x)` via series expansion
+    (:func:`_gser`) for :math:`x < a+1` or continued-fraction
+    representation (:func:`_gcf`) otherwise (Numerical Recipes sect. 6.2).
+:func:`gamm_inc`
+    Unnormalised incomplete Gamma function :math:`\\gamma(a, x)`.
+:func:`Fgamma`
+    Boys function :math:`F_m(x) = \\int_0^1 t^{2m} e^{-xt^2}\\,dt`,
+    evaluated via the relation :math:`F_m(x) = \\gamma(m+\\tfrac{1}{2}, x)/(2x^{m+\\tfrac{1}{2}})`.
+
+Combinatorial utilities
+-----------------------
+:func:`fact`, :func:`fact_ratio`, :func:`binomial`,
+:func:`binomial_prefactor`
+    Factorial, double-factorial ratio, and binomial-coefficient helpers
+    used in the Cartesian angular-momentum reduction (Augspurger & Dykstra).
+
+Geometry helpers
+----------------
+:func:`dist`
+    Squared Euclidean distance :math:`|A - B|^2` between two 3D points.
+:func:`gaussian_product_center`
+    Gaussian product theorem centre
+    :math:`P = (\\alpha_1 A + \\alpha_2 B)/(\\alpha_1+\\alpha_2)`.
+
+Data structure
+--------------
+:class:`CGBF`
+    Lightweight container for a contracted Gaussian basis function,
+    storing the centre origin, angular-momentum powers, primitive
+    exponents, contraction coefficients, and normalisation factors.
+"""
+
 import numpy as np
 
 

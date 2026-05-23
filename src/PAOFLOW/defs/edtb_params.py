@@ -117,7 +117,17 @@ _L_ORDER = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
 
 
 def species_pair_key(sp1: str, sp2: str) -> str:
-    """Canonical species-pair key (alphabetically sorted, hyphen-separated).
+    """Return the canonical species-pair key (alphabetically sorted, hyphen-separated).
+
+    Parameters
+    ----------
+    sp1, sp2 : str
+        Species names (order does not matter).
+
+    Returns
+    -------
+    str
+        Sorted, hyphen-joined key, e.g. ``'Ge-Si'``.
 
     Examples
     --------
@@ -131,7 +141,26 @@ def species_pair_key(sp1: str, sp2: str) -> str:
 
 
 def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
-    """Return the SK parameter names active for a species pair."""
+    """Return the SK parameter names active for a given species-pair basis.
+
+    Determines which Slater-Koster integrals are needed from the
+    angular-momentum channels of the two species, preserving canonical
+    ordering and avoiding duplicates.
+
+    Parameters
+    ----------
+    l_channels_a : list of str
+        Angular-momentum channels of species A (e.g. ``['s', 'p', 'd']``).
+    l_channels_b : list of str
+        Angular-momentum channels of species B.
+
+    Returns
+    -------
+    list of str
+        Ordered SK parameter names from ``SK_PARAM_NAMES`` that are
+        relevant for the given basis combination
+        (e.g. ``['sss', 'sps', 'pps', 'ppp']`` for ``sp``–``sp``).
+    """
     names = []
     seen = set()
     for la in l_channels_a:
@@ -146,7 +175,25 @@ def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) 
 
 
 def active_gamma_labels(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
-    """Return active γ labels for a species pair."""
+    """Return the active screening-exponent (γ) labels for a species-pair basis.
+
+    Analogous to :func:`active_sk_names_for_basis` but returns
+    angular-momentum-pair labels (e.g. ``'ss'``, ``'pp'``) rather than
+    individual SK integral names.
+
+    Parameters
+    ----------
+    l_channels_a : list of str
+        Angular-momentum channels of species A.
+    l_channels_b : list of str
+        Angular-momentum channels of species B.
+
+    Returns
+    -------
+    list of str
+        Ordered, deduplicated l-pair labels from ``LPAIR_LABELS``
+        (e.g. ``['ss', 'sp', 'pp']`` for an ``sp``-basis pair).
+    """
     labels = []
     seen = set()
     for la in l_channels_a:
@@ -159,9 +206,28 @@ def active_gamma_labels(l_channels_a: List[str], l_channels_b: List[str]) -> Lis
 
 
 def _orbital_to_onsite_group(orb: str, onsite_keys: set) -> str:
-    """Map an orbital name to its on-site group key.
+    """Map an orbital name to its on-site energy group key.
 
-    Handles both flat (s, p, d) and crystal-field-split (s, p, t2g, eg).
+    Supports both flat (``'s'``, ``'p'``, ``'d'``) and
+    crystal-field-split (``'s'``, ``'p'``, ``'t2g'``, ``'eg'``)
+    on-site key conventions.
+
+    Parameters
+    ----------
+    orb : str
+        Orbital name (e.g. ``'px'``, ``'dxy'``).
+    onsite_keys : set of str
+        Keys present in the on-site dict for the relevant species.
+
+    Returns
+    -------
+    str
+        Matching on-site group key (e.g. ``'p'``, ``'t2g'``).
+
+    Raises
+    ------
+    KeyError
+        If no suitable group key is found in ``onsite_keys``.
     """
     l = _ORB_TO_L[orb]
     if l in onsite_keys:
@@ -183,10 +249,21 @@ def _orbital_to_onsite_group(orb: str, onsite_keys: set) -> str:
 def validate_params(params: dict) -> List[str]:
     """Validate an EDTB parameter dict against the schema.
 
+    Checks for required top-level keys (``edtb_version``, ``basis``,
+    ``onsite``, ``hoppings``), orbital-to-l-channel consistency, correct
+    SK parameter names per species pair, and optional ``screening``
+    entries.
+
+    Parameters
+    ----------
+    params : dict
+        EDTB parameter dict to validate.
+
     Returns
     -------
     list of str
-        Error messages (empty list = valid).
+        Human-readable error messages.  An empty list means the dict
+        is valid.
     """
     errors = []
 
@@ -337,10 +414,20 @@ def validate_params(params: dict) -> List[str]:
 def validate_geometry(geometry: dict) -> List[str]:
     """Validate a geometry dict against the schema.
 
+    Checks for required keys ``alat``, ``a_vectors`` (3×3 nested list),
+    and ``atoms`` (each entry must have ``species`` and a 3-element
+    ``tau``).
+
+    Parameters
+    ----------
+    geometry : dict
+        Geometry dict to validate.
+
     Returns
     -------
     list of str
-        Error messages (empty list = valid).
+        Human-readable error messages.  An empty list means the dict
+        is valid.
     """
     errors = []
 
@@ -458,10 +545,22 @@ def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool
 def read_geometry(filepath: Union[str, Path], *, validate: bool = True) -> dict:
     """Read a geometry file (JSON).
 
+    Parameters
+    ----------
+    filepath : str or Path
+        Input path.
+    validate : bool
+        If True (default), validate after reading.
+
     Returns
     -------
     dict
         Geometry dict with keys ``alat``, ``a_vectors``, ``atoms``.
+
+    Raises
+    ------
+    ValueError
+        If *validate* is True and the file has schema violations.
     """
     filepath = Path(filepath)
     with open(filepath) as f:
@@ -976,7 +1075,23 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
 
 
 def summarize_params(params: dict) -> str:
-    """Return a human-readable summary of an EDTB parameter dict."""
+    """Return a human-readable summary of an EDTB parameter dict.
+
+    Prints species, orbital counts, on-site energies, hopping shells
+    (or distance-dependent channel coefficients), and screening
+    exponents when present.
+
+    Parameters
+    ----------
+    params : dict
+        EDTB parameter dict (need not be valid; missing keys produce
+        ``'?'`` placeholders).
+
+    Returns
+    -------
+    str
+        Multi-line formatted summary string.
+    """
     lines = []
     lines.append(f'EDTB Parameters  (v{params.get("edtb_version", "?")})')
     if 'description' in params:
@@ -1278,10 +1393,22 @@ class EDTBModel:
         params_path: Union[str, Path],
         geometry_path: Union[str, Path],
     ) -> 'EDTBModel':
-        """Shortcut: load parameters from one file, geometry from another.
+        """Load parameters from one file and geometry from another.
 
-        Identical to :meth:`from_files` — provided for readability in
-        transferability workflows where the same params file is reused.
+        Identical to :meth:`from_files`; provided for readability in
+        transferability workflows where the same parameter file is
+        reused with different geometries.
+
+        Parameters
+        ----------
+        params_path : str or Path
+            Path to the EDTB parameter JSON file.
+        geometry_path : str or Path
+            Path to the geometry JSON file.
+
+        Returns
+        -------
+        EDTBModel
         """
         return cls.from_files(params_path, geometry_path)
 

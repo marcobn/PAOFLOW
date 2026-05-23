@@ -1,9 +1,88 @@
+"""pao_sym — Crystal symmetry engine for PAO Hamiltonian expansion.
+
+This module implements the full symmetry workflow that expands the PAO
+Hamiltonian from the irreducible Brillouin zone (IBZ) wedge to the
+complete uniform k-grid.  It is the core symmetry back-end called by
+:func:`~PAOFLOW.PAOFLOW.pao_hamiltonian` and is MPI-parallel throughout.
+
+Overview
+--------
+The workflow exposed by :func:`open_grid_wrapper` proceeds in the
+following stages:
+
+1. **Wigner-D matrices** (:func:`get_wigner`, :func:`get_wigner_so`) —
+   For each space-group rotation, the :math:`D^{(l)}` matrices are
+   built via the ZYZ-convention Euler-angle decomposition
+   (:func:`mat2eul`, :func:`eul2mat`, :func:`d_mat_l`) and converted
+   from the quantum-mechanics :math:`|lm\rangle` basis to the chemistry
+   real-orbital basis (:func:`get_trans`, :func:`convert_wigner_d`).
+   Spin–orbit variants (:func:`get_wigner_so`) handle half-integer
+   :math:`j` channels.
+
+2. **Unitary transformation matrices** (:func:`build_U_matrix`) —
+   The per-symop block-diagonal :math:`U` matrices are assembled from
+   the :math:`D^{(l)}` blocks.  Atom-permutation phases from
+   symmetry-equivalent Wyckoff sites are folded in via
+   :func:`map_equiv_atoms`, :func:`get_phase_shifts`, and
+   :func:`add_U_wyc`.  Time-reversal partners are handled by
+   :func:`get_U_TR` and :func:`add_U_TR`.
+
+3. **IBZ → full-grid expansion** (:func:`wedge_to_grid`) —
+   For each k-point in the full grid, the symmetry operation and
+   originating IBZ k-point are identified by :func:`find_equiv_k`; the
+   corresponding Hamiltonian is transformed as
+
+   .. math::
+
+       H(\\mathbf{k}') = U(\\mathbf{k})\\,H(\\mathbf{k})\\,U^\\dagger(\\mathbf{k})
+
+   with k-dependent phase factors from :func:`get_U_k`.  Inversion and
+   time-reversal anti-unitarity are applied where required.
+
+4. **Symmetrisation** (:func:`symmetrize_grid`, :func:`symmetrize_grid_nspin2`) —
+   An optional iterative symmetrisation loop averages H(k) over all
+   symmetry-equivalent images and alternates between the original and an
+   upsampled interpolated grid (via :func:`~zero_pad.zero_pad`) until
+   the maximum symmetry residual falls below ``symm_thresh``.
+
+5. **Time-reversal and Hermiticity enforcement**
+   (:func:`enforce_t_rev`, :func:`enforce_hermaticity`) —
+   Final passes ensure :math:`H(\\mathbf{k}) = H^\\dagger(\\mathbf{k})` and
+   :math:`H(\\mathbf{k}) = H^*(-\\mathbf{k})` as required by crystal symmetry.
+
+Entry points
+------------
+:func:`open_grid_wrapper`
+    High-level DataController-based interface; unpacks all arrays/attributes
+    and dispatches to :func:`open_grid` (``nspin=1``, with or without SOC)
+    or :func:`open_grid_nspin2` (collinear spin-polarised).
+
+Utility functions
+-----------------
+:func:`get_full_grid`
+    Generate a uniform Monkhorst–Pack grid in crystal fractional coordinates.
+:func:`correct_roundoff`
+    Zero-out floating-point noise near exact crystallographic values.
+:func:`LPF` / :func:`down_samp`
+    Low-pass filter and down-sample routines for FFT-based grid interpolation.
+:func:`get_inv_op`
+    Build the real-space parity operator :math:`(-1)^l` acting on the PAO basis.
+
+MPI parallelism
+---------------
+k-point loops in the expansion and symmetrisation stages are distributed
+over MPI ranks using :func:`~.communication.scatter_full` and
+:func:`~.communication.gather_full`.  Rank 0 collects and broadcasts
+the final full-grid Hamiltonian.
+"""
+
 import numpy as np
 import scipy.linalg as LA
-from scipy.special import factorial as fac
-from .communication import scatter_full, gather_full, gather_scatter
-from scipy.spatial.distance import cdist
 from mpi4py import MPI
+from scipy.spatial.distance import cdist
+from scipy.special import factorial as fac
+
+from .communication import gather_full, gather_scatter, scatter_full
 from .zero_pad import zero_pad
 
 comm = MPI.COMM_WORLD

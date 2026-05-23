@@ -24,6 +24,124 @@
 # ----------
 # J.C. Slater & G.F. Koster, Phys. Rev. 94, 1498 (1954), Table I.
 
+"""sk_fitting — Slater-Koster tight-binding fitting engine.
+
+This module implements a hierarchy of three fitting classes that extract
+Slater-Koster (SK) tight-binding parameters from a PAOFLOW PAO Hamiltonian
+:math:`H(\\mathbf{R})` via eigenvalue-based least-squares optimisation with
+an analytic (Hellmann-Feynman) Jacobian.
+
+Physics background
+------------------
+Slater-Koster theory expresses every hopping matrix element between
+two orbitals in terms of a small set of two-centre integrals
+:math:`V_{ss\\sigma}, V_{sp\\sigma}, V_{pp\\sigma}, V_{pp\\pi}, \\ldots, V_{dd\\delta}`
+and the bond direction cosines :math:`(l_x, l_y, l_z)`.  The function
+:func:`sk_element` implements the full Slater-Koster table for
+:math:`s/p/d` orbitals, including all :math:`\\sqrt{3}` prefactors.
+:func:`sk_design_row` returns the linear coefficient vector of each SK
+parameter for a given pair of orbitals and bond direction, enabling
+vectorised Jacobian computation.
+
+Class hierarchy
+---------------
+
+:class:`SKFitter`
+    Base two-centre Slater-Koster fitter.
+
+    * Enumerates all bonds up to *n_shells* neighbor shells from the
+      :math:`H(\\mathbf{R})` grid.
+    * Builds precomputed design tensors and block-sparse
+      :math:`\\partial H/\\partial V` arrays (``_dHk_shells``).
+    * Fits on-site energies :math:`\\varepsilon` and hopping parameters
+      :math:`V_\\lambda` by minimising the eigenvalue RMSE
+
+      .. math::
+
+          \\mathcal{L} = \\sum_{\\mathbf{k},n} \\bigl(E_{n\\mathbf{k}}^\\text{SK}(p)
+              - E_{n\\mathbf{k}}^\\text{PAO}\\bigr)^2
+
+      using ``scipy.optimize.least_squares`` with a Hellmann-Feynman
+      Jacobian and multi-start random initialisation.
+    * Outputs a species-pair-keyed model dict compatible with
+      ``edtb_params``.
+
+:class:`SKFitterEDTB` *(extends SKFitter)*
+    Environment-dependent TB extension.  Each hopping is screened by a
+    bond-environment sum :math:`S_{ij}`:
+
+    .. math::
+
+        V_\\lambda^{\\text{eff}}(i,j) = V_\\lambda^{(2c)}
+            \\exp\\!\\bigl(-\\gamma_\\lambda\\,S_{ij}\\bigr), \\qquad
+        S_{ij} = \\sum_{k \\neq i,j} f_c(d_{ik})\\,f_c(d_{jk})
+
+    where :math:`f_c` is a smooth cosine cutoff tapering to zero at
+    ``r_cut``.  The screening strength :math:`\\gamma` can be shared
+    globally, per angular-momentum pair, or per SK channel
+    (``gamma_mode``).  Optionally fits environment-dependent on-site
+    shifts :math:`\\varepsilon_\\alpha \\to \\varepsilon_\\alpha + \\eta_\\alpha
+    \\sum_k f_c(d_{ik})`.
+
+:class:`MultiGeomEDTB`
+    Multi-geometry EDTB fitter.  Fits a **single shared** parameter set
+    :math:`(\\varepsilon, V_\\lambda, \\gamma, \\eta)` to DFT band structures
+    from multiple atomic configurations simultaneously — essential for
+    learning physically meaningful :math:`\\gamma` values.  Geometries
+    may differ in lattice parameter, strain, or surface termination
+    (same species and orbital basis required).  Evaluations across
+    geometries are parallelised with ``ThreadPoolExecutor`` (``eigh``
+    releases the GIL).  Supports species harmonisation when not all
+    geometries contain the same species.
+
+Module-level helpers
+--------------------
+:func:`sk_element`
+    Full SK table for an :math:`s/p/d` orbital pair and bond cosines.
+:func:`sk_design_row`
+    Length-10 linear coefficient vector of the SK parameters for a
+    given orbital pair.
+
+Key module-level constants
+--------------------------
+``SK_PARAM_NAMES``, ``SK_LABELS``
+    Canonical names and labels for the 10 SK integrals
+    (:math:`V_{ss\\sigma}` through :math:`V_{dd\\delta}`).
+``ORBITAL_NAMES``
+    Chemistry real-orbital names ``('s', 'px', ..., 'dz2')``.
+``LPAIR_ACTIVE_NAMES``, ``LPAIR_ACTIVE_INDICES``
+    Active SK parameters for each angular-momentum pair
+    :math:`(l, l')`.
+``SHELL_TO_ORBITALS``
+    Orbital name list for each angular-momentum shell.
+
+Typical usage
+-------------
+::
+
+    from PAOFLOW.defs.sk_fitting import SKFitter, SKFitterEDTB, MultiGeomEDTB
+
+    # 1. Plain SK fit
+    fitter = SKFitter(arryp, attrp, n_shells=2, nkfit=6)
+    result = fitter.fit(n_trials=20, seed=123)
+    model  = fitter.build_model_dict(result['p_opt'])
+
+    # 2. Staged EDTB: fix SK then fit γ
+    p_sk = result['p_opt']
+    edtb = SKFitterEDTB(arryp, attrp, n_shells=2, r_cut=8.0, gamma_mode='per_lpair')
+    result_edtb = edtb.fit(p0_sk=p_sk, n_trials=10)
+    model_edtb  = edtb.build_model_dict(result_edtb['p_opt'])
+
+    # 3. Multi-geometry EDTB
+    geoms = [(arry_eq, attr_eq), (arry_p5, attr_p5), (arry_m5, attr_m5)]
+    mg = MultiGeomEDTB(geoms, n_shells=2, r_cut=8.0, gamma_mode='global')
+    result_mg = mg.fit(p0_sk=p_sk, n_trials=10, n_jobs=-1)
+
+Reference
+---------
+J.C. Slater & G.F. Koster, *Phys. Rev.* **94**, 1498 (1954).
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -370,7 +488,7 @@ class SKFitter:
         self.HR_arr = np.array(HR_list)
 
         if self.verbose:
-            print(f'SKFitter: {self.nat} atoms, nawf={self.nawf}, ' f'alat={self.alat:.4f} Bohr')
+            print(f'SKFitter: {self.nat} atoms, nawf={self.nawf}, alat={self.alat:.4f} Bohr')
             print(f'  Shell groups: {self.cfg_names} (l = {self.group_l})')
 
     # ── 2b. Bond enumeration ──────────────────────────────────
@@ -888,7 +1006,7 @@ class SKFitter:
         )
 
         if self.verbose:
-            print(f"\n{'=' * 65}")
+            print(f'\n{"=" * 65}')
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(f'Multi-start optimisation: {n_trials} trials{par_tag}')
 
@@ -902,8 +1020,8 @@ class SKFitter:
         else:
             if self.verbose:
                 print(
-                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
-                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
+                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
                 )
                 print('-' * 50)
             all_results = []
@@ -931,7 +1049,7 @@ class SKFitter:
         if self.verbose:
             if use_parallel:
                 print(f'  Completed {n_trials} trials in parallel')
-            print(f"{'=' * 65}")
+            print(f'{"=" * 65}')
             msg = (
                 f'Best RMSE = {best_rmse * 1000:.2f} meV, '
                 f'max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV'
@@ -939,7 +1057,7 @@ class SKFitter:
             if alpha > 0:
                 msg += f'  (α = {alpha:.4g})'
             print(msg)
-            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 print(f'{name:<30s}  {best_p[i]: .5f}')
@@ -990,7 +1108,7 @@ class SKFitter:
             return d
 
         # ── Species-pair-keyed hoppings ──
-        from .edtb_params import species_pair_key, compute_pair_shell_distances
+        from .edtb_params import compute_pair_shell_distances, species_pair_key
 
         # Build per-shell SK params (species-blind)
         shell_params = []
@@ -1334,7 +1452,7 @@ class SKFitterEDTB(SKFitter):
         self.param_labels.extend(self.eta_labels)
 
         if self.verbose:
-            print(f'  EDTB screening: {self.n_gamma} γ ({self.gamma_mode}), ' f'{self.n_eta} η')
+            print(f'  EDTB screening: {self.n_gamma} γ ({self.gamma_mode}), {self.n_eta} η')
             print(f'  Total parameters: {self.n_params}')
 
     # ── 3c. Regularization weights ────────────────────────────
@@ -1541,7 +1659,7 @@ class SKFitterEDTB(SKFitter):
         )
 
         if self.verbose:
-            print(f"\n{'=' * 65}")
+            print(f'\n{"=" * 65}')
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(
                 f'EDTB multi-start optimisation: {n_trials} trials, '
@@ -1558,8 +1676,8 @@ class SKFitterEDTB(SKFitter):
         else:
             if self.verbose:
                 print(
-                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
-                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
+                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
                 )
                 print('-' * 50)
             all_results = []
@@ -1587,7 +1705,7 @@ class SKFitterEDTB(SKFitter):
         if self.verbose:
             if use_parallel:
                 print(f'  Completed {n_trials} trials in parallel')
-            print(f"{'=' * 65}")
+            print(f'{"=" * 65}')
             msg = (
                 f'Best RMSE = {best_rmse * 1000:.2f} meV, '
                 f'max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV'
@@ -1595,7 +1713,7 @@ class SKFitterEDTB(SKFitter):
             if alpha > 0:
                 msg += f'  (α = {alpha:.4g})'
             print(msg)
-            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 print(f'{name:<30s}  {best_p[i]: .5f}')
@@ -1874,13 +1992,13 @@ class MultiGeomEDTB:
         self._reg_weights = ref._reg_weights.copy()
 
         if verbose:
-            print(f"\n{'=' * 65}")
+            print(f'\n{"=" * 65}')
             print('MultiGeomEDTB summary:')
             print(f'  {self.n_geom} geometries, {self.n_params} shared parameters')
             print(f'  n_data_total = {self.n_data_total}')
             for ig, f in enumerate(self.fitters):
                 nk_str = (
-                    f"grid={'×'.join(str(x) for x in f._nkfit_grid)}"
+                    f'grid={"×".join(str(x) for x in f._nkfit_grid)}'
                     if hasattr(f, '_nkfit_grid')
                     else ''
                 )
@@ -2326,7 +2444,7 @@ class MultiGeomEDTB:
             )
             total_threads = effective_jobs * geom_threads
 
-            print(f"\n{'=' * 65}")
+            print(f'\n{"=" * 65}')
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(
                 f'Multi-geometry EDTB optimisation: {n_trials} trials, '
@@ -2389,8 +2507,8 @@ class MultiGeomEDTB:
         else:
             if self.verbose:
                 print(
-                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
-                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
+                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
                 )
                 print('-' * 50)
             all_results = []
@@ -2424,7 +2542,7 @@ class MultiGeomEDTB:
         if self.verbose:
             if use_parallel:
                 print(f'  Completed {n_trials} trials in parallel')
-            print(f"{'=' * 65}")
+            print(f'{"=" * 65}')
             print(f'Combined RMSE = {best_rmse * 1000:.2f} meV')
             for ig, r in enumerate(per_geom_rmse):
                 print(f'  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})')
@@ -2437,7 +2555,7 @@ class MultiGeomEDTB:
                 f'  Parameters: {n_fitted} fitted'
                 + (f', {self.n_onsite} on-site fixed' if fixed_onsite_vals is not None else '')
             )
-            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 tag = ' (fixed)' if fixed_onsite_vals is not None and i < self.n_onsite else ''
@@ -2598,8 +2716,7 @@ class MultiGeomEDTB_DD:
 
         if self.verbose:
             print(
-                f'\nMultiGeomEDTB_DD: {self.n_geom} geometries, '
-                f'{self.nat} atoms, nawf={self.nawf}'
+                f'\nMultiGeomEDTB_DD: {self.n_geom} geometries, {self.nat} atoms, nawf={self.nawf}'
             )
             print(
                 f'  r_0={self.r_0_bohr:.3f} Bohr, '
@@ -3320,9 +3437,9 @@ class MultiGeomEDTB_DD:
             )
             total_threads = effective_jobs * geom_threads
 
-            print(f"\n{'=' * 65}")
+            print(f'\n{"=" * 65}')
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
-            print(f'DD EDTB optimisation: {n_trials} trials, ' f'{self.n_geom} geometries{par_tag}')
+            print(f'DD EDTB optimisation: {n_trials} trials, {self.n_geom} geometries{par_tag}')
 
             if use_parallel:
                 print('\n  Parallelism diagnostics:')
@@ -3377,8 +3494,8 @@ class MultiGeomEDTB_DD:
         else:
             if self.verbose:
                 print(
-                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
-                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
+                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
+                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
                 )
                 print('-' * 50)
             all_results = []
@@ -3410,11 +3527,11 @@ class MultiGeomEDTB_DD:
             offset += nd
 
         if self.verbose:
-            print(f"{'=' * 65}")
+            print(f'{"=" * 65}')
             print(f'Combined RMSE = {best_rmse * 1000:.2f} meV')
             for ig, r in enumerate(per_geom_rmse):
                 print(f'  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})')
-            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 print(f'{name:<30s}  {best_p[i]: .5f}')
@@ -3734,7 +3851,7 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         """
         # If nk <= 0, skip augmentation entirely to recover the original fit
         if nk <= 0:
-            print('  HSP k-points added: 0  (nk=0 → no augmentation); ' f'total Nk = {self.Nk}')
+            print(f'  HSP k-points added: 0  (nk=0 → no augmentation); total Nk = {self.Nk}')
             return 0, ''
 
         # 2-pass dk scaling: first pass gets nk_trial, then rescale dk to hit ~nk
@@ -3766,7 +3883,7 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         self.Nk += nk_new
         self._precompute_dHk()  # rebuild k-dependent Hamiltonian tensors
 
-        print(f'  HSP k-points added: {nk_new}  (target ~{nk}); ' f'total Nk = {self.Nk}')
+        print(f'  HSP k-points added: {nk_new}  (target ~{nk}); total Nk = {self.Nk}')
         return nk_new, path_str
 
     # ── weighted least-squares trial ──────────────────────────────────

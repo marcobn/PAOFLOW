@@ -6,6 +6,55 @@ rank = comm.Get_rank()
 
 
 def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
+    """Compute the Boltzmann transport tensors L0, L1, and L2.
+
+    The three generalized transport tensors are defined by the BZ integral
+
+    .. math::
+
+        L^{(\\alpha)}_{ij}(\\varepsilon) =
+        \\sum_{n\\mathbf{k}} \\tau_{n\\mathbf{k}}\,
+        v^i_{n\\mathbf{k}}\, v^j_{n\\mathbf{k}}\,
+        \\left(-\\frac{\\partial f}{\\partial\\varepsilon}\\right)
+        (E_{n\\mathbf{k}} - \\varepsilon)^\\alpha
+
+    for ``alpha`` = 0, 1, 2.  From these, the electrical conductivity
+    (\u03c3 ~ L0), Seebeck coefficient (S ~ L1/L0), and electronic thermal
+    conductivity (\u03ba ~ L2 - L1\u00b2/L0) are derived.
+
+    When ``smearing`` is ``None`` the Fermi-Dirac derivative
+    ``1/(4T cosh\u00b2(...))`` is evaluated analytically.  When adaptive
+    smearing is enabled (``'gauss'`` or ``'m-p'``) the integration is
+    performed on an extended energy grid and convolved with the Fermi window
+    via Simpson quadrature.
+
+    Only the upper-triangular components of each tensor are computed; the
+    lower-triangular entries are filled by symmetry before returning.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``deltakp``, ``scattering_tau``, ``nkpnts``, ``bnd``.
+    smearing : str or None
+        Smearing type: ``None`` (Fermi-Dirac), ``'gauss'``, or ``'m-p'``.
+    temp : float
+        Temperature in eV (k\u0432T).
+    ene : ndarray, shape (ne,)
+        Chemical-potential (energy) grid in eV.
+    velkp : ndarray, shape (nkpts_local, 3, bnd, nspin)
+        Band velocities (diagonal elements of the momentum matrix).
+    ispin : int
+        Spin channel index.
+    channels : list
+        Scattering channel identifiers (strings or :class:`TauModel` objects).
+    weights : list of float
+        Harmonic-sum weights for each scattering channel.
+
+    Returns
+    -------
+    L0, L1, L2 : ndarray, shape (3, 3, ne), or (None, None, None)
+        Transport tensors on rank 0; ``(None, None, None)`` on all other ranks.
+    """
     from scipy.integrate import simpson
 
     # Compute the L_alpha tensors for Boltzmann transport
@@ -93,6 +142,48 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
 
 
 def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
+    """Compute the anomalous (Hall) Boltzmann transport tensor L0_hall.
+
+    Evaluates the rank-3 Hall conductivity kernel
+
+    .. math::
+
+        L^{\\rm Hall}_{ijp}(\\varepsilon) =
+        \\sum_{n\\mathbf{k}} \\tau^2_{n\\mathbf{k}}
+        \\sum_{qr} \\epsilon_{pqr}\,
+        v^i_{n\\mathbf{k}}\, v^r_{n\\mathbf{k}}\,
+        M^{-1}_{jq,n\\mathbf{k}}\,
+        \\left(-\\frac{\\partial f}{\\partial\\varepsilon}\\right)
+
+    where :math:`\\epsilon_{pqr}` is the Levi-Civita symbol and
+    :math:`M^{-1}_{jq}` is the inverse effective-mass tensor from
+    ``arry['d2Ed2k']``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``deltakp``, ``d2Ed2k``, ``scattering_tau``,
+        ``nkpnts``, ``bnd``, ``nspin``.
+    smearing : str or None
+        Smearing type: ``None`` (Fermi-Dirac), ``'gauss'``, or ``'m-p'``.
+    temp : float
+        Temperature in eV (k\u0432T).
+    ene : ndarray, shape (ne,)
+        Chemical-potential grid in eV.
+    velkp : ndarray, shape (nkpts_local, 3, bnd, nspin)
+        Band velocities.
+    ispin : int
+        Spin channel index.
+    channels : list
+        Scattering channel identifiers.
+    weights : list of float
+        Harmonic-sum weights for each scattering channel.
+
+    Returns
+    -------
+    L0_hall : ndarray, shape (3, 3, 3, ne), or None
+        Hall transport tensor on rank 0; ``None`` on all other ranks.
+    """
     arrays, _ = data_controller.data_dicts()
 
     esize = ene.size
@@ -115,6 +206,46 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
 
 def get_tau(data_controller, temp, channels, weights):
+    """Compute the relaxation time \u03c4(n, k) from a list of scattering channels.
+
+    Constructs the total scattering rate as a harmonic sum of individual
+    channel contributions
+
+    .. math::
+
+        \\frac{1}{\\tau_{n\\mathbf{k}}} =
+        \\sum_c \\frac{w_c}{\\tau^{(c)}_{n\\mathbf{k}}}
+
+    and returns :math:`\\tau = 1 / \\sum_c (w_c / \\tau^{(c)})`.  When no
+    channels are provided, a constant relaxation time of unity is used
+    (constant-\u03c4 approximation).
+
+    Each channel entry in ``channels`` can be either a built-in model name
+    string (dispatched to :func:`do_tau_models.builtin_tau_model`) or a
+    :class:`TauModel` instance.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``bnd``, and ``tau_dict`` (model parameters).
+    temp : float
+        Temperature in eV (k\u0432T), passed to each model's ``evaluate`` method.
+    channels : list
+        Scattering channel identifiers (strings or :class:`TauModel` objects).
+        Pass an empty list or ``None`` for constant-\u03c4.
+    weights : list of float
+        Per-channel harmonic-sum weights.  Defaults to all-ones when empty.
+
+    Returns
+    -------
+    tau : ndarray, shape (nkpts_local, bnd, nspin)
+        Relaxation time in arbitrary units (consistent with ``tau_dict``).
+
+    Raises
+    ------
+    Exception
+        If a required parameter is missing from ``attr['tau_dict']``.
+    """
     import numpy as np
 
     from .do_tau_models import builtin_tau_model
@@ -172,6 +303,50 @@ def get_tau(data_controller, temp, channels, weights):
 
 
 def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
+    """Inner BZ summation loop for one L\u1d45 transport tensor.
+
+    Evaluates the energy-resolved integral
+
+    .. math::
+
+        L^{(\\alpha)}_{ij}(\\varepsilon) =
+        \\frac{1}{N_k} \\sum_{n\\mathbf{k}}
+        \\tau_{n\\mathbf{k}}\,
+        v^i_{n\\mathbf{k}}\, v^j_{n\\mathbf{k}}\,
+        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)\,
+        (E_{n\\mathbf{k}} - \\varepsilon)^\\alpha
+
+    where :math:`\\sigma` is the smearing kernel (Fermi-Dirac derivative,
+    Gaussian, or Methfessel-Paxton depending on ``smearing``).
+
+    The loop runs over the k-point slice held by the local MPI rank.  Results
+    are subsequently reduced across ranks by the caller.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``deltakp``, ``scattering_tau``, ``nkpnts``, ``bnd``.
+    temp : float
+        Temperature in eV.
+    smearing : str or None
+        ``None`` uses the Fermi-Dirac window; ``'gauss'`` or ``'m-p'`` uses
+        adaptive smearing widths from ``deltakp``.
+    ene : ndarray, shape (ne,)
+        Energy (chemical-potential) grid.
+    velkp : ndarray, shape (nkpts_local, 3, bnd, nspin)
+        Band velocities.
+    t_tensor : ndarray, shape (nc, 2), int
+        Tensor component pairs ``[i, j]`` to evaluate (upper triangle).
+    alpha : int
+        Power of the ``(E - \u03b5)`` kernel: 0, 1, or 2.
+    ispin : int
+        Spin channel index.
+
+    Returns
+    -------
+    L : ndarray, shape (3, 3, ne)
+        Local contribution to L\u1d45 from this MPI rank's k-points.
+    """
     from .smearing import gaussian, metpax
     # We assume tau=1 in the constant relaxation time approximation
 
@@ -230,6 +405,51 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
 
 def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
+    """Inner BZ summation loop for the Hall transport tensor.
+
+    Computes the rank-3 Hall kernel
+
+    .. math::
+
+        L^{\\rm Hall}_{ijp}(\\varepsilon) =
+        \\frac{1}{N_k} \\sum_{n\\mathbf{k}}
+        \\tau^2_{n\\mathbf{k}}
+        \\left(\\sum_{qr} \\epsilon_{pqr}\,
+        v^i_{n\\mathbf{k}}\, v^r_{n\\mathbf{k}}\,
+        M^{-1}_{jq,n\\mathbf{k}}\\right)
+        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)
+
+    The Levi-Civita symbol :math:`\\epsilon_{pqr}` is evaluated with
+    ``sympy.Eijk``; the inverse effective-mass tensor components are read
+    from ``arry['d2Ed2k']`` and assembled into a full 3\u00d73 matrix.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``deltakp``, ``d2Ed2k``, ``scattering_tau``,
+        ``nkpnts``, ``bnd``, ``nspin``.
+    temp : float
+        Temperature in eV.
+    smearing : str or None
+        ``None`` uses the Fermi-Dirac window; ``'gauss'`` or ``'m-p'`` uses
+        adaptive smearing widths from ``deltakp``.
+    ene : ndarray, shape (ne,)
+        Energy (chemical-potential) grid.
+    velkp : ndarray, shape (nkpts_local, 3, bnd, nspin)
+        Band velocities.
+    t_tensor : ndarray, shape (nc, 2), int
+        Tensor component pairs (used to unpack the symmetric effective-mass
+        tensor stored as 6 independent components).
+    alpha : int
+        Power of the energy factor (currently always 0 for Hall).
+    ispin : int
+        Spin channel index.
+
+    Returns
+    -------
+    L_hall : ndarray, shape (3, 3, 3, ne)
+        Local contribution to the Hall tensor from this MPI rank's k-points.
+    """
     from sympy import Eijk
 
     from .smearing import gaussian, metpax
