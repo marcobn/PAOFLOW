@@ -11,15 +11,11 @@ Usage: [environment variables] build_assets_tar.sh [options] [example01 example0
 
 Options:
   --qe                   Create qe_assets.tar.gz from existing *.save folders only.
-  --paoflow-examples     Create paoflow_examples_assets.tar.gz from existing example Reference folders.
   --paoflow-test         Create paoflow_assets.tar.gz from staged test Reference folders.
   --all                  Create all selected tar files.
                          If no mode option is passed, the script runs --qe and --paoflow-test.
   --qe-assets-out PATH   Output path for QE assets tar.gz.
                          Default: QE_ASSETS_OUT or examples/qe_examples/_assets/qe_assets.tar.gz.
-  --paoflow-examples-assets-out PATH
-                         Output path for PAOFLOW example Reference tar.gz.
-                         Default: PAOFLOW_EXAMPLES_ASSETS_OUT or examples/qe_examples/_assets/paoflow_examples_assets.tar.gz.
   --paoflow-assets-out PATH
                          Output path for PAOFLOW test assets tar.gz.
                          Default: PAOFLOW_ASSETS_OUT or tests/integration/qe/_assets/paoflow_assets.tar.gz.
@@ -162,11 +158,9 @@ build_reference_tar_from_roots() {
 }
 
 run_qe=false
-run_paoflow_examples=false
 run_paoflow_test=false
 examples_arg=""
 qe_assets_out_arg=""
-paoflow_examples_assets_out_arg=""
 paoflow_assets_out_arg=""
 paoflow_test_staging_dir_arg=""
 extra_examples=()
@@ -174,13 +168,10 @@ extra_examples=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --qe) run_qe=true ;;
-    --paoflow-examples) run_paoflow_examples=true ;;
     --paoflow-test) run_paoflow_test=true ;;
-    --all) run_qe=true; run_paoflow_examples=true; run_paoflow_test=true ;;
+    --all) run_qe=true; run_paoflow_test=true ;;
     --qe-assets-out) qe_assets_out_arg="$2"; shift ;;
     --qe-assets-out=*) qe_assets_out_arg="${1#*=}" ;;
-    --paoflow-examples-assets-out) paoflow_examples_assets_out_arg="$2"; shift ;;
-    --paoflow-examples-assets-out=*) paoflow_examples_assets_out_arg="${1#*=}" ;;
     --paoflow-assets-out) paoflow_assets_out_arg="$2"; shift ;;
     --paoflow-assets-out=*) paoflow_assets_out_arg="${1#*=}" ;;
     --paoflow-test-staging-dir) paoflow_test_staging_dir_arg="$2"; shift ;;
@@ -193,7 +184,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ "$run_qe" = false && "$run_paoflow_examples" = false && "$run_paoflow_test" = false ]]; then
+if [[ "$run_qe" = false && "$run_paoflow_test" = false ]]; then
   run_qe=true
   run_paoflow_test=true
 fi
@@ -209,7 +200,6 @@ JOB_LOG="$LOG_DIR/build_assets_tar.log"
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
 QE_ASSETS_OUT="${qe_assets_out_arg:-${QE_ASSETS_OUT:-$EXAMPLES_ROOT/_assets/qe_assets.tar.gz}}"
-PAOFLOW_EXAMPLES_ASSETS_OUT="${paoflow_examples_assets_out_arg:-${PAOFLOW_EXAMPLES_ASSETS_OUT:-$EXAMPLES_ROOT/_assets/paoflow_examples_assets.tar.gz}}"
 PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$TESTS_ROOT/_assets/paoflow_assets.tar.gz}}"
 PAOFLOW_TEST_STAGING_DIR="${paoflow_test_staging_dir_arg:-${PAOFLOW_TEST_STAGING_DIR:-$TESTS_ROOT/_assets/staging}}"
 
@@ -237,10 +227,6 @@ failures=0
 
 if [[ "$run_qe" = true ]]; then
   build_qe_assets_tar || failures=$((failures + 1))
-fi
-
-if [[ "$run_paoflow_examples" = true ]]; then
-  build_reference_tar_from_roots "$PAOFLOW_EXAMPLES_ASSETS_OUT" "PAOFLOW example" "$EXAMPLES_ROOT" || failures=$((failures + 1))
 fi
 
 if [[ "$run_paoflow_test" = true ]]; then
