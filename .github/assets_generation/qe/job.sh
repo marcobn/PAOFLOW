@@ -14,14 +14,35 @@ Options:
   --paoflow-examples     Run PAOFLOW from examples and write Reference folders.
   --paoflow-test         Run PAOFLOW from tests and create paoflow_assets.tar.gz.
   --all                  Run --qe + --paoflow-test.
+                         If no mode option is passed, the script runs --qe,
+                         --paoflow-examples, and --paoflow-test.
   --skip-qe-if-save-exists
                          Skip QE in a job directory when '*.save' already exists.
+                         Default: disabled.
   --qe-assets-out PATH   Output path for qe assets tar.gz.
+                         Default: QE_ASSETS_OUT or EXAMPLES_ROOT/_assets/qe_assets.tar.gz.
   --paoflow-assets-out PATH
                          Output path for paoflow assets tar.gz.
+                         Default: PAOFLOW_ASSETS_OUT or
+                         TESTS_ROOT/_assets/paoflow_assets.tar.gz.
   --examples LIST        Comma-separated list of example selectors (example name,
                          nested path, or glob under examples/qe_examples).
+                         Default: all example* directories under EXAMPLES_ROOT.
   -h, --help             Show this help message.
+
+Environment variables:
+  PYTHON_EXEC            Python interpreter to use. Default: python.
+  QE_BIN                 Directory containing QE executables used as fallbacks.
+  PW_EXEC                Explicit path to pw.x. Default: QE_BIN/pw.x or PATH lookup.
+  PP_EXEC                Explicit path to projwfc.x. Default: QE_BIN/projwfc.x or
+                         PATH lookup.
+  EPSILON_EXEC           Explicit path to epsilon.x. Default: QE_BIN/epsilon.x or
+                         PATH lookup.
+  PARALLEL_EXEC          Parallel launcher prefix for QE commands.
+                         Default: srun -n \$SLURM_NTASKS when SLURM_NTASKS is set
+                         and srun is available.
+  SLURM_SUBMIT_DIR       If it contains examples/qe_examples or tests/integration/qe,
+                         those paths override the repository defaults.
 EOF
 }
 
