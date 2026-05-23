@@ -24,5 +24,9 @@ export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 cd "$SLURM_SUBMIT_DIR"
 script_dir="."
-chmod u+x "$script_dir/job.sh"
-"$script_dir/job.sh" --all
+
+chmod u+x "$script_dir/create_assets.sh"
+chmod u+x "$script_dir/build_tar.sh"
+
+"$script_dir/create_assets.sh" --all
+"$script_dir/build_tar.sh" --all
