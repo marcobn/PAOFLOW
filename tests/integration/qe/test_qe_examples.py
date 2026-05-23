@@ -39,7 +39,7 @@ def test_qe_example(
     plots_dir = result.workdir / '_compare_plots'
 
     try:
-        compare_dat_dirs(result.outdir, result.refdir, tolerance=0.01, plot_dir=plots_dir)
+        compare_dat_dirs(result.outdir, result.refdir, tolerance=0.001, plot_dir=plots_dir)
     except CompareFailure as e:
         raise AssertionError(
             f'{result.job_id} failed.\nSandbox: {result.workdir}\nPlots: {plots_dir}\n{e}'
