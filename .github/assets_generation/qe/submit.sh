@@ -28,24 +28,5 @@ script_dir="."
 chmod u+x "$script_dir/create_assets.sh"
 chmod u+x "$script_dir/build_tar.sh"
 
-create_status=0
-build_status=0
-
-set +e
 "$script_dir/create_assets.sh" --all
-create_status=$?
-"$script_dir/build_tar.sh" --all
-build_status=$?
-set -e
-
-if [[ $create_status -ne 0 ]]; then
-	echo "create_assets.sh completed with failures; kept successful assets and continued to build tarballs." >&2
-fi
-
-if [[ $build_status -ne 0 ]]; then
-	echo "build_tar.sh completed with failures or warnings." >&2
-fi
-
-if [[ $create_status -ne 0 || $build_status -ne 0 ]]; then
-	exit 1
-fi
+"$script_dir/build_tar.sh" --qe
