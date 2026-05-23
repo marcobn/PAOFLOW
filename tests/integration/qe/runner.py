@@ -53,40 +53,75 @@ def _infer_outputdir(job_dir: Path) -> Path:
     return outp
 
 
-def _overlay_assets(
+def _assets_job_root(
+    *, assets_root: Path, example_name: str, job_relpath: Path, label: str
+) -> Path:
+    assets_job_root = (assets_root / example_name / job_relpath).resolve()
+    if not assets_job_root.exists():
+        raise RuntimeError(f'{label} missing for job: {example_name}/{job_relpath}')
+    return assets_job_root
+
+
+def _link_or_copy_dir(*, src: Path, dst: Path, link_mode: str) -> None:
+    if dst.exists() or dst.is_symlink():
+        if dst.is_dir() and not dst.is_symlink():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink(missing_ok=True)
+
+    if link_mode == 'symlink':
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.symlink_to(src, target_is_directory=True)
+        return
+
+    shutil.copytree(src, dst)
+
+
+def _overlay_qe_assets(
     *,
-    assets_root: Path,
+    qe_assets_root: Path,
     example_name: str,
     job_relpath: Path,
     job_dir: Path,
     link_mode: str,
 ) -> None:
-    assets_job_root = (assets_root / example_name / job_relpath).resolve()
-    if not assets_job_root.exists():
-        raise RuntimeError(f'Assets missing for job: {example_name}/{job_relpath}')
+    assets_job_root = _assets_job_root(
+        assets_root=qe_assets_root,
+        example_name=example_name,
+        job_relpath=job_relpath,
+        label='QE assets',
+    )
 
-    def _link_or_copy(src: Path, dst: Path) -> None:
-        if dst.exists() or dst.is_symlink():
-            if dst.is_dir() and not dst.is_symlink():
-                shutil.rmtree(dst)
-            else:
-                dst.unlink(missing_ok=True)
-
-        if link_mode == 'symlink':
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.symlink_to(src, target_is_directory=True)
-            return
-
-        shutil.copytree(src, dst)
-
-    # Reference
-    ref_src = assets_job_root / 'Reference'
-    if ref_src.is_dir():
-        _link_or_copy(ref_src, job_dir / 'Reference')
-
+    found_savedir = False
     for savedir in sorted(assets_job_root.glob('*.save')):
         if savedir.is_dir():
-            _link_or_copy(savedir, job_dir / savedir.name)
+            _link_or_copy_dir(src=savedir, dst=job_dir / savedir.name, link_mode=link_mode)
+            found_savedir = True
+
+    if not found_savedir:
+        raise RuntimeError(f'QE assets missing *.save for job: {example_name}/{job_relpath}')
+
+
+def _overlay_reference_assets(
+    *,
+    reference_assets_root: Path,
+    example_name: str,
+    job_relpath: Path,
+    job_dir: Path,
+    link_mode: str,
+) -> None:
+    assets_job_root = _assets_job_root(
+        assets_root=reference_assets_root,
+        example_name=example_name,
+        job_relpath=job_relpath,
+        label='Reference assets',
+    )
+
+    ref_src = assets_job_root / 'Reference'
+    if not ref_src.is_dir():
+        raise RuntimeError(f'Reference assets missing for job: {example_name}/{job_relpath}')
+
+    _link_or_copy_dir(src=ref_src, dst=job_dir / 'Reference', link_mode=link_mode)
 
 
 def run_example_in_sandbox(
@@ -94,13 +129,14 @@ def run_example_in_sandbox(
     sandbox_root: Path,
     *,
     job_relpath: Path | None = None,
-    assets_root: Optional[Path] = None,
+    qe_assets_root: Optional[Path] = None,
+    reference_assets_root: Optional[Path] = None,
     assets_link_mode: str = 'symlink',
 ) -> ExampleRunResult:
     """Run a QE integration job in an isolated sandbox.
 
     - Copies the full example directory into the sandbox.
-    - Overlays `Reference/` and `*.save/` from assets into the job directory (if provided).
+    - Overlays `*.save/` and `Reference/` from separate assets into the job directory.
     """
 
     example_name = example_dir.name
@@ -117,9 +153,18 @@ def run_example_in_sandbox(
     if not sandbox_job_dir.exists():
         raise RuntimeError(f'Sandbox job directory missing: {sandbox_job_dir}')
 
-    if assets_root is not None:
-        _overlay_assets(
-            assets_root=assets_root,
+    if qe_assets_root is not None:
+        _overlay_qe_assets(
+            qe_assets_root=qe_assets_root,
+            example_name=example_name,
+            job_relpath=job_relpath,
+            job_dir=sandbox_job_dir,
+            link_mode=assets_link_mode,
+        )
+
+    if reference_assets_root is not None:
+        _overlay_reference_assets(
+            reference_assets_root=reference_assets_root,
             example_name=example_name,
             job_relpath=job_relpath,
             job_dir=sandbox_job_dir,

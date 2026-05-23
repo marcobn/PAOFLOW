@@ -2,14 +2,14 @@
 
 This folder contains integration tests based on Quantum ESPRESSO (QE) examples.
 The goal is to run PAOFLOW in CI **without requiring QE at runtime** by using a
-pre-generated asset bundle that contains:
+pair of pre-generated asset bundles that contain:
 
 - QE `*.save/` directories (needed by `read_atomic_proj_QE()`)
-- PAOFLOW `Reference/` directories ( `*.dat` outputs)
+- PAOFLOW `Reference/` directories (`*.dat` outputs)
 
-The pytest suite copies each job into a temporary sandbox, overlays `*.save/` and
-`Reference/` from the asset bundle, runs `python main.py`, then compares
-`output/*.dat` against `Reference/*.dat`.
+The pytest suite copies each job into a temporary sandbox, overlays `*.save/`
+from the QE asset bundle and `Reference/` from the PAOFLOW asset bundle, runs
+`python main.py`, then compares `output/*.dat` against `Reference/*.dat`.
 
 ## What is a “job”?
 
@@ -22,64 +22,68 @@ Job discovery is implemented in [jobs.py](jobs.py).
 You can validate the asset-bundle infrastructure locally before publishing anything
 to GitHub Releases.
 
-### 1) Generate `*.save/` and `Reference/` (requires QE)
+### 1) Generate `*.save/` and staged `Reference/` assets (requires QE)
 
-Use the bash runner to run QE and then PAOFLOW, and to trim the `*.save/` folders
-to a minimal size:
+Use the bash runner to run QE, generate PAOFLOW outputs, and stage the test
+`Reference/` folders:
 
 ```bash
 # From repository root
-cd .github/assets_generation/qe
-
-# Run QE + PAOFLOW for all examples (creates *.save and Reference)
-QE_BIN=/path/to/qe/bin ./job.sh --all
+QE_BIN=/path/to/qe/bin .github/assets_generation/qe/create_assets.sh --all
 ```
 
-Optionally, build the asset tarball automatically after a successful run:
+This creates:
 
-```bash
-QE_BIN=/path/to/qe/bin ./job.sh --all --build-assets
-```
-
-To override the tarball output location:
-
-```bash
-QE_BIN=/path/to/qe/bin ./job.sh --all --build-assets --assets-out ./_assets/qe_test_assets_dev.tar.gz
-```
+- trimmed QE `*.save/` folders under `examples/qe_examples/...`
+- staged PAOFLOW `Reference/` folders under `tests/integration/qe/_assets/staging/...`
 
 Notes:
 
-- `job.sh` will run QE in any folder containing `*.in` and PAOFLOW in any folder
-  containing `main.py`.
+- `create_assets.sh` runs QE in any folder containing `*.in` and PAOFLOW in any
+  folder containing `main.py`.
 - QE launch can be controlled via `PARALLEL_EXEC`:
   - serial (default): unset `PARALLEL_EXEC`
   - MPI: `PARALLEL_EXEC="mpirun -np 8"`
   - SLURM: `PARALLEL_EXEC="srun -n 8"`
-- After a successful PAOFLOW run, it moves the PAOFLOW output directory into
-  `Reference/` inside the same job folder.
-- It also cleans up QE outputs and trims `*.save/` directories to keep only `*.xml`
-  and `*.UPF` (which are required by PAOFLOW to read projections).
+- `create_assets.sh` writes PAOFLOW example outputs to in-place `Reference/`
+  folders only when `--paoflow-examples` is selected. The test workflow only
+  needs the staged test `Reference/` folders created by `--paoflow-test`.
+- After a successful QE run, the workflow trims `*.save/` directories to keep
+  only the files needed by PAOFLOW.
 
-### 2) Build a local asset tarball
+### 2) Build local asset tarballs
 
-Create a tarball containing only `Reference/` and `*.save/` directories, preserving
-their paths relative to this directory:
+Create the QE and PAOFLOW test tarballs from the generated assets:
 
 ```bash
 # From repository root
-mkdir -p examples/qe_examples/_assets
-python .github/assets_generation/qe/build_assets.py \
-  --qe-root examples/qe_examples \
-  --out examples/qe_examples/_assets/qe_test_assets_dev.tar.gz
+.github/assets_generation/qe/build_tar.sh --all
 ```
 
-The builder is [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py).
+By default this writes:
 
-### 3) Run pytest using the local tarball
+- `examples/qe_examples/_assets/qe_assets.tar.gz`
+- `tests/integration/qe/_assets/paoflow_assets.tar.gz`
+
+To override the output locations:
+
+```bash
+.github/assets_generation/qe/build_tar.sh \
+  --qe-assets-out examples/qe_examples/_assets/qe_assets_dev.tar.gz \
+  --paoflow-assets-out tests/integration/qe/_assets/paoflow_assets_dev.tar.gz
+```
+
+`build_tar.sh` uses [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py)
+internally for the QE `*.save/` tarball. That Python helper packages QE assets only.
+
+### 3) Run pytest using the local tarballs
+
+Point pytest at both archives:
 
 ```bash
 pytest -q tests/integration/qe/test_qe_examples.py \
-  --qe-assets-archive examples/qe_examples/_assets/qe_test_assets_dev.tar.gz
+  --qe-assets-archive examples/qe_examples/_assets/qe_assets.tar.gz \
+  --reference-assets-archive tests/integration/qe/_assets/paoflow_assets.tar.gz
 ```
 
 By default, assets are overlaid into the sandbox via symlinks (fast). To use a
@@ -87,7 +91,8 @@ copy instead:
 
 ```bash
 pytest -q tests/integration/qe/test_qe_examples.py \
-  --qe-assets-archive examples/qe_examples/_assets/qe_test_assets_dev.tar.gz \
+  --qe-assets-archive examples/qe_examples/_assets/qe_assets.tar.gz \
+  --reference-assets-archive tests/integration/qe/_assets/paoflow_assets.tar.gz \
   --qe-assets-link copy
 ```
 
@@ -96,22 +101,31 @@ pytest -q tests/integration/qe/test_qe_examples.py \
 Assets are required. If assets are not configured, pytest exits with a usage
 error explaining which CLI options or environment variables to set.
 
-You can configure assets via CLI flags or environment variables.
+You can configure the QE savedir assets and the Reference assets via CLI flags
+or environment variables.
 
 ### CLI flags
 
-- `--qe-assets-archive PATH` local tarball path
-- `--qe-assets-url URL` download tarball from URL (future/CI usage)
-- `--qe-assets-sha256 SHA256` expected checksum (recommended)
-- `--qe-assets-version VERSION` cache label (used for naming downloads)
+- `--qe-assets-archive PATH` local QE asset tarball path
+- `--qe-assets-url URL` QE asset tarball URL
+- `--qe-assets-sha256 SHA256` expected QE checksum (recommended)
+- `--qe-assets-version VERSION` QE cache label
+- `--reference-assets-archive PATH` local Reference asset tarball path
+- `--reference-assets-url URL` Reference asset tarball URL
+- `--reference-assets-sha256 SHA256` expected Reference checksum
+- `--reference-assets-version VERSION` Reference cache label
 - `--qe-assets-link symlink|copy` overlay strategy
 
 ### Environment variables
 
-- `PAOFLOW_QE_ASSET_ARCHIVE` local tarball path
-- `PAOFLOW_QE_ASSET_URL` download URL
-- `PAOFLOW_QE_ASSET_SHA256` expected checksum
-- `PAOFLOW_QE_ASSET_VERSION` cache label
+- `PAOFLOW_QE_ASSET_ARCHIVE` local QE asset tarball path
+- `PAOFLOW_QE_ASSET_URL` QE asset tarball URL
+- `PAOFLOW_QE_ASSET_SHA256` expected QE checksum
+- `PAOFLOW_QE_ASSET_VERSION` QE cache label
+- `PAOFLOW_REFERENCE_ASSET_ARCHIVE` local Reference asset tarball path
+- `PAOFLOW_REFERENCE_ASSET_URL` Reference asset tarball URL
+- `PAOFLOW_REFERENCE_ASSET_SHA256` expected Reference checksum
+- `PAOFLOW_REFERENCE_ASSET_VERSION` Reference cache label
 
 Extraction is cached under `${XDG_CACHE_HOME:-~/.cache}/paoflow/qe-assets/`.
 Implementation lives in [assets.py](assets.py).
@@ -119,8 +133,10 @@ Implementation lives in [assets.py](assets.py).
 ## QE execution
 
 Pytest does **not** run QE. QE is expected to be run on HPC resources via
-[.github/assets_generation/qe/job.sh](../../../.github/assets_generation/qe/job.sh) to generate `*.save/` and `Reference/`, which are then packaged
-into the asset tarball.
+[.github/assets_generation/qe/create_assets.sh](../../../.github/assets_generation/qe/create_assets.sh)
+or [.github/assets_generation/qe/submit.sh](../../../.github/assets_generation/qe/submit.sh)
+to generate `*.save/` and staged `Reference/` assets, which are then packaged
+into separate tarballs.
 
 ## How outputs and comparisons work
 
@@ -138,17 +154,18 @@ into the asset tarball.
 
 Recommended execution order:
 
-1. Generate QE `*.save/` + PAOFLOW `Reference/` on HPC: [.github/assets_generation/qe/submit.sh](../../../.github/assets_generation/qe/submit.sh) (SLURM) or [.github/assets_generation/qe/job.sh](../../../.github/assets_generation/qe/job.sh) (direct)
-2. Package `*.save/` + `Reference/` into a tarball: [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py)
-3. Run pytest using the tarball (PAOFLOW-only): [test_qe_examples.py](test_qe_examples.py)
+1. Generate QE `*.save/` + staged PAOFLOW `Reference/` assets on HPC: [.github/assets_generation/qe/submit.sh](../../../.github/assets_generation/qe/submit.sh) (SLURM) or [.github/assets_generation/qe/create_assets.sh](../../../.github/assets_generation/qe/create_assets.sh) (direct)
+2. Package QE and Reference assets into separate tarballs: [.github/assets_generation/qe/build_tar.sh](../../../.github/assets_generation/qe/build_tar.sh)
+3. Run pytest using both tarballs (PAOFLOW-only): [test_qe_examples.py](test_qe_examples.py)
 4. Internals used by pytest: [assets.py](assets.py), [runner.py](runner.py), [jobs.py](jobs.py), [compare.py](compare.py), [conftest.py](conftest.py)
 
-- [.github/assets_generation/qe/job.sh](../../../.github/assets_generation/qe/job.sh): generate `*.save/` (QE) and `Reference/` (PAOFLOW) in-place; trims large QE artifacts
-- [.github/assets_generation/qe/submit.sh](../../../.github/assets_generation/qe/submit.sh): SLURM wrapper for `job.sh`
-- [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py): package `Reference/` + `*.save/` into a tar.gz (local-first)
+- [.github/assets_generation/qe/create_assets.sh](../../../.github/assets_generation/qe/create_assets.sh): generate `*.save/` (QE) and staged `Reference/` assets for tests; trims large QE artifacts
+- [.github/assets_generation/qe/submit.sh](../../../.github/assets_generation/qe/submit.sh): SLURM wrapper for `create_assets.sh` and `build_tar.sh`
+- [.github/assets_generation/qe/build_tar.sh](../../../.github/assets_generation/qe/build_tar.sh): package QE and Reference assets into separate tar.gz files
+- [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py): package QE `*.save/` directories into a tar.gz
 - [assets.py](assets.py): resolve/download/verify/extract the asset tarball into a cache
 - [jobs.py](jobs.py): discover runnable jobs (any directory with `main.py`)
-- [runner.py](runner.py): sandbox runner; overlays assets; runs PAOFLOW
+- [runner.py](runner.py): sandbox runner; overlays QE and Reference assets; runs PAOFLOW
 - [test_qe_examples.py](test_qe_examples.py): pytest entrypoint for QE integration tests
 - [compare.py](compare.py): output-vs-reference `*.dat` comparison logic
 - [conftest.py](conftest.py): pytest options and fixtures (asset flags)

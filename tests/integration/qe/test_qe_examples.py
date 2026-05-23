@@ -18,7 +18,13 @@ def _discover_jobs() -> list[JobSpec]:
 
 @pytest.mark.integration
 @pytest.mark.parametrize('job', _discover_jobs(), ids=lambda j: j.id)
-def test_qe_example(job: JobSpec, tmp_path: Path, qe_assets_root, qe_assets_link_mode) -> None:
+def test_qe_example(
+    job: JobSpec,
+    tmp_path: Path,
+    qe_assets_root,
+    reference_assets_root,
+    qe_assets_link_mode,
+) -> None:
     sandbox_root = tmp_path / 'sandbox'
     sandbox_root.mkdir(parents=True, exist_ok=True)
 
@@ -26,7 +32,8 @@ def test_qe_example(job: JobSpec, tmp_path: Path, qe_assets_root, qe_assets_link
         job.example_root,
         sandbox_root,
         job_relpath=job.job_relpath,
-        assets_root=qe_assets_root,
+        qe_assets_root=qe_assets_root,
+        reference_assets_root=reference_assets_root,
         assets_link_mode=qe_assets_link_mode,
     )
     plots_dir = result.workdir / '_compare_plots'

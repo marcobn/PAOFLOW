@@ -11,6 +11,7 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class AssetSource:
+    cache_key: str
     archive_path: Optional[Path]
     url: Optional[str]
     sha256: Optional[str]
@@ -50,22 +51,21 @@ def resolve_asset_source(
     url: Optional[str] = None,
     sha256: Optional[str] = None,
     version: Optional[str] = None,
+    env_archive_var: str,
+    env_url_var: str,
+    env_sha256_var: str,
+    env_version_var: str,
+    cache_key: str,
 ) -> AssetSource:
     """Resolve asset configuration.
 
     Priority: explicit args -> env vars.
-
-    Env vars:
-      - PAOFLOW_QE_ASSET_ARCHIVE: local path to a tar.gz
-      - PAOFLOW_QE_ASSET_URL: URL to download the tar.gz
-      - PAOFLOW_QE_ASSET_SHA256: expected sha256 for the archive
-      - PAOFLOW_QE_ASSET_VERSION: label used for caching (default: "dev")
     """
 
-    env_archive = os.environ.get('PAOFLOW_QE_ASSET_ARCHIVE')
-    env_url = os.environ.get('PAOFLOW_QE_ASSET_URL')
-    env_sha = os.environ.get('PAOFLOW_QE_ASSET_SHA256')
-    env_ver = os.environ.get('PAOFLOW_QE_ASSET_VERSION')
+    env_archive = os.environ.get(env_archive_var)
+    env_url = os.environ.get(env_url_var)
+    env_sha = os.environ.get(env_sha256_var)
+    env_ver = os.environ.get(env_version_var)
 
     archive = archive_path if archive_path is not None else env_archive
     url_val = url if url is not None else env_url
@@ -74,9 +74,21 @@ def resolve_asset_source(
 
     archive_p = Path(archive).expanduser().resolve() if archive else None
     if archive_p is None and not url_val:
-        return AssetSource(archive_path=None, url=None, sha256=sha_val, version=ver_val)
+        return AssetSource(
+            cache_key=cache_key,
+            archive_path=None,
+            url=None,
+            sha256=sha_val,
+            version=ver_val,
+        )
 
-    return AssetSource(archive_path=archive_p, url=url_val, sha256=sha_val, version=ver_val)
+    return AssetSource(
+        cache_key=cache_key,
+        archive_path=archive_p,
+        url=url_val,
+        sha256=sha_val,
+        version=ver_val,
+    )
 
 
 def ensure_assets_available(
@@ -107,7 +119,7 @@ def ensure_assets_available(
         raise RuntimeError('No asset source configured (archive path or URL).')
 
     # Download mode.
-    archive_path = cache / f'qe_test_assets_{source.version}.tar.gz'
+    archive_path = cache / f'{source.cache_key}_assets_{source.version}.tar.gz'
     if archive_path.is_file() and source.sha256:
         got = _sha256_file(archive_path)
         if got.lower() == source.sha256.lower():
