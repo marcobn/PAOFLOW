@@ -29,4 +29,4 @@ chmod u+x "$script_dir/create_assets.sh"
 chmod u+x "$script_dir/build_tar.sh"
 
 "$script_dir/create_assets.sh" --all
-"$script_dir/build_tar.sh" --qe
+"$script_dir/build_tar.sh" --all
