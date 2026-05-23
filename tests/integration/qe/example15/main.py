@@ -12,4 +12,4 @@ paoflow.pao_hamiltonian(expand_wedge=True)
 
 paoflow.pao_eigh()
 paoflow.gradient_and_momenta()
-paoflow.dielectric_tensor(delta=0.1,emax=4.,ne=801,d_tensor="diag")
+paoflow.dielectric_tensor(delta=0.1,emax=4.,ne=100,d_tensor="diag")
