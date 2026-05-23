@@ -4,7 +4,6 @@ from PAOFLOW.defs.TauModel import TauModel
 
 
 def main():
-
     # Start PAOFLOW, interpolate Hamiltonian, compute gradient an momenta
     paoflow = PAOFLOW.PAOFLOW(savedir='GaAs.save', smearing=None, npool=1, verbose=True)
     arry, attr = paoflow.data_controller.data_dicts()

@@ -17,7 +17,6 @@ def main():
     special_points = {'M': [0.0, 0.5, 0.0], 'G': [0.0, 0.0, 0.0], 'K': [1.0 / 3.0, 1.0 / 3.0, 0.0]}
     paoflow.bands(ibrav=0, nk=100, band_path=path, high_sym_points=special_points)
 
-
     print('#######################################################')
     print('                     Z2PACK                            ')
     print('#######################################################')
