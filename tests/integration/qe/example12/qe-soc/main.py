@@ -13,26 +13,11 @@ def main():
 
     path = 'xX-G-X'
     special_points = {'xX': [-0.5, 0.0, 0.0], 'G': [0.0, 0.0, 0.0], 'X': [0.5, 0.0, 0.0]}
-    paoflow.bands(ibrav=0, nk=200, band_path=path, high_sym_points=special_points)
+    paoflow.bands(ibrav=0, nk=100, band_path=path, high_sym_points=special_points)
 
     # Projection on the outmost sites of the nanoribbon
     # index of the sites to obtain the projection.
     paoflow.site_projected_bands(site_proj=np.array([0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23]))
-
-    # Ploting Site Projection
-
-    outputdir = './output/'  # attr['outputdir']
-    f_band = outputdir + 'site-projected-bands_0.dat'
-    f_symp = outputdir + 'kpath_points.txt'
-
-    label = '$\epsilon-\epsilon_{F}$ (eV)'
-    cbar_label = 'Edge Sites Projection'
-    filename = 'edge_states_projection.png'
-
-    # pplt.plot_weighted_bands( f_band, sym_points = f_symp, cbar_label = cbar_label,
-    pplt.plot_weighted_bands(
-        outputdir, f_band, f_symp, None, cbar_label, label, filename, y_lim=(-1, 1)
-    )
 
     paoflow.finish_execution()
 

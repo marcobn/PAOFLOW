@@ -21,9 +21,9 @@ def main():
         'X': [0.5, 0.0, 0.0],
         'Y': [0.0, 0.5, 0.0],
     }
-    paoflow.bands(ibrav=8, nk=1000, band_path=path, high_sym_points=special_points)
+    paoflow.bands(ibrav=8, nk=100, band_path=path, high_sym_points=special_points)
 
-    paoflow.interpolated_hamiltonian(nfft1=140, nfft2=140, nfft3=1)
+    paoflow.interpolated_hamiltonian()
     paoflow.pao_eigh()
     paoflow.spin_operator()
     paoflow.fermi_surface(fermi_up=0.0, fermi_dw=-1.0)

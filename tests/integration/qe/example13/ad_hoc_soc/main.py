@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import tbmodels
 import z2pack
 
@@ -6,7 +5,6 @@ from PAOFLOW import GPAO, PAOFLOW
 
 
 def main():
-    pplt = GPAO.GPAO()
     paoflow = PAOFLOW.PAOFLOW(savedir='./Bi.save')
 
     paoflow.read_atomic_proj_QE()
@@ -19,14 +17,8 @@ def main():
     path = 'M-G-K-M'
 
     special_points = {'M': [0.0, 0.5, 0.0], 'G': [0.0, 0.0, 0.0], 'K': [1.0 / 3.0, 1.0 / 3.0, 0.0]}
-    paoflow.bands(ibrav=0, nk=200, band_path=path, high_sym_points=special_points)
+    paoflow.bands(ibrav=0, nk=100, band_path=path, high_sym_points=special_points)
 
-    # Bandstructure plot
-    outputdir = './output/'
-    f_band = outputdir + 'bands_0.dat'
-    f_symp = outputdir + 'kpath_points.txt'
-
-    pplt.plot_bands(f_band, f_symp, None, None, y_lim=(-3, 1))
 
     print('#######################################################')
     print('                     Z2PACK                            ')
@@ -38,12 +30,6 @@ def main():
     result = z2pack.surface.run(system=system, surface=lambda t1, t2: [t1 / 2, t2, 0], load=False)
 
     print('Z2 topological invariant :   {0}'.format(z2pack.invariant.z2(result)))
-
-    # Combining the two plots
-    fig, ax = plt.subplots(1, 2, sharey=True, figsize=(9, 5))
-    z2pack.plot.wcc(result, axis=ax[0])
-    z2pack.plot.wcc(result, axis=ax[1])
-    plt.savefig('plot-kz.pdf', bbox_inches='tight')
 
     paoflow.finish_execution()
 

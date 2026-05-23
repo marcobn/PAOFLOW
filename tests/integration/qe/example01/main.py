@@ -13,7 +13,7 @@ def main():
     paoflow.pao_hamiltonian()
 
     # Calculate eigenvalues on the default ibrav=2 path
-    paoflow.bands(ibrav=2, nk=2000)
+    paoflow.bands(ibrav=2, nk=100)
 
     # Dimension of the grid is doubled by default
     #  e.g. 12x12x12 -> 24x24x24

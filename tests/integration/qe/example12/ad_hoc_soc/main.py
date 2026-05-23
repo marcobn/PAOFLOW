@@ -21,20 +21,6 @@ def main():
     # index of the sites to obtain the projection.
     paoflow.site_projected_bands(site_proj=np.array([0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23]))
 
-    # Ploting Site Projection
-
-    outputdir = './output/'
-    f_band = outputdir + 'site-projected-bands_0.dat'
-    f_symp = outputdir + 'kpath_points.txt'
-
-    label = '$\epsilon-\epsilon_{F}$ (eV)'
-    cbar_label = 'Edge Sites Projection'
-    filename = 'edge_states_projection.png'
-
-    pplt.plot_weighted_bands(
-        outputdir, f_band, f_symp, None, cbar_label, label, filename, y_lim=(-1, 1)
-    )
-
     paoflow.finish_execution()
 
 

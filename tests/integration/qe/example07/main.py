@@ -30,7 +30,7 @@ def main():
         'X': (0.5, 0.0, 0.5),
     }
 
-    paoflow.bands(ibrav=2, nk=1000, band_path=path, high_sym_points=special_points)
+    paoflow.bands(ibrav=2, nk=100, band_path=path, high_sym_points=special_points)
 
     paoflow.topology(Berry=True, eff_mass=True, spin_Hall=True, spol=2, ipol=0, jpol=1)
     paoflow.interpolated_hamiltonian()

@@ -11,7 +11,7 @@ def main():
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
     paoflow.pao_hamiltonian()
-    paoflow.interpolated_hamiltonian(nfft1=40, nfft2=40, nfft3=40)
+    paoflow.interpolated_hamiltonian()
     paoflow.pao_eigh()
     paoflow.gradient_and_momenta()
 
