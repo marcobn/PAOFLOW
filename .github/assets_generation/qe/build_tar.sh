@@ -18,10 +18,10 @@ Options:
                          Remove staged PAOFLOW test outputs for the selected examples
                          after paoflow_assets.tar.gz is created successfully.
   --qe-assets-out PATH   Output path for QE assets tar.gz.
-                         Default: QE_ASSETS_OUT or examples/qe_examples/_assets/qe_assets.tar.gz.
+                         Default: QE_ASSETS_OUT or .github/assets_generation/qe/_assets/qe_assets.tar.gz.
   --paoflow-assets-out PATH
                          Output path for PAOFLOW test assets tar.gz.
-                         Default: PAOFLOW_ASSETS_OUT or tests/integration/qe/_assets/paoflow_assets.tar.gz.
+                         Default: PAOFLOW_ASSETS_OUT or .github/assets_generation/qe/_assets/paoflow_assets.tar.gz.
   --paoflow-test-staging-dir PATH
                          Directory containing staged PAOFLOW test outputs.
                          Default: PAOFLOW_TEST_STAGING_DIR or tests/integration/qe/_assets/staging.
@@ -231,6 +231,7 @@ fi
 EXAMPLES_ROOT="$(resolve_examples_root)"
 TESTS_ROOT="$(resolve_tests_root)"
 REPO_ROOT="$(cd "$EXAMPLES_ROOT/../.." && pwd)"
+ASSETS_DIR="$REPO_ROOT/.github/assets_generation/qe/_assets"
 LOG_DIR="$EXAMPLES_ROOT/logs"
 mkdir -p "$LOG_DIR"
 
@@ -238,8 +239,8 @@ JOB_LOG="$LOG_DIR/build_assets_tar.log"
 : > "$JOB_LOG"
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
-QE_ASSETS_OUT="${qe_assets_out_arg:-${QE_ASSETS_OUT:-$EXAMPLES_ROOT/_assets/qe_assets.tar.gz}}"
-PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$TESTS_ROOT/_assets/paoflow_assets.tar.gz}}"
+QE_ASSETS_OUT="${qe_assets_out_arg:-${QE_ASSETS_OUT:-$ASSETS_DIR/qe_assets.tar.gz}}"
+PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$ASSETS_DIR/paoflow_assets.tar.gz}}"
 PAOFLOW_TEST_STAGING_DIR="${paoflow_test_staging_dir_arg:-${PAOFLOW_TEST_STAGING_DIR:-$TESTS_ROOT/_assets/staging}}"
 
 declare -a examples=()

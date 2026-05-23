@@ -68,15 +68,15 @@ Create the QE and PAOFLOW test tarballs from the generated assets:
 
 By default this writes:
 
-- `examples/qe_examples/_assets/qe_assets.tar.gz`
-- `tests/integration/qe/_assets/paoflow_assets.tar.gz`
+- `.github/assets_generation/qe/_assets/qe_assets.tar.gz`
+- `.github/assets_generation/qe/_assets/paoflow_assets.tar.gz`
 
 To override the output locations:
 
 ```bash
 .github/assets_generation/qe/build_tar.sh \
-  --qe-assets-out examples/qe_examples/_assets/qe_assets_dev.tar.gz \
-  --paoflow-assets-out tests/integration/qe/_assets/paoflow_assets_dev.tar.gz
+  --qe-assets-out .github/assets_generation/qe/_assets/qe_assets_dev.tar.gz \
+  --paoflow-assets-out .github/assets_generation/qe/_assets/paoflow_assets_dev.tar.gz
 ```
 
 To delete staged PAOFLOW test outputs after a successful Reference tar build:
@@ -98,8 +98,8 @@ Point pytest at both archives:
 
 ```bash
 pytest -q tests/integration/qe/test_qe_examples.py \
-  --qe-assets-archive examples/qe_examples/_assets/qe_assets.tar.gz \
-  --reference-assets-archive tests/integration/qe/_assets/paoflow_assets.tar.gz
+  --qe-assets-archive .github/assets_generation/qe/_assets/qe_assets.tar.gz \
+  --reference-assets-archive .github/assets_generation/qe/_assets/paoflow_assets.tar.gz
 ```
 
 By default, assets are overlaid into the sandbox via symlinks (fast). To use a
@@ -107,8 +107,8 @@ copy instead:
 
 ```bash
 pytest -q tests/integration/qe/test_qe_examples.py \
-  --qe-assets-archive examples/qe_examples/_assets/qe_assets.tar.gz \
-  --reference-assets-archive tests/integration/qe/_assets/paoflow_assets.tar.gz \
+  --qe-assets-archive .github/assets_generation/qe/_assets/qe_assets.tar.gz \
+  --reference-assets-archive .github/assets_generation/qe/_assets/paoflow_assets.tar.gz \
   --qe-assets-link copy
 ```
 
