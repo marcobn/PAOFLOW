@@ -20,13 +20,13 @@ jobs:
 
       - name: Check asset files exist
         run: |
-          test -f /home/jayn/PAOFLOW/tests/integration/qe/_assets/paoflow_assets.tar.gz
-          test -f /home/jayn/PAOFLOW/tests/integration/qe/_assets/qe_assets.tar.gz
+          test -f /home/anooja/Work/software/PAOFLOW/.github/assets_generation/qe/_assets/paoflow_assets.tar.gz
+          test -f /home/anooja/Work/software/PAOFLOW/.github/assets_generation/qe/_assets/qe_assets.tar.gz
 
       - name: Copy assets into workspace
         run: |
-          cp /home/jayn/PAOFLOW/tests/integration/qe/_assets/paoflow_assets.tar.gz .
-          cp /home/jayn/PAOFLOW/tests/integration/qe/_assets/qe_assets.tar.gz .
+          cp /home/anooja/Work/software/PAOFLOW/.github/assets_generation/qe/_assets/paoflow_assets.tar.gz .
+          cp /home/anooja/Work/software/PAOFLOW/.github/assets_generation/qe/_assets/qe_assets.tar.gz .
           sha256sum paoflow_assets.tar.gz qe_assets.tar.gz > SHA256SUMS
 
       - name: Create or update GitHub release
