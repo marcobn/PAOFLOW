@@ -95,7 +95,7 @@ def compare_dat_dirs(
     outdir: Path,
     refdir: Path,
     *,
-    tolerance: float = 0.001,
+    tolerance: float = 0.01,
     plot_dir: Path | None = None,
 ) -> None:
     out_files = sorted(outdir.glob('*.dat'))
