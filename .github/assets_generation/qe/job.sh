@@ -14,10 +14,13 @@ Options:
   --paoflow-examples     Run PAOFLOW from examples and write Reference folders.
   --paoflow-test         Run PAOFLOW from tests and create paoflow_assets.tar.gz.
   --all                  Run --qe + --paoflow-test.
+  --skip-qe-if-save-exists
+                         Skip QE in a job directory when '*.save' already exists.
   --qe-assets-out PATH   Output path for qe assets tar.gz.
   --paoflow-assets-out PATH
                          Output path for paoflow assets tar.gz.
-  --examples LIST        Comma-separated list of example directories.
+  --examples LIST        Comma-separated list of example selectors (example name,
+                         nested path, or glob under examples/qe_examples).
   -h, --help             Show this help message.
 EOF
 }
@@ -83,6 +86,45 @@ run_qe_exec() {
   fi
 }
 
+should_preserve_wfc_from_main() {
+  local main_py="$1"
+  [[ -f "$main_py" ]] || return 1
+
+  "$PYTHON_EXEC" - <<'PY' "$main_py"
+import ast
+import sys
+
+path = sys.argv[1]
+try:
+    tree = ast.parse(open(path, "r", encoding="utf-8").read(), filename=path)
+except Exception:
+    print("false")
+    raise SystemExit(0)
+
+
+def is_true_literal(node):
+    if isinstance(node, ast.Constant):
+        return node.value is True
+    return isinstance(node, ast.NameConstant) and node.value is True
+
+
+preserve = False
+for node in ast.walk(tree):
+    if isinstance(node, ast.keyword) and node.arg == "internal" and is_true_literal(node.value):
+        preserve = True
+        break
+    if isinstance(node, ast.Assign) and is_true_literal(node.value):
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == "internal":
+                preserve = True
+                break
+        if preserve:
+            break
+
+print("true" if preserve else "false")
+PY
+}
+
 collect_example_jobs() {
   local base_dir="$1"
   local -a dirs=()
@@ -99,8 +141,65 @@ collect_test_jobs() {
   find "$base_dir" -type f -name 'main.py' -printf '%h\n' | sort -u
 }
 
+normalize_example_selector() {
+  local selector="$1"
+  selector="${selector%/}"
+  selector="${selector#./}"
+
+  if [[ "$selector" == "$EXAMPLES_ROOT/"* ]]; then
+    selector="${selector#"$EXAMPLES_ROOT"/}"
+  fi
+
+  if [[ "$selector" == examples/qe_examples/* ]]; then
+    selector="${selector#examples/qe_examples/}"
+  fi
+
+  printf '%s\n' "${selector%%/*}"
+}
+
+expand_examples_from_selectors() {
+  local -a selectors=("$@")
+  local selector normalized match
+
+  for selector in "${selectors[@]}"; do
+    [[ -n "$selector" ]] || continue
+
+    if [[ "$selector" == *['*''?''[']* ]]; then
+      shopt -s nullglob
+      local -a matches=("$EXAMPLES_ROOT"/$selector)
+      shopt -u nullglob
+
+      if [[ ${#matches[@]} -eq 0 ]]; then
+        log_job "WARN: selector '$selector' matched no examples under $EXAMPLES_ROOT"
+        continue
+      fi
+
+      for match in "${matches[@]}"; do
+        normalized="$(normalize_example_selector "$match")"
+        if [[ -d "$EXAMPLES_ROOT/$normalized" ]]; then
+          printf '%s\n' "$normalized"
+        fi
+      done
+      continue
+    fi
+
+    normalized="$(normalize_example_selector "$selector")"
+    if [[ -d "$EXAMPLES_ROOT/$normalized" ]]; then
+      printf '%s\n' "$normalized"
+    else
+      log_job "WARN: selector '$selector' does not resolve to an example under $EXAMPLES_ROOT"
+    fi
+  done | awk '!seen[$0]++'
+}
+
 run_qe_dir() {
   local jobdir="$1" label="$2"
+  local keep_wfc="false"
+  if [[ "$skip_qe_if_save_exists" = true ]] && find "$jobdir" -maxdepth 1 -type d -name '*.save' | grep -q .; then
+    log_job "QE: $label - skipped (existing .save detected)"
+    return 0
+  fi
+
   mapfile -t inputs < <(find "$jobdir" -maxdepth 1 -type f -name '*.in' -printf '%f\n' | sort)
   if [[ ${#inputs[@]} -eq 0 ]]; then
     log_job "QE: $label - skipped"
@@ -117,11 +216,23 @@ run_qe_dir() {
       fi
     fi
   done
+
+  keep_wfc="$(should_preserve_wfc_from_main "$jobdir/main.py")"
   while IFS= read -r -d '' savedir; do
-    find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' -delete
+    if [[ "$keep_wfc" = "true" ]]; then
+      # Preserve QE wavefunction artifacts only inside *.save when internal=True.
+      find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' ! -iname '*wfc*' -delete
+    else
+      find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' -delete
+    fi
   done < <(find "$jobdir" -maxdepth 1 -type d -name '*.save' -print0)
   find "$jobdir" -type f -name '.hub*' -delete
   find "$jobdir" -maxdepth 1 -type f \( -name '*pdos_*' -o -name '*.wfc*' -o \( -name '*.xml' ! -name 'inputfile.xml' \) \) -delete
+
+  if [[ "$keep_wfc" = "true" ]]; then
+    log_job "QE: $label - preserving *wfc* only inside *.save (internal=True in main.py)"
+  fi
+
   log_job "QE: $label - OK"
 }
 
@@ -197,6 +308,7 @@ build_paoflow_assets_tar() {
 run_qe=false
 run_paoflow_examples=false
 run_paoflow_test=false
+skip_qe_if_save_exists=false
 examples_arg=""
 qe_assets_out_arg=""
 paoflow_assets_out_arg=""
@@ -208,6 +320,7 @@ while [[ $# -gt 0 ]]; do
     --paoflow-examples) run_paoflow_examples=true ;;
     --paoflow-test) run_paoflow_test=true ;;
     --all) run_qe=true; run_paoflow_test=true ;;
+    --skip-qe-if-save-exists) skip_qe_if_save_exists=true ;;
     --qe-assets-out) qe_assets_out_arg="$2"; shift ;;
     --qe-assets-out=*) qe_assets_out_arg="${1#*=}" ;;
     --paoflow-assets-out) paoflow_assets_out_arg="$2"; shift ;;
@@ -261,12 +374,23 @@ fi
 
 declare -a examples=()
 if [[ -n "$examples_arg" ]]; then
-  IFS=',' read -r -a examples <<< "$examples_arg"
+  IFS=',' read -r -a _raw_examples <<< "$examples_arg"
+  mapfile -t examples < <(expand_examples_from_selectors "${_raw_examples[@]}")
 elif [[ ${#extra_examples[@]} -gt 0 ]]; then
-  examples=("${extra_examples[@]}")
+  mapfile -t examples < <(expand_examples_from_selectors "${extra_examples[@]}")
 else
   mapfile -t examples < <(find "$EXAMPLES_ROOT" -maxdepth 1 -type d -name 'example*' -printf '%f\n' | sort)
 fi
+
+if [[ ${#examples[@]} -eq 0 ]]; then
+  log_job "No examples selected."
+  exit 1
+fi
+
+log_job "Resolved EXAMPLES_ROOT: $EXAMPLES_ROOT"
+log_job "Resolved TESTS_ROOT: $TESTS_ROOT"
+log_job "Selected examples: ${examples[*]}"
+log_job "Skip QE on existing .save: $skip_qe_if_save_exists"
 
 failures=0
 
@@ -274,18 +398,36 @@ for ex in "${examples[@]}"; do
   exdir="$EXAMPLES_ROOT/$ex"
   test_exdir="$TESTS_ROOT/$ex"
 
+  if [[ ! -d "$exdir" ]]; then
+    log_job "WARN: example directory not found: $exdir"
+    failures=$((failures + 1))
+    continue
+  fi
+
+  mapfile -t example_jobs < <(collect_example_jobs "$exdir")
+  if [[ ${#example_jobs[@]} -eq 0 ]]; then
+    log_job "WARN: no runnable jobs discovered under $exdir"
+    continue
+  fi
+
+  example_labels=()
+  for jobdir in "${example_jobs[@]}"; do
+    example_labels+=("${jobdir#"$EXAMPLES_ROOT"/}")
+  done
+  log_job "Discovered jobs for $ex: ${example_labels[*]}"
+
   if [[ "$run_qe" = true ]]; then
-    while IFS= read -r jobdir; do
+    for jobdir in "${example_jobs[@]}"; do
       label="${jobdir#"$EXAMPLES_ROOT"/}"
       run_qe_dir "$jobdir" "$label" || failures=$((failures + 1))
-    done < <(collect_example_jobs "$exdir")
+    done
   fi
 
   if [[ "$run_paoflow_examples" = true ]]; then
-    while IFS= read -r jobdir; do
+    for jobdir in "${example_jobs[@]}"; do
       label="${jobdir#"$EXAMPLES_ROOT"/}"
       run_paoflow_example_dir "$jobdir" "$label" || failures=$((failures + 1))
-    done < <(collect_example_jobs "$exdir")
+    done
   fi
 
   if [[ "$run_paoflow_test" = true && -d "$test_exdir" ]]; then
