@@ -7,8 +7,8 @@
  &system
     ibrav=  2, celldm(1) =10.599478, nat=  2, ntyp= 1,
     ecutwfc = 40.0,  nbnd = 18
-    !nosym = .true. required for epsilon.x
-    !noinv = .true. required for epsilon.x
+    nosym = .true. ! required for epsilon.x
+    noinv = .true. ! required for epsilon.x
  /
  &electrons
     mixing_mode = 'plain'
@@ -16,7 +16,7 @@
     conv_thr =  1.0d-8
  /
 ATOMIC_SPECIES
- Si  28.086 Si_ONCV_PBE_sr.upf
+ Si  28.086 Si_ONCV_PBE_sr.UPF
 ATOMIC_POSITIONS (alat)
  Si 0.00 0.00 0.00
  Si 0.25 0.25 0.25
