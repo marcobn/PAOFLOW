@@ -2,6 +2,7 @@ import numpy as np
 
 from PAOFLOW import PAOFLOW
 
+
 def main():
     paoflow = PAOFLOW.PAOFLOW(savedir='./pt.save')
     arry, attr = paoflow.data_controller.data_dicts()
