@@ -12,7 +12,7 @@ Usage: [environment variables] create_assets.sh [options] [example01 example02 .
 Options:
   --qe                   Run QE on examples and create/update *.save folders.
   --paoflow-examples     Run PAOFLOW from examples and write Reference folders.
-  --paoflow-test         Run PAOFLOW from tests and create staged test Reference folders.
+  --paoflow-test         Run PAOFLOW from tests and create staged test outputs.
   --all                  Run --qe + --paoflow-test.
                          If no mode option is passed, the script runs --qe,
                          --paoflow-examples, and --paoflow-test.
@@ -20,7 +20,7 @@ Options:
                          Skip QE in a job directory when '*.save' already exists.
                          Default: disabled.
   --paoflow-test-staging-dir PATH
-                         Directory where PAOFLOW test Reference folders are staged.
+                         Directory where PAOFLOW test outputs are staged.
                          Default: PAOFLOW_TEST_STAGING_DIR or tests/integration/qe/_assets/staging.
   --examples LIST        Comma-separated list of example selectors.
                          Default: all example* directories under EXAMPLES_ROOT.
@@ -313,8 +313,9 @@ run_paoflow_test_dir() {
   fi
 
   if [[ -d "$output_path" ]]; then
-    mkdir -p "$staging_dir/$label/Reference"
-    cp -a "$output_path/." "$staging_dir/$label/Reference/"
+    rm -rf "$staging_dir/$label"
+    mkdir -p "$staging_dir/$label"
+    cp -a "$output_path/." "$staging_dir/$label/"
     rm -rf "$output_path"
   fi
 

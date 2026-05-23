@@ -11,16 +11,19 @@ Usage: [environment variables] build_assets_tar.sh [options] [example01 example0
 
 Options:
   --qe                   Create qe_assets.tar.gz from existing *.save folders only.
-  --paoflow-test         Create paoflow_assets.tar.gz from staged test Reference folders.
+  --paoflow-test         Create paoflow_assets.tar.gz from staged test outputs.
   --all                  Create all selected tar files.
                          If no mode option is passed, the script runs --qe and --paoflow-test.
+  --clean-paoflow-test-staging
+                         Remove staged PAOFLOW test outputs for the selected examples
+                         after paoflow_assets.tar.gz is created successfully.
   --qe-assets-out PATH   Output path for QE assets tar.gz.
                          Default: QE_ASSETS_OUT or examples/qe_examples/_assets/qe_assets.tar.gz.
   --paoflow-assets-out PATH
                          Output path for PAOFLOW test assets tar.gz.
                          Default: PAOFLOW_ASSETS_OUT or tests/integration/qe/_assets/paoflow_assets.tar.gz.
   --paoflow-test-staging-dir PATH
-                         Directory containing staged PAOFLOW test Reference folders.
+                         Directory containing staged PAOFLOW test outputs.
                          Default: PAOFLOW_TEST_STAGING_DIR or tests/integration/qe/_assets/staging.
   --examples LIST        Comma-separated list of example selectors.
                          Default: all example* directories under EXAMPLES_ROOT.
@@ -105,6 +108,11 @@ expand_examples_from_selectors() {
   done | awk '!seen[$0]++'
 }
 
+collect_test_jobs() {
+  local base_dir="$1"
+  find "$base_dir" -type f -name 'main.py' -printf '%h\n' | sort -u
+}
+
 build_qe_assets_tar() {
   mkdir -p "$(dirname "$QE_ASSETS_OUT")"
 
@@ -123,42 +131,72 @@ build_reference_tar_from_roots() {
   local description="$2"
   shift 2
   local -a roots=("$@")
-  local manifest
-  manifest="$(mktemp)"
+  local package_root root test_exdir test_jobdir label staged_job_root ref_src
+  package_root="$(mktemp -d)"
 
   for root in "${roots[@]}"; do
     [[ -d "$root" ]] || continue
 
     for ex in "${examples[@]}"; do
-      if [[ -d "$root/$ex" ]]; then
-        while IFS= read -r -d '' refdir; do
-          printf '%s\0' "$refdir" >> "$manifest"
-        done < <(find "$root/$ex" -type d -name Reference -print0)
-      else
-        log_job "WARN: missing selected $description directory: $root/$ex"
+      test_exdir="$TESTS_ROOT/$ex"
+      if [[ ! -d "$test_exdir" ]]; then
+        log_job "WARN: missing selected $description test directory: $test_exdir"
+        continue
       fi
+
+      while IFS= read -r test_jobdir; do
+        label="${test_jobdir#"$TESTS_ROOT"/}"
+        staged_job_root="$root/$label"
+
+        if [[ -d "$staged_job_root/Reference" ]]; then
+          ref_src="$staged_job_root/Reference"
+        elif [[ -d "$staged_job_root" ]]; then
+          ref_src="$staged_job_root"
+        else
+          continue
+        fi
+
+        rm -rf "$package_root/$label"
+        mkdir -p "$package_root/$label/Reference"
+        cp -a "$ref_src/." "$package_root/$label/Reference/"
+      done < <(collect_test_jobs "$test_exdir")
     done
   done
 
-  if [[ ! -s "$manifest" ]]; then
-    rm -f "$manifest"
+  if ! find "$package_root" -mindepth 1 -print -quit | grep -q .; then
+    rm -rf "$package_root"
     log_job "WARN: no $description Reference folders found. Skipping tar creation."
     return 1
   fi
 
   mkdir -p "$(dirname "$out_tar")"
-  tar --null -T "$manifest" \
-    --transform "s|^$EXAMPLES_ROOT/||" \
-    --transform "s|^$TESTS_ROOT/||" \
-    --transform "s|^$PAOFLOW_TEST_STAGING_DIR/||" \
-    -czf "$out_tar"
+  tar -C "$package_root" -czf "$out_tar" .
 
-  rm -f "$manifest"
+  rm -rf "$package_root"
   log_job "Built $description assets: $out_tar"
+}
+
+clean_reference_staging() {
+  local ex
+  local cleaned=0
+
+  for ex in "${examples[@]}"; do
+    if [[ -e "$PAOFLOW_TEST_STAGING_DIR/$ex" ]]; then
+      rm -rf "$PAOFLOW_TEST_STAGING_DIR/$ex"
+      cleaned=$((cleaned + 1))
+    fi
+  done
+
+  if [[ $cleaned -gt 0 ]]; then
+    log_job "Removed staged PAOFLOW test outputs for $cleaned selected example(s)."
+  else
+    log_job "No staged PAOFLOW test outputs were removed."
+  fi
 }
 
 run_qe=false
 run_paoflow_test=false
+clean_paoflow_test_staging=false
 examples_arg=""
 qe_assets_out_arg=""
 paoflow_assets_out_arg=""
@@ -170,6 +208,7 @@ while [[ $# -gt 0 ]]; do
     --qe) run_qe=true ;;
     --paoflow-test) run_paoflow_test=true ;;
     --all) run_qe=true; run_paoflow_test=true ;;
+    --clean-paoflow-test-staging) clean_paoflow_test_staging=true ;;
     --qe-assets-out) qe_assets_out_arg="$2"; shift ;;
     --qe-assets-out=*) qe_assets_out_arg="${1#*=}" ;;
     --paoflow-assets-out) paoflow_assets_out_arg="$2"; shift ;;
@@ -230,7 +269,13 @@ if [[ "$run_qe" = true ]]; then
 fi
 
 if [[ "$run_paoflow_test" = true ]]; then
-  build_reference_tar_from_roots "$PAOFLOW_ASSETS_OUT" "PAOFLOW test" "$PAOFLOW_TEST_STAGING_DIR" || failures=$((failures + 1))
+  if build_reference_tar_from_roots "$PAOFLOW_ASSETS_OUT" "PAOFLOW test" "$PAOFLOW_TEST_STAGING_DIR"; then
+    if [[ "$clean_paoflow_test_staging" = true ]]; then
+      clean_reference_staging
+    fi
+  else
+    failures=$((failures + 1))
+  fi
 fi
 
 if [[ $failures -gt 0 ]]; then

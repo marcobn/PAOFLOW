@@ -25,7 +25,7 @@ to GitHub Releases.
 ### 1) Generate `*.save/` and staged `Reference/` assets (requires QE)
 
 Use the bash runner to run QE, generate PAOFLOW outputs, and stage the test
-`Reference/` folders:
+reference data:
 
 ```bash
 # From repository root
@@ -35,7 +35,7 @@ QE_BIN=/path/to/qe/bin .github/assets_generation/qe/create_assets.sh --all
 This creates:
 
 - trimmed QE `*.save/` folders under `examples/qe_examples/...`
-- staged PAOFLOW `Reference/` folders under `tests/integration/qe/_assets/staging/...`
+- staged PAOFLOW test outputs under `tests/integration/qe/_assets/staging/...`
 
 Notes:
 
@@ -47,9 +47,15 @@ Notes:
   - SLURM: `PARALLEL_EXEC="srun -n 8"`
 - `create_assets.sh` writes PAOFLOW example outputs to in-place `Reference/`
   folders only when `--paoflow-examples` is selected. The test workflow only
-  needs the staged test `Reference/` folders created by `--paoflow-test`.
+  needs the staged test outputs created by `--paoflow-test`.
+- staged test outputs are stored directly under each job path in
+  `tests/integration/qe/_assets/staging/...`; `build_tar.sh` repacks them into
+  `Reference/` directories inside `paoflow_assets.tar.gz` for the test runner.
 - After a successful QE run, the workflow trims `*.save/` directories to keep
   only the files needed by PAOFLOW.
+- `submit.sh` still exits nonzero if any example fails, but it now runs
+  `build_tar.sh` first so `paoflow_assets.tar.gz` is created from successful
+  staged jobs whenever possible.
 
 ### 2) Build local asset tarballs
 
@@ -72,6 +78,16 @@ To override the output locations:
   --qe-assets-out examples/qe_examples/_assets/qe_assets_dev.tar.gz \
   --paoflow-assets-out tests/integration/qe/_assets/paoflow_assets_dev.tar.gz
 ```
+
+To delete staged PAOFLOW test outputs after a successful Reference tar build:
+
+```bash
+.github/assets_generation/qe/build_tar.sh --paoflow-test --clean-paoflow-test-staging
+```
+
+Cleanup is opt-in and only removes staging subdirectories for the selected
+examples. If you also pass `--examples`, unrelated staged outputs are left in
+place.
 
 `build_tar.sh` uses [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py)
 internally for the QE `*.save/` tarball. That Python helper packages QE assets only.
