@@ -217,7 +217,12 @@ run_qe_dir() {
     fi
   done
 
-  keep_wfc="$(should_preserve_wfc_from_main "$jobdir/main.py")"
+  # TODO Find a cleaner automated way to do this. Earlier attempts for automation failed
+  if [[ "$label" == "example10" || "$label" == "example15" ]]; then
+    keep_wfc="true"
+  else
+    keep_wfc="$(should_preserve_wfc_from_main "$jobdir/main.py")"
+  fi
   while IFS= read -r -d '' savedir; do
     if [[ "$keep_wfc" = "true" ]]; then
       # Preserve QE wavefunction artifacts only inside *.save when internal=True.

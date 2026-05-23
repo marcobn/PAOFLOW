@@ -3,7 +3,7 @@
 #SBATCH --job-name="defs1"
 #SBATCH --get-user-env
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=4-12:00:00
 #SBATCH --mem=2500
@@ -25,4 +25,4 @@ export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 cd "$SLURM_SUBMIT_DIR"
 script_dir="."
 chmod u+x "$script_dir/job.sh"
-"$script_dir/job.sh" --qe
+"$script_dir/job.sh" --all
