@@ -1,10 +1,9 @@
 import numpy as np
 
-from PAOFLOW import GPAO, PAOFLOW
+from PAOFLOW import PAOFLOW
 
 
 def main():
-    pplt = GPAO.GPAO()
     paoflow = PAOFLOW.PAOFLOW(savedir='./Bi.save')
 
     paoflow.read_atomic_proj_QE()

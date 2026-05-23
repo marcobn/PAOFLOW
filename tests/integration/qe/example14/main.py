@@ -24,8 +24,6 @@ def main():
     print('               Calculating total SHC')
     paoflow.spin_Hall(emin=-1.0, emax=1.0, ne=100, s_tensor=[[0, 1, 2]])
 
-    shc_total = np.loadtxt('./output/shcEf_z_xy.dat')
-
     # SHC contribution from the first layer (atomic site = 0)
     # shc_proj is an array with the sites to project indices. Here we are projeting on site zero. First layer.
 
