@@ -1,6 +1,5 @@
-
-
-import numpy as npfrom PAOFLOW import PAOFLOW
+import numpy as np
+from PAOFLOW import PAOFLOW
 from PAOFLOW.defs.TauModel import TauModel
 
 
