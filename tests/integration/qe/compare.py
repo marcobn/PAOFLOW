@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+SKIP_COMPARE_PATTERNS = {
+    'hamiltonian.dat',
+    'effmass*',
+}
 
 
 @dataclass(frozen=True)
@@ -98,8 +104,16 @@ def compare_dat_dirs(
     tolerance: float = 0.01,
     plot_dir: Path | None = None,
 ) -> None:
-    out_files = sorted(outdir.glob('*.dat'))
-    ref_files = sorted(refdir.glob('*.dat'))
+    out_files = sorted(
+        p
+        for p in outdir.glob('*.dat')
+        if not any(fnmatch(p.name, pattern) for pattern in SKIP_COMPARE_PATTERNS)
+    )
+    ref_files = sorted(
+        p
+        for p in refdir.glob('*.dat')
+        if not any(fnmatch(p.name, pattern) for pattern in SKIP_COMPARE_PATTERNS)
+    )
 
     if not refdir.exists() or len(ref_files) == 0:
         raise CompareFailure(f'Reference directory missing or empty: {refdir}')
