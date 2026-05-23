@@ -4,7 +4,6 @@ import numpy as np
 def main():
 
   paoflow = PAOFLOW.PAOFLOW(savedir='./pt.save')
-  arry,attr = paoflow.data_controller.data_dicts()
 
   paoflow.read_atomic_proj_QE()
   paoflow.projectability()

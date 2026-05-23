@@ -1,14 +1,23 @@
 import numpy as np
-
 from PAOFLOW import PAOFLOW
 from PAOFLOW.defs.TauModel import TauModel
 
 
 def main():
+
     # Start PAOFLOW, interpolate Hamiltonian, compute gradient an momenta
     paoflow = PAOFLOW.PAOFLOW(savedir='GaAs.save', smearing=None, npool=1, verbose=True)
-    arrays, attr = paoflow.data_controller.data_dicts()
-    paoflow.read_atomic_proj_QE()
+    arry, attr = paoflow.data_controller.data_dicts()
+    # Internal basis
+    attr['basispath'] = '../../../../BASIS/'
+    # Configuration
+    arry['configuration'] = {
+        'Ga': ['3S', '3P', '4S', '4P', '3D', '4D', '5S', '5P', '5D', '6S', '6P'],
+        'As': ['3S', '4S', '4P', '3D', '3P', '4D', '5S', '5P', '5D', '6S', '6P'],
+    }
+    paoflow.projections(
+        internal=True, basispath=attr['basispath'], configuration=arry['configuration']
+    )
     paoflow.projectability()
     paoflow.pao_hamiltonian()
     paoflow.interpolated_hamiltonian()
@@ -89,7 +98,7 @@ def main():
         )
 
         # Average the diagonal componenets of sigma
-        sigma = np.sum([sig for sig in np.diag(arrays['sigma'][:, :, 0])]) / 3
+        sigma = np.sum([sig for sig in np.diag(arry['sigma'][:, :, 0])]) / 3
         rho.append(1e2 / sigma)
 
     # Write the sigmas

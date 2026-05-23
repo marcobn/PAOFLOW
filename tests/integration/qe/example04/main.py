@@ -15,9 +15,7 @@ def main():
     paoflow.gradient_and_momenta()
     paoflow.adaptive_smearing()
     paoflow.dos(do_pdos=False, ne=100)
-    _, attr = paoflow.data_controller.data_dicts()
-    attr['esizeH'] = 100
-    paoflow.anomalous_Hall(do_ac=True, emin=-8.0, emax=4.0, a_tensor=np.array([[0, 1]]))
+    paoflow.anomalous_Hall(do_ac=True, emin=-8.0, emax=4.0, ne=100, a_tensor=np.array([[0, 1]]))
     paoflow.finish_execution()
 
 
