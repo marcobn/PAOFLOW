@@ -119,19 +119,13 @@ Conventions
 
 Notes
 -----
-- The HUBBARD V correction requires the symmetries to be turned off in
-  ``pw.x`` (``nosym = .true., noinv = .true.``).  The driver does not
-  inject these flags; they must be present in the user-supplied
-  ``<prefix>.scf.in`` / ``<prefix>.nscf.in`` templates.
 - Spin-restricted runs (``nspin = 1``) reuse a single density matrix
   for both spin channels by halving the doubly-occupied DM, so that the
   on-site limit (I = J, R = 0) reproduces the standard
   :class:`ACBN0.ACBN0` result exactly.
 - The underlying PAOFLOW call uses
-  ``pao_hamiltonian(write_binary=True, expand_wedge=False)``.  Because
-  ``nosym = noinv = .true.`` is mandatory for V, the resulting ``Hks``
-  is on the full BZ produced by QE and no symmetry expansion is
-  applied.  The reshape to ``(nawf, nawf, nk1, nk2, nk3, nspin)`` in
+  ``pao_hamiltonian(write_binary=True, expand_wedge=True)``.  The resulting ``Hks``
+  is on the full BZ produced by QE The reshape to ``(nawf, nawf, nk1, nk2, nk3, nspin)`` in
   :func:`PAOFLOW.defs.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
   is now guarded by an array-size check, so the same code path also
   handles the IBZ k-grid that arises from the bare ACBN0 (U-only)

@@ -136,10 +136,6 @@ Attributes set at construction
 
 Notes
 -----
-- The driver does not modify or add symmetry flags.  When using the
-  output ``HUBBARD`` card with intersite V (via :class:`eACBN0`) the
-  user must supply ``nosym = .true., noinv = .true.`` in the SCF/NSCF
-  templates — QE crashes otherwise.
 - The first thing :meth:`__init__` does after parsing the template is
   to write ``compute_hartree.py`` into the current directory; this
   small launcher is what gets executed under ``mpi_hartree`` for the
