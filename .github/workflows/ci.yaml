@@ -90,7 +90,7 @@ jobs:
       PAOFLOW_REFERENCE_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/paoflow_assets.tar.gz
 
       PAOFLOW_QE_ASSET_SHA256: "d41e7e69ac9a742fc9917330bbd9f297a6d3a208a8eb3537a4001bb1c4ef0f51"
-      PAOFLOW_REFERENCE_ASSET_SHA256: "7fe5d374adfc9c83d85448d6e7883116d3001f0bf50e2c86b5d35991a2f7f829"
+      PAOFLOW_REFERENCE_ASSET_SHA256: "425283b95eef73bbe2cf9c9e607eef26d5b8680e0edb209c976e7f145dfb1771"
 
     steps:
       - uses: actions/checkout@v4
