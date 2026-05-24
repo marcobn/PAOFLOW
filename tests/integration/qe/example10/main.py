@@ -1,4 +1,5 @@
 import numpy as np
+
 from PAOFLOW import PAOFLOW
 from PAOFLOW.defs.TauModel import TauModel
 
@@ -19,13 +20,13 @@ def main():
     )
     paoflow.projectability()
     paoflow.pao_hamiltonian()
-    paoflow.interpolated_hamiltonian()
+    paoflow.interpolated_hamiltonian(nfft1=16, nfft2=16, nfft3=16)
     paoflow.pao_eigh()
     paoflow.gradient_and_momenta()
 
     # Compute the chemical potential at specified doping concentration for various temperatures
     doping = -3.5e17
-    paoflow.doping(tmin=380, tmax=812, nt=28, emin=-36, emax=2, ne=100, doping_conc=doping)
+    paoflow.doping(tmin=380, tmax=812, nt=10, emin=-36, emax=2, ne=100, doping_conc=doping)
 
     # Define the functional form for our 'custom' TauModel
     me = 9.10938e-31  # Electron Mass
