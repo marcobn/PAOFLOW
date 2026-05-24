@@ -109,3 +109,11 @@ jobs:
       - name: Run QE integration tests
         run: |
           pytest tests/integration/qe -v
+
+      - name: Upload comparison plots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qe-comparison-plots
+          path: /tmp/pytest-of-runner/**/*.png
+          if-no-files-found: ignore
