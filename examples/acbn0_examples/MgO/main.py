@@ -1,35 +1,90 @@
+"""ACBN0 self-consistent U on rocksalt MgO.
 
+Runs the ACBN0 self-consistent loop to determine on-site Hubbard U
+corrections for Mg-3s and O-2p in rock-salt MgO.
+"""
+
+import shutil
+import subprocess
 
 from PAOFLOW.ACBN0 import ACBN0
 
-prefix = 'MgO'
-acbn0 = ACBN0(prefix,
-              workdir='./',
-              mpi_qe='/usr/bin/mpirun -np 8',
-              mpi_python='/home/ftc/Software/anaconda3/bin/mpirun -np 4',
-              qe_options='-npool 4',
-              qe_path='/home/ftc/Software/qe-7.3/bin',
-              python_path='/home/ftc/Software/anaconda3/bin')
+PREFIX = 'MgO'
+OUT = './tmp/'
+
+MPI_QE = 'mpirun -np 8'
+MPI_PY = 'mpirun -np 1'
+MPI_HARTREE = 'mpirun -np 4'
+
+QE_PATH = '/path/to/qe/bin/'
+PY_PATH = '/path/to/python/bin/'
 
 
-# Here, the Hubbard modifications are presented in three equivalent ways
+def _shell(cmd, stdin=None, stdout=None):
+    """Run a shell command, optionally redirecting stdin/stdout to files."""
+    msg = f'>>> {cmd}'
+    if stdin:
+        msg += f' < {stdin}'
+    if stdout:
+        msg += f' > {stdout}'
+    print(msg, flush=True)
+    fin = open(stdin, 'rb') if stdin else None
+    fout = open(stdout, 'w') if stdout else None
+    try:
+        subprocess.run(cmd.split(), stdin=fin, stdout=fout, stderr=subprocess.STDOUT, check=True)
+    finally:
+        if fin is not None:
+            fin.close()
+        if fout is not None:
+            fout.close()
 
-#  1) Simply specify the species and state on which to apply Hubbard corrections.
-#      U values default to 0.01 eV
+
+def run_bare_dft():
+    """Run pw.x scf+nscf and projwfc.x on the unmodified templates."""
+    for c in ('scf', 'nscf', 'projwfc'):
+        shutil.copy(f'{PREFIX}.{c}.in', f'{c}.in')
+    _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='scf.in', stdout='scf.out')
+    _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='nscf.in', stdout='nscf.out')
+    _shell(f'{MPI_QE} {QE_PATH}projwfc.x', stdin='projwfc.in', stdout='projwfc.out')
+
+
+# ---------------------------------------------------------------------- #
+# Stage 1 — bare DFT                                                     #
+# ---------------------------------------------------------------------- #
+print('\n=== Stage 1: bare DFT ===\n', flush=True)
+run_bare_dft()
+
+# ---------------------------------------------------------------------- #
+# Stage 2 — ACBN0 (U only)                                               #
+# ---------------------------------------------------------------------- #
+print('\n=== Stage 2: ACBN0 self-consistent U ===\n', flush=True)
+a = ACBN0(
+    PREFIX,
+    workdir='./',
+    mpi_qe=MPI_QE,
+    mpi_python=MPI_PY,
+    mpi_hartree=MPI_HARTREE,
+    qe_options='-npool 4',
+    qe_path=QE_PATH,
+    python_path=PY_PATH,
+    outputdir=OUT,
+    projection='ortho-atomic',
+)
+
+# Three equivalent ways to declare Hubbard-active orbitals:
+#
+#  1) List of labels — U values default to 0.01 eV
 hubbard = ['Mg-3s', 'O-2p']
+#
+#  2) Dict with custom seed U (eV)
+# hubbard = {'Mg-3s': 1.0, 'O-2p': 8.0}
+#
+#  3) Dict with (initial_U, occupation) tuples to also fix hubbard_occ
+# hubbard = {'Mg-3s': 1.0, 'O-2p': (8.0, 4.0)}
 
-#  2) Specify the species and state, with custom initial U values
-#hubbard = { 'Mg-3s' : 1.0,
-#            'O-2p'  : 8.0 }
-
-#  3) Specify custom hubbard occupation for Oxygen (initial_U, occupation)
-#hubbard = { 'Mg-3s' : 1.0,
-#            'O-2p'  : (8.0, 4.0)}
-
-acbn0.set_hubbard_parameters(hubbard)
-
-acbn0.optimize_hubbard_U(convergence_threshold=0.01)
+a.set_hubbard_parameters(hubbard)
+a.optimize_hubbard_U(convergence_threshold=0.01)
 
 print('\nFinal U values:')
-for k,v in acbn0.uVals.items():
-  print(f'  {k}: {v}')
+for k, v in a.uVals.items():
+    print(f'  {k} : {v:.4f} eV')

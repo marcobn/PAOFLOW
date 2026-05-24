@@ -15,8 +15,6 @@ MgO FCC
     nat = 2,
     ntyp = 2,
     celldm(1) = 8.0379167413,
-    nosym = .t.
-    noinv =.t.
     nbnd = 8
   /  
 

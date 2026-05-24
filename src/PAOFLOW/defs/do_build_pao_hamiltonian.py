@@ -179,7 +179,11 @@ def do_build_pao_hamiltonian(data_controller):
     #  Skip the reshape if Hks is still on a reduced (IBZ) grid, as is the
     #  case for the ACBN0 path (which only needs Hks at the IBZ k-points and
     #  exits before any FFT to real space).
-    if rank == 0 and arry['Hks'].size == int(np.prod(ashape)):
+    #  Also skip when acbn0=True: do_non_ortho (called below) needs the flat
+    #  4-D form (nawf, nawf, nkpnts, nspin); the 6-D reshape would break it
+    #  whenever nkpnts == nk1*nk2*nk3 (nosym=noinv=.true. grids, or when
+    #  expand_wedge has already filled the full BZ for eACBN0).
+    if rank == 0 and not attr.get('acbn0', False) and arry['Hks'].size == int(np.prod(ashape)):
         arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
         # Shift the Fermi energy to zero

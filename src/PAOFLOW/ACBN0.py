@@ -163,6 +163,7 @@ Notes
 
 import itertools
 import pickle
+import re
 import subprocess
 from os.path import join
 
@@ -174,7 +175,91 @@ ANGS_TO_BOHR = 1.0 / BOHR_RADIUS_ANGS
 HARTREE_TO_EV = 27.211396132
 
 
-class ACBN0_Hartree:
+class _HartreeKernel:
+    """Common MPI scaffolding shared by :class:`ACBN0_Hartree` and
+    :class:`eACBN0_Hartree`.
+
+    Provides:
+
+    - ``__init__(datafile)`` — initialises ``self.comm`` / ``self.rank`` /
+      ``self.size``, unpickles ``datafile`` on rank 0, and broadcasts the
+      dictionary to all ranks (stored as ``self.data``).
+    - ``coulomb(a, b, c, d)`` — chemist's-notation four-centre Coulomb
+      integral ``(ab|cd)`` between contracted Cartesian Gaussians,
+      delegating to :func:`PAOFLOW.defs.pyints.contr_coulomb`.
+
+    Subclasses implement the kernel-specific accumulation
+    (:meth:`ACBN0_Hartree.hartree_energy`,
+    :meth:`eACBN0_Hartree.intersite_energy`).
+    """
+
+    def __init__(self, datafile):
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.size = self.comm.Get_size()
+
+        if self.rank == 0:
+            with open(datafile, 'rb') as f:
+                data = pickle.load(f)
+        else:
+            data = None
+        self.data = self.comm.bcast(data, root=0)
+
+    def coulomb(self, a, b, c, d):
+        """Coulomb integral ``(ab|cd)`` (chemist's notation) between
+        four contracted Gaussian basis functions."""
+        from .defs.pyints import contr_coulomb
+
+        return contr_coulomb(
+            a.pexps,
+            a.pcoefs,
+            a.pnorms,
+            a.origin,
+            a.powers,
+            b.pexps,
+            b.pcoefs,
+            b.pnorms,
+            b.origin,
+            b.powers,
+            c.pexps,
+            c.pcoefs,
+            c.pnorms,
+            c.origin,
+            c.powers,
+            d.pexps,
+            d.pcoefs,
+            d.pnorms,
+            d.origin,
+            d.powers,
+        )
+
+    def _scatter_indices(self, *iterables):
+        """Build the Cartesian product of ``iterables`` on rank 0, split
+        into ``self.size`` chunks with :func:`numpy.array_split`, and
+        scatter the per-rank chunk to every rank.
+
+        Returns the local ``(n_local, len(iterables))`` integer array of
+        index tuples on every rank.
+        """
+        if self.rank == 0:
+            ind_all = np.array(list(itertools.product(*iterables)))
+            ind = np.array_split(ind_all, self.size, 0)
+        else:
+            ind = None
+        return self.comm.scatter(ind, root=0)
+
+    def _reduce_and_dump(self, payload, outputdir, filename):
+        """Reduce ``payload`` (dict of complex scalars) with ``MPI.SUM``
+        and pickle the reduced dict to ``<outputdir>/<filename>`` on
+        rank 0 only.
+        """
+        reduced = {k: self.comm.reduce(v, op=MPI.SUM, root=0) for k, v in payload.items()}
+        if self.rank == 0:
+            with open(join(outputdir, filename), 'wb') as f:
+                pickle.dump(reduced, f)
+
+
+class ACBN0_Hartree(_HartreeKernel):
     """MPI worker for the ACBN0 on-site Hartree / exchange integrals.
 
     Invoked by :class:`ACBN0` as a standalone MPI Python program
@@ -259,51 +344,7 @@ class ACBN0_Hartree:
     takes the full ``basis_2e ** 4`` cost on a single core.
     """
 
-    def __init__(self, datafile):
-        self.comm = MPI.COMM_WORLD
-        self.rank = self.comm.Get_rank()
-        self.size = self.comm.Get_size()
-
-        if self.rank == 0:
-            with open(datafile, 'rb') as f:
-                data = pickle.load(f)
-        else:
-            data = None
-        self.data = self.comm.bcast(data, root=0)
-
-    def coulomb(self, a, b, c, d):
-        from .defs.pyints import contr_coulomb
-
-        ' Coulomb interaction between four contracted Gaussians '
-        return contr_coulomb(
-            a.pexps,
-            a.pcoefs,
-            a.pnorms,
-            a.origin,
-            a.powers,
-            b.pexps,
-            b.pcoefs,
-            b.pnorms,
-            b.origin,
-            b.powers,
-            c.pexps,
-            c.pcoefs,
-            c.pnorms,
-            c.origin,
-            c.powers,
-            d.pexps,
-            d.pcoefs,
-            d.pnorms,
-            d.origin,
-            d.powers,
-        )
-
     def hartree_energy(self, outputdir):
-        import itertools
-        from os.path import join
-
-        import numpy as np
-
         DR_up = self.data['DR_up']
         DR_dn = self.data['DR_dn']
         basis = self.data['basis']
@@ -311,13 +352,7 @@ class ACBN0_Hartree:
 
         tmp_U, tmp_J = 0.0, 0.0
 
-        if self.rank == 0:
-            ind_all = np.array(list(itertools.product(basis_2e, repeat=4)))
-            ind = np.array_split(ind_all, self.size, 0)
-        else:
-            ind = None
-
-        ind = self.comm.scatter(ind, root=0)
+        ind = self._scatter_indices(basis_2e, basis_2e, basis_2e, basis_2e)
 
         for k, l, m, n in ind:
             int_U = self.coulomb(basis[m], basis[n], basis[k], basis[l])
@@ -336,16 +371,10 @@ class ACBN0_Hartree:
                 int_J = self.coulomb(basis[m], basis[k], basis[n], basis[l])
                 tmp_J += int_J * a_b
 
-        tmp_U = self.comm.reduce(tmp_U, op=MPI.SUM, root=0)
-        tmp_J = self.comm.reduce(tmp_J, op=MPI.SUM, root=0)
-
-        if self.rank == 0:
-            uj = {'U': tmp_U, 'J': tmp_J}
-            with open(join(outputdir, 'tmp_uj.pkl'), 'wb') as f:
-                pickle.dump(uj, f)
+        self._reduce_and_dump({'U': tmp_U, 'J': tmp_J}, outputdir, 'tmp_uj.pkl')
 
 
-class eACBN0_Hartree:
+class eACBN0_Hartree(_HartreeKernel):
     """MPI-parallel evaluator of the intersite Hubbard V numerator.
 
     Companion class to :class:`eACBN0`.  Implements the spin-summed
@@ -462,53 +491,9 @@ class eACBN0_Hartree:
     takes the full ``n_I² × n_J²`` cost on a single core.
     """
 
-    def __init__(self, datafile):
-        self.comm = MPI.COMM_WORLD
-        self.rank = self.comm.Get_rank()
-        self.size = self.comm.Get_size()
-
-        if self.rank == 0:
-            with open(datafile, 'rb') as f:
-                data = pickle.load(f)
-        else:
-            data = None
-        self.data = self.comm.bcast(data, root=0)
-
-    def coulomb(self, a, b, c, d):
-        """Coulomb integral ``(ab|cd)`` (chemist's notation) between
-        four contracted Gaussian basis functions."""
-        from .defs.pyints import contr_coulomb
-
-        return contr_coulomb(
-            a.pexps,
-            a.pcoefs,
-            a.pnorms,
-            a.origin,
-            a.powers,
-            b.pexps,
-            b.pcoefs,
-            b.pnorms,
-            b.origin,
-            b.powers,
-            c.pexps,
-            c.pcoefs,
-            c.pnorms,
-            c.origin,
-            c.powers,
-            d.pexps,
-            d.pcoefs,
-            d.pnorms,
-            d.origin,
-            d.powers,
-        )
-
     def intersite_energy(self, outputdir):
         """Evaluate the numerator of Eq. (8) and pickle the result to
         ``<outputdir>/tmp_v.pkl``."""
-        from os.path import join
-
-        import numpy as np
-
         gauss_I = self.data['gauss_I']
         gauss_J = self.data['gauss_J']
 
@@ -528,14 +513,7 @@ class eACBN0_Hartree:
         n_I = len(gauss_I)
         n_J = len(gauss_J)
 
-        if self.rank == 0:
-            ind_all = np.array(
-                list(itertools.product(range(n_I), range(n_I), range(n_J), range(n_J)))
-            )
-            ind = np.array_split(ind_all, self.size, 0)
-        else:
-            ind = None
-        ind = self.comm.scatter(ind, root=0)
+        ind = self._scatter_indices(range(n_I), range(n_I), range(n_J), range(n_J))
 
         tmp = 0.0 + 0.0j
         for i, k, j, l in ind:
@@ -548,11 +526,7 @@ class eACBN0_Hartree:
 
             tmp += integ * (direct - exchange)
 
-        tmp = self.comm.reduce(tmp, op=MPI.SUM, root=0)
-
-        if self.rank == 0:
-            with open(join(outputdir, 'tmp_v.pkl'), 'wb') as f:
-                pickle.dump({'num': tmp}, f)
+        self._reduce_and_dump({'num': tmp}, outputdir, 'tmp_v.pkl')
 
 
 class ACBN0:
@@ -646,8 +620,6 @@ class ACBN0:
 
         # Store U values from input template
         if 'HUBBARD' in self.cards:
-            import re
-
             self.hubbard_tag = self.cards['HUBBARD'][0]
             for h in self.cards['HUBBARD'][1:]:
                 tokens = h.split()
@@ -954,9 +926,28 @@ class ACBN0:
         else:
             raise Exception(f'Element {ele} has no defined Hubbard orbital')
 
-    def run_acbn0(self, prefix):
-        import re
+    @staticmethod
+    def _acbn0_denominator(nlm_up, nlm_dn):
+        """Compute the U and J denominators of Agapito PRX 5, 011006 (2015),
+        Eqs. (10–11), for arbitrary spin polarization.
 
+        For ``nspin == 1`` pass ``nlm_dn = nlm_up``: ``Nbb == Naa`` and the
+        result reduces to ``den_U = 2*(Naa + Nab)`` and ``den_J = 2*Naa``.
+        """
+        Naa = Nbb = 0.0
+        Nab = 0.0
+        n = nlm_up.shape[0]
+        for i1 in range(n):
+            for i2 in range(n):
+                Nab += nlm_up[i1] * nlm_dn[i2]
+                if i1 != i2:
+                    Naa += nlm_up[i1] * nlm_up[i2]
+                    Nbb += nlm_dn[i1] * nlm_dn[i2]
+        den_U = Naa.real + Nbb.real + 2 * Nab.real
+        den_J = Naa.real + Nbb.real
+        return den_U, den_J
+
+    def run_acbn0(self, prefix):
         BOHR_RADIUS_ANGS = 0.529177e0
 
         lattice, coords = self.read_cell_atoms('scf.out')
@@ -1008,34 +999,15 @@ class ACBN0:
 
             dk, nlm = self.Dk(basis_dm, basis_2e, Hks_up, Sks)
             nlm = self.Nmm(nlm, Hks_up, kwght)
-            nnlm = nlm.shape[0]
 
-            dk_dn = None
-            den_U, den_J = 0, 0
             if nspin == 1:
-                Naa, Nab = 0.0, 0.0
-                for i1, m1 in enumerate(nlm):
-                    for i2, m2 in enumerate(nlm):
-                        nlm12 = m1 * m2
-                        Nab += nlm12
-                        if i1 != i2:
-                            Naa += nlm12
-                den_U = 2 * (Naa.real + Nab.real)
-                den_J = 2 * Naa.real
-
+                dk_dn = None
+                nlmd = nlm
             else:
                 dk_dn, nlmd = self.Dk(basis_dm, basis_2e, Hks_dw, Sks)
                 nlmd = self.Nmm(nlmd, Hks_dw, kwght)
 
-                Naa, Nbb, Nab = 0.0, 0.0, 0.0
-                for i1 in range(nnlm):
-                    for i2 in range(nnlm):
-                        Nab += nlm[i1] * nlmd[i2]
-                        if i1 != i2:
-                            Naa += nlm[i1] * nlm[i2]
-                            Nbb += nlmd[i1] * nlmd[i2]
-                den_U = Naa.real + Nbb.real + 2 * Nab.real
-                den_J = Naa.real + Nbb.real
+            den_U, den_J = self._acbn0_denominator(nlm, nlmd)
 
             DR_up = self.DR(dk, kwght)
 
@@ -1701,8 +1673,6 @@ class eACBN0(ACBN0):
 
           state #   1: atom   1 (MnA  ), wfc  1 (l=2 m= 1)
         """
-        import re
-
         out = []
         for n, sl in enumerate(state_lines):
             mat = re.search(
@@ -1785,15 +1755,18 @@ class eACBN0(ACBN0):
 
         total_w = float(np.sum(kwght))
 
-        P_II = np.zeros((n_I, n_I), dtype=complex)
-        P_JJ = np.zeros((n_J, n_J), dtype=complex)
-        P_IJ = np.zeros((n_I, n_J), dtype=complex)
-        P_JI = np.zeros((n_J, n_I), dtype=complex)
-
-        n_II = np.zeros((n_I, n_I), dtype=complex)
-        n_JJ = np.zeros((n_J, n_J), dtype=complex)
-        n_IJ = np.zeros((n_I, n_J), dtype=complex)
-        n_JI = np.zeros((n_J, n_I), dtype=complex)
+        # Block layout: each entry is (key, left coefficients, right coefficients,
+        # phase factor). The same four blocks are filled for the bare ``n_*``
+        # and the renormalised ``P_*`` matrices, the only difference being
+        # whether the right-hand-side carries the band weight ``N_w``.
+        block_shapes = {
+            'II': (n_I, n_I),
+            'JJ': (n_J, n_J),
+            'IJ': (n_I, n_J),
+            'JI': (n_J, n_I),
+        }
+        n_blocks = {k: np.zeros(s, dtype=complex) for k, s in block_shapes.items()}
+        P_blocks = {k: np.zeros(s, dtype=complex) for k, s in block_shapes.items()}
 
         for ik in range(nkpts):
             w = kwght[ik]
@@ -1829,36 +1802,28 @@ class eACBN0(ACBN0):
                 + np.einsum('jm,jm->m', np.conj(cJ), sJ).real
             )
 
-            # Bare on-site / intersite occupation matrix blocks (Eq. 2),
-            # Hermitianised (½ [c*·(Sc)^T + (Sc)*·c^T]) so they are
-            # real-symmetric (resp. Hermitian) by construction:
-            n_II += 0.5 * w * (np.conj(cI) @ sI.T + np.conj(sI) @ cI.T)
-            n_JJ += 0.5 * w * (np.conj(cJ) @ sJ.T + np.conj(sJ) @ cJ.T)
-            n_IJ += 0.5 * w * phase_pos * (np.conj(cI) @ sJ.T + np.conj(sI) @ cJ.T)
-            n_JI += 0.5 * w * phase_neg * (np.conj(cJ) @ sI.T + np.conj(sJ) @ cI.T)
-
-            # Renormalized P matrices (Eq. 5): same expressions weighted
-            # by N_w[m].
-            cI_w = cI * N_w  # broadcast over the band index
-            cJ_w = cJ * N_w
-            sI_w = sI * N_w
-            sJ_w = sJ * N_w
-            P_II += 0.5 * w * (np.conj(cI) @ sI_w.T + np.conj(sI) @ cI_w.T)
-            P_JJ += 0.5 * w * (np.conj(cJ) @ sJ_w.T + np.conj(sJ) @ cJ_w.T)
-            P_IJ += 0.5 * w * phase_pos * (np.conj(cI) @ sJ_w.T + np.conj(sI) @ cJ_w.T)
-            P_JI += 0.5 * w * phase_neg * (np.conj(cJ) @ sI_w.T + np.conj(sJ) @ cI_w.T)
+            # (key, left c, left Sc, right c, right Sc, phase) — used to
+            # accumulate both bare ``n_*`` (Eq. 2) and renormalised
+            # ``P_*`` (Eq. 5) blocks, Hermitianised by construction.
+            blocks = (
+                ('II', cI, sI, cI, sI, 1.0 + 0.0j),
+                ('JJ', cJ, sJ, cJ, sJ, 1.0 + 0.0j),
+                ('IJ', cI, sI, cJ, sJ, phase_pos),
+                ('JI', cJ, sJ, cI, sI, phase_neg),
+            )
+            for key, ca, sa, cb, sb, phase in blocks:
+                prefac = 0.5 * w * phase
+                n_blocks[key] += prefac * (np.conj(ca) @ sb.T + np.conj(sa) @ cb.T)
+                # ``P_*`` matrices weight the right-hand-side coefficients
+                # (broadcast over the band index) by ``N_w[m]``.
+                sb_w = sb * N_w
+                cb_w = cb * N_w
+                P_blocks[key] += prefac * (np.conj(ca) @ sb_w.T + np.conj(sa) @ cb_w.T)
 
         scale = 1.0 / total_w
-        return {
-            'P_II': P_II * scale,
-            'P_JJ': P_JJ * scale,
-            'P_IJ': P_IJ * scale,
-            'P_JI': P_JI * scale,
-            'n_II': n_II * scale,
-            'n_JJ': n_JJ * scale,
-            'n_IJ': n_IJ * scale,
-            'n_JI': n_JI * scale,
-        }
+        result = {f'P_{k}': v * scale for k, v in P_blocks.items()}
+        result.update({f'n_{k}': v * scale for k, v in n_blocks.items()})
+        return result
 
     def run_eacbn0_V(self, kpnts_are_cartesian=False):
         """Compute intersite Hubbard V for every pair registered in
@@ -1884,10 +1849,8 @@ class eACBN0(ACBN0):
             of the same pair are registered the values reported here are
             those of the closest (minimum-image) image.
         """
-        import pickle
-        from os.path import join
-
         # Geometry from QE output of the current SCF iteration (in Bohr).
+
         # ``read_cell_atoms`` returns lattice + positions in Bohr.
         lattice_B, coords_B = self.read_cell_atoms('scf.out')
         lattice_A = lattice_B * BOHR_RADIUS_ANGS
@@ -2047,9 +2010,6 @@ class eACBN0(ACBN0):
             f.write(f"H.intersite_energy('{self.outputdir}')\n")
 
     def _launch_compute_hartree_v(self):
-        import subprocess
-        from os.path import join
-
         python_exec = join(self.ppath, 'python') if self.ppath else 'python'
         mpi = getattr(self, 'mpi_hartree', None) or self.mpi_python
         command = f'{mpi} {python_exec} compute_hartree_v.py'
