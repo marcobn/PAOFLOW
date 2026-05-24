@@ -66,22 +66,22 @@ jobs:
   integration-tests:
     runs-on: ubuntu-latest
     needs: pre-commit
-  strategy:
-    fail-fast: false
-    matrix:
-      example:
-        - example01
-        - example02
-        - example03
-        - example04
-        - example05
-        - example06
-        - example07
-        - example08
-        - example10
-        - example11
-        - example14
-        - example15
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - example01
+          - example02
+          - example03
+          - example04
+          - example05
+          - example06
+          - example07
+          - example08
+          - example10
+          - example11
+          - example14
+          - example15
     env:
       PAOFLOW_QE_ASSET_VERSION: integration-assets-v1
       PAOFLOW_REFERENCE_ASSET_VERSION: integration-assets-v1
