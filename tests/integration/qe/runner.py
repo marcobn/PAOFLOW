@@ -124,6 +124,28 @@ def _overlay_reference_assets(
     _link_or_copy_dir(src=ref_src, dst=job_dir / 'Reference', link_mode=link_mode)
 
 
+def _overlay_internal_basis_assets(
+    *,
+    reference_assets_root: Path,
+    sandbox_root: Path,
+    link_mode: str,
+) -> None:
+    basis_src = reference_assets_root / 'BASIS'
+    if not basis_src.is_dir():
+        return
+
+    basis_dst = (sandbox_root / 'BASIS').resolve()
+    if basis_dst.exists() or basis_dst.is_symlink():
+        return
+
+    basis_dst.parent.mkdir(parents=True, exist_ok=True)
+    if link_mode == 'symlink':
+        basis_dst.symlink_to(basis_src, target_is_directory=True)
+        return
+
+    shutil.copytree(basis_src, basis_dst)
+
+
 def run_example_in_sandbox(
     example_dir: Path,
     sandbox_root: Path,
@@ -142,8 +164,8 @@ def run_example_in_sandbox(
     example_name = example_dir.name
     job_relpath = job_relpath or Path('.')
 
-    # Keep sandbox directory stable per example, since tmp_path is unique per test.
-    sandbox_example_root = sandbox_root / example_name
+    # Preserve the original test path depth so relative paths like ../../../../BASIS still work.
+    sandbox_example_root = sandbox_root / 'tests' / 'integration' / 'qe' / example_name
 
     if sandbox_example_root.exists():
         shutil.rmtree(sandbox_example_root)
@@ -168,6 +190,11 @@ def run_example_in_sandbox(
             example_name=example_name,
             job_relpath=job_relpath,
             job_dir=sandbox_job_dir,
+            link_mode=assets_link_mode,
+        )
+        _overlay_internal_basis_assets(
+            reference_assets_root=reference_assets_root,
+            sandbox_root=sandbox_root,
             link_mode=assets_link_mode,
         )
 

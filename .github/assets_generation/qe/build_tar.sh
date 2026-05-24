@@ -113,6 +113,17 @@ collect_test_jobs() {
   find "$base_dir" -type f -name 'main.py' -printf '%h\n' | sort -u
 }
 
+internal_basis_species_for_example() {
+  case "$1" in
+    example10)
+      printf '%s\n' Ga As
+      ;;
+    example15)
+      printf '%s\n' Si
+      ;;
+  esac
+}
+
 build_qe_assets_tar() {
   mkdir -p "$(dirname "$QE_ASSETS_OUT")"
 
@@ -131,7 +142,7 @@ build_reference_tar_from_roots() {
   local description="$2"
   shift 2
   local -a roots=("$@")
-  local package_root root test_exdir test_jobdir label staged_job_root ref_src
+  local package_root root test_exdir test_jobdir label staged_job_root ref_src species basis_src
   package_root="$(mktemp -d)"
 
   for root in "${roots[@]}"; do
@@ -159,6 +170,20 @@ build_reference_tar_from_roots() {
         rm -rf "$package_root/$label"
         mkdir -p "$package_root/$label/Reference"
         cp -a "$ref_src/." "$package_root/$label/Reference/"
+
+        while IFS= read -r species; do
+          [[ -n "$species" ]] || continue
+          basis_src="$REPO_ROOT/BASIS/$species"
+          if [[ ! -d "$basis_src" ]]; then
+            log_job "WARN: missing BASIS directory for internal-basis species '$species': $basis_src"
+            continue
+          fi
+
+          if [[ ! -e "$package_root/BASIS/$species" ]]; then
+            mkdir -p "$package_root/BASIS"
+            cp -a "$basis_src" "$package_root/BASIS/$species"
+          fi
+        done < <(internal_basis_species_for_example "$ex")
       done < <(collect_test_jobs "$test_exdir")
     done
   done
