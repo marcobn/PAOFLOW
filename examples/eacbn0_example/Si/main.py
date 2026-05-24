@@ -18,10 +18,8 @@ import shutil
 import subprocess
 from os.path import join
 
-from PAOFLOW.ACBN0 import ACBN0
-from PAOFLOW.eACBN0 import eACBN0
 from PAOFLOW import GPAO
-
+from PAOFLOW.ACBN0 import ACBN0, eACBN0
 
 PREFIX = 'Si'
 OUT = './tmp/'
@@ -74,8 +72,7 @@ def run_bare_dft():
         shutil.copy(f'{PREFIX}.{c}.in', f'{c}.in')
     _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='scf.in', stdout='scf.out')
     _shell(f'{MPI_QE} {QE_PATH}pw.x', stdin='nscf.in', stdout='nscf.out')
-    _shell(f'{MPI_QE} {QE_PATH}projwfc.x -nd 1',
-           stdin='projwfc.in', stdout='projwfc.out')
+    _shell(f'{MPI_QE} {QE_PATH}projwfc.x -nd 1', stdin='projwfc.in', stdout='projwfc.out')
 
 
 def compute_bands(label):
@@ -121,10 +118,12 @@ a = ACBN0(
 )
 # Both 3s and 3p must be declared so that the V_ss, V_sp, V_pp
 # channels exist in the eACBN0 stage; ACBN0 will fit U for both.
-a.set_hubbard_parameters({
-    'Si-3s': 0.5,
-    'Si-3p': 0.5,
-})
+a.set_hubbard_parameters(
+    {
+        'Si-3s': 0.5,
+        'Si-3p': 0.5,
+    }
+)
 a.optimize_hubbard_U(convergence_threshold=0.05)
 compute_bands('U')
 

@@ -28,8 +28,7 @@ import subprocess
 from os.path import join
 
 from PAOFLOW import GPAO
-from PAOFLOW.ACBN0 import ACBN0
-from PAOFLOW.eACBN0 import eACBN0
+from PAOFLOW.ACBN0 import ACBN0, eACBN0
 
 PREFIX = 'GaAs'
 OUT = './tmp/'
