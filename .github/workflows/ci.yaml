@@ -123,12 +123,13 @@ jobs:
 
       - name: Run QE integration tests
         run: |
-          pytest tests/integration/qe -v
+          TEST_ID="tests/integration/qe/test_qe_examples.py::test_qe_example[${{ matrix.example }}]"
+          pytest "$TEST_ID" -v
 
       - name: Upload comparison plots
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: qe-comparison-plots
+          name: qe-comparison-plots-${{ matrix.example }}
           path: /tmp/pytest-of-runner/**/*.png
           if-no-files-found: ignore
