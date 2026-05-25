@@ -1661,16 +1661,20 @@ def open_grid_nspin2(
 ############################################################################################
 
 
-def open_grid_wrapper(data_controller):
-    #    np.set_printoptions(precision=3,suppress=True,linewidth=220)
+def _prepare_expansion_context(data_controller):
+    """Collect and pre-process everything needed to expand any Hermitian
+    k-space operator (Hks, Sks, ...) from the IBZ wedge to the full BZ
+    via :func:`open_grid` / :func:`open_grid_nspin2`.
 
-    # wrapper function to unload everything from
-    # data controller and do a few conversions
-
+    Returns a dict with the prepared inputs (atom_pos in fractional
+    coords, symop / symop_cart, full_grid in fractional coords, kp_red
+    in fractional coords aligned to full_grid, jchia / shells / a_index,
+    plus the scalar attributes the expanders need).
+    """
     data_arrays = data_controller.data_arrays
     data_attr = data_controller.data_attributes
+
     alat = data_attr['alat']
-    # nelec       = data_attr['nelec']
     nk1 = data_attr['nk1']
     nk2 = data_attr['nk2']
     nk3 = data_attr['nk3']
@@ -1683,23 +1687,16 @@ def open_grid_wrapper(data_controller):
     thresh = data_attr['symm_thresh']
     max_iter = data_attr['symm_max_iter']
     verbose = data_attr['verbose']
-    Hks = data_arrays['Hks']
+    npool = data_attr['npool']
+
     atom_pos = data_arrays['tau'] / alat
     atom_lab = data_arrays['atoms']
     equiv_atom = data_arrays['equiv_atom']
     kp_red = data_arrays['kpnts']
     b_vectors = data_arrays['b_vectors']
     a_vectors = data_arrays['a_vectors']
-    # sym_info    = data_arrays['sym_info']
-    # sym_shift   = data_arrays['sym_shift']
     symop = data_arrays['sym_rot']
     sym_TR = data_arrays['sym_TR']
-    npool = data_attr['npool']
-
-    a_vectors = a_vectors
-    b_vectors = b_vectors
-    nspin = Hks.shape[3]
-    nawf = Hks.shape[0]
 
     # convert atomic positions to crystal fractional coords
     conv = LA.inv(a_vectors)
@@ -1713,7 +1710,6 @@ def open_grid_wrapper(data_controller):
     inv_a_vectors = LA.inv(a_vectors)
     for isym in range(symop.shape[0]):
         symop_cart[isym] = inv_a_vectors @ symop[isym] @ a_vectors
-
     symop_cart = correct_roundoff(symop_cart, incl_hex=True, atol=1.0e-6)
 
     # convert k points from cartesian to crystal fractional
@@ -1722,7 +1718,6 @@ def open_grid_wrapper(data_controller):
     kp_red = kp_red @ conv
     kp_red = correct_roundoff(kp_red)
 
-    # get full grid in crystal fractional coords
     full_grid = get_full_grid(nk1, nk2, nk3, o1, o2, o3)
 
     jchia = []
@@ -1742,99 +1737,195 @@ def open_grid_wrapper(data_controller):
     shells = np.array(shells)
     a_index = np.array(a_index)
 
-    # correct small differences due to conversion
     kp_red = correct_roundoff_kp(kp_red, full_grid)
 
-    # we wont need this for now
+    return {
+        'nk1': nk1,
+        'nk2': nk2,
+        'nk3': nk3,
+        'o1': o1,
+        'o2': o2,
+        'o3': o3,
+        'spin_orb': spin_orb,
+        'mag_calc': mag_calc,
+        'symm_grid': symm_grid,
+        'thresh': thresh,
+        'max_iter': max_iter,
+        'verbose': verbose,
+        'npool': npool,
+        'symop': symop,
+        'symop_cart': symop_cart,
+        'sym_TR': sym_TR,
+        'atom_pos': atom_pos,
+        'equiv_atom': equiv_atom,
+        'kp_red': kp_red,
+        'full_grid': full_grid,
+        'shells': shells,
+        'a_index': a_index,
+        'jchia': jchia,
+    }
+
+
+def _expand_kspace_hermitian(Aks, ctx):
+    """Expand a Hermitian k-space operator from the IBZ wedge to the
+    full BZ using the same symmetry rotations applied to ``Hks``.
+
+    Parameters
+    ----------
+    Aks : np.ndarray, shape ``(nawf, nawf, nkpnts_ibz, nspin)``
+        Operator on the symmetry-reduced wedge.  ``nspin`` is 1 for
+        spin-independent operators (e.g. ``Sks``); the caller must add
+        a singleton spin axis before passing such operators.
+    ctx : dict
+        Output of :func:`_prepare_expansion_context`.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, nawf, nk1*nk2*nk3, nspin)`` on rank 0;
+    ``None`` on other ranks.
+
+    Notes
+    -----
+    Both the PAO Hamiltonian and the atomic overlap obey the same
+    transformation under a symmetry operation ``R``:
+
+        ``A(Rk) = U(R, k) A(k) U(R, k)^†``,
+
+    so the same :func:`open_grid` / :func:`open_grid_nspin2` machinery
+    applies (it ultimately dispatches to :func:`symmetrize`, whose kernel
+    is the unitary rotation above plus a time-reversal complex conjugate).
+    """
+    nspin = Aks.shape[3]
+
+    Aksp = np.ascontiguousarray(np.transpose(Aks, axes=(2, 0, 1, 3)))
+    if nspin == 1:
+        A_full = open_grid(
+            Aksp[..., 0],
+            ctx['full_grid'],
+            ctx['kp_red'],
+            ctx['symop'],
+            ctx['symop_cart'],
+            ctx['atom_pos'],
+            ctx['shells'],
+            ctx['a_index'],
+            ctx['equiv_atom'],
+            ctx['nk1'],
+            ctx['nk2'],
+            ctx['nk3'],
+            ctx['o1'],
+            ctx['o2'],
+            ctx['o3'],
+            ctx['spin_orb'],
+            ctx['sym_TR'],
+            ctx['jchia'],
+            ctx['mag_calc'],
+            ctx['symm_grid'],
+            ctx['thresh'],
+            ctx['max_iter'],
+            ctx['verbose'],
+            ctx['npool'],
+        )
+        A_full = A_full[..., np.newaxis]
+    else:
+        A_full = open_grid_nspin2(
+            Aksp,
+            ctx['full_grid'],
+            ctx['kp_red'],
+            ctx['symop'],
+            ctx['symop_cart'],
+            ctx['atom_pos'],
+            ctx['shells'],
+            ctx['a_index'],
+            ctx['equiv_atom'],
+            ctx['nk1'],
+            ctx['nk2'],
+            ctx['nk3'],
+            ctx['o1'],
+            ctx['o2'],
+            ctx['o3'],
+            ctx['sym_TR'],
+            ctx['symm_grid'],
+            ctx['thresh'],
+            ctx['max_iter'],
+            ctx['verbose'],
+            ctx['npool'],
+        )
+
+    if rank == 0:
+        return np.ascontiguousarray(np.transpose(A_full, axes=(1, 2, 0, 3)))
+    return None
+
+
+def open_grid_wrapper(data_controller):
+    """Expand the IBZ-wedge k-space arrays in ``data_controller`` to the
+    full Brillouin zone.
+
+    Always expands ``Hks``.  If ``Sks`` is present in ``data_arrays``
+    (i.e. ``save_overlaps=True`` / ACBN0 path) it is expanded too,
+    using the same symmetry rotations.  Spin-independent operators
+    (such as ``Sks``) are handled by temporarily adding a singleton
+    spin axis.
+    """
+    data_arrays = data_controller.data_arrays
+
+    Hks = data_arrays['Hks']
+    nspin = Hks.shape[3]
+    nawf = Hks.shape[0]
+
+    ctx = _prepare_expansion_context(data_controller)
+
+    # Pre-allocate the destination Hks slot (matches the original
+    # behaviour: nspin=2 gets a zero-buffer, nspin=1 gets cleared so
+    # only rank 0 holds the expanded array after assignment).
     if rank == 0:
         if nspin == 2:
-            data_arrays['Hks'] = np.zeros((nawf, nawf, nk1 * nk2 * nk3, nspin), dtype=complex)
+            data_arrays['Hks'] = np.zeros(
+                (nawf, nawf, ctx['nk1'] * ctx['nk2'] * ctx['nk3'], nspin),
+                dtype=complex,
+            )
         else:
             data_arrays['Hks'] = None
     else:
         data_arrays['Hks'] = None
 
-    # expand grid from wedge (older version that works for QE)
-    # for ispin in range(nspin):
-    #     Hksp = np.ascontiguousarray(np.transpose(Hks, axes=(2, 0, 1, 3))[:, :, :, ispin])
-    #
-    #     Hksp = open_grid(Hksp, full_grid, kp_red, symop, symop_cart, atom_pos,
-    #                      shells, a_index, equiv_atom, sym_info, sym_shift,
-    #                      nk1, nk2, nk3, spin_orb, sym_TR, jchia, mag_calc,
-    #                      symm_grid, thresh, max_iter, nelec, verbose)
-    #
-    #     if rank == 0:
-    #         if nspin == 2:
-    #             data_arrays['Hks'][:, :, :, ispin] = np.ascontiguousarray(np.transpose(Hksp, axes=(1, 2, 0)))
-    #         else:
-    #             data_arrays['Hks'] = np.ascontiguousarray(np.transpose(Hksp, axes=(1, 2, 0))[..., None])
-    #     #            np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
-    #     else:
-    #         Hksp = None
-
-    Hksp = np.ascontiguousarray(np.transpose(Hks, axes=(2, 0, 1, 3)))
-    if nspin == 1:
-        Hks_full = open_grid(
-            Hksp[..., 0],
-            full_grid,
-            kp_red,
-            symop,
-            symop_cart,
-            atom_pos,
-            shells,
-            a_index,
-            equiv_atom,
-            nk1,
-            nk2,
-            nk3,
-            o1,
-            o2,
-            o3,
-            spin_orb,
-            sym_TR,
-            jchia,
-            mag_calc,
-            symm_grid,
-            thresh,
-            max_iter,
-            verbose,
-            npool,
-        )
-        Hks_full = Hks_full[..., np.newaxis]
-    else:
-        Hks_full = open_grid_nspin2(
-            Hksp,
-            full_grid,
-            kp_red,
-            symop,
-            symop_cart,
-            atom_pos,
-            shells,
-            a_index,
-            equiv_atom,
-            nk1,
-            nk2,
-            nk3,
-            o1,
-            o2,
-            o3,
-            sym_TR,
-            symm_grid,
-            thresh,
-            max_iter,
-            verbose,
-            npool,
-        )
+    Hks_full = _expand_kspace_hermitian(Hks, ctx)
     if rank == 0:
-        # if nspin==1:
-        #     data_arrays['Hks'] = np.ascontiguousarray(np.transpose(Hksp, axes=(1, 2, 0))[..., None])
-        #     #  np.save("kham.npy",np.ascontiguousarray(np.transpose(Hksp,axes=(1,2,0))))
-        # else:
-        #     data_arrays['Hks'][:, :, :, 0] = np.ascontiguousarray(np.transpose(Hksp_up, axes=(1, 2, 0)))
-        #     data_arrays['Hks'][:, :, :, 1] = np.ascontiguousarray(np.transpose(Hksp_down, axes=(1, 2, 0)))
-        data_arrays['Hks'] = np.ascontiguousarray(np.transpose(Hks_full, axes=(1, 2, 0, 3)))
-    # else:
-    #   Hks_full = None
+        data_arrays['Hks'] = Hks_full
+
+    # Expand Sks too when present.  Sks has no spin axis
+    # (shape (nawf, nawf, nkpnts)); add a singleton spin axis for the
+    # expander and strip it back afterwards.
+    #
+    # IMPORTANT: ``data_arrays['Sks']`` as read from QE is stored in the
+    # Fortran (column-major) layout used by projwfc, i.e. it carries
+    # ``S(k)^T`` rather than the Hermitian ``S(k)`` itself.  Downstream
+    # consumers (``do_non_ortho`` in the ACBN0 path) compensate with a
+    # ``np.transpose(Sks, (1, 0, 2))`` *after* this routine returns.  The
+    # symmetry rule ``M(Rk) = U(R,k) M(k) U(R,k)^†`` only applies to the
+    # Hermitian ``S(k)``, so we transpose into the proper layout before
+    # expanding and transpose back afterwards to preserve that contract.
+    if 'Sks' in data_arrays and data_arrays['Sks'] is not None:
+        Sks_raw = data_arrays['Sks']
+        Sks_proper = np.transpose(Sks_raw, (1, 0, 2))
+        if rank == 0:
+            data_arrays['Sks'] = None
+        else:
+            data_arrays['Sks'] = None
+        Sks_full = _expand_kspace_hermitian(Sks_proper[..., np.newaxis], ctx)
+        if rank == 0:
+            # restore the raw QE storage layout (S^T) so the post-call
+            # transpose in do_non_ortho ends up with the proper S.
+            data_arrays['Sks'] = np.ascontiguousarray(np.transpose(Sks_full[..., 0], (1, 0, 2)))
+
+    # Replace the IBZ k-point list and weights with the full-BZ grid
+    # so downstream consumers (e.g. write_Hk_acbn0 -> k.txt / wk.txt)
+    # stay consistent with the now-expanded Hks / Sks arrays.
+    if rank == 0:
+        nktot = ctx['nk1'] * ctx['nk2'] * ctx['nk3']
+        # full_grid is in crystal fractional coords; convert back to the
+        # same (cartesian, 2π/alat) units used by the rest of PAOFLOW.
+        data_arrays['kpnts'] = np.ascontiguousarray(ctx['full_grid'] @ data_arrays['b_vectors'])
+        data_arrays['kpnts_wght'] = np.full(nktot, 1.0 / nktot, dtype=float)
 
 
 ############################################################################################

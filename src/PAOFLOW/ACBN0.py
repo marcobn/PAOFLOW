@@ -350,28 +350,103 @@ class ACBN0_Hartree(_HartreeKernel):
         basis = self.data['basis']
         basis_2e = self.data['basis_2e']
 
-        tmp_U, tmp_J = 0.0, 0.0
+        # ------------------------------------------------------------------
+        # P6: exploit 8-fold permutation symmetry of (ab|cd) for real
+        # Gaussians, evaluate each unique ERI once, then carry out the U
+        # and J sums as pure ``np.einsum`` contractions.
+        #
+        # ``basis_2e`` is an array of indices into ``basis``; we work in
+        # local indices ``a,b,c,d ∈ [0, n_2e)`` for the ERI tensor and
+        # density-matrix sub-blocks, mapping back to ``basis`` only when
+        # calling :meth:`coulomb`.
+        # ------------------------------------------------------------------
+        n_2e = int(np.asarray(basis_2e).size)
+        idx = np.asarray(basis_2e)
 
-        ind = self._scatter_indices(basis_2e, basis_2e, basis_2e, basis_2e)
+        # Enumerate unique 4-tuples under (ab|cd) = (ba|cd) = (ab|dc)
+        # = (cd|ab) and combinations thereof.  Canonical form:
+        #   a <= b,  c <= d,  (a, b) <= (c, d)  (lexicographic).
+        unique_keys = []
+        for a in range(n_2e):
+            for b in range(a, n_2e):
+                for c in range(n_2e):
+                    for d in range(c, n_2e):
+                        if (a, b) <= (c, d):
+                            unique_keys.append((a, b, c, d))
 
-        for k, l, m, n in ind:
-            int_U = self.coulomb(basis[m], basis[n], basis[k], basis[l])
+        # MPI-scatter the unique tuples across ranks; each rank evaluates
+        # only its local chunk.  Use ``allgather`` so every rank ends up
+        # with the full ERI dict (and can do the cheap contraction
+        # locally, no extra communication for the final reduce).
+        if self.rank == 0:
+            chunks = np.array_split(np.asarray(unique_keys, dtype=int), self.size, 0)
+        else:
+            chunks = None
+        my_keys = self.comm.scatter(chunks, root=0)
 
-            a_b = DR_up[m, n] * DR_up[k, l] + DR_dn[m, n] * DR_dn[k, l]
-            ab_ba = DR_dn[m, n] * DR_up[k, l] + DR_up[m, n] * DR_dn[k, l]
+        # ``contr_coulomb`` of real Cartesian Gaussians returns a real
+        # scalar; coerce to ``float`` so the gathered dict and downstream
+        # ERI tensor stay real.
+        local_vals = {
+            (int(a), int(b), int(c), int(d)): float(
+                self.coulomb(basis[idx[a]], basis[idx[b]], basis[idx[c]], basis[idx[d]])
+            )
+            for a, b, c, d in my_keys
+        }
 
-            tmp_U += int_U * (a_b + ab_ba)
+        all_local = self.comm.allgather(local_vals)
+        eri_dict = {}
+        for d_ in all_local:
+            eri_dict.update(d_)
 
-            # Hund's J counts only parallel-spin exchange between
-            # *distinct* orbitals (Agapito PRX 5, 011006 (2015), Eq. 11);
-            # the self-exchange (m,n)==(k,l) is the direct Coulomb and
-            # must not enter J, otherwise J is inflated and U_eff = U-J
-            # is systematically too small.
-            if not (m == k and n == l):
-                int_J = self.coulomb(basis[m], basis[k], basis[n], basis[l])
-                tmp_J += int_J * a_b
+        # Unfold the unique values into the full (n_2e)^4 tensor via the
+        # 8-fold symmetry.  Cost is n_2e^4 dict lookups — negligible next
+        # to a single contr_coulomb call.  ``contr_coulomb`` of real
+        # Cartesian Gaussians returns a real scalar, so the ERI tensor
+        # is purely real; keep it as ``float`` so the contractions below
+        # do not spuriously promote ``tmp_U`` / ``tmp_J`` to complex (the
+        # downstream HUBBARD-card writer expects real Python floats).
+        ERI = np.empty((n_2e, n_2e, n_2e, n_2e), dtype=float)
+        for a in range(n_2e):
+            for b in range(n_2e):
+                a1, b1 = (a, b) if a <= b else (b, a)
+                for c in range(n_2e):
+                    for d in range(n_2e):
+                        c1, d1 = (c, d) if c <= d else (d, c)
+                        if (a1, b1) <= (c1, d1):
+                            ERI[a, b, c, d] = eri_dict[(a1, b1, c1, d1)]
+                        else:
+                            ERI[a, b, c, d] = eri_dict[(c1, d1, a1, b1)]
 
-        self._reduce_and_dump({'U': tmp_U, 'J': tmp_J}, outputdir, 'tmp_uj.pkl')
+        # Sub-block the density matrices to the Hubbard-active shell and
+        # exploit the factorisation of the spin sum for U:
+        #   U_num = Σ_{abcd} (ab|cd) D^tot_{ab} D^tot_{cd},   D^tot = D↑ + D↓
+        # For J we need (ac|bd) = ERI.transpose(0, 2, 1, 3); only the
+        # like-spin terms contribute:
+        #   J_num = Σ_{abcd} (ac|bd) [D↑_{ab} D↑_{cd} + D↓_{ab} D↓_{cd}].
+        # ``DR()`` already takes ``.real`` of the k-summed density, but be
+        # explicit here so the sub-block is unambiguously real-valued and
+        # the contractions stay in float-precision arithmetic.
+        D_up = np.asarray(DR_up[np.ix_(idx, idx)]).real
+        D_dn = np.asarray(DR_dn[np.ix_(idx, idx)]).real
+        D_tot = D_up + D_dn
+
+        ERI_J = ERI.transpose(0, 2, 1, 3)  # (ac|bd) layout
+        tmp_U = float(np.einsum('abcd,ab,cd->', ERI, D_tot, D_tot, optimize=True))
+        tmp_J = float(
+            np.einsum('abcd,ab,cd->', ERI_J, D_up, D_up, optimize=True)
+            + np.einsum('abcd,ab,cd->', ERI_J, D_dn, D_dn, optimize=True)
+        )
+
+        # Contraction already replicated on every rank — write from rank 0
+        # without an MPI.SUM reduce (would over-count by ``self.size``).
+        # Store as real Python floats: the downstream HUBBARD-card writer
+        # interpolates them into ``scf.in`` with ``'{}'.format(v)`` and a
+        # complex value of the form ``(10.55+0j)`` makes QE's
+        # ``card_hubbard`` parser bail out.
+        if self.rank == 0:
+            with open(join(outputdir, 'tmp_uj.pkl'), 'wb') as f:
+                pickle.dump({'U': tmp_U, 'J': tmp_J}, f)
 
 
 class eACBN0_Hartree(_HartreeKernel):
@@ -513,20 +588,72 @@ class eACBN0_Hartree(_HartreeKernel):
         n_I = len(gauss_I)
         n_J = len(gauss_J)
 
-        ind = self._scatter_indices(range(n_I), range(n_I), range(n_J), range(n_J))
+        # ----------------------------------------------------------------- #
+        # P5: exploit the 4-fold permutation symmetry of (ik|jl) for real   #
+        # Cartesian Gaussians.  Because atoms I and J are distinct (and    #
+        # the gauss_I / gauss_J basis lists are independent) the           #
+        # electron-swap (ik|jl) = (jl|ik) does NOT apply, but               #
+        # (ik|jl) = (ki|jl) = (ik|lj) does — giving 4× fewer unique         #
+        # integrals.  Canonical form: i <= k, j <= l.                       #
+        # ----------------------------------------------------------------- #
+        unique_keys = [
+            (i, k, j, l)
+            for i in range(n_I)
+            for k in range(i, n_I)
+            for j in range(n_J)
+            for l in range(j, n_J)
+        ]
 
-        tmp = 0.0 + 0.0j
-        for i, k, j, l in ind:
-            integ = self.coulomb(gauss_I[i], gauss_I[k], gauss_J[j], gauss_J[l])
+        if self.rank == 0:
+            chunks = np.array_split(np.asarray(unique_keys, dtype=int), self.size, 0)
+        else:
+            chunks = None
+        my_keys = self.comm.scatter(chunks, root=0)
 
-            # Direct (Hartree) term: full σ,σ' double sum.
-            direct = PII_sum[i, k] * PJJ_sum[j, l]
-            # Exchange term: same-spin only (δ_{σσ'}).
-            exchange = P_IJ_up[i, l] * P_JI_up[j, k] + P_IJ_dn[i, l] * P_JI_dn[j, k]
+        # ``contr_coulomb`` of real Cartesian Gaussians returns a real
+        # scalar; coerce to ``float`` so the gathered dict and ERI
+        # tensor stay real (densities are complex, so contractions will
+        # naturally promote to complex without spurious imaginary noise
+        # from the integral side).
+        local_vals = {
+            (int(i), int(k), int(j), int(l)): float(
+                self.coulomb(gauss_I[i], gauss_I[k], gauss_J[j], gauss_J[l])
+            )
+            for i, k, j, l in my_keys
+        }
 
-            tmp += integ * (direct - exchange)
+        all_local = self.comm.allgather(local_vals)
+        eri_dict = {}
+        for d_ in all_local:
+            eri_dict.update(d_)
 
-        self._reduce_and_dump({'num': tmp}, outputdir, 'tmp_v.pkl')
+        # Unfold to full (n_I, n_I, n_J, n_J) ERI tensor via the 4-fold
+        # symmetry.  Cost is n_I^2 * n_J^2 dict lookups — negligible.
+        ERI = np.empty((n_I, n_I, n_J, n_J), dtype=float)
+        for i in range(n_I):
+            for k in range(n_I):
+                i1, k1 = (i, k) if i <= k else (k, i)
+                for j in range(n_J):
+                    for l in range(n_J):
+                        j1, l1 = (j, l) if j <= l else (l, j)
+                        ERI[i, k, j, l] = eri_dict[(i1, k1, j1, l1)]
+
+        # Direct (Hartree) term: full σ,σ' double sum.
+        #   Σ (ik|jl) PII_sum[i,k] PJJ_sum[j,l]
+        direct = np.einsum('ikjl,ik,jl->', ERI, PII_sum, PJJ_sum, optimize=True)
+        # Exchange term: same-spin only (δ_{σσ'}).
+        #   Σ (ik|jl) [P_IJ_up[i,l] P_JI_up[j,k] + (down term)]
+        exchange = np.einsum('ikjl,il,jk->', ERI, P_IJ_up, P_JI_up, optimize=True) + np.einsum(
+            'ikjl,il,jk->', ERI, P_IJ_dn, P_JI_dn, optimize=True
+        )
+
+        tmp = complex(direct - exchange)
+
+        # Contraction already replicated on every rank — write from rank 0
+        # without an MPI.SUM reduce (which would over-count by ``self.size``).
+        if self.rank == 0:
+            with open(join(outputdir, 'tmp_v.pkl'), 'wb') as f:
+                pickle.dump({'num': tmp}, f)
 
 
 class ACBN0:
@@ -607,6 +734,24 @@ class ACBN0:
             self.nspin = int(self.blocks['system']['nspin'])
         else:
             self.nspin = 1
+
+        # Decide whether PAOFLOW must expand the IBZ wedge to the full BZ.
+        # If the nscf was run with nosym=.true. and noinv=.true., QE already
+        # wrote the full BZ and no expansion is needed.  Otherwise, ask the
+        # symmetry expander to fill the full BZ from the wedge; both Hks
+        # and Sks are expanded (see open_grid_wrapper).
+        nscf_blocks, _ = struct_from_inputfile_QE(f'{self.prefix}.nscf.in')
+        nscf_sys = nscf_blocks.get('system', {})
+
+        def _qe_true(v):
+            # Accept any QE logical-true shorthand: .true., .t., true, t
+            # (with arbitrary case and trailing commas/whitespace).
+            return str(v).strip().rstrip(',').strip().lower().strip('.') in ('t', 'true')
+
+        nosym = _qe_true(nscf_sys.get('nosym', '.false.'))
+        noinv = _qe_true(nscf_sys.get('noinv', '.false.'))
+        self.expand_wedge = not (nosym and noinv)
+        print(f'ACBN0: nscf nosym={nosym}, noinv={noinv} -> expand_wedge={self.expand_wedge}\n')
 
         # Generate gaussian fits
         print('Generating gaussian fits for pseudopotential basis states.\n')
@@ -880,7 +1025,9 @@ class ACBN0:
             calcs.append(fstr.format('_up'))
             calcs.append(fstr.format('_down'))
 
-        create_acbn0_inputfile(save_prefix, self.pthr, self.outputdir)
+        create_acbn0_inputfile(
+            save_prefix, self.pthr, self.outputdir, expand_wedge=self.expand_wedge
+        )
         self.exec_PAOFLOW()
 
     def read_cell_atoms(self, fname):
@@ -974,6 +1121,12 @@ class ACBN0:
 
         gauss_basis = self.getbasis(self.basis, species, lattice, coords)
 
+        # Cache the per-k generalized eigendecomposition once per spin
+        # channel; reused across every Hubbard orbital below so we don't
+        # re-diagonalize H(k), S(k) for each species.
+        eigvec_up = self._eigh_all_k(Hks_up, Sks)
+        eigvec_dn = self._eigh_all_k(Hks_dw, Sks) if nspin == 2 else None
+
         for orb, v in self.uVals.items():
             ostates = []
             ustates = []
@@ -997,14 +1150,14 @@ class ACBN0:
             basis_dm = np.array(ostates)
             basis_2e = np.array(sstates)
 
-            dk, nlm = self.Dk(basis_dm, basis_2e, Hks_up, Sks)
+            dk, nlm = self.Dk(basis_dm, basis_2e, Hks_up, Sks, eigvec_cache=eigvec_up)
             nlm = self.Nmm(nlm, Hks_up, kwght)
 
             if nspin == 1:
                 dk_dn = None
                 nlmd = nlm
             else:
-                dk_dn, nlmd = self.Dk(basis_dm, basis_2e, Hks_dw, Sks)
+                dk_dn, nlmd = self.Dk(basis_dm, basis_2e, Hks_dw, Sks, eigvec_cache=eigvec_dn)
                 nlmd = self.Nmm(nlmd, Hks_dw, kwght)
 
             den_U, den_J = self._acbn0_denominator(nlm, nlmd)
@@ -1062,7 +1215,45 @@ class ACBN0:
 
         return basis_functions
 
-    def Dk(self, basis_dm, basis_2e, Hks, Sks):
+    def _eigh_all_k(self, Hks, Sks):
+        """Solve the generalized eigenproblem ``H(k) c = ε S(k) c`` at every
+        k-point and return per-k ``(eig, vec)`` tuples.
+
+        The result depends only on ``(Hks, Sks)`` and is therefore safe to
+        cache across the orbital loop in :meth:`run_acbn0` (and across the
+        intersite-V loop in :class:`eACBN0`), avoiding redundant per-k
+        diagonalizations when several Hubbard species are present.
+
+        Parameters
+        ----------
+        Hks, Sks : (nbasis, nbasis, nkpnts) complex ndarray
+
+        Returns
+        -------
+        list of (eig, vec)
+            ``eig`` is ``(nbasis,)`` real, ``vec`` is ``(nbasis, nbasis)``
+            complex; length ``nkpnts``.
+        """
+        from scipy.linalg import eigh
+
+        nkpnts = Hks.shape[2]
+        return [eigh(Hks[:, :, ik], Sks[:, :, ik]) for ik in range(nkpnts)]
+
+    def Dk(self, basis_dm, basis_2e, Hks, Sks, eigvec_cache=None):
+        """Build the per-k density matrix ``D(k)`` and the per-k Mulliken
+        projection ``n_{lm}(k)`` on ``basis_2e`` for the occupied manifold.
+
+        Parameters
+        ----------
+        basis_dm, basis_2e : 1D int ndarray
+            PAO indices defining the density-matrix block and the
+            two-electron-integral block, respectively.
+        Hks, Sks : (nbasis, nbasis, nkpnts) complex ndarray
+        eigvec_cache : list of (eig, vec) or None, optional
+            If provided, the per-k generalized eigenproblem is *not*
+            re-solved; values from the cache are used instead.  Produced by
+            :meth:`_eigh_all_k`.
+        """
         from scipy.linalg import eigh
 
         nbasis, _, nkpnts = Hks.shape
@@ -1072,7 +1263,10 @@ class ACBN0:
 
         # Find the density matrix for each k
         for ik in range(nkpnts):
-            eig, vec = eigh(Hks[:, :, ik], Sks[:, :, ik])
+            if eigvec_cache is not None:
+                eig, vec = eigvec_cache[ik]
+            else:
+                eig, vec = eigh(Hks[:, :, ik], Sks[:, :, ik])
 
             occ_ind = np.where(eig <= 0.0)[0]
             nocc = len(occ_ind)
@@ -1097,21 +1291,18 @@ class ACBN0:
         return D_k, nlm_k
 
     def Nmm(self, nlm, Hks, kwght):
-        lm_size, nbasis, nkp = nlm.shape
-        nlm_aux = np.zeros((lm_size, nbasis), dtype=complex)
-        for ik, wght in enumerate(kwght):
-            nlm_aux += wght * nlm[:, :, ik]
-
-        return np.sum(nlm_aux / np.sum(kwght), axis=1)
+        # Vectorised: nlm_aux[lm, b] = sum_k kwght[k] * nlm[lm, b, k].
+        kwght = np.asarray(kwght)
+        total_w = float(np.sum(kwght))
+        nlm_aux = np.tensordot(nlm, kwght, axes=([2], [0]))  # (lm_size, nbasis)
+        return np.sum(nlm_aux, axis=1) / total_w
 
     def DR(self, Dk, kwght):
-        nawf = Dk.shape[0]
-
-        D = np.zeros((nawf, nawf), dtype=complex)
-        for ik, wght in enumerate(kwght):
-            D += wght * Dk[:, :, ik]
-
-        return D.real / np.sum(kwght)
+        # Vectorised: D[a, b] = sum_k kwght[k] * Dk[a, b, k] / sum(kwght).
+        kwght = np.asarray(kwght)
+        total_w = float(np.sum(kwght))
+        D = np.tensordot(Dk, kwght, axes=([2], [0]))  # (nawf, nawf)
+        return (D / total_w).real
 
     def read_ham_data(self, nspin):
         kpnts = np.loadtxt(open(join(self.outputdir, 'k.txt'), 'r'))
@@ -1715,6 +1906,7 @@ class eACBN0(ACBN0):
         kpnts,
         kwght,
         R_bohr,
+        eigvec_cache=None,
     ):
         """Compute spin-channel pair density matrices following Eqs. (2),
         (4) and (5) of Phys. Rev. Research 2, 043410 (2020).
@@ -1773,7 +1965,10 @@ class eACBN0(ACBN0):
             phase_pos = np.exp(1j * float(np.dot(kpnts[ik], R_bohr)))
             phase_neg = np.conj(phase_pos)
 
-            eig, vec = eigh(Hks[:, :, ik], Sks[:, :, ik])
+            if eigvec_cache is not None:
+                eig, vec = eigvec_cache[ik]
+            else:
+                eig, vec = eigh(Hks[:, :, ik], Sks[:, :, ik])
             occ_ind = np.where(eig <= 0.0)[0]
             if occ_ind.size == 0:
                 continue
@@ -1881,6 +2076,12 @@ class eACBN0(ACBN0):
 
         state_lines = self._parse_state_lines('projwfc.out')
 
+        # Cache the per-k generalized eigendecomposition once per spin
+        # channel; reused across every (I, J) pair below so we don't
+        # re-diagonalize H(k), S(k) for each Hubbard pair.
+        eigvec_up = self._eigh_all_k(Hks_up, Sks)
+        eigvec_dn = self._eigh_all_k(Hks_dn, Sks) if self.nspin == 2 else eigvec_up
+
         # Collapse images to their minimum-image representative per
         # (l1, l2, i1, i2) (these are the keys that QE actually carries).
         best_image = {}
@@ -1918,6 +2119,7 @@ class eACBN0(ACBN0):
                 k_cart,
                 kwght,
                 R_bohr,
+                eigvec_cache=eigvec_up,
             )
             if self.nspin == 2:
                 dn = self._pair_density_matrices(
@@ -1928,6 +2130,7 @@ class eACBN0(ACBN0):
                     k_cart,
                     kwght,
                     R_bohr,
+                    eigvec_cache=eigvec_dn,
                 )
             else:
                 # Spin-restricted: split the doubly-occupied DM in half

@@ -378,7 +378,7 @@ def create_atomic_inputfile(calculation, blocks, cards):
             f.write('\n')
 
 
-def create_acbn0_inputfile(prefix, pthr, outputdir):
+def create_acbn0_inputfile(prefix, pthr, outputdir, expand_wedge=False):
     """Generate a PAOFLOW Python driver script for an ACBN0 calculation.
 
     Parameters
@@ -390,6 +390,10 @@ def create_acbn0_inputfile(prefix, pthr, outputdir):
     outputdir : str
         Output directory passed to the :class:`~PAOFLOW.PAOFLOW.PAOFLOW`
         constructor.
+    expand_wedge : bool, optional
+        Forwarded to ``paoflow.pao_hamiltonian``.  ``False`` (default)
+        assumes QE produced the full BZ (``nosym=.true., noinv=.true.``);
+        ``True`` expands the symmetry-reduced wedge to the full grid.
 
     Returns
     -------
@@ -403,5 +407,5 @@ def create_acbn0_inputfile(prefix, pthr, outputdir):
         )
         f.write('paoflow.read_atomic_proj_QE()\n')
         f.write(f'paoflow.projectability(pthr={pthr})\n')
-        f.write('paoflow.pao_hamiltonian(write_binary=True,expand_wedge=False)\n')
+        f.write(f'paoflow.pao_hamiltonian(write_binary=True,expand_wedge={bool(expand_wedge)})\n')
         f.write('paoflow.finish_execution()\n')

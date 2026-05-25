@@ -163,6 +163,9 @@ def do_build_pao_hamiltonian(data_controller):
     if attr['expand_wedge']:
         from .pao_sym import open_grid_wrapper
 
+        # Expands both Hks and (when present) Sks from the IBZ wedge
+        # to the full BZ.  Both transform identically under the point
+        # group: A(Rk) = U(R,k) A(k) U(R,k)^†.
         open_grid_wrapper(data_controller)
 
     attr['nkpnts'] = np.prod(ashape[2:5])
