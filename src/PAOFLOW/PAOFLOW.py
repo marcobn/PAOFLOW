@@ -106,17 +106,7 @@ class PAOFLOW:
             # Data Attributes
             attr = self.data_controller.data_attributes
 
-            # Check for CUDA FFT Libraries
-            ## CUDA not yet supported in PAOFLOW_CLASS
-            attr['use_cuda'] = False
             attr['scipyfft'] = True
-            if attr['use_cuda']:
-                attr['scipyfft'] = False
-            if self.rank == 0 and attr['verbose']:
-                if attr['use_cuda']:
-                    print('CUDA will perform FFTs on %d GPUs' % 1)
-                else:
-                    print('SciPy will perform FFTs')
 
         # Report execution information
         if self.rank == 0:

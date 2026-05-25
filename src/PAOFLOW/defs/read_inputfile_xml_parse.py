@@ -97,9 +97,7 @@ def read_inputfile_xml(fpath, inputfile, data_controller):
 
     # Control
     fpath = None
-    restart = verbose = acbn0 = write2file = write_binary = writedata = use_cuda = writez2pack = (
-        False
-    )
+    restart = verbose = acbn0 = write2file = write_binary = writedata = writez2pack = False
     shift_type = 1
     shift = 'auto'
     pthr = 0.95
@@ -285,7 +283,6 @@ def read_inputfile_xml(fpath, inputfile, data_controller):
     data_attributes['write2file'] = read_attribute(aroot, write2file, 'write2file', 'logical')
     data_attributes['write_binary'] = read_attribute(aroot, write_binary, 'write_binary', 'logical')
     data_attributes['writedata'] = read_attribute(aroot, writedata, 'writedata', 'logical')
-    data_attributes['use_cuda'] = read_attribute(aroot, use_cuda, 'use_cuda', 'logical')
     data_attributes['do_comparison'] = read_attribute(
         aroot, do_comparison, 'do_comparison', 'logical'
     )
