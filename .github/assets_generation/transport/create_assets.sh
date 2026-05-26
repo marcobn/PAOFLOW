@@ -129,6 +129,35 @@ run_qe_exec() {
   fi
 }
 
+infer_qe_outdir_from_input() {
+  local input_file="$1"
+  "$PYTHON_EXEC" - <<'PY' "$input_file"
+import re
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(r"\boutdir\s*=\s*['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+if match:
+    print(match.group(1).strip())
+PY
+}
+
+ensure_qe_outdir() {
+  local jobdir="$1"
+  local input_file="$2"
+  local outdir
+
+  outdir="$(infer_qe_outdir_from_input "$jobdir/$input_file")"
+  [[ -n "$outdir" ]] || return 0
+
+  if [[ "$outdir" = /* ]]; then
+    mkdir -p "$outdir"
+  else
+    mkdir -p "$jobdir/$outdir"
+  fi
+}
+
 collect_example_jobs() {
   local base_dir="$1"
   local -a dirs=()
@@ -220,6 +249,7 @@ run_qe_dir() {
     if [[ -f "$jobdir/$input" ]]; then
       local cmd="$PW_EXEC"
       [[ "$input" == *proj* ]] && cmd="$PP_EXEC"
+      ensure_qe_outdir "$jobdir" "$input"
       if ! (cd "$jobdir" && run_qe_exec "$cmd" "$input") >> "$QE_LOG" 2>&1; then
         log_job "QE: $label - FAILED on $input"
         return 1
