@@ -63,7 +63,7 @@ jobs:
         run: |
           pre-commit run --all-files --show-diff-on-failure
 
-  integration-tests:
+  qe-integration-tests:
     runs-on: ubuntu-latest
     needs: pre-commit
     strategy:
