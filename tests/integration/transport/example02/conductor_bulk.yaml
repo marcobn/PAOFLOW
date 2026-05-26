@@ -4,7 +4,7 @@ input_conductor:
   postfix: "_bulk"
   dimC: 41
   calculation_type: "bulk"
-  ne: 500
+  ne: 100
   emin: -7.0
   emax: 2.0
   datafile_C: "./alh.save/atomic_proj.xml"
@@ -14,7 +14,7 @@ input_conductor:
   do_eigenchannels: true
   neigchnx: 4
   do_eigplot: true
-  ie_eigplot: 7001
+  ie_eigplot: 100
   ik_eigplot: 1
   write_gf: false
   write_lead_sgm: false
