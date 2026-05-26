@@ -135,7 +135,6 @@ jobs:
           if-no-files-found: ignore
 
   transport-integration-tests:
-    if: ${{ vars.PAOFLOW_TRANSPORT_ASSET_SHA256 != '' }}
     runs-on: ubuntu-latest
     needs: pre-commit
     strategy:
@@ -145,9 +144,9 @@ jobs:
           - example01
           - example02
     env:
-      PAOFLOW_TRANSPORT_ASSET_VERSION: transport-integration-assets-v1
-      PAOFLOW_TRANSPORT_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/transport-integration-assets-v1/transport_test_assets.tar.gz
-      PAOFLOW_TRANSPORT_ASSET_SHA256: ${{ vars.PAOFLOW_TRANSPORT_ASSET_SHA256 }}
+      PAOFLOW_TRANSPORT_ASSET_VERSION: integration-assets-v1
+      PAOFLOW_TRANSPORT_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/transport_test_assets.tar.gz
+      PAOFLOW_TRANSPORT_ASSET_SHA256: "bccba698d0e39b44a61fc650bf2fee286d06068fc5a132baf5a1088a2f95cd4c"
 
     steps:
       - uses: actions/checkout@v4
