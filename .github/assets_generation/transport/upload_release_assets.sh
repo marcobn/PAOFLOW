@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-TAG="${1:-transport-integration-assets-v1}"
+TAG="${1:-integration-assets-v1}"
 
 ASSET_DIR="/home/anooja/Work/software/PAOFLOW/.github/assets_generation/transport/_assets"
 TRANSPORT_ASSET="${ASSET_DIR}/transport_test_assets.tar.gz"
@@ -17,24 +17,19 @@ if [[ ! -f "${TRANSPORT_ASSET}" ]]; then
   exit 1
 fi
 
-echo "Generating SHA256SUMS..."
-sha256sum transport_test_assets.tar.gz > "${CHECKSUM_ASSET}"
-
-if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
-  echo "Release '${TAG}' exists. Uploading transport assets..."
-  gh release upload "${TAG}" \
-    transport_test_assets.tar.gz \
-    "${CHECKSUM_ASSET}" \
-    --repo "${REPO}" \
-    --clobber
-else
-  echo "Creating GitHub release: ${TAG}"
-  gh release create "${TAG}" \
-    transport_test_assets.tar.gz \
-    "${CHECKSUM_ASSET}" \
-    --repo "${REPO}" \
-    --title "${TAG}" \
-    --notes "Transport integration test assets"
+if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+  echo "Release '${TAG}' does not exist. Refusing to create a new release."
+  exit 1
 fi
 
-echo "Release created successfully."
+echo "Generating transport SHA256SUMS..."
+sha256sum transport_test_assets.tar.gz > "${CHECKSUM_ASSET}"
+
+echo "Uploading transport assets to existing release: ${TAG}"
+gh release upload "${TAG}" \
+  transport_test_assets.tar.gz \
+  "${CHECKSUM_ASSET}" \
+  --repo "${REPO}" \
+  --clobber
+
+echo "Transport assets uploaded successfully."
