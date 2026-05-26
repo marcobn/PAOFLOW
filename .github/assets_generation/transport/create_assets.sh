@@ -195,6 +195,21 @@ print("output/paoflow")
 PY
 }
 
+clean_reference_dir() {
+  local refdir="$1"
+  [[ -d "$refdir" ]] || return 0
+
+  find "$refdir" -type f ! \( -name '*.dat' -o -name '*.txt' \) -delete
+  find "$refdir" -depth -type d -empty -delete
+}
+
+clean_qe_side_products() {
+  local jobdir="$1"
+
+  find "$jobdir" -type f -name '*.pdos_*' -delete
+  find "$jobdir" -type f -name '.hub*' -delete
+}
+
 run_transport_scripts() {
   local jobdir="$1"
   local logfile="$2"
@@ -272,7 +287,7 @@ run_qe_dir() {
     find "$savedir" -type f ! -name '*.xml' ! -name '*.UPF' ! -iname '*wfc*' -delete
   done < <(find "$jobdir" -type d -name '*.save' -print0)
 
-  find "$jobdir" -type f -name '.hub*' -delete
+  clean_qe_side_products "$jobdir"
   log_job "QE: $label - OK"
 }
 
@@ -310,6 +325,7 @@ run_paoflow_example_dir() {
   rm -rf "$jobdir/Reference"
   mkdir -p "$jobdir/Reference"
   cp -a "$outpath/." "$jobdir/Reference/"
+  clean_reference_dir "$jobdir/Reference"
   log_job "PAOFLOW(examples): $label - OK"
 }
 
@@ -376,6 +392,7 @@ run_paoflow_test_dir() {
   rm -rf "$staging_dir/$label/Reference"
   mkdir -p "$staging_dir/$label/Reference"
   cp -a "$outpath/." "$staging_dir/$label/Reference/"
+  clean_reference_dir "$staging_dir/$label/Reference"
   rm -rf "$outpath"
 
   while IFS= read -r copied_path; do
