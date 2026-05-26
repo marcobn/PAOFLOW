@@ -6,7 +6,7 @@ input_conductor:
   dimC: 41
   dimR: 12
   calculation_type: "conductor"
-  ne: 500
+  ne: 100
   emin: -7.0
   emax: 2.0
   datafile_L: "./alh.save/atomic_proj.xml"
@@ -18,7 +18,7 @@ input_conductor:
   do_eigenchannels: true
   neigchnx: 4
   do_eigplot: true
-  ie_eigplot: 7001
+  ie_eigplot: 100
   ik_eigplot: 1
 
 hamiltonian_data:

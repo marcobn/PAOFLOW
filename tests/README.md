@@ -39,8 +39,13 @@ workflow described in tests/integration/qe/README.md to generate `*.save/` and
 ### Transport examples
 
 Transport integration tests live under tests/integration/transport and are based on
-trimmed transport examples. Each example is copied into a sandbox, executed via the
-example scripts, and output/paoflow/_.dat is compared to Reference/_.dat.
+trimmed transport examples. Each example is copied into a sandbox, asset-bundle
+content is overlaid into the job directory, the example scripts are executed, and
+output/paoflow/_.dat is compared to Reference/_.dat.
+
+Transport integration tests require a combined asset tarball containing both
+`*.save/` and `Reference/` data. Use the asset-bundle workflow described in
+tests/integration/transport/README.md to generate and publish that archive.
 
 Run transport integration tests:
 

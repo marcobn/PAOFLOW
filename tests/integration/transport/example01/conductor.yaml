@@ -6,7 +6,7 @@ input_conductor:
   calculation_type: "bulk"
   emin: -7.0
   emax: 2.0
-  ne: 500
+  ne: 100
   datafile_C: "./al5.save/atomic_proj.xml"
   transport_direction: 3
   delta: 0.0005
