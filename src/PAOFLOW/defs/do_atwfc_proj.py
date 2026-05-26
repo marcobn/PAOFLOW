@@ -460,6 +460,92 @@ def build_aewfc_basis(data_controller):
     return basis, shells
 
 
+def build_mixed_basis(data_controller):
+    """Construct a mixed basis: pseudo-atomic wavefunctions + AE polarization.
+
+    The pseudo-atomic wavefunctions read from the UPF are kept as the
+    baseline (they were generated together with the pseudopotential and
+    therefore project the QE valence bands faithfully).  On top of that
+    baseline, extra all-electron shells listed in
+    ``arry['configuration']`` are loaded from ``basispath/<elem>/*.dat``
+    and appended.
+
+    ``arry['configuration']`` here lists ONLY the augmenting shells
+    (the pseudo shells come from the UPF automatically).  An empty or
+    missing entry for a species means "no augmentation for this
+    species" and yields a pure pseudo basis for those atoms.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``atoms``, ``tau``, ``species``,
+        ``configuration``.  Required attributes: ``ecutrho``, ``omega``,
+        ``verbose``, ``dftSO``, ``fpath``, ``basispath``.
+
+    Returns
+    -------
+    basis : list of dict
+        Concatenation of the pseudo and AE basis records (same dict
+        schema as :func:`build_pswfc_basis_all`).
+    shells : dict
+        ``{species: [l, ...]}`` — angular momenta of the pseudo shells
+        followed by those of the AE augmentation.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``attr['dftSO']`` is ``True``.  The spin-orbit ``jm`` index
+        assignment in :func:`assign_jm` assumes a specific ordering of
+        consecutive (l, m_j) entries that the simple concatenation here
+        does not preserve.  Use a pure pseudo or pure AE basis under
+        spin-orbit.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr.get('dftSO'):
+        raise NotImplementedError(
+            'Mixed (pseudo + AE) basis is not supported with spin-orbit. '
+            "Use a fully pseudo basis (configuration='minimal') or a "
+            'fully AE basis (explicit configuration dict with '
+            'internal=True) instead.'
+        )
+
+    # Pseudo part: full PSWFC set from UPF.  This populates
+    # ``arry['jchia']`` as a side effect.
+    basis, shells = build_pswfc_basis_all(data_controller)
+
+    # AE augmentation part.  ``build_aewfc_basis`` is driven by
+    # ``arry['configuration']`` which, in the mixed scheme, holds only
+    # the *extra* shells per element.  Skip entirely if the
+    # augmentation set is empty.
+    aug_cfg = arry.get('configuration') or {}
+    aug_cfg = {e: list(s) for e, s in aug_cfg.items() if s}
+    if not aug_cfg:
+        return basis, shells
+
+    saved_cfg = arry.get('configuration')
+    saved_jchia = dict(arry.get('jchia', {}))
+    try:
+        arry['configuration'] = aug_cfg
+        ae_basis, ae_shells = build_aewfc_basis(data_controller)
+    finally:
+        arry['configuration'] = saved_cfg
+
+    # ``build_aewfc_basis`` overwrites ``arry['jchia']``; restore the
+    # pseudo entries (the mixed scheme is non-SO so jchia is unused
+    # downstream, but keep the bookkeeping consistent).
+    arry['jchia'] = saved_jchia
+
+    basis.extend(ae_basis)
+    for sp, ls in ae_shells.items():
+        if sp in shells:
+            shells[sp] = list(shells[sp]) + list(ls)
+        else:
+            shells[sp] = list(ls)
+
+    return basis, shells
+
+
 def fft_wfc_G2R_old(wfc, igwx, gamma_only, mill, nr1, nr2, nr3, omega):
     """Transform a wavefunction from G-space to real space (deprecated).
 

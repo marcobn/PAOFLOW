@@ -1,0 +1,23 @@
+Example 16 — Auto-augmented internal basis presets
+=================================================
+
+Demonstrates the ``"minimal"`` and ``"extended"`` string presets
+accepted by ``PAOFLOW.projections(..., configuration=...)``.
+
+The example reuses the QE outputs produced by ``example10`` (GaAs):
+
+  1) Run example10 first to generate ``example10/GaAs.save``.
+  2) From this directory, run ``python main.py``.
+
+The script prints ``nawf`` and the number of high-projectability bands
+for three configurations:
+
+  * the original hand-written shell list (manual),
+  * the ``"minimal"`` preset (UPF valence only),
+  * the ``"extended"`` preset (minimal + rule-based polarization).
+
+The ``"extended"`` preset should give nawf >= "minimal" nawf and at
+least as many bands above the projectability threshold.
+
+Override the GaAs.save location via the ``PAOFLOW_GAAS_SAVEDIR``
+environment variable if needed.
