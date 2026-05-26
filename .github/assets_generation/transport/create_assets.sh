@@ -202,16 +202,22 @@ run_transport_scripts() {
 
   if [[ -f "$jobdir/main.py" ]]; then
     ran=true
-    (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$logfile" 2>&1
+    if ! (cd "$jobdir" && "$PYTHON_EXEC" main.py) >> "$logfile" 2>&1; then
+      return 1
+    fi
   fi
 
   if [[ -f "$jobdir/main_conductor.py" ]]; then
     ran=true
     if [[ -f "$jobdir/conductor.yaml" ]]; then
-      (cd "$jobdir" && "$PYTHON_EXEC" main_conductor.py) >> "$logfile" 2>&1
+      if ! (cd "$jobdir" && "$PYTHON_EXEC" main_conductor.py) >> "$logfile" 2>&1; then
+        return 1
+      fi
     else
       while IFS= read -r -d '' yaml_file; do
-        (cd "$jobdir" && "$PYTHON_EXEC" main_conductor.py "$(basename "$yaml_file")") >> "$logfile" 2>&1
+        if ! (cd "$jobdir" && "$PYTHON_EXEC" main_conductor.py "$(basename "$yaml_file")") >> "$logfile" 2>&1; then
+          return 1
+        fi
       done < <(find "$jobdir" -maxdepth 1 -type f -name 'conductor*.yaml' -print0 | sort -z)
     fi
   fi
@@ -219,15 +225,20 @@ run_transport_scripts() {
   if [[ -f "$jobdir/main_current.py" ]]; then
     ran=true
     if [[ -f "$jobdir/current.yaml" ]]; then
-      (cd "$jobdir" && "$PYTHON_EXEC" main_current.py) >> "$logfile" 2>&1
+      if ! (cd "$jobdir" && "$PYTHON_EXEC" main_current.py) >> "$logfile" 2>&1; then
+        return 1
+      fi
     else
       while IFS= read -r -d '' yaml_file; do
-        (cd "$jobdir" && "$PYTHON_EXEC" main_current.py "$(basename "$yaml_file")") >> "$logfile" 2>&1
+        if ! (cd "$jobdir" && "$PYTHON_EXEC" main_current.py "$(basename "$yaml_file")") >> "$logfile" 2>&1; then
+          return 1
+        fi
       done < <(find "$jobdir" -maxdepth 1 -type f -name 'current*.yaml' -print0 | sort -z)
     fi
   fi
 
-  [[ "$ran" = true ]]
+  [[ "$ran" = true ]] || return 2
+  return 0
 }
 
 run_qe_dir() {
@@ -268,10 +279,18 @@ run_qe_dir() {
 run_paoflow_example_dir() {
   local jobdir="$1"
   local label="$2"
+  local status
 
-  if ! run_transport_scripts "$jobdir" "$PAOFLOW_EXAMPLES_LOG"; then
-    log_job "PAOFLOW(examples): $label - skipped"
-    return 0
+  if run_transport_scripts "$jobdir" "$PAOFLOW_EXAMPLES_LOG"; then
+    :
+  else
+    status=$?
+    if [[ $status -eq 2 ]]; then
+      log_job "PAOFLOW(examples): $label - skipped"
+      return 0
+    fi
+    log_job "PAOFLOW(examples): $label - FAILED"
+    return 1
   fi
 
   local outputdir outpath
@@ -315,17 +334,25 @@ run_paoflow_test_dir() {
   local source_jobdir="$3"
   local staging_dir="$4"
   local copied_list outputdir outpath
+  local status
 
   copied_list="$(mktemp)"
   overlay_qe_save_dirs "$source_jobdir" "$jobdir" "$copied_list"
 
-  if ! run_transport_scripts "$jobdir" "$PAOFLOW_TEST_LOG"; then
+  if run_transport_scripts "$jobdir" "$PAOFLOW_TEST_LOG"; then
+    :
+  else
+    status=$?
     while IFS= read -r copied_path; do
       [[ -n "$copied_path" ]] && rm -rf "$copied_path"
     done < "$copied_list"
     rm -f "$copied_list"
-    log_job "PAOFLOW(test): $label - skipped"
-    return 0
+    if [[ $status -eq 2 ]]; then
+      log_job "PAOFLOW(test): $label - skipped"
+      return 0
+    fi
+    log_job "PAOFLOW(test): $label - FAILED"
+    return 1
   fi
 
   outputdir="$(infer_transport_outputdir "$jobdir")"
