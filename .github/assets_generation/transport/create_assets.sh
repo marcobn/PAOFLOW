@@ -427,9 +427,10 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+
+# --all should match QE example: only QE + paoflow-test
 if [[ "$run_qe" = false && "$run_paoflow_examples" = false && "$run_paoflow_test" = false ]]; then
   run_qe=true
-  run_paoflow_examples=true
   run_paoflow_test=true
 fi
 
