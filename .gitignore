@@ -122,6 +122,7 @@ pseudo/
 *tar.gz
 Reference2/
 TODOs/
+*pdos_tot
 
 # MAC files
 .DS_*
