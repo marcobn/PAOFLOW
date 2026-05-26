@@ -25,4 +25,16 @@ export QE_BIN=${QE_BIN:-/home/jayn/qe-7.4.1/bin}
 export PARALLEL_EXEC="srun -n ${SLURM_NTASKS:-4}"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$script_dir/job.sh" --all
+
+chmod u+x "$script_dir/create_assets.sh"
+chmod u+x "$script_dir/build_tar.sh"
+
+create_status=0
+build_status=0
+
+"$script_dir/create_assets.sh" --all || create_status=$?
+"$script_dir/build_tar.sh" --all || build_status=$?
+
+if [[ $create_status -ne 0 || $build_status -ne 0 ]]; then
+	exit 1
+fi

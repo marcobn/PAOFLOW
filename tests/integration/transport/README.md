@@ -25,7 +25,46 @@ Job discovery is implemented in [jobs.py](jobs.py).
 
 ## Local-first workflow
 
-### 1) Build a local asset tarball
+### 1) Generate savedirs and staged Reference outputs
+
+Use the transport asset-generation wrapper on a machine that has QE and the
+required Python environment available:
+
+```bash
+# From repository root
+.github/assets_generation/transport/create_assets.sh --all
+```
+
+Useful selectors:
+
+```bash
+.github/assets_generation/transport/create_assets.sh --all --examples example01
+.github/assets_generation/transport/create_assets.sh --qe --skip-qe-if-save-exists
+```
+
+The script stages test-side `Reference/` outputs under
+`tests/integration/transport/_assets/staging/` by default.
+
+Transport savedirs are discovered recursively and the workflow intentionally
+keeps `*wfc*` files inside `*.save/`.
+
+### 2) Build a local combined asset tarball
+
+Package example `*.save/` directories together with the staged test
+`Reference/` outputs into one tarball:
+
+```bash
+# From repository root
+.github/assets_generation/transport/build_tar.sh --all
+```
+
+By default this writes:
+
+```bash
+.github/assets_generation/transport/_assets/transport_test_assets.tar.gz
+```
+
+### 3) Build directly from existing folders
 
 Create a tarball containing `Reference/` and `*.save` directories for all
 discovered jobs, preserving their paths relative to this directory:
@@ -35,19 +74,20 @@ discovered jobs, preserving their paths relative to this directory:
 mkdir -p examples/transport_examples/_assets
 python .github/assets_generation/transport/build_assets.py \
   --transport-root examples/transport_examples \
+  --reference-root tests/integration/transport/_assets/staging \
   --out examples/transport_examples/_assets/transport_test_assets_dev.tar.gz
 ```
 
 The builder is [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py).
 
-When generating assets through [.github/assets_generation/transport/job.sh](../../../.github/assets_generation/transport/job.sh), QE launch can be controlled via
+When generating assets through [.github/assets_generation/transport/create_assets.sh](../../../.github/assets_generation/transport/create_assets.sh), QE launch can be controlled via
 `PARALLEL_EXEC`:
 
 - serial (default): unset `PARALLEL_EXEC`
 - MPI: `PARALLEL_EXEC="mpirun -np 8"`
 - SLURM: `PARALLEL_EXEC="srun -n 8"`
 
-### 2) Run pytest using the local tarball
+### 4) Run pytest using the local tarball
 
 ```bash
 pytest -q tests/integration/transport/test_transport_examples.py \
@@ -90,7 +130,11 @@ Implementation lives in [assets.py](assets.py).
 
 ## File guide
 
-- [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py): package `Reference/` + `*.save` into tar.gz
+- [.github/assets_generation/transport/create_assets.sh](../../../.github/assets_generation/transport/create_assets.sh): run QE and PAOFLOW to populate transport savedirs and staged test References
+- [.github/assets_generation/transport/build_tar.sh](../../../.github/assets_generation/transport/build_tar.sh): build the combined `transport_test_assets.tar.gz`
+- [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py): package staged `Reference/` + discovered `*.save` into tar.gz
+- [.github/assets_generation/transport/job.sh](../../../.github/assets_generation/transport/job.sh): convenience wrapper for `create_assets.sh` + `build_tar.sh`
+- [.github/assets_generation/transport/upload_release_assets.sh](../../../.github/assets_generation/transport/upload_release_assets.sh): upload `transport_test_assets.tar.gz` to a GitHub release
 - [assets.py](assets.py): resolve/download/verify/extract asset tarball into cache
 - [jobs.py](jobs.py): discover runnable transport jobs
 - [runner.py](runner.py): sandbox runner; overlays assets; runs transport scripts
