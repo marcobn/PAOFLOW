@@ -91,7 +91,7 @@ def do_projectability(data_controller):
         Pn = build_Pn(attr['nawf'], attr['nbnds'], attr['nkpnts'], attr['nspin'], arry['U'])
 
         if attr['verbose']:
-            print('Projectability vector ', Pn)
+            print('Projectability vector: \n', Pn)
 
         # Check projectability and decide bnd
         bnd = 0

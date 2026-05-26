@@ -4,7 +4,91 @@
 # Dense and Banded Skew-Symmetric Matrices".
 # ACM Trans. Math. Software 38, 30 (2012).
 
-"""A package for computing Pfaffians"""
+"""pfaffian — Numerical computation of the Pfaffian for skew-symmetric matrices.
+
+This module is a verbatim inclusion of the reference implementation by
+M. Wimmer [1]_, adapted for use as a PAOFLOW sub-module.  It provides
+efficient routines for computing the Pfaffian and for reducing a
+skew-symmetric matrix to tridiagonal form.
+
+Background
+----------
+For a :math:`2n \\times 2n` skew-symmetric matrix :math:`A = -A^T`, the
+Pfaffian is defined by
+
+.. math::
+
+    \\operatorname{pf}(A) = \\frac{1}{2^n n!}
+        \\sum_{\\sigma \\in S_{2n}} \\operatorname{sgn}(\\sigma)
+        \\prod_{i=1}^{n} a_{\\sigma(2i-1),\\sigma(2i)}
+
+and satisfies :math:`\\operatorname{pf}(A)^2 = \\det(A)`.  For odd-dimensional
+matrices the Pfaffian is defined to be zero.
+
+In PAOFLOW the Pfaffian is used to compute the :math:`\\mathbb{Z}_2`
+topological invariant (time-reversal polarisation) as part of the
+:func:`~PAOFLOW.PAOFLOW.topology` workflow.
+
+Algorithms
+----------
+Three independent algorithms are implemented, providing cross-validation
+and flexibility for different use cases:
+
+**Parlett–Reid (default, method='P')** — :func:`pfaffian_LTL`
+    Reduces :math:`A` to block-tridiagonal form via the :math:`P A P^T = L T L^T`
+    decomposition (:func:`skew_LTL`) with column pivoting.  Runs in
+    :math:`O(n^3)` time and is numerically stable for both real and
+    complex matrices.
+
+**Householder tridiagonalisation (method='H')** — :func:`pfaffian_householder`
+    Reduces :math:`A` to skew-symmetric tridiagonal form via
+    successive Householder reflections (:func:`householder_real` or
+    :func:`householder_complex`).  The Pfaffian is accumulated as the
+    product of the super-diagonal elements of the tridiagonal factor.
+    Also :math:`O(n^3)`.
+
+**Schur decomposition (real only)** — :func:`pfaffian_schur`
+    Uses ``scipy.linalg.schur`` to reduce :math:`A` to real Schur form
+    :math:`A = Z T Z^T`; the Pfaffian is :math:`\\det(Z)\\prod_i t_{2i-1,2i}`.
+    Does *not* exploit skew-symmetry but delegates to a LAPACK FORTRAN
+    routine, making it only slightly slower than :func:`pfaffian_LTL` in
+    practice.
+
+Matrix-reduction utilities
+---------------------------
+:func:`skew_tridiagonalize`
+    Orthogonal/unitary tridiagonalisation :math:`A = Q T Q^T` via
+    Householder reflections; optionally returns :math:`Q`.
+
+:func:`skew_LTL`
+    Unit-lower-triangular factorisation :math:`P A P^T = L T L^T` with
+    partial pivoting; optionally returns :math:`L` and the permutation
+    matrix :math:`P`.
+
+Householder primitives
+----------------------
+:func:`householder_real`, :func:`householder_complex`
+    Compute a Householder vector :math:`v` and scalar :math:`\\tau` such
+    that :math:`(I - \\tau v v^T) x = \\alpha e_1` for real and complex
+    input vectors, respectively.
+
+Recommended usage
+-----------------
+::
+
+    from PAOFLOW.defs.pfaffian import pfaffian
+
+    pf = pfaffian(A)               # Parlett-Reid (default, works for real & complex)
+    pf = pfaffian(A, method='H')   # Householder alternative
+    pf = pfaffian_schur(A)         # Schur-based (real only)
+
+Reference
+---------
+.. [1] M. Wimmer, "Algorithm 923: Efficient Numerical Computation of the
+       Pfaffian for Dense and Banded Skew-Symmetric Matrices",
+       *ACM Trans. Math. Software* **38**, 30 (2012).
+       https://doi.org/10.1145/2331130.2331138
+"""
 
 import cmath
 import math

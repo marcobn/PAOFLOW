@@ -9,6 +9,98 @@
 #   cubic harmonics
 #######################################################################
 
+"""upf_gaussfit — Gaussian fitting of UPF radial pseudo-wavefunctions.
+
+This module fits the radial pseudo-wavefunctions :math:`\\chi_{nl}(r)` stored
+in Quantum ESPRESSO UPF pseudopotential files (versions 1 and 2) with
+contracted Gaussian-type orbital (cGTO) expansions.  The resulting basis
+is used by the ACBN0 and eACBN0 workflows, where two-electron Coulomb
+repulsion integrals computed in :mod:`~PAOFLOW.defs.pyints` require
+analytic GTO representations of the projector functions.
+
+Fitting procedure
+-----------------
+For each pseudo-wavefunction labelled :math:`n l` the radial part is
+approximated as
+
+.. math::
+
+    \\chi_{nl}^\\text{GTO}(r) =
+        \\sum_{j=1}^{N_\\zeta} c_j\\, r^l\\, e^{-\\zeta_j r^2},
+    \\qquad \\zeta_j = \\alpha / \\beta^{j-1}
+
+where :math:`(\\alpha, \\beta)` control the geometric spacing of the
+exponents and :math:`c_j` are the contraction coefficients.  The two-
+parameter exponential progression means only :math:`N_\\zeta + 2` free
+parameters are needed regardless of the contraction length.
+
+The fit minimises the least-squares residual
+:math:`\\sum_r [\\chi_{nl}^\\text{ref}(r) - r\\, \\chi_{nl}^\\text{GTO}(r)]^2`
+using either the Levenberg–Marquardt algorithm (:func:`fit` with
+``least_squares=True``, default) or conjugate-gradient minimisation.
+Starting from :math:`N_\\zeta = 2` the multiplicity is increased by one
+until the residual norm falls below ``threshold`` or :math:`N_\\zeta = 5`.
+
+Angular-momentum conventions
+-----------------------------
+Contraction coefficients output by :func:`build_basis_dict` and
+:func:`write_basis_file` are expressed in the **cubic (real) harmonic**
+basis with the following conventions for each :math:`l`:
+
+* :math:`l=0` (s): single :math:`(0,0,0)` Cartesian GTO.
+* :math:`l=1` (p): :math:`p_z, p_y, p_x` in standard :math:`(n_x,n_y,n_z)` form.
+* :math:`l=2` (d): :math:`d_{z^2}, d_{xz}, d_{yz}, d_{x^2-y^2}, d_{xy}` as
+  linear combinations of Cartesian GTOs (standard :math:`\\sqrt{3}` prefactors).
+* :math:`l=3` (f): :math:`f_{z^3}, f_{xz^2}, f_{yz^2}, f_{z(x^2-y^2)},
+  f_{xyz}, f_{x(x^2-3y^2)}, f_{y(3x^2-y^2)}` with appropriate prefactors.
+
+These Cartesian tuples are consumed directly by
+:func:`~PAOFLOW.defs.pyints.contr_coulomb` to evaluate four-centre
+integrals.
+
+Main entry point
+----------------
+:func:`gaussian_fit`
+    Read a UPF file, fit every pseudo-wavefunction, and return the
+    atomic number together with the full Cartesian-GTO basis dictionary.
+    Automatically increments :math:`N_\\zeta` until convergence.
+
+I/O helpers
+-----------
+:func:`read_upf`
+    Parse the ``<PP_PSWFC>`` section of a UPF v1 or v2 XML file and
+    return the radial grid, integration weights, labels, angular momenta,
+    and wavefunction arrays.
+:func:`read_atom_no_xml`
+    Extract the element symbol and atomic number from a UPF XML header.
+:func:`write_basis_file`
+    Write the fitted basis to a Python-importable ``.py`` file containing
+    a ``basis_data`` dict keyed by atomic number.
+:func:`build_basis_dict`
+    Convert per-orbital coefficient/exponent lists to the nested
+    Cartesian-GTO tuple structure expected by :mod:`~PAOFLOW.defs.pyints`.
+
+Low-level fitting helpers
+--------------------------
+:func:`gto`
+    Evaluate the contracted radial GTO :math:`\\chi^\\text{GTO}(r)` for
+    given exponent/coefficient parameters.
+:func:`target` / :func:`target_squared`
+    Residual vector and sum-of-squares objective for ``scipy`` optimisers.
+:func:`fit`
+    Fit a single pseudo-wavefunction channel with :math:`N_\\zeta`
+    primitive Gaussians; returns coefficients, exponents, and an exit code.
+
+Utilities
+---------
+:data:`spn_map`
+    ``dict`` mapping element symbol → atomic number for Z = 1–112.
+:func:`get_atom_no`
+    Look up atomic number from element symbol; raises if symbol unknown.
+:func:`fact2`
+    Recursive double factorial :math:`n!!` used in GTO normalisation.
+"""
+
 import numpy as np
 
 spn_map = {

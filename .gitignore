@@ -121,6 +121,7 @@ pseudo/
 *.out
 *tar.gz
 Reference2/
+TODOs/
 
 # MAC files
 .DS_*

@@ -198,7 +198,8 @@ def struct_from_inputfile_QE(fname: str) -> dict:
     Notes
     -----
     Currently only control Namelist blocks are parsed; inline comments are
-    stripped.  Hubbard cards are limited to five ``U`` entries.
+    stripped.  The ``HUBBARD`` card accepts an arbitrary number of entries
+    (``U``, ``V``, ``J``, ...), terminated by the next card or end of file.
     """
     import re
     from os.path import isfile
@@ -290,11 +291,25 @@ def struct_from_inputfile_QE(fname: str) -> dict:
     if hl < nf:
         cards['HUBBARD'] = [fstr[hl]]
         hl = scan_blank_lines(hl)
-        for i in range(5):
-            if fstr[hl + i].split()[0] == 'U':
-                cards['HUBBARD'].append(fstr[hl + i])
-            else:
+        # Accept an arbitrary number of HUBBARD entries (U, V, J, J0, B, E, ...)
+        # until the next card keyword or EOF.
+        _card_keywords = {
+            'K_POINTS',
+            'CELL_PARAMETERS',
+            'ATOMIC_POSITIONS',
+            'ATOMIC_SPECIES',
+            'OCCUPATIONS',
+            'CONSTRAINTS',
+            'ADDITIONAL_K_POINTS',
+            'SOLVENTS',
+            'HUBBARD',
+        }
+        while hl < nf:
+            tokens = fstr[hl].split()
+            if not tokens or tokens[0] in _card_keywords:
                 break
+            cards['HUBBARD'].append(fstr[hl])
+            hl += 1
 
     kl = 0
     while kl < nf and 'K_POINTS' not in fstr[kl]:
@@ -363,7 +378,7 @@ def create_atomic_inputfile(calculation, blocks, cards):
             f.write('\n')
 
 
-def create_acbn0_inputfile(prefix, pthr, outputdir):
+def create_acbn0_inputfile(prefix, pthr, outputdir, expand_wedge=False):
     """Generate a PAOFLOW Python driver script for an ACBN0 calculation.
 
     Parameters
@@ -375,6 +390,10 @@ def create_acbn0_inputfile(prefix, pthr, outputdir):
     outputdir : str
         Output directory passed to the :class:`~PAOFLOW.PAOFLOW.PAOFLOW`
         constructor.
+    expand_wedge : bool, optional
+        Forwarded to ``paoflow.pao_hamiltonian``.  ``False`` (default)
+        assumes QE produced the full BZ (``nosym=.true., noinv=.true.``);
+        ``True`` expands the symmetry-reduced wedge to the full grid.
 
     Returns
     -------
@@ -388,5 +407,5 @@ def create_acbn0_inputfile(prefix, pthr, outputdir):
         )
         f.write('paoflow.read_atomic_proj_QE()\n')
         f.write(f'paoflow.projectability(pthr={pthr})\n')
-        f.write('paoflow.pao_hamiltonian(write_binary=True,expand_wedge=False)\n')
+        f.write(f'paoflow.pao_hamiltonian(write_binary=True,expand_wedge={bool(expand_wedge)})\n')
         f.write('paoflow.finish_execution()\n')

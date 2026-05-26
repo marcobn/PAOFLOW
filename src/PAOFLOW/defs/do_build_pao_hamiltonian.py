@@ -1,5 +1,4 @@
 import numpy as np
-
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
@@ -49,6 +48,15 @@ def build_Hks(data_controller):
     nspin = attributes['nspin']
     nkpnts = attributes['nkpnts']
     shift_type = attributes['shift_type']
+    # Local (per-k) projectability threshold.  Bands whose squared PAO
+    # projection at a given k falls below this value are excluded from the
+    # construction at that k-point even if they pass the global ``pthr``
+    # criterion that determines ``bnd``.  This guards against pathological
+    # gauge mixings in degenerate subspaces (e.g. at high-symmetry points
+    # such as Gamma) where one of the otherwise "good" bands can have a
+    # vanishing PAO content and would otherwise be artificially renormalised
+    # to unit norm, corrupting H(k) at that point.
+    pthr_local = attributes.get('pthr_local', 0.5 * attributes.get('pthr', 0.95))
 
     U = arrays['U']
     my_eigsmat = arrays['my_eigsmat']
@@ -61,24 +69,26 @@ def build_Hks(data_controller):
             my_eigs = my_eigsmat[:, ik, ispin]
 
             # Building the Hamiltonian matrix
-            E = np.diag(my_eigs)
             UU = np.transpose(
                 U[:, :, ik, ispin]
             )  # transpose of U. Now the columns of UU are the eigenvector of length nawf
-            norms = 1.0 / np.sqrt(np.real(np.sum(np.conj(UU) * UU, axis=0)))
+            proj_k = np.real(np.sum(np.conj(UU) * UU, axis=0))
+            # Avoid division by zero for vanishing projections.
+            safe_proj = np.where(proj_k > 0.0, proj_k, 1.0)
+            norms = 1.0 / np.sqrt(safe_proj)
             UU[:, :nawf] = UU[:, :nawf] * norms[:nawf]
 
-            # Choose only the eigenvalues that are below the energy shift
-            bnd_ik = 0
-            for n in range(bnd):
-                if my_eigs[n] <= eta:
-                    bnd_ik += 1
+            # Select bands that (i) are below the energy shift and
+            # (ii) have a sizable local projectability.  Bands failing the
+            # local projectability test are dropped at this k-point only.
+            sel = [n for n in range(bnd) if my_eigs[n] <= eta and proj_k[n] > pthr_local]
+            bnd_ik = len(sel)
             if bnd_ik == 0:
                 if rank == 0:
                     print('No Eigenvalues in the selected energy range')
                 comm.Abort()
-            ac = UU[:, :bnd_ik]  # filtering: bnd is defined by the projectabilities
-            ee1 = E[:bnd_ik, :bnd_ik]
+            ac = UU[:, sel]  # filtering: per-k projectability + energy cutoff
+            ee1 = np.diag(my_eigs[sel])
             if shift_type == 0:
                 # option 1 (PRB 2013)
                 Hksaux[:, :, ik, ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta * (
@@ -153,6 +163,9 @@ def do_build_pao_hamiltonian(data_controller):
     if attr['expand_wedge']:
         from .pao_sym import open_grid_wrapper
 
+        # Expands both Hks and (when present) Sks from the IBZ wedge
+        # to the full BZ.  Both transform identically under the point
+        # group: A(Rk) = U(R,k) A(k) U(R,k)^†.
         open_grid_wrapper(data_controller)
 
     attr['nkpnts'] = np.prod(ashape[2:5])
@@ -163,7 +176,17 @@ def do_build_pao_hamiltonian(data_controller):
     # acbn0 flag == 0 - makes H non orthogonal (original basis of the atomic pseudo-orbitals)
     # acbn0 flag == 1 - makes H orthogonal (rotated basis)
 
-    if rank == 0 and attr['expand_wedge']:
+    #  Reshape Hks to (nawf, nawf, nk1, nk2, nk3, nspin) for the IFFT.
+    #  When expand_wedge=False (full BZ already provided by QE, nosym=noinv=.t.),
+    #  open_grid_wrapper is skipped so the reshape must be done unconditionally.
+    #  Skip the reshape if Hks is still on a reduced (IBZ) grid, as is the
+    #  case for the ACBN0 path (which only needs Hks at the IBZ k-points and
+    #  exits before any FFT to real space).
+    #  Also skip when acbn0=True: do_non_ortho (called below) needs the flat
+    #  4-D form (nawf, nawf, nkpnts, nspin); the 6-D reshape would break it
+    #  whenever nkpnts == nk1*nk2*nk3 (nosym=noinv=.true. grids, or when
+    #  expand_wedge has already filled the full BZ for eACBN0).
+    if rank == 0 and not attr.get('acbn0', False) and arry['Hks'].size == int(np.prod(ashape)):
         arry['Hks'] = np.reshape(arry['Hks'], ashape)
 
         # Shift the Fermi energy to zero

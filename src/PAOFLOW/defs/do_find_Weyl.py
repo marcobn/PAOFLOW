@@ -16,6 +16,36 @@ size = comm.Get_size()
 
 
 def band_loop_H(ini_ik, end_ik, HRaux, kq, R):
+    """Fourier-transform H(R) to H(k) for a slice of k-points.
+
+    Evaluates
+
+    .. math::
+
+        H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
+                         H(\\mathbf{R})\,e^{2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
+
+    for the k-point range ``[ini_ik, end_ik)``.  The phase factors are
+    computed in vectorised form via ``np.tensordot``.
+
+    Parameters
+    ----------
+    ini_ik : int
+        Start index of the k-point slice (inclusive).
+    end_ik : int
+        End index of the k-point slice (exclusive).
+    HRaux : ndarray, shape (nawf, nawf, nR, nspin)
+        Real-space Hamiltonian on the R-grid in crystal coordinates.
+    kq : ndarray, shape (3, nkpnts)
+        k-points in crystal (fractional) coordinates.
+    R : ndarray, shape (nR, 3)
+        Real-space lattice vectors produced by :func:`get_R_grid_fft`.
+
+    Returns
+    -------
+    auxh : ndarray, shape (nawf, nawf, 1, nspin)
+        Complex H(k) for the requested k-point slice.
+    """
     nawf, _, _, nspin = HRaux.shape
     kdot = np.zeros((1, R.shape[0]), dtype=complex, order='C')
     kdot = np.tensordot(R, 2.0j * np.pi * kq[:, ini_ik:end_ik], axes=([1], [0]))
@@ -30,6 +60,26 @@ def band_loop_H(ini_ik, end_ik, HRaux, kq, R):
 
 
 def gen_eigs(HRaux, kq, R):
+    """Compute band eigenvalues at a single k-point.
+
+    Builds H(k) via :func:`band_loop_H` and diagonalises it with
+    ``numpy.linalg.eigvalsh`` (upper triangle, Hermitian) for each spin
+    channel.
+
+    Parameters
+    ----------
+    HRaux : ndarray, shape (nawf, nawf, nR, nspin)
+        Real-space Hamiltonian.
+    kq : ndarray, shape (3,)
+        Single k-point in crystal (fractional) coordinates.
+    R : ndarray, shape (nR, 3)
+        Real-space lattice vectors.
+
+    Returns
+    -------
+    E_kp : ndarray, shape (1, nawf, nspin)
+        Sorted eigenvalues in ascending order for each spin channel.
+    """
     # Load balancing
 
     nawf, _, _, nspin = HRaux.shape
@@ -47,11 +97,52 @@ def gen_eigs(HRaux, kq, R):
 
 
 def get_gap(HR, kq, R, nelec):
+    """Return the direct band gap at k-point ``kq`` between bands ``nelec-1`` and ``nelec``.
+
+    This is the scalar objective function minimised by :func:`find_min` to
+    locate Weyl (band-crossing) points.  A gap of zero indicates a
+    band-touching or crossing.
+
+    Parameters
+    ----------
+    HR : ndarray, shape (nawf, nawf, nR, nspin)
+        Real-space Hamiltonian.
+    kq : ndarray, shape (3,)
+        k-point in crystal (fractional) coordinates.
+    R : ndarray, shape (nR, 3)
+        Real-space lattice vectors.
+    nelec : int
+        Number of occupied bands; the gap is evaluated between band
+        index ``nelec - 1`` (HOMO) and ``nelec`` (LUMO).
+
+    Returns
+    -------
+    float
+        Energy difference ``E[nelec] - E[nelec - 1]`` at ``kq``.
+    """
     E_kp = gen_eigs(HR, kq, R)
     return E_kp[0, nelec, 0] - E_kp[0, nelec - 1, 0]
 
 
 def get_R_grid_fft(nr1, nr2, nr3):
+    """Build the real-space R-grid corresponding to an FFT supercell.
+
+    Generates all ``nr1 * nr2 * nr3`` lattice vectors in fractional
+    coordinates and folds them into the centred interval ``[-0.5, 0.5)``
+    so that the Fourier sums converge correctly with the PAOFLOW
+    convention.
+
+    Parameters
+    ----------
+    nr1, nr2, nr3 : int
+        Number of FFT grid points along each reciprocal-space direction.
+
+    Returns
+    -------
+    R : ndarray, shape (nr1 * nr2 * nr3, 3)
+        Lattice vectors in units of the corresponding primitive vectors,
+        ordered as ``k + j*nr3 + i*nr2*nr3``.
+    """
     R = np.zeros((nr1 * nr2 * nr3, 3))
 
     for i in range(nr1):
@@ -87,6 +178,30 @@ def get_search_grid(
     snk3_range=[-0.5, 0.5],
     endpoint=False,
 ):
+    """Generate a uniform 3-D search grid in fractional BZ coordinates.
+
+    Creates a full-factorial mesh with ``nk1 * nk2 * nk3`` points by
+    taking the outer product of three ``np.linspace`` arrays and reshaping
+    to a flat list of k-vectors.  These grid points are used as the lower
+    bounds of the optimisation boxes in :func:`find_min`.
+
+    Parameters
+    ----------
+    nk1, nk2, nk3 : int
+        Number of grid points along each reciprocal direction.
+    snk1_range, snk2_range, snk3_range : list of float, optional
+        ``[start, stop]`` range for each direction.  Default is the full
+        first Brillouin zone ``[-0.5, 0.5]``.
+    endpoint : bool, optional
+        If ``False`` (default), the stop value is excluded, matching the
+        Monkhorst–Pack convention and avoiding zone-boundary duplication.
+
+    Returns
+    -------
+    grid : ndarray, shape (nk1 * nk2 * nk3, 3)
+        Cartesian product of the three 1-D grids, ordered with the first
+        index varying slowest (``indexing='ij'``).
+    """
     nk1_arr = np.linspace(snk1_range[0], snk1_range[1], num=nk1, endpoint=endpoint)
     nk2_arr = np.linspace(snk2_range[0], snk2_range[1], num=nk2, endpoint=endpoint)
     nk3_arr = np.linspace(snk3_range[0], snk3_range[1], num=nk3, endpoint=endpoint)
@@ -96,6 +211,40 @@ def get_search_grid(
 
 
 def find_weyl(data_controller, test_rad, search_grid):
+    """Locate and classify Weyl points in the Brillouin zone.
+
+    Orchestrates the full Weyl-point search workflow:
+
+    1. Calls :func:`find_min` to minimise the band gap over a coarse
+       search grid and collect band-touching candidates.
+    2. If symmetry is enabled (``attr['symmetrize']``), expands candidates
+       to all symmetry-equivalent k-points via :func:`get_equiv_k`.
+    3. Optionally uses ``z2pack`` to compute the Chern number on a small
+       sphere around each candidate; points with non-zero Chern number are
+       confirmed as Weyl points.  If ``z2pack`` is unavailable, chirality
+       is recorded as ``'?'``.
+    4. Writes a summary table to ``weyl_points.dat`` in ``attr['opath']``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``HRs``, ``sym_rot``, ``b_vectors``, ``sym_TR``,
+        ``nelec``, ``symmetrize``, ``verbose``, ``dftMAG``, ``dftSO``,
+        ``alat``, ``opath``.
+    test_rad : float
+        Radius (in fractional BZ units) of the ``z2pack`` Chern-number
+        sphere.  Clamped to the half-distance between the nearest pair of
+        candidates.
+    search_grid : list of int, length 3
+        ``[nk1, nk2, nk3]`` number of cells to divide the BZ into for the
+        initial coarse gap-minimisation search.
+
+    Output files (written to ``opath``)
+    ------------------------------------
+    ``weyl_points.dat``
+        Formatted table with columns: index, Cartesian k-coordinates in
+        units of ``2\u03c0/alat``, Chern number, and energy.
+    """
     import os
 
     arry, attr = data_controller.data_dicts()
@@ -211,6 +360,44 @@ def find_weyl(data_controller, test_rad, search_grid):
 
 
 def find_min(HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8, 8, 8]):
+    """Find band-gap minima across the BZ using local optimisation.
+
+    Divides the first BZ into ``nk1 * nk2 * nk3`` rectangular boxes and
+    runs an ``L-BFGS-B`` minimisation of :func:`get_gap` inside each box,
+    with the box centre as the initial guess.  The BZ boxes are distributed
+    across MPI ranks for parallelism; partial results are collected with
+    :func:`~.communication.gather_full`.
+
+    On rank 0, candidates with a gap smaller than ``1e-5`` are retained.
+    If symmetry is enabled (``symf``), they are further de-duplicated by
+    sorting on energy and removing entries with identical energies (to
+    ``4`` decimal places), leaving only symmetry-inequivalent Weyl points.
+
+    Parameters
+    ----------
+    HRs : ndarray, shape (nawf, nawf, nR, nspin)
+        Real-space Hamiltonian.
+    nelec : int
+        Number of occupied bands; gap is ``E[nelec] - E[nelec-1]``.
+    R : ndarray, shape (nR, 3)
+        Real-space lattice vectors from :func:`get_R_grid_fft`.
+    a_vectors : ndarray, shape (3, 3)
+        Reciprocal lattice vectors (unused directly here; kept for
+        interface consistency).
+    symf : bool
+        If ``True``, de-duplicate candidates using energy degeneracy.
+    verbose : bool
+        Print intermediate candidate information to stdout.
+    search_grid : list of int, optional
+        ``[nk1, nk2, nk3]`` subdivision of the BZ.  Default ``[8, 8, 8]``.
+
+    Returns
+    -------
+    candidates : ndarray, shape (nc, 3) or ``None`` on non-root ranks
+        k-coordinates (fractional) of the band-touching candidates.
+    ene : ndarray, shape (nc,) or ``None`` on non-root ranks
+        Energy at the LUMO band for each candidate.
+    """
     snk = tuple(search_grid[i] for i in range(3))
     # snk2 = search_grid[1]
     # snk3 = search_grid[2]
@@ -287,6 +474,35 @@ def find_min(HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8, 8, 8]):
 
 
 def get_equiv_k(kp, symop, sym_TR, mag_soc):
+    """Expand a set of k-points to all symmetry-equivalent images.
+
+    Applies each space-group rotation ``symop[isym]`` (and optionally its
+    time-reversal partner ``-k``) to every k-point in ``kp``, then
+    de-duplicates the result to return only unique images within the
+    first BZ (folded to ``[-0.5, 0.5)``).
+
+    Time-reversal symmetry adds the set ``{-k}`` unless the system is a
+    magnetic SOC calculation (``mag_soc = dftMAG and dftSO``).
+
+    Parameters
+    ----------
+    kp : ndarray, shape (nc, 3)
+        Input k-points in crystal (fractional) coordinates.
+    symop : ndarray, shape (nsym, 3, 3)
+        Rotation matrices of the crystal point group.
+    sym_TR : ndarray of bool, shape (nsym,)
+        ``True`` for operations that include time reversal (i.e. act as
+        ``k' = -R k``).
+    mag_soc : bool
+        ``True`` when both ``dftMAG`` and ``dftSO`` are active; disables
+        the automatic ``{-k}`` extension.
+
+    Returns
+    -------
+    newk_tot : ndarray, shape (nu, 3)
+        All unique symmetry-equivalent k-points, rounded to ``4`` decimal
+        places.
+    """
     from .pao_sym import correct_roundoff
 
     # if we have time inversion sym

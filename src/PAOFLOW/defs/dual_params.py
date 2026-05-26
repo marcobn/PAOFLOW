@@ -74,10 +74,19 @@ ANGSTROM_AU = 1.0 / 0.52917720859  # Bohr → Å
 def _signed_geom_mean_array(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Element-wise signed geometric mean for complex arrays.
 
-    sign(Re(a) + Re(b)) · √|Re(a) · Re(b)|
+    Computes ``sign(Re(a) + Re(b)) * sqrt(|Re(a) * Re(b)|)``.
+    Zeros are handled gracefully.  Imaginary parts are discarded
+    because SK models without SOC are real-valued.
 
-    Handles zeros gracefully.  Imaginary parts are discarded
-    (SK models without SOC are real-valued).
+    Parameters
+    ----------
+    a, b : ndarray
+        Input arrays of the same shape (complex or real).
+
+    Returns
+    -------
+    ndarray, complex
+        Signed geometric mean, same shape as inputs.
     """
     ar = np.real(a)
     br = np.real(b)
@@ -421,7 +430,28 @@ def _dd_value(da, db, lx, ly, lz, sh):
 
 
 def _sk_value(orb_a, orb_b, lx, ly, lz, sh):
-    """Compute a single SK matrix element for orbital pair."""
+    """Compute a single Slater-Koster matrix element for an orbital pair.
+
+    Dispatches to the appropriate angular-integral formula (ss, sp, pp,
+    sd, pd, dd) using the direction cosines ``(lx, ly, lz)`` and the
+    Slater-Koster hopping integrals in ``sh``.
+
+    Parameters
+    ----------
+    orb_a, orb_b : str
+        Orbital labels, e.g. ``'s'``, ``'px'``, ``'dxy'``.
+    lx, ly, lz : float
+        Direction cosines of the bond vector.
+    sh : dict
+        Hopping integrals keyed by SK channel (``'sss'``, ``'sps'``,
+        ``'pps'``, ``'ppp'``, ``'sds'``, ``'pds'``, ``'pdp'``,
+        ``'dds'``, ``'ddp'``, ``'ddd'``).
+
+    Returns
+    -------
+    float
+        SK matrix element ``<orb_a | H | orb_b>``.
+    """
     # s-s
     if orb_a == 's' and orb_b == 's':
         return sh['sss']
@@ -459,7 +489,31 @@ def _sk_value(orb_a, orb_b, lx, ly, lz, sh):
 
 
 def _f_cutoff_vec(r, r_taper, r_cut):
-    """Vectorized smooth cutoff function."""
+    """Vectorized smooth cosine cutoff function.
+
+    Returns 1 for ``r <= r_taper``, 0 for ``r >= r_cut``, and a
+    smooth cosine ramp in between:
+
+    .. math::
+
+        f_c(r) = \\frac{1}{2}\\left[1 + \\cos\\!\\left(
+            \\pi\\,\\frac{r - r_{\\text{taper}}}
+                {r_{\\text{cut}} - r_{\\text{taper}}}\\right)\\right]
+
+    Parameters
+    ----------
+    r : ndarray
+        Distances (same units as ``r_taper`` and ``r_cut``).
+    r_taper : float
+        Distance at which the ramp begins (must be < ``r_cut``).
+    r_cut : float
+        Hard cutoff radius; contributions beyond this are zero.
+
+    Returns
+    -------
+    ndarray
+        Cutoff weights in ``[0, 1]``, same shape as ``r``.
+    """
     result = np.zeros_like(r)
     mask_inner = (r > 1e-10) & (r <= r_taper)
     mask_taper = (r > r_taper) & (r < r_cut)
@@ -498,7 +552,24 @@ _onsite_group = {
 
 
 def _get_gamma_map(gamma_spec):
-    """Build per-SK-channel gamma map from the gamma specification."""
+    """Build a per-SK-channel screening-exponent map from ``gamma_spec``.
+
+    Accepts a scalar (applied uniformly to all SK channels), a dict
+    keyed by SK parameter name (``'sss'``, ``'pps'``, ...), or a dict
+    keyed by angular-momentum pair (``'ss'``, ``'pp'``, ``'sd'``, ...).
+    Missing entries default to zero.
+
+    Parameters
+    ----------
+    gamma_spec : float or dict
+        Scalar exponent or mapping from SK/lp-pair keys to exponents.
+
+    Returns
+    -------
+    dict
+        Mapping from every SK parameter name in ``_sk_param_names`` to
+        its screening exponent.
+    """
     if isinstance(gamma_spec, (int, float)):
         return {k: float(gamma_spec) for k in _sk_param_names}
     gmap = {}
@@ -512,12 +583,54 @@ def _get_gamma_map(gamma_spec):
 
 
 def _screened_hoppings(shell_params, S_ij, gamma_map):
-    """Apply screening modulation to shell hopping parameters."""
+    """Apply environment-dependent screening to hopping parameters.
+
+    Multiplies each Slater-Koster integral by the screening factor
+    ``exp(-gamma * S_ij)``, where ``S_ij`` is the local coordination
+    sum between atoms ``i`` and ``j``.
+
+    Parameters
+    ----------
+    shell_params : dict
+        Unscreened SK hopping integrals for one neighbor shell
+        (keys: ``'sss'``, ``'pps'``, etc.).
+    S_ij : float
+        Screening coordination sum for the bond.
+    gamma_map : dict
+        Per-channel screening exponents from :func:`_get_gamma_map`.
+
+    Returns
+    -------
+    dict
+        Screened hopping integrals with the same keys as
+        ``shell_params``.
+    """
     return {k: v * np.exp(-gamma_map.get(k, 0.0) * S_ij) for k, v in shell_params.items()}
 
 
 def _mix_sk_params(params_a, params_b, rule):
-    """Mix two sets of SK hopping parameters."""
+    """Mix two sets of SK hopping parameters according to a mixing rule.
+
+    Parameters
+    ----------
+    params_a, params_b : dict
+        SK hopping integrals for two environments
+        (keys: ``'sss'``, ``'pps'``, etc.).
+    rule : str
+        ``'geometric'`` — signed geometric mean;
+        ``'arithmetic'`` — simple average;
+        ``'bulk'`` or ``'first'`` — use ``params_a`` unchanged.
+
+    Returns
+    -------
+    dict
+        Mixed SK hopping integrals.
+
+    Raises
+    ------
+    ValueError
+        If ``rule`` is not recognised.
+    """
     if rule in ('bulk', 'first'):
         return dict(params_a)
     elif rule == 'arithmetic':
@@ -535,7 +648,26 @@ def _mix_sk_params(params_a, params_b, rule):
 
 
 def _mix_gamma_maps(gmap_a, gmap_b, rule):
-    """Mix two gamma maps."""
+    """Mix two per-SK-channel screening-exponent maps.
+
+    Parameters
+    ----------
+    gmap_a, gmap_b : dict
+        Per-channel gamma maps from :func:`_get_gamma_map`.
+    rule : str
+        ``'geometric'``, ``'arithmetic'``, ``'bulk'``, or ``'first'``.
+        See :func:`_mix_sk_params` for semantics.
+
+    Returns
+    -------
+    dict
+        Mixed gamma map with the same SK-channel keys.
+
+    Raises
+    ------
+    ValueError
+        If ``rule`` is not recognised.
+    """
     if rule in ('bulk', 'first'):
         return dict(gmap_a)
     elif rule == 'arithmetic':
@@ -1518,6 +1650,32 @@ class DualParamModel:
         labeling: str = 'coordination',
         label_kwargs: Optional[dict] = None,
     ):
+        """Create a dual-parameter tight-binding model.
+
+        Parameters
+        ----------
+        params_bulk : dict
+            EDTB parameter dict for the bulk environment.
+        params_surf : dict
+            EDTB parameter dict for the surface environment.
+        geometry : dict
+            Geometry dict (alat, a_vectors, atoms).
+        labels : list of str, optional
+            Explicit per-atom ``'bulk'``/``'surface'`` labels.  If
+            omitted, labels are determined automatically by ``labeling``.
+        mixing : str, optional
+            Mixing rule for interface bonds: ``'geometric'`` (default),
+            ``'arithmetic'``, or ``'first'``/``'bulk'``.
+        labeling : str, optional
+            Automatic labeling method when ``labels`` is ``None``:
+            ``'coordination'`` (default), ``'geometric'``, or
+            ``'manual'`` (requires ``surface_indices`` in
+            ``label_kwargs``).
+        label_kwargs : dict, optional
+            Extra keyword arguments forwarded to the labeling function
+            (e.g. ``r_cut_bohr``, ``threshold``, ``n_surface_layers``,
+            ``surface_indices``).
+        """
         if label_kwargs is None:
             label_kwargs = {}
 
@@ -1565,7 +1723,24 @@ class DualParamModel:
         geometry: Union[str, Path],
         **kwargs,
     ) -> 'DualParamModel':
-        """Load from JSON files."""
+        """Load bulk and surface parameters and geometry from JSON files.
+
+        Parameters
+        ----------
+        params_bulk : str or Path
+            Path to the bulk EDTB parameter JSON file.
+        params_surf : str or Path
+            Path to the surface EDTB parameter JSON file.
+        geometry : str or Path
+            Path to the geometry JSON file.
+        **kwargs
+            Forwarded to the constructor (``mixing``, ``labeling``,
+            ``labels``, ``label_kwargs``).
+
+        Returns
+        -------
+        DualParamModel
+        """
         p_bulk = read_params(params_bulk)
         p_surf = read_params(params_surf)
         geom = read_geometry(geometry)
@@ -1579,7 +1754,23 @@ class DualParamModel:
         geometry: dict,
         **kwargs,
     ) -> 'DualParamModel':
-        """Create from two EDTBModel objects and a new geometry."""
+        """Create a dual-parameter model from two fitted ``EDTBModel`` objects.
+
+        Parameters
+        ----------
+        model_bulk : EDTBModel
+            Fitted model for the bulk environment.
+        model_surf : EDTBModel
+            Fitted model for the surface environment.
+        geometry : dict
+            Target geometry dict (may differ from training geometry).
+        **kwargs
+            Forwarded to the constructor.
+
+        Returns
+        -------
+        DualParamModel
+        """
         return cls(model_bulk.params, model_surf.params, geometry, **kwargs)
 
     # ── Delegated methods ─────────────────────────────────────

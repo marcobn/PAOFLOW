@@ -8,6 +8,41 @@ from .smearing import gaussian, intgaussian, intmetpax, metpax
 
 
 def do_dielectric_tensor(data_controller, ene):
+    """Compute and write the frequency-dependent dielectric tensor.
+
+    Iterates over every tensor component pair ``(i, j)`` listed in
+    ``arrays['d_tensor']`` and for each one calls :func:`do_epsilon` to
+    obtain the imaginary part ``\u03b5\u2082`` (``epsi``), real part ``\u03b5\u2081`` (``epsr``),
+    electron energy-loss spectrum ``\u03b5\u2082/(\u03b5\u2081\u00b2+\u03b5\u2082\u00b2)`` (``eels``), and the
+    Kramers\u2013Kronig-derived real part (``ieps``).  Each quantity is written
+    to a two-column ``.dat`` file.
+
+    For diagonal components the plasmon frequency is estimated from the
+    f-sum rule:
+
+    .. math::
+
+        \\omega_p = \\sqrt{\\frac{2}{\\pi} \\int_0^\\infty \\omega\\,\\varepsilon_2(\\omega)\,d\\omega}
+
+    and printed to stdout.
+
+    Spin-polarised runs (``nspin = 2``) loop over both spin channels and
+    append ``_0`` / ``_1`` suffixes to each output file.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``d_tensor``, ``nspin``, ``smearing``, ``degauss``, ``opath``.
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.  Must not start exactly at zero (shifted
+        internally to ``1e-5 eV`` by :func:`do_epsilon`).
+
+    Output files (written to ``opath``)
+    ------------------------------------
+    ``epsi_XY.dat``, ``epsr_XY.dat``, ``eels_XY.dat``, ``ieps_XY.dat``
+        Two-column (energy, value) files for each tensor component ``XY``;
+        spin-polarised runs also produce ``_0`` and ``_1`` variants.
+    """
     from .constants import LL
 
     arrays, attributes = data_controller.data_dicts()
@@ -75,6 +110,39 @@ def do_dielectric_tensor(data_controller, ene):
 
 
 def do_jdos(data_controller, ene, jdos_smeartype):
+    """Compute and write the joint density of states (JDOS).
+
+    The JDOS counts the number of interband transitions at each photon
+    energy
+
+    .. math::
+
+        J(\\omega) = \\sum_{nm\\mathbf{k}} f_{n\\mathbf{k}}
+                     (1 - f_{m\\mathbf{k}})
+                     \\delta(E_{m\\mathbf{k}} - E_{n\\mathbf{k}} - \\omega)
+
+    broadened with either a Gaussian or Lorentzian of width ``delta``.
+    Results from all MPI ranks are summed with ``MPI.Allreduce`` and written
+    to ``jdos.dat`` (spin-unpolarised) or ``jdos_0.dat`` / ``jdos_1.dat``
+    (spin-polarised).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``my_eigsmat``, ``kpnts_wght``, ``nbnds``, ``nspin``,
+        ``dftSO``, ``smearing``, ``degauss``, ``delta``, ``insulator``,
+        ``opath``.
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.
+    jdos_smeartype : str
+        Broadening kernel: ``'gauss'`` (Gaussian) or ``'lorentz'``
+        (Lorentzian).
+
+    Output files (written to ``opath``)
+    ------------------------------------
+    ``jdos.dat`` or ``jdos_0.dat`` / ``jdos_1.dat``
+        Two-column (energy, JDOS) file(s).
+    """
     _, attributes = data_controller.data_dicts()
     esize = ene.size
 
@@ -110,6 +178,57 @@ def do_jdos(data_controller, ene, jdos_smeartype):
 
 
 def do_epsilon(data_controller, ene, ispin, ipol, jpol):
+    """Compute the dielectric-function components for one spin channel and polarization pair.
+
+    Calls :func:`eps_loop` to accumulate the imaginary and real parts of the
+    interband dielectric function across all k-points (reducing partial sums
+    via ``MPI.Allreduce``), then applies the physical prefactor and constructs
+    the remaining spectra:
+
+    * ``epsi`` \u2014 imaginary part ``\u03b5\u2082(\u03c9)`` (interband absorption)
+    * ``epsr`` \u2014 real part ``\u03b5\u2081(\u03c9)`` (Sellmeier dispersion)
+    * ``eels`` \u2014 electron energy-loss spectrum
+      ``\u03b5\u2082 / (\u03b5\u2081\u00b2 + \u03b5\u2082\u00b2)``
+    * ``ieps`` \u2014 Kramers\u2013Kronig real part reconstructed by a discrete
+      numerical integration
+
+    The SI prefactor is
+
+    .. math::
+
+        A = \\frac{2\\,e\\,(10^{10})
+                   a_0^{\\,2}}{\\varepsilon_0\,N_k\,\\Omega}
+
+    with ``a_0`` the Bohr radius, ``\u03b50`` the vacuum permittivity, ``N_k`` the
+    number of k-points, and ``\u03a9`` the unit-cell volume in Bohr\u00b3.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``pksp``, ``nkpnts``, ``omega``, ``bnd``, ``nspin``,
+        ``dftSO``, ``insulator``, ``smearing``, ``degauss``, ``delta``,
+        ``intrasmear``.
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.  A value of exactly zero is shifted to
+        ``1e-5 eV`` to avoid division by zero.
+    ispin : int
+        Spin channel index (0 or 1).
+    ipol : int
+        Polarization index of the electric field (0\u20132 = x, y, z).
+    jpol : int
+        Second polarization index (0\u20132 = x, y, z).
+
+    Returns
+    -------
+    epsi : ndarray, shape (ne,)
+        Imaginary part of the dielectric function.
+    epsr : ndarray, shape (ne,)
+        Real part of the dielectric function.
+    eels : ndarray, shape (ne,)
+        Electron energy-loss spectrum.
+    ieps : ndarray, shape (ne,)
+        Kramers\u2013Kronig-derived real part.
+    """
     from .constants import BOHR_RADIUS_ANGS, ELECTRONVOLT_SI
 
     # Compute the dielectric tensor
@@ -170,6 +289,52 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
 
 
 def eps_loop(data_controller, ene, ispin, ipol, jpol):
+    """Inner BZ loop: accumulate the interband dielectric-function integrands.
+
+    Evaluates the Kubo\u2013Greenwood sum
+
+    .. math::
+
+        \\varepsilon_2(\\omega) \\propto \\sum_{nm\\mathbf{k}}
+            \\frac{f_n - f_m}{E_{mn}}
+            |\\langle m | p_i | n \\rangle|^2
+            \\frac{\\eta\\omega}
+                 {(E_{mn}^2 - \\omega^2)^2 + \\eta^2\\omega^2}
+
+    and its real-part companion simultaneously, using the PAO momentum
+    matrix ``pksp``.  A separate Drude-like intraband term is added for
+    metals when ``attributes['insulator']`` is ``False``.
+
+    Occupations are computed from the integrated Fermi function (step,
+    Gaussian, or Methfessel\u2013Paxton) according to ``attributes['smearing']``.
+    Overflow errors from large exponentials in the Fermi function are
+    silenced locally and restored on return.
+
+    This function operates on the local k-point slice held by the calling
+    MPI rank; the caller is responsible for reducing partial sums across
+    ranks.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``E_k``, ``pksp``, ``bnd``, ``nspin``, ``dftSO``,
+        ``insulator``, ``smearing``, ``degauss``, ``delta``, ``intrasmear``.
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.
+    ispin : int
+        Spin channel index.
+    ipol : int
+        First polarization index (row of momentum matrix).
+    jpol : int
+        Second polarization index (column of momentum matrix).
+
+    Returns
+    -------
+    epsi : ndarray, shape (ne,)
+        Local partial sum for the imaginary part (unscaled).
+    epsr : ndarray, shape (ne,)
+        Local partial sum for the real part (unscaled).
+    """
     orig_over_err = np.geterr()['over']
     np.seterr(over='raise')
 
@@ -290,6 +455,51 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
 
 
 def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
+    """Inner BZ loop: accumulate the joint-density-of-states integrand.
+
+    Iterates over all k-points and interband pairs ``(n, m)`` with
+    ``E_{mn} > 0`` and computes
+
+    .. math::
+
+        J(\\omega) = \\sum_{nm\\mathbf{k}} w_k\,f_{n\\mathbf{k}}
+                     (1 - f_{m\\mathbf{k}})
+                     g(E_{mn}, \\omega, \\eta)
+
+    where ``g`` is either a Gaussian (``'gauss'``) or Lorentzian
+    (``'lorentz'``) of width ``delta``, and ``w_k`` are the k-point
+    weights.  The result is normalized by the total oscillator-strength
+    sum and the spin degeneracy factor.
+
+    Occupations are computed from the integrated Fermi function (step,
+    Gaussian, or Methfessel\u2013Paxton) selected by ``attributes['smearing']``.
+
+    This function operates on the local k-point slice; the caller reduces
+    partial sums with ``MPI.Allreduce``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``my_eigsmat``, ``kpnts_wght``, ``nbnds``, ``nspin``,
+        ``dftSO``, ``smearing``, ``degauss``, ``delta``, ``insulator``.
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.
+    ispin : int
+        Spin channel index.
+    jdos_smeartype : str
+        Broadening kernel: ``'gauss'`` or ``'lorentz'``.
+
+    Returns
+    -------
+    jdos : ndarray, shape (ne,)
+        Local partial JDOS contribution from this MPI rank's k-points
+        (normalized but not yet globally reduced).
+
+    Raises
+    ------
+    ValueError
+        If ``jdos_smeartype`` is not ``'gauss'`` or ``'lorentz'``.
+    """
     arrays, attributes = data_controller.data_dicts()
     intersmear = attributes['delta']
     smearing = attributes['smearing']

@@ -16,8 +16,6 @@
     ntyp=2,
     ecutwfc = 150,
     occupations='fixed',
-    nosym=.true.
-    noinv=.true.
     nbnd=28
  /   
 

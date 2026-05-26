@@ -8,7 +8,29 @@ rank = comm.Get_rank()
 
 
 def _fd_criterion_gen(threshold):
+    """Return a root-finding criterion function for the Fermi-Dirac tail.
+
+    The returned callable evaluates ``f(x) - threshold``, where
+    ``f(x) = 1 / (exp(x) + 1)`` is the Fermi-Dirac function.  Finding
+    its root gives the reduced energy ``x = (\\varepsilon - \\mu) / k_BT``
+    beyond which the occupation drops below ``threshold``.  This is used
+    to determine the energy window over which the Fermi-Dirac function is
+    non-negligible.
+
+    Parameters
+    ----------
+    threshold : float
+        Occupation level at the desired tail cut-off (e.g. ``1e-8``).
+
+    Returns
+    -------
+    callable
+        A scalar function ``_fd_criterion(x)`` whose root is the reduced
+        energy corresponding to ``threshold`` occupation.
+    """
+
     def _fd_criterion(x):
+        """Fermi-Dirac value minus threshold; root gives the tail cut-off."""
         return 1.0 / (np.exp(x) + 1.0) - threshold
 
     return _fd_criterion

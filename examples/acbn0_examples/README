@@ -1,0 +1,38 @@
+
+ACBN0 and eACBN0 examples
+=========================
+
+Compatible with Quantum ESPRESSO v7.1 and newer.
+
+Examples
+--------
+  MgO/   -- ACBN0 on-site U for Mg-3s and O-2p (rocksalt)
+  MnO/   -- ACBN0 on-site U for MnA-3d, MnB-3d and O-2p (AFM-II rocksalt)
+  ZnO/   -- ACBN0 on-site U for Zn-3d and O-2p (wurtzite)
+  Si/    -- eACBN0 U+V for Si-3s and Si-3p, with intersite V on Si-Si bonds
+  GaAs/  -- eACBN0 U+V for Ga/As s and p manifolds, with intersite V on Ga-As bonds
+
+All examples follow the same layout
+------------------------------------
+* main.py should always be run in serial: it spawns MPI sub-processes for QE,
+  PAOFLOW, and the Hartree-integral kernel.
+
+* Edit the constants block at the top of main.py to set paths and MPI options:
+    PREFIX       -- QE calculation prefix (e.g. 'MgO')
+    OUT          -- output directory for PAOFLOW dumps  (e.g. './tmp/')
+    MPI_QE       -- MPI launcher for pw.x / projwfc.x  (e.g. 'mpirun -np 8')
+    MPI_PY       -- MPI launcher for PAOFLOW            (e.g. 'mpirun -np 1')
+    MPI_HARTREE  -- MPI launcher for Coulomb integrals  (e.g. 'mpirun -np 8')
+    QE_PATH      -- path to QE bin/  (leave empty if QE is on PATH)
+    PY_PATH      -- path to the Python interpreter directory
+
+* Template files (prefix.scf.in, prefix.nscf.in, prefix.projwfc.in) and all
+  pseudopotentials must be present in the working directory before running.
+
+* Hubbard occupations and initial U/V values can be provided either in the QE
+  input templates or via set_hubbard_parameters / set_intersite_pairs in
+  main.py.  Any call in main.py supersedes the template values.
+
+* Three equivalent ways to specify Hubbard-active orbitals are shown in
+  comments inside each main.py (list, dict with seed U, dict with seed U and
+  fixed occupation).

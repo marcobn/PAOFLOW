@@ -5,6 +5,49 @@ from .constants import ANGSTROM_AU
 
 
 def do_berry_phase(self):
+    """Compute the Berry or Zak phase for a set of occupied (or selected) bands.
+
+    Dispatches to one of four k-space sampling strategies based on
+    ``attr['berry_kspace_method']``:
+
+    ``'path'``
+        Evaluate the phase along a 1-D high-symmetry path.  The result is a
+        single scalar phase (or a vector of per-band phases when
+        ``berry_eigvals`` is True) written to ``<fname>.dat``.
+
+    ``'track'``
+        Sweep a 1-D path as a function of a transverse k-coordinate supplied
+        by ``berry_kpath_funct``.  Returns a 1-D array of phases (one per
+        transverse point) and writes ``<fname>.dat``.
+
+    ``'circle'``
+        Integrate along a circular contour of radius ``berry_kradius``
+        centered at ``berry_kcenter`` in the kx–ky plane.  Writes a single
+        scalar to ``<fname>.dat``.
+
+    ``'square'``
+        Tile the k-plane with elementary plaquettes and compute a phase on
+        each.  The resulting 2-D phase map (Berry flux) is written to
+        ``<fname>.dat`` together with a corner k-grid file.
+
+    Parameters
+    ----------
+    self : PAOFLOW
+        The calling :class:`PAOFLOW.PAOFLOW` instance; provides access to
+        ``data_controller`` and indirectly to all DataController arrays and
+        attributes.
+
+    Reads from DataController
+    -------------------------
+    ``berry_occupied``, ``berry_sub``, ``berry_contin``, ``berry_fname``,
+    ``berry_kspace_method``, ``berry_nk1``, ``berry_nk2``, ``berry_kpath_funct``,
+    ``berry_kradius``, ``berry_kcenter``, ``berry_kxlim``, ``berry_kylim``,
+    ``berry_eigvals``, ``berry_closed``, ``berry_method``, ``nelec``, ``HRs``.
+
+    Writes to DataController
+    ------------------------
+    ``berry_phase`` (array or scalar), ``berry_flux`` (square mode only).
+    """
     import os
 
     arry, attr = self.data_controller.data_dicts()
@@ -176,6 +219,42 @@ def do_berry_phase(self):
 
 
 def do_phase(data_controller):
+    """Compute the Berry (or Zak) phase from pre-computed Bloch eigenvectors.
+
+    Constructs the gauge-invariant phase as the argument of the determinant of
+    the product of overlap matrices between consecutive k-points along the
+    contour stored in ``arry['berry_kq']``:
+
+    .. math::
+
+        \\phi = -\\operatorname{Im} \\ln \\det
+               \\prod_{k} \\langle u_k | u_{k+1} \\rangle
+
+    Each overlap matrix is SVD-projected to the nearest unitary matrix before
+    multiplication, which makes the result independent of the individual gauge
+    choices at each k-point.
+
+    For the Zak variant (``method='zak'``) the boundary link includes the
+    reciprocal-lattice phase factor ``exp(-i G·r)`` that accounts for the
+    non-periodicity of the Bloch factor across the full Brillouin zone.
+
+    When ``berry_eigvals`` is True, the eigenvalues of the product matrix are
+    returned instead of its determinant, yielding per-band (Wannier-centre)
+    phases.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``berry_v_k``, ``berry_contour``, ``berry_closed``,
+        ``berry_method``, ``berry_eigvals``, ``berry_occupied``, ``berry_sub``,
+        ``nelec``, ``alat``, ``b_vectors``, ``tau``, ``naw``, ``HRs``.
+
+    Returns
+    -------
+    float or ndarray
+        If ``berry_eigvals`` is False: single scalar phase in radians.
+        If ``berry_eigvals`` is True: 1-D array of per-band phases, sorted.
+    """
     arry, attr = data_controller.data_dicts()
 
     v_kp = arry['berry_v_k']
@@ -312,6 +391,29 @@ def do_phase(data_controller):
 
 
 def bands_calc(data_controller):
+    """Diagonalise H(k) on the Berry-phase k-path and return eigenvalues and eigenvectors.
+
+    Scatters ``arry['berry_kq']`` across k-point pools, evaluates the
+    Hamiltonian at each k via :func:`band_loop_H`, then solves the
+    generalised eigenvalue problem with ``scipy.linalg.eigh``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Must contain ``HRs`` (real-space Hamiltonian), ``berry_kq``
+        (k-point array, shape ``(3, nkpts)``), ``R``, ``npool``, ``nspin``.
+
+    Returns
+    -------
+    E_kp_aux : ndarray, shape (nkpts_local, nawf, nspin)
+        Band eigenvalues along the local k-point slice.
+    v_kp_aux : ndarray, shape (nkpts_local, nawf, nawf, nspin)
+        Corresponding eigenvectors (columns are eigenstates).
+
+    Side effects
+    ------------
+    Stores the local k-slice Hamiltonian in ``arry['berry_Hks']``.
+    """
     from .communication import scatter_full
 
     arry, attr = data_controller.data_dicts()
@@ -344,6 +446,31 @@ def bands_calc(data_controller):
 
 
 def band_loop_H(data_controller, kq_aux):
+    """Evaluate the PAO Hamiltonian H(k) at an arbitrary set of k-points.
+
+    Performs the Fourier sum
+
+    .. math::
+
+        H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})
+                         e^{2\\pi i \\mathbf{k} \\cdot \\mathbf{R}}
+
+    using a single ``numpy.tensordot`` contraction over real-space lattice
+    vectors ``R``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Must contain ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``) and
+        ``R`` (shape ``(nR, 3)``, lattice vectors in crystal coordinates).
+    kq_aux : ndarray, shape (3, nkpts_local)
+        k-points for the local MPI slice, in crystal coordinates.
+
+    Returns
+    -------
+    Haux : ndarray, shape (nawf, nawf, nkpts_local, nspin), complex
+        H(k) at each requested k-point for each spin channel.
+    """
     arry, _ = data_controller.data_dicts()
 
     nksize = kq_aux.shape[1]
@@ -362,6 +489,34 @@ def band_loop_H(data_controller, kq_aux):
 
 
 def do_berry_bands(data_controller):
+    """Set up the real-space lattice grid and interpolate bands on the Berry-phase contour.
+
+    Orchestrates the full band interpolation required before phase evaluation:
+
+    1. Converts ``alat`` from Bohr to Ångström for the duration of the call.
+    2. Calls :func:`get_R_grid_fft` to populate the real-space lattice-vector
+       array ``R`` and associated weights.
+    3. For ``'path'`` and ``'track'`` methods, builds the k-point mesh via
+       :func:`berry_kpnts_interpolation_mesh`.
+    4. Rotates k-points from crystal to Cartesian (reciprocal-space) coordinates
+       using ``b_vectors``.
+    5. Calls :func:`bands_calc` and stores eigenvalues and eigenvectors in
+       ``arry['berry_E_k']`` and ``arry['berry_v_k']``.
+    6. Restores ``alat`` to Bohr before returning.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Must contain ``HRs``, ``b_vectors``, ``alat``, ``berry_kspace_method``,
+        and (for path/track modes) ``berry_path``, ``berry_high_sym_points``,
+        ``berry_nk``, ``ibrav``, ``a_vectors``.
+
+    Side effects
+    ------------
+    Populates ``arry['berry_E_k']``, ``arry['berry_v_k']``, ``arry['R']``,
+    ``arry['R_wght']``, and (path/track) ``arry['berry_kq']``,
+    ``arry['berry_contour']``.
+    """
     from .constants import ANGSTROM_AU
     from .get_R_grid_fft import get_R_grid_fft
 
@@ -429,7 +584,21 @@ def berry_kpnts_interpolation_mesh(data_controller):
 
 
 def no_2pi(x, ref):
-    "Make x as close to clos by adding or removing 2pi"
+    """Shift ``x`` by multiples of 2π until it is as close as possible to ``ref``.
+
+    Parameters
+    ----------
+    x : float
+        Phase value to adjust.
+    ref : float
+        Reference phase to match.
+
+    Returns
+    -------
+    float
+        ``x`` shifted by an integer multiple of 2π such that
+        ``|ref - x| ≤ π``.
+    """
 
     while abs(ref - x) > np.pi:
         if ref - x > np.pi:

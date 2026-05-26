@@ -14,8 +14,6 @@
    nspin = 2,
    starting_magnetization(1) = -0.2,
    starting_magnetization(2) = 0.2
-   !nosym = .t.
-   !noinv = .t.
  /
  &electrons
    diagonalization = 'david',

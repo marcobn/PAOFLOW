@@ -2,6 +2,187 @@ import numpy as np
 
 
 class PAOFLOW:
+    """Post-processing engine for Pseudo-Atomic Orbital (PAO) electronic structure calculations.
+
+    ``PAOFLOW`` reads the output of a plane-wave DFT code (Quantum ESPRESSO or VASP),
+    projects the Bloch eigenstates onto a compact PAO basis, and exposes a high-level
+    Python API for a broad range of electronic, topological, and transport properties.
+    All heavy numerics are MPI-parallelised through ``mpi4py`` and optionally distributed
+    across k-point pools to keep per-process memory bounded.
+
+    Typical workflow
+    ----------------
+    ::
+
+        from PAOFLOW import PAOFLOW
+
+        pf = PAOFLOW(workpath='./', savedir='prefix.save', outputdir='output')
+        pf.projections()           # build PAO projections (or read_atomic_proj_QE)
+        pf.projectability()        # drop low-projectability bands
+        pf.pao_hamiltonian()       # construct H(R) and H(k) in the PAO basis
+        pf.interpolated_hamiltonian()  # Fourier-interpolate onto a denser k-grid
+        pf.pao_eigh()              # diagonalise → E(k), v(k)
+        pf.gradient_and_momenta()  # ∇_k H, momentum matrix
+        pf.dos()                   # density of states / projected DOS
+        pf.transport()             # Boltzmann transport tensors
+        pf.finish_execution()      # print timings and memory usage
+
+    Parameters (constructor)
+    ------------------------
+    workpath : str, default ``'./'``
+        Path to the working directory.
+    outputdir : str, default ``'output'``
+        Name of the output sub-directory created under ``workpath``.
+    inputfile : str, optional
+        Path to an XML input file that configures the run.
+    savedir : str, optional
+        Path to the QE ``.save`` directory (required when not using ``inputfile``).
+    model : dict, optional
+        Parameters for building the Hamiltonian from a tight-binding model instead
+        of a DFT calculation.  Must contain at least the key ``'label'``.
+    npool : int, default 1
+        Number of k-point pools.  Increasing ``npool`` distributes k-point work
+        across MPI ranks and reduces per-process memory.
+    smearing : str, optional
+        Global smearing type for BZ integration (``None``, ``'m-p'``, or ``'gauss'``).
+    save_overlaps : bool, default ``False``
+        Retain the wavefunction overlap matrices ``Sks`` in the ``DataController``
+        after Hamiltonian construction.  Required for ACBN0.
+    acbn0 : bool, default ``False``
+        Orthogonalise the PAO Hamiltonian using the ACBN0 procedure.
+    verbose : bool, default ``False``
+        Enable detailed debugging output.
+    restart : bool, default ``False``
+        Resume from a previously saved ``.json`` dump (see :meth:`restart_dump`).
+    dft : str, default ``'QE'``
+        DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
+
+    Key attributes
+    --------------
+    data_controller : DataController
+        Central data store; all arrays (``HRs``, ``Hks``, ``E_k``, …) and
+        scalar attributes live in its ``data_arrays`` and ``data_attributes``
+        dictionaries.
+    comm, rank, size : MPI communicator and process identifiers.
+
+    Methods — PAO Hamiltonian
+    -------------------------
+    projections(\**kw)
+        Compute PAO projections from pseudopotential or all-electron basis sets,
+        replacing ``projwfc.x``.
+    read_atomic_proj_QE()
+        Read pre-computed projections from QE's ``atomic_proj.xml``.
+    projectability(pthr, shift)
+        Identify and optionally shift low-projectability bands.
+    pao_hamiltonian(shift_type, insulator, write_binary, expand_wedge, symmetrize, …)
+        Build the real-space Hamiltonian ``H(R)`` (stored as ``HRs``) and the
+        k-space Hamiltonian ``H(k)`` (stored as ``Hks``).
+    add_external_fields(Efield, Bfield, HubbardU)
+        Apply electric field, magnetic field, or Hubbard-U corrections to ``HRs``.
+    write_Hamiltonian(fname)
+        Dump ``HRs`` in the Z2Pack format.
+
+    Methods — Hamiltonian manipulation
+    ------------------------------------
+    interpolated_hamiltonian(nfft1, nfft2, nfft3, reshift_Ef)
+        Fourier-interpolate onto a denser k-grid via zero-padding, producing ``Hksp``.
+    doubling_Hamiltonian(nx, ny, nz)
+        Double the supercell in one or more directions.
+    cutting_Hamiltonian(x, y, z)
+        Trim periodic images from ``HRs`` along selected axes.
+    adhoc_spin_orbit(naw, phi, theta, lambda_p, lambda_d, soc_strengh, soc_species)
+        Add phenomenological spin-orbit coupling to ``HRs`` without a DFT+SOC run.
+
+    Methods — Band structure and eigenvalues
+    -----------------------------------------
+    bands(ibrav, band_path, high_sym_points, spin_orbit, fname, nk)
+        Compute and write the band structure along a high-symmetry path.
+    pao_eigh(bval)
+        Diagonalise ``Hksp`` to obtain eigenvalues ``E_k`` and eigenvectors ``v_k``.
+    gradient_and_momenta(band_curvature)
+        Compute ∇_k H (``dHksp``) and the momentum matrix ``pksp``.  Optionally
+        compute the band-curvature tensor.
+    adaptive_smearing(smearing, afac)
+        Compute adaptive smearing widths ``deltakp`` for BZ integration.
+    effective_mass(emin, emax, ne)
+        Calculate effective mass tensor components along kx, ky, kz.
+
+    Methods — Spectral and spatial quantities
+    -------------------------------------------
+    dos(do_dos, do_pdos, delta, emin, emax, ne)
+        Total and projected density of states (supports adaptive smearing).
+    density(nr1, nr2, nr3)
+        Real-space electron density on a uniform grid.
+    fermi_surface(fermi_up, fermi_dw)
+        Extract the Fermi surface within an energy window.
+    spin_texture(fermi_up, fermi_dw)
+        Map the spin expectation value ⟨S⟩ across the Fermi surface.
+    wave_function_projection(dimension)
+        Site-projected wave-function weights.
+    site_projected_bands(site_proj)
+        Band structure weighted by on-site probability density.
+    ipr(fname)
+        Inverse participation ratio (IPR) of PAO eigenstates.
+    doping(tmin, tmax, nt, delta, emin, emax, ne, doping_conc, core_electrons, fname)
+        Chemical potential as a function of carrier doping and temperature.
+
+    Methods — Topology and Berry physics
+    ----------------------------------------
+    topology(eff_mass, Berry, spin_Hall, spin_orbit, spol, ipol, jpol)
+        Berry curvature, effective mass, and spin Berry curvature along the
+        k-path, including Z2 invariant support.
+    berry_phase(kspace_method, berry_path, high_sym_points, …)
+        Berry/Zak phase via the discretized product formula (Resta 1994).
+    anomalous_Hall(do_ac, emin, emax, fermi_up, fermi_dw, ne, delta, a_tensor)
+        Anomalous Hall conductivity (and optionally magnetic circular dichroism).
+    spin_Hall(twoD, do_ac, emin, emax, ne, delta, fermi_up, fermi_dw, s_tensor, …)
+        Spin Hall conductivity and spin circular dichroism.
+    rashba_edelstein(emin, emax, ne, temps, twoD, lt, st, …)
+        Rashba–Edelstein (inverse spin galvanic effect) tensor.
+    find_weyl_points(symmetrize, test_rad, search_grid)
+        Locate Weyl nodes in the BZ via Chern-number integration.
+    spin_operator(spin_orbit, sh_l, sh_j)
+        Build the spin operator matrix ``Sj`` in the PAO basis.
+
+    Methods — Transport
+    --------------------
+    transport(tmin, tmax, nt, emin, emax, ne, scattering_channels, …)
+        Boltzmann semi-classical transport tensors (conductivity, Seebeck, thermal
+        conductivity) over a temperature and energy grid.
+    dielectric_tensor(delta, intrasmear, emin, emax, ne, d_tensor, degauss)
+        Frequency-dependent real and imaginary parts of the dielectric tensor.
+    jdos(delta, emin, emax, ne, jdos_smeartype)
+        Joint density of states.
+
+    Methods — Utilities
+    --------------------
+    print_data_keys()
+        Print all keys stored in the DataController dictionaries.
+    memory_check()
+        Estimate peak memory usage in GBytes.
+    restart_dump(fname_prefix)
+        Pickle the current DataController state for later resumption.
+    restart_load(fname_prefix)
+        Restore a previously pickled DataController state.
+    report_module_time(mname)
+        Print wall-clock time elapsed since the last timer reset.
+    finish_execution()
+        Print total run time and (if verbose) aggregate memory usage across ranks.
+
+    Notes
+    -----
+    - The ``DataController`` (``self.data_controller``) is the single source of
+      truth for all intermediate results.  Its ``data_arrays`` dict holds NumPy
+      arrays (e.g. ``HRs``, ``E_k``, ``pksp``); ``data_attributes`` holds scalar
+      configuration values (e.g. ``nawf``, ``nspin``, ``nkpnts``).
+    - Each public method guards its core computation in a ``try/except`` block and
+      calls ``self.report_exception`` on failure.  Setting
+      ``abort_on_exception = True`` in the DataController attributes causes the
+      exception to be re-raised immediately.
+    - MPI barriers are inserted automatically at the start and end of every
+      timed module via :meth:`report_module_time`.
+    """
+
     data_controller = None
 
     comm = rank = size = None
