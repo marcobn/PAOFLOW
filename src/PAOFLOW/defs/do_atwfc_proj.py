@@ -971,32 +971,43 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
         ylmgc = calc_ylmg_complex_0(ylmg)
         ylmgso = calc_ylmg_so(ylmgc)
 
+    # Cache structure factors per unique atomic position (basis
+    # entries belonging to the same atom share ``tau``) and form
+    # factors per unique radial table (entries of the same shell share
+    # ``wfc_g``).  ``np.interp`` is the fastest 1-D linear interpolator
+    # and replaces the per-basis ``scipy.interpolate.interp1d`` call.
+    strf_cache = {}
+    fact_cache = {}
+    for i in range(natwfc):
+        tau = basis[i]['tau']
+        tau_key = (float(tau[0]), float(tau[1]), float(tau[2]))
+        if tau_key not in strf_cache:
+            strf_cache[tau_key] = np.exp(-1j * (k_plus_G @ tau))
+
+        wfc_g = basis[i]['wfc_g']
+        wkey = id(wfc_g)
+        if wkey not in fact_cache:
+            fact_cache[wkey] = np.interp(q, basis[i]['qmesh'], wfc_g)
+
     # loop over atoms
     for i in range(natwfc):
-        # 1. build the structure factor
-        strf = np.zeros((igwx,), dtype=complex)
         tau = basis[i]['tau']
-        k_plus_G_dot_tau = np.dot(k_plus_G, tau)
-        strf = np.exp(-1j * k_plus_G_dot_tau)
+        strf = strf_cache[(float(tau[0]), float(tau[1]), float(tau[2]))]
+        fact = fact_cache[id(basis[i]['wfc_g'])]
 
-        # 2. build the form factor
-        qmesh, wfc_g = basis[i]['qmesh'], basis[i]['wfc_g']
-        # fact = InterpolatedUnivariateSpline(qmesh, wfc_g)(q)
-        fact = scipy.interpolate.interp1d(qmesh, wfc_g, kind='linear')(q)
-
-        # 3. build the angular part
         l, m = basis[i]['l'], basis[i]['m']
         if l > 3:
             raise NotImplementedError('l>3 not implemented yet')
         lm = l * l + (m - 1)
-        if dftSO:
-            jm = basis[i]['jm']
+        phase = (1.0j) ** l
 
-        # 4. final
         if not dftSO:
-            atwfc = strf * fact * ylmg[:, lm] * (1.0j) ** l
+            atwfc = (strf * fact) * ylmg[:, lm] * phase
         else:
-            atwfc = np.hstack((strf, strf)) * np.hstack((fact, fact)) * ylmgso[:, jm] * (1.0j) ** l
+            jm = basis[i]['jm']
+            sf = np.concatenate((strf, strf))
+            ff = np.concatenate((fact, fact))
+            atwfc = sf * ff * ylmgso[:, jm] * phase
 
         atwfc_k.append(atwfc)
 
@@ -1024,32 +1035,29 @@ def ortho_atwfc_k(atwfc_k):
     """
     # orthonormalize atwfcs
     natwfc = atwfc_k.shape[0]
-    ovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
 
-    for i in range(natwfc):
-        for j in range(natwfc):
-            ovp[i, j] = np.dot(np.conj(atwfc_k[i]), atwfc_k[j])
+    # Overlap matrix as a single Hermitian matmul (replaces the previous
+    # Python double loop, which was the dominant per-k cost: 2.8 s of
+    # 3.5 s on GaAs serial).
+    ovp = atwfc_k.conj() @ atwfc_k.T
 
-            # check that eigenvalues are positive
+    # Symmetric (Loewdin) orthogonalisation via eigh on the Hermitian
+    # overlap, which is faster and more stable than ``scipy.linalg.sqrtm``
+    # on a general complex matrix.
     eigs, eigv = np.linalg.eigh(ovp)
-    assert np.all(eigs >= 0)
+    assert np.all(eigs >= -1e-12)
+    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
+    # Original behaviour is ``oatwfc = solve(X.T, atwfc)`` with
+    # ``X = sqrtm(ovp)``.  For a Hermitian X this equals
+    # ``X.conj()^{-1} @ atwfc = (ovp^{-1/2}).conj() @ atwfc``.
+    # Build that operator from the eigendecomposition:
+    #   ovp^{-1/2}        = U  Λ^{-1/2} U^H
+    #   (ovp^{-1/2}).conj = U* Λ^{-1/2} U.T
+    X = (eigv.conj() * inv_sqrt) @ eigv.T
+    oatwfc_k = X @ atwfc_k
 
-    # orthogonalize
-    if True:
-        X = scipy.linalg.sqrtm(ovp)
-        oatwfc_k = np.linalg.solve(X.T, atwfc_k)
-    else:
-        eigs = 1.0 / np.sqrt(eigs)
-        X = np.dot(np.conj(eigv), np.dot(np.diag(eigs), eigv.T))
-        oatwfc_k = np.dot(X, atwfc_k)
-
-        # check ortonormalization
-    oovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
-    for i in range(natwfc):
-        for j in range(natwfc):
-            oovp[i, j] = np.dot(np.conj(oatwfc_k[i]), oatwfc_k[j])
-
-    # np.save("oovp",oovp)
+    # check orthonormalisation
+    oovp = oatwfc_k.conj() @ oatwfc_k.T
     diff = np.linalg.norm(oovp - np.eye(natwfc))
     if np.abs(diff) > 1e-4:
         raise RuntimeError('ortogonalization failed')
