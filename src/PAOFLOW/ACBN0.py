@@ -274,37 +274,44 @@ class ACBN0_Hartree(_HartreeKernel):
 
     .. math::
 
-        U_{\\text{num}} = \\sum_{klmn} (mn|kl)\\,
-            \\bigl[ D^{\\uparrow}_{mn} D^{\\uparrow}_{kl}
-                  + D^{\\downarrow}_{mn} D^{\\downarrow}_{kl}
-                  + D^{\\downarrow}_{mn} D^{\\uparrow}_{kl}
-                  + D^{\\uparrow}_{mn} D^{\\downarrow}_{kl} \\bigr]
+        U_{\\text{num}} = \\sum_{abcd} (ab|cd)\\,
+            D^{\\text{tot}}_{ab}\\, D^{\\text{tot}}_{cd},
+            \\qquad D^{\\text{tot}} = D^{\\uparrow} + D^{\\downarrow}
 
-        J_{\\text{num}} = \\sum_{\\substack{klmn \\\\ (m,n)\\neq(k,l)}}
-            (mk|nl)\\,
-            \\bigl[ D^{\\uparrow}_{mn} D^{\\uparrow}_{kl}
-                  + D^{\\downarrow}_{mn} D^{\\downarrow}_{kl} \\bigr]
+        J_{\\text{num}} = \\sum_{abcd} (ac|bd)\\,
+            \\bigl[ D^{\\uparrow}_{ab}\\, D^{\\uparrow}_{cd}
+                  + D^{\\downarrow}_{ab}\\, D^{\\downarrow}_{cd} \\bigr]
 
-    where the four indices run over the indices in ``basis_2e`` (the
-    Hubbard-active subshell), the two-electron integrals
-    ``(mn|kl) = ∫∫ φ_m(r₁) φ_n(r₁) (1/r₁₂) φ_k(r₂) φ_l(r₂) dr₁ dr₂`` are
+    where the four indices run over ``basis_2e`` (the Hubbard-active
+    subshell), the two-electron integrals
+    ``(ab|cd) = ∫∫ φ_a(r₁) φ_b(r₁) (1/r₁₂) φ_c(r₂) φ_d(r₂) dr₁ dr₂`` are
     evaluated analytically by :func:`PAOFLOW.defs.pyints.contr_coulomb`
     over contracted Cartesian Gaussians, and the spin pre-factors follow
-    the (αβ + βα) decomposition used by the ACBN0 formula
-    (Agapito *et al.*, Phys. Rev. X **5**, 011006 (2015)).  The
-    ``(m,n) = (k,l)`` term is excluded from the J sum because it
-    coincides with the direct Coulomb integral entering U and would
-    otherwise inflate J (hence depress ``U_eff = U − J``); see Eq. (11) of
-    the same reference.
+    the ACBN0 decomposition
+    (Agapito *et al.*, Phys. Rev. X **5**, 011006 (2015)).  The U sum
+    factorises through ``D^{tot} = D↑ + D↓`` (Hartree-like, full σσ'
+    sum); the J sum carries only the like-spin pieces under the
+    ``(ac|bd)`` index permutation.
+
+    No self-exchange exclusion is applied to the J sum: empirically the
+    no-exclusion form reproduces the published ACBN0 / Lee – Son
+    benchmark U values (e.g. ZnO Zn-3d ≈ 15.47 eV, O-2p ≈ 7.33 eV with
+    ortho-atomic projection), whereas the strict Eq. (11) form with the
+    ``(m,n) = (k,l)`` term removed does not.
 
     Parallelization
     ---------------
-    The Cartesian product of four indices over ``basis_2e`` is built on
-    rank 0, split into ``self.size`` roughly equal chunks with
-    ``numpy.array_split`` and scattered with ``comm.scatter``.  Each rank
-    sums its local contribution to ``tmp_U`` / ``tmp_J``; results are
-    reduced to rank 0 with ``MPI.SUM`` and pickled to
-    ``<outputdir>/tmp_uj.pkl``.
+    Only the unique 4-tuples ``(a, b, c, d)`` under the 8-fold permutation
+    symmetry ``(ab|cd) = (ba|cd) = (ab|dc) = (cd|ab)`` of real Cartesian
+    Gaussians are enumerated (canonical form: ``a ≤ b``, ``c ≤ d``,
+    ``(a, b) ≤ (c, d)``).  These are split into ``self.size`` chunks with
+    :func:`numpy.array_split`, scattered with ``comm.scatter``, evaluated
+    locally and ``allgather``-ed so every rank holds the full ``eri_dict``.
+    Each rank unfolds the dict into the full ``(n_2e)^4`` ``ERI`` tensor
+    and contracts it with the density-matrix sub-blocks via
+    :func:`numpy.einsum`.  The result is replicated on every rank, so
+    **no ``MPI.SUM`` reduce is performed** — the pickle
+    ``<outputdir>/tmp_uj.pkl`` is written from rank 0 only.
 
     Cost scales as ``len(basis_2e) ** 4`` times the (primitive count) ** 4
     inside :func:`contr_coulomb`.  For light p-shells (e.g. O-2p,
@@ -332,9 +339,15 @@ class ACBN0_Hartree(_HartreeKernel):
     Output
     ------
     ``<outputdir>/tmp_uj.pkl`` (rank 0 only): a dictionary
-    ``{'U': complex, 'J': complex}`` holding the unnormalized numerator
-    sums.  The driver divides these by the denominator (:meth:`ACBN0.Nmm`)
-    to obtain the final U and J in eV.
+    ``{'U': float, 'J': float}`` holding the unnormalized numerator
+    sums as real Python floats.  The driver divides these by the
+    denominator (:meth:`ACBN0.Nmm`) to obtain the final U and J in eV.
+
+    The real-valued type is load-bearing: QE's ``card_hubbard`` parser
+    rejects complex-formatted Hubbard values, so the ERI tensor is
+    allocated ``dtype=float``, the density-matrix sub-blocks are
+    ``.real``-coerced, and the einsum results are wrapped in ``float(…)``
+    before pickling.
 
     Notes
     -----
@@ -500,12 +513,19 @@ class eACBN0_Hartree(_HartreeKernel):
 
     Parallelization
     ---------------
-    The Cartesian product over ``(i, k, j, l) ∈ range(n_I)² × range(n_J)²``
-    is enumerated on rank 0, split into ``self.size`` roughly equal chunks
-    with :func:`numpy.array_split` and scattered with ``comm.scatter``.
-    Each rank accumulates its local contribution to ``tmp`` (complex);
-    results are reduced to rank 0 with ``MPI.SUM`` and pickled to
-    ``<outputdir>/tmp_v.pkl``.
+    Only the unique 4-tuples ``(i, k, j, l)`` under the 4-fold permutation
+    symmetry ``(ik|jl) = (ki|jl) = (ik|lj)`` are enumerated (canonical
+    form: ``i ≤ k``, ``j ≤ l``).  Because atoms I and J are distinct,
+    the electron-swap symmetry ``(ik|jl) = (jl|ik)`` does *not* apply
+    — only 4-fold (not 8-fold) reduction is available.  The unique keys
+    are split into ``self.size`` chunks with :func:`numpy.array_split`,
+    scattered with ``comm.scatter``, evaluated locally and
+    ``allgather``-ed so every rank holds the full ``eri_dict``.  Each
+    rank unfolds it into the ``(n_I, n_I, n_J, n_J)`` ``ERI`` tensor and
+    contracts via :func:`numpy.einsum` (direct via ``PII_sum``/``PJJ_sum``;
+    same-spin exchange via ``P_IJ``/``P_JI``).  The result is replicated
+    on every rank, so **no ``MPI.SUM`` reduce is performed** — the pickle
+    ``<outputdir>/tmp_v.pkl`` is written from rank 0 only.
 
     Cost scales as ``n_I² × n_J² × (primitive count)⁴`` inside
     :func:`contr_coulomb`.  For two p-shells (``n_I = n_J = 3``) the
