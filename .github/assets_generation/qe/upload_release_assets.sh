@@ -37,29 +37,13 @@ else
     echo "Release ${TAG} already exists."
 fi
 
-echo "Removing old versions of assets if they exist..."
-
-gh release delete-asset "${TAG}" qe_assets.tar.gz \
-    --repo "${REPO}" \
-    --yes \
-    >/dev/null 2>&1 || true
-
-gh release delete-asset "${TAG}" paoflow_assets.tar.gz \
-    --repo "${REPO}" \
-    --yes \
-    >/dev/null 2>&1 || true
-
-gh release delete-asset "${TAG}" SHA256SUMS \
-    --repo "${REPO}" \
-    --yes \
-    >/dev/null 2>&1 || true
-
-echo "Uploading updated assets..."
+echo "Uploading/replacing assets..."
 
 gh release upload "${TAG}" \
     qe_assets.tar.gz \
     paoflow_assets.tar.gz \
     SHA256SUMS \
-    --repo "${REPO}"
+    --repo "${REPO}" \
+    --clobber
 
-echo "Assets updated successfully."
+echo "Assets uploaded successfully."
