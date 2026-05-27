@@ -298,7 +298,7 @@ def find_weyl(data_controller, test_rad, search_grid):
             import z2pack
 
             model = tbmodels.Model.from_wannier_files(
-                hr_file=os.path.join(attr['opath'], 'z2pack_hamiltonian.dat')
+                hr_file=os.path.join(attr['opath'], 'hamiltonian.dat')
             )
             system = z2pack.tb.System(model, bands=nelec)
 
@@ -324,7 +324,7 @@ def find_weyl(data_controller, test_rad, search_grid):
                     candidates += 1
                     WEYL[str(kq).replace(',', '')] = invariant
 
-        except:
+        except ModuleNotFoundError:
             print('Could not load z2pack to verify chirality of weyl points')
             for kq in CAND:
                 WEYL[str(kq).replace(',', '')] = '?'
