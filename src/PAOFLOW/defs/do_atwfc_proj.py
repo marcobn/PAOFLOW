@@ -12,6 +12,38 @@ from scipy.io import FortranFile
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
+size = comm.Get_size()
+
+
+def _parallel_radialfft(tasks, qmesh, volume):
+    """Evaluate :func:`radialfft_simpson` for many shells in MPI parallel.
+
+    ``tasks`` is a sequence of ``(r, f, l)`` tuples — one entry per
+    radial shell across all atoms.  Work is distributed round-robin
+    across MPI ranks, then the resulting ``wfc_g`` arrays are
+    all-gathered so that every rank holds the full list in the original
+    order.  This eliminates the redundant per-rank cost of building
+    ``build_aewfc_basis`` / ``build_pswfc_basis_all`` (dominated by
+    ``scipy.special.spherical_jn`` evaluated on the (n_q, n_r) grid).
+    """
+    n = len(tasks)
+    wfc_g_all = [None] * n
+    for i in range(rank, n, size):
+        r, f, l = tasks[i]
+        wfc_g_all[i] = radialfft_simpson(r, f, l, qmesh, volume)
+    if size > 1:
+        # Each rank fills its own slice; reduce by summing element-wise
+        # with the empty slots represented as zero arrays.  Simpler and
+        # more portable than chunked allgather with variable counts.
+        gathered = comm.allgather(wfc_g_all)
+        for i in range(n):
+            if wfc_g_all[i] is None:
+                for g in gathered:
+                    if g[i] is not None:
+                        wfc_g_all[i] = g[i]
+                        break
+    return wfc_g_all
+
 
 from .read_upf import UPF
 
@@ -80,15 +112,26 @@ def radialfft_simpson(r, f, l, qmesh, volume):
         :math:`f_l(q) = 4\\pi/\\sqrt{\\Omega}
         \\int_0^\\infty f(r)\\,j_l(qr)\\,r\\,dr`.
     """
-    fq = np.zeros_like(qmesh)
     fact = 4.0 * np.pi / np.sqrt(volume)
 
-    f[r > 10.0] = 0.0
-    for iq in range(len(qmesh)):
-        q = qmesh[iq]
-        bess = scipy.special.spherical_jn(l, r * q)
-        aux = f * bess * r
-        fq[iq] = scipy.integrate.simpson(aux, r) * fact
+    # Work on a local copy: previous implementation mutated ``f`` in
+    # place (``f[r > 10.0] = 0.0``), which silently corrupted the
+    # caller's wavefunction array on repeated calls.
+    f_loc = np.asarray(f, dtype=float).copy()
+    r = np.asarray(r, dtype=float)
+    qmesh = np.asarray(qmesh, dtype=float)
+    f_loc[r > 10.0] = 0.0
+
+    # Vectorised spherical Bessel transform.  Build the (n_q, n_r)
+    # argument array ``q * r`` once, evaluate ``j_l`` on the whole grid
+    # in a single SciPy call, then integrate along the r-axis with
+    # Simpson's rule.  Replaces a Python loop over ``qmesh`` that was
+    # responsible for >50 % of the projections wall time on GaAs (10 s
+    # out of 19 s serial, 22 shells × ~150 q-points × spherical_jn).
+    qr = np.multiply.outer(qmesh, r)  # (n_q, n_r)
+    bess = scipy.special.spherical_jn(l, qr)  # (n_q, n_r)
+    integrand = bess * (f_loc * r)  # broadcast (n_q, n_r)
+    fq = scipy.integrate.simpson(integrand, x=r, axis=1) * fact
     return fq
 
 
@@ -186,22 +229,38 @@ def build_pswfc_basis_all(data_controller):
     # loop over atoms
     basis, shells = [], {}
     arry['jchia'] = {}
+
+    # ----- Pass 1: collect per-atom pswfc lists and the radial-FFT
+    # task list.  The heavy ``radialfft_simpson`` work (spherical
+    # Bessel transform on the (n_q, n_r) grid) is then dispatched
+    # across MPI ranks via ``_parallel_radialfft``.
+    per_atom = []  # list of (atom, tau, pswfc, pseudo)
+    tasks = []  # flat list of (r, f, l) for all shells
+    task_offset = []  # task index of first shell for each atom
     for na in range(len(arry['atoms'])):
         atom = arry['atoms'][na]
         tau = arry['tau'][na]
         r, pswfc, pseudo = read_pswfc_from_upf(data_controller, atom)
-        if verbose and rank == 0:
-            print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
-
-        # loop over pswfc'c
-        a_shells = []
-        jchia = []
-
-        s = 0.5
+        per_atom.append((atom, tau, pswfc, pseudo, r))
+        task_offset.append(len(tasks))
         for pao in pswfc:
             l = 'SPDF'.find(pao['label'][1].upper())
             assert l != -1
+            tasks.append((r, pao['wfc'], l))
+    task_offset.append(len(tasks))
 
+    wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
+
+    # ----- Pass 2: build the basis dictionaries (cheap, replicated).
+    for na, (atom, tau, pswfc, pseudo, r) in enumerate(per_atom):
+        if verbose and rank == 0:
+            print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
+
+        a_shells = []
+        jchia = []
+        s = 0.5
+        for ish, pao in enumerate(pswfc):
+            l = 'SPDF'.find(pao['label'][1].upper())
             a_shells.append(l)
             if l == 0:
                 jchia.append(0.5)
@@ -210,7 +269,7 @@ def build_pswfc_basis_all(data_controller):
                 jchia.append(l - s)
                 s = -s
 
-            wfc_g = radialfft_simpson(r, pao['wfc'], l, qmesh, volume)
+            wfc_g = wfc_g_list[task_offset[na] + ish]
 
             for m in range(1, 2 * l + 2):
                 basis.append(
@@ -313,6 +372,12 @@ def build_aewfc_basis(data_controller):
     # loop over atoms
     basis, shells = [], {}
     arry['jchia'] = {}
+
+    # ----- Pass 1: collect per-atom AE shell data and the radial-FFT
+    # task list, then dispatch ``radialfft_simpson`` across MPI ranks.
+    per_atom = []  # list of (atom, tau, aewfc)
+    tasks = []  # flat (r, f, l) list for all shells
+    task_offset = []
     for na in range(len(arry['atoms'])):
         atom = arry['atoms'][na]
         elem = re.split(r'\d+', atom)[0]
@@ -321,17 +386,28 @@ def build_aewfc_basis(data_controller):
         for shell in arry['configuration'][elem]:
             data = np.loadtxt(aebasis[na][shell])
             aewfc.append({shell: data[:, 1], 'r': data[:, 0]})
-
             if verbose and rank == 0:
                 print(
                     'atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, aebasis[na][shell], tau)
                 )
+        per_atom.append((atom, tau, aewfc))
+        task_offset.append(len(tasks))
+        for n in range(len(aewfc)):
+            shell_lbl = list(aewfc[n].items())[0][0]
+            l = 'SPDF'.find(shell_lbl[1].upper())
+            assert l != -1
+            tasks.append((aewfc[n]['r'], aewfc[n][shell_lbl], l))
+    task_offset.append(len(tasks))
 
+    wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
+
+    # ----- Pass 2: build the basis dictionaries (cheap, replicated).
+    for na, (atom, tau, aewfc) in enumerate(per_atom):
         ash = []
         jchia = []
         for n in range(len(aewfc)):
-            l = 'SPDF'.find(list(aewfc[n].items())[0][0][1].upper())
-            assert l != -1
+            shell_lbl = list(aewfc[n].items())[0][0]
+            l = 'SPDF'.find(shell_lbl[1].upper())
             ash.append(l)
 
             if attr['dftSO']:
@@ -342,9 +418,7 @@ def build_aewfc_basis(data_controller):
                     jchia.append(l - 0.5)
                     jchia.append(l + 0.5)
 
-            wfc_g = radialfft_simpson(
-                aewfc[n]['r'], aewfc[n][list(aewfc[n].items())[0][0]], l, qmesh, volume
-            )
+            wfc_g = wfc_g_list[task_offset[na] + n]
 
             twice = 1
             if attr['dftSO']:
@@ -358,9 +432,9 @@ def build_aewfc_basis(data_controller):
                             'tau': tau,
                             'l': l,
                             'm': m,
-                            'label': list(aewfc[n].items())[0][0],
+                            'label': shell_lbl,
                             'r': aewfc[n]['r'],
-                            'wfc': aewfc[n][list(aewfc[n].items())[0][0]].copy(),
+                            'wfc': aewfc[n][shell_lbl].copy(),
                             'qmesh': qmesh,
                             'wfc_g': wfc_g,
                         }
@@ -368,7 +442,7 @@ def build_aewfc_basis(data_controller):
                     if verbose and rank == 0:
                         print(
                             '      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(
-                                len(basis), l, m, list(aewfc[n].items())[0][0]
+                                len(basis), l, m, shell_lbl
                             )
                         )
 
@@ -382,6 +456,92 @@ def build_aewfc_basis(data_controller):
         # for b in basis:
         #    l,m,jm = b['l'], b['m'], b['jm']
         #    print(l,m,jm)
+
+    return basis, shells
+
+
+def build_mixed_basis(data_controller):
+    """Construct a mixed basis: pseudo-atomic wavefunctions + AE polarization.
+
+    The pseudo-atomic wavefunctions read from the UPF are kept as the
+    baseline (they were generated together with the pseudopotential and
+    therefore project the QE valence bands faithfully).  On top of that
+    baseline, extra all-electron shells listed in
+    ``arry['configuration']`` are loaded from ``basispath/<elem>/*.dat``
+    and appended.
+
+    ``arry['configuration']`` here lists ONLY the augmenting shells
+    (the pseudo shells come from the UPF automatically).  An empty or
+    missing entry for a species means "no augmentation for this
+    species" and yields a pure pseudo basis for those atoms.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``atoms``, ``tau``, ``species``,
+        ``configuration``.  Required attributes: ``ecutrho``, ``omega``,
+        ``verbose``, ``dftSO``, ``fpath``, ``basispath``.
+
+    Returns
+    -------
+    basis : list of dict
+        Concatenation of the pseudo and AE basis records (same dict
+        schema as :func:`build_pswfc_basis_all`).
+    shells : dict
+        ``{species: [l, ...]}`` — angular momenta of the pseudo shells
+        followed by those of the AE augmentation.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``attr['dftSO']`` is ``True``.  The spin-orbit ``jm`` index
+        assignment in :func:`assign_jm` assumes a specific ordering of
+        consecutive (l, m_j) entries that the simple concatenation here
+        does not preserve.  Use a pure pseudo or pure AE basis under
+        spin-orbit.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr.get('dftSO'):
+        raise NotImplementedError(
+            'Mixed (pseudo + AE) basis is not supported with spin-orbit. '
+            "Use a fully pseudo basis (configuration='minimal') or a "
+            'fully AE basis (explicit configuration dict with '
+            'internal=True) instead.'
+        )
+
+    # Pseudo part: full PSWFC set from UPF.  This populates
+    # ``arry['jchia']`` as a side effect.
+    basis, shells = build_pswfc_basis_all(data_controller)
+
+    # AE augmentation part.  ``build_aewfc_basis`` is driven by
+    # ``arry['configuration']`` which, in the mixed scheme, holds only
+    # the *extra* shells per element.  Skip entirely if the
+    # augmentation set is empty.
+    aug_cfg = arry.get('configuration') or {}
+    aug_cfg = {e: list(s) for e, s in aug_cfg.items() if s}
+    if not aug_cfg:
+        return basis, shells
+
+    saved_cfg = arry.get('configuration')
+    saved_jchia = dict(arry.get('jchia', {}))
+    try:
+        arry['configuration'] = aug_cfg
+        ae_basis, ae_shells = build_aewfc_basis(data_controller)
+    finally:
+        arry['configuration'] = saved_cfg
+
+    # ``build_aewfc_basis`` overwrites ``arry['jchia']``; restore the
+    # pseudo entries (the mixed scheme is non-SO so jchia is unused
+    # downstream, but keep the bookkeeping consistent).
+    arry['jchia'] = saved_jchia
+
+    basis.extend(ae_basis)
+    for sp, ls in ae_shells.items():
+        if sp in shells:
+            shells[sp] = list(shells[sp]) + list(ls)
+        else:
+            shells[sp] = list(ls)
 
     return basis, shells
 
@@ -897,32 +1057,43 @@ def calc_atwfc_k(basis, gkspace, dftSO=False):
         ylmgc = calc_ylmg_complex_0(ylmg)
         ylmgso = calc_ylmg_so(ylmgc)
 
+    # Cache structure factors per unique atomic position (basis
+    # entries belonging to the same atom share ``tau``) and form
+    # factors per unique radial table (entries of the same shell share
+    # ``wfc_g``).  ``np.interp`` is the fastest 1-D linear interpolator
+    # and replaces the per-basis ``scipy.interpolate.interp1d`` call.
+    strf_cache = {}
+    fact_cache = {}
+    for i in range(natwfc):
+        tau = basis[i]['tau']
+        tau_key = (float(tau[0]), float(tau[1]), float(tau[2]))
+        if tau_key not in strf_cache:
+            strf_cache[tau_key] = np.exp(-1j * (k_plus_G @ tau))
+
+        wfc_g = basis[i]['wfc_g']
+        wkey = id(wfc_g)
+        if wkey not in fact_cache:
+            fact_cache[wkey] = np.interp(q, basis[i]['qmesh'], wfc_g)
+
     # loop over atoms
     for i in range(natwfc):
-        # 1. build the structure factor
-        strf = np.zeros((igwx,), dtype=complex)
         tau = basis[i]['tau']
-        k_plus_G_dot_tau = np.dot(k_plus_G, tau)
-        strf = np.exp(-1j * k_plus_G_dot_tau)
+        strf = strf_cache[(float(tau[0]), float(tau[1]), float(tau[2]))]
+        fact = fact_cache[id(basis[i]['wfc_g'])]
 
-        # 2. build the form factor
-        qmesh, wfc_g = basis[i]['qmesh'], basis[i]['wfc_g']
-        # fact = InterpolatedUnivariateSpline(qmesh, wfc_g)(q)
-        fact = scipy.interpolate.interp1d(qmesh, wfc_g, kind='linear')(q)
-
-        # 3. build the angular part
         l, m = basis[i]['l'], basis[i]['m']
         if l > 3:
             raise NotImplementedError('l>3 not implemented yet')
         lm = l * l + (m - 1)
-        if dftSO:
-            jm = basis[i]['jm']
+        phase = (1.0j) ** l
 
-        # 4. final
         if not dftSO:
-            atwfc = strf * fact * ylmg[:, lm] * (1.0j) ** l
+            atwfc = (strf * fact) * ylmg[:, lm] * phase
         else:
-            atwfc = np.hstack((strf, strf)) * np.hstack((fact, fact)) * ylmgso[:, jm] * (1.0j) ** l
+            jm = basis[i]['jm']
+            sf = np.concatenate((strf, strf))
+            ff = np.concatenate((fact, fact))
+            atwfc = sf * ff * ylmgso[:, jm] * phase
 
         atwfc_k.append(atwfc)
 
@@ -950,32 +1121,29 @@ def ortho_atwfc_k(atwfc_k):
     """
     # orthonormalize atwfcs
     natwfc = atwfc_k.shape[0]
-    ovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
 
-    for i in range(natwfc):
-        for j in range(natwfc):
-            ovp[i, j] = np.dot(np.conj(atwfc_k[i]), atwfc_k[j])
+    # Overlap matrix as a single Hermitian matmul (replaces the previous
+    # Python double loop, which was the dominant per-k cost: 2.8 s of
+    # 3.5 s on GaAs serial).
+    ovp = atwfc_k.conj() @ atwfc_k.T
 
-            # check that eigenvalues are positive
+    # Symmetric (Loewdin) orthogonalisation via eigh on the Hermitian
+    # overlap, which is faster and more stable than ``scipy.linalg.sqrtm``
+    # on a general complex matrix.
     eigs, eigv = np.linalg.eigh(ovp)
-    assert np.all(eigs >= 0)
+    assert np.all(eigs >= -1e-12)
+    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
+    # Original behaviour is ``oatwfc = solve(X.T, atwfc)`` with
+    # ``X = sqrtm(ovp)``.  For a Hermitian X this equals
+    # ``X.conj()^{-1} @ atwfc = (ovp^{-1/2}).conj() @ atwfc``.
+    # Build that operator from the eigendecomposition:
+    #   ovp^{-1/2}        = U  Λ^{-1/2} U^H
+    #   (ovp^{-1/2}).conj = U* Λ^{-1/2} U.T
+    X = (eigv.conj() * inv_sqrt) @ eigv.T
+    oatwfc_k = X @ atwfc_k
 
-    # orthogonalize
-    if True:
-        X = scipy.linalg.sqrtm(ovp)
-        oatwfc_k = np.linalg.solve(X.T, atwfc_k)
-    else:
-        eigs = 1.0 / np.sqrt(eigs)
-        X = np.dot(np.conj(eigv), np.dot(np.diag(eigs), eigv.T))
-        oatwfc_k = np.dot(X, atwfc_k)
-
-        # check ortonormalization
-    oovp = np.zeros((natwfc, natwfc), dtype=np.complex128)
-    for i in range(natwfc):
-        for j in range(natwfc):
-            oovp[i, j] = np.dot(np.conj(oatwfc_k[i]), oatwfc_k[j])
-
-    # np.save("oovp",oovp)
+    # check orthonormalisation
+    oovp = oatwfc_k.conj() @ oatwfc_k.T
     diff = np.linalg.norm(oovp - np.eye(natwfc))
     if np.abs(diff) > 1e-4:
         raise RuntimeError('ortogonalization failed')

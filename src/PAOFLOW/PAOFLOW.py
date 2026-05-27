@@ -444,8 +444,41 @@ class PAOFLOW:
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
         Replaces projwfc.
+
+        Parameters
+        ----------
+        internal : bool, optional
+            If ``True``, use the all-electron internal basis (loaded from
+            ``basispath``) instead of the pseudopotential basis.  Always
+            forced ``True`` for VASP calculations.
+        basispath : str, optional
+            Directory containing the per-element ``BASIS/<elem>/*.dat``
+            files.  Required when ``internal`` is ``True`` or when
+            ``configuration`` is a preset string.
+        configuration : dict, str, or None, optional
+            How to build the projection basis:
+
+            * ``"minimal"`` — use the pseudo-atomic wavefunctions
+              shipped in each species' UPF file (smooth, matches the
+              default QE projwfc behaviour).  ``internal`` is ignored.
+              Spans the valence bands well; conduction states need
+              ``"extended"`` or an explicit configuration dict.
+            * ``"extended"`` — AE basis built from ``basispath``: the
+              UPF valence shells plus a generous rule-based set of
+              polarization shells (see
+              :func:`PAOFLOW.defs.basis_presets.extended_augmentation`).
+              ``internal`` is ignored.  Equivalent to the
+              ``internal=True`` legacy path with an auto-generated
+              configuration dict.
+            * ``dict`` — explicit ``{element: [shell_labels]}`` mapping
+              consumed by the legacy AE-only builder
+              (``internal=True``) or stored verbatim otherwise.
+              Backwards-compatible with previous releases.
+            * ``None`` — keep whatever is already stored in
+              ``arry['configuration']`` (legacy behaviour).
         """
 
+        from .defs.basis_presets import resolve_configuration
         from .defs.communication import gather_array, load_balancing
         from .defs.do_atwfc_proj import (
             build_aewfc_basis,
@@ -457,11 +490,36 @@ class PAOFLOW:
 
         if basispath is not None:
             attr['basispath'] = basispath
-        if configuration is not None:
-            arry['configuration'] = configuration
 
-        # Always use internal basis if VASP
-        if internal or attr['dft'] == 'VASP':
+        preset = None
+        if configuration is not None:
+            if isinstance(configuration, str):
+                preset = configuration.lower()
+                arry['configuration'] = resolve_configuration(self.data_controller, configuration)
+                if attr.get('verbose') and self.rank == 0:
+                    print("Resolved configuration preset '%s':" % configuration)
+                    for elem, shells in arry['configuration'].items():
+                        print('  %-3s : %s' % (elem, ', '.join(shells)))
+            elif isinstance(configuration, dict):
+                arry['configuration'] = configuration
+            else:
+                raise TypeError(
+                    'configuration must be a dict, a preset string '
+                    "('minimal' or 'extended'), or None; got %r" % type(configuration).__name__
+                )
+
+        # Dispatch to the correct basis builder.
+        #   'minimal'  -> pseudo PSWFC from UPF (smooth, matches QE bands).
+        #   'extended' -> AE basis from BASIS/ (valence + generous
+        #                 rule-based polarization shells).
+        # Presets override the ``internal`` flag because they imply a
+        # specific scheme.
+        if preset == 'minimal':
+            basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
+        elif preset == 'extended':
+            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
+        elif internal or attr['dft'] == 'VASP':
+            # Legacy AE-only path (explicit dict configuration).
             basis, arry['shells'] = build_aewfc_basis(self.data_controller)
         else:
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
