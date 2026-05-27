@@ -273,7 +273,7 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                from .defs.models import build_TB_model
+                from .models.models import build_TB_model
 
                 build_TB_model(self, model)
             else:
@@ -460,7 +460,7 @@ class DataController:
         )
 
     def read_pao_inputfile(self):
-        from .defs.read_inputfile_xml_parse import read_inputfile_xml
+        from .inputs.read_inputfile_xml_parse import read_inputfile_xml
 
         read_inputfile_xml(
             self.data_attributes['workpath'], self.data_attributes['inputfile'], self
@@ -472,11 +472,11 @@ class DataController:
         fpath = self.data_attributes['fpath']
 
         if exists(fpath + '/data-file-schema.xml'):
-            from .defs.read_QE_xml import parse_qe_data_file_schema
+            from .inputs.read_QE_xml import parse_qe_data_file_schema
 
             parse_qe_data_file_schema(self, fpath + '/data-file-schema.xml')
         elif exists(fpath + '/data-file.xml'):
-            from .defs.read_QE_xml import parse_qe_data_file
+            from .inputs.read_QE_xml import parse_qe_data_file
 
             parse_qe_data_file(self, fpath, 'data-file.xml')
         else:
@@ -488,7 +488,7 @@ class DataController:
         fpath = self.data_attributes['fpath']
 
         if exists(fpath + '/vasprun.xml'):
-            from .defs.read_VASP import parse_vasprun_data
+            from .inputs.read_VASP import parse_vasprun_data
 
             parse_vasprun_data(self, fpath + '/vasprun.xml', symprec)
         else:
@@ -536,8 +536,8 @@ class DataController:
         attr = self.data_attributes
 
         if self.rank == 0:
-            from .defs.write2bxsf import write2bxsf
-            from .defs.write2bxsf4skeaf import write2bxsf4skeaf
+            from .writers.write2bxsf import write2bxsf
+            from .writers.write2bxsf4skeaf import write2bxsf4skeaf
 
             write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
             write2bxsf4skeaf(self, bands, nbnd, indices)
@@ -744,7 +744,7 @@ class DataController:
 
                 import numpy as np
 
-                from .defs.zero_pad import zero_pad
+                from .utils.zero_pad import zero_pad
 
                 def HRs_write(nk1, nk2, nk3, nawf, ispin, f):
                     nkpts = nk1 * nk2 * nk3
@@ -917,14 +917,14 @@ class DataController:
             self.data_arrays = self.comm.recv(source=0)
 
     def scatter_data_array(self, key):
-        from .defs.communication import scatter_array
+        from .utils.communication import scatter_array
 
         self.data_arrays[key] = scatter_array(self.data_arrays[key])
 
     def gather_data_array(self, key):
         import numpy as np
 
-        from .defs.communication import gather_array
+        from .utils.communication import gather_array
 
         arr = self.data_arrays[key]
         aux = None

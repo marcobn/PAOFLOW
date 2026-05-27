@@ -1,7 +1,7 @@
 import numpy as np
 
 from PAOFLOW import PAOFLOW
-from PAOFLOW.defs.TauModel import TauModel
+from PAOFLOW.boltzmann.TauModel import TauModel
 
 
 def main():

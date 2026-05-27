@@ -14,7 +14,7 @@ class GPAO:
           vertical (bool): Set True to plot energy on the y-axis and elec/eV on the x-axis.
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .defs.read_pao_output import read_dos_PAO
+        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_dos
 
         es, dos = read_dos_PAO(fname)
@@ -48,7 +48,7 @@ class GPAO:
         """
         import numpy as np
 
-        from .defs.read_pao_output import read_dos_PAO
+        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_pdos
 
         es = None
@@ -88,12 +88,12 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .defs.read_pao_output import read_site_projected
+        from .inputs.read_pao_output import read_site_projected
         from .graphics.plot_functions import plot_weighted_bands
 
         if sym_points is not None:
             if type(sym_points) is str:
-                from .defs.read_pao_output import read_band_path_PAO
+                from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
         plot_weighted_bands(
@@ -132,7 +132,7 @@ class GPAO:
           cols (list or str): Color(s) for each dataset. A list of strings/3-tuples recognized by matplotlib.
           legend (bool): Show legend when labels are provided (default True)
         """
-        from .defs.read_pao_output import read_bands_PAO
+        from .inputs.read_pao_output import read_bands_PAO
         from .graphics.plot_functions import plot_bands
 
         if isinstance(fnames, str):
@@ -142,7 +142,7 @@ class GPAO:
 
         if sym_points is not None:
             if type(sym_points) is str:
-                from .defs.read_pao_output import read_band_path_PAO
+                from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
         plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend)
@@ -170,7 +170,7 @@ class GPAO:
         """
         import numpy as np
 
-        from .defs.read_pao_output import read_dos_PAO
+        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_bands
 
         if title is None:
@@ -179,7 +179,7 @@ class GPAO:
             label = r'$\Omega(\mathbf{k})$'
         if sym_points is not None:
             if type(sym_points) is str:
-                from .defs.read_pao_output import read_band_path_PAO
+                from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
         path, omega = read_dos_PAO(fname)
@@ -209,12 +209,12 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .defs.read_pao_output import read_bands_PAO, read_dos_PAO
+        from .inputs.read_pao_output import read_bands_PAO, read_dos_PAO
         from .graphics.plot_functions import plot_dos_beside_bands
 
         if sym_points is not None:
             if type(sym_points) is str:
-                from .defs.read_pao_output import read_band_path_PAO
+                from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
 
@@ -250,12 +250,12 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .defs.read_pao_output import read_bands_PAO, read_dos_PAO
+        from .inputs.read_pao_output import read_bands_PAO, read_dos_PAO
         from .graphics.plot_functions import plot_berry_under_bands
 
         if sym_points is not None:
             if type(sym_points) is str:
-                from .defs.read_pao_output import read_band_path_PAO
+                from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
 
@@ -298,7 +298,7 @@ class GPAO:
           col (list): A list of 3-tuples (R,G,B), one for each tensor element.
           vE (float): Set to an energy to plot the conductivity vs temperature. The value of conductivity is taken at the provided energy for each temperature.
         """
-        from .defs.read_pao_output import read_transport_PAO
+        from .inputs.read_pao_output import read_transport_PAO
         from .graphics.plot_functions import plot_tensor
 
         x_label = '$Energy (eV)$'
@@ -343,7 +343,7 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (list): A list of 3-tuples (R,G,B), one for each tensor element.
         """
-        from .defs.read_pao_output import read_transport_PAO
+        from .inputs.read_pao_output import read_transport_PAO
         from .graphics.plot_functions import plot_tensor
 
         x_label = 'Energy (eV)'
@@ -386,7 +386,7 @@ class GPAO:
         """
         import numpy as np
 
-        from .defs.read_pao_output import read_dos_PAO
+        from .inputs.read_pao_output import read_dos_PAO
 
         x_label = 'Energy (eV)'
         y_label = r'$\sigma$ ($\Omega$cm)$^{-1}$'
