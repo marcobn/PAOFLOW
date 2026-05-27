@@ -26,14 +26,40 @@ fi
 echo "Generating SHA256SUMS..."
 sha256sum qe_assets.tar.gz paoflow_assets.tar.gz > SHA256SUMS
 
-echo "Creating GitHub release: ${TAG}"
+if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+    echo "Creating release ${TAG}..."
 
-gh release create "${TAG}" \
+    gh release create "${TAG}" \
+        --repo "${REPO}" \
+        --title "${TAG}" \
+        --notes "Integration test assets"
+else
+    echo "Release ${TAG} already exists."
+fi
+
+echo "Removing old versions of assets if they exist..."
+
+gh release delete-asset "${TAG}" qe_assets.tar.gz \
+    --repo "${REPO}" \
+    --yes \
+    >/dev/null 2>&1 || true
+
+gh release delete-asset "${TAG}" paoflow_assets.tar.gz \
+    --repo "${REPO}" \
+    --yes \
+    >/dev/null 2>&1 || true
+
+gh release delete-asset "${TAG}" SHA256SUMS \
+    --repo "${REPO}" \
+    --yes \
+    >/dev/null 2>&1 || true
+
+echo "Uploading updated assets..."
+
+gh release upload "${TAG}" \
     qe_assets.tar.gz \
     paoflow_assets.tar.gz \
     SHA256SUMS \
-    --repo "${REPO}" \
-    --title "${TAG}" \
-    --notes "Integration test assets"
+    --repo "${REPO}"
 
-echo "Release created successfully."
+echo "Assets updated successfully."
