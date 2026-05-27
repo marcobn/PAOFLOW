@@ -2077,7 +2077,7 @@ def SK_EDTB(data_controller, params):
 def graphene(data_controller, params):
     import numpy as np
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -2152,7 +2152,7 @@ def graphene(data_controller, params):
 def graphene2(data_controller, params):
     import numpy as np
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -2229,7 +2229,7 @@ def graphene2(data_controller, params):
 def cubium(data_controller, params):
     import numpy as np
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -2306,7 +2306,7 @@ def cubium(data_controller, params):
 def cubium2(data_controller, params):
     import numpy as np
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
@@ -2386,7 +2386,7 @@ def cubium2(data_controller, params):
 def Kane_Mele(data_controller, params):
     import numpy as np
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 

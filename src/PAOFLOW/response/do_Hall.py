@@ -36,8 +36,8 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
           Fermi energy.
         - When ``do_ac``: ``ac_shcr_{...}.dat`` and ``ac_shci_{...}.dat``.
     """
-    from .constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
-    from .perturb_split import perturb_split
+    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
+    from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
 
@@ -163,8 +163,8 @@ def do_anomalous_Hall(data_controller, do_ac):
           Fermi energy.
         - When ``do_ac``: ``MCDr_{...}.dat`` and ``MCDi_{...}.dat``.
     """
-    from .constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
-    from .perturb_split import perturb_split
+    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
+    from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
 
@@ -283,8 +283,8 @@ def do_Berry_curvature(data_controller, jksp, pksp):
     # ----------------------
     # Compute spin Berry curvature
     # ----------------------
-    from .communication import gather_full
-    from .smearing import intgaussian, intmetpax
+    from ..utils.communication import gather_full
+    from ..utils.smearing import intgaussian, intmetpax
 
     arrays, attributes = data_controller.data_dicts()
 
@@ -443,7 +443,7 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
         Per-rank partial sum of the conductivity; call ``MPI.Reduce`` to
         accumulate the global result.
     """
-    from .smearing import intgaussian, intmetpax
+    from ..utils.smearing import intgaussian, intmetpax
 
     arry, attr = data_controller.data_dicts()
 

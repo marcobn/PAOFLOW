@@ -1,8 +1,8 @@
 import numpy as np
 from mpi4py import MPI
 
-from .communication import gather_scatter
-from .perturb_split import perturb_split
+from ..utils.communication import gather_scatter
+from ..utils.perturb_split import perturb_split
 
 # initialize parallel execution
 comm = MPI.COMM_WORLD

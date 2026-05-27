@@ -43,10 +43,10 @@ def do_topology(data_controller):
     """
     from mpi4py import MPI
 
-    from .communication import gather_full, scatter_full
-    from .constants import ANGSTROM_AU, LL
-    from .get_R_grid_fft import get_R_grid_fft
-    from .kpnts_interpolation_mesh import kpnts_interpolation_mesh
+    from ..utils.communication import gather_full, scatter_full
+    from ..utils.constants import ANGSTROM_AU, LL
+    from ..utils.get_R_grid_fft import get_R_grid_fft
+    from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -81,7 +81,7 @@ def do_topology(data_controller):
     # Define TRIM points in 2(0-3)/3D(0-7)
     if nspin == 1 and spin_Hall:
         from .clebsch_gordan import clebsch_gordan
-        from .do_eigh import do_eigh_calc
+        from ..spectrum.do_eigh import do_eigh_calc
         from .pfaffian import pfaffian
 
         nktrim = 16

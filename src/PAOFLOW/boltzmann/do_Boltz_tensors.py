@@ -290,7 +290,7 @@ def get_tau(data_controller, temp, channels, weights):
             try:
                 tau += m.weight / m.evaluate(temp, eigs)
             except KeyError as e:
-                from .report_exception import report_exception
+                from ..utils.report_exception import report_exception
 
                 print(
                     'Ensure that all required parameters are specified in the provided dictionary.'
@@ -347,7 +347,7 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
     L : ndarray, shape (3, 3, ne)
         Local contribution to L\u1d45 from this MPI rank's k-points.
     """
-    from .smearing import gaussian, metpax
+    from ..utils.smearing import gaussian, metpax
     # We assume tau=1 in the constant relaxation time approximation
 
     arrays, attributes = data_controller.data_dicts()
@@ -452,7 +452,7 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
     """
     from sympy import Eijk
 
-    from .smearing import gaussian, metpax
+    from ..utils.smearing import gaussian, metpax
 
     arrays, attributes = data_controller.data_dicts()
 

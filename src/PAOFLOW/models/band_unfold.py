@@ -315,7 +315,7 @@ def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbo
     norbitals : (natoms,) orbital count per atom.
     """
     from PAOFLOW import PAOFLOW as PF
-    from PAOFLOW.defs.get_R_grid_fft import get_R_grid_fft
+    from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
 
     pf = PF.PAOFLOW(
         savedir=None,

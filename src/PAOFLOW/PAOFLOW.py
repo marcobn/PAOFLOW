@@ -248,7 +248,7 @@ class PAOFLOW:
         from mpi4py import MPI
 
         from .DataController import DataController
-        from .defs.header import header
+        from .utils.header import header
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -466,7 +466,7 @@ class PAOFLOW:
             * ``"extended"`` — AE basis built from ``basispath``: the
               UPF valence shells plus a generous rule-based set of
               polarization shells (see
-              :func:`PAOFLOW.defs.basis_presets.extended_augmentation`).
+              :func:`PAOFLOW.inputs.basis_presets.extended_augmentation`).
               ``internal`` is ignored.  Equivalent to the
               ``internal=True`` legacy path with an auto-generated
               configuration dict.
@@ -478,9 +478,9 @@ class PAOFLOW:
               ``arry['configuration']`` (legacy behaviour).
         """
 
-        from .defs.basis_presets import resolve_configuration
-        from .defs.communication import gather_array, load_balancing
-        from .defs.do_atwfc_proj import (
+        from .inputs.basis_presets import resolve_configuration
+        from .utils.communication import gather_array, load_balancing
+        from .projection.do_atwfc_proj import (
             build_aewfc_basis,
             build_pswfc_basis_all,
             calc_proj_k,
@@ -563,13 +563,13 @@ class PAOFLOW:
         """
         from os.path import exists, join
 
-        from .defs.do_atwfc_proj import build_pswfc_basis_all
-        from .defs.read_upf import UPF
+        from .projection.do_atwfc_proj import build_pswfc_basis_all
+        from .inputs.read_upf import UPF
 
         arry, attr = self.data_controller.data_dicts()
         fpath = attr['fpath']
         if exists(join(fpath, 'atomic_proj.xml')):
-            from .defs.read_QE_xml import parse_qe_atomic_proj
+            from .inputs.read_QE_xml import parse_qe_atomic_proj
 
             if attr['acbn0'] and not attr['save_overlaps']:
                 if self.rank == 0:
@@ -620,7 +620,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_projectability import do_projectability
+        from .projection.do_projectability import do_projectability
 
         attr = self.data_controller.data_attributes
 
@@ -659,11 +659,11 @@ class PAOFLOW:
             None
 
         """
-        from .defs.do_build_pao_hamiltonian import (
+        from .hamiltonian.do_build_pao_hamiltonian import (
             do_build_pao_hamiltonian,
             do_Hks_to_HRs,
         )
-        from .defs.get_K_grid_fft import get_K_grid_fft
+        from .utils.get_K_grid_fft import get_K_grid_fft
 
         # Data Attributes and Arrays
         arrays, attr = self.data_controller.data_dicts()
@@ -716,12 +716,12 @@ class PAOFLOW:
         self.report_module_time('k -> R')
 
     def minimal(self, first_band=None, R=False):
-        from .defs.do_minimal import do_minimal
+        from .projection.do_minimal import do_minimal
 
         raise Exception('ONLY FOR ARCHIVAL PUTPOSES - DO NOT USE')
         do_minimal(self.data_controller, first_band)
         if R:
-            from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
+            from .hamiltonian.do_build_pao_hamiltonian import do_Hks_to_HRs
 
             do_Hks_to_HRs(self.data_controller)
             self.data_controller.broadcast_single_array('HRs')
@@ -753,7 +753,7 @@ class PAOFLOW:
         try:
             # Add external fields or non scf ACBN0 correction
             if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
-                from .defs.add_ext_field import add_ext_field
+                from .hamiltonian.add_ext_field import add_ext_field
 
                 add_ext_field(self.data_controller)
                 if self.rank == 0 and attr['verbose']:
@@ -808,8 +808,8 @@ class PAOFLOW:
             None
 
         """
-        from .defs.communication import gather_full
-        from .defs.do_bands import do_bands
+        from .utils.communication import gather_full
+        from .spectrum.do_bands import do_bands
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -878,7 +878,7 @@ class PAOFLOW:
         """
         import scipy.linalg as la
 
-        from .defs.do_spin_orbit import do_spin_orbit_H
+        from .hamiltonian.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
         attr['do_spin_orbit'] = attr['adhoc_SO'] = True
@@ -948,7 +948,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_wave_function_site_projection import wave_function_site_projection
+        from .topology.do_wave_function_site_projection import wave_function_site_projection
 
         try:
             wave_function_site_projection(self.data_controller)
@@ -971,7 +971,7 @@ class PAOFLOW:
             None
         """
 
-        from .defs.do_site_projected_bands import site_projeted_bands
+        from .spectrum.do_site_projected_bands import site_projeted_bands
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -1003,7 +1003,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_doubling import doubling_HRs
+        from .hamiltonian.do_doubling import doubling_HRs
 
         arrays, attributes = self.data_controller.data_dicts()
         attributes['nx'], attributes['ny'], attributes['nz'] = nx, ny, nz
@@ -1172,7 +1172,7 @@ class PAOFLOW:
                         Sj[spol, i_dn, i_up] = sP[spol][1, 0]
                         Sj[spol, i_dn, i_dn] = sP[spol][1, 1]
             else:
-                from .defs.clebsch_gordan import clebsch_gordan
+                from .topology.clebsch_gordan import clebsch_gordan
 
                 # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
                 for spol in range(3):
@@ -1209,7 +1209,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_topology import do_topology
+        from .topology.do_topology import do_topology
         # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
         # curvature operators along the path in the IBZ from do_topology_calc
 
@@ -1263,10 +1263,10 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.communication import gather_scatter
-        from .defs.do_double_grid import do_double_grid
-        from .defs.do_Efermi import E_Fermi
-        from .defs.get_K_grid_fft import get_K_grid_fft
+        from .utils.communication import gather_scatter
+        from .hamiltonian.do_double_grid import do_double_grid
+        from .spectrum.do_Efermi import E_Fermi
+        from .utils.get_K_grid_fft import get_K_grid_fft
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1349,8 +1349,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.communication import gather_full, scatter_full
-        from .defs.do_eigh import do_pao_eigh
+        from .utils.communication import gather_full, scatter_full
+        from .spectrum.do_eigh import do_pao_eigh
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1410,9 +1410,9 @@ class PAOFLOW:
         """
         import numpy as np
 
-        from .defs.communication import gather_scatter
-        from .defs.do_gradient import do_gradient
-        from .defs.do_momentum import do_momentum
+        from .utils.communication import gather_scatter
+        from .hamiltonian.do_gradient import do_gradient
+        from .hamiltonian.do_momentum import do_momentum
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1453,7 +1453,7 @@ class PAOFLOW:
                             + np.conj(arrays['dHksp'][nk, i, :, :, s].T)
                         ) / 2.0
             if band_curvature:
-                from .defs.do_band_curvature import do_band_curvature
+                from .spectrum.do_band_curvature import do_band_curvature
 
                 do_band_curvature(self.data_controller)
                 # No more need for k-space Hamiltonian
@@ -1483,7 +1483,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_adaptive_smearing import do_adaptive_smearing
+        from .spectrum.do_adaptive_smearing import do_adaptive_smearing
 
         attr = self.data_controller.data_attributes
 
@@ -1526,30 +1526,30 @@ class PAOFLOW:
         try:
             if attr['smearing'] is None:
                 if do_dos:
-                    from .defs.do_dos import do_dos
+                    from .spectrum.do_dos import do_dos
 
                     do_dos(self.data_controller, emin, emax, ne, delta)
                 if do_pdos:
-                    from .defs.do_pdos import do_pdos
+                    from .spectrum.do_pdos import do_pdos
 
                     do_pdos(self.data_controller, emin, emax, ne, delta)
             else:
                 if 'deltakp' not in arrays:
                     if do_dos:
-                        from .defs.do_dos import do_dos
+                        from .spectrum.do_dos import do_dos
 
                         do_dos(self.data_controller, emin, emax, ne, delta)
                     if do_pdos:
-                        from .defs.do_pdos import do_pdos
+                        from .spectrum.do_pdos import do_pdos
 
                         do_pdos(self.data_controller, emin, emax, ne, delta)
                 else:
                     if do_dos:
-                        from .defs.do_dos import do_dos_adaptive
+                        from .spectrum.do_dos import do_dos_adaptive
 
                         do_dos_adaptive(self.data_controller, emin, emax, ne)
                     if do_pdos:
-                        from .defs.do_pdos import do_pdos_adaptive
+                        from .spectrum.do_pdos import do_pdos_adaptive
 
                         do_pdos_adaptive(self.data_controller, emin, emax, ne)
         except Exception as e:
@@ -1571,7 +1571,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_real_space import do_density
+        from .hamiltonian.do_real_space import do_density
 
         do_density(self.data_controller, nr1, nr2, nr3)
 
@@ -1599,7 +1599,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_fermisurf import do_fermisurf
+        from .topology.do_fermisurf import do_fermisurf
 
         attr = self.data_controller.data_attributes
 
@@ -1628,7 +1628,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_spin_texture import do_spin_texture
+        from .topology.do_spin_texture import do_spin_texture
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -1685,8 +1685,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_Hall import do_spin_Hall
-        from .defs.projection_operator import do_projection_operator, orbital_array
+        from .response.do_Hall import do_spin_Hall
+        from .projection.projection_operator import do_projection_operator, orbital_array
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1752,7 +1752,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_rashba_edelstein import do_rashba_edelstein
+        from .response.do_rashba_edelstein import do_rashba_edelstein
 
         arrays, attr = self.data_controller.data_dicts()
         attr['deltaH'] = delta
@@ -1794,7 +1794,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_Hall import do_anomalous_Hall
+        from .response.do_Hall import do_anomalous_Hall
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1833,7 +1833,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_effective_mass import do_effective_mass
+        from .spectrum.do_effective_mass import do_effective_mass
 
         _, attr = self.data_controller.data_dicts()
 
@@ -1877,8 +1877,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_doping import do_doping
-        from .defs.do_dos import do_dos, do_dos_adaptive
+        from .boltzmann.do_doping import do_doping
+        from .spectrum.do_dos import do_dos, do_dos_adaptive
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1935,7 +1935,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_transport import do_transport
+        from .boltzmann.do_transport import do_transport
 
         arrays, attr = self.data_controller.data_dicts()
         if 'tau_dict' not in attr:
@@ -1996,7 +1996,7 @@ class PAOFLOW:
             None
         """
 
-        from .defs.do_epsilon import do_dielectric_tensor
+        from .response.do_epsilon import do_dielectric_tensor
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -2041,7 +2041,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_epsilon import do_jdos
+        from .response.do_epsilon import do_jdos
 
         _, attr = self.data_controller.data_dicts()
         if 'delta' not in attr:
@@ -2058,7 +2058,7 @@ class PAOFLOW:
         self.report_module_time('Joint density of states')
 
     def find_weyl_points(self, symmetrize=None, test_rad=0.01, search_grid=[8, 8, 8]):
-        from .defs.do_find_Weyl import find_weyl
+        from .topology.do_find_Weyl import find_weyl
 
         try:
             if symmetrize is not None:
@@ -2095,7 +2095,7 @@ class PAOFLOW:
 
         from os.path import join
 
-        from .defs.do_ipr import inverse_participation_ratio
+        from .response.do_ipr import inverse_participation_ratio
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -2160,7 +2160,7 @@ class PAOFLOW:
             Berry/Zak phase
 
         """
-        from .defs.do_berry_phase import do_berry_phase
+        from .topology.do_berry_phase import do_berry_phase
 
         arry, attr = self.data_controller.data_dicts()
 

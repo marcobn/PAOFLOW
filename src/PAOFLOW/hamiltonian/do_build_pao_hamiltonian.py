@@ -200,7 +200,7 @@ def do_build_pao_hamiltonian(data_controller):
         import sys
 
         if rank == 0:
-            from .do_non_ortho import do_non_ortho
+            from ..projection.do_non_ortho import do_non_ortho
 
             # This is needed for consistency of the ordering of the matrix elements
             # Important in ACBN0 file writing

@@ -285,7 +285,7 @@ def builtin_tau_model(label, params, weight):
     Returns
     -------
     TauModel or None
-        A :class:`~PAOFLOW.defs.TauModel.TauModel` instance with
+        A :class:`~PAOFLOW.boltzmann.TauModel.TauModel` instance with
         ``.function`` set to the appropriate callable, or ``None`` if
         ``label`` is not recognised.
     """

@@ -1,7 +1,7 @@
 import numpy as np
 from mpi4py import MPI
 
-from .get_K_grid_fft import get_K_grid_fft_crystal
+from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

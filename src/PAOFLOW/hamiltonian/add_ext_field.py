@@ -51,7 +51,7 @@ def add_ext_field(data_controller):
     """
     import numpy as np
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes

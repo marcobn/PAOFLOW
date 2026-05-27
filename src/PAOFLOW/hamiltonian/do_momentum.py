@@ -42,7 +42,7 @@ def do_momentum(data_controller):
     """
     import numpy as np
 
-    from .perturb_split import perturb_split
+    from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
 

@@ -46,8 +46,8 @@ def do_effective_mass(data_controller):
     import numpy as np
     from os.path import join
 
-    from .communication import gather_full
-    from .get_K_grid_fft import get_K_grid_fft_crystal
+    from ..utils.communication import gather_full
+    from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

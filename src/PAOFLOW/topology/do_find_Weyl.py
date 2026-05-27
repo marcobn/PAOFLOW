@@ -4,8 +4,8 @@ import scipy.optimize as OP
 from mpi4py import MPI
 from numpy import linalg as LAN
 
-from .communication import gather_full, scatter_full
-from .constants import BOHR_RADIUS_ANGS
+from ..utils.communication import gather_full, scatter_full
+from ..utils.constants import BOHR_RADIUS_ANGS
 
 # initialize parallel execution
 comm = MPI.COMM_WORLD
@@ -503,7 +503,7 @@ def get_equiv_k(kp, symop, sym_TR, mag_soc):
         All unique symmetry-equivalent k-points, rounded to ``4`` decimal
         places.
     """
-    from .pao_sym import correct_roundoff
+    from ..hamiltonian.pao_sym import correct_roundoff
 
     # if we have time inversion sym
     if not mag_soc:

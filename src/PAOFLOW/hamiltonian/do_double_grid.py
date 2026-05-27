@@ -40,8 +40,8 @@ def do_double_grid(data_controller):
     from mpi4py import MPI
     from scipy import fftpack as FFT
 
-    from .communication import scatter_full
-    from .zero_pad import zero_pad
+    from ..utils.communication import scatter_full
+    from ..utils.zero_pad import zero_pad
 
     rank = MPI.COMM_WORLD.Get_rank()
 

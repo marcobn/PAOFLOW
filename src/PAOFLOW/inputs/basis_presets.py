@@ -2,7 +2,7 @@
 
 This module turns string presets such as ``"minimal"`` and ``"extended"``
 into the per-species ``{element: [shell_labels]}`` dictionary consumed by
-:func:`PAOFLOW.defs.do_atwfc_proj.build_aewfc_basis`.
+:func:`PAOFLOW.projection.do_atwfc_proj.build_aewfc_basis`.
 
 * ``"minimal"`` — the set of occupied pseudo-atomic wavefunctions found in
   each species' UPF pseudopotential (``PP_PSWFC/PP_CHI`` entries with
@@ -201,7 +201,7 @@ def _resolve_pseudo_path(data_controller, elem: str) -> str | None:
     """Locate the UPF file shipped with the QE calculation for ``elem``.
 
     Mirrors the lookup performed inside
-    :func:`read_pswfc_from_upf <PAOFLOW.defs.do_atwfc_proj.read_pswfc_from_upf>`.
+    :func:`read_pswfc_from_upf <PAOFLOW.projection.do_atwfc_proj.read_pswfc_from_upf>`.
     Returns ``None`` if no matching species record exists (e.g. the
     DataController has not been populated yet, as in some unit tests).
     """

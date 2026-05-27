@@ -42,7 +42,7 @@ def do_fermisurf(data_controller):
     from mpi4py import MPI
     from os.path import join
 
-    from .communication import gather_full
+    from ..utils.communication import gather_full
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

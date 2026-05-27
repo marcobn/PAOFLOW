@@ -15,7 +15,7 @@ This module fits the radial pseudo-wavefunctions :math:`\\chi_{nl}(r)` stored
 in Quantum ESPRESSO UPF pseudopotential files (versions 1 and 2) with
 contracted Gaussian-type orbital (cGTO) expansions.  The resulting basis
 is used by the ACBN0 and eACBN0 workflows, where two-electron Coulomb
-repulsion integrals computed in :mod:`~PAOFLOW.defs.pyints` require
+repulsion integrals computed in :mod:`~PAOFLOW.utils.pyints` require
 analytic GTO representations of the projector functions.
 
 Fitting procedure
@@ -55,7 +55,7 @@ basis with the following conventions for each :math:`l`:
   f_{xyz}, f_{x(x^2-3y^2)}, f_{y(3x^2-y^2)}` with appropriate prefactors.
 
 These Cartesian tuples are consumed directly by
-:func:`~PAOFLOW.defs.pyints.contr_coulomb` to evaluate four-centre
+:func:`~PAOFLOW.utils.pyints.contr_coulomb` to evaluate four-centre
 integrals.
 
 Main entry point
@@ -78,7 +78,7 @@ I/O helpers
     a ``basis_data`` dict keyed by atomic number.
 :func:`build_basis_dict`
     Convert per-orbital coefficient/exponent lists to the nested
-    Cartesian-GTO tuple structure expected by :mod:`~PAOFLOW.defs.pyints`.
+    Cartesian-GTO tuple structure expected by :mod:`~PAOFLOW.utils.pyints`.
 
 Low-level fitting helpers
 --------------------------

@@ -1,9 +1,9 @@
 import numpy as np
 from mpi4py import MPI
 
-from .communication import load_balancing
-from .do_atwfc_proj import calc_atwfc_k, calc_gkspace, fft_allwfc_G2R, ortho_atwfc_k
-from .write2xsf import write2xsf
+from ..utils.communication import load_balancing
+from ..projection.do_atwfc_proj import calc_atwfc_k, calc_gkspace, fft_allwfc_G2R, ortho_atwfc_k
+from ..writers.write2xsf import write2xsf
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

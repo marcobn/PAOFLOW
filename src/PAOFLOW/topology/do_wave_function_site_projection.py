@@ -48,7 +48,7 @@ def wave_function_site_projection(data_controller):
     import numpy as np
     from os.path import join
 
-    from .constants import ANGSTROM_AU
+    from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 

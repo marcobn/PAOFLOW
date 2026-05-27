@@ -117,7 +117,7 @@ def do_dos_adaptive(data_controller, emin, emax, ne):
     broadening) or :func:`smearing.metpax` (Methfessel-Paxton broadening).
     This approach follows Yates *et al.*, Phys. Rev. B **75**, 195121 (2007).
     """
-    from .smearing import gaussian, metpax
+    from ..utils.smearing import gaussian, metpax
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

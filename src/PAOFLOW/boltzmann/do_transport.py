@@ -192,7 +192,7 @@ def do_transport(
                             )
 
                         except Exception:
-                            from .report_exception import report_exception
+                            from ..utils.report_exception import report_exception
 
                             print('check t_tensor components - matrix cannot be singular')
                             report_exception()
@@ -215,7 +215,7 @@ def do_transport(
                     try:
                         S[:, :, n] = -1.0 * npl.inv(L0[:, :, n]) @ L1[:, :, n]
                     except Exception:
-                        from .report_exception import report_exception
+                        from ..utils.report_exception import report_exception
 
                         print('check t_tensor components - matrix cannot be singular')
                         report_exception()

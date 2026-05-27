@@ -49,7 +49,7 @@ def do_spin_texture(data_controller):
     import numpy as np
     from mpi4py import MPI
 
-    from .communication import gather_full
+    from ..utils.communication import gather_full
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

@@ -4,7 +4,7 @@ from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-from .smearing import gaussian, intgaussian, intmetpax, metpax
+from ..utils.smearing import gaussian, intgaussian, intmetpax, metpax
 
 
 def do_dielectric_tensor(data_controller, ene):
@@ -43,7 +43,7 @@ def do_dielectric_tensor(data_controller, ene):
         Two-column (energy, value) files for each tensor component ``XY``;
         spin-polarised runs also produce ``_0`` and ``_1`` variants.
     """
-    from .constants import LL
+    from ..utils.constants import LL
 
     arrays, attributes = data_controller.data_dicts()
     d_tensor = arrays['d_tensor']
@@ -229,7 +229,7 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
     ieps : ndarray, shape (ne,)
         Kramers\u2013Kronig-derived real part.
     """
-    from .constants import BOHR_RADIUS_ANGS, ELECTRONVOLT_SI
+    from ..utils.constants import BOHR_RADIUS_ANGS, ELECTRONVOLT_SI
 
     # Compute the dielectric tensor
 
@@ -443,7 +443,7 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
 
     if not attributes['insulator']:
         # if from_wfc:
-        #     from .constants import RYTOEV
+        #     from ..utils.constants import RYTOEV
         #     epsi_metal *= 0.5*spin_factor/RYTOEV
         #     epsr_metal *= 0.5*spin_factor/RYTOEV
 
@@ -561,7 +561,7 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
 # Function to calculate dipole matrix element from coefficients of wavefunction,
 # following the routine of epsilon.x
 def calc_dipole(arry, attr, ik, ispin, b_vector):
-    from .do_atwfc_proj import calc_atwfc_k, ortho_atwfc_k, calc_gkspace
+    from ..projection.do_atwfc_proj import calc_atwfc_k, ortho_atwfc_k, calc_gkspace
     from scipy.io import FortranFile
     import os
 
@@ -641,9 +641,9 @@ def calc_dipole_internal(data_controller, ik, ispin):
     return dipole_aux
 
 def epsr_kramerskronig ( data_controller, ene, epsi ):
-  from .smearing import intmetpax
+  from ..utils.smearing import intmetpax
   from scipy.integrate import simpson
-  from .communication import load_balancing
+  from ..utils.communication import load_balancing
 
   arrays,attributes = data_controller.data_dicts()
 

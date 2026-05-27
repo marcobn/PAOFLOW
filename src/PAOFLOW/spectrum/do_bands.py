@@ -27,7 +27,7 @@ def bands_calc(data_controller):
     :func:`scatter_full`.  Eigenvalues are computed with
     ``scipy.linalg.eigh`` (real k) or ``scipy.linalg.eig`` (complex k).
     """
-    from .communication import scatter_full
+    from ..utils.communication import scatter_full
 
     arrays, attributes = data_controller.data_dicts()
 
@@ -148,8 +148,8 @@ def do_bands(data_controller):
     """
     from mpi4py import MPI
 
-    from .constants import ANGSTROM_AU
-    from .get_R_grid_fft import get_R_grid_fft
+    from ..utils.constants import ANGSTROM_AU
+    from ..utils.get_R_grid_fft import get_R_grid_fft
     from .kpnts_interpolation_mesh import kpnts_interpolation_mesh
 
     rank = MPI.COMM_WORLD.Get_rank()

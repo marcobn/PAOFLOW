@@ -15,7 +15,7 @@ orchestrates the full self-consistent cycle:
 1. Parse a user-supplied Quantum ESPRESSO ``<prefix>.scf.in`` template
    (and the matching ``<prefix>.nscf.in`` / ``<prefix>.projwfc.in``).
 2. Fit each pseudopotential's atomic wavefunctions to a contracted
-   Gaussian basis (:mod:`PAOFLOW.defs.upf_gaussfit`) so the Coulomb
+   Gaussian basis (:mod:`PAOFLOW.projection.upf_gaussfit`) so the Coulomb
    integrals required by the ACBN0 formula can be evaluated
    analytically.
 3. On every outer iteration, inject the current ``HUBBARD`` card into
@@ -124,10 +124,10 @@ Attributes set at construction
 - :attr:`uspecies` (``list[str]``) — atomic species discovered in the
   ``ATOMIC_SPECIES`` card.
 - :attr:`basis` (``dict[str, list]``) — per-species fitted Gaussian
-  basis from :func:`PAOFLOW.defs.upf_gaussfit.gaussian_fit`.
+  basis from :func:`PAOFLOW.projection.upf_gaussfit.gaussian_fit`.
 - :attr:`blocks` / :attr:`cards` — parsed namelists / cards of the
   SCF input template, as returned by
-  :func:`PAOFLOW.defs.file_io.struct_from_inputfile_QE`.
+  :func:`PAOFLOW.inputs.file_io.struct_from_inputfile_QE`.
 - :attr:`nspin` — read from the ``&system`` block (defaults to 1).
 - :attr:`hubbard_tag` — header line of the ``HUBBARD`` card
   (e.g. ``'HUBBARD (atomic)'``).
@@ -146,10 +146,10 @@ Notes
   full BZ when ``nosym = noinv = .true.``) and is written to disk
   without any FFT to real space.  The reshape to
   ``(nawf, nawf, nk1, nk2, nk3, nspin)`` in
-  :func:`PAOFLOW.defs.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
+  :func:`PAOFLOW.hamiltonian.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
   is therefore skipped for ACBN0; both IBZ and full-BZ k-grids are
   accepted.
-- :func:`PAOFLOW.defs.do_build_pao_hamiltonian.build_Hks` now applies a
+- :func:`PAOFLOW.hamiltonian.do_build_pao_hamiltonian.build_Hks` now applies a
   *per-k* projectability filter (``pthr_local``, defaulting to
   ``0.5 * pthr``) in addition to the global ``pthr``.  Bands whose
   local PAO projection at a given k vanishes (typically one of a
@@ -186,7 +186,7 @@ class _HartreeKernel:
       dictionary to all ranks (stored as ``self.data``).
     - ``coulomb(a, b, c, d)`` — chemist's-notation four-centre Coulomb
       integral ``(ab|cd)`` between contracted Cartesian Gaussians,
-      delegating to :func:`PAOFLOW.defs.pyints.contr_coulomb`.
+      delegating to :func:`PAOFLOW.utils.pyints.contr_coulomb`.
 
     Subclasses implement the kernel-specific accumulation
     (:meth:`ACBN0_Hartree.hartree_energy`,
@@ -208,7 +208,7 @@ class _HartreeKernel:
     def coulomb(self, a, b, c, d):
         """Coulomb integral ``(ab|cd)`` (chemist's notation) between
         four contracted Gaussian basis functions."""
-        from .defs.pyints import contr_coulomb
+        from .utils.pyints import contr_coulomb
 
         return contr_coulomb(
             a.pexps,
@@ -285,7 +285,7 @@ class ACBN0_Hartree(_HartreeKernel):
     where the four indices run over ``basis_2e`` (the Hubbard-active
     subshell), the two-electron integrals
     ``(ab|cd) = ∫∫ φ_a(r₁) φ_b(r₁) (1/r₁₂) φ_c(r₂) φ_d(r₂) dr₁ dr₂`` are
-    evaluated analytically by :func:`PAOFLOW.defs.pyints.contr_coulomb`
+    evaluated analytically by :func:`PAOFLOW.utils.pyints.contr_coulomb`
     over contracted Cartesian Gaussians, and the spin pre-factors follow
     the ACBN0 decomposition
     (Agapito *et al.*, Phys. Rev. X **5**, 011006 (2015)).  The U sum
@@ -330,7 +330,7 @@ class ACBN0_Hartree(_HartreeKernel):
 
     - ``'DR_up'``, ``'DR_dn'`` — ``(nbasis, nbasis)`` complex arrays, the
       renormalized real-space density matrices (R=0) per spin channel.
-    - ``'basis'`` — list of :class:`PAOFLOW.defs.pyints.CGBF` contracted
+    - ``'basis'`` — list of :class:`PAOFLOW.utils.pyints.CGBF` contracted
       Gaussian basis functions covering the entire site.
     - ``'basis_2e'`` — list of integer indices into ``basis`` selecting
       the Hubbard-active subshell over which the four-index sum is
@@ -494,7 +494,7 @@ class eACBN0_Hartree(_HartreeKernel):
     two-electron integral ``(ik|jl) = ∫∫ φ_i^I(r₁) φ_k^I(r₁) (1/r₁₂)
     φ_j^J(r₂) φ_l^J(r₂) dr₁ dr₂`` is evaluated analytically over
     contracted Cartesian Gaussians by
-    :func:`PAOFLOW.defs.pyints.contr_coulomb`.
+    :func:`PAOFLOW.utils.pyints.contr_coulomb`.
 
     The denominator of Eq. (8) is built directly on the driver side in
     :meth:`eACBN0.run_eacbn0_V` from the bare occupation
@@ -543,7 +543,7 @@ class eACBN0_Hartree(_HartreeKernel):
     ranks in :meth:`__init__`) containing one entry per pair:
 
     - ``'gauss_I'``, ``'gauss_J'`` — lists of
-      :class:`PAOFLOW.defs.pyints.CGBF` contracted Gaussian basis
+      :class:`PAOFLOW.utils.pyints.CGBF` contracted Gaussian basis
       functions covering the Hubbard-active shells on atoms I and J,
       with origins in Bohr (J already translated by ``R*``).
     - ``'P_II_up'``, ``'P_II_dn'`` — ``(n_I, n_I)`` complex on-site
@@ -713,9 +713,9 @@ class ACBN0:
         """
         from os import chdir
 
-        from .defs.file_io import struct_from_inputfile_QE
-        from .defs.header import header
-        from .defs.upf_gaussfit import gaussian_fit
+        from .inputs.file_io import struct_from_inputfile_QE
+        from .utils.header import header
+        from .projection.upf_gaussfit import gaussian_fit
 
         header()
         print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
@@ -1013,7 +1013,7 @@ class ACBN0:
         return card
 
     def run_dft(self, prefix, species, uVals):
-        from .defs.file_io import create_atomic_inputfile, struct_from_inputfile_QE
+        from .inputs.file_io import create_atomic_inputfile, struct_from_inputfile_QE
 
         blocks, cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
         cards['HUBBARD'] = self.hubbard_card()
@@ -1035,7 +1035,7 @@ class ACBN0:
             self.exec_QE(executables[c], f'{c}.in')
 
     def run_paoflow(self, prefix, save_prefix):
-        from .defs.file_io import create_acbn0_inputfile
+        from .inputs.file_io import create_acbn0_inputfile
 
         fstr = f'{prefix}_PAO_bands' + '{}.in'
         calcs = []
@@ -1218,7 +1218,7 @@ class ACBN0:
         return uVals
 
     def getbasis(self, basis, species, lattice, coords):
-        from .defs.pyints import CGBF
+        from .utils.pyints import CGBF
 
         basis_functions = []
         for a, pos in zip(species, coords):
@@ -1488,11 +1488,11 @@ class eACBN0(ACBN0):
     - The underlying PAOFLOW call uses
       ``pao_hamiltonian(write_binary=True, expand_wedge=True)``.  The resulting ``Hks``
       is on the full BZ produced by QE The reshape to ``(nawf, nawf, nk1, nk2, nk3, nspin)`` in
-      :func:`PAOFLOW.defs.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
+      :func:`PAOFLOW.hamiltonian.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
       is now guarded by an array-size check, so the same code path also
       handles the IBZ k-grid that arises from the bare ACBN0 (U-only)
       stage when run without ``nosym/noinv``.
-    - :func:`PAOFLOW.defs.do_build_pao_hamiltonian.build_Hks` now applies a
+    - :func:`PAOFLOW.hamiltonian.do_build_pao_hamiltonian.build_Hks` now applies a
       *per-k* projectability filter (``pthr_local``, defaulting to
       ``0.5 * pthr``) in addition to the global ``pthr``.  Bands whose
       local PAO projection at a given k vanishes (typically one of a
@@ -1899,7 +1899,7 @@ class eACBN0(ACBN0):
         """Build the CGBFs of the ``(ele, L)`` shell centred at
         ``pos_angstrom`` (Cartesian Ångström).  Returns a list with one
         CGBF per magnetic component (``2L+1`` Gaussians)."""
-        from .defs.pyints import CGBF
+        from .utils.pyints import CGBF
 
         gauss = []
         origin_bohr = np.asarray(pos_angstrom) * ANGS_TO_BOHR

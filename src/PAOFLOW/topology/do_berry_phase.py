@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg as la
 
-from .constants import ANGSTROM_AU
+from ..utils.constants import ANGSTROM_AU
 
 
 def do_berry_phase(self):
@@ -414,7 +414,7 @@ def bands_calc(data_controller):
     ------------
     Stores the local k-slice Hamiltonian in ``arry['berry_Hks']``.
     """
-    from .communication import scatter_full
+    from ..utils.communication import scatter_full
 
     arry, attr = data_controller.data_dicts()
 
@@ -517,8 +517,8 @@ def do_berry_bands(data_controller):
     ``arry['R_wght']``, and (path/track) ``arry['berry_kq']``,
     ``arry['berry_contour']``.
     """
-    from .constants import ANGSTROM_AU
-    from .get_R_grid_fft import get_R_grid_fft
+    from ..utils.constants import ANGSTROM_AU
+    from ..utils.get_R_grid_fft import get_R_grid_fft
 
     arry, attr = data_controller.data_dicts()
 
@@ -560,7 +560,7 @@ def berry_kpnts_interpolation_mesh(data_controller):
         numK    : Total no. of k-points
     """
 
-    from .kpnts_interpolation_mesh import get_path
+    from ..spectrum.kpnts_interpolation_mesh import get_path
 
     arry, attr = data_controller.data_dicts()
 

@@ -76,7 +76,7 @@ Recommended usage
 -----------------
 ::
 
-    from PAOFLOW.defs.pfaffian import pfaffian
+    from PAOFLOW.topology.pfaffian import pfaffian
 
     pf = pfaffian(A)               # Parlett-Reid (default, works for real & complex)
     pf = pfaffian(A, method='H')   # Householder alternative

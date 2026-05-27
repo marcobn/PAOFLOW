@@ -119,7 +119,7 @@ Typical usage
 -------------
 ::
 
-    from PAOFLOW.defs.sk_fitting import SKFitter, SKFitterEDTB, MultiGeomEDTB
+    from PAOFLOW.models.sk_fitting import SKFitter, SKFitterEDTB, MultiGeomEDTB
 
     # 1. Plain SK fit
     fitter = SKFitter(arryp, attrp, n_shells=2, nkfit=6)
@@ -149,7 +149,7 @@ from collections import defaultdict
 import numpy as np
 from scipy.optimize import least_squares
 
-from PAOFLOW.defs.kpnts_interpolation_mesh import get_path as _get_path
+from PAOFLOW.spectrum.kpnts_interpolation_mesh import get_path as _get_path
 
 # ═══════════════════════════════════════════════════════════════
 #  1. Slater-Koster two-center integrals (standard √3 convention)

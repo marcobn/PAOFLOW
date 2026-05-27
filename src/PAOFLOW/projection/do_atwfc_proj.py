@@ -45,7 +45,7 @@ def _parallel_radialfft(tasks, qmesh, volume):
     return wfc_g_all
 
 
-from .read_upf import UPF
+from ..inputs.read_upf import UPF
 
 AUTOA = 0.529177249  # VASP A.U. to Angstrom
 # Unitility functions to build atomic wfc from the pseudopotential and build the projections U (and overlaps if needed)

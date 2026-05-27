@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from PAOFLOW.defs.basis_presets import (
+from PAOFLOW.inputs.basis_presets import (
     SUPPORTED_PRESETS,
     available_ae_shells,
     element_block,

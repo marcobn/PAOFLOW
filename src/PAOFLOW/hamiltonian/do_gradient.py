@@ -53,8 +53,8 @@ def do_gradient(data_controller):
     import numpy as np
     from scipy import fftpack as FFT
 
-    from .communication import scatter_full
-    from .get_R_grid_fft import get_R_grid_fft
+    from ..utils.communication import scatter_full
+    from ..utils.get_R_grid_fft import get_R_grid_fft
 
     arry, attr = data_controller.data_dicts()
 

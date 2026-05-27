@@ -1,7 +1,7 @@
 import numpy as np
 from mpi4py import MPI
 
-from .smearing import intmetpax
+from ..utils.smearing import intmetpax
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

@@ -123,7 +123,7 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
     via :func:`smearing.gaussian` or :func:`smearing.metpax`.  This
     approach follows Yates *et al.*, Phys. Rev. B **75**, 195121 (2007).
     """
-    from .smearing import metpax, gaussian
+    from ..utils.smearing import metpax, gaussian
 
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes

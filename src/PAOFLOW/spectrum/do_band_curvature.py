@@ -45,7 +45,7 @@ def do_band_curvature(data_controller):
 
     import numpy as np
 
-    from .do_d2Hd2k import do_d2Hd2k_ij
+    from ..hamiltonian.do_d2Hd2k import do_d2Hd2k_ij
 
     ary, attr = data_controller.data_dicts()
     bnd = attr['bnd']

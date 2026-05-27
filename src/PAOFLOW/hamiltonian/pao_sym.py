@@ -82,8 +82,8 @@ from mpi4py import MPI
 from scipy.spatial.distance import cdist
 from scipy.special import factorial as fac
 
-from .communication import gather_full, gather_scatter, scatter_full
-from .zero_pad import zero_pad
+from ..utils.communication import gather_full, gather_scatter, scatter_full
+from ..utils.zero_pad import zero_pad
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
