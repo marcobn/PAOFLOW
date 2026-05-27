@@ -8,7 +8,9 @@ subpackages in ``src/PAOFLOW/`` (see
     import PAOFLOW.defs.X
 
 continue to work via a meta-path finder that transparently aliases the
-old dotted name to its new location and emits a ``DeprecationWarning``.
+old dotted name to its new location and emits a ``FutureWarning``
+(shown unconditionally, unlike ``DeprecationWarning`` which is silenced
+outside ``__main__`` per PEP 565).
 
 External code (notebooks, AFLOWpi, user scripts) should migrate to the
 new paths:
@@ -107,7 +109,7 @@ class _DefsAliasFinder(_MetaPathFinder):
         new_name = f'PAOFLOW.{new_stage}.{leaf}'
         _warnings.warn(
             f'{fullname} is deprecated; import from {new_name} instead',
-            DeprecationWarning, stacklevel=2,
+            FutureWarning, stacklevel=2,
         )
         return _spec_from_loader(fullname, _DefsAliasLoader(new_name))
 
@@ -123,7 +125,7 @@ def __getattr__(name):
         _warnings.warn(
             f'PAOFLOW.defs.{name} is deprecated; import from '
             f'PAOFLOW.{_MODULE_MAP[name]}.{name} instead',
-            DeprecationWarning, stacklevel=2,
+            FutureWarning, stacklevel=2,
         )
         return _import_module(f'PAOFLOW.defs.{name}')
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
