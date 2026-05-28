@@ -1463,12 +1463,34 @@ def inject_into_dHksp(
         raise ValueError(
             f'delta_pksp must have shape (nktot, 3, nawf, nawf); got {delta_pksp.shape}'
         )
-    if dHksp.shape[:4] != delta_pksp.shape:
+    nawf_dH = dHksp.shape[2]
+    nawf_dP = delta_pksp.shape[2]
+    if dHksp.shape[:2] != delta_pksp.shape[:2] or dHksp.shape[3] != nawf_dH:
         raise ValueError(
             f'shape mismatch: dHksp[:4]={dHksp.shape[:4]} vs delta_pksp={delta_pksp.shape}'
+        )
+    if nawf_dH == nawf_dP:
+        spinor = False
+    elif nawf_dH == 2 * nawf_dP:
+        # Spin-orbit / spinor doubled basis: PAOFLOW lays out
+        # [up-orbitals ; down-orbitals] globally (see do_spin_orbit.py).
+        # For NC pseudopotentials V_NL is spin-diagonal at the projector
+        # level, so the spinor extension is block-diagonal:
+        #   Delta_p_spinor = diag(Delta_p, Delta_p)
+        spinor = True
+    else:
+        raise ValueError(
+            f'shape mismatch: dHksp[:4]={dHksp.shape[:4]} vs delta_pksp={delta_pksp.shape} '
+            f'(neither equal nawf nor 2x for spinor doubling)'
         )
 
     scale = sign * lam
     nspin = dHksp.shape[-1]
-    for ispin in range(nspin):
-        dHksp[:, :, :, :, ispin] += scale * delta_pksp
+    if not spinor:
+        for ispin in range(nspin):
+            dHksp[:, :, :, :, ispin] += scale * delta_pksp
+    else:
+        n = nawf_dP
+        for ispin in range(nspin):
+            dHksp[:, :, :n, :n, ispin] += scale * delta_pksp
+            dHksp[:, :, n:, n:, ispin] += scale * delta_pksp
