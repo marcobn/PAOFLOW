@@ -479,12 +479,12 @@ class PAOFLOW:
         """
 
         from .inputs.basis_presets import resolve_configuration
-        from .utils.communication import gather_array, load_balancing
         from .projection.do_atwfc_proj import (
             build_aewfc_basis,
             build_pswfc_basis_all,
             calc_proj_k,
         )
+        from .utils.communication import gather_array, load_balancing
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -563,8 +563,8 @@ class PAOFLOW:
         """
         from os.path import exists, join
 
-        from .projection.do_atwfc_proj import build_pswfc_basis_all
         from .inputs.read_upf import UPF
+        from .projection.do_atwfc_proj import build_pswfc_basis_all
 
         arry, attr = self.data_controller.data_dicts()
         fpath = attr['fpath']
@@ -808,8 +808,8 @@ class PAOFLOW:
             None
 
         """
-        from .utils.communication import gather_full
         from .spectrum.do_bands import do_bands
+        from .utils.communication import gather_full
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1263,9 +1263,9 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .utils.communication import gather_scatter
         from .hamiltonian.do_double_grid import do_double_grid
         from .spectrum.do_Efermi import E_Fermi
+        from .utils.communication import gather_scatter
         from .utils.get_K_grid_fft import get_K_grid_fft
 
         arrays, attr = self.data_controller.data_dicts()
@@ -1349,8 +1349,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .utils.communication import gather_full, scatter_full
         from .spectrum.do_eigh import do_pao_eigh
+        from .utils.communication import gather_full, scatter_full
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1410,9 +1410,9 @@ class PAOFLOW:
         """
         import numpy as np
 
-        from .utils.communication import gather_scatter
         from .hamiltonian.do_gradient import do_gradient
         from .hamiltonian.do_momentum import do_momentum
+        from .utils.communication import gather_scatter
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1685,8 +1685,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .response.do_Hall import do_spin_Hall
         from .projection.projection_operator import do_projection_operator, orbital_array
+        from .response.do_Hall import do_spin_Hall
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1980,20 +1980,70 @@ class PAOFLOW:
         d_tensor=None,
         degauss=0.1,
     ):
-        """
-        Calculate the Dielectric Tensor
+        r"""Compute the frequency-dependent dielectric tensor.
 
-        Arguments:
-            delta (float): Inter-smearing parameter in eV
-            intrasmear (float): Intra-smearing parameter for metal in eV
-            emin (float): The minimum value of energy
-            emax (float): The maximum value of energy
-            ne (float): Number of energy values between emin and emax
-            d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
-            Can also use options 'all', 'diag', 'offdiag'.
+        Evaluates :math:`\varepsilon_{\alpha\beta}(\omega) =
+        \varepsilon_1 + i\varepsilon_2` in the independent-particle
+        (RPA, no local-field) approximation using the Drude-Lorentz form
+        of Quantum ESPRESSO's ``epsilon.x`` (Calandra & Mauri / QE
+        manual, ``epsilon.x`` user guide, eq. 8):
 
-        Returns:
-            None
+        * Interband (:math:`n \neq n'`): prefactor :math:`8\pi e^2/(\Omega N_k m^2)`.
+        * Intraband / Drude (metals only): prefactor :math:`4\pi e^2/(\Omega N_k m^2)`,
+          i.e. one half of the interband prefactor. PAOFLOW applies a
+          single common normalization built for the interband case and
+          rescales the intraband contribution internally by ``1/2`` —
+          see ``response/do_epsilon.py``.
+
+        Outputs (written by ``data_controller``):
+
+        * ``epsi_<a><b>.dat`` — :math:`\varepsilon_2(\omega)` (imag part)
+        * ``epsr_<a><b>.dat`` — :math:`\varepsilon_1(\omega)` (real part)
+        * ``ieps_<a><b>.dat`` — :math:`\varepsilon(i\omega)`, the Kramers-Kronig
+          transform onto the imaginary frequency axis
+        * ``eels_<a><b>.dat`` — :math:`-\mathrm{Im}\,\varepsilon^{-1}(\omega)`,
+          electron energy-loss function. **Only written for diagonal pairs**
+          (``ipol == jpol``); the EELS = :math:`\varepsilon_2/(\varepsilon_1^2+\varepsilon_2^2)`
+          formula is not physically meaningful for off-diagonal components.
+
+        On rank 0 the f-sum-rule plasmon frequency
+        :math:`\omega_p = \sqrt{(2/\pi)\int_0^{\omega_{\max}}\omega\varepsilon_2 d\omega}`
+        is printed per diagonal component and can be compared against the
+        equivalent value from ``epsilon.x``.
+
+        Parameters
+        ----------
+        delta : float, optional
+            Interband broadening :math:`\Gamma` (eV). QE input
+            ``intersmear``. Default 0.1.
+        intrasmear : float, optional
+            Intraband Drude broadening :math:`\eta` (eV). QE input
+            ``intrasmear``. Default 0.05.
+        emin, emax : float, optional
+            Frequency window (eV).
+        ne : int, optional
+            Number of frequency samples in ``[emin, emax]``.
+        d_tensor : list or {'all', 'diag', 'offdiag'}, optional
+            Tensor components to compute. ``'diag'`` -> ``[[0,0],[1,1],[2,2]]``,
+            ``'offdiag'`` -> the six off-diagonal pairs, or pass an explicit
+            list such as ``[[0,0],[1,2]]``.
+        degauss : float, optional
+            Fermi-Dirac smearing width (eV) used to evaluate occupations
+            and (for metals) the Drude :math:`-\partial f/\partial E`
+            delta-function approximation. Should match the QE SCF/NSCF
+            smearing for direct benchmarks.
+
+        Returns
+        -------
+        None
+            Files are written through ``data_controller``.
+
+        Notes
+        -----
+        Benchmarked against ``epsilon.x`` on Si (insulator) and Al fcc
+        (metal); see ``examples/qe_examples/example15_Si_epsilon`` and
+        ``example17_Al_epsilon``. Plasmon frequencies agree to within a
+        few percent on a converged 16x16x16 k-grid.
         """
 
         from .response.do_epsilon import do_dielectric_tensor
