@@ -2005,20 +2005,70 @@ class PAOFLOW:
         d_tensor=None,
         degauss=0.1,
     ):
-        """
-        Calculate the Dielectric Tensor
+        r"""Compute the frequency-dependent dielectric tensor.
 
-        Arguments:
-            delta (float): Inter-smearing parameter in eV
-            intrasmear (float): Intra-smearing parameter for metal in eV
-            emin (float): The minimum value of energy
-            emax (float): The maximum value of energy
-            ne (float): Number of energy values between emin and emax
-            d_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
-            Can also use options 'all', 'diag', 'offdiag'.
+        Evaluates :math:`\varepsilon_{\alpha\beta}(\omega) =
+        \varepsilon_1 + i\varepsilon_2` in the independent-particle
+        (RPA, no local-field) approximation using the Drude-Lorentz form
+        of Quantum ESPRESSO's ``epsilon.x`` (Calandra & Mauri / QE
+        manual, ``epsilon.x`` user guide, eq. 8):
 
-        Returns:
-            None
+        * Interband (:math:`n \neq n'`): prefactor :math:`8\pi e^2/(\Omega N_k m^2)`.
+        * Intraband / Drude (metals only): prefactor :math:`4\pi e^2/(\Omega N_k m^2)`,
+          i.e. one half of the interband prefactor. PAOFLOW applies a
+          single common normalization built for the interband case and
+          rescales the intraband contribution internally by ``1/2`` —
+          see ``response/do_epsilon.py``.
+
+        Outputs (written by ``data_controller``):
+
+        * ``epsi_<a><b>.dat`` — :math:`\varepsilon_2(\omega)` (imag part)
+        * ``epsr_<a><b>.dat`` — :math:`\varepsilon_1(\omega)` (real part)
+        * ``ieps_<a><b>.dat`` — :math:`\varepsilon(i\omega)`, the Kramers-Kronig
+          transform onto the imaginary frequency axis
+        * ``eels_<a><b>.dat`` — :math:`-\mathrm{Im}\,\varepsilon^{-1}(\omega)`,
+          electron energy-loss function. **Only written for diagonal pairs**
+          (``ipol == jpol``); the EELS = :math:`\varepsilon_2/(\varepsilon_1^2+\varepsilon_2^2)`
+          formula is not physically meaningful for off-diagonal components.
+
+        On rank 0 the f-sum-rule plasmon frequency
+        :math:`\omega_p = \sqrt{(2/\pi)\int_0^{\omega_{\max}}\omega\varepsilon_2 d\omega}`
+        is printed per diagonal component and can be compared against the
+        equivalent value from ``epsilon.x``.
+
+        Parameters
+        ----------
+        delta : float, optional
+            Interband broadening :math:`\Gamma` (eV). QE input
+            ``intersmear``. Default 0.1.
+        intrasmear : float, optional
+            Intraband Drude broadening :math:`\eta` (eV). QE input
+            ``intrasmear``. Default 0.05.
+        emin, emax : float, optional
+            Frequency window (eV).
+        ne : int, optional
+            Number of frequency samples in ``[emin, emax]``.
+        d_tensor : list or {'all', 'diag', 'offdiag'}, optional
+            Tensor components to compute. ``'diag'`` -> ``[[0,0],[1,1],[2,2]]``,
+            ``'offdiag'`` -> the six off-diagonal pairs, or pass an explicit
+            list such as ``[[0,0],[1,2]]``.
+        degauss : float, optional
+            Fermi-Dirac smearing width (eV) used to evaluate occupations
+            and (for metals) the Drude :math:`-\partial f/\partial E`
+            delta-function approximation. Should match the QE SCF/NSCF
+            smearing for direct benchmarks.
+
+        Returns
+        -------
+        None
+            Files are written through ``data_controller``.
+
+        Notes
+        -----
+        Benchmarked against ``epsilon.x`` on Si (insulator) and Al fcc
+        (metal); see ``examples/qe_examples/example15_Si_epsilon`` and
+        ``example17_Al_epsilon``. Plasmon frequencies agree to within a
+        few percent on a converged 16x16x16 k-grid.
         """
 
         from .response.do_epsilon import do_dielectric_tensor
