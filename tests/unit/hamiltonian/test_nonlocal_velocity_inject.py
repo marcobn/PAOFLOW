@@ -32,12 +32,12 @@ def _random_arrays(rng, nktot=4, nawf=3, nspin=2):
     return dH, dP
 
 
-def test_inject_rydberg_default_sign_subtracts_lambda_dP():
+def test_inject_rydberg_default_sign_adds_lambda_dP():
     rng = np.random.default_rng(0)
     dH, dP = _random_arrays(rng)
     dH_before = dH.copy()
-    inject_into_dHksp(dH, dP)  # defaults: units='rydberg', sign=-1
-    expected = dH_before - RYDBERG_IN_EV * dP[..., None]
+    inject_into_dHksp(dH, dP)  # defaults: units='rydberg', sign=+1
+    expected = dH_before + RYDBERG_IN_EV * dP[..., None]
     np.testing.assert_allclose(dH, expected, rtol=0, atol=1e-12)
 
 
@@ -46,16 +46,16 @@ def test_inject_hartree_uses_factor_two():
     dH, dP = _random_arrays(rng)
     dH_before = dH.copy()
     inject_into_dHksp(dH, dP, units='hartree')
-    expected = dH_before - 2.0 * RYDBERG_IN_EV * dP[..., None]
+    expected = dH_before + 2.0 * RYDBERG_IN_EV * dP[..., None]
     np.testing.assert_allclose(dH, expected, rtol=0, atol=1e-12)
 
 
-def test_inject_positive_sign_adds():
+def test_inject_negative_sign_subtracts():
     rng = np.random.default_rng(2)
     dH, dP = _random_arrays(rng)
     dH_before = dH.copy()
-    inject_into_dHksp(dH, dP, sign=+1)
-    expected = dH_before + RYDBERG_IN_EV * dP[..., None]
+    inject_into_dHksp(dH, dP, sign=-1)
+    expected = dH_before - RYDBERG_IN_EV * dP[..., None]
     np.testing.assert_allclose(dH, expected, rtol=0, atol=1e-12)
 
 
@@ -133,6 +133,35 @@ def test_inject_rejects_bad_delta_pksp_rank():
     dH = np.zeros((1, 3, 1, 1, 1), dtype=complex)
     dP = np.zeros((1, 3, 1, 1, 1), dtype=complex)  # 5-D, wrong
     with pytest.raises(ValueError, match='delta_pksp'):
+        inject_into_dHksp(dH, dP)
+
+
+def test_inject_spinor_doubled_dHksp_tiles_block_diagonal():
+    # SOC / fully-relativistic path: dHksp lives in the spinor-doubled
+    # basis (2*nawf), Delta_pksp lives in the projector basis (nawf).
+    # The NL correction is spin-diagonal at the projector level (NC pseudo),
+    # so the in-place add must tile block-diagonal [[dP, 0], [0, dP]]
+    # matching PAOFLOW's [up; down] global layout from do_spin_orbit.py.
+    rng = np.random.default_rng(7)
+    nktot, nawf = 3, 4
+    dH = np.zeros((nktot, 3, 2 * nawf, 2 * nawf, 1), dtype=complex)
+    dP = rng.standard_normal((nktot, 3, nawf, nawf)) + 1j * rng.standard_normal(
+        (nktot, 3, nawf, nawf)
+    )
+    inject_into_dHksp(dH, dP, units='rydberg', sign=+1)
+    lam = RYDBERG_IN_EV
+    np.testing.assert_allclose(dH[:, :, :nawf, :nawf, 0], lam * dP)
+    np.testing.assert_allclose(dH[:, :, nawf:, nawf:, 0], lam * dP)
+    # off-diagonal spin blocks untouched
+    np.testing.assert_array_equal(dH[:, :, :nawf, nawf:, 0], 0)
+    np.testing.assert_array_equal(dH[:, :, nawf:, :nawf, 0], 0)
+
+
+def test_inject_rejects_non_doubled_mismatched_nawf():
+    # Not a clean 2x relationship => still rejected.
+    dH = np.zeros((1, 3, 5, 5, 1), dtype=complex)
+    dP = np.zeros((1, 3, 3, 3), dtype=complex)
+    with pytest.raises(ValueError, match='mismatch'):
         inject_into_dHksp(dH, dP)
 
 
