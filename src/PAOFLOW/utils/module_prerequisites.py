@@ -16,6 +16,7 @@ module_pre_reqs = {
     'fermi_surface': ['pao_eigh'],
     'spin_texture': ['pao_eigh'],
     'gradient_and_momenta': ['pao_eigh'],
+    'nonlocal_velocity_correction': ['gradient_and_momenta'],
     'ipr': ['pao_eigh'],
     'berry_phase': ['pao_hamiltonian'],
     'real_space_wfc': ['gradient_and_momenta', 'atomic_orbitals'],
