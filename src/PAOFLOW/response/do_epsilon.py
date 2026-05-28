@@ -8,7 +8,7 @@ from ..utils.smearing import gaussian, intgaussian, intmetpax, metpax
 
 
 def do_dielectric_tensor(data_controller, ene):
-    """Compute and write the frequency-dependent dielectric tensor.
+    r"""Compute and write the frequency-dependent dielectric tensor.
 
     Iterates over every tensor component pair ``(i, j)`` listed in
     ``arrays['d_tensor']`` and for each one calls :func:`do_epsilon` to
@@ -74,9 +74,13 @@ def do_dielectric_tensor(data_controller, ene):
             jpol = d_tensor[n][1]
 
             epsi, epsr, eels, ieps = do_epsilon(data_controller, ene, 0, ipol, jpol)
-            # Write files
+            # Write files. EELS = -Im(1/eps) is only physically meaningful for
+            # diagonal tensor components, so we skip it for off-diagonal pairs.
             indices = (LL[ipol], LL[jpol])
-            for ep, es in [(epsi, 'epsi'), (epsr, 'epsr'), (eels, 'eels'), (ieps, 'ieps')]:
+            spectra = [(epsi, 'epsi'), (epsr, 'epsr'), (ieps, 'ieps')]
+            if ipol == jpol:
+                spectra.append((eels, 'eels'))
+            for ep, es in spectra:
                 fn = '%s_%s%s.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
 
@@ -92,13 +96,20 @@ def do_dielectric_tensor(data_controller, ene):
 
             epsi_0, epsr_0, eels_0, ieps_0 = do_epsilon(data_controller, ene, 0, ipol, jpol)
             epsi_1, epsr_1, eels_1, ieps_1 = do_epsilon(data_controller, ene, 1, ipol, jpol)
-            # Write files
+            # Write files. EELS = -Im(1/eps) is only physically meaningful for
+            # diagonal tensor components, so we skip it for off-diagonal pairs.
             indices = (LL[ipol], LL[jpol], 0)
-            for ep, es in [(epsi_0, 'epsi'), (epsr_0, 'epsr'), (eels_0, 'eels'), (ieps_0, 'ieps')]:
+            spectra0 = [(epsi_0, 'epsi'), (epsr_0, 'epsr'), (ieps_0, 'ieps')]
+            if ipol == jpol:
+                spectra0.append((eels_0, 'eels'))
+            for ep, es in spectra0:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
             indices = (LL[ipol], LL[jpol], 1)
-            for ep, es in [(epsi_1, 'epsi'), (epsr_1, 'epsr'), (eels_1, 'eels'), (ieps_1, 'ieps')]:
+            spectra1 = [(epsi_1, 'epsi'), (epsr_1, 'epsr'), (ieps_1, 'ieps')]
+            if ipol == jpol:
+                spectra1.append((eels_1, 'eels'))
+            for ep, es in spectra1:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
 
@@ -110,7 +121,7 @@ def do_dielectric_tensor(data_controller, ene):
 
 
 def do_jdos(data_controller, ene, jdos_smeartype):
-    """Compute and write the joint density of states (JDOS).
+    r"""Compute and write the joint density of states (JDOS).
 
     The JDOS counts the number of interband transitions at each photon
     energy
@@ -178,7 +189,7 @@ def do_jdos(data_controller, ene, jdos_smeartype):
 
 
 def do_epsilon(data_controller, ene, ispin, ipol, jpol):
-    """Compute the dielectric-function components for one spin channel and polarization pair.
+    r"""Compute the dielectric-function components for one spin channel and polarization pair.
 
     Calls :func:`eps_loop` to accumulate the imaginary and real parts of the
     interband dielectric function across all k-points (reducing partial sums
@@ -275,21 +286,33 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
     ### TNeeds revision. Each processor is allocating zeros here, when only rank 0 needs it.
     ### Can be condensed
 
-    ieps = np.zeros(esize, dtype=float)
-
     epsi *= factor
     epsr = 1.0 * (ipol == jpol) + epsr * factor
-    eels = epsi / (epsi**2 + epsr**2)
+
+    # EELS = -Im(1/eps) = eps2/(eps1^2+eps2^2) is only physically meaningful
+    # for diagonal tensor components. Emit zeros for off-diagonals and let the
+    # caller decide whether to write the file (see ``do_dielectric_tensor``).
+    if ipol == jpol:
+        eels = epsi / (epsi**2 + epsr**2)
+    else:
+        eels = np.zeros(esize, dtype=float)
+
+    # London transform: dielectric on the imaginary frequency axis
+    #   eps(iω) = 1 + (2/π) ∫₀^∞ ω' eps₂(ω') / (ω'² + ω²) dω'
+    # Integrand evaluated on the existing energy grid (any spacing).
+    # The j=0 sample is skipped because ene[0] is shifted to ~1e-5 eV to avoid
+    # a 1/0 divergence elsewhere; its contribution is negligible.
+    ieps = np.empty(esize, dtype=float)
+    integrand_num = ene[1:] * epsi[1:]
     for i in range(esize):
-        for j in range(1, esize):
-            ieps[i] += ene[j] * epsi[j] / (ene[i] ** 2 + ene[j] ** 2)
-    ieps = 1.0 + (2.0 / np.pi) * ieps * (ene[3] - ene[2])
+        ieps[i] = np.trapezoid(integrand_num / (ene[i] ** 2 + ene[1:] ** 2), x=ene[1:])
+    ieps = 1.0 + (2.0 / np.pi) * ieps
 
     return (epsi, epsr, eels, ieps)
 
 
 def eps_loop(data_controller, ene, ispin, ipol, jpol):
-    """Inner BZ loop: accumulate the interband dielectric-function integrands.
+    r"""Inner BZ loop: accumulate the interband dielectric-function integrands.
 
     Evaluates the Kubo\u2013Greenwood sum
 
@@ -357,13 +380,15 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     epsi = np.zeros(esize, dtype=float)
     epsr = np.zeros(esize, dtype=float)
 
-    if smearing != None:
-        degauss = attributes['degauss']
-        # Adaptive smearing not implemented
-        # if 'deltakp' in arrays:  # check whether adaptive smearing is used
-        #     degauss = arrays['deltakp'][:, :bndmax, ispin]
-        #     if rank == 0:
-        #         print('Using adaptive smearing')
+    # ``degauss`` is needed both for the integrated occupations (insulators)
+    # and for the Drude term (metals); pull it unconditionally so the metal
+    # fallback below cannot NameError when ``smearing is None``.
+    degauss = attributes.get('degauss', None)
+    # Adaptive smearing not implemented
+    # if 'deltakp' in arrays:  # check whether adaptive smearing is used
+    #     degauss = arrays['deltakp'][:, :bndmax, ispin]
+    #     if rank == 0:
+    #         print('Using adaptive smearing')
 
     if smearing == None:
         fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
@@ -385,7 +410,16 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
         elif smearing == 'm-p':
             fnF = spin_factor * metpax(Ek, Ef, degauss)
         else:
-            print('Smearing is None for a metal, switching to gaussian smearing')
+            if degauss is None:
+                raise ValueError(
+                    'Metal dielectric requires a smearing width: pass'
+                    " `smearing='gauss'` (or 'm-p') and a `degauss` value."
+                )
+            if rank == 0:
+                print(
+                    'Smearing is None for a metal, switching to gaussian'
+                    ' smearing with degauss = %.4f eV' % degauss
+                )
             fnF = spin_factor * gaussian(Ek, Ef, degauss)
 
     for ik in range(fn.shape[0]):
@@ -442,20 +476,21 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                     pass
 
     if not attributes['insulator']:
-        # if from_wfc:
-        #     from ..utils.constants import RYTOEV
-        #     epsi_metal *= 0.5*spin_factor/RYTOEV
-        #     epsr_metal *= 0.5*spin_factor/RYTOEV
-
-        epsi += epsi_metal
-        epsr += epsr_metal
+        # The intraband (Drude) contribution carries a 4\u03c0 prefactor in QE
+        # eq. (8) line 1, while the interband contribution carries 8\u03c0
+        # (eq. 8 line 2). Both branches are multiplied by the common
+        # ``factor`` in ``do_epsilon`` (built for the 8\u03c0 case), so the
+        # Drude part has to be rescaled by 1/2 to recover the correct
+        # absolute normalisation.
+        epsi += 0.5 * epsi_metal
+        epsr += 0.5 * epsr_metal
 
     np.seterr(over=orig_over_err)
     return (epsi, epsr)
 
 
 def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
-    """Inner BZ loop: accumulate the joint-density-of-states integrand.
+    r"""Inner BZ loop: accumulate the joint-density-of-states integrand.
 
     Iterates over all k-points and interband pairs ``(n, m)`` with
     ``E_{mn} > 0`` and computes
