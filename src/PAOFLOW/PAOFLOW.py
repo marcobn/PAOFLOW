@@ -524,6 +524,14 @@ class PAOFLOW:
         else:
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
 
+        # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
+        # tau, label) so that downstream modules can reconstruct the
+        # actual PAO radial functions used by the projection.  Required
+        # by ``hamiltonian.nonlocal_velocity.load_pao_orbitals`` when the
+        # production run uses an AE / extended basis that does not match
+        # the UPF pswfc set.
+        arry['atomic_basis'] = basis
+
         nkpnts = len(arry['kpnts'])
         nbnds = attr['nbnds']
         nspin = attr['nspin']
@@ -1466,10 +1474,163 @@ class PAOFLOW:
 
         self.report_module_time('Gradient')
 
+        # ---- Optional non-local pseudopotential velocity correction ----
+        # Enable via ``attr['nonlocal_velocity'] = True`` (default False, so
+        # this is a no-op for legacy runs).  See
+        # ``TODOs/nonlocal_velocity_correction.md`` and
+        # :mod:`PAOFLOW.hamiltonian.nonlocal_velocity` for the physics.
+        # When ``attr['nonlocal_velocity_inject']`` is also True the raw
+        # correction is folded into ``dHksp`` so ``do_momentum`` picks it
+        # up; ``attr['nonlocal_velocity_sign']`` (default -1) selects the
+        # sign convention (provisional pending Phase 4 calibration).
+        if attr.get('nonlocal_velocity', False):
+            self.nonlocal_velocity_correction(
+                inject=bool(attr.get('nonlocal_velocity_inject', False)),
+                sign=int(attr.get('nonlocal_velocity_sign', +1)),
+            )
+
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
         do_momentum(self.data_controller)
         self.report_module_time('Momenta')
+
+    def nonlocal_velocity_correction(
+        self,
+        *,
+        q_max: float = 15.0,
+        n_q: int = 300,
+        pao_tol: float = 1.0e-3,
+        units: str = 'rydberg',
+        inject: bool = False,
+        sign: int = -1,
+    ):
+        """Assemble the non-local pseudopotential velocity correction.
+
+        Computes the operator
+
+        .. math::
+           \\Delta p_\\alpha(\\mathbf{k})
+             = \\frac{m}{i\\hbar}\\,\\sum_I\\!\\left[
+                  P_I^{\\dagger}\\,D^I\\,P_I^{\\alpha}
+                - (P_I^{\\alpha})^{\\dagger}\\,D^I\\,P_I
+                \\right]
+
+        in the PAO basis on the current FFT k-grid and stores it under
+        ``arry['Delta_pksp']`` with shape ``(nktot, 3, nawf, nawf)``,
+        complex.
+
+        Parameters
+        ----------
+        q_max, n_q : float, int
+            Radial Bessel transform quadrature parameters passed to
+            :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.build_nl_real_space_tables`.
+        pao_tol : float
+            Cutoff tolerance used when enumerating the (β-site, PAO-site,
+            :math:`\\Delta\\mathbf{R}`) pair list.
+        units : {'hartree', 'rydberg'}
+            Units of the raw operator stored in ``arry['Delta_pksp']``.
+            ``'rydberg'`` (default) returns :math:`\\Delta p_\\alpha` in
+            Ry/Bohr; ``'hartree'`` returns Ha/Bohr.
+        inject : bool, optional
+            **Experimental — sign provisional, awaiting integration
+            calibration.**  When ``True`` the correction is additively
+            applied to ``arry['dHksp']`` (which is in eV·Bohr) using
+
+            .. math::
+               \\Delta H_{\\mathrm{ksp}} \\mathrel{+}= -\\,\\lambda\\,
+                  \\Delta p_\\alpha,
+
+            with :math:`\\lambda = 13.605693122994` eV/Ry for ``'rydberg'``
+            or :math:`2\\lambda` eV/Ha for ``'hartree'``.  The minus sign
+            reflects PAOFLOW's internal convention
+            ``pksp = -\\langle n|p|m\\rangle`` (confirmed by
+            ``writers/write4bt2.py`` which exports ``mommat = -np.real(pksp)``
+            and by the cubium Hellmann-Feynman test).  Pin in Phase 4
+            will compare against ``epsilon.x`` on Si/Cu and may flip the
+            sign; the conversion factor itself is exact.
+        sign : int, optional
+            ``-1`` (default) or ``+1``.  Forwarded to
+            :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.inject_into_dHksp`
+            when ``inject=True``.  Provided so the empirical sign
+            calibration (Phase 4) can toggle the convention without
+            modifying source.  Also configurable via
+            ``attr['nonlocal_velocity_sign']`` for the
+            ``gradient_and_momenta`` gate.
+
+        Notes
+        -----
+        Norm-conserving (KB) pseudopotentials only.  Caches the loaded
+        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.BetaCatalog`,
+        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.PAOCatalog`, and
+        :class:`~PAOFLOW.hamiltonian.nonlocal_velocity.NLRealSpaceTables`
+        on the data controller (keys ``'_NL_beta_catalog'``,
+        ``'_NL_pao_catalog'``, ``'_NL_pairs'``, ``'_NL_tables'``) so a
+        repeat call is cheap.
+        """
+        import numpy as np
+
+        from .hamiltonian.nonlocal_velocity import (
+            build_nl_real_space_tables,
+            compute_nonlocal_velocity_on_grid,
+            enumerate_nl_pairs,
+            inject_into_dHksp,
+            load_beta_projectors,
+            load_pao_orbitals,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+        try:
+            if '_NL_beta_catalog' not in arry:
+                arry['_NL_beta_catalog'] = load_beta_projectors(self.data_controller)
+            if '_NL_pao_catalog' not in arry:
+                arry['_NL_pao_catalog'] = load_pao_orbitals(self.data_controller)
+            beta_cat = arry['_NL_beta_catalog']
+            pao_cat = arry['_NL_pao_catalog']
+
+            if '_NL_tables' not in arry:
+                a_cart = np.asarray(arry['a_vectors']) * float(attr['alat'])
+                pairs = enumerate_nl_pairs(beta_cat, pao_cat, a_cart, pao_tol=pao_tol)
+                arry['_NL_pairs'] = pairs
+                arry['_NL_tables'] = build_nl_real_space_tables(
+                    beta_cat, pao_cat, pairs, q_max=q_max, n_q=n_q
+                )
+            tables = arry['_NL_tables']
+
+            dP = None
+            if attr.get('mpisize', 1) <= 1 or self.rank == 0:
+                dP = compute_nonlocal_velocity_on_grid(
+                    beta_cat,
+                    pao_cat,
+                    tables,
+                    arry['kgrid'],
+                    float(attr['alat']),
+                    units=units,
+                )
+
+            # Under MPI, ``dHksp`` is k-scattered along axis 0 (see
+            # :meth:`gradient_and_momenta`).  Replicate that partitioning
+            # for ``dP`` by scattering its first axis from rank 0 with
+            # :func:`scatter_full` (same primitive that backs the dHksp
+            # scatter, so the per-rank slices match exactly).
+            from .utils.communication import scatter_full
+
+            if attr.get('mpisize', 1) > 1:
+                if self.rank == 0:
+                    dP_local = scatter_full(np.ascontiguousarray(dP), attr['npool'])
+                else:
+                    dP_local = scatter_full(None, attr['npool'])
+            else:
+                dP_local = dP
+            arry['Delta_pksp'] = dP_local
+
+            if inject:
+                inject_into_dHksp(arry['dHksp'], dP_local, units=units, sign=sign)
+        except Exception as e:
+            self.report_exception('nonlocal_velocity_correction')
+            if attr.get('abort_on_exception', True):
+                raise e
+
+        self.report_module_time('NL velocity correction')
 
     def adaptive_smearing(self, smearing='gauss', afac=None):
         """
