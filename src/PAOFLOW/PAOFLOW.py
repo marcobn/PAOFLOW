@@ -1600,6 +1600,24 @@ class PAOFLOW:
         )
 
         arry, attr = self.data_controller.data_dicts()
+        # Fully-relativistic UPF path: ``build_aewfc_basis`` builds the
+        # 62-entry atomic_basis as ``twice=2`` per-shell duplicates and
+        # :func:`assign_jm` re-couples it to a (j, m_j) relativistic
+        # basis.  The first ``nawf`` rows of ``dHksp`` then have no
+        # meaning as a "spin-up scalar block", so the block-diagonal
+        # spinor tile used by :func:`inject_into_dHksp` would inject
+        # into the wrong matrix elements (verified: breaks cubic
+        # isotropy by ~1.6% on Pt FCC).  The adhoc_SO path
+        # (:meth:`add_spin_orbit`) is the only SOC route currently
+        # supported by the NL velocity correction.
+        if attr.get('dftSO', False) and not attr.get('adhoc_SO', False):
+            raise NotImplementedError(
+                'nonlocal_velocity_correction does not yet support fully-relativistic '
+                "UPF (attr['dftSO']=True with adhoc_SO=False); the projector tile would "
+                'inject into the wrong matrix elements of the (j, m_j)-coupled '
+                'spinor basis and break cubic symmetry.  Use a scalar-relativistic '
+                'UPF together with pf.spin_orbit(...) (adhoc_SO path) instead.'
+            )
         try:
             if '_NL_beta_catalog' not in arry:
                 arry['_NL_beta_catalog'] = load_beta_projectors(self.data_controller)
