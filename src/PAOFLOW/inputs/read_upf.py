@@ -6,7 +6,7 @@ import numpy as np
 
 # read UPF utility from Davide Ceresoli
 class UPF:
-    """Parser for Unified Pseudopotential Format (UPF) files.
+    r"""Parser for Unified Pseudopotential Format (UPF) files.
 
     Supports both UPF version 1 and version 2.  On construction the file is
     read and all relevant header, mesh, local-potential, and pseudo-wavefunction
@@ -57,6 +57,19 @@ class UPF:
         Angular momentum :math:`l` values from the spin-orbit block.
     atrho : np.ndarray or None
         Atomic charge density, or ``None`` if absent.
+    beta : list of dict
+        Kleinman--Bylander non-local projectors :math:`\beta_i(r)`.  Each
+        entry has keys ``'l'`` (angular momentum), ``'wfc'`` (the radial
+        function as stored in the UPF file: by QE convention this is
+        :math:`r\,\beta_l(r)` sampled on :attr:`r`, padded with zeros
+        beyond ``cutoff_index``), ``'cutoff_index'`` (first index past the
+        projector support, or ``None`` if absent), ``'cutoff_radius'``
+        (Bohr, or ``None``), and ``'label'`` (string identifier).  Empty
+        for UPF v1 (not yet parsed).
+    dion : np.ndarray or None, shape ``(nproj, nproj)``
+        Kleinman--Bylander coupling matrix :math:`D_{ij}` in **Hartree**
+        (the UPF stores Rydberg; the factor of 2 is applied on read).
+        ``None`` for UPF v1 (not yet parsed).
     """
 
     def __init__(self, filename):
@@ -176,7 +189,9 @@ class UPF:
 
         # TODO: NLCC
 
-        # TODO: PS_NONLOCAL/BETA, PP_DIJ
+        # PP_NONLOCAL not parsed for UPF v1 yet (no in-repo test sample).
+        self.beta = []
+        self.dion = None
 
         # TODO: GIPAW data
 
@@ -247,6 +262,56 @@ class UPF:
 
         # TODO: NLCC, ATRHO
 
-        # TODO: PS_NONLOCAL/BETA, PP_DIJ
+        self._read_nonlocal_v2(root)
 
         # TODO: GIPAW data
+
+    def _read_nonlocal_v2(self, root):
+        r"""Read the PP_NONLOCAL block (PP_BETA.N + PP_DIJ) of a UPF v2 file.
+
+        Stores :attr:`beta` and :attr:`dion`.  The ``D_{ij}`` matrix is
+        converted from Rydberg (UPF convention) to Hartree.  Beta radial
+        functions are kept verbatim from the file (QE convention: the
+        stored quantity is :math:`r\,\beta_l(r)` on :attr:`r`, truncated
+        to zero beyond ``cutoff_radius_index``).
+        """
+        self.beta = []
+        self.dion = None
+
+        nonlocal_node = root.find('PP_NONLOCAL')
+        if nonlocal_node is None:
+            return
+
+        # Per-projector PP_BETA.N blocks (1-indexed in the UPF spec).
+        for i in range(1, self.nproj + 1):
+            node = nonlocal_node.find(f'PP_BETA.{i}')
+            if node is None:
+                raise RuntimeError(
+                    f'UPF v2 PP_NONLOCAL: expected PP_BETA.{i} but tag is missing '
+                    f'(nproj={self.nproj}).'
+                )
+            wfc = np.fromstring(node.text, sep=' ', dtype=float)
+            l = int(node.attrib['angular_momentum'])
+            cutoff_index = node.attrib.get('cutoff_radius_index')
+            cutoff_radius = node.attrib.get('cutoff_radius')
+            self.beta.append(
+                {
+                    'l': l,
+                    'wfc': wfc,
+                    'cutoff_index': int(cutoff_index) if cutoff_index is not None else None,
+                    'cutoff_radius': float(cutoff_radius) if cutoff_radius is not None else None,
+                    'label': node.attrib.get('label', f'beta.{i}'),
+                }
+            )
+
+        # PP_DIJ: row-major (nproj, nproj) matrix in Rydberg.  Convert to Hartree.
+        dij_node = nonlocal_node.find('PP_DIJ')
+        if dij_node is None:
+            if self.nproj > 0:
+                raise RuntimeError('UPF v2 PP_NONLOCAL has PP_BETA entries but no PP_DIJ.')
+            return
+        dij = np.fromstring(dij_node.text, sep=' ', dtype=float)
+        expected = self.nproj * self.nproj
+        if dij.size != expected:
+            raise RuntimeError(f'UPF v2 PP_DIJ size mismatch: expected {expected}, got {dij.size}.')
+        self.dion = dij.reshape(self.nproj, self.nproj) / 2.0
