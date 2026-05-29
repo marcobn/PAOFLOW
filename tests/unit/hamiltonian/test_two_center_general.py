@@ -50,9 +50,9 @@ def test_real_ylm_orthonormality_grid():
         for k2 in keys[i:]:
             val = float(np.sum(w * Y[k1] * Y[k2]))
             expected = 1.0 if k1 == k2 else 0.0
-            assert val == pytest.approx(expected, abs=1e-10), (
-                f'<Y_{k1}|Y_{k2}> = {val}, expected {expected}'
-            )
+            assert val == pytest.approx(
+                expected, abs=1e-10
+            ), f'<Y_{k1}|Y_{k2}> = {val}, expected {expected}'
 
 
 # ----------------------------------------------------------------------
@@ -255,6 +255,6 @@ def test_general_overlap_vs_brute_force(name, orbital_factory_A, orbital_factory
     got = two_center_overlap(r, RA, lA, mA, r, RB, lB, mB, R, q_max=20.0, n_q=600)
 
     # Brute-force 3D quadrature on 121³ at lim=6 carries ~1% error itself.
-    assert got == pytest.approx(expected, rel=2e-2, abs=2e-3), (
-        f'[{name}] got={got:.6e}, expected={expected:.6e}'
-    )
+    assert got == pytest.approx(
+        expected, rel=2e-2, abs=2e-3
+    ), f'[{name}] got={got:.6e}, expected={expected:.6e}'

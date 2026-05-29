@@ -110,6 +110,6 @@ def test_si_oncv_beta_angular_momenta():
 def test_beta_consistent_with_mesh(upf):
     """The beta arrays are sampled on the same radial mesh as :attr:`r`."""
     for i, b in enumerate(upf.beta):
-        assert b['wfc'].size == upf.r.size, (
-            f'beta[{i}] has {b["wfc"].size} samples but mesh has {upf.r.size}'
-        )
+        assert (
+            b['wfc'].size == upf.r.size
+        ), f'beta[{i}] has {b["wfc"].size} samples but mesh has {upf.r.size}'
