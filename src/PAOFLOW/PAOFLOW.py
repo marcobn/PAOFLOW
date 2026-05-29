@@ -2350,6 +2350,24 @@ class PAOFLOW:
         (metal); see ``examples/qe_examples/example15_Si_epsilon`` and
         ``example17_Al_epsilon``. Plasmon frequencies agree to within a
         few percent on a converged 16x16x16 k-grid.
+
+        **Adaptive interband broadening** (Yates *et al.*, Phys. Rev. B
+        **75**, 195121 (2007)): if :meth:`adaptive_smearing` has been called
+        before this method (so the per-:math:`(k,n,m)` widths ``deltakp2``
+        are present), the fixed scalar ``delta`` broadening is replaced by
+        the local :math:`\eta_{nm}(\mathbf{k}) = \alpha\,
+        |\nabla_k(E_n-E_m)|\,\delta k` in the interband Lorentzian. The width
+        is floored by ``attr['adaptive_smearing_floor']`` (default: the
+        frequency-grid spacing ``(emax-emin)/(ne-1)``) so every Lorentzian is
+        at least one bin wide -- this removes single-point divergences where
+        bands are locally parallel while keeping sharp van Hove singularities.
+        Raise the floor (e.g. to the fixed ``delta``) for a smoother, purely
+        additive broadening. The fixed-smearing path is used otherwise.
+        Example::
+
+            pf.gradient_and_momenta()
+            pf.adaptive_smearing(smearing='gauss')   # builds deltakp/deltakp2
+            pf.dielectric_tensor(d_tensor='diag')    # uses adaptive eta_nm
         """
 
         from .response.do_epsilon import do_dielectric_tensor

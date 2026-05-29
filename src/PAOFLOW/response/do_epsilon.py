@@ -71,6 +71,9 @@ def do_dielectric_tensor(data_controller, ene):
         if rank == 0:
             print('Using fixed smearing = %.3f eV' % attributes['degauss'])
 
+    if 'deltakp2' in arrays and rank == 0:
+        print('Adaptive (Yates) interband broadening enabled for the dielectric tensor')
+
     if nspin == 1:
         for n in range(d_tensor.shape[0]):
             ipol = d_tensor[n][0]
@@ -454,6 +457,26 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     intersmear = attributes['delta']
     smearing = attributes['smearing']
 
+    # Optional adaptive (Yates et al., PRB 75, 195121 (2007)) interband
+    # broadening. When ``pf.adaptive_smearing()`` has been run it stores the
+    # per-(k, n, m) widths ``deltakp2`` = alpha |grad_k(E_n - E_m)| dk; use them
+    # in place of the fixed scalar ``delta`` for the Lorentzian denominator.
+    # Where two bands are locally parallel (|grad_k(E_n - E_m)| -> 0) the
+    # adaptive width collapses and the Lorentzian becomes a near-delta spike on
+    # a single frequency-grid point. To suppress those divergences without
+    # washing out the physics the width is floored at the frequency-grid
+    # spacing by default: every Lorentzian is then at least one bin wide (no
+    # single-point spikes) while sharp van Hove singularities are preserved.
+    # Set attr['adaptive_smearing_floor'] to override (e.g. to the fixed
+    # ``delta`` for a smoother, purely additive broadening).
+    adaptive = 'deltakp2' in arrays
+    if adaptive:
+        grid_spacing = (ene[1] - ene[0]) if ene.size > 1 else intersmear
+        eta_floor = attributes.get('adaptive_smearing_floor', grid_spacing)
+        deltakp2 = arrays['deltakp2'][:, :bndmax, :bndmax, ispin]
+        if rank == 0:
+            print('Using adaptive (Yates) interband smearing for the dielectric tensor')
+
     spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
     Ef = 1.0e-9
 
@@ -464,11 +487,6 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     # and for the Drude term (metals); pull it unconditionally so the metal
     # fallback below cannot NameError when ``smearing is None``.
     degauss = attributes.get('degauss', None)
-    # Adaptive smearing not implemented
-    # if 'deltakp' in arrays:  # check whether adaptive smearing is used
-    #     degauss = arrays['deltakp'][:, :bndmax, ispin]
-    #     if rank == 0:
-    #         print('Using adaptive smearing')
 
     if smearing == None:
         fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
@@ -509,6 +527,11 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                     E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
                     f_nm = fn[ik, iband2] - fn[ik, iband1]
                     if np.abs(f_nm) > th0 and fn[ik, iband1] > th1 and fn[ik, iband2] < spin_factor:
+                        # Interband broadening: adaptive per-(k, n, m) width
+                        # when available, otherwise the fixed scalar value.
+                        eta = (
+                            max(deltakp2[ik, iband1, iband2], eta_floor) if adaptive else intersmear
+                        )
                         pksp2 = np.real(
                             arrays['pksp'][ik, ipol, iband1, iband2, ispin]
                             * arrays['pksp'][ik, jpol, iband2, iband1, ispin]
@@ -516,11 +539,11 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                         # pksp2 in unit of (AU*eV)^2
                         epsi[:] += (
                             pksp2
-                            * intersmear
+                            * eta
                             * ene[:]
                             * fn[ik, iband1]
                             / (
-                                ((E_diff_nm**2 - ene[:] ** 2) ** 2 + intersmear**2 * ene[:] ** 2)
+                                ((E_diff_nm**2 - ene[:] ** 2) ** 2 + eta**2 * ene[:] ** 2)
                                 * (E_diff_nm)
                             )
                         )
@@ -529,7 +552,7 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                             * (E_diff_nm**2 - ene[:] ** 2)
                             * fn[ik, iband1]
                             / (
-                                ((E_diff_nm**2 - ene[:] ** 2) ** 2 + intersmear**2 * ene[:] ** 2)
+                                ((E_diff_nm**2 - ene[:] ** 2) ** 2 + eta**2 * ene[:] ** 2)
                                 * (E_diff_nm)
                             )
                         )
