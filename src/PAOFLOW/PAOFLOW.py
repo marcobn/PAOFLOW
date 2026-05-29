@@ -1709,43 +1709,58 @@ class PAOFLOW:
                 )
             tables = arry['_NL_tables']
 
-            dP = None
-            if attr.get('mpisize', 1) <= 1 or self.rank == 0:
+            def _build_dP(kgrid_slice):
                 if jm_kspace:
                     # Option A: Delta_p directly in the (j, m_j) basis
                     # (shape (nk, 3, n_rel, n_rel), n_rel = 2 * nawf_scalar).
-                    dP = compute_nonlocal_velocity_jm_on_grid(
+                    return compute_nonlocal_velocity_jm_on_grid(
                         beta_cat,
                         pao_cat,
                         tables,
-                        arry['kgrid'],
+                        kgrid_slice,
                         float(attr['alat']),
                         units=units,
                     )
-                else:
-                    dP = compute_nonlocal_velocity_on_grid(
-                        beta_cat,
-                        pao_cat,
-                        tables,
-                        arry['kgrid'],
-                        float(attr['alat']),
-                        units=units,
-                    )
+                return compute_nonlocal_velocity_on_grid(
+                    beta_cat,
+                    pao_cat,
+                    tables,
+                    kgrid_slice,
+                    float(attr['alat']),
+                    units=units,
+                )
 
             # Under MPI, ``dHksp`` is k-scattered along axis 0 (see
-            # :meth:`gradient_and_momenta`).  Replicate that partitioning
-            # for ``dP`` by scattering its first axis from rank 0 with
-            # :func:`scatter_full` (same primitive that backs the dHksp
-            # scatter, so the per-rank slices match exactly).
-            from .utils.communication import scatter_full
+            # :meth:`gradient_and_momenta`).  ``dP`` must end up partitioned
+            # the same way via :func:`scatter_full`.  Rather than building the
+            # whole grid serially on rank 0, each rank assembles a contiguous
+            # slice of the global k-grid in parallel; the slices are gathered
+            # on rank 0 (in global order, matching the un-scattered dHksp), and
+            # then re-scattered with :func:`scatter_full` so the per-rank
+            # layout matches dHksp exactly.  The k-grid assembly is independent
+            # per k-point, so a sliced build is bit-identical to the full one.
+            from .utils.communication import (
+                gather_array,
+                load_balancing,
+                scatter_full,
+            )
 
             if attr.get('mpisize', 1) > 1:
+                kgrid = np.asarray(arry['kgrid'])
+                nktot = kgrid.shape[1]
+                ks, ke = load_balancing(self.size, self.rank, nktot)
+                dP_part = np.ascontiguousarray(_build_dP(kgrid[:, ks:ke]))
+                if self.rank == 0:
+                    dP = np.zeros((nktot,) + dP_part.shape[1:], dtype=dP_part.dtype)
+                else:
+                    dP = None
+                gather_array(dP, dP_part)
                 if self.rank == 0:
                     dP_local = scatter_full(np.ascontiguousarray(dP), attr['npool'])
                 else:
                     dP_local = scatter_full(None, attr['npool'])
             else:
-                dP_local = dP
+                dP_local = _build_dP(arry['kgrid'])
 
             # Legacy Phase D: rotate the scalar Delta_p into the (j, m_j)
             # relativistic basis used by ``dHksp`` via a spin-trace (gated
