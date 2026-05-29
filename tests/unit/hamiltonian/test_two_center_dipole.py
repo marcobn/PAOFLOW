@@ -230,6 +230,6 @@ def test_dipole_overlap_vs_brute_force(name, factory_A, factory_B, R, alpha, rad
     expected = _brute_force_dipole(fA_3d, fB_3d, R, alpha)
 
     # Brute-force 3D quadrature on 121³ at lim=6 carries ~1% error itself.
-    assert got == pytest.approx(expected, rel=3e-2, abs=2e-3), (
-        f'[{name}] got={got:.6e}, expected={expected:.6e}'
-    )
+    assert got == pytest.approx(
+        expected, rel=3e-2, abs=2e-3
+    ), f'[{name}] got={got:.6e}, expected={expected:.6e}'

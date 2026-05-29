@@ -288,9 +288,9 @@ def test_si_home_pair_selection_rules(si_home_pair_table):
     for i, lb in enumerate(l_beta):
         for j, lp in enumerate(l_phi):
             if lb != lp:
-                assert abs(S[i, j]) < 5e-3, (
-                    f'overlap leak at i={i} (lβ={lb}) j={j} (lφ={lp}): {S[i, j]}'
-                )
+                assert (
+                    abs(S[i, j]) < 5e-3
+                ), f'overlap leak at i={i} (lβ={lb}) j={j} (lφ={lp}): {S[i, j]}'
 
     # Dipole at coincident origin: nonzero only when |l_β − l_φ| = 1.
     # τ_I = 0 here, so the geometry term vanishes entirely.
@@ -298,9 +298,9 @@ def test_si_home_pair_selection_rules(si_home_pair_table):
         for j, lp in enumerate(l_phi):
             if abs(lb - lp) != 1:
                 for alpha in (0, 1, 2):
-                    assert abs(Sr[alpha, i, j]) < 5e-3, (
-                        f'dipole leak α={alpha} i={i} (lβ={lb}) j={j} (lφ={lp}): {Sr[alpha, i, j]}'
-                    )
+                    assert (
+                        abs(Sr[alpha, i, j]) < 5e-3
+                    ), f'dipole leak α={alpha} i={i} (lβ={lb}) j={j} (lφ={lp}): {Sr[alpha, i, j]}'
 
 
 def test_si_home_pair_dipole_geometry_term_zero_when_tau_I_zero(si_home_pair_table):
