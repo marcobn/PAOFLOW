@@ -192,6 +192,7 @@ class UPF:
         # PP_NONLOCAL not parsed for UPF v1 yet (no in-repo test sample).
         self.beta = []
         self.dion = None
+        self.has_spinorbit = False
 
         # TODO: GIPAW data
 
@@ -274,13 +275,39 @@ class UPF:
         functions are kept verbatim from the file (QE convention: the
         stored quantity is :math:`r\,\beta_l(r)` on :attr:`r`, truncated
         to zero beyond ``cutoff_radius_index``).
+
+        For fully-relativistic UPFs the ``PP_SPIN_ORB/PP_RELBETA.N`` block
+        carries the total angular momentum :math:`j` of each projector
+        (attribute ``jjj``); when present it is stored as ``beta[i]['j']``
+        and :attr:`has_spinorbit` is set to ``True``.  Scalar-relativistic
+        UPFs leave ``beta[i]['j'] = None`` and :attr:`has_spinorbit` False.
         """
         self.beta = []
         self.dion = None
+        self.has_spinorbit = False
 
         nonlocal_node = root.find('PP_NONLOCAL')
         if nonlocal_node is None:
             return
+
+        # Fully-relativistic UPFs publish a PP_SPIN_ORB block with one
+        # PP_RELBETA.N entry per projector carrying ``lll`` (l) and
+        # ``jjj`` (j).  Build an index->j map keyed by the 1-based
+        # projector index (the ``index`` attribute, falling back to the
+        # tag order if absent).
+        spin_orb_node = root.find('PP_SPIN_ORB')
+        beta_j: dict[int, float] = {}
+        if spin_orb_node is not None:
+            self.has_spinorbit = True
+            for i in range(1, self.nproj + 1):
+                relnode = spin_orb_node.find(f'PP_RELBETA.{i}')
+                if relnode is None:
+                    continue
+                jstr = relnode.attrib.get('jjj')
+                if jstr is None:
+                    continue
+                idx = int(relnode.attrib.get('index', i))
+                beta_j[idx] = float(jstr)
 
         # Per-projector PP_BETA.N blocks (1-indexed in the UPF spec).
         for i in range(1, self.nproj + 1):
@@ -297,6 +324,7 @@ class UPF:
             self.beta.append(
                 {
                     'l': l,
+                    'j': beta_j.get(i),
                     'wfc': wfc,
                     'cutoff_index': int(cutoff_index) if cutoff_index is not None else None,
                     'cutoff_radius': float(cutoff_radius) if cutoff_radius is not None else None,
