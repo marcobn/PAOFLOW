@@ -123,6 +123,7 @@ pseudo/
 Reference2/
 TODOs/
 *pdos_tot
+scripts/
 
 # MAC files
 .DS_*
