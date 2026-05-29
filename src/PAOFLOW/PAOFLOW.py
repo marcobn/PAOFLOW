@@ -868,6 +868,7 @@ class PAOFLOW:
         lambda_d=[0.0],
         soc_strengh={},
         soc_species=True,
+        soc_shell_weights=None,
     ):
         """
         Include spin-orbit coupling
@@ -879,6 +880,14 @@ class PAOFLOW:
             If soc_species = False
             lambda_p (list of floats) :  p orbitals SOC strengh for each atom
             lambda_d (list of float)  :  d orbitals SOC strengh for each atom
+            soc_shell_weights (dict, optional):
+                Per-shell SOC weights for the ``'generic'`` builder
+                (extended bases).  Keyed by species symbol, value is a
+                list of bool or float of the same length as
+                ``arry['shells'][species]``.  ``None`` (default) uses
+                the builder's intrinsic ``1/k**2`` occurrence-index
+                falloff for each l > 0 channel (valence weight 1,
+                1st augmentation 0.25, 2nd 0.111, ...).
 
         Returns:
             None
@@ -909,6 +918,9 @@ class PAOFLOW:
                 arry['lambda_p'] = lambda_p[:]
             if 'lambda_d' not in arry:
                 arry['lambda_d'] = lambda_d[:]
+
+        if soc_shell_weights is not None:
+            arry['soc_shell_weights'] = soc_shell_weights
 
         self.data_controller.build_arrays_adhoc_soc()
 
@@ -1481,12 +1493,15 @@ class PAOFLOW:
         # :mod:`PAOFLOW.hamiltonian.nonlocal_velocity` for the physics.
         # When ``attr['nonlocal_velocity_inject']`` is also True the raw
         # correction is folded into ``dHksp`` so ``do_momentum`` picks it
-        # up; ``attr['nonlocal_velocity_sign']`` (default -1) selects the
-        # sign convention (provisional pending Phase 4 calibration).
+        # up; ``attr['nonlocal_velocity_sign']`` selects the sign
+        # convention.  When unset, ``nonlocal_velocity_correction``
+        # picks the calibrated default per path (+1 for the scalar/
+        # ad-hoc-SO path, -1 for the fully-relativistic jm-kspace path).
         if attr.get('nonlocal_velocity', False):
+            _nlv_sign = attr.get('nonlocal_velocity_sign', None)
             self.nonlocal_velocity_correction(
                 inject=bool(attr.get('nonlocal_velocity_inject', False)),
-                sign=int(attr.get('nonlocal_velocity_sign', +1)),
+                sign=(None if _nlv_sign is None else int(_nlv_sign)),
             )
 
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
@@ -1502,7 +1517,7 @@ class PAOFLOW:
         pao_tol: float = 1.0e-3,
         units: str = 'rydberg',
         inject: bool = False,
-        sign: int = -1,
+        sign: int = None,
     ):
         """Assemble the non-local pseudopotential velocity correction.
 
@@ -1548,14 +1563,19 @@ class PAOFLOW:
             and by the cubium Hellmann-Feynman test).  Pin in Phase 4
             will compare against ``epsilon.x`` on Si/Cu and may flip the
             sign; the conversion factor itself is exact.
-        sign : int, optional
-            ``-1`` (default) or ``+1``.  Forwarded to
+        sign : int or None, optional
+            ``+1``, ``-1``, or ``None`` (default).  When ``None`` the
+            calibrated default for the active path is used: ``+1`` for the
+            scalar / ad-hoc-SO path (calibrated against ``epsilon.x`` for
+            Cu) and ``-1`` for the fully-relativistic ``(j, m_j)``-kspace
+            path (the jm builder carries the opposite covariance/phase
+            convention, validated against QE ``epsilon.x`` and SHC for
+            Pt_REL).  Forwarded to
             :func:`~PAOFLOW.hamiltonian.nonlocal_velocity.inject_into_dHksp`
-            when ``inject=True``.  Provided so the empirical sign
-            calibration (Phase 4) can toggle the convention without
-            modifying source.  Also configurable via
+            when ``inject=True``.  Also configurable via
             ``attr['nonlocal_velocity_sign']`` for the
-            ``gradient_and_momenta`` gate.
+            ``gradient_and_momenta`` gate; set it explicitly to override
+            the per-path default.
 
         Notes
         -----
@@ -1570,33 +1590,45 @@ class PAOFLOW:
         import numpy as np
 
         from .hamiltonian.nonlocal_velocity import (
+            build_jm_transformation_matrix,
             build_nl_real_space_tables,
+            compute_nonlocal_velocity_jm_on_grid,
             compute_nonlocal_velocity_on_grid,
             enumerate_nl_pairs,
             inject_into_dHksp,
             load_beta_projectors,
             load_pao_orbitals,
+            rotate_dp_to_jm,
         )
 
         arry, attr = self.data_controller.data_dicts()
-        # Fully-relativistic UPF path: ``build_aewfc_basis`` builds the
-        # 62-entry atomic_basis as ``twice=2`` per-shell duplicates and
-        # :func:`assign_jm` re-couples it to a (j, m_j) relativistic
-        # basis.  The first ``nawf`` rows of ``dHksp`` then have no
-        # meaning as a "spin-up scalar block", so the block-diagonal
-        # spinor tile used by :func:`inject_into_dHksp` would inject
-        # into the wrong matrix elements (verified: breaks cubic
-        # isotropy by ~1.6% on Pt FCC).  The adhoc_SO path
-        # (:meth:`add_spin_orbit`) is the only SOC route currently
-        # supported by the NL velocity correction.
-        if attr.get('dftSO', False) and not attr.get('adhoc_SO', False):
-            raise NotImplementedError(
-                'nonlocal_velocity_correction does not yet support fully-relativistic '
-                "UPF (attr['dftSO']=True with adhoc_SO=False); the projector tile would "
-                'inject into the wrong matrix elements of the (j, m_j)-coupled '
-                'spinor basis and break cubic symmetry.  Use a scalar-relativistic '
-                'UPF together with pf.spin_orbit(...) (adhoc_SO path) instead.'
-            )
+        import os as _os
+
+        # Path selection for fully-relativistic UPFs (dftSO=True, not the
+        # ad-hoc SOC path).  Default is Option A: build Delta_p directly in
+        # the (j, m_j)-coupled basis used by dHksp, preserving the
+        # j-dependence of the NL operator.  Two legacy paths remain
+        # reachable for comparison:
+        #   * NL_SCALAR_TILE=1  -- inject the scalar Delta_p
+        #     block-diagonally in spin (the previous default; reproduces
+        #     QE epsilon.x for cubic Pt_REL but is only an approximation).
+        #   * NL_JM_ROTATION=1  -- Phase D scalar->jm spin-trace rotation
+        #     (build_jm_transformation_matrix + rotate_dp_to_jm); breaks
+        #     cubic isotropy, retained only for diagnostics.
+        fully_rel = bool(attr.get('dftSO', False)) and not bool(attr.get('adhoc_SO', False))
+        scalar_tile = _os.environ.get('NL_SCALAR_TILE') == '1'
+        jm_rotation = _os.environ.get('NL_JM_ROTATION') == '1'
+        jm_kspace = fully_rel and not scalar_tile and not jm_rotation
+
+        # Resolve the calibrated default injection sign per path when the
+        # caller left ``sign`` unset.  The fully-relativistic jm-kspace
+        # builder carries the opposite covariance/phase convention from the
+        # scalar path (see TODOs/nonlocal_velocity_correction.md), so it
+        # needs ``-1`` to match QE epsilon.x and SHC for Pt_REL; the scalar
+        # / ad-hoc-SO path keeps the Cu-calibrated ``+1``.
+        if sign is None:
+            sign = -1 if jm_kspace else +1
+        sign = int(sign)
         try:
             if '_NL_beta_catalog' not in arry:
                 arry['_NL_beta_catalog'] = load_beta_projectors(self.data_controller)
@@ -1616,14 +1648,26 @@ class PAOFLOW:
 
             dP = None
             if attr.get('mpisize', 1) <= 1 or self.rank == 0:
-                dP = compute_nonlocal_velocity_on_grid(
-                    beta_cat,
-                    pao_cat,
-                    tables,
-                    arry['kgrid'],
-                    float(attr['alat']),
-                    units=units,
-                )
+                if jm_kspace:
+                    # Option A: Delta_p directly in the (j, m_j) basis
+                    # (shape (nk, 3, n_rel, n_rel), n_rel = 2 * nawf_scalar).
+                    dP = compute_nonlocal_velocity_jm_on_grid(
+                        beta_cat,
+                        pao_cat,
+                        tables,
+                        arry['kgrid'],
+                        float(attr['alat']),
+                        units=units,
+                    )
+                else:
+                    dP = compute_nonlocal_velocity_on_grid(
+                        beta_cat,
+                        pao_cat,
+                        tables,
+                        arry['kgrid'],
+                        float(attr['alat']),
+                        units=units,
+                    )
 
             # Under MPI, ``dHksp`` is k-scattered along axis 0 (see
             # :meth:`gradient_and_momenta`).  Replicate that partitioning
@@ -1639,6 +1683,32 @@ class PAOFLOW:
                     dP_local = scatter_full(None, attr['npool'])
             else:
                 dP_local = dP
+
+            # Legacy Phase D: rotate the scalar Delta_p into the (j, m_j)
+            # relativistic basis used by ``dHksp`` via a spin-trace (gated
+            # behind NL_JM_ROTATION=1; the Option A jm-kspace builder above
+            # is the default and does not use this path).
+            if jm_rotation:
+                if '_NL_jm_T' not in arry:
+                    if 'atomic_basis' not in arry:
+                        raise RuntimeError(
+                            'nonlocal_velocity_correction: jm rotation requires '
+                            "arry['atomic_basis'] (the relativistic basis); "
+                            'run projections() before this method.'
+                        )
+                    basis_scalar = [
+                        {
+                            'atom': pao_cat.sites[o.site_index].label,
+                            'label': o.label,
+                            'l': o.l,
+                        }
+                        for o in pao_cat.basis
+                    ]
+                    arry['_NL_jm_T'] = build_jm_transformation_matrix(
+                        arry['atomic_basis'], basis_scalar
+                    )
+                dP_local = rotate_dp_to_jm(dP_local, arry['_NL_jm_T'])
+
             arry['Delta_pksp'] = dP_local
 
             if inject:

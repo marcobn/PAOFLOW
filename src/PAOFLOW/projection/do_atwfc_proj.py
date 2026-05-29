@@ -1481,3 +1481,76 @@ def calc_gvec_VASP(data_controller, ikpt=0):
             )
 
     return np.asarray(Gvec, dtype=int)
+
+
+# ---------------------------------------------------------------------------
+# Per-shell change-of-basis matrices used by the relativistic NL-velocity
+# rotation (see ``hamiltonian/nonlocal_velocity.py``).  Both helpers probe
+# the existing ``calc_ylmg_complex_0`` / ``calc_ylmg_so`` routines with
+# one-hot inputs so they inherit PAOFLOW's tesseral/spinor conventions
+# (including the non-standard odd-|m| sign).
+# ---------------------------------------------------------------------------
+
+_L_BLOCK_START_YLM = {0: 0, 1: 1, 2: 4, 3: 9}
+_L_BLOCK_START_JM = {0: 0, 1: 2, 2: 8, 3: 18}
+
+
+def tesseral_to_ylm_matrix(l):
+    """Per-shell unitary mapping real tesseral harmonics to complex Y_lm.
+
+    Returns an ``(2l+1, 2l+1)`` complex matrix ``U`` such that
+    ``Y_l^m = sum_k U[m_idx, k] * T_l^k`` where:
+
+    * ``T_l^k`` are the real cubic harmonics in the local order
+      ``[m=0, 1c, 1s, 2c, 2s, 3c, 3s]`` truncated to ``2l+1`` entries
+      (PAOFLOW's ``ylmg`` convention);
+    * ``Y_l^m`` are complex spherical harmonics in the local order
+      ``[m=0, +1, -1, +2, -2, +3, -3]`` truncated to ``2l+1`` entries
+      (PAOFLOW's ``ylmgc`` convention).
+
+    Derived numerically from :func:`calc_ylmg_complex_0` so it inherits
+    the non-standard odd-|m| signs.  ``l`` must be ``<= 3``.
+    """
+    if l > 3:
+        raise NotImplementedError('l > 3 not supported')
+    n = 2 * l + 1
+    s = _L_BLOCK_START_YLM[l]
+    U = np.zeros((n, n), dtype=complex)
+    for k in range(n):
+        ylmg = np.zeros((1, 16))
+        ylmg[0, s + k] = 1.0
+        ylmgc = calc_ylmg_complex_0(ylmg)
+        U[:, k] = ylmgc[0, s : s + n]
+    return U
+
+
+def clebsch_jm_matrix(l):
+    """Per-shell Clebsch-Gordan map (m_l, sigma) -> (j, m_j).
+
+    Returns an ``(2(2l+1), 2(2l+1))`` complex matrix ``C`` such that
+    ``chi_{j, m_j} = sum_{m_l, sigma} C[jm_idx, (m_l, sigma)] * |Y_l^{m_l}, sigma>``
+    where:
+
+    * the row index ``jm_idx`` runs 0..2(2l+1)-1 in
+      :func:`assign_jm`'s local order (j=l-1/2 sub-block first, then
+      j=l+1/2, each with increasing m_j);
+    * the column index is ``(m_l, sigma)`` flattened as
+      ``m_l + (2l+1) * sigma`` with ``sigma in {0=up, 1=down}`` and
+      ``m_l`` in PAOFLOW's local Y_lm order ``[m=0, +1, -1, ...]``.
+
+    Derived numerically from :func:`calc_ylmg_so`.  ``l`` must be ``<= 3``.
+    """
+    if l > 3:
+        raise NotImplementedError('l > 3 not supported')
+    n = 2 * l + 1
+    s = _L_BLOCK_START_YLM[l]
+    jm0 = _L_BLOCK_START_JM[l]
+    n_jm = 2 * n
+    C = np.zeros((n_jm, n_jm), dtype=complex)
+    for k in range(n):
+        ylmgc = np.zeros((1, 16), dtype=complex)
+        ylmgc[0, s + k] = 1.0
+        ylmgso = calc_ylmg_so(ylmgc)
+        C[:, k] = ylmgso[0, jm0 : jm0 + n_jm]  # upper spinor
+        C[:, n + k] = ylmgso[1, jm0 : jm0 + n_jm]  # lower spinor
+    return C

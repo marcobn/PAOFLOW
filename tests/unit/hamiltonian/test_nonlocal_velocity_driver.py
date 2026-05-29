@@ -267,12 +267,28 @@ def test_nlvc_caches_catalogs_across_calls(si_stub_pf_with_dP):
         assert key in arry, f'missing cache key {key!r}'
 
 
-def test_nlvc_inject_default_sign_subtracts_lambda_dP(si_stub_pf_with_dP):
-    """``inject=True`` (sign=-1) subtracts λ·dP from dHksp on every spin."""
+def test_nlvc_inject_default_sign_adds_lambda_dP(si_stub_pf_with_dP):
+    """For the scalar path, the calibrated default ``sign=+1`` adds λ·dP.
+
+    ``sign=None`` (the new default) resolves per path: ``+1`` for the
+    scalar / ad-hoc-SO path (Cu-calibrated) and ``-1`` for the
+    fully-relativistic jm-kspace path.  The Si stub is scalar, so the
+    resolved default is ``+1``.
+    """
     pf, dP, dHksp_pristine = si_stub_pf_with_dP
     arry, _ = pf.data_controller.data_dicts()
     arry['dHksp'] = dHksp_pristine.copy()
-    _call_nlvc(pf, inject=True)  # default sign=-1
+    _call_nlvc(pf, inject=True)  # default sign=None -> +1 for scalar path
+    expected = dHksp_pristine + RYDBERG_IN_EV * dP[..., None]
+    np.testing.assert_allclose(arry['dHksp'], expected, atol=1e-12)
+
+
+def test_nlvc_inject_negative_sign_subtracts_lambda_dP(si_stub_pf_with_dP):
+    """``sign=-1`` subtracts λ·dP (explicit override of the per-path default)."""
+    pf, dP, dHksp_pristine = si_stub_pf_with_dP
+    arry, _ = pf.data_controller.data_dicts()
+    arry['dHksp'] = dHksp_pristine.copy()
+    _call_nlvc(pf, inject=True, sign=-1)
     expected = dHksp_pristine - RYDBERG_IN_EV * dP[..., None]
     np.testing.assert_allclose(arry['dHksp'], expected, atol=1e-12)
 
@@ -294,8 +310,8 @@ def test_nlvc_inject_hartree_uses_factor_two(si_stub_pf_with_dP):
     arry['dHksp'] = dHksp_pristine.copy()
     _call_nlvc(pf, inject=True, units='hartree')
     dP_h = arry['Delta_pksp']
-    # dHksp += -2·λ · dP_h  (Hartree convention)
-    expected = dHksp_pristine - 2.0 * RYDBERG_IN_EV * dP_h[..., None]
+    # dHksp += +2·λ · dP_h  (Hartree convention, scalar-path default sign=+1)
+    expected = dHksp_pristine + 2.0 * RYDBERG_IN_EV * dP_h[..., None]
     np.testing.assert_allclose(arry['dHksp'], expected, atol=1e-12)
 
 
