@@ -381,27 +381,41 @@ class DataController:
 
         else:
             for i in range(len(arry['atoms'])):
-                if arry['shells'][arry['atoms'][i]] == [0]:
+                shells_i = arry['shells'][arry['atoms'][i]]
+                matched = True
+                if shells_i == [0]:
                     naw.append(1)
                     orb.append('s')
-                if arry['shells'][arry['atoms'][i]] == [0, 1]:
+                elif shells_i == [0, 1]:
                     naw.append(4)
                     orb.append('sp')
-                if arry['shells'][arry['atoms'][i]] == [0, 1, 2]:
+                elif shells_i == [0, 1, 2]:
                     naw.append(9)
                     orb.append('spd')
-                if arry['shells'][arry['atoms'][i]] == [1, 0]:
+                elif shells_i == [1, 0]:
                     naw.append(4)
                     orb.append('ps')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 2]:
+                elif shells_i == [0, 0, 1, 2]:
                     naw.append(10)
                     orb.append('sspd')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1]:
+                elif shells_i == [0, 1, 2, 0]:
+                    naw.append(10)
+                    orb.append('spds')
+                elif shells_i == [0, 0, 1]:
                     naw.append(5)
                     orb.append('ssp')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 1, 2]:
+                elif shells_i == [0, 0, 1, 1, 2]:
                     naw.append(13)
                     orb.append('ssppd')
+                else:
+                    matched = False
+                if not matched:
+                    # Fallback: any layout not in the hardcoded set is
+                    # routed through the generic SOC builder in
+                    # hamiltonian.do_spin_orbit (build_generic_soc).
+                    # naw is sum_{shells} (2l+1).
+                    naw.append(sum(2 * int(l) + 1 for l in shells_i))
+                    orb.append('generic')
             arry['orb_pseudo'] = orb
             arry['naw'] = np.array(naw)
 
