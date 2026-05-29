@@ -1416,14 +1416,36 @@ class PAOFLOW:
 
         self.report_module_time('Eigenvalues')
 
-    def gradient_and_momenta(self, band_curvature=False):
+    def gradient_and_momenta(
+        self,
+        band_curvature=False,
+        nonlocal_velocity=None,
+        nonlocal_velocity_inject=None,
+        nonlocal_velocity_sign=None,
+    ):
         """
         Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
         Requires 'Hksp'
         Populates DataController with 'dHksp'
 
         Arguments:
-          None
+          band_curvature (bool): also compute the band curvature.
+          nonlocal_velocity (bool or None): enable the non-local
+            pseudopotential velocity correction.  When ``None`` (default)
+            the value falls back to ``attr['nonlocal_velocity']`` (False if
+            unset), preserving the legacy DataController-driven behaviour.
+            Pass ``True`` here to enable the correction directly from the
+            call without touching the DataController.
+          nonlocal_velocity_inject (bool or None): fold the correction into
+            ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
+            it falls back to ``attr['nonlocal_velocity_inject']`` if set,
+            otherwise defaults to the resolved ``nonlocal_velocity`` value
+            (i.e. enabling the correction injects it by default; building
+            without injecting is diagnostic-only).
+          nonlocal_velocity_sign (int or None): injection sign convention.
+            When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
+            if set, otherwise the calibrated per-path default is used
+            (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
 
         Returns:
           None
@@ -1487,21 +1509,41 @@ class PAOFLOW:
         self.report_module_time('Gradient')
 
         # ---- Optional non-local pseudopotential velocity correction ----
-        # Enable via ``attr['nonlocal_velocity'] = True`` (default False, so
-        # this is a no-op for legacy runs).  See
+        # Enable via the ``nonlocal_velocity`` kwarg (preferred) or
+        # ``attr['nonlocal_velocity'] = True`` (legacy).  Default off, so
+        # this is a no-op for legacy runs.  See
         # ``TODOs/nonlocal_velocity_correction.md`` and
         # :mod:`PAOFLOW.hamiltonian.nonlocal_velocity` for the physics.
-        # When ``attr['nonlocal_velocity_inject']`` is also True the raw
-        # correction is folded into ``dHksp`` so ``do_momentum`` picks it
-        # up; ``attr['nonlocal_velocity_sign']`` selects the sign
-        # convention.  When unset, ``nonlocal_velocity_correction``
-        # picks the calibrated default per path (+1 for the scalar/
-        # ad-hoc-SO path, -1 for the fully-relativistic jm-kspace path).
-        if attr.get('nonlocal_velocity', False):
-            _nlv_sign = attr.get('nonlocal_velocity_sign', None)
+        # Explicit kwargs take precedence over the corresponding ``attr``
+        # entries; the injection sign, when unset, resolves to the
+        # calibrated per-path default (+1 scalar / ad-hoc-SO, -1
+        # fully-relativistic jm-kspace) inside
+        # :meth:`nonlocal_velocity_correction`.
+        if nonlocal_velocity is None:
+            nlv_enabled = bool(attr.get('nonlocal_velocity', False))
+        else:
+            nlv_enabled = bool(nonlocal_velocity)
+
+        if nonlocal_velocity_inject is not None:
+            nlv_inject = bool(nonlocal_velocity_inject)
+        elif 'nonlocal_velocity_inject' in attr:
+            nlv_inject = bool(attr['nonlocal_velocity_inject'])
+        else:
+            # Enabling the correction injects it by default; building Delta_p
+            # without injecting is a diagnostic-only mode.
+            nlv_inject = nlv_enabled
+
+        if nonlocal_velocity_sign is not None:
+            nlv_sign = int(nonlocal_velocity_sign)
+        elif attr.get('nonlocal_velocity_sign', None) is not None:
+            nlv_sign = int(attr['nonlocal_velocity_sign'])
+        else:
+            nlv_sign = None
+
+        if nlv_enabled:
             self.nonlocal_velocity_correction(
-                inject=bool(attr.get('nonlocal_velocity_inject', False)),
-                sign=(None if _nlv_sign is None else int(_nlv_sign)),
+                inject=nlv_inject,
+                sign=nlv_sign,
             )
 
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
