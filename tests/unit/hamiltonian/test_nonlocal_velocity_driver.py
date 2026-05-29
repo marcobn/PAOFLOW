@@ -175,7 +175,6 @@ def _si_stub_pf(nspin=1, nk_per_axis=2, seed=11):
     """
     dc_si, _ = _si_dc()
     arry_si, attr_si = dc_si.data_dicts()
-    alat = attr_si['alat']
 
     nk1 = nk2 = nk3 = nk_per_axis
     nktot = nk1 * nk2 * nk3
