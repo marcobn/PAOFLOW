@@ -446,12 +446,33 @@ def two_center_overlap_precomputed(
     mB: int,
     R: np.ndarray,
     q_grid: np.ndarray,
+    *,
+    cache: dict | None = None,
+    keyA=None,
+    keyB=None,
 ) -> float:
     r"""Same as :func:`two_center_overlap` but with precomputed radial
     Bessel transforms ``JA = J^A_{l_A}(q_grid)`` and ``JB = J^B_{l_B}(q_grid)``.
 
     The reciprocal-space Simpson grid (``q_grid``) is supplied by the
     caller and must match the one used to build ``JA`` and ``JB``.
+
+    Parameters
+    ----------
+    cache : dict, optional
+        Per-pair scratch cache.  When supplied, the radial integral
+        ``I_L`` (the expensive ``spherical_jn`` + Simpson quadrature) and
+        the angular factor ``Y_{LM}(\hat R)`` are memoized so they are
+        evaluated only once per unique ``(L, M)`` / radial-channel pair
+        instead of once per magnetic-index combination.  The cache is
+        keyed on ``(keyA, keyB, L)`` for ``I_L`` (so ``keyA``/``keyB``
+        must uniquely identify the radial channels behind ``JA``/``JB``)
+        and on ``(L, M)`` for ``Y_{LM}`` (valid only while ``R`` is held
+        fixed, i.e. within a single ΔR pair).  Results are bit-identical
+        to the uncached path.
+    keyA, keyB : hashable, optional
+        Stable identifiers for the radial channels behind ``JA`` and
+        ``JB``; required (and only used) when ``cache`` is provided.
     """
     R_vec = np.asarray(R, dtype=float)
     Rnorm = float(np.linalg.norm(R_vec))
@@ -459,7 +480,17 @@ def two_center_overlap_precomputed(
     L_min = abs(lA - lB)
     L_max = lA + lB
     parity = (lA + lB) % 2
-    qq = q_grid * q_grid
+
+    if cache is not None:
+        jl_cache = cache.setdefault('jl', {})
+        il_cache = cache.setdefault('il', {})
+        ylm_cache = cache.setdefault('ylm', {})
+        qq = cache.get('qq')
+        if qq is None:
+            qq = q_grid * q_grid
+            cache['qq'] = qq
+    else:
+        qq = q_grid * q_grid
 
     total = 0.0
     for L in range(L_min, L_max + 1):
@@ -469,13 +500,30 @@ def two_center_overlap_precomputed(
         if abs(phase.imag) > 1e-10:
             raise RuntimeError(f'Internal: i^{lA - lB - L} not real (parity logic broke?)')
         phase = phase.real
-        jL_qR = scipy.special.spherical_jn(L, q_grid * Rnorm)
-        I_L = float(scipy.integrate.simpson(qq * JA * JB * jL_qR, x=q_grid))
+        if cache is not None:
+            jL_qR = jl_cache.get(L)
+            if jL_qR is None:
+                jL_qR = scipy.special.spherical_jn(L, q_grid * Rnorm)
+                jl_cache[L] = jL_qR
+            il_key = (keyA, keyB, L)
+            I_L = il_cache.get(il_key)
+            if I_L is None:
+                I_L = float(scipy.integrate.simpson(qq * JA * JB * jL_qR, x=q_grid))
+                il_cache[il_key] = I_L
+        else:
+            jL_qR = scipy.special.spherical_jn(L, q_grid * Rnorm)
+            I_L = float(scipy.integrate.simpson(qq * JA * JB * jL_qR, x=q_grid))
         for M in range(-L, L + 1):
             G = real_gaunt_coefficient(lA, mA, lB, mB, L, M)
             if G == 0.0:
                 continue
-            YLM = float(real_spherical_harmonic(L, M, R_vec[np.newaxis, :])[0])
+            if cache is not None:
+                YLM = ylm_cache.get((L, M))
+                if YLM is None:
+                    YLM = float(real_spherical_harmonic(L, M, R_vec[np.newaxis, :])[0])
+                    ylm_cache[(L, M)] = YLM
+            else:
+                YLM = float(real_spherical_harmonic(L, M, R_vec[np.newaxis, :])[0])
             total += phase * G * YLM * I_L
     return 8.0 * total
 
@@ -490,6 +538,10 @@ def two_center_dipole_overlap_precomputed(
     R: np.ndarray,
     alpha: int,
     q_grid: np.ndarray,
+    *,
+    cache: dict | None = None,
+    keyA=None,
+    keyB=None,
 ) -> float:
     r"""Same as :func:`two_center_dipole_overlap` but with precomputed
     radial Bessel transforms of the modified bra :math:`g_A(r) = r\,R_A(r)`.
@@ -504,6 +556,11 @@ def two_center_dipole_overlap_precomputed(
         :math:`J^B_{l_B}(q_grid)`.
     lA, mA, lB, mB, R, alpha, q_grid
         See :func:`two_center_dipole_overlap`.
+    cache, keyA, keyB
+        Per-pair memoization passed through to
+        :func:`two_center_overlap_precomputed`.  ``keyA`` identifies the
+        modified-bra channel; the per-``Lp`` radial transform is keyed as
+        ``(keyA, Lp)`` so it never collides with the plain-overlap cache.
     """
     if alpha not in (0, 1, 2):
         raise ValueError(f'alpha must be 0, 1, or 2 (got {alpha}).')
@@ -518,6 +575,7 @@ def two_center_dipole_overlap_precomputed(
         if Lp % 2 != parity:
             continue
         JgA = J_gA_by_Lp[Lp]
+        gkeyA = None if keyA is None else (keyA, Lp)
         for Mp in range(-Lp, Lp + 1):
             G_ang = real_gaunt_coefficient(1, m_alpha, lA, mA, Lp, Mp)
             if G_ang == 0.0:
@@ -531,6 +589,9 @@ def two_center_dipole_overlap_precomputed(
                 mB,
                 R,
                 q_grid,
+                cache=cache,
+                keyA=gkeyA,
+                keyB=keyB,
             )
             total += prefactor * G_ang * ov
     return total

@@ -683,57 +683,6 @@ def _trapezoid_weights(r: np.ndarray) -> np.ndarray:
         w[1:-1] = 0.5 * (r[2:] - r[:-2])
     return w
 
-    atoms = arry['atoms']
-    tau = np.asarray(arry['tau'], dtype=float)
-    if tau.shape[0] != len(atoms):
-        raise RuntimeError(
-            f'tau ({tau.shape[0]} rows) does not match atoms list (length {len(atoms)}).'
-        )
-
-    sites: list[PAOSiteData] = []
-    basis: list[PAOOrbitalEntry] = []
-    basis_idx = 0
-    for site_i, label in enumerate(atoms):
-        if label not in species_data:
-            raise RuntimeError(
-                f"Atom site {site_i} has species '{label}' but no matching entry in arrays['species']."
-            )
-        sp = species_data[label]
-        site_orbitals: list[PAOOrbitalEntry] = []
-        offset = basis_idx
-        for ch_idx, ch in enumerate(sp.channels):
-            for qe_m in range(1, 2 * ch.l + 2):
-                m_std = qe_m_index_to_std(qe_m, ch.l)
-                entry = PAOOrbitalEntry(
-                    basis_index=basis_idx,
-                    site_index=site_i,
-                    channel_index=ch_idx,
-                    l=ch.l,
-                    m=m_std,
-                    qe_m=qe_m,
-                    label=ch.label,
-                )
-                site_orbitals.append(entry)
-                basis.append(entry)
-                basis_idx += 1
-        sites.append(
-            PAOSiteData(
-                index=site_i,
-                label=label,
-                tau=tau[site_i].copy(),
-                species=sp,
-                orbitals=site_orbitals,
-                basis_offset=offset,
-            )
-        )
-
-    return PAOCatalog(
-        species=species_data,
-        sites=sites,
-        basis=basis,
-        total_nlm=basis_idx,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Real-space ΔR enumeration for the <beta_I | ... | phi_J(r - dR)> tables.
@@ -1121,8 +1070,18 @@ def build_nl_real_space_tables(
         else:
             Sr_block = np.zeros((3, 0, 0), dtype=float)
 
+        # Per-pair scratch cache: the radial integral I_L (spherical_jn +
+        # Simpson) and the angular Y_LM(R-hat) depend only on the radial
+        # channels, L, M and the fixed ΔR of this pair -- not on the
+        # magnetic indices m_b/m_p.  Memoizing them here collapses the
+        # ~(2l_b+1)(2l_p+1) redundant recomputations per channel pair into
+        # a single evaluation (results are bit-identical).
+        pair_cache: dict = {}
+
         for local_b, ch_b_idx, l_b, m_b, _qe_b in beta_lm_tuples_per_site[I]:
             J_beta = beta_J[(sp_b_label, ch_b_idx)]
+            keyA_ov = ('b', sp_b_label, ch_b_idx)
+            keyA_dip = ('g', sp_b_label, ch_b_idx)
             if include_dipole:
                 JgA_by_Lp: dict[int, np.ndarray] = {}
                 parity_b = (l_b + 1) % 2
@@ -1136,6 +1095,7 @@ def build_nl_real_space_tables(
                 l_p = entry.l
                 m_p = entry.m
                 J_phi = pao_J[(sp_p_label, ch_p_idx)]
+                keyB = ('p', sp_p_label, ch_p_idx)
                 S_val = two_center_overlap_precomputed(
                     J_beta,
                     J_phi,
@@ -1145,6 +1105,9 @@ def build_nl_real_space_tables(
                     m_p,
                     d,
                     q_grid,
+                    cache=pair_cache,
+                    keyA=keyA_ov,
+                    keyB=keyB,
                 )
                 S_block[local_b, local_p] = S_val
                 if include_dipole:
@@ -1159,6 +1122,9 @@ def build_nl_real_space_tables(
                             d,
                             alpha,
                             q_grid,
+                            cache=pair_cache,
+                            keyA=keyA_dip,
+                            keyB=keyB,
                         )
                         Sr_block[alpha, local_b, local_p] = M_alpha + tau_I[alpha] * S_val
 
@@ -1339,10 +1305,15 @@ def build_nonlocal_velocity_kspace(
         # P_I:   (nk, n_b, nawf)
         # Pa_I:  (nk, 3, n_b, nawf)
         # D_I:   (n_b, n_b)
-        DP = np.einsum('ij,kjn->kin', D_I, P_I)  # (nk, n_b, nawf)
-        DPa = np.einsum('ij,kajn->kain', D_I, Pa_I)  # (nk, 3, n_b, nawf)
-        term1 = np.einsum('kim,kain->kamn', np.conj(P_I), DPa)  # P†·D·Pa
-        term2 = np.einsum('kaim,kin->kamn', np.conj(Pa_I), DP)  # Pa†·D·P
+        # Use BLAS matmul (multithreaded zgemm) instead of np.einsum, which
+        # falls back to single-threaded C loops for these contractions.
+        Dc = D_I.astype(complex)
+        DP = Dc @ P_I  # (nk, n_b, nawf)
+        DPa = Dc @ Pa_I  # (nk, 3, n_b, nawf)
+        Pc_T = np.conj(P_I).transpose(0, 2, 1)  # (nk, nawf, n_b)
+        Pac_T = np.conj(Pa_I).transpose(0, 1, 3, 2)  # (nk, 3, nawf, n_b)
+        term1 = Pc_T[:, None, :, :] @ DPa  # P†·D·Pa -> (nk, 3, nawf, nawf)
+        term2 = Pac_T @ DP[:, None, :, :]  # Pa†·D·P -> (nk, 3, nawf, nawf)
         dP += term1 - term2
 
     dP *= -1j  # m/(iℏ) in Hartree units
@@ -1636,11 +1607,15 @@ def build_nonlocal_velocity_jm_kspace(
     for P_I, Pa_I, D_I in zip(P_list, Palpha_list, D_per_site):
         if D_I.size == 0:
             continue
+        # Use BLAS matmul (multithreaded zgemm) instead of np.einsum, which
+        # falls back to single-threaded C loops for these contractions.
         D = D_I.astype(complex)
-        DP = np.einsum('ij,kjn->kin', D, P_I)  # (nk, n_b, n_rel)
-        DPa = np.einsum('ij,kajn->kain', D, Pa_I)  # (nk, 3, n_b, n_rel)
-        term1 = np.einsum('kim,kain->kamn', np.conj(P_I), DPa)  # P†·D·Pa
-        term2 = np.einsum('kaim,kin->kamn', np.conj(Pa_I), DP)  # Pa†·D·P
+        DP = D @ P_I  # (nk, n_b, n_rel)
+        DPa = D @ Pa_I  # (nk, 3, n_b, n_rel)
+        Pc_T = np.conj(P_I).transpose(0, 2, 1)  # (nk, n_rel, n_b)
+        Pac_T = np.conj(Pa_I).transpose(0, 1, 3, 2)  # (nk, 3, n_rel, n_b)
+        term1 = Pc_T[:, None, :, :] @ DPa  # P†·D·Pa -> (nk, 3, n_rel, n_rel)
+        term2 = Pac_T @ DP[:, None, :, :]  # Pa†·D·P -> (nk, 3, n_rel, n_rel)
         dP += term1 - term2
 
     dP *= -1j  # m/(iℏ) in Hartree units
