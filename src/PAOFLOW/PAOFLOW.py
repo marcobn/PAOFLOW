@@ -2,6 +2,187 @@ import numpy as np
 
 
 class PAOFLOW:
+    """Post-processing engine for Pseudo-Atomic Orbital (PAO) electronic structure calculations.
+
+    ``PAOFLOW`` reads the output of a plane-wave DFT code (Quantum ESPRESSO or VASP),
+    projects the Bloch eigenstates onto a compact PAO basis, and exposes a high-level
+    Python API for a broad range of electronic, topological, and transport properties.
+    All heavy numerics are MPI-parallelised through ``mpi4py`` and optionally distributed
+    across k-point pools to keep per-process memory bounded.
+
+    Typical workflow
+    ----------------
+    ::
+
+        from PAOFLOW import PAOFLOW
+
+        pf = PAOFLOW(workpath='./', savedir='prefix.save', outputdir='output')
+        pf.projections()           # build PAO projections (or read_atomic_proj_QE)
+        pf.projectability()        # drop low-projectability bands
+        pf.pao_hamiltonian()       # construct H(R) and H(k) in the PAO basis
+        pf.interpolated_hamiltonian()  # Fourier-interpolate onto a denser k-grid
+        pf.pao_eigh()              # diagonalise → E(k), v(k)
+        pf.gradient_and_momenta()  # ∇_k H, momentum matrix
+        pf.dos()                   # density of states / projected DOS
+        pf.transport()             # Boltzmann transport tensors
+        pf.finish_execution()      # print timings and memory usage
+
+    Parameters (constructor)
+    ------------------------
+    workpath : str, default ``'./'``
+        Path to the working directory.
+    outputdir : str, default ``'output'``
+        Name of the output sub-directory created under ``workpath``.
+    inputfile : str, optional
+        Path to an XML input file that configures the run.
+    savedir : str, optional
+        Path to the QE ``.save`` directory (required when not using ``inputfile``).
+    model : dict, optional
+        Parameters for building the Hamiltonian from a tight-binding model instead
+        of a DFT calculation.  Must contain at least the key ``'label'``.
+    npool : int, default 1
+        Number of k-point pools.  Increasing ``npool`` distributes k-point work
+        across MPI ranks and reduces per-process memory.
+    smearing : str, optional
+        Global smearing type for BZ integration (``None``, ``'m-p'``, or ``'gauss'``).
+    save_overlaps : bool, default ``False``
+        Retain the wavefunction overlap matrices ``Sks`` in the ``DataController``
+        after Hamiltonian construction.  Required for ACBN0.
+    acbn0 : bool, default ``False``
+        Orthogonalise the PAO Hamiltonian using the ACBN0 procedure.
+    verbose : bool, default ``False``
+        Enable detailed debugging output.
+    restart : bool, default ``False``
+        Resume from a previously saved ``.json`` dump (see :meth:`restart_dump`).
+    dft : str, default ``'QE'``
+        DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
+
+    Key attributes
+    --------------
+    data_controller : DataController
+        Central data store; all arrays (``HRs``, ``Hks``, ``E_k``, …) and
+        scalar attributes live in its ``data_arrays`` and ``data_attributes``
+        dictionaries.
+    comm, rank, size : MPI communicator and process identifiers.
+
+    Methods — PAO Hamiltonian
+    -------------------------
+    projections(\**kw)
+        Compute PAO projections from pseudopotential or all-electron basis sets,
+        replacing ``projwfc.x``.
+    read_atomic_proj_QE()
+        Read pre-computed projections from QE's ``atomic_proj.xml``.
+    projectability(pthr, shift)
+        Identify and optionally shift low-projectability bands.
+    pao_hamiltonian(shift_type, insulator, write_binary, expand_wedge, symmetrize, …)
+        Build the real-space Hamiltonian ``H(R)`` (stored as ``HRs``) and the
+        k-space Hamiltonian ``H(k)`` (stored as ``Hks``).
+    add_external_fields(Efield, Bfield, HubbardU)
+        Apply electric field, magnetic field, or Hubbard-U corrections to ``HRs``.
+    write_Hamiltonian(fname)
+        Dump ``HRs`` in the Z2Pack format.
+
+    Methods — Hamiltonian manipulation
+    ------------------------------------
+    interpolated_hamiltonian(nfft1, nfft2, nfft3, reshift_Ef)
+        Fourier-interpolate onto a denser k-grid via zero-padding, producing ``Hksp``.
+    doubling_Hamiltonian(nx, ny, nz)
+        Double the supercell in one or more directions.
+    cutting_Hamiltonian(x, y, z)
+        Trim periodic images from ``HRs`` along selected axes.
+    adhoc_spin_orbit(naw, phi, theta, lambda_p, lambda_d, soc_strengh, soc_species)
+        Add phenomenological spin-orbit coupling to ``HRs`` without a DFT+SOC run.
+
+    Methods — Band structure and eigenvalues
+    -----------------------------------------
+    bands(ibrav, band_path, high_sym_points, spin_orbit, fname, nk)
+        Compute and write the band structure along a high-symmetry path.
+    pao_eigh(bval)
+        Diagonalise ``Hksp`` to obtain eigenvalues ``E_k`` and eigenvectors ``v_k``.
+    gradient_and_momenta(band_curvature)
+        Compute ∇_k H (``dHksp``) and the momentum matrix ``pksp``.  Optionally
+        compute the band-curvature tensor.
+    adaptive_smearing(smearing, afac)
+        Compute adaptive smearing widths ``deltakp`` for BZ integration.
+    effective_mass(emin, emax, ne)
+        Calculate effective mass tensor components along kx, ky, kz.
+
+    Methods — Spectral and spatial quantities
+    -------------------------------------------
+    dos(do_dos, do_pdos, delta, emin, emax, ne)
+        Total and projected density of states (supports adaptive smearing).
+    density(nr1, nr2, nr3)
+        Real-space electron density on a uniform grid.
+    fermi_surface(fermi_up, fermi_dw)
+        Extract the Fermi surface within an energy window.
+    spin_texture(fermi_up, fermi_dw)
+        Map the spin expectation value ⟨S⟩ across the Fermi surface.
+    wave_function_projection(dimension)
+        Site-projected wave-function weights.
+    site_projected_bands(site_proj)
+        Band structure weighted by on-site probability density.
+    ipr(fname)
+        Inverse participation ratio (IPR) of PAO eigenstates.
+    doping(tmin, tmax, nt, delta, emin, emax, ne, doping_conc, core_electrons, fname)
+        Chemical potential as a function of carrier doping and temperature.
+
+    Methods — Topology and Berry physics
+    ----------------------------------------
+    topology(eff_mass, Berry, spin_Hall, spin_orbit, spol, ipol, jpol)
+        Berry curvature, effective mass, and spin Berry curvature along the
+        k-path, including Z2 invariant support.
+    berry_phase(kspace_method, berry_path, high_sym_points, …)
+        Berry/Zak phase via the discretized product formula (Resta 1994).
+    anomalous_Hall(do_ac, emin, emax, fermi_up, fermi_dw, ne, delta, a_tensor)
+        Anomalous Hall conductivity (and optionally magnetic circular dichroism).
+    spin_Hall(twoD, do_ac, emin, emax, ne, delta, fermi_up, fermi_dw, s_tensor, …)
+        Spin Hall conductivity and spin circular dichroism.
+    rashba_edelstein(emin, emax, ne, temps, twoD, lt, st, …)
+        Rashba–Edelstein (inverse spin galvanic effect) tensor.
+    find_weyl_points(symmetrize, test_rad, search_grid)
+        Locate Weyl nodes in the BZ via Chern-number integration.
+    spin_operator(spin_orbit, sh_l, sh_j)
+        Build the spin operator matrix ``Sj`` in the PAO basis.
+
+    Methods — Transport
+    --------------------
+    transport(tmin, tmax, nt, emin, emax, ne, scattering_channels, …)
+        Boltzmann semi-classical transport tensors (conductivity, Seebeck, thermal
+        conductivity) over a temperature and energy grid.
+    dielectric_tensor(delta, intrasmear, emin, emax, ne, d_tensor, degauss)
+        Frequency-dependent real and imaginary parts of the dielectric tensor.
+    jdos(delta, emin, emax, ne, jdos_smeartype)
+        Joint density of states.
+
+    Methods — Utilities
+    --------------------
+    print_data_keys()
+        Print all keys stored in the DataController dictionaries.
+    memory_check()
+        Estimate peak memory usage in GBytes.
+    restart_dump(fname_prefix)
+        Pickle the current DataController state for later resumption.
+    restart_load(fname_prefix)
+        Restore a previously pickled DataController state.
+    report_module_time(mname)
+        Print wall-clock time elapsed since the last timer reset.
+    finish_execution()
+        Print total run time and (if verbose) aggregate memory usage across ranks.
+
+    Notes
+    -----
+    - The ``DataController`` (``self.data_controller``) is the single source of
+      truth for all intermediate results.  Its ``data_arrays`` dict holds NumPy
+      arrays (e.g. ``HRs``, ``E_k``, ``pksp``); ``data_attributes`` holds scalar
+      configuration values (e.g. ``nawf``, ``nspin``, ``nkpnts``).
+    - Each public method guards its core computation in a ``try/except`` block and
+      calls ``self.report_exception`` on failure.  Setting
+      ``abort_on_exception = True`` in the DataController attributes causes the
+      exception to be re-raised immediately.
+    - MPI barriers are inserted automatically at the start and end of every
+      timed module via :meth:`report_module_time`.
+    """
+
     data_controller = None
 
     comm = rank = size = None
@@ -67,7 +248,7 @@ class PAOFLOW:
         from mpi4py import MPI
 
         from .DataController import DataController
-        from .defs.header import header
+        from .utils.header import header
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -106,17 +287,7 @@ class PAOFLOW:
             # Data Attributes
             attr = self.data_controller.data_attributes
 
-            # Check for CUDA FFT Libraries
-            ## CUDA not yet supported in PAOFLOW_CLASS
-            attr['use_cuda'] = False
             attr['scipyfft'] = True
-            if attr['use_cuda']:
-                attr['scipyfft'] = False
-            if self.rank == 0 and attr['verbose']:
-                if attr['use_cuda']:
-                    print('CUDA will perform FFTs on %d GPUs' % 1)
-                else:
-                    print('SciPy will perform FFTs')
 
         # Report execution information
         if self.rank == 0:
@@ -273,10 +444,43 @@ class PAOFLOW:
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
         Replaces projwfc.
+
+        Parameters
+        ----------
+        internal : bool, optional
+            If ``True``, use the all-electron internal basis (loaded from
+            ``basispath``) instead of the pseudopotential basis.  Always
+            forced ``True`` for VASP calculations.
+        basispath : str, optional
+            Directory containing the per-element ``BASIS/<elem>/*.dat``
+            files.  Required when ``internal`` is ``True`` or when
+            ``configuration`` is a preset string.
+        configuration : dict, str, or None, optional
+            How to build the projection basis:
+
+            * ``"minimal"`` — use the pseudo-atomic wavefunctions
+              shipped in each species' UPF file (smooth, matches the
+              default QE projwfc behaviour).  ``internal`` is ignored.
+              Spans the valence bands well; conduction states need
+              ``"extended"`` or an explicit configuration dict.
+            * ``"extended"`` — AE basis built from ``basispath``: the
+              UPF valence shells plus a generous rule-based set of
+              polarization shells (see
+              :func:`PAOFLOW.inputs.basis_presets.extended_augmentation`).
+              ``internal`` is ignored.  Equivalent to the
+              ``internal=True`` legacy path with an auto-generated
+              configuration dict.
+            * ``dict`` — explicit ``{element: [shell_labels]}`` mapping
+              consumed by the legacy AE-only builder
+              (``internal=True``) or stored verbatim otherwise.
+              Backwards-compatible with previous releases.
+            * ``None`` — keep whatever is already stored in
+              ``arry['configuration']`` (legacy behaviour).
         """
 
-        from .defs.communication import gather_array, load_balancing
-        from .defs.do_atwfc_proj import (
+        from .inputs.basis_presets import resolve_configuration
+        from .utils.communication import gather_array, load_balancing
+        from .projection.do_atwfc_proj import (
             build_aewfc_basis,
             build_pswfc_basis_all,
             calc_proj_k,
@@ -286,11 +490,36 @@ class PAOFLOW:
 
         if basispath is not None:
             attr['basispath'] = basispath
-        if configuration is not None:
-            arry['configuration'] = configuration
 
-        # Always use internal basis if VASP
-        if internal or attr['dft'] == 'VASP':
+        preset = None
+        if configuration is not None:
+            if isinstance(configuration, str):
+                preset = configuration.lower()
+                arry['configuration'] = resolve_configuration(self.data_controller, configuration)
+                if attr.get('verbose') and self.rank == 0:
+                    print("Resolved configuration preset '%s':" % configuration)
+                    for elem, shells in arry['configuration'].items():
+                        print('  %-3s : %s' % (elem, ', '.join(shells)))
+            elif isinstance(configuration, dict):
+                arry['configuration'] = configuration
+            else:
+                raise TypeError(
+                    'configuration must be a dict, a preset string '
+                    "('minimal' or 'extended'), or None; got %r" % type(configuration).__name__
+                )
+
+        # Dispatch to the correct basis builder.
+        #   'minimal'  -> pseudo PSWFC from UPF (smooth, matches QE bands).
+        #   'extended' -> AE basis from BASIS/ (valence + generous
+        #                 rule-based polarization shells).
+        # Presets override the ``internal`` flag because they imply a
+        # specific scheme.
+        if preset == 'minimal':
+            basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
+        elif preset == 'extended':
+            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
+        elif internal or attr['dft'] == 'VASP':
+            # Legacy AE-only path (explicit dict configuration).
             basis, arry['shells'] = build_aewfc_basis(self.data_controller)
         else:
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
@@ -334,13 +563,13 @@ class PAOFLOW:
         """
         from os.path import exists, join
 
-        from .defs.do_atwfc_proj import build_pswfc_basis_all
-        from .defs.read_upf import UPF
+        from .projection.do_atwfc_proj import build_pswfc_basis_all
+        from .inputs.read_upf import UPF
 
         arry, attr = self.data_controller.data_dicts()
         fpath = attr['fpath']
         if exists(join(fpath, 'atomic_proj.xml')):
-            from .defs.read_QE_xml import parse_qe_atomic_proj
+            from .inputs.read_QE_xml import parse_qe_atomic_proj
 
             if attr['acbn0'] and not attr['save_overlaps']:
                 if self.rank == 0:
@@ -391,7 +620,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_projectability import do_projectability
+        from .projection.do_projectability import do_projectability
 
         attr = self.data_controller.data_attributes
 
@@ -430,11 +659,11 @@ class PAOFLOW:
             None
 
         """
-        from .defs.do_build_pao_hamiltonian import (
+        from .hamiltonian.do_build_pao_hamiltonian import (
             do_build_pao_hamiltonian,
             do_Hks_to_HRs,
         )
-        from .defs.get_K_grid_fft import get_K_grid_fft
+        from .utils.get_K_grid_fft import get_K_grid_fft
 
         # Data Attributes and Arrays
         arrays, attr = self.data_controller.data_dicts()
@@ -487,12 +716,12 @@ class PAOFLOW:
         self.report_module_time('k -> R')
 
     def minimal(self, first_band=None, R=False):
-        from .defs.do_minimal import do_minimal
+        from .projection.do_minimal import do_minimal
 
         raise Exception('ONLY FOR ARCHIVAL PUTPOSES - DO NOT USE')
         do_minimal(self.data_controller, first_band)
         if R:
-            from .defs.do_build_pao_hamiltonian import do_Hks_to_HRs
+            from .hamiltonian.do_build_pao_hamiltonian import do_Hks_to_HRs
 
             do_Hks_to_HRs(self.data_controller)
             self.data_controller.broadcast_single_array('HRs')
@@ -524,7 +753,7 @@ class PAOFLOW:
         try:
             # Add external fields or non scf ACBN0 correction
             if Efield.any() != 0.0 or Bfield.any() != 0.0 or HubbardU.any() != 0.0:
-                from .defs.add_ext_field import add_ext_field
+                from .hamiltonian.add_ext_field import add_ext_field
 
                 add_ext_field(self.data_controller)
                 if self.rank == 0 and attr['verbose']:
@@ -579,8 +808,8 @@ class PAOFLOW:
             None
 
         """
-        from .defs.communication import gather_full
-        from .defs.do_bands import do_bands
+        from .utils.communication import gather_full
+        from .spectrum.do_bands import do_bands
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -649,7 +878,7 @@ class PAOFLOW:
         """
         import scipy.linalg as la
 
-        from .defs.do_spin_orbit import do_spin_orbit_H
+        from .hamiltonian.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
         attr['do_spin_orbit'] = attr['adhoc_SO'] = True
@@ -719,7 +948,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_wave_function_site_projection import wave_function_site_projection
+        from .topology.do_wave_function_site_projection import wave_function_site_projection
 
         try:
             wave_function_site_projection(self.data_controller)
@@ -742,7 +971,7 @@ class PAOFLOW:
             None
         """
 
-        from .defs.do_site_projected_bands import site_projeted_bands
+        from .spectrum.do_site_projected_bands import site_projeted_bands
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -774,7 +1003,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_doubling import doubling_HRs
+        from .hamiltonian.do_doubling import doubling_HRs
 
         arrays, attributes = self.data_controller.data_dicts()
         attributes['nx'], attributes['ny'], attributes['nz'] = nx, ny, nz
@@ -943,7 +1172,7 @@ class PAOFLOW:
                         Sj[spol, i_dn, i_up] = sP[spol][1, 0]
                         Sj[spol, i_dn, i_dn] = sP[spol][1, 1]
             else:
-                from .defs.clebsch_gordan import clebsch_gordan
+                from .topology.clebsch_gordan import clebsch_gordan
 
                 # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
                 for spol in range(3):
@@ -980,7 +1209,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_topology import do_topology
+        from .topology.do_topology import do_topology
         # Compute Z2 invariant, velocity, momentum and Berry curvature and spin Berry
         # curvature operators along the path in the IBZ from do_topology_calc
 
@@ -1034,10 +1263,10 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.communication import gather_scatter
-        from .defs.do_double_grid import do_double_grid
-        from .defs.do_Efermi import E_Fermi
-        from .defs.get_K_grid_fft import get_K_grid_fft
+        from .utils.communication import gather_scatter
+        from .hamiltonian.do_double_grid import do_double_grid
+        from .spectrum.do_Efermi import E_Fermi
+        from .utils.get_K_grid_fft import get_K_grid_fft
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1120,8 +1349,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.communication import gather_full, scatter_full
-        from .defs.do_eigh import do_pao_eigh
+        from .utils.communication import gather_full, scatter_full
+        from .spectrum.do_eigh import do_pao_eigh
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1181,9 +1410,9 @@ class PAOFLOW:
         """
         import numpy as np
 
-        from .defs.communication import gather_scatter
-        from .defs.do_gradient import do_gradient
-        from .defs.do_momentum import do_momentum
+        from .utils.communication import gather_scatter
+        from .hamiltonian.do_gradient import do_gradient
+        from .hamiltonian.do_momentum import do_momentum
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1224,7 +1453,7 @@ class PAOFLOW:
                             + np.conj(arrays['dHksp'][nk, i, :, :, s].T)
                         ) / 2.0
             if band_curvature:
-                from .defs.do_band_curvature import do_band_curvature
+                from .spectrum.do_band_curvature import do_band_curvature
 
                 do_band_curvature(self.data_controller)
                 # No more need for k-space Hamiltonian
@@ -1254,7 +1483,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_adaptive_smearing import do_adaptive_smearing
+        from .spectrum.do_adaptive_smearing import do_adaptive_smearing
 
         attr = self.data_controller.data_attributes
 
@@ -1297,30 +1526,30 @@ class PAOFLOW:
         try:
             if attr['smearing'] is None:
                 if do_dos:
-                    from .defs.do_dos import do_dos
+                    from .spectrum.do_dos import do_dos
 
                     do_dos(self.data_controller, emin, emax, ne, delta)
                 if do_pdos:
-                    from .defs.do_pdos import do_pdos
+                    from .spectrum.do_pdos import do_pdos
 
                     do_pdos(self.data_controller, emin, emax, ne, delta)
             else:
                 if 'deltakp' not in arrays:
                     if do_dos:
-                        from .defs.do_dos import do_dos
+                        from .spectrum.do_dos import do_dos
 
                         do_dos(self.data_controller, emin, emax, ne, delta)
                     if do_pdos:
-                        from .defs.do_pdos import do_pdos
+                        from .spectrum.do_pdos import do_pdos
 
                         do_pdos(self.data_controller, emin, emax, ne, delta)
                 else:
                     if do_dos:
-                        from .defs.do_dos import do_dos_adaptive
+                        from .spectrum.do_dos import do_dos_adaptive
 
                         do_dos_adaptive(self.data_controller, emin, emax, ne)
                     if do_pdos:
-                        from .defs.do_pdos import do_pdos_adaptive
+                        from .spectrum.do_pdos import do_pdos_adaptive
 
                         do_pdos_adaptive(self.data_controller, emin, emax, ne)
         except Exception as e:
@@ -1342,7 +1571,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_real_space import do_density
+        from .hamiltonian.do_real_space import do_density
 
         do_density(self.data_controller, nr1, nr2, nr3)
 
@@ -1370,7 +1599,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_fermisurf import do_fermisurf
+        from .topology.do_fermisurf import do_fermisurf
 
         attr = self.data_controller.data_attributes
 
@@ -1399,7 +1628,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_spin_texture import do_spin_texture
+        from .topology.do_spin_texture import do_spin_texture
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -1456,8 +1685,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_Hall import do_spin_Hall
-        from .defs.projection_operator import do_projection_operator, orbital_array
+        from .response.do_Hall import do_spin_Hall
+        from .projection.projection_operator import do_projection_operator, orbital_array
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1523,7 +1752,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_rashba_edelstein import do_rashba_edelstein
+        from .response.do_rashba_edelstein import do_rashba_edelstein
 
         arrays, attr = self.data_controller.data_dicts()
         attr['deltaH'] = delta
@@ -1565,7 +1794,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_Hall import do_anomalous_Hall
+        from .response.do_Hall import do_anomalous_Hall
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1604,7 +1833,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_effective_mass import do_effective_mass
+        from .spectrum.do_effective_mass import do_effective_mass
 
         _, attr = self.data_controller.data_dicts()
 
@@ -1648,8 +1877,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_doping import do_doping
-        from .defs.do_dos import do_dos, do_dos_adaptive
+        from .boltzmann.do_doping import do_doping
+        from .spectrum.do_dos import do_dos, do_dos_adaptive
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1706,7 +1935,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_transport import do_transport
+        from .boltzmann.do_transport import do_transport
 
         arrays, attr = self.data_controller.data_dicts()
         if 'tau_dict' not in attr:
@@ -1767,7 +1996,7 @@ class PAOFLOW:
             None
         """
 
-        from .defs.do_epsilon import do_dielectric_tensor
+        from .response.do_epsilon import do_dielectric_tensor
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1812,7 +2041,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_epsilon import do_jdos
+        from .response.do_epsilon import do_jdos
 
         _, attr = self.data_controller.data_dicts()
         if 'delta' not in attr:
@@ -1829,7 +2058,7 @@ class PAOFLOW:
         self.report_module_time('Joint density of states')
 
     def find_weyl_points(self, symmetrize=None, test_rad=0.01, search_grid=[8, 8, 8]):
-        from .defs.do_find_Weyl import find_weyl
+        from .topology.do_find_Weyl import find_weyl
 
         try:
             if symmetrize is not None:
@@ -1866,7 +2095,7 @@ class PAOFLOW:
 
         from os.path import join
 
-        from .defs.do_ipr import inverse_participation_ratio
+        from .response.do_ipr import inverse_participation_ratio
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -1931,7 +2160,7 @@ class PAOFLOW:
             Berry/Zak phase
 
         """
-        from .defs.do_berry_phase import do_berry_phase
+        from .topology.do_berry_phase import do_berry_phase
 
         arry, attr = self.data_controller.data_dicts()
 

@@ -1,0 +1,61 @@
+
+ &control
+  calculation = 'bands'
+  restart_mode = 'from_scratch'
+  prefix = 'GaAs'
+  wf_collect = .true.
+  pseudo_dir = './'
+  verbosity = 'high'
+ /
+
+ &system
+  ibrav = 0
+  nat = 2
+  ntyp = 2
+  celldm(1) = 10.6827
+  ecutwfc = 60.0
+  ecutrho = 600.0
+  nbnd = 24
+  nosym = .true.
+  noinv = .true.
+ /
+
+ &electrons
+  mixing_mode = 'plain'
+  mixing_beta = 0.7
+  conv_thr = 1.0d-10
+  electron_maxstep = 200
+  diago_full_acc = .true.
+ /
+
+ATOMIC_SPECIES
+ Ga  69.723    Ga.pbe-dn-kjpaw_psl.1.0.0.UPF
+ As  74.92160  As.pbe-n-kjpaw_psl.1.0.0.UPF
+
+ATOMIC_POSITIONS crystal
+ Ga   0.00   0.00   0.00
+ As   0.25   0.25   0.25
+
+CELL_PARAMETERS  alat
+-0.500000   0.000000   0.500000
+ 0.000000   0.500000   0.500000
+-0.500000   0.500000   0.000000
+
+! L - Gamma - X - W - K - Gamma  (FCC, 2*pi/a units)
+K_POINTS tpiba_b
+ 6
+ 0.500   0.500   0.500   40    ! L
+ 0.000   0.000   0.000   40    ! Gamma
+ 1.000   0.000   0.000   20    ! X
+ 1.000   0.500   0.000   20    ! W
+ 0.750   0.750   0.000   40    ! K
+ 0.000   0.000   0.000    1    ! Gamma
+
+HUBBARD (ortho-atomic)
+ U Ga-4s 0.0
+ U Ga-4p 0.5341327461507654
+ U As-4s 0.0
+ U As-4p 2.3937357974056486
+ V Ga-4s As-4s 1 2 1.5617398717839042
+ V Ga-4s As-4p 1 2 1.1322650343639031
+ V Ga-4p As-4p 1 2 2.043159353613767
