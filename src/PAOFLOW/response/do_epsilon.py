@@ -39,9 +39,12 @@ def do_dielectric_tensor(data_controller, ene):
 
     Output files (written to ``opath``)
     ------------------------------------
-    ``epsi_XY.dat``, ``epsr_XY.dat``, ``eels_XY.dat``, ``ieps_XY.dat``
+    ``epsi_XY.dat``, ``epsr_XY.dat``, ``eels_XY.dat``, ``ieps_XY.dat``,
+    ``sigmar_XY.dat``, ``sigmai_XY.dat``
         Two-column (energy, value) files for each tensor component ``XY``;
         spin-polarised runs also produce ``_0`` and ``_1`` variants.
+        ``sigmar``/``sigmai`` are the real (absorptive) and imaginary
+        (dispersive) parts of the optical conductivity in SI units (S/m).
     """
     from ..utils.constants import LL
 
@@ -74,10 +77,17 @@ def do_dielectric_tensor(data_controller, ene):
             jpol = d_tensor[n][1]
 
             epsi, epsr, eels, ieps = do_epsilon(data_controller, ene, 0, ipol, jpol)
+            sigmar, sigmai = optical_conductivity(ene, epsi, epsr, ipol, jpol)
             # Write files. EELS = -Im(1/eps) is only physically meaningful for
             # diagonal tensor components, so we skip it for off-diagonal pairs.
             indices = (LL[ipol], LL[jpol])
-            spectra = [(epsi, 'epsi'), (epsr, 'epsr'), (ieps, 'ieps')]
+            spectra = [
+                (epsi, 'epsi'),
+                (epsr, 'epsr'),
+                (ieps, 'ieps'),
+                (sigmar, 'sigmar'),
+                (sigmai, 'sigmai'),
+            ]
             if ipol == jpol:
                 spectra.append((eels, 'eels'))
             for ep, es in spectra:
@@ -96,17 +106,31 @@ def do_dielectric_tensor(data_controller, ene):
 
             epsi_0, epsr_0, eels_0, ieps_0 = do_epsilon(data_controller, ene, 0, ipol, jpol)
             epsi_1, epsr_1, eels_1, ieps_1 = do_epsilon(data_controller, ene, 1, ipol, jpol)
+            sigmar_0, sigmai_0 = optical_conductivity(ene, epsi_0, epsr_0, ipol, jpol)
+            sigmar_1, sigmai_1 = optical_conductivity(ene, epsi_1, epsr_1, ipol, jpol)
             # Write files. EELS = -Im(1/eps) is only physically meaningful for
             # diagonal tensor components, so we skip it for off-diagonal pairs.
             indices = (LL[ipol], LL[jpol], 0)
-            spectra0 = [(epsi_0, 'epsi'), (epsr_0, 'epsr'), (ieps_0, 'ieps')]
+            spectra0 = [
+                (epsi_0, 'epsi'),
+                (epsr_0, 'epsr'),
+                (ieps_0, 'ieps'),
+                (sigmar_0, 'sigmar'),
+                (sigmai_0, 'sigmai'),
+            ]
             if ipol == jpol:
                 spectra0.append((eels_0, 'eels'))
             for ep, es in spectra0:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
             indices = (LL[ipol], LL[jpol], 1)
-            spectra1 = [(epsi_1, 'epsi'), (epsr_1, 'epsr'), (ieps_1, 'ieps')]
+            spectra1 = [
+                (epsi_1, 'epsi'),
+                (epsr_1, 'epsr'),
+                (ieps_1, 'ieps'),
+                (sigmar_1, 'sigmar'),
+                (sigmai_1, 'sigmai'),
+            ]
             if ipol == jpol:
                 spectra1.append((eels_1, 'eels'))
             for ep, es in spectra1:
@@ -309,6 +333,62 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
     ieps = 1.0 + (2.0 / np.pi) * ieps
 
     return (epsi, epsr, eels, ieps)
+
+
+def optical_conductivity(ene, epsi, epsr, ipol, jpol):
+    r"""Optical (AC) conductivity from the complex dielectric function.
+
+    The optical conductivity is related to the complex relative permittivity
+    :math:`\varepsilon(\omega) = \varepsilon_1 + i\varepsilon_2` by
+
+    .. math::
+
+        \sigma(\omega) = -i\,\varepsilon_0\,\omega\,
+                          \bigl(\varepsilon(\omega) - 1\bigr)
+
+    so that its real (absorptive) and imaginary (dispersive) parts are
+
+    .. math::
+
+        \sigma_1(\omega) = \varepsilon_0\,\omega\,\varepsilon_2(\omega), \qquad
+        \sigma_2(\omega) = -\varepsilon_0\,\omega\,
+                            \bigl(\varepsilon_1(\omega) - \delta_{ij}\bigr).
+
+    The ``-1`` (``\delta_{ij}``) vacuum subtraction is applied only to
+    diagonal tensor components, consistent with the ``+1`` added to
+    ``epsr`` in :func:`do_epsilon`.
+
+    Parameters
+    ----------
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.  The angular frequency is
+        :math:`\omega = E / \hbar` with ``\hbar`` in eV s.
+    epsi : ndarray, shape (ne,)
+        Imaginary part of the dielectric function :math:`\varepsilon_2`.
+    epsr : ndarray, shape (ne,)
+        Real part of the dielectric function :math:`\varepsilon_1`
+        (already including the ``+1`` for diagonal components).
+    ipol, jpol : int
+        Tensor component indices (0-2 = x, y, z).
+
+    Returns
+    -------
+    sigma_r : ndarray, shape (ne,)
+        Real (absorptive) part of the optical conductivity in S/m.
+    sigma_i : ndarray, shape (ne,)
+        Imaginary (dispersive) part of the optical conductivity in S/m.
+    """
+    from ..utils.constants import HBAR
+
+    # SI vacuum permittivity (F/m), matching the prefactor used in do_epsilon.
+    eps0_si = 8.8541878188e-12
+    # Angular frequency in rad/s (HBAR is in eV s, ene in eV).
+    omega = ene / HBAR
+
+    sigma_r = eps0_si * omega * epsi
+    sigma_i = -eps0_si * omega * (epsr - 1.0 * (ipol == jpol))
+
+    return (sigma_r, sigma_i)
 
 
 def eps_loop(data_controller, ene, ispin, ipol, jpol):
