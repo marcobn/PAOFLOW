@@ -30,14 +30,17 @@
 #     print(
 #         '#############################################################################################\n'
 #     )
-def header(style='large'):
+def header(style='color'):
     """Print the PAOFLOW logo.
 
     Parameters
     ----------
     style : str
-        'large' for the full letter-art logo (default), 'small' for the
-        compact self-filled logo.
+        'large'    – full letter-art logo in plain text (default).
+        'small'    – compact self-filled logo in plain text.
+        'color'    – large logo in UNT green with decorative separators and
+                     subtitle (requires a 24-bit colour terminal).
+        'markdown' – large logo wrapped in a fenced code block (README / Sphinx).
     """
     large = (
         'PPPPPP\\   AA\\AAAAA\\   OOOOOO\\  FFFFFFFF\\ LLL\\        OOOOOO\\  WW\\   WW\\   WW\\ \n'
@@ -55,5 +58,31 @@ def header(style='large'):
         'ppppp   aaaaaa   oo  oo  f     l     oo  oo    wwwwwwww\n'
         'p      aa    aa  oooooo  f     llll  oooooo     ww  ww\n'
     )
-    logo = large if style == 'large' else small
-    print('\n' + logo)
+
+    if style == 'markdown':
+        print('\n```\n' + large + '```\n')
+
+    elif style == 'color':
+        _GREEN = '\033[38;2;0;133;62m'  # UNT green  #00853E  (separators)
+        _LIME = '\033[38;2;74;222;128m'  # bright lime #4ade80 (logo text)
+        _MINT = '\033[38;2;134;239;172m'  # subtitle   #86efac
+        _RESET = '\033[0m'
+        _WIDTH = 84
+        _SEP = _GREEN + '\u2500' * _WIDTH + _RESET
+        _SEP2 = _LIME + '\u2500' * _WIDTH + _RESET
+        _SUBTITLE = 'From DFT wavefunctions to materials properties via atomic-orbital Hamiltonians'
+
+        lines = large.rstrip('\n').split('\n')
+        colored_lines = [_LIME + '   ' + line + _RESET for line in lines]
+
+        print()
+        print(_SEP)
+        print('\n'.join(colored_lines))
+        print(_SEP2)
+        print(_MINT + _SUBTITLE.center(_WIDTH) + _RESET)
+        print(_SEP)
+        print()
+
+    else:
+        logo = large if style == 'large' else small
+        print('\n' + logo)
