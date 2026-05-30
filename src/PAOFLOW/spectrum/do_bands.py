@@ -1,5 +1,10 @@
 import numpy as np
+from mpi4py import MPI
 from scipy import linalg as spl
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
 
 def bands_calc(data_controller):
@@ -32,10 +37,10 @@ def bands_calc(data_controller):
     arrays, attributes = data_controller.data_dicts()
 
     npool = attributes['npool']
-    nawf, _, _, _, _, nspin = arrays['HRs'].shape
 
     kq_aux = scatter_full(arrays['kq'].T, npool).T
 
+    nawf, _, _, _, _, nspin = arrays['HRs'].shape
     Hks_aux = band_loop_H(data_controller, kq_aux)
 
     if np.iscomplex(arrays['kq']).any():

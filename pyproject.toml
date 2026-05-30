@@ -26,6 +26,7 @@ transport = ["pyyaml", "psutil", "pydantic"]
 pyskeaf = ["scikit-image>=0.20", "shapely>=2.0", "joblib>=1.2", "pandas>=2.0"]
 fast = ["numba>=0.58"]
 dev = ["pre-commit>=2.20.0", "pytest>=7"]
+sparse = ["petsc4py", "slepc4py"]
 
 [project.urls]
 Homepage = "https://github.com/marcobn/PAOFLOW"

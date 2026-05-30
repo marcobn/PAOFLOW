@@ -276,6 +276,8 @@ class PAOFLOW:
             smearing,
             save_overlaps,
             acbn0,
+            False,
+            1.0e-6,
             verbose,
             restart,
             dft,
@@ -479,12 +481,12 @@ class PAOFLOW:
         """
 
         from .inputs.basis_presets import resolve_configuration
-        from .utils.communication import gather_array, load_balancing
         from .projection.do_atwfc_proj import (
             build_aewfc_basis,
             build_pswfc_basis_all,
             calc_proj_k,
         )
+        from .utils.communication import gather_array, load_balancing
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -563,8 +565,8 @@ class PAOFLOW:
         """
         from os.path import exists, join
 
-        from .projection.do_atwfc_proj import build_pswfc_basis_all
         from .inputs.read_upf import UPF
+        from .projection.do_atwfc_proj import build_pswfc_basis_all
 
         arry, attr = self.data_controller.data_dicts()
         fpath = attr['fpath']
@@ -808,8 +810,8 @@ class PAOFLOW:
             None
 
         """
-        from .utils.communication import gather_full
         from .spectrum.do_bands import do_bands
+        from .utils.communication import gather_full
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -832,9 +834,7 @@ class PAOFLOW:
 
         # Prepare HRs for band computation with spin-orbit coupling
         try:
-            # Calculate the bands
             do_bands(self.data_controller)
-
             if self.rank == 0 and 'nkpnts' in attr and arrays['kq'].shape[1] == attr['nkpnts']:
                 print('WARNING: The bands kpath and nscf calculations have the same size.')
                 print(
@@ -1012,12 +1012,12 @@ class PAOFLOW:
             if self.rank == 0:
                 doubling_HRs(self.data_controller)
 
-            # Broadcasting new arrays
             array_list = [
                 'HRs',
                 'naw',
                 'Dnm',
                 'a_vectors',
+                'tau',
                 'atoms',
                 'sh',
                 'nl',
@@ -1026,30 +1026,54 @@ class PAOFLOW:
                 'lambda_d',
                 'orb_pseudo',
             ]
+
             for arry in array_list:
-                if arry in arrays:
+                has_key = self.comm.bcast((arry in arrays) if self.rank == 0 else None, root=0)
+                if not has_key:
+                    continue
+
+                if self.rank == 0:
                     try:
                         arry_type = arrays[arry].dtype
 
                         if arry_type == 'float64':
-                            self.data_controller.broadcast_single_array(arry, dtype=float)
+                            bcast_mode = 'float'
                         elif arry_type == 'complex128':
-                            self.data_controller.broadcast_single_array(arry)
+                            bcast_mode = 'complex'
                         elif arry_type == 'int32':
-                            self.data_controller.broadcast_single_array(arry, dtype=int)
+                            bcast_mode = 'int'
+                        else:
+                            bcast_mode = 'list'
+                    except AttributeError:
+                        bcast_mode = 'list'
+                else:
+                    bcast_mode = None
 
-                    except:
-                        self.data_controller.broadcast_single_list(arry)
+                bcast_mode = self.comm.bcast(bcast_mode, root=0)
+                if bcast_mode == 'float':
+                    self.data_controller.broadcast_single_array(arry, dtype=float)
+                elif bcast_mode == 'complex':
+                    self.data_controller.broadcast_single_array(arry)
+                elif bcast_mode == 'int':
+                    self.data_controller.broadcast_single_array(arry, dtype=int)
+                else:
+                    self.data_controller.broadcast_single_list(arry)
 
-            # Broadcasting new attributes
-            attr_list = ['nawf', 'natoms', 'nelec', 'nbnds', 'bnd', 'omega']
+            attr_list = [
+                'nawf',
+                'natoms',
+                'nelec',
+                'nbnds',
+                'bnd',
+                'omega',
+            ]
             for attr in attr_list:
                 if attr in attributes:
                     self.data_controller.broadcast_attribute(attr)
 
         except Exception as e:
             self.report_exception('doubling_Hamiltonian')
-            if attr['abort_on_exception']:
+            if attributes['abort_on_exception']:
                 raise e
 
         self.report_module_time('doubling_Hamiltonian')
@@ -1245,15 +1269,15 @@ class PAOFLOW:
 
         self.report_module_time('Band Topology')
 
-        del arrays['R']
-        del arrays['idx']
-        del arrays['Rfft']
-        del arrays['R_wght']
+        arrays.pop('R', None)
+        arrays.pop('idx', None)
+        arrays.pop('Rfft', None)
+        arrays.pop('R_wght', None)
 
     def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False):
         """
         Calculate the interpolated Hamiltonian with the method of zero padding
-        Populates DataController with 'Hksp'
+        Populates DataController with 'Hksp'.
 
         Arguments:
             nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
@@ -1263,9 +1287,9 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .utils.communication import gather_scatter
         from .hamiltonian.do_double_grid import do_double_grid
         from .spectrum.do_Efermi import E_Fermi
+        from .utils.communication import gather_scatter
         from .utils.get_K_grid_fft import get_K_grid_fft
 
         arrays, attr = self.data_controller.data_dicts()
@@ -1301,7 +1325,6 @@ class PAOFLOW:
 
             # Fourier interpolation on extended grid (zero padding)
             do_double_grid(self.data_controller)
-
             snawf, _, _, _, nspin = arrays['Hksp'].shape
             arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf, attr['nkpnts'], nspin))
             arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
@@ -1349,8 +1372,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .utils.communication import gather_full, scatter_full
         from .spectrum.do_eigh import do_pao_eigh
+        from .utils.communication import gather_full, scatter_full
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1398,9 +1421,7 @@ class PAOFLOW:
 
     def gradient_and_momenta(self, band_curvature=False):
         """
-        Calculate the Gradient of the k-space Hamiltonian, 'Hksp'
-        Requires 'Hksp'
-        Populates DataController with 'dHksp'
+        Calculate the gradient of the k-space Hamiltonian and momentum operator.
 
         Arguments:
           None
@@ -1410,9 +1431,9 @@ class PAOFLOW:
         """
         import numpy as np
 
-        from .utils.communication import gather_scatter
         from .hamiltonian.do_gradient import do_gradient
         from .hamiltonian.do_momentum import do_momentum
+        from .utils.communication import gather_scatter
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1485,7 +1506,7 @@ class PAOFLOW:
         """
         from .spectrum.do_adaptive_smearing import do_adaptive_smearing
 
-        attr = self.data_controller.data_attributes
+        arrays, attr = self.data_controller.data_dicts()
 
         attr['smearing'] = smearing
         if smearing != 'gauss' and smearing != 'm-p':
@@ -1493,7 +1514,6 @@ class PAOFLOW:
                 "Smearing type %s not supported.\nSmearing types are 'gauss' and 'm-p'"
                 % str(smearing)
             )
-
         try:
             do_adaptive_smearing(self.data_controller, smearing, afac)
         except Exception as e:
@@ -1685,8 +1705,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .response.do_Hall import do_spin_Hall
         from .projection.projection_operator import do_projection_operator, orbital_array
+        from .response.do_Hall import do_spin_Hall
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -1787,6 +1807,8 @@ class PAOFLOW:
             do_ac (bool): True to calculate the Magnetic Circular Dichroism
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
+            ne (float): The number of energy increments
+            delta (float) : small imaginary part added to the eigenvalue difference
             fermi_up (float): The upper limit of the occupied energy range
             fermi_dw (float): The lower limit of the occupied energy range
             a_tensor (list): List of tensor elements to calculate (e.g. To calculate xx and yz use [[0,0],[1,2]])
@@ -1798,7 +1820,8 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'], attr['emaxH'] = emin, emax
+        attr['eminH'] = emin
+        attr['emaxH'] = emax
         attr['deltaH'] = delta
         attr['esizeH'] = ne
 
@@ -1945,11 +1968,13 @@ class PAOFLOW:
         temps = np.linspace(tmin, tmax, nt)
         sc, sw = scattering_channels, scattering_weights
         try:
-            # Compute Velocities for Spin 0 Only
             bnd = attr['bnd']
-            velkp = np.zeros((arrays['pksp'].shape[0], 3, bnd, attr['nspin']))
-            for n in range(bnd):
-                velkp[:, :, n, :] = np.real(arrays['pksp'][:, :, n, n, :])
+            if 'pksp' in arrays:
+                velkp = np.zeros((arrays['pksp'].shape[0], 3, bnd, attr['nspin']))
+                for n in range(bnd):
+                    velkp[:, :, n, :] = np.real(arrays['pksp'][:, :, n, n, :])
+            elif 'velkp' in arrays:
+                velkp = np.ascontiguousarray(arrays['velkp'][:, :, :bnd, :])
 
             do_transport(
                 self.data_controller,
@@ -2073,7 +2098,7 @@ class PAOFLOW:
         self.report_module_time('Weyl Search')
 
     def ipr(self, fname='ipr'):
-        """
+        r"""
         Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
 
                      \sum_n |v_nk|^4
