@@ -11,7 +11,7 @@ from scipy import sparse
 from scipy.sparse import linalg as spla
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

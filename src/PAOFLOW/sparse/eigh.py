@@ -8,7 +8,7 @@ from scipy.sparse import csr_matrix, issparse
 from scipy.sparse.linalg import eigsh
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

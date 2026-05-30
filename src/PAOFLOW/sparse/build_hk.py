@@ -9,7 +9,7 @@ from scipy import sparse
 from .utils import report_hk_stats
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

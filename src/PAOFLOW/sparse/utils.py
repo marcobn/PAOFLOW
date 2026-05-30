@@ -24,7 +24,7 @@ def report_sparse_hr_stats(arrays: dict[str, Any], attr: dict[str, Any]) -> None
     if 'SparseHRs' not in arrays:
         return
 
-    from PAOFLOW.defs.sparse.doubling import _as_hr_dict
+    from PAOFLOW.sparse.doubling import _as_hr_dict
 
     blocks = _as_hr_dict(arrays['SparseHRs'], nspin=int(attr['nspin']))
     nk1 = int(attr['nk1'])

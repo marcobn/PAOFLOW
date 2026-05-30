@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 from scipy import sparse
 
-from PAOFLOW.defs.sparse.utils import report_sparse_hr_stats
+from PAOFLOW.sparse.utils import report_sparse_hr_stats
 
 SparseHRKey = tuple[int, int, int, int]
 SparseHRDict = dict[SparseHRKey, sparse.csr_matrix]

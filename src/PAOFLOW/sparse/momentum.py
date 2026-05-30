@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 from .operators import iter_projected_operators, projected_operator_diagonals
 

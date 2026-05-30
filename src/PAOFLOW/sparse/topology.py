@@ -6,7 +6,7 @@ import numpy as np
 from mpi4py import MPI
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 
 comm = MPI.COMM_WORLD
