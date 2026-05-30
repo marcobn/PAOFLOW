@@ -28,7 +28,10 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 | **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, topological surface states |
 | **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
 | **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
-| **Interoperability** | Quantum ESPRESSO, VASP, ACBN0, pyskeaf, Landauer transport integration |
+| **ACBN0** | Self-consistent Hubbard U and U+V via the extended ACBN0 functional |
+| **pyskeaf** | Fermi surface extremal orbit analysis (de Haas–van Alphen, Shubnikov–de Haas) |
+| **Landauer transport** | Quantum transport via Green's function/Landauer–Büttiker formalism |
+| **Interoperability** | Quantum ESPRESSO and VASP DFT code integration - other codes are in the development pipline (we welcome contributions from developers!)|
 
 ---
 
@@ -64,7 +67,7 @@ pf.finish()
 
 ## For Researchers
 
-PAOFLOW has been used in high-throughput screening campaigns (AFLOW), topological materials discovery, and optical/transport property databases. It is cited in **200+ publications** and is an active platform for methodological development — recent additions include non-local velocity corrections for accurate optical spectra and Boltzmann transport beyond the constant relaxation-time approximation.
+PAOFLOW has been used in high-throughput screening campaigns, topological materials discovery, optical/transport property databases, and quantum computing workflows, among others. It is an active platform for methodological development — recent additions include non-local velocity corrections for accurate optical spectra and Boltzmann transport beyond the constant relaxation-time approximation.
 
 ## For Industry & HPC
 
