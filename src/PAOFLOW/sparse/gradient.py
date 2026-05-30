@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from mpi4py import MPI
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 
 def _use_local_gradient(arrays: dict, attributes: dict) -> bool:

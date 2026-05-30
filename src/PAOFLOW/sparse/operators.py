@@ -8,7 +8,7 @@ from mpi4py import MPI
 from ..perturb_split import perturb_split
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 
 def _iter_streamed_derivative_batches(

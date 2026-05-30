@@ -174,8 +174,8 @@ class SparsePAOFLOW(PAOFLOW):
             Sparse Hamiltonian objects are stored in the data controller.
         """
         from .defs.get_K_grid_fft import get_K_grid_fft
-        from .defs.sparse.build_hk import do_build_pao_hamiltonian
-        from .defs.sparse.build_hr import do_Hks_to_HRs
+        from .sparse.build_hk import do_build_pao_hamiltonian
+        from .sparse.build_hr import do_Hks_to_HRs
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -223,7 +223,7 @@ class SparsePAOFLOW(PAOFLOW):
 
         try:
             if self.rank == 0:
-                from .defs.sparse.doubling import doubling_HRs
+                from .sparse.doubling import doubling_HRs
 
                 doubling_HRs(self.data_controller)
 
@@ -420,7 +420,7 @@ class SparsePAOFLOW(PAOFLOW):
             attr['sparse_bands_near_fermi_max_candidates'] = int(near_fermi_max_candidates)
 
         try:
-            from .defs.sparse.bands import do_bands
+            from .sparse.bands import do_bands
 
             do_bands(self.data_controller)
             self.data_controller.write_bands(fname, arrays['E_k'])
@@ -471,7 +471,7 @@ class SparsePAOFLOW(PAOFLOW):
             Selected eigenvectors are stored in ``arrays['v_k']`` only
             when requested.
         """
-        from .defs.sparse.eigh import do_pao_eigh as do_pao_eigh_sparse
+        from .sparse.eigh import do_pao_eigh as do_pao_eigh_sparse
 
         arrays, attr = self.data_controller.data_dicts()
 

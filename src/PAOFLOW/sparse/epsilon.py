@@ -9,7 +9,7 @@ from ..smearing import gaussian, intgaussian, intmetpax, metpax
 from .operators import iter_projected_operators
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 
 comm = MPI.COMM_WORLD

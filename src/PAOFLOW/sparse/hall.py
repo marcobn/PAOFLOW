@@ -9,7 +9,7 @@ from ..perturb_split import perturb_split
 from .operators import _iter_streamed_derivative_batches
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 
 comm = MPI.COMM_WORLD

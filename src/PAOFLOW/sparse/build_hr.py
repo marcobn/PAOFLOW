@@ -10,7 +10,7 @@ from scipy import sparse
 from .get_hr import SparseHRs
 
 if TYPE_CHECKING:
-    from ...DataController import DataController
+    from ..DataController import DataController
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
