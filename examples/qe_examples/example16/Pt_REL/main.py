@@ -130,7 +130,7 @@ def main():
 
     print('--- Pt (SO): minimal vs extended ---')
     results = {}
-    for preset in ('minimal', 'extended'):
+    for preset in ('minimal', 'standard', 'extended'):
         nawf, nbnd, path = _run(preset)
         print(f'  [{preset:8s}] nawf = {nawf:3d}   Pn>0.95 bands = {nbnd:3d}')
         results[preset] = (nawf, nbnd, path)

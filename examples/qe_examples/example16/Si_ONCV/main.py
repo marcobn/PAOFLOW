@@ -1,4 +1,4 @@
-"""Si (ONCV) — ``minimal`` vs ``extended`` projection presets.
+"""Si (ONCV) — ``minimal`` vs ``standard`` vs ``extended`` projection presets.
 
 Self-contained driver: assumes ``pw.x`` has already produced
 ``silicon.save/`` in this directory (run ``scf.in`` then ``nscf.in``).
@@ -8,8 +8,8 @@ For each preset it runs
     projections -> projectability -> pao_hamiltonian -> bands
 
 and writes ``output_<preset>/bands_0.dat``.  If matplotlib is
-available, an overlay ``bands_minimal_vs_extended.png`` is also
-produced.
+available, an overlay ``bands_minimal_vs_standard_vs_extended.png`` is
+also produced.
 
 The path to the AE radial database ``BASIS/`` is auto-resolved from
 the repository layout; export ``PAOFLOW_BASISPATH`` to override.
@@ -79,8 +79,8 @@ def _maybe_plot(results):
     except ImportError:
         return
 
-    colors = {'minimal': 'tab:blue', 'extended': 'tab:red'}
-    styles = {'minimal': '-', 'extended': '--'}
+    colors = {'minimal': 'tab:blue', 'standard': 'tab:green', 'extended': 'tab:red'}
+    styles = {'minimal': '-', 'standard': '-.', 'extended': '--'}
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
     for preset, (nawf, nbnd, path) in results.items():
@@ -102,11 +102,11 @@ def _maybe_plot(results):
 
     ax.set_xlabel('k-point index')
     ax.set_ylabel('Energy (eV)')
-    ax.set_title('Si ONCV — minimal vs extended PAO bands')
+    ax.set_title('Si ONCV — minimal vs standard vs extended PAO bands')
     ax.set_ylim(-13, 10)
     ax.legend(loc='upper right', fontsize=9)
     fig.tight_layout()
-    out = os.path.join(HERE, 'bands_minimal_vs_extended.png')
+    out = os.path.join(HERE, 'bands_minimal_vs_standard_vs_extended.png')
     fig.savefig(out, dpi=150)
     print(f'Wrote {out}')
 
@@ -117,9 +117,9 @@ def main():
         print('Run scf.in then nscf.in with pw.x in this directory first.')
         sys.exit(1)
 
-    print('--- Si ONCV: minimal vs extended ---')
+    print('--- Si ONCV: minimal vs standard vs extended ---')
     results = {}
-    for preset in ('minimal', 'extended'):
+    for preset in ('minimal', 'standard', 'extended'):
         nawf, nbnd, path = _run(preset)
         print(f'  [{preset:8s}] nawf = {nawf:3d}   Pn>0.95 bands = {nbnd:3d}')
         results[preset] = (nawf, nbnd, path)
