@@ -7,6 +7,10 @@ into the per-species ``{element: [shell_labels]}`` dictionary consumed by
 * ``"minimal"`` — the set of occupied pseudo-atomic wavefunctions found in
   each species' UPF pseudopotential (``PP_PSWFC/PP_CHI`` entries with
   positive occupation).
+* ``"standard"`` — the minimal set with each angular channel doubled by
+  adding the next principal-quantum-number shell (e.g. ``3S, 3P`` →
+  ``3S, 3P, 4S, 4P``).  Roughly doubles the orbital count of
+  ``"minimal"``.
 * ``"extended"`` — the minimal set augmented by a small, rule-based set
   of polarization shells, drawn from the all-electron wavefunctions
   shipped in ``BASIS/<element>/*.dat``.
@@ -135,7 +139,7 @@ _ELEMENT_BLOCK = {
 }
 
 # Recognised string presets.
-SUPPORTED_PRESETS = ('minimal', 'extended')
+SUPPORTED_PRESETS = ('minimal', 'standard', 'extended')
 
 
 def element_block(elem: str) -> str:
@@ -254,6 +258,69 @@ def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Augmentation rules
 # ---------------------------------------------------------------------------
+
+
+def standard_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
+    """Augmentation rule for the ``"standard"`` preset.
+
+    Builds on top of the minimal valence set with two complementary
+    additions:
+
+    1. **Polarization (next missing L)** — append the next angular
+       momentum channel beyond the highest one present in the minimal
+       set, at the largest principal quantum number ``nmax`` of the
+       minimal set.  For Si (minimal ``3S, 3P``) this adds ``3D``; for
+       a transition metal with minimal ``4S, 3D`` this adds ``4F``
+       (only when ``elem`` is in the f-block) or ``4F`` is skipped
+       otherwise.  The added shell is also clamped to the physical
+       minimum ``n`` for that ``L`` (``nP ≥ 2``, ``nD ≥ 3``,
+       ``nF ≥ 4``).
+    2. **Radial doubling (next n, same L)** — for each ``nL`` in the
+       minimal set append ``(n+1)L``.  This roughly doubles the radial
+       freedom of every occupied angular channel.
+
+    The result is intermediate between ``"minimal"`` (only the
+    occupied valence) and ``"extended"`` (generous multi-row
+    polarization).  For Si the standard set becomes
+    ``[3S, 3P, 3D, 4S, 4P]``.
+
+    Duplicates and shells already in ``minimal_shells`` are skipped.
+    Unknown elements or an empty minimal set yield an empty list.
+    The F-channel polarization is only added for f-block elements;
+    on s/p/d-block elements the augmentation stops at the D channel.
+    """
+    block = _ELEMENT_BLOCK.get(elem)
+    if block is None or not minimal_shells:
+        return []
+
+    minimal_set = set(minimal_shells)
+    extra: list[str] = []
+
+    def _add(label: str) -> None:
+        if label not in minimal_set and label not in extra:
+            extra.append(label)
+
+    order = 'SPDF'
+    min_n_for_L = {'S': 1, 'P': 2, 'D': 3, 'F': 4}
+
+    # (1) Next missing L channel at nmax.
+    L_indices = [order.find(sh[1]) for sh in minimal_shells]
+    nmax = max(int(sh[0]) for sh in minimal_shells)
+    next_L_idx = max(L_indices) + 1
+    if next_L_idx < len(order):
+        next_L = order[next_L_idx]
+        # Don't add F unless we're actually on an f-block element.
+        if next_L != 'F' or block == 'f':
+            n_pol = max(nmax, min_n_for_L[next_L])
+            _add(f'{n_pol}{next_L}')
+
+    # (2) Radial doubling: (n+1)L for each nL in minimal.
+    for sh in minimal_shells:
+        n = int(sh[0])
+        L = sh[1]
+        _add(f'{n + 1}{L}')
+
+    return extra
 
 
 def extended_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
@@ -392,10 +459,10 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
 
     _, attr = data_controller.data_dicts()
     basispath = attr.get('basispath')
-    if key == 'extended' and not basispath:
+    if key in ('standard', 'extended') and not basispath:
         raise ValueError(
-            "configuration='extended' requires 'basispath' to be set so that "
-            'augmenting AE wavefunctions can be located.'
+            "configuration='%s' requires 'basispath' to be set so that "
+            'augmenting AE wavefunctions can be located.' % key
         )
 
     config: dict[str, list[str]] = {}
@@ -405,9 +472,9 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
             config[elem] = minimal
             continue
 
-        # 'extended': start from the minimal valence and append the
-        # rule-based augmentation, filtered by what is actually
-        # available on disk.
+        # 'standard' / 'extended': start from the minimal valence and
+        # append a rule-based augmentation, filtered by what is
+        # actually available on disk.
         available = set(available_ae_shells(basispath, elem))
         if not available:
             warnings.warn(
@@ -429,7 +496,12 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
                     RuntimeWarning,
                     stacklevel=2,
                 )
-        for extra in extended_augmentation(elem, minimal):
+        augment = (
+            standard_augmentation(elem, minimal)
+            if key == 'standard'
+            else extended_augmentation(elem, minimal)
+        )
+        for extra in augment:
             if extra in available and extra not in shells:
                 shells.append(extra)
             elif extra not in available:

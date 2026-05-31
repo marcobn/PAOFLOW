@@ -464,7 +464,16 @@ class PAOFLOW:
               shipped in each species' UPF file (smooth, matches the
               default QE projwfc behaviour).  ``internal`` is ignored.
               Spans the valence bands well; conduction states need
-              ``"extended"`` or an explicit configuration dict.
+              ``"standard"``, ``"extended"`` or an explicit
+              configuration dict.
+            * ``"standard"`` — AE basis built from ``basispath``: the
+              minimal valence set augmented with (a) the next missing
+              angular-momentum channel at ``nmax`` (e.g. ``3D`` for
+              Si) and (b) ``(n+1)L`` for each occupied shell — see
+              :func:`PAOFLOW.inputs.basis_presets.standard_augmentation`.
+              Provides a moderate set of conduction states without the
+              full ``"extended"`` polarization.  ``internal`` is
+              ignored.
             * ``"extended"`` — AE basis built from ``basispath``: the
               UPF valence shells plus a generous rule-based set of
               polarization shells (see
@@ -507,18 +516,20 @@ class PAOFLOW:
             else:
                 raise TypeError(
                     'configuration must be a dict, a preset string '
-                    "('minimal' or 'extended'), or None; got %r" % type(configuration).__name__
+                    "('minimal', 'standard' or 'extended'), or None; got %r" % type(configuration).__name__
                 )
 
         # Dispatch to the correct basis builder.
         #   'minimal'  -> pseudo PSWFC from UPF (smooth, matches QE bands).
+        #   'standard' -> AE basis from BASIS/ (valence + same-L next-n
+        #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
         # Presets override the ``internal`` flag because they imply a
         # specific scheme.
         if preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
-        elif preset == 'extended':
+        elif preset in ('standard', 'extended'):
             basis, arry['shells'] = build_aewfc_basis(self.data_controller)
         elif internal or attr['dft'] == 'VASP':
             # Legacy AE-only path (explicit dict configuration).
