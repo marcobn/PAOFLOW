@@ -25,9 +25,9 @@ hamiltonian_data:
     cols: "ALL"
   H_CR:
     rows: "ALL"
-    cols: "1-20"
+    cols: "33-52"
   H_LC:
-    rows: "33-52"
+    rows: "1-20"
     cols: "ALL"
   H00_L:
     rows: "1-20"
