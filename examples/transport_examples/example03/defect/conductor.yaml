@@ -1,0 +1,43 @@
+input_conductor:
+  output_dir: "./output/paoflow"
+  prefix: "al"
+  postfix: "_defect"
+  dimL: 20
+  dimC: 52
+  dimR: 20
+  calculation_type: "conductor"
+  emin: -7.0
+  emax: 2.0
+  ne: 6001
+  datafile_L: "./output/qe/al5.save/atomic_proj.xml"
+  datafile_C: "./output/qe/al.save/atomic_proj.xml"
+  datafile_R: "./output/qe/al5.save/atomic_proj.xml"
+  transport_direction: 3
+  delta: 0.0005
+  do_overlap_transformation: false
+  write_gf: false
+  write_lead_sgm: false
+  use_sym: false
+
+hamiltonian_data:
+  H00_C:
+    rows: "ALL"
+    cols: "ALL"
+  H_CR:
+    rows: "ALL"
+    cols: "1-20"
+  H_LC:
+    rows: "33-52"
+    cols: "ALL"
+  H00_L:
+    rows: "1-20"
+    cols: "1-20"
+  H01_L:
+    rows: "33-52"
+    cols: "1-20"
+  H00_R:
+    rows: "1-20"
+    cols: "1-20"
+  H01_R:
+    rows: "33-52"
+    cols: "1-20"
