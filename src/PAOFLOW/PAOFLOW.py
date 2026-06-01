@@ -2348,6 +2348,16 @@ class PAOFLOW:
           electron energy-loss function. **Only written for diagonal pairs**
           (``ipol == jpol``); the EELS = :math:`\varepsilon_2/(\varepsilon_1^2+\varepsilon_2^2)`
           formula is not physically meaningful for off-diagonal components.
+        * ``nref_<a><a>.dat``, ``kref_<a><a>.dat`` — real (refractive index)
+          and imaginary (extinction coefficient) parts of the complex
+          refractive index :math:`\tilde n = n + i\kappa`, with
+          :math:`\tilde n^2 = \varepsilon`. **Diagonal pairs only**
+          (Option A: per principal axis; off-diagonal complex permittivity
+          requires tensor diagonalisation).
+        * ``alpha_<a><a>.dat`` — absorption coefficient
+          :math:`\alpha = 2\omega\kappa/c` (1/m). **Diagonal pairs only**.
+        * ``refl_<a><a>.dat`` — normal-incidence reflectivity
+          :math:`R = ((n-1)^2+\kappa^2)/((n+1)^2+\kappa^2)`. **Diagonal pairs only**.
 
         On rank 0 the f-sum-rule plasmon frequency
         :math:`\omega_p = \sqrt{(2/\pi)\int_0^{\omega_{\max}}\omega\varepsilon_2 d\omega}`

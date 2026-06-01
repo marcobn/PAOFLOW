@@ -83,6 +83,10 @@ def do_dielectric_tensor(data_controller, ene):
             sigmar, sigmai = optical_conductivity(ene, epsi, epsr, ipol, jpol)
             # Write files. EELS = -Im(1/eps) is only physically meaningful for
             # diagonal tensor components, so we skip it for off-diagonal pairs.
+            # The same applies to the refractive index n + iκ and the derived
+            # absorption coefficient and reflectivity (Option A: per principal
+            # axis; off-diagonal complex permittivity requires tensor
+            # diagonalisation, out of scope here).
             indices = (LL[ipol], LL[jpol])
             spectra = [
                 (epsi, 'epsi'),
@@ -92,7 +96,14 @@ def do_dielectric_tensor(data_controller, ene):
                 (sigmai, 'sigmai'),
             ]
             if ipol == jpol:
-                spectra.append((eels, 'eels'))
+                nref, kref, alpha, refl = refractive_index(ene, epsi, epsr)
+                spectra.extend([
+                    (eels, 'eels'),
+                    (nref, 'nref'),
+                    (kref, 'kref'),
+                    (alpha, 'alpha'),
+                    (refl, 'refl'),
+                ])
             for ep, es in spectra:
                 fn = '%s_%s%s.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
@@ -122,7 +133,14 @@ def do_dielectric_tensor(data_controller, ene):
                 (sigmai_0, 'sigmai'),
             ]
             if ipol == jpol:
-                spectra0.append((eels_0, 'eels'))
+                nref_0, kref_0, alpha_0, refl_0 = refractive_index(ene, epsi_0, epsr_0)
+                spectra0.extend([
+                    (eels_0, 'eels'),
+                    (nref_0, 'nref'),
+                    (kref_0, 'kref'),
+                    (alpha_0, 'alpha'),
+                    (refl_0, 'refl'),
+                ])
             for ep, es in spectra0:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
@@ -135,7 +153,14 @@ def do_dielectric_tensor(data_controller, ene):
                 (sigmai_1, 'sigmai'),
             ]
             if ipol == jpol:
-                spectra1.append((eels_1, 'eels'))
+                nref_1, kref_1, alpha_1, refl_1 = refractive_index(ene, epsi_1, epsr_1)
+                spectra1.extend([
+                    (eels_1, 'eels'),
+                    (nref_1, 'nref'),
+                    (kref_1, 'kref'),
+                    (alpha_1, 'alpha'),
+                    (refl_1, 'refl'),
+                ])
             for ep, es in spectra1:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
@@ -392,6 +417,59 @@ def optical_conductivity(ene, epsi, epsr, ipol, jpol):
     sigma_i = -eps0_si * omega * (epsr - 1.0 * (ipol == jpol))
 
     return (sigma_r, sigma_i)
+
+
+def refractive_index(ene, epsi, epsr):
+    r"""Complex refractive index and derived spectra from $\varepsilon(\omega)$.
+
+    For a diagonal component of the complex relative permittivity
+    $\varepsilon = \varepsilon_1 + i\varepsilon_2$ the complex refractive
+    index $\tilde n = n + i\kappa$ satisfies $\tilde n^2 = \varepsilon$, so
+
+    .. math::
+
+        n      &= \sqrt{(|\varepsilon| + \varepsilon_1)/2}, \\
+        \kappa &= \sqrt{(|\varepsilon| - \varepsilon_1)/2}.
+
+    From these the absorption coefficient and normal-incidence
+    reflectivity follow:
+
+    .. math::
+
+        \alpha(\omega) &= 2\,\omega\,\kappa(\omega)/c, \\
+        R(\omega)      &= \frac{(n-1)^2 + \kappa^2}{(n+1)^2 + \kappa^2}.
+
+    Parameters
+    ----------
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.
+    epsi, epsr : ndarray, shape (ne,)
+        Imaginary and real parts of the (diagonal) dielectric function,
+        with the ``+1`` already included in ``epsr``.
+
+    Returns
+    -------
+    n : ndarray, shape (ne,)
+        Real part of the refractive index (unitless).
+    kappa : ndarray, shape (ne,)
+        Extinction coefficient (unitless).
+    alpha : ndarray, shape (ne,)
+        Absorption coefficient in 1/m.
+    refl : ndarray, shape (ne,)
+        Normal-incidence reflectivity (unitless, in [0, 1]).
+    """
+    from ..utils.constants import HBAR, SPEED_OF_LIGHT
+
+    mod_eps = np.sqrt(epsr * epsr + epsi * epsi)
+    n = np.sqrt(0.5 * (mod_eps + epsr))
+    kappa = np.sqrt(np.maximum(0.5 * (mod_eps - epsr), 0.0))
+
+    omega = ene / HBAR
+    alpha = 2.0 * omega * kappa / SPEED_OF_LIGHT
+
+    refl = ((n - 1.0) ** 2 + kappa ** 2) / ((n + 1.0) ** 2 + kappa ** 2)
+
+    return (n, kappa, alpha, refl)
 
 
 def eps_loop(data_controller, ene, ispin, ipol, jpol):
