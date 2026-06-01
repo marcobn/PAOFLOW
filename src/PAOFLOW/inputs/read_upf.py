@@ -261,7 +261,13 @@ class UPF:
         self.lchia = self.lchia
         self.shells = self.shells
 
-        # TODO: NLCC, ATRHO
+        # atomic rho (4 pi r^2 n(r), sum to z_valence under int dr)
+        self.atrho = None
+        atrho = root.find('PP_RHOATOM')
+        if atrho is not None:
+            self.atrho = np.array([float(x) for x in atrho.text.split()])
+
+        # TODO: NLCC
 
         self._read_nonlocal_v2(root)
 

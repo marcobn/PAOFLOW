@@ -3,6 +3,10 @@
 Self-contained driver: assumes ``pw.x`` has already produced
 ``silicon.save/`` in this directory (run ``scf.in`` then ``nscf.in``).
 
+The pseudo-atom radial basis ``BASIS_PS/`` is generated on the fly
+from the local UPF via :func:`PAOFLOW.basis_gen.generate_basis_for_pseudo`;
+no external ``BASIS/`` database is needed.
+
 For each preset it runs
 
     projections -> projectability -> pao_hamiltonian -> bands
@@ -10,9 +14,6 @@ For each preset it runs
 and writes ``output_<preset>/bands_0.dat``.  If matplotlib is
 available, an overlay ``bands_minimal_vs_standard_vs_extended.png`` is
 also produced.
-
-The path to the AE radial database ``BASIS/`` is auto-resolved from
-the repository layout; export ``PAOFLOW_BASISPATH`` to override.
 """
 
 import os
@@ -21,6 +22,7 @@ import sys
 import numpy as np
 
 from PAOFLOW import PAOFLOW
+from PAOFLOW.basis_gen import generate_basis_for_pseudo
 
 try:
     from mpi4py import MPI
@@ -31,13 +33,8 @@ except ImportError:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAVEDIR = os.path.join(HERE, 'silicon.save')
-BASISPATH = (
-    os.environ.get(
-        'PAOFLOW_BASISPATH',
-        os.path.normpath(os.path.join(HERE, '..', '..', '..', '..', 'BASIS')),
-    )
-    + os.sep
-)
+UPF = os.path.join(HERE, 'Si_ONCV_PBE_sr.UPF')
+BASISPATH = os.path.join(HERE, 'BASIS_PS') + os.sep
 
 IBRAV = 2  # fcc
 NK = 400
@@ -103,7 +100,7 @@ def _maybe_plot(results):
     ax.set_xlabel('k-point index')
     ax.set_ylabel('Energy (eV)')
     ax.set_title('Si ONCV — minimal vs standard vs extended PAO bands')
-    ax.set_ylim(-13, 10)
+    ax.set_ylim(-13, 20)
     ax.legend(loc='upper right', fontsize=9)
     fig.tight_layout()
     out = os.path.join(HERE, 'bands_minimal_vs_standard_vs_extended.png')
@@ -116,6 +113,13 @@ def main():
         print(f'silicon.save not found at {SAVEDIR}.')
         print('Run scf.in then nscf.in with pw.x in this directory first.')
         sys.exit(1)
+
+    if RANK == 0 and not os.path.isdir(BASISPATH):
+        print(f'Generating pseudo-atom basis under {BASISPATH} ...')
+        generate_basis_for_pseudo(UPF, BASISPATH.rstrip(os.sep),
+                                  preset='extended', verbose=True)
+    if 'MPI' in globals():
+        MPI.COMM_WORLD.Barrier()
 
     print('--- Si ONCV: minimal vs standard vs extended ---')
     results = {}

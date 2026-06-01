@@ -116,6 +116,7 @@ pseudo/
 *.pyc
 *.xml
 *.log
+*.swp
 *wfc*
 **/*.xml
 *.out
