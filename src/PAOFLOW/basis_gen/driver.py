@@ -104,7 +104,7 @@ def generate_basis_for_pseudo(
 
     for label in shells:
         if len(label) < 2 or label[1].upper() not in _L_INDEX:
-            raise ValueError(f"shell label {label!r} not understood")
+            raise ValueError(f'shell label {label!r} not understood')
         n = int(label[0])
         l = _L_INDEX[label[1].upper()]
 
@@ -114,9 +114,7 @@ def generate_basis_for_pseudo(
             r, u_minus, e_minus = pseudize_shell(
                 upf, n, l, j=l - 0.5, r_box=r_box, n_points=n_points
             )
-            _, u_plus, e_plus = pseudize_shell(
-                upf, n, l, j=l + 0.5, r_box=r_box, n_points=n_points
-            )
+            _, u_plus, e_plus = pseudize_shell(upf, n, l, j=l + 0.5, r_box=r_box, n_points=n_points)
             files = [
                 (f'{label}_j{int(2*(l - 0.5))}.dat', u_minus, e_minus),
                 (f'{label}_j{int(2*(l + 0.5))}.dat', u_plus, e_plus),
@@ -164,8 +162,12 @@ def generate_basis_for_directory(
         upf = UPF(p)
         elem = upf.element.strip()
         out[elem] = generate_basis_for_pseudo(
-            p, out_dir,
-            preset=preset, r_box=r_box, n_points=n_points,
-            overwrite=overwrite, verbose=verbose,
+            p,
+            out_dir,
+            preset=preset,
+            r_box=r_box,
+            n_points=n_points,
+            overwrite=overwrite,
+            verbose=verbose,
         )
     return out

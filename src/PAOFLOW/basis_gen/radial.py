@@ -159,9 +159,7 @@ def solve_radial_channel(
         A = np.zeros((N, n_p))
         for col, ip in enumerate(pidx):
             b = upf.beta[ip]
-            A[:, col] = _interp_to_uniform(
-                upf.r, b['wfc'], r, cutoff_index=b.get('cutoff_index')
-            )
+            A[:, col] = _interp_to_uniform(upf.r, b['wfc'], r, cutoff_index=b.get('cutoff_index'))
         D = upf.dion[np.ix_(pidx, pidx)]
         # Nonlocal matrix in u-space: M = A D A^T * dr  (symmetric).
         H += dr * (A @ D @ A.T)
