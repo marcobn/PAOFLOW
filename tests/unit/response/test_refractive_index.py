@@ -1,7 +1,6 @@
 """Tests for the refractive-index post-processing helper."""
 
 import numpy as np
-import pytest
 
 from PAOFLOW.response.do_epsilon import refractive_index
 
