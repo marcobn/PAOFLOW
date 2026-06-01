@@ -97,13 +97,15 @@ def do_dielectric_tensor(data_controller, ene):
             ]
             if ipol == jpol:
                 nref, kref, alpha, refl = refractive_index(ene, epsi, epsr)
-                spectra.extend([
-                    (eels, 'eels'),
-                    (nref, 'nref'),
-                    (kref, 'kref'),
-                    (alpha, 'alpha'),
-                    (refl, 'refl'),
-                ])
+                spectra.extend(
+                    [
+                        (eels, 'eels'),
+                        (nref, 'nref'),
+                        (kref, 'kref'),
+                        (alpha, 'alpha'),
+                        (refl, 'refl'),
+                    ]
+                )
             for ep, es in spectra:
                 fn = '%s_%s%s.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
@@ -134,13 +136,15 @@ def do_dielectric_tensor(data_controller, ene):
             ]
             if ipol == jpol:
                 nref_0, kref_0, alpha_0, refl_0 = refractive_index(ene, epsi_0, epsr_0)
-                spectra0.extend([
-                    (eels_0, 'eels'),
-                    (nref_0, 'nref'),
-                    (kref_0, 'kref'),
-                    (alpha_0, 'alpha'),
-                    (refl_0, 'refl'),
-                ])
+                spectra0.extend(
+                    [
+                        (eels_0, 'eels'),
+                        (nref_0, 'nref'),
+                        (kref_0, 'kref'),
+                        (alpha_0, 'alpha'),
+                        (refl_0, 'refl'),
+                    ]
+                )
             for ep, es in spectra0:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
@@ -154,13 +158,15 @@ def do_dielectric_tensor(data_controller, ene):
             ]
             if ipol == jpol:
                 nref_1, kref_1, alpha_1, refl_1 = refractive_index(ene, epsi_1, epsr_1)
-                spectra1.extend([
-                    (eels_1, 'eels'),
-                    (nref_1, 'nref'),
-                    (kref_1, 'kref'),
-                    (alpha_1, 'alpha'),
-                    (refl_1, 'refl'),
-                ])
+                spectra1.extend(
+                    [
+                        (eels_1, 'eels'),
+                        (nref_1, 'nref'),
+                        (kref_1, 'kref'),
+                        (alpha_1, 'alpha'),
+                        (refl_1, 'refl'),
+                    ]
+                )
             for ep, es in spectra1:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
@@ -467,7 +473,7 @@ def refractive_index(ene, epsi, epsr):
     omega = ene / HBAR
     alpha = 2.0 * omega * kappa / SPEED_OF_LIGHT
 
-    refl = ((n - 1.0) ** 2 + kappa ** 2) / ((n + 1.0) ** 2 + kappa ** 2)
+    refl = ((n - 1.0) ** 2 + kappa**2) / ((n + 1.0) ** 2 + kappa**2)
 
     return (n, kappa, alpha, refl)
 
