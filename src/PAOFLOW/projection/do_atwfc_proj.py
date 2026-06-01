@@ -328,6 +328,29 @@ def build_pswfc_basis_all(data_controller):
     return basis, shells
 
 
+def _resolve_ae_shell_files(elem_dir, shell_label, l, so):
+    """Resolve the on-disk radial file(s) for ``<elem_dir>/<shell_label>``.
+
+    Returns a list of ``(j, path)`` entries.  For non-SO calculations
+    (or l = 0 under SO) this is always a single scalar entry
+    ``[(None, '<shell>.dat')]``.  Under SO with l > 0, if both
+    j-resolved companions ``<shell>_j{2(l-1/2)}.dat`` and
+    ``<shell>_j{2(l+1/2)}.dat`` are present (as produced by
+    ``PAOFLOW.basis_gen.driver``), the two entries
+    ``[(l-1/2, fm), (l+1/2, fp)]`` are returned; otherwise the loader
+    falls back to the legacy scalar file.  The legacy ``BASIS/`` tree
+    (no j-files) is therefore unchanged.
+    """
+    base = os.path.join(elem_dir, f'{shell_label}.dat')
+    if not so or l == 0:
+        return [(None, base)]
+    fm = os.path.join(elem_dir, f'{shell_label}_j{int(2 * (l - 0.5))}.dat')
+    fp = os.path.join(elem_dir, f'{shell_label}_j{int(2 * (l + 0.5))}.dat')
+    if os.path.exists(fm) and os.path.exists(fp):
+        return [(l - 0.5, fm), (l + 0.5, fp)]
+    return [(None, base)]
+
+
 def build_aewfc_basis(data_controller):
     """Construct the all-electron wavefunction basis set from atomic orbital files.
 
@@ -350,18 +373,7 @@ def build_aewfc_basis(data_controller):
     """
     arry, attr = data_controller.data_dicts()
     verbose = attr['verbose']
-
-    # read the atomic bases
-    aebasis = []
-    for na in range(len(arry['atoms'])):
-        atom_label = arry['atoms'][na]  # CHANGED
-        elem = re.split(r'\d+', atom_label)[0]
-        aefiles = glob.glob(attr['basispath'] + str(elem) + '/*.dat')
-        label = []
-        for entry in aefiles:
-            # label.append(entry.split('/')[-1].split('.')[0])
-            label.append(entry[-6:-4])
-        aebasis.append(dict(zip(label, aefiles)))
+    so = bool(attr.get('dftSO', False))
 
     # build the mesh in q space
     ecutrho = attr['ecutrho']
@@ -373,58 +385,77 @@ def build_aewfc_basis(data_controller):
     basis, shells = [], {}
     arry['jchia'] = {}
 
-    # ----- Pass 1: collect per-atom AE shell data and the radial-FFT
-    # task list, then dispatch ``radialfft_simpson`` across MPI ranks.
-    per_atom = []  # list of (atom, tau, aewfc)
-    tasks = []  # flat (r, f, l) list for all shells
-    task_offset = []
+    # ----- Pass 1: resolve per-shell radial files and build the FFT
+    # task list.  When SO is active and the basis directory contains
+    # j-resolved companions ``<shell>_j{2J}.dat`` for an l>0 shell, the
+    # shell contributes *two* tasks (one per j); otherwise it falls
+    # back to the legacy single scalar ``<shell>.dat`` (whose wfc_g is
+    # later reused for both j-blocks).  This keeps the basis ordering,
+    # size, and ``jchia`` layout identical to the pre-Phase-4 code on
+    # any BASIS/ tree that lacks the new files.
+    per_atom = []  # list of (atom, tau, shell_records)
+    tasks = []  # flat (r, f, l) list
     for na in range(len(arry['atoms'])):
         atom = arry['atoms'][na]
         elem = re.split(r'\d+', atom)[0]
         tau = arry['tau'][na]
-        aewfc = []
-        for shell in arry['configuration'][elem]:
-            data = np.loadtxt(aebasis[na][shell])
-            aewfc.append({shell: data[:, 1], 'r': data[:, 0]})
-            if verbose and rank == 0:
-                print(
-                    'atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, aebasis[na][shell], tau)
-                )
-        per_atom.append((atom, tau, aewfc))
-        task_offset.append(len(tasks))
-        for n in range(len(aewfc)):
-            shell_lbl = list(aewfc[n].items())[0][0]
+        elem_dir = os.path.join(attr['basispath'], elem)
+        shell_records = []  # list of dicts: {label, l, entries: [(j, r, wfc, task_idx)]}
+        for shell_lbl in arry['configuration'][elem]:
             l = 'SPDF'.find(shell_lbl[1].upper())
             assert l != -1
-            tasks.append((aewfc[n]['r'], aewfc[n][shell_lbl], l))
-    task_offset.append(len(tasks))
+            files = _resolve_ae_shell_files(elem_dir, shell_lbl, l, so)
+            entries = []
+            for j_val, path in files:
+                data = np.loadtxt(path)
+                r_grid = data[:, 0]
+                wfc = data[:, 1]
+                if verbose and rank == 0:
+                    print(
+                        'atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, path, tau)
+                    )
+                entries.append({'j': j_val, 'r': r_grid, 'wfc': wfc, 'task_idx': len(tasks)})
+                tasks.append((r_grid, wfc, l))
+            shell_records.append({'label': shell_lbl, 'l': l, 'entries': entries})
+        per_atom.append((atom, tau, shell_records))
 
     wfc_g_list = _parallel_radialfft(tasks, qmesh, volume)
 
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
-    for na, (atom, tau, aewfc) in enumerate(per_atom):
+    # SO emits 2*(2l+1) records per shell with the same ordering as
+    # before (first (2l+1) -> j=l-1/2 block, second -> j=l+1/2 block).
+    # ``assign_jm`` relies on that ordering.
+    for na, (atom, tau, shell_records) in enumerate(per_atom):
         ash = []
         jchia = []
-        for n in range(len(aewfc)):
-            shell_lbl = list(aewfc[n].items())[0][0]
-            l = 'SPDF'.find(shell_lbl[1].upper())
+        for sh in shell_records:
+            shell_lbl = sh['label']
+            l = sh['l']
+            entries = sh['entries']
             ash.append(l)
 
-            if attr['dftSO']:
-                if l == 0:
-                    jchia.append(0.5)
+            if so and l > 0:
+                ash.append(l)
+                jchia.extend([l - 0.5, l + 0.5])
+            elif so:
+                jchia.append(0.5)
+
+            if so and l > 0:
+                # Two j-blocks; use j-resolved wfc_g when present,
+                # otherwise reuse the scalar wfc_g for both.
+                if len(entries) == 2:
+                    block_entries = [entries[0], entries[1]]
                 else:
-                    ash.append(l)
-                    jchia.append(l - 0.5)
-                    jchia.append(l + 0.5)
+                    block_entries = [entries[0], entries[0]]
+            elif so:
+                # l = 0 under SO: two identical copies (matches the legacy
+                # ``twice = 2`` duplication consumed by ``assign_jm``).
+                block_entries = [entries[0], entries[0]]
+            else:
+                block_entries = [entries[0]]
 
-            wfc_g = wfc_g_list[task_offset[na] + n]
-
-            twice = 1
-            if attr['dftSO']:
-                twice = 2
-
-            for _ in range(twice):
+            for be in block_entries:
+                wfc_g = wfc_g_list[be['task_idx']]
                 for m in range(1, 2 * l + 2):
                     basis.append(
                         {
@@ -433,8 +464,8 @@ def build_aewfc_basis(data_controller):
                             'l': l,
                             'm': m,
                             'label': shell_lbl,
-                            'r': aewfc[n]['r'],
-                            'wfc': aewfc[n][shell_lbl].copy(),
+                            'r': be['r'],
+                            'wfc': be['wfc'].copy(),
                             'qmesh': qmesh,
                             'wfc_g': wfc_g,
                         }
