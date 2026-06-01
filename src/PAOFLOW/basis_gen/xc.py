@@ -36,18 +36,22 @@ def _pw92_c(n):
 
     rs_h = np.sqrt(rs)
     Q0 = -2.0 * _PW92_A * (1.0 + _PW92_a1 * rs)
-    Q1 = 2.0 * _PW92_A * (
-        _PW92_b1 * rs_h
-        + _PW92_b2 * rs
-        + _PW92_b3 * rs * rs_h
-        + _PW92_b4 * rs ** (_PW92_p + 1.0)
+    Q1 = (
+        2.0
+        * _PW92_A
+        * (
+            _PW92_b1 * rs_h
+            + _PW92_b2 * rs
+            + _PW92_b3 * rs * rs_h
+            + _PW92_b4 * rs ** (_PW92_p + 1.0)
+        )
     )
     # dQ1/drs
     Q1p = _PW92_A * (
         _PW92_b1 / rs_h
         + 2.0 * _PW92_b2
         + 3.0 * _PW92_b3 * rs_h
-        + 2.0 * (_PW92_p + 1.0) * _PW92_b4 * rs ** _PW92_p
+        + 2.0 * (_PW92_p + 1.0) * _PW92_b4 * rs**_PW92_p
     )
     L = np.log(1.0 + 1.0 / Q1)
     eps_c = Q0 * L

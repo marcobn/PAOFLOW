@@ -80,8 +80,7 @@ def _l2_relative(u_ref, u_solved, dr):
     if s == 0:
         s = 1.0
     diff = u_ref - s * u_solved
-    return float(np.sqrt(np.sum(diff * diff) * dr) /
-                 np.sqrt(np.sum(u_ref * u_ref) * dr))
+    return float(np.sqrt(np.sum(diff * diff) * dr) / np.sqrt(np.sum(u_ref * u_ref) * dr))
 
 
 def _pswfc_u_on_uniform(upf, label, r_uni, j=None):
@@ -211,7 +210,9 @@ def _read_two_col(path):
 
 def test_driver_writes_minimal_set_for_si(tmp_path, si_upf):
     written = generate_basis_for_pseudo(
-        str(_SI_UPF), str(tmp_path), preset='minimal',
+        str(_SI_UPF),
+        str(tmp_path),
+        preset='minimal',
     )
     files = sorted(os.path.basename(p) for p in written)
     assert files == ['3P.dat', '3S.dat']
@@ -224,7 +225,10 @@ def test_driver_writes_minimal_set_for_si(tmp_path, si_upf):
 
 def test_driver_extended_si_includes_augmentation(tmp_path):
     written = generate_basis_for_pseudo(
-        str(_SI_UPF), str(tmp_path), preset='extended', verbose=False,
+        str(_SI_UPF),
+        str(tmp_path),
+        preset='extended',
+        verbose=False,
     )
     names = {os.path.basename(p) for p in written}
     # Minimal (3S, 3P) plus the extended augmentation rule (rows of nS/nP, plus D).
@@ -234,14 +238,20 @@ def test_driver_extended_si_includes_augmentation(tmp_path):
 
 def test_driver_pt_so_emits_j_resolved_and_average(tmp_path):
     written = generate_basis_for_pseudo(
-        str(_PT_UPF), str(tmp_path), preset='standard',
+        str(_PT_UPF),
+        str(tmp_path),
+        preset='standard',
     )
     names = {os.path.basename(p) for p in written}
     # SO shells: j-resolved + j-averaged (l > 0).
     for required in (
         '5S.dat',
-        '5P.dat', '5P_j1.dat', '5P_j3.dat',
-        '5D.dat', '5D_j3.dat', '5D_j5.dat',
+        '5P.dat',
+        '5P_j1.dat',
+        '5P_j3.dat',
+        '5D.dat',
+        '5D_j3.dat',
+        '5D_j5.dat',
         '6S.dat',
     ):
         assert required in names, f'missing {required} from Pt SO standard basis'
@@ -260,7 +270,10 @@ def test_driver_overwrite_false_skips_existing(tmp_path):
     first = generate_basis_for_pseudo(str(_SI_UPF), out, preset='minimal')
     assert first  # something was written
     second = generate_basis_for_pseudo(
-        str(_SI_UPF), out, preset='minimal', overwrite=False,
+        str(_SI_UPF),
+        out,
+        preset='minimal',
+        overwrite=False,
     )
     assert second == [], 'overwrite=False must skip all existing files'
 

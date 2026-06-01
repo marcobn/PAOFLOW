@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 
@@ -411,9 +410,7 @@ def build_aewfc_basis(data_controller):
                 r_grid = data[:, 0]
                 wfc = data[:, 1]
                 if verbose and rank == 0:
-                    print(
-                        'atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, path, tau)
-                    )
+                    print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, path, tau))
                 entries.append({'j': j_val, 'r': r_grid, 'wfc': wfc, 'task_idx': len(tasks)})
                 tasks.append((r_grid, wfc, l))
             shell_records.append({'label': shell_lbl, 'l': l, 'entries': entries})
