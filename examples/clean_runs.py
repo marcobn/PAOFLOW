@@ -40,11 +40,11 @@ KEEP_SUFFIXES = {
     '.py',
     '.ipynb',
     '.md',
-    '.upf',   # match .UPF case-insensitively
+    '.upf',  # match .UPF case-insensitively
     '.pptx',  # tutorial slide decks
     '.yaml',  # transport_examples configs
     '.yml',
-    '.sh',    # job scripts shipped with examples
+    '.sh',  # job scripts shipped with examples
     '.bxsf',  # pyskeaf_examples Fermi-surface inputs
 }
 
@@ -56,6 +56,10 @@ KEEP_PREFIXES = ('README',)
 # - BASIS: per-tutorial atomic basis files (inputs to PAOFLOW).
 # - data_files: shipped reference data consumed by examples/plot_examples/.
 KEEP_DIRS = {'Reference', 'Reference2', 'BASIS', 'data_files'}
+
+# Directory name suffixes (lowercase) whose entire subtree is removed.
+# e.g. 'pt.save', 'silicon.save', ... produced by pw.x.
+REMOVE_DIR_SUFFIXES = {'.save'}
 
 
 def _should_keep_file(path: Path) -> bool:
@@ -69,21 +73,26 @@ def _should_keep_file(path: Path) -> bool:
     return False
 
 
-def _iter_targets(roots: list[Path]) -> tuple[list[Path], list[Path]]:
-    """Return (files_to_delete, dirs_to_consider_for_removal)."""
+def _iter_targets(roots: list[Path]) -> tuple[list[Path], list[Path], list[Path]]:
+    """Return (files_to_delete, dirs_to_consider_for_removal, save_dirs_to_delete)."""
     files: list[Path] = []
     dirs: list[Path] = []
+    save_dirs: list[Path] = []
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root, topdown=True):
             d = Path(dirpath)
-            # Skip Reference/Reference2 subtrees entirely.
-            dirnames[:] = [x for x in dirnames if x not in KEEP_DIRS]
+            # Collect *.save dirs for whole-tree removal; prune from walk.
+            to_remove = [x for x in dirnames if x.lower().endswith(tuple(REMOVE_DIR_SUFFIXES))]
+            for x in to_remove:
+                save_dirs.append(d / x)
+            # Skip Reference/Reference2 subtrees and *.save dirs entirely.
+            dirnames[:] = [x for x in dirnames if x not in KEEP_DIRS and x not in to_remove]
             for fname in filenames:
                 fpath = d / fname
                 if not _should_keep_file(fpath):
                     files.append(fpath)
             dirs.append(d)
-    return files, dirs
+    return files, dirs, save_dirs
 
 
 def _prune_empty_dirs(dirs: list[Path], protected: set[Path]) -> list[Path]:
@@ -106,8 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         'paths',
         nargs='*',
-        help='Subpaths (relative to examples/) to clean. Defaults to the whole '
-        'examples/ tree.',
+        help='Paths to clean (absolute or relative to CWD). Defaults to the whole examples/ tree.',
     )
     parser.add_argument(
         '--apply',
@@ -115,14 +123,12 @@ def main(argv: list[str] | None = None) -> int:
         help='Actually delete files. Without this flag the script only prints '
         'what would be deleted.',
     )
-    parser.add_argument(
-        '-q', '--quiet', action='store_true', help='Suppress per-file output.'
-    )
+    parser.add_argument('-q', '--quiet', action='store_true', help='Suppress per-file output.')
     args = parser.parse_args(argv)
 
     examples_root = Path(__file__).resolve().parent
     if args.paths:
-        roots = [examples_root / p for p in args.paths]
+        roots = [Path(p).resolve() for p in args.paths]
     else:
         roots = [examples_root]
 
@@ -132,18 +138,33 @@ def main(argv: list[str] | None = None) -> int:
             print(f'error: path does not exist: {r}', file=sys.stderr)
         return 2
 
-    files, dirs = _iter_targets(roots)
+    files, dirs, save_dirs = _iter_targets(roots)
 
     if not args.quiet:
         for f in files:
-            print(('delete ' if args.apply else 'would delete ') + str(f.relative_to(examples_root.parent)))
+            print(
+                ('delete ' if args.apply else 'would delete ')
+                + str(f.relative_to(examples_root.parent))
+            )
+        for sd in save_dirs:
+            print(
+                ('rmtree ' if args.apply else 'would rmtree ')
+                + str(sd.relative_to(examples_root.parent))
+            )
 
     if args.apply:
+        import shutil
+
         for f in files:
             try:
                 f.unlink()
             except OSError as exc:
                 print(f'warning: could not delete {f}: {exc}', file=sys.stderr)
+        for sd in save_dirs:
+            try:
+                shutil.rmtree(sd)
+            except OSError as exc:
+                print(f'warning: could not remove {sd}: {exc}', file=sys.stderr)
         # Protect the user-supplied roots so we never rmdir them.
         protected = {r.resolve() for r in roots}
         removed_dirs = _prune_empty_dirs(dirs, protected)
@@ -152,7 +173,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f'rmdir {d.relative_to(examples_root.parent)}')
 
     verb = 'deleted' if args.apply else 'would delete'
-    print(f'\n{verb} {len(files)} file(s) under {len(roots)} root(s).')
+    n_save = len(save_dirs)
+    print(f'\n{verb} {len(files)} file(s) and {n_save} *.save dir(s) under {len(roots)} root(s).')
     if not args.apply:
         print('Re-run with --apply to perform the deletions.')
     return 0
