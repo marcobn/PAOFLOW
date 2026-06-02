@@ -93,6 +93,11 @@ def generate_basis_for_pseudo(
     """
     upf = UPF(upf_path)
     elem = upf.element.strip()
+    if getattr(upf, 'has_augmentation', False) and upf.version != 2:
+        raise NotImplementedError(
+            f'UPF v{upf.version} ultrasoft/PAW augmentation parsing is not '
+            f'implemented; got {upf_path!r}.'
+        )
     if shells is None:
         shells = _default_shells(upf, preset=preset)
 

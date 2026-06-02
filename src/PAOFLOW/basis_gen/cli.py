@@ -2,9 +2,12 @@
 
 Generate per-element ``BASIS_PS/<elem>/<shell>.dat`` files by solving
 the pseudo-atom radial Schrödinger equation in a confining box for a
-given norm-conserving UPF (or every UPF in a directory).  Output files
-are consumed by ``PAOFLOW.projections(configuration='standard' or
-'extended', basispath=<out_dir>/)`` and respect the j-resolved naming
+given UPF (norm-conserving, ultrasoft, or PAW) or every UPF in a
+directory.  For ultrasoft/PAW pseudos the generalized eigenproblem
+``H u = eps S u`` is solved with the augmentation overlap operator
+``S = I + sum_ij q_ij |beta_i><beta_j|`` built from ``PP_AUGMENTATION``.
+Output files are consumed by ``PAOFLOW.projections(configuration='standard'
+or 'extended', basispath=<out_dir>/)`` and respect the j-resolved naming
 convention picked up by ``build_aewfc_basis``.
 """
 
@@ -20,7 +23,8 @@ from .driver import generate_basis_for_directory, generate_basis_for_pseudo
 def _parse_args(argv):
     p = argparse.ArgumentParser(
         prog='paoflow-genbasis-ps',
-        description='Generate pseudized AE-style basis files from norm-conserving UPFs.',
+        description='Generate pseudized AE-style basis files from UPF '
+                    'pseudopotentials (norm-conserving, ultrasoft, or PAW).',
     )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument('--pseudo', help='Path to a single UPF file.')

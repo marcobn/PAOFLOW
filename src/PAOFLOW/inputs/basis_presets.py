@@ -221,12 +221,22 @@ def _resolve_pseudo_path(data_controller, elem: str) -> str | None:
 
 
 def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
-    """Return the occupied PP_PSWFC shell labels for ``elem``.
+    """Return the PP_PSWFC shell labels shipped with ``elem``'s UPF.
 
     Reads the species' UPF file and returns the labels of every
-    ``PP_CHI`` entry with strictly-positive occupation, preserving the
-    order in which they appear in the pseudopotential.  Duplicates
-    (rare, but possible for spin-orbit pseudos) are collapsed.
+    ``PP_CHI`` entry, preserving the order in which they appear in
+    the pseudopotential.  Duplicates (rare, but possible for
+    spin-orbit pseudos where two j-channels share a label) are
+    collapsed.
+
+    All PSWFC entries are included regardless of occupation: an
+    unoccupied PSWFC (e.g. Pt 6P, ``occ=0``) is still a physical
+    pseudo-atomic orbital generated together with the pseudopotential,
+    and is typically the dominant bonding/conduction channel.  Excluding
+    such shells leaves the corresponding QE bands unprojectable, which
+    silently lowers the AE-basis ``standard``/``extended`` ``Pn>0.95``
+    band count below that of the ``minimal`` preset (which reads every
+    PSWFC unconditionally via :func:`build_pswfc_basis_all`).
 
     Raises
     ------
@@ -242,15 +252,13 @@ def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
     upf = UPF(pseudo_path)
     seen = []
     for chi in upf.pswfc:
-        if float(chi.get('occ', 0.0)) <= 0.0:
-            continue
         label = _normalize_shell(chi['label'])
         if label not in seen:
             seen.append(label)
     if not seen:
         raise RuntimeError(
-            "UPF for '%s' has no PP_PSWFC entries with positive occupation; "
-            "cannot derive a 'minimal' basis automatically." % elem
+            "UPF for '%s' has no PP_PSWFC entries; cannot derive a "
+            "'minimal' basis automatically." % elem
         )
     return seen
 

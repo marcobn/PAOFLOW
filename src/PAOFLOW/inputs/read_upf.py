@@ -70,6 +70,21 @@ class UPF:
         Kleinman--Bylander coupling matrix :math:`D_{ij}` in **Hartree**
         (the UPF stores Rydberg; the factor of 2 is applied on read).
         ``None`` for UPF v1 (not yet parsed).
+    qqq : np.ndarray or None, shape ``(nproj, nproj)``
+        Integrated augmentation matrix :math:`q_{ij} = \int Q_{ij}(r)\,
+        d^3 r` from ``PP_AUGMENTATION/PP_Q``.  ``None`` for
+        norm-conserving pseudopotentials.  Off-diagonal entries between
+        projectors of different :math:`l_\beta` are zero by construction.
+    has_augmentation : bool
+        Whether the pseudopotential exposes a ``PP_AUGMENTATION`` block
+        (true for USPP and PAW).
+    rho_atc : np.ndarray or None, shape ``(npoints,)``
+        Smooth pseudo-core density :math:`n_c(r)` in :math:`\mathrm{Bohr}^{-3}`
+        from ``PP_NLCC``.  ``None`` when the pseudopotential carries no
+        non-linear core correction.
+    ptype : str
+        Pseudopotential type (``'NC'`` / ``'US'`` / ``'USPP'`` / ``'PAW'``).
+        Alias of :attr:`type` for UPF v2.
     """
 
     def __init__(self, filename):
@@ -194,6 +209,12 @@ class UPF:
         self.dion = None
         self.has_spinorbit = False
 
+        # Augmentation / NLCC parsing currently only implemented for v2.
+        self.rho_atc = None
+        self.qqq = None
+        self.has_augmentation = False
+        # v1 keeps ptype set from the PP_HEADER parse above.
+
         # TODO: GIPAW data
 
     def _read_upf_v2(self, root):
@@ -267,9 +288,18 @@ class UPF:
         if atrho is not None:
             self.atrho = np.array([float(x) for x in atrho.text.split()])
 
-        # TODO: NLCC
+        # Non-linear core correction: PP_NLCC stores the smooth pseudo-core
+        # density n_c(r) in Bohr^-3 directly on self.r (not 4 pi r^2 n_c).
+        self.rho_atc = None
+        nlcc_node = root.find('PP_NLCC')
+        if nlcc_node is not None and nlcc_node.text is not None:
+            self.rho_atc = np.fromstring(nlcc_node.text, sep=' ', dtype=float)
+
+        # ptype alias (header attribute name varies between v1/v2).
+        self.ptype = self.type
 
         self._read_nonlocal_v2(root)
+        self._read_augmentation_v2(root)
 
         # TODO: GIPAW data
 
@@ -349,3 +379,41 @@ class UPF:
         if dij.size != expected:
             raise RuntimeError(f'UPF v2 PP_DIJ size mismatch: expected {expected}, got {dij.size}.')
         self.dion = dij.reshape(self.nproj, self.nproj) / 2.0
+
+    def _read_augmentation_v2(self, root):
+        r"""Read PP_NONLOCAL/PP_AUGMENTATION (USPP and PAW).
+
+        Only the *integrated* augmentation matrix ``q_{ij} =
+        \int Q_{ij}(r) d^3 r`` (stored verbatim in ``PP_Q``) is
+        extracted.  This is all that is needed to build the augmentation
+        overlap operator ``S = 1 + \sum_{ij} q_{ij} |\beta_i><\beta_j|``
+        for the scalar radial Schroedinger problem (the angular
+        L=0 selection happens automatically because ``q_{ij}`` is zero
+        between projectors of different ``l_\beta``).
+
+        The full radial expansion ``PP_QIJL.i.j.L`` (or the legacy
+        ``PP_QIJ`` + ``PP_RINNER`` + ``PP_QFCOEF``) is not parsed here:
+        it is required only for real-space density reconstruction, which
+        the basis_gen pipeline does not need.
+
+        Sets :attr:`qqq` (the ``q_{ij}`` matrix, ``None`` for NC) and
+        :attr:`has_augmentation` (bool).
+        """
+        self.qqq = None
+        self.has_augmentation = False
+
+        aug_node = root.find('PP_NONLOCAL/PP_AUGMENTATION')
+        if aug_node is None:
+            return
+
+        q_node = aug_node.find('PP_Q')
+        if q_node is None or q_node.text is None:
+            return
+        q = np.fromstring(q_node.text, sep=' ', dtype=float)
+        expected = self.nproj * self.nproj
+        if q.size != expected:
+            raise RuntimeError(
+                f'UPF v2 PP_Q size mismatch: expected {expected}, got {q.size}.'
+            )
+        self.qqq = q.reshape(self.nproj, self.nproj)
+        self.has_augmentation = True
