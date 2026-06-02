@@ -5,7 +5,7 @@ This example showcases the augmented (USPP / PAW) branch of
 the generalized eigenproblem ``H u = eps S u`` where the augmentation
 overlap ``S = I + sum_ij q_ij |beta_i><beta_j|`` is built from the
 UPF's ``PP_AUGMENTATION/PP_Q`` block.  Because the pseudopotential is
-fully relativistic (``Pt.rel-pz-n-rrkjus_psl.0.1.UPF``,
+fully relativistic (``Pt.rel-pbe-spn-rrkjus_psl.1.0.0.UPF``,
 ``has_spinorbit = True``), the solver produces *j-resolved* radials for
 every ``l >= 1`` channel (``6P_j1.dat`` for j=1/2, ``6P_j3.dat`` for
 j=3/2, etc., plus a degeneracy-weighted j-average ``6P.dat`` used as
@@ -39,7 +39,6 @@ import os
 import sys
 
 import numpy as np
-
 from PAOFLOW import PAOFLOW
 from PAOFLOW.basis_gen import generate_basis_for_pseudo
 from PAOFLOW.basis_gen.driver import _default_shells
@@ -53,16 +52,16 @@ except ImportError:
     RANK = 0
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SAVEDIR = os.path.join(HERE, 'pt.save')
-UPF = os.path.join(HERE, 'Pt.rel-pz-n-rrkjus_psl.0.1.UPF')
-BASISPATH = os.path.join(HERE, 'BASIS_PS') + os.sep
+SAVEDIR = os.path.join(HERE, "pt.save")
+UPF = os.path.join(HERE, "Pt.rel-pbe-spn-rrkjus_psl.1.0.0.UPF")
+BASISPATH = os.path.join(HERE, "BASIS_PS") + os.sep
 
 IBRAV = 2  # fcc
 NK = 400
 
 
 def _run(preset):
-    outdir = f'output_{preset}'
+    outdir = f"output_{preset}"
     paoflow = PAOFLOW.PAOFLOW(
         workpath=HERE,
         outputdir=outdir,
@@ -75,30 +74,30 @@ def _run(preset):
 
     paoflow.projections(basispath=BASISPATH, configuration=preset)
     paoflow.projectability(pthr=0.95)
-    nawf = attr['nawf']
-    nbnd = attr['bnd']
+    nawf = attr["nawf"]
+    nbnd = attr["bnd"]
 
     paoflow.pao_hamiltonian()
-    paoflow.bands(ibrav=IBRAV, nk=NK, fname='bands')
-    bands_path = os.path.join(HERE, outdir, 'bands_0.dat')
+    paoflow.bands(ibrav=IBRAV, nk=NK, fname="bands")
+    bands_path = os.path.join(HERE, outdir, "bands_0.dat")
 
     paoflow.finish_execution()
     return nawf, nbnd, bands_path
 
 
 def _maybe_plot(results):
-    if os.environ.get('PAOFLOW_SKIP_PLOT'):
+    if os.environ.get("PAOFLOW_SKIP_PLOT"):
         return
     try:
         import matplotlib
 
-        matplotlib.use('Agg')
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
         return
 
-    colors = {'minimal': 'tab:blue', 'standard': 'tab:green', 'extended': 'tab:red'}
-    styles = {'minimal': '-', 'standard': '-.', 'extended': '--'}
+    colors = {"minimal": "tab:blue", "standard": "tab:green", "extended": "tab:red"}
+    styles = {"minimal": "-", "standard": "-.", "extended": "--"}
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
     for preset, (nawf, nbnd, path) in results.items():
@@ -113,20 +112,28 @@ def _maybe_plot(results):
             color=colors[preset],
             linestyle=styles[preset],
             linewidth=0.9,
-            label=f'{preset} (nawf={nawf}, Pn>0.95: {nbnd})',
+            label=f"{preset} (nawf={nawf}, Pn>0.95: {nbnd})",
         )
         if bands.shape[1] > 1:
-            ax.plot(ik, bands[:, 1:], color=colors[preset], linestyle=styles[preset], linewidth=0.9)
+            ax.plot(
+                ik,
+                bands[:, 1:],
+                color=colors[preset],
+                linestyle=styles[preset],
+                linewidth=0.9,
+            )
 
-    ax.set_xlabel('k-point index')
-    ax.set_ylabel('Energy (eV)')
-    ax.set_title('Pt (USPP+SO) — j-resolved PAO bands (minimal vs standard vs extended)')
+    ax.set_xlabel("k-point index")
+    ax.set_ylabel("Energy (eV)")
+    ax.set_title(
+        "Pt (USPP+SO) — j-resolved PAO bands (minimal vs standard vs extended)"
+    )
     ax.set_ylim(-11, 14)
-    ax.legend(loc='upper right', fontsize=9)
+    ax.legend(loc="upper right", fontsize=9)
     fig.tight_layout()
-    out = os.path.join(HERE, 'bands_minimal_vs_standard_vs_extended.png')
+    out = os.path.join(HERE, "bands_minimal_vs_standard_vs_extended.png")
     fig.savefig(out, dpi=150)
-    print(f'Wrote {out}')
+    print(f"Wrote {out}")
 
 
 def _report_basis_j_resolved():
@@ -137,51 +144,58 @@ def _report_basis_j_resolved():
     channel; the bare ``<n><L>.dat`` is a degeneracy-weighted average
     used as scalar fallback.
     """
-    elem_dir = os.path.join(BASISPATH, 'Pt')
+    elem_dir = os.path.join(BASISPATH, "Pt")
     if not os.path.isdir(elem_dir):
         return
-    j_files = sorted(f for f in os.listdir(elem_dir) if '_j' in f)
+    j_files = sorted(f for f in os.listdir(elem_dir) if "_j" in f)
     if j_files:
-        print('  generated j-resolved radial files:')
+        print("  generated j-resolved radial files:")
         for f in j_files:
-            print(f'    {f}')
+            print(f"    {f}")
 
 
 def main():
     if not os.path.isdir(SAVEDIR):
-        print(f'pt.save not found at {SAVEDIR}.')
-        print('Run scf.in then nscf.in with pw.x in this directory first.')
+        print(f"pt.save not found at {SAVEDIR}.")
+        print("Run scf.in then nscf.in with pw.x in this directory first.")
         sys.exit(1)
 
     if RANK == 0:
         _upf = _UPFParser(UPF)
         elem_dir = os.path.join(BASISPATH, _upf.element.strip())
-        expected = _default_shells(_upf, preset='extended')
-        missing = [s for s in expected if not os.path.exists(os.path.join(elem_dir, f'{s}.dat'))]
+        expected = _default_shells(_upf, preset="extended")
+        missing = [
+            s
+            for s in expected
+            if not os.path.exists(os.path.join(elem_dir, f"{s}.dat"))
+        ]
         if missing:
-            print(f'Generating pseudo-atom basis under {BASISPATH} ...')
-            print('  (USPP path: solving generalized H u = eps S u with augmentation overlap)')
+            print(f"Generating pseudo-atom basis under {BASISPATH} ...")
+            print(
+                "  (USPP path: solving generalized H u = eps S u with augmentation overlap)"
+            )
             if os.path.isdir(elem_dir) and missing != expected:
-                print(f'  (regenerating: missing shells {missing})')
+                print(f"  (regenerating: missing shells {missing})")
             generate_basis_for_pseudo(
-                UPF, BASISPATH.rstrip(os.sep), preset='extended', verbose=True
+                UPF, BASISPATH.rstrip(os.sep), preset="extended", verbose=True
             )
         else:
-            print(f'Using existing pseudo-atom basis under {BASISPATH}')
+            print(f"Using existing pseudo-atom basis under {BASISPATH}")
         _report_basis_j_resolved()
-    if 'MPI' in globals():
+    if "MPI" in globals():
         MPI.COMM_WORLD.Barrier()
 
-    print('--- Pt (USPP+SO): minimal vs standard vs extended ---')
+    if RANK == 0:
+        print("--- Pt (USPP+SO): minimal vs standard vs extended ---")
     results = {}
-    for preset in ('minimal', 'standard', 'extended'):
+    for preset in ("minimal", "standard", "extended"):
         nawf, nbnd, path = _run(preset)
-        print(f'  [{preset:8s}] nawf = {nawf:3d}   Pn>0.95 bands = {nbnd:3d}')
+        print(f"  [{preset:8s}] nawf = {nawf:3d}   Pn>0.95 bands = {nbnd:3d}")
         results[preset] = (nawf, nbnd, path)
 
     if RANK == 0:
         _maybe_plot(results)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
