@@ -1,4 +1,4 @@
-"""Radial Schroedinger solver for norm-conserving pseudopotentials.
+"""Radial Schroedinger solver for norm-conserving, USPP and PAW pseudopotentials.
 
 The pseudo-atom Hamiltonian acting on the radial part u(r) = r R(r) of
 psi_{lm}(r) = R(r) Y_{lm} is, for a given (l, j) channel,
@@ -11,6 +11,16 @@ quantity a_i(r) = r * beta_i(r) the nonlocal kernel in u-space becomes
 the symmetric outer product
 
     M(r, r') = sum_{i,j} a_i(r) D_ij a_j(r') .
+
+For ultrasoft / PAW pseudopotentials the augmentation overlap operator
+
+    S = 1 + sum_{ij} q_ij |beta_i><beta_j|   ->   S_uu' = I + dr a Q a^T
+
+is built from ``upf.qqq`` and the eigenproblem becomes the generalized
+``H u = eps S u`` (solved with ``scipy.linalg.eigh(H, S)``); the
+returned u(r) is then normalised to ``<u|S|u> dr = 1``.  For NC pseudos
+(no augmentation) the path collapses to ``np.linalg.eigh(H)`` with the
+ordinary L^2 normalisation.
 
 We discretise on a uniform mesh r_k = k * dr, k = 1, ..., N-1 with
 u(0) = u(R_box) = 0, dr = R_box / N.  V_loc and a_i are interpolated
@@ -30,6 +40,7 @@ sum_k wfc[k]**2 * dr = 1.
 from __future__ import annotations
 
 import numpy as np
+import scipy.linalg
 from scipy.interpolate import CubicSpline
 
 
@@ -153,7 +164,12 @@ def solve_radial_channel(
     H = np.diag(diag) + np.diag(offdiag, 1) + np.diag(offdiag, -1)
 
     # Nonlocal KB block (only projectors matching this (l, j) channel).
+    # For ultrasoft/PAW pseudos the same projector outer-product also builds
+    # the augmentation overlap operator S = I + dr * A Q A^T, leading to a
+    # generalized eigenproblem H u = eps S u.  For NC (qqq is None) S = I and
+    # the path collapses to the original np.linalg.eigh call.
     pidx = _select_projectors(upf, l, j_used)
+    S = None
     if pidx:
         n_p = len(pidx)
         A = np.zeros((N, n_p))
@@ -164,13 +180,27 @@ def solve_radial_channel(
         # Nonlocal matrix in u-space: M = A D A^T * dr  (symmetric).
         H += dr * (A @ D @ A.T)
 
-    # Diagonalise; eigh assumes symmetric.
-    eps, V = np.linalg.eigh(H)
+        qqq = getattr(upf, 'qqq', None)
+        if qqq is not None:
+            Q = qqq[np.ix_(pidx, pidx)]
+            if np.any(Q):
+                S = np.eye(N) + dr * (A @ Q @ A.T)
+
+    # Diagonalise.  Switch to a generalized solve if S != I (USPP/PAW).
+    if S is None:
+        eps, V = np.linalg.eigh(H)
+        weight = None
+    else:
+        eps, V = scipy.linalg.eigh(H, S)
+        weight = S
     eps = eps[:n_states]
     U = V[:, :n_states].T  # shape (n_states, N)
 
-    # Normalise so that sum U[n, k]**2 * dr = 1.
-    norms = np.sqrt(np.sum(U * U, axis=1) * dr)
+    # Normalise so that <u_n | S | u_n> * dr = 1 (collapses to L^2 norm for NC).
+    if weight is None:
+        norms = np.sqrt(np.sum(U * U, axis=1) * dr)
+    else:
+        norms = np.sqrt(np.einsum('nk,kl,nl->n', U, weight, U) * dr)
     U = U / norms[:, None]
 
     # Sign convention: make the radial function R(r) ~ U(r)/r positive
@@ -209,6 +239,17 @@ def pseudize_shell(
     so ``pseudize_shell(upf, 5, 0)`` picks rank 0, ``(6, 0)`` rank 1,
     and ``(7, 0)`` rank 2.  For Si ONCV ``(l=2)`` (no PSWFC D entry)
     ``n_lowest = 3``, so ``(3, 2)`` picks rank 0.
+
+    .. note::
+
+       For PAW pseudopotentials with deep projector subspaces (e.g. an
+       extra semi-core projector at a given ``l``) the lowest-rank
+       eigenstate of the generalized augmented problem can be a
+       *spurious* deep "ghost" state at one or two Hartree below the
+       physical valence level.  The rank heuristic above does not
+       distinguish ghosts from physical states; affected channels
+       should be inspected by the caller (overlap with the stored
+       PSWFC is a reliable filter).
     """
     n_lowest = _lowest_n_for_channel(upf, l, j)
     target = n - n_lowest
@@ -220,7 +261,49 @@ def pseudize_shell(
     eps_all, U, r = solve_radial_channel(
         upf, l, j=j, r_box=r_box, n_points=n_points, n_states=max(6, target + 3)
     )
-    return r, U[target], float(eps_all[target])
+    eps = float(eps_all[target])
+
+    # If the frozen-density solver returned a continuum (unbound) state but
+    # the UPF carries a PSWFC for this (n, l[, j]) channel, fall back to the
+    # PSWFC.  This happens for the valence d shell of late transition-metal
+    # USPP/PAW pseudos (e.g. Pt 5d), where the pseudo-atom potential alone
+    # does not bind d and the rank-0 box state is a confinement mode rather
+    # than the physical valence orbital.  The PSWFC stored in the UPF was
+    # constructed by the pseudopotential generator with full atomic SCF and
+    # is the correct radial for those shells.
+    if eps >= 0.0:
+        u_psw = _pswfc_on_uniform(upf, n, l, j, r)
+        if u_psw is not None:
+            return r, u_psw, eps
+    return r, U[target], eps
+
+
+def _pswfc_on_uniform(upf, n, l, j, r_uni):
+    """Return the matching UPF PSWFC ``u(r) = r R(r)`` on ``r_uni``, or None.
+
+    Looks for a ``PP_CHI`` entry with label starting ``f"{n}{L}"`` and
+    matching ``j`` (under SO).  The returned array is normalised so that
+    ``sum(u**2) * dr = 1``, the same convention as the solver output.
+    """
+    j_used = _default_j(upf, l, j)
+    l_char = 'SPDF'[l]
+    target_label = f'{n}{l_char}'
+    for i, c in enumerate(upf.pswfc):
+        if c['label'].upper() != target_label:
+            continue
+        if j_used is not None and i < len(getattr(upf, 'jchia', [])):
+            if abs(float(upf.jchia[i]) - j_used) > 1e-6:
+                continue
+        u_log = c['wfc']  # u(r) = r R(r) on the UPF log mesh
+        u_uni = _interp_to_uniform(upf.r, u_log, r_uni)
+        dr = r_uni[1] - r_uni[0]
+        norm = np.sqrt(np.sum(u_uni * u_uni) * dr)
+        if norm > 0.0:
+            u_uni = u_uni / norm
+        if u_uni.size > 0 and u_uni[0] < 0.0:
+            u_uni = -u_uni
+        return u_uni
+    return None
 
 
 def _lowest_n_for_channel(upf, l, j):

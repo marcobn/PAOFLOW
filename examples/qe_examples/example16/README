@@ -18,11 +18,23 @@ The radial database is generated **on the fly from the UPF** by
 local `BASIS_PS/<Elem>/` tree; the legacy hand-curated `BASIS/`
 distributed with the repo is **not** used.
 
-Two subdirectories cover complementary regimes:
+Four subdirectories cover complementary regimes:
 
-  Si_ONCV/  scalar-relativistic ONCV pseudo (insulator, fcc Si)
-  Pt_REL/   fully-relativistic ONCV pseudo (metal, fcc Pt,
-            noncollinear + spin-orbit; j-resolved radials)
+  Si_ONCV/      scalar-relativistic ONCV pseudo (insulator, fcc Si)
+  Si_USPP/      scalar-relativistic ULTRASOFT pseudo (insulator, fcc
+                Si).  Exercises the augmented (USPP/PAW) branch of
+                ``basis_gen`` with NLCC; compare against ``Si_ONCV/``.
+  Pt_REL/       fully-relativistic ONCV pseudo (metal, fcc Pt,
+                noncollinear + spin-orbit; j-resolved radials)
+  Pt_USPP_REL/  fully-relativistic ULTRASOFT pseudo (metal, fcc Pt,
+                noncollinear + spin-orbit; j-resolved radials).
+                Exercises the augmented (USPP/PAW) branch of
+                ``basis_gen``: the generalized eigenproblem
+                ``H u = eps S u`` with augmentation overlap
+                ``S = I + sum_ij q_ij |beta_i><beta_j|`` is solved on
+                the box mesh.  Compare against ``Pt_REL/`` (same atom,
+                NC pseudo) to verify the augmented solver reproduces
+                the NC result.
 
 Workflow in each subdirectory
 -----------------------------
