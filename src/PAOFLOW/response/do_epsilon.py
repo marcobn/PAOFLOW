@@ -71,8 +71,8 @@ def do_dielectric_tensor(data_controller, ene):
         if rank == 0:
             print('Using fixed smearing = %.3f eV' % attributes['degauss'])
 
-    if 'deltakp2' in arrays and rank == 0:
-        print('Adaptive (Yates) interband broadening enabled for the dielectric tensor')
+    # if 'deltakp2' in arrays and rank == 0:
+    #     print('Adaptive (Yates) interband broadening enabled for the dielectric tensor')
 
     if nspin == 1:
         for n in range(d_tensor.shape[0]):
@@ -558,8 +558,8 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
         grid_spacing = (ene[1] - ene[0]) if ene.size > 1 else intersmear
         eta_floor = attributes.get('adaptive_smearing_floor', grid_spacing)
         deltakp2 = arrays['deltakp2'][:, :bndmax, :bndmax, ispin]
-        if rank == 0:
-            print('Using adaptive (Yates) interband smearing for the dielectric tensor')
+        # if rank == 0:
+        #     print('Using adaptive (Yates) interband smearing for the dielectric tensor')
 
     spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
     Ef = 1.0e-9
