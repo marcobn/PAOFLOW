@@ -572,7 +572,7 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     # fallback below cannot NameError when ``smearing is None``.
     degauss = attributes.get('degauss', None)
 
-    if smearing == None:
+    if smearing == None or attributes['insulator']:
         fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
     elif smearing == 'gauss':
         fn = spin_factor * intgaussian(Ek, Ef, degauss)
