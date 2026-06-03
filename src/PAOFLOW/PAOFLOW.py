@@ -1574,6 +1574,24 @@ class PAOFLOW:
             nlv_sign = None
 
         if nlv_enabled:
+            # --- Preserve the BARE band group velocity for adaptive smearing ---
+            # The Yates adaptive width uses |grad_k(E_n - E_m)|, taken from the
+            # diagonal of the eigenbasis velocity matrix (the band group
+            # velocity). By Hellmann-Feynman nabla_k E_n = <n|dH/dk|n> equals
+            # that diagonal ONLY for the bare gradient dHksp. The non-local
+            # velocity correction is an interband position-commutator term;
+            # once it is folded into dHksp below, the diagonal of pksp is no
+            # longer the bare group velocity, which inflates deltakp/deltakp2
+            # and produces a spurious epsilon spike near omega -> 0. Build pksp
+            # from the bare dHksp first and stash its diagonal so
+            # do_adaptive_smearing can use the uncontaminated group velocity.
+            do_momentum(self.data_controller)
+            nb = arrays['pksp'].shape[2]
+            bdiag = np.arange(nb)
+            arrays['velkp_bare'] = np.ascontiguousarray(
+                arrays['pksp'][:, :, bdiag, bdiag, :]
+            )
+
             self.nonlocal_velocity_correction(
                 inject=nlv_inject,
                 sign=nlv_sign,
