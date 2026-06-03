@@ -378,7 +378,15 @@ def create_atomic_inputfile(calculation, blocks, cards):
             f.write('\n')
 
 
-def create_acbn0_inputfile(prefix, pthr, outputdir, expand_wedge=False):
+def create_acbn0_inputfile(
+    prefix,
+    pthr,
+    outputdir,
+    expand_wedge=False,
+    use_local_basis=False,
+    basispath=None,
+    configuration='standard',
+):
     """Generate a PAOFLOW Python driver script for an ACBN0 calculation.
 
     Parameters
@@ -394,12 +402,33 @@ def create_acbn0_inputfile(prefix, pthr, outputdir, expand_wedge=False):
         Forwarded to ``paoflow.pao_hamiltonian``.  ``False`` (default)
         assumes QE produced the full BZ (``nosym=.true., noinv=.true.``);
         ``True`` expands the symmetry-reduced wedge to the full grid.
+    use_local_basis : bool, optional
+        When ``True`` the projections are computed internally by PAOFLOW
+        (:meth:`PAOFLOW.PAOFLOW.PAOFLOW.projections`) instead of reading
+        ``atomic_proj.xml`` from ``projwfc.x``.  The local projection
+        orthonormalises the atomic orbitals, so the wavefunction overlap is
+        set to the identity before the +U Hamiltonian is built, and the PAO
+        basis metadata is dumped to ``<outputdir>/pao_basis.dat`` for the
+        Hubbard-manifold selection in :meth:`ACBN0.run_acbn0`.
+    basispath : str, optional
+        Directory with the per-element radial basis files; forwarded to
+        ``projections`` when ``use_local_basis`` is ``True`` and
+        ``configuration`` is ``'standard'`` / ``'extended'``.
+    configuration : str, optional
+        Projection-basis preset (``'minimal'``, ``'standard'`` or
+        ``'extended'``) forwarded to ``projections``.
 
     Returns
     -------
     None
         Writes the script ``acbn0.py`` to the current directory.
     """
+    if use_local_basis:
+        _create_acbn0_local_basis_inputfile(
+            prefix, pthr, outputdir, expand_wedge, basispath, configuration
+        )
+        return
+
     with open('acbn0.py', 'w') as f:
         f.write('from PAOFLOW import PAOFLOW\n\n')
         f.write(
@@ -409,3 +438,71 @@ def create_acbn0_inputfile(prefix, pthr, outputdir, expand_wedge=False):
         f.write(f'paoflow.projectability(pthr={pthr})\n')
         f.write(f'paoflow.pao_hamiltonian(write_binary=True,expand_wedge={bool(expand_wedge)})\n')
         f.write('paoflow.finish_execution()\n')
+
+
+def _create_acbn0_local_basis_inputfile(
+    prefix, pthr, outputdir, expand_wedge, basispath, configuration
+):
+    """Write ``acbn0.py`` for the local-basis (projwfc-free) ACBN0 path.
+
+    The generated script projects the DFT eigenstates onto PAOFLOW's
+    internal atomic basis, fixes the (orthonormal) overlap to the identity
+    so that the non-orthogonal correction in
+    :func:`PAOFLOW.hamiltonian.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
+    is a no-op, dumps the PAO-orbital metadata and finally builds and writes
+    the +U Hamiltonian / overlap that :meth:`ACBN0.run_acbn0` consumes.
+
+    The metadata dump and the identity overlap must be set *before*
+    ``pao_hamiltonian`` because, with ``acbn0=True``, that call writes the
+    binary dumps and terminates the process with ``sys.exit(0)``.
+    """
+    cfg = (configuration or 'standard').lower()
+    basis_arg = 'None' if basispath is None else repr(basispath)
+
+    lines = [
+        'import os',
+        'import numpy as np',
+        'from PAOFLOW import PAOFLOW',
+        '',
+        'paoflow = PAOFLOW.PAOFLOW('
+        f"outputdir='{outputdir}', savedir='{prefix}.save', "
+        'save_overlaps=True, acbn0=True)',
+        f'paoflow.projections(basispath={basis_arg}, configuration={cfg!r})',
+        '',
+        'arry, attr = paoflow.data_controller.data_dicts()',
+        '',
+        '# The local projection orthonormalises the atomic orbitals, so the',
+        '# wavefunction overlap is the identity.  Set it explicitly so that',
+        '# do_non_ortho (called for acbn0=True) leaves H(k) unchanged and the',
+        '# dumped overlap kovp.npy is the identity (ortho-atomic scheme).',
+        "nawf = attr['nawf']",
+        "nkpnts = attr['nkpnts']",
+        "arry['Sks'] = np.repeat(np.eye(nawf, dtype=complex)[:, :, None], nkpnts, axis=2)",
+        '',
+        '# Dump the PAO-orbital metadata (PAO order matches the dumped',
+        '# Hamiltonian/overlap matrices) so that ACBN0.run_acbn0 can select',
+        '# the Hubbard manifold by shell label and build the aligned',
+        '# Gaussian basis.  Columns: index atom_index element l m label',
+        "tau = list(arry['tau'])",
+        '',
+        '',
+        'def _atom_index(t):',
+        '    for ia, ta in enumerate(tau):',
+        '        if np.allclose(ta, t):',
+        '            return ia + 1',
+        '    return 0',
+        '',
+        '',
+        f"_meta_path = os.path.join({outputdir!r}, 'pao_basis.dat')",
+        "with open(_meta_path, 'w') as _fmeta:",
+        "    for _i, _b in enumerate(arry['basis']):",
+        "        _fmeta.write('{0} {1} {2} {3} {4} {5}\\n'.format(",
+        "            _i, _atom_index(_b['tau']), _b['atom'], _b['l'], _b['m'], _b['label']))",
+        '',
+        f'paoflow.projectability(pthr={pthr})',
+        f'paoflow.pao_hamiltonian(write_binary=True, expand_wedge={bool(expand_wedge)})',
+        'paoflow.finish_execution()',
+        '',
+    ]
+    with open('acbn0.py', 'w') as f:
+        f.write('\n'.join(lines))
