@@ -791,6 +791,12 @@ class ACBN0:
         # Per-iteration cache of the PAO basis metadata dumped by the
         # local-basis PAOFLOW driver (populated by ``_load_pao_basis_meta``).
         self._pao_meta = None
+        # Whether a converged charge density from a previous ``run_dft``
+        # call is available on disk.  When True, the next scf reuses it as
+        # its starting potential (``startingpot='file'``) instead of the
+        # superposition of atomic densities, so each self-consistent
+        # iteration restarts from the previous step's density.
+        self._scf_density_available = False
 
         if self.use_local_basis:
             cfg = self.configuration
@@ -1101,6 +1107,16 @@ class ACBN0:
         cards["HUBBARD"] = self.hubbard_card()
         for k, v in self.hubbard_occ.items():
             blocks["system"][k] = v
+        # Restart the scf from the charge density converged in the
+        # previous iteration.  Across the self-consistent U/U+V loop the
+        # only thing that changes between successive scf runs is the
+        # (small) update to the Hubbard parameters, so the previous
+        # density is an excellent starting guess and dramatically cuts
+        # the number of scf steps.  The first run has no density on disk
+        # and therefore starts from the atomic superposition.
+        if self._scf_density_available:
+            blocks.setdefault("electrons", {})
+            blocks["electrons"]["startingpot"] = "'file'"
         create_atomic_inputfile("scf", blocks, cards)
 
         blocks, cards = struct_from_inputfile_QE(f"{prefix}.nscf.in")
@@ -1123,6 +1139,10 @@ class ACBN0:
             calcs = ["scf", "nscf", "projwfc"]
         for c in calcs:
             self.exec_QE(executables[c], f"{c}.in")
+
+        # The scf has now written a converged charge density to
+        # ``outdir/<prefix>.save``; subsequent iterations can reuse it.
+        self._scf_density_available = True
 
     def run_paoflow(self, prefix, save_prefix):
         from .inputs.file_io import create_acbn0_inputfile
