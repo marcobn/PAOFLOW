@@ -716,16 +716,21 @@ class ACBN0:
             radial basis files.  Required when ``use_local_basis`` is
             ``True`` and ``configuration`` is ``'standard'`` or
             ``'extended'``.
-        configuration : {'minimal', 'standard', 'extended'}, optional
+        configuration : {'minimal', 'standard', 'extended'} or dict, optional
             Projection-basis preset forwarded to
             :meth:`PAOFLOW.PAOFLOW.PAOFLOW.projections` when
             ``use_local_basis`` is ``True``.  ``'minimal'`` uses the UPF
             pseudo-atomic wavefunctions (the closest drop-in replacement
             for ``projwfc.x``); ``'standard'`` / ``'extended'`` augment the
             valence shells with polarization channels built from
-            ``basispath``.  The Hubbard manifold is always selected by its
-            shell *label* (e.g. ``'3P'``) so that polarization shells
-            sharing the same angular momentum are excluded.
+            ``basispath``.  A custom ``{element: [shell_labels]}`` dict
+            (e.g. ``{'Ga': ['3S', '3P', '4S', '4P', '3D', ...]}``) selects
+            an explicit all-electron basis from ``basispath``; this is the
+            way to include semicore shells (such as ``3S`` / ``3P``) that
+            the preset rules would not add.  The Hubbard manifold is always
+            selected by its shell *label* (e.g. ``'3P'``) so that
+            polarization shells sharing the same angular momentum are
+            excluded.
         projection : {'ortho-atomic', 'atomic'}, optional
             Hubbard projector type written to the QE ``HUBBARD`` card.
 
@@ -788,12 +793,21 @@ class ACBN0:
         self._pao_meta = None
 
         if self.use_local_basis:
-            cfg = (self.configuration or "standard").lower()
-            if cfg in ("standard", "extended") and not self.basispath:
+            cfg = self.configuration
+            if isinstance(cfg, dict):
+                # An explicit {element: [shells]} mapping builds the AE
+                # basis and therefore always needs the radial basis files.
+                needs_basis = True
+                cfg_name = "custom dict"
+            else:
+                cfg = (cfg or "standard").lower()
+                needs_basis = cfg in ("standard", "extended")
+                cfg_name = cfg
+            if needs_basis and not self.basispath:
                 msg = (
-                    "use_local_basis with configuration='%s' requires "
+                    "use_local_basis with configuration=%r requires "
                     "'basispath' pointing to the per-element radial basis "
-                    "files." % cfg
+                    "files." % cfg_name
                 )
                 raise ValueError(msg)
 
