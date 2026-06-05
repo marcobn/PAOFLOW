@@ -3789,3 +3789,84 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Vibrational Dielectric')
+
+    def greens(
+        self,
+        emin,
+        emax,
+        eta=0.02,
+        fermi=None,
+        hamiltonian_key='Hksp',
+        return_local=True,
+        return_kresolved=False,
+        compute_dos=True,
+        write_files=True,
+        energy_block=32,
+    ):
+        """Compute Green's functions from the PAOFLOW k-dependent Hamiltonian.
+
+        Parameters
+        ----------
+        emin, emax : float
+            Minimum and maximum energies in eV.
+
+        eta : float
+            Imaginary broadening in eV.
+
+        fermi : float or None
+            Fermi level in eV. If None, do_greens tries to read it from
+            the PAOFLOW attributes dictionary.
+
+        hamiltonian_key : str
+            Key of the k-dependent Hamiltonian in arrays. Default: 'Hksp'.
+
+        return_local : bool
+            If True, compute and store arrays['G_loc'].
+
+        return_kresolved : bool
+            If True, compute and store arrays['G_k'].
+
+        compute_dos : bool
+            If True, compute DOS and PDOS from G_loc.
+
+        write_files : bool
+            If True, write green_dos_<spin>.dat.
+
+        energy_block : int
+            Number of energies treated simultaneously in the tensorized solver.
+            Reduce this value if memory usage is too large.
+        """
+
+
+        # import numpy as np
+        from .defs.do_greens_tensorial import do_greens
+
+        arrays, attributes = self.data_controller.data_dicts()
+
+        if emax <= emin:
+            raise ValueError('emax must be larger than emin.')
+
+        if eta <= 0.0:
+            raise ValueError('eta must be positive for the retarded Green function.')
+
+        ne = int(attributes.get('green_ne', 1001))
+
+        if ne < 2:
+            raise ValueError("attributes['green_ne'] must be at least 2.")
+
+        energies = np.linspace(float(emin), float(emax), ne)
+
+        do_greens(
+            self.data_controller,
+            energies,
+            eta=eta,
+            fermi=fermi,
+            hamiltonian_key=hamiltonian_key,
+            return_local=return_local,
+            return_kresolved=return_kresolved,
+            compute_dos=compute_dos,
+            write_files=write_files,
+            energy_block=energy_block,
+        )
+
+        self.report_module_time('Greens')
