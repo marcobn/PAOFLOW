@@ -255,8 +255,7 @@ def pseudize_shell(
     target = n - n_lowest
     if target < 0:
         raise ValueError(
-            f'Requested (n, l) = ({n}, {l}) below lowest pseudo-atom level '
-            f'(n_lowest = {n_lowest}).'
+            f'Requested (n, l) = ({n}, {l}) below lowest pseudo-atom level (n_lowest = {n_lowest}).'
         )
     eps_all, U, r = solve_radial_channel(
         upf, l, j=j, r_box=r_box, n_points=n_points, n_states=max(6, target + 3)
@@ -322,3 +321,62 @@ def _lowest_n_for_channel(upf, l, j):
     if candidates:
         return min(candidates)
     return {0: 1, 1: 2, 2: 3, 3: 4}.get(l, l + 1)
+
+
+def _pswfc_max_n(upf):
+    """Largest principal quantum number among UPF PSWFC labels (0 if none)."""
+    nmax = 0
+    for c in upf.pswfc:
+        label = c['label']
+        if len(label) < 2 or label[1].upper() not in 'SPDF':
+            continue
+        try:
+            nmax = max(nmax, int(label[0]))
+        except ValueError:
+            continue
+    return nmax
+
+
+def _has_pswfc_label(upf, n, l, j=None):
+    """True if the UPF carries a PSWFC whose label matches ``(n, l[, j])``."""
+    j_used = _default_j(upf, l, j)
+    l_char = 'SPDF'[l]
+    target_label = f'{n}{l_char}'
+    for i, c in enumerate(upf.pswfc):
+        if c['label'].upper() != target_label:
+            continue
+        if j_used is not None and i < len(getattr(upf, 'jchia', [])):
+            if abs(float(upf.jchia[i]) - j_used) > 1e-6:
+                continue
+        return True
+    return False
+
+
+def is_frozen_core_shell(upf, n, l, eps, j=None):
+    """Heuristic: is ``(n, l[, j])`` a spurious frozen-core request?
+
+    A pseudopotential that freezes a shell into the core (e.g. As 3d,
+    whose 3d electrons are not in the As pseudo valence) carries no
+    PSWFC for that shell and cannot bind it.  Requesting such a shell
+    makes :func:`pseudize_shell` return an unbound, diffuse box mode
+    that is linearly dependent with the genuine polarization shells and
+    corrupts the projection basis.
+
+    The request is flagged as frozen-core when *all* of the following
+    hold:
+
+    * the UPF has no PSWFC with the exact ``(n, l[, j])`` label
+      (a genuine semicore shell, e.g. Ga 3D, *is* present and so is
+      never flagged);
+    * ``n`` lies below the largest PSWFC principal quantum number
+      ``nmax`` (above-valence polarization such as Ga 4D has ``n >= nmax``
+      and is never flagged); and
+    * the solver eigenvalue is non-negative (the returned state is
+      unbound, the signature of a confinement mode rather than a bound
+      orbital).
+    """
+    if _has_pswfc_label(upf, n, l, j):
+        return False
+    if n >= _pswfc_max_n(upf):
+        return False
+    return eps >= 0.0

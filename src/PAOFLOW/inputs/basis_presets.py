@@ -36,110 +36,110 @@ from .read_upf import UPF
 # elements that ship with the BASIS/ directory.
 _ELEMENT_BLOCK = {
     # s-block
-    "H": "s",
-    "He": "s",
-    "Li": "s",
-    "Be": "s",
-    "Na": "s",
-    "Mg": "s",
-    "K": "s",
-    "Ca": "s",
-    "Rb": "s",
-    "Sr": "s",
-    "Cs": "s",
-    "Ba": "s",
-    "Fr": "s",
-    "Ra": "s",
+    'H': 's',
+    'He': 's',
+    'Li': 's',
+    'Be': 's',
+    'Na': 's',
+    'Mg': 's',
+    'K': 's',
+    'Ca': 's',
+    'Rb': 's',
+    'Sr': 's',
+    'Cs': 's',
+    'Ba': 's',
+    'Fr': 's',
+    'Ra': 's',
     # p-block
-    "B": "p",
-    "C": "p",
-    "N": "p",
-    "O": "p",
-    "F": "p",
-    "Ne": "p",
-    "Al": "p",
-    "Si": "p",
-    "P": "p",
-    "S": "p",
-    "Cl": "p",
-    "Ar": "p",
-    "Ga": "p",
-    "Ge": "p",
-    "As": "p",
-    "Se": "p",
-    "Br": "p",
-    "Kr": "p",
-    "In": "p",
-    "Sn": "p",
-    "Sb": "p",
-    "Te": "p",
-    "I": "p",
-    "Xe": "p",
-    "Tl": "p",
-    "Pb": "p",
-    "Bi": "p",
-    "Po": "p",
-    "At": "p",
-    "Rn": "p",
+    'B': 'p',
+    'C': 'p',
+    'N': 'p',
+    'O': 'p',
+    'F': 'p',
+    'Ne': 'p',
+    'Al': 'p',
+    'Si': 'p',
+    'P': 'p',
+    'S': 'p',
+    'Cl': 'p',
+    'Ar': 'p',
+    'Ga': 'p',
+    'Ge': 'p',
+    'As': 'p',
+    'Se': 'p',
+    'Br': 'p',
+    'Kr': 'p',
+    'In': 'p',
+    'Sn': 'p',
+    'Sb': 'p',
+    'Te': 'p',
+    'I': 'p',
+    'Xe': 'p',
+    'Tl': 'p',
+    'Pb': 'p',
+    'Bi': 'p',
+    'Po': 'p',
+    'At': 'p',
+    'Rn': 'p',
     # d-block (3d)
-    "Sc": "d",
-    "Ti": "d",
-    "V": "d",
-    "Cr": "d",
-    "Mn": "d",
-    "Fe": "d",
-    "Co": "d",
-    "Ni": "d",
-    "Cu": "d",
-    "Zn": "d",
+    'Sc': 'd',
+    'Ti': 'd',
+    'V': 'd',
+    'Cr': 'd',
+    'Mn': 'd',
+    'Fe': 'd',
+    'Co': 'd',
+    'Ni': 'd',
+    'Cu': 'd',
+    'Zn': 'd',
     # d-block (4d)
-    "Y": "d",
-    "Zr": "d",
-    "Nb": "d",
-    "Mo": "d",
-    "Tc": "d",
-    "Ru": "d",
-    "Rh": "d",
-    "Pd": "d",
-    "Ag": "d",
-    "Cd": "d",
+    'Y': 'd',
+    'Zr': 'd',
+    'Nb': 'd',
+    'Mo': 'd',
+    'Tc': 'd',
+    'Ru': 'd',
+    'Rh': 'd',
+    'Pd': 'd',
+    'Ag': 'd',
+    'Cd': 'd',
     # d-block (5d)
-    "Lu": "d",
-    "Hf": "d",
-    "Ta": "d",
-    "W": "d",
-    "Re": "d",
-    "Os": "d",
-    "Ir": "d",
-    "Pt": "d",
-    "Au": "d",
-    "Hg": "d",
+    'Lu': 'd',
+    'Hf': 'd',
+    'Ta': 'd',
+    'W': 'd',
+    'Re': 'd',
+    'Os': 'd',
+    'Ir': 'd',
+    'Pt': 'd',
+    'Au': 'd',
+    'Hg': 'd',
     # f-block (lanthanides)
-    "La": "f",
-    "Ce": "f",
-    "Pr": "f",
-    "Nd": "f",
-    "Pm": "f",
-    "Sm": "f",
-    "Eu": "f",
-    "Gd": "f",
-    "Tb": "f",
-    "Dy": "f",
-    "Ho": "f",
-    "Er": "f",
-    "Tm": "f",
-    "Yb": "f",
+    'La': 'f',
+    'Ce': 'f',
+    'Pr': 'f',
+    'Nd': 'f',
+    'Pm': 'f',
+    'Sm': 'f',
+    'Eu': 'f',
+    'Gd': 'f',
+    'Tb': 'f',
+    'Dy': 'f',
+    'Ho': 'f',
+    'Er': 'f',
+    'Tm': 'f',
+    'Yb': 'f',
     # f-block (actinides)
-    "Ac": "f",
-    "Th": "f",
-    "Pa": "f",
-    "U": "f",
-    "Np": "f",
-    "Pu": "f",
+    'Ac': 'f',
+    'Th': 'f',
+    'Pa': 'f',
+    'U': 'f',
+    'Np': 'f',
+    'Pu': 'f',
 }
 
 # Recognised string presets.
-SUPPORTED_PRESETS = ("minimal", "standard", "extended")
+SUPPORTED_PRESETS = ('minimal', 'standard', 'extended')
 
 
 def element_block(elem: str) -> str:
@@ -162,7 +162,7 @@ def element_block(elem: str) -> str:
 # BASIS/ catalog
 # ---------------------------------------------------------------------------
 
-_SHELL_RE = re.compile(r"^([1-9])([SPDFspdf])$")
+_SHELL_RE = re.compile(r'^([1-9])([SPDFspdf])$')
 
 
 def _normalize_shell(label: str) -> str:
@@ -183,7 +183,7 @@ def available_ae_shells(basispath: str, elem: str) -> list[str]:
     Returns an empty list if the directory is missing or contains no
     recognisable ``nL.dat`` files.
     """
-    pattern = os.path.join(basispath, elem, "*.dat")
+    pattern = os.path.join(basispath, elem, '*.dat')
     shells = []
     for path in glob.glob(pattern):
         name = os.path.splitext(os.path.basename(path))[0]
@@ -191,7 +191,7 @@ def available_ae_shells(basispath: str, elem: str) -> list[str]:
         if _SHELL_RE.match(name):
             shells.append(name)
     # Sort by (n, l-index)
-    order = "SPDF"
+    order = 'SPDF'
     shells.sort(key=lambda s: (int(s[0]), order.find(s[1])))
     return shells
 
@@ -210,12 +210,12 @@ def _resolve_pseudo_path(data_controller, elem: str) -> str | None:
     DataController has not been populated yet, as in some unit tests).
     """
     arry, attr = data_controller.data_dicts()
-    species = arry.get("species")
-    fpath = attr.get("fpath")
+    species = arry.get('species')
+    fpath = attr.get('fpath')
     if not species or fpath is None:
         return None
     for at, pseudo in species:
-        if re.split(r"\d+", at)[0] == elem:
+        if re.split(r'\d+', at)[0] == elem:
             return os.path.join(fpath, pseudo)
     return None
 
@@ -252,7 +252,7 @@ def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
     upf = UPF(pseudo_path)
     seen = []
     for chi in upf.pswfc:
-        label = _normalize_shell(chi["label"])
+        label = _normalize_shell(chi['label'])
         if label not in seen:
             seen.append(label)
     if not seen:
@@ -308,8 +308,8 @@ def standard_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
         if label not in minimal_set and label not in extra:
             extra.append(label)
 
-    order = "SPDF"
-    min_n_for_L = {"S": 1, "P": 2, "D": 3, "F": 4}
+    order = 'SPDF'
+    min_n_for_L = {'S': 1, 'P': 2, 'D': 3, 'F': 4}
 
     # (1) Next missing L channel at nmax.
     L_indices = [order.find(sh[1]) for sh in minimal_shells]
@@ -318,15 +318,15 @@ def standard_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
     if next_L_idx < len(order):
         next_L = order[next_L_idx]
         # Don't add F unless we're actually on an f-block element.
-        if next_L != "F" or block == "f":
+        if next_L != 'F' or block == 'f':
             n_pol = max(nmax, min_n_for_L[next_L])
-            _add(f"{n_pol}{next_L}")
+            _add(f'{n_pol}{next_L}')
 
     # (2) Radial doubling: (n+1)L for each nL in minimal.
     for sh in minimal_shells:
         n = int(sh[0])
         L = sh[1]
-        _add(f"{n + 1}{L}")
+        _add(f'{n + 1}{L}')
 
     return extra
 
@@ -349,7 +349,9 @@ def extended_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
       ``n = nmax, nmax+1, nmax+2`` (clamped to ``n ≥ 1`` for ``S`` and
       ``n ≥ 2`` for ``P``).
     * **D channel** — append ``nD`` for
-      ``n = max(3, nmax−1) … nmax+1`` (skips 1D/2D which do not exist).
+      ``n = max(3, nmax) … nmax+1`` (skips sub-valence D rows, which are
+      either genuine semicore shells already present in ``minimal_shells``
+      or frozen-core shells the pseudopotential cannot represent).
     * **F channel** — only for f-block elements; append ``nF`` for
       ``n = max(4, nmax−1) … nmax``.
 
@@ -371,20 +373,26 @@ def extended_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
     # Three rows of S and P starting at nmax.
     for n in (nmax, nmax + 1, nmax + 2):
         if n >= 1:
-            _add(f"{n}S")
+            _add(f'{n}S')
         if n >= 2:
-            _add(f"{n}P")
+            _add(f'{n}P')
 
-    # D shells: from max(3, nmax-1) up through nmax+1.
-    n_d_start = max(3, nmax - 1)
+    # D shells: from max(3, nmax) up through nmax+1.  We deliberately do
+    # *not* start at nmax-1: a D row below the valence nmax is only physical
+    # when it is a genuine semicore shell, in which case it already appears
+    # in ``minimal_shells`` (e.g. Ga 3D) and is kept by the baseline.  Adding
+    # a sub-valence D row that the pseudopotential froze into the core (e.g.
+    # As 3D, whose 3d electrons are not in the As pseudo valence) yields an
+    # unbound diffuse box mode from the radial solver and corrupts the basis.
+    n_d_start = max(3, nmax)
     for n in range(n_d_start, nmax + 2):
-        _add(f"{n}D")
+        _add(f'{n}D')
 
     # F shells: f-block only.
-    if block == "f":
+    if block == 'f':
         n_f_start = max(4, nmax - 1)
         for n in range(n_f_start, nmax + 1):
-            _add(f"{n}F")
+            _add(f'{n}F')
 
     return extra
 
@@ -398,8 +406,8 @@ def _unique_elements(data_controller) -> list[str]:
     """Distinct element symbols present in ``arry['atoms']`` (order-preserving)."""
     arry, _ = data_controller.data_dicts()
     elems: list[str] = []
-    for atom in arry["atoms"]:
-        elem = re.split(r"\d+", atom)[0]
+    for atom in arry['atoms']:
+        elem = re.split(r'\d+', atom)[0]
         if elem not in elems:
             elems.append(elem)
     return elems
@@ -462,23 +470,21 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
         requested without ``data_attributes['basispath']`` being set.
     """
     if not isinstance(preset, str):
-        raise TypeError(
-            "configuration preset must be a string; got %r" % type(preset).__name__
-        )
+        raise TypeError('configuration preset must be a string; got %r' % type(preset).__name__)
     key = preset.lower()
     if key not in SUPPORTED_PRESETS:
         raise ValueError(
             "Unknown configuration preset '%s'. Supported presets: %s "
-            "(or pass an explicit {element: [shells]} dict)."
-            % (preset, ", ".join(SUPPORTED_PRESETS))
+            '(or pass an explicit {element: [shells]} dict).'
+            % (preset, ', '.join(SUPPORTED_PRESETS))
         )
 
     _, attr = data_controller.data_dicts()
-    basispath = attr.get("basispath")
-    if key in ("standard", "extended") and not basispath:
+    basispath = attr.get('basispath')
+    if key in ('standard', 'extended') and not basispath:
         raise ValueError(
             "configuration='%s' requires 'basispath' to be set so that "
-            "augmenting AE wavefunctions can be located." % key
+            'augmenting AE wavefunctions can be located.' % key
         )
 
     config: dict[str, list[str]] = {}
@@ -488,9 +494,7 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
     return config
 
 
-def _resolve_element_shells(
-    data_controller, elem: str, key: str, basispath
-) -> list[str]:
+def _resolve_element_shells(data_controller, elem: str, key: str, basispath) -> list[str]:
     """Resolve a single element's shell list for a string ``key`` preset.
 
     Shared by :func:`resolve_configuration` (whole-system string preset)
@@ -498,7 +502,7 @@ def _resolve_element_shells(
     that mixes preset names with explicit shell lists.
     """
     minimal = minimal_shells_from_upf(data_controller, elem)
-    if key == "minimal":
+    if key == 'minimal':
         return list(minimal)
 
     # 'standard' / 'extended': start from the all-electron
@@ -507,8 +511,7 @@ def _resolve_element_shells(
     if not available:
         warnings.warn(
             "No AE basis files found in '%s' for element '%s'; "
-            "falling back to the minimal valence set."
-            % (os.path.join(basispath, elem), elem),
+            'falling back to the minimal valence set.' % (os.path.join(basispath, elem), elem),
             RuntimeWarning,
             stacklevel=2,
         )
@@ -522,14 +525,13 @@ def _resolve_element_shells(
         if sh not in available:
             warnings.warn(
                 "Minimal shell '%s' for element '%s' is absent from "
-                "'%s'; build_aewfc_basis will fail."
-                % (sh, elem, os.path.join(basispath, elem)),
+                "'%s'; build_aewfc_basis will fail." % (sh, elem, os.path.join(basispath, elem)),
                 RuntimeWarning,
                 stacklevel=2,
             )
     augment = (
         standard_augmentation(elem, minimal)
-        if key == "standard"
+        if key == 'standard'
         else extended_augmentation(elem, minimal)
     )
     for extra in augment:
@@ -565,10 +567,10 @@ def _select_shells(data_controller, elem: str, spec, basispath) -> list[str]:
         if key not in SUPPORTED_PRESETS:
             raise ValueError(
                 "Unknown configuration preset '%s' for element '%s'. "
-                "Supported presets: %s (or pass an explicit list of shells)."
-                % (spec, elem, ", ".join(SUPPORTED_PRESETS))
+                'Supported presets: %s (or pass an explicit list of shells).'
+                % (spec, elem, ', '.join(SUPPORTED_PRESETS))
             )
-        if key in ("standard", "extended") and not basispath:
+        if key in ('standard', 'extended') and not basispath:
             raise ValueError(
                 "configuration preset '%s' for element '%s' requires "
                 "'basispath' to be set." % (key, elem)
@@ -593,7 +595,7 @@ def _select_shells(data_controller, elem: str, spec, basispath) -> list[str]:
 
     raise TypeError(
         "configuration value for element '%s' must be a list of shell "
-        "labels or a preset name string; got %r" % (elem, type(spec).__name__)
+        'labels or a preset name string; got %r' % (elem, type(spec).__name__)
     )
 
 
@@ -625,7 +627,7 @@ def resolve_configuration_dict(data_controller, spec: dict) -> dict[str, list[st
         Mapping ``{element: [shells]}``.
     """
     _, attr = data_controller.data_dicts()
-    basispath = attr.get("basispath")
+    basispath = attr.get('basispath')
     config: dict[str, list[str]] = {}
     for elem, value in spec.items():
         config[elem] = _select_shells(data_controller, elem, value, basispath)

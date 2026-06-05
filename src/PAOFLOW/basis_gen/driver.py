@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from glob import glob
 
 from ..inputs.basis_presets import (
@@ -10,7 +11,7 @@ from ..inputs.basis_presets import (
     standard_augmentation,
 )
 from ..inputs.read_upf import UPF
-from .radial import pseudize_shell
+from .radial import is_frozen_core_shell, pseudize_shell
 
 _L_INDEX = {'S': 0, 'P': 1, 'D': 2, 'F': 3}
 
@@ -28,12 +29,15 @@ def _minimal_shells_from_upf(upf):
 def _default_shells(upf, preset='extended'):
     """Resolve the full shell list (minimal + augmentation) for the preset."""
     minimal = _minimal_shells_from_upf(upf)
+    # UPF pads single-letter symbols (e.g. ' O'); the augmentation rules key
+    # the periodic-table block on the bare symbol, so strip before lookup.
+    elem = upf.element.strip()
     if preset == 'minimal':
         return list(minimal)
     if preset == 'standard':
-        return list(minimal) + standard_augmentation(upf.element, minimal)
+        return list(minimal) + standard_augmentation(elem, minimal)
     if preset == 'extended':
-        return list(minimal) + extended_augmentation(upf.element, minimal)
+        return list(minimal) + extended_augmentation(elem, minimal)
     raise ValueError(f"unknown preset '{preset}'")
 
 
@@ -121,13 +125,30 @@ def generate_basis_for_pseudo(
             )
             _, u_plus, e_plus = pseudize_shell(upf, n, l, j=l + 0.5, r_box=r_box, n_points=n_points)
             files = [
-                (f'{label}_j{int(2*(l - 0.5))}.dat', u_minus, e_minus),
-                (f'{label}_j{int(2*(l + 0.5))}.dat', u_plus, e_plus),
+                (f'{label}_j{int(2 * (l - 0.5))}.dat', u_minus, e_minus),
+                (f'{label}_j{int(2 * (l + 0.5))}.dat', u_plus, e_plus),
                 (f'{label}.dat', _j_average(u_minus, u_plus, l), 0.5 * (e_minus + e_plus)),
             ]
         else:
             r, u_, e_ = pseudize_shell(upf, n, l, r_box=r_box, n_points=n_points)
             files = [(f'{label}.dat', u_, e_)]
+
+        # Skip shells the pseudopotential froze into the core: an explicit
+        # shell list may request a sub-valence shell (e.g. As 3D) that has no
+        # PSWFC counterpart and cannot be bound, in which case the solver
+        # returns a spurious diffuse box mode that corrupts the basis.
+        rep_eps = files[0][2]
+        if is_frozen_core_shell(upf, n, l, rep_eps):
+            warnings.warn(
+                f'Skipping shell {label!r} for element {elem!r}: it has no '
+                f'matching pseudo-atomic wavefunction and the radial solver '
+                f'returns an unbound state (eps = {rep_eps:+.4f} Ha), which '
+                f'indicates a frozen-core shell the pseudopotential cannot '
+                f'represent.',
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
 
         for fname, wfc, eps in files:
             path = os.path.join(elem_dir, fname)
