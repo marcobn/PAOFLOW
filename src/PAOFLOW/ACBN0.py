@@ -199,7 +199,7 @@ class _HartreeKernel:
         self.size = self.comm.Get_size()
 
         if self.rank == 0:
-            with open(datafile, "rb") as f:
+            with open(datafile, 'rb') as f:
                 data = pickle.load(f)
         else:
             data = None
@@ -253,11 +253,9 @@ class _HartreeKernel:
         and pickle the reduced dict to ``<outputdir>/<filename>`` on
         rank 0 only.
         """
-        reduced = {
-            k: self.comm.reduce(v, op=MPI.SUM, root=0) for k, v in payload.items()
-        }
+        reduced = {k: self.comm.reduce(v, op=MPI.SUM, root=0) for k, v in payload.items()}
         if self.rank == 0:
-            with open(join(outputdir, filename), "wb") as f:
+            with open(join(outputdir, filename), 'wb') as f:
                 pickle.dump(reduced, f)
 
 
@@ -360,10 +358,10 @@ class ACBN0_Hartree(_HartreeKernel):
     """
 
     def hartree_energy(self, outputdir):
-        DR_up = self.data["DR_up"]
-        DR_dn = self.data["DR_dn"]
-        basis = self.data["basis"]
-        basis_2e = self.data["basis_2e"]
+        DR_up = self.data['DR_up']
+        DR_dn = self.data['DR_dn']
+        basis = self.data['basis']
+        basis_2e = self.data['basis_2e']
 
         # ------------------------------------------------------------------
         # P6: exploit 8-fold permutation symmetry of (ab|cd) for real
@@ -447,10 +445,10 @@ class ACBN0_Hartree(_HartreeKernel):
         D_tot = D_up + D_dn
 
         ERI_J = ERI.transpose(0, 2, 1, 3)  # (ac|bd) layout
-        tmp_U = float(np.einsum("abcd,ab,cd->", ERI, D_tot, D_tot, optimize=True))
+        tmp_U = float(np.einsum('abcd,ab,cd->', ERI, D_tot, D_tot, optimize=True))
         tmp_J = float(
-            np.einsum("abcd,ab,cd->", ERI_J, D_up, D_up, optimize=True)
-            + np.einsum("abcd,ab,cd->", ERI_J, D_dn, D_dn, optimize=True)
+            np.einsum('abcd,ab,cd->', ERI_J, D_up, D_up, optimize=True)
+            + np.einsum('abcd,ab,cd->', ERI_J, D_dn, D_dn, optimize=True)
         )
 
         # Contraction already replicated on every rank — write from rank 0
@@ -460,8 +458,8 @@ class ACBN0_Hartree(_HartreeKernel):
         # complex value of the form ``(10.55+0j)`` makes QE's
         # ``card_hubbard`` parser bail out.
         if self.rank == 0:
-            with open(join(outputdir, "tmp_uj.pkl"), "wb") as f:
-                pickle.dump({"U": tmp_U, "J": tmp_J}, f)
+            with open(join(outputdir, 'tmp_uj.pkl'), 'wb') as f:
+                pickle.dump({'U': tmp_U, 'J': tmp_J}, f)
 
 
 class eACBN0_Hartree(_HartreeKernel):
@@ -591,17 +589,17 @@ class eACBN0_Hartree(_HartreeKernel):
     def intersite_energy(self, outputdir):
         """Evaluate the numerator of Eq. (8) and pickle the result to
         ``<outputdir>/tmp_v.pkl``."""
-        gauss_I = self.data["gauss_I"]
-        gauss_J = self.data["gauss_J"]
+        gauss_I = self.data['gauss_I']
+        gauss_J = self.data['gauss_J']
 
-        P_II_up = self.data["P_II_up"]
-        P_II_dn = self.data["P_II_dn"]
-        P_JJ_up = self.data["P_JJ_up"]
-        P_JJ_dn = self.data["P_JJ_dn"]
-        P_IJ_up = self.data["P_IJ_up"]
-        P_IJ_dn = self.data["P_IJ_dn"]
-        P_JI_up = self.data["P_JI_up"]
-        P_JI_dn = self.data["P_JI_dn"]
+        P_II_up = self.data['P_II_up']
+        P_II_dn = self.data['P_II_dn']
+        P_JJ_up = self.data['P_JJ_up']
+        P_JJ_dn = self.data['P_JJ_dn']
+        P_IJ_up = self.data['P_IJ_up']
+        P_IJ_dn = self.data['P_IJ_dn']
+        P_JI_up = self.data['P_JI_up']
+        P_JI_dn = self.data['P_JI_dn']
 
         # Spin-summed prefactors.
         PII_sum = P_II_up + P_II_dn  # (n_I, n_I)
@@ -662,20 +660,20 @@ class eACBN0_Hartree(_HartreeKernel):
 
         # Direct (Hartree) term: full σ,σ' double sum.
         #   Σ (ik|jl) PII_sum[i,k] PJJ_sum[j,l]
-        direct = np.einsum("ikjl,ik,jl->", ERI, PII_sum, PJJ_sum, optimize=True)
+        direct = np.einsum('ikjl,ik,jl->', ERI, PII_sum, PJJ_sum, optimize=True)
         # Exchange term: same-spin only (δ_{σσ'}).
         #   Σ (ik|jl) [P_IJ_up[i,l] P_JI_up[j,k] + (down term)]
-        exchange = np.einsum(
-            "ikjl,il,jk->", ERI, P_IJ_up, P_JI_up, optimize=True
-        ) + np.einsum("ikjl,il,jk->", ERI, P_IJ_dn, P_JI_dn, optimize=True)
+        exchange = np.einsum('ikjl,il,jk->', ERI, P_IJ_up, P_JI_up, optimize=True) + np.einsum(
+            'ikjl,il,jk->', ERI, P_IJ_dn, P_JI_dn, optimize=True
+        )
 
         tmp = complex(direct - exchange)
 
         # Contraction already replicated on every rank — write from rank 0
         # without an MPI.SUM reduce (which would over-count by ``self.size``).
         if self.rank == 0:
-            with open(join(outputdir, "tmp_v.pkl"), "wb") as f:
-                pickle.dump({"num": tmp}, f)
+            with open(join(outputdir, 'tmp_v.pkl'), 'wb') as f:
+                pickle.dump({'num': tmp}, f)
 
 
 class ACBN0:
@@ -683,19 +681,19 @@ class ACBN0:
         self,
         prefix,
         pthr=0.95,
-        workdir="./",
-        mpi_qe="",
+        workdir='./',
+        mpi_qe='',
         nproc=1,
-        qe_path="",
-        qe_options="",
-        mpi_python="",
-        python_path="",
-        outputdir="./output/",
-        projection="ortho-atomic",
+        qe_path='',
+        qe_options='',
+        mpi_python='',
+        python_path='',
+        outputdir='./output/',
+        projection='ortho-atomic',
         mpi_hartree=None,
         use_local_basis=False,
         basispath=None,
-        configuration="standard",
+        configuration='standard',
         gaussian_threshold=0.01,
     ):
         """Initialize the ACBN0 self-consistent U driver.
@@ -761,13 +759,11 @@ class ACBN0:
         from .utils.header import header
 
         header()
-        print(
-            "\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n"
-        )
+        print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
 
-        datafilepath = join(outputdir, "data.pkl")
-        with open("compute_hartree.py", "w") as f:
-            f.write("from PAOFLOW.ACBN0 import ACBN0_Hartree\n")
+        datafilepath = join(outputdir, 'data.pkl')
+        with open('compute_hartree.py', 'w') as f:
+            f.write('from PAOFLOW.ACBN0 import ACBN0_Hartree\n')
             f.write(f"H = ACBN0_Hartree('{datafilepath}')\n")
             f.write(f"H.hartree_energy('{outputdir}')")
 
@@ -804,16 +800,16 @@ class ACBN0:
                 # An explicit {element: [shells]} mapping builds the AE
                 # basis and therefore always needs the radial basis files.
                 needs_basis = True
-                cfg_name = "custom dict"
+                cfg_name = 'custom dict'
             else:
-                cfg = (cfg or "standard").lower()
-                needs_basis = cfg in ("standard", "extended")
+                cfg = (cfg or 'standard').lower()
+                needs_basis = cfg in ('standard', 'extended')
                 cfg_name = cfg
             if needs_basis and not self.basispath:
                 msg = (
-                    "use_local_basis with configuration=%r requires "
+                    'use_local_basis with configuration=%r requires '
                     "'basispath' pointing to the per-element radial basis "
-                    "files." % cfg_name
+                    'files.' % cfg_name
                 )
                 raise ValueError(msg)
 
@@ -822,14 +818,14 @@ class ACBN0:
         self.occ_states = {}
         self.occ_values = {}
         self.hubbard_occ = {}
-        self.hubbard_tag = "HUBBARD (" + self.projection + ")"
+        self.hubbard_tag = 'HUBBARD (' + self.projection + ')'
 
         chdir(self.workdir)
 
         # Get structure information
-        self.blocks, self.cards = struct_from_inputfile_QE(f"{self.prefix}.scf.in")
-        if "nspin" in self.blocks["system"]:
-            self.nspin = int(self.blocks["system"]["nspin"])
+        self.blocks, self.cards = struct_from_inputfile_QE(f'{self.prefix}.scf.in')
+        if 'nspin' in self.blocks['system']:
+            self.nspin = int(self.blocks['system']['nspin'])
         else:
             self.nspin = 1
 
@@ -838,50 +834,48 @@ class ACBN0:
         # wrote the full BZ and no expansion is needed.  Otherwise, ask the
         # symmetry expander to fill the full BZ from the wedge; both Hks
         # and Sks are expanded (see open_grid_wrapper).
-        nscf_blocks, _ = struct_from_inputfile_QE(f"{self.prefix}.nscf.in")
-        nscf_sys = nscf_blocks.get("system", {})
+        nscf_blocks, _ = struct_from_inputfile_QE(f'{self.prefix}.nscf.in')
+        nscf_sys = nscf_blocks.get('system', {})
 
         def _qe_true(v):
             # Accept any QE logical-true shorthand: .true., .t., true, t
             # (with arbitrary case and trailing commas/whitespace).
-            return str(v).strip().rstrip(",").strip().lower().strip(".") in (
-                "t",
-                "true",
+            return str(v).strip().rstrip(',').strip().lower().strip('.') in (
+                't',
+                'true',
             )
 
-        nosym = _qe_true(nscf_sys.get("nosym", ".false."))
-        noinv = _qe_true(nscf_sys.get("noinv", ".false."))
+        nosym = _qe_true(nscf_sys.get('nosym', '.false.'))
+        noinv = _qe_true(nscf_sys.get('noinv', '.false.'))
         self.expand_wedge = not (nosym and noinv)
-        print(
-            f"ACBN0: nscf nosym={nosym}, noinv={noinv} -> expand_wedge={self.expand_wedge}\n"
-        )
+        print(f'ACBN0: nscf nosym={nosym}, noinv={noinv} -> expand_wedge={self.expand_wedge}\n')
 
         # Generate gaussian fits
-        print("Generating gaussian fits for pseudopotential basis states.\n")
+        print('Generating gaussian fits for pseudopotential basis states.\n')
         self.basis = {}
         self.uspecies = []
-        for s in self.cards["ATOMIC_SPECIES"][1:]:
+        for s in self.cards['ATOMIC_SPECIES'][1:]:
             ele, _, pp = s.split()
             self.uspecies.append(ele)
             atno, basis = gaussian_fit(pp, threshold=self.gaussian_threshold)
             self.basis[ele] = basis
 
         # Store U values from input template
-        if "HUBBARD" in self.cards:
-            self.hubbard_tag = self.cards["HUBBARD"][0]
-            for h in self.cards["HUBBARD"][1:]:
+        if 'HUBBARD' in self.cards:
+            self.hubbard_tag = self.cards['HUBBARD'][0]
+            for h in self.cards['HUBBARD'][1:]:
                 tokens = h.split()
                 kind = tokens[0]
-                if kind == "U":
+                if kind == 'U':
                     _, sym, uval = tokens
                     self.uVals[sym] = float(uval)
 
-                    ele, occ = sym.split("-")
+                    ele, occ = sym.split('-')
                     if ele not in self.occ_states:
                         self.occ_states[ele] = []
                     self.occ_states[ele].append(occ)
 
-                elif kind == "V":
+                elif kind == 'V':
                     # V <label1> <label2> <atom_idx1> <atom_idx2> <value>
                     _, sym1, sym2, idx1, idx2, vval = tokens
                     self.vVals[(sym1, sym2, int(idx1), int(idx2))] = float(vval)
@@ -894,28 +888,28 @@ class ACBN0:
 
             # Store occupations from input template
             nat = len(self.uspecies)
-            for s in self.blocks["system"]:
-                if "hubbard_occ" in s:
-                    i, j = map(int, re.findall(r"\(([^\)]+),([^\)]+)\)", s)[0])
+            for s in self.blocks['system']:
+                if 'hubbard_occ' in s:
+                    i, j = map(int, re.findall(r'\(([^\)]+),([^\)]+)\)', s)[0])
                     if i > nat:
-                        msg = f"hubbard_occ index 1 (value:{i}) out of range for {nat} species."
+                        msg = f'hubbard_occ index 1 (value:{i}) out of range for {nat} species.'
                         raise ValueError(msg)
 
                     spec = self.uspecies[i - 1]
                     nstates = len(self.occ_states[spec])
                     if j > nstates:
-                        msg = f"hubbard_occ index 2 (value:{j}) out of range, {nstates} states listed for {spec}."
+                        msg = f'hubbard_occ index 2 (value:{j}) out of range, {nstates} states listed for {spec}.'
                         raise ValueError(msg)
 
                     state = self.occ_states[spec][j - 1]
-                    self.occ_values[f"{spec}-{state}"] = float(self.blocks["system"][s])
-                    self.hubbard_occ[s] = self.blocks["system"][s]
+                    self.occ_values[f'{spec}-{state}'] = float(self.blocks['system'][s])
+                    self.hubbard_occ[s] = self.blocks['system'][s]
 
     def set_hubbard_parameters(self, hubbard):
         htype = type(hubbard)
         if htype in [list, tuple]:
             for h in hubbard:
-                ele, occ = h.split("-")
+                ele, occ = h.split('-')
                 self.uVals[h] = 0.01
                 if ele not in self.occ_states:
                     self.occ_states[ele] = []
@@ -937,7 +931,7 @@ class ACBN0:
                             self.uVals[k] = v[0]
 
                         if len(v) >= 2 and v[1] is not None:
-                            ele, occ = k.split("-")
+                            ele, occ = k.split('-')
                             if ele not in self.occ_states:
                                 self.occ_states[ele] = [occ]
 
@@ -947,17 +941,17 @@ class ACBN0:
                             i = 1 + self.uspecies.index(ele)
                             j = 1 + self.occ_states[ele].index(occ)
 
-                            key = f"hubbard_occ({i},{j})"
+                            key = f'hubbard_occ({i},{j})'
                             self.hubbard_occ[key] = float(v[1])
 
                 except Exception as e:
                     print(
-                        "Dictionary values should either be the initial U value, or a list/tuple containing (initial U, hubbard occupation)."
+                        'Dictionary values should either be the initial U value, or a list/tuple containing (initial U, hubbard occupation).'
                     )
                     raise e
 
         else:
-            msg = "Input type should be either list or dict."
+            msg = 'Input type should be either list or dict.'
             raise TypeError(msg)
 
     def set_intersite_V_parameters(self, vpairs):
@@ -980,54 +974,54 @@ class ACBN0:
             items = []
             for entry in vpairs:
                 if len(entry) != 5:
-                    msg = "Each V entry must be (label1, label2, atom_idx1, atom_idx2, V_init)."
+                    msg = 'Each V entry must be (label1, label2, atom_idx1, atom_idx2, V_init).'
                     raise ValueError(msg)
                 key = (entry[0], entry[1], int(entry[2]), int(entry[3]))
                 items.append((key, entry[4]))
         else:
-            msg = "Input type should be either list/tuple of tuples or dict."
+            msg = 'Input type should be either list/tuple of tuples or dict.'
             raise TypeError(msg)
 
         for key, v_init in items:
             self.vVals[key] = 0.01 if v_init is None else float(v_init)
 
     def optimize_hubbard_U(self, convergence_threshold=0.01):
-        print("\nBeginning self-consistent loop.\n")
+        print('\nBeginning self-consistent loop.\n')
         itr = 0
         converged = False
         while not converged:
             itr += 1
-            print(f"Iteration #{itr}\n")
+            print(f'Iteration #{itr}\n')
 
             self.run_dft(self.prefix, self.uspecies, self.uVals)
 
-            save_prefix = self.blocks["control"]["prefix"].strip('"').strip("'")
+            save_prefix = self.blocks['control']['prefix'].strip('"').strip("'")
             self.run_paoflow(self.prefix, save_prefix)
 
             new_U = self.run_acbn0(self.prefix)
 
             converged = True
-            print("\nNew U values:")
+            print('\nNew U values:')
             for k, v in new_U.items():
-                print(f"  {k} : {v}")
+                print(f'  {k} : {v}')
                 if converged and np.abs(self.uVals[k] - v) > convergence_threshold:
                     converged = False
-            print("", flush=True)
+            print('', flush=True)
 
             self.uVals = new_U
 
     def exec_QE(self, executable, fname):
         exe = join(self.qpath, executable)
-        fout = fname.replace("in", "out")
+        fout = fname.replace('in', 'out')
 
-        command = f"{self.mpi_qe} {exe} {self.qoption}"
+        command = f'{self.mpi_qe} {exe} {self.qoption}'
         print(
-            f"Starting Process: {self.mpi_qe} {exe} {self.qoption} < {fname} > {fout}",
+            f'Starting Process: {self.mpi_qe} {exe} {self.qoption} < {fname} > {fout}',
             flush=True,
         )
-        with open(fname, "r") as qe_in, open(fout, "w") as qe_out:
+        with open(fname, 'r') as qe_in, open(fout, 'w') as qe_out:
             subprocess.run(
-                command.split(" "),
+                command.split(' '),
                 stdin=qe_in,
                 stdout=qe_out,
                 stderr=subprocess.STDOUT,
@@ -1035,12 +1029,12 @@ class ACBN0:
             )
 
     def exec_PAOFLOW(self):
-        python_exec = join(self.ppath, "python")
-        command = f"{self.mpi_python} {python_exec} acbn0.py"
-        print(f"Starting Process: {command} > paoflow.out", flush=True)
-        with open("paoflow.out", "w") as paoflow_out:
+        python_exec = join(self.ppath, 'python')
+        command = f'{self.mpi_python} {python_exec} acbn0.py'
+        print(f'Starting Process: {command} > paoflow.out', flush=True)
+        with open('paoflow.out', 'w') as paoflow_out:
             subprocess.run(
-                command.split(" "),
+                command.split(' '),
                 stdout=paoflow_out,
                 stderr=subprocess.STDOUT,
                 check=True,
@@ -1049,14 +1043,14 @@ class ACBN0:
     def hubbard_card(self):
         if len(self.uVals) == 0 and len(self.vVals) == 0:
             msg = (
-                "No U or V found. Add them to the template inputfiles or "
-                "with set_hubbard_parameters / set_intersite_V_parameters."
+                'No U or V found. Add them to the template inputfiles or '
+                'with set_hubbard_parameters / set_intersite_V_parameters.'
             )
             raise ValueError(msg)
 
         card = [self.hubbard_tag]
         for k, v in self.uVals.items():
-            card.append(" U {} {}".format(k, v))
+            card.append(' U {} {}'.format(k, v))
 
         # Emit each undirected V channel only once.  QE's HUBBARD card
         # check (PW/src/read_cards.f90, card_hubbard) considers two V
@@ -1074,7 +1068,7 @@ class ACBN0:
         # to the same canonical channel we emit their *average* (this
         # is a QE limitation, not an ACBN0 one).
         def _orb(sym):
-            return sym.split("-", 1)[1] if "-" in sym else sym
+            return sym.split('-', 1)[1] if '-' in sym else sym
 
         grouped = {}  # canonical -> (representative entry, [values])
         for (sym1, sym2, idx1, idx2), v in self.vVals.items():
@@ -1089,7 +1083,7 @@ class ACBN0:
         for (sym1, sym2, idx1, idx2), vals in grouped.values():
             v_emit = sum(vals) / len(vals)
             card.append(
-                " V {} {} {} {} {}".format(
+                ' V {} {} {} {} {}'.format(
                     sym1,
                     sym2,
                     idx1,
@@ -1103,10 +1097,10 @@ class ACBN0:
     def run_dft(self, prefix, species, uVals):
         from .inputs.file_io import create_atomic_inputfile, struct_from_inputfile_QE
 
-        blocks, cards = struct_from_inputfile_QE(f"{prefix}.scf.in")
-        cards["HUBBARD"] = self.hubbard_card()
+        blocks, cards = struct_from_inputfile_QE(f'{prefix}.scf.in')
+        cards['HUBBARD'] = self.hubbard_card()
         for k, v in self.hubbard_occ.items():
-            blocks["system"][k] = v
+            blocks['system'][k] = v
         # Restart the scf from the charge density converged in the
         # previous iteration.  Across the self-consistent U/U+V loop the
         # only thing that changes between successive scf runs is the
@@ -1115,30 +1109,30 @@ class ACBN0:
         # the number of scf steps.  The first run has no density on disk
         # and therefore starts from the atomic superposition.
         if self._scf_density_available:
-            blocks.setdefault("electrons", {})
-            blocks["electrons"]["startingpot"] = "'file'"
-        create_atomic_inputfile("scf", blocks, cards)
+            blocks.setdefault('electrons', {})
+            blocks['electrons']['startingpot'] = "'file'"
+        create_atomic_inputfile('scf', blocks, cards)
 
-        blocks, cards = struct_from_inputfile_QE(f"{prefix}.nscf.in")
-        cards["HUBBARD"] = self.hubbard_card()
+        blocks, cards = struct_from_inputfile_QE(f'{prefix}.nscf.in')
+        cards['HUBBARD'] = self.hubbard_card()
         for k, v in self.hubbard_occ.items():
-            blocks["system"][k] = v
-        create_atomic_inputfile("nscf", blocks, cards)
+            blocks['system'][k] = v
+        create_atomic_inputfile('nscf', blocks, cards)
 
         if self.use_local_basis:
             # The local-basis projection (PAOFLOW.projections) replaces
             # projwfc.x entirely, so no <prefix>.projwfc.in is read and
             # projwfc.x is never launched.
-            executables = {"scf": "pw.x", "nscf": "pw.x"}
-            calcs = ["scf", "nscf"]
+            executables = {'scf': 'pw.x', 'nscf': 'pw.x'}
+            calcs = ['scf', 'nscf']
         else:
-            blocks, cards = struct_from_inputfile_QE(f"{prefix}.projwfc.in")
-            create_atomic_inputfile("projwfc", blocks, cards)
+            blocks, cards = struct_from_inputfile_QE(f'{prefix}.projwfc.in')
+            create_atomic_inputfile('projwfc', blocks, cards)
 
-            executables = {"scf": "pw.x", "nscf": "pw.x", "projwfc": "projwfc.x -nd 1"}
-            calcs = ["scf", "nscf", "projwfc"]
+            executables = {'scf': 'pw.x', 'nscf': 'pw.x', 'projwfc': 'projwfc.x -nd 1'}
+            calcs = ['scf', 'nscf', 'projwfc']
         for c in calcs:
-            self.exec_QE(executables[c], f"{c}.in")
+            self.exec_QE(executables[c], f'{c}.in')
 
         # The scf has now written a converged charge density to
         # ``outdir/<prefix>.save``; subsequent iterations can reuse it.
@@ -1147,13 +1141,13 @@ class ACBN0:
     def run_paoflow(self, prefix, save_prefix):
         from .inputs.file_io import create_acbn0_inputfile
 
-        fstr = f"{prefix}_PAO_bands" + "{}.in"
+        fstr = f'{prefix}_PAO_bands' + '{}.in'
         calcs = []
         if self.nspin == 1:
-            calcs.append(fstr.format(""))
+            calcs.append(fstr.format(''))
         else:
-            calcs.append(fstr.format("_up"))
-            calcs.append(fstr.format("_down"))
+            calcs.append(fstr.format('_up'))
+            calcs.append(fstr.format('_down'))
 
         create_acbn0_inputfile(
             save_prefix,
@@ -1168,26 +1162,24 @@ class ACBN0:
 
     def read_cell_atoms(self, fname):
         lines = None
-        with open(fname, "r") as f:
+        with open(fname, 'r') as f:
             lines = f.readlines()
 
         il = 0
-        while "lattice parameter" not in lines[il]:
+        while 'lattice parameter' not in lines[il]:
             il += 1
         alat = float(lines[il].split()[4])
 
-        while "number of atoms/cell" not in lines[il]:
+        while 'number of atoms/cell' not in lines[il]:
             il += 1
         nat = int(lines[il].split()[4])
 
-        while "crystal axes:" not in lines[il]:
+        while 'crystal axes:' not in lines[il]:
             il += 1
         il += 1
-        lattice = np.array(
-            [[float(v) for v in lines[il + i].split()[3:6]] for i in range(3)]
-        )
+        lattice = np.array([[float(v) for v in lines[il + i].split()[3:6]] for i in range(3)])
 
-        while "site n." not in lines[il]:
+        while 'site n.' not in lines[il]:
             il += 1
         il += 1
         # species = []
@@ -1203,13 +1195,13 @@ class ACBN0:
 
     def hubbard_orbital(self, ele):
         orb = ele[-1]
-        orbitals = {"s": 0, "p": 1, "d": 2}
+        orbitals = {'s': 0, 'p': 1, 'd': 2}
 
         if orb in orbitals:
             return orbitals[orb]
 
         else:
-            raise Exception(f"Element {ele} has no defined Hubbard orbital")
+            raise Exception(f'Element {ele} has no defined Hubbard orbital')
 
     @staticmethod
     def _acbn0_denominator(nlm_up, nlm_dn):
@@ -1245,12 +1237,12 @@ class ACBN0:
         for orb in self.uVals:
             ostates = []
             ustates = []
-            species_label = orb.split("-")[0]
+            species_label = orb.split('-')[0]
             horb = self.hubbard_orbital(orb)
             for n, sl in enumerate(state_lines):
-                stateN = re.findall(r"\(([^\)]+)\)", sl)
+                stateN = re.findall(r'\(([^\)]+)\)', sl)
                 oele = stateN[0].strip()
-                oL = int(re.split("=| ", stateN[1])[1])
+                oL = int(re.split('=| ', stateN[1])[1])
                 if species_label in oele and oL == horb:
                     ostates.append(n)
                     if species_label == oele:
@@ -1275,24 +1267,24 @@ class ACBN0:
         """
         if self._pao_meta is not None:
             return self._pao_meta
-        path = join(self.outputdir, "pao_basis.dat")
+        path = join(self.outputdir, 'pao_basis.dat')
         meta = []
-        with open(path, "r") as f:
+        with open(path, 'r') as f:
             for line in f:
                 parts = line.split()
                 if len(parts) < 6:
                     continue
                 meta.append(
                     {
-                        "index": int(parts[0]),
-                        "atom": int(parts[1]),
-                        "elem": parts[2],
-                        "l": int(parts[3]),
-                        "m": int(parts[4]),
-                        "label": parts[5],
+                        'index': int(parts[0]),
+                        'atom': int(parts[1]),
+                        'elem': parts[2],
+                        'l': int(parts[3]),
+                        'm': int(parts[4]),
+                        'label': parts[5],
                     }
                 )
-        meta.sort(key=lambda d: d["index"])
+        meta.sort(key=lambda d: d['index'])
         self._pao_meta = meta
         return meta
 
@@ -1302,7 +1294,7 @@ class ACBN0:
 
         ``'Si-3p' -> '3P'``, ``'Fe-3d' -> '3D'``.
         """
-        return orb.split("-")[1].upper()
+        return orb.split('-')[1].upper()
 
     def _local_hubbard_manifolds(self):
         """Build the Hubbard manifolds from the local-basis PAO metadata.
@@ -1317,19 +1309,19 @@ class ACBN0:
         meta = self._load_pao_basis_meta()
         manifolds = {}
         for orb in self.uVals:
-            species_label = orb.split("-")[0]
+            species_label = orb.split('-')[0]
             horb = self.hubbard_orbital(orb)
             shell_label = self._shell_label(orb)
 
             ostates = []
             ustates = []
             for e in meta:
-                if e["l"] != horb or e["label"].upper() != shell_label:
+                if e['l'] != horb or e['label'].upper() != shell_label:
                     continue
-                if species_label in e["elem"]:
-                    ostates.append(e["index"])
-                    if species_label == e["elem"]:
-                        ustates.append(e["index"])
+                if species_label in e['elem']:
+                    ostates.append(e['index'])
+                    if species_label == e['elem']:
+                        ustates.append(e['index'])
             if not ustates:
                 raise RuntimeError(
                     f"No PAO orbitals matched Hubbard manifold {orb!r} "
@@ -1361,7 +1353,7 @@ class ACBN0:
         from .utils.pyints import CGBF
 
         meta = self._load_pao_basis_meta()
-        placeholder = CGBF(np.zeros(3), "X")
+        placeholder = CGBF(np.zeros(3), 'X')
         placeholder.pnorms.append(1.0)
         placeholder.pexps.append(1.0)
         placeholder.pcoefs.append(1.0)
@@ -1369,30 +1361,30 @@ class ACBN0:
 
         gauss_basis = [placeholder] * nawf
         for orb in self.uVals:
-            species_label = orb.split("-")[0]
+            species_label = orb.split('-')[0]
             horb = self.hubbard_orbital(orb)
             shell_label = self._shell_label(orb)
 
             by_atom = defaultdict(list)
             for e in meta:
-                if e["l"] != horb or e["label"].upper() != shell_label:
+                if e['l'] != horb or e['label'].upper() != shell_label:
                     continue
-                if species_label == e["elem"]:
-                    by_atom[e["atom"]].append(e)
+                if species_label == e['elem']:
+                    by_atom[e['atom']].append(e)
 
             for atom_idx, entries in by_atom.items():
-                entries.sort(key=lambda d: d["index"])
+                entries.sort(key=lambda d: d['index'])
                 pos = coords[atom_idx - 1]
                 gs = self._atom_shell_gaussians(species_label, pos, horb)
                 if len(gs) != len(entries):
                     raise RuntimeError(
-                        f"Gaussian shell mismatch for {orb!r} on atom "
-                        f"{atom_idx}: {len(gs)} Gaussians vs {len(entries)} "
-                        "PAO orbitals. The UPF must provide exactly one "
-                        f"l={horb} shell for species {species_label!r}."
+                        f'Gaussian shell mismatch for {orb!r} on atom '
+                        f'{atom_idx}: {len(gs)} Gaussians vs {len(entries)} '
+                        'PAO orbitals. The UPF must provide exactly one '
+                        f'l={horb} shell for species {species_label!r}.'
                     )
                 for e, bf in zip(entries, gs):
-                    gauss_basis[e["index"]] = bf
+                    gauss_basis[e['index']] = bf
         return gauss_basis
 
     def _atom_shell_gaussians(self, ele, pos_angstrom, L):
@@ -1420,7 +1412,7 @@ class ACBN0:
     def run_acbn0(self, prefix):
         BOHR_RADIUS_ANGS = 0.529177e0
 
-        lattice, coords = self.read_cell_atoms("scf.out")
+        lattice, coords = self.read_cell_atoms('scf.out')
         lattice *= BOHR_RADIUS_ANGS
         coords *= BOHR_RADIUS_ANGS
         nspin = self.nspin
@@ -1435,18 +1427,18 @@ class ACBN0:
             gauss_basis = self._local_gauss_basis(Hks_up.shape[0], coords)
         else:
             sind = 0
-            state_lines = open("projwfc.out", "r").readlines()
-            while "state #" not in state_lines[sind]:
+            state_lines = open('projwfc.out', 'r').readlines()
+            while 'state #' not in state_lines[sind]:
                 sind += 1
             send = sind
-            while "state #" in state_lines[send]:
+            while 'state #' in state_lines[send]:
                 send += 1
             state_lines = state_lines[sind:send]
 
             species = []
             # for s in list(set(species)):
             for k, v in self.uVals.items():
-                species_label = k.split("-")[0]
+                species_label = k.split('-')[0]
                 species.append(species_label)
 
             gauss_basis = self.getbasis(self.basis, species, lattice, coords)
@@ -1470,9 +1462,7 @@ class ACBN0:
                 dk_dn = None
                 nlmd = nlm
             else:
-                dk_dn, nlmd = self.Dk(
-                    basis_dm, basis_2e, Hks_dw, Sks, eigvec_cache=eigvec_dn
-                )
+                dk_dn, nlmd = self.Dk(basis_dm, basis_2e, Hks_dw, Sks, eigvec_cache=eigvec_dn)
                 nlmd = self.Nmm(nlmd, Hks_dw, kwght)
 
             den_U, den_J = self._acbn0_denominator(nlm, nlmd)
@@ -1484,34 +1474,34 @@ class ACBN0:
                 DR_dn = self.DR(dk_dn, kwght)
 
             data = {
-                "DR_up": DR_up,
-                "DR_dn": DR_dn,
-                "basis": gauss_basis,
-                "basis_2e": basis_2e,
+                'DR_up': DR_up,
+                'DR_dn': DR_dn,
+                'basis': gauss_basis,
+                'basis_2e': basis_2e,
             }
-            with open(join(self.outputdir, "data.pkl"), "wb") as f:
+            with open(join(self.outputdir, 'data.pkl'), 'wb') as f:
                 pickle.dump(data, f)
 
             # compute hartree energy in parallel
-            python_exec = join(self.ppath, "python")
-            command = f"{self.mpi_hartree} {python_exec} compute_hartree.py"
-            subprocess.run(command.split(" "), check=True)
+            python_exec = join(self.ppath, 'python')
+            command = f'{self.mpi_hartree} {python_exec} compute_hartree.py'
+            subprocess.run(command.split(' '), check=True)
 
-            with open(join(self.outputdir, "tmp_uj.pkl"), "rb") as f:
+            with open(join(self.outputdir, 'tmp_uj.pkl'), 'rb') as f:
                 uj = pickle.load(f)
-            num_U = uj["U"]
-            num_J = uj["J"]
+            num_U = uj['U']
+            num_J = uj['J']
 
             hartree_to_eV = 27.211396132
             U = U_eff = hartree_to_eV * num_U / den_U
             if den_J == 0:
-                J = "Inf"
+                J = 'Inf'
             else:
                 J = hartree_to_eV * num_J / den_J
                 U_eff -= J
 
-            with open(f"{orb}_UJ.txt", "w") as f:
-                f.write(f"U : {U}\nJ : {J}\nU_eff : {U_eff}\n")
+            with open(f'{orb}_UJ.txt', 'w') as f:
+                f.write(f'U : {U}\nJ : {J}\nU_eff : {U_eff}\n')
 
             uVals[orb] = U_eff
 
@@ -1625,24 +1615,24 @@ class ACBN0:
         return (D / total_w).real
 
     def read_ham_data(self, nspin):
-        kpnts = np.loadtxt(open(join(self.outputdir, "k.txt"), "r"))
-        kwght = np.loadtxt(open(join(self.outputdir, "wk.txt"), "r"))
+        kpnts = np.loadtxt(open(join(self.outputdir, 'k.txt'), 'r'))
+        kwght = np.loadtxt(open(join(self.outputdir, 'wk.txt'), 'r'))
 
         if len(kpnts.shape) == 1:
             kpnts = np.array([kpnts])
             kwght = np.array([kwght])
         nkpnts = kpnts.shape[0]
 
-        kovp = np.load(join(self.outputdir, "kovp.npy"))
+        kovp = np.load(join(self.outputdir, 'kovp.npy'))
         nbasis = int(np.sqrt(kovp.shape[0] / nkpnts))
         kovp = kovp.reshape((nbasis, nbasis, nkpnts))
 
         kham_up = kham_dn = None
         for ispin in range(nspin):
-            fname = "kham"
+            fname = 'kham'
             if nspin == 2:
-                fname += "_up" if ispin == 0 else "_dn"
-            fname += ".npy"
+                fname += '_up' if ispin == 0 else '_dn'
+            fname += '.npy'
 
             kham = np.load(join(self.outputdir, fname))
             kham = kham.reshape((nbasis, nbasis, nkpnts))
@@ -1824,13 +1814,13 @@ class eACBN0(ACBN0):
         ``None`` if neither is present (e.g. ``CELL_PARAMETERS`` is in
         explicit units).
         """
-        sys = self.blocks.get("system", {})
+        sys = self.blocks.get('system', {})
         for k, v in sys.items():
-            kl = k.lower().replace(" ", "")
-            if kl == "celldm(1)":
-                return float(v.replace("d", "e").replace("D", "e"))
-            if kl == "a":
-                return float(v.replace("d", "e").replace("D", "e")) / BOHR_RADIUS_ANGS
+            kl = k.lower().replace(' ', '')
+            if kl == 'celldm(1)':
+                return float(v.replace('d', 'e').replace('D', 'e'))
+            if kl == 'a':
+                return float(v.replace('d', 'e').replace('D', 'e')) / BOHR_RADIUS_ANGS
         return None
 
     def _geometry_from_cards(self):
@@ -1846,28 +1836,28 @@ class eACBN0(ACBN0):
         species : list[str]
             Per-atom species labels (length ``nat``).
         """
-        if "CELL_PARAMETERS" not in self.cards:
+        if 'CELL_PARAMETERS' not in self.cards:
             raise ValueError(
-                "CELL_PARAMETERS card not found in template; "
-                "ibrav-based geometries are not yet supported by eACBN0."
+                'CELL_PARAMETERS card not found in template; '
+                'ibrav-based geometries are not yet supported by eACBN0.'
             )
 
-        header = self.cards["CELL_PARAMETERS"][0].lower()
-        if "angstrom" in header:
-            cell_unit = "angstrom"
-        elif "bohr" in header:
-            cell_unit = "bohr"
+        header = self.cards['CELL_PARAMETERS'][0].lower()
+        if 'angstrom' in header:
+            cell_unit = 'angstrom'
+        elif 'bohr' in header:
+            cell_unit = 'bohr'
         else:
-            cell_unit = "alat"
+            cell_unit = 'alat'
 
         vecs = []
-        for ln in self.cards["CELL_PARAMETERS"][1:4]:
+        for ln in self.cards['CELL_PARAMETERS'][1:4]:
             vecs.append([float(x) for x in ln.split()[:3]])
         lattice = np.asarray(vecs, dtype=float)
 
-        if cell_unit == "bohr":
+        if cell_unit == 'bohr':
             lattice *= BOHR_RADIUS_ANGS
-        elif cell_unit == "alat":
+        elif cell_unit == 'alat':
             alat_bohr = self._alat_bohr()
             if alat_bohr is None:
                 raise ValueError(
@@ -1875,22 +1865,22 @@ class eACBN0(ACBN0):
                 )
             lattice *= alat_bohr * BOHR_RADIUS_ANGS
 
-        if "ATOMIC_POSITIONS" not in self.cards:
-            raise ValueError("ATOMIC_POSITIONS card not found in template.")
+        if 'ATOMIC_POSITIONS' not in self.cards:
+            raise ValueError('ATOMIC_POSITIONS card not found in template.')
 
-        pos_header = self.cards["ATOMIC_POSITIONS"][0].lower()
-        if "crystal" in pos_header:
-            pos_unit = "crystal"
-        elif "angstrom" in pos_header:
-            pos_unit = "angstrom"
-        elif "bohr" in pos_header:
-            pos_unit = "bohr"
+        pos_header = self.cards['ATOMIC_POSITIONS'][0].lower()
+        if 'crystal' in pos_header:
+            pos_unit = 'crystal'
+        elif 'angstrom' in pos_header:
+            pos_unit = 'angstrom'
+        elif 'bohr' in pos_header:
+            pos_unit = 'bohr'
         else:
-            pos_unit = "alat"
+            pos_unit = 'alat'
 
         species = []
         raw = []
-        for ln in self.cards["ATOMIC_POSITIONS"][1:]:
+        for ln in self.cards['ATOMIC_POSITIONS'][1:]:
             tokens = ln.split()
             if len(tokens) < 4:
                 continue
@@ -1898,11 +1888,11 @@ class eACBN0(ACBN0):
             raw.append([float(x) for x in tokens[1:4]])
         raw = np.asarray(raw, dtype=float)
 
-        if pos_unit == "crystal":
+        if pos_unit == 'crystal':
             positions = raw @ lattice
-        elif pos_unit == "bohr":
+        elif pos_unit == 'bohr':
             positions = raw * BOHR_RADIUS_ANGS
-        elif pos_unit == "alat":
+        elif pos_unit == 'alat':
             alat_bohr = self._alat_bohr()
             if alat_bohr is None:
                 raise ValueError(
@@ -1961,14 +1951,12 @@ class eACBN0(ACBN0):
         # source of truth ``self.uVals`` (keyed by ``'species-orbital'``).
         species_orbs = {}
         for label in self.uVals:
-            ele, orb = label.split("-")
+            ele, orb = label.split('-')
             species_orbs.setdefault(ele, []).append(orb)
 
         # Build the set of (label1, label2) pairs to search for.
         if species_pairs is None:
-            labels = sorted(
-                {f"{ele}-{orb}" for ele, orbs in species_orbs.items() for orb in orbs}
-            )
+            labels = sorted({f'{ele}-{orb}' for ele, orbs in species_orbs.items() for orb in orbs})
             wanted_pairs = set()
             for i, a in enumerate(labels):
                 for b in labels[i:]:
@@ -1982,7 +1970,7 @@ class eACBN0(ACBN0):
         atom_labels = []
         for ele in species:
             if ele in species_orbs:
-                atom_labels.append([f"{ele}-{orb}" for orb in species_orbs[ele]])
+                atom_labels.append([f'{ele}-{orb}' for orb in species_orbs[ele]])
             else:
                 atom_labels.append([])
 
@@ -1999,13 +1987,7 @@ class eACBN0(ACBN0):
                 for na in range(-n_a, n_a + 1):
                     for nb in range(-n_b, n_b + 1):
                         for nc in range(-n_c, n_c + 1):
-                            if (
-                                not include_onsite
-                                and i == j
-                                and na == 0
-                                and nb == 0
-                                and nc == 0
-                            ):
+                            if not include_onsite and i == j and na == 0 and nb == 0 and nc == 0:
                                 continue
                             R = na * lattice[0] + nb * lattice[1] + nc * lattice[2]
                             d_vec = positions[j] + R - positions[i]
@@ -2072,7 +2054,7 @@ class eACBN0(ACBN0):
             and for cutoff-enumerated pairs.
         """
         if pairs is None and cutoff is None:
-            raise ValueError("Provide either `pairs` or `cutoff`.")
+            raise ValueError('Provide either `pairs` or `cutoff`.')
 
         if pairs is not None:
             self._register_explicit_pairs(pairs, V_init)
@@ -2096,9 +2078,9 @@ class eACBN0(ACBN0):
                 image = (int(na), int(nb), int(nc))
             else:
                 raise ValueError(
-                    "Each explicit V entry must be a 5-tuple "
-                    "(label1, label2, atom_idx1, atom_idx2, V_init) "
-                    "or an 8-tuple including the (n_a, n_b, n_c) image."
+                    'Each explicit V entry must be a 5-tuple '
+                    '(label1, label2, atom_idx1, atom_idx2, V_init) '
+                    'or an 8-tuple including the (n_a, n_b, n_c) image.'
                 )
             i1, i2 = int(i1), int(i2)
             R = image[0] * lattice[0] + image[1] * lattice[1] + image[2] * lattice[2]
@@ -2108,9 +2090,9 @@ class eACBN0(ACBN0):
             key = (l1, l2, i1, i2)
             full_key = key + image
             self.vPairs[full_key] = {
-                "image": image,
-                "R_cart": R,
-                "distance": dist,
+                'image': image,
+                'R_cart': R,
+                'distance': dist,
             }
             self.vVals[key] = float(V_init_default) if v is None else float(v)
 
@@ -2126,9 +2108,9 @@ class eACBN0(ACBN0):
             key = (l1, l2, i1, i2)
             full_key = key + image
             self.vPairs[full_key] = {
-                "image": image,
-                "R_cart": R,
-                "distance": dist,
+                'image': image,
+                'R_cart': R,
+                'distance': dist,
             }
             # Seed only if the user hasn't already set this V via an
             # explicit call or template entry.
@@ -2141,15 +2123,15 @@ class eACBN0(ACBN0):
     def print_intersite_pairs(self):
         """Print a human-readable summary of the registered V pairs."""
         if not self.vPairs:
-            print("No intersite V pairs registered.")
+            print('No intersite V pairs registered.')
             return
 
-        print(f"\n{len(self.vPairs)} intersite V pair(s) registered:")
+        print(f'\n{len(self.vPairs)} intersite V pair(s) registered:')
         print(
             f"  {'label1':>10s} {'label2':>10s} {'i1':>4s} {'i2':>4s} "
             f"{'image':>12s} {'d (A)':>9s} {'V_init (eV)':>12s}"
         )
-        for key, meta in sorted(self.vPairs.items(), key=lambda kv: kv[1]["distance"]):
+        for key, meta in sorted(self.vPairs.items(), key=lambda kv: kv[1]['distance']):
             l1, l2, i1, i2, na, nb, nc = key
             v = self.vVals[(l1, l2, i1, i2)]
             print(
@@ -2166,20 +2148,20 @@ class eACBN0(ACBN0):
         """Map a Hubbard orbital label (e.g. ``'3d'``, ``'2p'``, ``'5f'``)
         to its angular-momentum quantum number L."""
         sym = orb_label[-1].lower()
-        table = {"s": 0, "p": 1, "d": 2, "f": 3}
+        table = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
         if sym not in table:
-            raise ValueError(f"Unsupported orbital symbol in {orb_label!r}.")
+            raise ValueError(f'Unsupported orbital symbol in {orb_label!r}.')
         return table[sym]
 
-    def _parse_state_lines(self, projwfc_out="projwfc.out"):
+    def _parse_state_lines(self, projwfc_out='projwfc.out'):
         """Slice the ``state #`` table out of a ``projwfc.x`` output."""
-        with open(projwfc_out, "r") as f:
+        with open(projwfc_out, 'r') as f:
             lines = f.readlines()
         sind = 0
-        while sind < len(lines) and "state #" not in lines[sind]:
+        while sind < len(lines) and 'state #' not in lines[sind]:
             sind += 1
         send = sind
-        while send < len(lines) and "state #" in lines[send]:
+        while send < len(lines) and 'state #' in lines[send]:
             send += 1
         return lines[sind:send]
 
@@ -2195,7 +2177,7 @@ class eACBN0(ACBN0):
         out = []
         for n, sl in enumerate(state_lines):
             mat = re.search(
-                r"atom\s+(\d+)\s*\(\s*\S+\s*\)\s*,\s*wfc\s+\d+\s*\(\s*l\s*=\s*(\d+)", sl
+                r'atom\s+(\d+)\s*\(\s*\S+\s*\)\s*,\s*wfc\s+\d+\s*\(\s*l\s*=\s*(\d+)', sl
             )
             if mat is None:
                 continue
@@ -2215,9 +2197,9 @@ class eACBN0(ACBN0):
         meta = self._load_pao_basis_meta()
         target = shell_label.upper()
         out = [
-            e["index"]
+            e['index']
             for e in meta
-            if e["atom"] == atom_idx and e["l"] == L and e["label"].upper() == target
+            if e['atom'] == atom_idx and e['l'] == L and e['label'].upper() == target
         ]
         return np.asarray(sorted(out), dtype=int)
 
@@ -2276,10 +2258,10 @@ class eACBN0(ACBN0):
         # and the renormalised ``P_*`` matrices, the only difference being
         # whether the right-hand-side carries the band weight ``N_w``.
         block_shapes = {
-            "II": (n_I, n_I),
-            "JJ": (n_J, n_J),
-            "IJ": (n_I, n_J),
-            "JI": (n_J, n_I),
+            'II': (n_I, n_I),
+            'JJ': (n_J, n_J),
+            'IJ': (n_I, n_J),
+            'JI': (n_J, n_I),
         }
         n_blocks = {k: np.zeros(s, dtype=complex) for k, s in block_shapes.items()}
         P_blocks = {k: np.zeros(s, dtype=complex) for k, s in block_shapes.items()}
@@ -2317,18 +2299,18 @@ class eACBN0(ACBN0):
             # Mulliken band weight on the (I+J) manifold (Eq. 4):
             #   N_w[m] = Σ_{α∈I+J} Re( c*_α (S c)_α ) ∈ [0, 1].
             N_w = (
-                np.einsum("im,im->m", np.conj(cI), sI).real
-                + np.einsum("jm,jm->m", np.conj(cJ), sJ).real
+                np.einsum('im,im->m', np.conj(cI), sI).real
+                + np.einsum('jm,jm->m', np.conj(cJ), sJ).real
             )
 
             # (key, left c, left Sc, right c, right Sc, phase) — used to
             # accumulate both bare ``n_*`` (Eq. 2) and renormalised
             # ``P_*`` (Eq. 5) blocks, Hermitianised by construction.
             blocks = (
-                ("II", cI, sI, cI, sI, 1.0 + 0.0j),
-                ("JJ", cJ, sJ, cJ, sJ, 1.0 + 0.0j),
-                ("IJ", cI, sI, cJ, sJ, phase_pos),
-                ("JI", cJ, sJ, cI, sI, phase_neg),
+                ('II', cI, sI, cI, sI, 1.0 + 0.0j),
+                ('JJ', cJ, sJ, cJ, sJ, 1.0 + 0.0j),
+                ('IJ', cI, sI, cJ, sJ, phase_pos),
+                ('JI', cJ, sJ, cI, sI, phase_neg),
             )
             for key, ca, sa, cb, sb, phase in blocks:
                 prefac = 0.5 * w * phase
@@ -2340,8 +2322,8 @@ class eACBN0(ACBN0):
                 P_blocks[key] += prefac * (np.conj(ca) @ sb_w.T + np.conj(sa) @ cb_w.T)
 
         scale = 1.0 / total_w
-        result = {f"P_{k}": v * scale for k, v in P_blocks.items()}
-        result.update({f"n_{k}": v * scale for k, v in n_blocks.items()})
+        result = {f'P_{k}': v * scale for k, v in P_blocks.items()}
+        result.update({f'n_{k}': v * scale for k, v in n_blocks.items()})
         return result
 
     def run_eacbn0_V(self, kpnts_are_cartesian=False):
@@ -2371,7 +2353,7 @@ class eACBN0(ACBN0):
         # Geometry from QE output of the current SCF iteration (in Bohr).
 
         # ``read_cell_atoms`` returns lattice + positions in Bohr.
-        lattice_B, coords_B = self.read_cell_atoms("scf.out")
+        lattice_B, coords_B = self.read_cell_atoms('scf.out')
         lattice_A = lattice_B * BOHR_RADIUS_ANGS
         coords_A = coords_B * BOHR_RADIUS_ANGS
         recip = 2 * np.pi * np.linalg.inv(lattice_B).T  # Bohr^-1
@@ -2385,8 +2367,8 @@ class eACBN0(ACBN0):
             R_A = na * lattice_A[0] + nb * lattice_A[1] + nc * lattice_A[2]
             i1, i2 = full_key[2], full_key[3]
             d_vec = coords_A[i2 - 1] + R_A - coords_A[i1 - 1]
-            meta["R_cart"] = R_A
-            meta["distance"] = float(np.linalg.norm(d_vec))
+            meta['R_cart'] = R_A
+            meta['distance'] = float(np.linalg.norm(d_vec))
 
         kpnts, kwght, Sks, Hks_up, Hks_dn = self.read_ham_data(self.nspin)
         if self.nspin == 1:
@@ -2398,9 +2380,7 @@ class eACBN0(ACBN0):
         else:
             k_cart = kpnts @ recip  # (nk, 3)
 
-        state_lines = (
-            None if self.use_local_basis else self._parse_state_lines("projwfc.out")
-        )
+        state_lines = None if self.use_local_basis else self._parse_state_lines('projwfc.out')
 
         # Cache the per-k generalized eigendecomposition once per spin
         # channel; reused across every (I, J) pair below so we don't
@@ -2415,14 +2395,14 @@ class eACBN0(ACBN0):
             l1, l2, i1, i2, na, nb, nc = full_key
             key = (l1, l2, i1, i2)
             prev = best_image.get(key)
-            if prev is None or meta["distance"] < prev[1]["distance"]:
+            if prev is None or meta['distance'] < prev[1]['distance']:
                 best_image[key] = (full_key, meta)
 
         new_V = {}
         for key, (full_key, meta) in best_image.items():
             l1, l2, i1, i2 = key
-            ele1, orb1 = l1.split("-")
-            ele2, orb2 = l2.split("-")
+            ele1, orb1 = l1.split('-')
+            ele2, orb2 = l2.split('-')
             L1 = self._orbital_L(orb1)
             L2 = self._orbital_L(orb2)
 
@@ -2434,11 +2414,11 @@ class eACBN0(ACBN0):
                 basis_J = self._site_basis_indices(state_lines, i2, L2)
             if basis_I.size == 0 or basis_J.size == 0:
                 raise RuntimeError(
-                    f"No PAO states found for {key!r}: "
-                    f"basis_I.size={basis_I.size}, basis_J.size={basis_J.size}"
+                    f'No PAO states found for {key!r}: '
+                    f'basis_I.size={basis_I.size}, basis_J.size={basis_J.size}'
                 )
 
-            R_bohr = meta["R_cart"] * ANGS_TO_BOHR
+            R_bohr = meta['R_cart'] * ANGS_TO_BOHR
 
             # --- σ = up (and σ = dn when spin-polarized) -----------------
             up = self._pair_density_matrices(
@@ -2478,12 +2458,10 @@ class eACBN0(ACBN0):
             # difference between num and den is what yields the proper
             # orbital-character-dependent screening of V_IJ.
             den = 0.0
-            for nII in (up["n_II"], dn["n_II"]):
-                for nJJ in (up["n_JJ"], dn["n_JJ"]):
-                    den += float(
-                        (np.diag(nII).real[:, None] * np.diag(nJJ).real[None, :]).sum()
-                    )
-            for nIJ, nJI in [(up["n_IJ"], up["n_JI"]), (dn["n_IJ"], dn["n_JI"])]:
+            for nII in (up['n_II'], dn['n_II']):
+                for nJJ in (up['n_JJ'], dn['n_JJ']):
+                    den += float((np.diag(nII).real[:, None] * np.diag(nJJ).real[None, :]).sum())
+            for nIJ, nJI in [(up['n_IJ'], up['n_JI']), (dn['n_IJ'], dn['n_JI'])]:
                 # Σ_{ij} n^{IJ}_{ij} n^{JI}_{ji}  (note the transpose)
                 den -= float((nIJ * nJI.T).real.sum())
 
@@ -2491,38 +2469,38 @@ class eACBN0(ACBN0):
             gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1)
             gauss_J = self._atom_shell_gaussians(
                 ele2,
-                coords_A[i2 - 1] + meta["R_cart"],
+                coords_A[i2 - 1] + meta['R_cart'],
                 L2,
             )
             if len(gauss_I) != basis_I.size or len(gauss_J) != basis_J.size:
                 raise RuntimeError(
-                    "Mismatch between PAO basis size and Gaussian shell "
-                    f"size for pair {key!r}: "
-                    f"PAO {basis_I.size}/{basis_J.size} vs Gauss "
-                    f"{len(gauss_I)}/{len(gauss_J)}"
+                    'Mismatch between PAO basis size and Gaussian shell '
+                    f'size for pair {key!r}: '
+                    f'PAO {basis_I.size}/{basis_J.size} vs Gauss '
+                    f'{len(gauss_I)}/{len(gauss_J)}'
                 )
 
             data = {
-                "gauss_I": gauss_I,
-                "gauss_J": gauss_J,
-                "P_II_up": up["P_II"],
-                "P_II_dn": dn["P_II"],
-                "P_JJ_up": up["P_JJ"],
-                "P_JJ_dn": dn["P_JJ"],
-                "P_IJ_up": up["P_IJ"],
-                "P_IJ_dn": dn["P_IJ"],
-                "P_JI_up": up["P_JI"],
-                "P_JI_dn": dn["P_JI"],
+                'gauss_I': gauss_I,
+                'gauss_J': gauss_J,
+                'P_II_up': up['P_II'],
+                'P_II_dn': dn['P_II'],
+                'P_JJ_up': up['P_JJ'],
+                'P_JJ_dn': dn['P_JJ'],
+                'P_IJ_up': up['P_IJ'],
+                'P_IJ_dn': dn['P_IJ'],
+                'P_JI_up': up['P_JI'],
+                'P_JI_dn': dn['P_JI'],
             }
-            datapath = join(self.outputdir, "data_v.pkl")
-            with open(datapath, "wb") as f:
+            datapath = join(self.outputdir, 'data_v.pkl')
+            with open(datapath, 'wb') as f:
                 pickle.dump(data, f)
 
             self._write_compute_hartree_v(datapath)
             self._launch_compute_hartree_v()
 
-            with open(join(self.outputdir, "tmp_v.pkl"), "rb") as f:
-                num = pickle.load(f)["num"]
+            with open(join(self.outputdir, 'tmp_v.pkl'), 'rb') as f:
+                num = pickle.load(f)['num']
 
             # The 1/2 prefactor in Eq. (8) accounts for double-counting
             # of the (I,J) and (J,I) entries when summing over ordered
@@ -2530,26 +2508,24 @@ class eACBN0(ACBN0):
             V_IJ = 0.5 * HARTREE_TO_EV * float(num.real) / den if den != 0 else 0.0
             new_V[key] = V_IJ
 
-            with open(f"{l1}_{l2}_{i1}_{i2}_V.txt", "w") as f:
-                f.write(f"pair          : {key}\n")
-                f.write(
-                    f"image         : ({full_key[4]},{full_key[5]},{full_key[6]})\n"
-                )
+            with open(f'{l1}_{l2}_{i1}_{i2}_V.txt', 'w') as f:
+                f.write(f'pair          : {key}\n')
+                f.write(f'image         : ({full_key[4]},{full_key[5]},{full_key[6]})\n')
                 f.write(f"distance (A)  : {meta['distance']:.6f}\n")
-                f.write(f"V (eV)        : {V_IJ:.6f}\n")
+                f.write(f'V (eV)        : {V_IJ:.6f}\n')
 
         return new_V
 
     def _write_compute_hartree_v(self, datapath):
-        with open("compute_hartree_v.py", "w") as f:
-            f.write("from PAOFLOW.ACBN0 import eACBN0_Hartree\n")
+        with open('compute_hartree_v.py', 'w') as f:
+            f.write('from PAOFLOW.ACBN0 import eACBN0_Hartree\n')
             f.write(f"H = eACBN0_Hartree('{datapath}')\n")
             f.write(f"H.intersite_energy('{self.outputdir}')\n")
 
     def _launch_compute_hartree_v(self):
-        python_exec = join(self.ppath, "python") if self.ppath else "python"
-        mpi = getattr(self, "mpi_hartree", None) or self.mpi_python
-        command = f"{mpi} {python_exec} compute_hartree_v.py"
+        python_exec = join(self.ppath, 'python') if self.ppath else 'python'
+        mpi = getattr(self, 'mpi_hartree', None) or self.mpi_python
+        command = f'{mpi} {python_exec} compute_hartree_v.py'
         subprocess.run(command.split(), check=True)
 
     # ------------------------------------------------------------------ #
@@ -2592,17 +2568,17 @@ class eACBN0(ACBN0):
         """
         if not self.vPairs:
             raise RuntimeError(
-                "No intersite V pairs registered. Call "
-                "set_intersite_pairs(...) before optimize_hubbard_UV."
+                'No intersite V pairs registered. Call '
+                'set_intersite_pairs(...) before optimize_hubbard_UV.'
             )
 
-        print("\nBeginning joint U+V self-consistent loop.\n")
+        print('\nBeginning joint U+V self-consistent loop.\n')
         for itr in range(1, max_iter + 1):
-            print(f"Iteration #{itr}\n")
+            print(f'Iteration #{itr}\n')
 
             self.run_dft(self.prefix, self.uspecies, self.uVals)
 
-            save_prefix = self.blocks["control"]["prefix"].strip('"').strip("'")
+            save_prefix = self.blocks['control']['prefix'].strip('"').strip("'")
             self.run_paoflow(self.prefix, save_prefix)
 
             new_U = self.run_acbn0(self.prefix)
@@ -2610,34 +2586,32 @@ class eACBN0(ACBN0):
 
             # ---- Convergence check + mixing -------------------------
             converged = True
-            print("\nNew U values:")
+            print('\nNew U values:')
             for k, v in new_U.items():
                 old = self.uVals[k]
                 mixed = mixing * v + (1.0 - mixing) * old
-                print(f"  {k} : old={old:.4f}  new={v:.4f}  mixed={mixed:.4f}")
+                print(f'  {k} : old={old:.4f}  new={v:.4f}  mixed={mixed:.4f}')
                 if abs(mixed - old) > convergence_threshold:
                     converged = False
                 new_U[k] = mixed
 
-            print("\nNew V values:")
+            print('\nNew V values:')
             for k, v in new_V.items():
                 old = self.vVals.get(k, 0.0)
                 mixed = mixing * v + (1.0 - mixing) * old
                 l1, l2, i1, i2 = k
-                print(
-                    f"  {l1} {l2} {i1} {i2} : old={old:.4f}  new={v:.4f}  mixed={mixed:.4f}"
-                )
+                print(f'  {l1} {l2} {i1} {i2} : old={old:.4f}  new={v:.4f}  mixed={mixed:.4f}')
                 if abs(mixed - old) > convergence_threshold:
                     converged = False
                 new_V[k] = mixed
-            print("", flush=True)
+            print('', flush=True)
 
             self.uVals = new_U
             for k, v in new_V.items():
                 self.vVals[k] = v
 
             if converged:
-                print(f"Converged after {itr} iteration(s).")
+                print(f'Converged after {itr} iteration(s).')
                 return
 
-        raise RuntimeError(f"Joint U+V loop did not converge in {max_iter} iterations.")
+        raise RuntimeError(f'Joint U+V loop did not converge in {max_iter} iterations.')

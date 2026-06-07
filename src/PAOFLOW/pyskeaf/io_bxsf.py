@@ -160,9 +160,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
             found_bandgrid = True
             break
     if not found_bandgrid:
-        raise BXSFError(
-            f'BXSF file {path}: no BANDGRID_3D_BANDS block found after header.'
-        )
+        raise BXSFError(f'BXSF file {path}: no BANDGRID_3D_BANDS block found after header.')
 
     # 3. Number of bands — read from the next non-blank line; must be exactly 1.
     n_bands = None

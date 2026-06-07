@@ -33,34 +33,34 @@ def _input(prompt):
     try:
         return input(prompt)
     except EOFError:
-        return ""
+        return ''
 
 
 def ask(prompt, default=None):
     """Ask for a free-text value with an optional default."""
-    suffix = " [{}]".format(default) if default is not None else ""
-    ans = _input("{}{}: ".format(prompt, suffix)).strip()
-    return ans if ans else (default if default is not None else "")
+    suffix = ' [{}]'.format(default) if default is not None else ''
+    ans = _input('{}{}: '.format(prompt, suffix)).strip()
+    return ans if ans else (default if default is not None else '')
 
 
 def ask_yes_no(prompt, default=False):
     """Ask a yes/no question."""
-    d = "Y/n" if default else "y/N"
-    ans = _input("{} [{}]: ".format(prompt, d)).strip().lower()
+    d = 'Y/n' if default else 'y/N'
+    ans = _input('{} [{}]: '.format(prompt, d)).strip().lower()
     if not ans:
         return default
-    return ans.startswith("y")
+    return ans.startswith('y')
 
 
 def ask_int(prompt, default):
     """Ask for an integer value with a default."""
-    ans = _input("{} [{}]: ".format(prompt, default)).strip()
+    ans = _input('{} [{}]: '.format(prompt, default)).strip()
     if not ans:
         return default
     try:
         return int(ans)
     except ValueError:
-        print("  (not an integer, using {})".format(default))
+        print('  (not an integer, using {})'.format(default))
         return default
 
 
@@ -69,9 +69,9 @@ def ask_choice(prompt, choices, default):
     while True:
         print(prompt)
         for i, choice in enumerate(choices, 1):
-            mark = " (default)" if choice == default else ""
-            print("  {}: {}{}".format(i, choice, mark))
-        ans = _input("Choice [{}]: ".format(default)).strip()
+            mark = ' (default)' if choice == default else ''
+            print('  {}: {}{}'.format(i, choice, mark))
+        ans = _input('Choice [{}]: '.format(default)).strip()
         if not ans:
             return default
         if ans in choices:
@@ -82,23 +82,20 @@ def ask_choice(prompt, choices, default):
                 return choices[idx - 1]
         except ValueError:
             pass
-        print("  (invalid choice, try again)")
+        print('  (invalid choice, try again)')
 
 
 # --------------------------------------------------------------------------- #
 # Auto-detection of QE artifacts in the working directory
 # --------------------------------------------------------------------------- #
 def detect_savedir(workdir):
-    matches = sorted(
-        d for d in glob.glob(os.path.join(workdir, "*.save")) if os.path.isdir(d)
-    )
+    matches = sorted(d for d in glob.glob(os.path.join(workdir, '*.save')) if os.path.isdir(d))
     return os.path.basename(matches[0]) if matches else None
 
 
 def detect_upf(workdir):
     matches = sorted(
-        glob.glob(os.path.join(workdir, "*.UPF"))
-        + glob.glob(os.path.join(workdir, "*.upf"))
+        glob.glob(os.path.join(workdir, '*.UPF')) + glob.glob(os.path.join(workdir, '*.upf'))
     )
     return os.path.basename(matches[0]) if matches else None
 
@@ -106,23 +103,23 @@ def detect_upf(workdir):
 def detect_prefix(workdir, savedir):
     if savedir:
         return os.path.splitext(os.path.basename(savedir))[0]
-    for name in ("scf.in", "nscf.in"):
+    for name in ('scf.in', 'nscf.in'):
         path = os.path.join(workdir, name)
         if os.path.isfile(path):
             prefix = _read_prefix_from_input(path)
             if prefix:
                 return prefix
-    return "pwscf"
+    return 'pwscf'
 
 
 def _read_prefix_from_input(path):
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        with open(path, 'r', encoding='utf-8', errors='replace') as handle:
             for line in handle:
                 low = line.strip().lower()
-                if low.startswith("prefix"):
-                    _, _, val = line.partition("=")
-                    return val.strip().strip(",").strip().strip("'\"")
+                if low.startswith('prefix'):
+                    _, _, val = line.partition('=')
+                    return val.strip().strip(',').strip().strip('\'"')
     except OSError:
         return None
     return None
@@ -189,28 +186,26 @@ def ensure_basis(preset="extended"):
 # --------------------------------------------------------------------------- #
 # Each property: menu label and a flag for whether it needs the spin operator.
 PROPERTY_MENU = [
-    ("bands", "Band structure"),
-    ("dos", "DOS / projected DOS"),
-    ("transport", "Boltzmann transport (conductivity, Seebeck)"),
-    ("fermi_surface", "Fermi surface"),
-    ("spin_texture", "Spin texture"),
-    ("spin_Hall", "Spin Hall conductivity"),
-    ("anomalous_Hall", "Anomalous Hall / Berry curvature"),
-    ("topology", "Band topology (Berry, effective mass)"),
-    ("optical", "Optical / dielectric tensor (separate extended-basis run)"),
+    ('bands', 'Band structure'),
+    ('dos', 'DOS / projected DOS'),
+    ('transport', 'Boltzmann transport (conductivity, Seebeck)'),
+    ('fermi_surface', 'Fermi surface'),
+    ('spin_texture', 'Spin texture'),
+    ('spin_Hall', 'Spin Hall conductivity'),
+    ('anomalous_Hall', 'Anomalous Hall / Berry curvature'),
+    ('topology', 'Band topology (Berry, effective mass)'),
+    ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
 ]
-SPIN_PROPERTIES = {"spin_texture", "spin_Hall"}
+SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 
 
 def select_properties():
     """Show the property menu and return the ordered set of chosen keys."""
-    print("\nAvailable properties:")
+    print('\nAvailable properties:')
     for i, (_key, label) in enumerate(PROPERTY_MENU, 1):
-        print("  {}: {}".format(i, label))
-    raw = _input(
-        "Enter a comma/space separated list (e.g. '1 2 8'): "
-    ).strip()
-    tokens = raw.replace(",", " ").split()
+        print('  {}: {}'.format(i, label))
+    raw = _input("Enter a comma/space separated list (e.g. '1 2 8'): ").strip()
+    tokens = raw.replace(',', ' ').split()
     chosen = []
     for tok in tokens:
         try:
@@ -229,136 +224,146 @@ def select_properties():
 # --------------------------------------------------------------------------- #
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
-    props = cfg["properties"]
-    standard_props = [p for p in props if p != "optical"]
-    has_optical = "optical" in props
+    props = cfg['properties']
+    standard_props = [p for p in props if p != 'optical']
+    has_optical = 'optical' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
 
     lines = [HEADER]
 
     # ---- editable constants ------------------------------------------- #
-    lines.append("")
-    lines.append("# ----------------------------------------------------------------------- #")
-    lines.append("# Configuration  (edit freely)                                            #")
-    lines.append("# ----------------------------------------------------------------------- #")
-    lines.append("HERE = os.path.dirname(os.path.abspath(__file__))")
-    lines.append("SAVEDIR = os.path.join(HERE, {!r})".format(cfg["savedir"]))
-    lines.append("UPF = os.path.join(HERE, {!r})".format(cfg["upf"]))
-    lines.append("BASISPATH = os.path.join(HERE, {!r}) + os.sep".format(cfg["basisdir"]))
-    lines.append("OUTPUTDIR = {!r}".format(cfg["outputdir"]))
-    lines.append("")
-    lines.append("NPOOL = {}".format(cfg["npool"]))
-    lines.append("SMEARING = {!r}".format(cfg["smearing"]))
-    lines.append("SPIN_ORBIT = {}   # set True for spin-orbit (noncollinear) runs".format(cfg["spin_orbit"]))
-    lines.append("STD_BASIS = {!r}   # basis configuration for standard properties".format(cfg["std_basis"]))
-    lines.append("PTHR = 0.95   # projectability threshold")
-    lines.append("")
-    lines.append("IBRAV = {}".format(cfg["ibrav"]))
-    lines.append("NK = {}   # k-points along the band path".format(cfg["nk"]))
-    if cfg["ibrav"] == 0:
-        lines.append("# ibrav=0: PAOFLOW needs an explicit band path. Fill these in:")
-        lines.append("# TODO: list the high-symmetry point labels along the path, e.g. ['G','X','W','K','G','L'].")
-        lines.append("BAND_PATH = None")
-        lines.append("# TODO: map each label to its crystal-coordinate k-point, e.g. {'G':[0,0,0], ...}.")
-        lines.append("HIGH_SYM = None")
-    lines.append("")
-    lines.append("# Energy window (eV, relative to E_F) for DOS / transport / Hall properties.")
-    lines.append("EMIN, EMAX, NE = {}, {}, {}".format(cfg["emin"], cfg["emax"], cfg["ne"]))
-    if "dos" in props:
-        lines.append("DO_PDOS = {}".format(cfg["do_pdos"]))
-    if "transport" in props:
-        lines.append("TMIN, TMAX, NT = 300.0, 300.0, 1   # temperature grid (K) for transport")
-    lines.append("")
-    lines.append("# Double-grid interpolation (denser FFT grid). Set to None to skip.")
-    if cfg["interpolate"]:
-        lines.append("NFFT = ({n}, {n}, {n})".format(n=cfg["nfft"]))
+    lines.append('')
+    lines.append('# ----------------------------------------------------------------------- #')
+    lines.append('# Configuration  (edit freely)                                            #')
+    lines.append('# ----------------------------------------------------------------------- #')
+    lines.append('HERE = os.path.dirname(os.path.abspath(__file__))')
+    lines.append('SAVEDIR = os.path.join(HERE, {!r})'.format(cfg['savedir']))
+    lines.append('UPF = os.path.join(HERE, {!r})'.format(cfg['upf']))
+    lines.append('BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']))
+    lines.append('OUTPUTDIR = {!r}'.format(cfg['outputdir']))
+    lines.append('')
+    lines.append('NPOOL = {}'.format(cfg['npool']))
+    lines.append('SMEARING = {!r}'.format(cfg['smearing']))
+    lines.append(
+        'SPIN_ORBIT = {}   # set True for spin-orbit (noncollinear) runs'.format(cfg['spin_orbit'])
+    )
+    lines.append(
+        'STD_BASIS = {!r}   # basis configuration for standard properties'.format(cfg['std_basis'])
+    )
+    lines.append('PTHR = 0.95   # projectability threshold')
+    lines.append('')
+    lines.append('IBRAV = {}'.format(cfg['ibrav']))
+    lines.append('NK = {}   # k-points along the band path'.format(cfg['nk']))
+    if cfg['ibrav'] == 0:
+        lines.append('# ibrav=0: PAOFLOW needs an explicit band path. Fill these in:')
+        lines.append(
+            "# TODO: list the high-symmetry point labels along the path, e.g. ['G','X','W','K','G','L']."
+        )
+        lines.append('BAND_PATH = None')
+        lines.append(
+            "# TODO: map each label to its crystal-coordinate k-point, e.g. {'G':[0,0,0], ...}."
+        )
+        lines.append('HIGH_SYM = None')
+    lines.append('')
+    lines.append('# Energy window (eV, relative to E_F) for DOS / transport / Hall properties.')
+    lines.append('EMIN, EMAX, NE = {}, {}, {}'.format(cfg['emin'], cfg['emax'], cfg['ne']))
+    if 'dos' in props:
+        lines.append('DO_PDOS = {}'.format(cfg['do_pdos']))
+    if 'transport' in props:
+        lines.append('TMIN, TMAX, NT = 300.0, 300.0, 1   # temperature grid (K) for transport')
+    lines.append('')
+    lines.append('# Double-grid interpolation (denser FFT grid). Set to None to skip.')
+    if cfg['interpolate']:
+        lines.append('NFFT = ({n}, {n}, {n})'.format(n=cfg['nfft']))
     else:
-        lines.append("NFFT = None")
-    lines.append("")
+        lines.append('NFFT = None')
+    lines.append('')
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
 
     # ---- standard property run ---------------------------------------- #
     if standard_props:
-        lines.append("")
-        lines.append("def run_properties():")
-        lines.append('    """Standard properties on the {} basis."""'.format(cfg["std_basis"]))
-        lines.append("    p = PAOFLOW.PAOFLOW(")
-        lines.append("        workpath=HERE,")
-        lines.append("        outputdir=OUTPUTDIR,")
-        lines.append("        savedir=SAVEDIR,")
-        lines.append("        smearing=SMEARING,")
-        lines.append("        npool=NPOOL,")
-        lines.append("        verbose=False,")
-        lines.append("    )")
-        lines.append("")
-        lines.append("    p.projections(basispath=BASISPATH, configuration=STD_BASIS)")
-        lines.append("    p.projectability(pthr=PTHR)")
-        lines.append("    p.pao_hamiltonian()")
-        lines.append("")
+        lines.append('')
+        lines.append('def run_properties():')
+        lines.append('    """Standard properties on the {} basis."""'.format(cfg['std_basis']))
+        lines.append('    p = PAOFLOW.PAOFLOW(')
+        lines.append('        workpath=HERE,')
+        lines.append('        outputdir=OUTPUTDIR,')
+        lines.append('        savedir=SAVEDIR,')
+        lines.append('        smearing=SMEARING,')
+        lines.append('        npool=NPOOL,')
+        lines.append('        verbose=False,')
+        lines.append('    )')
+        lines.append('')
+        lines.append('    p.projections(basispath=BASISPATH, configuration=STD_BASIS)')
+        lines.append('    p.projectability(pthr=PTHR)')
+        lines.append('    p.pao_hamiltonian()')
+        lines.append('')
         lines.extend(_emit_standard_properties(standard_props, needs_spin, cfg))
-        lines.append("")
-        lines.append("    p.finish_execution()")
-        lines.append("")
+        lines.append('')
+        lines.append('    p.finish_execution()')
+        lines.append('')
 
     # ---- optical run (separate, extended basis) ----------------------- #
     if has_optical:
-        lines.append("")
-        lines.append("def run_optical():")
+        lines.append('')
+        lines.append('def run_optical():')
         lines.append('    """Optical properties: extended basis + non-local velocity.')
-        lines.append("")
-        lines.append("    The dielectric tensor requires the non-local velocity correction,")
-        lines.append("    so it runs as a separate PAOFLOW instance on the extended basis.")
+        lines.append('')
+        lines.append('    The dielectric tensor requires the non-local velocity correction,')
+        lines.append('    so it runs as a separate PAOFLOW instance on the extended basis.')
         lines.append('    """')
-        lines.append("    p = PAOFLOW.PAOFLOW(")
-        lines.append("        workpath=HERE,")
-        lines.append("        outputdir=OUTPUTDIR,")
-        lines.append("        savedir=SAVEDIR,")
-        lines.append("        smearing=SMEARING,")
-        lines.append("        npool=NPOOL,")
-        lines.append("        verbose=False,")
-        lines.append("    )")
-        lines.append("")
+        lines.append('    p = PAOFLOW.PAOFLOW(')
+        lines.append('        workpath=HERE,')
+        lines.append('        outputdir=OUTPUTDIR,')
+        lines.append('        savedir=SAVEDIR,')
+        lines.append('        smearing=SMEARING,')
+        lines.append('        npool=NPOOL,')
+        lines.append('        verbose=False,')
+        lines.append('    )')
+        lines.append('')
         lines.append("    p.projections(basispath=BASISPATH, configuration='extended')")
-        lines.append("    p.projectability(pthr=PTHR)")
-        lines.append("    p.pao_hamiltonian()")
-        lines.append("    if NFFT is not None:")
-        lines.append("        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])")
-        lines.append("    p.pao_eigh()")
-        lines.append("")
-        lines.append("    # Non-local velocity is essential for the optical matrix elements.")
-        lines.append("    p.gradient_and_momenta(nonlocal_velocity=True)")
-        lines.append("    p.adaptive_smearing()")
+        lines.append('    p.projectability(pthr=PTHR)')
+        lines.append('    p.pao_hamiltonian()')
+        lines.append('    if NFFT is not None:')
+        lines.append(
+            '        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])'
+        )
+        lines.append('    p.pao_eigh()')
+        lines.append('')
+        lines.append('    # Non-local velocity is essential for the optical matrix elements.')
+        lines.append('    p.gradient_and_momenta(nonlocal_velocity=True)')
+        lines.append('    p.adaptive_smearing()')
         lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)")
-        lines.append("")
-        lines.append("    p.finish_execution()")
-        lines.append("")
+        lines.append('')
+        lines.append('    p.finish_execution()')
+        lines.append('')
 
     # ---- main --------------------------------------------------------- #
-    lines.append("")
-    lines.append("def main():")
-    lines.append("    if not os.path.isdir(SAVEDIR):")
+    lines.append('')
+    lines.append('def main():')
+    lines.append('    if not os.path.isdir(SAVEDIR):')
     lines.append('        print("{} not found. Run pw.x (scf then nscf) first.".format(SAVEDIR))')
-    lines.append("        sys.exit(1)")
-    lines.append("")
+    lines.append('        sys.exit(1)')
+    lines.append('')
     lines.append("    ensure_basis(preset='extended')")
     lines.append('    if "MPI" in globals():')
-    lines.append("        MPI.COMM_WORLD.Barrier()")
-    lines.append("")
+    lines.append('        MPI.COMM_WORLD.Barrier()')
+    lines.append('')
     if standard_props:
-        lines.append("    run_properties()")
+        lines.append('    run_properties()')
     if has_optical:
-        lines.append("    run_optical()")
+        lines.append('    run_optical()')
     if not standard_props and not has_optical:
-        lines.append("    pass  # no properties selected")
-    lines.append("")
-    lines.append("")
+        lines.append('    pass  # no properties selected')
+    lines.append('')
+    lines.append('')
     lines.append('if __name__ == "__main__":')
-    lines.append("    main()")
-    lines.append("")
+    lines.append('    main()')
+    lines.append('')
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
 
 
 def _emit_standard_properties(props, needs_spin, cfg):
@@ -367,179 +372,185 @@ def _emit_standard_properties(props, needs_spin, cfg):
     selected = set(props)
 
     # Band structure (and topology) come right after the Hamiltonian.
-    if "bands" in selected:
-        if cfg["ibrav"] == 0:
-            body.append("    p.bands(ibrav=IBRAV, nk=NK, band_path=BAND_PATH,")
+    if 'bands' in selected:
+        if cfg['ibrav'] == 0:
+            body.append('    p.bands(ibrav=IBRAV, nk=NK, band_path=BAND_PATH,')
             body.append("            high_sym_points=HIGH_SYM, fname='bands')")
         else:
             body.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands')")
 
     if needs_spin:
-        body.append("    p.spin_operator(spin_orbit=SPIN_ORBIT)")
+        body.append('    p.spin_operator(spin_orbit=SPIN_ORBIT)')
 
-    if "topology" in selected:
-        body.append("    p.topology(Berry=True, eff_mass=True, spol=2, ipol=0, jpol=1)")
+    if 'topology' in selected:
+        body.append('    p.topology(Berry=True, eff_mass=True, spol=2, ipol=0, jpol=1)')
 
-    body.append("")
-    body.append("    if NFFT is not None:")
-    body.append("        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])")
-    body.append("    p.pao_eigh()")
-    body.append("")
+    body.append('')
+    body.append('    if NFFT is not None:')
+    body.append('        p.interpolated_hamiltonian(nfft1=NFFT[0], nfft2=NFFT[1], nfft3=NFFT[2])')
+    body.append('    p.pao_eigh()')
+    body.append('')
 
-    if "fermi_surface" in selected:
-        body.append("    p.fermi_surface()")
-    if "spin_texture" in selected:
-        body.append("    p.spin_texture()")
+    if 'fermi_surface' in selected:
+        body.append('    p.fermi_surface()')
+    if 'spin_texture' in selected:
+        body.append('    p.spin_texture()')
 
-    body.append("    p.gradient_and_momenta()")
-    body.append("    p.adaptive_smearing()")
+    body.append('    p.gradient_and_momenta()')
+    body.append('    p.adaptive_smearing()')
 
-    if "dos" in selected:
-        body.append("    p.dos(do_dos=True, do_pdos=DO_PDOS, emin=EMIN, emax=EMAX, ne=NE)")
-    if "spin_Hall" in selected:
-        body.append("    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])")
-    if "anomalous_Hall" in selected:
-        body.append("    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])")
-    if "transport" in selected:
-        body.append("    p.transport(tmin=TMIN, tmax=TMAX, nt=NT, emin=EMIN, emax=EMAX,")
-        body.append("                ne=NE, write_to_file=True)")
+    if 'dos' in selected:
+        body.append('    p.dos(do_dos=True, do_pdos=DO_PDOS, emin=EMIN, emax=EMAX, ne=NE)')
+    if 'spin_Hall' in selected:
+        body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
+    if 'anomalous_Hall' in selected:
+        body.append('    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])')
+    if 'transport' in selected:
+        body.append('    p.transport(tmin=TMIN, tmax=TMAX, nt=NT, emin=EMIN, emax=EMAX,')
+        body.append('                ne=NE, write_to_file=True)')
 
     return body
 
 
 def build_acbn0_script(cfg):
     """Assemble an ACBN0 / eACBN0 main.py from the collected config."""
-    use_v = cfg["use_intersite_v"]
-    hubbard = cfg["hubbard"]
+    use_v = cfg['use_intersite_v']
+    hubbard = cfg['hubbard']
 
     lines = [HEADER]
-    lines.append("")
-    lines.append("from PAOFLOW import GPAO")
+    lines.append('')
+    lines.append('from PAOFLOW import GPAO')
     if use_v:
-        lines.append("from PAOFLOW.ACBN0 import ACBN0, eACBN0")
+        lines.append('from PAOFLOW.ACBN0 import ACBN0, eACBN0')
     else:
-        lines.append("from PAOFLOW.ACBN0 import ACBN0")
-    lines.append("")
-    lines.append("# ----------------------------------------------------------------------- #")
-    lines.append("# Configuration  (edit freely)                                            #")
-    lines.append("# ----------------------------------------------------------------------- #")
-    lines.append("HERE = os.path.dirname(os.path.abspath(__file__))")
-    lines.append("PREFIX = {!r}".format(cfg["prefix"]))
-    lines.append("UPF = os.path.join(HERE, {!r})".format(cfg["upf"]))
-    lines.append("BASISPATH = os.path.join(HERE, {!r}) + os.sep".format(cfg["basisdir"]))
-    lines.append("OUT = {!r}".format(cfg["outputdir"]))
-    lines.append("")
-    lines.append("# Parallel launch commands and executable paths (edit to your machine).")
-    lines.append("MPI_QE = {!r}".format(cfg["mpi_qe"]))
-    lines.append("MPI_PY = {!r}".format(cfg["mpi_py"]))
-    lines.append("MPI_HARTREE = {!r}".format(cfg["mpi_hartree"]))
-    lines.append("QE_PATH = {!r}".format(cfg["qe_path"]))
-    lines.append("PY_PATH = {!r}".format(cfg["py_path"]))
-    lines.append("")
-    lines.append("PROJECTION = {!r}   # ortho-atomic projections fit the Hubbard U".format(cfg["projection"]))
-    lines.append("CONV_THR = {}".format(cfg["conv_thr"]))
-    lines.append("IBRAV = {}".format(cfg["ibrav"]))
-    lines.append("NK = {}".format(cfg["nk"]))
-    lines.append("")
-    lines.append("# Hubbard manifolds and their initial U (eV).")
-    lines.append("HUBBARD_INIT = {")
+        lines.append('from PAOFLOW.ACBN0 import ACBN0')
+    lines.append('')
+    lines.append('# ----------------------------------------------------------------------- #')
+    lines.append('# Configuration  (edit freely)                                            #')
+    lines.append('# ----------------------------------------------------------------------- #')
+    lines.append('HERE = os.path.dirname(os.path.abspath(__file__))')
+    lines.append('PREFIX = {!r}'.format(cfg['prefix']))
+    lines.append('UPF = os.path.join(HERE, {!r})'.format(cfg['upf']))
+    lines.append('BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']))
+    lines.append('OUT = {!r}'.format(cfg['outputdir']))
+    lines.append('')
+    lines.append('# Parallel launch commands and executable paths (edit to your machine).')
+    lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
+    lines.append('MPI_PY = {!r}'.format(cfg['mpi_py']))
+    lines.append('MPI_HARTREE = {!r}'.format(cfg['mpi_hartree']))
+    lines.append('QE_PATH = {!r}'.format(cfg['qe_path']))
+    lines.append('PY_PATH = {!r}'.format(cfg['py_path']))
+    lines.append('')
+    lines.append(
+        'PROJECTION = {!r}   # ortho-atomic projections fit the Hubbard U'.format(cfg['projection'])
+    )
+    lines.append('CONV_THR = {}'.format(cfg['conv_thr']))
+    lines.append('IBRAV = {}'.format(cfg['ibrav']))
+    lines.append('NK = {}'.format(cfg['nk']))
+    lines.append('')
+    lines.append('# Hubbard manifolds and their initial U (eV).')
+    lines.append('HUBBARD_INIT = {')
     for orb, val in hubbard:
-        lines.append("    {!r}: {},".format(orb, val))
-    lines.append("}")
+        lines.append('    {!r}: {},'.format(orb, val))
+    lines.append('}')
     if use_v:
-        lines.append("")
-        lines.append("V_CUTOFF = {}   # intersite neighbour cutoff (Angstrom)".format(cfg["v_cutoff"]))
-        lines.append("V_INIT = {}     # initial intersite V (eV)".format(cfg["v_init"]))
-    lines.append("")
+        lines.append('')
+        lines.append(
+            'V_CUTOFF = {}   # intersite neighbour cutoff (Angstrom)'.format(cfg['v_cutoff'])
+        )
+        lines.append('V_INIT = {}     # initial intersite V (eV)'.format(cfg['v_init']))
+    lines.append('')
     lines.append(BASIS_GEN_BLOCK)
-    lines.append("")
-    lines.append("def compute_bands(label):")
+    lines.append('')
+    lines.append('def compute_bands(label):')
     lines.append('    """Reconstruct the PAO band structure from the current <PREFIX>.save')
-    lines.append("    using the minimal basis and dump it to OUT/bands_<label>_0.dat.")
+    lines.append('    using the minimal basis and dump it to OUT/bands_<label>_0.dat.')
     lines.append('    """')
-    lines.append("    p = PAOFLOW.PAOFLOW(")
-    lines.append("        workpath=HERE,")
-    lines.append("        outputdir=OUT,")
+    lines.append('    p = PAOFLOW.PAOFLOW(')
+    lines.append('        workpath=HERE,')
+    lines.append('        outputdir=OUT,')
     lines.append("        savedir='{}.save'.format(PREFIX),")
     lines.append("        smearing='gauss',")
-    lines.append("        npool=1,")
-    lines.append("        verbose=False,")
-    lines.append("    )")
-    lines.append("    # Minimal basis for the projections, as required for ACBN0.")
+    lines.append('        npool=1,')
+    lines.append('        verbose=False,')
+    lines.append('    )')
+    lines.append('    # Minimal basis for the projections, as required for ACBN0.')
     lines.append("    p.projections(basispath=BASISPATH, configuration='minimal')")
-    lines.append("    p.projectability(pthr=0.95)")
-    lines.append("    p.pao_hamiltonian()")
-    if cfg["ibrav"] == 0:
-        lines.append("    # ibrav=0: provide BAND_PATH / HIGH_SYM here if you want bands.")
+    lines.append('    p.projectability(pthr=0.95)')
+    lines.append('    p.pao_hamiltonian()')
+    if cfg['ibrav'] == 0:
+        lines.append('    # ibrav=0: provide BAND_PATH / HIGH_SYM here if you want bands.')
         lines.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands_{}'.format(label))")
     else:
         lines.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands_{}'.format(label))")
-    lines.append("    p.finish_execution()")
-    lines.append("")
-    lines.append("")
-    lines.append("def main():")
+    lines.append('    p.finish_execution()')
+    lines.append('')
+    lines.append('')
+    lines.append('def main():')
     lines.append("    ensure_basis(preset='extended')")
     lines.append('    if "MPI" in globals():')
-    lines.append("        MPI.COMM_WORLD.Barrier()")
-    lines.append("")
-    lines.append("    # ------------------------------------------------------------------ #")
-    lines.append("    # ACBN0: self-consistent on-site U                                    #")
-    lines.append("    # ------------------------------------------------------------------ #")
-    lines.append("    a = ACBN0(")
-    lines.append("        PREFIX,")
+    lines.append('        MPI.COMM_WORLD.Barrier()')
+    lines.append('')
+    lines.append('    # ------------------------------------------------------------------ #')
+    lines.append('    # ACBN0: self-consistent on-site U                                    #')
+    lines.append('    # ------------------------------------------------------------------ #')
+    lines.append('    a = ACBN0(')
+    lines.append('        PREFIX,')
     lines.append("        workdir='./',")
-    lines.append("        mpi_qe=MPI_QE,")
-    lines.append("        mpi_python=MPI_PY,")
-    lines.append("        mpi_hartree=MPI_HARTREE,")
+    lines.append('        mpi_qe=MPI_QE,')
+    lines.append('        mpi_python=MPI_PY,')
+    lines.append('        mpi_hartree=MPI_HARTREE,')
     lines.append("        qe_options='',")
-    lines.append("        qe_path=QE_PATH,")
-    lines.append("        python_path=PY_PATH,")
-    lines.append("        outputdir=OUT,")
-    lines.append("        projection=PROJECTION,")
-    lines.append("    )")
-    lines.append("    a.set_hubbard_parameters(dict(HUBBARD_INIT))")
-    lines.append("    a.optimize_hubbard_U(convergence_threshold=CONV_THR)")
+    lines.append('        qe_path=QE_PATH,')
+    lines.append('        python_path=PY_PATH,')
+    lines.append('        outputdir=OUT,')
+    lines.append('        projection=PROJECTION,')
+    lines.append('    )')
+    lines.append('    a.set_hubbard_parameters(dict(HUBBARD_INIT))')
+    lines.append('    a.optimize_hubbard_U(convergence_threshold=CONV_THR)')
     lines.append("    compute_bands('U')")
-    lines.append("    converged_U = dict(a.uVals)")
+    lines.append('    converged_U = dict(a.uVals)')
     lines.append("    print('\\nConverged U values:')")
-    lines.append("    for k, v in converged_U.items():")
+    lines.append('    for k, v in converged_U.items():')
     lines.append("        print('  {} : {:.4f} eV'.format(k, v))")
     if use_v:
-        lines.append("")
-        lines.append("    # ------------------------------------------------------------------ #")
-        lines.append("    # eACBN0: joint on-site U + intersite V                               #")
-        lines.append("    # ------------------------------------------------------------------ #")
-        lines.append("    e = eACBN0(")
-        lines.append("        PREFIX,")
+        lines.append('')
+        lines.append('    # ------------------------------------------------------------------ #')
+        lines.append('    # eACBN0: joint on-site U + intersite V                               #')
+        lines.append('    # ------------------------------------------------------------------ #')
+        lines.append('    e = eACBN0(')
+        lines.append('        PREFIX,')
         lines.append("        workdir='./',")
-        lines.append("        mpi_qe=MPI_QE,")
-        lines.append("        mpi_python=MPI_PY,")
-        lines.append("        mpi_hartree=MPI_HARTREE,")
+        lines.append('        mpi_qe=MPI_QE,')
+        lines.append('        mpi_python=MPI_PY,')
+        lines.append('        mpi_hartree=MPI_HARTREE,')
         lines.append("        qe_options='',")
-        lines.append("        qe_path=QE_PATH,")
-        lines.append("        python_path=PY_PATH,")
-        lines.append("        outputdir=OUT,")
-        lines.append("        projection=PROJECTION,")
-        lines.append("    )")
-        lines.append("    e.set_hubbard_parameters(converged_U)")
-        lines.append("    e.set_intersite_pairs(cutoff=V_CUTOFF, V_init=V_INIT)")
-        lines.append("    e.print_intersite_pairs()")
-        lines.append("    e.optimize_hubbard_UV(convergence_threshold=CONV_THR, max_iter=25, mixing=0.7)")
-        lines.append("    e.run_dft(PREFIX, e.uspecies, e.uVals)")
+        lines.append('        qe_path=QE_PATH,')
+        lines.append('        python_path=PY_PATH,')
+        lines.append('        outputdir=OUT,')
+        lines.append('        projection=PROJECTION,')
+        lines.append('    )')
+        lines.append('    e.set_hubbard_parameters(converged_U)')
+        lines.append('    e.set_intersite_pairs(cutoff=V_CUTOFF, V_init=V_INIT)')
+        lines.append('    e.print_intersite_pairs()')
+        lines.append(
+            '    e.optimize_hubbard_UV(convergence_threshold=CONV_THR, max_iter=25, mixing=0.7)'
+        )
+        lines.append('    e.run_dft(PREFIX, e.uspecies, e.uVals)')
         lines.append("    compute_bands('UV')")
         lines.append("    print('\\nFinal U values:')")
-        lines.append("    for k, v in e.uVals.items():")
+        lines.append('    for k, v in e.uVals.items():')
         lines.append("        print('  {} : {:.4f} eV'.format(k, v))")
         lines.append("    print('\\nFinal V values:')")
-        lines.append("    for k, v in e.vVals.items():")
+        lines.append('    for k, v in e.vVals.items():')
         lines.append("        print('  {} : {:.4f} eV'.format(k, v))")
-    lines.append("")
-    lines.append("")
+    lines.append('')
+    lines.append('')
     lines.append('if __name__ == "__main__":')
-    lines.append("    main()")
-    lines.append("")
+    lines.append('    main()')
+    lines.append('')
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -608,196 +619,223 @@ def _missing(*names):
 # Plot-function bodies keyed by an internal id.  Each value is a list of source
 # lines for a ``plot_<id>()`` function in the generated script.
 def _plot_func(name, body_lines):
-    return ["def {}():".format(name)] + ["    " + ln for ln in body_lines] + [""]
+    return ['def {}():'.format(name)] + ['    ' + ln for ln in body_lines] + ['']
 
 
 def build_plot_script(cfg):
     """Assemble a plot.py that mimics the property selection in *cfg*."""
-    props = cfg["properties"]
-    has_bands = "bands" in props
-    has_dos = "dos" in props
-    do_pdos = cfg.get("do_pdos", False)
+    props = cfg['properties']
+    has_bands = 'bands' in props
+    has_dos = 'dos' in props
+    do_pdos = cfg.get('do_pdos', False)
 
-    funcs = []          # source for each plot_<id> function
-    menu = []           # ordered list of (label, func_name)
+    funcs = []  # source for each plot_<id> function
+    menu = []  # ordered list of (label, func_name)
 
     if has_bands:
-        funcs += _plot_func("plot_band_structure", [
-            "f = _one('*.bands_0.dat')",
-            "sp = _one('*.kpath_points.txt')",
-            "if _missing(f):",
-            "    return",
-            "pplt.plot_bands(f, sym_points=sp, title='Band structure')",
-        ])
-        menu.append(("Band structure", "plot_band_structure"))
+        funcs += _plot_func(
+            'plot_band_structure',
+            [
+                "f = _one('*.bands_0.dat')",
+                "sp = _one('*.kpath_points.txt')",
+                'if _missing(f):',
+                '    return',
+                "pplt.plot_bands(f, sym_points=sp, title='Band structure')",
+            ],
+        )
+        menu.append(('Band structure', 'plot_band_structure'))
 
     if has_dos:
         dos_body = [
             "f = _one('*.dosdk_0.dat')",
-            "if _missing(f):",
-            "    return",
+            'if _missing(f):',
+            '    return',
             "pplt.plot_dos(f, title='Density of states')",
         ]
         if do_pdos:
             dos_body += [
                 "pdos = _many('*.pdosdk*')",
-                "if pdos:",
+                'if pdos:',
                 "    pplt.plot_pdos(pdos, title='Projected DOS')",
             ]
-        funcs += _plot_func("plot_density_of_states", dos_body)
-        menu.append(("DOS / projected DOS", "plot_density_of_states"))
+        funcs += _plot_func('plot_density_of_states', dos_body)
+        menu.append(('DOS / projected DOS', 'plot_density_of_states'))
 
     # Per the workflow: when both bands and DOS are present, offer the combined
     # side-by-side plot via plot_dos_beside_bands.
     if has_bands and has_dos:
-        funcs += _plot_func("plot_bands_and_dos", [
-            "fb = _one('*.bands_0.dat')",
-            "fd = _one('*.dosdk_0.dat')",
-            "sp = _one('*.kpath_points.txt')",
-            "if _missing(fb, fd):",
-            "    return",
-            "pplt.plot_dos_beside_bands(fd, fb, sym_points=sp, dos_ticks=True,",
-            "                           title='Bands and DOS')",
-        ])
-        menu.append(("Bands + DOS (side by side)", "plot_bands_and_dos"))
+        funcs += _plot_func(
+            'plot_bands_and_dos',
+            [
+                "fb = _one('*.bands_0.dat')",
+                "fd = _one('*.dosdk_0.dat')",
+                "sp = _one('*.kpath_points.txt')",
+                'if _missing(fb, fd):',
+                '    return',
+                'pplt.plot_dos_beside_bands(fd, fb, sym_points=sp, dos_ticks=True,',
+                "                           title='Bands and DOS')",
+            ],
+        )
+        menu.append(('Bands + DOS (side by side)', 'plot_bands_and_dos'))
 
-    if "transport" in props:
-        funcs += _plot_func("plot_conductivity", [
-            "f = _one('*.sigmadk_0.dat')",
-            "if _missing(f):",
-            "    return",
-            "pplt.plot_electrical_conductivity(f, title='Electrical conductivity')",
-        ])
-        menu.append(("Electrical conductivity", "plot_conductivity"))
-        funcs += _plot_func("plot_seebeck", [
-            "f = _one('*.Seebeck_0.dat')",
-            "if _missing(f):",
-            "    return",
-            "pplt.plot_seebeck(f, title='Seebeck coefficient')",
-        ])
-        menu.append(("Seebeck coefficient", "plot_seebeck"))
+    if 'transport' in props:
+        funcs += _plot_func(
+            'plot_conductivity',
+            [
+                "f = _one('*.sigmadk_0.dat')",
+                'if _missing(f):',
+                '    return',
+                "pplt.plot_electrical_conductivity(f, title='Electrical conductivity')",
+            ],
+        )
+        menu.append(('Electrical conductivity', 'plot_conductivity'))
+        funcs += _plot_func(
+            'plot_seebeck',
+            [
+                "f = _one('*.Seebeck_0.dat')",
+                'if _missing(f):',
+                '    return',
+                "pplt.plot_seebeck(f, title='Seebeck coefficient')",
+            ],
+        )
+        menu.append(('Seebeck coefficient', 'plot_seebeck'))
 
-    if "spin_Hall" in props:
-        funcs += _plot_func("plot_spin_hall", [
-            "files = _many('*.shcEf*.dat')",
-            "if not files:",
-            "    _missing(None)",
-            "    return",
-            "pplt.plot_shc(files if len(files) > 1 else files[0], title='Spin Hall conductivity')",
-        ])
-        menu.append(("Spin Hall conductivity", "plot_spin_hall"))
+    if 'spin_Hall' in props:
+        funcs += _plot_func(
+            'plot_spin_hall',
+            [
+                "files = _many('*.shcEf*.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "pplt.plot_shc(files if len(files) > 1 else files[0], title='Spin Hall conductivity')",
+            ],
+        )
+        menu.append(('Spin Hall conductivity', 'plot_spin_hall'))
 
-    if "anomalous_Hall" in props:
-        funcs += _plot_func("plot_anomalous_hall", [
-            "files = _many('*.ahcEf*.dat')",
-            "if not files:",
-            "    _missing(None)",
-            "    return",
-            "pplt.plot_ahc(files if len(files) > 1 else files[0], title='Anomalous Hall conductivity')",
-        ])
-        menu.append(("Anomalous Hall conductivity", "plot_anomalous_hall"))
+    if 'anomalous_Hall' in props:
+        funcs += _plot_func(
+            'plot_anomalous_hall',
+            [
+                "files = _many('*.ahcEf*.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "pplt.plot_ahc(files if len(files) > 1 else files[0], title='Anomalous Hall conductivity')",
+            ],
+        )
+        menu.append(('Anomalous Hall conductivity', 'plot_anomalous_hall'))
 
-    if "topology" in props:
+    if 'topology' in props:
         berry_body = [
             "fb = _one('*.Omega_*.dat')",
-            "if _missing(fb):",
-            "    return",
+            'if _missing(fb):',
+            '    return',
             "sp = _one('*.kpath_points.txt')",
             "pplt.plot_berry(fb, sym_points=sp, title='Berry curvature')",
         ]
         if has_bands:
             berry_body += [
                 "fband = _one('*.bands_0.dat')",
-                "if fband is not None:",
-                "    pplt.plot_berry_under_bands(fb, fband, sym_points=sp, dos_ticks=True,",
+                'if fband is not None:',
+                '    pplt.plot_berry_under_bands(fb, fband, sym_points=sp, dos_ticks=True,',
                 "                                title='Berry curvature under bands')",
             ]
-        funcs += _plot_func("plot_berry_curvature", berry_body)
-        menu.append(("Berry curvature", "plot_berry_curvature"))
+        funcs += _plot_func('plot_berry_curvature', berry_body)
+        menu.append(('Berry curvature', 'plot_berry_curvature'))
 
-    if "optical" in props:
-        funcs += _plot_func("plot_dielectric", [
-            "epsi = _many('epsi_*.dat')",
-            "epsr = _many('epsr_*.dat')",
-            "if not epsi and not epsr:",
-            "    _missing(None)",
-            "    return",
-            "if epsi:",
-            "    pplt.plot_dielectric(epsi if len(epsi) > 1 else epsi[0],",
-            "                         title='Im(epsilon)')",
-            "if epsr:",
-            "    pplt.plot_dielectric(epsr if len(epsr) > 1 else epsr[0],",
-            "                         title='Re(epsilon)')",
-        ])
-        menu.append(("Optical / dielectric function", "plot_dielectric"))
+    if 'optical' in props:
+        funcs += _plot_func(
+            'plot_dielectric',
+            [
+                "epsi = _many('epsi_*.dat')",
+                "epsr = _many('epsr_*.dat')",
+                'if not epsi and not epsr:',
+                '    _missing(None)',
+                '    return',
+                'if epsi:',
+                '    pplt.plot_dielectric(epsi if len(epsi) > 1 else epsi[0],',
+                "                         title='Im(epsilon)')",
+                'if epsr:',
+                '    pplt.plot_dielectric(epsr if len(epsr) > 1 else epsr[0],',
+                "                         title='Re(epsilon)')",
+            ],
+        )
+        menu.append(('Optical / dielectric function', 'plot_dielectric'))
 
-    if "fermi_surface" in props:
-        funcs += _plot_func("plot_fermi_surface", [
-            "files = _many('FermiSurf_*.bxsf')",
-            "if not files:",
-            "    _missing(None)",
-            "    return",
-            "print('Fermi surface BXSF file(s) written; open in XCrySDen:')",
-            "for f in files:",
-            "    print('  xcrysden --bxsf {}'.format(f))",
-        ])
-        menu.append(("Fermi surface (XCrySDen)", "plot_fermi_surface"))
+    if 'fermi_surface' in props:
+        funcs += _plot_func(
+            'plot_fermi_surface',
+            [
+                "files = _many('FermiSurf_*.bxsf')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "print('Fermi surface BXSF file(s) written; open in XCrySDen:')",
+                'for f in files:',
+                "    print('  xcrysden --bxsf {}'.format(f))",
+            ],
+        )
+        menu.append(('Fermi surface (XCrySDen)', 'plot_fermi_surface'))
 
-    if "spin_texture" in props:
-        funcs += _plot_func("plot_spin_texture", [
-            "f = _one('spin-texture-bands.dat')",
-            "if _missing(f):",
-            "    return",
-            "print('Spin-texture data written to {}.'.format(f))",
-            "print('Visualize the k-resolved spin vectors with your preferred tool.')",
-        ])
-        menu.append(("Spin texture (data file)", "plot_spin_texture"))
+    if 'spin_texture' in props:
+        funcs += _plot_func(
+            'plot_spin_texture',
+            [
+                "f = _one('spin-texture-bands.dat')",
+                'if _missing(f):',
+                '    return',
+                "print('Spin-texture data written to {}.'.format(f))",
+                "print('Visualize the k-resolved spin vectors with your preferred tool.')",
+            ],
+        )
+        menu.append(('Spin texture (data file)', 'plot_spin_texture'))
 
-    lines = [PLOT_HEADER.replace("__OUTPUTDIR__", repr(cfg["outputdir"]))]
-    lines.append("")
+    lines = [PLOT_HEADER.replace('__OUTPUTDIR__', repr(cfg['outputdir']))]
+    lines.append('')
     lines.extend(funcs)
 
     # Menu registry and interactive driver.
-    lines.append("# Ordered menu of available plots: (label, function).")
-    lines.append("PLOTS = [")
+    lines.append('# Ordered menu of available plots: (label, function).')
+    lines.append('PLOTS = [')
     for label, fname in menu:
-        lines.append("    ({!r}, {}),".format(label, fname))
-    lines.append("]")
-    lines.append("")
-    lines.append("")
-    lines.append("def main():")
+        lines.append('    ({!r}, {}),'.format(label, fname))
+    lines.append(']')
+    lines.append('')
+    lines.append('')
+    lines.append('def main():')
     lines.append("    print('Available plots:')")
-    lines.append("    for i, (label, _fn) in enumerate(PLOTS, 1):")
+    lines.append('    for i, (label, _fn) in enumerate(PLOTS, 1):')
     lines.append("        print('  {}: {}'.format(i, label))")
-    lines.append("    try:")
-    lines.append("        raw = input(\"Enter a comma/space separated list (or 'all'): \").strip()")
-    lines.append("    except EOFError:")
+    lines.append('    try:')
+    lines.append('        raw = input("Enter a comma/space separated list (or \'all\'): ").strip()')
+    lines.append('    except EOFError:')
     lines.append("        raw = ''")
     lines.append("    if raw.lower() == 'all':")
-    lines.append("        chosen = list(range(1, len(PLOTS) + 1))")
-    lines.append("    else:")
-    lines.append("        chosen = []")
+    lines.append('        chosen = list(range(1, len(PLOTS) + 1))')
+    lines.append('    else:')
+    lines.append('        chosen = []')
     lines.append("        for tok in raw.replace(',', ' ').split():")
-    lines.append("            try:")
-    lines.append("                idx = int(tok)")
-    lines.append("            except ValueError:")
-    lines.append("                continue")
-    lines.append("            if 1 <= idx <= len(PLOTS) and idx not in chosen:")
-    lines.append("                chosen.append(idx)")
-    lines.append("    if not chosen:")
+    lines.append('            try:')
+    lines.append('                idx = int(tok)')
+    lines.append('            except ValueError:')
+    lines.append('                continue')
+    lines.append('            if 1 <= idx <= len(PLOTS) and idx not in chosen:')
+    lines.append('                chosen.append(idx)')
+    lines.append('    if not chosen:')
     lines.append("        print('Nothing selected.')")
-    lines.append("        return")
-    lines.append("    for idx in chosen:")
-    lines.append("        label, fn = PLOTS[idx - 1]")
+    lines.append('        return')
+    lines.append('    for idx in chosen:')
+    lines.append('        label, fn = PLOTS[idx - 1]')
     lines.append("        print('\\n== {} =='.format(label))")
-    lines.append("        fn()")
-    lines.append("")
-    lines.append("")
+    lines.append('        fn()')
+    lines.append('')
+    lines.append('')
     lines.append('if __name__ == "__main__":')
-    lines.append("    main()")
-    lines.append("")
+    lines.append('    main()')
+    lines.append('')
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -809,18 +847,18 @@ def collect_common(args, workdir):
     det_upf = detect_upf(workdir)
     det_prefix = detect_prefix(workdir, det_save)
 
-    savedir = args.savedir or ask("Save directory (<prefix>.save)", det_save or "pwscf.save")
-    prefix = args.prefix or ask("Prefix", det_prefix)
-    upf = args.upf or ask("Pseudopotential (UPF) file", det_upf or "pseudo.UPF")
-    basisdir = ask("Basis directory name", "BASIS_PS")
-    ibrav = ask_int("ibrav (0 = read cell; needs band path for bands)", 0)
+    savedir = args.savedir or ask('Save directory (<prefix>.save)', det_save or 'pwscf.save')
+    prefix = args.prefix or ask('Prefix', det_prefix)
+    upf = args.upf or ask('Pseudopotential (UPF) file', det_upf or 'pseudo.UPF')
+    basisdir = ask('Basis directory name', 'BASIS_PS')
+    ibrav = ask_int('ibrav (0 = read cell; needs band path for bands)', 0)
     return {
-        "savedir": savedir,
-        "prefix": prefix,
-        "upf": upf,
-        "basisdir": basisdir,
-        "ibrav": ibrav,
-        "outputdir": "output",
+        'savedir': savedir,
+        'prefix': prefix,
+        'upf': upf,
+        'basisdir': basisdir,
+        'ibrav': ibrav,
+        'outputdir': 'output',
     }
 
 
@@ -828,56 +866,54 @@ def collect_run(common):
     """Prompt for the full property-run configuration."""
     props = select_properties()
     if not props:
-        print("No valid properties selected; nothing to generate.")
+        print('No valid properties selected; nothing to generate.')
         return None
 
-    std_basis = "standard"
-    if any(p != "optical" for p in props):
+    std_basis = 'standard'
+    if any(p != 'optical' for p in props):
         std_basis = ask_choice(
-            "\nBasis configuration for the standard properties:",
-            ["minimal", "standard", "extended"],
-            "standard",
+            '\nBasis configuration for the standard properties:',
+            ['minimal', 'standard', 'extended'],
+            'standard',
         )
 
     cfg = dict(common)
-    cfg["properties"] = props
-    cfg["std_basis"] = std_basis
-    cfg["npool"] = ask_int("npool", 1)
-    cfg["smearing"] = ask("Smearing (gauss / m-p / None)", "gauss")
-    if cfg["smearing"].lower() == "none":
-        cfg["smearing"] = None
-    cfg["spin_orbit"] = ask_yes_no("Spin-orbit (noncollinear) calculation?", False)
-    cfg["nk"] = ask_int("Band path k-points (NK)", 400) if "bands" in props else 400
-    cfg["emin"] = -8.0
-    cfg["emax"] = 4.0
-    cfg["ne"] = 1000
-    cfg["do_pdos"] = ask_yes_no("Projected DOS as well?", True) if "dos" in props else False
-    cfg["interpolate"] = ask_yes_no(
-        "Use double-grid interpolation (denser FFT)?",
-        "optical" in props,
+    cfg['properties'] = props
+    cfg['std_basis'] = std_basis
+    cfg['npool'] = ask_int('npool', 1)
+    cfg['smearing'] = ask('Smearing (gauss / m-p / None)', 'gauss')
+    if cfg['smearing'].lower() == 'none':
+        cfg['smearing'] = None
+    cfg['spin_orbit'] = ask_yes_no('Spin-orbit (noncollinear) calculation?', False)
+    cfg['nk'] = ask_int('Band path k-points (NK)', 400) if 'bands' in props else 400
+    cfg['emin'] = -8.0
+    cfg['emax'] = 4.0
+    cfg['ne'] = 1000
+    cfg['do_pdos'] = ask_yes_no('Projected DOS as well?', True) if 'dos' in props else False
+    cfg['interpolate'] = ask_yes_no(
+        'Use double-grid interpolation (denser FFT)?',
+        'optical' in props,
     )
-    cfg["nfft"] = ask_int("FFT grid size per direction", 24) if cfg["interpolate"] else 0
-    cfg["plot"] = ask_yes_no("Also generate a plotting script (plot.py)?", True)
+    cfg['nfft'] = ask_int('FFT grid size per direction', 24) if cfg['interpolate'] else 0
+    cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.py)?', True)
     return cfg
 
 
 def collect_acbn0(common):
     """Prompt for the ACBN0 / eACBN0 configuration."""
     cfg = dict(common)
-    cfg["use_intersite_v"] = ask_yes_no(
-        "Include intersite V (eACBN0)? (No = on-site U only, ACBN0)", False
+    cfg['use_intersite_v'] = ask_yes_no(
+        'Include intersite V (eACBN0)? (No = on-site U only, ACBN0)', False
     )
-    cfg["projection"] = ask("Projection scheme", "ortho-atomic")
-    cfg["conv_thr"] = float(ask("U/V convergence threshold (eV)", "0.05"))
-    cfg["nk"] = ask_int("Band path k-points (NK)", 400)
+    cfg['projection'] = ask('Projection scheme', 'ortho-atomic')
+    cfg['conv_thr'] = float(ask('U/V convergence threshold (eV)', '0.05'))
+    cfg['nk'] = ask_int('Band path k-points (NK)', 400)
 
-    print(
-        "\nEnter the Hubbard manifolds, one per line, as '<species>-<nl> <initU>'"
-    )
+    print("\nEnter the Hubbard manifolds, one per line, as '<species>-<nl> <initU>'")
     print("  e.g. 'Si-3p 0.5'.  Leave blank to finish.")
     hubbard = []
     while True:
-        line = _input("  manifold: ").strip()
+        line = _input('  manifold: ').strip()
         if not line:
             break
         parts = line.split()
@@ -888,20 +924,20 @@ def collect_acbn0(common):
             val = 0.5
         hubbard.append((orb, val))
     if not hubbard:
-        print("No Hubbard manifolds entered; nothing to generate.")
+        print('No Hubbard manifolds entered; nothing to generate.')
         return None
-    cfg["hubbard"] = hubbard
+    cfg['hubbard'] = hubbard
 
-    if cfg["use_intersite_v"]:
-        cfg["v_cutoff"] = float(ask("Intersite V neighbour cutoff (Angstrom)", "2.6"))
-        cfg["v_init"] = float(ask("Initial intersite V (eV)", "0.5"))
+    if cfg['use_intersite_v']:
+        cfg['v_cutoff'] = float(ask('Intersite V neighbour cutoff (Angstrom)', '2.6'))
+        cfg['v_init'] = float(ask('Initial intersite V (eV)', '0.5'))
 
-    print("\nParallel launch commands (edit later in the script if unsure):")
-    cfg["mpi_qe"] = ask("MPI command for pw.x", "mpirun -np 4")
-    cfg["mpi_py"] = ask("MPI command for python", "mpirun -np 1")
-    cfg["mpi_hartree"] = ask("MPI command for the Hartree step", "mpirun -np 4")
-    cfg["qe_path"] = ask("Quantum ESPRESSO bin path", "")
-    cfg["py_path"] = ask("Python bin path", "")
+    print('\nParallel launch commands (edit later in the script if unsure):')
+    cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
+    cfg['mpi_py'] = ask('MPI command for python', 'mpirun -np 1')
+    cfg['mpi_hartree'] = ask('MPI command for the Hartree step', 'mpirun -np 4')
+    cfg['qe_path'] = ask('Quantum ESPRESSO bin path', '')
+    cfg['py_path'] = ask('Python bin path', '')
     return cfg
 
 
@@ -910,46 +946,48 @@ def collect_acbn0(common):
 # --------------------------------------------------------------------------- #
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Generate a PAOFLOW main.py driver script interactively."
+        description='Generate a PAOFLOW main.py driver script interactively.'
     )
     parser.add_argument(
-        "-d", "--workdir", default=".",
-        help="Working directory to scan for QE artifacts (default: .)",
+        '-d',
+        '--workdir',
+        default='.',
+        help='Working directory to scan for QE artifacts (default: .)',
     )
-    parser.add_argument("--prefix", default=None, help="QE prefix override")
-    parser.add_argument("--savedir", default=None, help="<prefix>.save override")
-    parser.add_argument("--upf", default=None, help="Pseudopotential file override")
+    parser.add_argument('--prefix', default=None, help='QE prefix override')
+    parser.add_argument('--savedir', default=None, help='<prefix>.save override')
+    parser.add_argument('--upf', default=None, help='Pseudopotential file override')
     parser.add_argument(
-        "-o", "--out", default="main.py", help="Output script path (default: main.py)"
-    )
-    parser.add_argument(
-        "--plot", action="store_true",
-        help="Force generation of a plotting script (run workflow only)",
+        '-o', '--out', default='main.py', help='Output script path (default: main.py)'
     )
     parser.add_argument(
-        "--plot-out", default="plot.py",
-        help="Plotting-script output path (default: plot.py)",
+        '--plot',
+        action='store_true',
+        help='Force generation of a plotting script (run workflow only)',
     )
     parser.add_argument(
-        "-f", "--force", action="store_true", help="Overwrite an existing output file"
+        '--plot-out',
+        default='plot.py',
+        help='Plotting-script output path (default: plot.py)',
+    )
+    parser.add_argument(
+        '-f', '--force', action='store_true', help='Overwrite an existing output file'
     )
     args = parser.parse_args(argv)
 
     workdir = os.path.abspath(os.path.expanduser(args.workdir))
     if os.path.exists(args.out) and not args.force:
-        sys.stderr.write(
-            "Refusing to overwrite {} (use --force).\n".format(args.out)
-        )
+        sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(args.out))
         return 1
 
     workflow = ask_choice(
-        "Which workflow?",
-        ["acbn0", "run"],
-        "run",
+        'Which workflow?',
+        ['acbn0', 'run'],
+        'run',
     )
 
     common = collect_common(args, workdir)
-    if workflow == "acbn0":
+    if workflow == 'acbn0':
         cfg = collect_acbn0(common)
         if cfg is None:
             return 1
@@ -960,23 +998,21 @@ def main(argv=None):
             return 1
         content = build_run_script(cfg)
 
-    with open(args.out, "w", encoding="utf-8") as handle:
+    with open(args.out, 'w', encoding='utf-8') as handle:
         handle.write(content)
-    print("\nWrote {}".format(os.path.abspath(args.out)))
+    print('\nWrote {}'.format(os.path.abspath(args.out)))
 
-    if workflow == "run" and (args.plot or cfg.get("plot")):
+    if workflow == 'run' and (args.plot or cfg.get('plot')):
         if os.path.exists(args.plot_out) and not args.force:
-            sys.stderr.write(
-                "Refusing to overwrite {} (use --force).\n".format(args.plot_out)
-            )
+            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(args.plot_out))
         else:
             plot_content = build_plot_script(cfg)
-            with open(args.plot_out, "w", encoding="utf-8") as handle:
+            with open(args.plot_out, 'w', encoding='utf-8') as handle:
                 handle.write(plot_content)
-            print("Wrote {}".format(os.path.abspath(args.plot_out)))
+            print('Wrote {}'.format(os.path.abspath(args.plot_out)))
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())
