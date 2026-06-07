@@ -24,7 +24,7 @@ def _parse_args(argv):
     p = argparse.ArgumentParser(
         prog='paoflow-genbasis-ps',
         description='Generate pseudized AE-style basis files from UPF '
-                    'pseudopotentials (norm-conserving, ultrasoft, or PAW).',
+        'pseudopotentials (norm-conserving, ultrasoft, or PAW).',
     )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument('--pseudo', help='Path to a single UPF file.')

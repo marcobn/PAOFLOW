@@ -412,8 +412,6 @@ class UPF:
         q = np.fromstring(q_node.text, sep=' ', dtype=float)
         expected = self.nproj * self.nproj
         if q.size != expected:
-            raise RuntimeError(
-                f'UPF v2 PP_Q size mismatch: expected {expected}, got {q.size}.'
-            )
+            raise RuntimeError(f'UPF v2 PP_Q size mismatch: expected {expected}, got {q.size}.')
         self.qqq = q.reshape(self.nproj, self.nproj)
         self.has_augmentation = True

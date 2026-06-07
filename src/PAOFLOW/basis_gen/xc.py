@@ -126,7 +126,7 @@ def _pbe_exchange_kernel(n, sigma):
     # LDA exchange energy density: A * n^{4/3}, A = -(3/4)(3/pi)^{1/3}
     A = -0.75 * (3.0 / np.pi) ** (1.0 / 3.0)
     n43 = n ** (4.0 / 3.0)
-    e_x_lda = A * n43           # n * eps_x_LDA
+    e_x_lda = A * n43  # n * eps_x_LDA
     de_lda_dn = (4.0 / 3.0) * A * n ** (1.0 / 3.0)
 
     # s^2 = sigma / (4 k_F^2 n^2);  k_F = (3 pi^2 n)^{1/3}
@@ -158,11 +158,15 @@ def _pbe_correlation_kernel(n, sigma):
     rs = np.cbrt(3.0 / (4.0 * np.pi * n))
     rs_h = np.sqrt(rs)
     Q0 = -2.0 * _PW92_A * (1.0 + _PW92_a1 * rs)
-    Q1 = 2.0 * _PW92_A * (
-        _PW92_b1 * rs_h
-        + _PW92_b2 * rs
-        + _PW92_b3 * rs * rs_h
-        + _PW92_b4 * rs ** (_PW92_p + 1.0)
+    Q1 = (
+        2.0
+        * _PW92_A
+        * (
+            _PW92_b1 * rs_h
+            + _PW92_b2 * rs
+            + _PW92_b3 * rs * rs_h
+            + _PW92_b4 * rs ** (_PW92_p + 1.0)
+        )
     )
     Q1p = _PW92_A * (
         _PW92_b1 / rs_h
@@ -172,7 +176,7 @@ def _pbe_correlation_kernel(n, sigma):
     )
     L = np.log(1.0 + 1.0 / Q1)
     dQ0 = -2.0 * _PW92_A * _PW92_a1
-    e_lda = Q0 * L                                       # eps_c_LDA
+    e_lda = Q0 * L  # eps_c_LDA
     de_lda_drs = dQ0 * L - Q0 * Q1p / (Q1 * (Q1 + 1.0))  # d eps_c / drs
     # drs/dn = -rs / (3 n)
     de_lda_dn = de_lda_drs * (-rs / (3.0 * n))
@@ -266,8 +270,12 @@ def pbe(n, r, rab=None):
     sigma = grad_n * grad_n
 
     # Evaluate kernels only where n > 0 (avoid LDA/PBE singularities).
-    F_x = np.zeros_like(n); dFx_dn = np.zeros_like(n); dFx_dsig = np.zeros_like(n)
-    F_c = np.zeros_like(n); dFc_dn = np.zeros_like(n); dFc_dsig = np.zeros_like(n)
+    F_x = np.zeros_like(n)
+    dFx_dn = np.zeros_like(n)
+    dFx_dsig = np.zeros_like(n)
+    F_c = np.zeros_like(n)
+    dFc_dn = np.zeros_like(n)
+    dFc_dsig = np.zeros_like(n)
     F_x[pos], dFx_dn[pos], dFx_dsig[pos] = _pbe_exchange_kernel(n[pos], sigma[pos])
     F_c[pos], dFc_dn[pos], dFc_dsig[pos] = _pbe_correlation_kernel(n[pos], sigma[pos])
 
