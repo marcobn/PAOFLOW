@@ -571,14 +571,28 @@ pplt = GPAO.GPAO()
 
 
 def _one(pattern):
-    """Return the first OUTPUTDIR file matching *pattern* (or None)."""
+    """Return the first OUTPUTDIR file matching *pattern* (or None).
+
+    Patterns are written with an optional ``<prefix>.`` in front (e.g.
+    ``*.bands_0.dat``).  PAOFLOW may write the files either with that prefix
+    (``Si.bands_0.dat``) or without it (``bands_0.dat``), so a ``*.`` pattern
+    falls back to the prefix-less form.
+    """
     hits = sorted(glob.glob(os.path.join(OUTPUTDIR, pattern)))
+    if not hits and pattern.startswith('*.'):
+        hits = sorted(glob.glob(os.path.join(OUTPUTDIR, pattern[2:])))
     return hits[0] if hits else None
 
 
 def _many(pattern):
-    """Return all OUTPUTDIR files matching *pattern* (sorted)."""
-    return sorted(glob.glob(os.path.join(OUTPUTDIR, pattern)))
+    """Return all OUTPUTDIR files matching *pattern* (sorted).
+
+    As with :func:`_one`, a ``*.`` pattern also matches prefix-less files.
+    """
+    hits = sorted(glob.glob(os.path.join(OUTPUTDIR, pattern)))
+    if not hits and pattern.startswith('*.'):
+        hits = sorted(glob.glob(os.path.join(OUTPUTDIR, pattern[2:])))
+    return hits
 
 
 def _missing(*names):
