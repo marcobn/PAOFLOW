@@ -34,6 +34,8 @@ Homepage = "https://github.com/marcobn/PAOFLOW"
 [project.scripts]
 pyskeaf = "PAOFLOW.pyskeaf.cli:main"
 paoflow-genbasis-ps = "PAOFLOW.basis_gen.cli:main"
+paoflow-gen-qe = "PAOFLOW.gen.aflow_qe:main"
+paoflow-gen = "PAOFLOW.gen.paoflow_driver:main"
 
 [tool.ruff]
 line-length = 100
