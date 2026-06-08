@@ -9,7 +9,6 @@ import numpy as np
 
 SKIP_COMPARE_PATTERNS = {
     'hamiltonian.dat',
-    'weyl_points.dat',
     'Omega_z_xy.dat',
     'effmass*',
 }
