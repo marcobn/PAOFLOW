@@ -364,8 +364,8 @@ def build_input(aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None):
     out.append("    restart_mode = 'from_scratch',")
     out.append("    prefix = '{}',".format(compound))
     out.append("    pseudo_dir = '{}',".format(pseudo_dir))
-    out.append("    outdir = './tmp'")
-    out.append(' /')
+    out.append("    outdir = './'")
+    out.append(" /")
 
     # &system
     out.append(' &system')

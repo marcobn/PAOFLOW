@@ -382,7 +382,7 @@ def create_atomic_inputfile(calculation, blocks, cards):
 
 
 def create_acbn0_inputfile(
-    prefix,
+    savedir,
     pthr,
     outputdir,
     expand_wedge=False,
@@ -394,8 +394,9 @@ def create_acbn0_inputfile(
 
     Parameters
     ----------
-    prefix : str
-        QE calculation prefix; the save directory is ``{prefix}.save``.
+    savedir : str
+        Path to the QE ``.save`` directory (relative to the PAOFLOW
+        workpath), e.g. ``./tmp/Si.save``.
     pthr : float
         Projectability threshold passed to ``paoflow.projectability()``.
     outputdir : str
@@ -430,14 +431,14 @@ def create_acbn0_inputfile(
     """
     if use_local_basis:
         _create_acbn0_local_basis_inputfile(
-            prefix, pthr, outputdir, expand_wedge, basispath, configuration
+            savedir, pthr, outputdir, expand_wedge, basispath, configuration
         )
         return
 
     with open('acbn0.py', 'w') as f:
         f.write('from PAOFLOW import PAOFLOW\n\n')
         f.write(
-            f"paoflow = PAOFLOW.PAOFLOW(outputdir='{outputdir}', savedir='{prefix}.save', save_overlaps=True, acbn0=True)\n"
+            f"paoflow = PAOFLOW.PAOFLOW(outputdir='{outputdir}', savedir='{savedir}', save_overlaps=True, acbn0=True)\n"
         )
         f.write('paoflow.read_atomic_proj_QE()\n')
         f.write(f'paoflow.projectability(pthr={pthr})\n')
@@ -446,7 +447,7 @@ def create_acbn0_inputfile(
 
 
 def _create_acbn0_local_basis_inputfile(
-    prefix, pthr, outputdir, expand_wedge, basispath, configuration
+    savedir, pthr, outputdir, expand_wedge, basispath, configuration
 ):
     """Write ``acbn0.py`` for the local-basis (projwfc-free) ACBN0 path.
 
@@ -475,13 +476,13 @@ def _create_acbn0_local_basis_inputfile(
         proj_line = f'paoflow.projections(basispath={basis_arg}, configuration={cfg!r})'
 
     lines = [
-        'import os',
-        'import numpy as np',
-        'from PAOFLOW import PAOFLOW',
-        '',
-        'paoflow = PAOFLOW.PAOFLOW('
-        f"outputdir='{outputdir}', savedir='{prefix}.save', "
-        'save_overlaps=True, acbn0=True)',
+        "import os",
+        "import numpy as np",
+        "from PAOFLOW import PAOFLOW",
+        "",
+        "paoflow = PAOFLOW.PAOFLOW("
+        f"outputdir='{outputdir}', savedir='{savedir}', "
+        "save_overlaps=True, acbn0=True)",
         proj_line,
         '',
         'arry, attr = paoflow.data_controller.data_dicts()',

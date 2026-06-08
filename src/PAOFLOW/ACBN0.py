@@ -165,7 +165,7 @@ import itertools
 import pickle
 import re
 import subprocess
-from os.path import join
+from os.path import expanduser, isfile, join
 
 import numpy as np
 from mpi4py import MPI
@@ -834,8 +834,14 @@ class ACBN0:
         # wrote the full BZ and no expansion is needed.  Otherwise, ask the
         # symmetry expander to fill the full BZ from the wedge; both Hks
         # and Sks are expanded (see open_grid_wrapper).
-        nscf_blocks, _ = struct_from_inputfile_QE(f'{self.prefix}.nscf.in')
-        nscf_sys = nscf_blocks.get('system', {})
+        #
+        # The nscf step is optional: when ``<prefix>.nscf.in`` is absent the
+        # driver runs the scf alone (with whatever bands the scf template
+        # requests) and reads the symmetry flags from the scf input instead.
+        self._has_nscf = isfile(f"{self.prefix}.nscf.in")
+        sym_file = f"{self.prefix}.nscf.in" if self._has_nscf else f"{self.prefix}.scf.in"
+        sym_blocks, _ = struct_from_inputfile_QE(sym_file)
+        nscf_sys = sym_blocks.get("system", {})
 
         def _qe_true(v):
             # Accept any QE logical-true shorthand: .true., .t., true, t
@@ -851,13 +857,22 @@ class ACBN0:
         print(f'ACBN0: nscf nosym={nosym}, noinv={noinv} -> expand_wedge={self.expand_wedge}\n')
 
         # Generate gaussian fits
-        print('Generating gaussian fits for pseudopotential basis states.\n')
+        print("Generating gaussian fits for pseudopotential basis states.\n")
+        # The ATOMIC_SPECIES card only stores the UPF file name; the
+        # directory holding the pseudopotentials is given by ``pseudo_dir``
+        # in the &control namelist.  Resolve the full path so the Gaussian
+        # fitter can open the file regardless of the current working dir.
+        pseudo_dir = self.blocks.get("control", {}).get("pseudo_dir", "")
+        pseudo_dir = expanduser(pseudo_dir.strip().strip('"').strip("'"))
         self.basis = {}
         self.uspecies = []
         for s in self.cards['ATOMIC_SPECIES'][1:]:
             ele, _, pp = s.split()
             self.uspecies.append(ele)
-            atno, basis = gaussian_fit(pp, threshold=self.gaussian_threshold)
+            pp_path = pp
+            if not isfile(pp_path) and pseudo_dir:
+                pp_path = join(pseudo_dir, pp)
+            atno, basis = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
             self.basis[ele] = basis
 
         # Store U values from input template
@@ -1011,8 +1026,8 @@ class ACBN0:
             self.uVals = new_U
 
     def exec_QE(self, executable, fname):
-        exe = join(self.qpath, executable)
-        fout = fname.replace('in', 'out')
+        exe = expanduser(join(self.qpath, executable))
+        fout = fname.replace("in", "out")
 
         command = f'{self.mpi_qe} {exe} {self.qoption}'
         print(
@@ -1021,20 +1036,29 @@ class ACBN0:
         )
         with open(fname, 'r') as qe_in, open(fout, 'w') as qe_out:
             subprocess.run(
-                command.split(' '),
+                [tok for tok in command.split(" ") if tok],
                 stdin=qe_in,
                 stdout=qe_out,
                 stderr=subprocess.STDOUT,
                 check=True,
             )
 
+    def _python_exec(self):
+        # ``python_path`` may point either at the directory containing the
+        # python interpreter (the historical convention) or directly at the
+        # interpreter executable.  Detect the latter so both forms work.
+        ppath = expanduser(self.ppath)
+        if ppath and isfile(ppath):
+            return ppath
+        return join(ppath, "python")
+
     def exec_PAOFLOW(self):
-        python_exec = join(self.ppath, 'python')
-        command = f'{self.mpi_python} {python_exec} acbn0.py'
-        print(f'Starting Process: {command} > paoflow.out', flush=True)
-        with open('paoflow.out', 'w') as paoflow_out:
+        python_exec = self._python_exec()
+        command = f"{self.mpi_python} {python_exec} acbn0.py"
+        print(f"Starting Process: {command} > paoflow.out", flush=True)
+        with open("paoflow.out", "w") as paoflow_out:
             subprocess.run(
-                command.split(' '),
+                [tok for tok in command.split(" ") if tok],
                 stdout=paoflow_out,
                 stderr=subprocess.STDOUT,
                 check=True,
@@ -1113,24 +1137,25 @@ class ACBN0:
             blocks['electrons']['startingpot'] = "'file'"
         create_atomic_inputfile('scf', blocks, cards)
 
-        blocks, cards = struct_from_inputfile_QE(f'{prefix}.nscf.in')
-        cards['HUBBARD'] = self.hubbard_card()
-        for k, v in self.hubbard_occ.items():
-            blocks['system'][k] = v
-        create_atomic_inputfile('nscf', blocks, cards)
+        blocks, cards = struct_from_inputfile_QE(f"{prefix}.nscf.in") if self._has_nscf else (None, None)
+        if self._has_nscf:
+            cards["HUBBARD"] = self.hubbard_card()
+            for k, v in self.hubbard_occ.items():
+                blocks["system"][k] = v
+            create_atomic_inputfile("nscf", blocks, cards)
 
         if self.use_local_basis:
             # The local-basis projection (PAOFLOW.projections) replaces
             # projwfc.x entirely, so no <prefix>.projwfc.in is read and
             # projwfc.x is never launched.
-            executables = {'scf': 'pw.x', 'nscf': 'pw.x'}
-            calcs = ['scf', 'nscf']
+            executables = {"scf": "pw.x", "nscf": "pw.x"}
+            calcs = ["scf", "nscf"] if self._has_nscf else ["scf"]
         else:
             blocks, cards = struct_from_inputfile_QE(f'{prefix}.projwfc.in')
             create_atomic_inputfile('projwfc', blocks, cards)
 
-            executables = {'scf': 'pw.x', 'nscf': 'pw.x', 'projwfc': 'projwfc.x -nd 1'}
-            calcs = ['scf', 'nscf', 'projwfc']
+            executables = {"scf": "pw.x", "nscf": "pw.x", "projwfc": "projwfc.x -nd 1"}
+            calcs = ["scf", "nscf", "projwfc"] if self._has_nscf else ["scf", "projwfc"]
         for c in calcs:
             self.exec_QE(executables[c], f'{c}.in')
 
@@ -1146,11 +1171,21 @@ class ACBN0:
         if self.nspin == 1:
             calcs.append(fstr.format(''))
         else:
-            calcs.append(fstr.format('_up'))
-            calcs.append(fstr.format('_down'))
+            calcs.append(fstr.format("_up"))
+            calcs.append(fstr.format("_down"))
+
+        # QE writes the wavefunction save folder to ``outdir/<prefix>.save``.
+        # PAOFLOW resolves ``savedir`` relative to its workpath ("./"), so the
+        # QE ``outdir`` (if any) must be folded into the save path, otherwise
+        # PAOFLOW would look for ``<prefix>.save`` in the run directory.
+        outdir = self.blocks.get("control", {}).get("outdir", "")
+        outdir = outdir.strip().strip('"').strip("'")
+        savedir = f"{save_prefix}.save"
+        if outdir:
+            savedir = join(outdir, savedir)
 
         create_acbn0_inputfile(
-            save_prefix,
+            savedir,
             self.pthr,
             self.outputdir,
             expand_wedge=self.expand_wedge,
@@ -1483,9 +1518,9 @@ class ACBN0:
                 pickle.dump(data, f)
 
             # compute hartree energy in parallel
-            python_exec = join(self.ppath, 'python')
-            command = f'{self.mpi_hartree} {python_exec} compute_hartree.py'
-            subprocess.run(command.split(' '), check=True)
+            python_exec = self._python_exec()
+            command = f"{self.mpi_hartree} {python_exec} compute_hartree.py"
+            subprocess.run([tok for tok in command.split(" ") if tok], check=True)
 
             with open(join(self.outputdir, 'tmp_uj.pkl'), 'rb') as f:
                 uj = pickle.load(f)
@@ -2523,10 +2558,10 @@ class eACBN0(ACBN0):
             f.write(f"H.intersite_energy('{self.outputdir}')\n")
 
     def _launch_compute_hartree_v(self):
-        python_exec = join(self.ppath, 'python') if self.ppath else 'python'
-        mpi = getattr(self, 'mpi_hartree', None) or self.mpi_python
-        command = f'{mpi} {python_exec} compute_hartree_v.py'
-        subprocess.run(command.split(), check=True)
+        python_exec = self._python_exec()
+        mpi = getattr(self, "mpi_hartree", None) or self.mpi_python
+        command = f"{mpi} {python_exec} compute_hartree_v.py"
+        subprocess.run([tok for tok in command.split(" ") if tok], check=True)
 
     # ------------------------------------------------------------------ #
     # Phase 4: joint U+V self-consistent loop                             #
