@@ -8,7 +8,7 @@ minimal, clearly-commented ``main.py`` that runs PAOFLOW.
 Two workflows are supported:
 
 1. **ACBN0 / eACBN0** self-consistent Hubbard U (and intersite V) using the
-   minimal basis for the PAO projections.
+   standard basis for the PAO projections.
 2. **Full property run** from the QE output, where the user picks the
    properties to compute from a menu.  Standard properties use the *standard*
    basis; optical properties (dielectric tensor) need the *extended* basis and
@@ -61,6 +61,18 @@ def ask_int(prompt, default):
         return int(ans)
     except ValueError:
         print('  (not an integer, using {})'.format(default))
+        return default
+
+
+def ask_float(prompt, default):
+    """Ask for a floating-point value with a default."""
+    ans = _input('{} [{}]: '.format(prompt, default)).strip()
+    if not ans:
+        return default
+    try:
+        return float(ans)
+    except ValueError:
+        print('  (not a number, using {})'.format(default))
         return default
 
 
@@ -180,6 +192,31 @@ def ensure_basis(preset="extended"):
         print("Using existing pseudo-atom basis under {}".format(BASISPATH))
 '''
 
+ENERGY_RANGE_BLOCK = '''
+def suggest_energy_window(p):
+    """Print the full PAO band range (eV, rel. to E_F) as a suggested window.
+
+    Must be called after p.pao_eigh().  The eigenvalues ('E_k') are distributed
+    across MPI ranks, so the local extrema are reduced to give every process the
+    same global range.  This only prints a hint; the calculation uses the
+    user-defined EMIN / EMAX / NE constants above.
+    """
+    import numpy as np
+
+    E_k = p.data_controller.data_arrays['E_k']
+    emin = float(np.amin(E_k))
+    emax = float(np.amax(E_k))
+    if "MPI" in globals():
+        comm = MPI.COMM_WORLD
+        emin = comm.allreduce(emin, op=MPI.MIN)
+        emax = comm.allreduce(emax, op=MPI.MAX)
+    if RANK == 0:
+        print('Suggested energy window from PAO bands: '
+              'EMIN={:.4f}, EMAX={:.4f} eV'.format(emin, emax))
+        print('  (currently using EMIN={}, EMAX={}, NE={})'.format(EMIN, EMAX, NE))
+    return emin, emax
+'''
+
 
 # --------------------------------------------------------------------------- #
 # Property registry for the full run
@@ -197,6 +234,8 @@ PROPERTY_MENU = [
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
+# Properties that read an explicit (emin, emax) energy window.
+ENERGY_WINDOW_PROPERTIES = {'dos', 'transport', 'spin_Hall', 'anomalous_Hall'}
 
 
 def select_properties():
@@ -228,6 +267,7 @@ def build_run_script(cfg):
     standard_props = [p for p in props if p != 'optical']
     has_optical = 'optical' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
+    needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
 
     lines = [HEADER]
 
@@ -265,7 +305,9 @@ def build_run_script(cfg):
         )
         lines.append('HIGH_SYM = None')
     lines.append('')
-    lines.append('# Energy window (eV, relative to E_F) for DOS / transport / Hall properties.')
+    lines.append('# Energy grid for DOS / transport / Hall properties (eV, relative to E_F).')
+    lines.append('# The full PAO band range is printed as a suggestion at run time')
+    lines.append('# (see suggest_energy_window); edit these values to match your needs.')
     lines.append('EMIN, EMAX, NE = {}, {}, {}'.format(cfg['emin'], cfg['emax'], cfg['ne']))
     if 'dos' in props:
         lines.append('DO_PDOS = {}'.format(cfg['do_pdos']))
@@ -281,6 +323,8 @@ def build_run_script(cfg):
 
     # ---- basis generation --------------------------------------------- #
     lines.append(BASIS_GEN_BLOCK)
+    if needs_energy_window:
+        lines.append(ENERGY_RANGE_BLOCK)
 
     # ---- standard property run ---------------------------------------- #
     if standard_props:
@@ -391,6 +435,11 @@ def _emit_standard_properties(props, needs_spin, cfg):
     body.append('    p.pao_eigh()')
     body.append('')
 
+    if selected & ENERGY_WINDOW_PROPERTIES:
+        body.append('    # Print the full PAO band range as a suggested energy window.')
+        body.append('    suggest_energy_window(p)')
+        body.append('')
+
     if 'fermi_surface' in selected:
         body.append('    p.fermi_surface()')
     if 'spin_texture' in selected:
@@ -474,8 +523,8 @@ def build_acbn0_script(cfg):
     lines.append('        npool=1,')
     lines.append('        verbose=False,')
     lines.append('    )')
-    lines.append('    # Minimal basis for the projections, as required for ACBN0.')
-    lines.append("    p.projections(basispath=BASISPATH, configuration='minimal')")
+    lines.append('    # Standard basis for the projections, as required for ACBN0.')
+    lines.append("    p.projections(basispath=BASISPATH, configuration='standard')")
     lines.append('    p.projectability(pthr=0.95)')
     lines.append('    p.pao_hamiltonian()')
     if cfg['ibrav'] == 0:
@@ -501,16 +550,16 @@ def build_acbn0_script(cfg):
     lines.append('        mpi_python=MPI_PY,')
     lines.append('        mpi_hartree=MPI_HARTREE,')
     lines.append("        qe_options='',")
-    lines.append("        qe_path=QE_PATH,")
-    lines.append("        python_path=PY_PATH,")
-    lines.append("        outputdir=OUT,")
-    lines.append("        projection=PROJECTION,")
-    lines.append("        use_local_basis=True,")
-    lines.append("        basispath=BASISPATH,")
-    lines.append("        configuration='minimal',")
-    lines.append("    )")
-    lines.append("    a.set_hubbard_parameters(dict(HUBBARD_INIT))")
-    lines.append("    a.optimize_hubbard_U(convergence_threshold=CONV_THR)")
+    lines.append('        qe_path=QE_PATH,')
+    lines.append('        python_path=PY_PATH,')
+    lines.append('        outputdir=OUT,')
+    lines.append('        projection=PROJECTION,')
+    lines.append('        use_local_basis=True,')
+    lines.append('        basispath=BASISPATH,')
+    lines.append("        configuration='standard',")
+    lines.append('    )')
+    lines.append('    a.set_hubbard_parameters(dict(HUBBARD_INIT))')
+    lines.append('    a.optimize_hubbard_U(convergence_threshold=CONV_THR)')
     lines.append("    compute_bands('U')")
     lines.append('    converged_U = dict(a.uVals)')
     lines.append("    print('\\nConverged U values:')")
@@ -528,19 +577,21 @@ def build_acbn0_script(cfg):
         lines.append('        mpi_python=MPI_PY,')
         lines.append('        mpi_hartree=MPI_HARTREE,')
         lines.append("        qe_options='',")
-        lines.append("        qe_path=QE_PATH,")
-        lines.append("        python_path=PY_PATH,")
-        lines.append("        outputdir=OUT,")
-        lines.append("        projection=PROJECTION,")
-        lines.append("        use_local_basis=True,")
-        lines.append("        basispath=BASISPATH,")
-        lines.append("        configuration='minimal',")
-        lines.append("    )")
-        lines.append("    e.set_hubbard_parameters(converged_U)")
-        lines.append("    e.set_intersite_pairs(cutoff=V_CUTOFF, V_init=V_INIT)")
-        lines.append("    e.print_intersite_pairs()")
-        lines.append("    e.optimize_hubbard_UV(convergence_threshold=CONV_THR, max_iter=25, mixing=0.7)")
-        lines.append("    e.run_dft(PREFIX, e.uspecies, e.uVals)")
+        lines.append('        qe_path=QE_PATH,')
+        lines.append('        python_path=PY_PATH,')
+        lines.append('        outputdir=OUT,')
+        lines.append('        projection=PROJECTION,')
+        lines.append('        use_local_basis=True,')
+        lines.append('        basispath=BASISPATH,')
+        lines.append("        configuration='standard',")
+        lines.append('    )')
+        lines.append('    e.set_hubbard_parameters(converged_U)')
+        lines.append('    e.set_intersite_pairs(cutoff=V_CUTOFF, V_init=V_INIT)')
+        lines.append('    e.print_intersite_pairs()')
+        lines.append(
+            '    e.optimize_hubbard_UV(convergence_threshold=CONV_THR, max_iter=25, mixing=0.7)'
+        )
+        lines.append('    e.run_dft(PREFIX, e.uspecies, e.uVals)')
         lines.append("    compute_bands('UV')")
         lines.append("    print('\\nFinal U values:')")
         lines.append('    for k, v in e.uVals.items():')
@@ -686,7 +737,7 @@ def build_plot_script(cfg):
         funcs += _plot_func(
             'plot_conductivity',
             [
-                "f = _one('*.sigmadk_0.dat')",
+                "f = _one('*sigma*_0.dat')",
                 'if _missing(f):',
                 '    return',
                 "pplt.plot_electrical_conductivity(f, title='Electrical conductivity')",
@@ -696,7 +747,7 @@ def build_plot_script(cfg):
         funcs += _plot_func(
             'plot_seebeck',
             [
-                "f = _one('*.Seebeck_0.dat')",
+                "f = _one('*Seebeck*_0.dat')",
                 'if _missing(f):',
                 '    return',
                 "pplt.plot_seebeck(f, title='Seebeck coefficient')",
@@ -890,9 +941,19 @@ def collect_run(common):
         cfg['smearing'] = None
     cfg['spin_orbit'] = ask_yes_no('Spin-orbit (noncollinear) calculation?', False)
     cfg['nk'] = ask_int('Band path k-points (NK)', 400) if 'bands' in props else 400
-    cfg['emin'] = -8.0
-    cfg['emax'] = 4.0
-    cfg['ne'] = 1000
+    if any(p in ENERGY_WINDOW_PROPERTIES for p in props):
+        print('\nEnergy grid for DOS / transport / Hall properties (eV, relative to E_F).')
+        print(
+            '  The full PAO band range is computed at run time and printed as a '
+            'suggestion;\n  the values below are what the calculation actually uses.'
+        )
+        cfg['emin'] = ask_float('  EMIN', -8.0)
+        cfg['emax'] = ask_float('  EMAX', 4.0)
+        cfg['ne'] = ask_int('  NE (number of energy points)', 1000)
+    else:
+        cfg['emin'] = -8.0
+        cfg['emax'] = 4.0
+        cfg['ne'] = 1000
     cfg['do_pdos'] = ask_yes_no('Projected DOS as well?', True) if 'dos' in props else False
     cfg['interpolate'] = ask_yes_no(
         'Use double-grid interpolation (denser FFT)?',
@@ -921,7 +982,7 @@ def collect_acbn0(common):
         if not line:
             break
         parts = line.split()
-        orb = parts[0].strip().strip("'\"")
+        orb = parts[0].strip().strip('\'"')
         try:
             val = float(parts[1]) if len(parts) > 1 else 0.5
         except ValueError:

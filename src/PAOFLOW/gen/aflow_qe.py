@@ -298,7 +298,206 @@ def resolve_species(aflow):
     return list(zip(species, counts))
 
 
-def build_input(aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None):
+# --------------------------------------------------------------------------- #
+# Bravais-lattice detection (QE ibrav + celldm) from the explicit cell
+# --------------------------------------------------------------------------- #
+# celldm slots (1-based) that QE reads for each ibrav.  Only these are emitted.
+_CELLDM_SLOTS = {
+    1: (1,),
+    2: (1,),
+    3: (1,),
+    -3: (1,),
+    4: (1, 3),
+    5: (1, 4),
+    -5: (1, 4),
+    6: (1, 3),
+    7: (1, 3),
+    8: (1, 2, 3),
+    9: (1, 2, 3),
+    -9: (1, 2, 3),
+    91: (1, 2, 3),
+    10: (1, 2, 3),
+    11: (1, 2, 3),
+    12: (1, 2, 3, 4),
+    -12: (1, 2, 3, 5),
+    13: (1, 2, 3, 4),
+    -13: (1, 2, 3, 5),
+    14: (1, 2, 3, 4, 5, 6),
+}
+
+
+def format_celldm_lines(ibrav, celldm):
+    """Return the ``celldm(i) = ...`` namelist lines QE needs for *ibrav* (Bohr)."""
+    slots = _CELLDM_SLOTS[ibrav]
+    return ['    celldm({}) = {:.10f},'.format(i, float(celldm[i - 1])) for i in slots]
+
+
+def cell_rows_to_matrix(contcar):
+    """Return the CONTCAR cell as a (3,3) array in Bohr, or ``None`` if unsupported.
+
+    Only ``angstrom`` and ``bohr`` cell units can be converted without an
+    external ``alat``; other units cause a fall back to the verbatim ibrav=0
+    path by returning ``None``.
+    """
+    import numpy as np
+
+    from PAOFLOW.inputs.lattice_format import BOHR_RADIUS_ANGS
+
+    rows = [[float(x) for x in row.split()[:3]] for row in contcar['cell_rows']]
+    lat = np.array(rows, dtype=float)
+    if lat.shape != (3, 3):
+        return None
+    unit = (contcar.get('cell_unit') or '').lower()
+    if unit.startswith('angstrom') or unit in ('ang',):
+        return lat / BOHR_RADIUS_ANGS
+    if unit.startswith('bohr') or unit in ('au', 'a.u.'):
+        return lat
+    return None
+
+
+def remap_atomic_positions(contcar, lat_bohr, m_matrix):
+    """Remap the CONTCAR positions to crystal coordinates of the QE primitive cell.
+
+    ``f_qe = f_in @ inv(M)`` where ``M`` maps the input cell onto the QE cell.
+    Each coordinate is wrapped to the minimum-image range ``[-0.5, 0.5)`` so
+    that bonded neighbours fall inside the home unit cell (needed by the
+    eACBN0 intersite-V neighbour search).  Returns the new
+    ``ATOMIC_POSITIONS (crystal)`` data rows, or ``None`` if the position
+    units cannot be resolved to fractional coordinates.
+    """
+    import numpy as np
+
+    parsed = _parse_frac_positions(contcar, lat_bohr)
+    if parsed is None:
+        return None
+    labels, frac_in, tails = parsed
+
+    frac_qe = frac_in @ np.linalg.inv(m_matrix)
+    # Wrap into the minimum-image cell [-0.5, 0.5): keeps every atom as close
+    # to the origin as possible so intersite bonds stay within the home cell.
+    frac_qe = frac_qe - np.floor(frac_qe + 0.5 + 1.0e-8)
+
+    rows = []
+    for label, frac, tail in zip(labels, frac_qe, tails):
+        line = '  {:<3s} {:18.12f} {:18.12f} {:18.12f}'.format(label, frac[0], frac[1], frac[2])
+        if tail:
+            line += ' ' + ' '.join(tail)
+        rows.append(line)
+    return rows
+
+
+def _parse_frac_positions(contcar, lat_bohr):
+    """Return ``(labels, frac, tails)`` for the CONTCAR positions.
+
+    ``frac`` is an ``(nat, 3)`` array of fractional coordinates in the input
+    cell ``lat_bohr`` (Bohr rows).  Returns ``None`` if the position units
+    cannot be resolved to fractional coordinates.
+    """
+    import numpy as np
+
+    from PAOFLOW.inputs.lattice_format import BOHR_RADIUS_ANGS
+
+    labels, coords, tails = [], [], []
+    for row in contcar['pos_rows']:
+        parts = row.split()
+        labels.append(parts[0])
+        coords.append([float(x) for x in parts[1:4]])
+        tails.append(parts[4:])
+    coords = np.array(coords, dtype=float)
+
+    unit = (contcar.get('pos_unit') or '').lower()
+    if unit.startswith('crystal'):
+        frac = coords
+    elif unit.startswith('angstrom') or unit in ('ang',):
+        frac = (coords / BOHR_RADIUS_ANGS) @ np.linalg.inv(lat_bohr)
+    elif unit.startswith('bohr') or unit in ('au', 'a.u.'):
+        frac = coords @ np.linalg.inv(lat_bohr)
+    else:
+        return None
+    return labels, frac, tails
+
+
+def suggest_intersite_cutoff(lat_bohr, frac):
+    """Suggest an eACBN0 intersite-V cutoff (Å) from the cell and positions.
+
+    Returns ``(d_nn_ang, cutoff_ang)``: the nearest-neighbour distance and a
+    cutoff placed midway between the first and second neighbour shells, so the
+    intersite-V search captures exactly the first shell.  Returns ``None`` when
+    no neighbour shell can be resolved.
+    """
+    import numpy as np
+
+    from PAOFLOW.inputs.lattice_format import BOHR_RADIUS_ANGS
+
+    frac = np.asarray(frac, dtype=float)
+    nat = frac.shape[0]
+    if nat == 0:
+        return None
+    cart = frac @ lat_bohr  # (nat, 3) Bohr
+
+    bound = 2
+    rng = range(-bound, bound + 1)
+    shifts = np.array([(na, nb, nc) for na in rng for nb in rng for nc in rng], dtype=float)
+    trans = shifts @ lat_bohr  # (n_img, 3)
+
+    collected = []
+    for i in range(nat):
+        diff = cart[None, :, :] + trans[:, None, :] - cart[i]  # (n_img, nat, 3)
+        d2 = np.einsum('ijk,ijk->ij', diff, diff).ravel()
+        d2 = d2[d2 > 1.0e-6]
+        if d2.size:
+            collected.append(np.sqrt(d2))
+    if not collected:
+        return None
+
+    dvals = np.sort(np.concatenate(collected))
+    # Collapse near-degenerate distances into discrete neighbour shells.
+    shells = [dvals[0]]
+    for d in dvals[1:]:
+        if d - shells[-1] > 1.0e-2:  # Bohr; shells differ by far more
+            shells.append(d)
+            if len(shells) >= 2:
+                break
+
+    d_nn = shells[0] * BOHR_RADIUS_ANGS
+    if len(shells) >= 2:
+        cutoff = 0.5 * (shells[0] + shells[1]) * BOHR_RADIUS_ANGS
+    else:
+        cutoff = 1.2 * shells[0] * BOHR_RADIUS_ANGS
+    return d_nn, cutoff
+
+
+def detect_ibrav(aflow, contcar, symprec):
+    """Detect QE ibrav/celldm and remap positions, or ``None`` to keep ibrav=0.
+
+    Any failure (missing numpy, unsupported units, undetectable lattice) yields
+    ``None`` so the caller falls back to the safe explicit-cell path.
+    """
+    try:
+        import numpy as np
+
+        from PAOFLOW.inputs.lattice_format import qe_ibrav_from_lattice
+
+        lat = cell_rows_to_matrix(contcar)
+        if lat is None:
+            return None
+        hint = aflow.get('Bravais_lattice_relax') or aflow.get('bravais_lattice_relax')
+        sg = aflow.get('sg') or aflow.get('spacegroup_relax')
+        res = qe_ibrav_from_lattice(lat, bravais_hint=hint, spacegroup=sg, symprec=symprec)
+        if res['ibrav'] == 0:
+            return None
+        pos_rows = remap_atomic_positions(contcar, lat, np.asarray(res['M'], dtype=float))
+        if pos_rows is None:
+            return None
+        return {'ibrav': res['ibrav'], 'celldm': res['celldm'], 'pos_rows': pos_rows}
+    except Exception as exc:  # pragma: no cover - defensive fall back
+        sys.stderr.write('Warning: ibrav detection failed ({}); using ibrav=0.\n'.format(exc))
+        return None
+
+
+def build_input(
+    aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None, ibrav_mode='auto', symprec=1.0e-4
+):
     """Assemble the full QE scf input text."""
     compound = aflow.get('compound', 'system')
     species = resolve_species(aflow)
@@ -339,8 +538,9 @@ def build_input(aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None):
             raise RuntimeError('ecutwfc unavailable: provide reference.json in the pseudo folder.')
         ecutwfc = float(fallback)
         sys.stderr.write(
-            'Warning: reference.json missing/incomplete; '
-            'using aflow energy_cutoff={} Ry.\n'.format(ecutwfc)
+            'Warning: reference.json missing/incomplete; using aflow energy_cutoff={} Ry.\n'.format(
+                ecutwfc
+            )
         )
 
     # nbnd large enough to span the extended PAO basis used in PAOFLOW
@@ -357,7 +557,30 @@ def build_input(aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None):
             nawf *= 2
         nbnd = max(nawf + 2, int(math.ceil(nawf * NBND_MARGIN)))
 
-    out = []
+    detected = detect_ibrav(aflow, contcar, symprec) if ibrav_mode == 'auto' else None
+
+    # Suggest an intersite-V neighbour cutoff (for a later eACBN0 / U+V run)
+    # from the structure itself; emitted as a header comment and on stderr.
+    header = []
+    lat_bohr = cell_rows_to_matrix(contcar)
+    if lat_bohr is not None:
+        parsed = _parse_frac_positions(contcar, lat_bohr)
+        if parsed is not None:
+            suggestion = suggest_intersite_cutoff(lat_bohr, parsed[1])
+            if suggestion is not None:
+                d_nn, v_cutoff = suggestion
+                sys.stderr.write(
+                    'Suggested eACBN0 intersite V cutoff: {:.2f} Angstrom '
+                    '(nearest-neighbour distance {:.2f} A).\n'.format(v_cutoff, d_nn)
+                )
+                header = [
+                    '! Suggested eACBN0 intersite V cutoff: {:.2f} Angstrom'.format(v_cutoff),
+                    '!   nearest-neighbour distance: {:.2f} Angstrom'.format(d_nn),
+                    '!   covers the first neighbour shell; use as V_CUTOFF /',
+                    '!   set_intersite_pairs(cutoff=...) in the PAOFLOW U+V driver.',
+                ]
+
+    out = list(header)
     # &control
     out.append(' &control')
     out.append("    calculation = 'scf'")
@@ -365,11 +588,15 @@ def build_input(aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None):
     out.append("    prefix = '{}',".format(compound))
     out.append("    pseudo_dir = '{}',".format(pseudo_dir))
     out.append("    outdir = './'")
-    out.append(" /")
+    out.append(' /')
 
     # &system
     out.append(' &system')
-    out.append('    ibrav = 0,')
+    if detected is not None:
+        out.append('    ibrav = {},'.format(detected['ibrav']))
+        out.extend(format_celldm_lines(detected['ibrav'], detected['celldm']))
+    else:
+        out.append('    ibrav = 0,')
     out.append('    nat = {},'.format(nat))
     out.append('    ntyp = {},'.format(ntyp))
     out.append('    ecutwfc = {:.1f},'.format(ecutwfc))
@@ -397,13 +624,18 @@ def build_input(aflow, contcar, pseudo_dir, soc, degauss, nbnd_override=None):
     out.append('ATOMIC_SPECIES')
     out.extend(species_rows)
 
-    # CELL_PARAMETERS
-    out.append(contcar['cell_header'])
-    out.extend('  ' + row for row in contcar['cell_rows'])
+    # CELL_PARAMETERS (only when no ibrav was detected)
+    if detected is None:
+        out.append(contcar['cell_header'])
+        out.extend('  ' + row for row in contcar['cell_rows'])
 
     # ATOMIC_POSITIONS
-    out.append(contcar['pos_header'])
-    out.extend('  ' + row for row in contcar['pos_rows'])
+    if detected is not None:
+        out.append('ATOMIC_POSITIONS (crystal)')
+        out.extend(detected['pos_rows'])
+    else:
+        out.append(contcar['pos_header'])
+        out.extend('  ' + row for row in contcar['pos_rows'])
 
     # K_POINTS
     kpts = aflow.get('kpoints_static') or [1, 1, 1]
@@ -456,6 +688,20 @@ def main(argv=None):
         default=None,
         help='Override nbnd (default: estimated from the extended PAO basis)',
     )
+    parser.add_argument(
+        '--ibrav',
+        choices=('auto', '0'),
+        default='auto',
+        help="Lattice mode: 'auto' detects the QE ibrav + celldm from the cell "
+        "(falling back to ibrav=0 when undetectable), '0' always writes explicit "
+        'CELL_PARAMETERS (default: %(default)s)',
+    )
+    parser.add_argument(
+        '--symprec',
+        type=float,
+        default=1.0e-4,
+        help='Symmetry tolerance for ibrav detection (default: %(default)s)',
+    )
     args = parser.parse_args(argv)
 
     pseudo_dir = os.path.abspath(os.path.expanduser(args.pseudo_dir))
@@ -468,7 +714,16 @@ def main(argv=None):
         aflow = json.loads(aflow_text)
         contcar_text = download_text(entry_file_url(entry_url, 'CONTCAR.relax.qe'))
         contcar = parse_contcar_qe(contcar_text)
-        content = build_input(aflow, contcar, pseudo_dir, args.soc, args.degauss, args.nbnd)
+        content = build_input(
+            aflow,
+            contcar,
+            pseudo_dir,
+            args.soc,
+            args.degauss,
+            args.nbnd,
+            ibrav_mode=args.ibrav,
+            symprec=args.symprec,
+        )
     except (RuntimeError, ValueError) as exc:
         sys.stderr.write('Error: {}\n'.format(exc))
         return 1

@@ -13,8 +13,11 @@ import pytest
 
 from PAOFLOW.inputs.lattice_format import (
     BOHR_RADIUS_ANGS,
+    bravais_to_ibrav,
+    cell_lengths_angles,
     celldm_from_namelist,
     lattice_format_QE,
+    qe_ibrav_from_lattice,
 )
 
 # Common celldm parameters reused across the orthorhombic/monoclinic/triclinic
@@ -250,3 +253,137 @@ def test_celldm_from_ABC_triclinic_all_cosines():
 def test_celldm_missing_raises():
     with pytest.raises(ValueError):
         celldm_from_namelist({'nat': '2'}, ibrav=1)
+
+
+# ---------------------------------------------------------------------------
+# Inverse map: explicit lattice -> QE ibrav + celldm
+# ---------------------------------------------------------------------------
+
+# (ibrav, celldm) cases exercising every supported Bravais form.  The negative
+# axis variants describe the *same* physical lattice as their positive
+# counterpart, so the inverse map is allowed to return either.
+_INVERSE_CASES = [
+    (1, [8.0, 0, 0, 0, 0, 0], {1}),
+    (2, [8.0, 0, 0, 0, 0, 0], {2}),
+    (3, [8.0, 0, 0, 0, 0, 0], {3}),
+    (-3, [8.0, 0, 0, 0, 0, 0], {3, -3}),
+    (4, [6.0, 0, 1.6, 0, 0, 0], {4}),
+    (5, [7.0, 0, 0, 0.3, 0, 0], {5}),
+    (-5, [7.0, 0, 0, 0.3, 0, 0], {5, -5}),
+    (6, [6.0, 0, 1.6, 0, 0, 0], {6}),
+    (7, [6.0, 0, 1.6, 0, 0, 0], {7}),
+    (8, [6.0, 1.2, 1.7, 0, 0, 0], {8}),
+    (9, [6.0, 1.2, 1.7, 0, 0, 0], {9}),
+    (-9, [6.0, 1.2, 1.7, 0, 0, 0], {9, -9}),
+    (91, [6.0, 1.2, 1.7, 0, 0, 0], {91}),
+    (10, [6.0, 1.2, 1.7, 0, 0, 0], {10}),
+    (11, [6.0, 1.2, 1.7, 0, 0, 0], {11}),
+    (12, [6.0, 1.2, 1.7, 0.2, 0, 0], {12}),
+    (-12, [6.0, 1.2, 1.7, 0, 0.2, 0], {12, -12}),
+    (13, [6.0, 1.2, 1.7, 0.2, 0, 0], {13}),
+    (-13, [6.0, 1.2, 1.7, 0, 0.2, 0], {13, -13}),
+    (14, [6.0, 1.2, 1.7, 0.1, 0.2, 0.15], {14}),
+]
+
+_INVERSE_HINTS = {
+    1: 'CUB',
+    2: 'FCC',
+    3: 'BCC',
+    -3: 'BCC',
+    4: 'HEX',
+    5: 'RHL',
+    -5: 'RHL',
+    6: 'TET',
+    7: 'BCT',
+    8: 'ORC',
+    9: 'ORCC',
+    -9: 'ORCC',
+    91: 'ORCA',
+    10: 'ORCF',
+    11: 'ORCI',
+    12: 'MCL',
+    -12: 'MCL',
+    13: 'MCLC',
+    -13: 'MCLC',
+    14: 'TRI',
+}
+
+
+def _rotation(seed):
+    rng = np.random.default_rng(seed)
+    q, r = np.linalg.qr(rng.standard_normal((3, 3)))
+    q = q @ np.diag(np.sign(np.diag(r)))
+    if np.linalg.det(q) < 0:
+        q[:, 0] *= -1
+    return q
+
+
+def _unimodular(seed):
+    rng = np.random.default_rng(seed + 1000)
+    while True:
+        m = rng.integers(-1, 2, size=(3, 3))
+        if abs(round(float(np.linalg.det(m)))) == 1:
+            return m
+
+
+@pytest.mark.parametrize('ibrav, celldm, allowed', _INVERSE_CASES)
+def test_inverse_roundtrip(ibrav, celldm, allowed):
+    """Scramble (re-pick primitive cell + rotate) and recover the ibrav."""
+    lat0 = lattice_format_QE(ibrav, celldm)
+    seed = abs(ibrav) * 7 + (1 if ibrav < 0 else 0)
+    lat = (_unimodular(seed) @ lat0) @ _rotation(seed).T
+
+    res = qe_ibrav_from_lattice(lat, bravais_hint=_INVERSE_HINTS[ibrav], symprec=1e-6)
+    assert res['ibrav'] in allowed, f'ibrav {ibrav} -> {res["ibrav"]}'
+
+    # The returned (ibrav, celldm, M) must reproduce the input lattice metric.
+    lat_qe = lattice_format_QE(res['ibrav'], res['celldm'])
+    m = np.asarray(res['M'], dtype=float)
+    g_in = lat @ lat.T
+    np.testing.assert_allclose(m @ g_in @ m.T, lat_qe @ lat_qe.T, atol=1e-3)
+
+
+def test_inverse_position_remap_preserves_geometry():
+    """f_qe = f_in @ inv(M) must keep interatomic distances unchanged."""
+    lat0 = lattice_format_QE(2, [7.0, 0, 0, 0, 0, 0])
+    lat = lat0 @ _rotation(42).T
+    frac_in = np.array([[0.0, 0.0, 0.0], [0.1, 0.2, 0.3]])
+    cart_in = frac_in @ lat
+
+    res = qe_ibrav_from_lattice(lat, bravais_hint='FCC', symprec=1e-6)
+    lat_qe = lattice_format_QE(res['ibrav'], res['celldm'])
+    frac_qe = frac_in @ np.linalg.inv(np.asarray(res['M'], dtype=float))
+    cart_qe = frac_qe @ lat_qe
+
+    d_in = np.linalg.norm(cart_in[1] - cart_in[0])
+    d_qe = np.linalg.norm(cart_qe[1] - cart_qe[0])
+    assert d_in == pytest.approx(d_qe, abs=1e-9)
+
+
+def test_inverse_skew_lattice_falls_back():
+    """A generic skew cell with an incompatible hint returns ibrav=0."""
+    skew = np.array([[5.0, 0.3, 0.1], [0.2, 5.5, 0.4], [0.1, 0.2, 6.0]])
+    res = qe_ibrav_from_lattice(skew, bravais_hint='CUB', symprec=1e-5)
+    assert res['ibrav'] == 0
+    assert res['celldm'] is None
+    assert res['M'] is None
+
+
+def test_inverse_generic_skew_is_triclinic():
+    skew = np.array([[5.0, 0.3, 0.1], [0.2, 5.5, 0.4], [0.1, 0.2, 6.0]])
+    res = qe_ibrav_from_lattice(skew, symprec=1e-5)
+    assert res['ibrav'] == 14
+
+
+def test_cell_lengths_angles_cubic():
+    a, b, c, al, be, ga = cell_lengths_angles(np.eye(3) * 4.0)
+    assert (a, b, c) == pytest.approx((4.0, 4.0, 4.0))
+    assert (al, be, ga) == pytest.approx((90.0, 90.0, 90.0))
+
+
+def test_bravais_to_ibrav_known_symbols():
+    assert bravais_to_ibrav('FCC') == 2
+    assert bravais_to_ibrav('BCC') == 3
+    assert bravais_to_ibrav('HEX') == 4
+    assert bravais_to_ibrav('cF') == 2
+    assert bravais_to_ibrav('unknown-symbol') is None
