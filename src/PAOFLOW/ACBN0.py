@@ -838,10 +838,10 @@ class ACBN0:
         # The nscf step is optional: when ``<prefix>.nscf.in`` is absent the
         # driver runs the scf alone (with whatever bands the scf template
         # requests) and reads the symmetry flags from the scf input instead.
-        self._has_nscf = isfile(f"{self.prefix}.nscf.in")
-        sym_file = f"{self.prefix}.nscf.in" if self._has_nscf else f"{self.prefix}.scf.in"
+        self._has_nscf = isfile(f'{self.prefix}.nscf.in')
+        sym_file = f'{self.prefix}.nscf.in' if self._has_nscf else f'{self.prefix}.scf.in'
         sym_blocks, _ = struct_from_inputfile_QE(sym_file)
-        nscf_sys = sym_blocks.get("system", {})
+        nscf_sys = sym_blocks.get('system', {})
 
         def _qe_true(v):
             # Accept any QE logical-true shorthand: .true., .t., true, t
@@ -857,12 +857,12 @@ class ACBN0:
         print(f'ACBN0: nscf nosym={nosym}, noinv={noinv} -> expand_wedge={self.expand_wedge}\n')
 
         # Generate gaussian fits
-        print("Generating gaussian fits for pseudopotential basis states.\n")
+        print('Generating gaussian fits for pseudopotential basis states.\n')
         # The ATOMIC_SPECIES card only stores the UPF file name; the
         # directory holding the pseudopotentials is given by ``pseudo_dir``
         # in the &control namelist.  Resolve the full path so the Gaussian
         # fitter can open the file regardless of the current working dir.
-        pseudo_dir = self.blocks.get("control", {}).get("pseudo_dir", "")
+        pseudo_dir = self.blocks.get('control', {}).get('pseudo_dir', '')
         pseudo_dir = expanduser(pseudo_dir.strip().strip('"').strip("'"))
         self.basis = {}
         self.uspecies = []
@@ -1027,7 +1027,7 @@ class ACBN0:
 
     def exec_QE(self, executable, fname):
         exe = expanduser(join(self.qpath, executable))
-        fout = fname.replace("in", "out")
+        fout = fname.replace('in', 'out')
 
         command = f'{self.mpi_qe} {exe} {self.qoption}'
         print(
@@ -1036,7 +1036,7 @@ class ACBN0:
         )
         with open(fname, 'r') as qe_in, open(fout, 'w') as qe_out:
             subprocess.run(
-                [tok for tok in command.split(" ") if tok],
+                [tok for tok in command.split(' ') if tok],
                 stdin=qe_in,
                 stdout=qe_out,
                 stderr=subprocess.STDOUT,
@@ -1050,15 +1050,15 @@ class ACBN0:
         ppath = expanduser(self.ppath)
         if ppath and isfile(ppath):
             return ppath
-        return join(ppath, "python")
+        return join(ppath, 'python')
 
     def exec_PAOFLOW(self):
         python_exec = self._python_exec()
-        command = f"{self.mpi_python} {python_exec} acbn0.py"
-        print(f"Starting Process: {command} > paoflow.out", flush=True)
-        with open("paoflow.out", "w") as paoflow_out:
+        command = f'{self.mpi_python} {python_exec} acbn0.py'
+        print(f'Starting Process: {command} > paoflow.out', flush=True)
+        with open('paoflow.out', 'w') as paoflow_out:
             subprocess.run(
-                [tok for tok in command.split(" ") if tok],
+                [tok for tok in command.split(' ') if tok],
                 stdout=paoflow_out,
                 stderr=subprocess.STDOUT,
                 check=True,
@@ -1137,25 +1137,27 @@ class ACBN0:
             blocks['electrons']['startingpot'] = "'file'"
         create_atomic_inputfile('scf', blocks, cards)
 
-        blocks, cards = struct_from_inputfile_QE(f"{prefix}.nscf.in") if self._has_nscf else (None, None)
+        blocks, cards = (
+            struct_from_inputfile_QE(f'{prefix}.nscf.in') if self._has_nscf else (None, None)
+        )
         if self._has_nscf:
-            cards["HUBBARD"] = self.hubbard_card()
+            cards['HUBBARD'] = self.hubbard_card()
             for k, v in self.hubbard_occ.items():
-                blocks["system"][k] = v
-            create_atomic_inputfile("nscf", blocks, cards)
+                blocks['system'][k] = v
+            create_atomic_inputfile('nscf', blocks, cards)
 
         if self.use_local_basis:
             # The local-basis projection (PAOFLOW.projections) replaces
             # projwfc.x entirely, so no <prefix>.projwfc.in is read and
             # projwfc.x is never launched.
-            executables = {"scf": "pw.x", "nscf": "pw.x"}
-            calcs = ["scf", "nscf"] if self._has_nscf else ["scf"]
+            executables = {'scf': 'pw.x', 'nscf': 'pw.x'}
+            calcs = ['scf', 'nscf'] if self._has_nscf else ['scf']
         else:
             blocks, cards = struct_from_inputfile_QE(f'{prefix}.projwfc.in')
             create_atomic_inputfile('projwfc', blocks, cards)
 
-            executables = {"scf": "pw.x", "nscf": "pw.x", "projwfc": "projwfc.x -nd 1"}
-            calcs = ["scf", "nscf", "projwfc"] if self._has_nscf else ["scf", "projwfc"]
+            executables = {'scf': 'pw.x', 'nscf': 'pw.x', 'projwfc': 'projwfc.x -nd 1'}
+            calcs = ['scf', 'nscf', 'projwfc'] if self._has_nscf else ['scf', 'projwfc']
         for c in calcs:
             self.exec_QE(executables[c], f'{c}.in')
 
@@ -1171,16 +1173,16 @@ class ACBN0:
         if self.nspin == 1:
             calcs.append(fstr.format(''))
         else:
-            calcs.append(fstr.format("_up"))
-            calcs.append(fstr.format("_down"))
+            calcs.append(fstr.format('_up'))
+            calcs.append(fstr.format('_down'))
 
         # QE writes the wavefunction save folder to ``outdir/<prefix>.save``.
         # PAOFLOW resolves ``savedir`` relative to its workpath ("./"), so the
         # QE ``outdir`` (if any) must be folded into the save path, otherwise
         # PAOFLOW would look for ``<prefix>.save`` in the run directory.
-        outdir = self.blocks.get("control", {}).get("outdir", "")
+        outdir = self.blocks.get('control', {}).get('outdir', '')
         outdir = outdir.strip().strip('"').strip("'")
-        savedir = f"{save_prefix}.save"
+        savedir = f'{save_prefix}.save'
         if outdir:
             savedir = join(outdir, savedir)
 
@@ -1359,9 +1361,9 @@ class ACBN0:
                         ustates.append(e['index'])
             if not ustates:
                 raise RuntimeError(
-                    f"No PAO orbitals matched Hubbard manifold {orb!r} "
-                    f"(species {species_label!r}, shell {shell_label!r}) in "
-                    f"{join(self.outputdir, 'pao_basis.dat')}."
+                    f'No PAO orbitals matched Hubbard manifold {orb!r} '
+                    f'(species {species_label!r}, shell {shell_label!r}) in '
+                    f'{join(self.outputdir, "pao_basis.dat")}.'
                 )
             # First contiguous run of the species' orbitals = the valence
             # shell on the first matching atom.
@@ -1519,8 +1521,8 @@ class ACBN0:
 
             # compute hartree energy in parallel
             python_exec = self._python_exec()
-            command = f"{self.mpi_hartree} {python_exec} compute_hartree.py"
-            subprocess.run([tok for tok in command.split(" ") if tok], check=True)
+            command = f'{self.mpi_hartree} {python_exec} compute_hartree.py'
+            subprocess.run([tok for tok in command.split(' ') if tok], check=True)
 
             with open(join(self.outputdir, 'tmp_uj.pkl'), 'rb') as f:
                 uj = pickle.load(f)
@@ -1858,6 +1860,36 @@ class eACBN0(ACBN0):
                 return float(v.replace('d', 'e').replace('D', 'e')) / BOHR_RADIUS_ANGS
         return None
 
+    def _lattice_from_ibrav(self):
+        """Reconstruct lattice vectors (Å) from the QE ``ibrav`` + ``celldm``
+        (or ``A``/``B``/``C``/``cos*``) parameters in the ``&system`` block.
+
+        Used when the template specifies the cell through ``ibrav`` instead
+        of an explicit ``CELL_PARAMETERS`` card.
+        """
+        from .inputs.lattice_format import celldm_from_namelist, lattice_format_QE
+
+        sys = self.blocks.get('system', {})
+        ibrav_raw = None
+        for k, v in sys.items():
+            if k.lower().replace(' ', '') == 'ibrav':
+                ibrav_raw = v
+                break
+        if ibrav_raw is None:
+            raise ValueError(
+                'Neither a CELL_PARAMETERS card nor ibrav was found in the '
+                'template; cannot determine the cell geometry for eACBN0.'
+            )
+        ibrav = int(float(str(ibrav_raw).replace('d', 'e').replace('D', 'e')))
+        if ibrav == 0:
+            raise ValueError(
+                'ibrav=0 requires an explicit CELL_PARAMETERS card, which was '
+                'not found in the template.'
+            )
+        celldm = celldm_from_namelist(sys, ibrav)
+        lattice_bohr = lattice_format_QE(ibrav, celldm)
+        return lattice_bohr * BOHR_RADIUS_ANGS
+
     def _geometry_from_cards(self):
         """Parse lattice (Å) and Cartesian atomic positions (Å) from the
         input cards captured in :attr:`self.cards`.
@@ -1872,33 +1904,32 @@ class eACBN0(ACBN0):
             Per-atom species labels (length ``nat``).
         """
         if 'CELL_PARAMETERS' not in self.cards:
-            raise ValueError(
-                'CELL_PARAMETERS card not found in template; '
-                'ibrav-based geometries are not yet supported by eACBN0.'
-            )
-
-        header = self.cards['CELL_PARAMETERS'][0].lower()
-        if 'angstrom' in header:
-            cell_unit = 'angstrom'
-        elif 'bohr' in header:
-            cell_unit = 'bohr'
+            # No explicit cell card: reconstruct the lattice from the QE
+            # ``ibrav`` + ``celldm`` (or A/B/C/cos*) parameters instead.
+            lattice = self._lattice_from_ibrav()
         else:
-            cell_unit = 'alat'
+            header = self.cards['CELL_PARAMETERS'][0].lower()
+            if 'angstrom' in header:
+                cell_unit = 'angstrom'
+            elif 'bohr' in header:
+                cell_unit = 'bohr'
+            else:
+                cell_unit = 'alat'
 
-        vecs = []
-        for ln in self.cards['CELL_PARAMETERS'][1:4]:
-            vecs.append([float(x) for x in ln.split()[:3]])
-        lattice = np.asarray(vecs, dtype=float)
+            vecs = []
+            for ln in self.cards['CELL_PARAMETERS'][1:4]:
+                vecs.append([float(x) for x in ln.split()[:3]])
+            lattice = np.asarray(vecs, dtype=float)
 
-        if cell_unit == 'bohr':
-            lattice *= BOHR_RADIUS_ANGS
-        elif cell_unit == 'alat':
-            alat_bohr = self._alat_bohr()
-            if alat_bohr is None:
-                raise ValueError(
-                    "CELL_PARAMETERS in 'alat' but no celldm(1)/A found in &system block."
-                )
-            lattice *= alat_bohr * BOHR_RADIUS_ANGS
+            if cell_unit == 'bohr':
+                lattice *= BOHR_RADIUS_ANGS
+            elif cell_unit == 'alat':
+                alat_bohr = self._alat_bohr()
+                if alat_bohr is None:
+                    raise ValueError(
+                        "CELL_PARAMETERS in 'alat' but no celldm(1)/A found in &system block."
+                    )
+                lattice *= alat_bohr * BOHR_RADIUS_ANGS
 
         if 'ATOMIC_POSITIONS' not in self.cards:
             raise ValueError('ATOMIC_POSITIONS card not found in template.')
@@ -2163,16 +2194,16 @@ class eACBN0(ACBN0):
 
         print(f'\n{len(self.vPairs)} intersite V pair(s) registered:')
         print(
-            f"  {'label1':>10s} {'label2':>10s} {'i1':>4s} {'i2':>4s} "
-            f"{'image':>12s} {'d (A)':>9s} {'V_init (eV)':>12s}"
+            f'  {"label1":>10s} {"label2":>10s} {"i1":>4s} {"i2":>4s} '
+            f'{"image":>12s} {"d (A)":>9s} {"V_init (eV)":>12s}'
         )
         for key, meta in sorted(self.vPairs.items(), key=lambda kv: kv[1]['distance']):
             l1, l2, i1, i2, na, nb, nc = key
             v = self.vVals[(l1, l2, i1, i2)]
             print(
-                f"  {l1:>10s} {l2:>10s} {i1:>4d} {i2:>4d} "
-                f"({na:>2d},{nb:>2d},{nc:>2d}) {meta['distance']:>9.4f} "
-                f"{v:>12.4f}"
+                f'  {l1:>10s} {l2:>10s} {i1:>4d} {i2:>4d} '
+                f'({na:>2d},{nb:>2d},{nc:>2d}) {meta["distance"]:>9.4f} '
+                f'{v:>12.4f}'
             )
 
     # ------------------------------------------------------------------ #
@@ -2546,7 +2577,7 @@ class eACBN0(ACBN0):
             with open(f'{l1}_{l2}_{i1}_{i2}_V.txt', 'w') as f:
                 f.write(f'pair          : {key}\n')
                 f.write(f'image         : ({full_key[4]},{full_key[5]},{full_key[6]})\n')
-                f.write(f"distance (A)  : {meta['distance']:.6f}\n")
+                f.write(f'distance (A)  : {meta["distance"]:.6f}\n')
                 f.write(f'V (eV)        : {V_IJ:.6f}\n')
 
         return new_V
@@ -2559,9 +2590,9 @@ class eACBN0(ACBN0):
 
     def _launch_compute_hartree_v(self):
         python_exec = self._python_exec()
-        mpi = getattr(self, "mpi_hartree", None) or self.mpi_python
-        command = f"{mpi} {python_exec} compute_hartree_v.py"
-        subprocess.run([tok for tok in command.split(" ") if tok], check=True)
+        mpi = getattr(self, 'mpi_hartree', None) or self.mpi_python
+        command = f'{mpi} {python_exec} compute_hartree_v.py'
+        subprocess.run([tok for tok in command.split(' ') if tok], check=True)
 
     # ------------------------------------------------------------------ #
     # Phase 4: joint U+V self-consistent loop                             #
