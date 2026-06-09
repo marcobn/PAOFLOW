@@ -683,6 +683,42 @@ def _ylim():
     return (YMIN, YMAX)
 
 
+def _dos_mag_lim(fnames):
+    """Magnitude-axis limits for DOS/PDOS plots.
+
+    When the user sets YMIN/YMAX those win.  Otherwise the magnitude axis is
+    rescaled to the data that falls inside the chosen energy window [EMIN, EMAX]
+    so that limiting the energy range actually zooms the curve (important for
+    metals, whose largest DOS peaks may sit far outside the window).
+    """
+    if YMIN is not None or YMAX is not None:
+        return _ylim()
+    if isinstance(fnames, str):
+        fnames = [fnames]
+    import numpy as np
+
+    peak = 0.0
+    for fn in fnames:
+        if not fn:
+            continue
+        try:
+            data = np.loadtxt(fn)
+        except (OSError, ValueError):
+            continue
+        if data.ndim != 2 or data.shape[1] < 2:
+            continue
+        es = data[:, 0]
+        mag = data[:, 1:]
+        mask = (es >= EMIN) & (es <= EMAX)
+        if not mask.any():
+            continue
+        peak = max(peak, float(np.nanmax(np.abs(mag[mask]))))
+    if peak <= 0.0:
+        return None
+    return (0.0, 1.1 * peak)
+
+
+
 def _ask_float(prompt, default):
     """Prompt for a float, accepting Enter to keep *default* (may be None)."""
     shown = 'auto' if default is None else default
@@ -734,6 +770,33 @@ def _missing(*names):
         print("  (output file(s) not found in {}; run PAOFLOW first)".format(OUTPUTDIR))
         return True
     return False
+
+
+def _file_energy_range(fname):
+    """Return (min, max) of the energy column of *fname*, or None."""
+    if not fname:
+        return None
+    import numpy as np
+
+    try:
+        data = np.loadtxt(fname)
+    except (OSError, ValueError):
+        return None
+    if data.ndim != 2 or data.shape[0] == 0:
+        return None
+    es = data[:, 0]
+    return (float(np.nanmin(es)), float(np.nanmax(es)))
+
+
+def _default_energy_window():
+    """Default energy window for the prompts.
+
+    When a DOS file is present its energy grid is used so that the DOS fills
+    the side-by-side panel (the DOS is usually computed on a narrower grid than
+    the bands).  Otherwise the window identified when the driver was generated
+    is kept.
+    """
+    return _file_energy_range(_one('*.dosdk_0.dat'))
 '''
 
 
@@ -771,13 +834,13 @@ def build_plot_script(cfg):
             "f = _one('*.dosdk_0.dat')",
             'if _missing(f):',
             '    return',
-            "pplt.plot_dos(f, title='Density of states', x_lim=_ewin(), y_lim=_ylim())",
+            "pplt.plot_dos(f, title='Density of states', x_lim=_ewin(), y_lim=_dos_mag_lim(f))",
         ]
         if do_pdos:
             dos_body += [
                 "pdos = _many('*.pdosdk*')",
                 'if pdos:',
-                "    pplt.plot_pdos(pdos, title='Projected DOS', x_lim=_ewin(), y_lim=_ylim())",
+                "    pplt.plot_pdos(pdos, title='Projected DOS', x_lim=_ewin(), y_lim=_dos_mag_lim(pdos))",
             ]
         funcs += _plot_func('plot_density_of_states', dos_body)
         menu.append(('DOS / projected DOS', 'plot_density_of_states'))
@@ -794,7 +857,7 @@ def build_plot_script(cfg):
                 'if _missing(fb, fd):',
                 '    return',
                 'pplt.plot_dos_beside_bands(fd, fb, sym_points=sp, dos_ticks=True,',
-                "                           title='Bands and DOS', y_lim=_ewin())",
+                "                           title='Bands and DOS', x_lim=_dos_mag_lim(fd), y_lim=_ewin())",
             ],
         )
         menu.append(('Bands + DOS (side by side)', 'plot_bands_and_dos'))
@@ -869,17 +932,14 @@ def build_plot_script(cfg):
         funcs += _plot_func(
             'plot_dielectric',
             [
-                "epsi = _many('epsi_*.dat')",
-                "epsr = _many('epsr_*.dat')",
-                'if not epsi and not epsr:',
+                "files = _many('epsi_*.dat') + _many('epsr_*.dat')",
+                'if not files:',
                 '    _missing(None)',
                 '    return',
-                'if epsi:',
-                '    pplt.plot_dielectric(epsi if len(epsi) > 1 else epsi[0],',
-                "                         title='Im(epsilon)', x_lim=_ewin_optical(), y_lim=_ylim())",
-                'if epsr:',
-                '    pplt.plot_dielectric(epsr if len(epsr) > 1 else epsr[0],',
-                "                         title='Re(epsilon)', x_lim=_ewin_optical(), y_lim=_ylim())",
+                '# Overlay all real/imaginary dielectric components on one figure',
+                '# (labels are taken from the file names, e.g. epsi_xx, epsr_xx).',
+                'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
+                "                     title='Dielectric function', x_lim=_ewin_optical(), y_lim=_ylim())",
             ],
         )
         menu.append(('Optical / dielectric function', 'plot_dielectric'))
@@ -931,22 +991,21 @@ def build_plot_script(cfg):
     lines.append('    global EMIN, EMAX, YMIN, YMAX')
     lines.append('    parser = argparse.ArgumentParser(')
     lines.append("        description='Plot PAOFLOW results with optional axis limits.')")
-    lines.append("    parser.add_argument('--emin', type=float, default=EMIN,")
-    lines.append(
-        "                        help='Lower energy-axis limit (eV, rel. E_F). "
-        "Default: %(default)s')"
-    )
-    lines.append("    parser.add_argument('--emax', type=float, default=EMAX,")
-    lines.append(
-        "                        help='Upper energy-axis limit (eV, rel. E_F). "
-        "Default: %(default)s')"
-    )
+    lines.append("    parser.add_argument('--emin', type=float, default=None,")
+    lines.append("                        help='Lower energy-axis limit (eV, rel. E_F).')")
+    lines.append("    parser.add_argument('--emax', type=float, default=None,")
+    lines.append("                        help='Upper energy-axis limit (eV, rel. E_F).')")
     lines.append("    parser.add_argument('--ymin', type=float, default=None,")
     lines.append("                        help='Lower property y-axis limit (default: automatic)')")
     lines.append("    parser.add_argument('--ymax', type=float, default=None,")
     lines.append("                        help='Upper property y-axis limit (default: automatic)')")
     lines.append('    args = parser.parse_args()')
-    lines.append('    EMIN, EMAX, YMIN, YMAX = args.emin, args.emax, args.ymin, args.ymax')
+    lines.append('    # Default the energy window to the DOS data range (so the DOS fills the')
+    lines.append('    # side-by-side panel) unless it was overridden on the command line.')
+    lines.append('    _win = _default_energy_window() or (EMIN, EMAX)')
+    lines.append('    EMIN = args.emin if args.emin is not None else _win[0]')
+    lines.append('    EMAX = args.emax if args.emax is not None else _win[1]')
+    lines.append('    YMIN, YMAX = args.ymin, args.ymax')
     lines.append('    # Ask for the axis limits interactively (Enter keeps the shown default;')
     lines.append('    # any value passed on the command line becomes that default).')
     lines.append("    print('Axis limits (press Enter to accept the default):')")
