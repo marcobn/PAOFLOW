@@ -105,9 +105,10 @@ def detect_savedir(workdir):
     return os.path.basename(matches[0]) if matches else None
 
 
-def detect_upf(workdir, savedir=None):
+def detect_upfs(workdir, savedir=None):
     # Per the QE standard, pseudopotentials are copied into the
     # ``<prefix>.save`` directory; look there first, then fall back to workdir.
+    # Returns the list of every pseudopotential found (one per species).
     if savedir:
         save_path = os.path.join(workdir, savedir)
         save_matches = sorted(
@@ -115,11 +116,11 @@ def detect_upf(workdir, savedir=None):
             + glob.glob(os.path.join(save_path, '*.upf'))
         )
         if save_matches:
-            return os.path.join(savedir, os.path.basename(save_matches[0]))
+            return [os.path.join(savedir, os.path.basename(m)) for m in save_matches]
     matches = sorted(
         glob.glob(os.path.join(workdir, '*.UPF')) + glob.glob(os.path.join(workdir, '*.upf'))
     )
-    return os.path.basename(matches[0]) if matches else None
+    return [os.path.basename(m) for m in matches]
 
 
 def detect_prefix(workdir, savedir):
@@ -179,27 +180,31 @@ except ImportError:
 
 BASIS_GEN_BLOCK = '''
 def ensure_basis(preset="extended"):
-    """Generate the pseudo-atom basis under BASISPATH if it is missing.
+    """Generate the pseudo-atom basis under BASISPATH for every species.
 
     The 'extended' preset is a superset of 'standard' and 'minimal', so
     generating it once is enough for every configuration used below.
     """
     if RANK != 0:
         return
-    upf = _UPFParser(UPF)
-    elem_dir = os.path.join(BASISPATH, upf.element.strip())
-    expected = _default_shells(upf, preset=preset)
-    missing = [
-        s for s in expected
-        if not os.path.exists(os.path.join(elem_dir, "{}.dat".format(s)))
-    ]
-    if missing:
-        print("Generating pseudo-atom basis under {} ...".format(BASISPATH))
-        generate_basis_for_pseudo(
-            UPF, BASISPATH.rstrip(os.sep), preset=preset, verbose=True
-        )
-    else:
-        print("Using existing pseudo-atom basis under {}".format(BASISPATH))
+    for upf_path in UPFS:
+        upf = _UPFParser(upf_path)
+        element = upf.element.strip()
+        elem_dir = os.path.join(BASISPATH, element)
+        expected = _default_shells(upf, preset=preset)
+        missing = [
+            s for s in expected
+            if not os.path.exists(os.path.join(elem_dir, "{}.dat".format(s)))
+        ]
+        if missing:
+            print("Generating pseudo-atom basis for {} under {} ...".format(
+                element, BASISPATH))
+            generate_basis_for_pseudo(
+                upf_path, BASISPATH.rstrip(os.sep), preset=preset, verbose=True
+            )
+        else:
+            print("Using existing pseudo-atom basis for {} under {}".format(
+                element, BASISPATH))
 '''
 
 ENERGY_RANGE_BLOCK = '''
@@ -271,6 +276,12 @@ def select_properties():
 # --------------------------------------------------------------------------- #
 # Script builders
 # --------------------------------------------------------------------------- #
+def _format_upfs_line(upfs):
+    """Render the ``UPFS = [...]`` constant listing one pseudo per species."""
+    items = ', '.join('os.path.join(HERE, {!r})'.format(u) for u in upfs)
+    return 'UPFS = [{}]'.format(items)
+
+
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
@@ -288,7 +299,7 @@ def build_run_script(cfg):
     lines.append('# ----------------------------------------------------------------------- #')
     lines.append('HERE = os.path.dirname(os.path.abspath(__file__))')
     lines.append('SAVEDIR = os.path.join(HERE, {!r})'.format(cfg['savedir']))
-    lines.append('UPF = os.path.join(HERE, {!r})'.format(cfg['upf']))
+    lines.append(_format_upfs_line(cfg['upfs']))
     lines.append('BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']))
     lines.append('OUTPUTDIR = {!r}'.format(cfg['outputdir']))
     lines.append('')
@@ -433,9 +444,6 @@ def _emit_standard_properties(props, needs_spin, cfg):
         else:
             body.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands')")
 
-    if needs_spin:
-        body.append('    p.spin_operator(spin_orbit=SPIN_ORBIT)')
-
     if 'topology' in selected:
         body.append('    p.topology(Berry=True, eff_mass=True, spol=2, ipol=0, jpol=1)')
 
@@ -453,6 +461,8 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'fermi_surface' in selected:
         body.append('    p.fermi_surface()')
     if 'spin_texture' in selected:
+        # spin_texture needs the spin operator cached beforehand.
+        body.append('    p.spin_operator(spin_orbit=SPIN_ORBIT)')
         body.append('    p.spin_texture()')
 
     body.append('    p.gradient_and_momenta()')
@@ -461,6 +471,8 @@ def _emit_standard_properties(props, needs_spin, cfg):
     if 'dos' in selected:
         body.append('    p.dos(do_dos=True, do_pdos=DO_PDOS, emin=EMIN, emax=EMAX, ne=NE)')
     if 'spin_Hall' in selected:
+        # Do not pre-build the spin operator here: spin_Hall builds it
+        # internally with the correct do_spin_orbit flag from the DFT data.
         body.append('    p.spin_Hall(emin=EMIN, emax=EMAX, s_tensor=[[0, 1, 2]])')
     if 'anomalous_Hall' in selected:
         body.append('    p.anomalous_Hall(do_ac=True, emin=EMIN, emax=EMAX, a_tensor=[[0, 1]])')
@@ -489,7 +501,7 @@ def build_acbn0_script(cfg):
     lines.append('# ----------------------------------------------------------------------- #')
     lines.append('HERE = os.path.dirname(os.path.abspath(__file__))')
     lines.append('PREFIX = {!r}'.format(cfg['prefix']))
-    lines.append('UPF = os.path.join(HERE, {!r})'.format(cfg['upf']))
+    lines.append(_format_upfs_line(cfg['upfs']))
     lines.append('BASISPATH = os.path.join(HERE, {!r}) + os.sep'.format(cfg['basisdir']))
     lines.append('OUT = {!r}'.format(cfg['outputdir']))
     lines.append('')
@@ -506,6 +518,11 @@ def build_acbn0_script(cfg):
     lines.append('CONV_THR = {}'.format(cfg['conv_thr']))
     lines.append('IBRAV = {}'.format(cfg['ibrav']))
     lines.append('NK = {}'.format(cfg['nk']))
+    lines.append('')
+    lines.append('# Residual tolerance for the Gaussian fit of the pseudo wavefunctions.')
+    lines.append('# Loosen (e.g. 0.05 - 0.1) if ACBN0 raises "Could not optimize the wfcs";')
+    lines.append('# ONCV / fully-relativistic pseudos often need a looser value than 0.01.')
+    lines.append('GAUSSIAN_THRESHOLD = {}'.format(cfg['gaussian_threshold']))
     lines.append('')
     lines.append('# Hubbard manifolds and their initial U (eV).')
     lines.append('HUBBARD_INIT = {')
@@ -567,6 +584,7 @@ def build_acbn0_script(cfg):
     lines.append('        use_local_basis=True,')
     lines.append('        basispath=BASISPATH,')
     lines.append("        configuration='standard',")
+    lines.append('        gaussian_threshold=GAUSSIAN_THRESHOLD,')
     lines.append('    )')
     lines.append('    a.set_hubbard_parameters(dict(HUBBARD_INIT))')
     lines.append('    a.optimize_hubbard_U(convergence_threshold=CONV_THR)')
@@ -594,6 +612,7 @@ def build_acbn0_script(cfg):
         lines.append('        use_local_basis=True,')
         lines.append('        basispath=BASISPATH,')
         lines.append("        configuration='standard',")
+        lines.append('        gaussian_threshold=GAUSSIAN_THRESHOLD,')
         lines.append('    )')
         lines.append('    e.set_hubbard_parameters(converged_U)')
         lines.append('    e.set_intersite_pairs(cutoff=V_CUTOFF, V_init=V_INIT)')
@@ -1197,18 +1216,23 @@ def build_plot_script(cfg):
 def collect_common(args, workdir):
     """Prompt for configuration shared by both workflows."""
     det_save = detect_savedir(workdir)
-    det_upf = detect_upf(workdir, det_save)
+    det_upfs = detect_upfs(workdir, det_save)
     det_prefix = detect_prefix(workdir, det_save)
 
     savedir = args.savedir or ask('Save directory (<prefix>.save)', det_save or 'pwscf.save')
     prefix = args.prefix or ask('Prefix', det_prefix)
-    upf = args.upf or ask('Pseudopotential (UPF) file', det_upf or 'pseudo.UPF')
+    if args.upf:
+        upfs = [u.strip() for u in args.upf.split(',') if u.strip()]
+    else:
+        default_upfs = ', '.join(det_upfs) if det_upfs else 'pseudo.UPF'
+        answer = ask('Pseudopotential (UPF) file(s), comma-separated', default_upfs)
+        upfs = [u.strip() for u in answer.split(',') if u.strip()]
     basisdir = ask('Basis directory name', 'BASIS_PS')
     ibrav = ask_int('ibrav (0 = read cell; needs band path for bands)', 0)
     return {
         'savedir': savedir,
         'prefix': prefix,
-        'upf': upf,
+        'upfs': upfs,
         'basisdir': basisdir,
         'ibrav': ibrav,
         'outputdir': 'output',
@@ -1271,6 +1295,9 @@ def collect_acbn0(common):
     cfg['projection'] = ask('Projection scheme', 'ortho-atomic')
     cfg['conv_thr'] = float(ask('U/V convergence threshold (eV)', '0.05'))
     cfg['nk'] = ask_int('Band path k-points (NK)', 400)
+    cfg['gaussian_threshold'] = float(
+        ask('Gaussian-fit tolerance (loosen for ONCV/SOC pseudos)', '0.05')
+    )
 
     print("\nEnter the Hubbard manifolds, one per line, as '<species>-<nl> <initU>'")
     print("  e.g. 'Si-3p 0.5'.  Leave blank to finish.")
@@ -1319,7 +1346,11 @@ def main(argv=None):
     )
     parser.add_argument('--prefix', default=None, help='QE prefix override')
     parser.add_argument('--savedir', default=None, help='<prefix>.save override')
-    parser.add_argument('--upf', default=None, help='Pseudopotential file override')
+    parser.add_argument(
+        '--upf',
+        default=None,
+        help='Pseudopotential file override (comma-separated for multiple species)',
+    )
     parser.add_argument(
         '-o', '--out', default='main.py', help='Output script path (default: main.py)'
     )
