@@ -227,6 +227,22 @@ def lmax_from_upf(upf_path):
     return max(found) if found else None
 
 
+def is_fully_relativistic(upf_path):
+    """True if the UPF is fully relativistic (``relativistic="full"``).
+
+    Fully-relativistic pseudopotentials carry spin-orbit information, so a QE
+    run using them must be noncollinear with spin-orbit coupling.  Returns
+    ``False`` when the file cannot be read or the attribute is absent.
+    """
+    try:
+        with open(upf_path, 'r', encoding='utf-8', errors='replace') as handle:
+            text = handle.read()
+    except OSError:
+        return False
+    match = re.search(r'relativistic\s*=\s*"?\s*([A-Za-z]+)', text)
+    return bool(match) and match.group(1).lower() == 'full'
+
+
 def extended_orbitals_per_atom(lmax):
     """Number of PAO orbitals per atom in the extended basis.
 
@@ -513,6 +529,7 @@ def build_input(
     species_rows = []
     ecut_values = []
     orbitals_per_element = {}
+    fully_relativistic = False
     for element, _count in species:
         upf = find_pseudo_file(pseudo_dir, element)
         mass = masses.get(element)
@@ -521,7 +538,10 @@ def build_input(
         species_rows.append('  {:<3s} {:>10.4f}  {}'.format(element, float(mass), upf))
         if element in cutoffs:
             ecut_values.append(cutoffs[element])
-        lmax = lmax_from_upf(os.path.join(pseudo_dir, upf))
+        upf_path = os.path.join(pseudo_dir, upf)
+        if is_fully_relativistic(upf_path):
+            fully_relativistic = True
+        lmax = lmax_from_upf(upf_path)
         if lmax is None:
             lmax = 2  # generous default (covers s/p/d extended basis)
             sys.stderr.write(
@@ -529,6 +549,16 @@ def build_input(
                 'assuming l_max=2 for nbnd.\n'.format(element)
             )
         orbitals_per_element[element] = extended_orbitals_per_atom(lmax)
+
+    # Fully-relativistic pseudopotentials carry spin-orbit coupling, so the run
+    # must be noncollinear with lspinorb even though AFLOW only reports a
+    # collinear (spin-polarized) magnetization.
+    if fully_relativistic and not soc:
+        soc = True
+        sys.stderr.write(
+            'Detected fully-relativistic pseudopotential(s); enabling '
+            'noncolin + lspinorb (spin-orbit) input.\n'
+        )
 
     if ecut_values:
         ecutwfc = max(ecut_values)
@@ -668,7 +698,8 @@ def main(argv=None):
     parser.add_argument(
         '--soc',
         action='store_true',
-        help='Pseudopotentials are relativistic: add noncolin/lspinorb cards',
+        help='Force noncolin/lspinorb cards. Auto-enabled when a pseudopotential '
+        'is fully relativistic (relativistic="full")',
     )
     parser.add_argument(
         '-o',
