@@ -105,7 +105,17 @@ def detect_savedir(workdir):
     return os.path.basename(matches[0]) if matches else None
 
 
-def detect_upf(workdir):
+def detect_upf(workdir, savedir=None):
+    # Per the QE standard, pseudopotentials are copied into the
+    # ``<prefix>.save`` directory; look there first, then fall back to workdir.
+    if savedir:
+        save_path = os.path.join(workdir, savedir)
+        save_matches = sorted(
+            glob.glob(os.path.join(save_path, '*.UPF'))
+            + glob.glob(os.path.join(save_path, '*.upf'))
+        )
+        if save_matches:
+            return os.path.join(savedir, os.path.basename(save_matches[0]))
     matches = sorted(
         glob.glob(os.path.join(workdir, '*.UPF')) + glob.glob(os.path.join(workdir, '*.upf'))
     )
@@ -620,9 +630,21 @@ and pick what to plot from the menu:
 
     python plot.py
 
+The energy window and property y-axis limits can be set on the command line:
+
+    python plot.py --emin -5 --emax 5 --ymin 0 --ymax 100
+
+and are also asked for interactively when the script runs (press Enter to keep
+the default / command-line value).  EMIN/EMAX set the energy axis (vertical for
+band plots, horizontal for the energy-resolved property plots) and default to
+the window identified when the driver was generated.  YMIN/YMAX set the property
+y-axis and default to automatic scaling.  Optical spectra always start at 0 on
+the energy axis.
+
 The plots use the helpers in PAOFLOW.GPAO.
 """
 
+import argparse
 import glob
 import os
 import sys
@@ -634,6 +656,50 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUTDIR = os.path.join(HERE, __OUTPUTDIR__)
 
 pplt = GPAO.GPAO()
+
+# Default energy window (eV, relative to E_F) identified when the driver was
+# generated.  Overridable on the command line via --emin/--emax.  YMIN/YMAX
+# default to None (automatic axis limits) and can be set via --ymin/--ymax.
+EMIN = __EMIN__
+EMAX = __EMAX__
+YMIN = None
+YMAX = None
+
+
+def _ewin():
+    """Energy-axis window (EMIN, EMAX) used for band / energy-resolved plots."""
+    return (EMIN, EMAX)
+
+
+def _ewin_optical():
+    """Energy-axis window for optical spectra (always starts at 0)."""
+    return (0.0, EMAX)
+
+
+def _ylim():
+    """Property-axis limits (YMIN, YMAX), or None for automatic scaling."""
+    if YMIN is None and YMAX is None:
+        return None
+    return (YMIN, YMAX)
+
+
+def _ask_float(prompt, default):
+    """Prompt for a float, accepting Enter to keep *default* (may be None)."""
+    shown = 'auto' if default is None else default
+    try:
+        raw = input('{} [{}]: '.format(prompt, shown)).strip()
+    except EOFError:
+        return default
+    if raw == '':
+        return default
+    if raw.lower() in ('auto', 'none'):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        print('  (invalid number, keeping {})'.format(shown))
+        return default
+
 
 
 def _one(pattern):
@@ -695,7 +761,7 @@ def build_plot_script(cfg):
                 "sp = _one('*.kpath_points.txt')",
                 'if _missing(f):',
                 '    return',
-                "pplt.plot_bands(f, sym_points=sp, title='Band structure')",
+                "pplt.plot_bands(f, sym_points=sp, title='Band structure', y_lim=_ewin())",
             ],
         )
         menu.append(('Band structure', 'plot_band_structure'))
@@ -705,13 +771,13 @@ def build_plot_script(cfg):
             "f = _one('*.dosdk_0.dat')",
             'if _missing(f):',
             '    return',
-            "pplt.plot_dos(f, title='Density of states')",
+            "pplt.plot_dos(f, title='Density of states', x_lim=_ewin(), y_lim=_ylim())",
         ]
         if do_pdos:
             dos_body += [
                 "pdos = _many('*.pdosdk*')",
                 'if pdos:',
-                "    pplt.plot_pdos(pdos, title='Projected DOS')",
+                "    pplt.plot_pdos(pdos, title='Projected DOS', x_lim=_ewin(), y_lim=_ylim())",
             ]
         funcs += _plot_func('plot_density_of_states', dos_body)
         menu.append(('DOS / projected DOS', 'plot_density_of_states'))
@@ -728,7 +794,7 @@ def build_plot_script(cfg):
                 'if _missing(fb, fd):',
                 '    return',
                 'pplt.plot_dos_beside_bands(fd, fb, sym_points=sp, dos_ticks=True,',
-                "                           title='Bands and DOS')",
+                "                           title='Bands and DOS', y_lim=_ewin())",
             ],
         )
         menu.append(('Bands + DOS (side by side)', 'plot_bands_and_dos'))
@@ -740,7 +806,7 @@ def build_plot_script(cfg):
                 "f = _one('*sigma*_0.dat')",
                 'if _missing(f):',
                 '    return',
-                "pplt.plot_electrical_conductivity(f, title='Electrical conductivity')",
+                "pplt.plot_electrical_conductivity(f, title='Electrical conductivity', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
         menu.append(('Electrical conductivity', 'plot_conductivity'))
@@ -750,7 +816,7 @@ def build_plot_script(cfg):
                 "f = _one('*Seebeck*_0.dat')",
                 'if _missing(f):',
                 '    return',
-                "pplt.plot_seebeck(f, title='Seebeck coefficient')",
+                "pplt.plot_seebeck(f, title='Seebeck coefficient', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
         menu.append(('Seebeck coefficient', 'plot_seebeck'))
@@ -763,7 +829,7 @@ def build_plot_script(cfg):
                 'if not files:',
                 '    _missing(None)',
                 '    return',
-                "pplt.plot_shc(files if len(files) > 1 else files[0], title='Spin Hall conductivity')",
+                "pplt.plot_shc(files if len(files) > 1 else files[0], title='Spin Hall conductivity', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
         menu.append(('Spin Hall conductivity', 'plot_spin_hall'))
@@ -776,7 +842,7 @@ def build_plot_script(cfg):
                 'if not files:',
                 '    _missing(None)',
                 '    return',
-                "pplt.plot_ahc(files if len(files) > 1 else files[0], title='Anomalous Hall conductivity')",
+                "pplt.plot_ahc(files if len(files) > 1 else files[0], title='Anomalous Hall conductivity', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
         menu.append(('Anomalous Hall conductivity', 'plot_anomalous_hall'))
@@ -787,14 +853,14 @@ def build_plot_script(cfg):
             'if _missing(fb):',
             '    return',
             "sp = _one('*.kpath_points.txt')",
-            "pplt.plot_berry(fb, sym_points=sp, title='Berry curvature')",
+            "pplt.plot_berry(fb, sym_points=sp, title='Berry curvature', y_lim=_ylim())",
         ]
         if has_bands:
             berry_body += [
                 "fband = _one('*.bands_0.dat')",
                 'if fband is not None:',
                 '    pplt.plot_berry_under_bands(fb, fband, sym_points=sp, dos_ticks=True,',
-                "                                title='Berry curvature under bands')",
+                "                                title='Berry curvature under bands', y_lim=_ewin())",
             ]
         funcs += _plot_func('plot_berry_curvature', berry_body)
         menu.append(('Berry curvature', 'plot_berry_curvature'))
@@ -810,10 +876,10 @@ def build_plot_script(cfg):
                 '    return',
                 'if epsi:',
                 '    pplt.plot_dielectric(epsi if len(epsi) > 1 else epsi[0],',
-                "                         title='Im(epsilon)')",
+                "                         title='Im(epsilon)', x_lim=_ewin_optical(), y_lim=_ylim())",
                 'if epsr:',
                 '    pplt.plot_dielectric(epsr if len(epsr) > 1 else epsr[0],',
-                "                         title='Re(epsilon)')",
+                "                         title='Re(epsilon)', x_lim=_ewin_optical(), y_lim=_ylim())",
             ],
         )
         menu.append(('Optical / dielectric function', 'plot_dielectric'))
@@ -846,7 +912,10 @@ def build_plot_script(cfg):
         )
         menu.append(('Spin texture (data file)', 'plot_spin_texture'))
 
-    lines = [PLOT_HEADER.replace('__OUTPUTDIR__', repr(cfg['outputdir']))]
+    header = PLOT_HEADER.replace('__OUTPUTDIR__', repr(cfg['outputdir']))
+    header = header.replace('__EMIN__', repr(float(cfg.get('emin', -8.0))))
+    header = header.replace('__EMAX__', repr(float(cfg.get('emax', 4.0))))
+    lines = [header]
     lines.append('')
     lines.extend(funcs)
 
@@ -859,6 +928,32 @@ def build_plot_script(cfg):
     lines.append('')
     lines.append('')
     lines.append('def main():')
+    lines.append('    global EMIN, EMAX, YMIN, YMAX')
+    lines.append('    parser = argparse.ArgumentParser(')
+    lines.append("        description='Plot PAOFLOW results with optional axis limits.')")
+    lines.append("    parser.add_argument('--emin', type=float, default=EMIN,")
+    lines.append(
+        "                        help='Lower energy-axis limit (eV, rel. E_F). "
+        "Default: %(default)s')"
+    )
+    lines.append("    parser.add_argument('--emax', type=float, default=EMAX,")
+    lines.append(
+        "                        help='Upper energy-axis limit (eV, rel. E_F). "
+        "Default: %(default)s')"
+    )
+    lines.append("    parser.add_argument('--ymin', type=float, default=None,")
+    lines.append("                        help='Lower property y-axis limit (default: automatic)')")
+    lines.append("    parser.add_argument('--ymax', type=float, default=None,")
+    lines.append("                        help='Upper property y-axis limit (default: automatic)')")
+    lines.append('    args = parser.parse_args()')
+    lines.append('    EMIN, EMAX, YMIN, YMAX = args.emin, args.emax, args.ymin, args.ymax')
+    lines.append('    # Ask for the axis limits interactively (Enter keeps the shown default;')
+    lines.append('    # any value passed on the command line becomes that default).')
+    lines.append("    print('Axis limits (press Enter to accept the default):')")
+    lines.append("    EMIN = _ask_float('  Energy axis EMIN (eV, rel. E_F)', EMIN)")
+    lines.append("    EMAX = _ask_float('  Energy axis EMAX (eV, rel. E_F)', EMAX)")
+    lines.append("    YMIN = _ask_float('  Property axis YMIN (auto for automatic)', YMIN)")
+    lines.append("    YMAX = _ask_float('  Property axis YMAX (auto for automatic)', YMAX)")
     lines.append("    print('Available plots:')")
     lines.append('    for i, (label, _fn) in enumerate(PLOTS, 1):')
     lines.append("        print('  {}: {}'.format(i, label))")
@@ -899,7 +994,7 @@ def build_plot_script(cfg):
 def collect_common(args, workdir):
     """Prompt for configuration shared by both workflows."""
     det_save = detect_savedir(workdir)
-    det_upf = detect_upf(workdir)
+    det_upf = detect_upf(workdir, det_save)
     det_prefix = detect_prefix(workdir, det_save)
 
     savedir = args.savedir or ask('Save directory (<prefix>.save)', det_save or 'pwscf.save')
