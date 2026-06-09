@@ -150,7 +150,6 @@ Implementation lives in [assets.py](assets.py).
 - [.github/assets_generation/transport/create_assets.sh](../../../.github/assets_generation/transport/create_assets.sh): run QE and PAOFLOW to populate transport savedirs and staged test References
 - [.github/assets_generation/transport/build_tar.sh](../../../.github/assets_generation/transport/build_tar.sh): build the combined `transport_test_assets.tar.gz`
 - [.github/assets_generation/transport/build_assets.py](../../../.github/assets_generation/transport/build_assets.py): package staged `Reference/` + discovered `*.save` into tar.gz
-- [.github/assets_generation/transport/job.sh](../../../.github/assets_generation/transport/job.sh): convenience wrapper for `create_assets.sh` + `build_tar.sh`
 - [.github/assets_generation/transport/upload_release_assets.sh](../../../.github/assets_generation/transport/upload_release_assets.sh): upload `transport_test_assets.tar.gz` to a GitHub release
 - [assets.py](assets.py): resolve/download/verify/extract asset tarball into cache
 - [jobs.py](jobs.py): discover runnable transport jobs
