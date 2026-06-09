@@ -4,12 +4,15 @@ set -euo pipefail
 
 TAG="${1:-integration-assets-v1}"
 
-ASSET_DIR="/home/anooja/Work/software/PAOFLOW/.github/assets_generation/qe/_assets"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+ASSET_DIR="${ASSET_DIR:-${REPO_ROOT}/.github/assets_generation/qe/_assets}"
 
 QE_ASSET="${ASSET_DIR}/qe_assets.tar.gz"
 PAOFLOW_ASSET="${ASSET_DIR}/paoflow_assets.tar.gz"
 
-REPO="marcobn/PAOFLOW"
+REPO="${REPO:-marcobn/PAOFLOW}"
 
 cd "${ASSET_DIR}"
 

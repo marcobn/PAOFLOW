@@ -64,6 +64,23 @@ By default this writes:
 .github/assets_generation/transport/_assets/transport_test_assets.tar.gz
 ```
 
+Upload the tarball to an existing GitHub release with:
+
+```bash
+# From repository root
+.github/assets_generation/transport/upload_release_assets.sh integration-assets-v1
+```
+
+The upload helper resolves `.github/assets_generation/transport/_assets`
+relative to its own script location, so it works from any clone path without
+editing the script. You can override the defaults when needed:
+
+```bash
+ASSET_DIR=/path/to/transport/_assets \
+REPO=owner/repo \
+.github/assets_generation/transport/upload_release_assets.sh integration-assets-v1
+```
+
 ### 3) Build directly from existing folders
 
 Create a tarball containing `Reference/` and `*.save` directories for all
