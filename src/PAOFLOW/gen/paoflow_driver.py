@@ -797,6 +797,125 @@ def _default_energy_window():
     is kept.
     """
     return _file_energy_range(_one('*.dosdk_0.dat'))
+
+
+_SPIN_COLORS = ['tab:blue', 'tab:red', 'tab:green', 'tab:orange']
+
+
+def _spin_channels(pattern):
+    """Return ``([files], [labels])`` for the spin channels of *pattern*.
+
+    The generated patterns target the first spin channel through a ``_0`` tag.
+    A spin-polarized (nspin=2) run also writes the ``_1`` channel; when present
+    both files are returned so the two channels can be overlaid in one figure.
+    """
+    f0 = _one(pattern)
+    if f0 is None:
+        return [], []
+    files, labels = [f0], ['spin up']
+    f1 = _one(pattern.replace('_0.', '_1.'))
+    if f1 is not None:
+        files.append(f1)
+        labels.append('spin down')
+    return files, labels
+
+
+def _overlay_transport(files, labels, title, y_label, scale=1.0, min_zero=False):
+    """Overlay the diagonal-averaged transport tensor of several files.
+
+    Used for spin-polarized conductivity / Seebeck output, where each spin
+    channel is written to its own file: both channels are drawn on a single
+    figure (one line per spin and temperature).
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from PAOFLOW.inputs.read_pao_output import read_transport_PAO
+
+    fig = plt.figure()
+    fig.suptitle(title)
+    ax = fig.add_subplot(111)
+    ic = 0
+    ymax = 0.0
+    for fn, base in zip(files, labels):
+        enes, temps, tensors = read_transport_PAO(fn)
+        for it, temp in enumerate(temps):
+            trace = scale * np.einsum('eii->e', tensors[it]) / 3.0
+            lbl = base if len(temps) == 1 else '{}, T={:g}'.format(base, temp)
+            ax.plot(enes, trace, color=_SPIN_COLORS[ic % len(_SPIN_COLORS)], label=lbl)
+            ymax = max(ymax, float(np.nanmax(np.abs(trace))))
+            ic += 1
+    ax.set_xlim(*_ewin())
+    yl = _ylim()
+    if yl is not None:
+        ax.set_ylim(*yl)
+    elif min_zero and ymax > 0.0:
+        ax.set_ylim(0.0, 1.1 * ymax)
+    ax.set_xlabel('Energy (eV)')
+    ax.set_ylabel(y_label)
+    ax.legend()
+    plt.show()
+
+
+def _overlay_bands_dos(band_files, dos_files, labels, sym_file, title):
+    """Bands beside DOS with both spin channels overlaid on one figure.
+
+    Reproduces ``plot_dos_beside_bands`` but loops over the spin channels so
+    that the two channels share a single bands panel and a single DOS panel.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib import gridspec
+    from PAOFLOW.inputs.read_pao_output import (
+        read_bands_PAO,
+        read_dos_PAO,
+        read_band_path_PAO,
+    )
+
+    sym_points = read_band_path_PAO(sym_file) if sym_file else None
+    y_lim = _ewin()
+
+    fig = plt.figure()
+    spec = gridspec.GridSpec(ncols=2, nrows=1, width_ratios=[5, 1])
+    fig.suptitle(title)
+    ax_b = fig.add_subplot(spec[0])
+    ax_d = fig.add_subplot(spec[1])
+
+    nk = 1
+    dos_peak = 0.0
+    for i, (fb, fd, lbl) in enumerate(zip(band_files, dos_files, labels)):
+        col = _SPIN_COLORS[i % len(_SPIN_COLORS)]
+        bands = read_bands_PAO(fb)
+        nk = bands.shape[1]
+        for j, b in enumerate(bands):
+            ax_b.plot(b, color=col, label=lbl if j == 0 else None)
+        es, dos = read_dos_PAO(fd)
+        ax_d.plot(dos, es, color=col, label=lbl)
+        mask = (es >= y_lim[0]) & (es <= y_lim[1])
+        if mask.any():
+            dos_peak = max(dos_peak, float(np.nanmax(np.abs(dos[mask]))))
+
+    ax_b.set_xlim(0, nk - 1)
+    ax_b.set_ylim(*y_lim)
+    if sym_points is None:
+        ax_b.xaxis.set_visible(False)
+    else:
+        ax_b.set_xticks(sym_points[0])
+        ax_b.set_xticklabels(sym_points[1])
+        ax_b.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
+    ax_b.set_ylabel(r'$\epsilon$($\mathbf{k}$) (eV)', fontsize=12)
+    ax_b.legend()
+
+    xl = _ylim()
+    if xl is not None:
+        ax_d.set_xlim(*xl)
+    elif dos_peak > 0.0:
+        ax_d.set_xlim(0.0, 1.1 * dos_peak)
+    ax_d.set_ylim(*y_lim)
+    ax_d.yaxis.set_visible(False)
+    ax_d.set_xlabel('DOS')
+
+    plt.tight_layout()
+    plt.show()
 '''
 
 
@@ -820,21 +939,31 @@ def build_plot_script(cfg):
         funcs += _plot_func(
             'plot_band_structure',
             [
-                "f = _one('*.bands_0.dat')",
+                "files, labels = _spin_channels('*.bands_0.dat')",
                 "sp = _one('*.kpath_points.txt')",
-                'if _missing(f):',
+                'if not files:',
+                '    _missing(None)',
                 '    return',
-                "pplt.plot_bands(f, sym_points=sp, title='Band structure', y_lim=_ewin())",
+                'if len(files) > 1:',
+                "    pplt.plot_bands(files, sym_points=sp, title='Band structure',",
+                '                    y_lim=_ewin(), labels=labels, cols=_SPIN_COLORS[:len(files)])',
+                'else:',
+                "    pplt.plot_bands(files[0], sym_points=sp, title='Band structure', y_lim=_ewin())",
             ],
         )
         menu.append(('Band structure', 'plot_band_structure'))
 
     if has_dos:
         dos_body = [
-            "f = _one('*.dosdk_0.dat')",
-            'if _missing(f):',
+            "files, labels = _spin_channels('*.dosdk_0.dat')",
+            'if not files:',
+            '    _missing(None)',
             '    return',
-            "pplt.plot_dos(f, title='Density of states', x_lim=_ewin(), y_lim=_dos_mag_lim(f))",
+            'if len(files) > 1:',
+            "    pplt.plot_pdos(files, title='Density of states', x_lim=_ewin(),",
+            '                   y_lim=_dos_mag_lim(files), labels=labels)',
+            'else:',
+            "    pplt.plot_dos(files[0], title='Density of states', x_lim=_ewin(), y_lim=_dos_mag_lim(files[0]))",
         ]
         if do_pdos:
             dos_body += [
@@ -851,13 +980,18 @@ def build_plot_script(cfg):
         funcs += _plot_func(
             'plot_bands_and_dos',
             [
-                "fb = _one('*.bands_0.dat')",
-                "fd = _one('*.dosdk_0.dat')",
+                "bfiles, blabels = _spin_channels('*.bands_0.dat')",
+                "dfiles, _ = _spin_channels('*.dosdk_0.dat')",
                 "sp = _one('*.kpath_points.txt')",
-                'if _missing(fb, fd):',
+                'if not bfiles or not dfiles:',
+                '    _missing(None)',
                 '    return',
-                'pplt.plot_dos_beside_bands(fd, fb, sym_points=sp, dos_ticks=True,',
-                "                           title='Bands and DOS', x_lim=_dos_mag_lim(fd), y_lim=_ewin())",
+                'if len(bfiles) > 1 and len(dfiles) > 1:',
+                '    _overlay_bands_dos(bfiles, dfiles, blabels, sp,',
+                "                       title='Bands and DOS')",
+                'else:',
+                '    pplt.plot_dos_beside_bands(dfiles[0], bfiles[0], sym_points=sp, dos_ticks=True,',
+                "                               title='Bands and DOS', x_lim=_dos_mag_lim(dfiles[0]), y_lim=_ewin())",
             ],
         )
         menu.append(('Bands + DOS (side by side)', 'plot_bands_and_dos'))
@@ -866,20 +1000,30 @@ def build_plot_script(cfg):
         funcs += _plot_func(
             'plot_conductivity',
             [
-                "f = _one('*sigma*_0.dat')",
-                'if _missing(f):',
+                "files, labels = _spin_channels('*sigma*_0.dat')",
+                'if not files:',
+                '    _missing(None)',
                 '    return',
-                "pplt.plot_electrical_conductivity(f, title='Electrical conductivity', x_lim=_ewin(), y_lim=_ylim())",
+                'if len(files) > 1:',
+                "    _overlay_transport(files, labels, 'Electrical conductivity',",
+                "                       r'Conductivity $(\\Omega\\, m\\, s)^{-1}$', min_zero=True)",
+                'else:',
+                "    pplt.plot_electrical_conductivity(files[0], title='Electrical conductivity', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
         menu.append(('Electrical conductivity', 'plot_conductivity'))
         funcs += _plot_func(
             'plot_seebeck',
             [
-                "f = _one('*Seebeck*_0.dat')",
-                'if _missing(f):',
+                "files, labels = _spin_channels('*Seebeck*_0.dat')",
+                'if not files:',
+                '    _missing(None)',
                 '    return',
-                "pplt.plot_seebeck(f, title='Seebeck coefficient', x_lim=_ewin(), y_lim=_ylim())",
+                'if len(files) > 1:',
+                "    _overlay_transport(files, labels, 'Seebeck coefficient',",
+                "                       r'Seebeck ($\\mu$V/K)', scale=1e6)",
+                'else:',
+                "    pplt.plot_seebeck(files[0], title='Seebeck coefficient', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
         menu.append(('Seebeck coefficient', 'plot_seebeck'))
