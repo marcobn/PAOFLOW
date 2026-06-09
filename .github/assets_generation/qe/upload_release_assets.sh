@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -9,25 +9,20 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 ASSET_DIR="${ASSET_DIR:-${REPO_ROOT}/.github/assets_generation/qe/_assets}"
 
-QE_ASSET="${ASSET_DIR}/qe_assets.tar.gz"
-PAOFLOW_ASSET="${ASSET_DIR}/paoflow_assets.tar.gz"
+QE_TEST_ASSET="${ASSET_DIR}/qe_test_assets.tar.gz"
+CHECKSUM_ASSET="qe_SHA256SUMS"
 
 REPO="${REPO:-marcobn/PAOFLOW}"
 
 cd "${ASSET_DIR}"
 
-if [[ ! -f "${QE_ASSET}" ]]; then
-    echo "Missing asset: ${QE_ASSET}"
+if [[ ! -f "${QE_TEST_ASSET}" ]]; then
+    echo "Missing asset: ${QE_TEST_ASSET}"
     exit 1
 fi
 
-if [[ ! -f "${PAOFLOW_ASSET}" ]]; then
-    echo "Missing asset: ${PAOFLOW_ASSET}"
-    exit 1
-fi
-
-echo "Generating SHA256SUMS..."
-sha256sum qe_assets.tar.gz paoflow_assets.tar.gz > SHA256SUMS
+echo "Generating QE SHA256SUMS..."
+sha256sum qe_test_assets.tar.gz > "${CHECKSUM_ASSET}"
 
 if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
     echo "Creating release ${TAG}..."
@@ -43,9 +38,8 @@ fi
 echo "Uploading/replacing assets..."
 
 gh release upload "${TAG}" \
-    qe_assets.tar.gz \
-    paoflow_assets.tar.gz \
-    SHA256SUMS \
+    qe_test_assets.tar.gz \
+    "${CHECKSUM_ASSET}" \
     --repo "${REPO}" \
     --clobber
 

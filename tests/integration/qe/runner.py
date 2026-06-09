@@ -79,17 +79,17 @@ def _link_or_copy_dir(*, src: Path, dst: Path, link_mode: str) -> None:
 
 def _overlay_qe_assets(
     *,
-    qe_assets_root: Path,
+    qe_test_assets_root: Path,
     example_name: str,
     job_relpath: Path,
     job_dir: Path,
     link_mode: str,
 ) -> None:
     assets_job_root = _assets_job_root(
-        assets_root=qe_assets_root,
+        assets_root=qe_test_assets_root,
         example_name=example_name,
         job_relpath=job_relpath,
-        label='QE assets',
+        label='QE test assets',
     )
 
     found_savedir = False
@@ -99,38 +99,40 @@ def _overlay_qe_assets(
             found_savedir = True
 
     if not found_savedir:
-        raise RuntimeError(f'QE assets missing *.save for job: {example_name}/{job_relpath}')
+        raise RuntimeError(f'QE test assets missing *.save for job: {example_name}/{job_relpath}')
 
 
 def _overlay_reference_assets(
     *,
-    reference_assets_root: Path,
+    qe_test_assets_root: Path,
     example_name: str,
     job_relpath: Path,
     job_dir: Path,
     link_mode: str,
 ) -> None:
     assets_job_root = _assets_job_root(
-        assets_root=reference_assets_root,
+        assets_root=qe_test_assets_root,
         example_name=example_name,
         job_relpath=job_relpath,
-        label='Reference assets',
+        label='QE test assets',
     )
 
     ref_src = assets_job_root / 'Reference'
     if not ref_src.is_dir():
-        raise RuntimeError(f'Reference assets missing for job: {example_name}/{job_relpath}')
+        raise RuntimeError(
+            f'QE test assets missing Reference for job: {example_name}/{job_relpath}'
+        )
 
     _link_or_copy_dir(src=ref_src, dst=job_dir / 'Reference', link_mode=link_mode)
 
 
 def _overlay_internal_basis_assets(
     *,
-    reference_assets_root: Path,
+    qe_test_assets_root: Path,
     sandbox_root: Path,
     link_mode: str,
 ) -> None:
-    basis_src = reference_assets_root / 'BASIS'
+    basis_src = qe_test_assets_root / 'BASIS'
     if not basis_src.is_dir():
         return
 
@@ -151,14 +153,13 @@ def run_example_in_sandbox(
     sandbox_root: Path,
     *,
     job_relpath: Path | None = None,
-    qe_assets_root: Optional[Path] = None,
-    reference_assets_root: Optional[Path] = None,
+    qe_test_assets_root: Optional[Path] = None,
     assets_link_mode: str = 'symlink',
 ) -> ExampleRunResult:
     """Run a QE integration job in an isolated sandbox.
 
     - Copies the full example directory into the sandbox.
-    - Overlays `*.save/` and `Reference/` from separate assets into the job directory.
+    - Overlays `*.save/`, `Reference/`, and optional `BASIS/` from one combined asset bundle.
     """
 
     example_name = example_dir.name
@@ -175,25 +176,23 @@ def run_example_in_sandbox(
     if not sandbox_job_dir.exists():
         raise RuntimeError(f'Sandbox job directory missing: {sandbox_job_dir}')
 
-    if qe_assets_root is not None:
+    if qe_test_assets_root is not None:
         _overlay_qe_assets(
-            qe_assets_root=qe_assets_root,
+            qe_test_assets_root=qe_test_assets_root,
             example_name=example_name,
             job_relpath=job_relpath,
             job_dir=sandbox_job_dir,
             link_mode=assets_link_mode,
         )
-
-    if reference_assets_root is not None:
         _overlay_reference_assets(
-            reference_assets_root=reference_assets_root,
+            qe_test_assets_root=qe_test_assets_root,
             example_name=example_name,
             job_relpath=job_relpath,
             job_dir=sandbox_job_dir,
             link_mode=assets_link_mode,
         )
         _overlay_internal_basis_assets(
-            reference_assets_root=reference_assets_root,
+            qe_test_assets_root=qe_test_assets_root,
             sandbox_root=sandbox_root,
             link_mode=assets_link_mode,
         )
