@@ -476,13 +476,13 @@ def _create_acbn0_local_basis_inputfile(
         proj_line = f'paoflow.projections(basispath={basis_arg}, configuration={cfg!r})'
 
     lines = [
-        "import os",
-        "import numpy as np",
-        "from PAOFLOW import PAOFLOW",
-        "",
-        "paoflow = PAOFLOW.PAOFLOW("
+        'import os',
+        'import numpy as np',
+        'from PAOFLOW import PAOFLOW',
+        '',
+        'paoflow = PAOFLOW.PAOFLOW('
         f"outputdir='{outputdir}', savedir='{savedir}', "
-        "save_overlaps=True, acbn0=True)",
+        'save_overlaps=True, acbn0=True)',
         proj_line,
         '',
         'arry, attr = paoflow.data_controller.data_dicts()',
