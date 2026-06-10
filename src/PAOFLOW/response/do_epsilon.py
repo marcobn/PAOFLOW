@@ -722,6 +722,8 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
     ValueError
         If ``jdos_smeartype`` is not ``'gauss'`` or ``'lorentz'``.
     """
+    from ..utils.communication import load_balancing
+
     arrays, attributes = data_controller.data_dicts()
     intersmear = attributes['delta']
     smearing = attributes['smearing']
@@ -735,6 +737,13 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
     jdos = np.zeros(esize, dtype=float)
     Ef = 1.0e-9
 
+    # ``my_eigsmat`` holds the full BZ on every rank, so partition the k-loop
+    # here: each rank accumulates only its slice and the caller reduces the
+    # partial sums with MPI.Allreduce.  Without this every rank would compute
+    # the complete JDOS and the Allreduce would scale the result by the number
+    # of ranks (spurious dependence on the core count).
+    ini_ik, end_ik = load_balancing(comm.Get_size(), rank, nkpnts)
+
     if smearing == None or attributes['insulator']:
         fn = 1.0 * (Ek <= Ef)  # fixed occupation for insulator, no smearing
     elif smearing == 'gauss':
@@ -746,7 +755,7 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
 
     count = 0.0
     if jdos_smeartype == 'gauss':
-        for ik in range(nkpnts):
+        for ik in range(ini_ik, end_ik):
             for iband2 in range(bndmax):
                 for iband1 in range(bndmax):
                     E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
@@ -756,7 +765,7 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
                         count += f_nm
 
     elif jdos_smeartype == 'lorentz':
-        for ik in range(nkpnts):
+        for ik in range(ini_ik, end_ik):
             for iband2 in range(bndmax):
                 for iband1 in range(bndmax):
                     E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
@@ -772,6 +781,10 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
 
     else:
         raise ValueError("jdos_smeartype must be 'gauss' or 'lorentz' ")
+
+    # The normalization must use the global oscillator-strength sum so it does
+    # not depend on how the k-points were split across ranks.
+    count = comm.allreduce(count, op=MPI.SUM)
 
     spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
     jdos *= nkpnts / count / spin_factor
