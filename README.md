@@ -62,7 +62,18 @@ pf.adaptive_smearing(smearing='gauss')
 pf.dos(do_dos=True, do_pdos=False)
 pf.finish()
 ```
+PAOFLOW ships two small, dependency-light command-line generators that automate
+the repetitive parts of setting up a study. They are installed with the package
+as console commands:
 
+1. **`paoflow-gen-qe`** — build a Quantum ESPRESSO `scf` input from an
+   [AFLOW](https://aflow.org) database entry, with sensible defaults for
+   smearing, magnetism, spin–orbit coupling, and the number of bands needed for
+   PAOFLOW's extended-basis projections.
+2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script
+   (`main.py`) from the output of a Quantum ESPRESSO run, and optionally a
+   companion **plotting script** (`plot.py`) that visualizes exactly the
+   properties you selected.
 ---
 
 ## For Researchers

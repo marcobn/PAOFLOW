@@ -1,0 +1,38 @@
+! Suggested eACBN0 intersite V cutoff: 3.27 Angstrom
+!   nearest-neighbour distance: 2.48 Angstrom
+!   covers the first neighbour shell; use as V_CUTOFF /
+!   set_intersite_pairs(cutoff=...) in the PAOFLOW U+V driver.
+ &control
+    calculation = 'scf'
+    restart_mode = 'from_scratch',
+    prefix = 'As1Ga1',
+    pseudo_dir = '/Users/marco/Local/Programs/PAOFLOW/PSEUDOS/nc-sr-05_pbe_standard_upf',
+    outdir = './'
+ /
+ &system
+    ibrav = 2,
+    celldm(1) = 10.8379195098,
+    nat = 2,
+    ntyp = 2,
+    ecutwfc = 84.0,
+    nbnd = 37,
+ /
+ &electrons
+    mixing_beta = 0.7
+ /
+ATOMIC_SPECIES
+  As     74.9216  As.upf
+  Ga     69.7231  Ga.upf
+ATOMIC_POSITIONS (crystal)
+  As      0.000000000000     0.000000000000     0.000000000000
+  Ga      0.250000000000     0.250000000000     0.250000000000
+K_POINTS {automatic}
+  18 18 18 0 0 0
+HUBBARD (ortho-atomic)
+ U Ga-4s 0.0
+ U Ga-4p 0.0
+ U As-4s 1.9927515673230571
+ U As-4p 0.7597138287586537
+ V As-4s Ga-4s 1 2 0.2331090721079384
+ V As-4s Ga-4p 1 2 0.3222787755874805
+ V As-4p Ga-4p 1 2 0.5512343409305684
