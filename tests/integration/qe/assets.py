@@ -21,8 +21,8 @@ class AssetSource:
 def _default_cache_dir() -> Path:
     xdg = os.environ.get('XDG_CACHE_HOME')
     if xdg:
-        return Path(xdg).expanduser().resolve() / 'paoflow' / 'qe-assets'
-    return Path.home().expanduser().resolve() / '.cache' / 'paoflow' / 'qe-assets'
+        return Path(xdg).expanduser().resolve() / 'paoflow' / 'qe-test-assets'
+    return Path.home().expanduser().resolve() / '.cache' / 'paoflow' / 'qe-test-assets'
 
 
 def _sha256_file(path: Path) -> str:

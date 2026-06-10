@@ -2,13 +2,58 @@
 
 set -euo pipefail
 
-TAG="${1:-integration-assets-v1}"
+usage() {
+  cat <<'EOF'
+Usage: [environment variables] upload_release_assets.sh [TAG]
 
-ASSET_DIR="/home/anooja/Work/software/PAOFLOW/.github/assets_generation/transport/_assets"
+Upload transport release assets from the local _assets directory.
+
+Positional arguments:
+  TAG                   Existing release tag to upload to.
+                        Default: integration-assets-v1
+
+Environment variables:
+  ASSET_DIR             Directory containing transport_test_assets.tar.gz.
+                        Default: .github/assets_generation/transport/_assets
+  REPO                  GitHub repository in OWNER/REPO form.
+                        Default: marcobn/PAOFLOW
+
+Behavior:
+  - Regenerates transport_SHA256SUMS from transport_test_assets.tar.gz before upload.
+  - Refuses to create a missing release.
+  - Replaces existing assets with the same name.
+EOF
+}
+
+TAG="integration-assets-v1"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      TAG="$1"
+      shift
+      if [[ $# -gt 0 ]]; then
+        echo "Unexpected argument: $1" >&2
+        usage >&2
+        exit 1
+      fi
+      ;;
+  esac
+  shift
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+ASSET_DIR="${ASSET_DIR:-${REPO_ROOT}/.github/assets_generation/transport/_assets}"
 TRANSPORT_ASSET="${ASSET_DIR}/transport_test_assets.tar.gz"
 CHECKSUM_ASSET="transport_SHA256SUMS"
 
-REPO="marcobn/PAOFLOW"
+REPO="${REPO:-marcobn/PAOFLOW}"
 
 cd "${ASSET_DIR}"
 
