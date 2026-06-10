@@ -69,7 +69,7 @@ as console commands:
 1. **`paoflow-gen-qe`** — build a Quantum ESPRESSO `scf` input from an
    [AFLOW](https://aflow.org) database entry, with sensible defaults for
    smearing, magnetism, spin–orbit coupling, and the number of bands needed for
-   PAOFLOW's extended-basis projections.
+   PAOFLOW's extended-basis projections. Pseudopotentials from the Pseudo Dojo repository (https://www.pseudo-dojo.org/), are included in the distribution and should be used for the input generation.
 2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script
    (`main.py`) from the output of a Quantum ESPRESSO run, and optionally a
    companion **plotting script** (`plot.py`) that visualizes exactly the
