@@ -86,7 +86,26 @@ To delete staged PAOFLOW test outputs after a successful tar build:
 
 Cleanup is opt-in and only removes staging subdirectories for the selected
 examples. If you also pass `--examples`, unrelated staged outputs are left in
-place.
+place. In `--repack` mode, cleanup is skipped because the repack path reads
+from `.github/assets_generation/qe/_assets/`, not from staging.
+
+To rebuild the tarball from an unpacked copy under
+`.github/assets_generation/qe/_assets/` without rereading the source examples:
+
+```bash
+.github/assets_generation/qe/build_tar.sh --repack
+```
+
+This mode only repacks recognized archive content:
+
+- `example*/.../*.save`
+- `example*/.../Reference/`
+- required `BASIS/<species>/`
+
+Other files that may be present in `.github/assets_generation/qe/_assets/`
+such as the existing tarball, checksum files, notes, or scratch directories are
+ignored. You can still combine `--repack` with `--examples example10` to limit
+the repack to selected top-level examples.
 
 `build_tar.sh` uses [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py)
 internally for the combined `qe_test_assets.tar.gz` tarball. That Python helper packages
