@@ -767,7 +767,6 @@ def qe_ibrav_from_lattice(
     for ibrav in candidates:
         index = _IBRAV_INDEX[ibrav]
         v_conv_target = index * v_prim
-        spec = _IBRAV_CONSTRAINTS[ibrav]
 
         # Find a conventional cell: a triple of lattice vectors with the
         # right volume and the ibrav's symmetry pattern.
