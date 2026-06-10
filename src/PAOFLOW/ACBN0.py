@@ -165,7 +165,7 @@ import itertools
 import pickle
 import re
 import subprocess
-from os.path import join
+from os.path import expanduser, isfile, join
 
 import numpy as np
 from mpi4py import MPI
@@ -691,11 +691,44 @@ class ACBN0:
         outputdir='./output/',
         projection='ortho-atomic',
         mpi_hartree=None,
+        use_local_basis=False,
+        basispath=None,
+        configuration='standard',
+        gaussian_threshold=0.01,
     ):
         """Initialize the ACBN0 self-consistent U driver.
 
         Parameters
         ----------
+        use_local_basis : bool, optional
+            When ``True`` the Hubbard occupations are obtained from
+            PAOFLOW's internal projection onto the local atomic basis
+            (:meth:`PAOFLOW.PAOFLOW.PAOFLOW.projections`) instead of from
+            ``projwfc.x``.  ``projwfc.x`` is then never run and no
+            ``<prefix>.projwfc.in`` template is required.  The local
+            projection orthonormalises the atomic orbitals per k-point, so
+            the wavefunction overlap is the identity, i.e. the scheme is
+            intrinsically ``'ortho-atomic'``.
+        basispath : str, optional
+            Directory containing the per-element ``<elem>/*.dat`` all-electron
+            radial basis files.  Required when ``use_local_basis`` is
+            ``True`` and ``configuration`` is ``'standard'`` or
+            ``'extended'``.
+        configuration : {'minimal', 'standard', 'extended'} or dict, optional
+            Projection-basis preset forwarded to
+            :meth:`PAOFLOW.PAOFLOW.PAOFLOW.projections` when
+            ``use_local_basis`` is ``True``.  ``'minimal'`` uses the UPF
+            pseudo-atomic wavefunctions (the closest drop-in replacement
+            for ``projwfc.x``); ``'standard'`` / ``'extended'`` augment the
+            valence shells with polarization channels built from
+            ``basispath``.  A custom ``{element: [shell_labels]}`` dict
+            (e.g. ``{'Ga': ['3S', '3P', '4S', '4P', '3D', ...]}``) selects
+            an explicit all-electron basis from ``basispath``; this is the
+            way to include semicore shells (such as ``3S`` / ``3P``) that
+            the preset rules would not add.  The Hubbard manifold is always
+            selected by its shell *label* (e.g. ``'3P'``) so that
+            polarization shells sharing the same angular momentum are
+            excluded.
         projection : {'ortho-atomic', 'atomic'}, optional
             Hubbard projector type written to the QE ``HUBBARD`` card.
 
@@ -710,12 +743,20 @@ class ACBN0:
             The choice must be self-consistent: the same projector type
             is used to build the occupations entering the ACBN0 numerator
             *and* the +U Hamiltonian in QE.
+        gaussian_threshold : float, optional
+            Residual-norm tolerance for the contracted-Gaussian fit of the
+            pseudo-atomic wavefunctions
+            (:func:`PAOFLOW.projection.upf_gaussfit.gaussian_fit`).  The
+            fit adds Gaussians (up to 5) until the per-shell residual falls
+            below this value.  The default ``0.01`` is appropriate for most
+            norm-conserving pseudos; harder-to-fit shells (e.g. some ONCV
+            sets) may need a looser value such as ``0.05``.
         """
         from os import chdir
 
         from .inputs.file_io import struct_from_inputfile_QE
-        from .utils.header import header
         from .projection.upf_gaussfit import gaussian_fit
+        from .utils.header import header
 
         header()
         print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
@@ -739,6 +780,39 @@ class ACBN0:
         self.projection = projection
         self.outputdir = outputdir
 
+        self.use_local_basis = bool(use_local_basis)
+        self.basispath = basispath
+        self.configuration = configuration
+        self.gaussian_threshold = float(gaussian_threshold)
+        # Per-iteration cache of the PAO basis metadata dumped by the
+        # local-basis PAOFLOW driver (populated by ``_load_pao_basis_meta``).
+        self._pao_meta = None
+        # Whether a converged charge density from a previous ``run_dft``
+        # call is available on disk.  When True, the next scf reuses it as
+        # its starting potential (``startingpot='file'``) instead of the
+        # superposition of atomic densities, so each self-consistent
+        # iteration restarts from the previous step's density.
+        self._scf_density_available = False
+
+        if self.use_local_basis:
+            cfg = self.configuration
+            if isinstance(cfg, dict):
+                # An explicit {element: [shells]} mapping builds the AE
+                # basis and therefore always needs the radial basis files.
+                needs_basis = True
+                cfg_name = 'custom dict'
+            else:
+                cfg = (cfg or 'standard').lower()
+                needs_basis = cfg in ('standard', 'extended')
+                cfg_name = cfg
+            if needs_basis and not self.basispath:
+                msg = (
+                    'use_local_basis with configuration=%r requires '
+                    "'basispath' pointing to the per-element radial basis "
+                    'files.' % cfg_name
+                )
+                raise ValueError(msg)
+
         self.uVals = {}
         self.vVals = {}
         self.occ_states = {}
@@ -760,13 +834,22 @@ class ACBN0:
         # wrote the full BZ and no expansion is needed.  Otherwise, ask the
         # symmetry expander to fill the full BZ from the wedge; both Hks
         # and Sks are expanded (see open_grid_wrapper).
-        nscf_blocks, _ = struct_from_inputfile_QE(f'{self.prefix}.nscf.in')
-        nscf_sys = nscf_blocks.get('system', {})
+        #
+        # The nscf step is optional: when ``<prefix>.nscf.in`` is absent the
+        # driver runs the scf alone (with whatever bands the scf template
+        # requests) and reads the symmetry flags from the scf input instead.
+        self._has_nscf = isfile(f'{self.prefix}.nscf.in')
+        sym_file = f'{self.prefix}.nscf.in' if self._has_nscf else f'{self.prefix}.scf.in'
+        sym_blocks, _ = struct_from_inputfile_QE(sym_file)
+        nscf_sys = sym_blocks.get('system', {})
 
         def _qe_true(v):
             # Accept any QE logical-true shorthand: .true., .t., true, t
             # (with arbitrary case and trailing commas/whitespace).
-            return str(v).strip().rstrip(',').strip().lower().strip('.') in ('t', 'true')
+            return str(v).strip().rstrip(',').strip().lower().strip('.') in (
+                't',
+                'true',
+            )
 
         nosym = _qe_true(nscf_sys.get('nosym', '.false.'))
         noinv = _qe_true(nscf_sys.get('noinv', '.false.'))
@@ -775,12 +858,21 @@ class ACBN0:
 
         # Generate gaussian fits
         print('Generating gaussian fits for pseudopotential basis states.\n')
+        # The ATOMIC_SPECIES card only stores the UPF file name; the
+        # directory holding the pseudopotentials is given by ``pseudo_dir``
+        # in the &control namelist.  Resolve the full path so the Gaussian
+        # fitter can open the file regardless of the current working dir.
+        pseudo_dir = self.blocks.get('control', {}).get('pseudo_dir', '')
+        pseudo_dir = expanduser(pseudo_dir.strip().strip('"').strip("'"))
         self.basis = {}
         self.uspecies = []
         for s in self.cards['ATOMIC_SPECIES'][1:]:
             ele, _, pp = s.split()
             self.uspecies.append(ele)
-            atno, basis = gaussian_fit(pp, threshold=0.01)
+            pp_path = pp
+            if not isfile(pp_path) and pseudo_dir:
+                pp_path = join(pseudo_dir, pp)
+            atno, basis = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
             self.basis[ele] = basis
 
         # Store U values from input template
@@ -934,25 +1026,39 @@ class ACBN0:
             self.uVals = new_U
 
     def exec_QE(self, executable, fname):
-        exe = join(self.qpath, executable)
+        exe = expanduser(join(self.qpath, executable))
         fout = fname.replace('in', 'out')
 
         command = f'{self.mpi_qe} {exe} {self.qoption}'
         print(
-            f'Starting Process: {self.mpi_qe} {exe} {self.qoption} < {fname} > {fout}', flush=True
+            f'Starting Process: {self.mpi_qe} {exe} {self.qoption} < {fname} > {fout}',
+            flush=True,
         )
         with open(fname, 'r') as qe_in, open(fout, 'w') as qe_out:
             subprocess.run(
-                command.split(' '), stdin=qe_in, stdout=qe_out, stderr=subprocess.STDOUT, check=True
+                [tok for tok in command.split(' ') if tok],
+                stdin=qe_in,
+                stdout=qe_out,
+                stderr=subprocess.STDOUT,
+                check=True,
             )
 
+    def _python_exec(self):
+        # ``python_path`` may point either at the directory containing the
+        # python interpreter (the historical convention) or directly at the
+        # interpreter executable.  Detect the latter so both forms work.
+        ppath = expanduser(self.ppath)
+        if ppath and isfile(ppath):
+            return ppath
+        return join(ppath, 'python')
+
     def exec_PAOFLOW(self):
-        python_exec = join(self.ppath, 'python')
+        python_exec = self._python_exec()
         command = f'{self.mpi_python} {python_exec} acbn0.py'
         print(f'Starting Process: {command} > paoflow.out', flush=True)
         with open('paoflow.out', 'w') as paoflow_out:
             subprocess.run(
-                command.split(' '),
+                [tok for tok in command.split(' ') if tok],
                 stdout=paoflow_out,
                 stderr=subprocess.STDOUT,
                 check=True,
@@ -1019,20 +1125,45 @@ class ACBN0:
         cards['HUBBARD'] = self.hubbard_card()
         for k, v in self.hubbard_occ.items():
             blocks['system'][k] = v
+        # Restart the scf from the charge density converged in the
+        # previous iteration.  Across the self-consistent U/U+V loop the
+        # only thing that changes between successive scf runs is the
+        # (small) update to the Hubbard parameters, so the previous
+        # density is an excellent starting guess and dramatically cuts
+        # the number of scf steps.  The first run has no density on disk
+        # and therefore starts from the atomic superposition.
+        if self._scf_density_available:
+            blocks.setdefault('electrons', {})
+            blocks['electrons']['startingpot'] = "'file'"
         create_atomic_inputfile('scf', blocks, cards)
 
-        blocks, cards = struct_from_inputfile_QE(f'{prefix}.nscf.in')
-        cards['HUBBARD'] = self.hubbard_card()
-        for k, v in self.hubbard_occ.items():
-            blocks['system'][k] = v
-        create_atomic_inputfile('nscf', blocks, cards)
+        blocks, cards = (
+            struct_from_inputfile_QE(f'{prefix}.nscf.in') if self._has_nscf else (None, None)
+        )
+        if self._has_nscf:
+            cards['HUBBARD'] = self.hubbard_card()
+            for k, v in self.hubbard_occ.items():
+                blocks['system'][k] = v
+            create_atomic_inputfile('nscf', blocks, cards)
 
-        blocks, cards = struct_from_inputfile_QE(f'{prefix}.projwfc.in')
-        create_atomic_inputfile('projwfc', blocks, cards)
+        if self.use_local_basis:
+            # The local-basis projection (PAOFLOW.projections) replaces
+            # projwfc.x entirely, so no <prefix>.projwfc.in is read and
+            # projwfc.x is never launched.
+            executables = {'scf': 'pw.x', 'nscf': 'pw.x'}
+            calcs = ['scf', 'nscf'] if self._has_nscf else ['scf']
+        else:
+            blocks, cards = struct_from_inputfile_QE(f'{prefix}.projwfc.in')
+            create_atomic_inputfile('projwfc', blocks, cards)
 
-        executables = {'scf': 'pw.x', 'nscf': 'pw.x', 'projwfc': 'projwfc.x -nd 1'}
-        for c in ['scf', 'nscf', 'projwfc']:
+            executables = {'scf': 'pw.x', 'nscf': 'pw.x', 'projwfc': 'projwfc.x -nd 1'}
+            calcs = ['scf', 'nscf', 'projwfc'] if self._has_nscf else ['scf', 'projwfc']
+        for c in calcs:
             self.exec_QE(executables[c], f'{c}.in')
+
+        # The scf has now written a converged charge density to
+        # ``outdir/<prefix>.save``; subsequent iterations can reuse it.
+        self._scf_density_available = True
 
     def run_paoflow(self, prefix, save_prefix):
         from .inputs.file_io import create_acbn0_inputfile
@@ -1045,8 +1176,24 @@ class ACBN0:
             calcs.append(fstr.format('_up'))
             calcs.append(fstr.format('_down'))
 
+        # QE writes the wavefunction save folder to ``outdir/<prefix>.save``.
+        # PAOFLOW resolves ``savedir`` relative to its workpath ("./"), so the
+        # QE ``outdir`` (if any) must be folded into the save path, otherwise
+        # PAOFLOW would look for ``<prefix>.save`` in the run directory.
+        outdir = self.blocks.get('control', {}).get('outdir', '')
+        outdir = outdir.strip().strip('"').strip("'")
+        savedir = f'{save_prefix}.save'
+        if outdir:
+            savedir = join(outdir, savedir)
+
         create_acbn0_inputfile(
-            save_prefix, self.pthr, self.outputdir, expand_wedge=self.expand_wedge
+            savedir,
+            self.pthr,
+            self.outputdir,
+            expand_wedge=self.expand_wedge,
+            use_local_basis=self.use_local_basis,
+            basispath=self.basispath,
+            configuration=self.configuration,
         )
         self.exec_PAOFLOW()
 
@@ -1114,40 +1261,17 @@ class ACBN0:
         den_J = Naa.real + Nbb.real
         return den_U, den_J
 
-    def run_acbn0(self, prefix):
-        BOHR_RADIUS_ANGS = 0.529177e0
+    def _projwfc_hubbard_manifolds(self, state_lines):
+        """Build the Hubbard manifolds from ``projwfc.x`` ``state #`` lines.
 
-        lattice, coords = self.read_cell_atoms('scf.out')
-        lattice *= BOHR_RADIUS_ANGS
-        coords *= BOHR_RADIUS_ANGS
-        nspin = self.nspin
-
-        sind = 0
-        state_lines = open('projwfc.out', 'r').readlines()
-        while 'state #' not in state_lines[sind]:
-            sind += 1
-        send = sind
-        while 'state #' in state_lines[send]:
-            send += 1
-        state_lines = state_lines[sind:send]
-
-        kpnts, kwght, Sks, Hks_up, Hks_dw = self.read_ham_data(nspin)
-        uVals = {}
-        species = []
-        # for s in list(set(species)):
-        for k, v in self.uVals.items():
-            species_label = k.split('-')[0]
-            species.append(species_label)
-
-        gauss_basis = self.getbasis(self.basis, species, lattice, coords)
-
-        # Cache the per-k generalized eigendecomposition once per spin
-        # channel; reused across every Hubbard orbital below so we don't
-        # re-diagonalize H(k), S(k) for each species.
-        eigvec_up = self._eigh_all_k(Hks_up, Sks)
-        eigvec_dn = self._eigh_all_k(Hks_dw, Sks) if nspin == 2 else None
-
-        for orb, v in self.uVals.items():
+        Returns a dict mapping each Hubbard orbital key to
+        ``(basis_dm, basis_2e)`` PAO-index arrays, where ``basis_dm`` is the
+        density-matrix manifold (all atoms of the species, matching L) and
+        ``basis_2e`` is the single representative shell used for the
+        two-electron integrals.
+        """
+        manifolds = {}
+        for orb in self.uVals:
             ostates = []
             ustates = []
             species_label = orb.split('-')[0]
@@ -1166,9 +1290,207 @@ class ACBN0:
                     sstates.append(us)
                 else:
                     break
+            manifolds[orb] = (np.array(ostates), np.array(sstates))
+        return manifolds
 
-            basis_dm = np.array(ostates)
-            basis_2e = np.array(sstates)
+    def _load_pao_basis_meta(self):
+        """Read the per-orbital PAO metadata dumped by the local-basis
+        projection driver (``<outputdir>/pao_basis.dat``).
+
+        Returns a list of dicts (sorted by PAO index) with keys
+        ``index`` (0-based PAO index), ``atom`` (1-based atom index),
+        ``elem`` (species label), ``l``, ``m`` and ``label`` (shell label,
+        e.g. ``'3P'``).
+        """
+        if self._pao_meta is not None:
+            return self._pao_meta
+        path = join(self.outputdir, 'pao_basis.dat')
+        meta = []
+        with open(path, 'r') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 6:
+                    continue
+                meta.append(
+                    {
+                        'index': int(parts[0]),
+                        'atom': int(parts[1]),
+                        'elem': parts[2],
+                        'l': int(parts[3]),
+                        'm': int(parts[4]),
+                        'label': parts[5],
+                    }
+                )
+        meta.sort(key=lambda d: d['index'])
+        self._pao_meta = meta
+        return meta
+
+    @staticmethod
+    def _shell_label(orb):
+        """Return the upper-case shell label of a Hubbard orbital key.
+
+        ``'Si-3p' -> '3P'``, ``'Fe-3d' -> '3D'``.
+        """
+        return orb.split('-')[1].upper()
+
+    def _local_hubbard_manifolds(self):
+        """Build the Hubbard manifolds from the local-basis PAO metadata.
+
+        Selection is by shell *label* (not merely by angular momentum), so
+        polarization shells that share the Hubbard L (e.g. ``4P`` alongside
+        the ``3P`` valence shell in the ``standard`` basis) are excluded.
+
+        Returns a dict mapping each Hubbard orbital key to
+        ``(basis_dm, basis_2e)`` PAO-index arrays.
+        """
+        meta = self._load_pao_basis_meta()
+        manifolds = {}
+        for orb in self.uVals:
+            species_label = orb.split('-')[0]
+            horb = self.hubbard_orbital(orb)
+            shell_label = self._shell_label(orb)
+
+            ostates = []
+            ustates = []
+            for e in meta:
+                if e['l'] != horb or e['label'].upper() != shell_label:
+                    continue
+                if species_label in e['elem']:
+                    ostates.append(e['index'])
+                    if species_label == e['elem']:
+                        ustates.append(e['index'])
+            if not ustates:
+                raise RuntimeError(
+                    f'No PAO orbitals matched Hubbard manifold {orb!r} '
+                    f'(species {species_label!r}, shell {shell_label!r}) in '
+                    f'{join(self.outputdir, "pao_basis.dat")}.'
+                )
+            # First contiguous run of the species' orbitals = the valence
+            # shell on the first matching atom.
+            sstates = [ustates[0]]
+            for us in ustates[1:]:
+                if us == 1 + sstates[-1]:
+                    sstates.append(us)
+                else:
+                    break
+            manifolds[orb] = (np.array(ostates), np.array(sstates))
+        return manifolds
+
+    def _local_gauss_basis(self, nawf, coords):
+        """Build a length-``nawf`` Gaussian-basis list aligned with the PAO
+        ordering of the local-basis Hamiltonian.
+
+        Only the Hubbard valence-shell positions are populated with the
+        UPF-derived contracted Gaussians (the only entries indexed by the
+        two-electron / density-matrix code); all other positions hold an
+        inert placeholder so that index access remains valid.
+        """
+        from collections import defaultdict
+
+        from .utils.pyints import CGBF
+
+        meta = self._load_pao_basis_meta()
+        placeholder = CGBF(np.zeros(3), 'X')
+        placeholder.pnorms.append(1.0)
+        placeholder.pexps.append(1.0)
+        placeholder.pcoefs.append(1.0)
+        placeholder.powers.append((0, 0, 0))
+
+        gauss_basis = [placeholder] * nawf
+        for orb in self.uVals:
+            species_label = orb.split('-')[0]
+            horb = self.hubbard_orbital(orb)
+            shell_label = self._shell_label(orb)
+
+            by_atom = defaultdict(list)
+            for e in meta:
+                if e['l'] != horb or e['label'].upper() != shell_label:
+                    continue
+                if species_label == e['elem']:
+                    by_atom[e['atom']].append(e)
+
+            for atom_idx, entries in by_atom.items():
+                entries.sort(key=lambda d: d['index'])
+                pos = coords[atom_idx - 1]
+                gs = self._atom_shell_gaussians(species_label, pos, horb)
+                if len(gs) != len(entries):
+                    raise RuntimeError(
+                        f'Gaussian shell mismatch for {orb!r} on atom '
+                        f'{atom_idx}: {len(gs)} Gaussians vs {len(entries)} '
+                        'PAO orbitals. The UPF must provide exactly one '
+                        f'l={horb} shell for species {species_label!r}.'
+                    )
+                for e, bf in zip(entries, gs):
+                    gauss_basis[e['index']] = bf
+        return gauss_basis
+
+    def _atom_shell_gaussians(self, ele, pos_angstrom, L):
+        """Build the CGBFs of the ``(ele, L)`` shell centred at
+        ``pos_angstrom`` (Cartesian Ångström).  Returns a list with one
+        CGBF per magnetic component (``2L+1`` Gaussians)."""
+        from .utils.pyints import CGBF
+
+        gauss = []
+        origin_bohr = np.asarray(pos_angstrom) * ANGS_TO_BOHR
+        for shell in self.basis[ele]:
+            for subshell in shell:
+                lx, ly, lz, _, _ = subshell[0]
+                if lx + ly + lz != L:
+                    continue
+                bf = CGBF(origin_bohr, ele)
+                for lx, ly, lz, coeff, zeta in subshell:
+                    bf.pnorms.append(1.0)
+                    bf.pexps.append(zeta)
+                    bf.pcoefs.append(coeff)
+                    bf.powers.append((lx, ly, lz))
+                gauss.append(bf)
+        return gauss
+
+    def run_acbn0(self, prefix):
+        BOHR_RADIUS_ANGS = 0.529177e0
+
+        lattice, coords = self.read_cell_atoms('scf.out')
+        lattice *= BOHR_RADIUS_ANGS
+        coords *= BOHR_RADIUS_ANGS
+        nspin = self.nspin
+
+        kpnts, kwght, Sks, Hks_up, Hks_dw = self.read_ham_data(nspin)
+
+        if self.use_local_basis:
+            # Local-basis path: the Hubbard manifolds and the index-aligned
+            # Gaussian basis are derived from the PAO metadata dumped by the
+            # projection driver (pao_basis.dat) rather than from projwfc.out.
+            manifolds = self._local_hubbard_manifolds()
+            gauss_basis = self._local_gauss_basis(Hks_up.shape[0], coords)
+        else:
+            sind = 0
+            state_lines = open('projwfc.out', 'r').readlines()
+            while 'state #' not in state_lines[sind]:
+                sind += 1
+            send = sind
+            while 'state #' in state_lines[send]:
+                send += 1
+            state_lines = state_lines[sind:send]
+
+            species = []
+            # for s in list(set(species)):
+            for k, v in self.uVals.items():
+                species_label = k.split('-')[0]
+                species.append(species_label)
+
+            gauss_basis = self.getbasis(self.basis, species, lattice, coords)
+            manifolds = self._projwfc_hubbard_manifolds(state_lines)
+
+        uVals = {}
+
+        # Cache the per-k generalized eigendecomposition once per spin
+        # channel; reused across every Hubbard orbital below so we don't
+        # re-diagonalize H(k), S(k) for each species.
+        eigvec_up = self._eigh_all_k(Hks_up, Sks)
+        eigvec_dn = self._eigh_all_k(Hks_dw, Sks) if nspin == 2 else None
+
+        for orb, v in self.uVals.items():
+            basis_dm, basis_2e = manifolds[orb]
 
             dk, nlm = self.Dk(basis_dm, basis_2e, Hks_up, Sks, eigvec_cache=eigvec_up)
             nlm = self.Nmm(nlm, Hks_up, kwght)
@@ -1188,14 +1510,19 @@ class ACBN0:
             if nspin == 2:
                 DR_dn = self.DR(dk_dn, kwght)
 
-            data = {'DR_up': DR_up, 'DR_dn': DR_dn, 'basis': gauss_basis, 'basis_2e': basis_2e}
+            data = {
+                'DR_up': DR_up,
+                'DR_dn': DR_dn,
+                'basis': gauss_basis,
+                'basis_2e': basis_2e,
+            }
             with open(join(self.outputdir, 'data.pkl'), 'wb') as f:
                 pickle.dump(data, f)
 
             # compute hartree energy in parallel
-            python_exec = join(self.ppath, 'python')
+            python_exec = self._python_exec()
             command = f'{self.mpi_hartree} {python_exec} compute_hartree.py'
-            subprocess.run(command.split(' '), check=True)
+            subprocess.run([tok for tok in command.split(' ') if tok], check=True)
 
             with open(join(self.outputdir, 'tmp_uj.pkl'), 'rb') as f:
                 uj = pickle.load(f)
@@ -1533,6 +1860,36 @@ class eACBN0(ACBN0):
                 return float(v.replace('d', 'e').replace('D', 'e')) / BOHR_RADIUS_ANGS
         return None
 
+    def _lattice_from_ibrav(self):
+        """Reconstruct lattice vectors (Å) from the QE ``ibrav`` + ``celldm``
+        (or ``A``/``B``/``C``/``cos*``) parameters in the ``&system`` block.
+
+        Used when the template specifies the cell through ``ibrav`` instead
+        of an explicit ``CELL_PARAMETERS`` card.
+        """
+        from .inputs.lattice_format import celldm_from_namelist, lattice_format_QE
+
+        sys = self.blocks.get('system', {})
+        ibrav_raw = None
+        for k, v in sys.items():
+            if k.lower().replace(' ', '') == 'ibrav':
+                ibrav_raw = v
+                break
+        if ibrav_raw is None:
+            raise ValueError(
+                'Neither a CELL_PARAMETERS card nor ibrav was found in the '
+                'template; cannot determine the cell geometry for eACBN0.'
+            )
+        ibrav = int(float(str(ibrav_raw).replace('d', 'e').replace('D', 'e')))
+        if ibrav == 0:
+            raise ValueError(
+                'ibrav=0 requires an explicit CELL_PARAMETERS card, which was '
+                'not found in the template.'
+            )
+        celldm = celldm_from_namelist(sys, ibrav)
+        lattice_bohr = lattice_format_QE(ibrav, celldm)
+        return lattice_bohr * BOHR_RADIUS_ANGS
+
     def _geometry_from_cards(self):
         """Parse lattice (Å) and Cartesian atomic positions (Å) from the
         input cards captured in :attr:`self.cards`.
@@ -1547,33 +1904,32 @@ class eACBN0(ACBN0):
             Per-atom species labels (length ``nat``).
         """
         if 'CELL_PARAMETERS' not in self.cards:
-            raise ValueError(
-                'CELL_PARAMETERS card not found in template; '
-                'ibrav-based geometries are not yet supported by eACBN0.'
-            )
-
-        header = self.cards['CELL_PARAMETERS'][0].lower()
-        if 'angstrom' in header:
-            cell_unit = 'angstrom'
-        elif 'bohr' in header:
-            cell_unit = 'bohr'
+            # No explicit cell card: reconstruct the lattice from the QE
+            # ``ibrav`` + ``celldm`` (or A/B/C/cos*) parameters instead.
+            lattice = self._lattice_from_ibrav()
         else:
-            cell_unit = 'alat'
+            header = self.cards['CELL_PARAMETERS'][0].lower()
+            if 'angstrom' in header:
+                cell_unit = 'angstrom'
+            elif 'bohr' in header:
+                cell_unit = 'bohr'
+            else:
+                cell_unit = 'alat'
 
-        vecs = []
-        for ln in self.cards['CELL_PARAMETERS'][1:4]:
-            vecs.append([float(x) for x in ln.split()[:3]])
-        lattice = np.asarray(vecs, dtype=float)
+            vecs = []
+            for ln in self.cards['CELL_PARAMETERS'][1:4]:
+                vecs.append([float(x) for x in ln.split()[:3]])
+            lattice = np.asarray(vecs, dtype=float)
 
-        if cell_unit == 'bohr':
-            lattice *= BOHR_RADIUS_ANGS
-        elif cell_unit == 'alat':
-            alat_bohr = self._alat_bohr()
-            if alat_bohr is None:
-                raise ValueError(
-                    "CELL_PARAMETERS in 'alat' but no celldm(1)/A found in &system block."
-                )
-            lattice *= alat_bohr * BOHR_RADIUS_ANGS
+            if cell_unit == 'bohr':
+                lattice *= BOHR_RADIUS_ANGS
+            elif cell_unit == 'alat':
+                alat_bohr = self._alat_bohr()
+                if alat_bohr is None:
+                    raise ValueError(
+                        "CELL_PARAMETERS in 'alat' but no celldm(1)/A found in &system block."
+                    )
+                lattice *= alat_bohr * BOHR_RADIUS_ANGS
 
         if 'ATOMIC_POSITIONS' not in self.cards:
             raise ValueError('ATOMIC_POSITIONS card not found in template.')
@@ -1895,27 +2251,23 @@ class eACBN0(ACBN0):
                 out.append(n)
         return np.asarray(out, dtype=int)
 
-    def _atom_shell_gaussians(self, ele, pos_angstrom, L):
-        """Build the CGBFs of the ``(ele, L)`` shell centred at
-        ``pos_angstrom`` (Cartesian Ångström).  Returns a list with one
-        CGBF per magnetic component (``2L+1`` Gaussians)."""
-        from .utils.pyints import CGBF
+    def _site_basis_indices_local(self, atom_idx, L, shell_label):
+        """Local-basis analogue of :meth:`_site_basis_indices`.
 
-        gauss = []
-        origin_bohr = np.asarray(pos_angstrom) * ANGS_TO_BOHR
-        for shell in self.basis[ele]:
-            for subshell in shell:
-                lx, ly, lz, _, _ = subshell[0]
-                if lx + ly + lz != L:
-                    continue
-                bf = CGBF(origin_bohr, ele)
-                for lx, ly, lz, coeff, zeta in subshell:
-                    bf.pnorms.append(1.0)
-                    bf.pexps.append(zeta)
-                    bf.pcoefs.append(coeff)
-                    bf.powers.append((lx, ly, lz))
-                gauss.append(bf)
-        return gauss
+        Returns the PAO Hamiltonian indices on atom ``atom_idx`` (1-based)
+        belonging to the valence shell ``shell_label`` (e.g. ``'3D'``).
+        Selecting by label (rather than by L alone) excludes polarization
+        shells that share the angular momentum L, so the returned size is
+        ``2L+1`` and matches the ``_atom_shell_gaussians`` count.
+        """
+        meta = self._load_pao_basis_meta()
+        target = shell_label.upper()
+        out = [
+            e['index']
+            for e in meta
+            if e['atom'] == atom_idx and e['l'] == L and e['label'].upper() == target
+        ]
+        return np.asarray(sorted(out), dtype=int)
 
     def _pair_density_matrices(
         self,
@@ -2094,7 +2446,7 @@ class eACBN0(ACBN0):
         else:
             k_cart = kpnts @ recip  # (nk, 3)
 
-        state_lines = self._parse_state_lines('projwfc.out')
+        state_lines = None if self.use_local_basis else self._parse_state_lines('projwfc.out')
 
         # Cache the per-k generalized eigendecomposition once per spin
         # channel; reused across every (I, J) pair below so we don't
@@ -2120,8 +2472,12 @@ class eACBN0(ACBN0):
             L1 = self._orbital_L(orb1)
             L2 = self._orbital_L(orb2)
 
-            basis_I = self._site_basis_indices(state_lines, i1, L1)
-            basis_J = self._site_basis_indices(state_lines, i2, L2)
+            if self.use_local_basis:
+                basis_I = self._site_basis_indices_local(i1, L1, orb1.upper())
+                basis_J = self._site_basis_indices_local(i2, L2, orb2.upper())
+            else:
+                basis_I = self._site_basis_indices(state_lines, i1, L1)
+                basis_J = self._site_basis_indices(state_lines, i2, L2)
             if basis_I.size == 0 or basis_J.size == 0:
                 raise RuntimeError(
                     f'No PAO states found for {key!r}: '
@@ -2233,10 +2589,10 @@ class eACBN0(ACBN0):
             f.write(f"H.intersite_energy('{self.outputdir}')\n")
 
     def _launch_compute_hartree_v(self):
-        python_exec = join(self.ppath, 'python') if self.ppath else 'python'
+        python_exec = self._python_exec()
         mpi = getattr(self, 'mpi_hartree', None) or self.mpi_python
         command = f'{mpi} {python_exec} compute_hartree_v.py'
-        subprocess.run(command.split(), check=True)
+        subprocess.run([tok for tok in command.split(' ') if tok], check=True)
 
     # ------------------------------------------------------------------ #
     # Phase 4: joint U+V self-consistent loop                             #

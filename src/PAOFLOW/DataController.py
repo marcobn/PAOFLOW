@@ -195,6 +195,8 @@ class DataController:
         smearing,
         save_overlaps,
         acbn0,
+        sparse,
+        sparse_threshold,
         verbose,
         restart,
         dft,
@@ -210,6 +212,8 @@ class DataController:
             savedir (str): QE .save directory
             save_overlaps (bool): If True the overlap matrix will be saved in data_arrays
             acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
+            sparse (bool): If True, use sparse matrix representations
+            sparse_threshold (float): Sparsification threshold
             smearing (str): Smearing type (None, m-p, gauss)
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
@@ -254,6 +258,8 @@ class DataController:
             attr['workpath'] = workpath
             attr['save_overlaps'] = save_overlaps
             attr['acbn0'] = acbn0
+            attr['sparse'] = sparse
+            attr['sparse_threshold'] = sparse_threshold
             attr['inputfile'], attr['outputdir'] = inputfile, outputdir
             attr['opath'] = join(workpath, outputdir)
             if model is None:
@@ -375,27 +381,41 @@ class DataController:
 
         else:
             for i in range(len(arry['atoms'])):
-                if arry['shells'][arry['atoms'][i]] == [0]:
+                shells_i = arry['shells'][arry['atoms'][i]]
+                matched = True
+                if shells_i == [0]:
                     naw.append(1)
                     orb.append('s')
-                if arry['shells'][arry['atoms'][i]] == [0, 1]:
+                elif shells_i == [0, 1]:
                     naw.append(4)
                     orb.append('sp')
-                if arry['shells'][arry['atoms'][i]] == [0, 1, 2]:
+                elif shells_i == [0, 1, 2]:
                     naw.append(9)
                     orb.append('spd')
-                if arry['shells'][arry['atoms'][i]] == [1, 0]:
+                elif shells_i == [1, 0]:
                     naw.append(4)
                     orb.append('ps')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 2]:
+                elif shells_i == [0, 0, 1, 2]:
                     naw.append(10)
                     orb.append('sspd')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1]:
+                elif shells_i == [0, 1, 2, 0]:
+                    naw.append(10)
+                    orb.append('spds')
+                elif shells_i == [0, 0, 1]:
                     naw.append(5)
                     orb.append('ssp')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 1, 2]:
+                elif shells_i == [0, 0, 1, 1, 2]:
                     naw.append(13)
                     orb.append('ssppd')
+                else:
+                    matched = False
+                if not matched:
+                    # Fallback: any layout not in the hardcoded set is
+                    # routed through the generic SOC builder in
+                    # hamiltonian.do_spin_orbit (build_generic_soc).
+                    # naw is sum_{shells} (2l+1).
+                    naw.append(sum(2 * int(l) + 1 for l in shells_i))
+                    orb.append('generic')
             arry['orb_pseudo'] = orb
             arry['naw'] = np.array(naw)
 
@@ -898,7 +918,26 @@ class DataController:
         )
         if self.rank != root:
             self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
-        self.comm.Bcast(np.ascontiguousarray(self.data_arrays[key]), root=root)
+
+        # Some MPI stacks cannot handle very large single-message broadcasts
+        # reliably. Broadcast in bounded chunks to avoid hitting message/count
+        # implementation limits after repeated supercell doubling.
+        from mpi4py import MPI
+
+        arr = self.data_arrays[key]
+        if not arr.flags['C_CONTIGUOUS']:
+            arr = np.ascontiguousarray(arr)
+            self.data_arrays[key] = arr
+
+        mpidtype = MPI._typedict[np.dtype(arr.dtype).char]
+        flat = arr.reshape(-1)
+
+        max_chunk_bytes = 1 << 30
+        max_chunk_elems = max(1, max_chunk_bytes // arr.dtype.itemsize)
+
+        for start in range(0, flat.size, max_chunk_elems):
+            stop = min(start + max_chunk_elems, flat.size)
+            self.comm.Bcast([flat[start:stop], mpidtype], root=root)
 
     ### This section is under construction
     ### Only 'broadcast_single_array' should be used

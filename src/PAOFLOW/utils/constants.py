@@ -27,6 +27,7 @@ UMA_AU = 1822.89e0  # au
 AU_TERAHERTZ = 2.418e-5  # THz
 TERAHERTZ = 2.418e-5  # from au to THz
 AU_SEC = 2.4189e-17  # sec
+SPEED_OF_LIGHT = 299792458.0  # m / s
 
 EPS0 = 1.0 / (4.0 * 3.14159265358979323846)  # vacuum dielectric constant in Ry
 RYTOEV = 13.6058e0  # conversion from Ry to eV

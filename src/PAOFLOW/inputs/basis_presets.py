@@ -7,6 +7,10 @@ into the per-species ``{element: [shell_labels]}`` dictionary consumed by
 * ``"minimal"`` — the set of occupied pseudo-atomic wavefunctions found in
   each species' UPF pseudopotential (``PP_PSWFC/PP_CHI`` entries with
   positive occupation).
+* ``"standard"`` — the minimal set with each angular channel doubled by
+  adding the next principal-quantum-number shell (e.g. ``3S, 3P`` →
+  ``3S, 3P, 4S, 4P``).  Roughly doubles the orbital count of
+  ``"minimal"``.
 * ``"extended"`` — the minimal set augmented by a small, rule-based set
   of polarization shells, drawn from the all-electron wavefunctions
   shipped in ``BASIS/<element>/*.dat``.
@@ -135,7 +139,7 @@ _ELEMENT_BLOCK = {
 }
 
 # Recognised string presets.
-SUPPORTED_PRESETS = ('minimal', 'extended')
+SUPPORTED_PRESETS = ('minimal', 'standard', 'extended')
 
 
 def element_block(elem: str) -> str:
@@ -217,12 +221,22 @@ def _resolve_pseudo_path(data_controller, elem: str) -> str | None:
 
 
 def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
-    """Return the occupied PP_PSWFC shell labels for ``elem``.
+    """Return the PP_PSWFC shell labels shipped with ``elem``'s UPF.
 
     Reads the species' UPF file and returns the labels of every
-    ``PP_CHI`` entry with strictly-positive occupation, preserving the
-    order in which they appear in the pseudopotential.  Duplicates
-    (rare, but possible for spin-orbit pseudos) are collapsed.
+    ``PP_CHI`` entry, preserving the order in which they appear in
+    the pseudopotential.  Duplicates (rare, but possible for
+    spin-orbit pseudos where two j-channels share a label) are
+    collapsed.
+
+    All PSWFC entries are included regardless of occupation: an
+    unoccupied PSWFC (e.g. Pt 6P, ``occ=0``) is still a physical
+    pseudo-atomic orbital generated together with the pseudopotential,
+    and is typically the dominant bonding/conduction channel.  Excluding
+    such shells leaves the corresponding QE bands unprojectable, which
+    silently lowers the AE-basis ``standard``/``extended`` ``Pn>0.95``
+    band count below that of the ``minimal`` preset (which reads every
+    PSWFC unconditionally via :func:`build_pswfc_basis_all`).
 
     Raises
     ------
@@ -238,15 +252,13 @@ def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
     upf = UPF(pseudo_path)
     seen = []
     for chi in upf.pswfc:
-        if float(chi.get('occ', 0.0)) <= 0.0:
-            continue
         label = _normalize_shell(chi['label'])
         if label not in seen:
             seen.append(label)
     if not seen:
         raise RuntimeError(
-            "UPF for '%s' has no PP_PSWFC entries with positive occupation; "
-            "cannot derive a 'minimal' basis automatically." % elem
+            "UPF for '%s' has no PP_PSWFC entries; cannot derive a "
+            "'minimal' basis automatically." % elem
         )
     return seen
 
@@ -254,6 +266,69 @@ def minimal_shells_from_upf(data_controller, elem: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Augmentation rules
 # ---------------------------------------------------------------------------
+
+
+def standard_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
+    """Augmentation rule for the ``"standard"`` preset.
+
+    Builds on top of the minimal valence set with two complementary
+    additions:
+
+    1. **Polarization (next missing L)** — append the next angular
+       momentum channel beyond the highest one present in the minimal
+       set, at the largest principal quantum number ``nmax`` of the
+       minimal set.  For Si (minimal ``3S, 3P``) this adds ``3D``; for
+       a transition metal with minimal ``4S, 3D`` this adds ``4F``
+       (only when ``elem`` is in the f-block) or ``4F`` is skipped
+       otherwise.  The added shell is also clamped to the physical
+       minimum ``n`` for that ``L`` (``nP ≥ 2``, ``nD ≥ 3``,
+       ``nF ≥ 4``).
+    2. **Radial doubling (next n, same L)** — for each ``nL`` in the
+       minimal set append ``(n+1)L``.  This roughly doubles the radial
+       freedom of every occupied angular channel.
+
+    The result is intermediate between ``"minimal"`` (only the
+    occupied valence) and ``"extended"`` (generous multi-row
+    polarization).  For Si the standard set becomes
+    ``[3S, 3P, 3D, 4S, 4P]``.
+
+    Duplicates and shells already in ``minimal_shells`` are skipped.
+    Unknown elements or an empty minimal set yield an empty list.
+    The F-channel polarization is only added for f-block elements;
+    on s/p/d-block elements the augmentation stops at the D channel.
+    """
+    block = _ELEMENT_BLOCK.get(elem)
+    if block is None or not minimal_shells:
+        return []
+
+    minimal_set = set(minimal_shells)
+    extra: list[str] = []
+
+    def _add(label: str) -> None:
+        if label not in minimal_set and label not in extra:
+            extra.append(label)
+
+    order = 'SPDF'
+    min_n_for_L = {'S': 1, 'P': 2, 'D': 3, 'F': 4}
+
+    # (1) Next missing L channel at nmax.
+    L_indices = [order.find(sh[1]) for sh in minimal_shells]
+    nmax = max(int(sh[0]) for sh in minimal_shells)
+    next_L_idx = max(L_indices) + 1
+    if next_L_idx < len(order):
+        next_L = order[next_L_idx]
+        # Don't add F unless we're actually on an f-block element.
+        if next_L != 'F' or block == 'f':
+            n_pol = max(nmax, min_n_for_L[next_L])
+            _add(f'{n_pol}{next_L}')
+
+    # (2) Radial doubling: (n+1)L for each nL in minimal.
+    for sh in minimal_shells:
+        n = int(sh[0])
+        L = sh[1]
+        _add(f'{n + 1}{L}')
+
+    return extra
 
 
 def extended_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
@@ -274,7 +349,9 @@ def extended_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
       ``n = nmax, nmax+1, nmax+2`` (clamped to ``n ≥ 1`` for ``S`` and
       ``n ≥ 2`` for ``P``).
     * **D channel** — append ``nD`` for
-      ``n = max(3, nmax−1) … nmax+1`` (skips 1D/2D which do not exist).
+      ``n = max(3, nmax) … nmax+1`` (skips sub-valence D rows, which are
+      either genuine semicore shells already present in ``minimal_shells``
+      or frozen-core shells the pseudopotential cannot represent).
     * **F channel** — only for f-block elements; append ``nF`` for
       ``n = max(4, nmax−1) … nmax``.
 
@@ -300,8 +377,14 @@ def extended_augmentation(elem: str, minimal_shells: list[str]) -> list[str]:
         if n >= 2:
             _add(f'{n}P')
 
-    # D shells: from max(3, nmax-1) up through nmax+1.
-    n_d_start = max(3, nmax - 1)
+    # D shells: from max(3, nmax) up through nmax+1.  We deliberately do
+    # *not* start at nmax-1: a D row below the valence nmax is only physical
+    # when it is a genuine semicore shell, in which case it already appears
+    # in ``minimal_shells`` (e.g. Ga 3D) and is kept by the baseline.  Adding
+    # a sub-valence D row that the pseudopotential froze into the core (e.g.
+    # As 3D, whose 3d electrons are not in the As pseudo valence) yields an
+    # unbound diffuse box mode from the radial solver and corrupts the basis.
+    n_d_start = max(3, nmax)
     for n in range(n_d_start, nmax + 2):
         _add(f'{n}D')
 
@@ -349,6 +432,12 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
       that are not present on disk are dropped with a
       :class:`RuntimeWarning`.
 
+    To choose exactly which orbitals enter the basis, pass a per-element
+    ``dict`` instead of a preset string (handled by
+    :func:`resolve_configuration_dict`).  Each value may independently be
+    a preset name or an explicit list of shells, e.g.
+    ``{'Ga': 'standard', 'As': ['4S', '4P', '3D']}``.
+
     Notes
     -----
     A *mixed* scheme combining pseudo PSWFC with AE polarization is
@@ -392,53 +481,154 @@ def resolve_configuration(data_controller, preset: str) -> dict[str, list[str]]:
 
     _, attr = data_controller.data_dicts()
     basispath = attr.get('basispath')
-    if key == 'extended' and not basispath:
+    if key in ('standard', 'extended') and not basispath:
         raise ValueError(
-            "configuration='extended' requires 'basispath' to be set so that "
-            'augmenting AE wavefunctions can be located.'
+            "configuration='%s' requires 'basispath' to be set so that "
+            'augmenting AE wavefunctions can be located.' % key
         )
 
     config: dict[str, list[str]] = {}
     for elem in _unique_elements(data_controller):
-        minimal = minimal_shells_from_upf(data_controller, elem)
-        if key == 'minimal':
-            config[elem] = minimal
-            continue
+        config[elem] = _resolve_element_shells(data_controller, elem, key, basispath)
 
-        # 'extended': start from the minimal valence and append the
-        # rule-based augmentation, filtered by what is actually
-        # available on disk.
-        available = set(available_ae_shells(basispath, elem))
-        if not available:
+    return config
+
+
+def _resolve_element_shells(data_controller, elem: str, key: str, basispath) -> list[str]:
+    """Resolve a single element's shell list for a string ``key`` preset.
+
+    Shared by :func:`resolve_configuration` (whole-system string preset)
+    and the per-element dispatch used when ``configuration`` is a dict
+    that mixes preset names with explicit shell lists.
+    """
+    minimal = minimal_shells_from_upf(data_controller, elem)
+    if key == 'minimal':
+        return list(minimal)
+
+    # 'standard' / 'extended': start from the all-electron
+    # shells available on disk and select the requested subset.
+    available = set(available_ae_shells(basispath, elem))
+    if not available:
+        warnings.warn(
+            "No AE basis files found in '%s' for element '%s'; "
+            'falling back to the minimal valence set.' % (os.path.join(basispath, elem), elem),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return list(minimal)
+
+    # 'standard' / 'extended': start from the minimal valence and
+    # append a rule-based augmentation, filtered by what is
+    # actually available on disk.
+    shells = list(minimal)
+    for sh in minimal:
+        if sh not in available:
             warnings.warn(
-                "No AE basis files found in '%s' for element '%s'; "
-                'falling back to the minimal valence set.' % (os.path.join(basispath, elem), elem),
+                "Minimal shell '%s' for element '%s' is absent from "
+                "'%s'; build_aewfc_basis will fail." % (sh, elem, os.path.join(basispath, elem)),
                 RuntimeWarning,
                 stacklevel=2,
             )
-            config[elem] = list(minimal)
-            continue
+    augment = (
+        standard_augmentation(elem, minimal)
+        if key == 'standard'
+        else extended_augmentation(elem, minimal)
+    )
+    for extra in augment:
+        if extra in available and extra not in shells:
+            shells.append(extra)
+        elif extra not in available:
+            warnings.warn(
+                "Skipping augmenting shell '%s' for element '%s': not "
+                "found in '%s'." % (extra, elem, os.path.join(basispath, elem)),
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    return shells
 
-        shells = list(minimal)
-        for sh in minimal:
-            if sh not in available:
-                warnings.warn(
-                    "Minimal shell '%s' for element '%s' is absent from "
-                    "'%s'; build_aewfc_basis will fail."
-                    % (sh, elem, os.path.join(basispath, elem)),
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-        for extra in extended_augmentation(elem, minimal):
-            if extra in available and extra not in shells:
-                shells.append(extra)
-            elif extra not in available:
-                warnings.warn(
-                    "Skipping augmenting shell '%s' for element '%s': not "
-                    "found in '%s'." % (extra, elem, os.path.join(basispath, elem)),
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-        config[elem] = shells
 
+def _select_shells(data_controller, elem: str, spec, basispath) -> list[str]:
+    """Resolve one element's shells from an explicit list or preset name.
+
+    ``spec`` may be:
+
+    * a list/tuple of shell labels (e.g. ``['3S', '3P', '4S']``) — used
+      verbatim after normalising the angular-momentum letter, so the
+      caller picks exactly which orbitals enter the basis;
+    * a string preset name (``'minimal'``/``'standard'``/``'extended'``)
+      — resolved for this element via :func:`_resolve_element_shells`.
+
+    When ``spec`` is an explicit list, any shell that is not present on
+    disk under ``basispath`` is reported with a :class:`RuntimeWarning`
+    but still kept, so the user stays in full control of the selection.
+    """
+    if isinstance(spec, str):
+        key = spec.lower()
+        if key not in SUPPORTED_PRESETS:
+            raise ValueError(
+                "Unknown configuration preset '%s' for element '%s'. "
+                'Supported presets: %s (or pass an explicit list of shells).'
+                % (spec, elem, ', '.join(SUPPORTED_PRESETS))
+            )
+        if key in ('standard', 'extended') and not basispath:
+            raise ValueError(
+                "configuration preset '%s' for element '%s' requires "
+                "'basispath' to be set." % (key, elem)
+            )
+        return _resolve_element_shells(data_controller, elem, key, basispath)
+
+    if isinstance(spec, (list, tuple)):
+        shells = [_normalize_shell(str(s)) for s in spec]
+        if basispath:
+            available = set(available_ae_shells(basispath, elem))
+            if available:
+                missing = [sh for sh in shells if sh not in available]
+                if missing:
+                    warnings.warn(
+                        "Selected shells %s for element '%s' are not present "
+                        "in '%s'; build_aewfc_basis will fail for them."
+                        % (missing, elem, os.path.join(basispath, elem)),
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+        return shells
+
+    raise TypeError(
+        "configuration value for element '%s' must be a list of shell "
+        'labels or a preset name string; got %r' % (elem, type(spec).__name__)
+    )
+
+
+def resolve_configuration_dict(data_controller, spec: dict) -> dict[str, list[str]]:
+    """Resolve a per-element ``configuration`` dict.
+
+    Each value may independently be a preset name string or an explicit
+    list of shell labels, so the user can ask for a curated preset on
+    some species while hand-picking orbitals on others::
+
+        configuration = {
+            'Ga': 'standard',                   # rule-based augmentation
+            'As': ['4S', '4P', '3D'],           # only these orbitals
+        }
+
+    Explicit lists are taken verbatim (only the angular-momentum letter
+    is upper-cased).
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Populated controller (see :func:`resolve_configuration`).
+    spec : dict
+        Mapping ``{element: (preset_name | [shells])}``.
+
+    Returns
+    -------
+    dict
+        Mapping ``{element: [shells]}``.
+    """
+    _, attr = data_controller.data_dicts()
+    basispath = attr.get('basispath')
+    config: dict[str, list[str]] = {}
+    for elem, value in spec.items():
+        config[elem] = _select_shells(data_controller, elem, value, basispath)
     return config

@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="260" viewBox="0 0 960 260">
+  <defs>
+    <!-- Background gradient — dark with a subtle UNT-green tint -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#06100a"/>
+      <stop offset="100%" stop-color="#0b1d12"/>
+    </linearGradient>
+    <!-- Title gradient — UNT green (#00853E) to bright lime and back -->
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#00853e"/>
+      <stop offset="45%"  stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#00853e"/>
+    </linearGradient>
+    <!-- Accent gradient (separator / bar) -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#00853e" stop-opacity="0"/>
+      <stop offset="30%"  stop-color="#00853e" stop-opacity="1"/>
+      <stop offset="70%"  stop-color="#4ade80" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#4ade80" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Subtle dot-grid pattern -->
+    <pattern id="dots" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="16" cy="16" r="1" fill="#ffffff" opacity="0.04"/>
+    </pattern>
+    <!-- Glow filter for title -->
+    <filter id="glow" x="-15%" y="-40%" width="130%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="260" rx="14" fill="url(#bgGrad)"/>
+  <!-- Dot grid overlay -->
+  <rect width="960" height="260" rx="14" fill="url(#dots)"/>
+
+  <!-- Top border line -->
+  <line x1="0" y1="0.5" x2="960" y2="0.5" stroke="url(#accentGrad)" stroke-width="1" opacity="0.5"/>
+  <!-- Bottom border line -->
+  <line x1="0" y1="259.5" x2="960" y2="259.5" stroke="url(#accentGrad)" stroke-width="1" opacity="0.5"/>
+
+  <!-- Corner brackets — top-left -->
+  <polyline points="18,70 18,18 70,18"
+            fill="none" stroke="#00853e" stroke-width="1.5" stroke-linecap="round" opacity="0.65"/>
+  <circle cx="18" cy="18" r="2.5" fill="#00853e" opacity="0.8"/>
+  <!-- Corner brackets — top-right -->
+  <polyline points="942,70 942,18 890,18"
+            fill="none" stroke="#00853e" stroke-width="1.5" stroke-linecap="round" opacity="0.65"/>
+  <circle cx="942" cy="18" r="2.5" fill="#00853e" opacity="0.8"/>
+  <!-- Corner brackets — bottom-left -->
+  <polyline points="18,185 18,242 70,242"
+            fill="none" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <circle cx="18" cy="242" r="2.5" fill="#4ade80" opacity="0.7"/>
+  <!-- Corner brackets — bottom-right -->
+  <polyline points="942,185 942,242 890,242"
+            fill="none" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <circle cx="942" cy="242" r="2.5" fill="#4ade80" opacity="0.7"/>
+
+  <!-- Left accent bar -->
+  <rect x="38" y="68" width="3" height="102" rx="1.5" fill="url(#titleGrad)" opacity="0.8"/>
+
+  <!-- PAOFLOW title -->
+  <text x="480" y="140"
+        font-family="'Courier New', Courier, monospace"
+        font-size="100"
+        font-weight="bold"
+        letter-spacing="10"
+        fill="url(#titleGrad)"
+        text-anchor="middle"
+        filter="url(#glow)">PAOFLOW</text>
+
+  <!-- Separator line with end diamonds -->
+  <line x1="180" y1="170" x2="780" y2="170" stroke="url(#accentGrad)" stroke-width="0.8"/>
+  <polygon points="174,170 180,165 186,170 180,175" fill="#00853e" opacity="0.8"/>
+  <polygon points="774,170 780,165 786,170 780,175" fill="#4ade80" opacity="0.8"/>
+
+  <!-- Subtitle -->
+  <text x="480" y="208"
+        font-family="'Courier New', Courier, monospace"
+        font-size="13.5"
+        letter-spacing="0.8"
+        fill="#86efac"
+        text-anchor="middle">From DFT wavefunctions to materials properties via atomic-orbital Hamiltonians.</text>
+</svg>

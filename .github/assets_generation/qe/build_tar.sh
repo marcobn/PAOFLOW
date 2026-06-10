@@ -7,26 +7,28 @@ timestamp() {
 
 usage() {
   cat <<'EOF'
-Usage: [environment variables] build_assets_tar.sh [options] [example01 example02 ...]
+Usage: [environment variables] build_tar.sh [options] [example01 example02 ...]
 
 Options:
-  --qe                   Create qe_assets.tar.gz from existing *.save folders only.
-  --paoflow-test         Create paoflow_assets.tar.gz from staged test outputs.
-  --all                  Create all selected tar files.
-                         If no mode option is passed, the script runs --qe and --paoflow-test.
+  --qe-test              Create qe_test_assets.tar.gz from example *.save folders,
+                         staged PAOFLOW test Reference outputs, and BASIS data.
+  --repack               Repack qe_test_assets.tar.gz from an unpacked copy under
+                         .github/assets_generation/qe/_assets/. Only example*/,
+                         job Reference/, job *.save/, and required BASIS/ entries
+                         are included; unrelated files in _assets are ignored.
+  --all                  Create qe_test_assets.tar.gz.
+                         If no mode option is passed, the script runs --qe-test.
   --clean-paoflow-test-staging
                          Remove staged PAOFLOW test outputs for the selected examples
-                         after paoflow_assets.tar.gz is created successfully.
-  --qe-assets-out PATH   Output path for QE assets tar.gz.
-                         Default: QE_ASSETS_OUT or .github/assets_generation/qe/_assets/qe_assets.tar.gz.
-  --paoflow-assets-out PATH
-                         Output path for PAOFLOW test assets tar.gz.
-                         Default: PAOFLOW_ASSETS_OUT or .github/assets_generation/qe/_assets/paoflow_assets.tar.gz.
+                         after qe_test_assets.tar.gz is created successfully.
+  --assets-out PATH      Output path for the combined QE test assets tar.gz.
+                         Default: QE_TEST_ASSETS_OUT or .github/assets_generation/qe/_assets/qe_test_assets.tar.gz.
   --paoflow-test-staging-dir PATH
                          Directory containing staged PAOFLOW test outputs.
                          Default: PAOFLOW_TEST_STAGING_DIR or tests/integration/qe/_assets/staging.
   --examples LIST        Comma-separated list of example selectors.
                          Default: all example* directories under EXAMPLES_ROOT.
+                         Not supported with --repack.
   -h, --help             Show this help message.
 EOF
 }
@@ -62,12 +64,16 @@ normalize_example_selector() {
   selector="${selector%/}"
   selector="${selector#./}"
 
-  if [[ "$selector" == "$EXAMPLES_ROOT/"* ]]; then
-    selector="${selector#"$EXAMPLES_ROOT"/}"
+  if [[ "$selector" == "$SELECTOR_ROOT/"* ]]; then
+    selector="${selector#"$SELECTOR_ROOT"/}"
   fi
 
   if [[ "$selector" == examples/qe_examples/* ]]; then
     selector="${selector#examples/qe_examples/}"
+  fi
+
+  if [[ "$selector" == .github/assets_generation/qe/_assets/* ]]; then
+    selector="${selector#.github/assets_generation/qe/_assets/}"
   fi
 
   printf '%s\n' "${selector%%/*}"
@@ -82,17 +88,17 @@ expand_examples_from_selectors() {
 
     if [[ "$selector" == *['*''?''[']* ]]; then
       shopt -s nullglob
-      local -a matches=("$EXAMPLES_ROOT"/$selector)
+      local -a matches=("$SELECTOR_ROOT"/$selector)
       shopt -u nullglob
 
       if [[ ${#matches[@]} -eq 0 ]]; then
-        log_job "WARN: selector '$selector' matched no examples under $EXAMPLES_ROOT"
+        log_job "WARN: selector '$selector' matched no examples under $SELECTOR_ROOT"
         continue
       fi
 
       for match in "${matches[@]}"; do
         normalized="$(normalize_example_selector "$match")"
-        if [[ -d "$EXAMPLES_ROOT/$normalized" ]]; then
+        if [[ -d "$SELECTOR_ROOT/$normalized" ]]; then
           printf '%s\n' "$normalized"
         fi
       done
@@ -100,105 +106,48 @@ expand_examples_from_selectors() {
     fi
 
     normalized="$(normalize_example_selector "$selector")"
-    if [[ -d "$EXAMPLES_ROOT/$normalized" ]]; then
+    if [[ -d "$SELECTOR_ROOT/$normalized" ]]; then
       printf '%s\n' "$normalized"
     else
-      log_job "WARN: selector '$selector' does not resolve to an example under $EXAMPLES_ROOT"
+      log_job "WARN: selector '$selector' does not resolve to an example under $SELECTOR_ROOT"
     fi
   done | awk '!seen[$0]++'
 }
 
-collect_test_jobs() {
-  local base_dir="$1"
-  find "$base_dir" -type f -name 'main.py' -printf '%h\n' | sort -u
-}
+build_qe_test_assets_tar() {
+  local examples_csv
+  local qe_root
+  local reference_root
+  local basis_root
+  local mode_label
 
-internal_basis_species_for_example() {
-  case "$1" in
-    example10)
-      printf '%s\n' Ga As
-      ;;
-    example15)
-      printf '%s\n' Si
-      ;;
-  esac
-}
+  mkdir -p "$(dirname "$QE_TEST_ASSETS_OUT")"
+  examples_csv="$(IFS=,; printf '%s' "${examples[*]}")"
 
-build_qe_assets_tar() {
-  mkdir -p "$(dirname "$QE_ASSETS_OUT")"
+  if [[ "$repack_qe_test" = true ]]; then
+    qe_root="$ASSETS_DIR"
+    reference_root="$ASSETS_DIR"
+    basis_root="$ASSETS_DIR/BASIS"
+    mode_label="repack"
+  else
+    qe_root="$EXAMPLES_ROOT"
+    reference_root="$PAOFLOW_TEST_STAGING_DIR"
+    basis_root="$REPO_ROOT/BASIS"
+    mode_label="source"
+  fi
 
   if ! PYTHONPATH="$REPO_ROOT" "$PYTHON_EXEC" "$REPO_ROOT/.github/assets_generation/qe/build_assets.py" \
-    --qe-root "$EXAMPLES_ROOT" \
-    --out "$QE_ASSETS_OUT"; then
-    log_job "WARN: QE assets tar was not created. No valid *.save folders may exist."
+    --qe-root "$qe_root" \
+    --reference-root "$reference_root" \
+    --basis-root "$basis_root" \
+    $( [[ "$repack_qe_test" = true ]] && printf '%s ' --repack-layout )\
+    --examples "$examples_csv" \
+    --out "$QE_TEST_ASSETS_OUT"; then
+    log_job "WARN: QE test assets tar was not created in $mode_label mode. No valid *.save folders or Reference folders were found."
     return 1
   fi
 
-  log_job "Built QE assets: $QE_ASSETS_OUT"
-}
-
-build_reference_tar_from_roots() {
-  local out_tar="$1"
-  local description="$2"
-  shift 2
-  local -a roots=("$@")
-  local package_root root test_exdir test_jobdir label staged_job_root ref_src species basis_src
-  package_root="$(mktemp -d)"
-
-  for root in "${roots[@]}"; do
-    [[ -d "$root" ]] || continue
-
-    for ex in "${examples[@]}"; do
-      test_exdir="$TESTS_ROOT/$ex"
-      if [[ ! -d "$test_exdir" ]]; then
-        log_job "WARN: missing selected $description test directory: $test_exdir"
-        continue
-      fi
-
-      while IFS= read -r test_jobdir; do
-        label="${test_jobdir#"$TESTS_ROOT"/}"
-        staged_job_root="$root/$label"
-
-        if [[ -d "$staged_job_root/Reference" ]]; then
-          ref_src="$staged_job_root/Reference"
-        elif [[ -d "$staged_job_root" ]]; then
-          ref_src="$staged_job_root"
-        else
-          continue
-        fi
-
-        rm -rf "$package_root/$label"
-        mkdir -p "$package_root/$label/Reference"
-        cp -a "$ref_src/." "$package_root/$label/Reference/"
-
-        while IFS= read -r species; do
-          [[ -n "$species" ]] || continue
-          basis_src="$REPO_ROOT/BASIS/$species"
-          if [[ ! -d "$basis_src" ]]; then
-            log_job "WARN: missing BASIS directory for internal-basis species '$species': $basis_src"
-            continue
-          fi
-
-          if [[ ! -e "$package_root/BASIS/$species" ]]; then
-            mkdir -p "$package_root/BASIS"
-            cp -a "$basis_src" "$package_root/BASIS/$species"
-          fi
-        done < <(internal_basis_species_for_example "$ex")
-      done < <(collect_test_jobs "$test_exdir")
-    done
-  done
-
-  if ! find "$package_root" -mindepth 1 -print -quit | grep -q .; then
-    rm -rf "$package_root"
-    log_job "WARN: no $description Reference folders found. Skipping tar creation."
-    return 1
-  fi
-
-  mkdir -p "$(dirname "$out_tar")"
-  tar -C "$package_root" -czf "$out_tar" .
-
-  rm -rf "$package_root"
-  log_job "Built $description assets: $out_tar"
+  log_job "Built QE test assets ($mode_label): $QE_TEST_ASSETS_OUT"
 }
 
 clean_reference_staging() {
@@ -219,25 +168,22 @@ clean_reference_staging() {
   fi
 }
 
-run_qe=false
-run_paoflow_test=false
+run_qe_test=false
+repack_qe_test=false
 clean_paoflow_test_staging=false
 examples_arg=""
-qe_assets_out_arg=""
-paoflow_assets_out_arg=""
+assets_out_arg=""
 paoflow_test_staging_dir_arg=""
 extra_examples=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --qe) run_qe=true ;;
-    --paoflow-test) run_paoflow_test=true ;;
-    --all) run_qe=true; run_paoflow_test=true ;;
+    --qe-test) run_qe_test=true ;;
+    --repack) repack_qe_test=true; run_qe_test=true ;;
+    --all) run_qe_test=true ;;
     --clean-paoflow-test-staging) clean_paoflow_test_staging=true ;;
-    --qe-assets-out) qe_assets_out_arg="$2"; shift ;;
-    --qe-assets-out=*) qe_assets_out_arg="${1#*=}" ;;
-    --paoflow-assets-out) paoflow_assets_out_arg="$2"; shift ;;
-    --paoflow-assets-out=*) paoflow_assets_out_arg="${1#*=}" ;;
+    --assets-out) assets_out_arg="$2"; shift ;;
+    --assets-out=*) assets_out_arg="${1#*=}" ;;
     --paoflow-test-staging-dir) paoflow_test_staging_dir_arg="$2"; shift ;;
     --paoflow-test-staging-dir=*) paoflow_test_staging_dir_arg="${1#*=}" ;;
     --examples) examples_arg="$2"; shift ;;
@@ -248,24 +194,31 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ "$run_qe" = false && "$run_paoflow_test" = false ]]; then
-  run_qe=true
-  run_paoflow_test=true
+if [[ "$run_qe_test" = false ]]; then
+  run_qe_test=true
+fi
+
+if [[ "$repack_qe_test" = true && ( -n "$examples_arg" || ${#extra_examples[@]} -gt 0 ) ]]; then
+  printf '%s\n' 'ERROR: --repack always rebuilds the full unpacked asset tree; --examples is not supported in repack mode.' >&2
+  exit 1
 fi
 
 EXAMPLES_ROOT="$(resolve_examples_root)"
 TESTS_ROOT="$(resolve_tests_root)"
 REPO_ROOT="$(cd "$EXAMPLES_ROOT/../.." && pwd)"
 ASSETS_DIR="$REPO_ROOT/.github/assets_generation/qe/_assets"
+SELECTOR_ROOT="$EXAMPLES_ROOT"
+if [[ "$repack_qe_test" = true ]]; then
+  SELECTOR_ROOT="$ASSETS_DIR"
+fi
 LOG_DIR="$EXAMPLES_ROOT/logs"
 mkdir -p "$LOG_DIR"
 
-JOB_LOG="$LOG_DIR/build_assets_tar.log"
+JOB_LOG="$LOG_DIR/build_tar.log"
 : > "$JOB_LOG"
 
 PYTHON_EXEC="${PYTHON_EXEC:-python}"
-QE_ASSETS_OUT="${qe_assets_out_arg:-${QE_ASSETS_OUT:-$ASSETS_DIR/qe_assets.tar.gz}}"
-PAOFLOW_ASSETS_OUT="${paoflow_assets_out_arg:-${PAOFLOW_ASSETS_OUT:-$ASSETS_DIR/paoflow_assets.tar.gz}}"
+QE_TEST_ASSETS_OUT="${assets_out_arg:-${QE_TEST_ASSETS_OUT:-$ASSETS_DIR/qe_test_assets.tar.gz}}"
 PAOFLOW_TEST_STAGING_DIR="${paoflow_test_staging_dir_arg:-${PAOFLOW_TEST_STAGING_DIR:-$TESTS_ROOT/_assets/staging}}"
 
 declare -a examples=()
@@ -275,7 +228,7 @@ if [[ -n "$examples_arg" ]]; then
 elif [[ ${#extra_examples[@]} -gt 0 ]]; then
   mapfile -t examples < <(expand_examples_from_selectors "${extra_examples[@]}")
 else
-  mapfile -t examples < <(find "$EXAMPLES_ROOT" -maxdepth 1 -type d -name 'example*' -printf '%f\n' | sort)
+  mapfile -t examples < <(find "$SELECTOR_ROOT" -maxdepth 1 -type d -name 'example*' -printf '%f\n' | sort)
 fi
 
 if [[ ${#examples[@]} -eq 0 ]]; then
@@ -286,18 +239,24 @@ fi
 log_job "Resolved EXAMPLES_ROOT: $EXAMPLES_ROOT"
 log_job "Resolved TESTS_ROOT: $TESTS_ROOT"
 log_job "Selected examples: ${examples[*]}"
+log_job "Selector root: $SELECTOR_ROOT"
 log_job "PAOFLOW test staging dir: $PAOFLOW_TEST_STAGING_DIR"
+log_job "QE test assets out: $QE_TEST_ASSETS_OUT"
+log_job "Repack mode: $repack_qe_test"
+if [[ "$repack_qe_test" = true ]]; then
+  log_job "Repack root: $ASSETS_DIR"
+fi
 
 failures=0
 
-if [[ "$run_qe" = true ]]; then
-  build_qe_assets_tar || failures=$((failures + 1))
-fi
-
-if [[ "$run_paoflow_test" = true ]]; then
-  if build_reference_tar_from_roots "$PAOFLOW_ASSETS_OUT" "PAOFLOW test" "$PAOFLOW_TEST_STAGING_DIR"; then
+if [[ "$run_qe_test" = true ]]; then
+  if build_qe_test_assets_tar; then
     if [[ "$clean_paoflow_test_staging" = true ]]; then
-      clean_reference_staging
+      if [[ "$repack_qe_test" = true ]]; then
+        log_job "Skipping staged Reference cleanup in repack mode."
+      else
+        clean_reference_staging
+      fi
     fi
   else
     failures=$((failures + 1))

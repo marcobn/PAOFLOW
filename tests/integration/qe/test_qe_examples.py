@@ -21,9 +21,8 @@ def _discover_jobs() -> list[JobSpec]:
 def test_qe_example(
     job: JobSpec,
     tmp_path: Path,
-    qe_assets_root,
-    reference_assets_root,
-    qe_assets_link_mode,
+    qe_test_assets_root,
+    qe_test_assets_link_mode,
 ) -> None:
     sandbox_root = tmp_path / 'sandbox'
     sandbox_root.mkdir(parents=True, exist_ok=True)
@@ -32,9 +31,8 @@ def test_qe_example(
         job.example_root,
         sandbox_root,
         job_relpath=job.job_relpath,
-        qe_assets_root=qe_assets_root,
-        reference_assets_root=reference_assets_root,
-        assets_link_mode=qe_assets_link_mode,
+        qe_test_assets_root=qe_test_assets_root,
+        assets_link_mode=qe_test_assets_link_mode,
     )
     plots_dir = result.workdir / '_compare_plots'
 
@@ -51,13 +49,13 @@ def test_internal_basis_assets_overlay(tmp_path: Path) -> None:
     job_dir = sandbox_root / 'tests' / 'integration' / 'qe' / 'example15'
     job_dir.mkdir(parents=True)
 
-    reference_assets_root = tmp_path / 'reference_assets'
-    basis_src = reference_assets_root / 'BASIS' / 'Si'
+    qe_test_assets_root = tmp_path / 'qe_test_assets'
+    basis_src = qe_test_assets_root / 'BASIS' / 'Si'
     basis_src.mkdir(parents=True)
     (basis_src / 'basis.py').write_text('basis_data = {}\n', encoding='utf-8')
 
     _overlay_internal_basis_assets(
-        reference_assets_root=reference_assets_root,
+        qe_test_assets_root=qe_test_assets_root,
         sandbox_root=sandbox_root,
         link_mode='symlink',
     )

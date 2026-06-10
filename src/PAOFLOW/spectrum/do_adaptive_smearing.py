@@ -64,7 +64,19 @@ def do_adaptive_smearing(data_controller, smearing, afac):
         afac = 1.0 if smearing == 'm-p' else 0.7
 
     ## DEV: Try to make contiguinuity conditional. Requires benchmark testing
-    pksaux = np.ascontiguousarray(arrays['pksp'][:, :, diag[0], diag[1]])
+    # Source of the band group velocity nabla_k E_n used for the Yates width.
+    # When the non-local velocity (NLV) correction is active, gradient_and_momenta
+    # stores the BARE eigenbasis velocity diagonal under 'velkp_bare'. The
+    # diagonal of the (NLV-corrected) 'pksp' is no longer the true group
+    # velocity -- the interband position-commutator correction contaminates it
+    # and inflates the adaptive widths, producing a spurious epsilon spike near
+    # omega -> 0. Prefer the bare diagonal whenever it is present (opt out via
+    # attr['adaptive_smearing_bare_velocity'] = False).
+    use_bare = attributes.get('adaptive_smearing_bare_velocity', True)
+    if use_bare and 'velkp_bare' in arrays:
+        pksaux = np.ascontiguousarray(arrays['velkp_bare'])
+    else:
+        pksaux = np.ascontiguousarray(arrays['pksp'][:, :, diag[0], diag[1]])
 
     deltakp = np.zeros((npks, nawf, nspin), dtype=float)
     deltakp2 = np.zeros((npks, nawf, nawf, nspin), dtype=float)
