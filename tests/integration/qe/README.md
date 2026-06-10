@@ -104,8 +104,8 @@ This mode only repacks recognized archive content:
 
 Other files that may be present in `.github/assets_generation/qe/_assets/`
 such as the existing tarball, checksum files, notes, or scratch directories are
-ignored. You can still combine `--repack` with `--examples example10` to limit
-the repack to selected top-level examples.
+ignored. Repack mode always rebuilds the full recognized asset tree; it does
+not support `--examples`.
 
 `build_tar.sh` uses [.github/assets_generation/qe/build_assets.py](../../../.github/assets_generation/qe/build_assets.py)
 internally for the combined `qe_test_assets.tar.gz` tarball. That Python helper packages

@@ -28,6 +28,7 @@ Options:
                          Default: PAOFLOW_TEST_STAGING_DIR or tests/integration/qe/_assets/staging.
   --examples LIST        Comma-separated list of example selectors.
                          Default: all example* directories under EXAMPLES_ROOT.
+                         Not supported with --repack.
   -h, --help             Show this help message.
 EOF
 }
@@ -195,6 +196,11 @@ done
 
 if [[ "$run_qe_test" = false ]]; then
   run_qe_test=true
+fi
+
+if [[ "$repack_qe_test" = true && ( -n "$examples_arg" || ${#extra_examples[@]} -gt 0 ) ]]; then
+  printf '%s\n' 'ERROR: --repack always rebuilds the full unpacked asset tree; --examples is not supported in repack mode.' >&2
+  exit 1
 fi
 
 EXAMPLES_ROOT="$(resolve_examples_root)"
