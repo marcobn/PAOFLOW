@@ -2,6 +2,176 @@ import cmath
 
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Generic on-site SOC builder
+# ---------------------------------------------------------------------------
+#
+# The hardcoded ``soc_<l>_<token>`` matrices below were written one per
+# pseudopotential layout (``sp``, ``spd``, ``sspd``, ``spds`` ...).  Adding a
+# new layout (e.g. extended AE bases produced by ``configuration='extended'``)
+# previously required a new hand-derived matrix.  The functions in this
+# section build the same L·S blocks from the canonical ``L`` operators in
+# the QE tesseral basis, and place them at the correct offset for any
+# ``shells`` list.  ``do_spin_orbit_H`` dispatches to them when
+# ``orb_pseudo[n] == 'generic'`` (set by :meth:`DataController.build_arrays_adhoc_soc`
+# for any layout not covered by the hardcoded set).
+#
+# The convention follows the existing kernels:
+#   * Tesseral order per shell: m=0, then (m=+kc, m=+ks) for k=1..l
+#     (i.e. for l=1: pz, px, py; for l=2: dz2, dxz, dyz, dx2-y2, dxy).
+#   * Quantisation axis n̂ = (sinθ cosφ, sinθ sinφ, cosθ);
+#     θ̂ = (cosθ cosφ, cosθ sinφ, -sinθ); φ̂ = (-sinφ, cosφ, 0).
+#   * H_UU = +(L·n̂)/2,  H_DD = -(L·n̂)/2,
+#     H_UD = (L·θ̂ - i L·φ̂)/2,  H_DU = H_UD†.
+
+
+def _angular_momentum_matrices(l):
+    """Return ``(Lx, Ly, Lz)`` as Hermitian ``(2l+1, 2l+1)`` complex matrices
+    in the QE real-tesseral basis.
+
+    Hardcoded for ``l = 0, 1, 2`` (the only channels exposed by the rest
+    of PAOFLOW's adhoc SOC).  Values are read off the existing
+    ``soc_p_*`` / ``soc_d_*`` kernels so the generic builder is
+    bit-for-bit compatible with them.
+    """
+    if l == 0:
+        z = np.zeros((1, 1), dtype=complex)
+        return z, z, z
+    if l == 1:
+        Lx = np.array([[0, 0, 1j], [0, 0, 0], [-1j, 0, 0]], dtype=complex)
+        Ly = np.array([[0, -1j, 0], [1j, 0, 0], [0, 0, 0]], dtype=complex)
+        Lz = np.array([[0, 0, 0], [0, 0, -1j], [0, 1j, 0]], dtype=complex)
+        return Lx, Ly, Lz
+    if l == 2:
+        s3 = np.sqrt(3.0)
+        Lx = np.zeros((5, 5), dtype=complex)
+        Lx[0, 2] = 1j * s3
+        Lx[2, 0] = -1j * s3
+        Lx[1, 4] = 1j
+        Lx[4, 1] = -1j
+        Lx[2, 3] = -1j
+        Lx[3, 2] = 1j
+        Ly = np.zeros((5, 5), dtype=complex)
+        Ly[0, 1] = -1j * s3
+        Ly[1, 0] = 1j * s3
+        Ly[1, 3] = -1j
+        Ly[3, 1] = 1j
+        Ly[2, 4] = -1j
+        Ly[4, 2] = 1j
+        Lz = np.zeros((5, 5), dtype=complex)
+        Lz[1, 2] = -1j
+        Lz[2, 1] = 1j
+        Lz[3, 4] = -2j
+        Lz[4, 3] = 2j
+        return Lx, Ly, Lz
+    raise NotImplementedError('Generic SOC builder only supports l=0,1,2 (s/p/d). Got l=%d.' % l)
+
+
+def _shell_soc_block(theta, phi, l):
+    """Build the ``(2(2l+1)) x (2(2l+1))`` L·S block for a single shell.
+
+    Layout: rows/cols ``0..2l`` are spin-up, ``2l+1..4l+1`` are spin-down,
+    matching the convention of the hardcoded ``soc_<l>_<token>`` kernels.
+    """
+    Lx, Ly, Lz = _angular_momentum_matrices(l)
+    n = 2 * l + 1
+    sT, cT = np.sin(theta), np.cos(theta)
+    sP, cP = np.sin(phi), np.cos(phi)
+    L3 = (sT * cP) * Lx + (sT * sP) * Ly + cT * Lz  # L · n̂
+    L1 = (cT * cP) * Lx + (cT * sP) * Ly + (-sT) * Lz  # L · θ̂
+    L2 = (-sP) * Lx + cP * Ly  # L · φ̂
+    H = np.zeros((2 * n, 2 * n), dtype=complex)
+    H[:n, :n] = 0.5 * L3
+    H[n:, n:] = -0.5 * L3
+    H[:n, n:] = 0.5 * (L1 - 1j * L2)
+    H[n:, :n] = H[:n, n:].conj().T
+    return H
+
+
+def build_generic_soc(theta, phi, shells_list, norb, active_shells=None):
+    """Build per-l SOC contributions for an arbitrary shells layout.
+
+    Parameters
+    ----------
+    theta, phi : float
+        Quantisation-axis angles (radians).
+    shells_list : sequence of int
+        Per-shell angular momenta in the order they appear in the atom's
+        orbital basis (e.g. ``[0, 1, 2]`` for ``spd``, ``[0, 1, 2, 0]``
+        for ``spds``, ``[0, 1, 2, 0, 0, 0, 1, 1, 1, 2, 2]`` for an
+        extended Pt basis).
+    norb : int
+        Total number of orbitals per atom (must equal ``sum(2l+1)``).
+    active_shells : sequence of bool or float, optional
+        Per-shell weight applied to the SOC kernel of each shell.
+        Booleans are interpreted as 0/1.  ``None`` (default) uses a
+        hydrogenic-style ``1/k**2`` falloff over the occurrence index of
+        each l > 0 channel: the valence shell (k=1) gets weight 1, the
+        first augmentation (k=2) gets 0.25, the second (k=3) gets
+        ~0.111, etc.  l=0 shells always get 0.
+
+    Returns
+    -------
+    (HR_soc_p, HR_soc_d) : tuple of two ``(2*norb, 2*norb)`` complex arrays
+        SOC blocks restricted to l=1 and l=2 shells respectively.  Caller
+        weights them by ``lambda_p`` and ``lambda_d``.
+
+    Notes
+    -----
+    The per-element ``lambda_p`` / ``lambda_d`` are fit (or read from
+    tables) for the valence p/d shell.  Applying the same ``lambda`` to
+    every shell of the same l in an extended/augmented basis triple-counts
+    SOC on unoccupied polarisation channels and corrupts response
+    functions (e.g. spin Hall conductivity).  Conversely, zeroing the
+    augmentation shells entirely under-broadens the conduction-side
+    response.  The default ``1/k**2`` heuristic is a compromise that
+    preserves the valence kernel exactly (matching the hardcoded
+    minimal-basis kernels ``soc_p_spd``, ``soc_p_spds``, ...) while
+    leaving a small residual weight on the augmentation channels.  Pass
+    an explicit ``active_shells`` (bool or float per shell) to override.
+    """
+    HR_p = np.zeros((2 * norb, 2 * norb), dtype=complex)
+    HR_d = np.zeros((2 * norb, 2 * norb), dtype=complex)
+    if active_shells is None:
+        counts = {}
+        weights = []
+        for l in shells_list:
+            if l == 0:
+                weights.append(0.0)
+                continue
+            counts[l] = counts.get(l, 0) + 1
+            weights.append(1.0 / counts[l] ** 2)
+    else:
+        if len(active_shells) != len(shells_list):
+            raise ValueError(
+                'active_shells length (%d) does not match shells_list length (%d).'
+                % (len(active_shells), len(shells_list))
+            )
+        weights = [float(w) for w in active_shells]
+    offset = 0
+    for l, w in zip(shells_list, weights):
+        n = 2 * l + 1
+        if l == 0 or w == 0.0:
+            offset += n
+            continue
+        H = _shell_soc_block(theta, phi, l)
+        target = HR_p if l == 1 else HR_d
+        sl_up = slice(offset, offset + n)
+        sl_dn = slice(offset + norb, offset + norb + n)
+        target[sl_up, sl_up] += w * H[:n, :n]
+        target[sl_dn, sl_dn] += w * H[n:, n:]
+        target[sl_up, sl_dn] += w * H[:n, n:]
+        target[sl_dn, sl_up] += w * H[n:, :n]
+        offset += n
+    if offset != norb:
+        raise ValueError(
+            'shells_list orbital count (%d) does not match norb (%d).' % (offset, norb)
+        )
+    return HR_p, HR_d
+
+
+# ---------------------------------------------------------------------------
+
 
 def do_spin_orbit_H(data_controller):
     """Construct the tight-binding spin-orbit Hamiltonian in real space.
@@ -88,11 +258,21 @@ def do_spin_orbit_H(data_controller):
         if orb_pseudo[n] == 'sspd':
             HR_soc_p[:, :] = soc_p_sspd(theta, phi, norb)
             HR_soc_d[:, :] = soc_d_sspd(theta, phi, norb)
+        if orb_pseudo[n] == 'spds':
+            HR_soc_p[:, :] = soc_p_spds(theta, phi, norb)
+            HR_soc_d[:, :] = soc_d_spds(theta, phi, norb)
         if orb_pseudo[n] == 'ssp':
             pass
         if orb_pseudo[n] == 'ssppd':
             HR_soc_p[:, :] = soc_p_ssppd(theta, phi, norb)
             HR_soc_d[:, :] = soc_d_ssppd(theta, phi, norb)
+        if orb_pseudo[n] == 'generic':
+            shells_for_atom = arry['shells'][arry['atoms'][n]]
+            sw_map = arry.get('soc_shell_weights')
+            weights = sw_map.get(arry['atoms'][n]) if sw_map else None
+            HR_soc_p[:, :], HR_soc_d[:, :] = build_generic_soc(
+                theta, phi, shells_for_atom, norb, active_shells=weights
+            )
 
         uui = offset[n]
         uuj = uui + norb
@@ -515,6 +695,117 @@ def soc_d_sspd(theta, phi, norb):
 
 
 ################## END PSEUDOPOTENTIAL SSPD ##############################
+
+
+################## PSEUDOPOTENTIAL SPDS ##############################
+def soc_p_spds(theta, phi, norb):
+    """p-orbital SOC matrix for the **SPDS** layout (s, p, d, s_semicore).
+
+    Identical to :func:`soc_p_spd` except the down-spin block offset is
+    parametrised on ``norb`` (=10 here) instead of the hard-coded ``9``.
+    The trailing semicore-s orbital at index 9 is left untouched (the
+    SOC operator vanishes on l=0).
+    """
+    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
+
+    sTheta, sPhi = np.sin(theta), np.sin(phi)
+    cTheta, cPhi = np.cos(theta), np.cos(phi)
+
+    # Up-Up p block (indices 1..3)
+    HR_soc[1, 2] = -0.5j * sTheta * sPhi
+    HR_soc[1, 3] = 0.5j * sTheta * cPhi
+    HR_soc[2, 3] = -0.5j * cTheta
+    HR_soc[2, 1] = np.conj(HR_soc[1, 2])
+    HR_soc[3, 1] = np.conj(HR_soc[1, 3])
+    HR_soc[3, 2] = np.conj(HR_soc[2, 3])
+    # Down-Down p block (indices 1+norb .. 3+norb)
+    d1, d2, d3 = 1 + norb, 2 + norb, 3 + norb
+    HR_soc[d1 : d3 + 1, d1 : d3 + 1] = -HR_soc[1:4, 1:4]
+    # Up-Down p block
+    HR_soc[1, d2] = -0.5 * complex(cPhi, cTheta * sPhi)
+    HR_soc[1, d3] = -0.5 * complex(sPhi, -cTheta * cPhi)
+    HR_soc[2, d3] = 0.5j * sTheta
+    HR_soc[2, d1] = -HR_soc[1, d2]
+    HR_soc[3, d1] = -HR_soc[1, d3]
+    HR_soc[3, d2] = -HR_soc[2, d3]
+    # Down-Up p block (Hermitian conjugate)
+    HR_soc[d2, 1] = np.conj(HR_soc[1, d2])
+    HR_soc[d3, 1] = np.conj(HR_soc[1, d3])
+    HR_soc[d1, 2] = np.conj(HR_soc[2, d1])
+    HR_soc[d3, 2] = np.conj(HR_soc[2, d3])
+    HR_soc[d1, 3] = np.conj(HR_soc[3, d1])
+    HR_soc[d2, 3] = np.conj(HR_soc[3, d2])
+
+    return HR_soc
+
+
+def soc_d_spds(theta, phi, norb):
+    """d-orbital SOC matrix for the **SPDS** layout (d at indices 4..8)."""
+    HR_soc = np.zeros((2 * norb, 2 * norb), dtype=complex)
+
+    sTheta, sPhi = np.sin(theta), np.sin(phi)
+    cTheta, cPhi = np.cos(theta), np.cos(phi)
+    s3 = np.sqrt(3.0)
+
+    # Up-Up d block (indices 4..8)
+    HR_soc[4, 5] = -s3 * 0.5j * sTheta * sPhi
+    HR_soc[4, 6] = s3 * 0.5j * sTheta * cPhi
+    HR_soc[5, 6] = -0.5j * cTheta
+    HR_soc[5, 7] = -0.5j * sTheta * sPhi
+    HR_soc[5, 8] = 0.5j * sTheta * cPhi
+    HR_soc[6, 7] = -0.5j * sTheta * cPhi
+    HR_soc[6, 8] = -0.5j * sTheta * sPhi
+    HR_soc[7, 8] = -1.0j * cTheta
+    HR_soc[5, 4] = np.conj(HR_soc[4, 5])
+    HR_soc[6, 4] = np.conj(HR_soc[4, 6])
+    HR_soc[6, 5] = np.conj(HR_soc[5, 6])
+    HR_soc[7, 5] = np.conj(HR_soc[5, 7])
+    HR_soc[8, 5] = np.conj(HR_soc[5, 8])
+    HR_soc[7, 6] = np.conj(HR_soc[6, 7])
+    HR_soc[8, 6] = np.conj(HR_soc[6, 8])
+    HR_soc[8, 7] = np.conj(HR_soc[7, 8])
+    # Down-Down d block (indices 4+norb .. 8+norb)
+    e4, e5, e6, e7, e8 = 4 + norb, 5 + norb, 6 + norb, 7 + norb, 8 + norb
+    HR_soc[e4 : e8 + 1, e4 : e8 + 1] = -HR_soc[4:9, 4:9]
+    # Up-Down d block
+    HR_soc[4, e5] = -s3 * 0.5 * complex(cPhi, cTheta * sPhi)
+    HR_soc[4, e6] = -s3 * 0.5 * complex(sPhi, -cTheta * cPhi)
+    HR_soc[5, e6] = 0.5j * sTheta
+    HR_soc[5, e7] = -0.5 * complex(cPhi, cTheta * sPhi)
+    HR_soc[5, e8] = -0.5 * complex(sPhi, -cTheta * cPhi)
+    HR_soc[6, e7] = 0.5 * complex(sPhi, -cTheta * cPhi)
+    HR_soc[6, e8] = -0.5 * complex(cPhi, cTheta * sPhi)
+    HR_soc[7, e8] = 1j * sTheta
+    HR_soc[5, e4] = -HR_soc[4, e5]
+    HR_soc[6, e4] = -HR_soc[4, e6]
+    HR_soc[6, e5] = -HR_soc[5, e6]
+    HR_soc[7, e5] = -HR_soc[5, e7]
+    HR_soc[8, e5] = -HR_soc[5, e8]
+    HR_soc[7, e6] = -HR_soc[6, e7]
+    HR_soc[8, e6] = -HR_soc[6, e8]
+    HR_soc[8, e7] = -HR_soc[7, e8]
+    # Down-Up d block (Hermitian conjugate)
+    HR_soc[e5, 4] = np.conj(HR_soc[4, e5])
+    HR_soc[e6, 4] = np.conj(HR_soc[4, e6])
+    HR_soc[e6, 5] = np.conj(HR_soc[5, e6])
+    HR_soc[e7, 5] = np.conj(HR_soc[5, e7])
+    HR_soc[e8, 5] = np.conj(HR_soc[5, e8])
+    HR_soc[e7, 6] = np.conj(HR_soc[6, e7])
+    HR_soc[e8, 6] = np.conj(HR_soc[6, e8])
+    HR_soc[e8, 7] = np.conj(HR_soc[7, e8])
+    HR_soc[e4, 5] = np.conj(HR_soc[5, e4])
+    HR_soc[e4, 6] = np.conj(HR_soc[6, e4])
+    HR_soc[e5, 6] = np.conj(HR_soc[6, e5])
+    HR_soc[e5, 7] = np.conj(HR_soc[7, e5])
+    HR_soc[e5, 8] = np.conj(HR_soc[8, e5])
+    HR_soc[e6, 7] = np.conj(HR_soc[7, e6])
+    HR_soc[e6, 8] = np.conj(HR_soc[8, e6])
+    HR_soc[e7, 8] = np.conj(HR_soc[8, e7])
+
+    return HR_soc
+
+
+################## END PSEUDOPOTENTIAL SPDS ##############################
 
 
 ################## PSEUDOPOTENTIAL SSPPD ##############################

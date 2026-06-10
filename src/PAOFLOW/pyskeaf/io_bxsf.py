@@ -85,6 +85,8 @@ class BXSFData:
 _FLOAT_RE = re.compile(r'[-+]?\d+(?:\.\d*)?(?:[EeDd][-+]?\d+)?')
 _INT_RE = re.compile(r'[-+]?\d+')
 _FERMI_RE = re.compile(r'fermi\s*energy', re.IGNORECASE)
+# Keyword that immediately precedes the band-count line in a BXSF bandgrid block.
+_BANDGRID_RE = re.compile(r'BANDGRID_3D_BANDS', re.IGNORECASE)
 _BAND_MARKER_RE = re.compile(r'(?:^|[^A-Za-z0-9_])(?:band|prod)\s*:', re.IGNORECASE)
 # Matches the BXSF "END_BANDGRID_3D" / "END_BLOCK_BANDGRID_3D" / lone "END" markers.
 # (cannot use \bend\b because the trailing underscore is a word character).
@@ -148,20 +150,26 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
     if fermi_energy is None:
         raise BXSFError(f"BXSF file {path}: no 'Fermi Energy' line found.")
 
-    # 2. Skip 4 lines (mirrors Fortran's `do i=1,4 read(15,*)tempstringread end do`).
-    #    These are: END_INFO, BEGIN_BLOCK_BANDGRID_3D, comment, BANDGRID_3D_BANDS.
-    for _ in range(4):
-        try:
-            next(it)
-        except StopIteration as exc:
-            raise BXSFError(f'BXSF file {path}: truncated header after Fermi energy.') from exc
+    # 2. Advance to the BANDGRID_3D_BANDS keyword that introduces the data
+    #    block.  Anchoring on the keyword (rather than skipping a fixed number
+    #    of lines) tolerates the optional blank line and comment that XCrysDen
+    #    and other writers place between END_INFO and the bandgrid block.
+    found_bandgrid = False
+    for _i, line in it:
+        if _BANDGRID_RE.search(line):
+            found_bandgrid = True
+            break
+    if not found_bandgrid:
+        raise BXSFError(f'BXSF file {path}: no BANDGRID_3D_BANDS block found after header.')
 
-    # 3. Number of bands — must be exactly 1.
-    try:
-        _, line = next(it)
-    except StopIteration as exc:
-        raise BXSFError(f'BXSF file {path}: missing band-count line.') from exc
-    n_bands = _read_first_int(line)
+    # 3. Number of bands — read from the next non-blank line; must be exactly 1.
+    n_bands = None
+    for _i, line in it:
+        if line.strip():
+            n_bands = _read_first_int(line)
+            break
+    if n_bands is None:
+        raise BXSFError(f'BXSF file {path}: missing band-count line.')
     if n_bands != 1:
         raise BXSFError(
             f'BXSF file {path}: header indicates {n_bands} bands, but SKEAF '

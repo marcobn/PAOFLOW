@@ -1,0 +1,60 @@
+{
+  "_comment": "Baselines for tests/integration/qe/test_dielectric_vs_qe.py. Each entry: {paoflow: {metrics...}, qe: {metrics...}, paoflow_rel_tol: ..., paoflow_abs_tol: ...}. PAOFLOW metrics are pinned to current (pre-correction) values to detect regressions. The QE block is informational. See TODOs/nonlocal_velocity_correction.md.",
+
+  "example15": {
+    "paoflow": {
+      "eps1_static": 14.533361154973031,
+      "eps2_peak_energy": 3.56,
+      "eps2_peak_height": 60.09427648082362,
+      "eels_peak_energy": 3.755,
+      "eels_peak_height": 0.033429169456507535
+    },
+    "qe": {
+      "eps1_static": 16.363543133000004,
+      "eps2_peak_energy": 3.56,
+      "eps2_peak_height": 69.091782461,
+      "eels_peak_energy": 3.755,
+      "eels_peak_height": 0.029764359666666667
+    },
+    "paoflow_rel_tol": 0.02,
+    "paoflow_abs_tol": 0.05
+  },
+
+  "example17_Al_epsilon": {
+    "paoflow": {
+      "eps1_static": -1558.3270715260373,
+      "eps2_peak_energy": 1.58062,
+      "eps2_peak_height": 103.413919498486,
+      "eels_peak_energy": 8.87187,
+      "eels_peak_height": 0.6445310140359441
+    },
+    "qe": {
+      "eps1_static": -1768.554193217088,
+      "eps2_peak_energy": 1.580625,
+      "eps2_peak_height": 117.08861884966666,
+      "eels_peak_energy": 6.663125,
+      "eels_peak_height": 0.073593704
+    },
+    "paoflow_rel_tol": 0.02,
+    "paoflow_abs_tol": 1.0
+  },
+
+  "example17_Cu_epsilon": {
+    "paoflow": {
+      "eps1_static": -883.992750049237,
+      "eps2_peak_energy": 1.659,
+      "eps2_peak_height": 15.4887973733913,
+      "eels_peak_energy": 9.0595,
+      "eels_peak_height": 0.6331849454671409
+    },
+    "qe": {
+      "eps1_static": -1569.9134224290287,
+      "eps2_peak_energy": 1.659,
+      "eps2_peak_height": 32.24701490499999,
+      "eels_peak_energy": 9.0975,
+      "eels_peak_height": 0.3323148953333333
+    },
+    "paoflow_rel_tol": 0.02,
+    "paoflow_abs_tol": 1.0
+  }
+}

@@ -413,3 +413,117 @@ class GPAO:
                 data.append(shc)
                 labels.append(tag)
             plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
+
+    def plot_ahc(
+        self,
+        fname,
+        title='AHC vs Energy',
+        x_lim=None,
+        y_lim=None,
+        cols=None,
+        legend=True,
+    ):
+        """
+        Plot the anomalous Hall conductivity vs energy.
+
+        PAOFLOW writes one ``ahcEf_{ipol}{jpol}.dat`` file per requested tensor
+        element (two columns: energy and conductivity).  Pass a single file name
+        to plot one component, or a list of file names to overlay several
+        components on the same axes.
+
+        Arguments:
+          fname (str or list): File name or list of file names (including relative path)
+          title (str): A title for the plot
+          x_lim (tuple): Pair of axis limits (x_min, x_max)
+          y_lim (tuple): Pair of axis limits (y_min, y_max)
+          cols (list): A 3-tuple (R,G,B) or list of them, one for each tensor element.
+          legend (bool): Show the legend when several components are plotted.
+        """
+        import numpy as np
+
+        from .inputs.read_pao_output import read_dos_PAO
+
+        x_label = 'Energy (eV)'
+        y_label = r'$\sigma^{A}$ ($\Omega$cm)$^{-1}$'
+
+        if isinstance(fname, str):
+            from .graphics.plot_functions import plot_dos
+
+            es, ahc = read_dos_PAO(fname)
+            if y_lim is None:
+                y_lim = 1.1 * np.array([np.min(ahc), np.max(ahc)])
+            plot_dos(es, ahc, title, x_lim, y_lim, False, cols, x_label, y_label)
+
+        elif isinstance(fname, list):
+            from .graphics.plot_functions import plot_shc_tensor
+
+            es = None
+            data = []
+            labels = []
+            if not isinstance(cols, list):
+                cols = [cols] * len(fname)
+            for fn in fname:
+                tag = fn.split('.')[-2][-2:]
+                es, ahc = read_dos_PAO(fn)
+                data.append(ahc)
+                labels.append(tag)
+            plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)
+
+    def plot_dielectric(
+        self,
+        fname,
+        title=None,
+        x_lim=None,
+        y_lim=None,
+        cols=None,
+        labels=None,
+        legend=True,
+    ):
+        """
+        Plot an optical / dielectric spectrum vs energy.
+
+        The dielectric-tensor module writes two-column ``.dat`` files such as
+        ``epsi_xx.dat`` (Im eps), ``epsr_xx.dat`` (Re eps), ``eels_xx.dat``,
+        ``sigmar_xx.dat`` etc.  Pass a single file name to plot one spectrum,
+        or a list of file names to overlay several on the same axes.
+
+        Arguments:
+          fname (str or list): File name or list of file names (including relative path)
+          title (str): A title for the plot
+          x_lim (tuple): Pair of axis limits (x_min, x_max)
+          y_lim (tuple): Pair of axis limits (y_min, y_max)
+          cols (str/tuple or list): Color or list of colors, one per file.
+          labels (list): Legend labels, one per file (defaults to the file tags).
+          legend (bool): Show the legend when several spectra are plotted.
+        """
+        from .inputs.read_pao_output import read_dos_PAO
+
+        x_label = 'Energy (eV)'
+        y_label = 'Dielectric response'
+
+        if isinstance(fname, str):
+            from .graphics.plot_functions import plot_dos
+
+            if title is None:
+                title = 'Dielectric function'
+            es, eps = read_dos_PAO(fname)
+            plot_dos(es, eps, title, x_lim, y_lim, False, cols, x_label, y_label)
+
+        elif isinstance(fname, list):
+            from .graphics.plot_functions import plot_shc_tensor
+
+            if title is None:
+                title = 'Dielectric function'
+            es = None
+            data = []
+            auto_labels = []
+            if not isinstance(cols, list):
+                cols = [cols] * len(fname)
+            for fn in fname:
+                tag = fn.split('/')[-1].split('.')[0]
+                es, eps = read_dos_PAO(fn)
+                data.append(eps)
+                auto_labels.append(tag)
+            if labels is None:
+                labels = auto_labels
+            plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend)

@@ -1,0 +1,5 @@
+ &projwfc
+    prefix='pt'
+    outdir='./'
+    filpdos='./pt'
+ /
