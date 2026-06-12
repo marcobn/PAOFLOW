@@ -37,17 +37,23 @@ Basic familiarity with DFT concepts (plane-wave basis, pseudopotentials, Brillou
 
 ## Start here
 
-<div class="grid cards" markdown>
+::::{grid} 2
+:gutter: 3
 
-- :material-download: **[Installation](installation.md)**
+:::{grid-item-card} Installation
+:link: installation
+:link-type: doc
 
-    Get PAOFLOW installed in a few commands.
+Get PAOFLOW installed in a few commands.
+:::
 
-- :material-rocket-launch: **[Quickstart](quickstart.md)**
+:::{grid-item-card} Quickstart
+:link: quickstart
+:link-type: doc
 
-    Run your first PAOFLOW workflow on a Silicon example in minutes.
-
-</div>
+Run your first PAOFLOW workflow on a Silicon example in minutes.
+:::
+::::
 
 ---
 
@@ -74,3 +80,13 @@ If you use PAOFLOW in published work, please cite:
 > M. Buongiorno Nardelli *et al.*, *PAOFLOW: A utility to construct and operate on ab initio Hamiltonians…*, Comp. Mat. Sci. **143**, 462 (2018).
 
 See the [repository README](https://github.com/marcobn/PAOFLOW#license--citation) for the full citation list.
+
+```{toctree}
+:hidden:
+:maxdepth: 2
+
+installation
+quickstart
+examples/index
+api/index
+```

@@ -63,3 +63,10 @@ python ../main.py ./ inputfile.xml
 ## Notebook-based tutorials
 
 A Jupyter notebook tutorial (`PAOFLOW-tutorial/PAO-tutorial.ipynb`) is available in the repository for a guided introduction. Full notebook-based documentation will be added in a future milestone.
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+
+qe-examples
+```

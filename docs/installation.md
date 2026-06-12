@@ -76,10 +76,11 @@ conda install -c conda-forge mpi4py
 pip install "PAOFLOW[graphics,transport]"
 ```
 
-!!! warning "mpi4py and system MPI"
-    On HPC systems, `pip install mpi4py` may build against the wrong MPI library.
-    Use `conda install -c conda-forge mpi4py` or load the correct MPI module and
-    install mpi4py from source to ensure ABI compatibility.
+:::{warning} mpi4py and system MPI
+On HPC systems, `pip install mpi4py` may build against the wrong MPI library.
+Use `conda install -c conda-forge mpi4py` or load the correct MPI module and
+install mpi4py from source to ensure ABI compatibility.
+:::
 
 ---
 

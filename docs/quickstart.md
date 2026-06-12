@@ -123,9 +123,10 @@ After the run, an `output/` directory is created containing:
 | `Seebeckgauss_0.dat` | Seebeck coefficient tensor vs. energy |
 | `kappagauss_0.dat` | Electronic thermal conductivity tensor vs. energy |
 
-!!! tip "Comparing to the reference"
-    The `Reference/` subdirectory contains expected output files.
-    You can diff your results against them to confirm a correct installation.
+:::{tip} Comparing to the reference
+The `Reference/` subdirectory contains expected output files.
+You can diff your results against them to confirm a correct installation.
+:::
 
 ---
 
@@ -136,4 +137,4 @@ After the run, an `output/` directory is created containing:
   ```bash
   paoflow-gen
   ```
-- See the [API Reference](api/paoflow.md) for the full list of methods on the `PAOFLOW` class.
+- See the [API Reference](api/index.md) for the full list of methods on the `PAOFLOW` class.
