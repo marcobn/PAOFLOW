@@ -67,7 +67,7 @@ class PAOFLOW:
 
     Methods — PAO Hamiltonian
     -------------------------
-    projections(\**kw)
+    projections(\\**kw)
         Compute PAO projections from pseudopotential or all-electron basis sets,
         replacing ``projwfc.x``.
     read_atomic_proj_QE()

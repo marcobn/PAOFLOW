@@ -13,8 +13,8 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
     .. math::
 
         L^{(\\alpha)}_{ij}(\\varepsilon) =
-        \\sum_{n\\mathbf{k}} \\tau_{n\\mathbf{k}}\,
-        v^i_{n\\mathbf{k}}\, v^j_{n\\mathbf{k}}\,
+        \\sum_{n\\mathbf{k}} \\tau_{n\\mathbf{k}}\\,
+        v^i_{n\\mathbf{k}}\\, v^j_{n\\mathbf{k}}\\,
         \\left(-\\frac{\\partial f}{\\partial\\varepsilon}\\right)
         (E_{n\\mathbf{k}} - \\varepsilon)^\\alpha
 
@@ -150,9 +150,9 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
         L^{\\rm Hall}_{ijp}(\\varepsilon) =
         \\sum_{n\\mathbf{k}} \\tau^2_{n\\mathbf{k}}
-        \\sum_{qr} \\epsilon_{pqr}\,
-        v^i_{n\\mathbf{k}}\, v^r_{n\\mathbf{k}}\,
-        M^{-1}_{jq,n\\mathbf{k}}\,
+        \\sum_{qr} \\epsilon_{pqr}\\,
+        v^i_{n\\mathbf{k}}\\, v^r_{n\\mathbf{k}}\\,
+        M^{-1}_{jq,n\\mathbf{k}}\\,
         \\left(-\\frac{\\partial f}{\\partial\\varepsilon}\\right)
 
     where :math:`\\epsilon_{pqr}` is the Levi-Civita symbol and
@@ -311,9 +311,9 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
         L^{(\\alpha)}_{ij}(\\varepsilon) =
         \\frac{1}{N_k} \\sum_{n\\mathbf{k}}
-        \\tau_{n\\mathbf{k}}\,
-        v^i_{n\\mathbf{k}}\, v^j_{n\\mathbf{k}}\,
-        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)\,
+        \\tau_{n\\mathbf{k}}\\,
+        v^i_{n\\mathbf{k}}\\, v^j_{n\\mathbf{k}}\\,
+        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)\\,
         (E_{n\\mathbf{k}} - \\varepsilon)^\\alpha
 
     where :math:`\\sigma` is the smearing kernel (Fermi-Dirac derivative,
@@ -407,8 +407,8 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         L^{\\rm Hall}_{ijp}(\\varepsilon) =
         \\frac{1}{N_k} \\sum_{n\\mathbf{k}}
         \\tau^2_{n\\mathbf{k}}
-        \\left(\\sum_{qr} \\epsilon_{pqr}\,
-        v^i_{n\\mathbf{k}}\, v^r_{n\\mathbf{k}}\,
+        \\left(\\sum_{qr} \\epsilon_{pqr}\\,
+        v^i_{n\\mathbf{k}}\\, v^r_{n\\mathbf{k}}\\,
         M^{-1}_{jq,n\\mathbf{k}}\\right)
         \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)
 
