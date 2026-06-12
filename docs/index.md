@@ -1,6 +1,6 @@
 # PAOFLOW
 
-**PAOFLOW** is an open-source Python framework for constructing and operating on *ab initio* tight-binding Hamiltonians built from the projection of DFT wavefunctions onto atomic orbital (PAO) bases. Starting from a converged Quantum ESPRESSO or VASP calculation, PAOFLOW delivers a compact Hamiltonian that drives a wide range of electronic, topological, optical, and transport property calculations — without empirical parameters.
+**PAOFLOW** is an open-source Python framework for constructing and operating on _ab initio_ tight-binding Hamiltonians built from the projection of DFT wavefunctions onto atomic orbital (PAO) bases. Starting from a converged Quantum ESPRESSO or VASP calculation, PAOFLOW delivers a compact Hamiltonian that drives a wide range of electronic, topological, optical, and transport property calculations — without empirical parameters.
 
 ---
 
@@ -10,15 +10,15 @@ PAOFLOW reads the output of a plane-wave DFT code, projects the Bloch eigenstate
 
 Key capabilities include:
 
-| Domain | What PAOFLOW computes |
-|---|---|
-| **Electronic structure** | Band structures, DOS (total & projected), Fermi surfaces |
-| **Optical & dielectric** | Complex dielectric tensor ε(ω), optical conductivity, JDOS |
-| **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity |
-| **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, surface states |
-| **Spin & magnetism** | Spin Hall conductivity, spin texture, SOC Hamiltonians |
-| **Model Hamiltonians** | Slater–Koster TB models, Kane–Mele, custom lattice models |
-| **ACBN0** | Self-consistent Hubbard U and U+V |
+| Domain                   | What PAOFLOW computes                                                         |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| **Electronic structure** | Band structures, DOS (total & projected), Fermi surfaces                      |
+| **Optical & dielectric** | Complex dielectric tensor ε(ω), optical conductivity, JDOS                    |
+| **Transport**            | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity |
+| **Topology**             | Berry curvature, anomalous Hall conductivity, Z₂ invariants, surface states   |
+| **Spin & magnetism**     | Spin Hall conductivity, spin texture, SOC Hamiltonians                        |
+| **Model Hamiltonians**   | Slater–Koster TB models, Kane–Mele, custom lattice models                     |
+| **ACBN0**                | Self-consistent Hubbard U and U+V                                             |
 
 ---
 
@@ -59,12 +59,13 @@ Run your first PAOFLOW workflow on a Silicon example in minutes.
 
 ## Main documentation sections
 
-| Section | Contents |
-|---|---|
-| [Installation](installation.md) | pip install, conda environment, optional dependencies, verification |
-| [Quickstart](quickstart.md) | Step-by-step first workflow using the Silicon QE example |
-| [Examples](examples/index.md) | Overview of all available QE and VASP example workflows |
-| [API Reference](api/index.md) | Full Python API generated from source docstrings |
+| Section                              | Contents                                                            |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| [Installation](installation.md)      | pip install, conda environment, optional dependencies, verification |
+| [Quickstart](quickstart.md)          | Step-by-step first workflow using the Silicon QE example            |
+| [Examples](examples/index.md)        | Overview of all available QE and VASP example workflows             |
+| [API Reference](api/index.md)        | Full Python API generated from source docstrings                    |
+| [Internals](internals/docstrings.md) | Guidelines for writing docstrings and equations                     |
 
 ---
 
@@ -75,9 +76,9 @@ Copyright 2016–2026 Marco Buongiorno Nardelli and the PAOFLOW Development Team
 
 If you use PAOFLOW in published work, please cite:
 
-> F.T. Cerasoli *et al.*, *Advanced modeling of materials with PAOFLOW 2.0*, Comp. Mat. Sci. **200**, 110828 (2021).
+> F.T. Cerasoli _et al._, _Advanced modeling of materials with PAOFLOW 2.0_, Comp. Mat. Sci. **200**, 110828 (2021).
 
-> M. Buongiorno Nardelli *et al.*, *PAOFLOW: A utility to construct and operate on ab initio Hamiltonians…*, Comp. Mat. Sci. **143**, 462 (2018).
+> M. Buongiorno Nardelli _et al._, _PAOFLOW: A utility to construct and operate on ab initio Hamiltonians…_, Comp. Mat. Sci. **143**, 462 (2018).
 
 See the [repository README](https://github.com/marcobn/PAOFLOW#license--citation) for the full citation list.
 
@@ -89,4 +90,5 @@ installation
 quickstart
 examples/index
 api/index
+internals/docstrings
 ```

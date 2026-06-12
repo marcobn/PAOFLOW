@@ -37,10 +37,15 @@ _PBE_GAMMA = (1.0 - np.log(2.0)) / np.pi**2  # ~ 0.0310907
 
 
 def _lda_x(n):
-    """LDA (Slater) exchange.  Returns (eps_x, v_x) for n > 0.
+    r"""LDA (Slater) exchange.  Returns ``(eps_x, v_x)`` for ``n > 0``.
 
-    eps_x(n) = -(3/4) * (3/pi)^(1/3) * n^(1/3)
-    v_x      = (4/3) * eps_x
+    .. math::
+
+       \varepsilon_x(n) = -\frac{3}{4}\left(\frac{3}{\pi}\right)^{1/3} n^{1/3}
+
+    .. math::
+
+       v_x = \frac{4}{3}\,\varepsilon_x
     """
     c = -0.75 * (3.0 / np.pi) ** (1.0 / 3.0)
     n13 = np.cbrt(n)
@@ -117,11 +122,11 @@ def lda_pw92(n):
 
 
 def _pbe_exchange_kernel(n, sigma):
-    """Return (F_x, dF_x/dn, dF_x/dsigma) for PBE exchange.
+    r"""Return :math:`(F_x,\, \partial F_x/\partial n,\, \partial F_x/\partial\sigma)` for PBE exchange.
 
-    Here F_x is the *energy density* n * eps_x_PBE(n, sigma), with
-    sigma = |grad n|^2 and n > 0 elementwise.  Operates only on
-    elements where n > 0; callers must mask.
+    Here :math:`F_x` is the *energy density* :math:`n\,\varepsilon_x^{\mathrm{PBE}}(n, \sigma)`,
+    with :math:`\sigma = |\nabla n|^2` and :math:`n > 0` elementwise.  Operates only on
+    elements where :math:`n > 0`; callers must mask.
     """
     # LDA exchange energy density: A * n^{4/3}, A = -(3/4)(3/pi)^{1/3}
     A = -0.75 * (3.0 / np.pi) ** (1.0 / 3.0)
@@ -149,10 +154,11 @@ def _pbe_exchange_kernel(n, sigma):
 
 
 def _pbe_correlation_kernel(n, sigma):
-    """Return (F_c, dF_c/dn, dF_c/dsigma) for PBE correlation.
+    r"""Return :math:`(F_c,\, \partial F_c/\partial n,\, \partial F_c/\partial\sigma)` for PBE correlation.
 
-    F_c = n * eps_c_PBE(n, sigma);  spin-unpolarised (phi = 1, zeta = 0).
-    Operates only on elements where n > 0; callers must mask.
+    :math:`F_c = n\,\varepsilon_c^{\mathrm{PBE}}(n, \sigma)`; spin-unpolarised
+    (:math:`\phi = 1`, :math:`\zeta = 0`).  Operates only on elements where
+    :math:`n > 0`; callers must mask.
     """
     # LDA correlation per particle and its drs derivative (PW92).
     rs = np.cbrt(3.0 / (4.0 * np.pi * n))
@@ -256,7 +262,12 @@ def pbe(n, r, rab=None):
     eps_xc : ndarray
         XC energy per particle (Hartree).
     v_xc : ndarray
-        XC potential v_xc(r) = dF/dn - (1/r^2) d/dr [r^2 * 2 dF/dsigma * dn/dr].
+        XC potential,
+
+        .. math::
+
+           v_{xc}(r) = \frac{\partial F}{\partial n}
+                       - \frac{1}{r^2}\frac{d}{dr}\!\left[r^2 \cdot 2\frac{\partial F}{\partial\sigma}\frac{dn}{dr}\right].
     """
     n = np.asarray(n, dtype=float)
     r = np.asarray(r, dtype=float)
