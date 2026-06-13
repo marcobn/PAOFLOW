@@ -17,6 +17,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx_design',
     'sphinx_copybutton',
+    'autoapi.extension',
 ]
 
 myst_enable_extensions = [
@@ -55,6 +56,24 @@ autodoc_default_options = {
     'show-inheritance': True,
     'exclude-members': '__weakref__',
 }
+
+autoapi_type = 'python'
+
+autoapi_dirs = [
+    '../src/PAOFLOW',
+]
+
+autoapi_root = 'api/autoapi'
+autoapi_add_toctree_entry = False
+
+autoapi_options = [
+    'members',
+    'undoc-members',
+    'show-inheritance',
+    'show-module-summary',
+]
+
+autoapi_member_order = 'bysource'
 
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True

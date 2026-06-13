@@ -34,7 +34,8 @@ docs = [
     "sphinx-design>=0.6",
     "sphinx-copybutton>=0.5",
     "pydata-sphinx-theme>=0.16",
-    "sphinx-autobuild"
+    "sphinx-autobuild",
+    "sphinx-autoapi",
 ]
 
 
