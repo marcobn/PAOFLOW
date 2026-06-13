@@ -62,7 +62,7 @@ def spinor(l, j, m, spin):
 
 
 def clebsch_gordan(nawf, sh_l, sh_j, spol):
-    """Build the spin operator matrix in the coupled \u007cj, m_j, l, s\u27e9 basis.
+    """Build the spin operator matrix in the coupled :math:`|j, m_j, l, s\rangle` basis.
 
     Parameters
     ----------

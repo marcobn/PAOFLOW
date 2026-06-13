@@ -39,6 +39,7 @@ def do_berry_phase(self):
 
     Reads from DataController
     -------------------------
+
     ``berry_occupied``, ``berry_sub``, ``berry_contin``, ``berry_fname``,
     ``berry_kspace_method``, ``berry_nk1``, ``berry_nk2``, ``berry_kpath_funct``,
     ``berry_kradius``, ``berry_kcenter``, ``berry_kxlim``, ``berry_kylim``,
@@ -46,6 +47,7 @@ def do_berry_phase(self):
 
     Writes to DataController
     ------------------------
+
     ``berry_phase`` (array or scalar), ``berry_flux`` (square mode only).
     """
     import os
@@ -513,6 +515,7 @@ def do_berry_bands(data_controller):
 
     Side effects
     ------------
+
     Populates ``arry['berry_E_k']``, ``arry['berry_v_k']``, ``arry['R']``,
     ``arry['R_wght']``, and (path/track) ``arry['berry_kq']``,
     ``arry['berry_contour']``.
@@ -552,10 +555,13 @@ def do_berry_bands(data_controller):
 def berry_kpnts_interpolation_mesh(data_controller):
     """
     Get path between HSP
+
     Arguments:
+
         nk (int): total number of points in path
 
     Returns:
+
         kpoints : array of arrays kx,ky,kz
         numK    : Total no. of k-points
     """

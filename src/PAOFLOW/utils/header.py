@@ -38,8 +38,7 @@ def header(style='color'):
     style : str
         'large'    – full letter-art logo in plain text (default).
         'small'    – compact self-filled logo in plain text.
-        'color'    – large logo in UNT green with decorative separators and
-                     subtitle (requires a 24-bit colour terminal).
+        'color'    – large logo in UNT green with decorative separators and subtitle (requires a 24-bit colour terminal).
         'markdown' – large logo wrapped in a fenced code block (README / Sphinx).
     """
     large = (

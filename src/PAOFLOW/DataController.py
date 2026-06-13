@@ -63,26 +63,43 @@ class DataController:
     ``data_attributes`` : dict
         Scalar configuration values.  Common keys:
 
-        ================  =====================================================
-        Key               Content
-        ================  =====================================================
-        ``nawf``          Number of PAO basis functions
-        ``nbnds``         Number of DFT bands
-        ``nspin``         Number of spin channels (1 or 2)
-        ``nkpnts``        Total number of k-points
-        ``nk1,nk2,nk3``  k-grid dimensions
-        ``nelec``         Number of electrons
-        ``natoms``        Number of atoms in the unit cell
-        ``alat``          Lattice parameter (Bohr)
-        ``omega``         Unit-cell volume
-        ``npool``         Number of k-point pools
-        ``smearing``      Smearing type (``None``, ``'m-p'``, ``'gauss'``)
-        ``acbn0``         Whether ACBN0 orthogonalisation is active
-        ``verbose``       Verbosity flag
-        ``opath``         Absolute path to the output directory
-        ``fpath``         Absolute path to the DFT ``.save`` directory
-        ``abort_on_exception`` Re-raise exceptions immediately if ``True``
-        ================  =====================================================
+        .. list-table::
+           :header-rows: 1
+
+           * - Key
+             - Content
+           * - ``nawf``
+             - Number of PAO basis functions
+           * - ``nbnds``
+             - Number of DFT bands
+           * - ``nspin``
+             - Number of spin channels (1 or 2)
+           * - ``nkpnts``
+             - Total number of k-points
+           * - ``nk1,nk2,nk3``
+             - k-grid dimensions
+           * - ``nelec``
+             - Number of electrons
+           * - ``natoms``
+             - Number of atoms in the unit cell
+           * - ``alat``
+             - Lattice parameter (Bohr)
+           * - ``omega``
+             - Unit-cell volume
+           * - ``npool``
+             - Number of k-point pools
+           * - ``smearing``
+             - Smearing type (``None``, ``'m-p'``, ``'gauss'``)
+           * - ``acbn0``
+             - Whether ACBN0 orthogonalisation is active
+           * - ``verbose``
+             - Verbosity flag
+           * - ``opath``
+             - Absolute path to the output directory
+           * - ``fpath``
+             - Absolute path to the DFT ``.save`` directory
+           * - ``abort_on_exception``
+             - Re-raise exceptions immediately if ``True``
 
     Parameters (constructor)
     ------------------------

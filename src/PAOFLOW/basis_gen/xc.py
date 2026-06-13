@@ -245,7 +245,7 @@ def _pbe_correlation_kernel(n, sigma):
 
 
 def pbe(n, r, rab=None):
-    """Spin-unpolarised PBE GGA for a spherical density on a radial mesh.
+    r"""Spin-unpolarised PBE GGA for a spherical density on a radial mesh.
 
     Parameters
     ----------

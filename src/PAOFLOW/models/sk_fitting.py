@@ -2331,8 +2331,7 @@ class MultiGeomEDTB:
         fix_onsite : dict, optional
             Fix on-site energies to given values instead of fitting them.
             Dict mapping species name to an on-site dict, e.g.
-            ``{'Si': {'s': -3.64, 'p': 2.14, 't2g': 6.30, 'eg': 6.37},
-              'Ge': {'s': -5.30, 'p': 1.68, ...}}``.
+            ``{'Si': {'s': -3.64, 'p': 2.14, 't2g': 6.30, 'eg': 6.37}, 'Ge': {'s': -5.30, 'p': 1.68, ...}}``.
             Typically obtained from independently fitted bulk models via
             ``model.params['onsite']['Si']``.
 

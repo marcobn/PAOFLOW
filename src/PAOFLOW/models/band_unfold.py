@@ -5,7 +5,7 @@ Works with any crystal symmetry.  Given the primitive-cell (PC) and
 supercell (SC) lattice vectors and atomic positions, the module:
 
   1. Finds the integer transformation matrix  M  such that  A_SC = M · A_PC.
-  2. Enumerates the  N = |det M|  primitive-lattice translations inside
+  2. Enumerates the  N = :math:`|\\det M|`  primitive-lattice translations inside
      the supercell.
   3. Builds the atom mapping  I(α, ℓ)  (SC atom ← PC atom α + translation ℓ).
   4. Extracts the real-space Hamiltonian from a PAOFLOW DataController,
@@ -14,7 +14,7 @@ supercell (SC) lattice vectors and atomic positions, the module:
 
 Public API
 ----------
-    unfold_bands(pc_model_dict, sc_model_dict, kpath_frac, *,
+    unfold_bands(pc_model_dict, sc_model_dict, kpath_frac, \\*,
                  nk_per_seg=80, verbose=True)
 
     UnfoldResult  — dataclass returned by unfold_bands()
@@ -54,7 +54,7 @@ class UnfoldResult:
     W          : (nk, nawf_sc)  spectral weights w_n(k).
     nawf_pc    : int   — number of orbitals in the PC.
     nawf_sc    : int   — number of orbitals in the SC.
-    N          : int   — volume ratio (= |det M|).
+    N          : int   — volume ratio (= :math:`|\\det M|`).
     R_translations : (N, 3)  PC lattice translations inside the SC.
     atom_map   : (n_at_pc, N)  SC atom index for each (α, ℓ).
     """
@@ -113,7 +113,7 @@ def _find_transformation_matrix(
 
 
 def _find_translations(a_pc: np.ndarray, M: np.ndarray, tol: float = 1e-6) -> np.ndarray:
-    """Find the N = |det M| PC lattice translations inside the SC.
+    """Find the N = :math:`|\\det M|` PC lattice translations inside the SC.
 
     Strategy: scan integer combinations  n1*a_pc[0] + n2*a_pc[1] + n3*a_pc[2]
     and keep those whose SC fractional coordinates lie in [0, 1)^3.

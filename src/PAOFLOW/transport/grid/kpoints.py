@@ -90,9 +90,11 @@ def kpoints_equivalent(v1: np.ndarray, v2: np.ndarray, tol: float = 1e-6) -> boo
     -----
     In a time-reversal symmetric system, a k-point `k` is equivalent to `-k` (modulo the reciprocal lattice).
     This function checks:
+
         (v1 + v2) % 1 ≈ 0
 
     For example:
+
         v1 = (0.25, 0.5), v2 = (-0.25, -0.5) -> equivalent
         v1 = (0.25, 0.5), v2 = (0.25, 0.5)   -> not equivalent (unless v1 == 0)
 
@@ -314,8 +316,10 @@ def initialize_r_vectors(
     Notes
     -----
     The 2D R-vectors are generated as:
+
         R_i = i - (nr_x + 1) // 2
         R_j = j - (nr_y + 1) // 2
+
     for i in [1, nr_x], j in [1, nr_y].
 
     Hermitian symmetry is enforced by ensuring that for each R, -R is present.
@@ -401,7 +405,9 @@ def compute_ivr_par(nr_par: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray]:
     Notes
     -----
     The R-vectors are centered about the origin using the rule:
+
         R_i = i - (N + 1) // 2
+
     where N is the number of grid points in the corresponding direction.
     This centers the mesh at zero for odd values and straddles zero for even values.
     """

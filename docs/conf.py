@@ -34,6 +34,11 @@ napoleon_google_docstring = False
 napoleon_numpy_docstring = True
 napoleon_use_param = True
 napoleon_use_rtype = True
+napoleon_custom_sections = [
+    'Reads from DataController',
+    'Writes to DataController',
+    'Side effects',
+]
 
 autodoc_mock_imports = [
     'mpi4py',
