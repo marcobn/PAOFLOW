@@ -59,13 +59,13 @@ Run your first PAOFLOW workflow on a Silicon example in minutes.
 
 ## Main documentation sections
 
-| Section                              | Contents                                                            |
-| ------------------------------------ | ------------------------------------------------------------------- |
-| [Installation](installation.md)      | pip install, conda environment, optional dependencies, verification |
-| [Quickstart](quickstart.md)          | Step-by-step first workflow using the Silicon QE example            |
-| [Examples](examples/index.md)        | Overview of all available QE and VASP example workflows             |
-| [API Reference](api/index.md)        | Full Python API generated from source docstrings                    |
-| [Internals](internals/docstrings.md) | Guidelines for writing docstrings and equations                     |
+| Section                         | Contents                                                            |
+| ------------------------------- | ------------------------------------------------------------------- |
+| [Installation](installation.md) | pip install, conda environment, optional dependencies, verification |
+| [Quickstart](quickstart.md)     | Step-by-step first workflow using the Silicon QE example            |
+| [Examples](examples/index.md)   | Overview of all available QE and VASP example workflows             |
+| [API Reference](api/index.md)   | Full Python API generated from source docstrings                    |
+| [Internals](internals/index.md) | Guidelines for writing docstrings and equations                     |
 
 ---
 
@@ -90,5 +90,8 @@ installation
 quickstart
 examples/index
 api/index
-internals/docstrings
+internals/index
+
+
+
 ```

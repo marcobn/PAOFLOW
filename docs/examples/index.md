@@ -49,14 +49,14 @@ python ../main.py ./ inputfile.xml
 
 ## Example categories
 
-| Category | Location | Description |
-|---|---|---|
-| QE examples | `qe_examples/` | Full workflows from QE output — see [QE Examples](qe-examples.md) |
-| VASP examples | `vasp_examples/` | Workflows from VASP OUTCAR/vasprun.xml |
-| ACBN0 | `acbn0_examples/` | Hubbard U/V for MgO, ZnO, MnO |
-| TB models | `TBmodel_examples/` | Slater–Koster and Kane–Mele model Hamiltonians |
-| Transport | `transport_examples/` | Green's function / Landauer–Büttiker conductance |
-| Plotting | `plot_examples/` | Standalone scripts for band, DOS, and transport plots |
+| Category      | Location              | Description                                                       |
+| ------------- | --------------------- | ----------------------------------------------------------------- |
+| QE examples   | `qe_examples/`        | Full workflows from QE output — see [QE Examples](qe-examples.md) |
+| VASP examples | `vasp_examples/`      | Workflows from VASP OUTCAR/vasprun.xml                            |
+| ACBN0         | `acbn0_examples/`     | Hubbard U/V for MgO, ZnO, MnO                                     |
+| TB models     | `TBmodel_examples/`   | Slater–Koster and Kane–Mele model Hamiltonians                    |
+| Transport     | `transport_examples/` | Green's function / Landauer–Büttiker conductance                  |
+| Plotting      | `plot_examples/`      | Standalone scripts for band, DOS, and transport plots             |
 
 ---
 
@@ -67,6 +67,7 @@ A Jupyter notebook tutorial (`PAOFLOW-tutorial/PAO-tutorial.ipynb`) is available
 ```{toctree}
 :hidden:
 :maxdepth: 1
+:glob:
 
-qe-examples
+*
 ```
