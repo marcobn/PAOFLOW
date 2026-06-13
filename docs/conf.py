@@ -46,6 +46,7 @@ autodoc_mock_imports = [
     'skimage',
     'shapely',
     'joblib',
+    'mendeleev',
 ]
 
 intersphinx_mapping = {

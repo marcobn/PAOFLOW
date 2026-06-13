@@ -89,8 +89,8 @@ See the [repository README](https://github.com/marcobn/PAOFLOW#license--citation
 installation
 quickstart
 examples/index
-api/index
 internals/index
+api/index
 
 
 
