@@ -7,5 +7,5 @@ This section contains the full Python API generated from source docstrings. It i
 :maxdepth: 1
 :glob:
 
-generated/*
+generated/modules
 ```
