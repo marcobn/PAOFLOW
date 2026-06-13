@@ -64,6 +64,9 @@ napoleon_use_ivar = True
 
 nitpicky = False
 
+suppress_warnings = [
+    'ref.python',
+]
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
