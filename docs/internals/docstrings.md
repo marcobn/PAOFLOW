@@ -1,8 +1,8 @@
-Docstrings
+# Docstrings
 
 !!! note This section is for developers and contributors to the project. It provides guidelines and best practices for writing docstrings in the codebase.
 
-# Writing Equations in Docstrings
+## Writing Equations in Docstrings
 
 To ensure equations render correctly in the generated documentation, always write mathematical expressions using standard LaTeX syntax and Sphinx-compatible directives. Use inline math for short expressions (e.g., ``:math:`E = mc^2```), and use a dedicated math block for displayed equations:
 
