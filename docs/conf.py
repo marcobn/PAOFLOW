@@ -71,6 +71,8 @@ exclude_patterns = [
     '_build',
     'Thumbs.db',
     '.DS_Store',
+    'api/generated/PAOFLOW.defs.rst',
+    'api/generated/PAOFLOW.defs.*.rst',
 ]
 
 source_suffix = {
