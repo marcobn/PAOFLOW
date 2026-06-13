@@ -62,7 +62,9 @@ autoapi_type = 'python'
 autoapi_dirs = [
     '../src/PAOFLOW',
 ]
-
+autoapi_ignore = [
+    '*defs*',
+]
 autoapi_root = 'api/autoapi'
 autoapi_add_toctree_entry = False
 
