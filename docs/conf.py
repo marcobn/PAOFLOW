@@ -1,25 +1,11 @@
 import sys
 from pathlib import Path
 
-from sphinx.ext.apidoc import main
-
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 project = 'PAOFLOW'
 author = 'PAOFLOW developers'
 release = '2.9.3'
-
-
-main(
-    [
-        '-f',
-        '-e',
-        '-M',
-        '-o',
-        'docs/api/generated',
-        '../src/PAOFLOW',
-    ]
-)
 
 extensions = [
     'myst_parser',
@@ -43,13 +29,12 @@ myst_enable_extensions = [
 autosummary_generate = True
 autodoc_typehints = 'description'
 autodoc_member_order = 'bysource'
+
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True
 napoleon_use_param = True
 napoleon_use_rtype = True
 
-# Mock heavy or optional dependencies unavailable in the docs build environment.
-# mpi4py is a core dep but requires a system MPI library that may be absent on RTD.
 autodoc_mock_imports = [
     'mpi4py',
     'vtk',
@@ -70,11 +55,26 @@ intersphinx_mapping = {
 }
 
 html_theme = 'pydata_sphinx_theme'
+
 html_theme_options = {
     'github_url': 'https://github.com/marcobn/PAOFLOW',
     'show_toc_level': 2,
     'navigation_with_keys': True,
 }
+
 html_static_path = ['_static']
 
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+templates_path = ['_templates']
+
+exclude_patterns = [
+    '_build',
+    'Thumbs.db',
+    '.DS_Store',
+]
+
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
+
+master_doc = 'index'
