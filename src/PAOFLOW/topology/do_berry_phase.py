@@ -37,18 +37,16 @@ def do_berry_phase(self):
         ``data_controller`` and indirectly to all DataController arrays and
         attributes.
 
-    Reads from DataController
-    -------------------------
-
-    ``berry_occupied``, ``berry_sub``, ``berry_contin``, ``berry_fname``,
+    Notes
+    -----
+    Reads ``berry_occupied``, ``berry_sub``, ``berry_contin``, ``berry_fname``,
     ``berry_kspace_method``, ``berry_nk1``, ``berry_nk2``, ``berry_kpath_funct``,
     ``berry_kradius``, ``berry_kcenter``, ``berry_kxlim``, ``berry_kylim``,
-    ``berry_eigvals``, ``berry_closed``, ``berry_method``, ``nelec``, ``HRs``.
+    ``berry_eigvals``, ``berry_closed``, ``berry_method``, ``nelec``, ``HRs``
+    from DataController.
 
-    Writes to DataController
-    ------------------------
-
-    ``berry_phase`` (array or scalar), ``berry_flux`` (square mode only).
+    Writes ``berry_phase`` (array or scalar) and ``berry_flux`` (square mode only)
+    to DataController.
     """
     import os
 
@@ -412,8 +410,8 @@ def bands_calc(data_controller):
     v_kp_aux : ndarray, shape (nkpts_local, nawf, nawf, nspin)
         Corresponding eigenvectors (columns are eigenstates).
 
-    Side effects
-    ------------
+    Notes
+    -----
     Stores the local k-slice Hamiltonian in ``arry['berry_Hks']``.
     """
     from ..utils.communication import scatter_full
@@ -513,9 +511,8 @@ def do_berry_bands(data_controller):
         and (for path/track modes) ``berry_path``, ``berry_high_sym_points``,
         ``berry_nk``, ``ibrav``, ``a_vectors``.
 
-    Side effects
-    ------------
-
+    Notes
+    -----
     Populates ``arry['berry_E_k']``, ``arry['berry_v_k']``, ``arry['R']``,
     ``arry['R_wght']``, and (path/track) ``arry['berry_kq']``,
     ``arry['berry_contour']``.

@@ -273,10 +273,9 @@ def compute_fourier_phase_table(
         R : real-space vector (fractional units)
 
     These factors are essential for transforming quantities between real and reciprocal space.
-    For example, they are used in:
-        - Evaluating Fourier series expansions
-        - Computing Green's functions or self-energies in k-space
-        - Constructing Hamiltonians or overlaps in different representations
+    For example, they are used in evaluating Fourier series expansions,
+    computing Green's functions or self-energies in k-space, and
+    constructing Hamiltonians or overlaps in different representations.
 
     The 2π factor comes from the convention of expressing k and R in fractional units:
         k = k_cartesian / (2π)  ->  k_cartesian = 2π * k_fractional
