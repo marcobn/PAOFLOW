@@ -110,13 +110,13 @@ html_theme_options = {
 }
 
 html_sidebars = {
-    'index': ['sidebar-tree'],
+    'index': [],
     '**': ['sidebar-tree'],
 }
 
 html_static_path = ['_static']
-html_css_files = ['sidebar-tree.css']
-html_js_files = ['sidebar-tree.js']
+html_css_files = ['sidebar-tree.css', 'landing.css']
+html_js_files = ['sidebar-tree.js', 'landing.js']
 html_title = 'PAOFLOW'
 
 templates_path = ['_templates']

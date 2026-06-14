@@ -1,0 +1,64 @@
+/* ── Landing page scoped styles ────────────────────────────────────────────
+   All rules are gated on .pf-landing (added to <body> by landing.js only
+   when the sentinel .paoflow-landing element is present) so nothing here
+   affects any other page.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Hide the top navigation bar */
+.pf-landing header.bd-header {
+  display: none !important;
+}
+
+/* Compensate for the missing header */
+.pf-landing .bd-main {
+  padding-top: 5rem;
+}
+
+/* Centre and constrain the content column */
+.pf-landing .bd-article-container {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+
+/* Centre the page title */
+.pf-landing h1 {
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+/* Hide the ¶ permalink anchor next to the title */
+.pf-landing h1 .headerlink {
+  display: none;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+
+.pf-landing .landing-card {
+  border-radius: 1rem !important;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.pf-landing .landing-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14) !important;
+}
+
+/* Stack icon → title → description centred inside the card */
+.pf-landing .landing-card .sd-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 2rem 1.5rem 1.75rem;
+  gap: 0.5rem;
+}
+
+.pf-landing .landing-card .sd-card-body p {
+  margin: 0;
+}
+
+/* Hide prev/next page navigation */
+.pf-landing .prev-next-area {
+  display: none !important;
+}
