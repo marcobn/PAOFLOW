@@ -106,7 +106,6 @@ html_theme_options = {
     'navbar_center': [],
     'navbar_end': ['search-field', 'theme-switcher', 'navbar-icon-links'],
     'navbar_persistent': [],
-    'secondary_sidebar_items': [],
 }
 
 html_sidebars = {
