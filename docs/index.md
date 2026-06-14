@@ -47,7 +47,7 @@ Developer guidelines and project internals.
 :::
 
 :::{grid-item-card}
-:link: about
+:link: about/index
 :link-type: doc
 :class-card: landing-card
 
@@ -68,5 +68,5 @@ installation
 quickstart
 examples/index
 internals/index
-about
+about/index
 ```

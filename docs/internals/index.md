@@ -1,12 +1,65 @@
 # Internals
 
-This section contains guidelines for writing docstrings and equations in PAOFLOW. It is intended for developers who want to contribute to the codebase or improve the documentation.
+Developer guidelines, architecture documentation, and internal workflow descriptions for PAOFLOW contributors.
+
+For the contribution model and community channels, see [Connect](../about/connect.md).
 
 ```{toctree}
 :hidden:
 :maxdepth: 1
-:glob:
+:caption: Introduction
 
-*
+overview
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+:caption: Development Environment
+
+dev-environment
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+:caption: Major Subsystems
+
+internal-basis
+acbn0
+nonlocal-velocity
+sk-edtb
+cli-generators
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+:caption: Development Workflows
+
+contributing
+testing
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+:caption: Documentation Standards
+
+docstrings
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+:caption: Release and Maintenance
+
+release
 ../api/index
+
 ```
