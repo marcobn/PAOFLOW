@@ -1,17 +1,17 @@
 # Project Overview
 
-PAOFLOW is an open-source Python package for post-processing Density Functional Theory (DFT) calculations. It processes Kohn–Sham eigenstates from Quantum ESPRESSO or VASP to construct tight-binding Hamiltonians in a Projected Atomic Orbital (PAO) basis, enabling computation of electronic, transport, and spectroscopic properties including band structures, density of states, Berry curvature effects, and more — without empirical parameters.
+PAOFLOW is an open-source Python package for post-processing Density Functional Theory (DFT) calculations. It takes Kohn–Sham eigenstates from Quantum ESPRESSO or VASP and constructs tight-binding Hamiltonians in a Projected Atomic Orbital (PAO) basis — giving you a compact, _ab initio_ starting point for computing electronic, transport, and spectroscopic properties like band structures, density of states, and Berry curvature effects, all without empirical parameters.
 
-This wiki serves as developer-facing documentation covering installation notes, contribution guidelines, module overviews, and internal workflow descriptions. For tutorials and API reference, see the [ReadTheDocs site](https://paoflow.readthedocs.io).
+This wiki is the developer-facing side of the documentation: installation notes, contribution guidelines, module overviews, and internal workflow descriptions. If you're looking for tutorials or the API reference, head over to [ReadTheDocs](https://paoflow.readthedocs.io).
 
 ## Design Philosophy
 
-PAOFLOW is built around a few core principles:
+A few core ideas shape how PAOFLOW is built and maintained:
 
-**PAO basis construction.** Starting from a converged DFT calculation, PAOFLOW projects Bloch wavefunctions onto atomic orbital bases to produce compact, _ab initio_ tight-binding Hamiltonians suitable for large-scale property calculations.
+**PAO basis construction.** Everything starts from a converged DFT calculation. PAOFLOW projects Bloch wavefunctions onto atomic orbital bases to produce compact, _ab initio_ tight-binding Hamiltonians that are efficient enough for large-scale property calculations.
 
-**Single source of truth.** Each module owns one well-defined responsibility. Shared state passes through the `DataController` dictionary, which every function documents explicitly — listing the specific keys it adds or modifies.
+**Single source of truth.** Each module owns one well-defined responsibility. Shared state travels through the `DataController` dictionary, and every function that touches it documents exactly which keys it reads or modifies — so you always know where data comes from and where it ends up.
 
-**Minimal external coupling.** The driver (rank-0 Python process) and MPI worker processes communicate exclusively through pickle files, keeping the orchestration layer free of MPI dependencies.
+**Minimal external coupling.** The driver (rank-0 Python process) and MPI worker processes talk to each other exclusively through pickle files, keeping the orchestration layer simple and free of MPI dependencies.
 
-**Testability first.** New functionality must be accompanied by integration tests using low-accuracy settings (reduced grids, k-points) for speed, plus reference output files for regression comparison. See [Testing](testing.md).
+**Testability first.** New functionality comes with integration tests. We keep them fast by using low-accuracy settings (reduced grids and k-points) and staging large inputs as release assets rather than committing them to the repository. See [Testing](testing.md) for the full picture.

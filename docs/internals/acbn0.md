@@ -1,54 +1,54 @@
 # ACBN0 Module
 
-The ACBN0 module automatically determines Hubbard U (on-site) and V (intersite) correction parameters for DFT+U calculations using a self-consistent approach.
+The ACBN0 module takes care of automatically determining Hubbard U (on-site) and V (intersite) correction parameters for DFT+U calculations. Rather than guessing or fitting U by hand, it computes them self-consistently from the electronic structure.
 
-**References:**
-- Agapito et al. (2015) — ACBN0 formulas for U and J
-- Lee & Son (2020) — eACBN0 extension to intersite V parameters
+**Key references:**
+- Agapito et al. (2015) — the ACBN0 formulas for U and J
+- Lee & Son (2020) — the eACBN0 extension to intersite V parameters
 
 ## Architecture
 
-The module uses two execution contexts:
+The module runs across two execution contexts to keep things clean:
 
-**Driver (rank-0 Python):** Orchestrates workflows, manages file I/O, and launches QE codes. Free of `mpi4py` dependencies.
+**Driver (rank-0 Python):** Orchestrates the workflow, manages file I/O, and launches QE codes. Deliberately kept free of `mpi4py` dependencies.
 
-**Worker (independent MPI process):** Computes Hartree energies via auto-generated stubs.
+**Worker (independent MPI process):** Handles the heavy lifting — Hartree energy computations via auto-generated stubs.
 
-Communication between driver and worker occurs exclusively through pickle files.
+Driver and worker communicate exclusively through pickle files, so there's no MPI entanglement in the orchestration layer.
 
 ## Core Classes
 
-**`_HartreeKernel`** — Base MPI-aware class providing Coulomb integral computation via `PAOFLOW.defs.pyints.contr_coulomb` and MPI scatter/allgather utilities for distributed calculations.
+**`_HartreeKernel`** — The base MPI-aware class. Provides Coulomb integral computation via `PAOFLOW.defs.pyints.contr_coulomb` and scatter/allgather utilities for distributed calculations.
 
-**`ACBN0_Hartree`** — Calculates on-site U/J numerators using 8-fold symmetry reduction on ERI tensors.
+**`ACBN0_Hartree`** — Computes on-site U/J numerators using 8-fold symmetry reduction on ERI tensors.
 
-**`eACBN0_Hartree`** — Extends to intersite V calculations with 4-fold symmetry optimization.
+**`eACBN0_Hartree`** — Extends the above to intersite V calculations with 4-fold symmetry optimization.
 
-**`ACBN0` Driver** — Manages the self-consistent U loop, orchestrating DFT → PAOFLOW → Hartree evaluation cycles.
+**`ACBN0` Driver** — Manages the self-consistent U loop, coordinating the DFT → PAOFLOW → Hartree evaluation cycle.
 
-**`eACBN0`** — Subclass adding pair enumeration, pair density-matrix construction, and joint U+V optimization.
+**`eACBN0`** — Subclass that adds pair enumeration, pair density-matrix construction, and joint U+V optimization.
 
-## Computational Flow
+## How It Works
 
-Each self-consistent iteration:
+Each self-consistent iteration goes through these steps:
 
-1. QE SCF/NSCF calculations with current `HUBBARD` card
+1. QE SCF/NSCF calculation with the current `HUBBARD` card
 2. Projector augmented-wave projection via `projwfc.x`
-3. PAOFLOW bandstructure computation — H(k), S(k)
+3. PAOFLOW bandstructure computation — H(k) and S(k)
 4. Density-matrix construction and Hartree energy evaluation
-5. Convergence check with optional mixing
+5. Convergence check, with optional mixing
 
-## Implementation Details
+## Things Worth Knowing
 
-**Type discipline:** On-site U values must remain real Python `float` throughout — complex numbers cause QE parser failure. The intersite V path permits complex values (which carry Bloch phases).
+**Keep U values as real floats.** On-site U values must remain real Python `float` throughout the workflow — passing complex numbers will break the QE input parser. The intersite V path does permit complex values (they carry Bloch phases), but on-site U does not.
 
 **Performance optimizations (P1–P6):**
-- P6: 8-fold symmetry on d-shell U evaluation → 5.9× speedup
-- P5: Eigendecomposition caching across V-pair loops
-- P2: Vectorized density-matrix operations
+- P6 applies 8-fold symmetry to d-shell U evaluation, giving a 5.9× speedup
+- P5 caches eigendecompositions across V-pair loops
+- P2 vectorizes density-matrix operations
 
-**Validation:** Reproduces published benchmarks (Si, ZnO) with ortho-atomic projection.
+**Validation:** The module reproduces published benchmarks on Si and ZnO with ortho-atomic projection.
 
-## Physical Applicability
+## When to Use It (and When Not To)
 
-ACBN0 works well for FM insulators and half-metals. It overestimates U in itinerant FM metals where metallic screening dominates. Near Stoner instabilities, fixed-U scanning is preferable to self-consistent determination.
+ACBN0 works well for FM insulators and half-metals. For itinerant FM metals, metallic screening tends to cause U overestimation. Near Stoner instabilities, fixed-U scanning is a more reliable approach than self-consistent determination.

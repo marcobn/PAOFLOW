@@ -1,14 +1,16 @@
 # Development Environment
 
+Getting set up to work on PAOFLOW should only take a few minutes. Here's everything you need.
+
 ## Requirements
 
 - Python 3.10 or newer
 - Linux / POSIX environment
-- A working MPI installation (required by `mpi4py`)
+- A working MPI installation (needed by `mpi4py`)
 
-Conda-based distributions (Miniforge, Miniconda) are recommended for managing the environment.
+We recommend a Conda-based distribution like Miniforge or Miniconda for managing your environment — it makes installing `mpi4py` much smoother.
 
-## Installation for Developers
+## Setting Up
 
 Clone the repository and install in editable mode with the `dev` extras:
 
@@ -19,13 +21,13 @@ conda install mpi4py
 pip install -e .[dev]
 ```
 
-The `dev` extra installs `pre-commit` and `pytest`. Install the git hooks immediately after:
+Then install the pre-commit hooks right away — they keep formatting consistent automatically:
 
 ```bash
 pre-commit install
 ```
 
-To verify the setup:
+To confirm everything is working:
 
 ```bash
 python -c "import PAOFLOW; print('PAOFLOW import OK')"
@@ -33,6 +35,8 @@ pytest -q tests/unit
 ```
 
 ## Optional Dependency Groups
+
+Install only what you need:
 
 | Extra | Dependencies | Use case |
 |-------|--------------|----------|
@@ -43,7 +47,7 @@ pytest -q tests/unit
 | `fast` | numba | JIT-accelerated paths |
 | `dev` | pre-commit, pytest | Development tools |
 
-Combine extras as needed:
+You can combine extras freely:
 
 ```bash
 pip install -e .[graphics,transport,fast,dev]
@@ -51,27 +55,25 @@ pip install -e .[graphics,transport,fast,dev]
 
 ## Code Formatting
 
-PAOFLOW uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting. Pre-commit hooks apply formatting automatically before each commit.
-
-Run hooks manually on all files:
+We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting. The pre-commit hooks take care of this for you automatically on each commit, so you shouldn't need to think about it much. If you ever want to run them manually:
 
 ```bash
 pre-commit run --all-files
 ```
 
-To clean and reset:
+And to reset if something gets into a weird state:
 
 ```bash
 pre-commit clean
 pre-commit run --all-files
 ```
 
-**VSCode:** Install the Ruff extension and enable format-on-save in `settings.json` for continuous formatting.
+If you use VSCode, the Ruff extension with format-on-save gives you continuous feedback as you write.
 
 ## Troubleshooting
 
-**`mpi4py` issues:** Prefer Conda installation (`conda install mpi4py`) over pip to ensure MPI library compatibility.
+**`mpi4py` issues:** Install it through Conda (`conda install mpi4py`) rather than pip — this ensures it links against the right MPI libraries.
 
-**Wrong Python environment:** Use `python -m pip install -e .[dev]` to guarantee consistency between `pip` and `python`.
+**Wrong Python environment:** Use `python -m pip install -e .[dev]` to make sure `pip` and `python` are from the same environment.
 
-**Editable install stale after code changes:** Restart the Python interpreter or notebook kernel after changes — editable installs do not hot-reload.
+**Stale editable install:** If your code changes don't seem to take effect, restart the Python interpreter or notebook kernel — editable installs don't hot-reload.
