@@ -99,6 +99,7 @@ html_theme = 'pydata_sphinx_theme'
 
 html_theme_options = {
     'github_url': 'https://github.com/marcobn/PAOFLOW',
+    'show_nav_level': 0,
     'show_toc_level': 2,
     'navigation_with_keys': True,
     'navbar_start': ['navbar-logo'],
@@ -109,11 +110,13 @@ html_theme_options = {
 }
 
 html_sidebars = {
-    'index': ['navbar-nav', 'sidebar-nav-bs'],
-    '**': ['navbar-nav', 'sidebar-nav-bs'],
+    'index': ['sidebar-tree'],
+    '**': ['sidebar-tree'],
 }
 
 html_static_path = ['_static']
+html_css_files = ['sidebar-tree.css']
+html_js_files = ['sidebar-tree.js']
 html_title = 'PAOFLOW'
 
 templates_path = ['_templates']

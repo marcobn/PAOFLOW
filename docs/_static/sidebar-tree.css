@@ -1,0 +1,39 @@
+.sidebar-tree-ready .sidebar-tree-parent > ul {
+  display: none;
+  margin-top: 0.25rem;
+}
+
+.sidebar-tree-ready .sidebar-tree-parent.is-open > ul {
+  display: block;
+}
+
+.sidebar-tree-ready .sidebar-tree-parent > a {
+  display: inline-block;
+  max-width: calc(100% - 1.5rem);
+}
+
+.sidebar-tree-ready .sidebar-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  margin-left: 0.35rem;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  vertical-align: text-top;
+}
+
+.sidebar-tree-ready .sidebar-tree-toggle::before {
+  content: '\25B8';
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.sidebar-tree-ready .sidebar-tree-parent.is-open > .sidebar-tree-toggle::before {
+  transform: rotate(90deg);
+}
