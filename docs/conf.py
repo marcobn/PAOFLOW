@@ -101,9 +101,20 @@ html_theme_options = {
     'github_url': 'https://github.com/marcobn/PAOFLOW',
     'show_toc_level': 2,
     'navigation_with_keys': True,
+    'navbar_start': ['navbar-logo'],
+    'navbar_center': [],
+    'navbar_end': ['search-field', 'theme-switcher', 'navbar-icon-links'],
+    'navbar_persistent': [],
+    'secondary_sidebar_items': [],
+}
+
+html_sidebars = {
+    'index': ['navbar-nav', 'sidebar-nav-bs'],
+    '**': ['navbar-nav', 'sidebar-nav-bs'],
 }
 
 html_static_path = ['_static']
+html_title = 'PAOFLOW'
 
 templates_path = ['_templates']
 

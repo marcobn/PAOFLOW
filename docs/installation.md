@@ -57,7 +57,7 @@ cd PAOFLOW
 pip install -e ".[dev,graphics,transport]"
 ```
 
-The `-e` flag installs the package in *editable* mode — changes to `src/PAOFLOW/` take effect immediately without reinstalling. The `dev` extra adds `pre-commit` and `pytest`.
+The `-e` flag installs the package in _editable_ mode — changes to `src/PAOFLOW/` take effect immediately without reinstalling. The `dev` extra adds `pre-commit` and `pytest`.
 
 ---
 
@@ -95,28 +95,4 @@ print(PAOFLOW.__version__)
 
 You should see the current version string (e.g. `2.9.3`).
 
-To confirm the command-line tools are available:
-
-```bash
-paoflow-gen --help
-paoflow-gen-qe --help
-```
-
 ---
-
-## Troubleshooting
-
-**`ImportError: No module named 'mpi4py'`**
-: Install mpi4py separately, preferably via conda (see the conda section above).
-
-**`mpi4py` builds but MPI runs fail on a cluster**
-: The `mpi4py` wheel was likely compiled against a different MPI than the one loaded by your environment module. Reinstall `mpi4py` from source after loading the correct MPI module:
-  ```bash
-  pip install --no-binary mpi4py mpi4py
-  ```
-
-**`ModuleNotFoundError: No module named 'vtk'` or `matplotlib`**
-: These are optional. Install the `graphics` extra: `pip install "PAOFLOW[graphics]"`.
-
-**Older QE output formats (pre-6.x)**
-: PAOFLOW reads QE XML output (`data-file-schema.xml`). Ensure your QE version writes the modern XML format. If you have legacy `data-file.xml`, a format converter may be required.
