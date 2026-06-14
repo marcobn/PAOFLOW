@@ -52,6 +52,7 @@
   text-align: center;
   padding: 2rem 1.5rem 1.75rem;
   gap: 0.5rem;
+  border-radius: 1rem;
 }
 
 .pf-landing .landing-card .sd-card-body p {
