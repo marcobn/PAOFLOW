@@ -1,0 +1,206 @@
+/* ── Matrix color scheme ────────────────────────────────────────────────────
+   Overrides pydata-sphinx-theme CSS custom properties with matrix
+   (black and green) palette, matching the PAOFLOW brand aesthetic.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* ── Dark theme: full Matrix ────────────────────────────────────────────── */
+html[data-theme=dark] {
+  --pst-color-primary: #00e040;
+  --pst-color-primary-text: #060e06;
+  --pst-color-primary-highlight: #00b833;
+  --pst-color-primary-highlight-text: #060e06;
+  --pst-color-primary-bg: #062006;
+
+  --pst-color-secondary: #00cc33;
+  --pst-color-secondary-text: #060e06;
+  --pst-color-secondary-highlight: #009e28;
+  --pst-color-secondary-highlight-text: #060e06;
+  --pst-color-secondary-bg: #041504;
+
+  --pst-color-accent: #39ff14;
+  --pst-color-accent-bg: #091f09;
+
+  --pst-color-info: #00c8a0;
+  --pst-color-info-text: #060e06;
+  --pst-color-info-highlight: #009e7e;
+  --pst-color-info-highlight-text: #060e06;
+  --pst-color-info-bg: #03201a;
+
+  --pst-color-success: #00e040;
+  --pst-color-success-text: #060e06;
+  --pst-color-success-highlight: #00b833;
+  --pst-color-success-highlight-text: #060e06;
+  --pst-color-success-bg: #062006;
+
+  --pst-color-warning: #d4a800;
+  --pst-color-warning-text: #060e06;
+  --pst-color-warning-highlight: #b08e00;
+  --pst-color-warning-highlight-text: #060e06;
+  --pst-color-warning-bg: #1c1800;
+
+  --pst-color-danger: #ff5555;
+  --pst-color-danger-text: #fff;
+  --pst-color-danger-highlight: #cc2222;
+  --pst-color-danger-highlight-text: #fff;
+  --pst-color-danger-bg: #200606;
+
+  --pst-color-text-base: #b8dcb8;
+  --pst-color-text-muted: #5a9a5a;
+  --pst-color-heading: #00e040;
+  --pst-color-shadow: rgba(0, 224, 64, 0.12);
+  --pst-color-border: #1c4020;
+  --pst-color-border-muted: #0f260f;
+  --pst-color-blockquote-notch: #00a030;
+  --pst-color-inline-code: #7eff7e;
+  --pst-color-inline-code-links: #00cc33;
+  --pst-color-target: #0a2a0a;
+  --pst-color-table: #b8dcb8;
+  --pst-color-table-row-hover-bg: #0d260d;
+  --pst-color-table-inner-border: #1c3a1c;
+  --pst-color-background: #060e06;
+  --pst-color-on-background: #0a160a;
+  --pst-color-surface: #0f1f0f;
+  --pst-color-on-surface: #c8e6c8;
+  --pst-color-link: #00e040;
+  --pst-color-link-hover: #39ff14;
+  --pst-color-table-outer-border: var(--pst-color-surface);
+  --pst-color-table-heading-bg: #0a200a;
+  --pst-color-table-row-zebra-high-bg: var(--pst-color-on-background);
+  --pst-color-table-row-zebra-low-bg: var(--pst-color-surface);
+  --pst-color-attention: var(--pst-color-warning);
+  --pst-color-attention-bg: var(--pst-color-warning-bg);
+
+  color-scheme: dark;
+}
+
+/* ── Light theme: forest terminal ───────────────────────────────────────── */
+html[data-theme=light] {
+  --pst-color-primary: #006622;
+  --pst-color-primary-text: #fff;
+  --pst-color-primary-highlight: #004d18;
+  --pst-color-primary-highlight-text: #fff;
+  --pst-color-primary-bg: #d4eedd;
+
+  --pst-color-secondary: #004d18;
+  --pst-color-secondary-text: #fff;
+  --pst-color-secondary-highlight: #003811;
+  --pst-color-secondary-highlight-text: #fff;
+  --pst-color-secondary-bg: #c2e8cc;
+
+  --pst-color-accent: #008030;
+  --pst-color-accent-bg: #d4eedd;
+
+  --pst-color-info: #006655;
+  --pst-color-info-bg: #bce8e0;
+
+  --pst-color-success: #006622;
+  --pst-color-success-bg: #d4eedd;
+
+  --pst-color-warning-bg: #fef8d6;
+  --pst-color-danger-bg: #fde8e8;
+
+  --pst-color-text-base: #0a1a0a;
+  --pst-color-text-muted: #2a5a2a;
+  --pst-color-heading: #004d18;
+  --pst-color-shadow: rgba(0, 80, 24, 0.12);
+  --pst-color-border: #88c898;
+  --pst-color-border-muted: rgba(0, 80, 24, 0.2);
+  --pst-color-blockquote-notch: #4a8a5a;
+  --pst-color-inline-code: #004d18;
+  --pst-color-inline-code-links: #003811;
+  --pst-color-target: #d4eedd;
+  --pst-color-table: #0a1a0a;
+  --pst-color-table-row-hover-bg: #c2e8cc;
+  --pst-color-table-inner-border: #c4e4cc;
+  --pst-color-background: #f6fcf6;
+  --pst-color-on-background: #eef8ee;
+  --pst-color-surface: #e4f2e6;
+  --pst-color-on-surface: #0a1a0a;
+  --pst-color-link: #006622;
+  --pst-color-link-hover: #004d18;
+  --pst-color-table-outer-border: var(--pst-color-surface);
+  --pst-color-table-heading-bg: var(--pst-color-surface);
+  --pst-color-table-row-zebra-high-bg: var(--pst-color-on-background);
+  --pst-color-table-row-zebra-low-bg: var(--pst-color-surface);
+  --pst-color-attention: var(--pst-color-warning);
+  --pst-color-attention-bg: var(--pst-color-warning-bg);
+}
+
+/* ── Unthemed fallback (before JS sets data-theme) ──────────────────────── */
+html:not([data-theme]) {
+  --pst-color-primary: #00e040;
+  --pst-color-primary-bg: #062006;
+  --pst-color-secondary: #00cc33;
+  --pst-color-secondary-bg: #041504;
+  --pst-color-accent: #39ff14;
+  --pst-color-accent-bg: #091f09;
+  --pst-color-info: #00c8a0;
+  --pst-color-info-bg: #03201a;
+  --pst-color-warning-bg: #1c1800;
+  --pst-color-success: #00e040;
+  --pst-color-success-bg: #062006;
+  --pst-color-danger-bg: #200606;
+  --pst-color-text-base: #b8dcb8;
+  --pst-color-text-muted: #5a9a5a;
+  --pst-color-heading: #00e040;
+  --pst-color-border: #1c4020;
+  --pst-color-border-muted: #0f260f;
+  --pst-color-inline-code: #7eff7e;
+  --pst-color-inline-code-links: #00cc33;
+  --pst-color-background: #060e06;
+  --pst-color-on-background: #0a160a;
+  --pst-color-surface: #0f1f0f;
+  --pst-color-on-surface: #c8e6c8;
+  --pst-color-link: #00e040;
+  --pst-color-link-hover: #39ff14;
+  --pst-color-shadow: rgba(0, 224, 64, 0.12);
+
+  color-scheme: dark;
+}
+
+/* ── Dark theme extra polish ────────────────────────────────────────────── */
+html[data-theme=dark] ::selection {
+  background: rgba(0, 224, 64, 0.28);
+  color: #fff;
+}
+
+html[data-theme=dark]::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+html[data-theme=dark]::-webkit-scrollbar-track {
+  background: #060e06;
+}
+
+html[data-theme=dark]::-webkit-scrollbar-thumb {
+  background: #1c4020;
+  border-radius: 4px;
+}
+
+html[data-theme=dark]::-webkit-scrollbar-thumb:hover {
+  background: #00b833;
+}
+
+/* Header / navbar background in dark mode */
+html[data-theme=dark] .bd-header {
+  background-color: #060e06 !important;
+  border-bottom: 1px solid #1c4020 !important;
+}
+
+/* Sidebar background in dark mode */
+html[data-theme=dark] .bd-sidebar-primary {
+  background-color: #060e06 !important;
+  border-right: 1px solid #1c4020 !important;
+}
+
+/* Copy button code block surface */
+html[data-theme=dark] div[class*="highlight"] {
+  background: #0a180a !important;
+  border: 1px solid #1c4020 !important;
+}
+
+/* Active / current nav link indicator */
+html[data-theme=dark] .bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
+  border-bottom-color: #00e040 !important;
+}
