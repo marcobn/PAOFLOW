@@ -99,6 +99,8 @@ intersphinx_mapping = {
 
 html_theme = 'pydata_sphinx_theme'
 
+html_logo = '_static/images/logo_documentation.svg'
+
 html_show_sourcelink = False
 
 html_theme_options = {

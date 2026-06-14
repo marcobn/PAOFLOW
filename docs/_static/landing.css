@@ -21,15 +21,23 @@
   padding: 0 1.5rem 4rem;
 }
 
-/* Centre the page title */
+/* Hide the text title — replaced by the header SVG */
 .pf-landing h1 {
-  text-align: center;
-  margin-bottom: 1.25rem;
+  display: none !important;
 }
 
-/* Hide the ¶ permalink anchor next to the title */
-.pf-landing h1 .headerlink {
-  display: none;
+/* Hero SVG banner */
+.pf-landing .paoflow-landing-hero {
+  margin-bottom: 2rem;
+}
+
+.pf-landing .paoflow-landing-hero img {
+  width: 100%;
+  max-width: 840px;
+  border-radius: 14px;
+  display: block;
+  margin: 0 auto;
+  background-color: transparent !important;
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */

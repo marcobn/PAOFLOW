@@ -200,6 +200,12 @@ html[data-theme=dark] div[class*="highlight"] {
   border: 1px solid #1c4020 !important;
 }
 
+/* Navbar logo sizing */
+.bd-header .navbar-brand img.logo__image {
+  height: 38px;
+  width: auto;
+}
+
 /* Active / current nav link indicator */
 html[data-theme=dark] .bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
   border-bottom-color: #00e040 !important;

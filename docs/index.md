@@ -1,5 +1,11 @@
 # PAOFLOW
 
+:::{div} sd-text-center paoflow-landing-hero
+
+![PAOFLOW](_static/images/paoflow_header.svg)
+
+:::
+
 :::{div} sd-text-center sd-fs-5 sd-font-weight-light paoflow-landing
 
 A python framework for constructing and operating on _ab initio_ tight-binding Hamiltonians built from the projection of DFT wavefunctions onto atomic orbital (PAO) bases.
