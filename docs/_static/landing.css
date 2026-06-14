@@ -63,3 +63,8 @@
 .pf-landing .prev-next-area {
   display: none !important;
 }
+
+/* Hide right sidebar (TOC) */
+.pf-landing .bd-sidebar-secondary {
+  display: none !important;
+}

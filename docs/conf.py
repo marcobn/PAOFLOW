@@ -99,6 +99,8 @@ intersphinx_mapping = {
 
 html_theme = 'pydata_sphinx_theme'
 
+html_show_sourcelink = False
+
 html_theme_options = {
     'github_url': 'https://github.com/marcobn/PAOFLOW',
     'show_nav_level': 0,

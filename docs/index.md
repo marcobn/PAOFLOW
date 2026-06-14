@@ -29,9 +29,9 @@ Get PAOFLOW installed in a few commands.
 
 {octicon}`code-square;2.4em;sd-text-muted`
 
-**Examples**
+**Tutorials**
 
-Ready-to-run workflows for QE and VASP calculations.
+Ready-to-run workflows.
 :::
 
 :::{grid-item-card}
