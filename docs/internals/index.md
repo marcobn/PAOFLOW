@@ -8,4 +8,5 @@ This section contains guidelines for writing docstrings and equations in PAOFLOW
 :glob:
 
 *
+../api/index
 ```
