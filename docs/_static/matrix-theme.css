@@ -223,6 +223,32 @@ a.pst-navbar-icon[href*="github"] svg {
   display: none !important;
 }
 
+/* ── Gallery cards ───────────────────────────────────────────────────────── */
+.pf-gallery-img {
+  height: 210px;
+  width: 100%;
+  object-fit: contain;
+  background-color: var(--pst-color-on-background);
+  display: block;
+}
+
+.pf-gallery-card .sd-card-body {
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+.pf-gallery-card .sd-card-body p {
+  margin: 0;
+  font-size: 0.9em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.pf-gallery-card .sd-card-footer {
+  font-size: 0.8em;
+  color: var(--pst-color-text-muted);
+  padding: 0.5rem 1rem;
+}
+
 /* ── Citation cards ──────────────────────────────────────────────────────── */
 .pf-cit-card .sd-card-body {
   padding: 0.75rem 1rem;
