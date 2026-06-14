@@ -16,11 +16,11 @@ connect
 PAOFLOW is distributed under the **GNU General Public License v3**.
 Copyright 2016–2026 Marco Buongiorno Nardelli and the PAOFLOW Development Team.
 
-## Citation
+## Citations
 
 If you use PAOFLOW in published work, please cite:
 
-### Codebase
+### Software
 
 ::::{grid} 1 1 2 2
 :gutter: 3
@@ -32,7 +32,7 @@ If you use PAOFLOW in published work, please cite:
 
 **Advanced modeling of materials with PAOFLOW 2.0: New features and software design**
 
-*Comp. Mat. Sci.* **200**, 110828 · 2021
+_Comp. Mat. Sci._ **200**, 110828 · 2021
 :::
 
 :::{grid-item-card}
@@ -42,12 +42,12 @@ If you use PAOFLOW in published work, please cite:
 
 **PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on Atomic Orbital bases**
 
-*Comp. Mat. Sci.* **143**, 462 · 2018
+_Comp. Mat. Sci._ **143**, 462 · 2018
 :::
 
 ::::
 
-### Scientific background
+### Theory
 
 ::::{grid} 1 1 2 2
 :gutter: 3
@@ -59,7 +59,7 @@ If you use PAOFLOW in published work, please cite:
 
 **Effective and accurate representation of extended Bloch states on finite Hilbert spaces**
 
-*Phys. Rev. B* **88**, 165127 · 2013
+_Phys. Rev. B_ **88**, 165127 · 2013
 :::
 
 :::{grid-item-card}
@@ -69,7 +69,7 @@ If you use PAOFLOW in published work, please cite:
 
 **Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets**
 
-*Phys. Rev. B* **93**, 035104 · 2016
+_Phys. Rev. B_ **93**, 035104 · 2016
 :::
 
 :::{grid-item-card}
@@ -79,7 +79,7 @@ If you use PAOFLOW in published work, please cite:
 
 **Accurate Tight-Binding Hamiltonians for 2D and Layered Materials**
 
-*Phys. Rev. B* **93**, 125137 · 2016
+_Phys. Rev. B_ **93**, 125137 · 2016
 :::
 
 :::{grid-item-card}
@@ -89,7 +89,7 @@ If you use PAOFLOW in published work, please cite:
 
 **Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and optical spectroscopy from first principles**
 
-*Phys. Rev. B* **94**, 165166 · 2016
+_Phys. Rev. B_ **94**, 165166 · 2016
 :::
 
 ::::
