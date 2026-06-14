@@ -57,6 +57,8 @@ autodoc_default_options = {
     'exclude-members': '__weakref__',
 }
 
+autoapi_keep_files = True
+
 autoapi_type = 'python'
 
 autoapi_dirs = [
