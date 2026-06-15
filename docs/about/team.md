@@ -9,88 +9,77 @@ Meet the people behind PAOFLOW — researchers, developers, and contributors who
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/marco.jpeg" alt="Marco Buongiorno Nardelli" class="pf-team-avatar">
 
-**Jane Doe**
+**Marco Buongiorno Nardelli**
 
-Lead Developer
+Developer
 :::
 
 :::{grid-item-card}
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/marcio.jpeg" alt="Marcio Costa" class="pf-team-avatar">
 
-**John Smith**
+**Marcio Costa**
 
-Core Developer
+Developer
 :::
 
 :::{grid-item-card}
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/davide.jpeg" alt="Davide Ceresoli" class="pf-team-avatar">
 
-**Alice Johnson**
+**Davide Ceresoli**
 
-Research Scientist
+Developer
 :::
 
 :::{grid-item-card}
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/jagoda.jpeg" alt="Jagoda Slawinska" class="pf-team-avatar">
 
-**Bob Williams**
+**Jagoda Slawinska**
 
-Software Engineer
+Developer
 :::
 
 :::{grid-item-card}
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/sergio.jpeg" alt="Sergio Alvarruiz" class="pf-team-avatar">
 
-**Carol Martinez**
+**Sergio Alvarruiz**
 
-Maintainer
+Developer
 :::
 
 :::{grid-item-card}
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/zhiren.jpeg" alt="Zhiren He" class="pf-team-avatar">
 
-**David Lee**
+**Zhiren He**
 
-Contributor
+Developer
 :::
 
 :::{grid-item-card}
 :class-card: pf-team-card
 :text-align: center
 
-<div class="pf-team-avatar"></div>
+<img src="../_static/images/team/anooja.jpeg" alt="Anooja Jayaraj" class="pf-team-avatar">
 
-**Eva Chen**
+**Anooja Jayaraj**
 
-Research Scientist
-:::
-
-:::{grid-item-card}
-:class-card: pf-team-card
-:text-align: center
-
-<div class="pf-team-avatar"></div>
-
-**Frank Brown**
-
-Core Developer
+Developer
 :::
 
 ::::

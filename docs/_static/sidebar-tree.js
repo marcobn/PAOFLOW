@@ -4,8 +4,6 @@ window.addEventListener('load', () => {
   );
 
   const bindNav = (nav) => {
-    nav.classList.add('sidebar-tree-ready');
-
     nav.querySelectorAll('li').forEach((item) => {
       if (item.dataset.sidebarTreeBound === 'true') {
         return;
@@ -33,32 +31,47 @@ window.addEventListener('load', () => {
       item.dataset.sidebarTreeBound = 'true';
       item.classList.add('sidebar-tree-parent');
 
+      // Track open state independently of details.open so CSS max-height
+      // transitions can animate the child ul smoothly.
+      let expanded = details.hasAttribute('open') || isCurrentBranch;
+
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'sidebar-tree-toggle';
       toggle.setAttribute('aria-label', `Toggle ${link.textContent.trim()}`);
 
       const applyOpenState = (isOpen) => {
-        details.open = isOpen;
+        expanded = isOpen;
         item.classList.toggle('is-open', isOpen);
         toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       };
 
-      applyOpenState(details.hasAttribute('open') || isCurrentBranch);
+      // Always keep <details> structurally open so the <ul> remains in the
+      // DOM and CSS can animate its max-height / opacity.
+      details.open = true;
+      applyOpenState(expanded);
 
       toggle.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-
-        applyOpenState(!details.open);
+        applyOpenState(!expanded);
       });
 
+      // If something re-closes <details> natively (e.g. browser restore),
+      // re-open it immediately so our CSS stays in control.
       details.addEventListener('toggle', () => {
-        applyOpenState(details.open);
+        if (!details.open) {
+          details.open = true;
+        }
       });
 
       link.insertAdjacentElement('afterend', toggle);
     });
+
+    // Add the ready class only after all items are processed so the initial
+    // is-open states are already set when CSS transitions become active.
+    // This prevents a flash of all-expanded content on first render.
+    nav.classList.add('sidebar-tree-ready');
   };
 
   navs.forEach((nav) => {

@@ -271,6 +271,8 @@ a.pst-navbar-icon[href*="github"] svg {
   border: 3px solid var(--pst-color-primary);
   margin: 0 auto 0.75rem;
   flex-shrink: 0;
+  object-fit: cover;
+  display: block;
 }
 
 /* ── Citation cards ──────────────────────────────────────────────────────── */
