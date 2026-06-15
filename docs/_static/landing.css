@@ -72,6 +72,16 @@
   display: none !important;
 }
 
+/* Restore original dark-mode color tokens for the landing page */
+html[data-theme=dark] body.pf-landing,
+html:not([data-theme]) body.pf-landing {
+  --pst-color-text-base: #b8dcb8;
+  --pst-color-text-muted: #5a9a5a;
+  --pst-color-heading: #00e040;
+  --pst-color-table: #b8dcb8;
+  --pst-color-on-surface: #c8e6c8;
+}
+
 /* Hide right sidebar (TOC) */
 .pf-landing .bd-sidebar-secondary {
   display: none !important;
