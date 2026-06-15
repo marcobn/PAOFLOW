@@ -249,30 +249,27 @@ a.pst-navbar-icon[href*="github"] svg {
   padding: 0.5rem 1rem;
 }
 
-/* ── Team / profile cards ────────────────────────────────────────────────── */
-.pf-team-card .sd-card-body {
+/* ── Team member entries (minimal, no cards) ─────────────────────────────── */
+.pf-team-member {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 1.5rem 1rem;
-  gap: 0.35rem;
+  gap: 0.25rem;
+  padding: 0.5rem 0;
 }
 
-.pf-team-card .sd-card-body p {
+.pf-team-member p {
   margin: 0;
 }
 
-.pf-team-avatar {
-  width: 80px;
-  height: 80px;
+.pf-team-photo {
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
-  background-color: var(--pst-color-primary-bg);
-  border: 3px solid var(--pst-color-primary);
-  margin: 0 auto 0.75rem;
-  flex-shrink: 0;
   object-fit: cover;
   display: block;
+  margin: 0 auto 0.5rem;
 }
 
 /* ── Citation cards ──────────────────────────────────────────────────────── */
