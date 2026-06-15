@@ -1,9 +1,13 @@
-.sidebar-tree-ready .sidebar-tree-parent > ul {
+.sidebar-tree-ready .sidebar-tree-parent > details > summary {
+  display: none;
+}
+
+.sidebar-tree-ready .sidebar-tree-parent > details > ul {
   display: none;
   margin-top: 0.25rem;
 }
 
-.sidebar-tree-ready .sidebar-tree-parent.is-open > ul {
+.sidebar-tree-ready .sidebar-tree-parent.is-open > details > ul {
   display: block;
 }
 
@@ -12,6 +16,9 @@
   max-width: calc(100% - 1.5rem);
 }
 
+.sidebar-tree-ready .sidebar-tree-parent > details {
+  margin-top: 0.25rem;
+}
 .sidebar-tree-ready .sidebar-tree-toggle {
   display: inline-flex;
   align-items: center;

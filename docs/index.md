@@ -99,6 +99,5 @@ quickstart
 applications/index
 installation
 examples/index
-api/index
 internals/index
 ```

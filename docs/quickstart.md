@@ -115,13 +115,13 @@ The run typically completes in under a minute on a laptop for this small example
 
 After the run, an `output/` directory is created containing:
 
-| File | Contents |
-|---|---|
-| `bands_0.dat` | Band structure along the default FCC k-path |
-| `dosdk_0.dat` | Total density of states |
-| `sigmagauss_0.dat` | Electrical conductivity tensor vs. energy |
-| `Seebeckgauss_0.dat` | Seebeck coefficient tensor vs. energy |
-| `kappagauss_0.dat` | Electronic thermal conductivity tensor vs. energy |
+| File                 | Contents                                          |
+| -------------------- | ------------------------------------------------- |
+| `bands_0.dat`        | Band structure along the default FCC k-path       |
+| `dosdk_0.dat`        | Total density of states                           |
+| `sigmagauss_0.dat`   | Electrical conductivity tensor vs. energy         |
+| `Seebeckgauss_0.dat` | Seebeck coefficient tensor vs. energy             |
+| `kappagauss_0.dat`   | Electronic thermal conductivity tensor vs. energy |
 
 :::{tip} Comparing to the reference
 The `Reference/` subdirectory contains expected output files.
@@ -137,4 +137,4 @@ You can diff your results against them to confirm a correct installation.
   ```bash
   paoflow-gen
   ```
-- See the [API Reference](api/index.md) for the full list of methods on the `PAOFLOW` class.
+- See the [API Reference](internals/api-reference.md) for the full list of methods on the `PAOFLOW` class.
