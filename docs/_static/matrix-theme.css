@@ -5,6 +5,8 @@
 
 /* ── Dark theme: full Matrix ────────────────────────────────────────────── */
 html[data-theme=dark] {
+  --paoflow-brand-green: #00853e;
+
   --pst-color-primary: #00e040;
   --pst-color-primary-text: #060e06;
   --pst-color-primary-highlight: #00b833;
@@ -44,9 +46,9 @@ html[data-theme=dark] {
   --pst-color-danger-highlight-text: #fff;
   --pst-color-danger-bg: #200606;
 
-  --pst-color-text-base: #b8dcb8;
-  --pst-color-text-muted: #5a9a5a;
-  --pst-color-heading: #00e040;
+  --pst-color-text-base: #ffffff;
+  --pst-color-text-muted: #9ab8a0;
+  --pst-color-heading: var(--paoflow-brand-green);
   --pst-color-shadow: rgba(0, 224, 64, 0.12);
   --pst-color-border: #1c4020;
   --pst-color-border-muted: #0f260f;
@@ -54,13 +56,13 @@ html[data-theme=dark] {
   --pst-color-inline-code: #7eff7e;
   --pst-color-inline-code-links: #00cc33;
   --pst-color-target: #0a2a0a;
-  --pst-color-table: #b8dcb8;
+  --pst-color-table: #ffffff;
   --pst-color-table-row-hover-bg: #0d260d;
   --pst-color-table-inner-border: #1c3a1c;
   --pst-color-background: #060e06;
   --pst-color-on-background: #0a160a;
   --pst-color-surface: #0f1f0f;
-  --pst-color-on-surface: #c8e6c8;
+  --pst-color-on-surface: #ffffff;
   --pst-color-link: #00e040;
   --pst-color-link-hover: #39ff14;
   --pst-color-table-outer-border: var(--pst-color-surface);
@@ -128,6 +130,8 @@ html[data-theme=light] {
 
 /* ── Unthemed fallback (before JS sets data-theme) ──────────────────────── */
 html:not([data-theme]) {
+  --paoflow-brand-green: #00853e;
+
   --pst-color-primary: #00e040;
   --pst-color-primary-bg: #062006;
   --pst-color-secondary: #00cc33;
@@ -140,9 +144,9 @@ html:not([data-theme]) {
   --pst-color-success: #00e040;
   --pst-color-success-bg: #062006;
   --pst-color-danger-bg: #200606;
-  --pst-color-text-base: #b8dcb8;
-  --pst-color-text-muted: #5a9a5a;
-  --pst-color-heading: #00e040;
+  --pst-color-text-base: #ffffff;
+  --pst-color-text-muted: #9ab8a0;
+  --pst-color-heading: var(--paoflow-brand-green);
   --pst-color-border: #1c4020;
   --pst-color-border-muted: #0f260f;
   --pst-color-inline-code: #7eff7e;
@@ -150,7 +154,7 @@ html:not([data-theme]) {
   --pst-color-background: #060e06;
   --pst-color-on-background: #0a160a;
   --pst-color-surface: #0f1f0f;
-  --pst-color-on-surface: #c8e6c8;
+  --pst-color-on-surface: #ffffff;
   --pst-color-link: #00e040;
   --pst-color-link-hover: #39ff14;
   --pst-color-shadow: rgba(0, 224, 64, 0.12);
@@ -208,7 +212,7 @@ html[data-theme=dark] div[class*="highlight"] {
 
 /* Active / current nav link indicator */
 html[data-theme=dark] .bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
-  border-bottom-color: #00e040 !important;
+  border-bottom-color: var(--paoflow-brand-green) !important;
 }
 
 /* ── GitHub icon: rounded square → circle ───────────────────────────────── */
