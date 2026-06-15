@@ -33,7 +33,7 @@ Project background, license and citations.
 :link-type: doc
 :class-card: landing-card
 
-{octicon}`graph;2.4em;sd-text-muted`
+{octicon}`beaker;2.4em;sd-text-muted`
 
 **Applications**
 
