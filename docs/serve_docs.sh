@@ -7,6 +7,8 @@ cd "$ROOT"
 sphinx-autobuild \
   docs \
   docs/_build/html \
+  -E \
+  -a \
   --host 127.0.0.1 \
   --port 8000 \
   --ignore docs/_build \

@@ -5,7 +5,7 @@
 :maxdepth: 1
 
 team
-connect
+contact
 contribute
 ```
 

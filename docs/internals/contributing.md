@@ -18,7 +18,7 @@ Pull requests to `develop` need at least one approval before they merge.
 ## Pull Request Process
 
 1. Branch from `develop` using `develop/<feature_name>`.
-2. Before writing any code, open or comment on a GitHub Issue describing what you'd like to do — see [Contact](../about/connect.md) for more on the discussion-first model.
+2. Before writing any code, open or comment on a GitHub Issue describing what you'd like to do — see [Contact](../about/contact.md) for more on the discussion-first model.
 3. Implement your change. Run `pre-commit run --all-files` to make sure formatting is tidy.
 4. Add tests. Take a look at [Testing](testing.md) to see what's expected.
 5. Open a pull request targeting `develop` and link it to the approved issue.
