@@ -29,15 +29,27 @@ Project background, license and citations.
 :::
 
 :::{grid-item-card}
+:link: applications/index
+:link-type: doc
+:class-card: landing-card
+
+{octicon}`graph;2.4em;sd-text-muted`
+
+**Applications**
+
+Published research and gallery of results.
+:::
+
+:::{grid-item-card}
 :link: quickstart
 :link-type: doc
 :class-card: landing-card
 
 {octicon}`rocket;2.4em;sd-text-muted`
 
-**Applications**
+**Quickstart**
 
-Published research and gallery of results.
+Run your first PAOFLOW calculation in minutes.
 :::
 
 :::{grid-item-card}
@@ -46,18 +58,6 @@ Published research and gallery of results.
 :class-card: landing-card
 
 {octicon}`package;2.4em;sd-text-muted`
-
-**Quickstart**
-
-Run your first PAOFLOW calculation in minutes.
-:::
-
-:::{grid-item-card}
-:link: applications/index
-:link-type: doc
-:class-card: landing-card
-
-{octicon}`graph;2.4em;sd-text-muted`
 
 **Installation**
 
