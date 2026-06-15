@@ -6,10 +6,10 @@ Welcome, and thank you for wanting to contribute to PAOFLOW! This page covers ho
 
 We use a Gitflow-inspired workflow with two long-lived branches:
 
-| Branch | Role |
-|--------|------|
-| `master` | Stable, released code — only advances when `develop` is promoted and tagged |
-| `develop` | The integration branch for ongoing work — may be temporarily unstable |
+| Branch    | Role                                                                        |
+| --------- | --------------------------------------------------------------------------- |
+| `master`  | Stable, released code — only advances when `develop` is promoted and tagged |
+| `develop` | The integration branch for ongoing work — may be temporarily unstable       |
 
 When you start work on something new, branch from `develop` using the naming convention `develop/<feature_name>`. Bug fixes follow the same path as features — there's no separate hotfix branch to worry about.
 
@@ -18,7 +18,7 @@ Pull requests to `develop` need at least one approval before they merge.
 ## Pull Request Process
 
 1. Branch from `develop` using `develop/<feature_name>`.
-2. Before writing any code, open or comment on a GitHub Issue describing what you'd like to do — see [Connect](../about/connect.md) for more on the discussion-first model.
+2. Before writing any code, open or comment on a GitHub Issue describing what you'd like to do — see [Contact](../about/connect.md) for more on the discussion-first model.
 3. Implement your change. Run `pre-commit run --all-files` to make sure formatting is tidy.
 4. Add tests. Take a look at [Testing](testing.md) to see what's expected.
 5. Open a pull request targeting `develop` and link it to the approved issue.

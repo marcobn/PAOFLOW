@@ -2,7 +2,7 @@
 
 This section is for anyone who wants to understand how PAOFLOW works under the hood, contribute code, or extend the project. You'll find developer setup instructions, architecture notes, module overviews, and everything else you need to get oriented and productive.
 
-If you're just getting started as a contributor, [Connect](../about/connect.md) has the contribution model and community channels — it's a good first stop before diving in here.
+If you're just getting started as a contributor, [Contact](../about/connect.md) has the contribution model and community channels — it's a good first stop before diving in here.
 
 ```{toctree}
 :hidden:

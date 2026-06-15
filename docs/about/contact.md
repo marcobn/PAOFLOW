@@ -1,4 +1,4 @@
-# Connect
+# Contact
 
 We'd love to hear from you — whether you have a question, found a bug, or want to contribute. Here's the best way to reach us depending on what you need.
 

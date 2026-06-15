@@ -25,7 +25,7 @@ A python framework for constructing and operating on _ab initio_ tight-binding H
 
 **About**
 
-Project background, license and citations.
+Project background, citations, and license.
 :::
 
 :::{grid-item-card}
