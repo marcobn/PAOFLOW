@@ -1,0 +1,83 @@
+[
+  {
+    "year": 2023,
+    "title": "Ultrathin films of black phosphorus as suitable platforms for unambiguous observation of the orbital Hall effect",
+    "journal": "Physical review. B./Physical review. B",
+    "doi": "10.1103/physrevb.108.165415",
+    "url": "https://doi.org/10.1103/physrevb.108.165415",
+    "authors": [
+      "Tarik P. Cysne",
+      "Marcio Costa",
+      "Marco Buongiorno Nardelli",
+      "R. B. Muniz",
+      "Tatiana G. Rappoport"
+    ]
+  },
+  {
+    "year": 2022,
+    "title": "Long-range current-induced spin accumulation in chiral crystals",
+    "journal": "npj Computational Materials",
+    "doi": "10.1038/s41524-022-00931-3",
+    "url": "https://doi.org/10.1038/s41524-022-00931-3",
+    "authors": [
+      "Arunesh Roy",
+      "Frank Cerasoli",
+      "Anooja Jayaraj",
+      "Karma Tenzin",
+      "Marco Buongiorno Nardelli",
+      "Jagoda Sławińska"
+    ]
+  },
+  {
+    "year": 2022,
+    "title": "Relaxation time approximations in PAOFLOW 2.0",
+    "journal": "Scientific Reports",
+    "doi": "10.1038/s41598-022-08931-5",
+    "url": "https://doi.org/10.1038/s41598-022-08931-5",
+    "authors": [
+      "Anooja Jayaraj",
+      "Ilaria Siloi",
+      "Marco Fornari",
+      "Marco Buongiorno Nardelli"
+    ]
+  },
+  {
+    "year": 2022,
+    "title": "Relaxation Time Approximations in PAOFLOW 2.0",
+    "journal": null,
+    "doi": "10.12794/metadc1944209",
+    "url": "https://doi.org/10.12794/metadc1944209",
+    "authors": [
+      "Anooja Jayaraj"
+    ]
+  },
+  {
+    "year": 2021,
+    "title": "Advanced modeling of materials with PAOFLOW 2.0: New features and software design",
+    "journal": "Computational Materials Science",
+    "doi": "10.1016/j.commatsci.2021.110828",
+    "url": "https://doi.org/10.1016/j.commatsci.2021.110828",
+    "authors": [
+      "Frank Cerasoli",
+      "Andrew Supka",
+      "Anooja Jayaraj",
+      "Marcio Costa",
+      "Ilaria Siloi",
+      "Jagoda Sławińska",
+      "Stefano Curtarolo",
+      "Marco Fornari",
+      "Davide Ceresoli",
+      "Marco Buongiorno Nardelli"
+    ]
+  },
+  {
+    "year": 2019,
+    "title": "PAOFLOW-Aided Computational Materials Design",
+    "journal": null,
+    "doi": "10.12794/metadc1609102",
+    "url": "https://doi.org/10.12794/metadc1609102",
+    "authors": [
+      "Haihang Wang"
+    ]
+  }
+]
