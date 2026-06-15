@@ -60,6 +60,5 @@ docstrings
 :caption: Release and Maintenance
 
 release
-../api/index
 
 ```
