@@ -1,4 +1,4 @@
-# Examples
+# Tutorials
 
 PAOFLOW ships a set of ready-to-run example workflows in the [`examples/`](https://github.com/marcobn/PAOFLOW/tree/master/examples) directory of the repository. All examples are **Python scripts** — no notebooks are required to get started.
 
