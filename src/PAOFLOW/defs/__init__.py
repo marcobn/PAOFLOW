@@ -56,6 +56,7 @@ _MODULE_MAP = {
     'pao_sym': 'hamiltonian',
     'add_ext_field': 'hamiltonian',
     'do_spin_orbit': 'hamiltonian',
+    'do_j_to_lm': 'hamiltonian',
     'do_gradient': 'hamiltonian',
     'do_momentum': 'hamiltonian',
     'do_double_grid': 'hamiltonian',
