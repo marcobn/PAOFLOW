@@ -23,6 +23,7 @@ module_pre_reqs = {
     'adaptive_smearing': ['gradient_and_momenta'],
     'anomalous_Hall': ['gradient_and_momenta'],
     'spin_Hall': ['gradient_and_momenta', 'spin_operator'],
+    'orbital_Hall': ['gradient_and_momenta', 'orbital_operator'],
     'transport': ['gradient_and_momenta'],
     'effective_mass': ['gradient_and_momenta'],
     'dielectric_tensor': ['gradient_and_momenta'],

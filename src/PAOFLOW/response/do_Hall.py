@@ -138,8 +138,38 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
 
 
 def do_orbital_Hall(data_controller, twoD, do_ac, P):
-    from .perturb_split import perturb_split
-    from .constants import ELECTRONVOLT_SI, ANGSTROM_AU, H_OVER_TPI, LL
+    """Compute the orbital Hall conductivity tensor and optionally the AC spin Hall conductivity.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays`` and ``data_attributes``.
+        Required arrays: ``o_tensor`` (shape ``(n, 3)`` specifying
+        :math:`(i_{\\rm pol}, j_{\\rm pol}, s_{\\rm pol})` triplets),
+        ``dHksp``, ``v_k``, ``degen``, ``Sj``, ``E_k``, ``deltakp``.
+        Required attributes: ``dftSO``, ``nk1``, ``nk2``, ``nk3``,
+        ``omega``, ``alat``, ``verbose``, ``opath``.
+    twoD : bool
+        If ``True``, normalise by the 2-D cross-sectional area instead of
+        the 3-D volume.
+    do_ac : bool
+        If ``True``, also compute the AC orbital Hall conductivity.
+    P : np.ndarray, shape ``(nawf, nawf)``
+        Projection operator used to symmetrize the orbital current operator.
+
+    Returns
+    -------
+    None
+        Writes per-component output files to ``opath``:
+
+        - ``Orbital_Berry_{spol}_{ipol}{jpol}.bxsf`` — orbital Berry curvature on
+          the k-grid.
+        - ``ohcEf_{spol}_{ipol}{jpol}.dat`` — orbital Hall conductivity vs.
+          Fermi energy.
+        - When ``do_ac``: ``ac_ohcr_{...}.dat`` and ``ac_ohci_{...}.dat``.
+    """
+    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
+    from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
 
@@ -636,6 +666,26 @@ def do_spin_current(data_controller, spol, ipol):
 
 
 def do_orbital_current(data_controller, spol, ipol):
+    """Compute the orbital current operator :math:`j^{s}_{\\rm pol}` in the band basis.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing ``data_arrays``.
+        Required arrays: ``Lj`` (shape ``(3, nawf, nawf)``),
+        ``dHksp`` (shape ``(snktot, 3, nawf, nawf, norbital)``).
+    spol : int
+        Orbital polarisation component index (0=x, 1=y, 2=z).
+    ipol : int
+        Momentum/velocity component index.
+
+    Returns
+    -------
+    np.ndarray, shape ``(snktot, nawf, nawf, norbital)``, complex
+        Symmetrised orbital current matrix elements
+        :math:`j^{s_\\rm pol}_{nm}(\\mathbf{k}) =
+        \\tfrac{1}{2}\\{L^{s_\\rm pol}, \\partial_{i_\\rm pol} H\\}_{nm}`.
+    """
     arry, attr = data_controller.data_dicts()
 
     Lj = arry['Lj'][spol]
