@@ -58,6 +58,7 @@ class DataController:
         ``t_tensor``     Transport tensor component indices
         ``a_tensor``     Anomalous Hall tensor component indices
         ``s_tensor``     Spin Hall tensor component indices
+        ``o_tensor``     Orbital Hall tensor component indices
         ===============  =================================================
 
     ``data_attributes`` : dict
@@ -357,6 +358,7 @@ class DataController:
 
         orb = []
         naw = []
+        orb_atom = []
 
         if attr['dftSO'] == True:
             for i in range(len(arry['atoms'])):
@@ -387,27 +389,65 @@ class DataController:
                 if shells_i == [0]:
                     naw.append(1)
                     orb.append('s')
+                    orb_atom.append(['s'])
                 elif shells_i == [0, 1]:
                     naw.append(4)
                     orb.append('sp')
+                    orb_atom.append(['s', 'p_z', 'p_x', 'p_y'])
                 elif shells_i == [0, 1, 2]:
                     naw.append(9)
                     orb.append('spd')
+                    orb_atom.append(
+                        ['s', 'p_z', 'p_x', 'p_y', 'd_3z2_r2', 'd_zx', 'd_yz', 'd_x2_y2', 'd_xy']
+                    )
                 elif shells_i == [1, 0]:
                     naw.append(4)
                     orb.append('ps')
+                    orb_atom.append(['p_z', 'p_x', 'p_y', 's'])
                 elif shells_i == [0, 0, 1, 2]:
                     naw.append(10)
                     orb.append('sspd')
+                    orb_atom.append(
+                        [
+                            's',
+                            's',
+                            'p_z',
+                            'p_x',
+                            'p_y',
+                            'd_3z2_r2',
+                            'd_zx',
+                            'd_yz',
+                            'd_x2_y2',
+                            'd_xy',
+                        ]
+                    )
                 elif shells_i == [0, 1, 2, 0]:
                     naw.append(10)
                     orb.append('spds')
                 elif shells_i == [0, 0, 1]:
                     naw.append(5)
                     orb.append('ssp')
+                    orb_atom.append(['s', 's', 'p_z', 'p_x', 'p_y'])
                 elif shells_i == [0, 0, 1, 1, 2]:
                     naw.append(13)
                     orb.append('ssppd')
+                    orb_atom.append(
+                        [
+                            's',
+                            's',
+                            'p_z',
+                            'p_x',
+                            'p_y',
+                            'p_z',
+                            'p_x',
+                            'p_y',
+                            'd_3z2_r2',
+                            'd_zx',
+                            'd_yz',
+                            'd_x2_y2',
+                            'd_xy',
+                        ]
+                    )
                 else:
                     matched = False
                 if not matched:
@@ -419,6 +459,7 @@ class DataController:
                     orb.append('generic')
             arry['orb_pseudo'] = orb
             arry['naw'] = np.array(naw)
+            arry['orb_atom'] = [(a, o) for a, o in zip(arry['atoms'], orb_atom)]
 
     def add_default_arrays(self):
         import numpy as np
@@ -449,6 +490,38 @@ class DataController:
         )
         # Spin Berry curvature
         self.data_arrays['s_tensor'] = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 2, 0],
+                [1, 0, 0],
+                [1, 1, 0],
+                [1, 2, 0],
+                [2, 0, 0],
+                [2, 1, 0],
+                [2, 2, 0],
+                [0, 0, 1],
+                [0, 1, 1],
+                [0, 2, 1],
+                [1, 0, 1],
+                [1, 1, 1],
+                [1, 2, 1],
+                [2, 0, 1],
+                [2, 1, 1],
+                [2, 2, 1],
+                [0, 0, 2],
+                [0, 1, 2],
+                [0, 2, 2],
+                [1, 0, 2],
+                [1, 1, 2],
+                [1, 2, 2],
+                [2, 0, 2],
+                [2, 1, 2],
+                [2, 2, 2],
+            ]
+        )
+        # Orbital Berry curvature
+        self.data_arrays['o_tensor'] = np.array(
             [
                 [0, 0, 0],
                 [0, 1, 0],

@@ -1532,6 +1532,50 @@ class PAOFLOW:
             if attr['abort_on_exception']:
                 raise e
 
+    def orbital_operator(self, adhoc_SO=False):
+        from .topology.j_matrix import j_matrix, build_orb_list_and_indices, build_L_from_orb
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        if adhoc_SO:
+            attr['adhoc_SO'] = adhoc_SO
+
+        try:
+            if attr['adhoc_SO'] == True:
+                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+                arrays['Lj'] = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+
+                for spol in range(3):
+                    L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+                    arrays['Lj'][spol, 0 : len(orb_list), 0 : len(orb_list)] = L
+                    arrays['Lj'][
+                        spol, len(orb_list) : 2 * len(orb_list), len(orb_list) : 2 * len(orb_list)
+                    ] = L
+
+            elif attr['adhoc_SO'] == False:
+                if 'Sj' not in arrays:
+                    self.spin_operator(adhoc_SO=False)
+                # Compute Total Angular Momentum operators
+                Jj = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+                for spol in range(3):
+                    Jj[spol, :, :] = j_matrix(self.data_controller, spol)
+                # Compute Orbital Angular Momentum operators L = J - S
+                arrays['Lj'] = Jj - arrays['Sj']
+
+            # elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
+            #    self.data_controller.build_arrays_adhoc_soc()
+            #    # Compute Orbital Angular Momentum operators L in the basis of |l,m> (NO SOC)
+            #    orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+            #    arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
+            #
+            #    for spol in range(3):
+            #        L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
+        except:
+            self.report_exception('angular_momentum_operator')
+            if attr['abort_on_exception']:
+                self.comm.Abort()
+
     def topology(
         self,
         eff_mass=False,
@@ -2384,7 +2428,8 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_orbital_texture import do_orbital_texture
+        from .topology.do_orbital_texture import do_orbital_texture
+
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -2440,8 +2485,12 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .defs.do_Hall import do_orbital_Hall
-        from .defs.projection_operator import do_projection_operator, orbital_array
+        
+        from .response.do_Hall import do_orbital_Hall
+        from .projection.projection_operator import (
+            do_projection_operator,
+            orbital_array,
+        )
 
         arrays, attr = self.data_controller.data_dicts()
 
