@@ -121,6 +121,8 @@ class PAOFLOW:
         Site-projected wave-function weights.
     site_projected_bands(site_proj)
         Band structure weighted by on-site probability density.
+    orbital_projected_bands(atoms, orbitals, fname)
+        Fat bands: band structure weighted by orbital (s/p/d/f) character.
     ipr(fname)
         Inverse participation ratio (IPR) of PAO eigenstates.
     doping(tmin, tmax, nt, delta, emin, emax, ne, doping_conc, core_electrons, fname)
@@ -989,6 +991,58 @@ class PAOFLOW:
 
         self.report_module_time('adhoc_spin_orbit')
 
+    def j_to_lm_hamiltonian(self, shells=None, check_unitary=True):
+        """
+        Rotate the fully-relativistic Hamiltonian from the J basis to the lm basis.
+
+        Fully-relativistic QE calculations (dftSO=True) build the Hamiltonian in
+        the coupled total-angular-momentum basis |j, m_j>. This rotates the
+        real-space Hamiltonian 'HRs' into the QE real-spherical-harmonic (lm)
+        basis, in the same [spin-up block][spin-down block] ordering produced by
+        'adhoc_spin_orbit', so the orbital character (s/p/d, m) becomes well
+        defined and the orbital-resolved band routines can be used.
+
+        'HRs' and 'Hks' are transformed in place and the per-orbital 'basis' is
+        rebuilt for the lm basis. Call after 'pao_hamiltonian' and before
+        'bands'. Only s, p, d shells are implemented.
+
+        Arguments:
+            shells (list of int): Flat shell list (0=s, 1=p, 2=d) in the
+                Hamiltonian's atom/shell order. None (default) builds it from
+                'atoms' and 'shells'. Pass explicitly if the dimension check
+                fails (e.g. a different atom/shell order or extra channels).
+            check_unitary (bool): Verify the transformation matrix is unitary.
+
+        Returns:
+            None
+        """
+        from .hamiltonian.do_j_to_lm import j_to_lm_hamiltonian as _j_to_lm
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print(
+                    "j_to_lm_hamiltonian requires the real-space Hamiltonian "
+                    "'HRs'; run 'pao_hamiltonian' first."
+                )
+            return
+
+        if self.rank == 0 and not attr.get('dftSO', False):
+            print(
+                'WARNING: j_to_lm_hamiltonian is intended for fully-relativistic '
+                '(dftSO) Hamiltonians written in the J basis.'
+            )
+
+        try:
+            _j_to_lm(self.data_controller, shells=shells, check_unitary=check_unitary)
+        except Exception as e:
+            self.report_exception('j_to_lm_hamiltonian')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('j_to_lm_hamiltonian')
+
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
@@ -1043,6 +1097,222 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('site_projeted_bands')
+
+    def orbital_projected_bands(
+        self, atoms=None, orbitals=None, fname='orbital-projected-bands'
+    ):
+        """
+        Compute an orbital-character-projected band structure ("fat bands").
+
+        For each band the spectral weight carried by the selected orbitals,
+        w_{nk} = sum_{mu in selection} |<mu|n,k>|^2, is written to file in the
+        same column layout as 'site_projected_bands', so it can be visualised
+        directly with GPAO.plot_weighted_bands.
+
+        Must be called after 'bands', which provides the eigenvectors 'v_k'.
+
+        Arguments:
+            atoms (list of int): 0-based atom indices to project onto.
+                None (default) includes every atom.
+            orbitals (list of str): Angular-momentum characters to project
+                onto, chosen among 's', 'p', 'd', 'f'. None (default) includes
+                every angular momentum. Combine with 'atoms' to obtain, e.g.,
+                the 'd' character of a single atom.
+            fname (str): Base name for the output. One file per spin channel is
+                written as '{fname}_{ispin}.dat'.
+
+        Returns:
+            None
+        """
+        from .spectrum.do_orbital_projected_bands import (
+            orbital_projected_bands as _orbital_projected_bands,
+        )
+        from .spectrum.do_orbital_projected_bands import L_LABELS
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'E_k' not in arry or 'v_k' not in arry:
+            if self.rank == 0:
+                print(
+                    "orbital_projected_bands requires band eigenvectors; "
+                    "run 'bands' first."
+                )
+            return
+
+        # Translate angular-momentum labels ('s','p','d','f') to l values.
+        l_sel = None
+        if orbitals is not None:
+            try:
+                l_sel = [L_LABELS[o.lower()] for o in orbitals]
+            except (KeyError, AttributeError):
+                raise Exception(
+                    "'orbitals' must be a list of characters among 's','p','d','f'"
+                )
+
+        arry['orb_proj_atoms'] = atoms
+        arry['orb_proj_l'] = l_sel
+        arry['orb_proj_fname'] = fname
+
+        try:
+            _orbital_projected_bands(self.data_controller)
+        except Exception as e:
+            self.report_exception('orbital_projected_bands')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('orbital_projected_bands')
+
+    def species_orbital_projected_bands(
+        self,
+        species,
+        fname='orbital-projected-bands',
+        plot=False,
+        sym_points=None,
+        y_lim=None,
+    ):
+        """
+        Orbital-resolved "fat bands" for every individual orbital of a species.
+
+        Like 'orbital_projected_bands', but instead of summing a whole
+        angular-momentum channel it projects onto each individual orbital of the
+        given species separately (grouped by shell label and the l, m quantum
+        numbers, summed over equivalent atoms of the species). One file per
+        orbital and spin channel is written as
+        '{fname}_{species}_{shell}_m{m}_{ispin}.dat', with the same column
+        layout as 'orbital_projected_bands'.
+
+        Requires the per-orbital 'basis' built by the atomic-wavefunction
+        projection and the eigenvectors 'v_k' produced by 'bands'; call after
+        'bands'.
+
+        Arguments:
+            species (str): Atomic species symbol to project onto, e.g. 'Mo'.
+            fname (str): Base name for the output files.
+            plot (bool): If True, also plot every written file with
+                GPAO.plot_weighted_bands (rank 0 only; needs matplotlib).
+            sym_points (str or tuple): k-path tick marks for the plots. None
+                (default) uses the 'kpath_points.txt' file written by 'bands'.
+            y_lim (tuple): Optional (e_min, e_max) energy window for the plots.
+
+        Returns:
+            list of (path, label): the files written (rank 0), else None.
+        """
+        from .spectrum.do_orbital_projected_bands import (
+            species_orbital_projected_bands as _species_orbital_projected_bands,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'E_k' not in arry or 'v_k' not in arry:
+            if self.rank == 0:
+                print(
+                    "species_orbital_projected_bands requires band "
+                    "eigenvectors; run 'bands' first."
+                )
+            return None
+
+        arry['orb_proj_species'] = species
+        arry['orb_proj_fname'] = fname
+
+        written = None
+        try:
+            written = _species_orbital_projected_bands(self.data_controller)
+        except Exception as e:
+            self.report_exception('species_orbital_projected_bands')
+            if attr['abort_on_exception']:
+                raise e
+
+        if plot and self.rank == 0 and written:
+            self._plot_weighted_bands_files(written, sym_points, y_lim)
+
+        self.report_module_time('species_orbital_projected_bands')
+        return written
+
+    def character_projected_bands(
+        self,
+        characters=None,
+        fname='orbital-projected-bands',
+        plot=False,
+        sym_points=None,
+        y_lim=None,
+    ):
+        """
+        "Fat bands" summed over all atoms for each angular-momentum character.
+
+        For every requested character (s, p, d, f) the spectral weight is summed
+        over all orbitals of that character in the whole system, regardless of
+        species or atom. One file per character and spin channel is written as
+        '{fname}_{char}_{ispin}.dat', with the same column layout as
+        'orbital_projected_bands'.
+
+        Requires the eigenvectors 'v_k' produced by 'bands'; call after 'bands'.
+
+        Arguments:
+            characters (list of str): Characters to project onto, among
+                's','p','d','f'. None (default) selects every character present.
+            fname (str): Base name for the output files.
+            plot (bool): If True, also plot every written file with
+                GPAO.plot_weighted_bands (rank 0 only; needs matplotlib).
+            sym_points (str or tuple): k-path tick marks for the plots. None
+                (default) uses the 'kpath_points.txt' file written by 'bands'.
+            y_lim (tuple): Optional (e_min, e_max) energy window for the plots.
+
+        Returns:
+            list of (path, label): the files written (rank 0), else None.
+        """
+        from .spectrum.do_orbital_projected_bands import (
+            character_projected_bands as _character_projected_bands,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'E_k' not in arry or 'v_k' not in arry:
+            if self.rank == 0:
+                print(
+                    "character_projected_bands requires band eigenvectors; "
+                    "run 'bands' first."
+                )
+            return None
+
+        arry['orb_proj_characters'] = characters
+        arry['orb_proj_fname'] = fname
+
+        written = None
+        try:
+            written = _character_projected_bands(self.data_controller)
+        except Exception as e:
+            self.report_exception('character_projected_bands')
+            if attr['abort_on_exception']:
+                raise e
+
+        if plot and self.rank == 0 and written:
+            self._plot_weighted_bands_files(written, sym_points, y_lim)
+
+        self.report_module_time('character_projected_bands')
+        return written
+
+    def _plot_weighted_bands_files(self, written, sym_points=None, y_lim=None):
+        """Plot each (path, label) weighted-band file with GPAO (rank 0 only).
+
+        Shared by the orbital-projection helpers. 'sym_points' defaults to the
+        'kpath_points.txt' file written by 'bands' in the output directory.
+        """
+        from os.path import join
+        from .GPAO import GPAO
+
+        sp = sym_points
+        if sp is None:
+            sp = join(self.data_controller.data_attributes['opath'], 'kpath_points.txt')
+        gp = GPAO()
+        for path, nice in written:
+            gp.plot_weighted_bands(
+                None,
+                path,
+                sym_points=sp,
+                title=nice,
+                cbar_label='%s weight' % nice,
+                y_lim=y_lim,
+            )
 
     def doubling_Hamiltonian(self, nx, ny, nz):
         """
