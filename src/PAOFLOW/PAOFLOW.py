@@ -623,6 +623,7 @@ class PAOFLOW:
         else:
             raise Exception('atomic_proj.xml was not found.\n')
 
+        arry['lchia'] = {}
         arry['jchia'] = {}
         arry['shells'] = {}
         for at, pseudo in arry['species']:
@@ -631,6 +632,7 @@ class PAOFLOW:
                 upf = UPF(fname)
                 arry['shells'][at] = upf.shells
                 arry['jchia'][at] = upf.jchia
+                arry['lchia'][at] = upf.lchia
             else:
                 raise Exception('Pseudopotential not found: %s' % fname)
 
@@ -2371,6 +2373,111 @@ class PAOFLOW:
 
         self.report_module_time('Spin Hall Conductivity')
 
+    def orbital_texture(self, fermi_up=1.0, fermi_dw=-1.0):
+        """
+        Calculate the Orbital Texture
+
+        Arguments:
+            fermi_up (float): The upper limit of the occupied energy range
+            fermi_dw (float): The lower limit of the occupied energy range
+
+        Returns:
+            None
+        """
+        from .defs.do_orbital_texture import do_orbital_texture
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'fermi_up' not in attr:
+            attr['fermi_up'] = fermi_up
+        if 'fermi_dw' not in attr:
+            attr['fermi_dw'] = fermi_dw
+
+        try:
+            if attr['nspin'] == 1:
+                if 'Lj' not in arry:
+                    self.orbital_operator()
+                do_orbital_texture(self.data_controller)
+                self.report_module_time('Orbital Texture')
+            else:
+                if self.rank == 0:
+                    print('Cannot compute orbital texture with nspin=2')
+        except Exception as e:
+            self.report_exception('orbital_texture')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+
+    def orbital_Hall(
+        self,
+        twoD=False,
+        do_ac=False,
+        emin=-1.0,
+        emax=1.0,
+        ne=501,
+        delta=0.05,
+        fermi_up=1.0,
+        fermi_dw=-1.0,
+        o_tensor=None,
+        ohc_proj=None,
+    ):
+        """
+        Calculate the Orbital Hall Conductivity
+
+
+        Arguments:
+            twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
+            do_ac (bool): True to calculate the Orbital Circular Dichroism
+            emin (float): The minimum energy in the range
+            emax (float): The maximum energy in the range
+            ne (float): The number of energy increments
+            delta (float) : small imaginary part added to the eigenvalue difference
+            fermi_up (float): The upper limit of the occupied energy range
+            fermi_dw (float): The lower limit of the occupied energy range
+            o_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+
+        Returns:
+            None
+        """
+        from .defs.do_Hall import do_orbital_Hall
+        from .defs.projection_operator import do_projection_operator, orbital_array
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        attr['eminH'], attr['emaxH'] = emin, emax
+        attr['deltaH'] = delta
+        attr['esizeH'] = ne
+
+        if o_tensor is not None:
+            arrays['o_tensor'] = np.array(o_tensor)
+        if 'fermi_up' not in attr:
+            attr['fermi_up'] = fermi_up
+        if 'fermi_dw' not in attr:
+            attr['fermi_dw'] = fermi_dw
+
+        if ohc_proj is not None:
+            arrays['ohc_proj'] = np.array(ohc_proj)
+
+        if 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+        try:
+            if ohc_proj == None:
+                P = np.eye(attr['nawf'])
+                do_orbital_Hall(self.data_controller, twoD, do_ac, P)
+            else:
+                if 'naw' not in arrays:
+                    arrays['naw'] = orbital_array(self.data_controller)
+                P = do_projection_operator(self.data_controller, arrays['ohc_proj'])
+                do_orbital_Hall(self.data_controller, twoD, do_ac, P)
+
+        except Exception as e:
+            self.report_exception('orbital_Hall')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Orbital Hall Conductivity')
     def rashba_edelstein(
         self,
         emin=-2,
