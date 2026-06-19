@@ -391,4 +391,21 @@ def j_to_lm_hamiltonian(data_controller, shells=None, check_unitary=True):
     # routines tile it to the [up][down] layout via the nawf == 2N detection.
     arry['basis'] = _build_lm_basis(arry)
 
+    # Any band eigenvectors computed before this call are in the OLD (J) basis
+    # and no longer match the rebuilt orbital map, so a projection that reused
+    # them would be silently wrong (the d-character would leak into s). Drop the
+    # stale 'v_k'/'E_k' so a fresh 'bands' is required before any band
+    # projection in the lm basis.
+    stale = [k for k in ('v_k', 'E_k') if k in arry]
+    for k in stale:
+        del arry[k]
+    if stale:
+        from mpi4py import MPI
+
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            print(
+                "j_to_lm_hamiltonian: cleared stale %s; re-run 'bands' before "
+                'any band projection in the lm basis.' % ', '.join(stale)
+            )
+
     return U
