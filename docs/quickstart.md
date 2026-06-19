@@ -1,16 +1,16 @@
 # Quickstart
 
-This page walks you through running **example01** — Silicon bands, DOS, and transport — which ships with PAOFLOW and includes all the pre-computed QE data needed to run without a Quantum ESPRESSO installation.
+This page walks you through the Silicon electronic structure workflow — bands, DOS, and transport — using pre-computed QE data that ships with PAOFLOW.
 
 ---
 
 ## What you will do
 
-1. Navigate to the example directory
-2. Run a short Python script that builds the PAO Hamiltonian from pre-computed QE output
+1. Place the pre-computed `silicon.save/` directory in your working directory
+2. Run a short Python script that builds the PAO Hamiltonian from the QE output
 3. Inspect the output files for band structure, density of states, and transport tensors
 
-**You do not need to run Quantum ESPRESSO yourself.** The `silicon.save/` directory in the example already contains the required `atomic_proj.xml` and `data-file-schema.xml` outputs.
+**You do not need to run Quantum ESPRESSO yourself.** The `silicon.save/` directory contains the required `atomic_proj.xml` and `data-file-schema.xml` outputs.
 
 ---
 
@@ -24,20 +24,12 @@ pip install PAOFLOW
 
 ---
 
-## Step 1 — Navigate to example01
+## Step 1 — Obtain the tutorial assets
 
-```bash
-cd examples/qe_examples/example01
-```
-
-The directory contains:
+Download the precomputed tutorial assets from the [PAOFLOW Releases page](https://github.com/marcobn/PAOFLOW/releases) and extract them into a working directory. The assets include:
 
 ```
-example01/
-├── silicon.save/          # Pre-computed QE output (atomic projections + data)
-├── main.py                # PAOFLOW driver script
-├── scf.in                 # QE SCF input (for reference only)
-└── nscf.in                # QE NSCF input (for reference only)
+silicon.save/          # Pre-computed QE output (atomic projections + data)
 ```
 
 ---
@@ -132,7 +124,7 @@ You can diff your results against them to confirm a correct installation.
 
 ## Next steps
 
-- Browse the other examples in [QE Examples](examples/qe-examples.md) for more complex workflows (SOC, transport, topology, ACBN0).
+- Explore the [Tutorials](tutorials/index.md) for in-depth guided workflows covering more advanced topics (spin–orbit coupling, topology, transport).
 - Use the `paoflow-gen` command-line tool to generate a driver script for your own QE calculation:
   ```bash
   paoflow-gen
