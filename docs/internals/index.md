@@ -25,23 +25,9 @@ dev-environment
 ```{toctree}
 :hidden:
 :maxdepth: 1
-:caption: Major Subsystems
-
-internal-basis
-acbn0
-nonlocal-velocity
-sk-edtb
-cli-generators
-
-```
-
-```{toctree}
-:hidden:
-:maxdepth: 1
-:caption: Development Workflows
+:caption: Contribution Guidelines
 
 contributing
-testing
 
 ```
 
@@ -57,9 +43,31 @@ docstrings
 ```{toctree}
 :hidden:
 :maxdepth: 1
+:caption: Testing
+
+testing
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
 :caption: Release and Maintenance
 
 release
+
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+:caption: Major Subsystems
+
+internal-basis
+acbn0
+nonlocal-velocity
+sk-edtb
+cli-generators
 
 ```
 

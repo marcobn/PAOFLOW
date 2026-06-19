@@ -2,7 +2,7 @@
 
 PAOFLOW is an open-source Python package for post-processing Density Functional Theory (DFT) calculations. It takes Kohn–Sham eigenstates from Quantum ESPRESSO or VASP and constructs tight-binding Hamiltonians in a Projected Atomic Orbital (PAO) basis — giving you a compact, _ab initio_ starting point for computing electronic, transport, and spectroscopic properties like band structures, density of states, and Berry curvature effects, all without empirical parameters.
 
-This wiki is the developer-facing side of the documentation: installation notes, contribution guidelines, module overviews, and internal workflow descriptions. If you're looking for tutorials or the API reference, head over to [ReadTheDocs](https://paoflow.readthedocs.io).
+This section is the developer-facing side of the documentation: installation notes, contribution guidelines, module overviews, and internal workflow descriptions.
 
 ## Design Philosophy
 
