@@ -8,11 +8,14 @@ Each tutorial walks through a complete workflow end-to-end: from the required in
 
 ::::{grid} 1 2 2 2
 :gutter: 4
+:class-container: tutorials-grid
 
 :::{grid-item-card}
 :link: tutorial01
 :link-type: doc
 :class-card: landing-card
+
+{octicon}`book;1.8em;sd-text-muted`
 
 **Tutorial 01**
 
@@ -23,6 +26,8 @@ Silicon electronic structure: build a PAO Hamiltonian, interpolate band structur
 :link: tutorial02
 :link-type: doc
 :class-card: landing-card
+
+{octicon}`graph;1.8em;sd-text-muted`
 
 **Tutorial 02**
 

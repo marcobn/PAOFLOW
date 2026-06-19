@@ -15,6 +15,7 @@ references
 :::{grid-item-card}
 :link: paoflow-in-action
 :link-type: doc
+:class-card: landing-card
 
 {octicon}`graph;1.6em;sd-text-muted` **PAOFLOW in Action**
 
@@ -24,6 +25,7 @@ A gallery of representative results from published research that used PAOFLOW to
 :::{grid-item-card}
 :link: references
 :link-type: doc
+:class-card: landing-card
 
 {octicon}`book;1.6em;sd-text-muted` **References**
 

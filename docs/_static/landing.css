@@ -42,18 +42,18 @@
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
 
-.pf-landing .landing-card {
+.landing-card {
   border-radius: 1rem !important;
   transition: box-shadow 0.2s ease, transform 0.15s ease;
 }
 
-.pf-landing .landing-card:hover {
+.landing-card:hover {
   transform: translateY(-3px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14) !important;
 }
 
 /* Stack icon → title → description centred inside the card */
-.pf-landing .landing-card .sd-card-body {
+.landing-card .sd-card-body {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -63,7 +63,7 @@
   border-radius: 1rem;
 }
 
-.pf-landing .landing-card .sd-card-body p {
+.landing-card .sd-card-body p {
   margin: 0;
 }
 
@@ -85,4 +85,17 @@ html:not([data-theme]) body.pf-landing {
 /* Hide right sidebar (TOC) */
 .pf-landing .bd-sidebar-secondary {
   display: none !important;
+}
+
+.tutorial-download-note {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid var(--pst-color-border);
+  background: color-mix(in srgb, var(--pst-color-surface) 90%, transparent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--pst-color-shadow) 58%, transparent);
+}
+
+.tutorial-download-note p {
+  margin: 0.3rem 0;
 }

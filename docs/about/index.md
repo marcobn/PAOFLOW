@@ -25,7 +25,7 @@ If you use PAOFLOW in published work, please cite:
 :::{grid-item-card}
 :link: https://doi.org/10.1016/j.commatsci.2021.110828
 :link-type: url
-:class-card: pf-cit-card
+:class-card: landing-card
 
 **Advanced modeling of materials with PAOFLOW 2.0: New features and software design**
 
@@ -35,7 +35,7 @@ _Comp. Mat. Sci._ **200**, 110828 · 2021
 :::{grid-item-card}
 :link: https://doi.org/10.1016/j.commatsci.2017.11.029
 :link-type: url
-:class-card: pf-cit-card
+:class-card: landing-card
 
 **PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on Atomic Orbital bases**
 
@@ -52,7 +52,7 @@ _Comp. Mat. Sci._ **143**, 462 · 2018
 :::{grid-item-card}
 :link: https://doi.org/10.1103/PhysRevB.88.165127
 :link-type: url
-:class-card: pf-cit-card
+:class-card: landing-card
 
 **Effective and accurate representation of extended Bloch states on finite Hilbert spaces**
 
@@ -62,7 +62,7 @@ _Phys. Rev. B_ **88**, 165127 · 2013
 :::{grid-item-card}
 :link: https://doi.org/10.1103/PhysRevB.93.035104
 :link-type: url
-:class-card: pf-cit-card
+:class-card: landing-card
 
 **Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets**
 
@@ -72,7 +72,7 @@ _Phys. Rev. B_ **93**, 035104 · 2016
 :::{grid-item-card}
 :link: https://doi.org/10.1103/PhysRevB.93.125137
 :link-type: url
-:class-card: pf-cit-card
+:class-card: landing-card
 
 **Accurate Tight-Binding Hamiltonians for 2D and Layered Materials**
 
@@ -82,7 +82,7 @@ _Phys. Rev. B_ **93**, 125137 · 2016
 :::{grid-item-card}
 :link: https://doi.org/10.1103/PhysRevB.94.165166
 :link-type: url
-:class-card: pf-cit-card
+:class-card: landing-card
 
 **Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and optical spectroscopy from first principles**
 
