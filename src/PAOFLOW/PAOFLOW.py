@@ -2343,6 +2343,66 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    def berry_curvature(self, spin_Hall=False, orbital_Hall=False, spol=None, ipol=None, jpol=None):
+        """
+        Calculate the Berry Curvature along the k-path 'kq'
+
+        Arguments:
+            curvature (string) : A string with the Hall effect to be calculated. Charge, spin or orbital.
+            spol (int): Spin polarization
+            ipol (int): In plane dimension 1
+            jpol (int): In plane dimension 2
+
+        Returns:
+            None
+        """
+
+        from .topology.do_berry_curvature import do_berry_curvature
+        # velocity, momentum and charge, spin or orbital Berry curvature and
+        # curvature operators along the path in the IBZ from do_topology_calc
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        attr['spol'] = spol
+        attr['ipol'] = ipol
+        attr['jpol'] = jpol
+
+        if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
+            if self.rank == 0:
+                print("Must specify 'spol', 'ipol', and 'jpol'")
+            quit()
+
+        if spin_Hall == True:
+            attr['curvature'] = 'Spin'
+            if 'Sj' not in arrays:
+                self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+            arrays['Oj'] = arrays['Sj']
+            try:
+                do_berry_curvature(self.data_controller)
+            except Exception as e:
+                self.report_exception(attr['curvature'] + ' Berry curvature')
+                if attr['abort_on_exception']:
+                    raise e
+
+        if orbital_Hall == True:
+            attr['curvature'] = 'Orbital'
+            if 'Lj' not in arrays:
+                self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+            arrays['Oj'] = arrays['Lj']
+            try:
+                do_berry_curvature(self.data_controller)
+            except Exception as e:
+                self.report_exception(attr['curvature'] + ' Berry curvature')
+                if attr['abort_on_exception']:
+                    raise e
+
+        self.report_module_time(attr['curvature'] + ' Berry Curvature')
+
+        del arrays['R']
+        del arrays['idx']
+        del arrays['Rfft']
+        del arrays['R_wght']
+
     def spin_Hall(
         self,
         twoD=False,
