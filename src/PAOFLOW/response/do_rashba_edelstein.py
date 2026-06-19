@@ -13,6 +13,8 @@ def do_rashba_edelstein(
     lattice_height,
     structure_thickness,
     write_to_file,
+    Op_text,
+    filename,
 ):
     """Compute the Rashba-Edelstein effect tensor as a function of energy.
 
@@ -86,7 +88,7 @@ def do_rashba_edelstein(
 
     deltakp = np.take(arrays['deltakp'], ind_plot, axis=1)[:, :, 0]
     E_k = np.take(arrays['E_k'], ind_plot, axis=1)[:, :, 0]
-    St = np.real(arrays['sktxt']).reshape(snktot, 3, nstates)
+    St = np.real(Op_text).reshape(snktot, 3, nstates)
 
     kai_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
     j_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
@@ -158,10 +160,10 @@ def do_rashba_edelstein(
         )
 
         if write_to_file:
-            fkai = open(join(attr['opath'], 'kai.dat'), 'w')
-            fcurrent = open(join(attr['opath'], 'current.dat'), 'w')
+            fkai = open(join(attr['opath'], filename + '_kai.dat'), 'w')
+            fcurrent = open(join(attr['opath'], filename + '_current.dat'), 'w')
 
-            ofE = lambda si, sj: open(join(attr['opath'], f'Ekai_{si}{sj}.dat'), 'w')
+            ofE = lambda si, sj: open(join(attr['opath'], filename + f'_Ekai_{si}{sj}.dat'), 'w')
             fEkai = [[ofE(sEkai[i], sEkai[j]) for j in range(3)] for i in range(3)]
 
             for ie in range(esize):
@@ -176,3 +178,81 @@ def do_rashba_edelstein(
             for i in range(3):
                 for j in range(3):
                     fEkai[i][j].close()
+def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, spol, Op1, P):
+    import numpy as np
+    from ..utils.perturb_split import perturb_split
+    from ..utils.smearing import metpax, gaussian
+    from ..utils.constants import LL
+
+    arrays, attributes = data_controller.data_dicts()
+
+    nawf = attributes['nawf']
+    nspin = attributes['nspin']
+    nktot = arrays['pksp'].shape[0]
+    ne = ene.size
+
+    # Hall Magnetization Calculation with Gaussian Smearing
+
+    nawf = attributes['nawf']
+
+    v_kaux = np.zeros_like(arrays['v_k'])
+
+    O1 = np.zeros_like(arrays['pksp'])
+    O2 = np.zeros_like(arrays['pksp'])
+
+    for ik in range(nktot):
+        for ispin in range(nspin):
+            O1[ik, spol, :, :, ispin], O2[ik, ipol, :, :, ispin] = perturb_split(
+                0.5 * (P @ Op1[spol, :, :] + Op1[spol, :, :] @ P),
+                arrays['dHksp'][ik, ipol, :, :, ispin],
+                arrays['v_k'][ik, :, :, ispin],
+                arrays['degen'][ispin][ik],
+            )
+
+            # O1[ik,spol,:,:,ispin],O2[ik,ipol,:,:,ispin]= perturb_split(
+            #    arrays['dHksp'][ik,ipol,:,:,ispin],
+            #    arrays['dHksp'][ik,spol,:,:,ispin],
+            #    arrays['v_k'][ik,:,:,ispin],
+            #    arrays['degen'][ispin][ik]
+            # )
+
+    for ispin in range(attributes['nspin']):
+        E_k = np.real(arrays['E_k'][:, :, ispin])
+
+        accaux = np.zeros((ne), dtype=float)
+
+        for ik in range(nktot):
+            v_kaux[ik, :, :, ispin] = O1[ik, spol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
+
+        if attributes['smearing'] != None:
+            taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
+
+        for n in range(ne):
+            # Adaptive Gaussian Smearing
+            if attributes['smearing'] == 'gauss':
+                taux = gaussian(ene[n], E_k, arrays['deltakp'][:, :, ispin])
+            # Adaptive M-P smearing
+            elif attributes['smearing'] == 'm-p':
+                taux = metpax(ene[n], E_k, arrays['deltakp'][:, :, ispin])
+            elif attributes['smearing'] == None:
+                taux = np.exp(-(((ene[n] - E_k[:, :]) / delta) ** 2)) / np.sqrt(np.pi)
+
+            accaux[n] += np.sum(
+                np.real(taux * np.diagonal(v_kaux[:, :, :, ispin], axis1=1, axis2=2))
+            )
+
+        acc = np.zeros((ne), dtype=float) if rank == 0 else None
+
+        comm.Reduce(accaux, acc, op=MPI.SUM)
+        accaux = None
+
+        if rank == 0:
+            if attributes['smearing'] == None:
+                acc /= float(attributes['nkpnts']) * np.sqrt(np.pi) * delta
+            else:
+                acc /= float(attributes['nkpnts'])
+
+        # cart_indices = (str(LL[ipol]),str(LL[spol]),str(ispin))
+
+        facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[ipol]), str(LL[spol]))
+        data_controller.write_file_row_col(facc, ene, acc)
