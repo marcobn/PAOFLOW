@@ -2280,7 +2280,7 @@ class PAOFLOW:
         if attr['smearing'] == None:
             do_dos(self.data_controller, emin, emax, ne, delta)
         else:
-            do_dos_adaptive(self.data_controller, emin, emax, ne, delta)
+            do_dos_adaptive(self.data_controller, emin, emax, ne)
         do_doping(self.data_controller, temps, ene, fname)
 
         self.report_module_time('Doping')
