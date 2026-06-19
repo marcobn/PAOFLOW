@@ -19,6 +19,16 @@ Each tutorial walks through a complete workflow end-to-end: from the required in
 Silicon electronic structure: build a PAO Hamiltonian, interpolate band structure, and compute the density of states.
 :::
 
+:::{grid-item-card}
+:link: tutorial02
+:link-type: doc
+:class-card: landing-card
+
+**Tutorial 02**
+
+Silicon transport: compute Boltzmann transport tensors and extend the workflow with relaxation-time models.
+:::
+
 ::::
 
 ```{toctree}
@@ -26,4 +36,5 @@ Silicon electronic structure: build a PAO Hamiltonian, interpolate band structur
 :maxdepth: 2
 
 tutorial01
+tutorial02
 ```
