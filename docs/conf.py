@@ -8,7 +8,7 @@ author = 'PAOFLOW developers'
 release = '2.9.3'
 
 extensions = [
-    'myst_parser',
+    'myst_nb',
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
@@ -19,6 +19,8 @@ extensions = [
     'sphinx_copybutton',
     'autoapi.extension',
 ]
+
+nb_execution_mode = 'off'
 
 myst_enable_extensions = [
     'amsmath',
@@ -136,7 +138,8 @@ exclude_patterns = [
 
 source_suffix = {
     '.rst': 'restructuredtext',
-    '.md': 'markdown',
+    '.md': 'myst-nb',
+    '.ipynb': 'myst-nb',
 }
 
 master_doc = 'index'
