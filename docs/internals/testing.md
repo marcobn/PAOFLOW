@@ -1,5 +1,9 @@
 # Testing
 
+:::{note}
+This section is for developers and contributors to the project. It provides guidelines and best practices for writing tests for the codebase.
+:::
+
 Testing is a first-class part of contributing to PAOFLOW. Good tests protect everyone's work — they catch regressions early and give reviewers confidence that new code behaves as intended.
 
 ## Test Categories
@@ -66,7 +70,7 @@ A good integration test answers the question: "Can this example still run succes
 
 ## What To Do If Integration Tests Fail
 
-When a test fails, the first step is figuring out *why* before making any changes. Failures usually fall into one of three buckets: a real regression, missing or wrong test assets, or small numerical differences between machines.
+When a test fails, the first step is figuring out _why_ before making any changes. Failures usually fall into one of three buckets: a real regression, missing or wrong test assets, or small numerical differences between machines.
 
 ### Reading the comparison plots
 
@@ -76,6 +80,7 @@ Every failed test generates comparison plots showing reference data, fresh outpu
 - **Locally:** Plots appear in `_compare_plots/`; the failure message prints the path.
 
 **Signs of a real regression:**
+
 - Output and reference curves have clearly different shapes
 - Peaks shift significantly
 - Unexpected output files appear or expected ones go missing
@@ -83,6 +88,7 @@ Every failed test generates comparison plots showing reference data, fresh outpu
 - Large differences spread across broad regions
 
 **Signs of machine-dependent numerical drift:**
+
 - Curves overlap almost everywhere visually
 - Differences are small and smooth
 - Tiny deviations near steep features or zero crossings
