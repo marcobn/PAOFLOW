@@ -275,16 +275,3 @@ a.pst-navbar-icon[href*="github"] svg {
   display: block;
   margin: 0 auto 0.5rem;
 }
-
-/* ── Citation cards ──────────────────────────────────────────────────────── */
-.pf-cit-card .sd-card-body {
-  padding: 0.75rem 1rem;
-}
-.pf-cit-card .sd-card-body p {
-  margin: 0;
-}
-.pf-cit-card .sd-card-body p + p {
-  margin-top: 0.35rem;
-  font-size: 0.85em;
-  color: var(--pst-color-text-muted);
-}
