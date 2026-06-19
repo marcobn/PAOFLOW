@@ -2527,18 +2527,39 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Orbital Hall Conductivity')
+    def conductivity(self, delta=0.01, emin=-10.0, emax=2.0, ne=1000, cond_tensor=None):
+        from .response.do_conductivity import do_conductivity
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        if cond_tensor is not None:
+            arrays['cond_tensor'] = np.array(cond_tensor)
+
+        for i in range(arrays['cond_tensor'].shape[0]):
+            ipol = arrays['cond_tensor'][i, 0]
+            jpol = arrays['cond_tensor'][i, 1]
+
+            do_conductivity(self.data_controller, emin, emax, ne, delta, ipol, jpol)
+
+        self.report_module_time('Conductivity')
+
     def rashba_edelstein(
         self,
         emin=-2,
         emax=2,
         ne=500,
+        delta=0.05,
         temps=0.0,
         reg=1e-30,
         twoD=False,
         lt=1.0,
         st=1.0,
         write_to_file=True,
-        delta=0.05,
+        intra_band=False,
+        spin=True,
+        orbital=False,
+        ree_tensor=None,
+        ree_proj=None,
     ):
         """
         Calculate the Rashba-Edelstein tensor
@@ -2546,25 +2567,119 @@ class PAOFLOW:
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
             ne (float): The number of energy increments in [emin,emax]
+            delta (float) : small imaginary part added to the eigenvalue difference
             temps (float): Smearing temperature in eV
             reg (float): The regularization number that is applicable only for materials with band gap (in the order of 1e-30)
             twoD (bool): set True for two dimnesional materials
             lt (float): The lattice height of the twoD structure (in cm)
             st (float): The structure 'effectivce' thickness of the twoD structure (in cm)
             write_to_file (bool): Set True to write tensors to file
+            intra_band (bool): Set True to calculate intra-band contributions
+            spin (bool): Set True to include spin in the calculation. If True, 'Sj' will be calculated if not already present in the DataController
+            orbital (bool): Set True to include orbital contributions in the calculation. If True, 'L' will be calculated if not already present in the DataController
+            ree_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
 
         Returns:
             None
         """
-        from .response.do_rashba_edelstein import do_rashba_edelstein
+        from .response.do_rashba_edelstein import do_rashba_edelstein, do_rashba_edelstein_intra
+        from .projection.projection_operator import (
+            do_projection_operator,
+            orbital_array,
+        )
 
         arrays, attr = self.data_controller.data_dicts()
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
 
         ene = np.linspace(emin, emax, ne)
+
+        if spin == True and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if orbital == True and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+        P = np.eye(attr['nawf'])
+
         try:
-            do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
+            if intra_band == True:
+                if ree_tensor is not None:
+                    arrays['ree_tensor'] = np.array(ree_tensor)
+
+                if spin is True:
+                    if 'Sj' not in arrays:
+                        self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+
+                    for i in range(arrays['ree_tensor'].shape[0]):
+                        ipol = arrays['ree_tensor'][i, 0]
+                        spol = arrays['ree_tensor'][i, 1]
+
+                        if ree_proj == None:
+                            P = np.eye(attr['nawf'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'spin',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Sj'],
+                                P,
+                            )
+                        else:
+                            if 'naw' not in arrays:
+                                arrays['naw'] = orbital_array(self.data_controller)
+                            P = do_projection_operator(self.data_controller, arrays['ree_proj'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'spin',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Sj'],
+                                P,
+                            )
+
+                if orbital is True:
+                    if 'Lj' not in arrays:
+                        self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+                    for i in range(arrays['ree_tensor'].shape[0]):
+                        ipol = arrays['ree_tensor'][i, 0]
+                        spol = arrays['ree_tensor'][i, 1]
+
+                        do_rashba_edelstein_intra(
+                            self.data_controller, 'orbital', ene, delta, ipol, spol, arrays['Lj'], P
+                        )
+
+            else:
+                if spin == True:
+                    self.spin_texture(fermi_up=emax, fermi_dw=emin)
+                    do_rashba_edelstein(
+                        self.data_controller,
+                        ene,
+                        temps,
+                        reg,
+                        twoD,
+                        lt,
+                        st,
+                        write_to_file,
+                        arrays['sktxt'],
+                        'spin',
+                    )
+                if orbital == True:
+                    self.orbital_texture(fermi_up=emax, fermi_dw=emin)
+                    do_rashba_edelstein(
+                        self.data_controller,
+                        ene,
+                        temps,
+                        reg,
+                        twoD,
+                        lt,
+                        st,
+                        write_to_file,
+                        arrays['oktxt'],
+                        'orbital',
+                    )
 
         except Exception as e:
             self.report_exception('rashba_edelstein')
