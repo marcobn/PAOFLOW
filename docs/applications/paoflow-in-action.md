@@ -1,4 +1,4 @@
-# PAOFLOW in Action
+# Selected Highlights
 
 PAOFLOW has enabled research across a broad range of physical phenomena — from topological insulators and spintronic devices to quantum computation and optical metamaterials. The gallery below highlights representative results from published work that used PAOFLOW to drive or support key calculations.
 
