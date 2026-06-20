@@ -9,9 +9,9 @@
   display: none !important;
 }
 
-/* Compensate for the missing header */
+/* Add vertical padding for landing page */
 .pf-landing .bd-main {
-  padding-top: 5rem;
+  padding: 5rem 0 8rem;
 }
 
 /* Centre and constrain the content column */
