@@ -1,6 +1,6 @@
 # Tutorials
 
-PAOFLOW tutorials are guided, educational workflows that teach both **how to use PAOFLOW** and **the physics behind the calculations**.
+PAOFLOW tutorials are guided, workflows that teach both **how to use PAOFLOW** and **the physics behind the calculations**.
 
 Each tutorial walks through a complete workflow end-to-end: from the required inputs, through each PAOFLOW step, to interpreting the results. Tutorials are written for researchers who are familiar with density functional theory but may be new to PAOFLOW.
 
@@ -19,7 +19,7 @@ Each tutorial walks through a complete workflow end-to-end: from the required in
 
 **Tutorial 01**
 
-Silicon electronic structure: build a PAO Hamiltonian, interpolate band structure, and compute the density of states.
+Electronic structure: build a PAO Hamiltonian, interpolate band structure, and compute the density of states.
 :::
 
 :::{grid-item-card}
@@ -31,7 +31,7 @@ Silicon electronic structure: build a PAO Hamiltonian, interpolate band structur
 
 **Tutorial 02**
 
-Silicon transport: compute Boltzmann transport tensors and extend the workflow with relaxation-time models.
+Transport properties: compute Boltzmann transport tensors and extend the workflow with relaxation-time models.
 :::
 
 ::::
