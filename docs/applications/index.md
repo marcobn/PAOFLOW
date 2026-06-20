@@ -10,14 +10,15 @@ paoflow-in-action
 references
 ```
 
-::::{grid} 1
+::::{grid} 1 2 2 2
+:gutter: 3
 
 :::{grid-item-card}
 :link: paoflow-in-action
 :link-type: doc
 :class-card: landing-card
 
-{octicon}`graph;1.6em;sd-text-muted` **PAOFLOW in Action**
+{octicon}`graph;1.6em;sd-text-muted` **Selected Highlights**
 
 A gallery of representative results from published research that used PAOFLOW to drive or support key calculations.
 :::
@@ -27,7 +28,7 @@ A gallery of representative results from published research that used PAOFLOW to
 :link-type: doc
 :class-card: landing-card
 
-{octicon}`book;1.6em;sd-text-muted` **References**
+{octicon}`book;1.6em;sd-text-muted` **Other Work**
 
 Publications that have used PAOFLOW in their scientific work.
 :::

@@ -199,9 +199,154 @@ html[data-theme=dark] .bd-sidebar-primary {
 }
 
 /* Copy button code block surface */
-html[data-theme=dark] div[class*="highlight"] {
+html[data-theme=dark] div.highlight,
+html[data-theme=dark] div[class*="highlight-"] {
   background: #0a180a !important;
   border: 1px solid #1c4020 !important;
+}
+
+/* Distinguish code blocks from notebook output blocks */
+div.highlight,
+.nbinput .highlight,
+div[class*="highlight-"] {
+  border: 1px solid var(--pst-color-border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--pst-color-shadow) 55%, transparent);
+  overflow: hidden;
+}
+
+div.highlight pre,
+.nbinput .highlight pre,
+div[class*="highlight-"] pre {
+  background: color-mix(in srgb, var(--pst-color-on-background) 94%, transparent) !important;
+}
+
+.nboutput,
+.nboutput .output,
+.nboutput .output_area,
+.nboutput .output pre {
+  background: color-mix(in srgb, var(--pst-color-surface) 90%, transparent) !important;
+}
+
+.nboutput,
+.nboutput .output,
+.nboutput .output_area {
+  border: 1px dashed var(--pst-color-border-muted) !important;
+  border-radius: 10px !important;
+}
+
+/* Syntax colors for highlighted code blocks */
+.highlight .k,
+.highlight .kn,
+.highlight .kp,
+.highlight .kr {
+  color: #00d4ff !important;
+}
+
+.highlight .nf,
+.highlight .fm {
+  color: #ffd166 !important;
+}
+
+.highlight .n,
+.highlight .nn,
+.highlight .nc {
+  color: #a7f3d0 !important;
+}
+
+.highlight .s,
+.highlight .sa,
+.highlight .sb,
+.highlight .sc,
+.highlight .sd,
+.highlight .s1,
+.highlight .s2 {
+  color: #ffb4a2 !important;
+}
+
+.highlight .mi,
+.highlight .mf,
+.highlight .il {
+  color: #f8f38d !important;
+}
+
+.highlight .c,
+.highlight .c1,
+.highlight .cm {
+  color: #8fb78f !important;
+  font-style: italic;
+}
+
+.highlight .o,
+.highlight .ow {
+  color: #ffd166 !important;
+}
+
+.highlight .p {
+  color: var(--pst-color-text-base) !important;
+}
+
+/* Keep copy buttons only for code blocks, not notebook outputs */
+.nboutput .copybtn,
+.output .copybtn,
+.jp-OutputArea .copybtn {
+  display: none !important;
+}
+
+/* Notebook cells: make all borders consistent and remove scroll boxes for equations */
+div.cell > div.cell_input {
+  border: 1px solid var(--pst-color-border) !important;
+  border-left: 1px solid var(--pst-color-border) !important;
+}
+
+div.cell:is(
+    .tag_output_scroll,
+    .tag_scroll-output,
+    .config_scroll_outputs
+  )
+  div.cell_output,
+div.cell.tag_scroll-input div.cell_input {
+  max-height: none !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+}
+
+.cell_output .MathJax_Display,
+.cell_output .output.text_latex,
+.nboutput .MathJax_Display,
+.nboutput .output.text_latex {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Display equations should flow naturally with no local scrollbar gutter */
+div.math,
+.math.notranslate.nohighlight,
+.MathJax_Display,
+mjx-container[display="true"] {
+  overflow: visible !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+  scrollbar-width: none !important;
+}
+
+div.math::-webkit-scrollbar,
+.math.notranslate.nohighlight::-webkit-scrollbar,
+.MathJax_Display::-webkit-scrollbar,
+mjx-container[display="true"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.cell_output:has(.MathJax_Display),
+.nboutput:has(.MathJax_Display),
+.nboutput:has(.output.text_latex) {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 /* Navbar logo sizing */
@@ -274,4 +419,33 @@ a.pst-navbar-icon[href*="github"] svg {
   object-fit: cover;
   display: block;
   margin: 0 auto 0.5rem;
+}
+
+/* Citation list with per-entry copy button */
+.pf-citation-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.pf-citation-entry {
+  margin: 0 0 1rem;
+}
+
+.pf-citation-text {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.pf-citation-copy {
+  border: 1px solid var(--pst-color-border);
+  border-radius: 8px;
+  background: var(--pst-color-surface);
+  color: var(--pst-color-text-base);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.86rem;
+}
+
+.pf-citation-copy:hover,
+.pf-citation-copy:focus-visible {
+  background: var(--pst-color-primary-bg);
 }

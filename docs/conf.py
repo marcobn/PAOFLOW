@@ -123,7 +123,7 @@ html_sidebars = {
 
 html_static_path = ['_static']
 html_css_files = ['sidebar-tree.css', 'landing.css', 'matrix-theme.css']
-html_js_files = ['sidebar-tree.js', 'landing.js', 'theme-toggle.js']
+html_js_files = ['sidebar-tree.js', 'landing.js', 'theme-toggle.js', 'citations.js']
 html_title = 'PAOFLOW'
 
 templates_path = ['_templates']
