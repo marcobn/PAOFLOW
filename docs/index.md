@@ -100,4 +100,5 @@ applications/index
 installation
 tutorials/index
 internals/index
+more/index
 ```

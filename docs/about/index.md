@@ -7,7 +7,6 @@
 theory
 team
 contact
-contribute
 ```
 
 **PAOFLOW** is an open-source Python framework for constructing and operating on _ab initio_ tight-binding Hamiltonians built from the projection of DFT wavefunctions onto atomic orbital (PAO) bases. Starting from a converged Quantum ESPRESSO or VASP calculation, PAOFLOW delivers a compact Hamiltonian that drives a wide range of electronic, topological, optical, and transport property calculations — without empirical parameters.
