@@ -1,3 +1,6 @@
+import re
+from typing import Any
+
 import numpy as np
 from mpi4py import MPI
 
@@ -30,7 +33,8 @@ def do_pdos(data_controller, emin, emax, ne, delta):
         Writes the following files to the output directory via
         :meth:`DataController.write_file_row_col`:
 
-        - ``{m}_pdos_{ispin}.dat`` for each orbital ``m`` and spin channel.
+        - ``{atom_indexed}_{n_orb}_pdos_{ispin}.dat`` (for example
+                    ``Si1_3px_pdos_0.dat``) for each orbital and spin channel.
         - ``pdos_sum_{ispin}.dat`` — the total projected DOS.
 
     Notes
@@ -57,6 +61,8 @@ def do_pdos(data_controller, emin, emax, ne, delta):
     emax = np.amin(np.array([attributes['shift'], emax]))
     ene = np.linspace(emin, emax, ne)
 
+    orbital_prefixes = _build_orbital_prefixes(arrays, nawf)
+
     for ispin in range(nspin):
         pdosaux = np.zeros((nawf, ne), dtype=float)
         v_kaux = np.real(np.abs(arrays['v_k'][:, :, :, ispin]) ** 2)
@@ -74,15 +80,18 @@ def do_pdos(data_controller, emin, emax, ne, delta):
         pdosaux = None
 
         if rank == 0:
+            assert pdos is not None
             pdos /= float(nktot) * np.sqrt(np.pi) * delta
-
-        pdos_sum = np.zeros(ne, dtype=float) if rank == 0 else None
-
-        for m in range(nawf):
-            if rank == 0:
+            pdos_sum = np.zeros(ne, dtype=float)
+            for m in range(nawf):
                 pdos_sum += pdos[m]
-            fpdos = '%d_pdos_%d.dat' % (m, ispin)
-            data_controller.write_file_row_col(fpdos, ene, (pdos[m] if rank == 0 else None))
+                fpdos = '%s_pdos_%d.dat' % (orbital_prefixes[m], ispin)
+                data_controller.write_file_row_col(fpdos, ene, pdos[m])
+        else:
+            pdos_sum = None
+            for m in range(nawf):
+                fpdos = '%s_pdos_%d.dat' % (orbital_prefixes[m], ispin)
+                data_controller.write_file_row_col(fpdos, ene, None)
 
         fpdos = 'pdos_sum_%d.dat' % ispin
         data_controller.write_file_row_col(fpdos, ene, pdos_sum)
@@ -113,7 +122,8 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
     None
         Writes the following files to the output directory:
 
-        - ``{m}_pdosdk_{ispin}.dat`` for each orbital ``m`` and spin channel.
+        - ``{atom_indexed}_{n_orb}_pdosdk_{ispin}.dat`` (for example
+                    ``Si1_3px_pdosdk_0.dat``) for each orbital and spin channel.
         - ``pdosdk_sum_{ispin}.dat`` — the total adaptive PDOS.
 
     Notes
@@ -123,7 +133,7 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
     via :func:`smearing.gaussian` or :func:`smearing.metpax`.  This
     approach follows Yates *et al.*, Phys. Rev. B **75**, 195121 (2007).
     """
-    from ..utils.smearing import metpax, gaussian
+    from ..utils.smearing import gaussian, metpax
 
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes
@@ -133,6 +143,8 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
     ene = np.linspace(emin, emax, ne)
 
     nawf = attributes['nawf']
+
+    orbital_prefixes = _build_orbital_prefixes(arrays, nawf)
 
     for ispin in range(attributes['nspin']):
         E_k = np.real(arrays['E_k'][:, :, ispin])
@@ -158,15 +170,161 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
         pdosaux = None
 
         if rank == 0:
+            assert pdos is not None
             pdos /= float(attributes['nkpnts'])
-
-        pdos_sum = np.zeros(ne, dtype=float) if rank == 0 else None
-
-        for m in range(nawf):
-            if rank == 0:
+            pdos_sum = np.zeros(ne, dtype=float)
+            for m in range(nawf):
                 pdos_sum += pdos[m]
-            fpdos = '%d_pdosdk_%d.dat' % (m, ispin)
-            data_controller.write_file_row_col(fpdos, ene, (pdos[m] if rank == 0 else None))
+                fpdos = '%s_pdosdk_%d.dat' % (orbital_prefixes[m], ispin)
+                data_controller.write_file_row_col(fpdos, ene, pdos[m])
+        else:
+            pdos_sum = None
+            for m in range(nawf):
+                fpdos = '%s_pdosdk_%d.dat' % (orbital_prefixes[m], ispin)
+                data_controller.write_file_row_col(fpdos, ene, None)
 
         fpdos = 'pdosdk_sum_%d.dat' % ispin
         data_controller.write_file_row_col(fpdos, ene, pdos_sum)
+
+
+def _sanitize_token(token: Any) -> str:
+    """Convert an arbitrary label into a filesystem-friendly token.
+
+    Parameters
+    ----------
+    token : Any
+        Input label (atom symbol, orbital string, etc.).
+
+    Returns
+    -------
+    str
+        Sanitized label containing only ``[A-Za-z0-9_-]``. Any run of
+        disallowed characters is replaced by ``'_'``. Empty inputs fall back
+        to ``'orb'``.
+    """
+    token = str(token).strip()
+    token = re.sub(r'[^A-Za-z0-9_\-]+', '_', token)
+    return token or 'orb'
+
+
+def _orbital_component_from_lm(lval: int, mval: int) -> str:
+    """Map angular quantum numbers ``(l, m)`` to cubic-harmonic labels.
+
+    Parameters
+    ----------
+    lval : int
+        Orbital angular momentum quantum number.
+        Typical values are ``0`` (s), ``1`` (p), ``2`` (d), ``3`` (f).
+    mval : int
+        PAOFLOW basis component index in the internal ordering
+        ``m = 1, ..., 2*l+1``.
+
+    Returns
+    -------
+    str
+        Component label in the same cubic-harmonic convention used by the
+        projection code (for example ``'px'``, ``'dxy'``, ``'fz3'``).
+
+    Notes
+    -----
+    The ordering matches the real-cubic-harmonic blocks used in
+    :func:`PAOFLOW.projection.do_atwfc_proj.calc_ylmg`.
+    For ``l=1``, the mapping is ``[pz, px, py]`` for ``m=1,2,3``.
+    """
+    lm_map = {
+        0: ['s'],
+        1: ['pz', 'px', 'py'],
+        2: ['dz2', 'dzx', 'dyz', 'dx2y2', 'dxy'],
+        3: ['fz3', 'fxz2', 'fyz2', 'fzx2y2', 'fxyz', 'fxx3yy2', 'fy3xx2y'],
+    }
+
+    names = lm_map.get(int(lval), None)
+    mind = int(mval) - 1
+    if names is None or mind < 0 or mind >= len(names):
+        return 'l%dm%d' % (int(lval), int(mval))
+    return names[mind]
+
+
+def _principal_n_from_label(label: Any) -> str | None:
+    """Extract principal quantum number from a shell label.
+
+    Parameters
+    ----------
+    label : Any
+        Shell label such as ``'3P'``, ``'4D'`` or ``'2S'``.
+
+    Returns
+    -------
+    str or None
+        Leading principal quantum number as a string (for example ``'3'``),
+        or ``None`` when no leading integer is present.
+    """
+    match = re.match(r'^\s*(\d+)', str(label))
+    return match.group(1) if match else None
+
+
+def _build_orbital_prefixes(arrays: dict[str, Any], nawf: int) -> list[str]:
+    """Build deterministic per-orbital filename prefixes.
+
+    Parameters
+    ----------
+    arrays : dict[str, Any]
+        Data-controller array dictionary. Uses ``'basis'`` when available,
+        otherwise ``'atomic_basis'``. Each basis record is expected to expose
+        ``atom``, ``tau``, ``l``, ``m`` and ``label``.
+    nawf : int
+        Number of atomic wavefunctions/orbitals.
+
+    Returns
+    -------
+    list[str]
+        Prefix list of length ``nawf``. Each entry follows
+        ``{AtomSite}_{n}{component}``, for example ``Si1_3px``.
+
+    Notes
+    -----
+    Site indices (``Si1``, ``Si2``, ...) are assigned by first-seen order of
+    unique atomic positions ``tau`` for each species, ensuring reproducible
+    labels in multi-atom cells. If basis metadata is unavailable, a safe
+    fallback ``orb_<index>`` is returned.
+    """
+    basis = arrays.get('basis') or arrays.get('atomic_basis')
+    if basis is None or len(basis) < nawf:
+        return ['orb_%d' % m for m in range(nawf)]
+
+    species_counts = {}
+    tau_to_tag = {}
+    prefixes = []
+    for m in range(nawf):
+        rec = basis[m]
+
+        atom = _sanitize_token(rec.get('atom', 'atom'))
+        tau = rec.get('tau', None)
+        tau_key = None
+        if tau is not None:
+            tau_key = tuple(np.asarray(tau, dtype=float).tolist())
+
+        if tau_key is not None:
+            if tau_key not in tau_to_tag:
+                species_counts[atom] = species_counts.get(atom, 0) + 1
+                tau_to_tag[tau_key] = '%s%d' % (atom, species_counts[atom])
+            atom_tag = tau_to_tag[tau_key]
+        else:
+            species_counts[atom] = species_counts.get(atom, 0) + 1
+            atom_tag = '%s%d' % (atom, species_counts[atom])
+
+        lval = rec.get('l', None)
+        mval = rec.get('m', None)
+        label = rec.get('label', '')
+
+        if lval is None or mval is None:
+            prefixes.append('%s_orb%d' % (atom_tag, m))
+            continue
+
+        component = _orbital_component_from_lm(lval, mval)
+        nval = _principal_n_from_label(label)
+        orb = (nval + component) if nval is not None else component
+
+        prefixes.append('%s_%s' % (atom_tag, _sanitize_token(orb)))
+
+    return prefixes
