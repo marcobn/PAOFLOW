@@ -10,7 +10,6 @@ import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.calculators.current import (
     build_bias_grid,
-    compute_current_vs_bias,
     read_transmittance,
 )
 from PAOFLOW.transport.conductor_kpoint import compute_kpoint_conductor_quantities
@@ -21,6 +20,7 @@ from PAOFLOW.transport.conductor_observables import (
     accumulate_transmission,
 )
 from PAOFLOW.transport.conductor_pipeline import run_conductor
+from PAOFLOW.transport.current_pipeline import run_current
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.get_input_params import ConductorData
@@ -513,15 +513,12 @@ class CurrentCalculator:
         log.log_rank0(f'Saved current vs bias to {outpath}')
 
     def run(self) -> None:
-        self.currents = compute_current_vs_bias(
-            self.egrid,
-            self.transm,
-            self.vgrid,
-            self.data['mu_L'],
-            self.data['mu_R'],
-            self.data['sigma'],
+        self.currents = run_current(
+            data=self.data,
+            egrid=self.egrid,
+            transm=self.transm,
+            vgrid=self.vgrid,
         )
-        self.write_output()
 
 
 class CurrentRunner:
