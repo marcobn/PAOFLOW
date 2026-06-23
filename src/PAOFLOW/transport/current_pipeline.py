@@ -7,7 +7,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
-from PAOFLOW.transport.calculators.current import compute_current_vs_bias
+from PAOFLOW.transport.calculators.current import (
+    build_bias_grid,
+    compute_current_vs_bias,
+    read_transmittance,
+)
 
 
 def write_current_output(
@@ -75,3 +79,42 @@ def run_current(
     )
     write_current_output(data=data, vgrid=vgrid, currents=currents)
     return currents
+
+
+def run_current_from_file(
+    *,
+    data: Mapping[str, Any],
+    filein: str,
+    bias_min: float,
+    bias_max: float,
+    nbias: int,
+) -> NDArray[np.float64]:
+    """Compute current-vs-bias from a transmission file and write output.
+
+    Parameters
+    ----------
+    data : Mapping[str, Any]
+        Current workflow input mapping. Required keys are ``mu_L``, ``mu_R``,
+        ``sigma``, and ``fileout``.
+    filein : str
+        Path to the transmission input file read by ``read_transmittance``.
+    bias_min : float
+        Minimum bias value in volts.
+    bias_max : float
+        Maximum bias value in volts.
+    nbias : int
+        Number of bias points in the generated grid.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Computed current values, shape ``(nbias,)``.
+    """
+    bias_grid = build_bias_grid(bias_min, bias_max, nbias)
+    energy_grid, transmission = read_transmittance(filein)
+    return run_current(
+        data=data,
+        egrid=energy_grid,
+        transm=transmission,
+        vgrid=bias_grid,
+    )

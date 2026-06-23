@@ -5,13 +5,9 @@ from mpi4py import MPI
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.calculators.current import (
-    build_bias_grid,
-    read_transmittance,
-)
 from PAOFLOW.transport.conductor_kpoint import compute_kpoint_conductor_quantities
 from PAOFLOW.transport.conductor_pipeline import run_conductor
-from PAOFLOW.transport.current_pipeline import run_current
+from PAOFLOW.transport.current_pipeline import run_current_from_file
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.io.get_input_params import ConductorData
 from PAOFLOW.transport.io.write_header import headered_function
@@ -189,22 +185,6 @@ class ConductorRunner:
         self.finalize()
 
 
-class CurrentCalculator:
-    def __init__(self, data: dict):
-        self.data = data
-        self.vgrid = build_bias_grid(data['Vmin'], data['Vmax'], data['nV'])
-        self.egrid, self.transm = read_transmittance(data['filein'])
-        self.currents = None
-
-    def run(self) -> None:
-        self.currents = run_current(
-            data=self.data,
-            egrid=self.egrid,
-            transm=self.transm,
-            vgrid=self.vgrid,
-        )
-
-
 class CurrentRunner:
     @classmethod
     def from_yaml(cls, yaml_file: str, data_controller: DataController) -> 'CurrentRunner':
@@ -225,7 +205,11 @@ class CurrentRunner:
             self.memory_tracker.report(include_real_memory=True)
 
     def run(self):
-        vgrid = build_bias_grid(self.data['Vmin'], self.data['Vmax'], self.data['nV'])
-        egrid, transm = read_transmittance(self.data['filein'])
-        self.currents = run_current(data=self.data, egrid=egrid, transm=transm, vgrid=vgrid)
+        self.currents = run_current_from_file(
+            data=self.data,
+            filein=self.data['filein'],
+            bias_min=self.data['Vmin'],
+            bias_max=self.data['Vmax'],
+            nbias=self.data['nV'],
+        )
         self.finalize()

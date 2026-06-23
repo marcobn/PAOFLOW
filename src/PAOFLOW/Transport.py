@@ -8,12 +8,8 @@ from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.calculators.current import (
-    build_bias_grid,
-    read_transmittance,
-)
 from PAOFLOW.transport.conductor_pipeline import run_conductor
-from PAOFLOW.transport.current_pipeline import run_current
+from PAOFLOW.transport.current_pipeline import run_current_from_file
 from PAOFLOW.transport.io.input_parameters import ConductorData
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.utils.timing import global_timing
@@ -200,11 +196,10 @@ class Transport:
             'mu_R': mu_R,
             'sigma': sigma,
         }
-        bias_grid = build_bias_grid(bias_min, bias_max, nbias)
-        energy_grid, transmission = read_transmittance(filein)
-        return run_current(
+        return run_current_from_file(
             data=current_data,
-            egrid=energy_grid,
-            transm=transmission,
-            vgrid=bias_grid,
+            filein=filein,
+            bias_min=bias_min,
+            bias_max=bias_max,
+            nbias=nbias,
         )
