@@ -422,3 +422,54 @@ def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, 
         ax.legend()
 
     plt.show()
+
+
+def plot_optical(curves, title, x_lim, y_lim, x_label, y_label, cols=None, legend=True):
+    """Overlay an arbitrary selection of optical spectra on a single axis.
+
+    This is the generic renderer behind the user-facing optical-property
+    selection (dielectric function, refractive index, absorption,
+    reflectivity, optical conductivity and emissivity). Each curve may carry
+    its own abscissa, so spectra sampled on the photon-energy grid and the
+    total-emissivity-versus-temperature curve can both be drawn through the
+    same entry point.
+
+    Arguments:
+      curves (list): Sequence of ``(x, y, label)`` tuples, one per spectrum.
+        ``x`` and ``y`` are 1D arrays of equal length; ``label`` is the legend
+        text (may be ``None``).
+      title (str): Figure title (defaults to ``'Optical properties'``).
+      x_lim (tuple): ``(x_min, x_max)`` axis limits, or ``None``.
+      y_lim (tuple): ``(y_min, y_max)`` axis limits, or ``None``.
+      x_label (str): X-axis label (defaults to ``'Energy (eV)'``).
+      y_label (str): Y-axis label (defaults to ``'Optical response'``).
+      cols (str/tuple or list): A single color applied to every curve, or a
+        list of colors (one per curve). ``None`` lets matplotlib cycle.
+      legend (bool): Show the legend when any curve carries a label.
+    """
+    fig = plt.figure()
+    fig.suptitle('Optical properties' if title is None else title)
+
+    ax = fig.add_subplot(111)
+
+    ncurves = len(curves)
+    if cols is None or isinstance(cols, str) or isinstance(cols, tuple):
+        cols = [cols] * ncurves
+    elif len(cols) < ncurves:
+        cols = list(cols) + [None] * (ncurves - len(cols))
+
+    for i, (x, y, label) in enumerate(curves):
+        ax.plot(x, y, color=cols[i], label=label)
+
+    if x_lim is not None:
+        ax.set_xlim(*x_lim)
+    if y_lim is not None:
+        ax.set_ylim(*y_lim)
+
+    ax.set_xlabel('Energy (eV)' if x_label is None else x_label, fontsize=12)
+    ax.set_ylabel('Optical response' if y_label is None else y_label, fontsize=12)
+
+    if legend and any(label is not None for _, _, label in curves):
+        ax.legend()
+
+    plt.show()

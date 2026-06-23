@@ -2361,6 +2361,10 @@ class PAOFLOW:
         ne=501,
         d_tensor=None,
         degauss=0.1,
+        emissivity=False,
+        emis_angles=(0.0, 30.0, 60.0),
+        emis_ntheta=90,
+        emis_temperature=300.0,
     ):
         r"""Compute the frequency-dependent dielectric tensor.
 
@@ -2398,6 +2402,21 @@ class PAOFLOW:
         * ``refl_<a><a>.dat`` — normal-incidence reflectivity
           :math:`R = ((n-1)^2+\kappa^2)/((n+1)^2+\kappa^2)`. **Diagonal pairs only**.
 
+        **Emissivity** (written only when ``emissivity=True``, diagonal pairs):
+
+        * ``refl_th<deg>_<a><a>.dat`` — Fresnel directional reflectivity
+          :math:`R(\theta, \omega)`, polarization-averaged over s and p
+          waves, at each incidence angle in ``emis_angles``.
+        * ``emis_th<deg>_<a><a>.dat`` — directional emissivity
+          :math:`\varepsilon(\theta, \omega) = 1 - R(\theta, \omega)`
+          (Kirchhoff's law, opaque medium).
+        * ``emish_<a><a>.dat`` — spectral hemispherical emissivity
+          :math:`\varepsilon(\omega) = 2\int_0^{\pi/2}\varepsilon(\theta,\omega)
+          \cos\theta\sin\theta\,d\theta`.
+        * ``emist_<a><a>.dat`` — total hemispherical emissivity
+          :math:`\varepsilon(T)`, the Planck-weighted spectral average, as a
+          two-column (temperature, emissivity) file.
+
         On rank 0 the f-sum-rule plasmon frequency
         :math:`\omega_p = \sqrt{(2/\pi)\int_0^{\omega_{\max}}\omega\varepsilon_2 d\omega}`
         is printed per diagonal component and can be compared against the
@@ -2424,6 +2443,32 @@ class PAOFLOW:
             and (for metals) the Drude :math:`-\partial f/\partial E`
             delta-function approximation. Should match the QE SCF/NSCF
             smearing for direct benchmarks.
+        emissivity : bool, optional
+            If ``True``, additionally compute the Fresnel directional
+            reflectivity, spectral hemispherical emissivity, and total
+            hemispherical emissivity from the diagonal complex refractive
+            index (see Outputs). Default ``False``.
+        emis_angles : sequence of float, optional
+            Incidence angles (degrees, relative to the surface normal) at
+            which the directional reflectivity/emissivity are tabulated.
+            Only used when ``emissivity=True``. Default ``(0, 30, 60)``.
+        emis_ntheta : int, optional
+            Number of polar-angle samples in :math:`[0, \pi/2]` for the
+            hemispherical integral. Only used when ``emissivity=True``.
+            Default 90.
+        emis_temperature : float or sequence of float, optional
+            Temperature(s) in kelvin at which the Planck-weighted total
+            hemispherical emissivity is evaluated. Only used when
+            ``emissivity=True``. Default 300 K.
+
+            .. note::
+
+               The total emissivity integral is taken over the supplied
+               ``[emin, emax]`` grid only. The Planck weight peaks near
+               :math:`k_B T`, so for a meaningful :math:`\varepsilon(T)` the
+               window should start near zero and resolve the thermally
+               relevant low-energy range; otherwise the truncated integral
+               underestimates :math:`\varepsilon(T)`.
 
         Returns
         -------
@@ -2465,6 +2510,10 @@ class PAOFLOW:
         if 'delta' not in attr:
             attr['delta'] = delta
         attr['intrasmear'] = intrasmear
+        attr['emissivity'] = emissivity
+        attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
+        attr['emis_ntheta'] = int(emis_ntheta)
+        attr['emis_temperature'] = np.atleast_1d(np.array(emis_temperature, dtype=float))
         if d_tensor == 'all':
             pass
         elif d_tensor == 'diag':
