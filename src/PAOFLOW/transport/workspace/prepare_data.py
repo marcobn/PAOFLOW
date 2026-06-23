@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-from PAOFLOW.DataController import DataController
 from mpi4py import MPI
 
+from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.grid.kpoints import (
     KpointsData,
     compute_fourier_phase_table,
@@ -25,28 +25,28 @@ from PAOFLOW.transport.io.get_input_params import (
 from PAOFLOW.transport.io.input_parameters import ConductorData, RuntimeData
 from PAOFLOW.transport.io.log_module import log_summary
 from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj
-from PAOFLOW.transport.smearing.smearing_T import SmearingData
 from PAOFLOW.transport.smearing.smearing_base import smearing_func
+from PAOFLOW.transport.smearing.smearing_T import SmearingData
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.workspace.workspace import Workspace
 
 
-def prepare_conductor(yaml_file: str, data_controller: DataController) -> ConductorData:
+def prepare_conductor_data(data: ConductorData, data_controller: DataController) -> ConductorData:
     """
-    Load input parameters from a YAML file and prepare core conductor data.
+    Prepare core conductor runtime data from an already validated input model.
 
     Parameters
     ----------
-    yaml_file : str
-        Path to the YAML input file.
+    data : ConductorData
+        Conductor input model with validated static fields.
+    data_controller : DataController
+        Shared PAOFLOW data store used to load atomic projections.
 
     Returns
     -------
-    data : ConductorData
-        Parsed conductor data object with runtime values initialized.
+    ConductorData
+        The same ``data`` instance with runtime fields initialized.
     """
-    data = load_conductor_data_from_yaml(yaml_file)
-
     prefix = os.path.basename(data.file_names.datafile_C)
     work_dir = data.file_names.work_dir
     nproc = MPI.COMM_WORLD.Get_size()
@@ -95,6 +95,26 @@ def prepare_conductor(yaml_file: str, data_controller: DataController) -> Conduc
     log_summary(data)
 
     return data
+
+
+def prepare_conductor(yaml_file: str, data_controller: DataController) -> ConductorData:
+    """
+    Load input parameters from a YAML file and prepare core conductor data.
+
+    Parameters
+    ----------
+    yaml_file : str
+        Path to the YAML input file.
+    data_controller : DataController
+        Shared PAOFLOW data store used to load atomic projections.
+
+    Returns
+    -------
+    ConductorData
+        Parsed conductor data object with runtime values initialized.
+    """
+    data = load_conductor_data_from_yaml(yaml_file)
+    return prepare_conductor_data(data, data_controller)
 
 
 def prepare_smearing(
