@@ -58,10 +58,10 @@ def build_conductor_input_values(
     *,
     datafile_C: str,
     dimC: int,
-    dimL: int,
-    dimR: int,
-    datafile_L: str,
-    datafile_R: str,
+    dimL: int | None = None,
+    dimR: int | None = None,
+    datafile_L: str | None = None,
+    datafile_R: str | None = None,
     emin: float,
     emax: float,
     ne: int,
@@ -83,14 +83,14 @@ def build_conductor_input_values(
         Path to the conductor input file.
     dimC : int
         Conductor block dimension.
-    dimL : int
-        Left lead block dimension.
-    dimR : int
-        Right lead block dimension.
-    datafile_L : str
-        Path to the left lead input file.
-    datafile_R : str
-        Path to the right lead input file.
+    dimL : int or None, optional
+        Left lead block dimension for non-bulk calculations.
+    dimR : int or None, optional
+        Right lead block dimension for non-bulk calculations.
+    datafile_L : str or None, optional
+        Path to the left lead input file for non-bulk calculations.
+    datafile_R : str or None, optional
+        Path to the right lead input file for non-bulk calculations.
     emin : float
         Minimum energy in eV.
     emax : float
@@ -123,11 +123,7 @@ def build_conductor_input_values(
     """
     input_values: dict[str, Any] = {
         'datafile_C': datafile_C,
-        'datafile_L': datafile_L,
-        'datafile_R': datafile_R,
         'dimC': dimC,
-        'dimL': dimL,
-        'dimR': dimR,
         'emin': emin,
         'emax': emax,
         'ne': ne,
@@ -140,6 +136,14 @@ def build_conductor_input_values(
         'output_dir': output_dir,
         'postfix': postfix,
     }
+
+    calculation_type = str(kwargs.get('calculation_type', '')).strip().lower()
+    if calculation_type != 'bulk':
+        input_values['dimL'] = 0 if dimL is None else dimL
+        input_values['dimR'] = 0 if dimR is None else dimR
+        input_values['datafile_L'] = '' if datafile_L is None else datafile_L
+        input_values['datafile_R'] = '' if datafile_R is None else datafile_R
+
     input_values.update(kwargs)
     return input_values
 

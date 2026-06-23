@@ -42,10 +42,10 @@ class Transport:
         *,
         datafile_C: str,
         dimC: int,
-        dimL: int,
-        dimR: int,
-        datafile_L: str,
-        datafile_R: str,
+        dimL: int | None = None,
+        dimR: int | None = None,
+        datafile_L: str | None = None,
+        datafile_R: str | None = None,
         emin: float,
         emax: float,
         ne: int,
@@ -92,10 +92,10 @@ class Transport:
         *,
         datafile_C: str,
         dimC: int,
-        dimL: int,
-        dimR: int,
-        datafile_L: str,
-        datafile_R: str,
+        dimL: int | None = None,
+        dimR: int | None = None,
+        datafile_L: str | None = None,
+        datafile_R: str | None = None,
         emin: float,
         emax: float,
         ne: int,
@@ -282,10 +282,10 @@ class Transport:
         *,
         datafile_C: str,
         dimC: int,
-        dimL: int,
-        dimR: int,
-        datafile_L: str,
-        datafile_R: str,
+        dimL: int | None = None,
+        dimR: int | None = None,
+        datafile_L: str | None = None,
+        datafile_R: str | None = None,
         emin: float,
         emax: float,
         ne: int,
@@ -316,14 +316,16 @@ class Transport:
             Path to the conductor Hamiltonian/projection input.
         dimC : int
             Conductor block dimension.
-        dimL : int
-            Left lead block dimension.
-        dimR : int
-            Right lead block dimension.
-        datafile_L : str
-            Path to the left-lead input.
-        datafile_R : str
-            Path to the right-lead input.
+        dimL : int or None, optional
+            Left lead block dimension. Provide for non-bulk calculations;
+            leave as ``None`` for bulk mode.
+        dimR : int or None, optional
+            Right lead block dimension. Provide for non-bulk calculations;
+            leave as ``None`` for bulk mode.
+        datafile_L : str or None, optional
+            Path to the left-lead input for non-bulk calculations.
+        datafile_R : str or None, optional
+            Path to the right-lead input for non-bulk calculations.
         emin : float
             Minimum energy in eV.
         emax : float

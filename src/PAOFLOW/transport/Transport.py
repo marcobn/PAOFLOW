@@ -213,3 +213,16 @@ class CurrentRunner:
             nbias=self.data['nV'],
         )
         self.finalize()
+
+
+from PAOFLOW.Transport import Transport as _StagedTransport
+
+
+class Transport(_StagedTransport):
+    """Compatibility shim exposing the staged Transport API from legacy path.
+
+    Notes
+    -----
+    This keeps ``PAOFLOW.transport.Transport`` import-compatible while routing
+    staged workflows to ``PAOFLOW.Transport.Transport``.
+    """

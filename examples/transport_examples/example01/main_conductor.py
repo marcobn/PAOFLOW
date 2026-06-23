@@ -1,9 +1,5 @@
 from PAOFLOW import PAOFLOW
-from PAOFLOW.transport.Transport import ConductorRunner
-from mpi4py import MPI
-
-
-comm = MPI.COMM_WORLD
+from PAOFLOW.Transport import Transport
 
 
 def main():
@@ -24,11 +20,25 @@ def main():
     )
     paoflow.projections()
 
-    transport = ConductorRunner.from_yaml(
-        yaml_file="conductor.yaml",
-        data_controller=paoflow.data_controller,
+    transport = Transport(paoflow.data_controller)
+    transport.conductor(
+        datafile_C="./output/qe/al5.save/atomic_proj.xml",
+        dimC=20,
+        emin=-7.0,
+        emax=2.0,
+        ne=9001,
+        delta=0.0005,
+        transport_direction=3,
+        output_dir="./output/paoflow",
+        postfix="_bulk",
+        calculation_type="bulk",
+        write_gf=True,
+        write_lead_sgm=True,
+        use_sym=False,
+        do_overlap_transformation=False,
+        H00_C={"rows": "ALL", "cols": "ALL"},
+        H_CR={"rows": "ALL", "cols": "ALL"},
     )
-    transport.run()
 
 
 if __name__ == "__main__":
