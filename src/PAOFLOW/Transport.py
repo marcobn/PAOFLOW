@@ -168,6 +168,17 @@ class Transport:
             data_controller=self.data_controller,
         )
 
+    def build_hamiltonian_blocks(self) -> dict[str, Any]:
+        """Build Hamiltonian blocks using the explicit staged API name.
+
+        Notes
+        -----
+        This is an API-aligned alias for :meth:`build_blocks` kept to expose
+        the staged transport naming proposed in ``instructions.md`` while
+        preserving existing behavior.
+        """
+        return self.build_blocks()
+
     def compute_self_energy(
         self,
         *,
@@ -185,10 +196,13 @@ class Transport:
         Raises
         ------
         RuntimeError
-            If ``prepare`` and ``build_blocks`` were not called first.
+            If ``prepare`` and block-building were not called first.
         """
         if self._conductor_state is None:
-            raise RuntimeError('Call prepare(...) and build_blocks() before compute_self_energy().')
+            raise RuntimeError(
+                'Call prepare(...) and build_hamiltonian_blocks() '
+                '(or build_blocks()) before compute_self_energy().'
+            )
         return compute_conductor_self_energy(
             state=self._conductor_state,
             ie_g=ie_g,
@@ -216,7 +230,8 @@ class Transport:
         """
         if self._conductor_state is None:
             raise RuntimeError(
-                'Call prepare(...) and build_blocks() before compute_green_function().'
+                'Call prepare(...) and build_hamiltonian_blocks() '
+                '(or build_blocks()) before compute_green_function().'
             )
         return compute_conductor_green(
             state=self._conductor_state,
