@@ -393,7 +393,8 @@ def plot_tensor(
     plt.show()
 
 
-def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend):
+def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend,
+                    legend_outside=False):
     """ """
 
     fig = plt.figure()
@@ -419,7 +420,15 @@ def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, 
     ax.set_ylabel(y_lab)
 
     if legend:
-        ax.legend()
+        if legend_outside:
+            # Shrink the axes and place the legend in a panel on the right
+            # so it does not overlap the curves.
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.75, box.height])
+            ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5),
+                      borderaxespad=0.0, frameon=False)
+        else:
+            ax.legend()
 
     plt.show()
 
