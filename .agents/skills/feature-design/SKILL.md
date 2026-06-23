@@ -36,6 +36,10 @@ The goal is consistency, maintainability, and behavior preservation.
 5. **No logic changes during redesign/refactor.**
    Reorganization is allowed; algorithmic behavior and numerical outputs must remain equivalent.
 
+6. **All functions and variables must be self documenting.**
+   Use descriptive function, parameter, local variable, and return-value names that reveal their role in the physics or workflow. Avoid abbreviations and one-letter names unless they are standard domain notation and the surrounding code/docstring makes their meaning clear.
+   Prefer names such as `energy_grid`, `overlap_matrix`, `hamiltonian_kspace`, and `selected_band_indices` over opaque names such as `arr`, `tmp`, `x`, or `vals`.
+
 ---
 
 ## Architecture Pattern
@@ -63,12 +67,18 @@ Both orchestrators should call module-level procedural functions in subpackages.
 
 ### Function Style for New Modules
 
-Use procedural functions with explicit arguments.
+Use procedural functions with explicit arguments, type hints, and self-documenting names.
 
 ```python
 # src/PAOFLOW/spectrum/bands_solver.py
+from numpy.typing import NDArray
 
-def compute_bands(hksp, kpath, nk, spin_orbit=False):
+def compute_bands(
+   hamiltonian_kspace: NDArray,
+   k_path: NDArray,
+   number_of_kpoints: int,
+   spin_orbit: bool = False,
+) -> tuple[NDArray, dict[str, object]]:
     """Compute band energies along a k-path."""
     # local temporary arrays only
     # return values explicitly
