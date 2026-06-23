@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +11,11 @@ from PAOFLOW.transport.calculators.current import (
     build_bias_grid,
     read_transmittance,
 )
+from PAOFLOW.transport.conductor_energy_loop import (
+    process_energy_point,
+    reduce_conductor_results,
+    transform_k_to_r_at_energy as transform_k_to_r_at_energy_point,
+)
 from PAOFLOW.transport.conductor_kpoint import compute_kpoint_conductor_quantities
 from PAOFLOW.transport.conductor_observables import (
     accumulate_dos as accumulate_dos_contribution,
@@ -19,17 +23,19 @@ from PAOFLOW.transport.conductor_observables import (
 from PAOFLOW.transport.conductor_observables import (
     accumulate_transmission,
 )
+from PAOFLOW.transport.conductor_outputs import (
+    initialize_conductor_outputs,
+    initialize_kpoint_operator_buffers,
+)
 from PAOFLOW.transport.conductor_pipeline import run_conductor
+from PAOFLOW.transport.conductor_writers import (
+    write_conductor_operators,
+    write_conductor_output,
+)
 from PAOFLOW.transport.current_pipeline import run_current
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
-from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.get_input_params import ConductorData
-from PAOFLOW.transport.io.write_data import (
-    write_data,
-    write_operator_xml,
-)
 from PAOFLOW.transport.io.write_header import headered_function
-from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.utils.timing import global_timing, timed_function
 from PAOFLOW.transport.workspace.prepare_data import (
@@ -162,31 +168,17 @@ class ConductorCalculator:
         dos_k : ndarray
             k-resolved DOS.
         """
-        do_eigenchannels = self.data.symmetry.do_eigenchannels
-        neigchnx = self.data.symmetry.neigchnx
-        neigchn = min(self.dimC, self.dimR, self.dimL, neigchnx) if do_eigenchannels else 0
-
-        conduct = np.zeros((1 + neigchn, self.ne), dtype=np.float64)
-        conduct_k = np.zeros((1 + neigchn, self.nkpts_par, self.ne), dtype=np.float64)
-        dos = np.zeros(self.ne, dtype=np.float64)
-        dos_k = np.zeros((self.ne, self.nkpts_par), dtype=np.float64)
-
-        self.gf_out = (
-            np.zeros((self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128)
-            if self.data.symmetry.write_gf
-            else None
+        conduct, dos, conduct_k, dos_k, self.gf_out, self.rsgmL_out, self.rsgmR_out = (
+            initialize_conductor_outputs(
+                data=self.data,
+                dimC=self.dimC,
+                dimL=self.dimL,
+                dimR=self.dimR,
+                ne=self.ne,
+                nkpts_par=self.nkpts_par,
+                nrtot_par=self.nrtot_par,
+            )
         )
-        self.rsgmL_out = (
-            np.zeros((self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128)
-            if self.data.symmetry.write_lead_sgm
-            else None
-        )
-        self.rsgmR_out = (
-            np.zeros((self.ne, self.nrtot_par, self.dimC, self.dimC), dtype=np.complex128)
-            if self.data.symmetry.write_lead_sgm
-            else None
-        )
-
         return conduct, dos, conduct_k, dos_k
 
     def process_energy(self, conduct, dos, conduct_k, dos_k, ie_g: int, ie_start: int, ie_end: int):
@@ -200,35 +192,29 @@ class ConductorCalculator:
         dos : ndarray
             Updated DOS.
         """
-        nprint = self.data.iteration.nprint
-        if (ie_g % nprint == 0 or ie_g == 0 or ie_g == self.ne - 1) and self.rank == 0:
-            if self.data.carriers == 'phonons':
-                omega_val = np.sqrt(self.egrid[ie_g] * rydcm1**2 / amconv)
-                log.log_rank0(f'  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1')
-            else:
-                log.log_rank0(f'  Computing E({ie_g:6d}) = {self.egrid[ie_g]:12.5f} eV')
-
-        gC_k, sgmL_k, sgmR_k = self.initialize_k_dependent_operators()
-        avg_iter = 0.0
-
-        for ik in range(self.nkpts_par):
-            gC, sigma_L, sigma_R, niter_sum = self.process_kpoint(ie_g, ik)
-            avg_iter += niter_sum
-
-            self.accumulate_dos(dos, dos_k, gC, ie_g, ik)
-            self.accumulate_conductance(conduct, conduct_k, gC, sigma_L, sigma_R, ie_g, ik)
-
-            if self.data.symmetry.write_gf:
-                gC_k[ik] = gC
-            if self.data.symmetry.write_lead_sgm:
-                sgmL_k[ik], sgmR_k[ik] = sigma_L, sigma_R
-
-        self.transform_k_to_r_at_energy(ie_g, gC_k, sgmL_k, sgmR_k)
-
-        if (ie_g % nprint == 0 or ie_g == ie_start or ie_g == ie_end) and self.rank == 0:
-            avg_iter /= 2 * self.nkpts_par
-            log.log_rank0(f'  T matrix converged after avg. # of iterations {avg_iter:10.3f}\n')
-            global_timing.timing_upto_now('do_conductor', label='Total time spent up to now')
+        process_energy_point(
+            data=self.data,
+            blc_blocks=self.blc_blocks,
+            egrid=self.egrid,
+            delta=self.delta,
+            ie_g=ie_g,
+            ie_start=ie_start,
+            ie_end=ie_end,
+            rank=self.rank,
+            nkpts_par=self.nkpts_par,
+            dimC=self.dimC,
+            nrtot_par=self.nrtot_par,
+            vkpt_par3D=self.vkpt_par3D,
+            vr_par3D=self.vr_par3D,
+            wk_par=self.wk_par,
+            conduct=conduct,
+            dos=dos,
+            conduct_k=conduct_k,
+            dos_k=dos_k,
+            gf_out=self.gf_out,
+            rsgmL_out=self.rsgmL_out,
+            rsgmR_out=self.rsgmR_out,
+        )
         return conduct, dos
 
     def initialize_k_dependent_operators(self):
@@ -244,20 +230,10 @@ class ConductorCalculator:
         sgmR_k : ndarray or None
             Right lead self-energy at each k-point, if requested.
         """
-        gC_k = (
-            np.zeros((self.nkpts_par, self.dimC, self.dimC), dtype=np.complex128)
-            if self.data.symmetry.write_gf
-            else None
-        )
-        sgmL_k = (
-            np.zeros((self.nkpts_par, self.dimC, self.dimC), dtype=np.complex128)
-            if self.data.symmetry.write_lead_sgm
-            else None
-        )
-        sgmR_k = (
-            np.zeros((self.nkpts_par, self.dimC, self.dimC), dtype=np.complex128)
-            if self.data.symmetry.write_lead_sgm
-            else None
+        gC_k, sgmL_k, sgmR_k = initialize_kpoint_operator_buffers(
+            data=self.data,
+            nkpts_par=self.nkpts_par,
+            dimC=self.dimC,
         )
         return gC_k, sgmL_k, sgmR_k
 
@@ -339,19 +315,20 @@ class ConductorCalculator:
         Transform k-space Green’s functions and self-energies into real space
         for a given energy index.
         """
-        if self.data.symmetry.write_gf:
-            for ir in range(self.nrtot_par):
-                self.gf_out[ie_g, ir] = compute_rham(
-                    self.vr_par3D[ir, :], gC_k, self.vkpt_par3D.T, self.wk_par
-                )
-        if self.data.symmetry.write_lead_sgm:
-            for ir in range(self.nrtot_par):
-                self.rsgmL_out[ie_g, ir] = compute_rham(
-                    self.vr_par3D[ir, :], sgmL_k, self.vkpt_par3D.T, self.wk_par
-                )
-                self.rsgmR_out[ie_g, ir] = compute_rham(
-                    self.vr_par3D[ir, :], sgmR_k, self.vkpt_par3D.T, self.wk_par
-                )
+        transform_k_to_r_at_energy_point(
+            data=self.data,
+            ie_g=ie_g,
+            gC_k=gC_k,
+            sgmL_k=sgmL_k,
+            sgmR_k=sgmR_k,
+            gf_out=self.gf_out,
+            rsgmL_out=self.rsgmL_out,
+            rsgmR_out=self.rsgmR_out,
+            nrtot_par=self.nrtot_par,
+            vr_par3D=self.vr_par3D,
+            vkpt_par3D=self.vkpt_par3D,
+            wk_par=self.wk_par,
+        )
 
     def reduce_results(self, conduct, dos, conduct_k, dos_k):
         """
@@ -362,16 +339,17 @@ class ConductorCalculator:
         Calls `MPI.Allreduce` to accumulate conductance, DOS, Green’s functions,
         and lead self-energies across all ranks.
         """
-        self.comm.Allreduce(MPI.IN_PLACE, conduct, op=MPI.SUM)
-        self.comm.Allreduce(MPI.IN_PLACE, conduct_k, op=MPI.SUM)
-        self.comm.Allreduce(MPI.IN_PLACE, dos, op=MPI.SUM)
-        self.comm.Allreduce(MPI.IN_PLACE, dos_k, op=MPI.SUM)
-
-        if self.data.symmetry.write_gf:
-            self.comm.Allreduce(MPI.IN_PLACE, self.gf_out, op=MPI.SUM)
-        if self.data.symmetry.write_lead_sgm:
-            self.comm.Allreduce(MPI.IN_PLACE, self.rsgmL_out, op=MPI.SUM)
-            self.comm.Allreduce(MPI.IN_PLACE, self.rsgmR_out, op=MPI.SUM)
+        reduce_conductor_results(
+            comm=self.comm,
+            data=self.data,
+            conduct=conduct,
+            dos=dos,
+            conduct_k=conduct_k,
+            dos_k=dos_k,
+            gf_out=self.gf_out,
+            rsgmL_out=self.rsgmL_out,
+            rsgmR_out=self.rsgmR_out,
+        )
 
     def write_operators(self):
         """
@@ -381,46 +359,17 @@ class ConductorCalculator:
         -----
         Uses `write_operator_xml` to replicate the Fortran IOTK format exactly.
         """
-        if self.rank != 0:
-            return
+        write_conductor_operators(
+            rank=self.rank,
+            data=self.data,
+            gf_out=self.gf_out,
+            rsgmL_out=self.rsgmL_out,
+            rsgmR_out=self.rsgmR_out,
+            ivr_par3D=self.ivr_par3D,
+            egrid=self.egrid,
+            dimC=self.dimC,
+        )
 
-        if self.data.symmetry.write_gf:
-            write_operator_xml(
-                output_dir=Path(self.data.file_names.output_dir),
-                filename='greenf.xml',
-                operator_matrix=self.gf_out,
-                ivr=self.ivr_par3D,
-                grid=self.egrid,
-                dimwann=self.dimC,
-                dynamical=True,
-                eunits='eV',
-                analyticity='retarded',
-            )
-        if self.data.symmetry.write_lead_sgm:
-            write_operator_xml(
-                output_dir=Path(self.data.file_names.output_dir),
-                filename='lead_L_sgm.xml',
-                operator_matrix=self.rsgmL_out,
-                ivr=self.ivr_par3D,
-                grid=self.egrid,
-                dimwann=self.dimC,
-                dynamical=True,
-                eunits='eV',
-                analyticity='retarded',
-            )
-            write_operator_xml(
-                output_dir=Path(self.data.file_names.output_dir),
-                filename='lead_R_sgm.xml',
-                operator_matrix=self.rsgmR_out,
-                ivr=self.ivr_par3D,
-                grid=self.egrid,
-                dimwann=self.dimC,
-                dynamical=True,
-                eunits='eV',
-                analyticity='retarded',
-            )
-
-    @headered_function('Writing data')
     def write_output(self):
         """
         Write final conductance and DOS results to disk.
@@ -430,41 +379,15 @@ class ConductorCalculator:
         - Writes `conductance.dat` and `doscond.dat` for total results.
         - Optionally writes k-resolved data per k-point.
         """
-        if self.rank != 0:
-            return
-
-        output_dir = Path(self.data.file_names.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        postfix = self.data.file_names.postfix
-
-        if self.data.carriers == 'phonons':
-            egrid_out = np.sqrt(self.egrid * rydcm1**2 / amconv)
-        else:
-            egrid_out = self.egrid
-
-        write_data(egrid_out, self.conduct, 'conductance', output_dir, postfix=postfix)
-        write_data(egrid_out, self.dos, 'doscond', output_dir, postfix=postfix)
-
-        if self.data.symmetry.write_kdata:
-            nkpts_par = self.data.get_runtime_data().nkpts_par
-            prefix = os.path.basename(self.data.file_names.datafile_C)
-
-            for ik in range(nkpts_par):
-                ik_str = f'{ik + 1:04d}'
-                filename_cond = f'{prefix}_cond-{ik_str}.dat'
-                filename_dos = f'{prefix}_doscond-{ik_str}.dat'
-
-                with (output_dir / filename_cond).open('w') as f:
-                    for ie in range(self.egrid.shape[0]):
-                        values = ' '.join(
-                            f'{self.conduct_k[ch, ik, ie]:15.9f}'
-                            for ch in range(self.conduct_k.shape[0])
-                        )
-                        f.write(f'{self.egrid[ie]:15.9f} {values}\n')
-
-                with (output_dir / filename_dos).open('w') as f:
-                    for ie in range(self.egrid.shape[0]):
-                        f.write(f'{self.egrid[ie]:15.9f} {self.dos_k[ie, ik]:15.9f}\n')
+        write_conductor_output(
+            rank=self.rank,
+            data=self.data,
+            conduct=self.conduct,
+            dos=self.dos,
+            conduct_k=self.conduct_k,
+            dos_k=self.dos_k,
+            egrid=self.egrid,
+        )
 
 
 class ConductorRunner:
