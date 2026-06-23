@@ -3,33 +3,31 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PAOFLOW.DataController import DataController
 import numpy as np
 from mpi4py import MPI
 
+import PAOFLOW.transport.io.log_module as log
+from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.calculators.current import (
     build_bias_grid,
     compute_current_vs_bias,
     read_transmittance,
 )
+from PAOFLOW.transport.conductor_kpoint import compute_kpoint_conductor_quantities
+from PAOFLOW.transport.conductor_observables import (
+    accumulate_dos as accumulate_dos_contribution,
+)
+from PAOFLOW.transport.conductor_observables import (
+    accumulate_transmission,
+)
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
-from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
 from PAOFLOW.transport.io.get_input_params import ConductorData
 from PAOFLOW.transport.io.write_data import (
     write_data,
-    write_eigenchannels,
     write_operator_xml,
 )
 from PAOFLOW.transport.io.write_header import headered_function
-import PAOFLOW.transport.io.log_module as log
-from PAOFLOW.transport.calculators.green import compute_conductor_green_function
-from PAOFLOW.transport.calculators.leads_self_energy import (
-    build_self_energies_from_blocks,
-)
-from PAOFLOW.transport.calculators.transmittance import (
-    evaluate_transmittance,
-)
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.divide_et_impera import divide_work
 from PAOFLOW.transport.utils.memusage import MemoryTracker
@@ -290,44 +288,14 @@ class ConductorCalculator:
         niter_sum : int
             Total number of Sancho-Rubio iterations performed.
         """
-        hamiltonian_setup(
-            ik=ik,
-            ie_g=ie_g,
-            egrid=self.egrid,
-            shift_L=self.data.shift_L,
-            shift_C=self.data.shift_C,
-            shift_R=self.data.shift_R,
-            shift_C_corr=getattr(self.data, 'shift_corr', 0.0),
+        return compute_kpoint_conductor_quantities(
+            data=self.data,
             blc_blocks=self.blc_blocks,
-            ie_buff=1,
-        )
-
-        sigma_R, sigma_L, niter_R, niter_L = build_self_energies_from_blocks(
-            blc_00R=self.blc_blocks['blc_00R'].at_k(ik),
-            blc_01R=self.blc_blocks['blc_01R'].at_k(ik),
-            blc_00L=self.blc_blocks['blc_00L'].at_k(ik),
-            blc_01L=self.blc_blocks['blc_01L'].at_k(ik),
-            blc_CR=self.blc_blocks['blc_CR'].at_k(ik),
-            blc_LC=self.blc_blocks['blc_LC'].at_k(ik),
-            leads_are_identical=self.data.advanced.leads_are_identical,
+            egrid=self.egrid,
             delta=self.delta,
-            niterx=self.data.iteration.niterx,
-            transfer_thr=self.data.iteration.transfer_thr,
-            fail_counter=None,
-            fail_limit=self.data.iteration.nfailx,
-            verbose=False,
+            ie_g=ie_g,
+            ik=ik,
         )
-
-        gC = compute_conductor_green_function(
-            blc_00C=self.blc_blocks['blc_00C'].at_k(ik),
-            sigma_l=sigma_L,
-            sigma_r=sigma_R if not self.data.advanced.surface else None,
-            delta=self.delta,
-            surface=self.data.advanced.surface,
-        )
-
-        niter_sum = niter_R + (niter_L if not self.data.advanced.leads_are_identical else 0)
-        return gC, sigma_L, sigma_R, niter_sum
 
     def accumulate_dos(self, dos, dos_k, gC, ie_g, ik):
         """
@@ -339,9 +307,7 @@ class ConductorCalculator:
 
         ``DOS(E) += -w_k / π · Im Tr[G_C(E, k)]``
         """
-        diag_imag = np.imag(np.diagonal(gC))
-        dos_k[ie_g, ik] = -self.wk_par[ik] * np.sum(diag_imag) / np.pi
-        dos[ie_g] += dos_k[ie_g, ik]
+        accumulate_dos_contribution(dos, dos_k, gC, self.wk_par, ie_g, ik)
 
     def accumulate_conductance(self, conduct, conduct_k, gC, sigma_L, sigma_R, ie_g, ik):
         """
@@ -358,48 +324,20 @@ class ConductorCalculator:
         Eigenchannel decomposition is optionally performed by diagonalizing
         ``√Γ_L G_C Γ_R G_C† √Γ_L``.
         """
-        gamma_L = 1j * (sigma_L - sigma_L.conj().T)
-        gamma_R = 1j * (sigma_R - sigma_R.conj().T)
-
-        do_eigplot_now = (
-            self.data.symmetry.do_eigenchannels
-            and self.data.symmetry.do_eigplot
-            and ie_g == self.data.symmetry.ie_eigplot
-            and ik == self.data.symmetry.ik_eigplot
+        accumulate_transmission(
+            conduct,
+            conduct_k,
+            gC,
+            sigma_L,
+            sigma_R,
+            self.wk_par,
+            ie_g,
+            ik,
+            data=self.data,
+            delta=self.delta,
+            rank=self.rank,
+            vkpt=self.vkpt_par3D,
         )
-
-        cond_aux, z_eigplot = evaluate_transmittance(
-            gamma_L=gamma_L,
-            gamma_R=gamma_R,
-            G_ret=gC,
-            formula=self.data.conduct_formula,
-            do_eigenchannels=self.data.symmetry.do_eigenchannels,
-            do_eigplot=do_eigplot_now,
-            sgm_corr=None,
-            eta=self.delta,
-            S_overlap=None,
-        )
-
-        conduct[0, ie_g] += self.wk_par[ik] * np.sum(cond_aux)
-        conduct_k[0, ik, ie_g] += self.wk_par[ik] * np.sum(cond_aux)
-
-        if self.data.symmetry.do_eigenchannels:
-            nchan = min(conduct.shape[0] - 1, cond_aux.shape[0])
-            conduct[1 : 1 + nchan, ie_g] += self.wk_par[ik] * cond_aux[:nchan]
-            conduct_k[1 : 1 + nchan, ik, ie_g] += self.wk_par[ik] * cond_aux[:nchan]
-
-        if do_eigplot_now and z_eigplot is not None and self.rank == 0:
-            write_eigenchannels(
-                data=z_eigplot,
-                ie=ie_g,
-                ik=ik,
-                vkpt=self.vkpt_par3D[:, ik],
-                transport_direction=self.data.transport_direction,
-                output_dir=Path('output/eigenchannels'),
-                prefix='eigchn',
-                overwrite=True,
-                verbose=True,
-            )
 
     def transform_k_to_r_at_energy(self, ie_g, gC_k, sgmL_k, sgmR_k):
         """
