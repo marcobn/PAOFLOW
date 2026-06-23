@@ -169,22 +169,23 @@ class ConductorRunner:
         memory_tracker = MemoryTracker()
 
         ham_sys = prepare_conductor_runtime(data, data_controller, memory_tracker)
+        return cls(data=data, blc_blocks=ham_sys.blocks, memory_tracker=memory_tracker)
 
-        calculator = ConductorCalculator(data=data, blc_blocks=ham_sys.blocks)
-
-        return cls(calculator, memory_tracker)
-
-    def __init__(self, calculator: ConductorCalculator, memory_tracker: MemoryTracker):
-        self.calculator = calculator
+    def __init__(self, data: ConductorData, blc_blocks: dict, memory_tracker: MemoryTracker):
+        self.data = data
+        self.blc_blocks = blc_blocks
         self.memory_tracker = memory_tracker
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+        self.results = None
 
     def finalize(self):
-        if self.calculator.rank == 0:
+        if self.rank == 0:
             global_timing.report()
             self.memory_tracker.report(include_real_memory=True)
 
     def run(self):
-        self.calculator.run()
+        self.results = run_conductor(data=self.data, blc_blocks=self.blc_blocks, comm=self.comm)
         self.finalize()
 
 
@@ -210,14 +211,12 @@ class CurrentRunner:
         log.initialize_logger(data_controller, log_file_name='transport_current.log')
         data = prepare_current(yaml_file)
         memory_tracker = MemoryTracker()
+        return cls(data=data, memory_tracker=memory_tracker)
 
-        calculator = CurrentCalculator(data)
-
-        return cls(calculator, memory_tracker)
-
-    def __init__(self, calculator: CurrentCalculator, memory_tracker: MemoryTracker):
-        self.calculator = calculator
+    def __init__(self, data: dict, memory_tracker: MemoryTracker):
+        self.data = data
         self.memory_tracker = memory_tracker
+        self.currents = None
 
     def finalize(self):
         rank = MPI.COMM_WORLD.Get_rank()
@@ -226,5 +225,7 @@ class CurrentRunner:
             self.memory_tracker.report(include_real_memory=True)
 
     def run(self):
-        self.calculator.run()
+        vgrid = build_bias_grid(self.data['Vmin'], self.data['Vmax'], self.data['nV'])
+        egrid, transm = read_transmittance(self.data['filein'])
+        self.currents = run_current(data=self.data, egrid=egrid, transm=transm, vgrid=vgrid)
         self.finalize()
