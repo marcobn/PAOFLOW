@@ -294,6 +294,40 @@ def prepare_workspace(data: ConductorData, memory_tracker: MemoryTracker) -> Wor
     return workspace
 
 
+def prepare_conductor_runtime(
+    data: ConductorData,
+    data_controller: DataController,
+    memory_tracker: MemoryTracker,
+) -> HamiltonianSystem:
+    """Prepare all runtime objects required to execute conductor transport.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Conductor input model with runtime fields already initialized.
+    data_controller : DataController
+        Shared PAOFLOW data store used by Hamiltonian block setup.
+    memory_tracker : MemoryTracker
+        Memory tracker updated by each preparation stage.
+
+    Returns
+    -------
+    HamiltonianSystem
+        Prepared Hamiltonian system with initialized block operators.
+
+    Notes
+    -----
+    This function centralizes the common execution setup used by both
+    compatibility runners and the direct-argument ``Transport`` orchestrator.
+    """
+    _ = prepare_smearing(data, memory_tracker)
+    _ = prepare_kpoints(data, memory_tracker)
+    hamiltonian_system = prepare_hamiltonian_system(data, memory_tracker)
+    prepare_hamiltonian_blocks_and_leads(data, hamiltonian_system, data_controller)
+    _ = prepare_workspace(data, memory_tracker)
+    return hamiltonian_system
+
+
 def prepare_current(yaml_file: str) -> dict | None:
     """
     Load current calculation input parameters from YAML.

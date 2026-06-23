@@ -19,11 +19,7 @@ from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.utils.timing import global_timing
 from PAOFLOW.transport.workspace.prepare_data import (
     prepare_conductor_data,
-    prepare_hamiltonian_blocks_and_leads,
-    prepare_hamiltonian_system,
-    prepare_kpoints,
-    prepare_smearing,
-    prepare_workspace,
+    prepare_conductor_runtime,
 )
 
 
@@ -148,11 +144,7 @@ class Transport:
         memory_tracker = MemoryTracker()
 
         prepare_conductor_data(data, self.data_controller)
-        _ = prepare_smearing(data, memory_tracker)
-        _ = prepare_kpoints(data, memory_tracker)
-        ham_sys = prepare_hamiltonian_system(data, memory_tracker)
-        prepare_hamiltonian_blocks_and_leads(data, ham_sys, self.data_controller)
-        _ = prepare_workspace(data, memory_tracker)
+        ham_sys = prepare_conductor_runtime(data, self.data_controller, memory_tracker)
 
         results = run_conductor(data=data, blc_blocks=ham_sys.blocks, comm=MPI.COMM_WORLD)
 

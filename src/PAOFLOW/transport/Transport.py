@@ -19,12 +19,8 @@ from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.utils.timing import global_timing, timed_function
 from PAOFLOW.transport.workspace.prepare_data import (
     prepare_conductor,
+    prepare_conductor_runtime,
     prepare_current,
-    prepare_hamiltonian_blocks_and_leads,
-    prepare_hamiltonian_system,
-    prepare_kpoints,
-    prepare_smearing,
-    prepare_workspace,
 )
 
 comm = MPI.COMM_WORLD
@@ -172,11 +168,7 @@ class ConductorRunner:
         log.initialize_logger(data_controller, log_file_name=f'transport_conductor{postfix}.log')
         memory_tracker = MemoryTracker()
 
-        _ = prepare_smearing(data, memory_tracker)
-        _ = prepare_kpoints(data, memory_tracker)
-        ham_sys = prepare_hamiltonian_system(data, memory_tracker)
-        prepare_hamiltonian_blocks_and_leads(data, ham_sys, data_controller)
-        _ = prepare_workspace(data, memory_tracker)
+        ham_sys = prepare_conductor_runtime(data, data_controller, memory_tracker)
 
         calculator = ConductorCalculator(data=data, blc_blocks=ham_sys.blocks)
 
