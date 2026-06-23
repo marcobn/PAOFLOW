@@ -22,7 +22,27 @@ from PAOFLOW.transport.workspace.prepare_data import (
 
 @dataclass
 class ConductorStepState:
-    """State container for staged conductor computations."""
+    """State container for staged conductor computations.
+
+    Attributes
+    ----------
+    data : ConductorData
+        Validated conductor input model and runtime metadata.
+    memory_tracker : MemoryTracker
+        Memory profiler used by conductor preparation and setup stages.
+    energy_grid : NDArray[np.float64]
+        Energy grid in eV, shape ``(ne,)``.
+    blc_blocks : dict[str, Any] or None, optional
+        Hamiltonian and coupling block operators after ``build_conductor_blocks``.
+    last_sigma_L : NDArray[np.complex128] or None, optional
+        Last computed left lead self-energy for staged reuse.
+    last_sigma_R : NDArray[np.complex128] or None, optional
+        Last computed right lead self-energy for staged reuse.
+    last_gC : NDArray[np.complex128] or None, optional
+        Last computed conductor retarded Green's function for staged reuse.
+    last_ik : int or None, optional
+        k-point index associated with ``last_sigma_*`` and ``last_gC``.
+    """
 
     data: ConductorData
     memory_tracker: MemoryTracker
@@ -55,7 +75,52 @@ def build_conductor_input_values(
     postfix: str = '',
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Build ``ConductorData`` constructor inputs from direct arguments."""
+    """Build ``ConductorData`` constructor inputs from direct arguments.
+
+    Parameters
+    ----------
+    datafile_C : str
+        Path to the conductor input file.
+    dimC : int
+        Conductor block dimension.
+    dimL : int
+        Left lead block dimension.
+    dimR : int
+        Right lead block dimension.
+    datafile_L : str
+        Path to the left lead input file.
+    datafile_R : str
+        Path to the right lead input file.
+    emin : float
+        Minimum energy in eV.
+    emax : float
+        Maximum energy in eV.
+    ne : int
+        Number of energy points.
+    delta : float
+        Broadening parameter.
+    nk : list[int] or tuple[int, int], optional
+        2D k-grid dimensions.
+    formula : str, optional
+        Conductance formula identifier.
+    transport_direction : int, optional
+        Transport direction index in ``{1, 2, 3}``.
+    carriers : str, optional
+        Carrier type (for example ``'electrons'`` or ``'phonons'``).
+    work_dir : str, optional
+        Working directory for transport assets.
+    output_dir : str, optional
+        Output directory for generated files.
+    postfix : str, optional
+        Output postfix appended to default file names.
+    **kwargs : Any
+        Additional optional ``ConductorData`` fields.
+
+    Returns
+    -------
+    dict[str, Any]
+        Keyword arguments ready for ``ConductorData(..., **input_values)``.
+    """
     input_values: dict[str, Any] = {
         'datafile_C': datafile_C,
         'datafile_L': datafile_L,
@@ -84,7 +149,26 @@ def prepare_conductor_step_state(
     data_controller: DataController,
     input_values: dict[str, Any],
 ) -> ConductorStepState:
-    """Create staged conductor state with validated data and runtime metadata."""
+    """Create staged conductor state with validated data and runtime metadata.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Shared data controller used by transport preparation.
+    input_values : dict[str, Any]
+        Keyword arguments for ``ConductorData`` construction.
+
+    Returns
+    -------
+    ConductorStepState
+        Prepared state containing validated conductor input, initialized memory
+        tracker, and the energy grid.
+
+    Notes
+    -----
+    This routine mutates transport-related runtime containers through
+    ``prepare_conductor_data`` as part of the existing preparation flow.
+    """
     data = ConductorData(filename='<direct-arguments>', validate=True, **input_values)
     memory_tracker = MemoryTracker()
     prepare_conductor_data(data, data_controller)
@@ -102,7 +186,25 @@ def build_conductor_blocks(
     state: ConductorStepState,
     data_controller: DataController,
 ) -> dict[str, Any]:
-    """Build Hamiltonian blocks for staged conductor computations."""
+    """Build Hamiltonian blocks for staged conductor computations.
+
+    Parameters
+    ----------
+    state : ConductorStepState
+        Staged conductor state returned by ``prepare_conductor_step_state``.
+    data_controller : DataController
+        Shared data controller used by Hamiltonian setup routines.
+
+    Returns
+    -------
+    dict[str, Any]
+        Block-operator mapping used by conductor self-energy and Green-function
+        calculations.
+
+    Notes
+    -----
+    Updates ``state.blc_blocks`` with the returned operator dictionary.
+    """
     hamiltonian_system = prepare_conductor_runtime(
         state.data, data_controller, state.memory_tracker
     )
@@ -116,7 +218,33 @@ def compute_conductor_self_energy(
     ie_g: int,
     ik: int,
 ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
-    """Compute lead self-energies for one ``(E, k)`` point."""
+    """Compute lead self-energies for one ``(E, k)`` point.
+
+    Parameters
+    ----------
+    state : ConductorStepState
+        Staged conductor state with initialized block operators.
+    ie_g : int
+        Global energy index in ``state.energy_grid``.
+    ik : int
+        Local k-point index.
+
+    Returns
+    -------
+    tuple[NDArray[np.complex128], NDArray[np.complex128], int]
+        ``(sigma_L, sigma_R, total_iterations)``, where self-energies have
+        shape ``(dimC, dimC)`` and ``total_iterations`` is the summed transfer
+        matrix iteration count.
+
+    Raises
+    ------
+    RuntimeError
+        If Hamiltonian blocks were not built before calling this function.
+
+    Notes
+    -----
+    Updates ``state.last_sigma_L``, ``state.last_sigma_R``, and ``state.last_ik``.
+    """
     if state.blc_blocks is None:
         raise RuntimeError(
             'Hamiltonian blocks are unavailable. Call build_conductor_blocks(...) first.'
@@ -163,7 +291,35 @@ def compute_conductor_green(
     sigma_L: NDArray[np.complex128] | None = None,
     sigma_R: NDArray[np.complex128] | None = None,
 ) -> NDArray[np.complex128]:
-    """Compute conductor retarded Green's function for one k-point."""
+    """Compute conductor retarded Green's function for one k-point.
+
+    Parameters
+    ----------
+    state : ConductorStepState
+        Staged conductor state with initialized block operators.
+    ik : int
+        Local k-point index.
+    sigma_L : NDArray[np.complex128] or None, optional
+        Left lead self-energy, shape ``(dimC, dimC)``. When ``None``, uses
+        ``state.last_sigma_L``.
+    sigma_R : NDArray[np.complex128] or None, optional
+        Right lead self-energy, shape ``(dimC, dimC)``. When ``None``, uses
+        ``state.last_sigma_R``.
+
+    Returns
+    -------
+    NDArray[np.complex128]
+        Retarded conductor Green's function, shape ``(dimC, dimC)``.
+
+    Raises
+    ------
+    RuntimeError
+        If Hamiltonian blocks are unavailable or ``sigma_L`` cannot be resolved.
+
+    Notes
+    -----
+    Updates ``state.last_gC`` and ``state.last_ik``.
+    """
     if state.blc_blocks is None:
         raise RuntimeError(
             'Hamiltonian blocks are unavailable. Call build_conductor_blocks(...) first.'
@@ -196,7 +352,35 @@ def compute_conductor_transmission(
     sigma_R: NDArray[np.complex128] | None = None,
     weighted: bool = False,
 ) -> NDArray[np.float64]:
-    """Compute transmission channels from Green's function and self-energies."""
+    """Compute transmission channels from Green's function and self-energies.
+
+    Parameters
+    ----------
+    state : ConductorStepState
+        Staged conductor state containing the latest computed operators.
+    gC : NDArray[np.complex128] or None, optional
+        Retarded conductor Green's function, shape ``(dimC, dimC)``. When
+        ``None``, uses ``state.last_gC``.
+    sigma_L : NDArray[np.complex128] or None, optional
+        Left lead self-energy, shape ``(dimC, dimC)``. When ``None``, uses
+        ``state.last_sigma_L``.
+    sigma_R : NDArray[np.complex128] or None, optional
+        Right lead self-energy, shape ``(dimC, dimC)``. When ``None``, uses
+        ``state.last_sigma_R``.
+    weighted : bool, optional
+        If ``True``, multiply channels by the k-point weight of ``state.last_ik``.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Total and optional eigenchannel transmission values.
+
+    Raises
+    ------
+    RuntimeError
+        If required operators are unavailable or ``weighted`` cannot resolve a
+        previously used k-point index.
+    """
     g_ret = gC if gC is not None else state.last_gC
     sigma_left = sigma_L if sigma_L is not None else state.last_sigma_L
     sigma_right = sigma_R if sigma_R is not None else state.last_sigma_R
@@ -231,7 +415,29 @@ def compute_conductor_dos(
     gC: NDArray[np.complex128] | None = None,
     weighted: bool = False,
 ) -> float:
-    """Compute DOS contribution from a conductor Green's function."""
+    """Compute DOS contribution from a conductor Green's function.
+
+    Parameters
+    ----------
+    state : ConductorStepState
+        Staged conductor state containing the latest computed operators.
+    gC : NDArray[np.complex128] or None, optional
+        Retarded conductor Green's function, shape ``(dimC, dimC)``. When
+        ``None``, uses ``state.last_gC``.
+    weighted : bool, optional
+        If ``True``, multiply DOS by the k-point weight of ``state.last_ik``.
+
+    Returns
+    -------
+    float
+        DOS contribution for the selected ``(E, k)`` state.
+
+    Raises
+    ------
+    RuntimeError
+        If ``gC`` is unavailable or ``weighted`` cannot resolve a previously
+        used k-point index.
+    """
     g_ret = gC if gC is not None else state.last_gC
     if g_ret is None:
         raise RuntimeError('gC is required. Call compute_conductor_green(...) first or pass gC.')

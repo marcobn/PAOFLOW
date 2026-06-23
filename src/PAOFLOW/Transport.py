@@ -59,7 +59,13 @@ class Transport:
         postfix: str = '',
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Build ``ConductorData`` constructor inputs from direct arguments."""
+        """Build ``ConductorData`` constructor inputs from direct arguments.
+
+        Returns
+        -------
+        dict[str, Any]
+            Keyword arguments forwarded to ``ConductorData``.
+        """
         return build_conductor_input_values(
             datafile_C=datafile_C,
             dimC=dimC,
@@ -143,7 +149,18 @@ class Transport:
         return state.data
 
     def build_blocks(self) -> dict[str, Any]:
-        """Build Hamiltonian blocks for the prepared conductor workflow."""
+        """Build Hamiltonian blocks for the prepared conductor workflow.
+
+        Returns
+        -------
+        dict[str, Any]
+            Block operators used by staged self-energy and Green-function steps.
+
+        Raises
+        ------
+        RuntimeError
+            If ``prepare`` has not been called.
+        """
         if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) before build_blocks().')
         return build_conductor_blocks(
@@ -157,7 +174,19 @@ class Transport:
         ie_g: int,
         ik: int,
     ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
-        """Compute lead self-energies for one ``(E, k)`` point."""
+        """Compute lead self-energies for one ``(E, k)`` point.
+
+        Returns
+        -------
+        tuple[NDArray[np.complex128], NDArray[np.complex128], int]
+            ``(sigma_L, sigma_R, total_iterations)`` for the requested
+            ``(ie_g, ik)`` pair.
+
+        Raises
+        ------
+        RuntimeError
+            If ``prepare`` and ``build_blocks`` were not called first.
+        """
         if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) and build_blocks() before compute_self_energy().')
         return compute_conductor_self_energy(
@@ -173,7 +202,18 @@ class Transport:
         sigma_L: NDArray[np.complex128] | None = None,
         sigma_R: NDArray[np.complex128] | None = None,
     ) -> NDArray[np.complex128]:
-        """Compute conductor retarded Green's function for one k-point."""
+        """Compute conductor retarded Green's function for one k-point.
+
+        Returns
+        -------
+        NDArray[np.complex128]
+            Retarded conductor Green's function at the selected k-point.
+
+        Raises
+        ------
+        RuntimeError
+            If staged preparation/build steps were not completed.
+        """
         if self._conductor_state is None:
             raise RuntimeError(
                 'Call prepare(...) and build_blocks() before compute_green_function().'
@@ -193,7 +233,18 @@ class Transport:
         sigma_R: NDArray[np.complex128] | None = None,
         weighted: bool = False,
     ) -> NDArray[np.float64]:
-        """Compute transmission channels from Green's function and self-energies."""
+        """Compute transmission channels from Green's function and self-energies.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Total and optional channel-resolved transmission values.
+
+        Raises
+        ------
+        RuntimeError
+            If staged preparation was not completed.
+        """
         if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) before compute_transmission().')
         return compute_conductor_transmission(
@@ -210,7 +261,18 @@ class Transport:
         gC: NDArray[np.complex128] | None = None,
         weighted: bool = False,
     ) -> float:
-        """Compute DOS contribution from a conductor Green's function."""
+        """Compute DOS contribution from a conductor Green's function.
+
+        Returns
+        -------
+        float
+            DOS contribution from the selected Green's function.
+
+        Raises
+        ------
+        RuntimeError
+            If staged preparation was not completed.
+        """
         if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) before compute_dos().')
         return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
