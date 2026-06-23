@@ -20,6 +20,7 @@ from PAOFLOW.transport.conductor_observables import (
 from PAOFLOW.transport.conductor_observables import (
     accumulate_transmission,
 )
+from PAOFLOW.transport.conductor_pipeline import run_conductor
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.get_input_params import ConductorData
@@ -29,7 +30,6 @@ from PAOFLOW.transport.io.write_data import (
 )
 from PAOFLOW.transport.io.write_header import headered_function
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
-from PAOFLOW.transport.utils.divide_et_impera import divide_work
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.utils.timing import global_timing, timed_function
 from PAOFLOW.transport.workspace.prepare_data import (
@@ -136,21 +136,16 @@ class ConductorCalculator:
 
            where ``Γ_{L/R} = i (Σ_{L/R} - Σ_{L/R}†)``.
         """
-        self.conduct, self.dos, self.conduct_k, self.dos_k = self.initialize_outputs()
-        ie_start, ie_end = divide_work(0, self.ne - 1, self.rank, self.size, 'energies')
-        for ie_g in range(ie_start, ie_end + 1):
-            self.conduct, self.dos = self.process_energy(
-                self.conduct,
-                self.dos,
-                self.conduct_k,
-                self.dos_k,
-                ie_g,
-                ie_start,
-                ie_end,
-            )
-        self.reduce_results(self.conduct, self.dos, self.conduct_k, self.dos_k)
-        self.write_operators()
-        self.write_output()
+        (
+            self.conduct,
+            self.dos,
+            self.conduct_k,
+            self.dos_k,
+            self.gf_out,
+            self.rsgmL_out,
+            self.rsgmR_out,
+            self.egrid,
+        ) = run_conductor(data=self.data, blc_blocks=self.blc_blocks, comm=self.comm)
 
     def initialize_outputs(self):
         """
