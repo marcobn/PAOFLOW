@@ -9,19 +9,19 @@ from numpy.typing import NDArray
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.conductor_pipeline import run_conductor
-from PAOFLOW.transport.current_pipeline import run_current_from_file
-from PAOFLOW.transport.calculators.green import compute_conductor_green_function
-from PAOFLOW.transport.calculators.leads_self_energy import build_self_energies_from_blocks
-from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
-from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
-from PAOFLOW.transport.grid.egrid import initialize_energy_grid
-from PAOFLOW.transport.io.input_parameters import ConductorData
-from PAOFLOW.transport.utils.memusage import MemoryTracker
-from PAOFLOW.transport.utils.timing import global_timing
-from PAOFLOW.transport.workspace.prepare_data import (
-    prepare_conductor_data,
-    prepare_conductor_runtime,
+from PAOFLOW.transport.conductor_steps import (
+    ConductorStepState,
+    build_conductor_blocks,
+    build_conductor_input_values,
+    compute_conductor_dos,
+    compute_conductor_green,
+    compute_conductor_self_energy,
+    compute_conductor_transmission,
+    prepare_conductor_step_state,
 )
+from PAOFLOW.transport.current_pipeline import run_current_from_file
+from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.utils.timing import global_timing
 
 
 class Transport:
@@ -35,14 +35,7 @@ class Transport:
 
     def __init__(self, data_controller: DataController):
         self.data_controller = data_controller
-        self._conductor_data: ConductorData | None = None
-        self._conductor_blocks: dict[str, Any] | None = None
-        self._memory_tracker: MemoryTracker | None = None
-        self._energy_grid: NDArray[np.float64] | None = None
-        self._last_sigma_L: NDArray[np.complex128] | None = None
-        self._last_sigma_R: NDArray[np.complex128] | None = None
-        self._last_gC: NDArray[np.complex128] | None = None
-        self._last_ik: int | None = None
+        self._conductor_state: ConductorStepState | None = None
 
     def _build_conductor_input_values(
         self,
@@ -67,27 +60,26 @@ class Transport:
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Build ``ConductorData`` constructor inputs from direct arguments."""
-        input_values: dict[str, Any] = {
-            'datafile_C': datafile_C,
-            'datafile_L': datafile_L,
-            'datafile_R': datafile_R,
-            'dimC': dimC,
-            'dimL': dimL,
-            'dimR': dimR,
-            'emin': emin,
-            'emax': emax,
-            'ne': ne,
-            'delta': delta,
-            'nk': list(nk),
-            'conduct_formula': formula,
-            'transport_direction': transport_direction,
-            'carriers': carriers,
-            'work_dir': work_dir,
-            'output_dir': output_dir,
-            'postfix': postfix,
-        }
-        input_values.update(kwargs)
-        return input_values
+        return build_conductor_input_values(
+            datafile_C=datafile_C,
+            dimC=dimC,
+            dimL=dimL,
+            dimR=dimR,
+            datafile_L=datafile_L,
+            datafile_R=datafile_R,
+            emin=emin,
+            emax=emax,
+            ne=ne,
+            delta=delta,
+            nk=nk,
+            formula=formula,
+            transport_direction=transport_direction,
+            carriers=carriers,
+            work_dir=work_dir,
+            output_dir=output_dir,
+            postfix=postfix,
+            **kwargs,
+        )
 
     def prepare(
         self,
@@ -139,40 +131,25 @@ class Transport:
             **kwargs,
         )
 
-        data = ConductorData(filename='<direct-arguments>', validate=True, **input_values)
+        state = prepare_conductor_step_state(
+            data_controller=self.data_controller,
+            input_values=input_values,
+        )
         log.initialize_logger(
             self.data_controller,
-            log_file_name=f'transport_conductor{data.file_names.postfix}.log',
+            log_file_name=f'transport_conductor{state.data.file_names.postfix}.log',
         )
-        memory_tracker = MemoryTracker()
-        prepare_conductor_data(data, self.data_controller)
-
-        self._conductor_data = data
-        self._memory_tracker = memory_tracker
-        self._conductor_blocks = None
-        self._last_sigma_L = None
-        self._last_sigma_R = None
-        self._last_gC = None
-        self._last_ik = None
-        self._energy_grid = initialize_energy_grid(
-            emin=data.energy.emin,
-            emax=data.energy.emax,
-            ne=data.energy.ne,
-            carriers=data.carriers,
-        )
-        return data
+        self._conductor_state = state
+        return state.data
 
     def build_blocks(self) -> dict[str, Any]:
         """Build Hamiltonian blocks for the prepared conductor workflow."""
-        if self._conductor_data is None or self._memory_tracker is None:
+        if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) before build_blocks().')
-        hamiltonian_system = prepare_conductor_runtime(
-            self._conductor_data,
-            self.data_controller,
-            self._memory_tracker,
+        return build_conductor_blocks(
+            state=self._conductor_state,
+            data_controller=self.data_controller,
         )
-        self._conductor_blocks = hamiltonian_system.blocks
-        return self._conductor_blocks
 
     def compute_self_energy(
         self,
@@ -181,47 +158,13 @@ class Transport:
         ik: int,
     ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
         """Compute lead self-energies for one ``(E, k)`` point."""
-        if self._conductor_data is None or self._conductor_blocks is None:
+        if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) and build_blocks() before compute_self_energy().')
-        if self._energy_grid is None:
-            raise RuntimeError(
-                'Energy grid is unavailable. Call prepare(...) before compute_self_energy().'
-            )
-
-        hamiltonian_setup(
-            ik=ik,
+        return compute_conductor_self_energy(
+            state=self._conductor_state,
             ie_g=ie_g,
-            egrid=self._energy_grid,
-            shift_L=self._conductor_data.shift_L,
-            shift_C=self._conductor_data.shift_C,
-            shift_R=self._conductor_data.shift_R,
-            shift_C_corr=getattr(self._conductor_data, 'shift_corr', 0.0),
-            blc_blocks=self._conductor_blocks,
-            ie_buff=1,
+            ik=ik,
         )
-
-        sigma_R, sigma_L, niter_R, niter_L = build_self_energies_from_blocks(
-            blc_00R=self._conductor_blocks['blc_00R'].at_k(ik),
-            blc_01R=self._conductor_blocks['blc_01R'].at_k(ik),
-            blc_00L=self._conductor_blocks['blc_00L'].at_k(ik),
-            blc_01L=self._conductor_blocks['blc_01L'].at_k(ik),
-            blc_CR=self._conductor_blocks['blc_CR'].at_k(ik),
-            blc_LC=self._conductor_blocks['blc_LC'].at_k(ik),
-            leads_are_identical=self._conductor_data.advanced.leads_are_identical,
-            delta=self._conductor_data.energy.delta,
-            niterx=self._conductor_data.iteration.niterx,
-            transfer_thr=self._conductor_data.iteration.transfer_thr,
-            fail_counter=None,
-            fail_limit=self._conductor_data.iteration.nfailx,
-            verbose=False,
-        )
-        total_iterations = niter_R + (
-            niter_L if not self._conductor_data.advanced.leads_are_identical else 0
-        )
-        self._last_sigma_L = sigma_L
-        self._last_sigma_R = sigma_R
-        self._last_ik = ik
-        return sigma_L, sigma_R, total_iterations
 
     def compute_green_function(
         self,
@@ -231,28 +174,16 @@ class Transport:
         sigma_R: NDArray[np.complex128] | None = None,
     ) -> NDArray[np.complex128]:
         """Compute conductor retarded Green's function for one k-point."""
-        if self._conductor_data is None or self._conductor_blocks is None:
+        if self._conductor_state is None:
             raise RuntimeError(
                 'Call prepare(...) and build_blocks() before compute_green_function().'
             )
-
-        sigma_left = sigma_L if sigma_L is not None else self._last_sigma_L
-        sigma_right = sigma_R if sigma_R is not None else self._last_sigma_R
-        if sigma_left is None:
-            raise RuntimeError(
-                'sigma_L is required. Call compute_self_energy(...) first or pass sigma_L explicitly.'
-            )
-
-        g_c = compute_conductor_green_function(
-            blc_00C=self._conductor_blocks['blc_00C'].at_k(ik),
-            sigma_l=sigma_left,
-            sigma_r=sigma_right if not self._conductor_data.advanced.surface else None,
-            delta=self._conductor_data.energy.delta,
-            surface=self._conductor_data.advanced.surface,
+        return compute_conductor_green(
+            state=self._conductor_state,
+            ik=ik,
+            sigma_L=sigma_L,
+            sigma_R=sigma_R,
         )
-        self._last_gC = g_c
-        self._last_ik = ik
-        return g_c
 
     def compute_transmission(
         self,
@@ -263,35 +194,15 @@ class Transport:
         weighted: bool = False,
     ) -> NDArray[np.float64]:
         """Compute transmission channels from Green's function and self-energies."""
-        if self._conductor_data is None:
+        if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) before compute_transmission().')
-
-        g_ret = gC if gC is not None else self._last_gC
-        sigma_left = sigma_L if sigma_L is not None else self._last_sigma_L
-        sigma_right = sigma_R if sigma_R is not None else self._last_sigma_R
-        if g_ret is None or sigma_left is None or sigma_right is None:
-            raise RuntimeError(
-                'gC, sigma_L, and sigma_R are required. Compute self-energy and Green function first.'
-            )
-
-        gamma_L = 1j * (sigma_left - sigma_left.conj().T)
-        gamma_R = 1j * (sigma_right - sigma_right.conj().T)
-        channels, _ = evaluate_transmittance(
-            gamma_L=gamma_L,
-            gamma_R=gamma_R,
-            G_ret=g_ret,
-            formula=self._conductor_data.conduct_formula,
-            do_eigenchannels=self._conductor_data.symmetry.do_eigenchannels,
-            do_eigplot=False,
-            sgm_corr=None,
-            eta=self._conductor_data.energy.delta,
-            S_overlap=None,
+        return compute_conductor_transmission(
+            state=self._conductor_state,
+            gC=gC,
+            sigma_L=sigma_L,
+            sigma_R=sigma_R,
+            weighted=weighted,
         )
-        if weighted:
-            if self._last_ik is None:
-                raise RuntimeError('weighted=True requires a known k-point from previous calls.')
-            return self._conductor_data._runtime.wk_par[self._last_ik] * channels
-        return channels
 
     def compute_dos(
         self,
@@ -300,19 +211,9 @@ class Transport:
         weighted: bool = False,
     ) -> float:
         """Compute DOS contribution from a conductor Green's function."""
-        if self._conductor_data is None:
+        if self._conductor_state is None:
             raise RuntimeError('Call prepare(...) before compute_dos().')
-
-        g_ret = gC if gC is not None else self._last_gC
-        if g_ret is None:
-            raise RuntimeError('gC is required. Call compute_green_function(...) first or pass gC.')
-
-        dos_value = -np.sum(np.imag(np.diagonal(g_ret))) / np.pi
-        if weighted:
-            if self._last_ik is None:
-                raise RuntimeError('weighted=True requires a known k-point from previous calls.')
-            dos_value *= self._conductor_data._runtime.wk_par[self._last_ik]
-        return float(dos_value)
+        return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
 
     def conductor(
         self,
@@ -419,8 +320,8 @@ class Transport:
 
         if MPI.COMM_WORLD.Get_rank() == 0:
             global_timing.report()
-            if self._memory_tracker is not None:
-                self._memory_tracker.report(include_real_memory=True)
+            if self._conductor_state is not None:
+                self._conductor_state.memory_tracker.report(include_real_memory=True)
 
         return results
 
