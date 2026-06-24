@@ -31,13 +31,22 @@ class Transport:
     ----------
     data_controller : DataController
         Shared PAOFLOW ``DataController`` used by transport preparation stages.
+
+    Attributes
+    ----------
+    conductor_data : ConductorData or None
+        Validated conductor input model populated by ``build_hamiltonian_blocks``.
+    blc_blocks : dict[str, Any] or None
+        Hamiltonian block operators populated by ``build_hamiltonian_blocks``.
     """
 
-    def __init__(self, data_controller: DataController):
+    def __init__(self, data_controller: DataController) -> None:
         self.data_controller = data_controller
         self._conductor_state: ConductorStepState | None = None
+        self.conductor_data: ConductorData | None = None
+        self.blc_blocks: dict[str, Any] | None = None
 
-    def _build_conductor_input_values(
+    def build_hamiltonian_blocks(
         self,
         *,
         datafile_C: str,
@@ -59,271 +68,11 @@ class Transport:
         postfix: str = '',
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Build ``ConductorData`` constructor inputs from direct arguments.
+        """Build conductor Hamiltonian blocks from direct arguments.
 
-        Returns
-        -------
-        dict[str, Any]
-            Keyword arguments forwarded to ``ConductorData``.
-        """
-        return build_conductor_input_values(
-            datafile_C=datafile_C,
-            dimC=dimC,
-            dimL=dimL,
-            dimR=dimR,
-            datafile_L=datafile_L,
-            datafile_R=datafile_R,
-            emin=emin,
-            emax=emax,
-            ne=ne,
-            delta=delta,
-            nk=nk,
-            formula=formula,
-            transport_direction=transport_direction,
-            carriers=carriers,
-            work_dir=work_dir,
-            output_dir=output_dir,
-            postfix=postfix,
-            **kwargs,
-        )
-
-    def prepare(
-        self,
-        *,
-        datafile_C: str,
-        dimC: int,
-        dimL: int | None = None,
-        dimR: int | None = None,
-        datafile_L: str | None = None,
-        datafile_R: str | None = None,
-        emin: float,
-        emax: float,
-        ne: int,
-        delta: float,
-        nk: list[int] | tuple[int, int] = (0, 0),
-        formula: str = 'landauer',
-        transport_direction: int = 1,
-        carriers: str = 'electrons',
-        work_dir: str = './',
-        output_dir: str = './',
-        postfix: str = '',
-        **kwargs: Any,
-    ) -> ConductorData:
-        """Prepare validated conductor input and runtime metadata.
-
-        Returns
-        -------
-        ConductorData
-            Prepared conductor input model stored on this ``Transport`` instance.
-        """
-        input_values = self._build_conductor_input_values(
-            datafile_C=datafile_C,
-            dimC=dimC,
-            dimL=dimL,
-            dimR=dimR,
-            datafile_L=datafile_L,
-            datafile_R=datafile_R,
-            emin=emin,
-            emax=emax,
-            ne=ne,
-            delta=delta,
-            nk=nk,
-            formula=formula,
-            transport_direction=transport_direction,
-            carriers=carriers,
-            work_dir=work_dir,
-            output_dir=output_dir,
-            postfix=postfix,
-            **kwargs,
-        )
-
-        state = prepare_conductor_step_state(
-            data_controller=self.data_controller,
-            input_values=input_values,
-        )
-        log.initialize_logger(
-            self.data_controller,
-            log_file_name=f'transport_conductor{state.data.file_names.postfix}.log',
-        )
-        self._conductor_state = state
-        return state.data
-
-    def build_blocks(self) -> dict[str, Any]:
-        """Build Hamiltonian blocks for the prepared conductor workflow.
-
-        Returns
-        -------
-        dict[str, Any]
-            Block operators used by staged self-energy and Green-function steps.
-
-        Raises
-        ------
-        RuntimeError
-            If ``prepare`` has not been called.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError('Call prepare(...) before build_blocks().')
-        return build_conductor_blocks(
-            state=self._conductor_state,
-            data_controller=self.data_controller,
-        )
-
-    def build_hamiltonian_blocks(self) -> dict[str, Any]:
-        """Build Hamiltonian blocks using the explicit staged API name.
-
-        Notes
-        -----
-        This is an API-aligned alias for :meth:`build_blocks` kept to expose
-        the staged transport naming proposed in ``instructions.md`` while
-        preserving existing behavior.
-        """
-        return self.build_blocks()
-
-    def compute_self_energy(
-        self,
-        *,
-        ie_g: int,
-        ik: int,
-    ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
-        """Compute lead self-energies for one ``(E, k)`` point.
-
-        Returns
-        -------
-        tuple[NDArray[np.complex128], NDArray[np.complex128], int]
-            ``(sigma_L, sigma_R, total_iterations)`` for the requested
-            ``(ie_g, ik)`` pair.
-
-        Raises
-        ------
-        RuntimeError
-            If ``prepare`` and block-building were not called first.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError(
-                'Call prepare(...) and build_hamiltonian_blocks() '
-                '(or build_blocks()) before compute_self_energy().'
-            )
-        return compute_conductor_self_energy(
-            state=self._conductor_state,
-            ie_g=ie_g,
-            ik=ik,
-        )
-
-    def compute_green_function(
-        self,
-        *,
-        ik: int,
-        sigma_L: NDArray[np.complex128] | None = None,
-        sigma_R: NDArray[np.complex128] | None = None,
-    ) -> NDArray[np.complex128]:
-        """Compute conductor retarded Green's function for one k-point.
-
-        Returns
-        -------
-        NDArray[np.complex128]
-            Retarded conductor Green's function at the selected k-point.
-
-        Raises
-        ------
-        RuntimeError
-            If staged preparation/build steps were not completed.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError(
-                'Call prepare(...) and build_hamiltonian_blocks() '
-                '(or build_blocks()) before compute_green_function().'
-            )
-        return compute_conductor_green(
-            state=self._conductor_state,
-            ik=ik,
-            sigma_L=sigma_L,
-            sigma_R=sigma_R,
-        )
-
-    def compute_transmission(
-        self,
-        *,
-        gC: NDArray[np.complex128] | None = None,
-        sigma_L: NDArray[np.complex128] | None = None,
-        sigma_R: NDArray[np.complex128] | None = None,
-        weighted: bool = False,
-    ) -> NDArray[np.float64]:
-        """Compute transmission channels from Green's function and self-energies.
-
-        Returns
-        -------
-        NDArray[np.float64]
-            Total and optional channel-resolved transmission values.
-
-        Raises
-        ------
-        RuntimeError
-            If staged preparation was not completed.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError('Call prepare(...) before compute_transmission().')
-        return compute_conductor_transmission(
-            state=self._conductor_state,
-            gC=gC,
-            sigma_L=sigma_L,
-            sigma_R=sigma_R,
-            weighted=weighted,
-        )
-
-    def compute_dos(
-        self,
-        *,
-        gC: NDArray[np.complex128] | None = None,
-        weighted: bool = False,
-    ) -> float:
-        """Compute DOS contribution from a conductor Green's function.
-
-        Returns
-        -------
-        float
-            DOS contribution from the selected Green's function.
-
-        Raises
-        ------
-        RuntimeError
-            If staged preparation was not completed.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError('Call prepare(...) before compute_dos().')
-        return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
-
-    def conductor(
-        self,
-        *,
-        datafile_C: str,
-        dimC: int,
-        dimL: int | None = None,
-        dimR: int | None = None,
-        datafile_L: str | None = None,
-        datafile_R: str | None = None,
-        emin: float,
-        emax: float,
-        ne: int,
-        delta: float,
-        nk: list[int] | tuple[int, int] = (0, 0),
-        formula: str = 'landauer',
-        transport_direction: int = 1,
-        carriers: str = 'electrons',
-        work_dir: str = './',
-        output_dir: str = './',
-        postfix: str = '',
-        **kwargs: Any,
-    ) -> tuple[
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.complex128] | None,
-        NDArray[np.complex128] | None,
-        NDArray[np.complex128] | None,
-        NDArray[np.float64],
-    ]:
-        """Run conductor transport from direct Python arguments.
+        Merges all setup operations into a single call: builds conductor
+        input values, initializes staged state, sets up logging, and
+        constructs the Hamiltonian block operators.
 
         Parameters
         ----------
@@ -332,11 +81,9 @@ class Transport:
         dimC : int
             Conductor block dimension.
         dimL : int or None, optional
-            Left lead block dimension. Provide for non-bulk calculations;
-            leave as ``None`` for bulk mode.
+            Left lead block dimension. Leave as ``None`` for bulk mode.
         dimR : int or None, optional
-            Right lead block dimension. Provide for non-bulk calculations;
-            leave as ``None`` for bulk mode.
+            Right lead block dimension. Leave as ``None`` for bulk mode.
         datafile_L : str or None, optional
             Path to the left-lead input for non-bulk calculations.
         datafile_R : str or None, optional
@@ -370,11 +117,18 @@ class Transport:
 
         Returns
         -------
-        tuple
-            ``(conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out, egrid)``
-            returned by ``run_conductor``.
+        dict[str, Any]
+            Block-operator mapping used by conductor self-energy and
+            Green-function calculations. Also stored as ``self.blc_blocks``.
+
+        Notes
+        -----
+        Sets ``self.conductor_data``, ``self.blc_blocks``, and
+        ``self._conductor_state`` as side effects. Calling this method a
+        second time on the same instance resets all three for the new
+        calculation.
         """
-        data = self.prepare(
+        input_values = build_conductor_input_values(
             datafile_C=datafile_C,
             dimC=dimC,
             dimL=dimL,
@@ -394,8 +148,169 @@ class Transport:
             postfix=postfix,
             **kwargs,
         )
-        blocks = self.build_blocks()
-        results = run_conductor(data=data, blc_blocks=blocks, comm=MPI.COMM_WORLD)
+        state = prepare_conductor_step_state(
+            data_controller=self.data_controller,
+            input_values=input_values,
+        )
+        log.initialize_logger(
+            self.data_controller,
+            log_file_name=f'transport_conductor{state.data.file_names.postfix}.log',
+        )
+        build_conductor_blocks(
+            state=state,
+            data_controller=self.data_controller,
+        )
+        self.conductor_data = state.data
+        self.blc_blocks = state.blc_blocks
+        self._conductor_state = state
+        return state.blc_blocks
+
+    def compute_self_energy(
+        self,
+        *,
+        ie_g: int,
+        ik: int,
+    ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
+        """Compute lead self-energies for one ``(E, k)`` point.
+
+        Returns
+        -------
+        tuple[NDArray[np.complex128], NDArray[np.complex128], int]
+            ``(sigma_L, sigma_R, total_iterations)`` for the requested
+            ``(ie_g, ik)`` pair.
+
+        Raises
+        ------
+        RuntimeError
+            If ``build_hamiltonian_blocks`` was not called first.
+        """
+        if self._conductor_state is None:
+            raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_self_energy().')
+        return compute_conductor_self_energy(
+            state=self._conductor_state,
+            ie_g=ie_g,
+            ik=ik,
+        )
+
+    def compute_green_function(
+        self,
+        *,
+        ik: int,
+        sigma_L: NDArray[np.complex128] | None = None,
+        sigma_R: NDArray[np.complex128] | None = None,
+    ) -> NDArray[np.complex128]:
+        """Compute conductor retarded Green's function for one k-point.
+
+        Returns
+        -------
+        NDArray[np.complex128]
+            Retarded conductor Green's function at the selected k-point.
+
+        Raises
+        ------
+        RuntimeError
+            If ``build_hamiltonian_blocks`` was not called first.
+        """
+        if self._conductor_state is None:
+            raise RuntimeError(
+                'Call build_hamiltonian_blocks(...) before compute_green_function().'
+            )
+        return compute_conductor_green(
+            state=self._conductor_state,
+            ik=ik,
+            sigma_L=sigma_L,
+            sigma_R=sigma_R,
+        )
+
+    def compute_transmission(
+        self,
+        *,
+        gC: NDArray[np.complex128] | None = None,
+        sigma_L: NDArray[np.complex128] | None = None,
+        sigma_R: NDArray[np.complex128] | None = None,
+        weighted: bool = False,
+    ) -> NDArray[np.float64]:
+        """Compute transmission channels from Green's function and self-energies.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Total and optional channel-resolved transmission values.
+
+        Raises
+        ------
+        RuntimeError
+            If ``build_hamiltonian_blocks`` was not called first.
+        """
+        if self._conductor_state is None:
+            raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_transmission().')
+        return compute_conductor_transmission(
+            state=self._conductor_state,
+            gC=gC,
+            sigma_L=sigma_L,
+            sigma_R=sigma_R,
+            weighted=weighted,
+        )
+
+    def compute_dos(
+        self,
+        *,
+        gC: NDArray[np.complex128] | None = None,
+        weighted: bool = False,
+    ) -> float:
+        """Compute DOS contribution from a conductor Green's function.
+
+        Returns
+        -------
+        float
+            DOS contribution from the selected Green's function.
+
+        Raises
+        ------
+        RuntimeError
+            If ``build_hamiltonian_blocks`` was not called first.
+        """
+        if self._conductor_state is None:
+            raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_dos().')
+        return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
+
+    def conductor(
+        self,
+        **kwargs: Any,
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.complex128] | None,
+        NDArray[np.complex128] | None,
+        NDArray[np.complex128] | None,
+        NDArray[np.float64],
+    ]:
+        """Run conductor transport from direct Python arguments.
+
+        Compatibility wrapper around ``build_hamiltonian_blocks`` and
+        ``run_conductor``.  All keyword arguments are forwarded to
+        ``build_hamiltonian_blocks``; see that method for the full parameter
+        list.
+
+        Returns
+        -------
+        tuple
+            ``(conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out, egrid)``
+            returned by ``run_conductor``.
+
+        Notes
+        -----
+        Sets ``self.conductor_data`` and ``self.blc_blocks`` as side effects
+        via ``build_hamiltonian_blocks``.
+        """
+        self.build_hamiltonian_blocks(**kwargs)
+        results = run_conductor(
+            data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            comm=MPI.COMM_WORLD,
+        )
 
         if MPI.COMM_WORLD.Get_rank() == 0:
             global_timing.report()
