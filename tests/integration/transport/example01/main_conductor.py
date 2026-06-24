@@ -2,6 +2,7 @@ from mpi4py import MPI
 
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
+from PAOFLOW.transport.conductor_pipeline import run_conductor
 
 comm = MPI.COMM_WORLD
 
@@ -25,7 +26,7 @@ def main():
     paoflow.projections()
 
     transport = Transport(paoflow.data_controller)
-    transport.conductor(
+    transport.build_hamiltonian_blocks(
         datafile_C='./output/qe/al5.save/atomic_proj.xml',
         dimC=20,
         emin=-7.0,
@@ -42,6 +43,11 @@ def main():
         do_overlap_transformation=False,
         H00_C={'rows': 'ALL', 'cols': 'ALL'},
         H_CR={'rows': 'ALL', 'cols': 'ALL'},
+    )
+
+    run_conductor(
+        data=transport.conductor_data,
+        blc_blocks=transport.blc_blocks,
     )
 
 

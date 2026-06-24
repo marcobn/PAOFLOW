@@ -4,6 +4,7 @@ from mpi4py import MPI
 
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
+from PAOFLOW.transport.conductor_pipeline import run_conductor
 
 comm = MPI.COMM_WORLD
 
@@ -98,7 +99,11 @@ def main() -> None:
     paoflow.projections()
 
     transport = Transport(paoflow.data_controller)
-    transport.conductor(**_CONDUCTOR_CONFIGS[yaml_file])
+    transport.build_hamiltonian_blocks(**_CONDUCTOR_CONFIGS[yaml_file])
+    run_conductor(
+        data=transport.conductor_data,
+        blc_blocks=transport.blc_blocks,
+    )
 
 
 if __name__ == '__main__':
