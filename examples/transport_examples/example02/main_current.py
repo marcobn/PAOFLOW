@@ -1,11 +1,6 @@
 import sys
 
-from mpi4py import MPI
-
-from PAOFLOW import PAOFLOW
-from PAOFLOW.Transport import Transport
-
-comm = MPI.COMM_WORLD
+from PAOFLOW.transport.current_pipeline import run_current_from_file
 
 _CURRENT_CONFIGS = {
     'current.yaml': {
@@ -26,22 +21,20 @@ def main() -> None:
     if yaml_file not in _CURRENT_CONFIGS:
         raise ValueError(f'Unsupported current input selector: {yaml_file}')
 
-    paoflow = PAOFLOW.PAOFLOW(
-        savedir='output/qe/alh.save',
-        outputdir='output/paoflow',
-        smearing='gauss',
-        npool=1,
-        verbose=True,
-        save_overlaps=True,
+    cfg = _CURRENT_CONFIGS[yaml_file]
+
+    run_current_from_file(
+        data={
+            'fileout': cfg['fileout'],
+            'mu_L': cfg['mu_L'],
+            'mu_R': cfg['mu_R'],
+            'sigma': cfg['sigma'],
+        },
+        filein=cfg['filein'],
+        bias_min=cfg['bias_min'],
+        bias_max=cfg['bias_max'],
+        nbias=cfg['nbias'],
     )
-
-    paoflow.read_atomic_proj_QE()
-    paoflow.projectability()
-    paoflow.pao_hamiltonian(shift_type=1, expand_wedge=False)
-    paoflow.projections()
-
-    transport = Transport(paoflow.data_controller)
-    transport.current(**_CURRENT_CONFIGS[yaml_file])
 
 
 if __name__ == '__main__':

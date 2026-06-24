@@ -1,12 +1,8 @@
 import sys
 
-from mpi4py import MPI
-
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
 from PAOFLOW.transport.conductor_pipeline import run_conductor
-
-comm = MPI.COMM_WORLD
 
 _CONDUCTOR_CONFIGS = {
     'conductor_bulk.yaml': {
@@ -103,7 +99,6 @@ def main() -> None:
     run_conductor(
         data=transport.conductor_data,
         blc_blocks=transport.blc_blocks,
-        comm=comm,
     )
 
 

@@ -3,12 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from mpi4py import MPI
 from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.conductor_pipeline import run_conductor
 from PAOFLOW.transport.conductor_steps import (
     ConductorStepState,
     build_conductor_blocks,
@@ -19,9 +17,7 @@ from PAOFLOW.transport.conductor_steps import (
     compute_conductor_transmission,
     prepare_conductor_step_state,
 )
-from PAOFLOW.transport.current_pipeline import run_current_from_file
 from PAOFLOW.transport.io.input_parameters import ConductorData
-from PAOFLOW.transport.utils.timing import global_timing
 
 
 class Transport:
@@ -273,102 +269,3 @@ class Transport:
         if self._conductor_state is None:
             raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_dos().')
         return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
-
-    def conductor(
-        self,
-        **kwargs: Any,
-    ) -> tuple[
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.float64],
-        NDArray[np.complex128] | None,
-        NDArray[np.complex128] | None,
-        NDArray[np.complex128] | None,
-        NDArray[np.float64],
-    ]:
-        """Run conductor transport from direct Python arguments.
-
-        Compatibility wrapper around ``build_hamiltonian_blocks`` and
-        ``run_conductor``.  All keyword arguments are forwarded to
-        ``build_hamiltonian_blocks``; see that method for the full parameter
-        list.
-
-        Returns
-        -------
-        tuple
-            ``(conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out, egrid)``
-            returned by ``run_conductor``.
-
-        Notes
-        -----
-        Sets ``self.conductor_data`` and ``self.blc_blocks`` as side effects
-        via ``build_hamiltonian_blocks``.
-        """
-        self.build_hamiltonian_blocks(**kwargs)
-        results = run_conductor(
-            data=self.conductor_data,
-            blc_blocks=self.blc_blocks,
-            comm=MPI.COMM_WORLD,
-        )
-
-        if MPI.COMM_WORLD.Get_rank() == 0:
-            global_timing.report()
-            if self._conductor_state is not None:
-                self._conductor_state.memory_tracker.report(include_real_memory=True)
-
-        return results
-
-    def current(
-        self,
-        *,
-        filein: str,
-        fileout: str,
-        bias_min: float,
-        bias_max: float,
-        nbias: int,
-        sigma: float,
-        mu_L: float,
-        mu_R: float,
-    ) -> NDArray[np.float64]:
-        """Run current-vs-bias calculation from direct Python arguments.
-
-        Parameters
-        ----------
-        filein : str
-            Input transmission file path.
-        fileout : str
-            Output path for current-vs-bias data.
-        bias_min : float
-            Minimum bias in volts.
-        bias_max : float
-            Maximum bias in volts.
-        nbias : int
-            Number of bias samples.
-        sigma : float
-            Smearing parameter used in Fermi occupations.
-        mu_L : float
-            Left chemical potential.
-        mu_R : float
-            Right chemical potential.
-
-        Returns
-        -------
-        NDArray[np.float64]
-            Current values aligned with the generated bias grid.
-        """
-        log.initialize_logger(self.data_controller, log_file_name='transport_current.log')
-
-        current_data = {
-            'fileout': fileout,
-            'mu_L': mu_L,
-            'mu_R': mu_R,
-            'sigma': sigma,
-        }
-        return run_current_from_file(
-            data=current_data,
-            filein=filein,
-            bias_min=bias_min,
-            bias_max=bias_max,
-            nbias=nbias,
-        )
