@@ -1,39 +1,48 @@
-import sys
+"""Current-vs-bias calculation example.
 
+This example demonstrates computing current as a function of applied bias
+using transmission data from a prior conductor calculation.
+"""
+
+from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.current_pipeline import run_current_from_file
-
-_CURRENT_CONFIGS = {
-    'current.yaml': {
-        'filein': './output/paoflow/conductance_lcr.dat',
-        'fileout': './output/paoflow/current.dat',
-        'bias_min': -1.0,
-        'bias_max': 1.0,
-        'nbias': 1500,
-        'sigma': 0.05,
-        'mu_L': -0.5,
-        'mu_R': 0.5,
-    },
-}
 
 
 def main() -> None:
-    yaml_file = sys.argv[1] if len(sys.argv) > 1 else 'current.yaml'
-    if yaml_file not in _CURRENT_CONFIGS:
-        raise ValueError(f'Unsupported current input selector: {yaml_file}')
+    # PAOFLOW setup
+    paoflow = PAOFLOW.PAOFLOW(
+        savedir='output/qe/alh.save',
+        outputdir='output/paoflow',
+        smearing='gauss',
+        npool=1,
+        verbose=True,
+        save_overlaps=True,
+    )
 
-    cfg = _CURRENT_CONFIGS[yaml_file]
+    # Read projections from QE output
+    paoflow.read_atomic_proj_QE()
 
+    # Projectability analysis
+    paoflow.projectability()
+
+    # Build PAO Hamiltonian
+    paoflow.pao_hamiltonian(shift_type=1, expand_wedge=False)
+
+    # Compute projections
+    paoflow.projections()
+
+    # Compute current from transmission data
     run_current_from_file(
         data={
-            'fileout': cfg['fileout'],
-            'mu_L': cfg['mu_L'],
-            'mu_R': cfg['mu_R'],
-            'sigma': cfg['sigma'],
+            'fileout': './output/paoflow/current.dat',
+            'mu_L': -0.5,
+            'mu_R': 0.5,
+            'sigma': 0.05,
         },
-        filein=cfg['filein'],
-        bias_min=cfg['bias_min'],
-        bias_max=cfg['bias_max'],
-        nbias=cfg['nbias'],
+        filein='./output/paoflow/conductance_lcr.dat',
+        bias_min=-1.0,
+        bias_max=1.0,
+        nbias=1500,
     )
 
 
