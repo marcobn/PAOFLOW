@@ -529,8 +529,19 @@ class GPAO:
                 auto_labels.append(tag)
             if labels is None:
                 labels = auto_labels
-            plot_shc_tensor(es, data, title, x_lim, y_lim, x_label, y_label, cols, labels, legend,
-                            legend_outside)
+            plot_shc_tensor(
+                es,
+                data,
+                title,
+                x_lim,
+                y_lim,
+                x_label,
+                y_label,
+                cols,
+                labels,
+                legend,
+                legend_outside,
+            )
 
     # Property prefix -> (default legend label, y-axis label) for plot_optical.
     OPTICAL_PROPERTIES = {
@@ -719,8 +730,9 @@ class GPAO:
             nfound += 1
 
         if nfound == 0:
-            raise Exception('No reflectivity files found for component %r in %s'
-                            % (component, path))
+            raise Exception(
+                'No reflectivity files found for component %r in %s' % (component, path)
+            )
 
         refl = refl_sum / nfound
 
@@ -732,8 +744,9 @@ class GPAO:
             )
 
         rgb01, rgb255, hexstr = reflectance_to_srgb(ene, refl, illuminant)
-        print('Perceived color (sRGB): RGB={}  hex={}'.format(
-            tuple(int(c) for c in rgb255), hexstr))
+        print(
+            'Perceived color (sRGB): RGB={}  hex={}'.format(tuple(int(c) for c in rgb255), hexstr)
+        )
 
         if show:
             from .graphics.plot_functions import plot_color_swatch
@@ -741,4 +754,3 @@ class GPAO:
             plot_color_swatch(rgb01, hexstr=hexstr, title=title, label=label)
 
         return rgb01, rgb255, hexstr
-

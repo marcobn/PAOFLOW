@@ -393,8 +393,9 @@ def plot_tensor(
     plt.show()
 
 
-def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend,
-                    legend_outside=False):
+def plot_shc_tensor(
+    enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend, legend_outside=False
+):
     """ """
 
     fig = plt.figure()
@@ -425,8 +426,9 @@ def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, 
             # so it does not overlap the curves.
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.75, box.height])
-            ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5),
-                      borderaxespad=0.0, frameon=False)
+            ax.legend(
+                loc='center left', bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0, frameon=False
+            )
         else:
             ax.legend()
 
@@ -509,8 +511,16 @@ def plot_color_swatch(rgb01, hexstr=None, title=None, label=None):
     if hexstr is not None:
         annotation.append(hexstr)
     if annotation:
-        ax.text(0.5, 0.5, '\n'.join(annotation), color=text_col,
-                ha='center', va='center', fontsize=13, transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            '\n'.join(annotation),
+            color=text_col,
+            ha='center',
+            va='center',
+            fontsize=13,
+            transform=ax.transAxes,
+        )
 
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)

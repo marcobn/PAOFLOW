@@ -42,7 +42,7 @@ def test_red_band_is_reddish():
     """Reflectance peaked at long wavelengths (low E) reads as red-dominant."""
     # Gaussian reflectance peak around 1.8 eV (~690 nm, red).
     refl = np.exp(-0.5 * ((ENE - 1.8) / 0.12) ** 2)
-    rgb255, = (reflectance_to_srgb(ENE, refl, illuminant='E')[1],)
+    (rgb255,) = (reflectance_to_srgb(ENE, refl, illuminant='E')[1],)
     assert rgb255[0] > rgb255[1]
     assert rgb255[0] > rgb255[2]
 

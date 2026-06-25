@@ -62,13 +62,11 @@ def cie_cmf(lam):
         + 0.362 * _gaussian_lobe(lam, 442.0, 16.0, 26.7)
         - 0.065 * _gaussian_lobe(lam, 501.1, 20.4, 26.2)
     )
-    ybar = (
-        0.821 * _gaussian_lobe(lam, 568.8, 46.9, 40.5)
-        + 0.286 * _gaussian_lobe(lam, 530.9, 16.3, 31.1)
+    ybar = 0.821 * _gaussian_lobe(lam, 568.8, 46.9, 40.5) + 0.286 * _gaussian_lobe(
+        lam, 530.9, 16.3, 31.1
     )
-    zbar = (
-        1.217 * _gaussian_lobe(lam, 437.0, 11.8, 36.0)
-        + 0.681 * _gaussian_lobe(lam, 459.0, 26.0, 13.8)
+    zbar = 1.217 * _gaussian_lobe(lam, 437.0, 11.8, 36.0) + 0.681 * _gaussian_lobe(
+        lam, 459.0, 26.0, 13.8
     )
     return xbar, ybar, zbar
 
@@ -82,7 +80,7 @@ def _planck_spd(lam, temperature):
     # h c / k_B in nm*K.
     hc_over_k = 1.4387768775e7  # nm K
     lam = np.asarray(lam, dtype=float)
-    return lam ** -5 / np.expm1(hc_over_k / (lam * temperature))
+    return lam**-5 / np.expm1(hc_over_k / (lam * temperature))
 
 
 def illuminant_spd(lam, illuminant='E'):

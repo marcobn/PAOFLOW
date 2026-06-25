@@ -408,19 +408,11 @@ def build_run_script(cfg):
         lines.append('    p.gradient_and_momenta(nonlocal_velocity=True)')
         lines.append('    p.adaptive_smearing()')
         if has_emissivity:
-            lines.append(
-                "    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1,"
-            )
-            lines.append(
-                '                        emissivity=True, emis_angles=(0.0, 30.0, 60.0),'
-            )
-            lines.append(
-                '                        emis_ntheta=90, emis_temperature=300.0)'
-            )
+            lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1,")
+            lines.append('                        emissivity=True, emis_angles=(0.0, 30.0, 60.0),')
+            lines.append('                        emis_ntheta=90, emis_temperature=300.0)')
         else:
-            lines.append(
-                "    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)"
-            )
+            lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)")
         lines.append('')
         lines.append('    p.finish_execution()')
         lines.append('')
@@ -1119,20 +1111,30 @@ def build_plot_script(cfg):
         # y-axis limits). Directional spectra (those with '_th' in the name)
         # are handled separately by the emissivity menu.
         optical_groups = [
-            ('Dielectric function', 'plot_dielectric_function',
-             ['epsi_*.dat', 'epsr_*.dat'], '_ylim()'),
-            ('Refractive index (n, kappa)', 'plot_refractive_index',
-             ['nref_*.dat', 'kref_*.dat'], '_ylim()'),
+            (
+                'Dielectric function',
+                'plot_dielectric_function',
+                ['epsi_*.dat', 'epsr_*.dat'],
+                '_ylim()',
+            ),
+            (
+                'Refractive index (n, kappa)',
+                'plot_refractive_index',
+                ['nref_*.dat', 'kref_*.dat'],
+                '_ylim()',
+            ),
             ('EELS', 'plot_eels', ['eels_*.dat'], '_ylim()'),
-            ('Absorption coefficient', 'plot_absorption',
-             ['alpha_*.dat'], '_ylim()'),
-            ('Reflectivity', 'plot_reflectivity',
-             ['refl_*.dat'], '(0.0, 1.0)'),
-            ('Optical conductivity', 'plot_optical_conductivity',
-             ['sigmar_*.dat', 'sigmai_*.dat'], '_ylim()'),
+            ('Absorption coefficient', 'plot_absorption', ['alpha_*.dat'], '_ylim()'),
+            ('Reflectivity', 'plot_reflectivity', ['refl_*.dat'], '(0.0, 1.0)'),
+            (
+                'Optical conductivity',
+                'plot_optical_conductivity',
+                ['sigmar_*.dat', 'sigmai_*.dat'],
+                '_ylim()',
+            ),
         ]
         for label, fname, globs, ylim in optical_groups:
-            glob_calls = ' + '.join("_many({!r})".format(gl) for gl in globs)
+            glob_calls = ' + '.join('_many({!r})'.format(gl) for gl in globs)
             funcs += _plot_func(
                 fname,
                 [
@@ -1142,7 +1144,9 @@ def build_plot_script(cfg):
                     '    _missing(None)',
                     '    return',
                     'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
-                    "                     title={!r}, x_lim=_ewin_optical(), y_lim={})".format(label, ylim),
+                    '                     title={!r}, x_lim=_ewin_optical(), y_lim={})'.format(
+                        label, ylim
+                    ),
                 ],
             )
             menu.append((label, fname))

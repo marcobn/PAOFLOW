@@ -711,9 +711,7 @@ def write_emissivity(data_controller, ene, epsr, epsi, comp, spin_tag):
     data_controller.write_file_row_col('emish_%s%s.dat' % (comp, spin_tag), ene, emis_hemi)
 
     # Total hemispherical emissivity at each requested temperature.
-    emis_tot = np.array(
-        [total_hemispherical_emissivity(ene, emis_hemi, T) for T in temps]
-    )
+    emis_tot = np.array([total_hemispherical_emissivity(ene, emis_hemi, T) for T in temps])
     data_controller.write_file_row_col('emist_%s%s.dat' % (comp, spin_tag), temps, emis_tot)
 
     if rank == 0:
