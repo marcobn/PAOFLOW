@@ -6,9 +6,7 @@ from PAOFLOW.transport.conductor_pipeline import run_conductor
 from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 
 
-def main() -> None:
-    input_name = sys.argv[1] if len(sys.argv) > 1 else 'conductor_bulk.yaml'
-
+def _run_case(case: str) -> None:
     paoflow = PAOFLOW.PAOFLOW(
         savedir='alh.save',
         outputdir='output',
@@ -24,7 +22,7 @@ def main() -> None:
     paoflow.projections()
 
     transport = Transport(paoflow.data_controller)
-    if input_name.endswith('conductor_bulk.yaml'):
+    if case == 'bulk':
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             dimC=41,
@@ -48,7 +46,7 @@ def main() -> None:
             H00_C={'rows': 'ALL', 'cols': 'ALL'},
             H_CR={'rows': 'ALL', 'cols': 'ALL'},
         )
-    elif input_name.endswith('conductor_lcr.yaml'):
+    elif case == 'lcr':
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             datafile_L='./alh.save/atomic_proj.xml',
@@ -79,7 +77,7 @@ def main() -> None:
             H00_R={'rows': '1-12', 'cols': '1-12'},
             H01_R={'rows': '30-41', 'cols': '1-12'},
         )
-    elif input_name.endswith('conductor_lead_Al.yaml'):
+    elif case == 'lead':
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             dimC=12,
@@ -97,7 +95,7 @@ def main() -> None:
             H_CR={'rows': '30-41', 'cols': '1-12'},
         )
     else:
-        raise ValueError(f'Unsupported conductor selector: {input_name}')
+        raise ValueError(f'Unsupported conductor selector: {case}')
 
     energy_index = 50
     kpoint_index = 0
@@ -112,6 +110,24 @@ def main() -> None:
         data=transport.conductor_data,
         blc_blocks=transport.blc_blocks,
     )
+
+
+def main() -> None:
+    if len(sys.argv) > 1:
+        name = sys.argv[1]
+        if name.endswith('conductor_bulk.yaml'):
+            selectors = ['bulk']
+        elif name.endswith('conductor_lcr.yaml'):
+            selectors = ['lcr']
+        elif name.endswith('conductor_lead_Al.yaml'):
+            selectors = ['lead']
+        else:
+            raise ValueError(f'Unsupported conductor selector: {name}')
+    else:
+        selectors = ['bulk', 'lcr', 'lead']
+
+    for selector in selectors:
+        _run_case(selector)
 
 
 if __name__ == '__main__':
