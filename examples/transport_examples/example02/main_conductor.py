@@ -6,6 +6,7 @@ This example demonstrates a bulk transport calculation with Al system.
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
 from PAOFLOW.transport.conductor_pipeline import run_conductor
+from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 
 
 def main() -> None:
@@ -58,6 +59,21 @@ def main() -> None:
         H00_C={'rows': 'ALL', 'cols': 'ALL'},
         H_CR={'rows': 'ALL', 'cols': 'ALL'},
     )
+
+    # Inspect intermediate observables at one (energy, k-point).
+    energy_index = 7001
+    kpoint_index = 0
+    sigma_L, sigma_R, _ = transport.compute_self_energy(ie_g=energy_index, ik=kpoint_index)
+    gamma_L = compute_broadening_matrix(sigma_L)
+    gamma_R = compute_broadening_matrix(sigma_R)
+    gC = transport.compute_green_function(ik=kpoint_index, sigma_L=sigma_L, sigma_R=sigma_R)
+    transmission = transport.compute_transmission(
+        gC=gC,
+        sigma_L=sigma_L,
+        sigma_R=sigma_R,
+        weighted=True,
+    )
+    dos = transport.compute_dos(gC=gC, weighted=True)
 
     # Run conductor calculation
     run_conductor(

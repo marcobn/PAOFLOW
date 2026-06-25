@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
 from PAOFLOW.transport.io.input_parameters import ConductorData
 from PAOFLOW.transport.io.write_data import write_eigenchannels
+from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 
 
 def accumulate_dos(
@@ -118,8 +119,8 @@ def accumulate_transmission(
 
     with :math:`\\Gamma_{L/R} = i\\left(\\Sigma_{L/R} - \\Sigma_{L/R}^\\dagger\\right)`.
     """
-    gamma_L = 1j * (sigma_L - sigma_L.conj().T)
-    gamma_R = 1j * (sigma_R - sigma_R.conj().T)
+    gamma_L = compute_broadening_matrix(sigma_L)
+    gamma_R = compute_broadening_matrix(sigma_R)
 
     do_eigplot_now = (
         data.symmetry.do_eigenchannels

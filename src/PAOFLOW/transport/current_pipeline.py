@@ -9,9 +9,9 @@ from numpy.typing import NDArray
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.transport.calculators.current import (
     build_bias_grid,
-    compute_current_vs_bias,
     read_transmittance,
 )
+from PAOFLOW.transport.observables.current import compute_current
 
 
 def write_current_output(
@@ -69,13 +69,13 @@ def run_current(
     NDArray[np.float64]
         Computed current values, shape ``(nV,)``.
     """
-    currents = compute_current_vs_bias(
-        egrid,
-        transm,
-        vgrid,
-        data['mu_L'],
-        data['mu_R'],
-        data['sigma'],
+    currents = compute_current(
+        energy_grid=egrid,
+        transmission=transm,
+        bias_grid=vgrid,
+        mu_L=data['mu_L'],
+        mu_R=data['mu_R'],
+        sigma=data['sigma'],
     )
     write_current_output(data=data, vgrid=vgrid, currents=currents)
     return currents

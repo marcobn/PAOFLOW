@@ -13,6 +13,7 @@ from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
 from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.workspace.prepare_data import (
     prepare_conductor_data,
@@ -393,8 +394,8 @@ def compute_conductor_transmission(
             'gC, sigma_L, and sigma_R are required. Compute self-energy and Green function first.'
         )
 
-    gamma_L = 1j * (sigma_left - sigma_left.conj().T)
-    gamma_R = 1j * (sigma_right - sigma_right.conj().T)
+    gamma_L = compute_broadening_matrix(sigma_left)
+    gamma_R = compute_broadening_matrix(sigma_right)
     channels, _ = evaluate_transmittance(
         gamma_L=gamma_L,
         gamma_R=gamma_R,

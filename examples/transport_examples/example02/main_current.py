@@ -1,37 +1,9 @@
-"""Current-vs-bias calculation example.
+"""Current-vs-bias calculation from an existing conductance file."""
 
-This example demonstrates computing current as a function of applied bias
-using transmission data from a prior conductor calculation.
-"""
-
-from PAOFLOW import PAOFLOW
 from PAOFLOW.transport.current_pipeline import run_current_from_file
 
 
 def main() -> None:
-    # PAOFLOW setup
-    paoflow = PAOFLOW.PAOFLOW(
-        savedir='output/qe/alh.save',
-        outputdir='output/paoflow',
-        smearing='gauss',
-        npool=1,
-        verbose=True,
-        save_overlaps=True,
-    )
-
-    # Read projections from QE output
-    paoflow.read_atomic_proj_QE()
-
-    # Projectability analysis
-    paoflow.projectability()
-
-    # Build PAO Hamiltonian
-    paoflow.pao_hamiltonian(shift_type=1, expand_wedge=False)
-
-    # Compute projections
-    paoflow.projections()
-
-    # Compute current from transmission data
     run_current_from_file(
         data={
             'fileout': './output/paoflow/current.dat',
