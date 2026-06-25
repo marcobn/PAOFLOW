@@ -1147,6 +1147,20 @@ def build_plot_script(cfg):
             )
             menu.append((label, fname))
 
+        # Perceived visible color (sRGB) derived from the reflectivity spectrum.
+        funcs += _plot_func(
+            'plot_visible_color',
+            [
+                "files = [f for f in _many('refl_*.dat') if '_th' not in os.path.basename(f)]",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                'pplt.optical_color(path=OUTPUTDIR, component="avg", illuminant="E",',
+                "                   title='Perceived color')",
+            ],
+        )
+        menu.append(('Visible color (sRGB swatch)', 'plot_visible_color'))
+
     if has_emissivity:
         funcs += _plot_func(
             'plot_emissivity',

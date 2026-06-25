@@ -482,3 +482,40 @@ def plot_optical(curves, title, x_lim, y_lim, x_label, y_label, cols=None, legen
         ax.legend()
 
     plt.show()
+
+
+def plot_color_swatch(rgb01, hexstr=None, title=None, label=None):
+    """Display a solid swatch of the perceived visible color of a material.
+
+    Arguments:
+      rgb01 (sequence): sRGB color components in [0, 1].
+      hexstr (str): Optional hex string annotated on the swatch (e.g. '#rrggbb').
+      title (str): Figure title (defaults to 'Perceived color').
+      label (str): Optional text drawn above the hex value (e.g. the material).
+    """
+    rgb01 = tuple(float(c) for c in rgb01)
+
+    fig = plt.figure(figsize=(3.0, 3.0))
+    fig.suptitle('Perceived color' if title is None else title)
+    ax = fig.add_subplot(111)
+    ax.add_patch(plt.Rectangle((0.0, 0.0), 1.0, 1.0, facecolor=rgb01, edgecolor='black'))
+
+    # Choose readable text color from the swatch luminance.
+    luminance = 0.2126 * rgb01[0] + 0.7152 * rgb01[1] + 0.0722 * rgb01[2]
+    text_col = 'black' if luminance > 0.5 else 'white'
+    annotation = []
+    if label is not None:
+        annotation.append(label)
+    if hexstr is not None:
+        annotation.append(hexstr)
+    if annotation:
+        ax.text(0.5, 0.5, '\n'.join(annotation), color=text_col,
+                ha='center', va='center', fontsize=13, transform=ax.transAxes)
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal')
+
+    plt.show()

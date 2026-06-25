@@ -652,3 +652,93 @@ class GPAO:
             title = 'Optical properties'
 
         plot_optical(curves, title, x_lim, y_lim, x_label, y_label, cols, legend)
+
+    def optical_color(
+        self,
+        path='.',
+        component='avg',
+        spin=None,
+        illuminant='E',
+        title=None,
+        label=None,
+        show=True,
+    ):
+        """
+        Derive the perceived visible color (sRGB) of a material from its
+        normal-incidence reflectivity and display it as a color swatch.
+
+        The reflectivity spectra ``refl_<component>.dat`` written by
+        :meth:`PAOFLOW.dielectric_tensor` are passed through the CIE 1931
+        color-matching functions under the chosen illuminant to obtain a CIE
+        XYZ tristimulus, which is converted to an sRGB color.
+
+        Arguments:
+          path (str): Directory containing the ``refl_*.dat`` files. Default '.'.
+          component (str): Diagonal tensor component ('xx', 'yy', 'zz') or
+            'avg' to average the available diagonal components (default).
+          spin (int): Spin channel (0 or 1) for spin-polarized runs; ``None``
+            for the spin-unpolarized files.
+          illuminant (str or float): 'E' equal-energy (intrinsic color, default),
+            'D65' daylight, or a blackbody temperature in kelvin.
+          title (str): A title for the swatch figure.
+          label (str): Optional text drawn on the swatch (e.g. the material).
+          show (bool): Render the swatch (set False to only return the color).
+
+        Returns:
+          tuple: ``(rgb01, rgb255, hexstr)`` -- sRGB in [0, 1], in [0, 255], and
+          as a ``'#rrggbb'`` string.
+        """
+        import os
+
+        from .inputs.read_pao_output import read_dos_PAO
+        from .graphics.color import reflectance_to_srgb, visible_grid_covered
+
+        spin_tag = '' if spin is None else '_%d' % spin
+        if component == 'avg':
+            comps = ['xx', 'yy', 'zz']
+        else:
+            comps = [component]
+
+        ene = None
+        refl_sum = None
+        nfound = 0
+        for comp in comps:
+            fn = os.path.join(path, 'refl_%s%s.dat' % (comp, spin_tag))
+            if not os.path.isfile(fn):
+                continue
+            x, y = read_dos_PAO(fn)
+            import numpy as np
+
+            x = np.asarray(x, dtype=float)
+            y = np.asarray(y, dtype=float)
+            if refl_sum is None:
+                ene = x
+                refl_sum = y
+            else:
+                refl_sum = refl_sum + y
+            nfound += 1
+
+        if nfound == 0:
+            raise Exception('No reflectivity files found for component %r in %s'
+                            % (component, path))
+
+        refl = refl_sum / nfound
+
+        if not visible_grid_covered(ene):
+            print(
+                'Warning: the reflectivity energy grid does not span the full '
+                'visible range (~1.59-3.26 eV); the derived color is biased. '
+                'Re-run the optical calculation with emax >= ~3.3 eV.'
+            )
+
+        rgb01, rgb255, hexstr = reflectance_to_srgb(ene, refl, illuminant)
+        print('Perceived color (sRGB): RGB={}  hex={}'.format(
+            tuple(int(c) for c in rgb255), hexstr))
+
+        if show:
+            from .graphics.plot_functions import plot_color_swatch
+
+            plot_color_swatch(rgb01, hexstr=hexstr, title=title, label=label)
+
+        return rgb01, rgb255, hexstr
+
