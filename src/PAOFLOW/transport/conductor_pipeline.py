@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 from mpi4py import MPI
-from numpy.typing import NDArray
 
 from PAOFLOW.transport.conductor_energy_loop import (
     process_energy_point,
@@ -17,25 +18,24 @@ from PAOFLOW.transport.conductor_writers import (
 )
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.io.write_data import write_data
+from PAOFLOW.transport.io.write_data import write_operator_xml
+from PAOFLOW.transport.results import TransportResults
+from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.divide_et_impera import divide_work
 
 
-def run_conductor(
+def compute_conductor_results(
     data: ConductorData,
     blc_blocks: Mapping[str, Any],
     *,
     comm: MPI.Comm = MPI.COMM_WORLD,
-) -> tuple[
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.float64],
-    NDArray[np.complex128] | None,
-    NDArray[np.complex128] | None,
-    NDArray[np.complex128] | None,
-    NDArray[np.float64],
-]:
-    """Execute the procedural conductor transport workflow.
+) -> TransportResults:
+    """Compute transport observables across the full energy and k-point grid.
+
+    This function executes the core conductor calculation: it distributes
+    energies across MPI ranks, computes self-energies and Green's functions
+    at each ``(E, k)`` point, and accumulates transmission and DOS observables.
 
     Parameters
     ----------
@@ -50,25 +50,21 @@ def run_conductor(
 
     Returns
     -------
-    tuple
-        ``(conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out, egrid)``.
-        ``conduct`` has shape ``(1 + neigchn, ne)`` and ``dos`` has shape ``(ne,)``.
-        ``conduct_k`` has shape ``(1 + neigchn, nkpts_par, ne)`` and
-        ``dos_k`` has shape ``(ne, nkpts_par)``.
-        ``gf_out``, ``rsgmL_out``, and ``rsgmR_out`` are optional
-        ``complex128`` arrays with shape ``(ne, nrtot_par, dimC, dimC)``.
-        ``egrid`` is the energy grid with shape ``(ne,)``.
+    TransportResults
+        Container with ``transmission``, ``dos``, ``transmission_k``,
+        ``dos_k``, optional ``green_functions``, optional ``self_energy_L``,
+        optional ``self_energy_R``, and ``energy_grid``.
 
     Notes
     -----
-    This routine preserves the legacy conductor sequence:
+    This function:
 
-    1. Distribute energies across MPI ranks.
-    2. For each local energy, loop over local k-points.
-    3. Compute :math:`G_C^r`, :math:`\\Sigma_L`, and :math:`\\Sigma_R`.
-    4. Accumulate DOS and transmission observables.
-    5. Optionally transform k-resolved operators into real-space output.
-    6. Reduce all arrays across MPI and write final outputs.
+    1. Distributes energies across MPI ranks.
+    2. For each local energy, loops over local k-points.
+    3. Computes :math:`G_C^r`, :math:`\\Sigma_L`, and :math:`\\Sigma_R`.
+    4. Accumulates DOS and transmission observables.
+    5. Optionally transforms k-resolved operators into real-space output.
+    6. Reduces all arrays across MPI and returns ``TransportResults``.
     """
     rank = comm.Get_rank()
     size = comm.Get_size()
@@ -139,24 +135,185 @@ def run_conductor(
         rsgmL_out=rsgmL_out,
         rsgmR_out=rsgmR_out,
     )
+
+    return TransportResults(
+        transmission=conduct,
+        dos=dos,
+        transmission_k=conduct_k,
+        dos_k=dos_k,
+        green_functions=gf_out,
+        self_energy_L=rsgmL_out,
+        self_energy_R=rsgmR_out,
+        energy_grid=egrid,
+    )
+
+
+def write_conductor_results(
+    data: ConductorData,
+    results: TransportResults,
+    *,
+    comm: MPI.Comm = MPI.COMM_WORLD,
+) -> None:
+    """Write transport observables and operators to files.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Validated transport input and output configuration.
+    results : TransportResults
+        Container with transport observables from ``compute_conductor_results``.
+    comm : MPI.Comm, optional
+        Communicator for rank-aware file writing.
+        Default is ``MPI.COMM_WORLD``.
+
+    Notes
+    -----
+    Writes operator arrays (Green's functions, lead self-energies) in real space
+    if requested, and writes scalar/k-resolved transport observables.
+    """
+    rank = comm.Get_rank()
+    runtime = data.get_runtime_data()
+    ivr_par3D = runtime.ivr_par3D
+
     write_conductor_operators(
         rank=rank,
         data=data,
-        gf_out=gf_out,
-        rsgmL_out=rsgmL_out,
-        rsgmR_out=rsgmR_out,
+        gf_out=results.green_functions,
+        rsgmL_out=results.self_energy_L,
+        rsgmR_out=results.self_energy_R,
         ivr_par3D=ivr_par3D,
-        egrid=egrid,
-        dimC=dimC,
+        egrid=results.energy_grid,
+        dimC=data.dimC,
     )
     write_conductor_output(
         rank=rank,
         data=data,
-        conduct=conduct,
-        dos=dos,
-        conduct_k=conduct_k,
-        dos_k=dos_k,
-        egrid=egrid,
+        conduct=results.transmission,
+        dos=results.dos,
+        conduct_k=results.transmission_k,
+        dos_k=results.dos_k,
+        egrid=results.energy_grid,
     )
 
-    return conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out, egrid
+
+def write_self_energy_results(
+    data: ConductorData,
+    results: TransportResults,
+    *,
+    comm: MPI.Comm = MPI.COMM_WORLD,
+) -> None:
+    """Write lead self-energies to XML output files."""
+    rank = comm.Get_rank()
+    if rank != 0 or results.self_energy_L is None or results.self_energy_R is None:
+        return
+    ivr_par3D = data.get_runtime_data().ivr_par3D
+    output_dir = Path(data.file_names.output_dir)
+    write_operator_xml(
+        output_dir=output_dir,
+        filename='lead_L_sgm.xml',
+        operator_matrix=results.self_energy_L,
+        ivr=ivr_par3D,
+        grid=results.energy_grid,
+        dimwann=data.dimC,
+        dynamical=True,
+        eunits='eV',
+        analyticity='retarded',
+    )
+    write_operator_xml(
+        output_dir=output_dir,
+        filename='lead_R_sgm.xml',
+        operator_matrix=results.self_energy_R,
+        ivr=ivr_par3D,
+        grid=results.energy_grid,
+        dimwann=data.dimC,
+        dynamical=True,
+        eunits='eV',
+        analyticity='retarded',
+    )
+
+
+def write_greens_function_results(
+    data: ConductorData,
+    results: TransportResults,
+    *,
+    comm: MPI.Comm = MPI.COMM_WORLD,
+) -> None:
+    """Write conductor Green's functions to XML output files."""
+    rank = comm.Get_rank()
+    if rank != 0 or results.green_functions is None:
+        return
+    ivr_par3D = data.get_runtime_data().ivr_par3D
+    output_dir = Path(data.file_names.output_dir)
+    write_operator_xml(
+        output_dir=output_dir,
+        filename='greenf.xml',
+        operator_matrix=results.green_functions,
+        ivr=ivr_par3D,
+        grid=results.energy_grid,
+        dimwann=data.dimC,
+        dynamical=True,
+        eunits='eV',
+        analyticity='retarded',
+    )
+
+
+def write_transmission_results(
+    data: ConductorData,
+    results: TransportResults,
+    *,
+    comm: MPI.Comm = MPI.COMM_WORLD,
+) -> None:
+    """Write transmission and k-resolved transmission data files."""
+    rank = comm.Get_rank()
+    if rank != 0:
+        return
+    output_dir = Path(data.file_names.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    postfix = data.file_names.postfix
+    if data.carriers == 'phonons':
+        egrid_out = np.sqrt(results.energy_grid * rydcm1**2 / amconv)
+    else:
+        egrid_out = results.energy_grid
+    write_data(egrid_out, results.transmission, 'conductance', output_dir, postfix=postfix)
+    if data.symmetry.write_kdata:
+        nkpts_par = data.get_runtime_data().nkpts_par
+        prefix = os.path.basename(data.file_names.datafile_C)
+        for ik in range(nkpts_par):
+            ik_str = f'{ik + 1:04d}'
+            filename_cond = f'{prefix}_cond-{ik_str}.dat'
+            with (output_dir / filename_cond).open('w') as f:
+                for ie in range(results.energy_grid.shape[0]):
+                    values = ' '.join(
+                        f'{results.transmission_k[ch, ik, ie]:15.9f}'
+                        for ch in range(results.transmission_k.shape[0])
+                    )
+                    f.write(f'{results.energy_grid[ie]:15.9f} {values}\n')
+
+
+def write_dos_results(
+    data: ConductorData,
+    results: TransportResults,
+    *,
+    comm: MPI.Comm = MPI.COMM_WORLD,
+) -> None:
+    """Write DOS and k-resolved DOS data files."""
+    rank = comm.Get_rank()
+    if rank != 0:
+        return
+    output_dir = Path(data.file_names.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    postfix = data.file_names.postfix
+    if data.carriers == 'phonons':
+        egrid_out = np.sqrt(results.energy_grid * rydcm1**2 / amconv)
+    else:
+        egrid_out = results.energy_grid
+    write_data(egrid_out, results.dos, 'doscond', output_dir, postfix=postfix)
+    if data.symmetry.write_kdata:
+        nkpts_par = data.get_runtime_data().nkpts_par
+        prefix = os.path.basename(data.file_names.datafile_C)
+        for ik in range(nkpts_par):
+            ik_str = f'{ik + 1:04d}'
+            filename_dos = f'{prefix}_doscond-{ik_str}.dat'
+            with (output_dir / filename_dos).open('w') as f:
+                for ie in range(results.energy_grid.shape[0]):
+                    f.write(f'{results.energy_grid[ie]:15.9f} {results.dos_k[ie, ik]:15.9f}\n')

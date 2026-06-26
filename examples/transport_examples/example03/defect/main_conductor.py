@@ -4,7 +4,6 @@ from mpi4py import MPI
 
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
-from PAOFLOW.transport.conductor_pipeline import run_conductor
 
 comm = MPI.COMM_WORLD
 
@@ -54,11 +53,12 @@ def main() -> None:
         H01_R={'rows': '33-52', 'cols': '1-20'},
     )
 
-    run_conductor(
-        data=transport.conductor_data,
-        blc_blocks=transport.blc_blocks,
-        comm=comm,
-    )
+    transport.compute_self_energy(write=True, comm=comm)
+    transport.compute_greens_functions(write=True, comm=comm)
+    transmission = transport.compute_transmission(write=True, comm=comm)
+    dos = transport.compute_dos(write=True, comm=comm)
+    print('Transmission shape:', transmission.shape)
+    print('DOS shape:', dos.shape)
 
 
 if __name__ == '__main__':

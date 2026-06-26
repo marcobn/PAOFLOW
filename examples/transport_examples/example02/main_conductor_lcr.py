@@ -6,7 +6,6 @@ left lead, central conductor, and right lead regions.
 
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
-from PAOFLOW.transport.conductor_pipeline import run_conductor
 
 
 def main() -> None:
@@ -66,11 +65,13 @@ def main() -> None:
         H01_R={'rows': '30-41', 'cols': '1-12'},
     )
 
-    # Run LCR transport calculation
-    run_conductor(
-        data=transport.conductor_data,
-        blc_blocks=transport.blc_blocks,
-    )
+    # Compute and write transport observables by physics stage.
+    transport.compute_self_energy(write=True)
+    transport.compute_greens_functions(write=True)
+    transmission = transport.compute_transmission(write=True)
+    dos = transport.compute_dos(write=True)
+    print('Transmission shape:', transmission.shape)
+    print('DOS shape:', dos.shape)
 
 
 if __name__ == '__main__':

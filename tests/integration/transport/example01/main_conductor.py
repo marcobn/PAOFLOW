@@ -1,7 +1,5 @@
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
-from PAOFLOW.transport.conductor_pipeline import run_conductor
-from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 
 
 def main():
@@ -42,19 +40,12 @@ def main():
         H_CR={'rows': 'ALL', 'cols': 'ALL'},
     )
 
-    energy_index = 50
-    kpoint_index = 0
-    sigma_L, sigma_R, _ = transport.compute_self_energy(ie_g=energy_index, ik=kpoint_index)
-    _ = compute_broadening_matrix(sigma_L)
-    _ = compute_broadening_matrix(sigma_R)
-    gC = transport.compute_green_function(ik=kpoint_index, sigma_L=sigma_L, sigma_R=sigma_R)
-    _ = transport.compute_transmission(gC=gC, sigma_L=sigma_L, sigma_R=sigma_R, weighted=True)
-    _ = transport.compute_dos(gC=gC, weighted=True)
-
-    run_conductor(
-        data=transport.conductor_data,
-        blc_blocks=transport.blc_blocks,
-    )
+    transport.compute_self_energy(write=True)
+    transport.compute_greens_functions(write=True)
+    transmission = transport.compute_transmission(write=True)
+    dos = transport.compute_dos(write=True)
+    print('Transmission shape:', transmission.shape)
+    print('DOS shape:', dos.shape)
 
 
 if __name__ == '__main__':

@@ -3,10 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from mpi4py import MPI
 from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
+from PAOFLOW.transport.conductor_pipeline import (
+    compute_conductor_results,
+    write_dos_results,
+    write_greens_function_results,
+    write_self_energy_results,
+    write_transmission_results,
+)
 from PAOFLOW.transport.conductor_steps import (
     ConductorStepState,
     build_conductor_blocks,
@@ -18,6 +26,7 @@ from PAOFLOW.transport.conductor_steps import (
     prepare_conductor_step_state,
 )
 from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.results import TransportResults
 
 
 class Transport:
@@ -34,6 +43,8 @@ class Transport:
         Validated conductor input model populated by ``build_hamiltonian_blocks``.
     blc_blocks : dict[str, Any] or None
         Hamiltonian block operators populated by ``build_hamiltonian_blocks``.
+    results : TransportResults or None
+        Cached full-grid transport observables for staged workflow methods.
     """
 
     def __init__(self, data_controller: DataController) -> None:
@@ -41,6 +52,7 @@ class Transport:
         self._conductor_state: ConductorStepState | None = None
         self.conductor_data: ConductorData | None = None
         self.blc_blocks: dict[str, Any] | None = None
+        self.results: TransportResults | None = None
 
     def build_hamiltonian_blocks(
         self,
@@ -159,58 +171,64 @@ class Transport:
         self.conductor_data = state.data
         self.blc_blocks = state.blc_blocks
         self._conductor_state = state
+        self.results = None
         return state.blc_blocks
 
-    def compute_self_energy(
+    def _require_hamiltonian_blocks(self) -> None:
+        if self.conductor_data is None or self.blc_blocks is None:
+            raise RuntimeError('Call build_hamiltonian_blocks(...) before transport computations.')
+
+    def _require_step_state(self) -> None:
+        if self._conductor_state is None:
+            raise RuntimeError('Call build_hamiltonian_blocks(...) before point calculations.')
+
+    def _compute_full_grid_results(
+        self,
+        *,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+        require_green_functions: bool = False,
+        require_self_energies: bool = False,
+    ) -> TransportResults:
+        self._require_hamiltonian_blocks()
+        if require_green_functions or require_self_energies:
+            if (
+                not self.conductor_data.symmetry.write_gf
+                or not self.conductor_data.symmetry.write_lead_sgm
+            ):
+                self.conductor_data.symmetry.write_gf = True
+                self.conductor_data.symmetry.write_lead_sgm = True
+                self.results = None
+        if self.results is None:
+            self.results = compute_conductor_results(
+                data=self.conductor_data,
+                blc_blocks=self.blc_blocks,
+                comm=comm,
+            )
+        return self.results
+
+    def compute_self_energy_point(
         self,
         *,
         ie_g: int,
         ik: int,
     ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
-        """Compute lead self-energies for one ``(E, k)`` point.
-
-        Returns
-        -------
-        tuple[NDArray[np.complex128], NDArray[np.complex128], int]
-            ``(sigma_L, sigma_R, total_iterations)`` for the requested
-            ``(ie_g, ik)`` pair.
-
-        Raises
-        ------
-        RuntimeError
-            If ``build_hamiltonian_blocks`` was not called first.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_self_energy().')
+        """Compute lead self-energies for one ``(E, k)`` point."""
+        self._require_step_state()
         return compute_conductor_self_energy(
             state=self._conductor_state,
             ie_g=ie_g,
             ik=ik,
         )
 
-    def compute_green_function(
+    def compute_greens_function_point(
         self,
         *,
         ik: int,
         sigma_L: NDArray[np.complex128] | None = None,
         sigma_R: NDArray[np.complex128] | None = None,
     ) -> NDArray[np.complex128]:
-        """Compute conductor retarded Green's function for one k-point.
-
-        Returns
-        -------
-        NDArray[np.complex128]
-            Retarded conductor Green's function at the selected k-point.
-
-        Raises
-        ------
-        RuntimeError
-            If ``build_hamiltonian_blocks`` was not called first.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError(
-                'Call build_hamiltonian_blocks(...) before compute_green_function().'
-            )
+        """Compute conductor retarded Green's function for one k-point."""
+        self._require_step_state()
         return compute_conductor_green(
             state=self._conductor_state,
             ik=ik,
@@ -218,7 +236,7 @@ class Transport:
             sigma_R=sigma_R,
         )
 
-    def compute_transmission(
+    def compute_transmission_point(
         self,
         *,
         gC: NDArray[np.complex128] | None = None,
@@ -226,20 +244,8 @@ class Transport:
         sigma_R: NDArray[np.complex128] | None = None,
         weighted: bool = False,
     ) -> NDArray[np.float64]:
-        """Compute transmission channels from Green's function and self-energies.
-
-        Returns
-        -------
-        NDArray[np.float64]
-            Total and optional channel-resolved transmission values.
-
-        Raises
-        ------
-        RuntimeError
-            If ``build_hamiltonian_blocks`` was not called first.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_transmission().')
+        """Compute transmission channels for one selected point."""
+        self._require_step_state()
         return compute_conductor_transmission(
             state=self._conductor_state,
             gC=gC,
@@ -248,24 +254,91 @@ class Transport:
             weighted=weighted,
         )
 
-    def compute_dos(
+    def compute_dos_point(
         self,
         *,
         gC: NDArray[np.complex128] | None = None,
         weighted: bool = False,
     ) -> float:
-        """Compute DOS contribution from a conductor Green's function.
-
-        Returns
-        -------
-        float
-            DOS contribution from the selected Green's function.
-
-        Raises
-        ------
-        RuntimeError
-            If ``build_hamiltonian_blocks`` was not called first.
-        """
-        if self._conductor_state is None:
-            raise RuntimeError('Call build_hamiltonian_blocks(...) before compute_dos().')
+        """Compute DOS contribution for one selected point."""
+        self._require_step_state()
         return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
+
+    def compute_self_energy(
+        self,
+        *,
+        write: bool = True,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> tuple[NDArray[np.complex128] | None, NDArray[np.complex128] | None]:
+        """Compute full-grid lead self-energies and optionally write XML outputs."""
+        results = self._compute_full_grid_results(
+            comm=comm,
+            require_self_energies=True,
+        )
+        if write:
+            write_self_energy_results(
+                data=self.conductor_data,
+                results=results,
+                comm=comm,
+            )
+        return results.self_energy_L, results.self_energy_R
+
+    def compute_greens_function(
+        self,
+        *,
+        write: bool = True,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> NDArray[np.complex128] | None:
+        """Compute full-grid conductor Green's functions and optionally write XML output."""
+        results = self._compute_full_grid_results(
+            comm=comm,
+            require_green_functions=True,
+        )
+        if write:
+            write_greens_function_results(
+                data=self.conductor_data,
+                results=results,
+                comm=comm,
+            )
+        return results.green_functions
+
+    def compute_greens_functions(
+        self,
+        *,
+        write: bool = True,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> NDArray[np.complex128] | None:
+        """Alias of ``compute_greens_function`` with plural naming."""
+        return self.compute_greens_function(write=write, comm=comm)
+
+    def compute_transmission(
+        self,
+        *,
+        write: bool = True,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> NDArray[np.float64]:
+        """Compute full-grid transmission and optionally write output files."""
+        results = self._compute_full_grid_results(comm=comm)
+        if write:
+            write_transmission_results(
+                data=self.conductor_data,
+                results=results,
+                comm=comm,
+            )
+        return results.transmission
+
+    def compute_dos(
+        self,
+        *,
+        write: bool = True,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> NDArray[np.float64]:
+        """Compute full-grid DOS and optionally write output files."""
+        results = self._compute_full_grid_results(comm=comm)
+        if write:
+            write_dos_results(
+                data=self.conductor_data,
+                results=results,
+                comm=comm,
+            )
+        return results.dos
