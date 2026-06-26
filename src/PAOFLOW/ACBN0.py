@@ -873,9 +873,7 @@ class ACBN0:
             pp_path = pp
             if not isfile(pp_path) and pseudo_dir:
                 pp_path = join(pseudo_dir, pp)
-            atno, basis, labels = gaussian_fit(
-                pp_path, threshold=self.gaussian_threshold
-            )
+            atno, basis, labels = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
             self.basis[ele] = basis
             self.basis_labels[ele] = labels
 
@@ -1416,9 +1414,7 @@ class ACBN0:
             for atom_idx, entries in by_atom.items():
                 entries.sort(key=lambda d: d['index'])
                 pos = coords[atom_idx - 1]
-                gs = self._atom_shell_gaussians(
-                    species_label, pos, horb, shell_label
-                )
+                gs = self._atom_shell_gaussians(species_label, pos, horb, shell_label)
                 if len(gs) != len(entries):
                     raise RuntimeError(
                         f'Gaussian shell mismatch for {orb!r} on atom '
@@ -2554,9 +2550,7 @@ class eACBN0(ACBN0):
             # --- Numerator (Eq. 8 num): launch the MPI kernel -----------
             lbl1 = orb1.upper() if self.use_local_basis else None
             lbl2 = orb2.upper() if self.use_local_basis else None
-            gauss_I = self._atom_shell_gaussians(
-                ele1, coords_A[i1 - 1], L1, lbl1
-            )
+            gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1, lbl1)
             gauss_J = self._atom_shell_gaussians(
                 ele2,
                 coords_A[i2 - 1] + meta['R_cart'],
