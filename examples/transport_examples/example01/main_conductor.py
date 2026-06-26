@@ -42,10 +42,8 @@ def main():
 
     transport.compute_self_energy(write=True)
     transport.compute_greens_functions(write=True)
-    transmission = transport.compute_transmission(write=True)
-    dos = transport.compute_dos(write=True)
-    print('Transmission shape:', transmission.shape)
-    print('DOS shape:', dos.shape)
+    transport.compute_transmission(write=True)
+    transport.compute_dos(write=True)
 
 
 if __name__ == '__main__':

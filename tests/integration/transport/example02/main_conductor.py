@@ -1,5 +1,3 @@
-import sys
-
 from PAOFLOW import PAOFLOW
 from PAOFLOW.Transport import Transport
 
@@ -97,25 +95,12 @@ def _run_case(case: str) -> None:
 
     transport.compute_self_energy(write=True)
     transport.compute_greens_functions(write=True)
-    transmission = transport.compute_transmission(write=True)
-    dos = transport.compute_dos(write=True)
-    print(f'Completed {case}: transmission shape {transmission.shape}, DOS shape {dos.shape}')
+    transport.compute_transmission(write=True)
+    transport.compute_dos(write=True)
 
 
 def main() -> None:
-    if len(sys.argv) > 1:
-        name = sys.argv[1]
-        if name.endswith('conductor_bulk.yaml'):
-            selectors = ['bulk']
-        elif name.endswith('conductor_lcr.yaml'):
-            selectors = ['lcr']
-        elif name.endswith('conductor_lead_Al.yaml'):
-            selectors = ['lead']
-        else:
-            raise ValueError(f'Unsupported conductor selector: {name}')
-    else:
-        selectors = ['bulk', 'lcr', 'lead']
-
+    selectors = ['bulk', 'lcr', 'lead']
     for selector in selectors:
         _run_case(selector)
 
