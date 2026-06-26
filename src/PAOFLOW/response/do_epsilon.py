@@ -110,6 +110,9 @@ def do_dielectric_tensor(data_controller, ene):
                 fn = '%s_%s%s.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
 
+            if ipol == jpol and attributes.get('emissivity', False):
+                write_emissivity(data_controller, ene, epsr, epsi, LL[ipol] + LL[jpol], '')
+
             if rank == 0 and ipol == jpol:
                 renorm = np.sqrt((2.0 / np.pi) * np.trapezoid(epsi * ene, x=ene))
                 component = LL[ipol] + LL[jpol]
@@ -148,6 +151,8 @@ def do_dielectric_tensor(data_controller, ene):
             for ep, es in spectra0:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
+            if ipol == jpol and attributes.get('emissivity', False):
+                write_emissivity(data_controller, ene, epsr_0, epsi_0, LL[ipol] + LL[jpol], '_0')
             indices = (LL[ipol], LL[jpol], 1)
             spectra1 = [
                 (epsi_1, 'epsi'),
@@ -170,6 +175,8 @@ def do_dielectric_tensor(data_controller, ene):
             for ep, es in spectra1:
                 fn = '%s_%s%s_%d.dat' % ((es,) + indices)
                 data_controller.write_file_row_col(fn, ene, ep)
+            if ipol == jpol and attributes.get('emissivity', False):
+                write_emissivity(data_controller, ene, epsr_1, epsi_1, LL[ipol] + LL[jpol], '_1')
 
             if rank == 0 and ipol == jpol:
                 epsi = epsi_0 + epsi_1
@@ -476,6 +483,243 @@ def refractive_index(ene, epsi, epsr):
     refl = ((n - 1.0) ** 2 + kappa**2) / ((n + 1.0) ** 2 + kappa**2)
 
     return (n, kappa, alpha, refl)
+
+
+def directional_reflectivity(epsr, epsi, theta):
+    r"""Fresnel directional reflectivity for an opaque (optically thick) medium.
+
+    Treats the diagonal complex relative permittivity
+    :math:`\tilde\varepsilon = \varepsilon_1 + i\varepsilon_2` as the squared
+    complex refractive index :math:`\tilde n^2 = \tilde\varepsilon`.  For an
+    opaque bulk material light does not transmit, so the spectral directional
+    reflectivity follows from the Fresnel equations.  The complex refraction
+    term is
+
+    .. math::
+
+        q(\theta, \omega) = \sqrt{\tilde n^2 - \sin^2\theta},
+
+    and the polarization-resolved reflectivities for the transverse-electric
+    (s) and transverse-magnetic (p) components are
+
+    .. math::
+
+        R_s(\theta, \omega) &= \left\lvert
+            \frac{\cos\theta - q}{\cos\theta + q}\right\rvert^2, \\
+        R_p(\theta, \omega) &= \left\lvert
+            \frac{\tilde n^2\cos\theta - q}{\tilde n^2\cos\theta + q}
+            \right\rvert^2.
+
+    The unpolarized directional reflectivity is the average
+
+    .. math::
+
+        R(\theta, \omega) = \tfrac{1}{2}\bigl(R_s + R_p\bigr).
+
+    At normal incidence (:math:`\theta = 0`) this reduces to the standard
+    expression :math:`R = [(n-1)^2 + \kappa^2]/[(n+1)^2 + \kappa^2]` returned
+    by :func:`refractive_index`.
+
+    Parameters
+    ----------
+    epsr, epsi : ndarray, shape (ne,)
+        Real and imaginary parts of the (diagonal) dielectric function, with
+        the ``+1`` already included in ``epsr``.
+    theta : float
+        Incidence angle relative to the surface normal, in radians
+        (``0 <= theta < pi/2``).
+
+    Returns
+    -------
+    refl : ndarray, shape (ne,)
+        Unpolarized directional reflectivity (unitless, in [0, 1]).
+    """
+    n2 = epsr + 1j * epsi
+    cos_t = np.cos(theta)
+    sin2_t = np.sin(theta) ** 2
+    q = np.sqrt(n2 - sin2_t)
+
+    r_s = np.abs((cos_t - q) / (cos_t + q)) ** 2
+    r_p = np.abs((n2 * cos_t - q) / (n2 * cos_t + q)) ** 2
+
+    return 0.5 * (r_s + r_p)
+
+
+def spectral_hemispherical_emissivity(epsr, epsi, ntheta):
+    r"""Spectral hemispherical emissivity from the directional reflectivity.
+
+    By Kirchhoff's law the directional spectral emissivity of an opaque
+    material equals its directional spectral absorptivity,
+    :math:`\varepsilon(\theta, \omega) = 1 - R(\theta, \omega)`.  The
+    hemispherical emissivity removes the directional dependence by averaging
+    over all solid angles in the upper hemisphere, weighted by the projected
+    area :math:`\cos\theta`:
+
+    .. math::
+
+        \varepsilon(\omega) = 2 \int_0^{\pi/2}
+            \varepsilon(\theta, \omega)\,\cos\theta\,\sin\theta\,d\theta.
+
+    The polar-angle integral is evaluated numerically on a uniform grid of
+    ``ntheta`` points in :math:`[0, \pi/2]` via the trapezoidal rule, with
+    :func:`directional_reflectivity` supplying :math:`R(\theta, \omega)` at
+    each angle.
+
+    Parameters
+    ----------
+    epsr, epsi : ndarray, shape (ne,)
+        Real and imaginary parts of the (diagonal) dielectric function.
+    ntheta : int
+        Number of polar-angle samples in ``[0, pi/2]``.
+
+    Returns
+    -------
+    emis : ndarray, shape (ne,)
+        Spectral hemispherical emissivity (unitless, in [0, 1]).
+    """
+    thetas = np.linspace(0.0, 0.5 * np.pi, ntheta)
+    # integrand[k, :] = epsilon(theta_k, omega) * cos(theta_k) * sin(theta_k)
+    integrand = np.empty((ntheta, epsr.size), dtype=float)
+    for k, theta in enumerate(thetas):
+        emis_dir = 1.0 - directional_reflectivity(epsr, epsi, theta)
+        integrand[k] = emis_dir * np.cos(theta) * np.sin(theta)
+
+    return 2.0 * np.trapezoid(integrand, x=thetas, axis=0)
+
+
+def total_hemispherical_emissivity(ene, emis_w, temperature):
+    r"""Total (Planck-weighted) hemispherical emissivity at a temperature.
+
+    The total hemispherical emissivity weights the spectral hemispherical
+    emissivity :math:`\varepsilon(\omega)` against the Planck blackbody
+    spectral intensity and integrates over frequency:
+
+    .. math::
+
+        \varepsilon(T) = \frac{\int_0^\infty \varepsilon(\omega)\,
+                               I_{bb}(\omega, T)\,d\omega}
+                              {\int_0^\infty I_{bb}(\omega, T)\,d\omega},
+        \qquad
+        I_{bb}(\omega, T) = \frac{\hbar\omega^3}{4\pi^3 c^2}
+            \frac{1}{\exp(\hbar\omega / k_B T) - 1}.
+
+    Because the result is a ratio, the constant prefactor
+    :math:`\hbar/(4\pi^3 c^2)` cancels and the angular frequency may be
+    replaced by the photon energy :math:`E = \hbar\omega` (in eV), so the
+    weight reduces to :math:`w(E) = E^3 / [\exp(E / k_B T) - 1]` with
+    :math:`k_B T` expressed in eV.
+
+    .. note::
+
+        The integral is evaluated over the supplied energy grid ``ene`` only.
+        At moderate temperatures the Planck weight peaks at low photon energy
+        (:math:`\sim k_B T` to :math:`\sim 10\,k_B T`), so for a meaningful
+        :math:`\varepsilon(T)` the grid should start near zero and resolve the
+        thermally relevant range; otherwise the truncated integral
+        underestimates the contribution from unsampled frequencies.
+
+    Parameters
+    ----------
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV (assumed strictly positive).
+    emis_w : ndarray, shape (ne,)
+        Spectral hemispherical emissivity :math:`\varepsilon(\omega)`.
+    temperature : float
+        Absolute temperature in kelvin.
+
+    Returns
+    -------
+    emis_total : float
+        Total hemispherical emissivity (unitless, in [0, 1]).
+    """
+    from ..utils.constants import ELECTRONVOLT_SI, K_BOLTZMAN_SI
+
+    # Boltzmann constant in eV/K so that E/(kT) is dimensionless with E in eV.
+    kb_ev = K_BOLTZMAN_SI / ELECTRONVOLT_SI
+    kt = kb_ev * temperature
+
+    # Planck weight w(E) = E^3 / (exp(E/kT) - 1); the constant prefactor
+    # hbar/(4 pi^3 c^2) cancels in the ratio. Guard the exponential against
+    # overflow for E >> kT (where the weight is negligibly small anyway).
+    x = ene / kt
+    with np.errstate(over='ignore'):
+        weight = np.where(x < 700.0, ene**3 / np.expm1(x), 0.0)
+
+    denom = np.trapezoid(weight, x=ene)
+    if denom == 0.0:
+        return 0.0
+    return np.trapezoid(emis_w * weight, x=ene) / denom
+
+
+def write_emissivity(data_controller, ene, epsr, epsi, comp, spin_tag):
+    r"""Compute and write all emissivity spectra for one diagonal component.
+
+    Driven by the configuration stored on ``data_controller`` by
+    :meth:`PAOFLOW.dielectric_tensor` when ``emissivity=True``:
+
+    * ``emis_angles`` \u2014 incidence angles (degrees) at which the Fresnel
+      directional reflectivity :math:`R(\theta, \omega)` and emissivity
+      :math:`\varepsilon(\theta, \omega) = 1 - R` are tabulated.
+    * ``emis_ntheta`` \u2014 number of polar-angle samples used for the
+      hemispherical integral.
+    * ``emis_temperature`` \u2014 temperature(s) (K) at which the Planck-weighted
+      total hemispherical emissivity is evaluated.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides ``emis_angles``, ``emis_ntheta``, ``emis_temperature`` and
+        the ``write_file_row_col`` output method.
+    ene : ndarray, shape (ne,)
+        Photon-energy grid in eV.
+    epsr, epsi : ndarray, shape (ne,)
+        Real and imaginary parts of the diagonal dielectric function.
+    comp : str
+        Two-letter tensor-component tag (e.g. ``'xx'``) for output filenames.
+    spin_tag : str
+        Spin suffix appended to filenames (``''``, ``'_0'`` or ``'_1'``).
+
+    Output files (written to ``opath``)
+    ------------------------------------
+    ``refl_th{deg}_{comp}{spin}.dat``, ``emis_th{deg}_{comp}{spin}.dat``
+        Directional reflectivity and emissivity at each selected angle.
+    ``emish_{comp}{spin}.dat``
+        Spectral hemispherical emissivity :math:`\varepsilon(\omega)`.
+    ``emist_{comp}{spin}.dat``
+        Two-column (temperature, total hemispherical emissivity) file.
+    """
+    from ..utils.constants import DEGTORAD
+
+    _, attributes = data_controller.data_dicts()
+    angles_deg = np.atleast_1d(attributes['emis_angles']).astype(float)
+    ntheta = int(attributes['emis_ntheta'])
+    temps = np.atleast_1d(attributes['emis_temperature']).astype(float)
+
+    # Directional reflectivity and emissivity at each requested incidence angle.
+    for ang in angles_deg:
+        refl_dir = directional_reflectivity(epsr, epsi, ang * DEGTORAD)
+        deg_tag = int(round(ang))
+        data_controller.write_file_row_col(
+            'refl_th%d_%s%s.dat' % (deg_tag, comp, spin_tag), ene, refl_dir
+        )
+        data_controller.write_file_row_col(
+            'emis_th%d_%s%s.dat' % (deg_tag, comp, spin_tag), ene, 1.0 - refl_dir
+        )
+
+    # Spectral hemispherical emissivity.
+    emis_hemi = spectral_hemispherical_emissivity(epsr, epsi, ntheta)
+    data_controller.write_file_row_col('emish_%s%s.dat' % (comp, spin_tag), ene, emis_hemi)
+
+    # Total hemispherical emissivity at each requested temperature.
+    emis_tot = np.array([total_hemispherical_emissivity(ene, emis_hemi, T) for T in temps])
+    data_controller.write_file_row_col('emist_%s%s.dat' % (comp, spin_tag), temps, emis_tot)
+
+    if rank == 0:
+        for T, e in zip(temps, emis_tot):
+            print(
+                'Component %s%s, total hemispherical emissivity at %.1f K = %.6f'
+                % (comp, spin_tag, T, e)
+            )
 
 
 def eps_loop(data_controller, ene, ispin, ipol, jpol):

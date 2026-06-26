@@ -865,6 +865,7 @@ class ACBN0:
         pseudo_dir = self.blocks.get('control', {}).get('pseudo_dir', '')
         pseudo_dir = expanduser(pseudo_dir.strip().strip('"').strip("'"))
         self.basis = {}
+        self.basis_labels = {}
         self.uspecies = []
         for s in self.cards['ATOMIC_SPECIES'][1:]:
             ele, _, pp = s.split()
@@ -872,8 +873,9 @@ class ACBN0:
             pp_path = pp
             if not isfile(pp_path) and pseudo_dir:
                 pp_path = join(pseudo_dir, pp)
-            atno, basis = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
+            atno, basis, labels = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
             self.basis[ele] = basis
+            self.basis_labels[ele] = labels
 
         # Store U values from input template
         if 'HUBBARD' in self.cards:
@@ -1412,27 +1414,41 @@ class ACBN0:
             for atom_idx, entries in by_atom.items():
                 entries.sort(key=lambda d: d['index'])
                 pos = coords[atom_idx - 1]
-                gs = self._atom_shell_gaussians(species_label, pos, horb)
+                gs = self._atom_shell_gaussians(species_label, pos, horb, shell_label)
                 if len(gs) != len(entries):
                     raise RuntimeError(
                         f'Gaussian shell mismatch for {orb!r} on atom '
                         f'{atom_idx}: {len(gs)} Gaussians vs {len(entries)} '
-                        'PAO orbitals. The UPF must provide exactly one '
-                        f'l={horb} shell for species {species_label!r}.'
+                        f'PAO orbitals. The UPF must provide exactly one '
+                        f'l={horb} shell labelled {shell_label!r} for '
+                        f'species {species_label!r}.'
                     )
                 for e, bf in zip(entries, gs):
                     gauss_basis[e['index']] = bf
         return gauss_basis
 
-    def _atom_shell_gaussians(self, ele, pos_angstrom, L):
+    def _atom_shell_gaussians(self, ele, pos_angstrom, L, shell_label=None):
         """Build the CGBFs of the ``(ele, L)`` shell centred at
         ``pos_angstrom`` (Cartesian Ångström).  Returns a list with one
-        CGBF per magnetic component (``2L+1`` Gaussians)."""
+        CGBF per magnetic component (``2L+1`` Gaussians).
+
+        When ``shell_label`` is given (e.g. ``'2S'``) only the UPF
+        pseudo-wavefunction carrying that label is used.  This is required
+        for pseudopotentials that include semicore states of the same
+        angular momentum as the Hubbard valence shell (e.g. Li ``1s`` +
+        ``2s``), where selecting purely by ``L`` would return more Gaussian
+        shells than the single label-selected PAO valence orbital.
+        """
         from .utils.pyints import CGBF
 
         gauss = []
         origin_bohr = np.asarray(pos_angstrom) * ANGS_TO_BOHR
-        for shell in self.basis[ele]:
+        labels = self.basis_labels.get(ele)
+        wanted = None if shell_label is None else shell_label.upper()
+        for ishell, shell in enumerate(self.basis[ele]):
+            if wanted is not None and labels is not None:
+                if labels[ishell].upper() != wanted:
+                    continue
             for subshell in shell:
                 lx, ly, lz, _, _ = subshell[0]
                 if lx + ly + lz != L:
@@ -2532,11 +2548,14 @@ class eACBN0(ACBN0):
                 den -= float((nIJ * nJI.T).real.sum())
 
             # --- Numerator (Eq. 8 num): launch the MPI kernel -----------
-            gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1)
+            lbl1 = orb1.upper() if self.use_local_basis else None
+            lbl2 = orb2.upper() if self.use_local_basis else None
+            gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1, lbl1)
             gauss_J = self._atom_shell_gaussians(
                 ele2,
                 coords_A[i2 - 1] + meta['R_cart'],
                 L2,
+                lbl2,
             )
             if len(gauss_I) != basis_I.size or len(gauss_J) != basis_J.size:
                 raise RuntimeError(

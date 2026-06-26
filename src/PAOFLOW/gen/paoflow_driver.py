@@ -247,6 +247,7 @@ PROPERTY_MENU = [
     ('anomalous_Hall', 'Anomalous Hall / Berry curvature'),
     ('topology', 'Band topology (Berry, effective mass)'),
     ('optical', 'Optical / dielectric tensor (separate extended-basis run)'),
+    ('emissivity', 'Emissivity (Fresnel/Kirchhoff; implies the optical run)'),
 ]
 SPIN_PROPERTIES = {'spin_texture', 'spin_Hall'}
 # Properties that read an explicit (emin, emax) energy window.
@@ -285,8 +286,9 @@ def _format_upfs_line(upfs):
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
-    standard_props = [p for p in props if p != 'optical']
-    has_optical = 'optical' in props
+    standard_props = [p for p in props if p not in ('optical', 'emissivity')]
+    has_optical = 'optical' in props or 'emissivity' in props
+    has_emissivity = 'emissivity' in props
     needs_spin = any(p in SPIN_PROPERTIES for p in props)
     needs_energy_window = any(p in ENERGY_WINDOW_PROPERTIES for p in props)
 
@@ -378,6 +380,11 @@ def build_run_script(cfg):
         lines.append('')
         lines.append('    The dielectric tensor requires the non-local velocity correction,')
         lines.append('    so it runs as a separate PAOFLOW instance on the extended basis.')
+        if has_emissivity:
+            lines.append('')
+            lines.append('    Emissivity (Fresnel directional reflectivity, spectral and total')
+            lines.append('    hemispherical emissivity) is computed from the diagonal dielectric')
+            lines.append('    function in the same call.')
         lines.append('    """')
         lines.append('    p = PAOFLOW.PAOFLOW(')
         lines.append('        workpath=HERE,')
@@ -400,7 +407,12 @@ def build_run_script(cfg):
         lines.append('    # Non-local velocity is essential for the optical matrix elements.')
         lines.append('    p.gradient_and_momenta(nonlocal_velocity=True)')
         lines.append('    p.adaptive_smearing()')
-        lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)")
+        if has_emissivity:
+            lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1,")
+            lines.append('                        emissivity=True, emis_angles=(0.0, 30.0, 60.0),')
+            lines.append('                        emis_ntheta=90, emis_temperature=300.0)')
+        else:
+            lines.append("    p.dielectric_tensor(emax=10.0, ne=801, d_tensor='diag', delta=0.1)")
         lines.append('')
         lines.append('    p.finish_execution()')
         lines.append('')
@@ -949,6 +961,8 @@ def build_plot_script(cfg):
     props = cfg['properties']
     has_bands = 'bands' in props
     has_dos = 'dos' in props
+    has_optical = 'optical' in props or 'emissivity' in props
+    has_emissivity = 'emissivity' in props
     do_pdos = cfg.get('do_pdos', False)
 
     funcs = []  # source for each plot_<id> function
@@ -1091,21 +1105,92 @@ def build_plot_script(cfg):
         funcs += _plot_func('plot_berry_curvature', berry_body)
         menu.append(('Berry curvature', 'plot_berry_curvature'))
 
-    if 'optical' in props:
+    if has_optical:
+        # Each optical quantity written by dielectric_tensor() gets its own
+        # top-level menu entry: (menu label, function name, [file globs],
+        # y-axis limits). Directional spectra (those with '_th' in the name)
+        # are handled separately by the emissivity menu.
+        optical_groups = [
+            (
+                'Dielectric function',
+                'plot_dielectric_function',
+                ['epsi_*.dat', 'epsr_*.dat'],
+                '_ylim()',
+            ),
+            (
+                'Refractive index (n, kappa)',
+                'plot_refractive_index',
+                ['nref_*.dat', 'kref_*.dat'],
+                '_ylim()',
+            ),
+            ('EELS', 'plot_eels', ['eels_*.dat'], '_ylim()'),
+            ('Absorption coefficient', 'plot_absorption', ['alpha_*.dat'], '_ylim()'),
+            ('Reflectivity', 'plot_reflectivity', ['refl_*.dat'], '(0.0, 1.0)'),
+            (
+                'Optical conductivity',
+                'plot_optical_conductivity',
+                ['sigmar_*.dat', 'sigmai_*.dat'],
+                '_ylim()',
+            ),
+        ]
+        for label, fname, globs, ylim in optical_groups:
+            glob_calls = ' + '.join('_many({!r})'.format(gl) for gl in globs)
+            funcs += _plot_func(
+                fname,
+                [
+                    'files = {}'.format(glob_calls),
+                    "files = [f for f in files if '_th' not in os.path.basename(f)]",
+                    'if not files:',
+                    '    _missing(None)',
+                    '    return',
+                    'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
+                    '                     title={!r}, x_lim=_ewin_optical(), y_lim={})'.format(
+                        label, ylim
+                    ),
+                ],
+            )
+            menu.append((label, fname))
+
+        # Perceived visible color (sRGB) derived from the reflectivity spectrum.
         funcs += _plot_func(
-            'plot_dielectric',
+            'plot_visible_color',
             [
-                "files = _many('epsi_*.dat') + _many('epsr_*.dat')",
+                "files = [f for f in _many('refl_*.dat') if '_th' not in os.path.basename(f)]",
                 'if not files:',
                 '    _missing(None)',
                 '    return',
-                '# Overlay all real/imaginary dielectric components on one figure',
-                '# (labels are taken from the file names, e.g. epsi_xx, epsr_xx).',
-                'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
-                "                     title='Dielectric function', x_lim=_ewin_optical(), y_lim=_ylim())",
+                'pplt.optical_color(path=OUTPUTDIR, component="avg", illuminant="E",',
+                "                   title='Perceived color')",
             ],
         )
-        menu.append(('Optical / dielectric function', 'plot_dielectric'))
+        menu.append(('Visible color (sRGB swatch)', 'plot_visible_color'))
+
+    if has_emissivity:
+        funcs += _plot_func(
+            'plot_emissivity',
+            [
+                '# Spectral hemispherical and directional emissivity (energy axis).',
+                "files = _many('emish_*.dat') + _many('emis_th*_*.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
+                "                     title='Emissivity', x_lim=_ewin_optical(), y_lim=(0.0, 1.0),",
+                '                     legend_outside=True)',
+                '# Total hemispherical emissivity vs temperature: overlay the',
+                '# x/y/z tensor components (per spin channel) on one figure.',
+                'by_spin = {}',
+                "for tf in _many('emist_*.dat'):",
+                '    parts = os.path.basename(tf)[:-4].split("_")  # emist_<comp>[_<spin>]',
+                '    comp = parts[1]',
+                '    sp = int(parts[2]) if len(parts) > 2 else None',
+                '    by_spin.setdefault(sp, []).append(comp)',
+                'for sp, comps in by_spin.items():',
+                "    pplt.plot_optical(['emist'], path=OUTPUTDIR, component=sorted(set(comps)),",
+                "                      spin=sp, title='Total hemispherical emissivity', y_lim=(0.0, 1.0))",
+            ],
+        )
+        menu.append(('Emissivity (spectral & directional)', 'plot_emissivity'))
 
     if 'fermi_surface' in props:
         funcs += _plot_func(

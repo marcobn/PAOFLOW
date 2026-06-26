@@ -393,7 +393,9 @@ def plot_tensor(
     plt.show()
 
 
-def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend):
+def plot_shc_tensor(
+    enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, legend, legend_outside=False
+):
     """ """
 
     fig = plt.figure()
@@ -419,6 +421,111 @@ def plot_shc_tensor(enes, shc, title, x_lim, y_lim, x_lab, y_lab, cols, labels, 
     ax.set_ylabel(y_lab)
 
     if legend:
+        if legend_outside:
+            # Shrink the axes and place the legend in a panel on the right
+            # so it does not overlap the curves.
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.75, box.height])
+            ax.legend(
+                loc='center left', bbox_to_anchor=(1.02, 0.5), borderaxespad=0.0, frameon=False
+            )
+        else:
+            ax.legend()
+
+    plt.show()
+
+
+def plot_optical(curves, title, x_lim, y_lim, x_label, y_label, cols=None, legend=True):
+    """Overlay an arbitrary selection of optical spectra on a single axis.
+
+    This is the generic renderer behind the user-facing optical-property
+    selection (dielectric function, refractive index, absorption,
+    reflectivity, optical conductivity and emissivity). Each curve may carry
+    its own abscissa, so spectra sampled on the photon-energy grid and the
+    total-emissivity-versus-temperature curve can both be drawn through the
+    same entry point.
+
+    Arguments:
+      curves (list): Sequence of ``(x, y, label)`` tuples, one per spectrum.
+        ``x`` and ``y`` are 1D arrays of equal length; ``label`` is the legend
+        text (may be ``None``).
+      title (str): Figure title (defaults to ``'Optical properties'``).
+      x_lim (tuple): ``(x_min, x_max)`` axis limits, or ``None``.
+      y_lim (tuple): ``(y_min, y_max)`` axis limits, or ``None``.
+      x_label (str): X-axis label (defaults to ``'Energy (eV)'``).
+      y_label (str): Y-axis label (defaults to ``'Optical response'``).
+      cols (str/tuple or list): A single color applied to every curve, or a
+        list of colors (one per curve). ``None`` lets matplotlib cycle.
+      legend (bool): Show the legend when any curve carries a label.
+    """
+    fig = plt.figure()
+    fig.suptitle('Optical properties' if title is None else title)
+
+    ax = fig.add_subplot(111)
+
+    ncurves = len(curves)
+    if cols is None or isinstance(cols, str) or isinstance(cols, tuple):
+        cols = [cols] * ncurves
+    elif len(cols) < ncurves:
+        cols = list(cols) + [None] * (ncurves - len(cols))
+
+    for i, (x, y, label) in enumerate(curves):
+        ax.plot(x, y, color=cols[i], label=label)
+
+    if x_lim is not None:
+        ax.set_xlim(*x_lim)
+    if y_lim is not None:
+        ax.set_ylim(*y_lim)
+
+    ax.set_xlabel('Energy (eV)' if x_label is None else x_label, fontsize=12)
+    ax.set_ylabel('Optical response' if y_label is None else y_label, fontsize=12)
+
+    if legend and any(label is not None for _, _, label in curves):
         ax.legend()
+
+    plt.show()
+
+
+def plot_color_swatch(rgb01, hexstr=None, title=None, label=None):
+    """Display a solid swatch of the perceived visible color of a material.
+
+    Arguments:
+      rgb01 (sequence): sRGB color components in [0, 1].
+      hexstr (str): Optional hex string annotated on the swatch (e.g. '#rrggbb').
+      title (str): Figure title (defaults to 'Perceived color').
+      label (str): Optional text drawn above the hex value (e.g. the material).
+    """
+    rgb01 = tuple(float(c) for c in rgb01)
+
+    fig = plt.figure(figsize=(3.0, 3.0))
+    fig.suptitle('Perceived color' if title is None else title)
+    ax = fig.add_subplot(111)
+    ax.add_patch(plt.Rectangle((0.0, 0.0), 1.0, 1.0, facecolor=rgb01, edgecolor='black'))
+
+    # Choose readable text color from the swatch luminance.
+    luminance = 0.2126 * rgb01[0] + 0.7152 * rgb01[1] + 0.0722 * rgb01[2]
+    text_col = 'black' if luminance > 0.5 else 'white'
+    annotation = []
+    if label is not None:
+        annotation.append(label)
+    if hexstr is not None:
+        annotation.append(hexstr)
+    if annotation:
+        ax.text(
+            0.5,
+            0.5,
+            '\n'.join(annotation),
+            color=text_col,
+            ha='center',
+            va='center',
+            fontsize=13,
+            transform=ax.transAxes,
+        )
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal')
 
     plt.show()
