@@ -283,6 +283,79 @@ def _format_upfs_line(upfs):
     return 'UPFS = [{}]'.format(items)
 
 
+# In-plane high-symmetry band paths for 2D systems (vacuum along c, kz = 0).
+# Keyed by the in-plane Bravais lattice (the QE ibrav used by detect_ibrav_2d):
+# 4 hexagonal, 6 square (tetragonal), 8 rectangular (orthorhombic),
+# 9 centred-rectangular, 12 oblique (monoclinic).  Only the kz = 0 points of
+# the corresponding 3D path are retained.
+_BAND_PATH_2D = {
+    4: (
+        'gG-M-K-gG',
+        {'gG': (0.0, 0.0, 0.0), 'M': (0.5, 0.0, 0.0), 'K': (1.0 / 3.0, 1.0 / 3.0, 0.0)},
+    ),
+    6: ('gG-X-M-gG', {'gG': (0.0, 0.0, 0.0), 'X': (0.0, 0.5, 0.0), 'M': (0.5, 0.5, 0.0)}),
+    8: (
+        'gG-X-S-Y-gG',
+        {'gG': (0.0, 0.0, 0.0), 'X': (0.5, 0.0, 0.0), 'S': (0.5, 0.5, 0.0), 'Y': (0.0, 0.5, 0.0)},
+    ),
+    9: (
+        'gG-X-S-Y-gG',
+        {'gG': (0.0, 0.0, 0.0), 'X': (0.5, 0.0, 0.0), 'S': (0.5, 0.5, 0.0), 'Y': (0.0, 0.5, 0.0)},
+    ),
+    12: ('X-gG-Y', {'gG': (0.0, 0.0, 0.0), 'X': (0.5, 0.0, 0.0), 'Y': (0.0, 0.5, 0.0)}),
+}
+
+
+def _band_path_2d(ibrav):
+    """Return ``(band_path, high_sym_points)`` for a 2D in-plane path.
+
+    Returns ``(None, None)`` when there is no built-in 2D path for *ibrav*.
+    """
+    try:
+        return _BAND_PATH_2D[int(ibrav)]
+    except (KeyError, ValueError, TypeError):
+        return None, None
+
+
+def _format_high_sym(high_sym):
+    """Render a HIGH_SYM dict literal for the generated script."""
+    items = ', '.join('{!r}: ({}, {}, {})'.format(k, *v) for k, v in high_sym.items())
+    return '{' + items + '}'
+
+
+def _wants_explicit_band_path(cfg):
+    """True when the script must pass an explicit band_path/high_sym to bands()."""
+    return cfg['ibrav'] == 0 or bool(cfg.get('is_2d'))
+
+
+def _band_path_constant_lines(cfg):
+    """Source lines defining BAND_PATH / HIGH_SYM (empty list when not needed)."""
+    ibrav = cfg['ibrav']
+    if ibrav == 0:
+        return [
+            '# ibrav=0: PAOFLOW needs an explicit band path. Fill these in:',
+            "# TODO: list the high-symmetry labels along the path, e.g. 'gG-X-W-K-gG-L'.",
+            'BAND_PATH = None',
+            "# TODO: map each label to its crystal-coordinate k-point, e.g. {'gG': [0, 0, 0], ...}.",
+            'HIGH_SYM = None',
+        ]
+    if cfg.get('is_2d'):
+        band_path, high_sym = _band_path_2d(ibrav)
+        if band_path is None:
+            return [
+                '# 2D system: restrict the band path to the in-plane (kz=0) points.',
+                '# No built-in 2D path for ibrav={}; fill these in:'.format(ibrav),
+                'BAND_PATH = None',
+                'HIGH_SYM = None',
+            ]
+        return [
+            '# 2D system: in-plane band path only (vacuum along c, so kz=0).',
+            'BAND_PATH = {!r}'.format(band_path),
+            'HIGH_SYM = {}'.format(_format_high_sym(high_sym)),
+        ]
+    return []
+
+
 def build_run_script(cfg):
     """Assemble a full property-run main.py from the collected config."""
     props = cfg['properties']
@@ -317,16 +390,7 @@ def build_run_script(cfg):
     lines.append('')
     lines.append('IBRAV = {}'.format(cfg['ibrav']))
     lines.append('NK = {}   # k-points along the band path'.format(cfg['nk']))
-    if cfg['ibrav'] == 0:
-        lines.append('# ibrav=0: PAOFLOW needs an explicit band path. Fill these in:')
-        lines.append(
-            "# TODO: list the high-symmetry point labels along the path, e.g. ['G','X','W','K','G','L']."
-        )
-        lines.append('BAND_PATH = None')
-        lines.append(
-            "# TODO: map each label to its crystal-coordinate k-point, e.g. {'G':[0,0,0], ...}."
-        )
-        lines.append('HIGH_SYM = None')
+    lines.extend(_band_path_constant_lines(cfg))
     lines.append('')
     lines.append('# Energy grid for DOS / transport / Hall properties (eV, relative to E_F).')
     lines.append('# The full PAO band range is printed as a suggestion at run time')
@@ -450,7 +514,7 @@ def _emit_standard_properties(props, needs_spin, cfg):
 
     # Band structure (and topology) come right after the Hamiltonian.
     if 'bands' in selected:
-        if cfg['ibrav'] == 0:
+        if _wants_explicit_band_path(cfg):
             body.append('    p.bands(ibrav=IBRAV, nk=NK, band_path=BAND_PATH,')
             body.append("            high_sym_points=HIGH_SYM, fname='bands')")
         else:
@@ -530,6 +594,7 @@ def build_acbn0_script(cfg):
     lines.append('CONV_THR = {}'.format(cfg['conv_thr']))
     lines.append('IBRAV = {}'.format(cfg['ibrav']))
     lines.append('NK = {}'.format(cfg['nk']))
+    lines.extend(_band_path_constant_lines(cfg))
     lines.append('')
     lines.append('# Residual tolerance for the Gaussian fit of the pseudo wavefunctions.')
     lines.append('# Loosen (e.g. 0.05 - 0.1) if ACBN0 raises "Could not optimize the wfcs";')
@@ -566,9 +631,9 @@ def build_acbn0_script(cfg):
     lines.append("    p.projections(basispath=BASISPATH, configuration='standard')")
     lines.append('    p.projectability(pthr=0.95)')
     lines.append('    p.pao_hamiltonian()')
-    if cfg['ibrav'] == 0:
-        lines.append('    # ibrav=0: provide BAND_PATH / HIGH_SYM here if you want bands.')
-        lines.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands_{}'.format(label))")
+    if _wants_explicit_band_path(cfg):
+        lines.append('    p.bands(ibrav=IBRAV, nk=NK, band_path=BAND_PATH,')
+        lines.append("            high_sym_points=HIGH_SYM, fname='bands_{}'.format(label))")
     else:
         lines.append("    p.bands(ibrav=IBRAV, nk=NK, fname='bands_{}'.format(label))")
     lines.append('    p.finish_execution()')
@@ -652,7 +717,7 @@ def build_acbn0_script(cfg):
 # --------------------------------------------------------------------------- #
 # Plotting-script builder
 # --------------------------------------------------------------------------- #
-PLOT_HEADER = '''#!/usr/bin/env python3
+PLOT_HEADER = r'''#!/usr/bin/env python3
 """Plotting helper for the PAOFLOW run (generated by paoflow_gen.py).
 
 This script mirrors the property selection made when the PAOFLOW driver was
@@ -1295,6 +1360,98 @@ def build_plot_script(cfg):
     return '\n'.join(lines)
 
 
+def build_acbn0_plot_script(cfg):
+    """Assemble a plot.acbn0.py that overlays the ACBN0 / eACBN0 band structures.
+
+    The ACBN0 driver writes one band-structure file per converged case
+    (``bands_U`` for the on-site-U solution and, for eACBN0, ``bands_UV`` for
+    the joint U+V solution).  This script overlays whichever of those cases are
+    present so they can be compared directly on a single figure.
+    """
+    body = [
+        'import numpy as np  # noqa: F401',
+        'import matplotlib.pyplot as plt',
+        'from PAOFLOW.inputs.read_pao_output import read_bands_PAO, read_band_path_PAO',
+        '',
+        "files = _many('*.bands_*_0.dat')",
+        'if not files:',
+        '    _missing(None)',
+        '    return',
+        '# Parse the case label embedded in each file name (bands_<label>_0.dat).',
+        'cases = []',
+        'for fn in files:',
+        "    stem = os.path.basename(fn)[:-4]  # drop '.dat'",
+        "    stem = stem[stem.find('bands_') + len('bands_'):]  # drop prefix + 'bands_'",
+        "    if stem.endswith('_0'):",
+        '        stem = stem[:-2]',
+        '    cases.append((stem, fn))',
+        '# Show the on-site-U case before the longer U+V label.',
+        'cases.sort(key=lambda kv: (len(kv[0]), kv[0]))',
+        "sym = _one('*.kpath_points.txt')",
+        'sym_points = read_band_path_PAO(sym) if sym else None',
+        'y_lim = _ewin()',
+        'fig = plt.figure()',
+        'ax = fig.add_subplot(111)',
+        'nk = 1',
+        'for i, (label, fn) in enumerate(cases):',
+        '    col = _SPIN_COLORS[i % len(_SPIN_COLORS)]',
+        '    bands = read_bands_PAO(fn)',
+        '    nk = bands.shape[1]',
+        '    nice = _CASE_LABELS.get(label, label)',
+        '    for j, b in enumerate(bands):',
+        '        ax.plot(b, color=col, label=nice if j == 0 else None)',
+        'ax.set_xlim(0, nk - 1)',
+        'ax.set_ylim(*y_lim)',
+        'if sym_points is None:',
+        '    ax.xaxis.set_visible(False)',
+        'else:',
+        '    ax.set_xticks(sym_points[0])',
+        '    ax.set_xticklabels(sym_points[1])',
+        "    ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')",
+        "ax.set_ylabel(r'$\\epsilon$($\\mathbf{k}$) (eV)', fontsize=12)",
+        "ax.set_title('ACBN0 band-structure comparison')",
+        'ax.legend()',
+        'plt.tight_layout()',
+        'plt.show()',
+    ]
+
+    header = PLOT_HEADER.replace('__OUTPUTDIR__', repr(cfg['outputdir']))
+    header = header.replace('__EMIN__', repr(float(cfg.get('emin', -8.0))))
+    header = header.replace('__EMAX__', repr(float(cfg.get('emax', 4.0))))
+    lines = [header]
+    lines.append('')
+    lines.append('# Human-readable names for the ACBN0 band-structure cases.')
+    lines.append('_CASE_LABELS = {')
+    lines.append("    'U': 'DFT+U (ACBN0)',")
+    lines.append("    'UV': 'DFT+U+V (eACBN0)',")
+    lines.append('}')
+    lines.append('')
+    lines.append('')
+    lines.extend(_plot_func('plot_acbn0_bands', body))
+    lines.append('')
+    lines.append('def main():')
+    lines.append('    global EMIN, EMAX')
+    lines.append('    parser = argparse.ArgumentParser(')
+    lines.append("        description='Compare ACBN0 / eACBN0 band structures.')")
+    lines.append("    parser.add_argument('--emin', type=float, default=None,")
+    lines.append("                        help='Lower energy-axis limit (eV, rel. E_F).')")
+    lines.append("    parser.add_argument('--emax', type=float, default=None,")
+    lines.append("                        help='Upper energy-axis limit (eV, rel. E_F).')")
+    lines.append('    args = parser.parse_args()')
+    lines.append('    EMIN = args.emin if args.emin is not None else EMIN')
+    lines.append('    EMAX = args.emax if args.emax is not None else EMAX')
+    lines.append("    print('Axis limits (press Enter to accept the default):')")
+    lines.append("    EMIN = _ask_float('  Energy axis EMIN (eV, rel. E_F)', EMIN)")
+    lines.append("    EMAX = _ask_float('  Energy axis EMAX (eV, rel. E_F)', EMAX)")
+    lines.append('    plot_acbn0_bands()')
+    lines.append('')
+    lines.append('')
+    lines.append('if __name__ == "__main__":')
+    lines.append('    main()')
+    lines.append('')
+    return '\n'.join(lines)
+
+
 # --------------------------------------------------------------------------- #
 # Config collection
 # --------------------------------------------------------------------------- #
@@ -1314,12 +1471,14 @@ def collect_common(args, workdir):
         upfs = [u.strip() for u in answer.split(',') if u.strip()]
     basisdir = ask('Basis directory name', 'BASIS_PS')
     ibrav = ask_int('ibrav (0 = read cell; needs band path for bands)', 0)
+    is_2d = ask_yes_no('Is this a 2D system (slab with vacuum along c)?', False)
     return {
         'savedir': savedir,
         'prefix': prefix,
         'upfs': upfs,
         'basisdir': basisdir,
         'ibrav': ibrav,
+        'is_2d': is_2d,
         'outputdir': 'output',
     }
 
@@ -1437,7 +1596,11 @@ def main(argv=None):
         help='Pseudopotential file override (comma-separated for multiple species)',
     )
     parser.add_argument(
-        '-o', '--out', default='main.py', help='Output script path (default: main.py)'
+        '-o',
+        '--out',
+        default=None,
+        help='Output script path (default: main.py for the run workflow, '
+        'main.acbn0.py for the acbn0 workflow)',
     )
     parser.add_argument(
         '--plot',
@@ -1446,8 +1609,9 @@ def main(argv=None):
     )
     parser.add_argument(
         '--plot-out',
-        default='plot.py',
-        help='Plotting-script output path (default: plot.py)',
+        default=None,
+        help='Plotting-script output path (default: plot.py for the run '
+        'workflow, plot.acbn0.py for the acbn0 workflow)',
     )
     parser.add_argument(
         '-f', '--force', action='store_true', help='Overwrite an existing output file'
@@ -1455,15 +1619,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     workdir = os.path.abspath(os.path.expanduser(args.workdir))
-    if os.path.exists(args.out) and not args.force:
-        sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(args.out))
-        return 1
 
     workflow = ask_choice(
         'Which workflow?',
         ['acbn0', 'run'],
         'run',
     )
+
+    # The ACBN0 driver is named main.acbn0.py so it is not confused with a
+    # regular PAOFLOW main.py; an explicit -o/--out always wins.
+    out_path = args.out or ('main.acbn0.py' if workflow == 'acbn0' else 'main.py')
+    if os.path.exists(out_path) and not args.force:
+        sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(out_path))
+        return 1
 
     common = collect_common(args, workdir)
     if workflow == 'acbn0':
@@ -1477,18 +1645,31 @@ def main(argv=None):
             return 1
         content = build_run_script(cfg)
 
-    with open(args.out, 'w', encoding='utf-8') as handle:
+    with open(out_path, 'w', encoding='utf-8') as handle:
         handle.write(content)
-    print('\nWrote {}'.format(os.path.abspath(args.out)))
+    print('\nWrote {}'.format(os.path.abspath(out_path)))
 
-    if workflow == 'run' and (args.plot or cfg.get('plot')):
-        if os.path.exists(args.plot_out) and not args.force:
-            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(args.plot_out))
+    if workflow == 'acbn0':
+        # Always pair the ACBN0 driver with a plot.acbn0.py that compares the
+        # band structures of the cases it computes (DFT+U and, for eACBN0,
+        # DFT+U+V).
+        plot_path = args.plot_out or 'plot.acbn0.py'
+        if os.path.exists(plot_path) and not args.force:
+            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(plot_path))
+        else:
+            plot_content = build_acbn0_plot_script(cfg)
+            with open(plot_path, 'w', encoding='utf-8') as handle:
+                handle.write(plot_content)
+            print('Wrote {}'.format(os.path.abspath(plot_path)))
+    elif args.plot or cfg.get('plot'):
+        plot_path = args.plot_out or 'plot.py'
+        if os.path.exists(plot_path) and not args.force:
+            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(plot_path))
         else:
             plot_content = build_plot_script(cfg)
-            with open(args.plot_out, 'w', encoding='utf-8') as handle:
+            with open(plot_path, 'w', encoding='utf-8') as handle:
                 handle.write(plot_content)
-            print('Wrote {}'.format(os.path.abspath(args.plot_out)))
+            print('Wrote {}'.format(os.path.abspath(plot_path)))
 
     return 0
 
