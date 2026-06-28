@@ -71,8 +71,7 @@ def do_pdos(data_controller, emin, emax, ne, delta):
 
         for n in range(ne):
             taux = np.exp(-(((ene[n] - E_k) / delta) ** 2)) / np.sqrt(np.pi)
-            for m in range(nawf):
-                pdosaux[m, n] += np.sum(taux * v_kaux[:, m, :])
+            pdosaux[:, n] = np.einsum('kb,kmb->m', taux, v_kaux)
 
         pdos = np.zeros((nawf, ne), dtype=float) if rank == 0 else None
 
@@ -160,9 +159,7 @@ def do_pdos_adaptive(data_controller, emin, emax, ne):
                 taux = gaussian(ene[n], E_k, arrays['deltakp'][:, :, ispin])
             elif attributes['smearing'] == 'm-p':
                 taux = metpax(ene[n], E_k, arrays['deltakp'][:, :, ispin])
-            for i in range(nawf):
-                # Adaptive Gaussian Smearing
-                pdosaux[i, n] += np.sum(taux * v_kaux[:, i, :])
+            pdosaux[:, n] = np.einsum('kb,kmb->m', taux, v_kaux)
 
         pdos = np.zeros((nawf, ne), dtype=float) if rank == 0 else None
 
