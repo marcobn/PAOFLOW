@@ -22,6 +22,7 @@ afterwards.
 import argparse
 import glob
 import os
+import re
 import sys
 
 
@@ -146,6 +147,32 @@ def _read_prefix_from_input(path):
     except OSError:
         return None
     return None
+
+
+def detect_v_cutoff(workdir):
+    """Read the suggested eACBN0 intersite-V cutoff from a QE input header.
+
+    ``paoflow-gen-qe`` writes ``! Suggested eACBN0 intersite V cutoff: <x>
+    Angstrom`` into the header of the ``<compound>.scf.in`` it generates.
+    Returns that cutoff (in Angstrom) from the first matching input file, or
+    ``None`` if no input file or comment is found.
+    """
+    candidates = sorted(glob.glob(os.path.join(workdir, '*.scf.in')))
+    candidates += [os.path.join(workdir, n) for n in ('scf.in', 'nscf.in')]
+    for path in candidates:
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as handle:
+                for line in handle:
+                    if 'intersite v cutoff' in line.lower():
+                        match = re.search(r'([0-9]+\.?[0-9]*)\s*Angstrom', line, re.IGNORECASE)
+                        if match:
+                            return float(match.group(1))
+        except OSError:
+            continue
+    return None
+
 
 
 # --------------------------------------------------------------------------- #
@@ -730,6 +757,11 @@ The energy window and property y-axis limits can be set on the command line:
 
     python plot.py --emin -5 --emax 5 --ymin 0 --ymax 100
 
+Pass ``--all`` to plot every available quantity without any prompting (the
+menu and axis-limit prompts are skipped and the generated defaults are used):
+
+    python plot.py --all
+
 and are also asked for interactively when the script runs (press Enter to keep
 the default / command-line value).  EMIN/EMAX set the energy axis (vertical for
 band plots, horizontal for the energy-resolved property plots) and default to
@@ -1125,6 +1157,44 @@ def build_plot_script(cfg):
             ],
         )
         menu.append(('Seebeck coefficient', 'plot_seebeck'))
+        funcs += _plot_func(
+            'plot_thermal_conductivity',
+            [
+                "files, labels = _spin_channels('*kappa*_0.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "_overlay_transport(files, labels, 'Electron thermal conductivity',",
+                "                   r'$\\kappa$ (W m$^{-1}$ K$^{-1}$)', min_zero=True)",
+            ],
+        )
+        menu.append(('Thermal conductivity', 'plot_thermal_conductivity'))
+        funcs += _plot_func(
+            'plot_power_factor',
+            [
+                "files, labels = _spin_channels('*PF*_0.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "_overlay_transport(files, labels, 'Power factor',",
+                "                   r'$S^2\\sigma$ (W m$^{-1}$ K$^{-2}$)', min_zero=True)",
+            ],
+        )
+        menu.append(('Power factor', 'plot_power_factor'))
+        funcs += _plot_func(
+            'plot_hall_coefficient',
+            [
+                '# Trace of the Hall coefficient tensor (only present when the run',
+                '# enabled do_hall); each file is energy vs a single value.',
+                "files, _ = _spin_channels('hall_trace_0.dat')",
+                'if not files:',
+                '    _missing(None)',
+                '    return',
+                "pplt.plot_shc(files if len(files) > 1 else files[0],",
+                "              title='Hall coefficient', x_lim=_ewin(), y_lim=_ylim())",
+            ],
+        )
+        menu.append(('Hall coefficient', 'plot_hall_coefficient'))
 
     if 'spin_Hall' in props:
         funcs += _plot_func(
@@ -1312,6 +1382,8 @@ def build_plot_script(cfg):
     lines.append("                        help='Lower property y-axis limit (default: automatic)')")
     lines.append("    parser.add_argument('--ymax', type=float, default=None,")
     lines.append("                        help='Upper property y-axis limit (default: automatic)')")
+    lines.append("    parser.add_argument('--all', action='store_true',")
+    lines.append("                        help='Plot every available quantity without prompting.')")
     lines.append('    args = parser.parse_args()')
     lines.append('    # Default the energy window to the DOS data range (so the DOS fills the')
     lines.append('    # side-by-side panel) unless it was overridden on the command line.')
@@ -1321,29 +1393,33 @@ def build_plot_script(cfg):
     lines.append('    YMIN, YMAX = args.ymin, args.ymax')
     lines.append('    # Ask for the axis limits interactively (Enter keeps the shown default;')
     lines.append('    # any value passed on the command line becomes that default).')
-    lines.append("    print('Axis limits (press Enter to accept the default):')")
-    lines.append("    EMIN = _ask_float('  Energy axis EMIN (eV, rel. E_F)', EMIN)")
-    lines.append("    EMAX = _ask_float('  Energy axis EMAX (eV, rel. E_F)', EMAX)")
-    lines.append("    YMIN = _ask_float('  Property axis YMIN (auto for automatic)', YMIN)")
-    lines.append("    YMAX = _ask_float('  Property axis YMAX (auto for automatic)', YMAX)")
-    lines.append("    print('Available plots:')")
-    lines.append('    for i, (label, _fn) in enumerate(PLOTS, 1):')
-    lines.append("        print('  {}: {}'.format(i, label))")
-    lines.append('    try:')
-    lines.append('        raw = input("Enter a comma/space separated list (or \'all\'): ").strip()')
-    lines.append('    except EOFError:')
-    lines.append("        raw = ''")
-    lines.append("    if raw.lower() == 'all':")
+    lines.append('    if not args.all:')
+    lines.append("        print('Axis limits (press Enter to accept the default):')")
+    lines.append("        EMIN = _ask_float('  Energy axis EMIN (eV, rel. E_F)', EMIN)")
+    lines.append("        EMAX = _ask_float('  Energy axis EMAX (eV, rel. E_F)', EMAX)")
+    lines.append("        YMIN = _ask_float('  Property axis YMIN (auto for automatic)', YMIN)")
+    lines.append("        YMAX = _ask_float('  Property axis YMAX (auto for automatic)', YMAX)")
+    lines.append('    if args.all:')
     lines.append('        chosen = list(range(1, len(PLOTS) + 1))')
     lines.append('    else:')
-    lines.append('        chosen = []')
-    lines.append("        for tok in raw.replace(',', ' ').split():")
-    lines.append('            try:')
-    lines.append('                idx = int(tok)')
-    lines.append('            except ValueError:')
-    lines.append('                continue')
-    lines.append('            if 1 <= idx <= len(PLOTS) and idx not in chosen:')
-    lines.append('                chosen.append(idx)')
+    lines.append("        print('Available plots:')")
+    lines.append('        for i, (label, _fn) in enumerate(PLOTS, 1):')
+    lines.append("            print('  {}: {}'.format(i, label))")
+    lines.append('        try:')
+    lines.append('            raw = input("Enter a comma/space separated list (or \'all\'): ").strip()')
+    lines.append('        except EOFError:')
+    lines.append("            raw = ''")
+    lines.append("        if raw.lower() == 'all':")
+    lines.append('            chosen = list(range(1, len(PLOTS) + 1))')
+    lines.append('        else:')
+    lines.append('            chosen = []')
+    lines.append("            for tok in raw.replace(',', ' ').split():")
+    lines.append('                try:')
+    lines.append('                    idx = int(tok)')
+    lines.append('                except ValueError:')
+    lines.append('                    continue')
+    lines.append('                if 1 <= idx <= len(PLOTS) and idx not in chosen:')
+    lines.append('                    chosen.append(idx)')
     lines.append('    if not chosen:')
     lines.append("        print('Nothing selected.')")
     lines.append('        return')
@@ -1480,6 +1556,7 @@ def collect_common(args, workdir):
         'ibrav': ibrav,
         'is_2d': is_2d,
         'outputdir': 'output',
+        'workdir': workdir,
     }
 
 
@@ -1563,7 +1640,8 @@ def collect_acbn0(common):
     cfg['hubbard'] = hubbard
 
     if cfg['use_intersite_v']:
-        cfg['v_cutoff'] = float(ask('Intersite V neighbour cutoff (Angstrom)', '2.6'))
+        v_default = detect_v_cutoff(common.get('workdir', '.')) or 2.6
+        cfg['v_cutoff'] = float(ask('Intersite V neighbour cutoff (Angstrom)', repr(v_default)))
         cfg['v_init'] = float(ask('Initial intersite V (eV)', '0.5'))
 
     print('\nParallel launch commands (edit later in the script if unsure):')
