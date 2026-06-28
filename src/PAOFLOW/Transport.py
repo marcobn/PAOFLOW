@@ -25,6 +25,7 @@ from PAOFLOW.transport.conductor_steps import (
     compute_conductor_transmission,
     prepare_conductor_step_state,
 )
+from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.io.input_parameters import ConductorData
 from PAOFLOW.transport.results import TransportResults
 
@@ -53,6 +54,125 @@ class Transport:
         self.conductor_data: ConductorData | None = None
         self.blc_blocks: dict[str, Any] | None = None
         self.results: TransportResults | None = None
+        self._energy_grid_config: dict[str, Any] | None = None
+        self._output_config: dict[str, Any] = {
+            'output_dir': './',
+            'work_dir': './',
+            'postfix': '',
+            'write_kdata': False,
+        }
+        self._transport_options_config: dict[str, Any] = {
+            'formula': 'landauer',
+        }
+
+    def configure_energy_grid(
+        self,
+        *,
+        emin: float,
+        emax: float,
+        ne: int,
+        delta: float,
+        nk: list[int] | tuple[int, int] = (0, 0),
+    ) -> None:
+        """Configure the energy and k-grid integration settings.
+
+        Must be called before any full-grid observable computation
+        (``compute_self_energy``, ``compute_greens_functions``,
+        ``compute_transmission``, ``compute_dos``).
+
+        Parameters
+        ----------
+        emin : float
+            Minimum energy in eV.
+        emax : float
+            Maximum energy in eV.
+        ne : int
+            Number of energy points.
+        delta : float
+            Broadening parameter.
+        nk : list[int] or tuple[int, int], optional
+            2D k-grid dimensions. Default is ``(0, 0)``.
+        """
+        self._energy_grid_config = {
+            'emin': emin,
+            'emax': emax,
+            'ne': ne,
+            'delta': delta,
+            'nk': list(nk),
+        }
+        if self.conductor_data is not None:
+            self.conductor_data.energy.emin = emin
+            self.conductor_data.energy.emax = emax
+            self.conductor_data.energy.ne = ne
+            self.conductor_data.energy.delta = delta
+            self.conductor_data.kpoint_grid.nk = list(nk)
+            if self._conductor_state is not None:
+                self._conductor_state.energy_grid = initialize_energy_grid(
+                    emin=emin,
+                    emax=emax,
+                    ne=ne,
+                    carriers=self.conductor_data.carriers,
+                )
+        self.results = None
+
+    def configure_outputs(
+        self,
+        *,
+        output_dir: str = './',
+        work_dir: str = './',
+        postfix: str = '',
+        write_kdata: bool = False,
+    ) -> None:
+        """Configure output directory, file postfix, and k-resolved write options.
+
+        Parameters
+        ----------
+        output_dir : str, optional
+            Directory where transport output files are written.
+        work_dir : str, optional
+            Working directory for transport assets.
+        postfix : str, optional
+            String appended to default transport file names.
+        write_kdata : bool, optional
+            If ``True``, write k-resolved transmission and DOS to separate files.
+        """
+        self._output_config = {
+            'output_dir': output_dir,
+            'work_dir': work_dir,
+            'postfix': postfix,
+            'write_kdata': write_kdata,
+        }
+        if self.conductor_data is not None:
+            self.conductor_data.file_names.output_dir = output_dir
+            self.conductor_data.file_names.work_dir = work_dir
+            self.conductor_data.file_names.postfix = postfix
+            self.conductor_data.symmetry.write_kdata = write_kdata
+            log.initialize_logger(
+                self.data_controller,
+                log_file_name=f'transport_conductor{postfix}.log',
+            )
+        self.results = None
+
+    def configure_transport_options(
+        self,
+        *,
+        formula: str = 'landauer',
+        **options: Any,
+    ) -> None:
+        """Configure the conductance formula and other transport options.
+
+        Parameters
+        ----------
+        formula : str, optional
+            Conductance formula. Supported values: ``'landauer'``,
+            ``'generalized'``. Default is ``'landauer'``.
+        **options : Any
+            Additional formula-specific options forwarded to ``ConductorData``.
+        """
+        self._transport_options_config = {'formula': formula, **options}
+        if self.conductor_data is not None:
+            self.conductor_data.conduct_formula = formula
+        self.results = None
 
     def build_hamiltonian_blocks(
         self,
@@ -63,24 +183,29 @@ class Transport:
         dimR: int | None = None,
         datafile_L: str | None = None,
         datafile_R: str | None = None,
-        emin: float,
-        emax: float,
-        ne: int,
-        delta: float,
-        nk: list[int] | tuple[int, int] = (0, 0),
-        formula: str = 'landauer',
         transport_direction: int = 1,
+        calculation_type: str = 'bulk',
         carriers: str = 'electrons',
-        work_dir: str = './',
-        output_dir: str = './',
-        postfix: str = '',
-        **kwargs: Any,
+        use_sym: bool = False,
+        do_overlap_transformation: bool = False,
+        H00_C: dict[str, Any] | None = None,
+        H_CR: dict[str, Any] | None = None,
+        H_CL: dict[str, Any] | None = None,
+        H_LC: dict[str, Any] | None = None,
+        H00_L: dict[str, Any] | None = None,
+        H01_L: dict[str, Any] | None = None,
+        H00_R: dict[str, Any] | None = None,
+        H01_R: dict[str, Any] | None = None,
+        **block_options: Any,
     ) -> dict[str, Any]:
         """Build conductor Hamiltonian blocks from direct arguments.
 
-        Merges all setup operations into a single call: builds conductor
-        input values, initializes staged state, sets up logging, and
-        constructs the Hamiltonian block operators.
+        Accepts only parameters required to construct Hamiltonian/overlap
+        block objects and lead-device partitions.  Energy-grid parameters
+        (``emin``, ``emax``, ``ne``, ``delta``), output paths, and observable
+        write flags must be configured separately via
+        ``configure_energy_grid(...)``, ``configure_outputs(...)``, and
+        ``configure_transport_options(...)``.
 
         Parameters
         ----------
@@ -96,32 +221,36 @@ class Transport:
             Path to the left-lead input for non-bulk calculations.
         datafile_R : str or None, optional
             Path to the right-lead input for non-bulk calculations.
-        emin : float
-            Minimum energy in eV.
-        emax : float
-            Maximum energy in eV.
-        ne : int
-            Number of energy points.
-        delta : float
-            Broadening parameter.
-        nk : list[int] or tuple[int, int], optional
-            2D k-grid parameters for ``kpoint_grid.nk``.
-        formula : str, optional
-            Conductance formula. Default is ``'landauer'``.
         transport_direction : int, optional
             Transport direction index in ``{1, 2, 3}``.
+        calculation_type : str, optional
+            Calculation mode: ``'bulk'`` or ``'conductor'``.
         carriers : str, optional
             Carrier type (``'electrons'`` or ``'phonons'``).
-        work_dir : str, optional
-            Working directory for transport assets.
-        output_dir : str, optional
-            Output directory for generated transport files.
-        postfix : str, optional
-            Output postfix appended to default transport file names.
-        **kwargs : Any
-            Additional optional ``ConductorData`` fields (for example
-            ``write_kdata``, ``write_gf``, ``niterx``, ``transfer_thr``, or
-            self-energy file paths for generalized formulas).
+        use_sym : bool, optional
+            Apply time-reversal symmetry to reduce the k-point sampling.
+        do_overlap_transformation : bool, optional
+            Apply the overlap-matrix orthogonalisation transformation.
+        H00_C : dict or None, optional
+            Row/column selectors for the conductor on-site block.
+        H_CR : dict or None, optional
+            Row/column selectors for the conductor–right-lead coupling block.
+        H_CL : dict or None, optional
+            Row/column selectors for the conductor–left-lead coupling block.
+        H_LC : dict or None, optional
+            Row/column selectors for the left-lead–conductor coupling block.
+        H00_L : dict or None, optional
+            Row/column selectors for the left-lead on-site block.
+        H01_L : dict or None, optional
+            Row/column selectors for the left-lead hopping block.
+        H00_R : dict or None, optional
+            Row/column selectors for the right-lead on-site block.
+        H01_R : dict or None, optional
+            Row/column selectors for the right-lead hopping block.
+        **block_options : Any
+            Additional block-construction options forwarded to ``ConductorData``
+            (for example ``niterx``, ``transfer_thr``, or self-energy file paths
+            for generalized formulas).
 
         Returns
         -------
@@ -132,10 +261,23 @@ class Transport:
         Notes
         -----
         Sets ``self.conductor_data``, ``self.blc_blocks``, and
-        ``self._conductor_state`` as side effects. Calling this method a
-        second time on the same instance resets all three for the new
-        calculation.
+        ``self._conductor_state`` as side effects. Calling this method a second
+        time on the same instance resets all three for the new calculation.
         """
+        hamiltonian_selectors: dict[str, Any] = {}
+        for h_name, h_val in [
+            ('H00_C', H00_C),
+            ('H_CR', H_CR),
+            ('H_CL', H_CL),
+            ('H_LC', H_LC),
+            ('H00_L', H00_L),
+            ('H01_L', H01_L),
+            ('H00_R', H00_R),
+            ('H01_R', H01_R),
+        ]:
+            if h_val is not None:
+                hamiltonian_selectors[h_name] = h_val
+
         input_values = build_conductor_input_values(
             datafile_C=datafile_C,
             dimC=dimC,
@@ -143,19 +285,22 @@ class Transport:
             dimR=dimR,
             datafile_L=datafile_L,
             datafile_R=datafile_R,
-            emin=emin,
-            emax=emax,
-            ne=ne,
-            delta=delta,
-            nk=nk,
-            formula=formula,
             transport_direction=transport_direction,
+            calculation_type=calculation_type,
             carriers=carriers,
-            work_dir=work_dir,
-            output_dir=output_dir,
-            postfix=postfix,
-            **kwargs,
+            formula=self._transport_options_config.get('formula', 'landauer'),
+            work_dir=self._output_config.get('work_dir', './'),
+            output_dir=self._output_config.get('output_dir', './'),
+            postfix=self._output_config.get('postfix', ''),
+            use_sym=use_sym,
+            do_overlap_transformation=do_overlap_transformation,
+            **hamiltonian_selectors,
+            **block_options,
         )
+
+        if self._energy_grid_config is not None:
+            input_values.update(self._energy_grid_config)
+
         state = prepare_conductor_step_state(
             data_controller=self.data_controller,
             input_values=input_values,
@@ -182,6 +327,12 @@ class Transport:
         if self._conductor_state is None:
             raise RuntimeError('Call build_hamiltonian_blocks(...) before point calculations.')
 
+    def _require_grid_config(self) -> None:
+        if self._energy_grid_config is None:
+            raise RuntimeError(
+                'Call configure_energy_grid(...) before full-grid transport calculations.'
+            )
+
     def _compute_full_grid_results(
         self,
         *,
@@ -190,6 +341,7 @@ class Transport:
         require_self_energies: bool = False,
     ) -> TransportResults:
         self._require_hamiltonian_blocks()
+        self._require_grid_config()
         if require_green_functions or require_self_energies:
             if (
                 not self.conductor_data.symmetry.write_gf

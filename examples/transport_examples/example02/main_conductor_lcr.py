@@ -42,13 +42,7 @@ def main() -> None:
         dimC=41,
         dimL=12,
         dimR=12,
-        emin=-7.0,
-        emax=2.0,
-        ne=9001,
-        delta=0.0005,
         transport_direction=3,
-        output_dir='./output/paoflow',
-        postfix='_lcr',
         calculation_type='conductor',
         do_overlap_transformation=False,
         do_eigenchannels=True,
@@ -63,6 +57,18 @@ def main() -> None:
         H01_L={'rows': '30-41', 'cols': '1-12'},
         H00_R={'rows': '1-12', 'cols': '1-12'},
         H01_R={'rows': '30-41', 'cols': '1-12'},
+    )
+
+    transport.configure_energy_grid(
+        emin=-7.0,
+        emax=2.0,
+        ne=9001,
+        delta=0.0005,
+    )
+
+    transport.configure_outputs(
+        output_dir='./output/paoflow',
+        postfix='_lcr',
     )
 
     # Compute and write transport observables by physics stage.

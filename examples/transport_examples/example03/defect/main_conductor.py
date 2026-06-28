@@ -32,18 +32,10 @@ def main() -> None:
         dimC=52,
         dimL=20,
         dimR=20,
-        emin=-7.0,
-        emax=2.0,
-        ne=6001,
-        delta=0.0005,
         transport_direction=3,
-        output_dir='./output/paoflow',
-        postfix='_defect',
         calculation_type='conductor',
-        do_overlap_transformation=False,
-        write_gf=False,
-        write_lead_sgm=False,
         use_sym=False,
+        do_overlap_transformation=False,
         H00_C={'rows': 'ALL', 'cols': 'ALL'},
         H_CR={'rows': 'ALL', 'cols': '1-20'},
         H_LC={'rows': '33-52', 'cols': 'ALL'},
@@ -51,6 +43,18 @@ def main() -> None:
         H01_L={'rows': '33-52', 'cols': '1-20'},
         H00_R={'rows': '1-20', 'cols': '1-20'},
         H01_R={'rows': '33-52', 'cols': '1-20'},
+    )
+
+    transport.configure_energy_grid(
+        emin=-7.0,
+        emax=2.0,
+        ne=6001,
+        delta=0.0005,
+    )
+
+    transport.configure_outputs(
+        output_dir='./output/paoflow',
+        postfix='_defect',
     )
 
     transport.compute_self_energy(write=True, comm=comm)

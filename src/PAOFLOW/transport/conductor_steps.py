@@ -63,13 +63,9 @@ def build_conductor_input_values(
     dimR: int | None = None,
     datafile_L: str | None = None,
     datafile_R: str | None = None,
-    emin: float,
-    emax: float,
-    ne: int,
-    delta: float,
-    nk: list[int] | tuple[int, int] = (0, 0),
     formula: str = 'landauer',
     transport_direction: int = 1,
+    calculation_type: str = 'bulk',
     carriers: str = 'electrons',
     work_dir: str = './',
     output_dir: str = './',
@@ -77,6 +73,10 @@ def build_conductor_input_values(
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Build ``ConductorData`` constructor inputs from direct arguments.
+
+    Energy-grid parameters (``emin``, ``emax``, ``ne``, ``delta``, ``nk``) are
+    not accepted here.  Pass them through ``kwargs`` when assembling inputs for a
+    full-grid calculation, or rely on the defaults defined in ``EnergySettings``.
 
     Parameters
     ----------
@@ -92,20 +92,12 @@ def build_conductor_input_values(
         Path to the left lead input file for non-bulk calculations.
     datafile_R : str or None, optional
         Path to the right lead input file for non-bulk calculations.
-    emin : float
-        Minimum energy in eV.
-    emax : float
-        Maximum energy in eV.
-    ne : int
-        Number of energy points.
-    delta : float
-        Broadening parameter.
-    nk : list[int] or tuple[int, int], optional
-        2D k-grid dimensions.
     formula : str, optional
         Conductance formula identifier.
     transport_direction : int, optional
         Transport direction index in ``{1, 2, 3}``.
+    calculation_type : str, optional
+        Calculation mode: ``'bulk'`` or ``'conductor'``.
     carriers : str, optional
         Carrier type (for example ``'electrons'`` or ``'phonons'``).
     work_dir : str, optional
@@ -115,7 +107,8 @@ def build_conductor_input_values(
     postfix : str, optional
         Output postfix appended to default file names.
     **kwargs : Any
-        Additional optional ``ConductorData`` fields.
+        Additional optional ``ConductorData`` fields, including energy-grid
+        parameters when assembling a full calculation input.
 
     Returns
     -------
@@ -125,21 +118,17 @@ def build_conductor_input_values(
     input_values: dict[str, Any] = {
         'datafile_C': datafile_C,
         'dimC': dimC,
-        'emin': emin,
-        'emax': emax,
-        'ne': ne,
-        'delta': delta,
-        'nk': list(nk),
         'conduct_formula': formula,
         'transport_direction': transport_direction,
+        'calculation_type': calculation_type,
         'carriers': carriers,
         'work_dir': work_dir,
         'output_dir': output_dir,
         'postfix': postfix,
     }
 
-    calculation_type = str(kwargs.get('calculation_type', '')).strip().lower()
-    if calculation_type != 'bulk':
+    calculation_type_lower = calculation_type.strip().lower()
+    if calculation_type_lower != 'bulk':
         input_values['dimL'] = 0 if dimL is None else dimL
         input_values['dimR'] = 0 if dimR is None else dimR
         input_values['datafile_L'] = '' if datafile_L is None else datafile_L

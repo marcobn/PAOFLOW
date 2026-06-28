@@ -22,26 +22,19 @@ def _run_case(case: str) -> None:
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             dimC=41,
-            emin=-7.0,
-            emax=2.0,
-            ne=100,
-            delta=0.0005,
             transport_direction=3,
-            output_dir='./output',
-            postfix='_bulk',
             calculation_type='bulk',
+            use_sym=False,
             do_overlap_transformation=False,
             do_eigenchannels=True,
             neigchnx=4,
             do_eigplot=True,
             ie_eigplot=50,
             ik_eigplot=0,
-            write_gf=False,
-            write_lead_sgm=False,
-            use_sym=False,
             H00_C={'rows': 'ALL', 'cols': 'ALL'},
             H_CR={'rows': 'ALL', 'cols': 'ALL'},
         )
+        transport.configure_outputs(output_dir='./output', postfix='_bulk')
     elif case == 'lcr':
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
@@ -50,21 +43,15 @@ def _run_case(case: str) -> None:
             dimC=41,
             dimL=12,
             dimR=12,
-            emin=-7.0,
-            emax=2.0,
-            ne=100,
-            delta=0.0005,
             transport_direction=3,
-            output_dir='./output',
-            postfix='_lcr',
             calculation_type='conductor',
+            use_sym=False,
             do_overlap_transformation=False,
             do_eigenchannels=True,
             neigchnx=4,
             do_eigplot=True,
             ie_eigplot=50,
             ik_eigplot=0,
-            use_sym=False,
             H00_C={'rows': '1-41', 'cols': '1-41'},
             H_CR={'rows': '1-41', 'cols': '1-12'},
             H_LC={'rows': '30-41', 'cols': '1-41'},
@@ -73,25 +60,28 @@ def _run_case(case: str) -> None:
             H00_R={'rows': '1-12', 'cols': '1-12'},
             H01_R={'rows': '30-41', 'cols': '1-12'},
         )
+        transport.configure_outputs(output_dir='./output', postfix='_lcr')
     elif case == 'lead':
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             dimC=12,
-            emin=-7.0,
-            emax=2.0,
-            ne=100,
-            delta=0.0005,
             transport_direction=3,
-            output_dir='./output',
-            postfix='_lead',
             calculation_type='bulk',
-            do_overlap_transformation=False,
             use_sym=False,
+            do_overlap_transformation=False,
             H00_C={'rows': '1-12', 'cols': '1-12'},
             H_CR={'rows': '30-41', 'cols': '1-12'},
         )
+        transport.configure_outputs(output_dir='./output', postfix='_lead')
     else:
         raise ValueError(f'Unsupported conductor selector: {case}')
+
+    transport.configure_energy_grid(
+        emin=-7.0,
+        emax=2.0,
+        ne=100,
+        delta=0.0005,
+    )
 
     transport.compute_self_energy(write=True)
     transport.compute_greens_functions(write=True)

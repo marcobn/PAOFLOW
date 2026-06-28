@@ -37,25 +37,29 @@ def main() -> None:
     transport.build_hamiltonian_blocks(
         datafile_C='./output/qe/alh.save/atomic_proj.xml',
         dimC=41,
-        emin=-7.0,
-        emax=2.0,
-        ne=9001,
-        delta=0.0005,
         transport_direction=3,
-        output_dir='./output/paoflow',
-        postfix='_bulk',
         calculation_type='bulk',
+        use_sym=False,
         do_overlap_transformation=False,
         do_eigenchannels=True,
         neigchnx=4,
         do_eigplot=True,
         ie_eigplot=7001,
         ik_eigplot=1,
-        write_gf=False,
-        write_lead_sgm=False,
-        use_sym=False,
         H00_C={'rows': 'ALL', 'cols': 'ALL'},
         H_CR={'rows': 'ALL', 'cols': 'ALL'},
+    )
+
+    transport.configure_energy_grid(
+        emin=-7.0,
+        emax=2.0,
+        ne=9001,
+        delta=0.0005,
+    )
+
+    transport.configure_outputs(
+        output_dir='./output/paoflow',
+        postfix='_bulk',
     )
 
     # Compute and write transport observables by physics stage.

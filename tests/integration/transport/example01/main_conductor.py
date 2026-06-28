@@ -21,23 +21,28 @@ def main():
     paoflow.projections()
 
     transport = Transport(paoflow.data_controller)
+
     transport.build_hamiltonian_blocks(
         datafile_C='./output/qe/al5.save/atomic_proj.xml',
         dimC=20,
-        emin=-7.0,
-        emax=2.0,
-        ne=100,
-        delta=0.0005,
         transport_direction=3,
-        output_dir='./output',
-        postfix='_bulk',
         calculation_type='bulk',
-        write_gf=True,
-        write_lead_sgm=True,
         use_sym=False,
         do_overlap_transformation=False,
         H00_C={'rows': 'ALL', 'cols': 'ALL'},
         H_CR={'rows': 'ALL', 'cols': 'ALL'},
+    )
+
+    transport.configure_energy_grid(
+        emin=-7.0,
+        emax=2.0,
+        ne=100,
+        delta=0.0005,
+    )
+
+    transport.configure_outputs(
+        output_dir='./output',
+        postfix='_bulk',
     )
 
     transport.compute_self_energy(write=True)
