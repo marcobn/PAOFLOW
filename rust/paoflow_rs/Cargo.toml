@@ -1,12 +1,12 @@
 [package]
-name = "paoflow_acbn0_rs"
+name = "paoflow_rs"
 version = "0.1.0"
 edition = "2021"
-description = "Rust backend for ACBN0/eACBN0 two-electron Coulomb integrals in PAOFLOW"
+description = "Rust backend for PAOFLOW (ACBN0/eACBN0 two-electron Coulomb integrals)"
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "paoflow_acbn0_rs"
+name = "paoflow_rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

@@ -4,7 +4,7 @@
 //! `src/PAOFLOW/utils/pyints.py`, plus a [`Cgbf`] container and a batched
 //! evaluator suitable for FFI + `rayon` parallelism.
 
-use crate::special::{b_array, fgamma};
+use crate::acbn0::special::{b_array, fgamma};
 
 #[inline]
 fn dist(a: &[f64; 3], b: &[f64; 3]) -> f64 {

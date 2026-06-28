@@ -828,8 +828,6 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
 
     if not attributes['insulator']:
         intrasmear = attributes['intrasmear']
-        epsi_metal = np.zeros_like(epsi)
-        epsr_metal = np.zeros_like(epsr)
 
         if smearing == 'gauss':
             fnF = spin_factor * gaussian(Ek, Ef, degauss)
@@ -848,65 +846,89 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                 )
             fnF = spin_factor * gaussian(Ek, Ef, degauss)
 
-    for ik in range(fn.shape[0]):
-        for iband2 in range(bndmax):
-            for iband1 in range(bndmax):
-                if iband1 != iband2:
-                    E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
-                    f_nm = fn[ik, iband2] - fn[ik, iband1]
-                    if np.abs(f_nm) > th0 and fn[ik, iband1] > th1 and fn[ik, iband2] < spin_factor:
-                        # Interband broadening: adaptive per-(k, n, m) width
-                        # when available, otherwise the fixed scalar value.
-                        eta = (
-                            max(deltakp2[ik, iband1, iband2], eta_floor) if adaptive else intersmear
-                        )
-                        pksp2 = np.real(
-                            arrays['pksp'][ik, ipol, iband1, iband2, ispin]
-                            * arrays['pksp'][ik, jpol, iband2, iband1, ispin]
-                        )
-                        # pksp2 in unit of (AU*eV)^2
-                        epsi[:] += (
-                            pksp2
-                            * eta
-                            * ene[:]
-                            * fn[ik, iband1]
-                            / (
-                                ((E_diff_nm**2 - ene[:] ** 2) ** 2 + eta**2 * ene[:] ** 2)
-                                * (E_diff_nm)
-                            )
-                        )
-                        epsr[:] += (
-                            pksp2
-                            * (E_diff_nm**2 - ene[:] ** 2)
-                            * fn[ik, iband1]
-                            / (
-                                ((E_diff_nm**2 - ene[:] ** 2) ** 2 + eta**2 * ene[:] ** 2)
-                                * (E_diff_nm)
-                            )
-                        )
+    # Vectorised Kubo--Greenwood accumulation. The interband term is built per
+    # k-point by broadcasting over (band-pair, energy); the metal (Drude) term
+    # is fully separable -- it sums ``pksp2_diag * fnF`` over every (k, band)
+    # with no occupation mask and shares a single energy profile -- so it is
+    # reduced to one scalar weight and applied once after the loop. Results
+    # match the former triple loop up to floating-point summation order.
+    ene2 = ene**2
+    offdiag = ~np.eye(bndmax, dtype=bool)
+    drude_weight = 0.0
 
-                elif not attributes['insulator']:
-                    pksp2 = np.real(
-                        arrays['pksp'][ik, ipol, iband1, iband1, ispin]
-                        * arrays['pksp'][ik, jpol, iband1, iband1, ispin]
-                    )
-                    epsi_metal[:] += (
-                        pksp2
-                        * intrasmear
-                        * ene[:]
-                        * fnF[ik, iband1]
-                        / (ene[:] ** 4 + intrasmear**2 * ene[:] ** 2)
-                    )
-                    epsr_metal[:] -= (
-                        pksp2
-                        * fnF[ik, iband1]
-                        * ene[:] ** 2
-                        / (ene[:] ** 4 + intrasmear**2 * ene[:] ** 2)
-                    )
+    fnF_arg = fnF if not attributes['insulator'] else None
+    eta_floor_arg = eta_floor if adaptive else 0.0
+    deltakp2_arg = deltakp2 if adaptive else None
+
+    from ..epsilon_native import available as _eps_native_available
+    from ..epsilon_native import eps_loop as _eps_native
+
+    if _eps_native_available():
+        # pksp2[ik, b2, b1] = Re(P.T * Q) = Re(pksp[ik, ipol].T * pksp[ik, jpol]).
+        P_all = arrays['pksp'][:, ipol, :bndmax, :bndmax, ispin]
+        Q_all = arrays['pksp'][:, jpol, :bndmax, :bndmax, ispin]
+        pksp2_all = np.real(np.transpose(P_all, (0, 2, 1)) * Q_all)
+        epsi, epsr, drude_weight = _eps_native(
+            Ek,
+            fn,
+            pksp2_all,
+            ene,
+            intersmear,
+            th0,
+            th1,
+            spin_factor,
+            deltakp2_arg,
+            eta_floor_arg,
+            fnF_arg,
+        )
+    else:
+        for ik in range(fn.shape[0]):
+            Ek_k = Ek[ik]
+            fn_k = fn[ik]
+            P = arrays['pksp'][ik, ipol, :bndmax, :bndmax, ispin]
+            Q = arrays['pksp'][ik, jpol, :bndmax, :bndmax, ispin]
+
+            # Matrices indexed [iband2, iband1] to match the original loop order.
+            E_diff = Ek_k[:, None] - Ek_k[None, :]
+            f_nm = fn_k[:, None] - fn_k[None, :]
+            # pksp2[b2, b1] = Re(pksp[ipol, b1, b2] * pksp[jpol, b2, b1]) = Re(P.T * Q)
+            pksp2 = np.real(P.T * Q)
+
+            mask = (
+                offdiag
+                & (np.abs(f_nm) > th0)
+                & (fn_k[None, :] > th1)
+                & (fn_k[:, None] < spin_factor)
+            )
+            b2_idx, b1_idx = np.nonzero(mask)
+            if b2_idx.size:
+                D = E_diff[b2_idx, b1_idx]
+                pk = pksp2[b2_idx, b1_idx]
+                fb1 = fn_k[b1_idx]
+                if adaptive:
+                    eta = np.maximum(deltakp2[ik, b1_idx, b2_idx], eta_floor)[:, None]
                 else:
-                    pass
+                    eta = intersmear
+
+                Dm = D[:, None] ** 2 - ene2[None, :]
+                denom = (Dm**2 + eta**2 * ene2[None, :]) * D[:, None]
+                common = (pk * fb1)[:, None] / denom
+                epsi += np.sum(common * eta * ene[None, :], axis=0)
+                epsr += np.sum(common * Dm, axis=0)
+
+            if not attributes['insulator']:
+                d = np.arange(bndmax)
+                pksp2_diag = np.real(P[d, d] * Q[d, d])
+                drude_weight += np.dot(pksp2_diag, fnF[ik])
 
     if not attributes['insulator']:
+        # Separable Drude profile: epsi_metal = S * intrasmear * ene / denom,
+        # epsr_metal = -S * ene^2 / denom, with S the accumulated weight and
+        # denom = ene^4 + intrasmear^2 ene^2.
+        drude_denom = ene2**2 + intrasmear**2 * ene2
+        epsi_metal = drude_weight * intrasmear * ene / drude_denom
+        epsr_metal = -drude_weight * ene2 / drude_denom
+
         # The intraband (Drude) contribution carries a 4\u03c0 prefactor in QE
         # eq. (8) line 1, while the interband contribution carries 8\u03c0
         # (eq. 8 line 2). Both branches are multiplied by the common
@@ -974,7 +996,6 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
     esize = ene.size
     # bndmax = attributes['bnd']
     # Ek = arrays['E_k'][:, :bndmax, ispin]
-    bndmax = attributes['nbnds']
     Ek = np.swapaxes(arrays['my_eigsmat'][:, :, ispin], 0, 1)
     kweights = arrays['kpnts_wght']
     nkpnts = Ek.shape[0]
@@ -997,34 +1018,42 @@ def jdos_loop(data_controller, ene, ispin, jdos_smeartype):
         degauss = attributes['degauss']
         fn = intmetpax(Ek, Ef, degauss)
 
-    count = 0.0
-    if jdos_smeartype == 'gauss':
-        for ik in range(ini_ik, end_ik):
-            for iband2 in range(bndmax):
-                for iband1 in range(bndmax):
-                    E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
-                    if fn[ik, iband1] > 1.0e-4 and fn[ik, iband2] < 2.0 and E_diff_nm > 1e-10:
-                        f_nm = fn[ik, iband1] - fn[ik, iband2]
-                        jdos += f_nm * gaussian(E_diff_nm, ene, intersmear) * kweights[ik]
-                        count += f_nm
-
-    elif jdos_smeartype == 'lorentz':
-        for ik in range(ini_ik, end_ik):
-            for iband2 in range(bndmax):
-                for iband1 in range(bndmax):
-                    E_diff_nm = Ek[ik, iband2] - Ek[ik, iband1]
-                    if fn[ik, iband1] > 1.0e-4 and fn[ik, iband2] < 2.0 and E_diff_nm > 1e-10:
-                        f_nm = fn[ik, iband1] - fn[ik, iband2]
-                        jdos += (
-                            f_nm
-                            * intersmear
-                            / (np.pi * ((E_diff_nm - ene) ** 2 + intersmear**2))
-                            * kweights[ik]
-                        )
-                        count += f_nm
-
-    else:
+    if jdos_smeartype not in ('gauss', 'lorentz'):
         raise ValueError("jdos_smeartype must be 'gauss' or 'lorentz' ")
+
+    # Vectorised over (band-pair, energy) per k-point. The kept pairs satisfy
+    # fn[b1] > 1e-4, fn[b2] < 2 and E_{b2} - E_{b1} > 1e-10 (the last excludes
+    # b1 == b2); ``count`` accumulates the unweighted oscillator strength.
+    count = 0.0
+    from ..epsilon_native import available as _eps_native_available
+    from ..epsilon_native import jdos_loop as _jdos_native
+
+    if _eps_native_available():
+        jdos, count = _jdos_native(
+            Ek[ini_ik:end_ik],
+            fn[ini_ik:end_ik],
+            kweights[ini_ik:end_ik],
+            ene,
+            intersmear,
+            jdos_smeartype,
+        )
+    else:
+        for ik in range(ini_ik, end_ik):
+            Ek_k = Ek[ik]
+            fn_k = fn[ik]
+            E_diff = Ek_k[:, None] - Ek_k[None, :]  # [b2, b1]
+            mask = (fn_k[None, :] > 1.0e-4) & (fn_k[:, None] < 2.0) & (E_diff > 1e-10)
+            b2_idx, b1_idx = np.nonzero(mask)
+            if not b2_idx.size:
+                continue
+            D = E_diff[b2_idx, b1_idx]
+            f_nm = fn_k[b1_idx] - fn_k[b2_idx]
+            if jdos_smeartype == 'gauss':
+                kernel = gaussian(D[:, None], ene[None, :], intersmear)
+            else:  # lorentz
+                kernel = intersmear / (np.pi * ((D[:, None] - ene[None, :]) ** 2 + intersmear**2))
+            jdos += kweights[ik] * np.sum(f_nm[:, None] * kernel, axis=0)
+            count += np.sum(f_nm)
 
     # The normalization must use the global oscillator-strength sum so it does
     # not depend on how the k-points were split across ranks.

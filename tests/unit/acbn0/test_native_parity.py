@@ -1,7 +1,7 @@
 """Parity tests: the optional Rust ERI backend must reproduce the pure-Python
 ``pyints`` kernel inside the real ACBN0 / eACBN0 Hartree drivers.
 
-Skipped automatically when the ``paoflow_acbn0_rs`` extension is not installed.
+Skipped automatically when the ``paoflow_rs`` extension is not installed.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from PAOFLOW.utils.pyints import CGBF
 
 pytestmark = pytest.mark.skipif(
     not acbn0_native.available(),
-    reason='paoflow_acbn0_rs extension not installed',
+    reason='paoflow_rs extension not installed',
 )
 
 

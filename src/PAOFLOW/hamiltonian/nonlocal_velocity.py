@@ -1225,23 +1225,39 @@ def assemble_beta_projections_k(
     nawf = pao_catalog.total_nlm
     pao_offsets = [s.basis_offset for s in pao_catalog.sites]
 
-    P_list: list[np.ndarray] = [
-        np.zeros((nk, tables.beta_lm_per_site[I], nawf), dtype=complex) for I in range(nsites)
-    ]
-    Palpha_list: list[np.ndarray] = [
-        np.zeros((nk, 3, tables.beta_lm_per_site[I], nawf), dtype=complex) for I in range(nsites)
-    ]
-
+    # Each pair contributes phase(k) * S into a fixed PAO column block of its
+    # host site I. Pre-pad every pair's block to the full nawf width, stack per
+    # site, and Fourier-sum all pairs of a site in one tensordot: phases (nk,np)
+    # x Sfull (np, n_b, nawf) -> (nk, n_b, nawf). This replaces ~10^3 large
+    # broadcast temporaries with a single BLAS contraction per site.
+    per_site: list[tuple[list, list, list]] = [([], [], []) for _ in range(nsites)]
     for pair, S, Sr in zip(tables.pairs, tables.S_bp, tables.S_rbp):
-        I = pair.beta_site
-        J = pair.pao_site
-        dR = pair.deltaR_cart
-        off = pao_offsets[J]
+        off = pao_offsets[pair.pao_site]
         sz = S.shape[1]
-        phase = np.exp(1j * (k_points_cart @ dR))  # (nk,)
-        # P[I][k, i, off:off+sz] += phase[k] * S[i, :]
-        P_list[I][:, :, off : off + sz] += phase[:, None, None] * S[None, :, :]
-        Palpha_list[I][:, :, :, off : off + sz] += phase[:, None, None, None] * Sr[None, :, :, :]
+        nb = S.shape[0]
+        Sfull = np.zeros((nb, nawf), dtype=float)
+        Sfull[:, off : off + sz] = S
+        Srfull = np.zeros((3, nb, nawf), dtype=float)
+        Srfull[:, :, off : off + sz] = Sr
+        dRs, Ss, Srs = per_site[pair.beta_site]
+        dRs.append(pair.deltaR_cart)
+        Ss.append(Sfull)
+        Srs.append(Srfull)
+
+    P_list: list[np.ndarray] = []
+    Palpha_list: list[np.ndarray] = []
+    for I in range(nsites):
+        nb = tables.beta_lm_per_site[I]
+        dRs, Ss, Srs = per_site[I]
+        if not Ss:
+            P_list.append(np.zeros((nk, nb, nawf), dtype=complex))
+            Palpha_list.append(np.zeros((nk, 3, nb, nawf), dtype=complex))
+            continue
+        phases = np.exp(1j * (k_points_cart @ np.asarray(dRs).T))  # (nk, npairs)
+        S_stack = np.asarray(Ss)  # (npairs, nb, nawf)
+        Sr_stack = np.asarray(Srs)  # (npairs, 3, nb, nawf)
+        P_list.append(np.tensordot(phases, S_stack, axes=(1, 0)))
+        Palpha_list.append(np.tensordot(phases, Sr_stack, axes=(1, 0)))
 
     return P_list, Palpha_list
 

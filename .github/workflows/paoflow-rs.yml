@@ -1,20 +1,20 @@
 ---
-name: ACBN0 Rust backend
+name: PAOFLOW Rust backend
 on:
   push:
     branches: [ develop, main ]
     paths:
-      - 'rust/paoflow_acbn0_rs/**'
-      - '.github/workflows/acbn0-rust.yml'
+      - 'rust/paoflow_rs/**'
+      - '.github/workflows/paoflow-rs.yml'
   pull_request:
     paths:
-      - 'rust/paoflow_acbn0_rs/**'
-      - '.github/workflows/acbn0-rust.yml'
+      - 'rust/paoflow_rs/**'
+      - '.github/workflows/paoflow-rs.yml'
   workflow_dispatch:
 
 defaults:
   run:
-    working-directory: rust/paoflow_acbn0_rs
+    working-directory: rust/paoflow_rs
 
 jobs:
   test:
@@ -50,7 +50,7 @@ jobs:
         run: maturin develop --release
       - name: Python parity tests
         working-directory: .
-        run: python -m pytest tests/unit/acbn0 -q
+        run: python -m pytest tests/unit/acbn0 tests/unit/response -q
 
   wheels:
     name: Build wheels (${{ matrix.os }})
@@ -70,9 +70,9 @@ jobs:
         with:
           command: build
           args: --release --strip --out dist
-          working-directory: rust/paoflow_acbn0_rs
+          working-directory: rust/paoflow_rs
       - uses: actions/upload-artifact@v4
         with:
-          name: acbn0-wheels-${{ matrix.os }}
-          path: rust/paoflow_acbn0_rs/dist/*.whl
+          name: paoflow-rs-wheels-${{ matrix.os }}
+          path: rust/paoflow_rs/dist/*.whl
 ...

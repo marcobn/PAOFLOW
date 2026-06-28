@@ -17,7 +17,7 @@ from PAOFLOW.utils.pyints import CGBF, contr_coulomb
 
 pytestmark = pytest.mark.skipif(
     not acbn0_native.available(),
-    reason='paoflow_acbn0_rs extension not installed',
+    reason='paoflow_rs extension not installed',
 )
 
 # A representative Cartesian power tuple for each shell type.
@@ -87,7 +87,7 @@ def test_mixed_shell_battery_matches_pyints():
 
 
 def test_thread_count_is_positive():
-    import paoflow_acbn0_rs as rs
+    import paoflow_rs as rs
 
     assert rs.thread_count() >= 1
 

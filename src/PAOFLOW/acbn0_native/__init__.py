@@ -1,7 +1,7 @@
 """Optional Rust backend bridge for the ACBN0 / eACBN0 Coulomb integrals.
 
-This package opportunistically imports the compiled ``paoflow_acbn0_rs``
-extension (built from ``rust/paoflow_acbn0_rs``) and exposes a small, NumPy
+This package opportunistically imports the compiled ``paoflow_rs``
+extension (built from ``rust/paoflow_rs``) and exposes a small, NumPy
 friendly API that mirrors the per-call :meth:`PAOFLOW.ACBN0._HartreeKernel.coulomb`
 semantics in *batched* form.
 
@@ -19,9 +19,10 @@ The basis crosses the FFI boundary as flat CSR-style arrays:
 and the integral request as ``keys`` — ``(nkeys, 4)`` int64 index tuples.
 
 Threads: the native kernels parallelise over keys with ``rayon`` and release the
-GIL. Set ``PAOFLOW_ACBN0_THREADS`` to a positive integer to cap intra-rank
-threads (useful to avoid oversubscription with many MPI ranks per node);
-otherwise the global ``rayon`` pool is used (honours ``RAYON_NUM_THREADS``).
+GIL. Set ``PAOFLOW_RS_THREADS`` (legacy alias ``PAOFLOW_ACBN0_THREADS``) to a
+positive integer to cap intra-rank threads (useful to avoid oversubscription
+with many MPI ranks per node); otherwise the global ``rayon`` pool is used
+(honours ``RAYON_NUM_THREADS``).
 """
 
 import os
@@ -29,9 +30,12 @@ import os
 import numpy as np
 
 try:
-    import paoflow_acbn0_rs as _native
+    import paoflow_rs as _native
 except ImportError:  # pragma: no cover - exercised only when extension absent
-    _native = None
+    try:
+        import paoflow_acbn0_rs as _native  # legacy module name
+    except ImportError:
+        _native = None
 
 
 __all__ = ['available', 'flatten_basis', 'eri_batch', 'eri_batch_2c']
@@ -116,10 +120,10 @@ def eri_batch(basis, keys):
         One contracted Coulomb integral per key.
     """
     if _native is None:
-        raise RuntimeError('paoflow_acbn0_rs extension is not available')
+        raise RuntimeError('paoflow_rs extension is not available')
     origins, prim_offsets, exps, coefs, norms, powers = flatten_basis(basis)
     keys = np.ascontiguousarray(keys, dtype=np.int64).reshape(-1, 4)
-    return _native.eri_batch(origins, prim_offsets, exps, coefs, norms, powers, keys)
+    return _native.acbn0_eri_batch(origins, prim_offsets, exps, coefs, norms, powers, keys)
 
 
 def eri_batch_2c(basis_i, basis_j, keys):
@@ -139,11 +143,11 @@ def eri_batch_2c(basis_i, basis_j, keys):
         One contracted Coulomb integral per key.
     """
     if _native is None:
-        raise RuntimeError('paoflow_acbn0_rs extension is not available')
+        raise RuntimeError('paoflow_rs extension is not available')
     oi, po_i, ei, ci, ni, pw_i = flatten_basis(basis_i)
     oj, po_j, ej, cj, nj, pw_j = flatten_basis(basis_j)
     keys = np.ascontiguousarray(keys, dtype=np.int64).reshape(-1, 4)
-    return _native.eri_batch_2c(
+    return _native.acbn0_eri_batch_2c(
         oi,
         po_i,
         ei,

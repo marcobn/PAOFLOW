@@ -7,12 +7,12 @@ implementation, producing numerically identical results (parity < 1e-12).
 
 | Crate | Importable module | Accelerates | Python fallback |
 | --- | --- | --- | --- |
-| [`paoflow_acbn0_rs`](paoflow_acbn0_rs/) | `paoflow_acbn0_rs` | Four-centre two-electron Coulomb integrals (ERIs) in ACBN0 / eACBN0 | `PAOFLOW.utils.pyints` |
+| [`paoflow_rs`](paoflow_rs/) | `paoflow_rs` | ACBN0/eACBN0 four-centre Coulomb integrals (ERIs); dielectric/JDOS response loops | `PAOFLOW.utils.pyints`; vectorised NumPy in `do_epsilon` |
 
 This document is the end-to-end guide for getting a backend running on a fresh
 machine — whether you are an **end user** who just wants the speedup, or a
 **developer** who wants to build, test, and modify the crate. The crate-level
-[`paoflow_acbn0_rs/README.md`](paoflow_acbn0_rs/README.md) has the API reference
+[`paoflow_rs/README.md`](paoflow_rs/README.md) has the API reference
 and internals.
 
 ---
@@ -79,10 +79,10 @@ environment** that runs PAOFLOW:
 
 ```sh
 # From a wheel file or directory of wheels
-pip install paoflow_acbn0_rs-0.1.0-cp310-abi3-<platform>.whl
+pip install paoflow_rs-0.1.0-cp310-abi3-<platform>.whl
 
 # or, once published to an index
-pip install paoflow-acbn0-rs
+pip install paoflow-rs
 ```
 
 That is the entire installation. PAOFLOW will pick it up on the next run.
@@ -98,12 +98,12 @@ Verify (see §5) and you are done.
 ## 4. Build from source (developers)
 
 All commands below run from this `rust/` directory unless noted; the crate lives
-in `paoflow_acbn0_rs/`.
+in `paoflow_rs/`.
 
 ### 4a. Build and install into the active environment (editable dev loop)
 
 ```sh
-cd paoflow_acbn0_rs
+cd paoflow_rs
 maturin develop --release
 ```
 
@@ -114,7 +114,7 @@ source so Python picks up the new build.
 ### 4b. Build a distributable wheel (to ship to other machines)
 
 ```sh
-cd paoflow_acbn0_rs
+cd paoflow_rs
 maturin build --release            # wheel written under target/wheels/
 ```
 
@@ -146,7 +146,7 @@ Run this in the environment where you installed the backend:
 ```sh
 python -c "
 import PAOFLOW.acbn0_native as n
-import paoflow_acbn0_rs as rs
+import paoflow_rs as rs
 print('available    :', n.available())     # expect: True
 print('version      :', rs.__version__)
 print('thread_count :', rs.thread_count())
@@ -159,7 +159,7 @@ print('module file  :', rs.__file__)
 Optional numerical sanity check against the pure-Python kernel:
 
 ```sh
-python rust/paoflow_acbn0_rs/scripts/bench.py --nprim 4
+python rust/paoflow_rs/scripts/bench.py --nprim 4
 # prints max relative error (~1e-16) and a native-vs-pyints speedup
 ```
 
@@ -193,7 +193,7 @@ numerically identical, so this isolates pure timing.
 The batched kernels parallelise over keys with `rayon`. Thread count resolves
 as:
 
-1. **`PAOFLOW_ACBN0_THREADS=N`** (positive integer) → a dedicated pool of `N`
+1. **`PAOFLOW_RS_THREADS=N`** (positive integer) → a dedicated pool of `N`
    threads. Use this to cap intra-rank threads.
 2. Otherwise the global `rayon` pool is used, honouring **`RAYON_NUM_THREADS`**
    and defaulting to the number of logical cores.
@@ -203,13 +203,13 @@ parallelism layers (MPI ranks × rayon threads). To avoid oversubscribing a node
 
 ```sh
 # one thread per rank (pure MPI behaviour)
-PAOFLOW_ACBN0_THREADS=1 mpirun -np <ranks> ...
+PAOFLOW_RS_THREADS=1 mpirun -np <ranks> ...
 
 # or roughly cores_per_node / ranks_per_node
-PAOFLOW_ACBN0_THREADS=$((CORES / RANKS)) mpirun -np <ranks> ...
+PAOFLOW_RS_THREADS=$((CORES / RANKS)) mpirun -np <ranks> ...
 ```
 
-`paoflow_acbn0_rs.thread_count()` reports the effective count.
+`paoflow_rs.thread_count()` reports the effective count.
 
 ---
 
@@ -218,12 +218,12 @@ PAOFLOW_ACBN0_THREADS=$((CORES / RANKS)) mpirun -np <ranks> ...
 ### Rust golden-value parity tests
 
 The crate ships golden values generated from the real `pyints` reference
-(`paoflow_acbn0_rs/tests/golden.json`). Because plain `cargo test` links
+(`paoflow_rs/tests/golden.json`). Because plain `cargo test` links
 `libpython` (the `extension-module` feature is off for tests), point it at your
 interpreter and put `libpython` on the loader path:
 
 ```sh
-cd paoflow_acbn0_rs
+cd paoflow_rs
 
 # Linux:
 PYO3_PYTHON=/path/to/python \
@@ -250,7 +250,7 @@ python -m pytest tests/unit/acbn0 -q
 ### Lint / format (developers)
 
 ```sh
-cd paoflow_acbn0_rs
+cd paoflow_rs
 cargo fmt
 PYO3_PYTHON=/path/to/python cargo clippy --all-targets
 ```
@@ -259,7 +259,7 @@ PYO3_PYTHON=/path/to/python cargo clippy --all-targets
 
 ## 9. Continuous integration
 
-`.github/workflows/acbn0-rust.yml` builds and validates the crate on every push
+`.github/workflows/paoflow-rs.yml` builds and validates the crate on every push
 / PR that touches `rust/`:
 
 - **test job** (Ubuntu + macOS): `cargo fmt --check`, `clippy`, regenerate golden
@@ -279,9 +279,9 @@ CI artifact or build locally (§4).
 | Symptom | Cause / fix |
 | --- | --- |
 | `available()` is `False` but import works | `PAOFLOW_ACBN0_DISABLE` is set to a truthy value — unset it. |
-| `ImportError: No module named paoflow_acbn0_rs` | Wheel not installed in the active environment. Install it (§3/§4) into the same env that runs PAOFLOW. |
+| `ImportError: No module named paoflow_rs` | Wheel not installed in the active environment. Install it (§3/§4) into the same env that runs PAOFLOW. |
 | `maturin failed: Both VIRTUAL_ENV and CONDA_PREFIX are set` | Unset one; see §4c. |
 | Build error: requires rustc ≥ 1.71 | `rustup update stable`. |
 | `cargo test`: `Library not loaded: libpython3.x.dylib` (or `.so`) | Add the interpreter's `lib` dir to `DYLD_LIBRARY_PATH` (macOS) / `LD_LIBRARY_PATH` (Linux); see §8. |
-| Slower than expected on a cluster | Oversubscription — set `PAOFLOW_ACBN0_THREADS` to balance MPI ranks vs threads (§7). |
+| Slower than expected on a cluster | Oversubscription — set `PAOFLOW_RS_THREADS` to balance MPI ranks vs threads (§7). |
 | Want to confirm it is actually being used | Compare a run with and without `PAOFLOW_ACBN0_DISABLE=1` (§6), or check `available()` (§5). |

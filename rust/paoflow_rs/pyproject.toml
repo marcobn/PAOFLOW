@@ -3,9 +3,9 @@ requires = ["maturin>=1.5,<2"]
 build-backend = "maturin"
 
 [project]
-name = "paoflow-acbn0-rs"
+name = "paoflow-rs"
 version = "0.1.0"
-description = "Rust backend for ACBN0/eACBN0 two-electron Coulomb integrals in PAOFLOW"
+description = "Rust backend for PAOFLOW (ACBN0/eACBN0 two-electron Coulomb integrals)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
@@ -17,7 +17,7 @@ classifiers = [
 ]
 
 [tool.maturin]
-# Build an abi3 extension module importable as `paoflow_acbn0_rs`.
+# Build an abi3 extension module importable as `paoflow_rs`.
 features = ["extension-module"]
-module-name = "paoflow_acbn0_rs"
+module-name = "paoflow_rs"
 strip = true
