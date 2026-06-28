@@ -1,0 +1,29 @@
+[package]
+name = "paoflow_acbn0_rs"
+version = "0.1.0"
+edition = "2021"
+description = "Rust backend for ACBN0/eACBN0 two-electron Coulomb integrals in PAOFLOW"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "paoflow_acbn0_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["abi3-py310"] }
+numpy = "0.23"
+rayon = "1"
+
+[features]
+# maturin enables this so the cdylib links as a Python extension module.
+# Plain `cargo test` omits it so the test harness links libpython instead.
+extension-module = ["pyo3/extension-module"]
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

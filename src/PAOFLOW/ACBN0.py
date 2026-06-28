@@ -170,6 +170,8 @@ from os.path import expanduser, isfile, join
 import numpy as np
 from mpi4py import MPI
 
+from . import acbn0_native as _acbn0_native
+
 BOHR_RADIUS_ANGS = 0.529177210903
 ANGS_TO_BOHR = 1.0 / BOHR_RADIUS_ANGS
 HARTREE_TO_EV = 27.211396132
@@ -400,12 +402,21 @@ class ACBN0_Hartree(_HartreeKernel):
         # ``contr_coulomb`` of real Cartesian Gaussians returns a real
         # scalar; coerce to ``float`` so the gathered dict and downstream
         # ERI tensor stay real.
-        local_vals = {
-            (int(a), int(b), int(c), int(d)): float(
-                self.coulomb(basis[idx[a]], basis[idx[b]], basis[idx[c]], basis[idx[d]])
-            )
-            for a, b, c, d in my_keys
-        }
+        if _acbn0_native.available():
+            # Batched Rust path: evaluate the whole rank-local chunk in one
+            # FFI call over the Hubbard-active sub-basis (local indices).
+            active = [basis[i] for i in idx]
+            vals = _acbn0_native.eri_batch(active, my_keys)
+            local_vals = {
+                (int(a), int(b), int(c), int(d)): float(v) for (a, b, c, d), v in zip(my_keys, vals)
+            }
+        else:
+            local_vals = {
+                (int(a), int(b), int(c), int(d)): float(
+                    self.coulomb(basis[idx[a]], basis[idx[b]], basis[idx[c]], basis[idx[d]])
+                )
+                for a, b, c, d in my_keys
+            }
 
         all_local = self.comm.allgather(local_vals)
         eri_dict = {}
@@ -635,12 +646,19 @@ class eACBN0_Hartree(_HartreeKernel):
         # tensor stay real (densities are complex, so contractions will
         # naturally promote to complex without spurious imaginary noise
         # from the integral side).
-        local_vals = {
-            (int(i), int(k), int(j), int(l)): float(
-                self.coulomb(gauss_I[i], gauss_I[k], gauss_J[j], gauss_J[l])
-            )
-            for i, k, j, l in my_keys
-        }
+        if _acbn0_native.available():
+            # Batched Rust path: i,k index gauss_I and j,l index gauss_J.
+            vals = _acbn0_native.eri_batch_2c(gauss_I, gauss_J, my_keys)
+            local_vals = {
+                (int(i), int(k), int(j), int(l)): float(v) for (i, k, j, l), v in zip(my_keys, vals)
+            }
+        else:
+            local_vals = {
+                (int(i), int(k), int(j), int(l)): float(
+                    self.coulomb(gauss_I[i], gauss_I[k], gauss_J[j], gauss_J[l])
+                )
+                for i, k, j, l in my_keys
+            }
 
         all_local = self.comm.allgather(local_vals)
         eri_dict = {}
