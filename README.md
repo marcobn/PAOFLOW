@@ -66,14 +66,29 @@ PAOFLOW ships two small, dependency-light command-line generators that automate
 the repetitive parts of setting up a study. They are installed with the package
 as console commands:
 
-1. **`paoflow-gen-qe`** — build a Quantum ESPRESSO `scf` input from an
-   [AFLOW](https://aflow.org) database entry, with sensible defaults for
-   smearing, magnetism, spin–orbit coupling, and the number of bands needed for
-   PAOFLOW's extended-basis projections. Pseudopotentials from the Pseudo Dojo repository (https://www.pseudo-dojo.org/), are included in the distribution and should be used for the input generation.
-2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script
-   (`main.py`) from the output of a Quantum ESPRESSO run, and optionally a
-   companion **plotting script** (`plot.py`) that visualizes exactly the
-   properties you selected.
+1. **`paoflow-gen-qe`** — build a Quantum ESPRESSO `scf` input from an online
+   materials database entry, with sensible defaults for smearing, magnetism,
+   spin–orbit coupling, and the number of bands needed for PAOFLOW's
+   extended-basis projections. Two databases are supported and auto-detected
+   from the identifier (or selected with `--source`):
+   [AFLOW](https://aflow.org) for bulk (3D) crystals and
+   [C2DB](https://cmr.fysik.dtu.dk/c2db/c2db.html) for two-dimensional
+   materials, where the input is set up with vacuum padding, an in-plane
+   **k**-grid, and `assume_isolated='2D'`. When a database provides no
+   **k**-mesh, dimension- and metallicity-aware defaults are used and a caveat
+   reminds you to check **k**-point convergence. Pseudopotentials from the
+   Pseudo Dojo repository (https://www.pseudo-dojo.org/), are included in the
+   distribution and should be used for the input generation.
+2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script from the
+   output of a Quantum ESPRESSO run. It offers two workflows:
+   - **regular** — a property-run driver (`main.py`) that computes the
+     properties you select (bands, DOS/PDOS, transport, optical, topology,
+     …), with a 2D-aware band path, plus an optional companion **plotting
+     script** (`plot.py`) that visualizes exactly those properties.
+   - **acbn0** — a self-consistent Hubbard *U* (ACBN0) / on-site *U* + intersite
+     *V* (eACBN0) driver (`main.acbn0.py`), paired with a `plot.acbn0.py` that
+     overlays the band structures of the converged cases (DFT+U and, for
+     eACBN0, DFT+U+V) for direct comparison.
 ---
 
 ## For Researchers
