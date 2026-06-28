@@ -63,7 +63,7 @@ def main() -> None:
     )
 
     # Compute and write transport observables by physics stage.
-    transport.compute_self_energy(write=True)
+    transport.compute_leads_self_energy(write=True)
     transport.compute_greens_functions(write=True)
     transmission = transport.compute_transmission(write=True)
     dos = transport.compute_dos(write=True)

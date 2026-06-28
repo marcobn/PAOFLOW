@@ -94,7 +94,7 @@ def test_compute_self_energy_requires_hamiltonian_blocks():
     transport = Transport(data_controller=object())
     transport.configure_energy_grid(emin=-1.0, emax=1.0, ne=10, delta=1e-4)
     with pytest.raises(RuntimeError, match='build_hamiltonian_blocks'):
-        transport.compute_self_energy()
+        transport.compute_leads_self_energy()
 
 
 def test_compute_transmission_requires_energy_grid():

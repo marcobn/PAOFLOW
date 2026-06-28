@@ -57,7 +57,7 @@ def main() -> None:
         postfix='_defect',
     )
 
-    transport.compute_self_energy(write=True, comm=comm)
+    transport.compute_leads_self_energy(write=True, comm=comm)
     transport.compute_greens_functions(write=True, comm=comm)
     transport.compute_transmission(write=True, comm=comm)
     transport.compute_dos(write=True, comm=comm)

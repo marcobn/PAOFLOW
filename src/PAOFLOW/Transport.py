@@ -416,7 +416,7 @@ class Transport:
         self._require_step_state()
         return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
 
-    def compute_self_energy(
+    def compute_leads_self_energy(
         self,
         *,
         write: bool = True,
