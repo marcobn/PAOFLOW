@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.io.write_data import (
     write_data,
     write_operator_xml,

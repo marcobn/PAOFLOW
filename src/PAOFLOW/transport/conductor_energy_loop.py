@@ -14,7 +14,7 @@ from PAOFLOW.transport.conductor_observables import (
 )
 from PAOFLOW.transport.conductor_outputs import initialize_kpoint_operator_buffers
 from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
-from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.timing import global_timing
 

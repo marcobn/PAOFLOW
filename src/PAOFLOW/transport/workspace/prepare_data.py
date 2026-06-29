@@ -18,11 +18,7 @@ from PAOFLOW.transport.hamiltonian.hamiltonian_init import (
     check_leads_are_identical,
     initialize_hamiltonian_blocks,
 )
-from PAOFLOW.transport.io.get_input_params import (
-    load_conductor_data_from_yaml,
-    load_current_data_from_yaml,
-)
-from PAOFLOW.transport.io.input_parameters import ConductorData, RuntimeData
+from PAOFLOW.transport.data import ConductorData, RuntimeData
 from PAOFLOW.transport.io.log_module import log_summary
 from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj
 from PAOFLOW.transport.smearing.smearing_base import smearing_func
@@ -95,26 +91,6 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
     log_summary(data)
 
     return data
-
-
-def prepare_conductor(yaml_file: str, data_controller: DataController) -> ConductorData:
-    """
-    Load input parameters from a YAML file and prepare core conductor data.
-
-    Parameters
-    ----------
-    yaml_file : str
-        Path to the YAML input file.
-    data_controller : DataController
-        Shared PAOFLOW data store used to load atomic projections.
-
-    Returns
-    -------
-    ConductorData
-        Parsed conductor data object with runtime values initialized.
-    """
-    data = load_conductor_data_from_yaml(yaml_file)
-    return prepare_conductor_data(data, data_controller)
 
 
 def prepare_smearing(
@@ -326,20 +302,3 @@ def prepare_conductor_runtime(
     prepare_hamiltonian_blocks_and_leads(data, hamiltonian_system, data_controller)
     _ = prepare_workspace(data, memory_tracker)
     return hamiltonian_system
-
-
-def prepare_current(yaml_file: str) -> dict | None:
-    """
-    Load current calculation input parameters from YAML.
-
-    Parameters
-    ----------
-    `yaml_file` : str
-        Path to the YAML input file (e.g. current.yaml).
-
-    Returns
-    -------
-    `data` : dict or None
-        Parsed input parameters, or None if loading fails.
-    """
-    return load_current_data_from_yaml(yaml_file)

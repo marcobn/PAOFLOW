@@ -5,7 +5,7 @@ from PAOFLOW.DataController import DataController
 import numpy as np
 
 from PAOFLOW.transport.grid.rgrid import get_rgrid
-from PAOFLOW.transport.io.input_parameters import AtomicProjData, ConductorData
+from PAOFLOW.transport.data import AtomicProjData, ConductorData
 import PAOFLOW.transport.io.log_module as log
 
 from PAOFLOW.transport.io.write_data import (

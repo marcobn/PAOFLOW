@@ -3,7 +3,7 @@ from typing import Dict, Optional
 import numpy as np
 
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.utils.converters import (
     cartesian_to_crystal,
 )

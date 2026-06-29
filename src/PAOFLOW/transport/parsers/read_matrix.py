@@ -4,7 +4,7 @@ from PAOFLOW.DataController import DataController
 import numpy as np
 
 from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlock
-from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.parsers.parser_base import parse_index_array
 from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_kspace
 from PAOFLOW.transport.utils.timing import timed_function

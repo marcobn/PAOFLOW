@@ -26,7 +26,7 @@ from PAOFLOW.transport.conductor_steps import (
     prepare_conductor_step_state,
 )
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
-from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.results import TransportResults
 
 

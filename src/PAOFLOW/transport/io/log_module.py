@@ -5,7 +5,7 @@ import numpy as np
 from mpi4py import MPI
 
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.io.input_parameters import AtomicProjData, ConductorData
+from PAOFLOW.transport.data import AtomicProjData, ConductorData
 from PAOFLOW.transport.utils.constants import amconv, rydcm1
 
 comm = MPI.COMM_WORLD

@@ -4,7 +4,7 @@ from PAOFLOW.DataController import DataController
 import numpy as np
 
 from PAOFLOW.transport.hamiltonian.hamiltonian import HamiltonianSystem
-from PAOFLOW.transport.io.input_parameters import CalculationType, ConductorData
+from PAOFLOW.transport.data import CalculationType, ConductorData
 from PAOFLOW.transport.parsers.read_matrix import read_matrix
 from PAOFLOW.transport.utils.timing import timed_function
 

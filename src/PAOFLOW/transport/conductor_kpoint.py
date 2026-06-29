@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 from PAOFLOW.transport.calculators.green import compute_conductor_green_function
 from PAOFLOW.transport.calculators.leads_self_energy import build_self_energies_from_blocks
 from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
-from PAOFLOW.transport.io.input_parameters import ConductorData
+from PAOFLOW.transport.data import ConductorData
 
 
 def compute_kpoint_conductor_quantities(

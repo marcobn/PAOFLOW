@@ -10,11 +10,12 @@ from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.calculators.green import compute_conductor_green_function
 from PAOFLOW.transport.calculators.leads_self_energy import build_self_energies_from_blocks
 from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
+from PAOFLOW.transport.data import ConductorData, build_conductor_data
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
-from PAOFLOW.transport.io.input_parameters import ConductorData
 from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 from PAOFLOW.transport.utils.memusage import MemoryTracker
+from PAOFLOW.transport.validation import validate_conductor_data
 from PAOFLOW.transport.workspace.prepare_data import (
     prepare_conductor_data,
     prepare_conductor_runtime,
@@ -113,7 +114,7 @@ def build_conductor_input_values(
     Returns
     -------
     dict[str, Any]
-        Keyword arguments ready for ``ConductorData(..., **input_values)``.
+        Keyword arguments ready for ``build_conductor_data(**input_values)``.
     """
     input_values: dict[str, Any] = {
         'datafile_C': datafile_C,
@@ -150,7 +151,7 @@ def prepare_conductor_step_state(
     data_controller : DataController
         Shared data controller used by transport preparation.
     input_values : dict[str, Any]
-        Keyword arguments for ``ConductorData`` construction.
+        Flat keyword arguments passed to ``build_conductor_data``.
 
     Returns
     -------
@@ -163,7 +164,8 @@ def prepare_conductor_step_state(
     This routine mutates transport-related runtime containers through
     ``prepare_conductor_data`` as part of the existing preparation flow.
     """
-    data = ConductorData(filename='<direct-arguments>', validate=True, **input_values)
+    data = build_conductor_data(**input_values)
+    validate_conductor_data(data)
     memory_tracker = MemoryTracker()
     prepare_conductor_data(data, data_controller)
     energy_grid = initialize_energy_grid(

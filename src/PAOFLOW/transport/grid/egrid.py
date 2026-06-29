@@ -1,6 +1,6 @@
 import numpy as np
 
-from PAOFLOW.transport.io.input_parameters import Carriers
+from PAOFLOW.transport.data import Carriers
 
 
 def initialize_energy_grid(

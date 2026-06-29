@@ -8,7 +8,7 @@ from typing import Dict, Optional
 import numpy.typing as npt
 
 from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
-from PAOFLOW.transport.io.input_parameters import AtomicProjData
+from PAOFLOW.transport.data import AtomicProjData
 from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 from PAOFLOW.transport.io.log_module import log_rank0
 
