@@ -19,7 +19,7 @@ SmearingType = Literal[
     'marzari-vanderbilt',
     'mv',
 ]
-FileFormat = Literal['internal', 'crystal', 'wannier90', 'cp2k', 'atmproj']
+FileFormat = Literal['internal', 'atmproj']
 
 _FILE_NAMES_FIELDS: frozenset[str] = frozenset(
     {
