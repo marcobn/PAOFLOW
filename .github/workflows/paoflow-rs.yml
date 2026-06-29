@@ -32,6 +32,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install MPI runtime
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install open-mpi
+          else
+            sudo apt-get update && sudo apt-get install -y openmpi-bin libopenmpi-dev
+          fi
       - name: Create virtualenv
         run: |
           python -m venv .venv
