@@ -1,0 +1,17 @@
+The results belong to the red color curve of Fig.4(a,c) in the paper "https://doi.org/10.1103/PhysRevMaterials.9.054204".  "qo_val0029.png" is a copy of Fig.4(a). "qo_val004.png" is a copy of Fig.4(c)
+The original data is openly accessible on the website "https://doi.org/10.34894/MGCHEN". It is the val004_phi_0 case of STI 
+
+Output files from PAOFLOW:
+   - Fermi_surf_band_*.bxsf: 
+        + Input files for pyskeaf and Fermi surface visualizations tools
+        + One file = One band
+        + PAOFLOW shifts the energy by defaulf, so Fermi Energy = 0 is the only correct value
+   - Fermi_surf_band_*.npz: 
+        + Input files Fermi surface visualizations tools
+        + One file = One band
+        + PAOFLOW shifts the energy by defaulf, so Fermi Energy = 0 is the only correct value
+   - FermiSurf_0.bxsf
+        + Input files Fermi surface visualizations tools
+        + Single file with all bands
+        + PAOFLOW shifts the energy by defaulf, so Fermi Energy = 0 is the only correct value
+Note: even doing the same E-E_F shift for all the above files, the exact value for the same band in different files somehow differ significantly. Thus, stick to one set the files.

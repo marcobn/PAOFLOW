@@ -25,10 +25,10 @@ def plot_freq(file, col):
   plt.ylabel(r"$\rm{B_F}$ ($10^3$ T)",fontsize=20)
   plt.tick_params(axis='both', which='major', labelsize=18)
   plt.xlim(0.0, 90)
-  plt.ylim(0, 30)
+  plt.ylim(0, 5)
   # plt.yscale('log')
 
-fig = plt.figure()
+fig = plt.figure(figsize=(4, 7))
 
 for i in range(len(files_nz)):
   plot_freq(files_nz[i], colors[i])

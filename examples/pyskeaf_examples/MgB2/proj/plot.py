@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import glob
 import re
 
-colors = ['blue', 'green', 'yellow', 'red', 'black']
+colors = ['blue', 'green', 'yellow', 'red', 'black', 'magenta', 'orange', 'purple', 'brown']
 
-files_nz = glob.glob('results_freqvsangle*.out')
+files_nz = glob.glob('./output_pyskeaf/results_freqvsangle_*.out')
 files_nz.sort()
 print(files_nz)
 
@@ -24,8 +24,8 @@ def plot_freq(file, col):
   plt.xlabel("angle ($\u00B0$)",fontsize=20)
   plt.ylabel(r"$\rm{B_F}$ ($10^3$ T)",fontsize=20)
   plt.tick_params(axis='both', which='major', labelsize=18)
-  plt.xlim(0.0, 90)
-  plt.ylim(0, 30)
+  # plt.xlim(0.0, 90)
+  # plt.ylim(0, 30)
   # plt.yscale('log')
 
 fig = plt.figure()
@@ -37,6 +37,6 @@ for i in range(len(files_nz)):
   print(' ')
 
 plt.tight_layout()
-plt.savefig('plot_frequencies.png',dpi=300)
+plt.savefig('plot_frequencies1.png',dpi=300)
 # plt.show()
 
