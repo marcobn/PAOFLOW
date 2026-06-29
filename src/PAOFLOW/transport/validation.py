@@ -13,7 +13,7 @@ from PAOFLOW.transport.data import (
     KPointGridSettings,
     SymmetryOutputOptions,
 )
-from PAOFLOW.transport.utils.constants import amconv, rydcm1
+from PAOFLOW.utils.constants import AMCONV, RYDCM1
 
 
 def _require_positive_int(name: str, value: int) -> None:
@@ -153,7 +153,7 @@ def validate_conductor_data(data: ConductorData) -> None:
         raise ValueError('conduct_formula="generalized" requires datafile_sgm or datafile_C_sgm.')
 
     if data.carriers == 'phonons':
-        scale = (rydcm1 / np.sqrt(amconv)) ** 2
+        scale = (RYDCM1 / np.sqrt(AMCONV)) ** 2
         data.energy.emin = data.energy.emin**2 / scale
         if data.energy.emin < 0.0:
             raise ValueError('energy.emin < 0.0 after phonon energy conversion.')

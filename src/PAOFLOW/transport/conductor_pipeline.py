@@ -20,7 +20,7 @@ from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.io.write_data import write_data
 from PAOFLOW.transport.io.write_data import write_operator_xml
 from PAOFLOW.transport.results import TransportResults
-from PAOFLOW.transport.utils.constants import amconv, rydcm1
+from PAOFLOW.utils.constants import AMCONV, RYDCM1
 from PAOFLOW.transport.utils.divide_et_impera import divide_work
 
 
@@ -391,7 +391,7 @@ def write_transmission_results(
     output_dir.mkdir(parents=True, exist_ok=True)
     postfix = data.file_names.postfix
     if data.carriers == 'phonons':
-        egrid_out = np.sqrt(results.energy_grid * rydcm1**2 / amconv)
+        egrid_out = np.sqrt(results.energy_grid * RYDCM1**2 / AMCONV)
     else:
         egrid_out = results.energy_grid
     write_data(egrid_out, results.transmission, 'conductance', output_dir, postfix=postfix)
@@ -441,7 +441,7 @@ def write_dos_results(
     output_dir.mkdir(parents=True, exist_ok=True)
     postfix = data.file_names.postfix
     if data.carriers == 'phonons':
-        egrid_out = np.sqrt(results.energy_grid * rydcm1**2 / amconv)
+        egrid_out = np.sqrt(results.energy_grid * RYDCM1**2 / AMCONV)
     else:
         egrid_out = results.energy_grid
     write_data(egrid_out, results.dos, 'doscond', output_dir, postfix=postfix)

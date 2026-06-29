@@ -6,7 +6,7 @@ from mpi4py import MPI
 
 from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.data import AtomicProjData, ConductorData
-from PAOFLOW.transport.utils.constants import amconv, rydcm1
+from PAOFLOW.utils.constants import AMCONV, RYDCM1
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -109,7 +109,7 @@ def log_summary(data: ConductorData) -> None:
     log_rank0(f'                 Buffering :{data.energy.ne_buffer:>10}')
 
     if data.carriers.strip().lower() == 'phonons':
-        scale = (rydcm1 / np.sqrt(amconv)) ** 2
+        scale = (RYDCM1 / np.sqrt(AMCONV)) ** 2
         log_rank0(f'            Min Frequency :{format_float(data.energy.emin * scale)}')
         log_rank0(f'            Max Frequency :{format_float(data.energy.emax * scale)}')
         log_rank0(f'              Energy Step :{format_float(data.energy.energy_step * scale)}')

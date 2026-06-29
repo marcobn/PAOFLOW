@@ -13,7 +13,7 @@ from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
 from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.observables.accumulation import accumulate_dos, accumulate_transmission
-from PAOFLOW.transport.utils.constants import amconv, rydcm1
+from PAOFLOW.utils.constants import AMCONV, RYDCM1
 from PAOFLOW.transport.utils.timing import global_timing
 
 
@@ -291,7 +291,7 @@ def process_energy_point(
     nprint = data.iteration.nprint
     if (ie_g % nprint == 0 or ie_g == 0 or ie_g == egrid.shape[0] - 1) and rank == 0:
         if data.carriers == 'phonons':
-            omega_val = np.sqrt(egrid[ie_g] * rydcm1**2 / amconv)
+            omega_val = np.sqrt(egrid[ie_g] * RYDCM1**2 / AMCONV)
             log.log_rank0(f'  Computing omega({ie_g:6d}) = {omega_val:12.5f} cm-1')
         else:
             log.log_rank0(f'  Computing E({ie_g:6d}) = {egrid[ie_g]:12.5f} eV')

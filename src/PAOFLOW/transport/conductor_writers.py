@@ -12,7 +12,7 @@ from PAOFLOW.transport.io.write_data import (
     write_operator_xml,
 )
 from PAOFLOW.transport.io.write_header import headered_function
-from PAOFLOW.transport.utils.constants import amconv, rydcm1
+from PAOFLOW.utils.constants import AMCONV, RYDCM1
 
 
 def write_conductor_operators(
@@ -138,7 +138,7 @@ def write_conductor_output(
     postfix = data.file_names.postfix
 
     if data.carriers == 'phonons':
-        egrid_out = np.sqrt(egrid * rydcm1**2 / amconv)
+        egrid_out = np.sqrt(egrid * RYDCM1**2 / AMCONV)
     else:
         egrid_out = egrid
 
