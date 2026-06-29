@@ -47,8 +47,8 @@ def main():
 
     transport.compute_leads_self_energy(write=True)
     transport.compute_greens_functions(write=True)
-    transport.compute_transmission(write=True)
-    transport.compute_dos(write=True)
+    transport.compute_transmission()
+    transport.compute_dos()
 
 
 if __name__ == '__main__':

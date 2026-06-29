@@ -11,7 +11,6 @@ from PAOFLOW.transport.conductor_energy_loop import (
     process_energy_point,
     reduce_conductor_results,
 )
-from PAOFLOW.transport.conductor_outputs import initialize_conductor_outputs
 from PAOFLOW.transport.conductor_writers import (
     write_conductor_operators,
     write_conductor_output,
@@ -25,6 +24,82 @@ from PAOFLOW.transport.utils.constants import amconv, rydcm1
 from PAOFLOW.transport.utils.divide_et_impera import divide_work
 
 
+def initialize_conductor_outputs(
+    *,
+    data: ConductorData,
+    dimC: int,
+    dimL: int,
+    dimR: int,
+    ne: int,
+    nkpts_par: int,
+    nrtot_par: int,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray | None,
+    np.ndarray | None,
+    np.ndarray | None,
+]:
+    """Allocate transport output arrays for the conductor workflow.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Validated transport input and runtime flags.
+    dimC : int
+        Conductor block dimension.
+    dimL : int
+        Left lead block dimension.
+    dimR : int
+        Right lead block dimension.
+    ne : int
+        Number of energy points.
+    nkpts_par : int
+        Number of k-points handled by this MPI rank.
+    nrtot_par : int
+        Number of real-space vectors handled by this MPI rank.
+
+    Returns
+    -------
+    tuple
+        ``(conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out)``.
+        ``conduct`` has shape ``(1 + neigchn, ne)`` and dtype ``float64``.
+        ``dos`` has shape ``(ne,)`` and dtype ``float64``.
+        ``conduct_k`` has shape ``(1 + neigchn, nkpts_par, ne)`` and dtype ``float64``.
+        ``dos_k`` has shape ``(ne, nkpts_par)`` and dtype ``float64``.
+        ``gf_out``, ``rsgmL_out``, and ``rsgmR_out`` are ``complex128`` arrays
+        of shape ``(ne, nrtot_par, dimC, dimC)`` when enabled by flags, otherwise ``None``.
+    """
+    do_eigenchannels = data.symmetry.do_eigenchannels
+    neigchnx = data.symmetry.neigchnx
+    neigchn = min(dimC, dimR, dimL, neigchnx) if do_eigenchannels else 0
+
+    conduct = np.zeros((1 + neigchn, ne), dtype=np.float64)
+    conduct_k = np.zeros((1 + neigchn, nkpts_par, ne), dtype=np.float64)
+    dos = np.zeros(ne, dtype=np.float64)
+    dos_k = np.zeros((ne, nkpts_par), dtype=np.float64)
+
+    gf_out = (
+        np.zeros((ne, nrtot_par, dimC, dimC), dtype=np.complex128)
+        if data.symmetry.write_gf
+        else None
+    )
+    rsgmL_out = (
+        np.zeros((ne, nrtot_par, dimC, dimC), dtype=np.complex128)
+        if data.symmetry.write_lead_sgm
+        else None
+    )
+    rsgmR_out = (
+        np.zeros((ne, nrtot_par, dimC, dimC), dtype=np.complex128)
+        if data.symmetry.write_lead_sgm
+        else None
+    )
+
+    return conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out
+
+
 def compute_conductor_results(
     data: ConductorData,
     blc_blocks: Mapping[str, Any],
@@ -32,10 +107,6 @@ def compute_conductor_results(
     comm: MPI.Comm = MPI.COMM_WORLD,
 ) -> TransportResults:
     """Compute transport observables across the full energy and k-point grid.
-
-    This function executes the core conductor calculation: it distributes
-    energies across MPI ranks, computes self-energies and Green's functions
-    at each ``(E, k)`` point, and accumulates transmission and DOS observables.
 
     Parameters
     ----------
@@ -202,7 +273,23 @@ def write_self_energy_results(
     *,
     comm: MPI.Comm = MPI.COMM_WORLD,
 ) -> None:
-    """Write lead self-energies to XML output files."""
+    """Write lead self-energies to XML output files.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Validated transport input and output configuration.
+    results : TransportResults
+        Container with transport observables from ``compute_conductor_results``.
+    comm : MPI.Comm, optional
+        Communicator for rank-aware file writing.
+        Default is ``MPI.COMM_WORLD``.
+
+    Notes
+    -----
+    Writes ``lead_L_sgm.xml`` and ``lead_R_sgm.xml`` under the configured
+    output directory. Non-root ranks perform no writes.
+    """
     rank = comm.Get_rank()
     if rank != 0 or results.self_energy_L is None or results.self_energy_R is None:
         return
@@ -238,7 +325,23 @@ def write_greens_function_results(
     *,
     comm: MPI.Comm = MPI.COMM_WORLD,
 ) -> None:
-    """Write conductor Green's functions to XML output files."""
+    """Write conductor Green's functions to XML output files.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Validated transport input and output configuration.
+    results : TransportResults
+        Container with transport observables from ``compute_conductor_results``.
+    comm : MPI.Comm, optional
+        Communicator for rank-aware file writing.
+        Default is ``MPI.COMM_WORLD``.
+
+    Notes
+    -----
+    Writes ``greenf.xml`` under the configured output directory.
+    Non-root ranks perform no writes.
+    """
     rank = comm.Get_rank()
     if rank != 0 or results.green_functions is None:
         return
@@ -263,7 +366,24 @@ def write_transmission_results(
     *,
     comm: MPI.Comm = MPI.COMM_WORLD,
 ) -> None:
-    """Write transmission and k-resolved transmission data files."""
+    """Write transmission and k-resolved transmission data files.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Validated transport input and output configuration.
+    results : TransportResults
+        Container with transport observables from ``compute_conductor_results``.
+    comm : MPI.Comm, optional
+        Communicator for rank-aware file writing.
+        Default is ``MPI.COMM_WORLD``.
+
+    Notes
+    -----
+    Writes ``conductance*.dat`` under the configured output directory.
+    When ``write_kdata`` is enabled, also writes per-k-point conductance files.
+    Non-root ranks perform no writes.
+    """
     rank = comm.Get_rank()
     if rank != 0:
         return
@@ -296,7 +416,24 @@ def write_dos_results(
     *,
     comm: MPI.Comm = MPI.COMM_WORLD,
 ) -> None:
-    """Write DOS and k-resolved DOS data files."""
+    """Write DOS and k-resolved DOS data files.
+
+    Parameters
+    ----------
+    data : ConductorData
+        Validated transport input and output configuration.
+    results : TransportResults
+        Container with transport observables from ``compute_conductor_results``.
+    comm : MPI.Comm, optional
+        Communicator for rank-aware file writing.
+        Default is ``MPI.COMM_WORLD``.
+
+    Notes
+    -----
+    Writes ``doscond*.dat`` under the configured output directory.
+    When ``write_kdata`` is enabled, also writes per-k-point DOS files.
+    Non-root ranks perform no writes.
+    """
     rank = comm.Get_rank()
     if rank != 0:
         return

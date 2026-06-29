@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from PAOFLOW.transport import conductor_observables
+from PAOFLOW.transport.observables import accumulation
 
 
 @pytest.mark.unit
@@ -13,7 +13,7 @@ def test_accumulate_dos_preserves_weighted_trace_formula():
     gC = np.diag([1.0 + 2.0j, 3.0 - 0.5j])
     wk = np.array([0.25, 0.75])
 
-    conductor_observables.accumulate_dos(dos, dos_k, gC, wk, ie_g=1, ik=0)
+    accumulation.accumulate_dos(dos, dos_k, gC, wk, ie_g=1, ik=0)
 
     expected = -wk[0] * np.imag(np.trace(gC)) / np.pi
     assert dos_k[1, 0] == pytest.approx(expected)
@@ -32,7 +32,7 @@ def test_accumulate_transmission_preserves_weighting(monkeypatch):
         return np.array([0.4, 0.2]), None
 
     monkeypatch.setattr(
-        conductor_observables,
+        accumulation,
         'evaluate_transmittance',
         fake_evaluate_transmittance,
     )
@@ -54,7 +54,7 @@ def test_accumulate_transmission_preserves_weighting(monkeypatch):
     sigma_R = -1.0j * np.eye(2)
     wk = np.array([0.25, 0.75])
 
-    conductor_observables.accumulate_transmission(
+    accumulation.accumulate_transmission(
         conduct,
         conduct_k,
         gC,

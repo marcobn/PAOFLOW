@@ -64,6 +64,17 @@ def test_configure_outputs_stores_config():
     assert transport._output_config['write_kdata'] is True
 
 
+def test_configure_outputs_write_flags_stored():
+    transport = Transport(data_controller=object())
+    transport.configure_outputs(
+        output_dir='./out',
+        write_green_function=True,
+        write_lead_self_energy=True,
+    )
+    assert transport._output_config['write_green_function'] is True
+    assert transport._output_config['write_lead_self_energy'] is True
+
+
 def test_configure_outputs_invalidates_results(monkeypatch):
     transport = Transport(data_controller=object())
     transport.results = object()
@@ -84,7 +95,7 @@ def test_configure_transport_options_invalidates_results():
     assert transport.results is None
 
 
-def test_compute_self_energy_requires_hamiltonian_blocks():
+def test_compute_leads_self_energy_requires_hamiltonian_blocks():
     transport = Transport(data_controller=object())
     transport.configure_energy_grid(emin=-1.0, emax=1.0, ne=10, delta=1e-4)
     with pytest.raises(RuntimeError, match='build_hamiltonian_blocks'):

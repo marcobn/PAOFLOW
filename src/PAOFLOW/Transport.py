@@ -50,7 +50,7 @@ class Transport:
     blc_blocks : dict[str, Any] or None
         Hamiltonian block operators populated by ``build_hamiltonian_blocks``.
     results : TransportResults or None
-        Cached full-grid transport observables for staged workflow methods.
+        Cached full-grid transport observables.
     """
 
     def __init__(self, data_controller: DataController) -> None:
@@ -65,6 +65,8 @@ class Transport:
             'work_dir': './',
             'postfix': '',
             'write_kdata': False,
+            'write_green_function': False,
+            'write_lead_self_energy': False,
         }
         self._transport_options_config: dict[str, Any] = {
             'formula': 'landauer',
@@ -81,9 +83,7 @@ class Transport:
     ) -> None:
         """Configure the energy and k-grid integration settings.
 
-        Must be called before any full-grid observable computation
-        (``compute_self_energy``, ``compute_greens_functions``,
-        ``compute_transmission``, ``compute_dos``).
+        Must be called before any full-grid observable computation.
 
         Parameters
         ----------
@@ -127,8 +127,10 @@ class Transport:
         work_dir: str = './',
         postfix: str = '',
         write_kdata: bool = False,
+        write_green_function: bool = False,
+        write_lead_self_energy: bool = False,
     ) -> None:
-        """Configure output directory, file postfix, and k-resolved write options.
+        """Configure output directory, file postfix, and optional operator outputs.
 
         Parameters
         ----------
@@ -140,18 +142,30 @@ class Transport:
             String appended to default transport file names.
         write_kdata : bool, optional
             If ``True``, write k-resolved transmission and DOS to separate files.
+        write_green_function : bool, optional
+            If ``True``, compute and write the real-space conductor Green's
+            function to ``greenf.xml``. This increases memory usage proportional
+            to ``ne * nrtot_par * dimC * dimC``.
+        write_lead_self_energy : bool, optional
+            If ``True``, compute and write real-space lead self-energies to
+            ``lead_L_sgm.xml`` and ``lead_R_sgm.xml``. This increases memory
+            usage proportional to ``ne * nrtot_par * dimC * dimC``.
         """
         self._output_config = {
             'output_dir': output_dir,
             'work_dir': work_dir,
             'postfix': postfix,
             'write_kdata': write_kdata,
+            'write_green_function': write_green_function,
+            'write_lead_self_energy': write_lead_self_energy,
         }
         if self.conductor_data is not None:
             self.conductor_data.file_names.output_dir = output_dir
             self.conductor_data.file_names.work_dir = work_dir
             self.conductor_data.file_names.postfix = postfix
             self.conductor_data.symmetry.write_kdata = write_kdata
+            self.conductor_data.symmetry.write_gf = write_green_function
+            self.conductor_data.symmetry.write_lead_sgm = write_lead_self_energy
             log.initialize_logger(
                 self.data_controller,
                 log_file_name=f'transport_conductor{postfix}.log',
@@ -207,8 +221,8 @@ class Transport:
 
         Accepts only parameters required to construct Hamiltonian/overlap
         block objects and lead-device partitions.  Energy-grid parameters
-        (``emin``, ``emax``, ``ne``, ``delta``), output paths, and observable
-        write flags must be configured separately via
+        (``emin``, ``emax``, ``ne``, ``delta``), output paths, and optional
+        operator outputs must be configured separately via
         ``configure_energy_grid(...)``, ``configure_outputs(...)``, and
         ``configure_transport_options(...)``.
 
@@ -267,7 +281,7 @@ class Transport:
         -----
         Sets ``self.conductor_data``, ``self.blc_blocks``, and
         ``self._conductor_state`` as side effects. Calling this method a second
-        time on the same instance resets all three for the new calculation.
+        time resets all three for the new calculation.
         """
         hamiltonian_selectors: dict[str, Any] = {}
         for h_name, h_val in [
@@ -318,6 +332,14 @@ class Transport:
             state=state,
             data_controller=self.data_controller,
         )
+
+        # Apply output flags configured before build_hamiltonian_blocks was called
+        write_green_function = self._output_config.get('write_green_function', False)
+        write_lead_self_energy = self._output_config.get('write_lead_self_energy', False)
+        state.data.symmetry.write_gf = write_green_function
+        state.data.symmetry.write_lead_sgm = write_lead_self_energy
+        state.data.symmetry.write_kdata = self._output_config.get('write_kdata', False)
+
         self.conductor_data = state.data
         self.blc_blocks = state.blc_blocks
         self._conductor_state = state
@@ -342,19 +364,9 @@ class Transport:
         self,
         *,
         comm: MPI.Comm = MPI.COMM_WORLD,
-        require_green_functions: bool = False,
-        require_self_energies: bool = False,
     ) -> TransportResults:
         self._require_hamiltonian_blocks()
         self._require_grid_config()
-        if require_green_functions or require_self_energies:
-            if (
-                not self.conductor_data.symmetry.write_gf
-                or not self.conductor_data.symmetry.write_lead_sgm
-            ):
-                self.conductor_data.symmetry.write_gf = True
-                self.conductor_data.symmetry.write_lead_sgm = True
-                self.results = None
         if self.results is None:
             self.results = compute_conductor_results(
                 data=self.conductor_data,
@@ -427,11 +439,31 @@ class Transport:
         write: bool = True,
         comm: MPI.Comm = MPI.COMM_WORLD,
     ) -> tuple[NDArray[np.complex128] | None, NDArray[np.complex128] | None]:
-        """Compute full-grid lead self-energies and optionally write XML outputs."""
-        results = self._compute_full_grid_results(
-            comm=comm,
-            require_self_energies=True,
-        )
+        """Compute full-grid lead self-energies and write XML outputs.
+
+        Parameters
+        ----------
+        write : bool, optional
+            If ``True`` (default), write real-space self-energies to
+            ``lead_L_sgm.xml`` and ``lead_R_sgm.xml``.
+        comm : MPI.Comm, optional
+            MPI communicator. Default is ``MPI.COMM_WORLD``.
+
+        Returns
+        -------
+        tuple[NDArray[np.complex128] or None, NDArray[np.complex128] or None]
+            ``(self_energy_L, self_energy_R)`` in real space,
+            shape ``(ne, nrtot_par, dimC, dimC)`` each, or ``(None, None)``
+            if ``write`` is ``False``.
+        """
+        self._require_hamiltonian_blocks()
+        self._require_grid_config()
+        if write:
+            if self.conductor_data is not None:
+                self.conductor_data.symmetry.write_lead_sgm = True
+            if self.results is not None and self.results.self_energy_L is None:
+                self.results = None
+        results = self._compute_full_grid_results(comm=comm)
         if write:
             write_self_energy_results(
                 data=self.conductor_data,
@@ -440,17 +472,37 @@ class Transport:
             )
         return results.self_energy_L, results.self_energy_R
 
-    def compute_greens_function(
+    def compute_greens_functions(
         self,
         *,
         write: bool = True,
         comm: MPI.Comm = MPI.COMM_WORLD,
     ) -> NDArray[np.complex128] | None:
-        """Compute full-grid conductor Green's functions and optionally write XML output."""
-        results = self._compute_full_grid_results(
-            comm=comm,
-            require_green_functions=True,
-        )
+        """Compute full-grid conductor Green's functions and write XML output.
+
+        Parameters
+        ----------
+        write : bool, optional
+            If ``True`` (default), write real-space Green's functions to
+            ``greenf.xml``.
+        comm : MPI.Comm, optional
+            MPI communicator. Default is ``MPI.COMM_WORLD``.
+
+        Returns
+        -------
+        NDArray[np.complex128] or None
+            Real-space conductor Green's function,
+            shape ``(ne, nrtot_par, dimC, dimC)``, or ``None`` if
+            ``write`` is ``False``.
+        """
+        self._require_hamiltonian_blocks()
+        self._require_grid_config()
+        if write:
+            if self.conductor_data is not None:
+                self.conductor_data.symmetry.write_gf = True
+            if self.results is not None and self.results.green_functions is None:
+                self.results = None
+        results = self._compute_full_grid_results(comm=comm)
         if write:
             write_greens_function_results(
                 data=self.conductor_data,
@@ -459,21 +511,27 @@ class Transport:
             )
         return results.green_functions
 
-    def compute_greens_functions(
-        self,
-        *,
-        write: bool = True,
-        comm: MPI.Comm = MPI.COMM_WORLD,
-    ) -> NDArray[np.complex128] | None:
-        """Alias of ``compute_greens_function`` with plural naming."""
-        return self.compute_greens_function(write=write, comm=comm)
-
     def compute_transmission(
         self,
         *,
         comm: MPI.Comm = MPI.COMM_WORLD,
     ) -> NDArray[np.float64]:
-        """Compute full-grid transmission and write output files."""
+        """Compute full-grid transmission and write output files.
+
+        Parameters
+        ----------
+        comm : MPI.Comm, optional
+            MPI communicator. Default is ``MPI.COMM_WORLD``.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Transmission, shape ``(1 + neigchn, ne)``.
+
+        Notes
+        -----
+        Writes ``conductance*.dat`` under the configured output directory.
+        """
         results = self._compute_full_grid_results(comm=comm)
         write_transmission_results(
             data=self.conductor_data,
@@ -487,7 +545,22 @@ class Transport:
         *,
         comm: MPI.Comm = MPI.COMM_WORLD,
     ) -> NDArray[np.float64]:
-        """Compute full-grid DOS and write output files."""
+        """Compute full-grid DOS and write output files.
+
+        Parameters
+        ----------
+        comm : MPI.Comm, optional
+            MPI communicator. Default is ``MPI.COMM_WORLD``.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Density of states, shape ``(ne,)``.
+
+        Notes
+        -----
+        Writes ``doscond*.dat`` under the configured output directory.
+        """
         results = self._compute_full_grid_results(comm=comm)
         write_dos_results(
             data=self.conductor_data,
@@ -511,8 +584,8 @@ class Transport:
 
         Requires that ``build_hamiltonian_blocks(...)``,
         ``configure_energy_grid(...)``, and ``configure_outputs(...)`` have
-        already been called.  Transmission is taken from the cached full-grid
-        results; if they are not yet computed they will be computed here.
+        already been called. Transmission is taken from the cached full-grid
+        results; if not yet computed, the full-grid calculation runs here.
 
         Parameters
         ----------
@@ -532,7 +605,7 @@ class Transport:
             Smearing width in eV for the Fermi-Dirac broadening (must be
             positive).
         comm : MPI.Comm, optional
-            Communicator used for work distribution.  Default is
+            Communicator used for work distribution. Default is
             ``MPI.COMM_WORLD``.
 
         Returns
@@ -543,8 +616,8 @@ class Transport:
 
         Notes
         -----
-        Output is written automatically to
-        ``{output_dir}/current.dat`` as two columns ``V I``.
+        Writes ``current.dat`` as two columns ``V I`` under the configured
+        output directory.
         """
         if nbias <= 0:
             raise ValueError(f'nbias must be positive, got {nbias}.')
