@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "paoflow-rs"
+version = "0.1.0"
+description = "Rust backend for PAOFLOW (ACBN0/eACBN0 two-electron Coulomb integrals)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+
+[tool.maturin]
+# Build an abi3 extension module importable as `paoflow_rs`.
+features = ["extension-module"]
+module-name = "paoflow_rs"
+strip = true

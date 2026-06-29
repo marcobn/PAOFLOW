@@ -126,6 +126,8 @@ TODOs/
 WIKI/
 *pdos_tot
 scripts/
+# but keep the Rust crate's CI helper scripts (needed by paoflow-rs workflow)
+!rust/paoflow_rs/scripts/
 
 # --- Files produced by runs in examples/ ---
 # Keep only inputs (*.in, INCAR/KPOINTS/POSCAR, *.py, inputfile.xml, README*)

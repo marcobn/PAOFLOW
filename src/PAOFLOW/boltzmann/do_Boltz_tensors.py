@@ -6,7 +6,7 @@ rank = comm.Get_rank()
 
 
 def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
-    """Compute the Boltzmann transport tensors L0, L1, and L2.
+    r"""Compute the Boltzmann transport tensors L0, L1, and L2.
 
     The three generalized transport tensors are defined by the BZ integral
 
@@ -142,7 +142,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
 
 
 def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
-    """Compute the anomalous (Hall) Boltzmann transport tensor L0_hall.
+    r"""Compute the anomalous (Hall) Boltzmann transport tensor L0_hall.
 
     Evaluates the rank-3 Hall conductivity kernel
 
@@ -303,7 +303,7 @@ def get_tau(data_controller, temp, channels, weights):
 
 
 def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
-    """Inner BZ summation loop for one L\u1d45 transport tensor.
+    r"""Inner BZ summation loop for one L\u1d45 transport tensor.
 
     Evaluates the energy-resolved integral
 
@@ -354,8 +354,6 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
     esize = ene.size
 
-    snktot = arrays['E_k'].shape[0]
-
     bnd = attributes['bnd']
     kq_wght = 1.0 / attributes['nkpnts']
     if smearing is not None and smearing != 'gauss' and smearing != 'm-p':
@@ -364,33 +362,28 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
     L = np.zeros((3, 3, esize), dtype=float)
 
-    for n in range(bnd):
-        Eaux = np.reshape(np.repeat(arrays['E_k'][:, n, ispin], esize), (snktot, esize))
-        delk = (
-            np.reshape(np.repeat(arrays['deltakp'][:, n, ispin], esize), (snktot, esize))
-            if smearing != None
-            else None
-        )
-        EtoAlpha = np.power(Eaux[:, :] - ene, alpha)
-        if smearing is None:
-            Eaux -= ene
-            smearA = 1 / (4 * temp * (np.cosh(Eaux / (2 * temp)) ** 2))
-        else:
-            if smearing == 'gauss':
-                smearA = gaussian(Eaux, ene, delk)
-            elif smearing == 'm-p':
-                smearA = metpax(Eaux, ene, delk)
-        for l in range(t_tensor.shape[0]):
-            i = t_tensor[l][0]
-            j = t_tensor[l][1]
-            L[i, j, :] += np.sum(
-                kq_wght
-                * arrays['scattering_tau'][:, n, ispin]
-                * velkp[:, i, n, ispin]
-                * velkp[:, j, n, ispin]
-                * (smearA * EtoAlpha).T,
-                axis=1,
-            )
+    # Vectorised over (k, band, energy). Eaux[k, n, e] = E_k - ene; the smearing
+    # window and (E - eps)^alpha share that grid, contracted against the per-(k,n)
+    # tau * v_i * v_j prefactor. Matches the former band loop up to sum order.
+    Ek = arrays['E_k'][:, :bnd, ispin]
+    tau = arrays['scattering_tau'][:, :bnd, ispin]
+    Ediff = Ek[:, :, None] - ene[None, None, :]
+    EtoAlpha = np.power(Ediff, alpha)
+    if smearing is None:
+        smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
+    else:
+        delk = arrays['deltakp'][:, :bnd, ispin][:, :, None]
+        if smearing == 'gauss':
+            smearA = gaussian(Ek[:, :, None], ene[None, None, :], delk)
+        elif smearing == 'm-p':
+            smearA = metpax(Ek[:, :, None], ene[None, None, :], delk)
+
+    S = smearA * EtoAlpha  # (k, bnd, ne)
+    for ll in range(t_tensor.shape[0]):
+        i = t_tensor[ll][0]
+        j = t_tensor[ll][1]
+        pref = kq_wght * tau * velkp[:, i, :bnd, ispin] * velkp[:, j, :bnd, ispin]
+        L[i, j, :] = np.tensordot(pref, S, axes=([0, 1], [0, 1]))
     """
   # noise reduction using a running average (correlation function)
   # Only possible for sigma vs chemical potential
@@ -405,7 +398,7 @@ def L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
 
 
 def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, ispin):
-    """Inner BZ summation loop for the Hall transport tensor.
+    r"""Inner BZ summation loop for the Hall transport tensor.
 
     Computes the rank-3 Hall kernel
 
@@ -419,8 +412,8 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         M^{-1}_{jq,n\\mathbf{k}}\\right)
         \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)
 
-    The Levi-Civita symbol :math:`\\epsilon_{pqr}` is evaluated with
-    ``sympy.Eijk``; the inverse effective-mass tensor components are read
+    The Levi-Civita symbol :math:`\\epsilon_{pqr}` is a static rank-3
+    tensor; the inverse effective-mass tensor components are read
     from ``arry['d2Ed2k']`` and assembled into a full 3\u00d73 matrix.
 
     Parameters
@@ -450,8 +443,6 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
     L_hall : ndarray, shape (3, 3, 3, ne)
         Local contribution to the Hall tensor from this MPI rank's k-points.
     """
-    from sympy import Eijk
-
     from ..utils.smearing import gaussian, metpax
 
     arrays, attributes = data_controller.data_dicts()
@@ -467,7 +458,6 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         comm.Abort()
 
     L_hall = np.zeros((3, 3, 3, esize), dtype=float)
-    sig_hall = np.zeros((3, 3, 3, snktot, bnd, nspin))
 
     M_inv = np.zeros((3, 3, snktot, bnd, nspin))
     eff_mass_inv = arrays['d2Ed2k']
@@ -486,37 +476,30 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
             M_inv[i, j] = eff_mass_inv[5]
             M_inv[j, i] = eff_mass_inv[5]
 
-    for n in range(bnd):
-        Eaux = np.reshape(np.repeat(arrays['E_k'][:, n, ispin], esize), (snktot, esize))
-        delk = (
-            np.reshape(np.repeat(arrays['deltakp'][:, n, ispin], esize), (snktot, esize))
-            if smearing != None
-            else None
-        )
-        if smearing is None:
-            Eaux -= ene
-            smearA = 1 / (4 * temp * (np.cosh(Eaux / (2 * temp)) ** 2))
-        else:
-            if smearing == 'gauss':
-                smearA = gaussian(Eaux, ene, delk)
-            elif smearing == 'm-p':
-                smearA = metpax(Eaux, ene, delk)
-        for i in range(3):
-            for j in range(3):
-                for p in range(3):
-                    for q in range(3):
-                        for r in range(3):
-                            sig_hall[i, j, p, :, n, ispin] += (
-                                int(Eijk(p, q, r))
-                                * velkp[:, i, n, ispin]
-                                * velkp[:, r, n, ispin]
-                                * M_inv[j, q, :, n, ispin]
-                            )
-                    L_hall[i, j, p, :] += np.sum(
-                        kq_wght
-                        * arrays['scattering_tau'][:, n, ispin] ** 2
-                        * sig_hall[i, j, p, :, n, ispin]
-                        * (smearA).T,
-                        axis=1,
-                    )
+    # Vectorised over (k, band, energy). The Levi-Civita contraction
+    # sig[i,j,p] = sum_qr eps_pqr v_i v_r Minv_jq is precomputed once, then
+    # reduced against tau^2 * smearing over (k, band). Matches the former
+    # 5-deep band loop up to floating-point summation order.
+    eps = np.zeros((3, 3, 3))
+    eps[0, 1, 2] = eps[1, 2, 0] = eps[2, 0, 1] = 1.0
+    eps[0, 2, 1] = eps[2, 1, 0] = eps[1, 0, 2] = -1.0
+
+    Ek = arrays['E_k'][:, :bnd, ispin]
+    tau2 = arrays['scattering_tau'][:, :bnd, ispin] ** 2
+    v = velkp[:, :, :bnd, ispin]  # (k, 3, bnd)
+    Minv = M_inv[:, :, :, :, ispin]  # (j, q, k, bnd)
+    if smearing is None:
+        Ediff = Ek[:, :, None] - ene[None, None, :]
+        smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
+    else:
+        delk = arrays['deltakp'][:, :bnd, ispin][:, :, None]
+        if smearing == 'gauss':
+            smearA = gaussian(Ek[:, :, None], ene[None, None, :], delk)
+        elif smearing == 'm-p':
+            smearA = metpax(Ek[:, :, None], ene[None, None, :], delk)
+
+    # A[j,p,k,n] = sum_qr eps_pqr Minv_jq v_r ; sig[i,j,p,k,n] = v_i A[j,p,k,n]
+    A = np.einsum('pqr,jqkn,krn->jpkn', eps, Minv, v, optimize=True)
+    pref = kq_wght * np.einsum('kn,kin,jpkn->ijpkn', tau2, v, A, optimize=True)
+    L_hall = np.tensordot(pref, smearA, axes=([3, 4], [0, 1]))
     return L_hall
