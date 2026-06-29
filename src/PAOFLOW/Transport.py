@@ -23,10 +23,8 @@ from PAOFLOW.transport.conductor_steps import (
     ConductorStepState,
     build_conductor_blocks,
     build_conductor_input_values,
-    compute_conductor_dos,
     compute_conductor_green,
     compute_conductor_self_energy,
-    compute_conductor_transmission,
     prepare_conductor_step_state,
 )
 from PAOFLOW.transport.data import ConductorData
@@ -404,34 +402,6 @@ class Transport:
             sigma_L=sigma_L,
             sigma_R=sigma_R,
         )
-
-    def compute_transmission_point(
-        self,
-        *,
-        gC: NDArray[np.complex128] | None = None,
-        sigma_L: NDArray[np.complex128] | None = None,
-        sigma_R: NDArray[np.complex128] | None = None,
-        weighted: bool = False,
-    ) -> NDArray[np.float64]:
-        """Compute transmission channels for one selected point."""
-        self._require_step_state()
-        return compute_conductor_transmission(
-            state=self._conductor_state,
-            gC=gC,
-            sigma_L=sigma_L,
-            sigma_R=sigma_R,
-            weighted=weighted,
-        )
-
-    def compute_dos_point(
-        self,
-        *,
-        gC: NDArray[np.complex128] | None = None,
-        weighted: bool = False,
-    ) -> float:
-        """Compute DOS contribution for one selected point."""
-        self._require_step_state()
-        return compute_conductor_dos(state=self._conductor_state, gC=gC, weighted=weighted)
 
     def compute_leads_self_energy(
         self,
