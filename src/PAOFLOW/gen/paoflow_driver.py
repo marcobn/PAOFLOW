@@ -174,7 +174,6 @@ def detect_v_cutoff(workdir):
     return None
 
 
-
 # --------------------------------------------------------------------------- #
 # Shared script fragments
 # --------------------------------------------------------------------------- #
@@ -1190,7 +1189,7 @@ def build_plot_script(cfg):
                 'if not files:',
                 '    _missing(None)',
                 '    return',
-                "pplt.plot_shc(files if len(files) > 1 else files[0],",
+                'pplt.plot_shc(files if len(files) > 1 else files[0],',
                 "              title='Hall coefficient', x_lim=_ewin(), y_lim=_ylim())",
             ],
         )
@@ -1406,7 +1405,9 @@ def build_plot_script(cfg):
     lines.append('        for i, (label, _fn) in enumerate(PLOTS, 1):')
     lines.append("            print('  {}: {}'.format(i, label))")
     lines.append('        try:')
-    lines.append('            raw = input("Enter a comma/space separated list (or \'all\'): ").strip()')
+    lines.append(
+        '            raw = input("Enter a comma/space separated list (or \'all\'): ").strip()'
+    )
     lines.append('        except EOFError:')
     lines.append("            raw = ''")
     lines.append("        if raw.lower() == 'all':")
