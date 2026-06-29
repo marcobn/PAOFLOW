@@ -59,7 +59,7 @@ def write2bxsf(data_controller, fname, bands, nbnd, indices, fermi_up, fermi_dw)
             )
         )
         # BXSF scalar-field header
-        f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBANDGRID_3D_BANDS\n')
+        f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBEGIN_BANDGRID_3D_BANDS\n')
         # number of points in each direction
         f.write('{:12d}\n'.format(nbnd))
         f.write('{:12d}{:12d}{:12d}\n'.format(nx + 1, ny + 1, nz + 1))

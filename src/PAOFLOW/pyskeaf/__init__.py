@@ -10,6 +10,10 @@ Public API (Phase 1 — I/O only):
     from pyskeaf import SKEAFResult, Orbit
 """
 
+from PAOFLOW.pyskeaf._parallel import install_mpi_output_filters
+
+install_mpi_output_filters()
+
 from PAOFLOW.pyskeaf.constants import (
     BUILD_NUMBER,
     CONV_AU_TO_ANG,
@@ -19,7 +23,7 @@ from PAOFLOW.pyskeaf.constants import (
 from PAOFLOW.pyskeaf.io_bxsf import BXSFData, read_bxsf
 from PAOFLOW.pyskeaf.config import SkeafConfig, read_config_in, write_config_in
 from PAOFLOW.pyskeaf.results import Orbit, SKEAFResult
-from PAOFLOW.pyskeaf.runner import run_at_angle, run_angle_sweep, run_skeaf
+from PAOFLOW.pyskeaf.runner import BXSFRun, run_at_angle, run_angle_sweep, run_paoflow_bxsf_files, run_skeaf
 
 __all__ = [
     'BUILD_NUMBER',
@@ -36,6 +40,8 @@ __all__ = [
     'run_at_angle',
     'run_angle_sweep',
     'run_skeaf',
+    'run_paoflow_bxsf_files',
+    'BXSFRun',
 ]
 
 __version__ = '0.1.0.dev0'

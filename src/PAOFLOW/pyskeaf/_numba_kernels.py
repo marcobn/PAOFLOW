@@ -25,14 +25,16 @@ from __future__ import annotations
 import numpy as np
 
 try:
+    if 'long' not in np.__dict__:
+        raise ImportError('installed Numba is incompatible with this NumPy')
     from numba import njit
 
     HAS_NUMBA = True
-except ImportError:  # pragma: no cover — exercised only when Numba absent
+except Exception:  # pragma: no cover — exercised only when Numba absent/broken
     HAS_NUMBA = False
 
     def njit(*args, **kwargs):  # type: ignore[no-redef]
-        """No-op fallback for ``@numba.njit`` when Numba is not installed."""
+        """No-op fallback for ``@numba.njit`` when Numba cannot be used."""
         if args and callable(args[0]) and not kwargs:
             return args[0]
 
