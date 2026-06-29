@@ -816,3 +816,32 @@ class GPAO:
             units=units,
             filename=filename,
         )
+
+    def plot_phonon_thermal(
+        self,
+        thermal_file,
+        title=None,
+        filename=None,
+    ):
+        """Plot harmonic thermal properties from a PAOFLOW output file.
+
+        Arguments:
+          thermal_file (str): Path to ``<fname>_thermal.dat`` with columns
+            temperature (K), free energy (kJ/mol), entropy (J/K/mol) and
+            constant-volume heat capacity (J/K/mol).
+          title (str): A title for the plot.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_phonon_thermal
+
+        data = np.loadtxt(thermal_file)
+        plot_phonon_thermal(
+            data[:, 0],
+            data[:, 1],
+            data[:, 2],
+            data[:, 3],
+            title=title,
+            filename=filename,
+        )

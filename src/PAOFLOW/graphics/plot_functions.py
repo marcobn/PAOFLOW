@@ -605,3 +605,43 @@ def plot_phonons(
         plt.savefig(filename, dpi=300, bbox_inches='tight')
 
     plt.show()
+
+
+def plot_phonon_thermal(
+    temperatures,
+    free_energy,
+    entropy,
+    heat_capacity,
+    title=None,
+    filename=None,
+):
+    """Plot the harmonic thermal properties as a function of temperature.
+
+    Arguments:
+      temperatures (ndarray): 1D array of temperatures (K).
+      free_energy (ndarray): Helmholtz free energy (kJ/mol).
+      entropy (ndarray): Entropy (J/K/mol).
+      heat_capacity (ndarray): Constant-volume heat capacity (J/K/mol).
+      title (str): Plot title.
+      filename (str): If given, save the figure to this path.
+    """
+    temperatures = np.asarray(temperatures)
+
+    fig, ax = plt.subplots()
+    tit = 'Thermal Properties' if title is None else title
+    fig.suptitle(tit)
+
+    ax.plot(temperatures, free_energy, color='tab:blue', label='Free energy (kJ/mol)')
+    ax.plot(temperatures, entropy, color='tab:orange', label='Entropy (J/K/mol)')
+    ax.plot(temperatures, heat_capacity, color='tab:green', label=r'$C_v$ (J/K/mol)')
+
+    ax.set_xlim(temperatures[0], temperatures[-1])
+    ax.set_xlabel('Temperature (K)', fontsize=12)
+    ax.set_ylabel('Thermal properties', fontsize=12)
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+
+    plt.show()
