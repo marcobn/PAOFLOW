@@ -2723,3 +2723,218 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Berry phase')
+
+    def phonon_setup(
+        self,
+        supercell_matrix,
+        primitive_matrix=None,
+        displacement_distance=0.01,
+        q_mesh=None,
+        q_path=None,
+    ):
+        """Initialise the phonopy interface (Stage 0: structure bridge).
+
+        Converts the PAOFLOW structure into a ``phonopy`` unit cell, stores the
+        phonon configuration on the ``DataController`` and creates the
+        :class:`phonopy.Phonopy` object reused by subsequent phonon stages.
+
+        Arguments:
+            supercell_matrix: Supercell used for the finite-displacement
+                force constants.  Accepts a scalar (isotropic diagonal),
+                a length-3 sequence (anisotropic diagonal) or a 3x3 matrix.
+            primitive_matrix (optional): Primitive-cell transformation passed
+                to phonopy.  May be ``None``, ``'auto'`` or a 3x3 matrix.
+            displacement_distance (float): Atomic displacement amplitude in
+                Angstrom used to generate displaced supercells.
+            q_mesh (optional): Default q-point mesh for DOS / thermal
+                properties (used in later stages).
+            q_path (optional): Default q-point path for the phonon dispersion
+                (used in later stages).
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import init_phonopy
+
+        arry, attr = self.data_controller.data_dicts()
+
+        attr['phonon_supercell_matrix'] = supercell_matrix
+        attr['phonon_primitive_matrix'] = primitive_matrix
+        attr['phonon_displacement_distance'] = displacement_distance
+        attr['phonon_q_mesh'] = q_mesh
+        arry['phonon_q_path'] = q_path
+
+        try:
+            init_phonopy(self.data_controller)
+        except Exception as e:
+            self.report_exception('phonon_setup')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Phonon Setup')
+
+    def phonons(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        displacement_distance=None,
+        forces=None,
+        phonon_dir='phonon',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        ibrav=None,
+        q_path=None,
+        q_labels=None,
+        q_npoints=101,
+        mesh=None,
+        do_bands=True,
+        do_dos=True,
+        do_thermal=False,
+        t_min=0.0,
+        t_max=1000.0,
+        t_step=10.0,
+        units='THz',
+        fname='phonon',
+    ):
+        """Harmonic phonons via phonopy finite displacements (Stage 1).
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the phonopy object, create the
+           displaced supercells and write a complete, ready-to-run Quantum
+           ESPRESSO ``pw.x`` SCF input for each one
+           (``<outputdir>/<phonon_dir>/supercell-NNN.in``).  Run ``pw.x`` on
+           every input, then call this method again with ``forces=...``.
+
+        2. **Analyse** (``forces`` provided): assemble the second-order force
+           constants and compute the requested harmonic properties.
+
+        Arguments:
+            supercell_matrix: Supercell for the finite displacements (scalar,
+                length-3 or 3x3).  Required on the first call; reused
+                afterwards.
+            primitive_matrix (optional): phonopy primitive transformation
+                (``None`` -> identity, ``'auto'`` or a 3x3 matrix).
+            displacement_distance (float, optional): Displacement amplitude in
+                Bohr (default 0.01).
+            forces: Force source for the analysis phase.  ``None`` -> only
+                write the displaced-supercell inputs; ``'qe'`` -> harvest forces
+                from ``supercell-NNN.out`` in ``phonon_dir``; a path string ->
+                ingest an external ``FORCE_SETS``; an array
+                ``(ndisp, natoms, 3)`` (Ry/au) -> use directly.
+            phonon_dir (str): Sub-directory (under ``outputdir``) for the
+                displaced supercells and ``FORCE_SETS``.
+            pp_dir (str, optional): Pseudopotential directory written into the
+                QE inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): QE ``prefix`` for the supercell runs.
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercell
+                (default: unit-cell grid scaled by the supercell multiplicity).
+            ibrav (int, optional): Quantum ESPRESSO Bravais lattice index used
+                to derive the default high-symmetry dispersion path when
+                ``q_path`` is ``None`` (the QE ``.save`` does not record it).
+            q_path (optional): Dispersion path as a sequence of segments in
+                fractional reciprocal coordinates; ``None`` -> path derived from
+                ``ibrav`` (or automatic seekpath path if ``ibrav`` is unset).
+            q_labels (optional): Tick labels matching ``q_path``.
+            q_npoints (int): q-points per path segment.
+            mesh (optional): q-mesh for DOS / thermal properties (default
+                ``[20, 20, 20]``).
+            do_bands, do_dos, do_thermal (bool): Properties to compute.
+            t_min, t_max, t_step (float): Temperature grid (K) for thermal
+                properties.
+            units (str): Frequency units for outputs, ``'THz'`` or ``'cm-1'``.
+            fname (str): Output filename prefix.
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import (
+            compute_phonon_bands,
+            compute_phonon_dos,
+            compute_thermal_properties,
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import (
+            harvest_qe_forces,
+            ingest_force_sets,
+            write_displaced_supercells,
+            write_force_sets,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+        if displacement_distance is not None:
+            attr['phonon_displacement_distance'] = displacement_distance
+        if mesh is not None:
+            attr['phonon_q_mesh'] = mesh
+        if ibrav is not None:
+            attr['ibrav'] = ibrav
+
+        try:
+            # Deterministic rebuild: same structure + distance + supercell yield
+            # the same displacement ordering, so a later analysis call lines up
+            # with the inputs written in the generation phase.
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if forces is None:
+                paths = write_displaced_supercells(
+                    self.data_controller,
+                    phonon_dir=phonon_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote %d displaced-supercell QE inputs. Run pw.x on each, '
+                        "then re-call phonons(forces='qe')." % len(paths)
+                    )
+                self.report_module_time('Phonons (write inputs)')
+                return
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            write_force_sets(self.data_controller, phonon_dir=phonon_dir)
+
+            if do_bands:
+                compute_phonon_bands(
+                    self.data_controller,
+                    q_path=q_path,
+                    q_labels=q_labels,
+                    npoints=q_npoints,
+                    units=units,
+                    fname=fname,
+                )
+            if do_dos:
+                compute_phonon_dos(self.data_controller, mesh=mesh, units=units, fname=fname)
+            if do_thermal:
+                compute_thermal_properties(
+                    self.data_controller,
+                    mesh=mesh,
+                    t_min=t_min,
+                    t_max=t_max,
+                    t_step=t_step,
+                    fname=fname,
+                )
+
+        except Exception as e:
+            self.report_exception('phonons')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Phonons')

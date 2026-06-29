@@ -529,3 +529,79 @@ def plot_color_swatch(rgb01, hexstr=None, title=None, label=None):
     ax.set_aspect('equal')
 
     plt.show()
+
+
+def plot_phonons(
+    distances,
+    frequencies,
+    ticks=None,
+    dos=None,
+    title=None,
+    y_lim=None,
+    col='black',
+    units='THz',
+    filename=None,
+):
+    """Plot a phonon dispersion, optionally with a side density-of-states panel.
+
+    Arguments:
+      distances (ndarray): 1D array of cumulative path distances.
+      frequencies (ndarray): 2D array (nq, nbranch) of phonon frequencies.
+      ticks (tuple): Optional (positions, labels) for high-symmetry points.
+      dos (tuple): Optional (frequency, dos) arrays for a side DOS panel.
+      title (str): Plot title.
+      y_lim (tuple): Frequency axis limits (y_min, y_max).
+      col (str or tuple): Line colour.
+      units (str): Frequency unit string for the axis label.
+      filename (str): If given, save the figure to this path.
+    """
+    from matplotlib import gridspec
+
+    distances = np.asarray(distances)
+    frequencies = np.asarray(frequencies)
+
+    fig = plt.figure()
+    tit = 'Phonon Dispersion' if title is None else title
+    fig.suptitle(tit)
+
+    if dos is not None:
+        spec = gridspec.GridSpec(ncols=2, nrows=1, width_ratios=[5, 1])
+        ax_b = fig.add_subplot(spec[0])
+        ax_d = fig.add_subplot(spec[1])
+    else:
+        ax_b = fig.add_subplot(111)
+        ax_d = None
+
+    for branch in frequencies.T:
+        ax_b.plot(distances, branch, color=col)
+
+    ax_b.axhline(0.0, color='gray', linewidth=0.8, linestyle='--')
+
+    if y_lim is None:
+        y_lim = ax_b.get_ylim()
+    ax_b.set_xlim(distances[0], distances[-1])
+    ax_b.set_ylim(*y_lim)
+
+    if ticks is not None:
+        positions, labels = ticks
+        ax_b.set_xticks(positions)
+        ax_b.set_xticklabels(labels)
+        ax_b.vlines(positions, y_lim[0], y_lim[1], color='gray')
+    else:
+        ax_b.set_xlabel('Wave vector', fontsize=12)
+
+    ax_b.set_ylabel('Frequency (%s)' % units, fontsize=12)
+
+    if ax_d is not None:
+        dos_freq, dos_val = dos
+        ax_d.plot(dos_val, dos_freq, color=col)
+        ax_d.set_ylim(*y_lim)
+        ax_d.set_xlim(0, ax_d.get_xlim()[1])
+        ax_d.yaxis.set_visible(False)
+        ax_d.set_xlabel('DOS', fontsize=12)
+        plt.tight_layout()
+
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+
+    plt.show()
