@@ -85,8 +85,17 @@ def _run_case(case: str) -> None:
 
     transport.compute_leads_self_energy(write=True)
     transport.compute_greens_functions(write=True)
-    transport.compute_transmission(write=True)
-    transport.compute_dos(write=True)
+    transport.compute_transmission()
+    transport.compute_dos()
+    if case == 'lcr':
+        transport.compute_current(
+            bias_min=-1.0,
+            bias_max=1.0,
+            nbias=100,
+            mu_L=-0.5,
+            mu_R=0.5,
+            sigma=0.05,
+        )
 
 
 def main() -> None:

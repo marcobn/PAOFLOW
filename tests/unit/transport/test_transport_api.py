@@ -3,12 +3,6 @@ from __future__ import annotations
 import pytest
 
 from PAOFLOW.Transport import Transport
-from PAOFLOW.transport.Transport import Transport as CompatTransport
-
-
-def test_compat_import_path_exposes_build_hamiltonian_blocks():
-    transport = CompatTransport(data_controller=object())
-    assert callable(transport.build_hamiltonian_blocks)
 
 
 def test_initial_state_has_no_conductor_data():

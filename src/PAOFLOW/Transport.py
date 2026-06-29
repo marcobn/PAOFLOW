@@ -8,6 +8,11 @@ from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
+from PAOFLOW.transport.calculators.current import (
+    build_bias_grid,
+    compute_current_vs_bias,
+    write_current_results,
+)
 from PAOFLOW.transport.conductor_pipeline import (
     compute_conductor_results,
     write_dos_results,
@@ -25,8 +30,8 @@ from PAOFLOW.transport.conductor_steps import (
     compute_conductor_transmission,
     prepare_conductor_step_state,
 )
-from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.data import ConductorData
+from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.results import TransportResults
 
 
@@ -466,31 +471,117 @@ class Transport:
     def compute_transmission(
         self,
         *,
-        write: bool = True,
         comm: MPI.Comm = MPI.COMM_WORLD,
     ) -> NDArray[np.float64]:
-        """Compute full-grid transmission and optionally write output files."""
+        """Compute full-grid transmission and write output files."""
         results = self._compute_full_grid_results(comm=comm)
-        if write:
-            write_transmission_results(
-                data=self.conductor_data,
-                results=results,
-                comm=comm,
-            )
+        write_transmission_results(
+            data=self.conductor_data,
+            results=results,
+            comm=comm,
+        )
         return results.transmission
 
     def compute_dos(
         self,
         *,
-        write: bool = True,
         comm: MPI.Comm = MPI.COMM_WORLD,
     ) -> NDArray[np.float64]:
-        """Compute full-grid DOS and optionally write output files."""
+        """Compute full-grid DOS and write output files."""
         results = self._compute_full_grid_results(comm=comm)
-        if write:
-            write_dos_results(
-                data=self.conductor_data,
-                results=results,
-                comm=comm,
-            )
+        write_dos_results(
+            data=self.conductor_data,
+            results=results,
+            comm=comm,
+        )
         return results.dos
+
+    def compute_current(
+        self,
+        *,
+        bias_min: float,
+        bias_max: float,
+        nbias: int,
+        mu_L: float,
+        mu_R: float,
+        sigma: float,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> NDArray[np.float64]:
+        r"""Compute current vs bias from the in-memory transmission and write output.
+
+        Requires that ``build_hamiltonian_blocks(...)``,
+        ``configure_energy_grid(...)``, and ``configure_outputs(...)`` have
+        already been called.  Transmission is taken from the cached full-grid
+        results; if they are not yet computed they will be computed here.
+
+        Parameters
+        ----------
+        bias_min : float
+            Minimum bias voltage in V.
+        bias_max : float
+            Maximum bias voltage in V (must be greater than ``bias_min``).
+        nbias : int
+            Number of bias points (must be positive).
+        mu_L : float
+            Left chemical-potential scaling coefficient; enters as
+            :math:`\mu_L \cdot V`.
+        mu_R : float
+            Right chemical-potential scaling coefficient; enters as
+            :math:`\mu_R \cdot V`.
+        sigma : float
+            Smearing width in eV for the Fermi-Dirac broadening (must be
+            positive).
+        comm : MPI.Comm, optional
+            Communicator used for work distribution.  Default is
+            ``MPI.COMM_WORLD``.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Current values aligned with the internally generated bias grid,
+            shape ``(nbias,)``.
+
+        Notes
+        -----
+        Output is written automatically to
+        ``{output_dir}/current.dat`` as two columns ``V I``.
+        """
+        if nbias <= 0:
+            raise ValueError(f'nbias must be positive, got {nbias}.')
+        if bias_max <= bias_min:
+            raise ValueError(f'bias_max ({bias_max}) must be greater than bias_min ({bias_min}).')
+        if sigma <= 0:
+            raise ValueError(f'sigma must be positive, got {sigma}.')
+        if not (np.isfinite(mu_L) and np.isfinite(mu_R)):
+            raise ValueError('mu_L and mu_R must be finite floats.')
+
+        results = self._compute_full_grid_results(comm=comm)
+        energy_grid = results.energy_grid
+        transmission = results.transmission[0]
+
+        if len(energy_grid) != len(transmission):
+            raise RuntimeError(
+                f'Energy grid length ({len(energy_grid)}) does not match '
+                f'transmission length ({len(transmission)}).'
+            )
+
+        bias_grid = build_bias_grid(bias_min, bias_max, nbias)
+        currents = compute_current_vs_bias(
+            egrid=energy_grid,
+            transm=transmission,
+            vgrid=bias_grid,
+            mu_L=mu_L,
+            mu_R=mu_R,
+            sigma=sigma,
+        )
+
+        if comm.Get_rank() == 0:
+            write_current_results(
+                output_dir=self._output_config['output_dir'],
+                bias_grid=bias_grid,
+                currents=currents,
+            )
+
+        results.bias_grid = bias_grid
+        results.current = currents
+        return currents

@@ -71,11 +71,18 @@ def main() -> None:
         postfix='_lcr',
     )
 
-    # Compute and write transport observables by physics stage.
     transport.compute_leads_self_energy(write=True)
     transport.compute_greens_functions(write=True)
-    transport.compute_transmission(write=True)
-    transport.compute_dos(write=True)
+    transport.compute_transmission()
+    transport.compute_dos()
+    transport.compute_current(
+        bias_min=-1.0,
+        bias_max=1.0,
+        nbias=1500,
+        mu_L=-0.5,
+        mu_R=0.5,
+        sigma=0.05,
+    )
 
 
 if __name__ == '__main__':

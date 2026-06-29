@@ -48,3 +48,5 @@ class TransportResults:
     green_functions: NDArray[np.complex128] | None = None
     self_energy_L: NDArray[np.complex128] | None = None
     self_energy_R: NDArray[np.complex128] | None = None
+    bias_grid: NDArray[np.float64] | None = None
+    current: NDArray[np.float64] | None = None
