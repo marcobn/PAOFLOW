@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH -J 3.1.2_val003_phi_0
+#SBATCH -o %j.out
+#SBATCH -p fat
+#SBATCH -n 4
+#SBATCH --mem=5G
+#SBATCH -t 01:50:00
+
+module load 2020
+module load iccifort/2020.1.217
+
+python runfile.py > result_skeaf.out

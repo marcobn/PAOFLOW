@@ -1,0 +1,10 @@
+#!/bin/bash
+#SBATCH -J qo_FeP
+#SBATCH -o %j.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=c.chen.ye@rug.nl
+#SBATCH -p fat
+#SBATCH -n 1
+#SBATCH -t 01:39:00
+
+python runfile.py

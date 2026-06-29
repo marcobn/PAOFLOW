@@ -1,0 +1,50 @@
+&CONTROL
+  calculation = 'scf',
+  verbosity = 'high',
+  restart_mode = 'from_scratch',
+  prefix = 'MgB2',
+  outdir = './',
+  pseudo_dir = '/home3/p311698/pp',
+/
+
+&SYSTEM
+  !lda_plus_u = .true.,
+  !Hubbard_U(1) = 0.166567,
+  !Hubbard_U(2) = 2.152901,
+  !lda_plus_u_kind = 1,
+  lspinorb = .true.,
+  noncolin = .true.,
+  
+  ibrav       = 4
+  celldm(1)   = 5.8073153507
+  celldm(3)   = 1.1498793432
+  nat         = 3
+  ntyp        = 2
+
+  ecutwfc     = 80.0
+  ecutrho     = 640.0
+
+  occupations = 'smearing'
+  smearing    = 'mv'
+  degauss     = 0.01
+
+  nbnd        = 32
+/
+
+&ELECTRONS
+  conv_thr         = 1.0d-12
+  mixing_beta      = 0.4
+  electron_maxstep = 200
+/
+
+ATOMIC_SPECIES
+Mg  24.305000  Mg.rel-pbe-spnl-kjpaw_psl.1.0.0.UPF
+B   10.811000  B.rel-pbe-n-kjpaw_psl.1.0.0.UPF
+
+ATOMIC_POSITIONS crystal
+B   0.6666800418  0.3333199582  0.5000000000
+B   0.3333199582  0.6666800418  0.5000000000
+Mg  0.0000000000  0.0000000000  0.0000000000
+
+K_POINTS automatic
+24 24 20  0 0 0
