@@ -753,6 +753,16 @@ def _pp_dir_line(cfg):
     return 'PP_DIR = os.path.join(HERE, {!r})'.format(ppd)
 
 
+def _hubbard_file_line(cfg):
+    """Render the ``HUBBARD_FILE = ...`` constant for the phonon script."""
+    hf = (cfg.get('hubbard_file', '') or '').strip()
+    if not hf:
+        return 'HUBBARD_FILE = None   # pw.x input with a HUBBARD card (on-site U injected)'
+    if os.path.isabs(hf):
+        return 'HUBBARD_FILE = {!r}'.format(hf)
+    return 'HUBBARD_FILE = os.path.join(HERE, {!r})'.format(hf)
+
+
 def build_phonon_script(cfg):
     """Assemble a main.phonon.py harmonic-phonon workflow from the config.
 
@@ -773,6 +783,10 @@ def build_phonon_script(cfg):
     lines.append('    python main.phonon.py generate   # write displaced-supercell QE inputs')
     lines.append('    python main.phonon.py run        # run pw.x on every displaced supercell')
     lines.append('    python main.phonon.py analyse    # forces -> fc2 -> bands / DOS / thermal')
+    lines.append('')
+    lines.append('When BORN is enabled the same three phases also write, run and harvest the')
+    lines.append('Born-charge / dielectric calculation (ph.x DFPT or lelfield pw.x), so the')
+    lines.append('phonon bands include the LO-TO splitting (non-analytical correction).')
     lines.append('')
     lines.append('``all`` (the default) runs the three phases in sequence:')
     lines.append('')
@@ -808,6 +822,28 @@ def build_phonon_script(cfg):
     lines.append(
         'DO_THERMAL = {}   # free energy, entropy and heat capacity'.format(cfg['do_thermal'])
     )
+    lines.append('')
+    lines.append('# Born charges & high-frequency dielectric tensor (LO-TO / NAC).')
+    lines.append(
+        'BORN = {}   # compute Z* + epsilon_inf and apply the LO-TO correction'.format(
+            bool(cfg.get('born', False))
+        )
+    )
+    lines.append(
+        "BORN_METHOD = {!r}   # 'dfpt' (ph.x) or 'field' (lelfield pw.x)".format(
+            cfg.get('born_method', 'dfpt')
+        )
+    )
+    lines.append("FIELD_STRENGTH = 0.001   # efield (a.u.) for BORN_METHOD='field'")
+    lines.append("NBERRYCYC = 3            # Berry-phase cycles for BORN_METHOD='field'")
+    lines.append(
+        "BORN_FILE = os.path.join(HERE, OUTPUTDIR, PHONON_DIR, 'BORN')   # written by the analyse phase"
+    )
+    lines.append('')
+    lines.append('# HUBBARD card injected into the force (and lelfield) inputs.  Only on-site')
+    lines.append('# U parameters are kept; intersite V lines are dropped (their atom indices')
+    lines.append('# are not valid for the supercell).')
+    lines.append(_hubbard_file_line(cfg))
     lines.append('')
     lines.append('# Dispersion path in fractional reciprocal coordinates.  None derives a')
     lines.append('# high-symmetry path automatically from IBRAV below (falling back to the')
@@ -849,8 +885,21 @@ def build_phonon_script(cfg):
     lines.append('        phonon_dir=PHONON_DIR,')
     lines.append('        pp_dir=PP_DIR,')
     lines.append('        prefix=PREFIX,')
+    lines.append('        hubbard_file=HUBBARD_FILE,')
     lines.append('        forces=None,')
     lines.append('    )')
+    lines.append('    if BORN:')
+    lines.append('        p.born_charges(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            method=BORN_METHOD,')
+    lines.append('            phonon_dir=PHONON_DIR,')
+    lines.append('            pp_dir=PP_DIR,')
+    lines.append('            prefix=PREFIX,')
+    lines.append('            field_strength=FIELD_STRENGTH,')
+    lines.append('            nberrycyc=NBERRYCYC,')
+    lines.append('            hubbard_file=HUBBARD_FILE,')
+    lines.append('            forces=None,')
+    lines.append('        )')
     lines.append('')
     lines.append('')
     lines.append('def _job_done(path):')
@@ -883,9 +932,54 @@ def build_phonon_script(cfg):
     lines.append('        subprocess.run(cmd, shell=True, check=True, cwd=indir)')
     lines.append('')
     lines.append('')
+    lines.append('def run_born():')
+    lines.append('    """Phase 2 (Born): run the ph.x (DFPT) or lelfield pw.x field inputs."""')
+    lines.append('    indir = os.path.join(HERE, OUTPUTDIR, PHONON_DIR)')
+    lines.append("    if BORN_METHOD == 'dfpt':")
+    lines.append("        phx = os.path.join(QE_PATH, 'ph.x') if QE_PATH else 'ph.x'")
+    lines.append("        fin = os.path.join(indir, 'ph_epsil.in')")
+    lines.append('        if not os.path.isfile(fin):')
+    lines.append("            print('No ph_epsil.in in {}; run the generate phase first.'.format(")
+    lines.append('                indir))')
+    lines.append('            sys.exit(1)')
+    lines.append("        fout = os.path.join(indir, 'ph_epsil.out')")
+    lines.append('        if _job_done(fout):')
+    lines.append("            print('  skip (already done):', os.path.basename(fout))")
+    lines.append('            return')
+    lines.append("        cmd = '{mpi} {phx} -in ph_epsil.in > ph_epsil.out'.format(")
+    lines.append('            mpi=MPI_QE, phx=phx)')
+    lines.append("        print('  running: ph_epsil.in')")
+    lines.append('        subprocess.run(cmd, shell=True, check=True, cwd=indir)')
+    lines.append('    else:')
+    lines.append("        inputs = sorted(glob.glob(os.path.join(indir, 'field-*.in')))")
+    lines.append('        if not inputs:')
+    lines.append("            print('No field-*.in in {}; run the generate phase first.'.format(")
+    lines.append('                indir))')
+    lines.append('            sys.exit(1)')
+    lines.append("        pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('        for fin in inputs:')
+    lines.append("            fout = fin[:-3] + '.out'")
+    lines.append('            if _job_done(fout):')
+    lines.append("                print('  skip (already done):', os.path.basename(fout))")
+    lines.append('                continue')
+    lines.append("            cmd = '{mpi} {pwx} -in {inp} > {out}'.format(")
+    lines.append('                mpi=MPI_QE, pwx=pwx,')
+    lines.append('                inp=os.path.basename(fin), out=os.path.basename(fout))')
+    lines.append("            print('  running:', os.path.basename(fin))")
+    lines.append('            subprocess.run(cmd, shell=True, check=True, cwd=indir)')
+    lines.append('')
+    lines.append('')
     lines.append('def analyse():')
     lines.append('    """Phase 3: harvest forces, build fc2, write bands / DOS / thermal props."""')
     lines.append('    p = _make_paoflow()')
+    lines.append('    if BORN:')
+    lines.append('        p.born_charges(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            method=BORN_METHOD,')
+    lines.append("            forces='qe',")
+    lines.append('            phonon_dir=PHONON_DIR,')
+    lines.append('            prefix=PREFIX,')
+    lines.append('        )')
     lines.append('    p.phonons(')
     lines.append('        supercell_matrix=SUPERCELL_MATRIX,')
     lines.append('        displacement_distance=DISPLACEMENT,')
@@ -894,6 +988,8 @@ def build_phonon_script(cfg):
     lines.append('        pp_dir=PP_DIR,')
     lines.append('        prefix=PREFIX,')
     lines.append('        ibrav=IBRAV,')
+    lines.append('        nac=BORN,')
+    lines.append('        born_file=(BORN_FILE if BORN else None),')
     lines.append('        q_path=Q_PATH,')
     lines.append('        q_labels=Q_LABELS,')
     lines.append('        q_npoints=Q_NPOINTS,')
@@ -923,6 +1019,8 @@ def build_phonon_script(cfg):
     lines.append('        generate()')
     lines.append("    if args.phase in ('run', 'all'):")
     lines.append('        run_supercells()')
+    lines.append('        if BORN:')
+    lines.append('            run_born()')
     lines.append("    if args.phase in ('analyse', 'all'):")
     lines.append('        analyse()')
     lines.append('')
@@ -1905,6 +2003,20 @@ def collect_phonon(common):
     cfg['units'] = ask_choice('Frequency units', ['cm-1', 'THz'], 'cm-1')
     cfg['do_thermal'] = ask_yes_no('Compute thermal properties (F, S, Cv)?', True)
     cfg['pp_dir'] = ask('Pseudopotential directory (blank or "HERE" = script directory)', 'HERE')
+    cfg['hubbard_file'] = ask(
+        'pw.x input with a HUBBARD card to inject (on-site U only; blank = none)', ''
+    )
+    cfg['born'] = ask_yes_no(
+        'Compute Born charges + dielectric tensor (NAC / LO-TO splitting)?', True
+    )
+    if cfg['born']:
+        cfg['born_method'] = ask_choice(
+            'Born/epsilon method (dfpt = ph.x, field = lelfield pw.x)',
+            ['dfpt', 'field'],
+            'dfpt',
+        )
+    else:
+        cfg['born_method'] = 'dfpt'
     print('\npw.x launch settings for the displaced-supercell SCF runs:')
     cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
     cfg['qe_path'] = ask('Quantum ESPRESSO bin path (dir with pw.x; blank = PATH)', '')

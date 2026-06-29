@@ -165,3 +165,30 @@ def verify_round_trip(data_controller, rtol=1.0e-8, atol=1.0e-8):
         'symbols': symbols_rt,
         'masses': masses_ref,
     }
+
+
+def primitive_atom_info(data_controller):
+    """Return the phonopy primitive-cell atom ordering for Born-charge I/O.
+
+    Born effective charges are a property of the primitive cell, so a phonopy
+    ``BORN`` file lists one tensor per primitive atom in the phonopy primitive
+    order (which may differ from the PAOFLOW ``tau`` order).  This helper
+    exposes that ordering and the per-atom masses/positions.
+
+    Returns
+    -------
+    dict
+        ``symbols`` (list), ``masses`` (ndarray), ``scaled_positions``
+        ``(natom_prim, 3)``, ``cell`` (Bohr lattice rows) and ``natom``.
+    """
+    arry, _ = data_controller.data_dicts()
+    phonon = arry['phonopy']
+    primitive = phonon.primitive
+
+    return {
+        'symbols': [str(s) for s in primitive.symbols],
+        'masses': np.asarray(primitive.masses, dtype=float),
+        'scaled_positions': np.asarray(primitive.scaled_positions, dtype=float),
+        'cell': np.asarray(primitive.cell, dtype=float),
+        'natom': len(primitive),
+    }

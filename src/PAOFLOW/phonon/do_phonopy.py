@@ -131,6 +131,66 @@ def produce_force_constants(data_controller, forces=None):
     return phonon.force_constants
 
 
+def attach_nac(data_controller, born=None, dielectric=None, born_file=None, factor=None):
+    """Attach non-analytical correction (NAC) parameters to the phonopy object.
+
+    Enables LO-TO splitting near :math:`\\Gamma` by setting
+    ``phonon.nac_params``.  Once attached, phonopy applies the correction
+    automatically to the dispersion, DOS and thermal properties.
+
+    Parameters
+    ----------
+    born : array_like, optional
+        Born effective charges ``(natom_prim, 3, 3)`` in units of the
+        elementary charge.  Required (with ``dielectric``) unless ``born_file``
+        is given.
+    dielectric : array_like, optional
+        ``(3, 3)`` high-frequency dielectric tensor.
+    born_file : str, optional
+        Path to a phonopy ``BORN`` file; when supplied it takes precedence and
+        provides ``born``, ``dielectric`` and the unit-conversion ``factor``.
+    factor : float, optional
+        NAC unit-conversion factor.  Defaults to the phonopy Quantum ESPRESSO
+        value when building ``nac_params`` from explicit arrays.
+
+    Returns
+    -------
+    dict
+        The ``nac_params`` dictionary that was attached.
+    """
+    arry, attr = data_controller.data_dicts()
+    phonon = arry['phonopy']
+
+    if born_file is not None:
+        from .io import read_born_file
+
+        nac_params = read_born_file(data_controller, born_file)
+    else:
+        if born is None or dielectric is None:
+            raise ValueError('attach_nac requires either born_file or both born and dielectric.')
+        if factor is None:
+            from phonopy.interface.calculator import get_calculator_physical_units
+
+            factor = float(get_calculator_physical_units('qe').nac_factor)
+        nac_params = {
+            'born': np.asarray(born, dtype=float),
+            'dielectric': np.asarray(dielectric, dtype=float),
+            'factor': float(factor),
+        }
+
+    phonon.nac_params = nac_params
+    arry['born_charges'] = nac_params['born']
+    arry['dielectric_tensor'] = nac_params['dielectric']
+
+    if attr.get('verbose', False):
+        zsum = np.asarray(nac_params['born']).sum(axis=0)
+        print('NAC parameters attached (LO-TO splitting enabled):')
+        print('  dielectric tensor (diag):', np.diag(nac_params['dielectric']))
+        print('  sum of Born charges (acoustic sum rule):\n', zsum)
+
+    return nac_params
+
+
 def _write_rows(data_controller, fname, header, rows):
     """Write a whitespace-delimited table to ``opath/<fname>`` on rank 0."""
     _, attr = data_controller.data_dicts()

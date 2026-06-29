@@ -2784,6 +2784,12 @@ class PAOFLOW:
         prefix=None,
         kgrid=None,
         ibrav=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        nac=False,
+        born_file=None,
+        born=None,
+        dielectric=None,
         q_path=None,
         q_labels=None,
         q_npoints=101,
@@ -2833,6 +2839,24 @@ class PAOFLOW:
             ibrav (int, optional): Quantum ESPRESSO Bravais lattice index used
                 to derive the default high-symmetry dispersion path when
                 ``q_path`` is ``None`` (the QE ``.save`` does not record it).
+            hubbard_file (str, optional): Path to a ``pw.x`` input whose
+                new-style ``HUBBARD`` card is read and appended to every
+                displaced-supercell input so the forces reflect the DFT+U
+                electronic structure.  Only on-site ``U`` (manifold) parameters
+                are kept; intersite ``V`` lines (cell-specific atom indices) are
+                dropped.
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            nac (bool): Apply the non-analytical term correction (LO-TO
+                splitting near Gamma).  Requires ``born_file`` or both ``born``
+                and ``dielectric``.
+            born_file (str, optional): Path to a phonopy ``BORN`` file with the
+                dielectric tensor and Born effective charges; takes precedence
+                over ``born``/``dielectric`` when given.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor.
             q_path (optional): Dispersion path as a sequence of segments in
                 fractional reciprocal coordinates; ``None`` -> path derived from
                 ``ibrav`` (or automatic seekpath path if ``ibrav`` is unset).
@@ -2850,6 +2874,7 @@ class PAOFLOW:
             None
         """
         from .phonon.do_phonopy import (
+            attach_nac,
             compute_phonon_bands,
             compute_phonon_dos,
             compute_thermal_properties,
@@ -2860,6 +2885,7 @@ class PAOFLOW:
         from .phonon.io import (
             harvest_qe_forces,
             ingest_force_sets,
+            read_hubbard_card,
             write_displaced_supercells,
             write_force_sets,
         )
@@ -2877,6 +2903,9 @@ class PAOFLOW:
         if ibrav is not None:
             attr['ibrav'] = ibrav
 
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
         try:
             # Deterministic rebuild: same structure + distance + supercell yield
             # the same displacement ordering, so a later analysis call lines up
@@ -2891,6 +2920,7 @@ class PAOFLOW:
                     pp_dir=pp_dir,
                     prefix=prefix,
                     kgrid=kgrid,
+                    hubbard_card=hubbard_card,
                 )
                 if self.rank == 0:
                     print(
@@ -2910,6 +2940,14 @@ class PAOFLOW:
                 produce_force_constants(self.data_controller, forces=forces)
 
             write_force_sets(self.data_controller, phonon_dir=phonon_dir)
+
+            if nac:
+                attach_nac(
+                    self.data_controller,
+                    born=born,
+                    dielectric=dielectric,
+                    born_file=born_file,
+                )
 
             if do_bands:
                 compute_phonon_bands(
@@ -2938,3 +2976,157 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Phonons')
+
+    def born_charges(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        method='dfpt',
+        forces=None,
+        phonon_dir='phonon',
+        pp_dir=None,
+        prefix=None,
+        outdir=None,
+        kgrid=None,
+        field_strength=0.001,
+        nberrycyc=3,
+        hubbard_file=None,
+        hubbard_card=None,
+        enforce_sum_rule=True,
+        symmetrize=True,
+    ):
+        """Born effective charges and epsilon_inf (Stage 2b).
+
+        Computes the macroscopic Born effective charge tensors and the
+        high-frequency (clamped-ion) dielectric tensor, and writes a phonopy
+        ``BORN`` file usable by :meth:`phonons` (``nac=True``, ``born_file=...``)
+        for the LO-TO splitting.  Two back-ends are available:
+
+        * ``method='dfpt'`` (default): a single Gamma-point ``ph.x`` run
+          (``epsil=.true., trans=.false.``) gives both tensors directly.  Fast
+          and accurate, but unavailable for DFT+U / hybrid functionals.
+        * ``method='field'``: finite electric-field (``lelfield``) runs on the
+          primitive cell (central differences of forces and polarization).
+          Slower, but works whenever ``ph.x`` cannot be used.
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the phonopy object and write
+           the QE input(s).  For ``method='dfpt'`` this is a single
+           ``ph_epsil.in``; for ``method='field'`` it is seven primitive-cell
+           ``field-*.in`` SCF inputs.  Run QE on the input(s), then re-call with
+           ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): parse the results, impose the acoustic
+           sum rule, symmetrize, and write the ``BORN`` file.
+
+        Arguments:
+            supercell_matrix: Supercell used to build the phonopy object (only
+                the primitive cell is used here); reused from a previous phonon
+                call when omitted.
+            primitive_matrix (optional): phonopy primitive transformation.
+            method (str): ``'dfpt'`` (``ph.x``) or ``'field'`` (``lelfield``).
+            forces: ``None`` -> write the QE input(s) only; ``'qe'`` -> harvest
+                the QE output(s) and write ``BORN``.
+            phonon_dir (str): Sub-directory (under ``outputdir``) for the QE
+                runs and the ``BORN`` file.
+            pp_dir (str, optional): Pseudopotential directory (``method='field'``
+                QE inputs).
+            prefix (str, optional): QE ``prefix``.  For ``method='dfpt'`` this
+                defaults to the DFT ``.save`` prefix so ``ph.x`` reuses the
+                existing self-consistent save.
+            outdir (str, optional): QE ``outdir`` for ``method='dfpt'`` (default:
+                the directory containing the DFT ``.save``).
+            kgrid (optional): Monkhorst-Pack grid for the primitive cell
+                (``method='field'``; default: the unit-cell grid).
+            field_strength (float): ``efield_cart`` magnitude in QE atomic units
+                (``method='field'``; 1 a.u. = 36.3609e10 V/m).
+            nberrycyc (int): Berry-phase cycles per SCF step (``method='field'``).
+            hubbard_file (str, optional): Path to a ``pw.x`` input whose
+                new-style ``HUBBARD`` card is appended to the ``method='field'``
+                QE inputs (on-site ``U`` only; intersite ``V`` dropped).  The
+                ``method='dfpt'`` route instead reuses the Hubbard setup stored
+                in the existing ``.save``.
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            enforce_sum_rule (bool): Impose ``sum_k Z*_k = 0``.
+            symmetrize (bool): Symmetrize the Born and dielectric tensors.
+
+        Returns:
+            None
+        """
+        from .phonon.do_born_charges import compute_born_and_epsilon
+        from .phonon.do_phonopy import generate_displacements, init_phonopy
+        from .phonon.io import read_hubbard_card, write_field_inputs, write_ph_epsil_input
+
+        arry, attr = self.data_controller.data_dicts()
+
+        method = str(method).lower()
+        if method not in ('dfpt', 'field'):
+            raise ValueError("born_charges method must be 'dfpt' or 'field'.")
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if forces is None:
+                if method == 'dfpt':
+                    path = write_ph_epsil_input(
+                        self.data_controller,
+                        phonon_dir=phonon_dir,
+                        prefix=prefix,
+                        outdir=outdir,
+                    )
+                    if self.rank == 0:
+                        print(
+                            'Wrote ph.x input %s. Run ph.x on it, then re-call '
+                            "born_charges(method='dfpt', forces='qe')." % path
+                        )
+                else:
+                    paths = write_field_inputs(
+                        self.data_controller,
+                        field_strength=field_strength,
+                        phonon_dir=phonon_dir,
+                        pp_dir=pp_dir,
+                        prefix=prefix,
+                        kgrid=kgrid,
+                        nberrycyc=nberrycyc,
+                        hubbard_card=hubbard_card,
+                    )
+                    if self.rank == 0:
+                        print(
+                            'Wrote %d lelfield QE inputs. Run pw.x on each, then '
+                            "re-call born_charges(method='field', forces='qe')." % len(paths)
+                        )
+                self.report_module_time('Born Charges (write inputs)')
+                return
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                compute_born_and_epsilon(
+                    self.data_controller,
+                    method=method,
+                    phonon_dir=phonon_dir,
+                    enforce_sum_rule=enforce_sum_rule,
+                    symmetrize=symmetrize,
+                    write_born=True,
+                )
+            else:
+                raise ValueError(
+                    "born_charges forces must be None (write inputs) or 'qe' "
+                    '(harvest the QE output).'
+                )
+
+        except Exception as e:
+            self.report_exception('born_charges')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Born Charges')
