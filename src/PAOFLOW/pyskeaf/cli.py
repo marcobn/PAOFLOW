@@ -18,6 +18,7 @@ from pathlib import Path
 
 from PAOFLOW.pyskeaf.config import read_config_in
 from PAOFLOW.pyskeaf.io_bxsf import read_bxsf
+from PAOFLOW.pyskeaf._parallel import is_primary_process
 from PAOFLOW.pyskeaf.runner import run_skeaf
 
 
@@ -49,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     cfg_path = Path(args.config)
     if not cfg_path.exists():
-        print(f'pyskeaf: config file not found: {cfg_path}', file=sys.stderr)
+        _eprint(f'pyskeaf: config file not found: {cfg_path}')
         return 2
 
     cfg = read_config_in(cfg_path)
@@ -59,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         if alt.exists():
             bxsf_path = alt
         else:
-            print(f'pyskeaf: BXSF file not found: {bxsf_path}', file=sys.stderr)
+            _eprint(f'pyskeaf: BXSF file not found: {bxsf_path}')
             return 3
 
     bxsf = read_bxsf(bxsf_path)
@@ -68,13 +69,17 @@ def main(argv: list[str] | None = None) -> int:
 
     n_orbits = len(result.orbits)
     n_angles = result.angles.shape[0] if result.angles is not None else 1
-    print(
-        f'pyskeaf: completed {n_angles} angle(s); ' f'found {n_orbits} extremal orbit(s) in total.',
-        file=sys.stderr,
+    _eprint(
+        f'pyskeaf: completed {n_angles} angle(s); ' f'found {n_orbits} extremal orbit(s) in total.'
     )
     if args.write:
-        print(f'pyskeaf: outputs written to {out_dir.resolve()}', file=sys.stderr)
+        _eprint(f'pyskeaf: outputs written to {out_dir.resolve()}')
     return 0
+
+
+def _eprint(message: str) -> None:
+    if is_primary_process():
+        print(message, file=sys.stderr)
 
 
 if __name__ == '__main__':

@@ -14,15 +14,16 @@ reference for the call sequence.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 
 from PAOFLOW.pyskeaf.config import SkeafConfig, read_config_in
 from PAOFLOW.pyskeaf.constants import CONV_AU_TO_ANG
 from PAOFLOW.pyskeaf.geometry import set_field_angle
-from PAOFLOW.pyskeaf.io_bxsf import BXSFData, read_bxsf
+from PAOFLOW.pyskeaf.io_bxsf import BXSFData, BXSFError, read_bxsf
 from PAOFLOW.pyskeaf.slice_ops import (
     SliceGeometry,
     build_slice,
@@ -45,6 +46,24 @@ from PAOFLOW.pyskeaf.results import (
 )
 
 logger = logging.getLogger(__name__)
+
+_RYDBERG_IN_EV = 13.605693122994
+
+
+@dataclass
+class BXSFRun:
+    """The calculation or skip outcome for one PAOFLOW BXSF file."""
+
+    path: Path
+    minimum_ev: float
+    maximum_ev: float
+    fermi_energy_ev: float
+    result: SKEAFResult | None = None
+    skipped_reason: str | None = None
+
+    @property
+    def calculated(self) -> bool:
+        return self.result is not None
 
 
 def run_at_angle(
@@ -224,6 +243,7 @@ def run_skeaf(
     *,
     write_files: bool = True,
     output_dir: Union[str, Path, None] = None,
+    output_suffix: str = '',
 ) -> SKEAFResult:
     """Top-level driver: run SKEAF as defined by ``config``.
 
@@ -325,12 +345,98 @@ def run_skeaf(
     if write_files:
         out = Path(output_dir) if output_dir is not None else Path.cwd()
         out.mkdir(parents=True, exist_ok=True)
-        write_results_freqvsangle(result, out / 'results_freqvsangle.out')
-        write_results_short(result, out / 'results_short.out')
-        write_results_long(result, out / 'results_long.out')
+        suffix = f'_{output_suffix}' if output_suffix else ''
+        write_results_freqvsangle(result, out / f'results_freqvsangle{suffix}.out')
+        write_results_short(result, out / f'results_short{suffix}.out')
+        write_results_long(result, out / f'results_long{suffix}.out')
         write_orbit_outlines(
             result,
-            out / 'results_orbitoutlines_invAng.out',
-            out / 'results_orbitoutlines_invau.out',
+            out / f'results_orbitoutlines_invAng{suffix}.out',
+            out / f'results_orbitoutlines_invau{suffix}.out',
         )
     return result
+
+
+def run_paoflow_bxsf_files(
+    config: Union[SkeafConfig, str, Path],
+    *,
+    input_dir: Union[str, Path],
+    filenames: Sequence[Union[str, Path]] | None = None,
+    all_files: bool = False,
+    output_dir: Union[str, Path, None] = None,
+    write_files: bool = True,
+) -> list[BXSFRun]:
+    """Run selected PAOFLOW BXSF bands whose energy ranges contain ``E_F``.
+
+    PAOFLOW BXSF grids store energy in eV, but the legacy SKEAF ``config.in``
+    Fermi energy is in Rydberg. The eligibility test is performed in eV.
+    Select arbitrary BXSF names with ``filenames`` or every ``*.bxsf`` in
+    ``input_dir`` with ``all_files=True``. If neither is supplied, the legacy
+    filename in ``config.in`` is used.
+
+    Output files use the trailing numeric band index when present, e.g.
+    ``results_short_1.out`` for ``Fermi_surf_band_1.bxsf``. Arbitrary
+    filenames use their complete stem, e.g. ``results_short_manual_name.out``.
+    """
+    if not isinstance(config, SkeafConfig):
+        config = read_config_in(config)
+    if filenames is not None and all_files:
+        raise ValueError('Choose explicit filenames or all_files, not both.')
+
+    directory = Path(input_dir)
+    if not directory.is_dir():
+        raise NotADirectoryError(f'BXSF input directory does not exist: {directory}')
+    if filenames is not None:
+        paths = [directory / Path(name) for name in filenames]
+    elif all_files:
+        paths = sorted(directory.glob('*.bxsf'))
+    else:
+        paths = [directory / config.filename]
+    if not paths:
+        raise FileNotFoundError(f'No BXSF files found in {directory}.')
+
+    fermi_energy_ev = config.fermi_energy * _RYDBERG_IN_EV
+    results: list[BXSFRun] = []
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError(f'BXSF file not found: {path}')
+        try:
+            bxsf = read_bxsf(path)
+        except BXSFError as error:
+            results.append(
+                BXSFRun(
+                    path,
+                    float('nan'),
+                    float('nan'),
+                    fermi_energy_ev,
+                    skipped_reason=str(error),
+                )
+            )
+            continue
+        minimum_ev = float(np.min(bxsf.energies))
+        maximum_ev = float(np.max(bxsf.energies))
+        item = BXSFRun(path, minimum_ev, maximum_ev, fermi_energy_ev)
+        if not minimum_ev <= fermi_energy_ev <= maximum_ev:
+            item.skipped_reason = (
+                f'Fermi energy {fermi_energy_ev:.6f} eV is outside '
+                f'[{minimum_ev:.6f}, {maximum_ev:.6f}] eV.'
+            )
+            results.append(item)
+            continue
+
+        # Existing SKEAF effective-mass code expects a Ry energy grid.
+        bxsf.energies /= _RYDBERG_IN_EV
+        bxsf.fermi_energy /= _RYDBERG_IN_EV
+        item.result = run_skeaf(
+            config,
+            bxsf,
+            write_files=write_files,
+            output_dir=output_dir,
+            output_suffix=(
+                path.stem.rsplit('_', 1)[-1]
+                if '_' in path.stem and path.stem.rsplit('_', 1)[-1].isdigit()
+                else path.stem
+            ),
+        )
+        results.append(item)
+    return results

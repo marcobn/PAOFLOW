@@ -45,7 +45,13 @@ class SkeafConfig:
 
 def _strip_field(line: str, width: int) -> str:
     """Return the first ``width`` characters of *line*, stripped of whitespace."""
-    return line[:width].strip()
+    end = len(line)
+    for marker in ('!', '|'):
+        idx = line.find(marker)
+        if idx >= 0:
+            end = min(end, idx)
+    field = line[:end].strip()
+    return field if field else line[:width].strip()
 
 
 def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
@@ -105,8 +111,8 @@ def write_config_in(cfg: SkeafConfig, path: Union[str, Path] = 'config.in') -> N
     def _line(payload: str, comment: str, total: int = 53) -> str:
         # All Fortran writes pad the payload field to the same total width
         # (e.g. ``A50,2x`` → 52 chars; ``F12.6,40x`` → 52; ``I4,48x`` → 52).
-        # We standardise on 52 chars of payload + "| comment" suffix.
-        return f'{payload:<{total - 1}}| {comment}\n'
+        # We standardise on 52 chars of payload + "! comment" suffix.
+        return f'{payload:<{total - 1}}! {comment}\n'
 
     rad2deg = 180.0 / math.pi
     aewn = 'y' if cfg.allow_ext_near_walls else 'n'

@@ -89,6 +89,7 @@ _BAND_MARKER_RE = re.compile(r'(?:^|[^A-Za-z0-9_])(?:band|prod)\s*:', re.IGNOREC
 # Matches the BXSF "END_BANDGRID_3D" / "END_BLOCK_BANDGRID_3D" / lone "END" markers.
 # (cannot use \bend\b because the trailing underscore is a word character).
 _END_MARKER_RE = re.compile(r'(?:^|\s)END(?:_|\s|$)', re.IGNORECASE)
+_BANDGRID_MARKER_RE = re.compile(r'^\s*(?:BEGIN_)?BANDGRID_3D_BANDS\s*$', re.IGNORECASE)
 
 
 def _to_float(token: str) -> float:
@@ -108,6 +109,13 @@ def _read_n_floats(line: str, n: int) -> list[float]:
     if len(toks) < n:
         raise BXSFError(f'Expected at least {n} floats, got {len(toks)} in: {line!r}')
     return [_to_float(t) for t in toks[:n]]
+
+
+def _next_nonempty(it, path: Path, what: str) -> str:
+    for _i, line in it:
+        if line.strip():
+            return line
+    raise BXSFError(f'BXSF file {path}: missing {what}.')
 
 
 # --- public API --------------------------------------------------------------
@@ -148,19 +156,22 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
     if fermi_energy is None:
         raise BXSFError(f"BXSF file {path}: no 'Fermi Energy' line found.")
 
-    # 2. Skip 4 lines (mirrors Fortran's `do i=1,4 read(15,*)tempstringread end do`).
-    #    These are: END_INFO, BEGIN_BLOCK_BANDGRID_3D, comment, BANDGRID_3D_BANDS.
-    for _ in range(4):
-        try:
-            next(it)
-        except StopIteration as exc:
-            raise BXSFError(f'BXSF file {path}: truncated header after Fermi energy.') from exc
+    # 2. Find the actual band-grid marker instead of skipping a fixed number
+    #    of records.  PAOFLOW's BXSF writers may include blank lines in this
+    #    header, and a fixed skip can accidentally read the BANDGRID marker as
+    #    the band-count line. Both BEGIN_BANDGRID_3D_BANDS and
+    #    BANDGRID_3D_BANDS are accepted in the wild.
+    for _i, line in it:
+        if _BANDGRID_MARKER_RE.match(line):
+            break
+    else:
+        raise BXSFError(
+            f"BXSF file {path}: no 'BEGIN_BANDGRID_3D_BANDS' or "
+            "'BANDGRID_3D_BANDS' block found."
+        )
 
     # 3. Number of bands — must be exactly 1.
-    try:
-        _, line = next(it)
-    except StopIteration as exc:
-        raise BXSFError(f'BXSF file {path}: missing band-count line.') from exc
+    line = _next_nonempty(it, path, 'band-count line')
     n_bands = _read_first_int(line)
     if n_bands != 1:
         raise BXSFError(
@@ -169,10 +180,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
         )
 
     # 4. Grid dimensions.
-    try:
-        _, line = next(it)
-    except StopIteration as exc:
-        raise BXSFError(f'BXSF file {path}: missing grid-dimension line.') from exc
+    line = _next_nonempty(it, path, 'grid-dimension line')
     dims = _read_n_floats(line, 3)
     nx, ny, nz = (int(round(v)) for v in dims)
     if nx < 2 or ny < 2 or nz < 2:
@@ -182,10 +190,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
         )
 
     # 5. Reciprocal-lattice origin (must be 0, 0, 0).
-    try:
-        _, line = next(it)
-    except StopIteration as exc:
-        raise BXSFError(f'BXSF file {path}: missing origin line.') from exc
+    line = _next_nonempty(it, path, 'origin line')
     origin = np.array(_read_n_floats(line, 3), dtype=float)
     if not np.allclose(origin, 0.0):
         raise BXSFError(
@@ -196,19 +201,13 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
     # 6. Three reciprocal-lattice vectors (a.u.^-1, no 2π factor).
     recip_au = np.empty((3, 3), dtype=float)
     for j in range(3):
-        try:
-            _, line = next(it)
-        except StopIteration as exc:
-            raise BXSFError(
-                f'BXSF file {path}: missing reciprocal-lattice vector {j + 1}.'
-            ) from exc
+        line = _next_nonempty(it, path, f'reciprocal-lattice vector {j + 1}')
         recip_au[j] = _read_n_floats(line, 3)
 
     # 7. "BAND: 1" line (skip).
-    try:
-        next(it)
-    except StopIteration as exc:
-        raise BXSFError(f'BXSF file {path}: missing BAND marker.') from exc
+    line = _next_nonempty(it, path, 'BAND marker')
+    if not _BAND_MARKER_RE.search(line):
+        raise BXSFError(f'BXSF file {path}: missing BAND marker.')
 
     # 8. Energy block — read floats until END marker.  The Fortran reader
     #    detects extra BAND/Prod markers as a multi-band error.
@@ -312,7 +311,7 @@ def write_bxsf(
         fh.write(' END_INFO\n')
         fh.write(' BEGIN_BLOCK_BANDGRID_3D\n')
         fh.write(f' {band_label}\n')
-        fh.write(' BANDGRID_3D_BANDS\n')
+        fh.write(' BEGIN_BANDGRID_3D_BANDS\n')
         fh.write(' 1\n')
         fh.write(f' {data.nx:3d} {data.ny:3d} {data.nz:3d}\n')
         fh.write(
