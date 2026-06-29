@@ -1,16 +1,17 @@
-from PAOFLOW.DataController import DataController
-import numpy as np
 import os
 from pathlib import Path
-
 from typing import Dict, Optional
 
+import numpy as np
 import numpy.typing as npt
+from numpy.typing import NDArray
 
-from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
+import PAOFLOW.transport.io.log_module as log
+from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.data import AtomicProjData
-from PAOFLOW.transport.utils.converters import crystal_to_cartesian
+from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.log_module import log_rank0
+from PAOFLOW.transport.utils.converters import crystal_to_cartesian
 
 
 def write_data(
@@ -483,7 +484,7 @@ def write_projectability_files(output_dir: str, proj_data: AtomicProjData, Hk: n
 
     for isp in range(nspin):
         proj_file = (
-            os.path.join(output_dir, f"projectability_{['up', 'dn'][isp]}.txt")
+            os.path.join(output_dir, f'projectability_{["up", "dn"][isp]}.txt')
             if nspin == 2
             else os.path.join(output_dir, 'projectability.txt')
         )
@@ -512,3 +513,34 @@ def write_overlap_files(output_dir: str, Sk: np.ndarray, do_overlap_transformati
                 for j in range(nawf):
                     f.write(f'{mat[i, j].real:20.13f}  {mat[i, j].imag:20.13f}\n')
     log_rank0('Printed overlap matrices to kovp.txt')
+
+
+def write_current_results(
+    *,
+    output_dir: str,
+    bias_grid: NDArray[np.float64],
+    currents: NDArray[np.float64],
+) -> None:
+    """Write current-vs-bias results to disk.
+
+    Parameters
+    ----------
+    output_dir : str
+        Directory where the output file is written.
+    postfix : str
+        String appended to the default file name ``current``.
+    bias_grid : NDArray[np.float64]
+        Bias voltages in V, shape ``(nbias,)``.
+    currents : NDArray[np.float64]
+        Current values aligned with ``bias_grid``, shape ``(nbias,)``.
+
+    Returns
+    -------
+    None
+        Writes ``current{postfix}.dat`` with two columns ``V I`` using
+        :func:`numpy.savetxt`.
+    """
+    outpath = Path(output_dir) / 'current.dat'
+    outpath.parent.mkdir(parents=True, exist_ok=True)
+    np.savetxt(outpath, np.column_stack([bias_grid, currents]))
+    log.log_rank0(f'Saved current vs bias to {outpath}')

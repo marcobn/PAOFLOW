@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
-from numpy.typing import NDArray
 
-import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.transport.calculators.transmittance import interpolate_transmittance
 from PAOFLOW.transport.utils.locate import locate
 
@@ -145,34 +141,3 @@ def compute_current_vs_bias(
         currents[iv] = integral
 
     return currents
-
-
-def write_current_results(
-    *,
-    output_dir: str,
-    bias_grid: NDArray[np.float64],
-    currents: NDArray[np.float64],
-) -> None:
-    """Write current-vs-bias results to disk.
-
-    Parameters
-    ----------
-    output_dir : str
-        Directory where the output file is written.
-    postfix : str
-        String appended to the default file name ``current``.
-    bias_grid : NDArray[np.float64]
-        Bias voltages in V, shape ``(nbias,)``.
-    currents : NDArray[np.float64]
-        Current values aligned with ``bias_grid``, shape ``(nbias,)``.
-
-    Returns
-    -------
-    None
-        Writes ``current{postfix}.dat`` with two columns ``V I`` using
-        :func:`numpy.savetxt`.
-    """
-    outpath = Path(output_dir) / 'current.dat'
-    outpath.parent.mkdir(parents=True, exist_ok=True)
-    np.savetxt(outpath, np.column_stack([bias_grid, currents]))
-    log.log_rank0(f'Saved current vs bias to {outpath}')

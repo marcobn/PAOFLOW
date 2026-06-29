@@ -11,7 +11,6 @@ from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.calculators.current import (
     build_bias_grid,
     compute_current_vs_bias,
-    write_current_results,
 )
 from PAOFLOW.transport.conductor_pipeline import (
     compute_conductor_results,
@@ -32,6 +31,7 @@ from PAOFLOW.transport.conductor_steps import (
 )
 from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
+from PAOFLOW.transport.io.write_data import write_current_results
 from PAOFLOW.transport.results import TransportResults
 
 
