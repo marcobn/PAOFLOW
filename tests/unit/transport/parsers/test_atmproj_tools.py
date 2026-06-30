@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from PAOFLOW.transport.parsers.atmproj_tools import get_pao_hamiltonian, parse_atomic_proj_data
+from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj_data, reshape_pao_hamiltonian
 
 
 class DummyDataController:
@@ -34,7 +34,7 @@ def test_get_pao_hamiltonian_shapes():
     arry = {'Hks': hks, 'HRs': hrs}
     attr = {'nspin': nspin, 'nkpnts': nkpnts, 'nawf': nawf}
 
-    data = get_pao_hamiltonian(DummyDataController(arry, attr))
+    data = reshape_pao_hamiltonian(DummyDataController(arry, attr))
 
     assert data['Hk'].shape == (nspin, nkpnts, nawf, nawf)
     assert data['HR'].shape == (nspin, nkpnts, nawf, nawf)

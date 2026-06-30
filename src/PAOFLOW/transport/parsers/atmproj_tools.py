@@ -1,17 +1,16 @@
 from pathlib import Path
 from typing import Dict
 
-from PAOFLOW.DataController import DataController
 import numpy as np
 
-from PAOFLOW.transport.grid.rgrid import get_rgrid
-from PAOFLOW.transport.data import AtomicProjData, ConductorData
 import PAOFLOW.transport.io.log_module as log
-
+from PAOFLOW.DataController import DataController
+from PAOFLOW.transport.data import AtomicProjData, ConductorData
+from PAOFLOW.transport.grid.rgrid import get_rgrid
 from PAOFLOW.transport.io.write_data import (
     write_internal_format_files,
-    write_projectability_files,
     write_overlap_files,
+    write_projectability_files,
 )
 from PAOFLOW.transport.io.write_header import headered_function
 from PAOFLOW.transport.parsers.atmproj_parser_base import (
@@ -42,7 +41,7 @@ def parse_atomic_proj(
         data,
     )
 
-    hk_data = get_pao_hamiltonian(data_controller)
+    hk_data = reshape_pao_hamiltonian(data_controller)
 
     nk = np.array([1, 1, 4], dtype=int)  # TODO: confirm hardcoded grid
     nr = nk
@@ -82,7 +81,7 @@ def parse_atomic_proj_data(data: ConductorData, data_controller: DataController)
     )
 
 
-def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:
+def reshape_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:
     arry, attr = data_controller.data_dicts()
     Hks_raw = arry['Hks']  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     HRs_raw = arry['HRs']  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
