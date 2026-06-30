@@ -865,6 +865,22 @@ def build_phonon_script(cfg):
         "BORN_FILE = os.path.join(HERE, OUTPUTDIR, PHONON_DIR, 'BORN')   # written by the analyse phase"
     )
     lines.append('')
+    lines.append('# Vibrational (ionic) dielectric function eps(w) = eps_inf + ionic')
+    lines.append('# (lattice resonances -> reststrahlen band).  Needs the Born charges.')
+    lines.append(
+        'VIBDIELECTRIC = {}   # compute the ionic dielectric eps(w)'.format(
+            bool(cfg.get('vibdielectric', False))
+        )
+    )
+    lines.append(
+        'VIBDIELECTRIC_GAMMA = {}   # phonon linewidth (in UNITS) damping eps(w)'.format(
+            cfg.get('vibdielectric_gamma', 4.0)
+        )
+    )
+    lines.append(
+        "VIBDIELECTRIC_DIR = 'vibdielectric'   # sub-dir (under OUTPUTDIR) for the eps files"
+    )
+    lines.append('')
     lines.append('# HUBBARD card injected into the force (and lelfield) inputs.  Only on-site')
     lines.append('# U parameters are kept; intersite V lines are dropped (their atom indices')
     lines.append('# are not valid for the supercell).')
@@ -1046,6 +1062,21 @@ def build_phonon_script(cfg):
     lines.append('            phonon_dir=PHONON_DIR,')
     lines.append('            born_file=BORN_FILE,')
     lines.append('            units=UNITS,')
+    lines.append("            fname='phonon',")
+    lines.append('        )')
+    lines.append('')
+    lines.append(
+        '    # Vibrational (ionic) dielectric eps(w) (reststrahlen; requires Born charges).'
+    )
+    lines.append('    if nac and VIBDIELECTRIC:')
+    lines.append('        p.vibrational_dielectric(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            forces=forces,')
+    lines.append('            phonon_dir=PHONON_DIR,')
+    lines.append('            born_file=BORN_FILE,')
+    lines.append('            gamma=VIBDIELECTRIC_GAMMA,')
+    lines.append('            units=UNITS,')
+    lines.append('            outdir=VIBDIELECTRIC_DIR,')
     lines.append("            fname='phonon',")
     lines.append('        )')
     lines.append('')
@@ -1969,6 +2000,17 @@ def build_phonon_plot_script(cfg):
     lines.append('            filename=save_ir,')
     lines.append('        )')
     lines.append('')
+    lines.append('    # Vibrational (ionic) dielectric eps(w): overlay Re/Im eps to show the')
+    lines.append('    # reststrahlen band (Re eps < 0 between the TO and LO frequencies).')
+    lines.append("    vibdir = os.path.join(OUTPUTDIR, 'vibdielectric')")
+    lines.append("    if os.path.isfile(os.path.join(vibdir, 'epsr_xx.dat')):")
+    lines.append('        pplt.plot_optical(')
+    lines.append("            ['epsr', 'epsi'],")
+    lines.append('            path=vibdir,')
+    lines.append("            component='xx',")
+    lines.append("            title='Vibrational dielectric function',")
+    lines.append('        )')
+    lines.append('')
     lines.append('')
     lines.append('if __name__ == "__main__":')
     lines.append('    main()')
@@ -2586,6 +2628,16 @@ def collect_phonon(common):
         )
     else:
         cfg['born_method'] = 'dfpt'
+    cfg['vibdielectric'] = cfg['born'] and ask_yes_no(
+        'Also compute the vibrational (ionic) dielectric function eps(w) (reststrahlen band)?',
+        True,
+    )
+    if cfg['vibdielectric']:
+        cfg['vibdielectric_gamma'] = ask_float(
+            '  Phonon linewidth gamma for eps(w) (in the chosen units)', 4.0
+        )
+    else:
+        cfg['vibdielectric_gamma'] = 4.0
     print('\npw.x launch settings for the displaced-supercell SCF runs:')
     cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
     cfg['qe_path'] = ask('Quantum ESPRESSO bin path (dir with pw.x; blank = PATH)', '')

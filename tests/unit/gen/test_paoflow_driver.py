@@ -227,3 +227,59 @@ def test_parse_laser_list_rejects_unsafe_input():
         d.parse_laser_list('__import__("os").system("echo hi")')
     # Blank input yields an empty list (the caller decides what to do).
     assert d.parse_laser_list('   ') == []
+
+
+# --------------------------------------------------------------------------- #
+# Phonon workflow generation
+# --------------------------------------------------------------------------- #
+def _phonon_cfg(**kw):
+    cfg = dict(_COMMON)
+    cfg.update(
+        {
+            'prefix': 'Mg1O1',
+            'savedir': 'Mg1O1.save',
+            'ibrav': 2,
+            'supercell': 2,
+            'displacement': 0.06,
+            'mesh': [12, 12, 12],
+            'units': 'cm-1',
+            'do_thermal': True,
+            'pp_dir': 'HERE',
+            'hubbard_file': None,
+            'born': True,
+            'born_method': 'dfpt',
+            'vibdielectric': True,
+            'vibdielectric_gamma': 4.0,
+            'mpi_qe': 'mpirun -np 4',
+            'qe_path': '',
+        }
+    )
+    cfg.update(kw)
+    return cfg
+
+
+def test_build_phonon_script_vibrational_dielectric_wired():
+    text = d.build_phonon_script(_phonon_cfg())
+    # Constants block exposes the toggle, damping and output sub-directory.
+    assert 'VIBDIELECTRIC = True' in text
+    assert 'VIBDIELECTRIC_GAMMA = 4.0' in text
+    assert "VIBDIELECTRIC_DIR = 'vibdielectric'" in text
+    # The analyse phase calls vibrational_dielectric, gated on NAC + the toggle.
+    assert 'if nac and VIBDIELECTRIC:' in text
+    assert 'p.vibrational_dielectric(' in text
+    assert 'gamma=VIBDIELECTRIC_GAMMA,' in text
+    assert 'outdir=VIBDIELECTRIC_DIR,' in text
+
+
+def test_build_phonon_script_vibrational_dielectric_disabled():
+    text = d.build_phonon_script(_phonon_cfg(vibdielectric=False))
+    assert 'VIBDIELECTRIC = False' in text
+    # The call is still emitted but guarded so it never runs when disabled.
+    assert 'if nac and VIBDIELECTRIC:' in text
+
+
+def test_build_phonon_plot_script_includes_reststrahlen():
+    text = d.build_phonon_plot_script(_phonon_cfg())
+    assert "os.path.join(OUTPUTDIR, 'vibdielectric')" in text
+    assert "os.path.isfile(os.path.join(vibdir, 'epsr_xx.dat'))" in text
+    assert 'pplt.plot_optical(' in text

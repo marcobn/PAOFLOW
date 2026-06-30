@@ -3644,3 +3644,128 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Raman Spectrum')
+
+    def vibrational_dielectric(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        born_file=None,
+        born=None,
+        dielectric=None,
+        gamma=4.0,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        units='cm-1',
+        emit_ev=True,
+        outdir='vibdielectric',
+        fname='phonon',
+    ):
+        """Vibrational (ionic) dielectric function eps(omega) (Stage 5).
+
+        The polar zone-centre phonons add a lattice resonance to the electronic
+        high-frequency dielectric tensor ``eps_inf``::
+
+            eps_ab(w) = eps_inf_ab
+                + (e^2 / (eps0 m_u V)) * sum_v Zbar_v,a Zbar_v,b
+                                              / (w_v^2 - w^2 - i w gamma_v),
+
+        where ``Zbar_v,a = sum_k,b Z*_k,a,b e_v,k,b / sqrt(M_k)`` is the mode
+        effective charge vector (as in :meth:`ir_spectrum`) and
+        ``S_v,ab = Zbar_v,a Zbar_v,b`` the mode-oscillator-strength tensor.  The
+        static limit ``eps(0) = eps_inf + sum_v S_v / w_v^2`` (generalized
+        Lyddane-Sachs-Teller) and, for a polar crystal, a reststrahlen band
+        (``Re eps < 0`` between ``w_TO`` and ``w_LO``) follow directly.  Acoustic
+        modes carry no dipole and do not contribute.
+
+        The harmonic force constants are rebuilt from the displaced-supercell
+        forces (as in :meth:`phonons`); the Born charges and ``eps_inf`` are
+        taken from ``born``/``dielectric``/``born_file`` or from a preceding
+        :meth:`born_charges` call.
+
+        Arguments:
+            supercell_matrix, primitive_matrix: As in :meth:`phonons`; reused
+                from a previous call when omitted.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (``'qe'`` -> harvest ``supercell-NNN.out``; a
+                path -> ingest ``FORCE_SETS``; an array -> use directly).
+            phonon_dir (str): Sub-directory (under ``outputdir``) with the
+                displaced supercells / ``FORCE_SETS`` and the ``BORN`` file.
+            born_file (str, optional): Path to a phonopy ``BORN`` file providing
+                the Born charges and ``eps_inf``.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor ``eps_inf``.
+            gamma (float or array_like): Phonon linewidth(s) used as the
+                Lorentzian damping (in ``units``); a scalar broadens every mode
+                equally, an array gives a per-mode width.
+            freq_min, freq_max (float, optional): Frequency-axis limits (in
+                ``units``); defaults span 0 to just above the highest LO mode so
+                the reststrahlen band is captured.
+            npoints (int): Number of points on the frequency grid.
+            units (str): Frequency units for inputs/outputs, ``'cm-1'`` or
+                ``'THz'``.
+            emit_ev (bool): Write the per-component ``eps{r,i}_<ab>.dat`` files
+                with the frequency axis in eV (so they plot directly with
+                :meth:`GPAO.plot_optical`); otherwise in ``units``.
+            outdir (str): Sub-directory (under ``outputdir``) for the
+                per-component dielectric files.
+            fname (str): Output basename; writes
+                ``<fname>_vibdielectric_static.dat`` and the per-component
+                ``eps{r,i}/eels/refl_<ab>.dat`` files under ``outdir``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.do_vibrational_dielectric import compute_vibrational_dielectric
+        from .phonon.io import harvest_qe_forces, ingest_force_sets
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            compute_vibrational_dielectric(
+                self.data_controller,
+                born=born,
+                dielectric=dielectric,
+                born_file=born_file,
+                gamma=gamma,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                units=units,
+                emit_ev=emit_ev,
+                outdir=outdir,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('vibrational_dielectric')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Vibrational Dielectric')
