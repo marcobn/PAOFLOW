@@ -645,3 +645,54 @@ def plot_phonon_thermal(
         plt.savefig(filename, dpi=300, bbox_inches='tight')
 
     plt.show()
+
+
+def plot_ir_spectrum(
+    frequencies,
+    intensities,
+    modes=None,
+    title=None,
+    x_lim=None,
+    col='black',
+    units='cm-1',
+    filename=None,
+):
+    """Plot a broadened infrared spectrum, optionally with the mode sticks.
+
+    Arguments:
+      frequencies (ndarray): 1D array of frequencies for the broadened curve.
+      intensities (ndarray): 1D array of broadened intensities.
+      modes (tuple): Optional (mode_freq, mode_intensity) arrays drawn as
+        vertical sticks at the discrete mode positions.
+      title (str): Plot title.
+      x_lim (tuple): Frequency axis limits (x_min, x_max).
+      col (str or tuple): Line colour.
+      units (str): Frequency unit string for the axis label.
+      filename (str): If given, save the figure to this path.
+    """
+    frequencies = np.asarray(frequencies)
+    intensities = np.asarray(intensities)
+
+    fig, ax = plt.subplots()
+    tit = 'Infrared Spectrum' if title is None else title
+    fig.suptitle(tit)
+
+    ax.plot(frequencies, intensities, color=col)
+
+    if modes is not None:
+        mode_freq, mode_int = np.asarray(modes[0]), np.asarray(modes[1])
+        ax.vlines(mode_freq, 0.0, mode_int, color='tab:red', linewidth=1.0)
+
+    if x_lim is None:
+        x_lim = (frequencies[0], frequencies[-1])
+    ax.set_xlim(*x_lim)
+    ax.set_ylim(0.0, ax.get_ylim()[1])
+
+    ax.set_xlabel('Frequency (%s)' % units, fontsize=12)
+    ax.set_ylabel('IR intensity (arb. units)', fontsize=12)
+    ax.grid(alpha=0.3)
+
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+
+    plt.show()

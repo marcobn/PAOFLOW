@@ -3130,3 +3130,109 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Born Charges')
+
+    def ir_spectrum(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        born_file=None,
+        born=None,
+        dielectric=None,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        gamma=4.0,
+        units='cm-1',
+        fname='phonon',
+    ):
+        """Infrared spectrum from Born charges and zone-centre eigenvectors (Stage 3).
+
+        For each zone-centre mode the *mode effective charge vector*
+        ``Zbar_v,a = sum_k,b Z*_k,a,b e_v,k,b / sqrt(M_k)`` is formed from the
+        Born effective charges, the (mass-weighted) Gamma-point eigenvectors and
+        the atomic masses; the IR intensity is ``I_v = sum_a |Zbar_v,a|^2``.  A
+        Lorentzian broadening of each mode yields the continuous spectrum.  The
+        transverse-optical eigenvectors at exactly Gamma are used, so the
+        non-analytical (LO-TO) correction is not required.
+
+        The harmonic force constants are rebuilt deterministically from the
+        displaced-supercell forces (as in :meth:`phonons`), and the Born charges
+        are taken from ``born``/``born_file`` or from a preceding
+        :meth:`born_charges` call.
+
+        Arguments:
+            supercell_matrix: Supercell used to build the phonopy object;
+                reused from a previous phonon call when omitted.
+            primitive_matrix (optional): phonopy primitive transformation.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (``'qe'`` -> harvest ``supercell-NNN.out``; a
+                path -> ingest ``FORCE_SETS``; an array -> use directly).
+            phonon_dir (str): Sub-directory (under ``outputdir``) with the
+                displaced supercells / ``FORCE_SETS`` and the ``BORN`` file.
+            born_file (str, optional): Path to a phonopy ``BORN`` file with the
+                Born effective charges; takes precedence over ``born``.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor (read alongside ``born_file``; unused by the
+                oscillator strengths).
+            freq_min, freq_max (float, optional): Frequency-axis limits of the
+                broadened spectrum (in ``units``).
+            npoints (int): Number of points on the broadened-spectrum grid.
+            gamma (float): Lorentzian full width at half maximum (in ``units``).
+            units (str): Frequency units for outputs, ``'cm-1'`` or ``'THz'``.
+            fname (str): Output filename prefix; writes ``<fname>_ir_modes.dat``
+                and ``<fname>_ir_spectrum.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_ir_raman import compute_ir_spectrum
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import harvest_qe_forces, ingest_force_sets
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            compute_ir_spectrum(
+                self.data_controller,
+                born=born,
+                dielectric=dielectric,
+                born_file=born_file,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                gamma=gamma,
+                units=units,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('ir_spectrum')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('IR Spectrum')
