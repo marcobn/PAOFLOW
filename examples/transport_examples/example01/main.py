@@ -29,7 +29,6 @@ def main():
     )
 
     transport.build_hamiltonian_blocks(
-        datafile_C='./output/qe/al5.save/atomic_proj.xml',
         dimC=20,
         transport_direction=3,
         calculation_type='bulk',

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -397,10 +396,9 @@ def write_transmission_results(
     write_data(egrid_out, results.transmission, 'conductance', output_dir, postfix=postfix)
     if data.symmetry.write_kdata:
         nkpts_par = data.get_runtime_data().nkpts_par
-        prefix = os.path.basename(data.file_names.datafile_C)
         for ik in range(nkpts_par):
             ik_str = f'{ik + 1:04d}'
-            filename_cond = f'{prefix}_cond-{ik_str}.dat'
+            filename_cond = f'cond{postfix}-{ik_str}.dat'
             with (output_dir / filename_cond).open('w') as f:
                 for ie in range(results.energy_grid.shape[0]):
                     values = ' '.join(
@@ -447,10 +445,9 @@ def write_dos_results(
     write_data(egrid_out, results.dos, 'doscond', output_dir, postfix=postfix)
     if data.symmetry.write_kdata:
         nkpts_par = data.get_runtime_data().nkpts_par
-        prefix = os.path.basename(data.file_names.datafile_C)
         for ik in range(nkpts_par):
             ik_str = f'{ik + 1:04d}'
-            filename_dos = f'{prefix}_doscond-{ik_str}.dat'
+            filename_dos = f'doscond{postfix}-{ik_str}.dat'
             with (output_dir / filename_dos).open('w') as f:
                 for ie in range(results.energy_grid.shape[0]):
                     f.write(f'{results.energy_grid[ie]:15.9f} {results.dos_k[ie, ik]:15.9f}\n')

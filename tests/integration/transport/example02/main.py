@@ -24,7 +24,6 @@ def _run_case(case: str) -> None:
             H_CR={'rows': 'ALL', 'cols': 'ALL'},
         )
         transport.build_hamiltonian_blocks(
-            datafile_C='./alh.save/atomic_proj.xml',
             dimC=41,
             transport_direction=3,
             calculation_type='bulk',
@@ -50,9 +49,6 @@ def _run_case(case: str) -> None:
             H01_R={'rows': '30-41', 'cols': '1-12'},
         )
         transport.build_hamiltonian_blocks(
-            datafile_C='./alh.save/atomic_proj.xml',
-            datafile_L='./alh.save/atomic_proj.xml',
-            datafile_R='./alh.save/atomic_proj.xml',
             dimC=41,
             dimL=12,
             dimR=12,
@@ -75,7 +71,6 @@ def _run_case(case: str) -> None:
             H_CR={'rows': '30-41', 'cols': '1-12'},
         )
         transport.build_hamiltonian_blocks(
-            datafile_C='./alh.save/atomic_proj.xml',
             dimC=12,
             transport_direction=3,
             calculation_type='bulk',

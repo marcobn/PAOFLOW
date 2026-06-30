@@ -391,12 +391,9 @@ class Transport:
     def build_hamiltonian_blocks(
         self,
         *,
-        datafile_C: str,
         dimC: int,
         dimL: int | None = None,
         dimR: int | None = None,
-        datafile_L: str | None = None,
-        datafile_R: str | None = None,
         transport_direction: int = 1,
         calculation_type: str = 'bulk',
         carriers: str = 'electrons',
@@ -417,18 +414,12 @@ class Transport:
 
         Parameters
         ----------
-        datafile_C : str
-            Path to the conductor Hamiltonian/projection input.
         dimC : int
             Conductor block dimension.
         dimL : int or None, optional
             Left lead block dimension. Leave as ``None`` for bulk mode.
         dimR : int or None, optional
             Right lead block dimension. Leave as ``None`` for bulk mode.
-        datafile_L : str or None, optional
-            Path to the left-lead input for non-bulk calculations.
-        datafile_R : str or None, optional
-            Path to the right-lead input for non-bulk calculations.
         transport_direction : int, optional
             Transport direction index in ``{1, 2, 3}``.
         calculation_type : str, optional
@@ -468,12 +459,9 @@ class Transport:
         time resets all three for the new calculation.
         """
         input_values = build_conductor_input_values(
-            datafile_C=datafile_C,
             dimC=dimC,
             dimL=dimL,
             dimR=dimR,
-            datafile_L=datafile_L,
-            datafile_R=datafile_R,
             transport_direction=transport_direction,
             calculation_type=calculation_type,
             carriers=carriers,

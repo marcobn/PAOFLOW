@@ -26,9 +26,6 @@ _FILE_NAMES_FIELDS: frozenset[str] = frozenset(
         'output_dir',
         'prefix',
         'postfix',
-        'datafile_L',
-        'datafile_C',
-        'datafile_R',
         'datafile_sgm',
         'datafile_L_sgm',
         'datafile_C_sgm',
@@ -111,9 +108,6 @@ class FileNamesData:
     output_dir: str = './'
     prefix: str = ''
     postfix: str = ''
-    datafile_L: str = ''
-    datafile_C: str = ''
-    datafile_R: str = ''
     datafile_sgm: str = ''
     datafile_L_sgm: str = ''
     datafile_C_sgm: str = ''

@@ -32,8 +32,8 @@ def _require_non_negative_int(name: str, value: int) -> None:
 
 
 def validate_file_names(file_names: FileNamesData) -> None:
-    if not file_names.datafile_C:
-        raise ValueError('datafile_C must be specified.')
+    # No required file names: all transport input comes from the DataController.
+    pass
 
 
 def validate_hamiltonian_selectors(hamiltonian: HamiltonianData) -> None:
@@ -130,16 +130,8 @@ def validate_conductor_data(data: ConductorData) -> None:
             raise ValueError('dimL must be positive when calculation_type="conductor".')
         if data.dimR <= 0:
             raise ValueError('dimR must be positive when calculation_type="conductor".')
-        if not data.file_names.datafile_L:
-            raise ValueError('datafile_L must be specified when calculation_type="conductor".')
-        if not data.file_names.datafile_R:
-            raise ValueError('datafile_R must be specified when calculation_type="conductor".')
 
     if data.calculation_type == 'bulk':
-        if data.file_names.datafile_L.strip():
-            raise ValueError('datafile_L must not be specified when calculation_type="bulk".')
-        if data.file_names.datafile_R.strip():
-            raise ValueError('datafile_R must not be specified when calculation_type="bulk".')
         data.dimL = data.dimC
         data.dimR = data.dimC
 

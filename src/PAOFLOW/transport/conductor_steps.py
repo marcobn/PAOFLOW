@@ -58,12 +58,9 @@ class ConductorStepState:
 
 def build_conductor_input_values(
     *,
-    datafile_C: str,
     dimC: int,
     dimL: int | None = None,
     dimR: int | None = None,
-    datafile_L: str | None = None,
-    datafile_R: str | None = None,
     formula: str = 'landauer',
     transport_direction: int = 1,
     calculation_type: str = 'bulk',
@@ -81,18 +78,12 @@ def build_conductor_input_values(
 
     Parameters
     ----------
-    datafile_C : str
-        Path to the conductor input file.
     dimC : int
         Conductor block dimension.
     dimL : int or None, optional
         Left lead block dimension for non-bulk calculations.
     dimR : int or None, optional
         Right lead block dimension for non-bulk calculations.
-    datafile_L : str or None, optional
-        Path to the left lead input file for non-bulk calculations.
-    datafile_R : str or None, optional
-        Path to the right lead input file for non-bulk calculations.
     formula : str, optional
         Conductance formula identifier.
     transport_direction : int, optional
@@ -117,7 +108,6 @@ def build_conductor_input_values(
         Keyword arguments ready for ``build_conductor_data(**input_values)``.
     """
     input_values: dict[str, Any] = {
-        'datafile_C': datafile_C,
         'dimC': dimC,
         'conduct_formula': formula,
         'transport_direction': transport_direction,
@@ -132,8 +122,6 @@ def build_conductor_input_values(
     if calculation_type_lower != 'bulk':
         input_values['dimL'] = 0 if dimL is None else dimL
         input_values['dimR'] = 0 if dimR is None else dimR
-        input_values['datafile_L'] = '' if datafile_L is None else datafile_L
-        input_values['datafile_R'] = '' if datafile_R is None else datafile_R
 
     input_values.update(kwargs)
     return input_values

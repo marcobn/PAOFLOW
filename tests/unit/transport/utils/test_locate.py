@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from PAOFLOW.transport.utils.locate import locate
+from PAOFLOW.transport.calculators.current import locate
 
 
 @pytest.mark.unit

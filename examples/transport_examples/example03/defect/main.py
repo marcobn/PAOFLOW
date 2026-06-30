@@ -37,9 +37,6 @@ def main() -> None:
     )
 
     transport.build_hamiltonian_blocks(
-        datafile_C='./output/qe/al.save/atomic_proj.xml',
-        datafile_L='./output/qe/al5.save/atomic_proj.xml',
-        datafile_R='./output/qe/al5.save/atomic_proj.xml',
         dimC=52,
         dimL=20,
         dimR=20,

@@ -70,17 +70,6 @@ def test_configure_outputs_stores_config():
     assert transport._output_config['write_kdata'] is True
 
 
-def test_configure_outputs_write_flags_stored():
-    transport = Transport(data_controller=object())
-    transport.configure_outputs(
-        output_dir='./out',
-        write_green_function=True,
-        write_lead_self_energy=True,
-    )
-    assert transport._output_config['write_green_function'] is True
-    assert transport._output_config['write_lead_self_energy'] is True
-
-
 def test_configure_outputs_invalidates_results(monkeypatch):
     transport = Transport(data_controller=object())
     transport.results = object()
@@ -137,7 +126,7 @@ def test_configure_onsite_shifts_applies_to_existing_data():
     from PAOFLOW.transport.data import build_conductor_data
 
     transport = Transport(data_controller=object())
-    transport.conductor_data = build_conductor_data(datafile_C='x', dimC=1)
+    transport.conductor_data = build_conductor_data(dimC=1)
     transport.configure_onsite_shifts(shift_C=0.3, shift_corr=0.1)
     assert transport.conductor_data.shift_C == 0.3
     assert transport.conductor_data.shift_corr == 0.1
@@ -155,7 +144,7 @@ def test_configure_eigenchannels_applies_without_clobbering_when_unset():
 
     # Not configuring eigenchannels must not overwrite values already on the model.
     transport = Transport(data_controller=object())
-    data = build_conductor_data(datafile_C='x', dimC=1, do_eigenchannels=True)
+    data = build_conductor_data(dimC=1, do_eigenchannels=True)
     transport._apply_eigenchannels(data)
     assert data.symmetry.do_eigenchannels is True
 
@@ -165,7 +154,7 @@ def test_configure_eigenchannels_applies_when_set():
 
     transport = Transport(data_controller=object())
     transport.configure_eigenchannels(do_eigenchannels=True, neigchnx=4)
-    data = build_conductor_data(datafile_C='x', dimC=1)
+    data = build_conductor_data(dimC=1)
     transport._apply_eigenchannels(data)
     assert data.symmetry.do_eigenchannels is True
     assert data.symmetry.neigchnx == 4

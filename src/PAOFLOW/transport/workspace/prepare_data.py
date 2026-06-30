@@ -48,7 +48,8 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
     ConductorData
         The same ``data`` instance with runtime fields initialized.
     """
-    prefix = os.path.basename(data.file_names.datafile_C)
+    postfix = data.file_names.postfix
+    prefix = postfix
     work_dir = data.file_names.work_dir
     nproc = MPI.COMM_WORLD.Get_size()
 
@@ -58,7 +59,7 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
 
         if data.advanced.debug:
             output_dir = data.file_names.output_dir
-            output_prefix = os.path.join(output_dir, os.path.basename(data.file_names.datafile_C))
+            output_prefix = os.path.join(output_dir, f'transport{postfix}')
             do_overlap = data.atomic_proj.do_overlap_transformation
             write_internal_format_files(output_dir, output_prefix, data_controller, do_overlap)
             write_projectability_files(output_dir, data_controller)
@@ -239,8 +240,6 @@ def prepare_hamiltonian_blocks_and_leads(
 
     data.advanced.leads_are_identical = check_leads_are_identical(
         ham_system=ham_sys,
-        datafile_L=data.file_names.datafile_L,
-        datafile_R=data.file_names.datafile_R,
         datafile_L_sgm=data.file_names.datafile_L_sgm,
         datafile_R_sgm=data.file_names.datafile_R_sgm,
     )

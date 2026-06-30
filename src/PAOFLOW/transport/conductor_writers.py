@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -147,12 +146,11 @@ def write_conductor_output(
 
     if data.symmetry.write_kdata:
         nkpts_par = data.get_runtime_data().nkpts_par
-        prefix = os.path.basename(data.file_names.datafile_C)
 
         for ik in range(nkpts_par):
             ik_str = f'{ik + 1:04d}'
-            filename_cond = f'{prefix}_cond-{ik_str}.dat'
-            filename_dos = f'{prefix}_doscond-{ik_str}.dat'
+            filename_cond = f'cond{postfix}-{ik_str}.dat'
+            filename_dos = f'doscond{postfix}-{ik_str}.dat'
 
             with (output_dir / filename_cond).open('w') as f:
                 for ie in range(egrid.shape[0]):

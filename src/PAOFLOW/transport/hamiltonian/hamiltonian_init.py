@@ -31,12 +31,8 @@ def initialize_hamiltonian_blocks(
         Container object holding all OperatorBlock instances for the device.
     `ivr_par3D` : np.ndarray
         (3, nrtot) array of integer lattice vectors for real-space blocks.
-    `datafile_C` : str
-        Path to the `.ham` file for the central conductor region.
-    `datafile_L` : str
-        Path to the `.ham` file for the left lead region.
-    `datafile_R` : str
-        Path to the `.ham` file for the right lead region.
+    `data_controller` : DataController
+        Shared PAOFLOW data store providing the Hamiltonian/overlap arrays.
     `ispin` : int
         Spin index (0-based) to select the spin channel to load.
     `transport_direction` : int
@@ -150,8 +146,6 @@ def initialize_hamiltonian_blocks(
 
 def check_leads_are_identical(
     ham_system: HamiltonianSystem,
-    datafile_L: str = '',
-    datafile_R: str = '',
     datafile_L_sgm: str = '',
     datafile_R_sgm: str = '',
 ) -> bool:
@@ -160,24 +154,18 @@ def check_leads_are_identical(
 
     Parameters
     ----------
-    `datafile_L` : str
-        Path to the left lead file.
-    `datafile_R` : str
-        Path to the right lead file.
+    `ham_system` : HamiltonianSystem
+        Transport Hamiltonian system with all blocks loaded.
     `datafile_L_sgm` : str
         Path to the left lead self-energy file.
     `datafile_R_sgm` : str
         Path to the right lead self-energy file.
-    `ham_system` : HamiltonianSystem
-        Transport Hamiltonian system with all blocks loaded.
 
     Returns
     -------
     `identical` : bool
         True if the left and right leads are identical.
     """
-    if datafile_L.strip() != datafile_R.strip():
-        return False
     if datafile_L_sgm.strip() != datafile_R_sgm.strip():
         return False
 
