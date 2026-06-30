@@ -208,3 +208,71 @@ def test_emit_units_axis(tmp_path):
     )
     x, _ = read_dos_PAO(os.path.join(str(tmp_path), 'vib_cm', 'epsr_xx.dat'))
     assert x.max() == pytest.approx(500.0, abs=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Reststrahlen (phonon) emissivity.
+# ---------------------------------------------------------------------------
+
+
+def test_emissivity_not_computed_by_default(tmp_path):
+    """Without emissivity=True no emissivity is returned or written."""
+    dc = _polar_controller(str(tmp_path), q=2.0)
+    res = compute_vibrational_dielectric(dc, freq_min=0.0, npoints=200, outdir='vib')
+    assert res['emissivity'] is None
+    assert not os.path.isfile(os.path.join(str(tmp_path), 'vib', 'emish_xx.dat'))
+
+
+def test_emissivity_files_written_and_bounded(tmp_path):
+    """emissivity=True writes directional/hemispherical/total files in [0, 1]."""
+    from PAOFLOW.inputs.read_pao_output import read_dos_PAO
+
+    dc = _polar_controller(str(tmp_path), q=2.0)
+    res = compute_vibrational_dielectric(
+        dc,
+        freq_min=0.0,
+        npoints=400,
+        outdir='vib',
+        fname='t',
+        emissivity=True,
+        emis_angles=(0.0, 60.0),
+        emis_ntheta=24,
+        emis_temperature=(300.0, 600.0),
+    )
+    emis = res['emissivity']
+    assert emis is not None
+
+    outdir = os.path.join(str(tmp_path), 'vib')
+    # Spectral hemispherical + per-angle directional + total files for diagonals.
+    for comp in ('xx', 'yy', 'zz'):
+        assert os.path.isfile(os.path.join(outdir, 'emish_%s.dat' % comp))
+        assert os.path.isfile(os.path.join(outdir, 'emist_%s.dat' % comp))
+        for deg in (0, 60):
+            assert os.path.isfile(os.path.join(outdir, 'emis_th%d_%s.dat' % (deg, comp)))
+            assert os.path.isfile(os.path.join(outdir, 'refl_th%d_%s.dat' % (deg, comp)))
+
+    # Emissivity (= 1 - R) is bounded in [0, 1] and header-free.
+    x, e = read_dos_PAO(os.path.join(outdir, 'emish_xx.dat'))
+    assert x.size == 400
+    assert np.all(e >= -1e-9) and np.all(e <= 1.0 + 1e-9)
+    # Returned arrays carry the diagonal components and temperatures.
+    assert emis['hemispherical'].shape == (400, 3)
+    assert emis['total'].shape == (2, 3)
+    assert np.all(emis['total'] >= -1e-9) and np.all(emis['total'] <= 1.0 + 1e-9)
+
+
+def test_emissivity_reststrahlen_dip(tmp_path):
+    """Inside the reststrahlen band the emissivity drops (R -> 1)."""
+    dc = _polar_controller(str(tmp_path), q=2.0)
+    res = compute_vibrational_dielectric(
+        dc, freq_min=0.0, npoints=600, emissivity=True, write=False
+    )
+    emis = res['emissivity']
+    emis_xx = emis['hemispherical'][:, 0]
+    eps_xx = np.real(res['eps'][:, 0, 0])
+    # Where Re eps < 0 (reststrahlen) the emissivity is strongly suppressed
+    # relative to the high-frequency tail (eps -> eps_inf, partially absorbing).
+    band = eps_xx < 0.0
+    assert np.any(band)
+    tail = emis_xx[-20:].mean()
+    assert emis_xx[band].min() < 0.5 * tail

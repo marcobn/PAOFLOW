@@ -3660,6 +3660,10 @@ class PAOFLOW:
         npoints=2000,
         units='cm-1',
         emit_ev=True,
+        emissivity=False,
+        emis_angles=(0.0,),
+        emis_ntheta=64,
+        emis_temperature=(300.0,),
         outdir='vibdielectric',
         fname='phonon',
     ):
@@ -3711,6 +3715,17 @@ class PAOFLOW:
             emit_ev (bool): Write the per-component ``eps{r,i}_<ab>.dat`` files
                 with the frequency axis in eV (so they plot directly with
                 :meth:`GPAO.plot_optical`); otherwise in ``units``.
+            emissivity (bool): Also derive the reststrahlen (phonon) emissivity
+                from ``eps(omega)`` via the Fresnel/Kirchhoff helpers in
+                :mod:`PAOFLOW.response.do_epsilon` and write it under ``outdir``
+                (directional ``refl_th*``/``emis_th*``, spectral hemispherical
+                ``emish_*`` and Planck-weighted total ``emist_*``).
+            emis_angles (array_like): Incidence angles (degrees) for the
+                directional reflectivity/emissivity.
+            emis_ntheta (int): Polar-angle samples for the hemispherical
+                integral.
+            emis_temperature (float or array_like): Temperature(s) (K) for the
+                total hemispherical emissivity.
             outdir (str): Sub-directory (under ``outputdir``) for the
                 per-component dielectric files.
             fname (str): Output basename; writes
@@ -3759,6 +3774,10 @@ class PAOFLOW:
                 npoints=npoints,
                 units=units,
                 emit_ev=emit_ev,
+                emissivity=emissivity,
+                emis_angles=emis_angles,
+                emis_ntheta=emis_ntheta,
+                emis_temperature=emis_temperature,
                 outdir=outdir,
                 fname=fname,
             )

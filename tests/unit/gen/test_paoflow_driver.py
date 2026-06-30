@@ -250,6 +250,8 @@ def _phonon_cfg(**kw):
             'born_method': 'dfpt',
             'vibdielectric': True,
             'vibdielectric_gamma': 4.0,
+            'vibdielectric_emissivity': True,
+            'vibdielectric_emis_temp': [300.0],
             'mpi_qe': 'mpirun -np 4',
             'qe_path': '',
         }
@@ -271,6 +273,22 @@ def test_build_phonon_script_vibrational_dielectric_wired():
     assert 'outdir=VIBDIELECTRIC_DIR,' in text
 
 
+def test_build_phonon_script_emissivity_wired():
+    text = d.build_phonon_script(_phonon_cfg())
+    # Emissivity toggle + temperature constants and call arguments.
+    assert 'VIBDIELECTRIC_EMISSIVITY = True' in text
+    assert 'VIBDIELECTRIC_EMIS_TEMP = [300.0]' in text
+    assert 'emissivity=VIBDIELECTRIC_EMISSIVITY,' in text
+    assert 'emis_temperature=VIBDIELECTRIC_EMIS_TEMP,' in text
+
+
+def test_build_phonon_script_emissivity_disabled():
+    text = d.build_phonon_script(_phonon_cfg(vibdielectric_emissivity=False))
+    assert 'VIBDIELECTRIC_EMISSIVITY = False' in text
+    # The argument is still threaded so the toggle alone controls it.
+    assert 'emissivity=VIBDIELECTRIC_EMISSIVITY,' in text
+
+
 def test_build_phonon_script_vibrational_dielectric_disabled():
     text = d.build_phonon_script(_phonon_cfg(vibdielectric=False))
     assert 'VIBDIELECTRIC = False' in text
@@ -283,3 +301,6 @@ def test_build_phonon_plot_script_includes_reststrahlen():
     assert "os.path.join(OUTPUTDIR, 'vibdielectric')" in text
     assert "os.path.isfile(os.path.join(vibdir, 'epsr_xx.dat'))" in text
     assert 'pplt.plot_optical(' in text
+    # The reststrahlen (phonon) emissivity is plotted when present.
+    assert "os.path.isfile(os.path.join(vibdir, 'emish_xx.dat'))" in text
+    assert "['emish']" in text

@@ -880,6 +880,16 @@ def build_phonon_script(cfg):
     lines.append(
         "VIBDIELECTRIC_DIR = 'vibdielectric'   # sub-dir (under OUTPUTDIR) for the eps files"
     )
+    lines.append(
+        'VIBDIELECTRIC_EMISSIVITY = {}   # reststrahlen emissivity (1 - R) from eps(w)'.format(
+            bool(cfg.get('vibdielectric_emissivity', False))
+        )
+    )
+    lines.append(
+        'VIBDIELECTRIC_EMIS_TEMP = {!r}   # temperature(s) (K) for total hemispherical emissivity'.format(
+            cfg.get('vibdielectric_emis_temp', [300.0])
+        )
+    )
     lines.append('')
     lines.append('# HUBBARD card injected into the force (and lelfield) inputs.  Only on-site')
     lines.append('# U parameters are kept; intersite V lines are dropped (their atom indices')
@@ -1077,6 +1087,8 @@ def build_phonon_script(cfg):
     lines.append('            gamma=VIBDIELECTRIC_GAMMA,')
     lines.append('            units=UNITS,')
     lines.append('            outdir=VIBDIELECTRIC_DIR,')
+    lines.append('            emissivity=VIBDIELECTRIC_EMISSIVITY,')
+    lines.append('            emis_temperature=VIBDIELECTRIC_EMIS_TEMP,')
     lines.append("            fname='phonon',")
     lines.append('        )')
     lines.append('')
@@ -2011,6 +2023,15 @@ def build_phonon_plot_script(cfg):
     lines.append("            title='Vibrational dielectric function',")
     lines.append('        )')
     lines.append('')
+    lines.append('    # Reststrahlen (phonon) emissivity (1 - R), when computed.')
+    lines.append("    if os.path.isfile(os.path.join(vibdir, 'emish_xx.dat')):")
+    lines.append('        pplt.plot_optical(')
+    lines.append("            ['emish'],")
+    lines.append('            path=vibdir,')
+    lines.append("            component='xx',")
+    lines.append("            title='Vibrational (reststrahlen) emissivity',")
+    lines.append('        )')
+    lines.append('')
     lines.append('')
     lines.append('if __name__ == "__main__":')
     lines.append('    main()')
@@ -2636,8 +2657,18 @@ def collect_phonon(common):
         cfg['vibdielectric_gamma'] = ask_float(
             '  Phonon linewidth gamma for eps(w) (in the chosen units)', 4.0
         )
+        cfg['vibdielectric_emissivity'] = ask_yes_no(
+            '  Also compute the reststrahlen (phonon) emissivity (1 - R)?', True
+        )
+        if cfg['vibdielectric_emissivity']:
+            temp = ask_float('    Temperature for the total hemispherical emissivity (K)', 300.0)
+            cfg['vibdielectric_emis_temp'] = [temp]
+        else:
+            cfg['vibdielectric_emis_temp'] = [300.0]
     else:
         cfg['vibdielectric_gamma'] = 4.0
+        cfg['vibdielectric_emissivity'] = False
+        cfg['vibdielectric_emis_temp'] = [300.0]
     print('\npw.x launch settings for the displaced-supercell SCF runs:')
     cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
     cfg['qe_path'] = ask('Quantum ESPRESSO bin path (dir with pw.x; blank = PATH)', '')

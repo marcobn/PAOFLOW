@@ -77,6 +77,10 @@ def compute_vibrational_dielectric(
     npoints=2000,
     units='cm-1',
     emit_ev=True,
+    emissivity=False,
+    emis_angles=(0.0,),
+    emis_ntheta=64,
+    emis_temperature=(300.0,),
     outdir='vibdielectric',
     fname='phonon',
     write=True,
@@ -113,6 +117,20 @@ def compute_vibrational_dielectric(
         written with the frequency axis in **eV**, so they can be plotted
         directly with :meth:`PAOFLOW.GPAO.GPAO.plot_optical` (whose axis is in
         eV).  When ``False`` the axis is written in ``units``.
+    emissivity : bool
+        When ``True`` the reststrahlen (phonon) emissivity is derived from the
+        vibrational dielectric function via the Fresnel/Kirchhoff helpers in
+        :mod:`PAOFLOW.response.do_epsilon` and written alongside the
+        ``eps{r,i}`` files (directional ``refl_th*``/``emis_th*``, spectral
+        hemispherical ``emish_*`` and Planck-weighted total ``emist_*``).  The
+        total hemispherical emissivity is integrated over the far-IR grid only,
+        so it captures the lattice (phonon) contribution to the emissivity.
+    emis_angles : array_like
+        Incidence angles (degrees) for the directional reflectivity/emissivity.
+    emis_ntheta : int
+        Polar-angle samples for the hemispherical integral.
+    emis_temperature : float or array_like
+        Temperature(s) (K) for the total hemispherical emissivity.
     outdir : str
         Sub-directory (under ``opath``) for the per-component dielectric files.
     fname : str
@@ -217,6 +235,21 @@ def compute_vibrational_dielectric(
             % (ionic[0, 0], ionic[1, 1], ionic[2, 2])
         )
 
+    emissivity_result = None
+    if emissivity:
+        emissivity_result = _compute_emissivity(
+            eps, grid_ev, emis_angles, emis_ntheta, emis_temperature
+        )
+        arry['vib_emissivity_hemispherical'] = emissivity_result['hemispherical']
+        arry['vib_emissivity_total'] = emissivity_result['total']
+        if attr.get('verbose', False) and getattr(data_controller, 'rank', 0) == 0:
+            for t, T in enumerate(emissivity_result['temperatures']):
+                vals = emissivity_result['total'][t]
+                print(
+                    '  total hemispherical emissivity at %.1f K (xx, yy, zz) = '
+                    '% .4f % .4f % .4f' % (T, vals[0], vals[1], vals[2])
+                )
+
     if write:
         axis = grid_ev if emit_ev else grid
         _write_eps_components(data_controller, outdir, axis, eps)
@@ -231,6 +264,8 @@ def compute_vibrational_dielectric(
             static,
             irreps,
         )
+        if emissivity_result is not None:
+            _write_emissivity_files(data_controller, outdir, axis, emissivity_result)
 
     return {
         'grid': grid,
@@ -241,6 +276,7 @@ def compute_vibrational_dielectric(
         'frequencies': freqs,
         'mode_strengths': strengths,
         'irreps': irreps,
+        'emissivity': emissivity_result,
     }
 
 
@@ -357,4 +393,85 @@ def _write_static_summary(
             lab = irreps[v] if irreps is not None and irreps[v] is not None else '-'
             s = float(np.trace(strengths[v]) / 3.0)
             f.write('%6d % 16.8e % 16.8e  %s\n' % (v + 1, freqs[v], s, lab))
+    return path
+
+
+def _compute_emissivity(eps, grid_ev, angles_deg, ntheta, temps):
+    """Reststrahlen emissivity from the vibrational dielectric (diagonal comps).
+
+    Reuses the Fresnel/Kirchhoff helpers in :mod:`PAOFLOW.response.do_epsilon`
+    on the diagonal of :math:`\\varepsilon(\\omega) = \\varepsilon^\\infty +
+    \\varepsilon^{\\text{ionic}}(\\omega)`.  Returns the directional and
+    hemispherical spectral emissivities together with the Planck-weighted total
+    hemispherical emissivity (integrated over the supplied far-IR grid only).
+    """
+    from ..response.do_epsilon import (
+        directional_reflectivity,
+        spectral_hemispherical_emissivity,
+        total_hemispherical_emissivity,
+    )
+    from ..utils.constants import DEGTORAD
+
+    angles_deg = np.atleast_1d(np.asarray(angles_deg, dtype=float))
+    temps = np.atleast_1d(np.asarray(temps, dtype=float))
+    diag = ((0, 0), (1, 1), (2, 2))
+    ne = grid_ev.shape[0]
+
+    directional = np.empty((angles_deg.size, ne, 3), dtype=float)
+    hemispherical = np.empty((ne, 3), dtype=float)
+    total = np.empty((temps.size, 3), dtype=float)
+
+    # The Planck weight needs strictly positive energies (the grid starts at 0).
+    positive = grid_ev > 0.0
+    for c, (i, j) in enumerate(diag):
+        epsr = np.real(eps[:, i, j])
+        epsi = np.imag(eps[:, i, j])
+        for a, ang in enumerate(angles_deg):
+            directional[a, :, c] = 1.0 - directional_reflectivity(epsr, epsi, float(ang) * DEGTORAD)
+        emis_w = spectral_hemispherical_emissivity(epsr, epsi, int(ntheta))
+        hemispherical[:, c] = emis_w
+        for t, temperature in enumerate(temps):
+            total[t, c] = total_hemispherical_emissivity(
+                grid_ev[positive], emis_w[positive], float(temperature)
+            )
+    return {
+        'grid_ev': grid_ev,
+        'angles': angles_deg,
+        'temperatures': temps,
+        'directional': directional,
+        'hemispherical': hemispherical,
+        'total': total,
+    }
+
+
+def _write_emissivity_files(data_controller, outdir, axis, emis):
+    """Write the reststrahlen emissivity spectra (rank 0 only).
+
+    File names mirror :func:`PAOFLOW.response.do_epsilon.write_emissivity`:
+    ``refl_th{deg}_<comp>.dat`` / ``emis_th{deg}_<comp>.dat`` (directional, per
+    angle), ``emish_<comp>.dat`` (spectral hemispherical) and
+    ``emist_<comp>.dat`` (temperature vs total hemispherical emissivity).
+    """
+    _, attr = data_controller.data_dicts()
+    if getattr(data_controller, 'rank', 0) != 0:
+        return None
+    path = os.path.join(attr.get('opath', '.'), outdir)
+    os.makedirs(path, exist_ok=True)
+
+    def _save(name, x, y):
+        with open(os.path.join(path, name), 'w') as f:
+            for a, b in zip(x, y):
+                f.write('% .8e % .8e\n' % (a, b))
+
+    comps = ('xx', 'yy', 'zz')
+    angles = emis['angles']
+    temps = emis['temperatures']
+    for c, comp in enumerate(comps):
+        for a, ang in enumerate(angles):
+            deg = int(round(float(ang)))
+            emis_dir = emis['directional'][a, :, c]
+            _save('emis_th%d_%s.dat' % (deg, comp), axis, emis_dir)
+            _save('refl_th%d_%s.dat' % (deg, comp), axis, 1.0 - emis_dir)
+        _save('emish_%s.dat' % comp, axis, emis['hemispherical'][:, c])
+        _save('emist_%s.dat' % comp, temps, emis['total'][:, c])
     return path
