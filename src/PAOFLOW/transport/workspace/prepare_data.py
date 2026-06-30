@@ -20,6 +20,11 @@ from PAOFLOW.transport.hamiltonian.hamiltonian_init import (
 )
 from PAOFLOW.transport.data import ConductorData, RuntimeData
 from PAOFLOW.transport.io.log_module import log_summary
+from PAOFLOW.transport.io.write_debug import (
+    write_internal_format_files,
+    write_overlap_files,
+    write_projectability_files,
+)
 from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj
 from PAOFLOW.transport.smearing.smearing_base import smearing_func
 from PAOFLOW.transport.smearing.smearing_T import SmearingData
@@ -50,6 +55,14 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
     if data.carriers == 'electrons':
         hk_data = parse_atomic_proj(data, data_controller)
         nr_full = hk_data['nr']
+
+        if data.advanced.debug:
+            output_dir = data.file_names.output_dir
+            output_prefix = os.path.join(output_dir, os.path.basename(data.file_names.datafile_C))
+            do_overlap = data.atomic_proj.do_overlap_transformation
+            write_internal_format_files(output_dir, output_prefix, data_controller, do_overlap)
+            write_projectability_files(output_dir, data_controller)
+            write_overlap_files(output_dir, data_controller, do_overlap)
     elif data.carriers == 'phonons':
         raise NotImplementedError('Phonon transport not yet implemented')
 

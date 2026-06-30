@@ -79,7 +79,7 @@ _ITERATION_FIELDS: frozenset[str] = frozenset({'nprint', 'niterx', 'nfailx', 'tr
 _ATOMIC_PROJ_FIELDS: frozenset[str] = frozenset({'do_overlap_transformation', 'write_intermediate'})
 _ADVANCED_FIELDS: frozenset[str] = frozenset(
     {
-        'debug_level',
+        'debug',
         'ispin',
         'surface',
         'efermi_bulk',
@@ -185,7 +185,7 @@ class AtomicProjectionOverlapSettings:
 
 @dataclass(slots=True)
 class AdvancedSettings:
-    debug_level: int = 0
+    debug: bool = False
     ispin: int = 0
     surface: bool = False
     efermi_bulk: float = 0.0

@@ -7,8 +7,6 @@ from PAOFLOW.transport.io.write_data import (
     write_data,
     write_eigenchannels,
     write_operator_xml,
-    write_overlap_files,
-    write_projectability_files,
 )
 
 
@@ -93,28 +91,3 @@ def test_write_operator_xml_writes_basic_file(tmp_path):
     out_file = tmp_path / 'op.xml'
     assert out_file.exists()
     assert '<OPERATOR>' in out_file.read_text()
-
-
-@pytest.mark.unit
-def test_write_projectability_files(tmp_path):
-    """Projectability writer should emit a text file for each spin."""
-    proj = np.ones((1, 1, 1, 1), dtype=complex)
-    eigvals = np.zeros((1, 1, 1))
-    nbnds = 1
-    hk = np.zeros((1, 1, 1, 1), dtype=complex)
-
-    write_projectability_files(str(tmp_path), proj, eigvals, nbnds, hk)
-
-    out_file = tmp_path / 'projectability.txt'
-    assert out_file.exists()
-
-
-@pytest.mark.unit
-def test_write_overlap_files(tmp_path):
-    """Overlap writer should emit kovp.txt when overlap transformation is enabled."""
-    sk = np.zeros((1, 1, 1), dtype=complex)
-
-    write_overlap_files(str(tmp_path), sk, do_overlap_transformation=True)
-
-    out_file = tmp_path / 'kovp.txt'
-    assert out_file.exists()

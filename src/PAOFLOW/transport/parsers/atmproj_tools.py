@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Dict
 
 import numpy as np
@@ -7,14 +6,8 @@ import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.grid.rgrid import get_rgrid
-from PAOFLOW.transport.io.write_data import (
-    populate_real_space_hamiltonian,
-    write_internal_format_files,
-    write_overlap_files,
-    write_projectability_files,
-)
+from PAOFLOW.transport.io.write_data import populate_real_space_hamiltonian
 from PAOFLOW.transport.io.write_header import headered_function
-from PAOFLOW.transport.utils.converters import cartesian_to_crystal
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -23,10 +16,6 @@ from PAOFLOW.transport.utils.timing import timed_function
 def parse_atomic_proj(
     data: ConductorData, data_controller: DataController
 ) -> Dict[str, np.ndarray]:
-    debug = False
-
-    file_proj = data.file_names.datafile_C
-    output_dir = data.file_names.output_dir
     opts = data.atomic_proj
 
     arry, attr = data_controller.data_dicts()
@@ -44,29 +33,8 @@ def parse_atomic_proj(
     ivr, wr = get_rgrid(nr)
     hk_data.update({'ivr': ivr, 'wr': wr, 'nk': nk, 'nr': nr})
     arry.update(hk_data)
-    name = Path(file_proj).name
-    output_prefix = Path(output_dir) / name
 
     populate_real_space_hamiltonian(data_controller, hk_data, opts.do_overlap_transformation)
-
-    if debug:
-        bvec = arry['b_vectors'] * (2.0 * np.pi / alat)
-        kpts = arry['kpnts'].T
-        vkpts_crystal = cartesian_to_crystal(arry['vkpts_cartesian'], bvec)
-        eigvals = arry['my_eigsmat']
-        proj = arry['U'].swapaxes(0, 1)
-        write_internal_format_files(
-            Path(output_dir),
-            str(output_prefix),
-            data_controller,
-            hk_data,
-            kpts,
-            vkpts_crystal,
-            arry['wk'],
-            opts.do_overlap_transformation,
-        )
-        write_projectability_files(output_dir, proj, eigvals, attr['nbnds'], hk_data['Hk'])
-        write_overlap_files(output_dir, hk_data['Sk'], opts.do_overlap_transformation)
 
     return hk_data
 
