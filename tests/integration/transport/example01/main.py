@@ -22,6 +22,11 @@ def main():
 
     transport = Transport(paoflow.data_controller)
 
+    transport.define_blocks(
+        H00_C={'rows': 'ALL', 'cols': 'ALL'},
+        H_CR={'rows': 'ALL', 'cols': 'ALL'},
+    )
+
     transport.build_hamiltonian_blocks(
         datafile_C='./output/qe/al5.save/atomic_proj.xml',
         dimC=20,
@@ -29,8 +34,6 @@ def main():
         calculation_type='bulk',
         use_sym=False,
         do_overlap_transformation=False,
-        H00_C={'rows': 'ALL', 'cols': 'ALL'},
-        H_CR={'rows': 'ALL', 'cols': 'ALL'},
     )
 
     transport.configure_energy_grid(

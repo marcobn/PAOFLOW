@@ -19,6 +19,10 @@ def _run_case(case: str) -> None:
 
     transport = Transport(paoflow.data_controller)
     if case == 'bulk':
+        transport.define_blocks(
+            H00_C={'rows': 'ALL', 'cols': 'ALL'},
+            H_CR={'rows': 'ALL', 'cols': 'ALL'},
+        )
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             dimC=41,
@@ -26,16 +30,25 @@ def _run_case(case: str) -> None:
             calculation_type='bulk',
             use_sym=False,
             do_overlap_transformation=False,
+        )
+        transport.configure_eigenchannels(
             do_eigenchannels=True,
             neigchnx=4,
             do_eigplot=True,
             ie_eigplot=50,
             ik_eigplot=0,
-            H00_C={'rows': 'ALL', 'cols': 'ALL'},
-            H_CR={'rows': 'ALL', 'cols': 'ALL'},
         )
         transport.configure_outputs(output_dir='./output', postfix='_bulk')
     elif case == 'lcr':
+        transport.define_blocks(
+            H00_C={'rows': '1-41', 'cols': '1-41'},
+            H_CR={'rows': '1-41', 'cols': '1-12'},
+            H_LC={'rows': '30-41', 'cols': '1-41'},
+            H00_L={'rows': '1-12', 'cols': '1-12'},
+            H01_L={'rows': '30-41', 'cols': '1-12'},
+            H00_R={'rows': '1-12', 'cols': '1-12'},
+            H01_R={'rows': '30-41', 'cols': '1-12'},
+        )
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             datafile_L='./alh.save/atomic_proj.xml',
@@ -47,21 +60,20 @@ def _run_case(case: str) -> None:
             calculation_type='conductor',
             use_sym=False,
             do_overlap_transformation=False,
+        )
+        transport.configure_eigenchannels(
             do_eigenchannels=True,
             neigchnx=4,
             do_eigplot=True,
             ie_eigplot=50,
             ik_eigplot=0,
-            H00_C={'rows': '1-41', 'cols': '1-41'},
-            H_CR={'rows': '1-41', 'cols': '1-12'},
-            H_LC={'rows': '30-41', 'cols': '1-41'},
-            H00_L={'rows': '1-12', 'cols': '1-12'},
-            H01_L={'rows': '30-41', 'cols': '1-12'},
-            H00_R={'rows': '1-12', 'cols': '1-12'},
-            H01_R={'rows': '30-41', 'cols': '1-12'},
         )
         transport.configure_outputs(output_dir='./output', postfix='_lcr')
     elif case == 'lead':
+        transport.define_blocks(
+            H00_C={'rows': '1-12', 'cols': '1-12'},
+            H_CR={'rows': '30-41', 'cols': '1-12'},
+        )
         transport.build_hamiltonian_blocks(
             datafile_C='./alh.save/atomic_proj.xml',
             dimC=12,
@@ -69,8 +81,6 @@ def _run_case(case: str) -> None:
             calculation_type='bulk',
             use_sym=False,
             do_overlap_transformation=False,
-            H00_C={'rows': '1-12', 'cols': '1-12'},
-            H_CR={'rows': '30-41', 'cols': '1-12'},
         )
         transport.configure_outputs(output_dir='./output', postfix='_lead')
     else:

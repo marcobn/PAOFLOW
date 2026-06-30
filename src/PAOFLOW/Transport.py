@@ -69,6 +69,10 @@ class Transport:
         self._transport_options_config: dict[str, Any] = {
             'formula': 'landauer',
         }
+        self._block_selectors: dict[str, Any] = {}
+        self._onsite_shift_config: dict[str, Any] | None = None
+        self._lead_convergence_config: dict[str, Any] | None = None
+        self._eigenchannel_config: dict[str, Any] | None = None
 
     def configure_energy_grid(
         self,
@@ -157,8 +161,6 @@ class Transport:
         work_dir: str = './',
         postfix: str = '',
         write_kdata: bool = False,
-        write_green_function: bool = False,
-        write_lead_self_energy: bool = False,
     ) -> None:
         """Configure output directory, file postfix, and optional operator outputs.
 
@@ -172,30 +174,18 @@ class Transport:
             String appended to default transport file names.
         write_kdata : bool, optional
             If ``True``, write k-resolved transmission and DOS to separate files.
-        write_green_function : bool, optional
-            If ``True``, compute and write the real-space conductor Green's
-            function to ``greenf.xml``. This increases memory usage proportional
-            to ``ne * nrtot_par * dimC * dimC``.
-        write_lead_self_energy : bool, optional
-            If ``True``, compute and write real-space lead self-energies to
-            ``lead_L_sgm.xml`` and ``lead_R_sgm.xml``. This increases memory
-            usage proportional to ``ne * nrtot_par * dimC * dimC``.
         """
         self._output_config = {
             'output_dir': output_dir,
             'work_dir': work_dir,
             'postfix': postfix,
             'write_kdata': write_kdata,
-            'write_green_function': write_green_function,
-            'write_lead_self_energy': write_lead_self_energy,
         }
         if self.conductor_data is not None:
             self.conductor_data.file_names.output_dir = output_dir
             self.conductor_data.file_names.work_dir = work_dir
             self.conductor_data.file_names.postfix = postfix
             self.conductor_data.symmetry.write_kdata = write_kdata
-            self.conductor_data.symmetry.write_gf = write_green_function
-            self.conductor_data.symmetry.write_lead_sgm = write_lead_self_energy
             log.initialize_logger(
                 self.data_controller,
                 log_file_name=f'transport_conductor{postfix}.log',
@@ -223,6 +213,181 @@ class Transport:
             self.conductor_data.conduct_formula = formula
         self.results = None
 
+    def define_blocks(
+        self,
+        *,
+        H00_C: dict[str, Any] | None = None,
+        H_CR: dict[str, Any] | None = None,
+        H_CL: dict[str, Any] | None = None,
+        H_LC: dict[str, Any] | None = None,
+        H00_L: dict[str, Any] | None = None,
+        H01_L: dict[str, Any] | None = None,
+        H00_R: dict[str, Any] | None = None,
+        H01_R: dict[str, Any] | None = None,
+    ) -> None:
+        """Define the orbital row/column selectors for each Hamiltonian block.
+
+        Must be called before :meth:`build_hamiltonian_blocks`; the selectors
+        determine which orbitals form the conductor, lead, and coupling blocks
+        and are consumed during block construction.
+
+        Parameters
+        ----------
+        H00_C : dict or None, optional
+            Row/column selectors for the conductor on-site block.
+        H_CR : dict or None, optional
+            Row/column selectors for the conductor–right-lead coupling block.
+        H_CL : dict or None, optional
+            Row/column selectors for the conductor–left-lead coupling block.
+        H_LC : dict or None, optional
+            Row/column selectors for the left-lead–conductor coupling block.
+        H00_L : dict or None, optional
+            Row/column selectors for the left-lead on-site block.
+        H01_L : dict or None, optional
+            Row/column selectors for the left-lead hopping block.
+        H00_R : dict or None, optional
+            Row/column selectors for the right-lead on-site block.
+        H01_R : dict or None, optional
+            Row/column selectors for the right-lead hopping block.
+        """
+        selectors = {
+            'H00_C': H00_C,
+            'H_CR': H_CR,
+            'H_CL': H_CL,
+            'H_LC': H_LC,
+            'H00_L': H00_L,
+            'H01_L': H01_L,
+            'H00_R': H00_R,
+            'H01_R': H01_R,
+        }
+        self._block_selectors = {k: v for k, v in selectors.items() if v is not None}
+
+    def configure_onsite_shifts(
+        self,
+        *,
+        shift_L: float = 0.0,
+        shift_C: float = 0.0,
+        shift_R: float = 0.0,
+        shift_corr: float = 0.0,
+    ) -> None:
+        """Configure rigid on-site energy shifts for lead/conductor alignment.
+
+        Parameters
+        ----------
+        shift_L, shift_C, shift_R : float, optional
+            Rigid on-site energy shifts (eV) applied to the left-lead, conductor,
+            and right-lead blocks respectively. Default ``0.0``.
+        shift_corr : float, optional
+            On-site energy shift (eV) applied to the correlation self-energy.
+            Default ``0.0``.
+        """
+        self._onsite_shift_config = {
+            'shift_L': shift_L,
+            'shift_C': shift_C,
+            'shift_R': shift_R,
+            'shift_corr': shift_corr,
+        }
+        if self.conductor_data is not None:
+            self._apply_onsite_shifts(self.conductor_data)
+        self.results = None
+
+    def configure_lead_convergence(
+        self,
+        *,
+        niterx: int = 200,
+        transfer_thr: float = 1.0e-7,
+        nprint: int = 20,
+        nfailx: int = 5,
+        surface: bool = False,
+    ) -> None:
+        """Configure the lead surface-Green's-function transfer-matrix iteration.
+
+        Parameters
+        ----------
+        niterx : int, optional
+            Maximum number of lead transfer-matrix iterations. Default ``200``.
+        transfer_thr : float, optional
+            Convergence threshold for the transfer-matrix iteration. Default ``1.0e-7``.
+        nprint : int, optional
+            Iteration-progress print frequency. Default ``20``.
+        nfailx : int, optional
+            Maximum number of allowed convergence failures. Default ``5``.
+        surface : bool, optional
+            If ``True``, run in surface mode (lead surface Green's function only,
+            skipping the right-lead self-energy). Default ``False``.
+        """
+        self._lead_convergence_config = {
+            'niterx': niterx,
+            'transfer_thr': transfer_thr,
+            'nprint': nprint,
+            'nfailx': nfailx,
+            'surface': surface,
+        }
+        if self.conductor_data is not None:
+            self._apply_lead_convergence(self.conductor_data)
+        self.results = None
+
+    def configure_eigenchannels(
+        self,
+        *,
+        do_eigenchannels: bool = False,
+        neigchnx: int = 200000,
+        do_eigplot: bool = False,
+        ie_eigplot: int = 0,
+        ik_eigplot: int = 0,
+    ) -> None:
+        """Configure transmission eigenchannel decomposition and plotting.
+
+        Parameters
+        ----------
+        do_eigenchannels : bool, optional
+            If ``True``, compute transmission eigenchannels. Default ``False``.
+        neigchnx : int, optional
+            Maximum number of eigenchannels to retain. Default ``200000``.
+        do_eigplot : bool, optional
+            If ``True``, write eigenchannel data for a chosen (energy, k) point.
+        ie_eigplot : int, optional
+            Energy index to plot eigenchannels for (with ``do_eigplot``).
+        ik_eigplot : int, optional
+            k-point index to plot eigenchannels for (with ``do_eigplot``).
+        """
+        self._eigenchannel_config = {
+            'do_eigenchannels': do_eigenchannels,
+            'neigchnx': neigchnx,
+            'do_eigplot': do_eigplot,
+            'ie_eigplot': ie_eigplot,
+            'ik_eigplot': ik_eigplot,
+        }
+        if self.conductor_data is not None:
+            self._apply_eigenchannels(self.conductor_data)
+        self.results = None
+
+    def _apply_onsite_shifts(self, data: ConductorData) -> None:
+        if self._onsite_shift_config is None:
+            return
+        data.shift_L = self._onsite_shift_config['shift_L']
+        data.shift_C = self._onsite_shift_config['shift_C']
+        data.shift_R = self._onsite_shift_config['shift_R']
+        data.shift_corr = self._onsite_shift_config['shift_corr']
+
+    def _apply_lead_convergence(self, data: ConductorData) -> None:
+        if self._lead_convergence_config is None:
+            return
+        data.iteration.niterx = self._lead_convergence_config['niterx']
+        data.iteration.transfer_thr = self._lead_convergence_config['transfer_thr']
+        data.iteration.nprint = self._lead_convergence_config['nprint']
+        data.iteration.nfailx = self._lead_convergence_config['nfailx']
+        data.advanced.surface = self._lead_convergence_config['surface']
+
+    def _apply_eigenchannels(self, data: ConductorData) -> None:
+        if self._eigenchannel_config is None:
+            return
+        data.symmetry.do_eigenchannels = self._eigenchannel_config['do_eigenchannels']
+        data.symmetry.neigchnx = self._eigenchannel_config['neigchnx']
+        data.symmetry.do_eigplot = self._eigenchannel_config['do_eigplot']
+        data.symmetry.ie_eigplot = self._eigenchannel_config['ie_eigplot']
+        data.symmetry.ik_eigplot = self._eigenchannel_config['ik_eigplot']
+
     def build_hamiltonian_blocks(
         self,
         *,
@@ -237,30 +402,8 @@ class Transport:
         carriers: str = 'electrons',
         use_sym: bool = False,
         do_overlap_transformation: bool = False,
-        debug: bool = False,
-        surface: bool = False,
         ispin: int = 0,
-        niterx: int = 200,
-        transfer_thr: float = 1.0e-7,
-        nprint: int = 20,
-        nfailx: int = 5,
-        shift_L: float = 0.0,
-        shift_C: float = 0.0,
-        shift_R: float = 0.0,
-        shift_corr: float = 0.0,
-        do_eigenchannels: bool = False,
-        neigchnx: int = 200000,
-        do_eigplot: bool = False,
-        ie_eigplot: int = 0,
-        ik_eigplot: int = 0,
-        H00_C: dict[str, Any] | None = None,
-        H_CR: dict[str, Any] | None = None,
-        H_CL: dict[str, Any] | None = None,
-        H_LC: dict[str, Any] | None = None,
-        H00_L: dict[str, Any] | None = None,
-        H01_L: dict[str, Any] | None = None,
-        H00_R: dict[str, Any] | None = None,
-        H01_R: dict[str, Any] | None = None,
+        debug: bool = False,
         **block_options: Any,
     ) -> dict[str, Any]:
         """Build conductor Hamiltonian blocks from direct arguments.
@@ -296,59 +439,15 @@ class Transport:
             Apply time-reversal symmetry to reduce the k-point sampling.
         do_overlap_transformation : bool, optional
             Apply the overlap-matrix orthogonalisation transformation.
+        ispin : int, optional
+            Spin channel to use for spin-polarized inputs (``0``, ``1``, or ``2``).
         debug : bool, optional
             If ``True``, write human-inspectable debug artifacts during setup:
             the legacy ``.ham`` file, ``projectability.txt``, and (when overlap
             is enabled) ``kovp.txt``. Off by default.
-        surface : bool, optional
-            If ``True``, run in surface mode (lead surface Green's function only,
-            skipping the right-lead self-energy). Default ``False``.
-        ispin : int, optional
-            Spin channel to use for spin-polarized inputs (``0``, ``1``, or ``2``).
-        niterx : int, optional
-            Maximum number of lead transfer-matrix iterations. Default ``200``.
-        transfer_thr : float, optional
-            Convergence threshold for the transfer-matrix iteration. Default ``1.0e-7``.
-        nprint : int, optional
-            Iteration-progress print frequency. Default ``20``.
-        nfailx : int, optional
-            Maximum number of allowed convergence failures. Default ``5``.
-        shift_L, shift_C, shift_R : float, optional
-            Rigid on-site energy shifts (eV) applied to the left lead, conductor,
-            and right lead blocks respectively. Default ``0.0``.
-        shift_corr : float, optional
-            On-site energy shift (eV) applied to the correlation self-energy.
-            Default ``0.0``.
-        do_eigenchannels : bool, optional
-            If ``True``, compute transmission eigenchannels. Default ``False``.
-        neigchnx : int, optional
-            Maximum number of eigenchannels to retain. Default ``200000``.
-        do_eigplot : bool, optional
-            If ``True``, write eigenchannel data for a chosen (energy, k) point.
-        ie_eigplot : int, optional
-            Energy index to plot eigenchannels for (with ``do_eigplot``).
-        ik_eigplot : int, optional
-            k-point index to plot eigenchannels for (with ``do_eigplot``).
-        H00_C : dict or None, optional
-            Row/column selectors for the conductor on-site block.
-        H_CR : dict or None, optional
-            Row/column selectors for the conductor–right-lead coupling block.
-        H_CL : dict or None, optional
-            Row/column selectors for the conductor–left-lead coupling block.
-        H_LC : dict or None, optional
-            Row/column selectors for the left-lead–conductor coupling block.
-        H00_L : dict or None, optional
-            Row/column selectors for the left-lead on-site block.
-        H01_L : dict or None, optional
-            Row/column selectors for the left-lead hopping block.
-        H00_R : dict or None, optional
-            Row/column selectors for the right-lead on-site block.
-        H01_R : dict or None, optional
-            Row/column selectors for the right-lead hopping block.
         **block_options : Any
             Additional block-construction options forwarded to ``ConductorData``
-            (for example ``niterx``, ``transfer_thr``, or self-energy file paths
-            for generalized formulas).
+            (for example self-energy file paths for generalized formulas).
 
         Returns
         -------
@@ -358,24 +457,16 @@ class Transport:
 
         Notes
         -----
+        Hamiltonian block selectors (``H00_C``, ``H_CR``, ...) must be supplied
+        beforehand via :meth:`define_blocks`. Optional physics tuning is applied
+        through :meth:`configure_onsite_shifts`, :meth:`configure_lead_convergence`,
+        and :meth:`configure_eigenchannels`; energy/smearing via
+        :meth:`configure_energy_grid` and outputs via :meth:`configure_outputs`.
+
         Sets ``self.conductor_data``, ``self.blc_blocks``, and
         ``self._conductor_state`` as side effects. Calling this method a second
         time resets all three for the new calculation.
         """
-        hamiltonian_selectors: dict[str, Any] = {}
-        for h_name, h_val in [
-            ('H00_C', H00_C),
-            ('H_CR', H_CR),
-            ('H_CL', H_CL),
-            ('H_LC', H_LC),
-            ('H00_L', H00_L),
-            ('H01_L', H01_L),
-            ('H00_R', H00_R),
-            ('H01_R', H01_R),
-        ]:
-            if h_val is not None:
-                hamiltonian_selectors[h_name] = h_val
-
         input_values = build_conductor_input_values(
             datafile_C=datafile_C,
             dimC=dimC,
@@ -393,22 +484,8 @@ class Transport:
             use_sym=use_sym,
             do_overlap_transformation=do_overlap_transformation,
             debug=debug,
-            surface=surface,
             ispin=ispin,
-            niterx=niterx,
-            transfer_thr=transfer_thr,
-            nprint=nprint,
-            nfailx=nfailx,
-            shift_L=shift_L,
-            shift_C=shift_C,
-            shift_R=shift_R,
-            shift_corr=shift_corr,
-            do_eigenchannels=do_eigenchannels,
-            neigchnx=neigchnx,
-            do_eigplot=do_eigplot,
-            ie_eigplot=ie_eigplot,
-            ik_eigplot=ik_eigplot,
-            **hamiltonian_selectors,
+            **self._block_selectors,
             **block_options,
         )
 
@@ -434,6 +511,11 @@ class Transport:
         state.data.symmetry.write_gf = write_green_function
         state.data.symmetry.write_lead_sgm = write_lead_self_energy
         state.data.symmetry.write_kdata = self._output_config.get('write_kdata', False)
+
+        # Apply physics-tuning configs (compute-time) stashed before build
+        self._apply_onsite_shifts(state.data)
+        self._apply_lead_convergence(state.data)
+        self._apply_eigenchannels(state.data)
 
         self.conductor_data = state.data
         self.blc_blocks = state.blc_blocks
