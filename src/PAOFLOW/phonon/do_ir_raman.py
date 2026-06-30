@@ -364,14 +364,19 @@ def mode_displacement_vectors(eigvecs, masses, delta):
 def raman_invariants(tensor):
     """Rotational invariants ``(a, gamma2)`` of a Raman tensor.
 
-    The (real, symmetric) Raman tensor ``R`` is characterised by its isotropic
-    mean polarisability ``a = Tr(R)/3`` and its anisotropy ``gamma2``,
+    The Raman tensor ``R`` is characterised by its isotropic mean
+    polarisability ``a = Tr(R)/3`` and its anisotropy ``gamma2``,
 
     .. math::
 
-        \\gamma^2 = \\tfrac{1}{2}\\big[(R_{xx}-R_{yy})^2 +
-            (R_{yy}-R_{zz})^2 + (R_{zz}-R_{xx})^2\\big]
-            + 3\\,(R_{xy}^2 + R_{xz}^2 + R_{yz}^2).
+        \\gamma^2 = \\tfrac{1}{2}\\big[|R_{xx}-R_{yy}|^2 +
+            |R_{yy}-R_{zz}|^2 + |R_{zz}-R_{xx}|^2\\big]
+            + 3\\,(|R_{xy}|^2 + |R_{xz}|^2 + |R_{yz}|^2).
+
+    The squared magnitudes make the invariants valid for the **complex** Raman
+    tensor of the resonance case as well; for a real (non-resonant) tensor they
+    reduce to the usual real invariants.  ``a`` is returned complex when the
+    input is complex (its magnitude enters the activity), and real otherwise.
 
     Parameters
     ----------
@@ -381,21 +386,26 @@ def raman_invariants(tensor):
     Returns
     -------
     tuple
-        ``(a, gamma2)`` with the isotropic mean and the anisotropy invariant.
+        ``(a, gamma2)`` with the (possibly complex) isotropic mean and the
+        (real) anisotropy invariant.
     """
-    r = np.asarray(tensor, dtype=float)
+    r = np.asarray(tensor)
     r = 0.5 * (r + r.T)
     a = np.trace(r) / 3.0
     gamma2 = 0.5 * (
-        (r[0, 0] - r[1, 1]) ** 2 + (r[1, 1] - r[2, 2]) ** 2 + (r[2, 2] - r[0, 0]) ** 2
-    ) + 3.0 * (r[0, 1] ** 2 + r[0, 2] ** 2 + r[1, 2] ** 2)
+        np.abs(r[0, 0] - r[1, 1]) ** 2
+        + np.abs(r[1, 1] - r[2, 2]) ** 2
+        + np.abs(r[2, 2] - r[0, 0]) ** 2
+    ) + 3.0 * (np.abs(r[0, 1]) ** 2 + np.abs(r[0, 2]) ** 2 + np.abs(r[1, 2]) ** 2)
+    if np.iscomplexobj(r):
+        return complex(a), float(gamma2)
     return float(a), float(gamma2)
 
 
 def raman_powder_activity(tensor):
-    """Orientationally-averaged Raman activity ``45 a^2 + 7 gamma2``."""
+    """Orientationally-averaged Raman activity ``45 |a|^2 + 7 gamma2``."""
     a, gamma2 = raman_invariants(tensor)
-    return 45.0 * a * a + 7.0 * gamma2
+    return 45.0 * abs(a) ** 2 + 7.0 * gamma2
 
 
 def _bose_factor(freq_cm, temperature):
@@ -417,20 +427,22 @@ def raman_tensors_from_epsilon(eps_plus, eps_minus, delta):
     Parameters
     ----------
     eps_plus, eps_minus : array_like
-        Static dielectric tensors ``(nmodes, 3, 3)`` for the ``+delta`` and
+        Dielectric tensors ``(nmodes, 3, 3)`` for the ``+delta`` and
         ``-delta`` displacements along each mode. Modes that were not displaced
         should carry identical ``+/-`` tensors (or zeros) and yield a null
-        Raman tensor.
+        Raman tensor.  May be real (non-resonant, static) or complex
+        (resonance, evaluated at the laser frequency).
     delta : float
         Normal-coordinate step amplitude used to build the displacements.
 
     Returns
     -------
     numpy.ndarray
-        Raman tensors ``(nmodes, 3, 3)`` (symmetrised).
+        Raman tensors ``(nmodes, 3, 3)`` (symmetrised), complex when the input
+        dielectric tensors are complex.
     """
-    eps_plus = np.asarray(eps_plus, dtype=float)
-    eps_minus = np.asarray(eps_minus, dtype=float)
+    eps_plus = np.asarray(eps_plus)
+    eps_minus = np.asarray(eps_minus)
     r = (eps_plus - eps_minus) / (2.0 * float(delta))
     return 0.5 * (r + np.transpose(r, (0, 2, 1)))
 
@@ -457,8 +469,10 @@ def compute_raman_spectrum(
     Parameters
     ----------
     eps_plus, eps_minus : array_like
-        Static dielectric tensors ``(nmodes, 3, 3)`` harvested from the
-        ``+delta`` / ``-delta`` displaced-cell ``do_epsilon`` runs.
+        Dielectric tensors ``(nmodes, 3, 3)`` harvested from the ``+delta`` /
+        ``-delta`` displaced-cell ``do_epsilon`` runs.  Real for the
+        non-resonant (static) spectrum, or complex when evaluated at a laser
+        frequency for the resonance spectrum.
     delta : float
         Normal-coordinate step amplitude used to displace the cells.
     computed : array_like of bool, optional
@@ -485,8 +499,8 @@ def compute_raman_spectrum(
     arry, attr = data_controller.data_dicts()
     phonon = arry['phonopy']
 
-    eps_plus = np.asarray(eps_plus, dtype=float)
-    eps_minus = np.asarray(eps_minus, dtype=float)
+    eps_plus = np.asarray(eps_plus)
+    eps_minus = np.asarray(eps_minus)
 
     qpts = phonon.run_qpoints([[0.0, 0.0, 0.0]], with_eigenvectors=True)
     freqs_thz = np.asarray(qpts.frequencies)[0]
@@ -518,8 +532,8 @@ def compute_raman_spectrum(
         if not computed[v] or freqs_cm[v] <= 0.0:
             continue
         a, gamma2 = raman_invariants(tensors[v])
-        invariants[v] = (a, gamma2)
-        act = 45.0 * a * a + 7.0 * gamma2
+        invariants[v] = (float(np.real(a)), gamma2)
+        act = 45.0 * abs(a) ** 2 + 7.0 * gamma2
         activities[v] = act
         # Stokes scattering cross-section prefactor.
         pref = _bose_factor(freqs_cm[v], temperature) + 1.0

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from PAOFLOW.gen import paoflow_driver as d
 
 _COMMON = {
@@ -155,7 +157,73 @@ def test_build_raman_script_laser_value():
 
 def test_build_raman_plot_script():
     text = d.build_raman_plot_script(_raman_cfg())
-    assert 'plot_raman_spectrum(' in text
     assert '_raman_spectrum.dat' in text
     assert '_raman_modes.dat' in text
     assert '--xmin' in text and '--xmax' in text and '--save' in text
+    # Plots are drawn directly with matplotlib so multiple curves share one axes.
+    assert 'import matplotlib.pyplot as plt' in text
+    assert 'ax.plot(freq' in text
+
+
+def test_build_raman_plot_script_overlays_all_spectra():
+    text = d.build_raman_plot_script(_raman_cfg())
+    # The plot script globs for every spectrum and overlays them on a single
+    # axes (with a legend) so 'all' / excitation-profile outputs share one plot.
+    assert 'import glob' in text
+    assert "glob.glob(os.path.join(OUTPUTDIR, FNAME + '*_raman_spectrum.dat'))" in text
+    assert 'fig, ax = plt.subplots()' in text
+    assert 'for spectrum in spectra:' in text
+    assert 'ax.legend(' in text
+    assert '--normalize' in text and '--sticks' in text
+
+
+def test_build_raman_plot_script_excitation_profile():
+    text = d.build_raman_plot_script(_raman_cfg())
+    # --excitation plots mode intensity vs laser energy (eV) from the per-laser
+    # *_raman_modes.dat files (static channel skipped, only active modes drawn).
+    assert '--excitation' in text
+    assert 'def plot_excitation(args):' in text
+    assert 'def _laser_ev(label):' in text
+    assert 'EV_NM = 1239.841984' in text
+    assert "glob.glob(os.path.join(OUTPUTDIR, FNAME + '*_raman_modes.dat'))" in text
+    assert "ax.set_xlabel('Laser energy (eV)'" in text
+    assert 'if args.excitation:' in text
+
+
+def test_build_raman_script_method_static_default():
+    text = d.build_raman_script(_raman_cfg())
+    assert "METHOD = 'static'" in text
+    assert 'method=METHOD,' in text
+    assert 'lifetime=LIFETIME,' in text
+
+
+def test_build_raman_script_method_resonance_list():
+    text = d.build_raman_script(
+        _raman_cfg(raman_method='resonance', raman_laser_nm=[488.0, 532.0], raman_lifetime=0.2)
+    )
+    assert "METHOD = 'resonance'" in text
+    assert 'LASER_NM = [488.0, 532.0]' in text
+    assert 'LIFETIME = 0.2' in text
+    assert 'resonance Raman workflow' in text
+
+
+def test_build_raman_script_method_all_title():
+    text = d.build_raman_script(_raman_cfg(raman_method='all', raman_laser_nm=[532.0]))
+    assert "METHOD = 'all'" in text
+    assert 'static + resonance Raman workflow' in text
+
+
+def test_parse_laser_list_comma_and_expression():
+    assert d.parse_laser_list('488, 514.5, 532') == [488.0, 514.5, 532.0]
+    assert d.parse_laser_list('532') == [532.0]
+    profile = d.parse_laser_list('[n for n in range(450, 650, 5)]')
+    assert profile[0] == 450.0
+    assert profile[-1] == 645.0
+    assert len(profile) == 40
+
+
+def test_parse_laser_list_rejects_unsafe_input():
+    with pytest.raises(ValueError):
+        d.parse_laser_list('__import__("os").system("echo hi")')
+    # Blank input yields an empty list (the caller decides what to do).
+    assert d.parse_laser_list('   ') == []

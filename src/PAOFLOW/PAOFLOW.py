@@ -3248,15 +3248,31 @@ class PAOFLOW:
         nfft=None,
         e_static=0.05,
         eps_outdir='eps',
+        energies=None,
+        lifetime=0.1,
+        e_window=None,
+        e_ne=None,
+        return_static=False,
     ):
-        """Static dielectric tensor of one displaced cell via the PAO pipeline.
+        """Dielectric tensor of one displaced cell via the PAO pipeline.
 
         Mirrors the standard PAOFLOW optical workflow (internal projections ->
         PAO Hamiltonian -> non-local velocity -> dielectric tensor) on the
-        displaced-cell SCF save and returns the static ``(3, 3)`` dielectric
-        tensor (``epsilon_1`` at ``omega -> 0``).
+        displaced-cell SCF save.
+
+        When ``energies`` is ``None`` the static ``(3, 3)`` dielectric tensor
+        (``epsilon_1`` at ``omega -> 0``) is returned (non-resonant Raman).
+        Otherwise the **complex** dielectric tensor is evaluated on a frequency
+        grid spanning ``energies`` (with a finite ``lifetime`` broadening) and
+        the interpolated value at each requested photon energy (eV) is returned,
+        stacked as ``(len(energies), 3, 3)`` (resonance Raman).  When
+        ``return_static`` is ``True`` (only meaningful with ``energies``), the
+        static tensor is harvested from the same grid (its ``omega -> 0`` row)
+        and the method returns the tuple ``(stack, static)`` -- letting the
+        ``method='all'`` workflow obtain both spectra from a single SCF/optics
+        run per cell.
         """
-        from .phonon.io import read_static_epsilon
+        from .phonon.io import read_epsilon_at, read_static_epsilon
 
         _, attr = self.data_controller.data_dicts()
         pf = type(self)(
@@ -3275,14 +3291,27 @@ class PAOFLOW:
         pf.pao_eigh()
         pf.gradient_and_momenta(nonlocal_velocity=nonlocal_velocity)
         pf.adaptive_smearing()
-        pf.dielectric_tensor(
-            emin=0.0,
-            emax=e_static,
-            ne=2,
-            d_tensor=[[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]],
+
+        d_tensor = [[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]]
+        if energies is None:
+            pf.dielectric_tensor(emin=0.0, emax=e_static, ne=2, d_tensor=d_tensor)
+            _, pat = pf.data_controller.data_dicts()
+            return read_static_epsilon(pat['opath'], nspin=int(pat.get('nspin', 1)))
+
+        energies = np.atleast_1d(np.asarray(energies, dtype=float))
+        grid_max = float(e_window) if e_window else float(np.max(energies)) * 1.25 + 5.0 * lifetime
+        grid_ne = (
+            int(e_ne)
+            if e_ne
+            else max(201, int(np.ceil(grid_max / max(lifetime / 4.0, 1.0e-3))) + 1)
         )
+        pf.dielectric_tensor(delta=lifetime, emin=0.0, emax=grid_max, ne=grid_ne, d_tensor=d_tensor)
         _, pat = pf.data_controller.data_dicts()
-        return read_static_epsilon(pat['opath'], nspin=int(pat.get('nspin', 1)))
+        nspin = int(pat.get('nspin', 1))
+        stack = np.stack([read_epsilon_at(pat['opath'], energy=e, nspin=nspin) for e in energies])
+        if return_static:
+            return stack, read_static_epsilon(pat['opath'], nspin=nspin)
+        return stack
 
     def raman_spectrum(
         self,
@@ -3299,6 +3328,10 @@ class PAOFLOW:
         nonlocal_velocity=True,
         nfft=None,
         e_static=0.05,
+        method='static',
+        lifetime=0.1,
+        e_window=None,
+        e_ne=None,
         dielectric_callback=None,
         laser_nm=None,
         temperature=300.0,
@@ -3310,9 +3343,23 @@ class PAOFLOW:
         fname='phonon',
         generate=None,
     ):
-        """Non-resonant (Placzek) Raman spectrum by finite differences (Stage 4).
+        """Raman spectrum by finite differences of the dielectric tensor (Stage 4).
 
-        Two-phase workflow:
+        Two flavours, selected with ``method``:
+
+        * ``'static'`` (default) -- **non-resonant (Placzek)** Raman from the
+          finite-difference derivative of the *static* dielectric tensor
+          (``omega -> 0``).  The Raman tensor is real.
+        * ``'resonance'`` -- **resonance Raman** from the derivative of the
+          *complex* dielectric tensor evaluated at the laser frequency
+          ``omega_L`` (set by ``laser_nm``).  In the independent-particle limit
+          this is the Albrecht A+B sum (Franck-Condon and Herzberg-Teller
+          captured together, since the finite difference differentiates the
+          transition energies *and* the transition dipoles), with resonance
+          enhancement as ``omega_L`` approaches the interband transitions.  The
+          Raman tensor is complex and intensities use ``45|a|^2 + 7 gamma^2``.
+
+        Two-phase workflow (identical for both flavours):
 
         * **generate** -- displace the primitive cell by ``+/-delta`` along each
           optical zone-centre eigenvector and write a ready-to-run ``pw.x`` SCF
@@ -3321,9 +3368,10 @@ class PAOFLOW:
           calculations (any tool); no NSCF/projwfc are needed.
         * **analyse** -- for every displaced cell run the PAOFLOW optical
           pipeline (internal projections -> dielectric tensor) to obtain the
-          static dielectric tensor, build the Raman tensor
-          ``R^v = (eps(+delta) - eps(-delta)) / (2 delta)`` per mode, and form
-          the orientationally-averaged (powder) Stokes intensities.
+          dielectric tensor (static, or at ``omega_L`` for resonance), build the
+          Raman tensor ``R^v = (eps(+delta) - eps(-delta)) / (2 delta)`` per
+          mode, and form the orientationally-averaged (powder) Stokes
+          intensities.
 
         The phase is chosen automatically (``generate=None``): *analyse* when
         every displaced-cell SCF save is present, otherwise *generate*.  Pass
@@ -3351,12 +3399,33 @@ class PAOFLOW:
                 the dielectric tensor (recommended).
             nfft (tuple, optional): Double-grid interpolation ``(n1, n2, n3)``.
             e_static (float): Upper energy (eV) of the 2-point grid used to read
-                the static dielectric tensor (``epsilon_1`` at ``omega -> 0``).
+                the static dielectric tensor (``epsilon_1`` at ``omega -> 0``;
+                ``method='static'`` only).
+            method (str): ``'static'`` (non-resonant), ``'resonance'`` (at the
+                laser frequency), or ``'all'`` (both, harvested from a single
+                optics run per displaced cell; the static spectrum is written to
+                ``<fname>_static_raman_*.dat`` and each laser to
+                ``<fname>_<nm>nm_raman_*.dat``).
+            lifetime (float): Lorentzian lifetime broadening (eV) of the complex
+                dielectric tensor in the resonance case (the ``delta`` of
+                :meth:`dielectric_tensor`); keeps the response finite on
+                resonance.
+            e_window (float, optional): Upper energy (eV) of the per-cell
+                dielectric grid in the resonance case (default: just above the
+                largest laser energy).
+            e_ne (int, optional): Number of grid points for the per-cell
+                dielectric grid in the resonance case (default: chosen so the
+                spacing resolves ``lifetime``).
             dielectric_callback (callable, optional): ``f(savedir, workpath) ->
-                (3, 3) ndarray`` returning the static dielectric tensor of a
-                displaced cell.  Overrides the built-in PAO pipeline.
-            laser_nm (float, optional): Excitation wavelength (nm); enables the
-                ``(omega_L - omega_v)^4`` prefactor.
+                ndarray`` returning the dielectric tensor of a displaced cell --
+                ``(3, 3)`` for ``method='static'`` or
+                ``(len(laser_nm), 3, 3)`` (complex) for ``method='resonance'``.
+                Overrides the built-in PAO pipeline.
+            laser_nm (float or sequence, optional): Excitation wavelength(s) in
+                nm.  Required for ``method='resonance'`` (sets ``omega_L`` and
+                enables the ``(omega_L - omega_v)^4`` prefactor).  A sequence
+                produces one spectrum per wavelength (a Raman *excitation
+                profile*), each written to ``<fname>_<nm>nm_raman_*.dat``.
             temperature (float): Temperature (K) for the Bose ``(n+1)`` factor.
             freq_min, freq_max, npoints, gamma, units, fname: Spectrum grid and
                 output options, as in :meth:`ir_spectrum`.  Writes
@@ -3432,19 +3501,107 @@ class PAOFLOW:
             nmodes = 3 * len(phonon.primitive)
             optical, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
 
-            eps_plus = np.zeros((nmodes, 3, 3), dtype=float)
-            eps_minus = np.zeros((nmodes, 3, 3), dtype=float)
+            # Laser wavelength(s) / photon energies for the resonance harvest.
+            method_l = str(method).lower()
+            if method_l not in ('static', 'resonance', 'all'):
+                raise ValueError(
+                    "raman_spectrum: method must be 'static', 'resonance' or 'all' "
+                    '(got %r).' % method
+                )
+            want_static = method_l in ('static', 'all')
+            want_resonance = method_l in ('resonance', 'all')
+
+            if want_resonance:
+                if laser_nm is None:
+                    raise ValueError(
+                        'raman_spectrum(method=%r) requires laser_nm=... '
+                        '(the excitation wavelength(s) in nm).' % method_l
+                    )
+                laser_list = [float(x) for x in np.atleast_1d(laser_nm)]
+                # E(eV) = h c / lambda, with h c = 1239.841984 eV*nm.
+                res_energies = [1239.841984 / nm for nm in laser_list]
+            else:
+                laser_list = []
+                res_energies = []
+
+            if dielectric_callback is not None and method_l == 'all':
+                raise ValueError(
+                    'raman_spectrum: dielectric_callback is not supported with '
+                    "method='all'; call method='static' and method='resonance' "
+                    'separately with your callback instead.'
+                )
+
+            # One output channel per spectrum to produce.  Each carries its own
+            # +/- dielectric arrays, the laser used for the Stokes prefactor and
+            # the output basename.
+            channels = []
+            static_channel = None
+            if want_static:
+                # Bare Placzek for 'all'; pass the (scalar) laser through for a
+                # plain static run to preserve the historical behaviour.
+                static_laser = laser_nm if method_l == 'static' else None
+                static_channel = {
+                    'fname': fname + '_static' if method_l == 'all' else fname,
+                    'laser': static_laser,
+                    'plus': np.zeros((nmodes, 3, 3), dtype=float),
+                    'minus': np.zeros((nmodes, 3, 3), dtype=float),
+                }
+                channels.append(static_channel)
+
+            res_channels = []
+            multi = method_l == 'all' or len(laser_list) > 1
+            for i, nm in enumerate(laser_list):
+                ch = {
+                    'fname': '%s_%dnm' % (fname, int(round(nm))) if multi else fname,
+                    'laser': nm,
+                    'plus': np.zeros((nmodes, 3, 3), dtype=complex),
+                    'minus': np.zeros((nmodes, 3, 3), dtype=complex),
+                    'index': i,
+                }
+                channels.append(ch)
+                res_channels.append(ch)
+
             computed = np.zeros(nmodes, dtype=bool)
             for v, sign, cell_dir, save in entries:
+                res_stack = None
+                stat = None
                 if dielectric_callback is not None:
-                    eps3 = np.asarray(dielectric_callback(save, cell_dir), dtype=float)
+                    out = np.asarray(dielectric_callback(save, cell_dir))
+                    if want_resonance:
+                        res_stack = out[None, ...] if out.ndim == 2 else out
+                    else:
+                        stat = np.real(out)
+                elif want_resonance:
+                    if basispath is None:
+                        raise ValueError(
+                            'raman_spectrum analyse phase needs basispath=... '
+                            '(or a dielectric_callback) for the internal PAO projections.'
+                        )
+                    out = self._raman_cell_epsilon(
+                        save,
+                        cell_dir,
+                        basispath,
+                        configuration=configuration,
+                        pthr=pthr,
+                        nonlocal_velocity=nonlocal_velocity,
+                        nfft=nfft,
+                        energies=res_energies,
+                        lifetime=lifetime,
+                        e_window=e_window,
+                        e_ne=e_ne,
+                        return_static=want_static,
+                    )
+                    if want_static:
+                        res_stack, stat = out
+                    else:
+                        res_stack = out
                 else:
                     if basispath is None:
                         raise ValueError(
                             'raman_spectrum analyse phase needs basispath=... '
                             '(or a dielectric_callback) for the internal PAO projections.'
                         )
-                    eps3 = self._raman_cell_epsilon(
+                    stat = self._raman_cell_epsilon(
                         save,
                         cell_dir,
                         basispath,
@@ -3454,27 +3611,32 @@ class PAOFLOW:
                         nfft=nfft,
                         e_static=e_static,
                     )
-                if sign == '+':
-                    eps_plus[v] = eps3
-                else:
-                    eps_minus[v] = eps3
+
+                key = 'plus' if sign == '+' else 'minus'
+                if static_channel is not None and stat is not None:
+                    static_channel[key][v] = np.real(stat)
+                if res_stack is not None:
+                    res_stack = np.asarray(res_stack)
+                    for ch in res_channels:
+                        ch[key][v] = res_stack[ch['index']]
                 computed[v] = True
 
-            compute_raman_spectrum(
-                self.data_controller,
-                eps_plus,
-                eps_minus,
-                delta,
-                computed=computed,
-                laser_nm=laser_nm,
-                temperature=temperature,
-                freq_min=freq_min,
-                freq_max=freq_max,
-                npoints=npoints,
-                gamma=gamma,
-                units=units,
-                fname=fname,
-            )
+            for ch in channels:
+                compute_raman_spectrum(
+                    self.data_controller,
+                    ch['plus'],
+                    ch['minus'],
+                    delta,
+                    computed=computed,
+                    laser_nm=ch['laser'],
+                    temperature=temperature,
+                    freq_min=freq_min,
+                    freq_max=freq_max,
+                    npoints=npoints,
+                    gamma=gamma,
+                    units=units,
+                    fname=ch['fname'],
+                )
 
         except Exception as e:
             self.report_exception('raman_spectrum')

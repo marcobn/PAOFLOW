@@ -209,3 +209,161 @@ def test_compute_raman_spectrum_shape_validation(tmp_path):
 
     with pytest.raises(ValueError, match='modes are expected'):
         compute_raman_spectrum(dc, np.zeros((2, 3, 3)), np.zeros((2, 3, 3)), 0.05, write=False)
+
+
+# ---------------------------------------------------------------------------
+# Resonance Raman: complex dielectric tensors.
+# ---------------------------------------------------------------------------
+
+
+def test_invariants_complex_reduce_to_real():
+    """A complex tensor with zero imaginary part reproduces the real result."""
+    r = np.diag([1.0, 2.0, 3.0]).astype(complex)
+    a, gamma2 = raman_invariants(r)
+    assert isinstance(a, complex)
+    assert a.real == pytest.approx(2.0, abs=1e-12)
+    assert a.imag == pytest.approx(0.0, abs=1e-12)
+    assert gamma2 == pytest.approx(3.0, abs=1e-12)
+    # Activity uses |a|^2 and is identical to the real case.
+    assert raman_powder_activity(r) == pytest.approx(201.0, abs=1e-10)
+
+
+def test_invariants_complex_uses_modulus():
+    """For a complex isotropic tensor the activity scales as |a|^2."""
+    a0 = 1.0 + 1.0j
+    r = np.eye(3) * a0
+    a, gamma2 = raman_invariants(r)
+    assert a == pytest.approx(a0, abs=1e-12)
+    assert gamma2 == pytest.approx(0.0, abs=1e-12)
+    # |a|^2 = 2 -> activity = 45 * 2 = 90.
+    assert raman_powder_activity(r) == pytest.approx(90.0, abs=1e-10)
+
+
+def test_raman_tensor_complex_passthrough():
+    """Complex dielectric differences yield a complex Raman tensor."""
+    delta = 0.5
+    eps_plus = np.zeros((1, 3, 3), dtype=complex)
+    eps_minus = np.zeros((1, 3, 3), dtype=complex)
+    eps_plus[0] = np.eye(3) * (0.2 + 0.4j)
+    eps_minus[0] = -np.eye(3) * (0.2 + 0.4j)
+    r = raman_tensors_from_epsilon(eps_plus, eps_minus, delta)
+    assert np.iscomplexobj(r)
+    # (0.2+0.4j - (-(0.2+0.4j))) / (2*0.5) = 0.4 + 0.8j on the diagonal.
+    np.testing.assert_allclose(np.diag(r[0]), 0.4 + 0.8j, atol=1e-12)
+
+
+def test_resonance_reduces_to_static_for_real_eps(tmp_path):
+    """Real complex-typed dielectric data reproduces the static activities."""
+    dc = _diatomic_controller(tmp_path, supercell_matrix=1)
+    phonon = init_phonopy(dc)
+    _set_diatomic_force_constants(phonon, k=1.0)
+
+    nmodes = 3 * len(phonon.primitive)
+    delta = 0.05
+    eps_plus = np.zeros((nmodes, 3, 3), dtype=complex)
+    eps_minus = np.zeros((nmodes, 3, 3), dtype=complex)
+    computed = np.zeros(nmodes, dtype=bool)
+    eps_plus[:] = np.eye(3) * 0.1
+    eps_minus[:] = -np.eye(3) * 0.1
+    computed[:] = True
+
+    res = compute_raman_spectrum(dc, eps_plus, eps_minus, delta, computed=computed, write=False)
+    # R = 2*I -> a = 2 (real), gamma2 = 0, activity = 180 for the optical modes
+    # (acoustic branches stay silent) -- same as the static case.
+    active = res['active']
+    np.testing.assert_allclose(res['activities'][active], 180.0, rtol=1e-6)
+
+
+def test_resonance_enhancement_near_pole(tmp_path):
+    """A larger |eps| derivative (closer to resonance) raises the activity."""
+    dc = _diatomic_controller(tmp_path, supercell_matrix=1)
+    phonon = init_phonopy(dc)
+    _set_diatomic_force_constants(phonon, k=1.0)
+
+    nmodes = 3 * len(phonon.primitive)
+    delta = 0.05
+
+    def _activity(amp):
+        eps_plus = np.zeros((nmodes, 3, 3), dtype=complex)
+        eps_minus = np.zeros((nmodes, 3, 3), dtype=complex)
+        computed = np.zeros(nmodes, dtype=bool)
+        eps_plus[:] = np.eye(3) * amp
+        eps_minus[:] = -np.eye(3) * amp
+        computed[:] = True
+        res = compute_raman_spectrum(dc, eps_plus, eps_minus, delta, computed=computed, write=False)
+        return res['activities'][computed].max()
+
+    off = _activity(0.1 + 0.05j)
+    on = _activity(0.5 + 0.6j)
+    assert on > off
+
+
+# ---------------------------------------------------------------------------
+# read_epsilon_at: complex harvest with interpolation.
+# ---------------------------------------------------------------------------
+
+
+def _write_eps_grid(eps_dir, energies, real_of, imag_of):
+    os.makedirs(eps_dir, exist_ok=True)
+    for comp, i, j in (
+        ('xx', 0, 0),
+        ('yy', 1, 1),
+        ('zz', 2, 2),
+        ('xy', 0, 1),
+        ('xz', 0, 2),
+        ('yz', 1, 2),
+    ):
+        np.savetxt(
+            os.path.join(eps_dir, 'epsr_%s.dat' % comp),
+            np.column_stack([energies, real_of(comp, energies)]),
+        )
+        np.savetxt(
+            os.path.join(eps_dir, 'epsi_%s.dat' % comp),
+            np.column_stack([energies, imag_of(comp, energies)]),
+        )
+
+
+def test_read_epsilon_at_interpolates(tmp_path):
+    from PAOFLOW.phonon.io import read_epsilon_at, read_static_epsilon
+
+    eps_dir = os.path.join(str(tmp_path), 'eps')
+    energies = np.linspace(0.0, 4.0, 9)  # spacing 0.5 eV
+
+    def real_of(comp, e):
+        return np.full_like(e, 2.0) if comp == 'xx' else np.zeros_like(e)
+
+    def imag_of(comp, e):
+        return e if comp == 'xx' else np.zeros_like(e)
+
+    _write_eps_grid(eps_dir, energies, real_of, imag_of)
+
+    # Static limit -> real part only, imaginary part dropped.
+    eps0 = read_static_epsilon(eps_dir)
+    assert eps0.dtype == float or np.isrealobj(eps0)
+    assert eps0[0, 0] == pytest.approx(2.0, abs=1e-12)
+
+    # At 1.25 eV (between grid points) the imaginary part interpolates to 1.25.
+    eps = read_epsilon_at(eps_dir, energy=1.25)
+    assert np.iscomplexobj(eps)
+    assert eps[0, 0].real == pytest.approx(2.0, abs=1e-12)
+    assert eps[0, 0].imag == pytest.approx(1.25, abs=1e-12)
+    # Tensor is symmetric.
+    np.testing.assert_allclose(eps, eps.T, atol=1e-12)
+
+
+def test_read_epsilon_at_missing_imag_is_zero(tmp_path):
+    from PAOFLOW.phonon.io import read_epsilon_at
+
+    eps_dir = os.path.join(str(tmp_path), 'eps')
+    os.makedirs(eps_dir, exist_ok=True)
+    energies = np.linspace(0.0, 2.0, 5)
+    for comp in ('xx', 'yy', 'zz', 'xy', 'xz', 'yz'):
+        val = 3.0 if comp == 'yy' else 0.0
+        np.savetxt(
+            os.path.join(eps_dir, 'epsr_%s.dat' % comp),
+            np.column_stack([energies, np.full_like(energies, val)]),
+        )
+    # No epsi files: the imaginary part defaults to zero without error.
+    eps = read_epsilon_at(eps_dir, energy=1.0)
+    assert eps[1, 1].real == pytest.approx(3.0, abs=1e-12)
+    assert eps[1, 1].imag == pytest.approx(0.0, abs=1e-12)

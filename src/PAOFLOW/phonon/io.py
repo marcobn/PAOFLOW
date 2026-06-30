@@ -632,27 +632,80 @@ def read_static_epsilon(eps_dir, nspin=1):
     numpy.ndarray
         Symmetric static dielectric tensor ``(3, 3)``.
     """
-    eps = np.zeros((3, 3), dtype=float)
-    for comp, i, j in _EPS_COMPONENTS:
-        if nspin == 2:
-            candidates = [
-                os.path.join(eps_dir, 'epsr_%s_0.dat' % comp),
-                os.path.join(eps_dir, 'epsr_%s_1.dat' % comp),
-            ]
-        else:
-            candidates = [os.path.join(eps_dir, 'epsr_%s.dat' % comp)]
-        val = 0.0
-        found = False
-        for path in candidates:
-            if os.path.isfile(path):
-                data = np.loadtxt(path)
-                data = np.atleast_2d(data)
+    return np.real(read_epsilon_at(eps_dir, energy=None, nspin=nspin))
+
+
+def _read_eps_component(eps_dir, tag, comp, energy, nspin, required):
+    """Read one dielectric component (``tag`` = ``'epsr'`` / ``'epsi'``).
+
+    Returns the (spin-summed) value at ``energy`` (linear interpolation on the
+    file's energy grid; the lowest-energy row when ``energy is None``), or
+    ``None`` when the file is absent and ``required`` is ``False``.
+    """
+    if nspin == 2:
+        candidates = [
+            os.path.join(eps_dir, '%s_%s_0.dat' % (tag, comp)),
+            os.path.join(eps_dir, '%s_%s_1.dat' % (tag, comp)),
+        ]
+    else:
+        candidates = [os.path.join(eps_dir, '%s_%s.dat' % (tag, comp))]
+
+    val = 0.0
+    found = False
+    for path in candidates:
+        if os.path.isfile(path):
+            data = np.atleast_2d(np.loadtxt(path))
+            if energy is None:
                 val += float(data[0, 1])
-                found = True
-        if not found:
+            else:
+                val += float(np.interp(float(energy), data[:, 0], data[:, 1]))
+            found = True
+    if not found:
+        if required:
             raise FileNotFoundError(
-                'Missing static dielectric output for component %s in %s' % (comp, eps_dir)
+                'Missing %s output for component %s in %s' % (tag, comp, eps_dir)
             )
+        return None
+    return val
+
+
+def read_epsilon_at(eps_dir, energy=None, nspin=1):
+    """Read the (complex) dielectric tensor at a target photon energy.
+
+    The real part is read from ``epsr_<ab>*.dat`` and, when available, the
+    imaginary part from ``epsi_<ab>*.dat`` (both written by
+    :func:`PAOFLOW.response.do_epsilon.do_dielectric_tensor` on a shared energy
+    grid given in the first column).  Used by the resonance-Raman harvester to
+    evaluate :math:`\\varepsilon(\\omega_L)` at the laser energy; with
+    ``energy=None`` it returns the static (``omega -> 0``) tensor.
+
+    Parameters
+    ----------
+    eps_dir : str
+        Directory containing the ``eps{r,i}_<ab>*.dat`` files.
+    energy : float, optional
+        Photon energy (eV) at which to evaluate the dielectric tensor (linear
+        interpolation on the file grid).  ``None`` selects the static limit and
+        the imaginary part is taken to be zero.
+    nspin : int
+        Number of spin channels (``_0``/``_1`` suffixes summed when
+        ``nspin == 2``).
+
+    Returns
+    -------
+    numpy.ndarray
+        Complex symmetric dielectric tensor ``(3, 3)`` (real when
+        ``energy is None``).
+    """
+    eps = np.zeros((3, 3), dtype=complex)
+    for comp, i, j in _EPS_COMPONENTS:
+        re = _read_eps_component(eps_dir, 'epsr', comp, energy, nspin, required=True)
+        im = 0.0
+        if energy is not None:
+            im_val = _read_eps_component(eps_dir, 'epsi', comp, energy, nspin, required=False)
+            if im_val is not None:
+                im = im_val
+        val = complex(re, im)
         eps[i, j] = val
         eps[j, i] = val
     return eps
