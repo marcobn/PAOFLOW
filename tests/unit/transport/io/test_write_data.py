@@ -10,7 +10,6 @@ from PAOFLOW.transport.io.write_data import (
     write_overlap_files,
     write_projectability_files,
 )
-from PAOFLOW.transport.io.input_parameters import AtomicProjData
 
 
 @pytest.mark.unit
@@ -99,22 +98,12 @@ def test_write_operator_xml_writes_basic_file(tmp_path):
 @pytest.mark.unit
 def test_write_projectability_files(tmp_path):
     """Projectability writer should emit a text file for each spin."""
-    proj_data = AtomicProjData(
-        nbnds=1,
-        nkpnts=1,
-        nspin=1,
-        nawf=1,
-        nelec=1.0,
-        efermi=0.0,
-        energy_units='eV',
-        kpts=np.zeros((3, 1)),
-        wk=np.ones(1),
-        eigvals=np.zeros((1, 1, 1)),
-        proj=np.ones((1, 1, 1, 1), dtype=complex),
-    )
+    proj = np.ones((1, 1, 1, 1), dtype=complex)
+    eigvals = np.zeros((1, 1, 1))
+    nbnds = 1
     hk = np.zeros((1, 1, 1, 1), dtype=complex)
 
-    write_projectability_files(str(tmp_path), proj_data, hk)
+    write_projectability_files(str(tmp_path), proj, eigvals, nbnds, hk)
 
     out_file = tmp_path / 'projectability.txt'
     assert out_file.exists()
