@@ -1,63 +1,82 @@
 from __future__ import annotations
 
-from PAOFLOW.DataController import DataController
 import numpy as np
 
-from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlock
+from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.data import ConductorData
-from PAOFLOW.transport.parsers.parser_base import parse_index_array
 from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_kspace
+from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlock
+from PAOFLOW.transport.parsers.parser_base import parse_index_array
 from PAOFLOW.transport.utils.timing import timed_function
 
 
 @timed_function('read_matrix')
 def read_matrix(
-    yaml_data: ConductorData,
+    conductor_data: ConductorData,
     data_controller: DataController,
     ispin: int,
     transport_direction: int,
     opr: OperatorBlock,
 ) -> None:
-    """
-    Read the Hamiltonian and overlap block from a .ham IOTK-formatted file
-    and populate the given OperatorBlock with the k-space transformed data.
+    """Build a k-space operator block from the in-memory real-space Hamiltonian.
+
+    Selects the real-space block requested by ``opr`` from the shared
+    ``HRs``/``SRs`` arrays, slices it according to the row/column index metadata
+    on ``opr.tag``, and stores the partial Fourier transform into ``opr``.
 
     Parameters
     ----------
-    `filename` : str
-        Path to the input .ham file.
-    `ispin` : int
-        Spin index (0-based) to select the spin component (if applicable).
-    `transport_direction` : int
-        Transport direction (1=x, 2=y, 3=z).
-    `opr` : OperatorBlock
-        Target operator block to populate.
+    conductor_data : ConductorData
+        Conductor input model. Only ``conductor_data.atomic_proj.do_overlap_transformation``
+        is read, to decide whether overlap blocks are taken from ``SRs`` or replaced
+        by an identity (on-site) / zero (off-site) block.
+    data_controller : DataController
+        Shared PAOFLOW data store. Required arrays: ``HRs`` (shape ``(nrtot, nawf, nawf)``),
+        ``SRs`` (same shape, only when overlap is enabled), and ``ivr``
+        (shape ``(nrtot, 3)``). Required attributes: ``nawf``, ``nspin``.
+    ispin : int
+        Spin index (0-based) selecting the spin channel. Must be non-negative
+        when ``nspin == 2``.
+    transport_direction : int
+        Transport direction (``1`` = x, ``2`` = y, ``3`` = z).
+    opr : OperatorBlock
+        Target operator block, mutated in place (see ``Returns``).
+
+    Returns
+    -------
+    None
+        Mutates ``opr``: sets ``opr.irows``, ``opr.icols``, ``opr.irows_sgm``,
+        ``opr.icols_sgm`` from the parsed ``opr.tag`` metadata, and overwrites
+        ``opr.H`` and ``opr.S`` with the k-resolved Hamiltonian and overlap blocks.
+
+    Raises
+    ------
+    RuntimeError
+        If ``opr`` has not been allocated.
+    ValueError
+        If ``nspin == 2`` and ``ispin`` is negative, if ``opr.name`` is not a
+        recognized block label, or if the required 3D R-vector cannot be found
+        in ``ivr``.
 
     Notes
     -----
-    This function reads real-space Hamiltonian and overlap data from a Quantum ESPRESSO
-    `.ham` file in IOTK format, processes it, and populates the operator block `opr`
-    in reciprocal space using a partial Fourier transform.
+    The data source is the in-memory ``HRs``/``SRs`` arrays produced by
+    ``populate_real_space_hamiltonian``; nothing is read from disk. (The legacy
+    ``.ham`` file is now a debug-only artifact and is not an input here.)
 
-    The function supports spin-polarized and non-spin-polarized cases. For spin-polarized
-    input, the appropriate spin channel is extracted from the nested `@SPINn` sections.
+    Real-space blocks are selected by building the target 3D integer R-vector
+    ``ivr_aux``: the component along ``transport_direction`` is fixed by the block
+    label (``0`` for on-site blocks, ``1`` for coupling blocks, or an explicit
+    ``ivr`` override from ``opr.tag``), while the remaining components come from
+    ``opr.ivr_par``. The matching row of ``ivr`` selects the block from ``HRs``
+    (and ``SRs`` when overlap is enabled). When overlap is disabled, the on-site
+    block uses the identity at the zero R-vector and zeros elsewhere.
 
-    Matrix blocks are selected by identifying matching 3D integer R-vectors `ivr_aux` that
-    correspond to a fixed component along the transport direction (e.g., 0 for on-site blocks,
-    1 for coupling blocks). These vectors are matched against the global `IVR` list from the file.
-
-    For each matching R-vector:
-        - A real-space Hamiltonian block `VRn` is read.
-        - If present, the corresponding overlap block `OVERLAPn` is also read.
-        - If overlap is not present in the file and the block label corresponds to an on-site
-          block, then an identity matrix is used for the zero R-vector and zeros elsewhere.
-
-    The selected block is sliced using index arrays parsed from the `opr.tag` metadata, and
-    inserted into 3D tensors A (Hamiltonian) and S (overlap), indexed over the R-vector grid.
-
-    Finally, a partial 2D Fourier transform is applied in the directions orthogonal to
-    the transport axis to obtain the k-resolved operator block.
-
+    Each selected block is sliced using the ``irows``/``icols`` index arrays
+    parsed from ``opr.tag`` and inserted into the real-space tensors ``A``
+    (Hamiltonian) and ``S`` (overlap), indexed over the parallel R-vector grid.
+    A partial 2D Fourier transform in the directions orthogonal to the transport
+    axis then yields the k-resolved operator block.
     """
     if not opr.allocated:
         raise RuntimeError('OperatorBlock is not allocated')
@@ -90,7 +109,7 @@ def read_matrix(
 
     nawf = attr['nawf']
     nspin = attr['nspin']
-    do_overlap_transform = yaml_data.atomic_proj.do_overlap_transformation
+    do_overlap_transform = conductor_data.atomic_proj.do_overlap_transformation
     ivr = arry['ivr']
     nrtot = ivr.shape[0]
     irows = parse_index_array(rows, nawf)

@@ -59,9 +59,9 @@ def parse_projections(data_controller: DataController) -> np.ndarray:
 
 
 def parse_overlaps(
-    yaml_data: ConductorData, data_controller: DataController
+    conductor_data: ConductorData, data_controller: DataController
 ) -> Optional[np.ndarray]:
-    do_overlap_transformation = yaml_data.atomic_proj.do_overlap_transformation
+    do_overlap_transformation = conductor_data.atomic_proj.do_overlap_transformation
     if not do_overlap_transformation:
         return None
     else:
