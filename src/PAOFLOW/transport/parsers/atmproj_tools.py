@@ -5,7 +5,7 @@ import numpy as np
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.data import AtomicProjData, ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.grid.rgrid import get_rgrid
 from PAOFLOW.transport.io.write_data import (
     populate_real_space_hamiltonian,
@@ -14,13 +14,7 @@ from PAOFLOW.transport.io.write_data import (
     write_projectability_files,
 )
 from PAOFLOW.transport.io.write_header import headered_function
-from PAOFLOW.transport.parsers.atmproj_parser_base import (
-    parse_eigenvalues,
-    parse_header,
-    parse_kpoints,
-    parse_overlaps,
-    parse_projections,
-)
+from PAOFLOW.transport.utils.converters import cartesian_to_crystal
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -35,14 +29,13 @@ def parse_atomic_proj(
     output_dir = data.file_names.output_dir
     opts = data.atomic_proj
 
-    arry, _ = data_controller.data_dicts()
+    arry, attr = data_controller.data_dicts()
 
-    proj_data = parse_atomic_proj_data(data, data_controller)
+    alat = float(attr['alat'])
+    arry['wk'] = arry['kpnts_wght'] / np.sum(arry['kpnts_wght'])
+    arry['vkpts_cartesian'] = arry['kpnts'].T * (2.0 * np.pi / alat)  # bohr^-1
 
-    log.log_proj_summary(
-        proj_data,
-        data,
-    )
+    log.log_proj_summary(data_controller, data)
 
     hk_data = reshape_pao_hamiltonian(data_controller)
 
@@ -54,39 +47,28 @@ def parse_atomic_proj(
     name = Path(file_proj).name
     output_prefix = Path(output_dir) / name
 
-    populate_real_space_hamiltonian(
-        data_controller, hk_data, proj_data, opts.do_overlap_transformation
-    )
+    populate_real_space_hamiltonian(data_controller, hk_data, opts.do_overlap_transformation)
 
     if debug:
+        bvec = arry['b_vectors'] * (2.0 * np.pi / alat)
+        kpts = arry['kpnts'].T
+        vkpts_crystal = cartesian_to_crystal(arry['vkpts_cartesian'], bvec)
+        eigvals = arry['my_eigsmat']
+        proj = arry['U'].swapaxes(0, 1)
         write_internal_format_files(
             Path(output_dir),
             str(output_prefix),
             data_controller,
             hk_data,
-            proj_data,
+            kpts,
+            vkpts_crystal,
+            arry['wk'],
             opts.do_overlap_transformation,
         )
-        write_projectability_files(output_dir, proj_data, hk_data['Hk'])
+        write_projectability_files(output_dir, proj, eigvals, attr['nbnds'], hk_data['Hk'])
         write_overlap_files(output_dir, hk_data['Sk'], opts.do_overlap_transformation)
 
     return hk_data
-
-
-def parse_atomic_proj_data(data: ConductorData, data_controller: DataController) -> AtomicProjData:
-    header = parse_header(data_controller)
-    kpt_data = parse_kpoints(data_controller)
-    eigvals = parse_eigenvalues(data_controller)
-    proj = parse_projections(data_controller)
-    overlap = parse_overlaps(data, data_controller)
-
-    return AtomicProjData(
-        **header,
-        **kpt_data,
-        eigvals=eigvals,
-        proj=proj,
-        overlap=overlap,
-    )
 
 
 def reshape_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:

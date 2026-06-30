@@ -8,7 +8,6 @@ from numpy.typing import NDArray
 
 import PAOFLOW.transport.io.log_module as log
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.data import AtomicProjData
 from PAOFLOW.transport.hamiltonian.compute_rham import compute_rham
 from PAOFLOW.transport.io.log_module import log_rank0
 from PAOFLOW.transport.utils.converters import crystal_to_cartesian
@@ -148,7 +147,6 @@ def write_eigenchannels(
 def populate_real_space_hamiltonian(
     data_controller: DataController,
     hk_data: Dict[str, np.ndarray],
-    proj_data: AtomicProjData,
     do_overlap_transformation: bool,
 ) -> None:
     """
@@ -166,10 +164,13 @@ def populate_real_space_hamiltonian(
             - "Hk": shape (nspin, nkpnts, dim, dim), Hamiltonian matrices
             - "Sk" (optional): shape (dim, dim, nkpnts), Overlap matrices
             - "ivr": shape (nrtot, 3), R-vectors
-    `proj_data` : AtomicProjData
-        Provides the Cartesian k-points and weights used by the Fourier sum.
     `do_overlap_transformation` : bool
         If True and overlap matrices are provided, the overlap blocks are also computed.
+
+    Notes
+    -----
+    The Cartesian k-points and weights used by the Fourier sum are read from the
+    shared data store (``vkpts_cartesian``/``wk``), which is the single source of truth.
     """
     arry, attr = data_controller.data_dicts()
     Hk = hk_data['Hk']
@@ -177,8 +178,8 @@ def populate_real_space_hamiltonian(
     ivr = hk_data['ivr']
 
     avec = arry['a_vectors'] * attr['alat']
-    vkpts_cartesian = proj_data.vkpts_cartesian
-    wk = proj_data.wk
+    vkpts_cartesian = arry['vkpts_cartesian']
+    wk = arry['wk']
     _, _, dim, _ = Hk.shape
     nrtot = ivr.shape[0]
     have_overlap = Sk is not None and do_overlap_transformation
@@ -204,7 +205,9 @@ def write_internal_format_files(
     output_prefix: str,
     data_controller: DataController,
     hk_data: Dict[str, np.ndarray],
-    proj_data: AtomicProjData,
+    kpts: np.ndarray,
+    vkpts_crystal: np.ndarray,
+    wk: np.ndarray,
     do_overlap_transformation: bool,
 ) -> None:
     """
@@ -232,10 +235,12 @@ def write_internal_format_files(
             - "S" (optional): shape (nspin, nrtot, dim, dim), Overlap matrices
             - "ivr": shape (nrtot, 3), R-vectors
             - "wr": shape (nrtot,), R-vector weights
-    `proj_data` : Dict[str, np.ndarray]
-        Dictionary containing:
-            - "kpts": shape (nkpnts, 3), list of k-points
-            - "wk": shape (nkpnts,), k-point weights
+    `kpts` : np.ndarray
+        Shape (3, nkpnts), list of k-points.
+    `vkpts_crystal` : np.ndarray
+        K-points in crystal coordinates.
+    `wk` : np.ndarray
+        Shape (nkpnts,), k-point weights.
     `lattice_data` : Dict[str, np.ndarray]
         Dictionary containing:
             - "avec": shape (3, 3), direct lattice vectors
@@ -253,9 +258,6 @@ def write_internal_format_files(
 
     avec = arry['a_vectors'] * attr['alat']
     bvec = arry['b_vectors'] * (2.0 * np.pi / attr['alat'])
-    kpts = proj_data.kpts
-    vkpts_crystal = proj_data.vkpts_crystal
-    wk = proj_data.wk
     spin_component = 'all'
     shift = np.zeros(3, dtype=float)  # No shift in k-point grid for crystal coordinates
     nspin, _, dim, _ = Hk.shape
@@ -519,11 +521,14 @@ def write_operator_xml(
             f.write('</OPERATOR>\n')
 
 
-def write_projectability_files(output_dir: str, proj_data: AtomicProjData, Hk: np.ndarray) -> None:
-    proj = proj_data.proj
-    eigvals = proj_data.eigvals
+def write_projectability_files(
+    output_dir: str,
+    proj: np.ndarray,
+    eigvals: np.ndarray,
+    nbnds: int,
+    Hk: np.ndarray,
+) -> None:
     nspin, nkpnts, _, _ = Hk.shape
-    nbnds = proj_data.nbnds
 
     for isp in range(nspin):
         proj_file = (

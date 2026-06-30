@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import numpy as np
-import numpy.typing as npt
 
 CalculationType = Literal['conductor', 'bulk']
 ConductFormula = Literal['landauer', 'generalized']
@@ -182,28 +181,6 @@ class IterationConvergenceSettings:
 class AtomicProjectionOverlapSettings:
     do_overlap_transformation: bool = False
     write_intermediate: bool = True
-
-
-@dataclass
-class AtomicProjData:
-    """Parsed atomic projection data from Quantum ESPRESSO's atomic_proj.xml."""
-
-    nbnds: int
-    nkpnts: int
-    nspin: int
-    nawf: int
-    nelec: float
-    efermi: float
-    energy_units: str
-    kpts: npt.NDArray[np.float64]
-    wk: npt.NDArray[np.float64]
-    eigvals: npt.NDArray[np.float64]
-    proj: npt.NDArray[np.complex128]
-    overlap: npt.NDArray[np.complex128] | None = None
-    vkpts_crystal: npt.NDArray[np.float64] | None = None
-    vkpts_cartesian: npt.NDArray[np.float64] | None = None
-    efermi_raw: float | None = None
-    eigvals_raw: npt.NDArray[np.float64] | None = None
 
 
 @dataclass(slots=True)

@@ -5,7 +5,7 @@ import numpy as np
 from mpi4py import MPI
 
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.data import AtomicProjData, ConductorData
+from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.utils.constants import AMCONV, RYDCM1
 
 comm = MPI.COMM_WORLD
@@ -170,24 +170,25 @@ def log_summary(data: ConductorData) -> None:
 
 
 def log_proj_data(
-    proj_data: AtomicProjData,
+    data_controller: DataController,
     data: ConductorData,
 ) -> list[str]:
+    _, attr = data_controller.data_dicts()
     lines = []
     lines.append('  Dimensions found in atomic_proj.{dat,xml}:')
-    lines.append(f'    nbnds        : {proj_data.nbnds:>5}')
-    lines.append(f'    nkpnts       : {proj_data.nkpnts:>5}')
-    lines.append(f'    nspin        : {proj_data.nspin:>5}')
-    lines.append(f'    nawf         : {proj_data.nawf:>5}')
-    lines.append(f'    nelec        : {proj_data.nelec:>12.6f}')
-    lines.append(f'    efermi       : {proj_data.efermi:>12.6f}')
-    lines.append(f'    energy_units :  {proj_data.energy_units}   ')
+    lines.append(f'    nbnds        : {attr["nbnds"]:>5}')
+    lines.append(f'    nkpnts       : {attr["nkpnts"]:>5}')
+    lines.append(f'    nspin        : {attr["nspin"]:>5}')
+    lines.append(f'    nawf         : {attr["nawf"]:>5}')
+    lines.append(f'    nelec        : {attr["nelec"]:>12.6f}')
+    lines.append(f'    efermi       : {attr["Efermi"]:>12.6f}')
+    lines.append(f'    energy_units :  {attr.get("energy_units", "eV")}   ')
     lines.append('')
     if not data.atomic_proj.do_overlap_transformation:
         lines.append('Using an orthogonal basis. do_overlap_transformation=.false.')
     return lines
 
 
-def log_proj_summary(proj_data: AtomicProjData, data: ConductorData) -> None:
-    for line in log_proj_data(proj_data, data):
+def log_proj_summary(data_controller: DataController, data: ConductorData) -> None:
+    for line in log_proj_data(data_controller, data):
         log_rank0(line)
