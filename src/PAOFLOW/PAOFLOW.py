@@ -3236,3 +3236,249 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('IR Spectrum')
+
+    def _raman_cell_epsilon(
+        self,
+        savedir,
+        workpath,
+        basispath,
+        configuration='extended',
+        pthr=0.95,
+        nonlocal_velocity=True,
+        nfft=None,
+        e_static=0.05,
+        eps_outdir='eps',
+    ):
+        """Static dielectric tensor of one displaced cell via the PAO pipeline.
+
+        Mirrors the standard PAOFLOW optical workflow (internal projections ->
+        PAO Hamiltonian -> non-local velocity -> dielectric tensor) on the
+        displaced-cell SCF save and returns the static ``(3, 3)`` dielectric
+        tensor (``epsilon_1`` at ``omega -> 0``).
+        """
+        from .phonon.io import read_static_epsilon
+
+        _, attr = self.data_controller.data_dicts()
+        pf = type(self)(
+            workpath=workpath,
+            outputdir=eps_outdir,
+            savedir=savedir,
+            smearing=attr.get('smearing', 'gauss'),
+            npool=attr.get('npool', 1),
+            verbose=False,
+        )
+        pf.projections(basispath=basispath, configuration=configuration)
+        pf.projectability(pthr=pthr)
+        pf.pao_hamiltonian()
+        if nfft is not None:
+            pf.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
+        pf.pao_eigh()
+        pf.gradient_and_momenta(nonlocal_velocity=nonlocal_velocity)
+        pf.adaptive_smearing()
+        pf.dielectric_tensor(
+            emin=0.0,
+            emax=e_static,
+            ne=2,
+            d_tensor=[[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]],
+        )
+        _, pat = pf.data_controller.data_dicts()
+        return read_static_epsilon(pat['opath'], nspin=int(pat.get('nspin', 1)))
+
+    def raman_spectrum(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        raman_dir='raman',
+        delta=0.05,
+        nbnd=None,
+        basispath=None,
+        configuration='extended',
+        pthr=0.95,
+        nonlocal_velocity=True,
+        nfft=None,
+        e_static=0.05,
+        dielectric_callback=None,
+        laser_nm=None,
+        temperature=300.0,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        gamma=4.0,
+        units='cm-1',
+        fname='phonon',
+        generate=None,
+    ):
+        """Non-resonant (Placzek) Raman spectrum by finite differences (Stage 4).
+
+        Two-phase workflow:
+
+        * **generate** -- displace the primitive cell by ``+/-delta`` along each
+          optical zone-centre eigenvector and write a ready-to-run ``pw.x`` SCF
+          input per displacement under
+          ``<raman_dir>/mode-NNN-{plus,minus}/<prefix>.scf.in``.  Run these SCF
+          calculations (any tool); no NSCF/projwfc are needed.
+        * **analyse** -- for every displaced cell run the PAOFLOW optical
+          pipeline (internal projections -> dielectric tensor) to obtain the
+          static dielectric tensor, build the Raman tensor
+          ``R^v = (eps(+delta) - eps(-delta)) / (2 delta)`` per mode, and form
+          the orientationally-averaged (powder) Stokes intensities.
+
+        The phase is chosen automatically (``generate=None``): *analyse* when
+        every displaced-cell SCF save is present, otherwise *generate*.  Pass
+        ``generate=True``/``False`` to force a phase.
+
+        Arguments:
+            supercell_matrix, primitive_matrix: As in :meth:`phonons`; reused
+                from a previous call when omitted.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (used to obtain the zone-centre eigenvectors).
+            phonon_dir (str): Sub-directory with the displaced supercells /
+                ``FORCE_SETS``.
+            raman_dir (str): Sub-directory for the displaced primitive cells and
+                their dielectric outputs.
+            delta (float): Mass-weighted normal-coordinate displacement
+                amplitude (Bohr*sqrt(amu) convention; the same value is used to
+                finite-difference).
+            nbnd (int, optional): Bands for the displaced SCF inputs (empty
+                states are needed for the optical response).
+            basispath (str, optional): Pseudo-atomic basis directory for the
+                internal PAO projections in the analyse phase.
+            configuration (str): PAO basis configuration (default ``'extended'``).
+            pthr (float): Projectability threshold for the analyse phase.
+            nonlocal_velocity (bool): Use the non-local velocity correction in
+                the dielectric tensor (recommended).
+            nfft (tuple, optional): Double-grid interpolation ``(n1, n2, n3)``.
+            e_static (float): Upper energy (eV) of the 2-point grid used to read
+                the static dielectric tensor (``epsilon_1`` at ``omega -> 0``).
+            dielectric_callback (callable, optional): ``f(savedir, workpath) ->
+                (3, 3) ndarray`` returning the static dielectric tensor of a
+                displaced cell.  Overrides the built-in PAO pipeline.
+            laser_nm (float, optional): Excitation wavelength (nm); enables the
+                ``(omega_L - omega_v)^4`` prefactor.
+            temperature (float): Temperature (K) for the Bose ``(n+1)`` factor.
+            freq_min, freq_max, npoints, gamma, units, fname: Spectrum grid and
+                output options, as in :meth:`ir_spectrum`.  Writes
+                ``<fname>_raman_modes.dat`` and ``<fname>_raman_spectrum.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_ir_raman import compute_raman_spectrum
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import (
+            harvest_qe_forces,
+            ingest_force_sets,
+            raman_cell_dirs,
+            write_raman_displaced_inputs,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            # Decide phase: analyse when every displaced-cell save is present.
+            run_analyse = generate is False
+            if generate is None:
+                try:
+                    _, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+                    run_analyse = bool(entries) and all(
+                        os.path.isdir(save) for _, _, _, save in entries
+                    )
+                except FileNotFoundError:
+                    run_analyse = False
+            elif generate is True:
+                run_analyse = False
+            else:
+                run_analyse = True
+
+            if not run_analyse:
+                write_raman_displaced_inputs(
+                    self.data_controller,
+                    delta,
+                    raman_dir=raman_dir,
+                    nbnd=nbnd,
+                )
+                if self.rank == 0 and attr.get('verbose', False):
+                    print(
+                        'Raman: displaced-cell SCF inputs written; run them, then re-run to analyse.'
+                    )
+                self.report_module_time('Raman Spectrum')
+                return
+
+            # --- analyse phase -------------------------------------------------
+            phonon = arry['phonopy']
+            nmodes = 3 * len(phonon.primitive)
+            optical, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+
+            eps_plus = np.zeros((nmodes, 3, 3), dtype=float)
+            eps_minus = np.zeros((nmodes, 3, 3), dtype=float)
+            computed = np.zeros(nmodes, dtype=bool)
+            for v, sign, cell_dir, save in entries:
+                if dielectric_callback is not None:
+                    eps3 = np.asarray(dielectric_callback(save, cell_dir), dtype=float)
+                else:
+                    if basispath is None:
+                        raise ValueError(
+                            'raman_spectrum analyse phase needs basispath=... '
+                            '(or a dielectric_callback) for the internal PAO projections.'
+                        )
+                    eps3 = self._raman_cell_epsilon(
+                        save,
+                        cell_dir,
+                        basispath,
+                        configuration=configuration,
+                        pthr=pthr,
+                        nonlocal_velocity=nonlocal_velocity,
+                        nfft=nfft,
+                        e_static=e_static,
+                    )
+                if sign == '+':
+                    eps_plus[v] = eps3
+                else:
+                    eps_minus[v] = eps3
+                computed[v] = True
+
+            compute_raman_spectrum(
+                self.data_controller,
+                eps_plus,
+                eps_minus,
+                delta,
+                computed=computed,
+                laser_nm=laser_nm,
+                temperature=temperature,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                gamma=gamma,
+                units=units,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('raman_spectrum')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Raman Spectrum')

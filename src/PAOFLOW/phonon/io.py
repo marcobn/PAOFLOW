@@ -378,6 +378,286 @@ def write_displaced_supercells(
     return written
 
 
+def _raman_scf_namelists(data_controller, cell, prefix, pp_dir, nbnd=None):
+    """``&control/&system/&electrons`` block for a displaced Raman SCF cell.
+
+    The displacement breaks the crystal symmetry, so the cell is always written
+    with ``ibrav = 0`` (explicit ``CELL_PARAMETERS``). Enough bands for the
+    optical (dielectric) response are requested through ``nbnd``.
+    """
+    _, attr = data_controller.data_dicts()
+
+    nat = len(cell)
+    ntyp = len(set(map(str, cell.symbols)))
+    ecutwfc = float(attr.get('ecutwfc', 60.0))
+    ecutrho = float(attr.get('ecutrho', 4.0 * ecutwfc))
+    nspin = int(attr.get('nspin', 1))
+    insulator = bool(attr.get('insulator', True))
+
+    lines = []
+    lines.append('&control')
+    lines.append("    calculation = 'scf'")
+    lines.append("    restart_mode = 'from_scratch'")
+    lines.append("    prefix = '%s'" % prefix)
+    lines.append("    outdir = './'")
+    lines.append("    pseudo_dir = '%s'" % pp_dir)
+    lines.append('    tprnfor = .true.')
+    lines.append('    tstress = .false.')
+    lines.append('/')
+    lines.append('&system')
+    lines.append('    ibrav = 0')
+    lines.append('    nat = %d' % nat)
+    lines.append('    ntyp = %d' % ntyp)
+    lines.append('    ecutwfc = %.2f' % ecutwfc)
+    lines.append('    ecutrho = %.2f' % ecutrho)
+    if nbnd is not None:
+        lines.append('    nbnd = %d' % int(nbnd))
+    if not insulator:
+        lines.append("    occupations = 'smearing'")
+        lines.append("    smearing = 'mp'")
+        lines.append('    degauss = %.4f' % float(attr.get('degauss', 0.02)))
+    if nspin == 2:
+        lines.append('    nspin = 2')
+        lines.append('    starting_magnetization(1) = 0.1')
+    lines.append('/')
+    lines.append('&electrons')
+    lines.append('    conv_thr = 1.0d-8')
+    lines.append('    mixing_beta = 0.7')
+    lines.append('/')
+    return '\n'.join(lines)
+
+
+def _raman_structure_cards(cell, positions_bohr, pp_filenames):
+    """``ATOMIC_SPECIES`` + ``CELL_PARAMETERS`` + ``ATOMIC_POSITIONS`` (Bohr).
+
+    ``positions_bohr`` are the displaced Cartesian coordinates in Bohr; the
+    lattice (``cell.cell``) is unchanged by the displacement.
+    """
+    species = _atomic_species_block(cell, pp_filenames)
+    lat = np.asarray(cell.cell, dtype=float)  # Bohr, rows are lattice vectors
+    symbols = [str(s) for s in cell.symbols]
+
+    out = [species, 'CELL_PARAMETERS bohr']
+    for row in lat:
+        out.append('  %18.12f %18.12f %18.12f' % (row[0], row[1], row[2]))
+    out.append('ATOMIC_POSITIONS bohr')
+    for sym, p in zip(symbols, positions_bohr):
+        out.append('  %-3s %18.12f %18.12f %18.12f' % (sym, p[0], p[1], p[2]))
+    return '\n'.join(out) + '\n'
+
+
+def write_raman_displaced_inputs(
+    data_controller,
+    delta,
+    raman_dir='raman',
+    pp_dir=None,
+    prefix=None,
+    kgrid=None,
+    nbnd=None,
+    freq_tol=1.0e-3,
+    hubbard_card=None,
+):
+    """Write QE SCF inputs for the ``+/-`` displaced primitive cells of Raman.
+
+    For every optical zone-centre mode the primitive cell is displaced along
+    the (mass-weighted) eigenvector by ``+delta`` and ``-delta`` and a complete
+    ``pw.x`` SCF input is written under
+    ``<raman_dir>/mode-NNN-{plus,minus}/<prefix>.scf.in``. A subsequent PAOFLOW
+    ``do_epsilon`` run on each SCF save yields the static dielectric tensor used
+    to finite-difference the Raman tensor.
+
+    Parameters
+    ----------
+    delta : float
+        Normal-coordinate displacement amplitude (same value must be used when
+        harvesting; persisted to ``<raman_dir>/raman_meta.npz``).
+    nbnd : int, optional
+        Number of bands (empty states are required for the optical response).
+    freq_tol : float
+        Modes with ``|frequency| <= freq_tol`` THz (acoustic / imaginary) are
+        skipped: a rigid translation leaves the dielectric tensor invariant.
+
+    Returns
+    -------
+    list[str]
+        Absolute paths of the written ``*.scf.in`` files.
+    """
+    from .do_ir_raman import mode_displacement_vectors
+
+    arry, attr = data_controller.data_dicts()
+    phonon = arry['phonopy']
+
+    base = attr.get('opath', '.')
+    out_dir = raman_dir if os.path.isabs(raman_dir) else os.path.join(base, raman_dir)
+    rank = getattr(data_controller, 'rank', 0)
+    if rank == 0:
+        os.makedirs(out_dir, exist_ok=True)
+
+    if prefix is None:
+        savedir = attr.get('savedir', None)
+        prefix = os.path.basename(str(savedir)).replace('.save', '') if savedir else 'raman'
+    if pp_dir is None:
+        pp_dir = attr.get('fpath', '.')
+
+    pp_filenames = _pp_filenames(data_controller)
+
+    primitive = phonon.primitive
+    masses = np.asarray(primitive.masses, dtype=float)
+    base_pos = np.asarray(primitive.positions, dtype=float)  # Cartesian, Bohr
+
+    qpts = phonon.run_qpoints([[0.0, 0.0, 0.0]], with_eigenvectors=True)
+    freqs_thz = np.asarray(qpts.frequencies)[0]
+    eigvecs = np.asarray(qpts.eigenvectors)[0]
+    nmodes = freqs_thz.shape[0]
+
+    disp = mode_displacement_vectors(eigvecs, masses, delta)
+
+    if kgrid is None:
+        kgrid = (
+            int(attr.get('nk1', 1) or 1),
+            int(attr.get('nk2', 1) or 1),
+            int(attr.get('nk3', 1) or 1),
+        )
+
+    optical = [v for v in range(nmodes) if abs(freqs_thz[v]) > freq_tol]
+    width = max(3, len(str(nmodes)))
+    written = []
+
+    if rank == 0:
+        for v in optical:
+            for sign, tag in ((+1.0, 'plus'), (-1.0, 'minus')):
+                cell_dir = os.path.join(out_dir, 'mode-{0:0{w}}-{1}'.format(v + 1, tag, w=width))
+                os.makedirs(cell_dir, exist_ok=True)
+                positions = base_pos + sign * disp[v]
+                header = _raman_scf_namelists(data_controller, primitive, prefix, pp_dir, nbnd=nbnd)
+                structure = _raman_structure_cards(primitive, positions, pp_filenames)
+                k1, k2, k3 = kgrid
+                kpoints = 'K_POINTS automatic\n %d %d %d 0 0 0\n' % (
+                    int(k1),
+                    int(k2),
+                    int(k3),
+                )
+                text = header + '\n' + structure + '\n' + kpoints
+                if hubbard_card:
+                    text += '\n' + hubbard_card.rstrip('\n') + '\n'
+                fname = os.path.join(cell_dir, prefix + '.scf.in')
+                with open(fname, 'w') as f:
+                    f.write(text)
+                written.append(fname)
+
+        # Persist the metadata needed to harvest and finite-difference.
+        np.savez(
+            os.path.join(out_dir, 'raman_meta.npz'),
+            delta=float(delta),
+            optical=np.asarray(optical, dtype=int),
+            freqs_thz=freqs_thz,
+            prefix=prefix,
+            width=int(width),
+        )
+        if attr.get('verbose', False):
+            print(
+                'Wrote %d displaced primitive-cell SCF inputs (%d optical modes) to %s'
+                % (len(written), len(optical), out_dir)
+            )
+
+    arry['raman_optical_modes'] = np.asarray(optical, dtype=int)
+    arry['raman_delta'] = float(delta)
+    return written
+
+
+def raman_cell_dirs(data_controller, raman_dir='raman', optical=None, width=None, prefix=None):
+    """Return ``(optical, [(v, '+'/'-', dir, save)])`` for the displaced cells.
+
+    Mirrors the directory layout produced by
+    :func:`write_raman_displaced_inputs`.
+    """
+    _, attr = data_controller.data_dicts()
+    base = attr.get('opath', '.')
+    out_dir = raman_dir if os.path.isabs(raman_dir) else os.path.join(base, raman_dir)
+
+    meta_path = os.path.join(out_dir, 'raman_meta.npz')
+    if (optical is None or width is None or prefix is None) and os.path.isfile(meta_path):
+        meta = np.load(meta_path, allow_pickle=True)
+        if optical is None:
+            optical = [int(v) for v in meta['optical']]
+        if width is None:
+            width = int(meta['width'])
+        if prefix is None:
+            prefix = str(meta['prefix'])
+    if optical is None:
+        raise FileNotFoundError(
+            'No Raman metadata at %s; run the generate phase first.' % meta_path
+        )
+    if width is None:
+        width = 3
+    if prefix is None:
+        savedir = attr.get('savedir', None)
+        prefix = os.path.basename(str(savedir)).replace('.save', '') if savedir else 'raman'
+
+    entries = []
+    for v in optical:
+        for tag, sign in (('plus', '+'), ('minus', '-')):
+            cell_dir = os.path.join(out_dir, 'mode-{0:0{w}}-{1}'.format(v + 1, tag, w=width))
+            save = os.path.join(cell_dir, prefix + '.save')
+            entries.append((int(v), sign, cell_dir, save))
+    return [int(v) for v in optical], entries
+
+
+# Cartesian-component labels matching ``do_epsilon`` file naming.
+_EPS_COMPONENTS = (
+    ('xx', 0, 0),
+    ('yy', 1, 1),
+    ('zz', 2, 2),
+    ('xy', 0, 1),
+    ('xz', 0, 2),
+    ('yz', 1, 2),
+)
+
+
+def read_static_epsilon(eps_dir, nspin=1):
+    """Read the static dielectric tensor from ``epsr_<ab>*.dat`` files.
+
+    Parameters
+    ----------
+    eps_dir : str
+        Directory containing the ``epsr_xx.dat`` ... files written by
+        :func:`PAOFLOW.response.do_epsilon.do_dielectric_tensor`. The first
+        (lowest-energy) row of each file is the static :math:`\\varepsilon_1`.
+    nspin : int
+        Number of spin channels (files carry a ``_0``/``_1`` suffix when
+        ``nspin == 2``; the channels are summed).
+
+    Returns
+    -------
+    numpy.ndarray
+        Symmetric static dielectric tensor ``(3, 3)``.
+    """
+    eps = np.zeros((3, 3), dtype=float)
+    for comp, i, j in _EPS_COMPONENTS:
+        if nspin == 2:
+            candidates = [
+                os.path.join(eps_dir, 'epsr_%s_0.dat' % comp),
+                os.path.join(eps_dir, 'epsr_%s_1.dat' % comp),
+            ]
+        else:
+            candidates = [os.path.join(eps_dir, 'epsr_%s.dat' % comp)]
+        val = 0.0
+        found = False
+        for path in candidates:
+            if os.path.isfile(path):
+                data = np.loadtxt(path)
+                data = np.atleast_2d(data)
+                val += float(data[0, 1])
+                found = True
+        if not found:
+            raise FileNotFoundError(
+                'Missing static dielectric output for component %s in %s' % (comp, eps_dir)
+            )
+        eps[i, j] = val
+        eps[j, i] = val
+    return eps
+
+
 def harvest_qe_forces(data_controller, phonon_dir='phonon'):
     """Parse forces from ``supercell-NNN.out`` files and set them on phonopy.
 

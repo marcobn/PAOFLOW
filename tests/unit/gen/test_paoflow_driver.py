@@ -78,3 +78,84 @@ def test_wants_explicit_band_path():
     assert d._wants_explicit_band_path({'ibrav': 4, 'is_2d': True}) is True
     assert d._wants_explicit_band_path({'ibrav': 4, 'is_2d': False}) is False
     assert d._wants_explicit_band_path({'ibrav': 4}) is False
+
+
+# --------------------------------------------------------------------------- #
+# Raman workflow generation
+# --------------------------------------------------------------------------- #
+def _raman_cfg(**kw):
+    cfg = dict(_COMMON)
+    cfg.update(
+        {
+            'prefix': 'Si2',
+            'savedir': 'Si2.save',
+            'supercell': 2,
+            'displacement': 0.01,
+            'mesh': 16,
+            'units': 'cm-1',
+            'pp_dir': 'Si2.save',
+            'hubbard_file': None,
+            'mpi_qe': 'mpirun -np 16',
+            'qe_path': '~/Local/Programs/qe-7.4.1/bin/',
+            'raman': True,
+            'raman_delta': 0.05,
+            'raman_nbnd': 21,
+            'raman_npool': 4,
+            'raman_smearing': 'gauss',
+            'raman_nfft': 24,
+            'raman_e_static': 0.05,
+            'raman_temperature': 300.0,
+            'raman_gamma': 4.0,
+            'raman_laser_nm': None,
+            'raman_pthr': 0.95,
+            'raman_configuration': 'extended',
+        }
+    )
+    cfg.update(kw)
+    return cfg
+
+
+def test_build_raman_script_phases_and_calls():
+    text = d.build_raman_script(_raman_cfg())
+    # three-phase driver
+    assert "choices=['generate', 'run', 'analyse', 'all']" in text
+    assert 'def generate():' in text
+    assert 'def run_cells():' in text
+    assert 'def analyse():' in text
+    # generate vs. analyse both call raman_spectrum with the right generate flag
+    assert 'generate=True,' in text
+    assert 'generate=False,' in text
+    assert 'p.raman_spectrum(' in text
+    # analyse passes the optical-pipeline settings
+    assert 'basispath=BASISPATH,' in text
+    assert 'p.finish_execution()' in text
+
+
+def test_build_raman_script_constants():
+    text = d.build_raman_script(_raman_cfg())
+    assert 'SUPERCELL_MATRIX = 2' in text
+    assert 'DELTA = 0.05' in text
+    assert 'NBND = 21' in text
+    assert 'NFFT = (24, 24, 24)' in text
+    assert "PREFIX = 'Si2'" in text
+    assert "MPI_QE = 'mpirun -np 16'" in text
+    assert 'LASER_NM = None' in text
+
+
+def test_build_raman_script_nbnd_default_and_no_nfft():
+    text = d.build_raman_script(_raman_cfg(raman_nbnd=0, raman_nfft=0))
+    assert 'NBND = None' in text
+    assert 'NFFT = None' in text
+
+
+def test_build_raman_script_laser_value():
+    text = d.build_raman_script(_raman_cfg(raman_laser_nm=532.0))
+    assert 'LASER_NM = 532.0' in text
+
+
+def test_build_raman_plot_script():
+    text = d.build_raman_plot_script(_raman_cfg())
+    assert 'plot_raman_spectrum(' in text
+    assert '_raman_spectrum.dat' in text
+    assert '_raman_modes.dat' in text
+    assert '--xmin' in text and '--xmax' in text and '--save' in text

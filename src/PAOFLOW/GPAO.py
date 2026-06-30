@@ -892,3 +892,51 @@ class GPAO:
             units=units,
             filename=filename,
         )
+
+    def plot_raman_spectrum(
+        self,
+        spectrum_file,
+        modes_file=None,
+        title=None,
+        x_lim=None,
+        col='black',
+        units='cm-1',
+        filename=None,
+    ):
+        """Plot a Raman spectrum from PAOFLOW output files.
+
+        Arguments:
+          spectrum_file (str): Path to ``<fname>_raman_spectrum.dat`` (frequency
+            + broadened intensity).
+          modes_file (str): Optional path to ``<fname>_raman_modes.dat``; when
+            given the discrete mode intensities are drawn as vertical sticks.
+          title (str): A title for the plot.
+          x_lim (tuple): Pair of frequency-axis limits (x_min, x_max).
+          col (str or tuple): Line colour recognised by matplotlib.
+          units (str): Frequency unit string for the axis label.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_raman_spectrum
+
+        spec = np.loadtxt(spectrum_file)
+        frequencies = spec[:, 0]
+        intensities = spec[:, 1]
+
+        modes = None
+        if modes_file is not None:
+            # columns: mode, frequency, activity, activity_norm, intensity, ...
+            m = np.loadtxt(modes_file, usecols=(1, 4))
+            modes = (m[:, 0], m[:, 1])
+
+        plot_raman_spectrum(
+            frequencies,
+            intensities,
+            modes=modes,
+            title=title,
+            x_lim=x_lim,
+            col=col,
+            units=units,
+            filename=filename,
+        )
