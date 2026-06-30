@@ -76,7 +76,7 @@ _SYMMETRY_FIELDS: frozenset[str] = frozenset(
     }
 )
 _ITERATION_FIELDS: frozenset[str] = frozenset({'nprint', 'niterx', 'nfailx', 'transfer_thr'})
-_ATOMIC_PROJ_FIELDS: frozenset[str] = frozenset({'do_overlap_transformation', 'write_intermediate'})
+_ATOMIC_PROJ_FIELDS: frozenset[str] = frozenset({'do_overlap_transformation'})
 _ADVANCED_FIELDS: frozenset[str] = frozenset(
     {
         'debug',
@@ -180,7 +180,6 @@ class IterationConvergenceSettings:
 @dataclass(slots=True)
 class AtomicProjectionOverlapSettings:
     do_overlap_transformation: bool = False
-    write_intermediate: bool = True
 
 
 @dataclass(slots=True)

@@ -40,6 +40,12 @@ def test_configure_energy_grid_stores_config():
         'ne': 100,
         'delta': 0.001,
         'nk': [0, 0],
+        'smearing_type': 'lorentzian',
+        'delta_ratio': 5.0e-3,
+        'xmax': 25.0,
+        'ne_buffer': 1,
+        'energy_step': 0.001,
+        'nx_smear': 20000,
     }
 
 

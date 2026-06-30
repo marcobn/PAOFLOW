@@ -27,7 +27,7 @@ from PAOFLOW.transport.conductor_steps import (
     compute_conductor_self_energy,
     prepare_conductor_step_state,
 )
-from PAOFLOW.transport.data import ConductorData
+from PAOFLOW.transport.data import ConductorData, SmearingType
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.io.write_data import write_current_results
 from PAOFLOW.transport.results import TransportResults
@@ -78,6 +78,12 @@ class Transport:
         ne: int,
         delta: float,
         nk: list[int] | tuple[int, int] = (0, 0),
+        smearing_type: SmearingType = 'lorentzian',
+        delta_ratio: float = 5.0e-3,
+        xmax: float = 25.0,
+        ne_buffer: int = 1,
+        energy_step: float = 0.001,
+        nx_smear: int = 20000,
     ) -> None:
         """Configure the energy and k-grid integration settings.
 
@@ -95,6 +101,20 @@ class Transport:
             Broadening parameter.
         nk : list[int] or tuple[int, int], optional
             2D k-grid dimensions. Default is ``(0, 0)``.
+        smearing_type : str, optional
+            Smearing function: ``'lorentzian'`` (default), ``'gaussian'``,
+            ``'fermi-dirac'``/``'fd'``, ``'methfessel-paxton'``/``'mp'``, or
+            ``'marzari-vanderbilt'``/``'mv'``.
+        delta_ratio : float, optional
+            Adaptive-smearing ratio. Default ``5.0e-3``.
+        xmax : float, optional
+            Smearing cutoff in units of the broadening. Default ``25.0``.
+        ne_buffer : int, optional
+            Number of energy points processed per buffered chunk. Default ``1``.
+        energy_step : float, optional
+            Energy step used when building the smearing table. Default ``0.001``.
+        nx_smear : int, optional
+            Number of samples in the precomputed smearing table. Default ``20000``.
         """
         self._energy_grid_config = {
             'emin': emin,
@@ -102,6 +122,12 @@ class Transport:
             'ne': ne,
             'delta': delta,
             'nk': list(nk),
+            'smearing_type': smearing_type,
+            'delta_ratio': delta_ratio,
+            'xmax': xmax,
+            'ne_buffer': ne_buffer,
+            'energy_step': energy_step,
+            'nx_smear': nx_smear,
         }
         if self.conductor_data is not None:
             self.conductor_data.energy.emin = emin
@@ -109,6 +135,12 @@ class Transport:
             self.conductor_data.energy.ne = ne
             self.conductor_data.energy.delta = delta
             self.conductor_data.kpoint_grid.nk = list(nk)
+            self.conductor_data.energy.smearing_type = smearing_type
+            self.conductor_data.energy.delta_ratio = delta_ratio
+            self.conductor_data.energy.xmax = xmax
+            self.conductor_data.energy.ne_buffer = ne_buffer
+            self.conductor_data.energy.energy_step = energy_step
+            self.conductor_data.energy.nx_smear = nx_smear
             if self._conductor_state is not None:
                 self._conductor_state.energy_grid = initialize_energy_grid(
                     emin=emin,
@@ -205,6 +237,22 @@ class Transport:
         carriers: str = 'electrons',
         use_sym: bool = False,
         do_overlap_transformation: bool = False,
+        debug: bool = False,
+        surface: bool = False,
+        ispin: int = 0,
+        niterx: int = 200,
+        transfer_thr: float = 1.0e-7,
+        nprint: int = 20,
+        nfailx: int = 5,
+        shift_L: float = 0.0,
+        shift_C: float = 0.0,
+        shift_R: float = 0.0,
+        shift_corr: float = 0.0,
+        do_eigenchannels: bool = False,
+        neigchnx: int = 200000,
+        do_eigplot: bool = False,
+        ie_eigplot: int = 0,
+        ik_eigplot: int = 0,
         H00_C: dict[str, Any] | None = None,
         H_CR: dict[str, Any] | None = None,
         H_CL: dict[str, Any] | None = None,
@@ -248,6 +296,39 @@ class Transport:
             Apply time-reversal symmetry to reduce the k-point sampling.
         do_overlap_transformation : bool, optional
             Apply the overlap-matrix orthogonalisation transformation.
+        debug : bool, optional
+            If ``True``, write human-inspectable debug artifacts during setup:
+            the legacy ``.ham`` file, ``projectability.txt``, and (when overlap
+            is enabled) ``kovp.txt``. Off by default.
+        surface : bool, optional
+            If ``True``, run in surface mode (lead surface Green's function only,
+            skipping the right-lead self-energy). Default ``False``.
+        ispin : int, optional
+            Spin channel to use for spin-polarized inputs (``0``, ``1``, or ``2``).
+        niterx : int, optional
+            Maximum number of lead transfer-matrix iterations. Default ``200``.
+        transfer_thr : float, optional
+            Convergence threshold for the transfer-matrix iteration. Default ``1.0e-7``.
+        nprint : int, optional
+            Iteration-progress print frequency. Default ``20``.
+        nfailx : int, optional
+            Maximum number of allowed convergence failures. Default ``5``.
+        shift_L, shift_C, shift_R : float, optional
+            Rigid on-site energy shifts (eV) applied to the left lead, conductor,
+            and right lead blocks respectively. Default ``0.0``.
+        shift_corr : float, optional
+            On-site energy shift (eV) applied to the correlation self-energy.
+            Default ``0.0``.
+        do_eigenchannels : bool, optional
+            If ``True``, compute transmission eigenchannels. Default ``False``.
+        neigchnx : int, optional
+            Maximum number of eigenchannels to retain. Default ``200000``.
+        do_eigplot : bool, optional
+            If ``True``, write eigenchannel data for a chosen (energy, k) point.
+        ie_eigplot : int, optional
+            Energy index to plot eigenchannels for (with ``do_eigplot``).
+        ik_eigplot : int, optional
+            k-point index to plot eigenchannels for (with ``do_eigplot``).
         H00_C : dict or None, optional
             Row/column selectors for the conductor on-site block.
         H_CR : dict or None, optional
@@ -311,6 +392,22 @@ class Transport:
             postfix=self._output_config.get('postfix', ''),
             use_sym=use_sym,
             do_overlap_transformation=do_overlap_transformation,
+            debug=debug,
+            surface=surface,
+            ispin=ispin,
+            niterx=niterx,
+            transfer_thr=transfer_thr,
+            nprint=nprint,
+            nfailx=nfailx,
+            shift_L=shift_L,
+            shift_C=shift_C,
+            shift_R=shift_R,
+            shift_corr=shift_corr,
+            do_eigenchannels=do_eigenchannels,
+            neigchnx=neigchnx,
+            do_eigplot=do_eigplot,
+            ie_eigplot=ie_eigplot,
+            ik_eigplot=ik_eigplot,
             **hamiltonian_selectors,
             **block_options,
         )
