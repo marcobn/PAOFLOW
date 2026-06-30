@@ -8,6 +8,7 @@ from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.data import AtomicProjData, ConductorData
 from PAOFLOW.transport.grid.rgrid import get_rgrid
 from PAOFLOW.transport.io.write_data import (
+    populate_real_space_hamiltonian,
     write_internal_format_files,
     write_overlap_files,
     write_projectability_files,
@@ -28,6 +29,8 @@ from PAOFLOW.transport.utils.timing import timed_function
 def parse_atomic_proj(
     data: ConductorData, data_controller: DataController
 ) -> Dict[str, np.ndarray]:
+    debug = False
+
     file_proj = data.file_names.datafile_C
     output_dir = data.file_names.output_dir
     opts = data.atomic_proj
@@ -50,17 +53,22 @@ def parse_atomic_proj(
     arry.update(hk_data)
     name = Path(file_proj).name
     output_prefix = Path(output_dir) / name
-    write_internal_format_files(
-        Path(output_dir),
-        str(output_prefix),
-        data_controller,
-        hk_data,
-        proj_data,
-        opts.do_overlap_transformation,
+
+    populate_real_space_hamiltonian(
+        data_controller, hk_data, proj_data, opts.do_overlap_transformation
     )
 
-    write_projectability_files(output_dir, proj_data, hk_data['Hk'])
-    write_overlap_files(output_dir, hk_data['Sk'], opts.do_overlap_transformation)
+    if debug:
+        write_internal_format_files(
+            Path(output_dir),
+            str(output_prefix),
+            data_controller,
+            hk_data,
+            proj_data,
+            opts.do_overlap_transformation,
+        )
+        write_projectability_files(output_dir, proj_data, hk_data['Hk'])
+        write_overlap_files(output_dir, hk_data['Sk'], opts.do_overlap_transformation)
 
     return hk_data
 

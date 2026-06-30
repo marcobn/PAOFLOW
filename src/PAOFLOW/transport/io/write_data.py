@@ -145,6 +145,60 @@ def write_eigenchannels(
     return filepath
 
 
+def populate_real_space_hamiltonian(
+    data_controller: DataController,
+    hk_data: Dict[str, np.ndarray],
+    proj_data: AtomicProjData,
+    do_overlap_transformation: bool,
+) -> None:
+    """
+    Compute the real-space Hamiltonian (and optional overlap) blocks and store them
+    in the shared data store as ``HRs``/``SRs``.
+
+    These in-memory arrays are what the transport pipeline consumes downstream.
+    Serializing them to the ``.ham`` file (see :func:`write_internal_format_files`)
+    is an independent, debug-only step that depends on the arrays populated here.
+
+    Parameters
+    ----------
+    `hk_data` : Dict[str, np.ndarray]
+        Dictionary containing:
+            - "Hk": shape (nspin, nkpnts, dim, dim), Hamiltonian matrices
+            - "Sk" (optional): shape (dim, dim, nkpnts), Overlap matrices
+            - "ivr": shape (nrtot, 3), R-vectors
+    `proj_data` : AtomicProjData
+        Provides the Cartesian k-points and weights used by the Fourier sum.
+    `do_overlap_transformation` : bool
+        If True and overlap matrices are provided, the overlap blocks are also computed.
+    """
+    arry, attr = data_controller.data_dicts()
+    Hk = hk_data['Hk']
+    Sk = hk_data['Sk'] if 'Sk' in hk_data else None
+    ivr = hk_data['ivr']
+
+    avec = arry['a_vectors'] * attr['alat']
+    vkpts_cartesian = proj_data.vkpts_cartesian
+    wk = proj_data.wk
+    _, _, dim, _ = Hk.shape
+    nrtot = ivr.shape[0]
+    have_overlap = Sk is not None and do_overlap_transformation
+
+    vr_crystal = ivr.astype(np.float64).T
+    rgrid_cart = crystal_to_cartesian(vr_crystal, avec).T  # (nrtot, 3)
+    Hr = np.empty((nrtot, dim, dim), dtype=np.complex128)
+
+    for ir in range(nrtot):
+        Hr[ir] = compute_rham(rgrid_cart[ir], Hk[0], vkpts_cartesian, wk)
+
+    arry['HRs'] = Hr
+
+    if have_overlap:
+        Sr = np.empty((nrtot, dim, dim), dtype=np.complex128)
+        for ir in range(nrtot):
+            Sr[ir] = compute_rham(rgrid_cart[ir], Sk, vkpts_cartesian, wk)
+        arry['SRs'] = Sr
+
+
 def write_internal_format_files(
     output_dir: Path,
     output_prefix: str,
@@ -155,6 +209,10 @@ def write_internal_format_files(
 ) -> None:
     """
     Write Hamiltonian and optional overlap matrices in a format that matches the legacy IOTK-style .ham file structure.
+
+    This is a debug-only serialization of the real-space blocks produced by
+    :func:`populate_real_space_hamiltonian`, which must have been called first to
+    populate ``HRs``/``SRs`` in the shared data store.
 
     The output includes:
     - Dimensional and symmetry metadata in a DATA tag
@@ -197,7 +255,6 @@ def write_internal_format_files(
     bvec = arry['b_vectors'] * (2.0 * np.pi / attr['alat'])
     kpts = proj_data.kpts
     vkpts_crystal = proj_data.vkpts_crystal
-    vkpts_cartesian = proj_data.vkpts_cartesian
     wk = proj_data.wk
     spin_component = 'all'
     shift = np.zeros(3, dtype=float)  # No shift in k-point grid for crystal coordinates
@@ -209,22 +266,8 @@ def write_internal_format_files(
     have_overlap = Sk is not None and do_overlap_transformation
     fermi_energy = 0.0
 
-    vr_crystal = ivr.astype(np.float64).T
-    rgrid_cart = crystal_to_cartesian(vr_crystal, avec).T  # (nrtot, 3)
-    Hr = np.empty((nrtot, dim, dim), dtype=np.complex128)
-
-    for ir in range(nrtot):
-        Hr[ir] = compute_rham(rgrid_cart[ir], Hk[0], vkpts_cartesian, wk)
-
-    if have_overlap:
-        Sr = np.empty((nrtot, dim, dim), dtype=np.complex128)
-        for ir in range(nrtot):
-            Sr[ir] = compute_rham(rgrid_cart[ir], Sk, vkpts_cartesian, wk)
-
-    arry['HRs'] = Hr
-
-    if have_overlap:
-        arry['SRs'] = Sr
+    Hr = arry['HRs']
+    Sr = arry['SRs'] if have_overlap else None
 
     with open(ham_file, 'w') as f:
         f.write('<?xml version="1.0"?>\n')
