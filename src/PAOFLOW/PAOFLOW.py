@@ -3470,11 +3470,11 @@ class PAOFLOW:
             # Decide phase: analyse when every displaced-cell save is present.
             run_analyse = generate is False
             if generate is None:
+                from os.path import isdir
+
                 try:
                     _, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
-                    run_analyse = bool(entries) and all(
-                        os.path.isdir(save) for _, _, _, save in entries
-                    )
+                    run_analyse = bool(entries) and all(isdir(save) for _, _, _, save in entries)
                 except FileNotFoundError:
                     run_analyse = False
             elif generate is True:
