@@ -98,8 +98,6 @@ def validate_advanced_settings(advanced: AdvancedSettings) -> None:
         raise ValueError('advanced.ispin must be 0, 1, or 2.')
     if advanced.efermi_bulk < 0.0:
         raise ValueError('advanced.efermi_bulk must be non-negative.')
-    if advanced.shifting_scheme < 0:
-        raise ValueError('advanced.shifting_scheme must be non-negative.')
 
 
 def validate_conductor_data(data: ConductorData) -> None:

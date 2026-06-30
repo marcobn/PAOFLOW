@@ -86,7 +86,6 @@ _ADVANCED_FIELDS: frozenset[str] = frozenset(
         'lhave_corr',
         'ldynam_corr',
         'leads_are_identical',
-        'shifting_scheme',
     }
 )
 _TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
@@ -98,7 +97,6 @@ _TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
         'calculation_type',
         'conduct_formula',
         'carriers',
-        'bias',
         'shift_L',
         'shift_C',
         'shift_R',
@@ -191,7 +189,6 @@ class AdvancedSettings:
     lhave_corr: bool = False
     ldynam_corr: bool = False
     leads_are_identical: bool = True
-    shifting_scheme: int = 1
 
 
 @dataclass
@@ -229,7 +226,6 @@ class ConductorData:
     calculation_type: CalculationType = 'conductor'
     conduct_formula: ConductFormula = 'landauer'
     carriers: Carriers = 'electrons'
-    bias: float = 0.0
     shift_L: float = 0.0
     shift_C: float = 0.0
     shift_R: float = 0.0
