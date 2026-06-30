@@ -69,7 +69,89 @@ def _supercell_kgrid(data_controller, supercell_matrix):
     return kg
 
 
-def _namelists(data_controller, supercell, prefix, pp_dir):
+def _detect_ibrav_cell(cell, symprec=1.0e-4):
+    """Classify a (super)cell as a QE ``ibrav`` + ``celldm`` description.
+
+    Reuses the lattice classifier from the ``paoflow-gen`` QE writer
+    (:func:`PAOFLOW.inputs.lattice_format.qe_ibrav_from_lattice`).  A uniform
+    (diagonal) supercell shares the Bravais lattice of the primitive cell, so
+    the supercell can be written with QE's ``ibrav``/``celldm`` convention
+    instead of the explicit ``CELL_PARAMETERS`` card (deprecated by QE when
+    symmetry is used).
+
+    The ``ibrav`` path is taken **only** when QE's canonical lattice
+    (``lattice_format_QE(ibrav, celldm)``) reproduces the phonopy cell with the
+    same Cartesian orientation.  phonopy maps the QE forces back onto its own
+    supercell frame, so any rotation between QE's canonical cell and the
+    phonopy cell would corrupt the force constants; in that case the explicit
+    ``CELL_PARAMETERS`` description is kept (returns ``None``).
+
+    Parameters
+    ----------
+    cell : phonopy.structure.atoms.PhonopyAtoms
+        Cell whose ``cell`` rows are the lattice vectors in **Bohr**.
+
+    Returns
+    -------
+    tuple or None
+        ``(ibrav, celldm, frac)`` where ``frac`` are the phonopy fractional
+        coordinates (already QE crystal coordinates, since the lattices match),
+        or ``None`` when the explicit ``CELL_PARAMETERS`` card must be kept.
+    """
+    try:
+        from PAOFLOW.inputs.lattice_format import (
+            lattice_format_QE,
+            qe_ibrav_from_lattice,
+        )
+
+        lat = np.asarray(cell.cell, dtype=float)  # Bohr
+        res = qe_ibrav_from_lattice(lat, symprec=symprec)
+        ibrav = int(res.get('ibrav', 0))
+        if ibrav == 0 or res.get('celldm') is None:
+            return None
+        celldm = np.asarray(res['celldm'], dtype=float)
+        # celldm is rotation-invariant (lengths/angles); QE's canonical cell may
+        # still be rotated w.r.t. the phonopy cell.  Require an exact match so
+        # the forces stay in phonopy's frame (a rotation would differ by ~Bohr).
+        lat_qe = np.asarray(lattice_format_QE(ibrav, celldm), dtype=float)
+        if not np.allclose(lat_qe, lat, atol=1.0e-6, rtol=0.0):
+            return None
+        frac = np.asarray(cell.scaled_positions, dtype=float)
+        return ibrav, celldm, frac
+    except Exception:
+        return None
+
+
+def _atomic_species_block(cell, pp_filenames):
+    """Return the ``ATOMIC_SPECIES`` card (symbol, mass, pseudo) for *cell*."""
+    symbols = [str(s) for s in cell.symbols]
+    masses = np.asarray(cell.masses, dtype=float)
+    lines = ['ATOMIC_SPECIES']
+    seen = set()
+    for sym, mass in zip(symbols, masses):
+        if sym in seen:
+            continue
+        seen.add(sym)
+        lines.append('  %-3s %14.8f  %s' % (sym, float(mass), pp_filenames[sym]))
+    return '\n'.join(lines)
+
+
+def _structure_card_ibrav(cell, pp_filenames, frac_qe):
+    """Build the ``ATOMIC_SPECIES`` + ``ATOMIC_POSITIONS (crystal)`` cards.
+
+    Used on the ``ibrav`` path: the lattice is described by ``ibrav``/``celldm``
+    in ``&system`` (no ``CELL_PARAMETERS``), so only the species and the
+    QE-basis fractional positions are emitted here.
+    """
+    species = _atomic_species_block(cell, pp_filenames)
+    symbols = [str(s) for s in cell.symbols]
+    pos = ['ATOMIC_POSITIONS (crystal)']
+    for sym, f in zip(symbols, frac_qe):
+        pos.append('  %-3s %18.12f %18.12f %18.12f' % (sym, f[0], f[1], f[2]))
+    return species + '\n' + '\n'.join(pos) + '\n'
+
+
+def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines=None):
     """Assemble the ``&control/&system/&electrons`` namelist block."""
     _, attr = data_controller.data_dicts()
 
@@ -90,7 +172,9 @@ def _namelists(data_controller, supercell, prefix, pp_dir):
     lines.append('    tstress = .false.')
     lines.append('/')
     lines.append('&system')
-    lines.append('    ibrav = 0')
+    lines.append('    ibrav = %d' % int(ibrav))
+    if celldm_lines:
+        lines.extend(celldm_lines)
     lines.append('    nat = %d' % nat)
     lines.append('    ntyp = %d' % ntyp)
     lines.append('    ecutwfc = %.2f' % ecutwfc)
@@ -123,8 +207,30 @@ def _qe_input_text(
     """Compose a complete ``pw.x`` SCF input for one (super)cell."""
     from phonopy.interface.qe import get_pwscf_structure
 
-    header = _namelists(data_controller, cell, prefix, pp_dir)
-    structure = get_pwscf_structure(cell, pp_filenames=pp_filenames)
+    detected = _detect_ibrav_cell(cell)
+    if detected is not None:
+        from PAOFLOW.gen.qe_input.writer import format_celldm_lines
+
+        ibrav, celldm, frac_qe = detected
+        try:
+            celldm_lines = format_celldm_lines(ibrav, celldm)
+            structure = _structure_card_ibrav(cell, pp_filenames, frac_qe)
+            header = _namelists(
+                data_controller,
+                cell,
+                prefix,
+                pp_dir,
+                ibrav=ibrav,
+                celldm_lines=celldm_lines,
+            )
+        except Exception:
+            # Any failure assembling the ibrav cards -> safe explicit fallback.
+            header = _namelists(data_controller, cell, prefix, pp_dir)
+            structure = get_pwscf_structure(cell, pp_filenames=pp_filenames)
+    else:
+        header = _namelists(data_controller, cell, prefix, pp_dir)
+        structure = get_pwscf_structure(cell, pp_filenames=pp_filenames)
+
     k1, k2, k3 = kgrid
     kpoints = 'K_POINTS automatic\n %d %d %d 0 0 0\n' % (int(k1), int(k2), int(k3))
     text = header + '\n' + structure + '\n' + kpoints

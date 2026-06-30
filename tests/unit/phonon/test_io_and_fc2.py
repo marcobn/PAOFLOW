@@ -141,6 +141,71 @@ def test_write_displaced_supercells_emits_inputs(tmp_path):
     assert os.path.isfile(tmp_path / 'phonon' / 'phonopy_disp.yaml')
 
 
+def test_supercell_inputs_use_ibrav_not_cell_parameters(tmp_path):
+    """A uniform supercell of a canonical-ibrav cell is written with ibrav."""
+
+    dc = _silicon_controller(tmp_path, supercell_matrix=2, distance=0.05)
+    init_phonopy(dc)
+    generate_displacements(dc)
+    written = write_displaced_supercells(dc, phonon_dir='phonon', prefix='silicon')
+
+    with open(written[0]) as f:
+        content = f.read()
+    # fcc silicon (ibrav=2): supercell shares the Bravais lattice, celldm doubled.
+    assert 'ibrav = 2' in content
+    assert 'celldm(1) = 20.4000' in content
+    assert 'CELL_PARAMETERS' not in content
+    assert 'ATOMIC_POSITIONS (crystal)' in content
+
+
+def test_detect_ibrav_cell_preserves_cartesian_geometry(tmp_path):
+    """The ibrav crystal coords reproduce the exact phonopy Cartesian geometry."""
+    from PAOFLOW.inputs.lattice_format import lattice_format_QE
+    from PAOFLOW.phonon.io import _detect_ibrav_cell
+
+    dc = _silicon_controller(tmp_path, supercell_matrix=2, distance=0.05)
+    phonon = init_phonopy(dc)
+    generate_displacements(dc)
+
+    cell = phonon.supercells_with_displacements[0]
+    detected = _detect_ibrav_cell(cell)
+    assert detected is not None
+    ibrav, celldm, frac = detected
+    assert ibrav == 2
+
+    lat_qe = np.asarray(lattice_format_QE(ibrav, celldm), dtype=float)
+    cart_qe = frac @ lat_qe
+    cart_ref = np.asarray(cell.scaled_positions) @ np.asarray(cell.cell)
+    np.testing.assert_allclose(cart_qe, cart_ref, atol=1e-9)
+
+
+def test_detect_ibrav_cell_rejects_rotated_cell(tmp_path):
+    """A cell rotated off QE's canonical axes must fall back to CELL_PARAMETERS."""
+    from phonopy.structure.atoms import PhonopyAtoms
+
+    from PAOFLOW.phonon.io import _detect_ibrav_cell
+
+    dc = _silicon_controller(tmp_path, supercell_matrix=2, distance=0.05)
+    phonon = init_phonopy(dc)
+    cell = phonon.supercell
+
+    theta = 0.37
+    rot = np.array(
+        [
+            [np.cos(theta), -np.sin(theta), 0.0],
+            [np.sin(theta), np.cos(theta), 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    rotated = PhonopyAtoms(
+        symbols=[str(s) for s in cell.symbols],
+        cell=np.asarray(cell.cell) @ rot.T,
+        scaled_positions=cell.scaled_positions,
+    )
+    assert _detect_ibrav_cell(rotated) is None
+
+
 # --------------------------------------------------------------------------- #
 # fc2 pipeline (fabricated forces, no QE)
 # --------------------------------------------------------------------------- #

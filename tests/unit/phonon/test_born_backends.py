@@ -93,6 +93,8 @@ _PH_OUTPUT = """
 
            atom      1   Ga
       Px  (        9.99900        0.00000        0.00000 )
+
+     JOB DONE.
 """
 
 
