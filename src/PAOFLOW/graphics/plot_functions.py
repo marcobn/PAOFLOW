@@ -607,6 +607,60 @@ def plot_phonons(
     plt.show()
 
 
+def plot_gruneisen_band(
+    distances,
+    gruneisen,
+    ticks=None,
+    title=None,
+    y_lim=None,
+    col='black',
+    filename=None,
+):
+    """Plot the mode Grueneisen parameters along a q-path (dispersion style).
+
+    Arguments:
+      distances (ndarray): 1D array of cumulative path distances.
+      gruneisen (ndarray): 2D array (nq, nbranch) of mode Grueneisen parameters.
+      ticks (tuple): Optional (positions, labels) for high-symmetry points.
+      title (str): Plot title.
+      y_lim (tuple): Grueneisen-axis limits (y_min, y_max).
+      col (str or tuple): Line colour.
+      filename (str): If given, save the figure to this path.
+    """
+    distances = np.asarray(distances)
+    gruneisen = np.asarray(gruneisen)
+
+    fig = plt.figure()
+    tit = 'Mode Gr\u00fcneisen parameters' if title is None else title
+    fig.suptitle(tit)
+    ax = fig.add_subplot(111)
+
+    for branch in gruneisen.T:
+        ax.plot(distances, branch, color=col)
+
+    ax.axhline(0.0, color='gray', linewidth=0.8, linestyle='--')
+
+    if y_lim is None:
+        y_lim = ax.get_ylim()
+    ax.set_xlim(distances[0], distances[-1])
+    ax.set_ylim(*y_lim)
+
+    if ticks is not None:
+        positions, labels = ticks
+        ax.set_xticks(positions)
+        ax.set_xticklabels(labels)
+        ax.vlines(positions, y_lim[0], y_lim[1], color='gray')
+    else:
+        ax.set_xlabel('Wave vector', fontsize=12)
+
+    ax.set_ylabel('Gr\u00fcneisen parameter ' + r'$\gamma_{q\nu}$', fontsize=12)
+
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+
+    plt.show()
+
+
 def plot_phonon_thermal(
     temperatures,
     free_energy,
@@ -640,6 +694,83 @@ def plot_phonon_thermal(
     ax.set_ylabel('Thermal properties', fontsize=12)
     ax.legend()
     ax.grid(alpha=0.3)
+
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+
+    plt.show()
+
+
+def plot_qha(
+    temperatures,
+    volume=None,
+    thermal_expansion=None,
+    bulk_modulus=None,
+    heat_capacity=None,
+    gruneisen=None,
+    ev=None,
+    title=None,
+    filename=None,
+):
+    """Plot the quasi-harmonic quantities as a function of temperature.
+
+    Each supplied quantity is drawn in its own panel; ``None`` panels are
+    skipped.  Pass ``ev=(volumes, energies)`` to include the static E-V curve.
+
+    Arguments:
+      temperatures (ndarray): 1D array of temperatures (K).
+      volume (ndarray): Equilibrium volume V(T) (Angstrom^3).
+      thermal_expansion (ndarray): Volumetric thermal expansion alpha(T) (1/K).
+      bulk_modulus (ndarray): Isothermal bulk modulus B(T) (GPa).
+      heat_capacity (ndarray): Constant-pressure heat capacity Cp(T) (J/K/mol).
+      gruneisen (ndarray): Thermodynamic Gruneisen parameter gamma(T).
+      ev (tuple): Optional (volumes, energies) static E-V data (Angstrom^3, eV).
+      title (str): Overall figure title.
+      filename (str): If given, save the figure to this path.
+    """
+    temperatures = np.asarray(temperatures)
+
+    panels = []
+    if ev is not None:
+        panels.append(('E-V', ev, 'Volume (Ang$^3$)', 'Energy (eV)'))
+    if volume is not None:
+        panels.append(('V(T)', volume, 'Temperature (K)', 'Volume (Ang$^3$)'))
+    if thermal_expansion is not None:
+        panels.append(('alpha(T)', thermal_expansion, 'Temperature (K)', r'$\alpha$ (K$^{-1}$)'))
+    if bulk_modulus is not None:
+        panels.append(('B(T)', bulk_modulus, 'Temperature (K)', 'Bulk modulus (GPa)'))
+    if heat_capacity is not None:
+        panels.append(('Cp(T)', heat_capacity, 'Temperature (K)', r'$C_p$ (J/K/mol)'))
+    if gruneisen is not None:
+        panels.append(('gamma(T)', gruneisen, 'Temperature (K)', r'$\gamma$'))
+
+    n = len(panels)
+    if n == 0:
+        raise ValueError('plot_qha requires at least one quantity to plot.')
+
+    ncols = min(3, n)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.5 * nrows))
+    fig.suptitle('Quasi-Harmonic Approximation' if title is None else title)
+    axes = np.atleast_1d(axes).ravel()
+
+    for ax, (tag, ydata, xlabel, ylabel) in zip(axes, panels):
+        ydata = np.asarray(ydata)
+        if tag == 'E-V':
+            xdata = np.asarray(ev[0])
+            ydata = np.asarray(ev[1])
+            ax.plot(xdata, ydata, 'o-', color='tab:purple')
+        else:
+            ax.plot(temperatures, ydata, color='tab:blue')
+            ax.set_xlim(temperatures[0], temperatures[-1])
+        ax.set_xlabel(xlabel, fontsize=11)
+        ax.set_ylabel(ylabel, fontsize=11)
+        ax.grid(alpha=0.3)
+
+    for ax in axes[n:]:
+        ax.set_visible(False)
+
+    plt.tight_layout()
 
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')

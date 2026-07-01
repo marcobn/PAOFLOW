@@ -744,6 +744,35 @@ def harvest_qe_forces(data_controller, phonon_dir='phonon'):
     return force_sets
 
 
+def parse_qe_total_energy(out_path):
+    """Return the final total energy (Ry) from a ``pw.x`` SCF output.
+
+    Scans for Quantum ESPRESSO's converged total-energy line
+    (``!    total energy   =  ... Ry``) and returns the last occurrence, so a
+    restarted or multi-step run yields the final self-consistent value.
+
+    Parameters
+    ----------
+    out_path : str
+        Path to the ``pw.x`` standard output.
+
+    Returns
+    -------
+    float
+        Total energy in Rydberg.
+    """
+    energy = None
+    with open(out_path) as fh:
+        for line in fh:
+            if line.lstrip().startswith('!') and 'total energy' in line and '=' in line:
+                tokens = line.split('=')[1].split()
+                if tokens:
+                    energy = float(tokens[0])
+    if energy is None:
+        raise ValueError('No converged total energy ("!  total energy") found in %s' % out_path)
+    return energy
+
+
 def ingest_force_sets(data_controller, force_sets_path):
     """Load an external ``FORCE_SETS`` onto the stored phonopy object.
 

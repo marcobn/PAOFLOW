@@ -788,6 +788,19 @@ def _hubbard_file_line(cfg):
     return 'HUBBARD_FILE = os.path.join(HERE, {!r})'.format(hf)
 
 
+def _derive_ph_command(pw_command):
+    """Derive a ``ph.x`` command from the user's ``pw.x`` command.
+
+    Keeps any parallelisation flags (e.g. ``-npool 4``, which ``ph.x`` also
+    accepts) by swapping only the executable token; falls back to ``ph.x`` when
+    no ``pw.x`` token is present.
+    """
+    pw_command = (pw_command or 'pw.x').strip()
+    if 'pw.x' in pw_command:
+        return pw_command.replace('pw.x', 'ph.x')
+    return 'ph.x'
+
+
 def build_phonon_script(cfg):
     """Assemble a main.phonon.py harmonic-phonon workflow from the config.
 
@@ -891,6 +904,35 @@ def build_phonon_script(cfg):
         )
     )
     lines.append('')
+    lines.append('# Quasi-harmonic approximation (QHA): isotropic volume scan combining the')
+    lines.append('# static E(V) with the harmonic F_vib(T, V) -> V(T), thermal expansion,')
+    lines.append('# bulk modulus, Gibbs energy, Cp and the Gruneisen parameter.')
+    lines.append(
+        'QHA = {}   # run the quasi-harmonic volume scan'.format(bool(cfg.get('qha', False)))
+    )
+    lines.append(
+        'QHA_NVOLUMES = {}   # sampled volumes: 5 (full EOS fit) or 3 (parabolic fit)'.format(
+            int(cfg.get('qha_nvolumes', 5))
+        )
+    )
+    lines.append(
+        'QHA_STRAIN = {}   # maximum linear strain of the scan'.format(cfg.get('qha_strain', 0.02))
+    )
+    lines.append(
+        "QHA_EOS = {!r}   # 'vinet', 'birch_murnaghan' or 'murnaghan' (QHA_NVOLUMES >= 4)".format(
+            cfg.get('qha_eos', 'vinet')
+        )
+    )
+    lines.append('QHA_TMIN = {}   # minimum temperature (K)'.format(cfg.get('qha_tmin', 0.0)))
+    lines.append('QHA_TMAX = {}   # maximum temperature (K)'.format(cfg.get('qha_tmax', 1000.0)))
+    lines.append('QHA_TSTEP = {}   # temperature step (K)'.format(cfg.get('qha_tstep', 10.0)))
+    lines.append(
+        'QHA_PRESSURE = {}   # external pressure (GPa) added as a pV term'.format(
+            cfg.get('qha_pressure', 0.0)
+        )
+    )
+    lines.append("QHA_DIR = 'qha'   # sub-directory (under OUTPUTDIR) for the volume scan")
+    lines.append('')
     lines.append('# HUBBARD card injected into the force (and lelfield) inputs.  Only on-site')
     lines.append('# U parameters are kept; intersite V lines are dropped (their atom indices')
     lines.append('# are not valid for the supercell).')
@@ -913,7 +955,14 @@ def build_phonon_script(cfg):
     lines.append('# pw.x launch settings for the supercell SCF runs (edit to your machine).')
     lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
     lines.append(
-        "QE_PATH = {!r}   # directory containing pw.x ('' -> use PATH)".format(cfg['qe_path'])
+        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+            cfg.get('qe_pw', 'pw.x')
+        )
+    )
+    lines.append(
+        'QE_PH = {!r}   # ph.x command for the Born DFPT run (may include flags)'.format(
+            _derive_ph_command(cfg.get('qe_pw', 'pw.x'))
+        )
     )
     lines.append('')
     lines.append('')
@@ -951,6 +1000,18 @@ def build_phonon_script(cfg):
     lines.append('            hubbard_file=HUBBARD_FILE,')
     lines.append('            forces=None,')
     lines.append('        )')
+    lines.append('    if QHA:')
+    lines.append('        p.quasi_harmonic(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            displacement_distance=DISPLACEMENT,')
+    lines.append('            nvolumes=QHA_NVOLUMES,')
+    lines.append('            strain=QHA_STRAIN,')
+    lines.append('            qha_dir=QHA_DIR,')
+    lines.append('            pp_dir=PP_DIR,')
+    lines.append('            prefix=PREFIX,')
+    lines.append('            hubbard_file=HUBBARD_FILE,')
+    lines.append('            forces=None,')
+    lines.append('        )')
     lines.append('')
     lines.append('')
     lines.append('def _job_done(path):')
@@ -970,7 +1031,7 @@ def build_phonon_script(cfg):
     lines.append("        print('No supercell inputs in {}; run the generate phase first.'.format(")
     lines.append('            indir))')
     lines.append('        sys.exit(1)')
-    lines.append("    pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('    pwx = QE_PW')
     lines.append('    for fin in inputs:')
     lines.append("        fout = fin[:-3] + '.out'")
     lines.append('        if _job_done(fout):')
@@ -987,7 +1048,7 @@ def build_phonon_script(cfg):
     lines.append('    """Phase 2 (Born): run the ph.x (DFPT) or lelfield pw.x field inputs."""')
     lines.append('    indir = os.path.join(HERE, OUTPUTDIR, PHONON_DIR)')
     lines.append("    if BORN_METHOD == 'dfpt':")
-    lines.append("        phx = os.path.join(QE_PATH, 'ph.x') if QE_PATH else 'ph.x'")
+    lines.append('        phx = QE_PH')
     lines.append("        fin = os.path.join(indir, 'ph_epsil.in')")
     lines.append('        if not os.path.isfile(fin):')
     lines.append("            print('No ph_epsil.in in {}; run the generate phase first.'.format(")
@@ -1007,7 +1068,7 @@ def build_phonon_script(cfg):
     lines.append("            print('No field-*.in in {}; run the generate phase first.'.format(")
     lines.append('                indir))')
     lines.append('            sys.exit(1)')
-    lines.append("        pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('        pwx = QE_PW')
     lines.append('        for fin in inputs:')
     lines.append("            fout = fin[:-3] + '.out'")
     lines.append('            if _job_done(fout):')
@@ -1018,6 +1079,34 @@ def build_phonon_script(cfg):
     lines.append('                inp=os.path.basename(fin), out=os.path.basename(fout))')
     lines.append("            print('  running:', os.path.basename(fin))")
     lines.append('            subprocess.run(cmd, shell=True, check=True, cwd=indir)')
+    lines.append('')
+    lines.append('')
+    lines.append('def run_qha():')
+    lines.append(
+        '    """Phase 2 (QHA): run pw.x on every volume\'s scf and displaced supercells."""'
+    )
+    lines.append('    base = os.path.join(HERE, OUTPUTDIR, QHA_DIR)')
+    lines.append("    vol_dirs = sorted(glob.glob(os.path.join(base, 'vol-*')))")
+    lines.append('    if not vol_dirs:')
+    lines.append(
+        "        print('No vol-* directories in {}; run the generate phase first.'.format("
+    )
+    lines.append('            base))')
+    lines.append('        sys.exit(1)')
+    lines.append('    pwx = QE_PW')
+    lines.append('    for vdir in vol_dirs:')
+    lines.append("        inputs = sorted(glob.glob(os.path.join(vdir, 'scf.in')))")
+    lines.append("        inputs += sorted(glob.glob(os.path.join(vdir, 'supercell-*.in')))")
+    lines.append('        for fin in inputs:')
+    lines.append("            fout = fin[:-3] + '.out'")
+    lines.append('            if _job_done(fout):')
+    lines.append("                print('  skip (already done):', os.path.relpath(fout, base))")
+    lines.append('                continue')
+    lines.append("            cmd = '{mpi} {pwx} -in {inp} > {out}'.format(")
+    lines.append('                mpi=MPI_QE, pwx=pwx,')
+    lines.append('                inp=os.path.basename(fin), out=os.path.basename(fout))')
+    lines.append("            print('  running:', os.path.relpath(fin, base))")
+    lines.append('            subprocess.run(cmd, shell=True, check=True, cwd=vdir)')
     lines.append('')
     lines.append('')
     lines.append('def analyse():')
@@ -1092,6 +1181,30 @@ def build_phonon_script(cfg):
     lines.append("            fname='phonon',")
     lines.append('        )')
     lines.append('')
+    lines.append('    # Quasi-harmonic approximation: harvest the volume scan and write V(T),')
+    lines.append('    # thermal expansion, bulk modulus, Gibbs energy, Cp and Gruneisen.')
+    lines.append('    if QHA:')
+    lines.append('        p.quasi_harmonic(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            displacement_distance=DISPLACEMENT,')
+    lines.append('            nvolumes=QHA_NVOLUMES,')
+    lines.append('            strain=QHA_STRAIN,')
+    lines.append("            forces='qe',")
+    lines.append('            qha_dir=QHA_DIR,')
+    lines.append('            mesh=MESH,')
+    lines.append('            t_min=QHA_TMIN,')
+    lines.append('            t_max=QHA_TMAX,')
+    lines.append('            t_step=QHA_TSTEP,')
+    lines.append('            eos=QHA_EOS,')
+    lines.append('            pressure=QHA_PRESSURE,')
+    lines.append('            ibrav=IBRAV,')
+    lines.append('            q_path=Q_PATH,')
+    lines.append('            q_labels=Q_LABELS,')
+    lines.append('            q_npoints=Q_NPOINTS,')
+    lines.append('            units=UNITS,')
+    lines.append("            fname='qha',")
+    lines.append('        )')
+    lines.append('')
     lines.append('')
     lines.append('def main():')
     lines.append('    parser = argparse.ArgumentParser(')
@@ -1112,6 +1225,8 @@ def build_phonon_script(cfg):
     lines.append('        run_supercells()')
     lines.append('        if BORN:')
     lines.append('            run_born()')
+    lines.append('        if QHA:')
+    lines.append('            run_qha()')
     lines.append("    if args.phase in ('analyse', 'all'):")
     lines.append('        analyse()')
     lines.append('')
@@ -1998,6 +2113,42 @@ def build_phonon_plot_script(cfg):
     lines.append('            filename=save_thermal,')
     lines.append('        )')
     lines.append('')
+    lines.append('    # Quasi-harmonic quantities: V(T), thermal expansion, bulk modulus, Cp and')
+    lines.append('    # the Gruneisen parameter, plus the static E-V curve.')
+    lines.append("    qha_volume = os.path.join(OUTPUTDIR, 'qha_volume.dat')")
+    lines.append('    if os.path.isfile(qha_volume):')
+    lines.append('        save_qha = None')
+    lines.append('        if args.save:')
+    lines.append('            stem, ext = os.path.splitext(args.save)')
+    lines.append("            save_qha = stem + '_qha' + (ext or '.png')")
+    lines.append('        pplt.plot_qha(')
+    lines.append('            volume_file=qha_volume,')
+    lines.append(
+        "            thermal_expansion_file=os.path.join(OUTPUTDIR, 'qha_thermal_expansion.dat'),"
+    )
+    lines.append("            bulk_modulus_file=os.path.join(OUTPUTDIR, 'qha_bulk_modulus.dat'),")
+    lines.append("            heat_capacity_file=os.path.join(OUTPUTDIR, 'qha_heat_capacity.dat'),")
+    lines.append("            gruneisen_file=os.path.join(OUTPUTDIR, 'qha_gruneisen.dat'),")
+    lines.append("            ev_file=os.path.join(OUTPUTDIR, 'qha_ev.dat'),")
+    lines.append("            title='Quasi-harmonic approximation',")
+    lines.append('            filename=save_qha,')
+    lines.append('        )')
+    lines.append('')
+    lines.append('    # Mode Gruneisen parameters along the q-path (dispersion style).')
+    lines.append("    qha_gband = os.path.join(OUTPUTDIR, 'qha_gruneisen_band.dat')")
+    lines.append('    if os.path.isfile(qha_gband):')
+    lines.append('        save_gband = None')
+    lines.append('        if args.save:')
+    lines.append('            stem, ext = os.path.splitext(args.save)')
+    lines.append("            save_gband = stem + '_gruneisen_band' + (ext or '.png')")
+    lines.append("        gband_labels = os.path.join(OUTPUTDIR, 'qha_gruneisen_band.labels')")
+    lines.append('        pplt.plot_gruneisen_band(')
+    lines.append('            qha_gband,')
+    lines.append('            labels_file=gband_labels if os.path.isfile(gband_labels) else None,')
+    lines.append("            title='Mode Gruneisen parameters',")
+    lines.append('            filename=save_gband,')
+    lines.append('        )')
+    lines.append('')
     lines.append("    ir = _path('_ir_spectrum.dat')")
     lines.append('    if os.path.isfile(ir):')
     lines.append('        save_ir = None')
@@ -2187,7 +2338,11 @@ def build_raman_script(cfg):
     lines.append('')
     lines.append('# pw.x launch settings for the displaced-cell SCF runs (edit to your machine).')
     lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
-    lines.append("QE_PATH = {!r}   # directory with pw.x ('' -> PATH)".format(cfg['qe_path']))
+    lines.append(
+        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+            cfg.get('qe_pw', 'pw.x')
+        )
+    )
     lines.append('')
     lines.append('')
     lines.append("def ensure_basis(preset='extended'):")
@@ -2259,7 +2414,7 @@ def build_raman_script(cfg):
         "        print('No displaced-cell inputs in {}; run the generate phase first.'.format(base))"
     )
     lines.append('        sys.exit(1)')
-    lines.append("    pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('    pwx = QE_PW')
     lines.append('    for fin in inputs:')
     lines.append('        cell_dir = os.path.dirname(fin)')
     lines.append("        fout = os.path.join(cell_dir, PREFIX + '.scf.out')")
@@ -2669,9 +2824,45 @@ def collect_phonon(common):
         cfg['vibdielectric_gamma'] = 4.0
         cfg['vibdielectric_emissivity'] = False
         cfg['vibdielectric_emis_temp'] = [300.0]
+    cfg['qha'] = ask_yes_no(
+        'Compute quasi-harmonic properties (thermal expansion, V(T), B(T), Gruneisen)?',
+        False,
+    )
+    if cfg['qha']:
+        cfg['qha_nvolumes'] = ask_choice(
+            '  Number of sampled volumes (5 = full EOS fit; 3 = parabolic fit)',
+            ['5', '3'],
+            '5',
+        )
+        cfg['qha_nvolumes'] = int(cfg['qha_nvolumes'])
+        cfg['qha_strain'] = ask_float('  Maximum linear strain of the volume scan', 0.02)
+        if cfg['qha_nvolumes'] >= 4:
+            cfg['qha_eos'] = ask_choice(
+                '  Equation of state',
+                ['vinet', 'birch_murnaghan', 'murnaghan'],
+                'vinet',
+            )
+        else:
+            cfg['qha_eos'] = 'vinet'
+        cfg['qha_tmin'] = ask_float('  Minimum temperature (K)', 0.0)
+        cfg['qha_tmax'] = ask_float('  Maximum temperature (K)', 1000.0)
+        cfg['qha_tstep'] = ask_float('  Temperature step (K)', 10.0)
+        cfg['qha_pressure'] = ask_float('  External pressure (GPa)', 0.0)
+    else:
+        cfg['qha_nvolumes'] = 5
+        cfg['qha_strain'] = 0.02
+        cfg['qha_eos'] = 'vinet'
+        cfg['qha_tmin'] = 0.0
+        cfg['qha_tmax'] = 1000.0
+        cfg['qha_tstep'] = 10.0
+        cfg['qha_pressure'] = 0.0
     print('\npw.x launch settings for the displaced-supercell SCF runs:')
     cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
-    cfg['qe_path'] = ask('Quantum ESPRESSO bin path (dir with pw.x; blank = PATH)', '')
+    cfg['qe_pw'] = ask(
+        "pw.x executable/command (may include flags, e.g. 'pw.x', 'pw.x -npool 4', "
+        "'/opt/qe/bin/pw.x')",
+        'pw.x',
+    )
     cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.phonon.py)?', True)
     cfg['raman_method'] = ask_choice(
         'Also generate a Raman workflow (main.raman.py)?  Pick the flavour '

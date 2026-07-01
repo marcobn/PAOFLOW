@@ -38,7 +38,7 @@ def _element_symbol(label):
     return sym[0].upper() + sym[1:].lower()
 
 
-def paoflow_to_phonopy(data_controller):
+def paoflow_to_phonopy(data_controller, scale=1.0):
     """Build a :class:`phonopy.structure.atoms.PhonopyAtoms` from PAOFLOW data.
 
     Parameters
@@ -46,6 +46,11 @@ def paoflow_to_phonopy(data_controller):
     data_controller : DataController
         Provides the structural arrays/attributes described in the module
         docstring.
+    scale : float, optional
+        Isotropic linear scale factor applied to the lattice vectors (the cell
+        volume scales as ``scale**3``).  The fractional atomic positions are
+        preserved, so atoms move with the cell.  Used by the quasi-harmonic
+        volume scan; defaults to ``1.0`` (no scaling).
 
     Returns
     -------
@@ -65,14 +70,15 @@ def paoflow_to_phonopy(data_controller):
     # Cartesian lattice in Bohr (rows are lattice vectors).
     cell_bohr = a_vectors * alat
 
-    # Fractional positions are unitless: solve tau = scaled @ cell_bohr.
+    # Fractional positions are unitless: solve tau = scaled @ cell_bohr.  They
+    # are scale-invariant, so the isotropic strain enters only through the cell.
     scaled_positions = tau @ np.linalg.inv(cell_bohr)
 
     symbols = [_element_symbol(a) for a in atoms]
 
     return PhonopyAtoms(
         symbols=symbols,
-        cell=cell_bohr,
+        cell=cell_bohr * float(scale),
         scaled_positions=scaled_positions,
     )
 

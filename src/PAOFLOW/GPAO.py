@@ -817,6 +817,59 @@ class GPAO:
             filename=filename,
         )
 
+    def plot_gruneisen_band(
+        self,
+        band_file,
+        labels_file=None,
+        title=None,
+        y_lim=None,
+        col='black',
+        filename=None,
+    ):
+        """Plot the mode Grueneisen dispersion from PAOFLOW output files.
+
+        Arguments:
+          band_file (str): Path to ``<fname>_gruneisen_band.dat`` (distance +
+            per-branch [gruneisen, frequency] columns).
+          labels_file (str): Optional path to ``<fname>_gruneisen_band.labels``
+            supplying the high-symmetry tick marks.
+          title (str): A title for the plot.
+          y_lim (tuple): Pair of Grueneisen-axis limits (y_min, y_max).
+          col (str or tuple): Line colour recognised by matplotlib.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_gruneisen_band
+
+        band = np.loadtxt(band_file)
+        distances = band[:, 0]
+        # Columns after the distance alternate gruneisen, frequency per branch.
+        gruneisen = band[:, 1::2]
+
+        ticks = None
+        if labels_file is not None:
+            positions, labels = [], []
+            with open(labels_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    parts = line.split(None, 1)
+                    positions.append(float(parts[0]))
+                    labels.append(parts[1] if len(parts) > 1 else '')
+            ticks = (positions, labels)
+
+        plot_gruneisen_band(
+            distances,
+            gruneisen,
+            ticks=ticks,
+            title=title,
+            y_lim=y_lim,
+            col=col,
+            filename=filename,
+        )
+
     def plot_phonon_thermal(
         self,
         thermal_file,
@@ -891,6 +944,81 @@ class GPAO:
             col=col,
             units=units,
             filename=filename,
+        )
+
+    def plot_qha(
+        self,
+        volume_file=None,
+        thermal_expansion_file=None,
+        bulk_modulus_file=None,
+        heat_capacity_file=None,
+        gruneisen_file=None,
+        ev_file=None,
+        title=None,
+        filename=None,
+    ):
+        """Plot quasi-harmonic quantities from PAOFLOW output files.
+
+        Each argument is the path to one ``qha_*.dat`` table written by
+        :meth:`PAOFLOW.PAOFLOW.quasi_harmonic`.  Missing / ``None`` files are
+        skipped, so a subset can be plotted.  All temperature-resolved tables
+        share the same temperature grid (column 0).
+
+        Arguments:
+          volume_file (str): ``<fname>_volume.dat`` (T, V in Ang^3).
+          thermal_expansion_file (str): ``<fname>_thermal_expansion.dat``
+            (T, alpha in 1/K).
+          bulk_modulus_file (str): ``<fname>_bulk_modulus.dat`` (T, B in GPa).
+          heat_capacity_file (str): ``<fname>_heat_capacity.dat`` (T, Cp in
+            J/K/mol).
+          gruneisen_file (str): ``<fname>_gruneisen.dat`` (T, gamma).
+          ev_file (str): ``<fname>_ev.dat`` (volume in Ang^3, static energy eV).
+          title (str): A title for the figure.
+          filename (str): If given, save the figure to this path.
+        """
+        import os
+
+        import numpy as np
+
+        from .graphics.plot_functions import plot_qha
+
+        def _load(path):
+            if path is None or not os.path.isfile(path):
+                return None
+            data = np.loadtxt(path)
+            if data.ndim != 2 or data.shape[0] == 0:
+                return None
+            return data
+
+        temps = None
+        kwargs = {}
+        for key, path in (
+            ('volume', volume_file),
+            ('thermal_expansion', thermal_expansion_file),
+            ('bulk_modulus', bulk_modulus_file),
+            ('heat_capacity', heat_capacity_file),
+            ('gruneisen', gruneisen_file),
+        ):
+            data = _load(path)
+            if data is None:
+                continue
+            if temps is None:
+                temps = data[:, 0]
+            kwargs[key] = data[:, 1]
+
+        ev = _load(ev_file)
+        if ev is not None:
+            kwargs['ev'] = (ev[:, 0], ev[:, 1])
+
+        if temps is None and 'ev' not in kwargs:
+            print('  (no QHA output files found to plot)')
+            return
+
+        plot_qha(
+            temps if temps is not None else np.array([0.0]),
+            title=title,
+            filename=filename,
+            **kwargs,
         )
 
     def plot_raman_spectrum(
