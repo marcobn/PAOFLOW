@@ -151,7 +151,7 @@ def _structure_card_ibrav(cell, pp_filenames, frac_qe):
     return species + '\n' + '\n'.join(pos) + '\n'
 
 
-def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines=None):
+def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines=None, nbnd=None):
     """Assemble the ``&control/&system/&electrons`` namelist block."""
     _, attr = data_controller.data_dicts()
 
@@ -179,6 +179,8 @@ def _namelists(data_controller, supercell, prefix, pp_dir, ibrav=0, celldm_lines
     lines.append('    ntyp = %d' % ntyp)
     lines.append('    ecutwfc = %.2f' % ecutwfc)
     lines.append('    ecutrho = %.2f' % ecutrho)
+    if nbnd is not None:
+        lines.append('    nbnd = %d' % int(nbnd))
     if not insulator:
         lines.append("    occupations = 'smearing'")
         lines.append("    smearing = 'mp'")
@@ -203,6 +205,7 @@ def _qe_input_text(
     pp_filenames,
     kgrid,
     hubbard_card=None,
+    nbnd=None,
 ):
     """Compose a complete ``pw.x`` SCF input for one (super)cell."""
     from phonopy.interface.qe import get_pwscf_structure
@@ -222,13 +225,14 @@ def _qe_input_text(
                 pp_dir,
                 ibrav=ibrav,
                 celldm_lines=celldm_lines,
+                nbnd=nbnd,
             )
         except Exception:
             # Any failure assembling the ibrav cards -> safe explicit fallback.
-            header = _namelists(data_controller, cell, prefix, pp_dir)
+            header = _namelists(data_controller, cell, prefix, pp_dir, nbnd=nbnd)
             structure = get_pwscf_structure(cell, pp_filenames=pp_filenames)
     else:
-        header = _namelists(data_controller, cell, prefix, pp_dir)
+        header = _namelists(data_controller, cell, prefix, pp_dir, nbnd=nbnd)
         structure = get_pwscf_structure(cell, pp_filenames=pp_filenames)
 
     k1, k2, k3 = kgrid

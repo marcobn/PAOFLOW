@@ -3977,3 +3977,132 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Quasi-Harmonic')
+
+    def electron_phonon(
+        self,
+        supercell_matrix=None,
+        displacement_distance=0.06,
+        forces=None,
+        elphon_dir='elphon',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        configuration='standard',
+        basispath=None,
+        nbnd=None,
+        is_plusminus='auto',
+        pthr=0.95,
+        shift_type=1,
+    ):
+        """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
+
+        Builds the electron-phonon matrix elements by finite-differencing the
+        PAO Hamiltonian with respect to atomic displacements (frozen phonon in a
+        supercell), reusing the projection / ``pao_hamiltonian`` pipeline and the
+        phonon module's supercell machinery.
+
+        The routine is two-phase:
+
+        1. **Generate** (``forces=None``): initialise the phonon supercell,
+           displace every atom of the reference primitive cell by
+           ``+/- displacement_distance`` along x, y and z, and write one static
+           ``pw.x`` SCF input per displaced supercell under
+           ``<outputdir>/<elphon_dir>/`` (plus the reference ``supercell.in`` and
+           a ``displacements.json`` manifest).  The displacement set is reduced
+           by the crystal symmetry (via phonopy), so only the inequivalent
+           displacements are computed (a single one for fcc metals).  Each
+           displaced run gets a unique ``prefix`` so its ``.save`` survives, and
+           ``nbnd`` is sized to the PAO projection basis of ``configuration``.
+           Run ``pw.x`` on each, then re-call with ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): rebuild the PAO Hamiltonian of every
+           displaced supercell and central-difference to ``dV = dH/du`` (stored
+           on the controller as ``elphon_dV``).  The ``g_mn^v(k, q)`` assembly
+           and the derived properties land in the next stage.
+
+        Arguments:
+            supercell_matrix: Supercell for the displacements (scalar, length-3
+                or 3x3). Required on the first call; reused afterwards.
+            displacement_distance (float): Displacement amplitude in Bohr
+                (default ``0.06``).
+            forces: ``None`` -> write the displaced-supercell inputs; ``'qe'`` ->
+                harvest and build ``dV``.
+            elphon_dir (str): Sub-directory (under ``outputdir``) for the
+                displaced supercells and the manifest.
+            pp_dir (str, optional): Pseudopotential directory written into the QE
+                inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): Base QE ``prefix`` for the supercell runs
+                (each displacement appends ``_dispNNN``).
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercells
+                (default: the unit-cell grid scaled by the supercell size).
+            hubbard_file (str, optional): ``pw.x`` input whose new-style
+                ``HUBBARD`` card is appended to every input (on-site ``U`` only).
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            configuration (str): PAO basis configuration (``'minimal'``,
+                ``'standard'`` or ``'extended'``) that sizes ``nbnd`` and drives
+                the analyse-phase projections.
+            basispath (str, optional): Local PAO basis directory used by the
+                analyse-phase projections.
+            nbnd (int, optional): Explicit band count for the displaced-supercell
+                SCF inputs (default: the PAO basis size for ``configuration``).
+            is_plusminus ({'auto', True, False}): Passed to phonopy's
+                displacement generation.  ``'auto'`` (default) keeps the
+                symmetry-minimal set and takes forward differences against the
+                reference supercell; ``True`` adds the explicit ``-`` for central
+                differences.
+            pthr (float): Projectability threshold for the analyse phase.
+            shift_type (int): Hamiltonian shift scheme for the analyse phase.
+
+        Returns:
+            None
+        """
+        from .elphon.do_elphon import generate_eph_inputs, run_eph
+        from .phonon.io import read_hubbard_card
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            if forces is None:
+                paths = generate_eph_inputs(
+                    self.data_controller,
+                    supercell_matrix=supercell_matrix,
+                    displacement_distance=displacement_distance,
+                    elphon_dir=elphon_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                    configuration=configuration,
+                    nbnd=nbnd,
+                    is_plusminus=is_plusminus,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote %d displaced-supercell QE inputs for electron-phonon '
+                        'under %s. Run pw.x on each, then re-call '
+                        "electron_phonon(forces='qe')." % (len(paths), elphon_dir)
+                    )
+                self.report_module_time('Electron-Phonon (write inputs)')
+                return
+
+            run_eph(
+                self.data_controller,
+                elphon_dir=elphon_dir,
+                configuration=configuration,
+                basispath=basispath,
+                pthr=pthr,
+                shift_type=shift_type,
+            )
+
+        except Exception as e:
+            self.report_exception('electron_phonon')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Electron-Phonon')
