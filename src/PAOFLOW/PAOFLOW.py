@@ -3993,6 +3993,7 @@ class PAOFLOW:
         basispath=None,
         nbnd=None,
         is_plusminus='auto',
+        displacement_mode='symmetry',
         pthr=0.95,
         shift_type=1,
     ):
@@ -4053,6 +4054,11 @@ class PAOFLOW:
                 symmetry-minimal set and takes forward differences against the
                 reference supercell; ``True`` adds the explicit ``-`` for central
                 differences.
+            displacement_mode ({'symmetry', 'cartesian'}): ``'symmetry'``
+                (default) uses phonopy's symmetry-reduced displacements (the full
+                Cartesian tensor is reconstructed by the symmetry expansion);
+                ``'cartesian'`` displaces every reference-cell atom explicitly
+                along x, y and z (full Cartesian derivative directly, more runs).
             pthr (float): Projectability threshold for the analyse phase.
             shift_type (int): Hamiltonian shift scheme for the analyse phase.
 
@@ -4081,6 +4087,7 @@ class PAOFLOW:
                     configuration=configuration,
                     nbnd=nbnd,
                     is_plusminus=is_plusminus,
+                    displacement_mode=displacement_mode,
                 )
                 if self.rank == 0:
                     print(

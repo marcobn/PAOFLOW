@@ -18,15 +18,22 @@ def reference_supercell_atoms(phonon):
     return np.asarray(phonon.primitive.p2s_map, dtype=int)
 
 
-def generate_eph_displacements(phonon, distance, is_plusminus='auto'):
-    """Symmetry-reduced finite displacements (reuses phonopy's reduction).
+def generate_eph_displacements(phonon, distance, is_plusminus='auto', displacement_mode='symmetry'):
+    """Finite displacements for the electron-phonon derivative.
 
-    Delegates to :meth:`phonopy.Phonopy.generate_displacements`, so the crystal
-    symmetry reduces the set to the inequivalent displacements.  With
-    ``is_plusminus='auto'`` (the phonopy/phonon default) the minus displacement
-    is added only when it is not related to the plus by a symmetry operation
-    (for fcc Al this yields a single displacement); ``is_plusminus=True`` always
-    adds the minus so a central difference can be taken.
+    Two modes are available:
+
+    * ``displacement_mode='symmetry'`` (default): delegate to
+      :meth:`phonopy.Phonopy.generate_displacements`, so the crystal symmetry
+      reduces the set to the inequivalent displacements (a single one for fcc
+      Al).  The full Cartesian tensor is then reconstructed by the symmetry
+      expansion.  ``is_plusminus='auto'`` adds the minus displacement only when
+      it is not symmetry-related to the plus; ``True`` always adds it.
+    * ``displacement_mode='cartesian'``: displace every reference primitive-cell
+      atom explicitly along x, y and z (``is_plusminus=True`` -> central ``+/-``
+      pairs, otherwise a single ``+`` per axis with a forward difference against
+      the reference).  This yields the full Cartesian derivative directly, with
+      no symmetry expansion, at the cost of more DFT runs.
 
     Parameters
     ----------
@@ -35,16 +42,23 @@ def generate_eph_displacements(phonon, distance, is_plusminus='auto'):
     distance : float
         Displacement amplitude in Bohr.
     is_plusminus : {'auto', True, False}
-        Passed through to phonopy.
+        Central-difference control (see above).
+    displacement_mode : {'symmetry', 'cartesian'}
+        Displacement generation strategy.
 
     Returns
     -------
     cells : list[phonopy.structure.atoms.PhonopyAtoms]
-        The symmetry-reduced displaced supercells.
+        The displaced supercells.
     meta : list[dict]
         One entry per cell: ``{index, sc_atom, displacement:[dx, dy, dz], distance}``
         with the Cartesian displacement vector (Bohr).
     """
+    if displacement_mode == 'cartesian':
+        return _cartesian_displacements(phonon, distance, is_plusminus)
+    if displacement_mode != 'symmetry':
+        raise ValueError("displacement_mode must be 'symmetry' or 'cartesian'.")
+
     phonon.generate_displacements(distance=distance, is_plusminus=is_plusminus)
     cells = list(phonon.supercells_with_displacements)
 
@@ -59,4 +73,39 @@ def generate_eph_displacements(phonon, distance, is_plusminus='auto'):
                 'distance': float(distance),
             }
         )
+    return cells, meta
+
+
+def _cartesian_displacements(phonon, distance, is_plusminus):
+    """Explicit x/y/z displacements of every reference primitive-cell atom."""
+    from phonopy.structure.atoms import PhonopyAtoms
+
+    supercell = phonon.supercell
+    p2s = reference_supercell_atoms(phonon)
+    base_pos = np.asarray(supercell.positions, dtype=float)
+    symbols = list(supercell.symbols)
+    cell = np.asarray(supercell.cell, dtype=float)
+    masses = np.asarray(supercell.masses, dtype=float)
+
+    signs = (+1, -1) if is_plusminus is True else (+1,)
+
+    cells, meta = [], []
+    index = 0
+    for sc_atom in p2s:
+        for alpha in range(3):
+            for sign in signs:
+                pos = base_pos.copy()
+                pos[sc_atom, alpha] += sign * distance
+                cells.append(PhonopyAtoms(symbols=symbols, cell=cell, positions=pos, masses=masses))
+                vec = [0.0, 0.0, 0.0]
+                vec[alpha] = sign * distance
+                meta.append(
+                    {
+                        'index': index,
+                        'sc_atom': int(sc_atom),
+                        'displacement': vec,
+                        'distance': float(distance),
+                    }
+                )
+                index += 1
     return cells, meta

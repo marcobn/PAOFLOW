@@ -150,6 +150,34 @@ def test_plusminus_generation_writes_two_inputs(tmp_path):
     assert len(set(prefixes)) == 2
 
 
+def test_cartesian_mode_generates_three_axis_displacements(tmp_path):
+    dc = _aluminium_controller(tmp_path)
+    paths = generate_eph_inputs(
+        dc,
+        supercell_matrix=2,
+        displacement_distance=0.06,
+        nbnd=104,
+        displacement_mode='cartesian',
+    )
+    # One reference atom x, y, z (forward differences).
+    assert len(paths) == 3
+    manifest = json.loads((tmp_path / 'elphon' / 'displacements.json').read_text())
+    vecs = np.array([d['displacement'] for d in manifest['displacements']])
+    # The three displacement vectors are the +x, +y, +z axes times the distance.
+    np.testing.assert_allclose(vecs, np.eye(3) * 0.06, atol=1e-12)
+
+
+def test_cartesian_mode_plusminus_generates_six(tmp_path):
+    dc = _aluminium_controller(tmp_path)
+    _, meta = generate_eph_displacements(
+        init_phonopy(_aluminium_controller(tmp_path)),
+        distance=0.06,
+        is_plusminus=True,
+        displacement_mode='cartesian',
+    )
+    assert len(meta) == 6  # 3 axes x +/-
+
+
 def test_generate_inputs_without_pseudo_warns_and_omits_nbnd(tmp_path):
     dc = _aluminium_controller(tmp_path)  # no real Al.upf under fpath
     with pytest.warns(UserWarning):

@@ -26,6 +26,7 @@ def generate_eph_inputs(
     configuration='standard',
     nbnd=None,
     is_plusminus='auto',
+    displacement_mode='symmetry',
 ):
     """Build the reference-cell displacements and write their QE SCF inputs."""
     arry, attr = data_controller.data_dicts()
@@ -35,7 +36,10 @@ def generate_eph_inputs(
 
     init_phonopy(data_controller)
     cells, meta = generate_eph_displacements(
-        arry['phonopy'], displacement_distance, is_plusminus=is_plusminus
+        arry['phonopy'],
+        displacement_distance,
+        is_plusminus=is_plusminus,
+        displacement_mode=displacement_mode,
     )
     arry['elphon_displacements'] = meta
 
