@@ -11,7 +11,6 @@ user-invocable: true
 This skill defines design rules for:
 
 - General PAOFLOW feature additions.
-- Transport redesign work under `src/PAOFLOW/transport/`.
 - Example and driver design where `main.py` should read like a physics workflow.
 
 The goal is consistency, maintainability, behavior preservation, and user-facing workflows that are understandable when read from top to bottom.
@@ -213,30 +212,6 @@ with the internal preparation split into backend modules.
 
 Expose lower-level public methods only when they represent meaningful reusable physics operations.
 
-### Workflow Comments in Examples
-
-Example `main.py` files may use short section comments that describe the physics stage, not the implementation details.
-
-Preferred:
-
-```python
-# Build the PAO Hamiltonian from QE projections
-pao.read_atomic_proj_QE()
-pao.projectability()
-pao.pao_hamiltonian()
-
-# Compute Green's-function transport observables
-transport = Transport(pao.data_controller)
-transport.conductor(...)
-```
-
-Avoid:
-
-```python
-# Get arrays and call helper functions
-arrays, attr = pao.data_controller.data_dicts()
-```
-
 ### Public API Review Test
 
 Before accepting a new feature or refactor, inspect the final `main.py` and ask:
@@ -251,7 +226,7 @@ If the answer is no, redesign the public API before refining backend code.
 
 ---
 
-## Part A: General Codebase Design (All New Features)
+## General Codebase Design (All New Features)
 
 ### Placement Rules
 
@@ -335,110 +310,6 @@ Avoid new interfaces like:
 - `from_yaml(...)`
 - `load_config_file(...)`
 - `input_parameters.py`-only pipelines for new features
-
----
-
-## Part B: Transport Redesign Rules (Specific to `transport/`)
-
-### Design Goal
-
-Refactor Green's-function transport from class-heavy internals to procedural modules while keeping behavior unchanged.
-
-The public `Transport` API should expose physics-level operations. Internal transport modules should remain procedural, testable, and small.
-
-### Mandatory Constraints
-
-1. Keep existing public imports working during migration.
-   Example: existing `ConductorRunner`/`CurrentRunner` can remain as compatibility wrappers.
-
-2. New transport compute modules must not use `do_*` names.
-   Examples:
-
-- `conductor_pipeline.py`
-- `current_pipeline.py`
-- `green_solver.py`
-- `self_energy_ops.py`
-
-3. New primary API uses direct arguments, not file-based config.
-
-4. Keep local intermediates local; only persist reusable results.
-
-5. Keep `main.py` at the physics-workflow level. Do not expose transport backend setup details in examples unless the example is explicitly a developer/debugging example.
-
-### New Driver Structure
-
-`src/PAOFLOW/Transport.py` should provide user-facing methods such as:
-
-```python
-class Transport:
-    def __init__(self, data_controller):
-        self.data_controller = data_controller
-
-    def conductor(self, *, emin, emax, ne, delta, nk, formula='landauer', **kwargs):
-        from .transport.conductor_pipeline import run_conductor
-        return run_conductor(self.data_controller, emin=emin, emax=emax, ne=ne, delta=delta, nk=nk, formula=formula, **kwargs)
-
-    def current(self, *, bias_min, bias_max, nbias, temperature, **kwargs):
-        from .transport.current_pipeline import run_current
-        return run_current(self.data_controller, bias_min=bias_min, bias_max=bias_max, nbias=nbias, temperature=temperature, **kwargs)
-```
-
-### Transport Workflow Design
-
-A transport example should look like:
-
-```python
-pao = PAOFLOW(savedir="al.save")
-
-pao.read_atomic_proj_QE()
-pao.projectability()
-pao.pao_hamiltonian()
-pao.doubling_Hamiltonian(nx=1, ny=1, nz=1)
-
-transport = Transport(pao.data_controller)
-transport.conductor(...)
-transport.current(...)
-```
-
-It should not look like:
-
-```python
-arrays, attr = pao.data_controller.data_dicts()
-lead_blocks = build_lead_blocks(arrays, attr)
-self_energies = build_self_energies(lead_blocks)
-transmission = solve_green_function_transport(arrays, attr, self_energies)
-```
-
-The second form is acceptable inside backend modules or developer tests, not as the recommended user workflow.
-
-### Migration Strategy
-
-1. Write or update the target `main.py` first so the desired user workflow is explicit.
-2. Extract logic from class methods into module-level functions.
-3. Keep thin wrapper classes for compatibility.
-4. Add direct-argument APIs in `Transport` class.
-5. Port examples to the new direct-argument API.
-6. Check that examples read as physics workflows before optimizing internals.
-7. Only then deprecate file-based pathways, if any remain.
-
----
-
-## Part C: Behavior-Safety Checklist
-
-Before merging any redesign patch:
-
-- [ ] No algorithmic edits disguised as refactor.
-- [ ] Numerical outputs match baseline within expected tolerance.
-- [ ] Legacy entry points still execute, unless intentionally removed.
-- [ ] New APIs accept arguments directly, with no required config file.
-- [ ] New modules avoid `do_*` naming.
-- [ ] DataController additions are justified by reuse.
-- [ ] Temporary arrays are not persisted.
-- [ ] Tests updated for both compatibility path and new path.
-- [ ] The final `main.py` reads like a top-down physics workflow.
-- [ ] Public method names correspond to physics actions or observables.
-- [ ] Public arguments correspond to physical parameters or user-facing numerical controls.
-- [ ] Internal arrays, scratch buffers, and backend helper modules are not exposed in ordinary examples.
 
 ---
 
