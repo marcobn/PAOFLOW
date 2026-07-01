@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from PAOFLOW.DataController import DataController
     from PAOFLOW.transport.data import ConductorData, SmearingType
+    from PAOFLOW.transport.partition.types import HamiltonianBlockPartition
     from PAOFLOW.transport.results import TransportResults
 
 
@@ -47,7 +48,7 @@ class Transport:
         self._transport_options_config: dict[str, Any] = {
             'formula': 'landauer',
         }
-        self._block_selectors: dict[str, Any] = {}
+        self._partition: HamiltonianBlockPartition | None = None
         self._onsite_shift_config: dict[str, Any] | None = None
         self._lead_convergence_config: dict[str, Any] | None = None
         self._eigenchannel_config: dict[str, Any] | None = None
@@ -186,54 +187,50 @@ class Transport:
             self.conductor_data.conduct_formula = formula
         self.results = None
 
-    def define_blocks(
+    def define_partition(
         self,
         *,
-        H00_C: dict[str, Any] | None = None,
-        H_CR: dict[str, Any] | None = None,
-        H_CL: dict[str, Any] | None = None,
-        H_LC: dict[str, Any] | None = None,
-        H00_L: dict[str, Any] | None = None,
-        H01_L: dict[str, Any] | None = None,
-        H00_R: dict[str, Any] | None = None,
-        H01_R: dict[str, Any] | None = None,
+        central_atoms: str = 'ALL',
+        central_layers: int | None = None,
+        left_lead_layers: int | None = None,
+        right_lead_layers: int | None = None,
+        transport_direction: str,
+        layer_tolerance: float = 1.0e-6,
     ) -> None:
-        """Define the orbital row/column selectors for each Hamiltonian block.
+        """Define a layer-based transport partition.
 
-        Must be called before :meth:`build_hamiltonian_blocks`; the selectors
-        determine which orbitals form the conductor, lead, and coupling blocks
-        and are consumed during block construction.
+        The partition is resolved immediately from PAOFLOW atom/order metadata
+        into Hamiltonian block dimensions and orbital selectors. Users specify
+        physical layers along ``transport_direction`` instead of PAO indices.
 
         Parameters
         ----------
-        H00_C : dict or None, optional
-            Row/column selectors for the conductor on-site block.
-        H_CR : dict or None, optional
-            Row/column selectors for the conductor–right-lead coupling block.
-        H_CL : dict or None, optional
-            Row/column selectors for the conductor–left-lead coupling block.
-        H_LC : dict or None, optional
-            Row/column selectors for the left-lead–conductor coupling block.
-        H00_L : dict or None, optional
-            Row/column selectors for the left-lead on-site block.
-        H01_L : dict or None, optional
-            Row/column selectors for the left-lead hopping block.
-        H00_R : dict or None, optional
-            Row/column selectors for the right-lead on-site block.
-        H01_R : dict or None, optional
-            Row/column selectors for the right-lead hopping block.
+        central_atoms : str, optional
+            Central region atom selector. Currently only ``'ALL'`` is supported.
+        central_layers : int or None, optional
+            If provided, use this many layers from the start of the transport
+            direction as the central region. This is useful for lead-only bulk
+            calculations.
+        left_lead_layers, right_lead_layers : int or None, optional
+            Number of layers at the start/end of the transport direction used
+            to construct conductor lead and coupling blocks.
+        transport_direction : {'x', 'y', 'z'}
+            Direction along which transport is computed.
+        layer_tolerance : float, optional
+            Coordinate tolerance used to group atoms into layers.
         """
-        selectors = {
-            'H00_C': H00_C,
-            'H_CR': H_CR,
-            'H_CL': H_CL,
-            'H_LC': H_LC,
-            'H00_L': H00_L,
-            'H01_L': H01_L,
-            'H00_R': H00_R,
-            'H01_R': H01_R,
-        }
-        self._block_selectors = {k: v for k, v in selectors.items() if v is not None}
+        from PAOFLOW.transport.partition import resolve_layer_partition
+
+        self._partition = resolve_layer_partition(
+            self.data_controller,
+            central_atoms=central_atoms,
+            central_layers=central_layers,
+            left_lead_layers=left_lead_layers,
+            right_lead_layers=right_lead_layers,
+            transport_direction=transport_direction,
+            layer_tolerance=layer_tolerance,
+        )
+        self.results = None
 
     def configure_onsite_shifts(
         self,
@@ -344,10 +341,6 @@ class Transport:
     def build_hamiltonian_blocks(
         self,
         *,
-        dimC: int,
-        dimL: int | None = None,
-        dimR: int | None = None,
-        transport_direction: int = 1,
         calculation_type: str = 'bulk',
         carriers: str = 'electrons',
         use_sym: bool = False,
@@ -356,10 +349,10 @@ class Transport:
         debug: bool = False,
         **block_options: Any,
     ) -> dict[str, Any]:
-        """Build conductor Hamiltonian blocks from direct arguments.
+        """Build conductor Hamiltonian blocks from the defined partition.
 
         Accepts only parameters required to construct Hamiltonian/overlap
-        block objects and lead-device partitions.  Energy-grid parameters
+        block objects after :meth:`define_partition`. Energy-grid parameters
         (``emin``, ``emax``, ``ne``, ``delta``), output paths, and optional
         operator outputs must be configured separately via
         ``configure_energy_grid(...)``, ``configure_outputs(...)``, and
@@ -367,14 +360,6 @@ class Transport:
 
         Parameters
         ----------
-        dimC : int
-            Conductor block dimension.
-        dimL : int or None, optional
-            Left lead block dimension. Leave as ``None`` for bulk mode.
-        dimR : int or None, optional
-            Right lead block dimension. Leave as ``None`` for bulk mode.
-        transport_direction : int, optional
-            Transport direction index in ``{1, 2, 3}``.
         calculation_type : str, optional
             Calculation mode: ``'bulk'`` or ``'conductor'``.
         carriers : str, optional
@@ -401,8 +386,8 @@ class Transport:
 
         Notes
         -----
-        Hamiltonian block selectors (``H00_C``, ``H_CR``, ...) must be supplied
-        beforehand via :meth:`define_blocks`. Optional physics tuning is applied
+        A layer partition must be supplied beforehand via
+        :meth:`define_partition`. Optional physics tuning is applied
         through :meth:`configure_onsite_shifts`, :meth:`configure_lead_convergence`,
         and :meth:`configure_eigenchannels`; energy/smearing via
         :meth:`configure_energy_grid` and outputs via :meth:`configure_outputs`.
@@ -422,11 +407,14 @@ class Transport:
             prepare_conductor_step_state,
         )
 
+        if self._partition is None:
+            raise RuntimeError('Call define_partition(...) before build_hamiltonian_blocks(...).')
+
         input_values = build_conductor_input_values(
-            dimC=dimC,
-            dimL=dimL,
-            dimR=dimR,
-            transport_direction=transport_direction,
+            dimC=self._partition.dim_c,
+            dimL=self._partition.dim_l,
+            dimR=self._partition.dim_r,
+            transport_direction=self._partition.transport_direction,
             calculation_type=calculation_type,
             carriers=carriers,
             formula=self._transport_options_config.get('formula', 'landauer'),
@@ -437,7 +425,7 @@ class Transport:
             do_overlap_transformation=do_overlap_transformation,
             debug=debug,
             ispin=ispin,
-            **self._block_selectors,
+            **self._partition.selectors,
             **block_options,
         )
 

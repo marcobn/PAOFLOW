@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from PAOFLOW.Transport import Transport
+
+
+class DummyPartitionDataController:
+    def data_dicts(self):
+        arrays = {
+            'atoms': ['Al', 'Al', 'Al', 'Al', 'Al'],
+            'tau': np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [0.0, 0.0, 2.0],
+                    [0.0, 0.0, 3.0],
+                    [0.0, 0.0, 4.0],
+                ]
+            ),
+        }
+        attributes = {'nawf': 20}
+        return arrays, attributes
 
 
 def test_initial_state_has_no_conductor_data():
@@ -109,13 +128,14 @@ def test_compute_dos_requires_energy_grid():
         transport.compute_dos()
 
 
-def test_define_blocks_stashes_only_provided_selectors():
-    transport = Transport(data_controller=object())
-    transport.define_blocks(
-        H00_C={'rows': 'ALL', 'cols': 'ALL'}, H_CR={'rows': '1-2', 'cols': '1-2'}
-    )
-    assert set(transport._block_selectors) == {'H00_C', 'H_CR'}
-    assert transport._block_selectors['H_CR'] == {'rows': '1-2', 'cols': '1-2'}
+def test_define_partition_resolves_layer_selectors():
+    transport = Transport(data_controller=DummyPartitionDataController())
+    transport.define_partition(central_atoms='ALL', transport_direction='z')
+    assert transport._partition is not None
+    assert transport._partition.dim_c == 20
+    assert transport._partition.transport_direction == 'z'
+    assert transport._partition.selectors['H00_C'] == {'rows': '1-20', 'cols': '1-20'}
+    assert transport._partition.selectors['H_CR'] == {'rows': '1-20', 'cols': '1-20'}
 
 
 def test_configure_onsite_shifts_applies_to_existing_data():

@@ -8,6 +8,7 @@ import numpy as np
 CalculationType = Literal['conductor', 'bulk']
 ConductFormula = Literal['landauer', 'generalized']
 Carriers = Literal['electrons', 'phonons']
+TransportDirection = Literal['x', 'y', 'z']
 SmearingType = Literal[
     'lorentzian',
     'gaussian',
@@ -216,7 +217,7 @@ class ConductorData:
     dimL: int = 0
     dimR: int = 0
     dimC: int = 0
-    transport_direction: int = 1
+    transport_direction: TransportDirection = 'x'
     calculation_type: CalculationType = 'conductor'
     conduct_formula: ConductFormula = 'landauer'
     carriers: Carriers = 'electrons'

@@ -116,8 +116,8 @@ def validate_conductor_data(data: ConductorData) -> None:
 
     if data.dimC <= 0:
         raise ValueError('dimC must be positive.')
-    if data.transport_direction not in (1, 2, 3):
-        raise ValueError('transport_direction must be 1, 2, or 3.')
+    if data.transport_direction not in ('x', 'y', 'z'):
+        raise ValueError("transport_direction must be one of 'x', 'y', or 'z'.")
     if data.calculation_type not in ('bulk', 'conductor'):
         raise ValueError("calculation_type must be 'bulk' or 'conductor'.")
     if data.conduct_formula not in ('landauer', 'generalized'):

@@ -78,7 +78,7 @@ def write_eigenchannels(
     ie: int,
     ik: int,
     vkpt: np.ndarray,
-    transport_direction: int,
+    transport_direction: str,
     output_dir: Path,
     prefix: str = 'eigchn',
     overwrite: bool = True,
@@ -97,8 +97,8 @@ def write_eigenchannels(
         k-point index.
     `vkpt` : (3,) float ndarray
         Coordinates of the k-point in crystal units.
-    `transport_direction` : int
-        Direction of transport (typically 1, 2, or 3).
+    `transport_direction` : {'x', 'y', 'z'}
+        Direction of transport.
     `output_dir` : Path
         Directory to write the output file.
     `prefix` : str

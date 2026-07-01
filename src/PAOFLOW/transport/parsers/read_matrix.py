@@ -7,6 +7,7 @@ from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.hamiltonian.fourier_par import fourier_transform_real_to_kspace
 from PAOFLOW.transport.hamiltonian.operator_blc import OperatorBlock
 from PAOFLOW.transport.parsers.parser_base import parse_index_array
+from PAOFLOW.transport.partition.directions import direction_axis
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -15,7 +16,7 @@ def read_matrix(
     conductor_data: ConductorData,
     data_controller: DataController,
     ispin: int,
-    transport_direction: int,
+    transport_direction: str,
     opr: OperatorBlock,
 ) -> None:
     """Build a k-space operator block from the in-memory real-space Hamiltonian.
@@ -37,8 +38,8 @@ def read_matrix(
     ispin : int
         Spin index (0-based) selecting the spin channel. Must be non-negative
         when ``nspin == 2``.
-    transport_direction : int
-        Transport direction (``1`` = x, ``2`` = y, ``3`` = z).
+    transport_direction : {'x', 'y', 'z'}
+        Transport direction.
     opr : OperatorBlock
         Target operator block, mutated in place (see ``Returns``).
 
@@ -94,6 +95,7 @@ def read_matrix(
     ivr_from_input = 'ivr' in tag_attr
 
     dim1, dim2 = opr.dim1, opr.dim2
+    transport_axis = direction_axis(transport_direction)
 
     # Convert "all" to full ranges
     if rows == 'all':
@@ -135,7 +137,7 @@ def read_matrix(
         ivr_aux = np.zeros(3, dtype=int)
         j = 0
         for i in range(3):
-            if i + 1 == transport_direction:
+            if i + 1 == transport_axis:
                 if label.lower() in {
                     'block_00c',
                     'block_00r',

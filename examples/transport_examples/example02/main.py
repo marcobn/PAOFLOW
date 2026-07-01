@@ -34,14 +34,9 @@ def _run_case(case: str) -> None:
     transport = Transport(paoflow.data_controller)
 
     if case == 'bulk':
-        transport.define_blocks(
-            H00_C={'rows': 'ALL', 'cols': 'ALL'},
-            H_CR={'rows': 'ALL', 'cols': 'ALL'},
-        )
+        transport.define_partition(central_atoms='ALL', transport_direction='z')
 
         transport.build_hamiltonian_blocks(
-            dimC=41,
-            transport_direction=3,
             calculation_type='bulk',
             use_sym=False,
             do_overlap_transformation=False,
@@ -68,21 +63,14 @@ def _run_case(case: str) -> None:
         )
 
     elif case == 'lcr':
-        transport.define_blocks(
-            H00_C={'rows': '1-41', 'cols': '1-41'},
-            H_CR={'rows': '1-41', 'cols': '1-12'},
-            H_LC={'rows': '30-41', 'cols': '1-41'},
-            H00_L={'rows': '1-12', 'cols': '1-12'},
-            H01_L={'rows': '30-41', 'cols': '1-12'},
-            H00_R={'rows': '1-12', 'cols': '1-12'},
-            H01_R={'rows': '30-41', 'cols': '1-12'},
+        transport.define_partition(
+            central_atoms='ALL',
+            left_lead_layers=3,
+            right_lead_layers=3,
+            transport_direction='z',
         )
 
         transport.build_hamiltonian_blocks(
-            dimC=41,
-            dimL=12,
-            dimR=12,
-            transport_direction=3,
             calculation_type='conductor',
             do_overlap_transformation=False,
         )
@@ -108,14 +96,9 @@ def _run_case(case: str) -> None:
         )
 
     elif case == 'lead':
-        transport.define_blocks(
-            H00_C={'rows': '1-12', 'cols': '1-12'},
-            H_CR={'rows': '30-41', 'cols': '1-12'},
-        )
+        transport.define_partition(central_layers=3, transport_direction='z')
 
         transport.build_hamiltonian_blocks(
-            dimC=12,
-            transport_direction=3,
             calculation_type='bulk',
             do_overlap_transformation=False,
         )

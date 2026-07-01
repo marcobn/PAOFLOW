@@ -39,7 +39,7 @@ def test_initialize_hamiltonian_blocks_bulk_symmetrizes(monkeypatch):
         wr_par=wr_par,
         table_par=table_par,
         ispin=0,
-        transport_direction=3,
+        transport_direction='z',
         calculation_type='bulk',
         data_controller=object(),
         conductor_data=DummyConductorData(),

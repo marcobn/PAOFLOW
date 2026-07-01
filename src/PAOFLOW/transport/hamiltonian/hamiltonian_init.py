@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from PAOFLOW.DataController import DataController
 import numpy as np
 
-from PAOFLOW.transport.hamiltonian.hamiltonian import HamiltonianSystem
+from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.data import CalculationType, ConductorData
+from PAOFLOW.transport.hamiltonian.hamiltonian import HamiltonianSystem
 from PAOFLOW.transport.parsers.read_matrix import read_matrix
+from PAOFLOW.transport.partition.directions import direction_axis
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -17,7 +18,7 @@ def initialize_hamiltonian_blocks(
     wr_par: np.ndarray,
     table_par: np.ndarray,
     ispin: int,
-    transport_direction: int,
+    transport_direction: str,
     calculation_type: CalculationType,
     data_controller: DataController,
     conductor_data: ConductorData | None = None,
@@ -35,8 +36,8 @@ def initialize_hamiltonian_blocks(
         Shared PAOFLOW data store providing the Hamiltonian/overlap arrays.
     `ispin` : int
         Spin index (0-based) to select the spin channel to load.
-    `transport_direction` : int
-        Index (1-based) of the transport direction (1 = x, 2 = y, 3 = z).
+    `transport_direction` : {'x', 'y', 'z'}
+        Transport direction.
     `calculation_type` : {"conductor", "bulk"}
         System configuration type.
 
@@ -46,15 +47,14 @@ def initialize_hamiltonian_blocks(
         Whether the left and right lead blocks are structurally and numerically identical.
     """
 
-    def extract_2D_ivrs(ivr3D: np.ndarray, transport_direction: int) -> np.ndarray:
-        if transport_direction == 1:
+    def extract_2D_ivrs(ivr3D: np.ndarray, transport_direction: str) -> np.ndarray:
+        axis = direction_axis(transport_direction)
+        if axis == 1:
             return ivr3D[1:, :]
-        elif transport_direction == 2:
+        elif axis == 2:
             return ivr3D[[0, 2], :]
-        elif transport_direction == 3:
+        elif axis == 3:
             return ivr3D[:2, :]
-        else:
-            raise ValueError(f'Invalid transport_direction: {transport_direction}')
 
     ham_system.allocate(ivr_par3D, conductor_data.hamiltonian_tags)
 

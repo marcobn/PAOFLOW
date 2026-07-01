@@ -35,7 +35,7 @@ def test_write_eigenchannels_writes_npz(tmp_path):
         ie=1,
         ik=2,
         vkpt=np.array([0.0, 0.0, 0.0]),
-        transport_direction=3,
+        transport_direction='z',
         output_dir=tmp_path,
         verbose=False,
     )

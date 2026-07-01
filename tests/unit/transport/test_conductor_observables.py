@@ -45,7 +45,7 @@ def test_accumulate_transmission_preserves_weighting(monkeypatch):
             ie_eigplot=0,
             ik_eigplot=0,
         ),
-        transport_direction=1,
+        transport_direction='x',
     )
     conduct = np.zeros((3, 4))
     conduct_k = np.zeros((3, 2, 4))

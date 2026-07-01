@@ -38,7 +38,7 @@ def build_conductor_input_values(
     dimL: int | None = None,
     dimR: int | None = None,
     formula: str = 'landauer',
-    transport_direction: int = 1,
+    transport_direction: str = 'x',
     calculation_type: str = 'bulk',
     carriers: str = 'electrons',
     work_dir: str = './',
@@ -62,8 +62,8 @@ def build_conductor_input_values(
         Right lead block dimension for non-bulk calculations.
     formula : str, optional
         Conductance formula identifier.
-    transport_direction : int, optional
-        Transport direction index in ``{1, 2, 3}``.
+    transport_direction : {'x', 'y', 'z'}, optional
+        Transport direction.
     calculation_type : str, optional
         Calculation mode: ``'bulk'`` or ``'conductor'``.
     carriers : str, optional

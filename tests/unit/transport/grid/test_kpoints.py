@@ -20,19 +20,19 @@ def test_kpoints_mask_inserts_transport_direction():
     """The transport direction should receive the inserted init value."""
     vect = (2, 3)
 
-    np.testing.assert_allclose(kpoints_mask(vect, 1, 1), [1, 2, 3])
-    np.testing.assert_allclose(kpoints_mask(vect, 1, 2), [2, 1, 3])
-    np.testing.assert_allclose(kpoints_mask(vect, 1, 3), [2, 3, 1])
+    np.testing.assert_allclose(kpoints_mask(vect, 1, 'x'), [1, 2, 3])
+    np.testing.assert_allclose(kpoints_mask(vect, 1, 'y'), [2, 1, 3])
+    np.testing.assert_allclose(kpoints_mask(vect, 1, 'z'), [2, 3, 1])
 
 
 @pytest.mark.unit
 def test_kpoints_mask_invalid_inputs():
     """Invalid vector shapes or directions should raise errors."""
     with pytest.raises(ValueError):
-        kpoints_mask((1, 2, 3), 0, 1)
+        kpoints_mask((1, 2, 3), 0, 'x')
 
     with pytest.raises(ValueError):
-        kpoints_mask((1, 2), 0, 4)
+        kpoints_mask((1, 2), 0, 'a')
 
 
 @pytest.mark.unit
@@ -48,7 +48,7 @@ def test_kpoints_equivalent_time_reversal():
 @pytest.mark.unit
 def test_initialize_meshsize_defaults_to_nr_par():
     """When nk_par is missing, it should mirror the R-mesh size."""
-    nk_par, nr_par = initialize_meshsize(np.array([2, 3, 4]), transport_direction=1)
+    nk_par, nr_par = initialize_meshsize(np.array([2, 3, 4]), transport_direction='x')
 
     np.testing.assert_allclose(nr_par, [3, 4])
     np.testing.assert_allclose(nk_par, [3, 4])
@@ -60,7 +60,7 @@ def test_initialize_meshsize_safe_mesh_enforced():
     with pytest.raises(ValueError):
         initialize_meshsize(
             np.array([2, 2, 2]),
-            transport_direction=3,
+            transport_direction='z',
             nk_par=np.array([1, 1]),
             use_safe_kmesh=True,
         )
@@ -72,7 +72,7 @@ def test_initialize_kpoints_symmetry_weights():
     vkpts, weights = initialize_kpoints(
         nk_par=np.array([2, 2]),
         s_par=np.array([0, 0]),
-        transport_direction=3,
+        transport_direction='z',
         use_sym=True,
     )
 
@@ -86,7 +86,7 @@ def test_initialize_kpoints_no_symmetry_full_mesh():
     vkpts, weights = initialize_kpoints(
         nk_par=np.array([2, 2]),
         s_par=np.array([0, 0]),
-        transport_direction=3,
+        transport_direction='z',
         use_sym=False,
     )
 
@@ -108,7 +108,7 @@ def test_compute_fourier_phase_table_basic():
 @pytest.mark.unit
 def test_initialize_r_vectors_include_negatives():
     """Hermitian symmetry ensures -R is present (except for self-inverse R=0)."""
-    ivr_par3d, wr_par = initialize_r_vectors((1, 1), transport_direction=3)
+    ivr_par3d, wr_par = initialize_r_vectors((1, 1), transport_direction='z')
 
     assert ivr_par3d.shape[1] == 3
     assert wr_par.sum() == pytest.approx(1.0)

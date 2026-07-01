@@ -22,14 +22,9 @@ def main():
 
     transport = Transport(paoflow.data_controller)
 
-    transport.define_blocks(
-        H00_C={'rows': 'ALL', 'cols': 'ALL'},
-        H_CR={'rows': 'ALL', 'cols': 'ALL'},
-    )
+    transport.define_partition(central_atoms='ALL', transport_direction='z')
 
     transport.build_hamiltonian_blocks(
-        dimC=20,
-        transport_direction=3,
         calculation_type='bulk',
         use_sym=False,
         do_overlap_transformation=False,
