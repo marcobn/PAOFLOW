@@ -19,12 +19,6 @@ def test_require_hamiltonian_blocks_raises_before_build():
         transport._require_hamiltonian_blocks()
 
 
-def test_require_step_state_raises_before_build():
-    transport = Transport(data_controller=object())
-    with pytest.raises(RuntimeError, match='build_hamiltonian_blocks'):
-        transport._require_step_state()
-
-
 def test_require_grid_config_raises_before_configure():
     transport = Transport(data_controller=object())
     with pytest.raises(RuntimeError, match='configure_energy_grid'):

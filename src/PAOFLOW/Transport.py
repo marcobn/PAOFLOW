@@ -20,15 +20,11 @@ from PAOFLOW.transport.conductor_pipeline import (
     write_transmission_results,
 )
 from PAOFLOW.transport.conductor_steps import (
-    ConductorStepState,
     build_conductor_blocks,
     build_conductor_input_values,
-    compute_conductor_green,
-    compute_conductor_self_energy,
     prepare_conductor_step_state,
 )
 from PAOFLOW.transport.data import ConductorData, SmearingType
-from PAOFLOW.transport.grid.egrid import initialize_energy_grid
 from PAOFLOW.transport.io.write_data import write_current_results
 from PAOFLOW.transport.results import TransportResults
 
@@ -53,7 +49,6 @@ class Transport:
 
     def __init__(self, data_controller: DataController) -> None:
         self.data_controller = data_controller
-        self._conductor_state: ConductorStepState | None = None
         self.conductor_data: ConductorData | None = None
         self.blc_blocks: dict[str, Any] | None = None
         self.results: TransportResults | None = None
@@ -145,13 +140,6 @@ class Transport:
             self.conductor_data.energy.ne_buffer = ne_buffer
             self.conductor_data.energy.energy_step = energy_step
             self.conductor_data.energy.nx_smear = nx_smear
-            if self._conductor_state is not None:
-                self._conductor_state.energy_grid = initialize_energy_grid(
-                    emin=emin,
-                    emax=emax,
-                    ne=ne,
-                    carriers=self.conductor_data.carriers,
-                )
         self.results = None
 
     def configure_outputs(
@@ -454,9 +442,8 @@ class Transport:
         and :meth:`configure_eigenchannels`; energy/smearing via
         :meth:`configure_energy_grid` and outputs via :meth:`configure_outputs`.
 
-        Sets ``self.conductor_data``, ``self.blc_blocks``, and
-        ``self._conductor_state`` as side effects. Calling this method a second
-        time resets all three for the new calculation.
+        Sets ``self.conductor_data`` and ``self.blc_blocks`` as side effects.
+        Calling this method a second time resets both for the new calculation.
         """
         input_values = build_conductor_input_values(
             dimC=dimC,
@@ -507,17 +494,12 @@ class Transport:
 
         self.conductor_data = state.data
         self.blc_blocks = state.blc_blocks
-        self._conductor_state = state
         self.results = None
         return state.blc_blocks
 
     def _require_hamiltonian_blocks(self) -> None:
         if self.conductor_data is None or self.blc_blocks is None:
             raise RuntimeError('Call build_hamiltonian_blocks(...) before transport computations.')
-
-    def _require_step_state(self) -> None:
-        if self._conductor_state is None:
-            raise RuntimeError('Call build_hamiltonian_blocks(...) before point calculations.')
 
     def _require_grid_config(self) -> None:
         if self._energy_grid_config is None:
@@ -539,36 +521,6 @@ class Transport:
                 comm=comm,
             )
         return self.results
-
-    def compute_self_energy_point(
-        self,
-        *,
-        ie_g: int,
-        ik: int,
-    ) -> tuple[NDArray[np.complex128], NDArray[np.complex128], int]:
-        """Compute lead self-energies for one ``(E, k)`` point."""
-        self._require_step_state()
-        return compute_conductor_self_energy(
-            state=self._conductor_state,
-            ie_g=ie_g,
-            ik=ik,
-        )
-
-    def compute_greens_function_point(
-        self,
-        *,
-        ik: int,
-        sigma_L: NDArray[np.complex128] | None = None,
-        sigma_R: NDArray[np.complex128] | None = None,
-    ) -> NDArray[np.complex128]:
-        """Compute conductor retarded Green's function for one k-point."""
-        self._require_step_state()
-        return compute_conductor_green(
-            state=self._conductor_state,
-            ik=ik,
-            sigma_L=sigma_L,
-            sigma_R=sigma_R,
-        )
 
     def compute_leads_self_energy(
         self,
