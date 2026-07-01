@@ -1,0 +1,95 @@
+---
+name: Notify Teams on PR merge
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify-teams:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Post merge notification to Teams
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number || 'manual' }}
+          PR_TITLE: ${{ github.event.pull_request.title || 'Manual Teams notification test' }}
+          PR_URL: ${{ github.event.pull_request.html_url || github.server_url }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          MERGED_BY: ${{ github.event.pull_request.merged_by.login || github.actor }}
+          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+        run: |
+          if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+            echo "::error::Missing repository secret MS_TEAMS_WEBHOOK_URL."
+            exit 1
+          fi
+
+          theme_color="0078D4"
+          if [ "$BASE_BRANCH" = "main" ]; then
+            theme_color="2EB886"
+          fi
+
+          run_url="$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID"
+          short_sha="${MERGE_COMMIT_SHA:0:7}"
+
+          payload=$(jq -n \
+            --arg summary "PR merged to $BASE_BRANCH" \
+            --arg theme_color "$theme_color" \
+            --arg title "PR merged to $BASE_BRANCH" \
+            --arg activity_title "#$PR_NUMBER $PR_TITLE" \
+            --arg activity_subtitle "Merged by $MERGED_BY" \
+            --arg repo "$REPOSITORY" \
+            --arg base "$BASE_BRANCH" \
+            --arg head "$HEAD_BRANCH" \
+            --arg sha "$short_sha" \
+            --arg pr_url "$PR_URL" \
+            --arg run_url "$run_url" \
+            '{
+              "@type": "MessageCard",
+              "@context": "http://schema.org/extensions",
+              "summary": $summary,
+              "themeColor": $theme_color,
+              "title": $title,
+              "sections": [
+                {
+                  "activityTitle": $activity_title,
+                  "activitySubtitle": $activity_subtitle,
+                  "facts": [
+                    {"name": "Repository", "value": $repo},
+                    {"name": "Target branch", "value": $base},
+                    {"name": "Source branch", "value": $head},
+                    {"name": "Merge commit", "value": $sha}
+                  ],
+                  "markdown": true
+                }
+              ],
+              "potentialAction": [
+                {
+                  "@type": "OpenUri",
+                  "name": "View pull request",
+                  "targets": [{"os": "default", "uri": $pr_url}]
+                },
+                {
+                  "@type": "OpenUri",
+                  "name": "View workflow run",
+                  "targets": [{"os": "default", "uri": $run_url}]
+                }
+              ]
+            }')
+
+          curl --fail-with-body \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "$TEAMS_WEBHOOK_URL"
