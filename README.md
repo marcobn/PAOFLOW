@@ -25,6 +25,7 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 | **Electronic structure** | Band structures, density of states (total & projected), Fermi surfaces |
 | **Optical & dielectric response** | Complex dielectric tensor ε(ω), optical conductivity, joint density of states; non-local velocity correction for norm-conserving pseudopotentials |
 | **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity (Boltzmann transport) |
+| **Lattice dynamics & phonons** | Phonon dispersions, DOS and thermal properties ([phonopy](https://phonopy.github.io/phonopy/) finite-displacement); Born effective charges, ε∞ and LO–TO splitting; infrared (IR), non-resonant (Placzek) and resonant (Albrecht) Raman spectra |
 | **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, topological surface states |
 | **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
 | **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
@@ -80,7 +81,7 @@ as console commands:
    Pseudo Dojo repository (https://www.pseudo-dojo.org/), are included in the
    distribution and should be used for the input generation.
 2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script from the
-   output of a Quantum ESPRESSO run. It offers two workflows:
+   output of a Quantum ESPRESSO run. It offers three workflows:
    - **regular** — a property-run driver (`main.py`) that computes the
      properties you select (bands, DOS/PDOS, transport, optical, topology,
      …), with a 2D-aware band path, plus an optional companion **plotting
@@ -89,6 +90,12 @@ as console commands:
      *V* (eACBN0) driver (`main.acbn0.py`), paired with a `plot.acbn0.py` that
      overlays the band structures of the converged cases (DFT+U and, for
      eACBN0, DFT+U+V) for direct comparison.
+   - **phonon** — a three-phase lattice-dynamics driver (`main.phonon.py`)
+     that writes the displaced-supercell `pw.x` inputs, harvests the forces
+     and assembles the phonon dispersion, DOS, thermal properties and (with
+     Born charges) the LO–TO splitting. Optionally it also emits a companion
+     **Raman workflow** (`main.raman.py`) for the non-resonant (Placzek)
+     Raman spectrum, plus matching `plot.phonon.py` / `plot.raman.py` scripts.
 ---
 
 ## For Researchers
@@ -98,6 +105,8 @@ PAOFLOW has been used in high-throughput screening campaigns, topological materi
 ## For Industry & HPC
 
 PAOFLOW is MPI-parallel, NumPy/SciPy-based, and designed to plug into existing DFT workflows with minimal overhead. The PAO Hamiltonian is orders of magnitude cheaper to diagonalize than the full DFT problem, enabling dense **k**-point sampling and fine spectral resolution at low computational cost.
+
+An **optional Rust backend** ([`rust/`](rust/)) further accelerates the heaviest numerical kernels — the ACBN0/eACBN0 four-centre Coulomb integrals (ERIs) and the dielectric/JDOS response loops. It is fully optional and imported opportunistically: when the compiled `paoflow_rs` module is unavailable, PAOFLOW falls back to its pure-Python/NumPy implementation with numerically identical results (parity < 1e-12). See the [Rust backend guide](rust/README.md) for build and usage instructions.
 
 ---
 

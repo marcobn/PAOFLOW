@@ -14,8 +14,8 @@ class GPAO:
           vertical (bool): Set True to plot energy on the y-axis and elec/eV on the x-axis.
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_dos
+        from .inputs.read_pao_output import read_dos_PAO
 
         es, dos = read_dos_PAO(fname)
 
@@ -48,8 +48,8 @@ class GPAO:
         """
         import numpy as np
 
-        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_pdos
+        from .inputs.read_pao_output import read_dos_PAO
 
         es = None
         dos = []
@@ -88,8 +88,8 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .inputs.read_pao_output import read_site_projected
         from .graphics.plot_functions import plot_weighted_bands
+        from .inputs.read_pao_output import read_site_projected
 
         if sym_points is not None:
             if type(sym_points) is str:
@@ -132,8 +132,8 @@ class GPAO:
           cols (list or str): Color(s) for each dataset. A list of strings/3-tuples recognized by matplotlib.
           legend (bool): Show legend when labels are provided (default True)
         """
-        from .inputs.read_pao_output import read_bands_PAO
         from .graphics.plot_functions import plot_bands
+        from .inputs.read_pao_output import read_bands_PAO
 
         if isinstance(fnames, str):
             fnames = [fnames]
@@ -170,8 +170,8 @@ class GPAO:
         """
         import numpy as np
 
-        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_bands
+        from .inputs.read_pao_output import read_dos_PAO
 
         if title is None:
             title = 'Berry curvature vs k-point'
@@ -209,8 +209,8 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .inputs.read_pao_output import read_bands_PAO, read_dos_PAO
         from .graphics.plot_functions import plot_dos_beside_bands
+        from .inputs.read_pao_output import read_bands_PAO, read_dos_PAO
 
         if sym_points is not None:
             if type(sym_points) is str:
@@ -250,8 +250,8 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (str or tuple): A string recognized by matplotlib or a 3-tuple (R,G,B)
         """
-        from .inputs.read_pao_output import read_bands_PAO, read_dos_PAO
         from .graphics.plot_functions import plot_berry_under_bands
+        from .inputs.read_pao_output import read_bands_PAO, read_dos_PAO
 
         if sym_points is not None:
             if type(sym_points) is str:
@@ -298,8 +298,8 @@ class GPAO:
           col (list): A list of 3-tuples (R,G,B), one for each tensor element.
           vE (float): Set to an energy to plot the conductivity vs temperature. The value of conductivity is taken at the provided energy for each temperature.
         """
-        from .inputs.read_pao_output import read_transport_PAO
         from .graphics.plot_functions import plot_tensor
+        from .inputs.read_pao_output import read_transport_PAO
 
         x_label = '$Energy (eV)$'
         y_label = r'Conductivity $(\Omega\, m\, s)^{-1}$'
@@ -343,8 +343,8 @@ class GPAO:
           y_lim (tuple): Pair of axis limits (y_min, y_max)
           col (list): A list of 3-tuples (R,G,B), one for each tensor element.
         """
-        from .inputs.read_pao_output import read_transport_PAO
         from .graphics.plot_functions import plot_tensor
+        from .inputs.read_pao_output import read_transport_PAO
 
         x_label = 'Energy (eV)'
         y_label = r'Seebeck ($\mu$V/K)'
@@ -610,8 +610,8 @@ class GPAO:
         """
         import os
 
-        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.plot_functions import plot_optical
+        from .inputs.read_pao_output import read_dos_PAO
 
         if isinstance(properties, str):
             properties = [properties]
@@ -701,8 +701,8 @@ class GPAO:
         """
         import os
 
-        from .inputs.read_pao_output import read_dos_PAO
         from .graphics.color import reflectance_to_srgb, visible_grid_covered
+        from .inputs.read_pao_output import read_dos_PAO
 
         spin_tag = '' if spin is None else '_%d' % spin
         if component == 'avg':
@@ -754,3 +754,189 @@ class GPAO:
             plot_color_swatch(rgb01, hexstr=hexstr, title=title, label=label)
 
         return rgb01, rgb255, hexstr
+
+    def plot_phonons(
+        self,
+        band_file,
+        dos_file=None,
+        labels_file=None,
+        title=None,
+        y_lim=None,
+        col='black',
+        units='THz',
+        filename=None,
+    ):
+        """Plot a phonon dispersion (and optional DOS) from PAOFLOW output files.
+
+        Arguments:
+          band_file (str): Path to ``<fname>_band.dat`` (distance + frequencies).
+          dos_file (str): Optional path to ``<fname>_dos.dat`` (frequency + DOS).
+          labels_file (str): Optional path to ``<fname>_band.labels`` produced
+            alongside the band file; supplies the high-symmetry tick marks.
+          title (str): A title for the plot.
+          y_lim (tuple): Pair of frequency-axis limits (y_min, y_max).
+          col (str or tuple): Line colour recognised by matplotlib.
+          units (str): Frequency unit string for the axis label.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_phonons
+
+        band = np.loadtxt(band_file)
+        distances = band[:, 0]
+        frequencies = band[:, 1:]
+
+        ticks = None
+        if labels_file is not None:
+            positions, labels = [], []
+            with open(labels_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    parts = line.split(None, 1)
+                    positions.append(float(parts[0]))
+                    labels.append(parts[1] if len(parts) > 1 else '')
+            ticks = (positions, labels)
+
+        dos = None
+        if dos_file is not None:
+            d = np.loadtxt(dos_file)
+            dos = (d[:, 0], d[:, 1])
+
+        plot_phonons(
+            distances,
+            frequencies,
+            ticks=ticks,
+            dos=dos,
+            title=title,
+            y_lim=y_lim,
+            col=col,
+            units=units,
+            filename=filename,
+        )
+
+    def plot_phonon_thermal(
+        self,
+        thermal_file,
+        title=None,
+        filename=None,
+    ):
+        """Plot harmonic thermal properties from a PAOFLOW output file.
+
+        Arguments:
+          thermal_file (str): Path to ``<fname>_thermal.dat`` with columns
+            temperature (K), free energy (kJ/mol), entropy (J/K/mol) and
+            constant-volume heat capacity (J/K/mol).
+          title (str): A title for the plot.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_phonon_thermal
+
+        data = np.loadtxt(thermal_file)
+        plot_phonon_thermal(
+            data[:, 0],
+            data[:, 1],
+            data[:, 2],
+            data[:, 3],
+            title=title,
+            filename=filename,
+        )
+
+    def plot_ir_spectrum(
+        self,
+        spectrum_file,
+        modes_file=None,
+        title=None,
+        x_lim=None,
+        col='black',
+        units='cm-1',
+        filename=None,
+    ):
+        """Plot an infrared spectrum from PAOFLOW output files.
+
+        Arguments:
+          spectrum_file (str): Path to ``<fname>_ir_spectrum.dat`` (frequency +
+            broadened intensity).
+          modes_file (str): Optional path to ``<fname>_ir_modes.dat``; when given
+            the discrete mode intensities are drawn as vertical sticks.
+          title (str): A title for the plot.
+          x_lim (tuple): Pair of frequency-axis limits (x_min, x_max).
+          col (str or tuple): Line colour recognised by matplotlib.
+          units (str): Frequency unit string for the axis label.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_ir_spectrum
+
+        spec = np.loadtxt(spectrum_file)
+        frequencies = spec[:, 0]
+        intensities = spec[:, 1]
+
+        modes = None
+        if modes_file is not None:
+            m = np.loadtxt(modes_file, usecols=(1, 2))
+            modes = (m[:, 0], m[:, 1])
+
+        plot_ir_spectrum(
+            frequencies,
+            intensities,
+            modes=modes,
+            title=title,
+            x_lim=x_lim,
+            col=col,
+            units=units,
+            filename=filename,
+        )
+
+    def plot_raman_spectrum(
+        self,
+        spectrum_file,
+        modes_file=None,
+        title=None,
+        x_lim=None,
+        col='black',
+        units='cm-1',
+        filename=None,
+    ):
+        """Plot a Raman spectrum from PAOFLOW output files.
+
+        Arguments:
+          spectrum_file (str): Path to ``<fname>_raman_spectrum.dat`` (frequency
+            + broadened intensity).
+          modes_file (str): Optional path to ``<fname>_raman_modes.dat``; when
+            given the discrete mode intensities are drawn as vertical sticks.
+          title (str): A title for the plot.
+          x_lim (tuple): Pair of frequency-axis limits (x_min, x_max).
+          col (str or tuple): Line colour recognised by matplotlib.
+          units (str): Frequency unit string for the axis label.
+          filename (str): If given, save the figure to this path.
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_raman_spectrum
+
+        spec = np.loadtxt(spectrum_file)
+        frequencies = spec[:, 0]
+        intensities = spec[:, 1]
+
+        modes = None
+        if modes_file is not None:
+            # columns: mode, frequency, activity, activity_norm, intensity, ...
+            m = np.loadtxt(modes_file, usecols=(1, 4))
+            modes = (m[:, 0], m[:, 1])
+
+        plot_raman_spectrum(
+            frequencies,
+            intensities,
+            modes=modes,
+            title=title,
+            x_lim=x_lim,
+            col=col,
+            units=units,
+            filename=filename,
+        )

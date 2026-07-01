@@ -2723,3 +2723,1068 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Berry phase')
+
+    def phonon_setup(
+        self,
+        supercell_matrix,
+        primitive_matrix=None,
+        displacement_distance=0.01,
+        q_mesh=None,
+        q_path=None,
+    ):
+        """Initialise the phonopy interface (Stage 0: structure bridge).
+
+        Converts the PAOFLOW structure into a ``phonopy`` unit cell, stores the
+        phonon configuration on the ``DataController`` and creates the
+        :class:`phonopy.Phonopy` object reused by subsequent phonon stages.
+
+        Arguments:
+            supercell_matrix: Supercell used for the finite-displacement
+                force constants.  Accepts a scalar (isotropic diagonal),
+                a length-3 sequence (anisotropic diagonal) or a 3x3 matrix.
+            primitive_matrix (optional): Primitive-cell transformation passed
+                to phonopy.  May be ``None``, ``'auto'`` or a 3x3 matrix.
+            displacement_distance (float): Atomic displacement amplitude in
+                Angstrom used to generate displaced supercells.
+            q_mesh (optional): Default q-point mesh for DOS / thermal
+                properties (used in later stages).
+            q_path (optional): Default q-point path for the phonon dispersion
+                (used in later stages).
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import init_phonopy
+
+        arry, attr = self.data_controller.data_dicts()
+
+        attr['phonon_supercell_matrix'] = supercell_matrix
+        attr['phonon_primitive_matrix'] = primitive_matrix
+        attr['phonon_displacement_distance'] = displacement_distance
+        attr['phonon_q_mesh'] = q_mesh
+        arry['phonon_q_path'] = q_path
+
+        try:
+            init_phonopy(self.data_controller)
+        except Exception as e:
+            self.report_exception('phonon_setup')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Phonon Setup')
+
+    def phonons(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        displacement_distance=None,
+        forces=None,
+        phonon_dir='phonon',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        ibrav=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        nac=False,
+        born_file=None,
+        born=None,
+        dielectric=None,
+        q_path=None,
+        q_labels=None,
+        q_npoints=101,
+        mesh=None,
+        do_bands=True,
+        do_dos=True,
+        do_thermal=False,
+        t_min=0.0,
+        t_max=1000.0,
+        t_step=10.0,
+        units='THz',
+        fname='phonon',
+    ):
+        """Harmonic phonons via phonopy finite displacements (Stage 1).
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the phonopy object, create the
+           displaced supercells and write a complete, ready-to-run Quantum
+           ESPRESSO ``pw.x`` SCF input for each one
+           (``<outputdir>/<phonon_dir>/supercell-NNN.in``).  Run ``pw.x`` on
+           every input, then call this method again with ``forces=...``.
+
+        2. **Analyse** (``forces`` provided): assemble the second-order force
+           constants and compute the requested harmonic properties.
+
+        Arguments:
+            supercell_matrix: Supercell for the finite displacements (scalar,
+                length-3 or 3x3).  Required on the first call; reused
+                afterwards.
+            primitive_matrix (optional): phonopy primitive transformation
+                (``None`` -> identity, ``'auto'`` or a 3x3 matrix).
+            displacement_distance (float, optional): Displacement amplitude in
+                Bohr (default 0.01).
+            forces: Force source for the analysis phase.  ``None`` -> only
+                write the displaced-supercell inputs; ``'qe'`` -> harvest forces
+                from ``supercell-NNN.out`` in ``phonon_dir``; a path string ->
+                ingest an external ``FORCE_SETS``; an array
+                ``(ndisp, natoms, 3)`` (Ry/au) -> use directly.
+            phonon_dir (str): Sub-directory (under ``outputdir``) for the
+                displaced supercells and ``FORCE_SETS``.
+            pp_dir (str, optional): Pseudopotential directory written into the
+                QE inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): QE ``prefix`` for the supercell runs.
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercell
+                (default: unit-cell grid scaled by the supercell multiplicity).
+            ibrav (int, optional): Quantum ESPRESSO Bravais lattice index used
+                to derive the default high-symmetry dispersion path when
+                ``q_path`` is ``None`` (the QE ``.save`` does not record it).
+            hubbard_file (str, optional): Path to a ``pw.x`` input whose
+                new-style ``HUBBARD`` card is read and appended to every
+                displaced-supercell input so the forces reflect the DFT+U
+                electronic structure.  Only on-site ``U`` (manifold) parameters
+                are kept; intersite ``V`` lines (cell-specific atom indices) are
+                dropped.
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            nac (bool): Apply the non-analytical term correction (LO-TO
+                splitting near Gamma).  Requires ``born_file`` or both ``born``
+                and ``dielectric``.
+            born_file (str, optional): Path to a phonopy ``BORN`` file with the
+                dielectric tensor and Born effective charges; takes precedence
+                over ``born``/``dielectric`` when given.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor.
+            q_path (optional): Dispersion path as a sequence of segments in
+                fractional reciprocal coordinates; ``None`` -> path derived from
+                ``ibrav`` (or automatic seekpath path if ``ibrav`` is unset).
+            q_labels (optional): Tick labels matching ``q_path``.
+            q_npoints (int): q-points per path segment.
+            mesh (optional): q-mesh for DOS / thermal properties (default
+                ``[20, 20, 20]``).
+            do_bands, do_dos, do_thermal (bool): Properties to compute.
+            t_min, t_max, t_step (float): Temperature grid (K) for thermal
+                properties.
+            units (str): Frequency units for outputs, ``'THz'`` or ``'cm-1'``.
+            fname (str): Output filename prefix.
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import (
+            attach_nac,
+            compute_phonon_bands,
+            compute_phonon_dos,
+            compute_thermal_properties,
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import (
+            harvest_qe_forces,
+            ingest_force_sets,
+            read_hubbard_card,
+            write_displaced_supercells,
+            write_force_sets,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+        if displacement_distance is not None:
+            attr['phonon_displacement_distance'] = displacement_distance
+        if mesh is not None:
+            attr['phonon_q_mesh'] = mesh
+        if ibrav is not None:
+            attr['ibrav'] = ibrav
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            # Deterministic rebuild: same structure + distance + supercell yield
+            # the same displacement ordering, so a later analysis call lines up
+            # with the inputs written in the generation phase.
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if forces is None:
+                paths = write_displaced_supercells(
+                    self.data_controller,
+                    phonon_dir=phonon_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote %d displaced-supercell QE inputs. Run pw.x on each, '
+                        "then re-call phonons(forces='qe')." % len(paths)
+                    )
+                self.report_module_time('Phonons (write inputs)')
+                return
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            write_force_sets(self.data_controller, phonon_dir=phonon_dir)
+
+            if nac:
+                attach_nac(
+                    self.data_controller,
+                    born=born,
+                    dielectric=dielectric,
+                    born_file=born_file,
+                )
+
+            if do_bands:
+                compute_phonon_bands(
+                    self.data_controller,
+                    q_path=q_path,
+                    q_labels=q_labels,
+                    npoints=q_npoints,
+                    units=units,
+                    fname=fname,
+                )
+            if do_dos:
+                compute_phonon_dos(self.data_controller, mesh=mesh, units=units, fname=fname)
+            if do_thermal:
+                compute_thermal_properties(
+                    self.data_controller,
+                    mesh=mesh,
+                    t_min=t_min,
+                    t_max=t_max,
+                    t_step=t_step,
+                    fname=fname,
+                )
+
+        except Exception as e:
+            self.report_exception('phonons')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Phonons')
+
+    def born_charges(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        method='dfpt',
+        forces=None,
+        phonon_dir='phonon',
+        pp_dir=None,
+        prefix=None,
+        outdir=None,
+        kgrid=None,
+        field_strength=0.001,
+        nberrycyc=3,
+        hubbard_file=None,
+        hubbard_card=None,
+        enforce_sum_rule=True,
+        symmetrize=True,
+    ):
+        """Born effective charges and epsilon_inf (Stage 2b).
+
+        Computes the macroscopic Born effective charge tensors and the
+        high-frequency (clamped-ion) dielectric tensor, and writes a phonopy
+        ``BORN`` file usable by :meth:`phonons` (``nac=True``, ``born_file=...``)
+        for the LO-TO splitting.  Two back-ends are available:
+
+        * ``method='dfpt'`` (default): a single Gamma-point ``ph.x`` run
+          (``epsil=.true., trans=.false.``) gives both tensors directly.  Fast
+          and accurate, but unavailable for DFT+U / hybrid functionals.
+        * ``method='field'``: finite electric-field (``lelfield``) runs on the
+          primitive cell (central differences of forces and polarization).
+          Slower, but works whenever ``ph.x`` cannot be used.
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the phonopy object and write
+           the QE input(s).  For ``method='dfpt'`` this is a single
+           ``ph_epsil.in``; for ``method='field'`` it is seven primitive-cell
+           ``field-*.in`` SCF inputs.  Run QE on the input(s), then re-call with
+           ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): parse the results, impose the acoustic
+           sum rule, symmetrize, and write the ``BORN`` file.
+
+        Arguments:
+            supercell_matrix: Supercell used to build the phonopy object (only
+                the primitive cell is used here); reused from a previous phonon
+                call when omitted.
+            primitive_matrix (optional): phonopy primitive transformation.
+            method (str): ``'dfpt'`` (``ph.x``) or ``'field'`` (``lelfield``).
+            forces: ``None`` -> write the QE input(s) only; ``'qe'`` -> harvest
+                the QE output(s) and write ``BORN``.
+            phonon_dir (str): Sub-directory (under ``outputdir``) for the QE
+                runs and the ``BORN`` file.
+            pp_dir (str, optional): Pseudopotential directory (``method='field'``
+                QE inputs).
+            prefix (str, optional): QE ``prefix``.  For ``method='dfpt'`` this
+                defaults to the DFT ``.save`` prefix so ``ph.x`` reuses the
+                existing self-consistent save.
+            outdir (str, optional): QE ``outdir`` for ``method='dfpt'`` (default:
+                the directory containing the DFT ``.save``).
+            kgrid (optional): Monkhorst-Pack grid for the primitive cell
+                (``method='field'``; default: the unit-cell grid).
+            field_strength (float): ``efield_cart`` magnitude in QE atomic units
+                (``method='field'``; 1 a.u. = 36.3609e10 V/m).
+            nberrycyc (int): Berry-phase cycles per SCF step (``method='field'``).
+            hubbard_file (str, optional): Path to a ``pw.x`` input whose
+                new-style ``HUBBARD`` card is appended to the ``method='field'``
+                QE inputs (on-site ``U`` only; intersite ``V`` dropped).  The
+                ``method='dfpt'`` route instead reuses the Hubbard setup stored
+                in the existing ``.save``.
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            enforce_sum_rule (bool): Impose ``sum_k Z*_k = 0``.
+            symmetrize (bool): Symmetrize the Born and dielectric tensors.
+
+        Returns:
+            None
+        """
+        from .phonon.do_born_charges import compute_born_and_epsilon
+        from .phonon.do_phonopy import generate_displacements, init_phonopy
+        from .phonon.io import read_hubbard_card, write_field_inputs, write_ph_epsil_input
+
+        arry, attr = self.data_controller.data_dicts()
+
+        method = str(method).lower()
+        if method not in ('dfpt', 'field'):
+            raise ValueError("born_charges method must be 'dfpt' or 'field'.")
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if forces is None:
+                if method == 'dfpt':
+                    path = write_ph_epsil_input(
+                        self.data_controller,
+                        phonon_dir=phonon_dir,
+                        prefix=prefix,
+                        outdir=outdir,
+                    )
+                    if self.rank == 0:
+                        print(
+                            'Wrote ph.x input %s. Run ph.x on it, then re-call '
+                            "born_charges(method='dfpt', forces='qe')." % path
+                        )
+                else:
+                    paths = write_field_inputs(
+                        self.data_controller,
+                        field_strength=field_strength,
+                        phonon_dir=phonon_dir,
+                        pp_dir=pp_dir,
+                        prefix=prefix,
+                        kgrid=kgrid,
+                        nberrycyc=nberrycyc,
+                        hubbard_card=hubbard_card,
+                    )
+                    if self.rank == 0:
+                        print(
+                            'Wrote %d lelfield QE inputs. Run pw.x on each, then '
+                            "re-call born_charges(method='field', forces='qe')." % len(paths)
+                        )
+                self.report_module_time('Born Charges (write inputs)')
+                return
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                compute_born_and_epsilon(
+                    self.data_controller,
+                    method=method,
+                    phonon_dir=phonon_dir,
+                    enforce_sum_rule=enforce_sum_rule,
+                    symmetrize=symmetrize,
+                    write_born=True,
+                )
+            else:
+                raise ValueError(
+                    "born_charges forces must be None (write inputs) or 'qe' "
+                    '(harvest the QE output).'
+                )
+
+        except Exception as e:
+            self.report_exception('born_charges')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Born Charges')
+
+    def ir_spectrum(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        born_file=None,
+        born=None,
+        dielectric=None,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        gamma=4.0,
+        units='cm-1',
+        fname='phonon',
+    ):
+        """Infrared spectrum from Born charges and zone-centre eigenvectors (Stage 3).
+
+        For each zone-centre mode the *mode effective charge vector*
+        ``Zbar_v,a = sum_k,b Z*_k,a,b e_v,k,b / sqrt(M_k)`` is formed from the
+        Born effective charges, the (mass-weighted) Gamma-point eigenvectors and
+        the atomic masses; the IR intensity is ``I_v = sum_a |Zbar_v,a|^2``.  A
+        Lorentzian broadening of each mode yields the continuous spectrum.  The
+        transverse-optical eigenvectors at exactly Gamma are used, so the
+        non-analytical (LO-TO) correction is not required.
+
+        The harmonic force constants are rebuilt deterministically from the
+        displaced-supercell forces (as in :meth:`phonons`), and the Born charges
+        are taken from ``born``/``born_file`` or from a preceding
+        :meth:`born_charges` call.
+
+        Arguments:
+            supercell_matrix: Supercell used to build the phonopy object;
+                reused from a previous phonon call when omitted.
+            primitive_matrix (optional): phonopy primitive transformation.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (``'qe'`` -> harvest ``supercell-NNN.out``; a
+                path -> ingest ``FORCE_SETS``; an array -> use directly).
+            phonon_dir (str): Sub-directory (under ``outputdir``) with the
+                displaced supercells / ``FORCE_SETS`` and the ``BORN`` file.
+            born_file (str, optional): Path to a phonopy ``BORN`` file with the
+                Born effective charges; takes precedence over ``born``.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor (read alongside ``born_file``; unused by the
+                oscillator strengths).
+            freq_min, freq_max (float, optional): Frequency-axis limits of the
+                broadened spectrum (in ``units``).
+            npoints (int): Number of points on the broadened-spectrum grid.
+            gamma (float): Lorentzian full width at half maximum (in ``units``).
+            units (str): Frequency units for outputs, ``'cm-1'`` or ``'THz'``.
+            fname (str): Output filename prefix; writes ``<fname>_ir_modes.dat``
+                and ``<fname>_ir_spectrum.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_ir_raman import compute_ir_spectrum
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import harvest_qe_forces, ingest_force_sets
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            compute_ir_spectrum(
+                self.data_controller,
+                born=born,
+                dielectric=dielectric,
+                born_file=born_file,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                gamma=gamma,
+                units=units,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('ir_spectrum')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('IR Spectrum')
+
+    def _raman_cell_epsilon(
+        self,
+        savedir,
+        workpath,
+        basispath,
+        configuration='extended',
+        pthr=0.95,
+        nonlocal_velocity=True,
+        nfft=None,
+        e_static=0.05,
+        eps_outdir='eps',
+        energies=None,
+        lifetime=0.1,
+        e_window=None,
+        e_ne=None,
+        return_static=False,
+    ):
+        """Dielectric tensor of one displaced cell via the PAO pipeline.
+
+        Mirrors the standard PAOFLOW optical workflow (internal projections ->
+        PAO Hamiltonian -> non-local velocity -> dielectric tensor) on the
+        displaced-cell SCF save.
+
+        When ``energies`` is ``None`` the static ``(3, 3)`` dielectric tensor
+        (``epsilon_1`` at ``omega -> 0``) is returned (non-resonant Raman).
+        Otherwise the **complex** dielectric tensor is evaluated on a frequency
+        grid spanning ``energies`` (with a finite ``lifetime`` broadening) and
+        the interpolated value at each requested photon energy (eV) is returned,
+        stacked as ``(len(energies), 3, 3)`` (resonance Raman).  When
+        ``return_static`` is ``True`` (only meaningful with ``energies``), the
+        static tensor is harvested from the same grid (its ``omega -> 0`` row)
+        and the method returns the tuple ``(stack, static)`` -- letting the
+        ``method='all'`` workflow obtain both spectra from a single SCF/optics
+        run per cell.
+        """
+        from .phonon.io import read_epsilon_at, read_static_epsilon
+
+        _, attr = self.data_controller.data_dicts()
+        pf = type(self)(
+            workpath=workpath,
+            outputdir=eps_outdir,
+            savedir=savedir,
+            smearing=attr.get('smearing', 'gauss'),
+            npool=attr.get('npool', 1),
+            verbose=False,
+        )
+        pf.projections(basispath=basispath, configuration=configuration)
+        pf.projectability(pthr=pthr)
+        pf.pao_hamiltonian()
+        if nfft is not None:
+            pf.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
+        pf.pao_eigh()
+        pf.gradient_and_momenta(nonlocal_velocity=nonlocal_velocity)
+        pf.adaptive_smearing()
+
+        d_tensor = [[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]]
+        if energies is None:
+            pf.dielectric_tensor(emin=0.0, emax=e_static, ne=2, d_tensor=d_tensor)
+            _, pat = pf.data_controller.data_dicts()
+            return read_static_epsilon(pat['opath'], nspin=int(pat.get('nspin', 1)))
+
+        energies = np.atleast_1d(np.asarray(energies, dtype=float))
+        grid_max = float(e_window) if e_window else float(np.max(energies)) * 1.25 + 5.0 * lifetime
+        grid_ne = (
+            int(e_ne)
+            if e_ne
+            else max(201, int(np.ceil(grid_max / max(lifetime / 4.0, 1.0e-3))) + 1)
+        )
+        pf.dielectric_tensor(delta=lifetime, emin=0.0, emax=grid_max, ne=grid_ne, d_tensor=d_tensor)
+        _, pat = pf.data_controller.data_dicts()
+        nspin = int(pat.get('nspin', 1))
+        stack = np.stack([read_epsilon_at(pat['opath'], energy=e, nspin=nspin) for e in energies])
+        if return_static:
+            return stack, read_static_epsilon(pat['opath'], nspin=nspin)
+        return stack
+
+    def raman_spectrum(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        raman_dir='raman',
+        delta=0.05,
+        nbnd=None,
+        basispath=None,
+        configuration='extended',
+        pthr=0.95,
+        nonlocal_velocity=True,
+        nfft=None,
+        e_static=0.05,
+        method='static',
+        lifetime=0.1,
+        e_window=None,
+        e_ne=None,
+        dielectric_callback=None,
+        laser_nm=None,
+        temperature=300.0,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        gamma=4.0,
+        units='cm-1',
+        fname='phonon',
+        generate=None,
+    ):
+        """Raman spectrum by finite differences of the dielectric tensor (Stage 4).
+
+        Two flavours, selected with ``method``:
+
+        * ``'static'`` (default) -- **non-resonant (Placzek)** Raman from the
+          finite-difference derivative of the *static* dielectric tensor
+          (``omega -> 0``).  The Raman tensor is real.
+        * ``'resonance'`` -- **resonance Raman** from the derivative of the
+          *complex* dielectric tensor evaluated at the laser frequency
+          ``omega_L`` (set by ``laser_nm``).  In the independent-particle limit
+          this is the Albrecht A+B sum (Franck-Condon and Herzberg-Teller
+          captured together, since the finite difference differentiates the
+          transition energies *and* the transition dipoles), with resonance
+          enhancement as ``omega_L`` approaches the interband transitions.  The
+          Raman tensor is complex and intensities use ``45|a|^2 + 7 gamma^2``.
+
+        Two-phase workflow (identical for both flavours):
+
+        * **generate** -- displace the primitive cell by ``+/-delta`` along each
+          optical zone-centre eigenvector and write a ready-to-run ``pw.x`` SCF
+          input per displacement under
+          ``<raman_dir>/mode-NNN-{plus,minus}/<prefix>.scf.in``.  Run these SCF
+          calculations (any tool); no NSCF/projwfc are needed.
+        * **analyse** -- for every displaced cell run the PAOFLOW optical
+          pipeline (internal projections -> dielectric tensor) to obtain the
+          dielectric tensor (static, or at ``omega_L`` for resonance), build the
+          Raman tensor ``R^v = (eps(+delta) - eps(-delta)) / (2 delta)`` per
+          mode, and form the orientationally-averaged (powder) Stokes
+          intensities.
+
+        The phase is chosen automatically (``generate=None``): *analyse* when
+        every displaced-cell SCF save is present, otherwise *generate*.  Pass
+        ``generate=True``/``False`` to force a phase.
+
+        Arguments:
+            supercell_matrix, primitive_matrix: As in :meth:`phonons`; reused
+                from a previous call when omitted.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (used to obtain the zone-centre eigenvectors).
+            phonon_dir (str): Sub-directory with the displaced supercells /
+                ``FORCE_SETS``.
+            raman_dir (str): Sub-directory for the displaced primitive cells and
+                their dielectric outputs.
+            delta (float): Mass-weighted normal-coordinate displacement
+                amplitude (Bohr*sqrt(amu) convention; the same value is used to
+                finite-difference).
+            nbnd (int, optional): Bands for the displaced SCF inputs (empty
+                states are needed for the optical response).
+            basispath (str, optional): Pseudo-atomic basis directory for the
+                internal PAO projections in the analyse phase.
+            configuration (str): PAO basis configuration (default ``'extended'``).
+            pthr (float): Projectability threshold for the analyse phase.
+            nonlocal_velocity (bool): Use the non-local velocity correction in
+                the dielectric tensor (recommended).
+            nfft (tuple, optional): Double-grid interpolation ``(n1, n2, n3)``.
+            e_static (float): Upper energy (eV) of the 2-point grid used to read
+                the static dielectric tensor (``epsilon_1`` at ``omega -> 0``;
+                ``method='static'`` only).
+            method (str): ``'static'`` (non-resonant), ``'resonance'`` (at the
+                laser frequency), or ``'all'`` (both, harvested from a single
+                optics run per displaced cell; the static spectrum is written to
+                ``<fname>_static_raman_*.dat`` and each laser to
+                ``<fname>_<nm>nm_raman_*.dat``).
+            lifetime (float): Lorentzian lifetime broadening (eV) of the complex
+                dielectric tensor in the resonance case (the ``delta`` of
+                :meth:`dielectric_tensor`); keeps the response finite on
+                resonance.
+            e_window (float, optional): Upper energy (eV) of the per-cell
+                dielectric grid in the resonance case (default: just above the
+                largest laser energy).
+            e_ne (int, optional): Number of grid points for the per-cell
+                dielectric grid in the resonance case (default: chosen so the
+                spacing resolves ``lifetime``).
+            dielectric_callback (callable, optional): ``f(savedir, workpath) ->
+                ndarray`` returning the dielectric tensor of a displaced cell --
+                ``(3, 3)`` for ``method='static'`` or
+                ``(len(laser_nm), 3, 3)`` (complex) for ``method='resonance'``.
+                Overrides the built-in PAO pipeline.
+            laser_nm (float or sequence, optional): Excitation wavelength(s) in
+                nm.  Required for ``method='resonance'`` (sets ``omega_L`` and
+                enables the ``(omega_L - omega_v)^4`` prefactor).  A sequence
+                produces one spectrum per wavelength (a Raman *excitation
+                profile*), each written to ``<fname>_<nm>nm_raman_*.dat``.
+            temperature (float): Temperature (K) for the Bose ``(n+1)`` factor.
+            freq_min, freq_max, npoints, gamma, units, fname: Spectrum grid and
+                output options, as in :meth:`ir_spectrum`.  Writes
+                ``<fname>_raman_modes.dat`` and ``<fname>_raman_spectrum.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_ir_raman import compute_raman_spectrum
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import (
+            harvest_qe_forces,
+            ingest_force_sets,
+            raman_cell_dirs,
+            write_raman_displaced_inputs,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            # Decide phase: analyse when every displaced-cell save is present.
+            run_analyse = generate is False
+            if generate is None:
+                from os.path import isdir
+
+                try:
+                    _, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+                    run_analyse = bool(entries) and all(isdir(save) for _, _, _, save in entries)
+                except FileNotFoundError:
+                    run_analyse = False
+            elif generate is True:
+                run_analyse = False
+            else:
+                run_analyse = True
+
+            if not run_analyse:
+                write_raman_displaced_inputs(
+                    self.data_controller,
+                    delta,
+                    raman_dir=raman_dir,
+                    nbnd=nbnd,
+                )
+                if self.rank == 0 and attr.get('verbose', False):
+                    print(
+                        'Raman: displaced-cell SCF inputs written; run them, then re-run to analyse.'
+                    )
+                self.report_module_time('Raman Spectrum')
+                return
+
+            # --- analyse phase -------------------------------------------------
+            phonon = arry['phonopy']
+            nmodes = 3 * len(phonon.primitive)
+            optical, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+
+            # Laser wavelength(s) / photon energies for the resonance harvest.
+            method_l = str(method).lower()
+            if method_l not in ('static', 'resonance', 'all'):
+                raise ValueError(
+                    "raman_spectrum: method must be 'static', 'resonance' or 'all' "
+                    '(got %r).' % method
+                )
+            want_static = method_l in ('static', 'all')
+            want_resonance = method_l in ('resonance', 'all')
+
+            if want_resonance:
+                if laser_nm is None:
+                    raise ValueError(
+                        'raman_spectrum(method=%r) requires laser_nm=... '
+                        '(the excitation wavelength(s) in nm).' % method_l
+                    )
+                laser_list = [float(x) for x in np.atleast_1d(laser_nm)]
+                # E(eV) = h c / lambda, with h c = 1239.841984 eV*nm.
+                res_energies = [1239.841984 / nm for nm in laser_list]
+            else:
+                laser_list = []
+                res_energies = []
+
+            if dielectric_callback is not None and method_l == 'all':
+                raise ValueError(
+                    'raman_spectrum: dielectric_callback is not supported with '
+                    "method='all'; call method='static' and method='resonance' "
+                    'separately with your callback instead.'
+                )
+
+            # One output channel per spectrum to produce.  Each carries its own
+            # +/- dielectric arrays, the laser used for the Stokes prefactor and
+            # the output basename.
+            channels = []
+            static_channel = None
+            if want_static:
+                # Bare Placzek for 'all'; pass the (scalar) laser through for a
+                # plain static run to preserve the historical behaviour.
+                static_laser = laser_nm if method_l == 'static' else None
+                static_channel = {
+                    'fname': fname + '_static' if method_l == 'all' else fname,
+                    'laser': static_laser,
+                    'plus': np.zeros((nmodes, 3, 3), dtype=float),
+                    'minus': np.zeros((nmodes, 3, 3), dtype=float),
+                }
+                channels.append(static_channel)
+
+            res_channels = []
+            multi = method_l == 'all' or len(laser_list) > 1
+            for i, nm in enumerate(laser_list):
+                ch = {
+                    'fname': '%s_%dnm' % (fname, int(round(nm))) if multi else fname,
+                    'laser': nm,
+                    'plus': np.zeros((nmodes, 3, 3), dtype=complex),
+                    'minus': np.zeros((nmodes, 3, 3), dtype=complex),
+                    'index': i,
+                }
+                channels.append(ch)
+                res_channels.append(ch)
+
+            computed = np.zeros(nmodes, dtype=bool)
+            for v, sign, cell_dir, save in entries:
+                res_stack = None
+                stat = None
+                if dielectric_callback is not None:
+                    out = np.asarray(dielectric_callback(save, cell_dir))
+                    if want_resonance:
+                        res_stack = out[None, ...] if out.ndim == 2 else out
+                    else:
+                        stat = np.real(out)
+                elif want_resonance:
+                    if basispath is None:
+                        raise ValueError(
+                            'raman_spectrum analyse phase needs basispath=... '
+                            '(or a dielectric_callback) for the internal PAO projections.'
+                        )
+                    out = self._raman_cell_epsilon(
+                        save,
+                        cell_dir,
+                        basispath,
+                        configuration=configuration,
+                        pthr=pthr,
+                        nonlocal_velocity=nonlocal_velocity,
+                        nfft=nfft,
+                        energies=res_energies,
+                        lifetime=lifetime,
+                        e_window=e_window,
+                        e_ne=e_ne,
+                        return_static=want_static,
+                    )
+                    if want_static:
+                        res_stack, stat = out
+                    else:
+                        res_stack = out
+                else:
+                    if basispath is None:
+                        raise ValueError(
+                            'raman_spectrum analyse phase needs basispath=... '
+                            '(or a dielectric_callback) for the internal PAO projections.'
+                        )
+                    stat = self._raman_cell_epsilon(
+                        save,
+                        cell_dir,
+                        basispath,
+                        configuration=configuration,
+                        pthr=pthr,
+                        nonlocal_velocity=nonlocal_velocity,
+                        nfft=nfft,
+                        e_static=e_static,
+                    )
+
+                key = 'plus' if sign == '+' else 'minus'
+                if static_channel is not None and stat is not None:
+                    static_channel[key][v] = np.real(stat)
+                if res_stack is not None:
+                    res_stack = np.asarray(res_stack)
+                    for ch in res_channels:
+                        ch[key][v] = res_stack[ch['index']]
+                computed[v] = True
+
+            for ch in channels:
+                compute_raman_spectrum(
+                    self.data_controller,
+                    ch['plus'],
+                    ch['minus'],
+                    delta,
+                    computed=computed,
+                    laser_nm=ch['laser'],
+                    temperature=temperature,
+                    freq_min=freq_min,
+                    freq_max=freq_max,
+                    npoints=npoints,
+                    gamma=gamma,
+                    units=units,
+                    fname=ch['fname'],
+                )
+
+        except Exception as e:
+            self.report_exception('raman_spectrum')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Raman Spectrum')
+
+    def vibrational_dielectric(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        born_file=None,
+        born=None,
+        dielectric=None,
+        gamma=4.0,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        units='cm-1',
+        emit_ev=True,
+        emissivity=False,
+        emis_angles=(0.0,),
+        emis_ntheta=64,
+        emis_temperature=(300.0,),
+        outdir='vibdielectric',
+        fname='phonon',
+    ):
+        """Vibrational (ionic) dielectric function eps(omega) (Stage 5).
+
+        The polar zone-centre phonons add a lattice resonance to the electronic
+        high-frequency dielectric tensor ``eps_inf``::
+
+            eps_ab(w) = eps_inf_ab
+                + (e^2 / (eps0 m_u V)) * sum_v Zbar_v,a Zbar_v,b
+                                              / (w_v^2 - w^2 - i w gamma_v),
+
+        where ``Zbar_v,a = sum_k,b Z*_k,a,b e_v,k,b / sqrt(M_k)`` is the mode
+        effective charge vector (as in :meth:`ir_spectrum`) and
+        ``S_v,ab = Zbar_v,a Zbar_v,b`` the mode-oscillator-strength tensor.  The
+        static limit ``eps(0) = eps_inf + sum_v S_v / w_v^2`` (generalized
+        Lyddane-Sachs-Teller) and, for a polar crystal, a reststrahlen band
+        (``Re eps < 0`` between ``w_TO`` and ``w_LO``) follow directly.  Acoustic
+        modes carry no dipole and do not contribute.
+
+        The harmonic force constants are rebuilt from the displaced-supercell
+        forces (as in :meth:`phonons`); the Born charges and ``eps_inf`` are
+        taken from ``born``/``dielectric``/``born_file`` or from a preceding
+        :meth:`born_charges` call.
+
+        Arguments:
+            supercell_matrix, primitive_matrix: As in :meth:`phonons`; reused
+                from a previous call when omitted.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (``'qe'`` -> harvest ``supercell-NNN.out``; a
+                path -> ingest ``FORCE_SETS``; an array -> use directly).
+            phonon_dir (str): Sub-directory (under ``outputdir``) with the
+                displaced supercells / ``FORCE_SETS`` and the ``BORN`` file.
+            born_file (str, optional): Path to a phonopy ``BORN`` file providing
+                the Born charges and ``eps_inf``.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor ``eps_inf``.
+            gamma (float or array_like): Phonon linewidth(s) used as the
+                Lorentzian damping (in ``units``); a scalar broadens every mode
+                equally, an array gives a per-mode width.
+            freq_min, freq_max (float, optional): Frequency-axis limits (in
+                ``units``); defaults span 0 to just above the highest LO mode so
+                the reststrahlen band is captured.
+            npoints (int): Number of points on the frequency grid.
+            units (str): Frequency units for inputs/outputs, ``'cm-1'`` or
+                ``'THz'``.
+            emit_ev (bool): Write the per-component ``eps{r,i}_<ab>.dat`` files
+                with the frequency axis in eV (so they plot directly with
+                :meth:`GPAO.plot_optical`); otherwise in ``units``.
+            emissivity (bool): Also derive the reststrahlen (phonon) emissivity
+                from ``eps(omega)`` via the Fresnel/Kirchhoff helpers in
+                :mod:`PAOFLOW.response.do_epsilon` and write it under ``outdir``
+                (directional ``refl_th*``/``emis_th*``, spectral hemispherical
+                ``emish_*`` and Planck-weighted total ``emist_*``).
+            emis_angles (array_like): Incidence angles (degrees) for the
+                directional reflectivity/emissivity.
+            emis_ntheta (int): Polar-angle samples for the hemispherical
+                integral.
+            emis_temperature (float or array_like): Temperature(s) (K) for the
+                total hemispherical emissivity.
+            outdir (str): Sub-directory (under ``outputdir``) for the
+                per-component dielectric files.
+            fname (str): Output basename; writes
+                ``<fname>_vibdielectric_static.dat`` and the per-component
+                ``eps{r,i}/eels/refl_<ab>.dat`` files under ``outdir``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.do_vibrational_dielectric import compute_vibrational_dielectric
+        from .phonon.io import harvest_qe_forces, ingest_force_sets
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            compute_vibrational_dielectric(
+                self.data_controller,
+                born=born,
+                dielectric=dielectric,
+                born_file=born_file,
+                gamma=gamma,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                units=units,
+                emit_ev=emit_ev,
+                emissivity=emissivity,
+                emis_angles=emis_angles,
+                emis_ntheta=emis_ntheta,
+                emis_temperature=emis_temperature,
+                outdir=outdir,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('vibrational_dielectric')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Vibrational Dielectric')
