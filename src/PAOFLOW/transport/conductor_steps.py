@@ -7,12 +7,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.calculators.green import compute_conductor_green_function
-from PAOFLOW.transport.calculators.leads_self_energy import build_self_energies_from_blocks
 from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
+from PAOFLOW.transport.conductor_kpoint import (
+    compute_kpoint_green,
+    compute_kpoint_self_energies,
+)
 from PAOFLOW.transport.data import ConductorData, build_conductor_data
 from PAOFLOW.transport.grid.egrid import initialize_energy_grid
-from PAOFLOW.transport.hamiltonian.hamiltonian_setup import hamiltonian_setup
 from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.validation import validate_conductor_data
@@ -234,34 +235,22 @@ def compute_conductor_self_energy(
             'Hamiltonian blocks are unavailable. Call build_conductor_blocks(...) first.'
         )
 
-    hamiltonian_setup(
+    sigma_L, sigma_R, total_iterations = compute_kpoint_self_energies(
+        blc_blocks=state.blc_blocks,
         ik=ik,
         ie_g=ie_g,
         egrid=state.energy_grid,
+        delta=state.data.energy.delta,
         shift_L=state.data.shift_L,
         shift_C=state.data.shift_C,
         shift_R=state.data.shift_R,
-        shift_C_corr=getattr(state.data, 'shift_corr', 0.0),
-        blc_blocks=state.blc_blocks,
-        ie_buff=1,
-    )
-
-    sigma_R, sigma_L, niter_R, niter_L = build_self_energies_from_blocks(
-        blc_00R=state.blc_blocks['blc_00R'].at_k(ik),
-        blc_01R=state.blc_blocks['blc_01R'].at_k(ik),
-        blc_00L=state.blc_blocks['blc_00L'].at_k(ik),
-        blc_01L=state.blc_blocks['blc_01L'].at_k(ik),
-        blc_CR=state.blc_blocks['blc_CR'].at_k(ik),
-        blc_LC=state.blc_blocks['blc_LC'].at_k(ik),
+        shift_corr=getattr(state.data, 'shift_corr', 0.0),
         leads_are_identical=state.data.advanced.leads_are_identical,
-        delta=state.data.energy.delta,
         niterx=state.data.iteration.niterx,
         transfer_thr=state.data.iteration.transfer_thr,
-        fail_counter=None,
-        fail_limit=state.data.iteration.nfailx,
-        verbose=False,
+        nfailx=state.data.iteration.nfailx,
+        surface=state.data.advanced.surface,
     )
-    total_iterations = niter_R + (niter_L if not state.data.advanced.leads_are_identical else 0)
     state.last_sigma_L = sigma_L
     state.last_sigma_R = sigma_R
     state.last_ik = ik
@@ -316,10 +305,10 @@ def compute_conductor_green(
             'sigma_L is required. Call compute_conductor_self_energy(...) first or pass sigma_L.'
         )
 
-    g_c = compute_conductor_green_function(
+    g_c = compute_kpoint_green(
         blc_00C=state.blc_blocks['blc_00C'].at_k(ik),
-        sigma_l=sigma_left,
-        sigma_r=sigma_right if not state.data.advanced.surface else None,
+        sigma_L=sigma_left,
+        sigma_R=sigma_right,
         delta=state.data.energy.delta,
         surface=state.data.advanced.surface,
     )

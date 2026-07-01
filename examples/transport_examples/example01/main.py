@@ -36,10 +36,13 @@ def main():
         do_overlap_transformation=False,
     )
 
-    # --- optional physics tuning (compute-time; defaults shown, call before compute) ---
-    # transport.configure_onsite_shifts(shift_L=0.0, shift_C=0.0, shift_R=0.0, shift_corr=0.0)
-    # transport.configure_lead_convergence(niterx=200, transfer_thr=1.0e-7, nprint=20, nfailx=5, surface=False)
-    # transport.configure_eigenchannels(do_eigenchannels=False, neigchnx=200000, do_eigplot=False, ie_eigplot=0, ik_eigplot=0)
+    transport.configure_onsite_shifts(shift_L=0.0, shift_C=0.0, shift_R=0.0, shift_corr=0.0)
+    transport.configure_lead_convergence(
+        niterx=200, transfer_thr=1.0e-7, nprint=20, nfailx=5, surface=False
+    )
+    transport.configure_eigenchannels(
+        do_eigenchannels=False, neigchnx=200000, do_eigplot=False, ie_eigplot=0, ik_eigplot=0
+    )
 
     transport.configure_energy_grid(
         emin=-7.0,

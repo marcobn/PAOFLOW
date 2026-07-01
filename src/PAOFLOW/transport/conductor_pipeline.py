@@ -7,6 +7,8 @@ import numpy as np
 from mpi4py import MPI
 
 from PAOFLOW.transport.conductor_energy_loop import (
+    ConductorAccumulators,
+    ParallelGridGeometry,
     process_energy_point,
     reduce_conductor_results,
 )
@@ -32,15 +34,7 @@ def initialize_conductor_outputs(
     ne: int,
     nkpts_par: int,
     nrtot_par: int,
-) -> tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray | None,
-    np.ndarray | None,
-    np.ndarray | None,
-]:
+) -> ConductorAccumulators:
     """Allocate transport output arrays for the conductor workflow.
 
     Parameters
@@ -62,14 +56,13 @@ def initialize_conductor_outputs(
 
     Returns
     -------
-    tuple
-        ``(conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out)``.
-        ``conduct`` has shape ``(1 + neigchn, ne)`` and dtype ``float64``.
-        ``dos`` has shape ``(ne,)`` and dtype ``float64``.
-        ``conduct_k`` has shape ``(1 + neigchn, nkpts_par, ne)`` and dtype ``float64``.
-        ``dos_k`` has shape ``(ne, nkpts_par)`` and dtype ``float64``.
-        ``gf_out``, ``rsgmL_out``, and ``rsgmR_out`` are ``complex128`` arrays
-        of shape ``(ne, nrtot_par, dimC, dimC)`` when enabled by flags, otherwise ``None``.
+    ConductorAccumulators
+        Bundle of zero-initialized accumulators. ``conduct`` has shape
+        ``(1 + neigchn, ne)`` and dtype ``float64``; ``dos`` has shape ``(ne,)``;
+        ``conduct_k`` has shape ``(1 + neigchn, nkpts_par, ne)``; ``dos_k`` has
+        shape ``(ne, nkpts_par)``. ``gf_out``, ``rsgmL_out``, and ``rsgmR_out``
+        are ``complex128`` arrays of shape ``(ne, nrtot_par, dimC, dimC)`` when
+        enabled by flags, otherwise ``None``.
     """
     do_eigenchannels = data.symmetry.do_eigenchannels
     neigchnx = data.symmetry.neigchnx
@@ -96,7 +89,15 @@ def initialize_conductor_outputs(
         else None
     )
 
-    return conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out
+    return ConductorAccumulators(
+        conduct=conduct,
+        dos=dos,
+        conduct_k=conduct_k,
+        dos_k=dos_k,
+        gf_out=gf_out,
+        rsgmL_out=rsgmL_out,
+        rsgmR_out=rsgmR_out,
+    )
 
 
 def compute_conductor_results(
@@ -158,7 +159,15 @@ def compute_conductor_results(
         carriers=data.carriers,
     )
 
-    conduct, dos, conduct_k, dos_k, gf_out, rsgmL_out, rsgmR_out = initialize_conductor_outputs(
+    geom = ParallelGridGeometry(
+        nkpts_par=nkpts_par,
+        nrtot_par=nrtot_par,
+        dimC=dimC,
+        vkpt_par3D=vkpt_par3D,
+        vr_par3D=vr_par3D,
+        wk_par=wk_par,
+    )
+    acc = initialize_conductor_outputs(
         data=data,
         dimC=dimC,
         dimL=dimL,
@@ -179,41 +188,20 @@ def compute_conductor_results(
             ie_start=ie_start,
             ie_end=ie_end,
             rank=rank,
-            nkpts_par=nkpts_par,
-            dimC=dimC,
-            nrtot_par=nrtot_par,
-            vkpt_par3D=vkpt_par3D,
-            vr_par3D=vr_par3D,
-            wk_par=wk_par,
-            conduct=conduct,
-            dos=dos,
-            conduct_k=conduct_k,
-            dos_k=dos_k,
-            gf_out=gf_out,
-            rsgmL_out=rsgmL_out,
-            rsgmR_out=rsgmR_out,
+            geom=geom,
+            acc=acc,
         )
 
-    reduce_conductor_results(
-        comm=comm,
-        data=data,
-        conduct=conduct,
-        dos=dos,
-        conduct_k=conduct_k,
-        dos_k=dos_k,
-        gf_out=gf_out,
-        rsgmL_out=rsgmL_out,
-        rsgmR_out=rsgmR_out,
-    )
+    reduce_conductor_results(comm=comm, data=data, acc=acc)
 
     return TransportResults(
-        transmission=conduct,
-        dos=dos,
-        transmission_k=conduct_k,
-        dos_k=dos_k,
-        green_functions=gf_out,
-        self_energy_L=rsgmL_out,
-        self_energy_R=rsgmR_out,
+        transmission=acc.conduct,
+        dos=acc.dos,
+        transmission_k=acc.conduct_k,
+        dos_k=acc.dos_k,
+        green_functions=acc.gf_out,
+        self_energy_L=acc.rsgmL_out,
+        self_energy_R=acc.rsgmR_out,
         energy_grid=egrid,
     )
 
