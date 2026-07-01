@@ -14,15 +14,17 @@ def test_initial_state_has_no_conductor_data():
 
 
 def test_require_hamiltonian_blocks_raises_before_build():
-    transport = Transport(data_controller=object())
+    from PAOFLOW.transport.conductor_orchestration import require_hamiltonian_blocks
+
     with pytest.raises(RuntimeError, match='build_hamiltonian_blocks'):
-        transport._require_hamiltonian_blocks()
+        require_hamiltonian_blocks(None, None)
 
 
 def test_require_grid_config_raises_before_configure():
-    transport = Transport(data_controller=object())
+    from PAOFLOW.transport.conductor_orchestration import require_grid_config
+
     with pytest.raises(RuntimeError, match='configure_energy_grid'):
-        transport._require_grid_config()
+        require_grid_config(None)
 
 
 def test_configure_energy_grid_stores_config():
@@ -134,21 +136,22 @@ def test_configure_lead_convergence_stashes_config():
 
 
 def test_configure_eigenchannels_applies_without_clobbering_when_unset():
+    from PAOFLOW.transport.conductor_orchestration import apply_eigenchannels
     from PAOFLOW.transport.data import build_conductor_data
 
-    # Not configuring eigenchannels must not overwrite values already on the model.
-    transport = Transport(data_controller=object())
+    # An unset (None) config must not overwrite values already on the model.
     data = build_conductor_data(dimC=1, do_eigenchannels=True)
-    transport._apply_eigenchannels(data)
+    apply_eigenchannels(data, None)
     assert data.symmetry.do_eigenchannels is True
 
 
 def test_configure_eigenchannels_applies_when_set():
+    from PAOFLOW.transport.conductor_orchestration import apply_eigenchannels
     from PAOFLOW.transport.data import build_conductor_data
 
     transport = Transport(data_controller=object())
     transport.configure_eigenchannels(do_eigenchannels=True, neigchnx=4)
     data = build_conductor_data(dimC=1)
-    transport._apply_eigenchannels(data)
+    apply_eigenchannels(data, transport._eigenchannel_config)
     assert data.symmetry.do_eigenchannels is True
     assert data.symmetry.neigchnx == 4

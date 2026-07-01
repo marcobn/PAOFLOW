@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from PAOFLOW.transport.calculators.broadening import compute_broadening_matrix
 from PAOFLOW.transport.calculators.transmittance import evaluate_transmittance
 from PAOFLOW.transport.data import ConductorData
 from PAOFLOW.transport.io.write_data import write_eigenchannels
-from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
 
 
 def accumulate_dos(

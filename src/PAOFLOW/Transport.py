@@ -1,32 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from mpi4py import MPI
 from numpy.typing import NDArray
 
-import PAOFLOW.transport.io.log_module as log
-from PAOFLOW.DataController import DataController
-from PAOFLOW.transport.calculators.current import (
-    build_bias_grid,
-    compute_current_vs_bias,
-)
-from PAOFLOW.transport.conductor_pipeline import (
-    compute_conductor_results,
-    write_dos_results,
-    write_greens_function_results,
-    write_self_energy_results,
-    write_transmission_results,
-)
-from PAOFLOW.transport.conductor_steps import (
-    build_conductor_blocks,
-    build_conductor_input_values,
-    prepare_conductor_step_state,
-)
-from PAOFLOW.transport.data import ConductorData, SmearingType
-from PAOFLOW.transport.io.write_data import write_current_results
-from PAOFLOW.transport.results import TransportResults
+if TYPE_CHECKING:
+    from PAOFLOW.DataController import DataController
+    from PAOFLOW.transport.data import ConductorData, SmearingType
+    from PAOFLOW.transport.results import TransportResults
 
 
 class Transport:
@@ -163,6 +146,8 @@ class Transport:
         write_kdata : bool, optional
             If ``True``, write k-resolved transmission and DOS to separate files.
         """
+        import PAOFLOW.transport.io.log_module as log
+
         self._output_config = {
             'output_dir': output_dir,
             'work_dir': work_dir,
@@ -269,6 +254,8 @@ class Transport:
             On-site energy shift (eV) applied to the correlation self-energy.
             Default ``0.0``.
         """
+        from PAOFLOW.transport.conductor_orchestration import apply_onsite_shifts
+
         self._onsite_shift_config = {
             'shift_L': shift_L,
             'shift_C': shift_C,
@@ -276,7 +263,7 @@ class Transport:
             'shift_corr': shift_corr,
         }
         if self.conductor_data is not None:
-            self._apply_onsite_shifts(self.conductor_data)
+            apply_onsite_shifts(self.conductor_data, self._onsite_shift_config)
         self.results = None
 
     def configure_lead_convergence(
@@ -304,6 +291,8 @@ class Transport:
             If ``True``, run in surface mode (lead surface Green's function only,
             skipping the right-lead self-energy). Default ``False``.
         """
+        from PAOFLOW.transport.conductor_orchestration import apply_lead_convergence
+
         self._lead_convergence_config = {
             'niterx': niterx,
             'transfer_thr': transfer_thr,
@@ -312,7 +301,7 @@ class Transport:
             'surface': surface,
         }
         if self.conductor_data is not None:
-            self._apply_lead_convergence(self.conductor_data)
+            apply_lead_convergence(self.conductor_data, self._lead_convergence_config)
         self.results = None
 
     def configure_eigenchannels(
@@ -339,6 +328,8 @@ class Transport:
         ik_eigplot : int, optional
             k-point index to plot eigenchannels for (with ``do_eigplot``).
         """
+        from PAOFLOW.transport.conductor_orchestration import apply_eigenchannels
+
         self._eigenchannel_config = {
             'do_eigenchannels': do_eigenchannels,
             'neigchnx': neigchnx,
@@ -347,34 +338,8 @@ class Transport:
             'ik_eigplot': ik_eigplot,
         }
         if self.conductor_data is not None:
-            self._apply_eigenchannels(self.conductor_data)
+            apply_eigenchannels(self.conductor_data, self._eigenchannel_config)
         self.results = None
-
-    def _apply_onsite_shifts(self, data: ConductorData) -> None:
-        if self._onsite_shift_config is None:
-            return
-        data.shift_L = self._onsite_shift_config['shift_L']
-        data.shift_C = self._onsite_shift_config['shift_C']
-        data.shift_R = self._onsite_shift_config['shift_R']
-        data.shift_corr = self._onsite_shift_config['shift_corr']
-
-    def _apply_lead_convergence(self, data: ConductorData) -> None:
-        if self._lead_convergence_config is None:
-            return
-        data.iteration.niterx = self._lead_convergence_config['niterx']
-        data.iteration.transfer_thr = self._lead_convergence_config['transfer_thr']
-        data.iteration.nprint = self._lead_convergence_config['nprint']
-        data.iteration.nfailx = self._lead_convergence_config['nfailx']
-        data.advanced.surface = self._lead_convergence_config['surface']
-
-    def _apply_eigenchannels(self, data: ConductorData) -> None:
-        if self._eigenchannel_config is None:
-            return
-        data.symmetry.do_eigenchannels = self._eigenchannel_config['do_eigenchannels']
-        data.symmetry.neigchnx = self._eigenchannel_config['neigchnx']
-        data.symmetry.do_eigplot = self._eigenchannel_config['do_eigplot']
-        data.symmetry.ie_eigplot = self._eigenchannel_config['ie_eigplot']
-        data.symmetry.ik_eigplot = self._eigenchannel_config['ik_eigplot']
 
     def build_hamiltonian_blocks(
         self,
@@ -445,6 +410,18 @@ class Transport:
         Sets ``self.conductor_data`` and ``self.blc_blocks`` as side effects.
         Calling this method a second time resets both for the new calculation.
         """
+        import PAOFLOW.transport.io.log_module as log
+        from PAOFLOW.transport.conductor_orchestration import (
+            apply_eigenchannels,
+            apply_lead_convergence,
+            apply_onsite_shifts,
+        )
+        from PAOFLOW.transport.conductor_steps import (
+            build_conductor_blocks,
+            build_conductor_input_values,
+            prepare_conductor_step_state,
+        )
+
         input_values = build_conductor_input_values(
             dimC=dimC,
             dimL=dimL,
@@ -480,47 +457,20 @@ class Transport:
             data_controller=self.data_controller,
         )
 
-        # Apply output flags configured before build_hamiltonian_blocks was called
         write_green_function = self._output_config.get('write_green_function', False)
         write_lead_self_energy = self._output_config.get('write_lead_self_energy', False)
         state.data.symmetry.write_gf = write_green_function
         state.data.symmetry.write_lead_sgm = write_lead_self_energy
         state.data.symmetry.write_kdata = self._output_config.get('write_kdata', False)
 
-        # Apply physics-tuning configs (compute-time) stashed before build
-        self._apply_onsite_shifts(state.data)
-        self._apply_lead_convergence(state.data)
-        self._apply_eigenchannels(state.data)
+        apply_onsite_shifts(state.data, self._onsite_shift_config)
+        apply_lead_convergence(state.data, self._lead_convergence_config)
+        apply_eigenchannels(state.data, self._eigenchannel_config)
 
         self.conductor_data = state.data
         self.blc_blocks = state.blc_blocks
         self.results = None
         return state.blc_blocks
-
-    def _require_hamiltonian_blocks(self) -> None:
-        if self.conductor_data is None or self.blc_blocks is None:
-            raise RuntimeError('Call build_hamiltonian_blocks(...) before transport computations.')
-
-    def _require_grid_config(self) -> None:
-        if self._energy_grid_config is None:
-            raise RuntimeError(
-                'Call configure_energy_grid(...) before full-grid transport calculations.'
-            )
-
-    def _compute_full_grid_results(
-        self,
-        *,
-        comm: MPI.Comm = MPI.COMM_WORLD,
-    ) -> TransportResults:
-        self._require_hamiltonian_blocks()
-        self._require_grid_config()
-        if self.results is None:
-            self.results = compute_conductor_results(
-                data=self.conductor_data,
-                blc_blocks=self.blc_blocks,
-                comm=comm,
-            )
-        return self.results
 
     def compute_leads_self_energy(
         self,
@@ -545,14 +495,28 @@ class Transport:
             shape ``(ne, nrtot_par, dimC, dimC)`` each, or ``(None, None)``
             if ``write`` is ``False``.
         """
-        self._require_hamiltonian_blocks()
-        self._require_grid_config()
+        from PAOFLOW.transport.conductor_orchestration import (
+            compute_full_grid_results,
+            require_grid_config,
+            require_hamiltonian_blocks,
+        )
+        from PAOFLOW.transport.conductor_pipeline import write_self_energy_results
+
+        require_hamiltonian_blocks(self.conductor_data, self.blc_blocks)
+        require_grid_config(self._energy_grid_config)
         if write:
             if self.conductor_data is not None:
                 self.conductor_data.symmetry.write_lead_sgm = True
             if self.results is not None and self.results.self_energy_L is None:
                 self.results = None
-        results = self._compute_full_grid_results(comm=comm)
+        self.results = compute_full_grid_results(
+            conductor_data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            energy_grid_config=self._energy_grid_config,
+            cached_results=self.results,
+            comm=comm,
+        )
+        results = self.results
         if write:
             write_self_energy_results(
                 data=self.conductor_data,
@@ -584,14 +548,28 @@ class Transport:
             shape ``(ne, nrtot_par, dimC, dimC)``, or ``None`` if
             ``write`` is ``False``.
         """
-        self._require_hamiltonian_blocks()
-        self._require_grid_config()
+        from PAOFLOW.transport.conductor_orchestration import (
+            compute_full_grid_results,
+            require_grid_config,
+            require_hamiltonian_blocks,
+        )
+        from PAOFLOW.transport.conductor_pipeline import write_greens_function_results
+
+        require_hamiltonian_blocks(self.conductor_data, self.blc_blocks)
+        require_grid_config(self._energy_grid_config)
         if write:
             if self.conductor_data is not None:
                 self.conductor_data.symmetry.write_gf = True
             if self.results is not None and self.results.green_functions is None:
                 self.results = None
-        results = self._compute_full_grid_results(comm=comm)
+        self.results = compute_full_grid_results(
+            conductor_data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            energy_grid_config=self._energy_grid_config,
+            cached_results=self.results,
+            comm=comm,
+        )
+        results = self.results
         if write:
             write_greens_function_results(
                 data=self.conductor_data,
@@ -621,7 +599,17 @@ class Transport:
         -----
         Writes ``conductance*.dat`` under the configured output directory.
         """
-        results = self._compute_full_grid_results(comm=comm)
+        from PAOFLOW.transport.conductor_orchestration import compute_full_grid_results
+        from PAOFLOW.transport.conductor_pipeline import write_transmission_results
+
+        self.results = compute_full_grid_results(
+            conductor_data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            energy_grid_config=self._energy_grid_config,
+            cached_results=self.results,
+            comm=comm,
+        )
+        results = self.results
         write_transmission_results(
             data=self.conductor_data,
             results=results,
@@ -650,7 +638,17 @@ class Transport:
         -----
         Writes ``doscond*.dat`` under the configured output directory.
         """
-        results = self._compute_full_grid_results(comm=comm)
+        from PAOFLOW.transport.conductor_orchestration import compute_full_grid_results
+        from PAOFLOW.transport.conductor_pipeline import write_dos_results
+
+        self.results = compute_full_grid_results(
+            conductor_data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            energy_grid_config=self._energy_grid_config,
+            cached_results=self.results,
+            comm=comm,
+        )
+        results = self.results
         write_dos_results(
             data=self.conductor_data,
             results=results,
@@ -708,6 +706,13 @@ class Transport:
         Writes ``current.dat`` as two columns ``V I`` under the configured
         output directory.
         """
+        from PAOFLOW.transport.calculators.current import (
+            build_bias_grid,
+            compute_current_vs_bias,
+        )
+        from PAOFLOW.transport.conductor_orchestration import compute_full_grid_results
+        from PAOFLOW.transport.io.write_data import write_current_results
+
         if nbias <= 0:
             raise ValueError(f'nbias must be positive, got {nbias}.')
         if bias_max <= bias_min:
@@ -717,7 +722,14 @@ class Transport:
         if not (np.isfinite(mu_L) and np.isfinite(mu_R)):
             raise ValueError('mu_L and mu_R must be finite floats.')
 
-        results = self._compute_full_grid_results(comm=comm)
+        self.results = compute_full_grid_results(
+            conductor_data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            energy_grid_config=self._energy_grid_config,
+            cached_results=self.results,
+            comm=comm,
+        )
+        results = self.results
         energy_grid = results.energy_grid
         transmission = results.transmission[0]
 

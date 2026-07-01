@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from PAOFLOW.transport.observables import accumulation
+from PAOFLOW.transport.calculators import accumulation
 
 
 @pytest.mark.unit

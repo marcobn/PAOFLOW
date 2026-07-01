@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from PAOFLOW.transport.observables.broadening import compute_broadening_matrix
+from PAOFLOW.transport.calculators.broadening import compute_broadening_matrix
 
 
 @pytest.mark.unit
