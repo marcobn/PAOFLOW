@@ -3996,6 +3996,7 @@ class PAOFLOW:
         displacement_mode='symmetry',
         pthr=0.95,
         shift_type=1,
+        project_good_subspace=True,
     ):
         """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
 
@@ -4105,6 +4106,7 @@ class PAOFLOW:
                 basispath=basispath,
                 pthr=pthr,
                 shift_type=shift_type,
+                project_good_subspace=project_good_subspace,
             )
 
         except Exception as e:
