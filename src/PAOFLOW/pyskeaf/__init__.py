@@ -23,7 +23,13 @@ from PAOFLOW.pyskeaf.constants import (
 from PAOFLOW.pyskeaf.io_bxsf import BXSFData, read_bxsf
 from PAOFLOW.pyskeaf.config import SkeafConfig, read_config_in, write_config_in
 from PAOFLOW.pyskeaf.results import Orbit, SKEAFResult
-from PAOFLOW.pyskeaf.runner import BXSFRun, run_at_angle, run_angle_sweep, run_paoflow_bxsf_files, run_skeaf
+from PAOFLOW.pyskeaf.runner import (
+    BXSFRun,
+    run_at_angle,
+    run_angle_sweep,
+    run_paoflow_bxsf_files,
+    run_skeaf,
+)
 
 __all__ = [
     'BUILD_NUMBER',

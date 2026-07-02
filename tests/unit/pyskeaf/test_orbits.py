@@ -2,7 +2,13 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from PAOFLOW.pyskeaf.orbits import average_orbits, ExtremalOrbit, find_extremal, match_chunks, SliceOrbit
+from PAOFLOW.pyskeaf.orbits import (
+    average_orbits,
+    ExtremalOrbit,
+    find_extremal,
+    match_chunks,
+    SliceOrbit,
+)
 
 
 def _orbit(slice_index, avg, area=None):

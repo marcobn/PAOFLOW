@@ -735,9 +735,12 @@ def find_extremal(
 
             h_prev = (o.slice_index - o_prev.slice_index) * dk
             h_next = (o_next.slice_index - o.slice_index) * dk
-            curvature = CONV_FSAREA_TO_KT * 2.0 * (
-                ((a_next - a) / h_next) - ((a - a_prev) / h_prev)
-            ) / (h_prev + h_next)
+            curvature = (
+                CONV_FSAREA_TO_KT
+                * 2.0
+                * (((a_next - a) / h_next) - ((a - a_prev) / h_prev))
+                / (h_prev + h_next)
+            )
             ruc = _supercell_centroid_to_ruc(geom, o.avg_xy_frac, o.slice_index, n_slices)
             out.append(
                 ExtremalOrbit(
