@@ -2,7 +2,7 @@
 
 :::{div} sd-text-center paoflow-landing-hero
 
-![PAOFLOW](_static/images/paoflow_header.svg)
+![PAOFLOW](_static/images/logos/paoflow_header.svg)
 
 :::
 
