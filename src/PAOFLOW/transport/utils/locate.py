@@ -27,6 +27,11 @@ def locate(xx: np.ndarray, x: float) -> int:
     ju = n
     is_ascending = xx[-1] > xx[0]
 
+    if (x < xx[0] and is_ascending) or (x > xx[0] and not is_ascending):
+        raise ValueError('Value is outside the bounds of the array.')
+    if (x >= xx[-1] and is_ascending) or (x <= xx[-1] and not is_ascending):
+        raise ValueError('Value is outside the bounds of the array.')
+
     while ju - jl > 1:
         jm = (ju + jl) // 2
         if (x > xx[jm]) == is_ascending:
@@ -34,7 +39,7 @@ def locate(xx: np.ndarray, x: float) -> int:
         else:
             ju = jm
 
-    if jl == 0 or jl == n - 1:
+    if jl == n - 1:
         raise ValueError('Located index out of valid bounds.')
 
     return jl

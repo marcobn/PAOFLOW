@@ -1,7 +1,7 @@
  &CONTROL
     calculation='nscf',
     restart_mode='from_scratch',
-    pseudo_dir = '../pseudo',
+    pseudo_dir = './',
     outdir='./output/qe',
     tprnfor = .TRUE.
     prefix='alh'

@@ -2,7 +2,7 @@
       calculation = 'scf',
       restart_mode='from_scratch',
       prefix='al5',
-      pseudo_dir = '../pseudo',
+      pseudo_dir = './',
       outdir = './output/qe'
    /
    &SYSTEM

@@ -2,7 +2,7 @@
       calculation = 'nscf',
       restart_mode='from_scratch',
       prefix='al5',
-      pseudo_dir = '../pseudo',
+      pseudo_dir = './',
       outdir = './output/qe'
       wf_collect = .TRUE.
    /

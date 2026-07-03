@@ -1,0 +1,417 @@
+import xml.etree.ElementTree as ET
+from io import StringIO
+
+import numpy as np
+
+
+# read UPF utility from Davide Ceresoli
+class UPF:
+    r"""Parser for Unified Pseudopotential Format (UPF) files.
+
+    Supports both UPF version 1 and version 2.  On construction the file is
+    read and all relevant header, mesh, local-potential, and pseudo-wavefunction
+    data are stored as instance attributes.
+
+    Parameters
+    ----------
+    filename : str
+        Path to the UPF pseudopotential file.
+
+    Attributes
+    ----------
+    version : int
+        UPF format version (1 or 2).
+    element : str
+        Chemical symbol of the element.
+    ptype : str
+        Pseudopotential type (``'NC'`` for norm-conserving, ``'US'`` for
+        ultrasoft).
+    nlcc : bool
+        Whether non-linear core correction is present.
+    qexc : str
+        Exchange-correlation functional label.
+    val : float
+        Number of valence electrons.
+    lmax : int
+        Maximum angular momentum quantum number.
+    npoints : int
+        Number of radial mesh points.
+    nwfc : int
+        Number of pseudo-wavefunctions.
+    nproj : int
+        Number of projectors.
+    r : np.ndarray, shape ``(npoints,)``
+        Radial mesh (Bohr).
+    rab : np.ndarray, shape ``(npoints,)``
+        Radial mesh integration weights.
+    vloc : np.ndarray, shape ``(npoints,)``
+        Local pseudopotential (Hartree).
+    pswfc : list of dict
+        Pseudo-wavefunctions; each entry has keys ``'label'``, ``'occ'``,
+        and ``'wfc'``.
+    shells : list of int
+        Angular momentum quantum numbers :math:`l` of occupied shells.
+    jchia : np.ndarray
+        Total angular momentum :math:`j` values (spin-orbit case).
+    lchia : np.ndarray
+        Angular momentum :math:`l` values from the spin-orbit block.
+    atrho : np.ndarray or None
+        Atomic charge density, or ``None`` if absent.
+    beta : list of dict
+        Kleinman--Bylander non-local projectors :math:`\beta_i(r)`.  Each
+        entry has keys ``'l'`` (angular momentum), ``'wfc'`` (the radial
+        function as stored in the UPF file: by QE convention this is
+        :math:`r\,\beta_l(r)` sampled on :attr:`r`, padded with zeros
+        beyond ``cutoff_index``), ``'cutoff_index'`` (first index past the
+        projector support, or ``None`` if absent), ``'cutoff_radius'``
+        (Bohr, or ``None``), and ``'label'`` (string identifier).  Empty
+        for UPF v1 (not yet parsed).
+    dion : np.ndarray or None, shape ``(nproj, nproj)``
+        Kleinman--Bylander coupling matrix :math:`D_{ij}` in **Hartree**
+        (the UPF stores Rydberg; the factor of 2 is applied on read).
+        ``None`` for UPF v1 (not yet parsed).
+    qqq : np.ndarray or None, shape ``(nproj, nproj)``
+        Integrated augmentation matrix :math:`q_{ij} = \int Q_{ij}(r)\,
+        d^3 r` from ``PP_AUGMENTATION/PP_Q``.  ``None`` for
+        norm-conserving pseudopotentials.  Off-diagonal entries between
+        projectors of different :math:`l_\beta` are zero by construction.
+    has_augmentation : bool
+        Whether the pseudopotential exposes a ``PP_AUGMENTATION`` block
+        (true for USPP and PAW).
+    rho_atc : np.ndarray or None, shape ``(npoints,)``
+        Smooth pseudo-core density :math:`n_c(r)` in :math:`\mathrm{Bohr}^{-3}`
+        from ``PP_NLCC``.  ``None`` when the pseudopotential carries no
+        non-linear core correction.
+    ptype : str
+        Pseudopotential type (``'NC'`` / ``'US'`` / ``'USPP'`` / ``'PAW'``).
+        Alias of :attr:`type` for UPF v2.
+    """
+
+    def __init__(self, filename):
+        """Open a UPF file, determine version, and read it.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the UPF pseudopotential file.
+
+        Raises
+        ------
+        RuntimeError
+            If the UPF version is not 1 or 2.
+        """
+        with open(filename) as f:
+            xml_file_content = f.read()
+
+        # fix broken XML
+        xml_file_content = xml_file_content.replace('&', '&amp;')
+
+        # test if v1
+        if xml_file_content.startswith('<PP_INFO>'):
+            xml_file_content = '<UPF version="1.0">\n' + xml_file_content + '</UPF>\n'
+
+        # parse the XML file
+        root = ET.fromstring(xml_file_content)
+
+        # dispatch to the specific routine
+        upfver = root.attrib['version']
+        self.version = int(upfver.split('.')[0])
+        if self.version == 1:
+            self._read_upf_v1(root)
+        elif self.version == 2:
+            self._read_upf_v2(root)
+        else:
+            raise RuntimeError('Wrong UPF version: %s' % upfver)
+
+    def _read_upf_v1(self, root):
+        """Read a UPF v1 pseudopotential.
+
+        Parameters
+        ----------
+        root : xml.etree.ElementTree.Element
+            Root element of the parsed UPF XML tree.
+        """
+
+        # parse info and header
+        self.info = root.find('PP_INFO').text
+        for line in root.find('PP_HEADER').text.split('\n'):
+            l = line.split()
+            if 'Element' in line:
+                self.element = l[0]
+            if 'NC' in line:
+                self.ptype = 'NC'
+            if 'US' in line:
+                self.ptype = 'US'
+            if 'Nonlinear' in line:
+                self.nlcc = l[0] == 'T'
+            if 'Exchange' in line:
+                self.qexc = ' '.join(l[0:4])
+            if 'Z valence' in line:
+                self.val = float(l[0])
+            if 'Max angular' in line:
+                self.lmax = int(l[0])
+            if 'Number of po' in line:
+                self.npoints = int(l[0])
+            if 'Number of Wave' in line:
+                self.nwfc = int(l[0])
+                self.nproj = int(l[1])
+
+        # parse mesh
+        text = root.find('PP_MESH/PP_R').text
+        self.r = np.array([float(x) for x in text.split()])
+        text = root.find('PP_MESH/PP_RAB').text
+        self.rab = np.array([float(x) for x in text.split()])
+
+        # local potential
+        text = root.find('PP_LOCAL').text
+        self.vloc = np.array([float(x) for x in text.split()]) / 2.0  # to Hartree
+
+        # atomic wavefunctions
+        self.pswfc = []
+        chis = root.find('PP_PSWFC')
+        self.shells = []
+        self.jchia = []
+        self.lchia = []
+        if chis is not None:
+            data = StringIO(chis.text)
+            nlines = self.npoints // 4
+            if self.npoints % 4 != 0:
+                nlines += 1
+
+            while True:
+                line = data.readline()
+                if line == '\n':
+                    continue
+                if line == '':
+                    break
+                label, l, occ, dummy = line.split()
+
+                wfc = []
+                for i in range(nlines):
+                    wfc.extend(map(float, data.readline().split()))
+                wfc = np.array(wfc)
+
+                # add only occupied pswfc
+                if float(occ) >= 0.0:
+                    self.shells.append(int(l))
+                    self.pswfc.append({'label': label, 'occ': float(occ), 'wfc': wfc})
+
+        # atomic rho
+        self.atrho = None
+        atrho = root.find('PP_RHOATOM')
+        if atrho is not None:
+            self.atrho = np.array([float(x) for x in atrho.text.split()])
+
+        # TODO: NLCC
+
+        # PP_NONLOCAL not parsed for UPF v1 yet (no in-repo test sample).
+        self.beta = []
+        self.dion = None
+        self.has_spinorbit = False
+
+        # Augmentation / NLCC parsing currently only implemented for v2.
+        self.rho_atc = None
+        self.qqq = None
+        self.has_augmentation = False
+        # v1 keeps ptype set from the PP_HEADER parse above.
+
+        # TODO: GIPAW data
+
+    def _read_upf_v2(self, root):
+        """Read a UPF v2 pseudopotential.
+
+        Parameters
+        ----------
+        root : xml.etree.ElementTree.Element
+            Root element of the parsed UPF XML tree.
+        """
+
+        # parse header
+        h = root.find('PP_HEADER').attrib
+        self.element = h['element']
+        self.type = h['pseudo_type']
+        self.nlcc = h['core_correction'] == 'true'
+        self.qexc = h['functional']
+        self.val = float(h['z_valence'])
+        self.lmax = int(h['l_max'])
+        self.npoints = int(h['mesh_size'])
+        self.nwfc = int(h['number_of_wfc'])
+        self.nproj = int(h['number_of_proj'])
+        self.v2_header = h.copy()
+
+        # parse mesh
+        text = root.find('PP_MESH/PP_R').text
+        self.r = np.array([float(x) for x in text.split()])
+        text = root.find('PP_MESH/PP_RAB').text
+        self.rab = np.array([float(x) for x in text.split()])
+
+        # local potential
+        text = root.find('PP_LOCAL').text
+        self.vloc = np.array([float(x) for x in text.split()]) / 2.0  # to Hartree
+
+        # atomic wavefunctions
+        self.pswfc = []
+        self.jchia = []
+        self.lchia = []
+        self.shells = []
+        i = 0
+        while True:
+            i += 1
+            chi = root.find('PP_PSWFC/PP_CHI.%i' % (i))
+            if chi is None:
+                break
+
+            label = chi.attrib['label']
+            occ = float(chi.attrib['occupation'])
+            wfc = [float(x) for x in chi.text.split()]
+            wfc = np.array(wfc)
+
+            # add only occupied pswfc
+            if float(occ) >= 0.0:
+                self.shells.append(int(chi.attrib['l']))
+                self.pswfc.append({'label': label, 'occ': float(occ), 'wfc': wfc})
+
+                jchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d' % i)
+                lchi = root.find('PP_SPIN_ORB/PP_RELWFC.%d' % i)
+                if jchi is not None:
+                    self.jchia.append(float(jchi.attrib['jchi']))
+                if lchi is not None:
+                    self.lchia.append(float(lchi.attrib['lchi']))
+
+        self.jchia = self.jchia
+        self.lchia = self.lchia
+        self.shells = self.shells
+
+        # atomic rho (4 pi r^2 n(r), sum to z_valence under int dr)
+        self.atrho = None
+        atrho = root.find('PP_RHOATOM')
+        if atrho is not None:
+            self.atrho = np.array([float(x) for x in atrho.text.split()])
+
+        # Non-linear core correction: PP_NLCC stores the smooth pseudo-core
+        # density n_c(r) in Bohr^-3 directly on self.r (not 4 pi r^2 n_c).
+        self.rho_atc = None
+        nlcc_node = root.find('PP_NLCC')
+        if nlcc_node is not None and nlcc_node.text is not None:
+            self.rho_atc = np.fromstring(nlcc_node.text, sep=' ', dtype=float)
+
+        # ptype alias (header attribute name varies between v1/v2).
+        self.ptype = self.type
+
+        self._read_nonlocal_v2(root)
+        self._read_augmentation_v2(root)
+
+        # TODO: GIPAW data
+
+    def _read_nonlocal_v2(self, root):
+        r"""Read the PP_NONLOCAL block (PP_BETA.N + PP_DIJ) of a UPF v2 file.
+
+        Stores :attr:`beta` and :attr:`dion`.  The ``D_{ij}`` matrix is
+        converted from Rydberg (UPF convention) to Hartree.  Beta radial
+        functions are kept verbatim from the file (QE convention: the
+        stored quantity is :math:`r\,\beta_l(r)` on :attr:`r`, truncated
+        to zero beyond ``cutoff_radius_index``).
+
+        For fully-relativistic UPFs the ``PP_SPIN_ORB/PP_RELBETA.N`` block
+        carries the total angular momentum :math:`j` of each projector
+        (attribute ``jjj``); when present it is stored as ``beta[i]['j']``
+        and :attr:`has_spinorbit` is set to ``True``.  Scalar-relativistic
+        UPFs leave ``beta[i]['j'] = None`` and :attr:`has_spinorbit` False.
+        """
+        self.beta = []
+        self.dion = None
+        self.has_spinorbit = False
+
+        nonlocal_node = root.find('PP_NONLOCAL')
+        if nonlocal_node is None:
+            return
+
+        # Fully-relativistic UPFs publish a PP_SPIN_ORB block with one
+        # PP_RELBETA.N entry per projector carrying ``lll`` (l) and
+        # ``jjj`` (j).  Build an index->j map keyed by the 1-based
+        # projector index (the ``index`` attribute, falling back to the
+        # tag order if absent).
+        spin_orb_node = root.find('PP_SPIN_ORB')
+        beta_j: dict[int, float] = {}
+        if spin_orb_node is not None:
+            self.has_spinorbit = True
+            for i in range(1, self.nproj + 1):
+                relnode = spin_orb_node.find(f'PP_RELBETA.{i}')
+                if relnode is None:
+                    continue
+                jstr = relnode.attrib.get('jjj')
+                if jstr is None:
+                    continue
+                idx = int(relnode.attrib.get('index', i))
+                beta_j[idx] = float(jstr)
+
+        # Per-projector PP_BETA.N blocks (1-indexed in the UPF spec).
+        for i in range(1, self.nproj + 1):
+            node = nonlocal_node.find(f'PP_BETA.{i}')
+            if node is None:
+                raise RuntimeError(
+                    f'UPF v2 PP_NONLOCAL: expected PP_BETA.{i} but tag is missing '
+                    f'(nproj={self.nproj}).'
+                )
+            wfc = np.fromstring(node.text, sep=' ', dtype=float)
+            l = int(node.attrib['angular_momentum'])
+            cutoff_index = node.attrib.get('cutoff_radius_index')
+            cutoff_radius = node.attrib.get('cutoff_radius')
+            self.beta.append(
+                {
+                    'l': l,
+                    'j': beta_j.get(i),
+                    'wfc': wfc,
+                    'cutoff_index': int(cutoff_index) if cutoff_index is not None else None,
+                    'cutoff_radius': float(cutoff_radius) if cutoff_radius is not None else None,
+                    'label': node.attrib.get('label', f'beta.{i}'),
+                }
+            )
+
+        # PP_DIJ: row-major (nproj, nproj) matrix in Rydberg.  Convert to Hartree.
+        dij_node = nonlocal_node.find('PP_DIJ')
+        if dij_node is None:
+            if self.nproj > 0:
+                raise RuntimeError('UPF v2 PP_NONLOCAL has PP_BETA entries but no PP_DIJ.')
+            return
+        dij = np.fromstring(dij_node.text, sep=' ', dtype=float)
+        expected = self.nproj * self.nproj
+        if dij.size != expected:
+            raise RuntimeError(f'UPF v2 PP_DIJ size mismatch: expected {expected}, got {dij.size}.')
+        self.dion = dij.reshape(self.nproj, self.nproj) / 2.0
+
+    def _read_augmentation_v2(self, root):
+        r"""Read PP_NONLOCAL/PP_AUGMENTATION (USPP and PAW).
+
+        Only the *integrated* augmentation matrix ``q_{ij} =
+        \int Q_{ij}(r) d^3 r`` (stored verbatim in ``PP_Q``) is
+        extracted.  This is all that is needed to build the augmentation
+        overlap operator ``S = 1 + \sum_{ij} q_{ij} |\beta_i><\beta_j|``
+        for the scalar radial Schroedinger problem (the angular
+        L=0 selection happens automatically because ``q_{ij}`` is zero
+        between projectors of different ``l_\beta``).
+
+        The full radial expansion ``PP_QIJL.i.j.L`` (or the legacy
+        ``PP_QIJ`` + ``PP_RINNER`` + ``PP_QFCOEF``) is not parsed here:
+        it is required only for real-space density reconstruction, which
+        the basis_gen pipeline does not need.
+
+        Sets :attr:`qqq` (the ``q_{ij}`` matrix, ``None`` for NC) and
+        :attr:`has_augmentation` (bool).
+        """
+        self.qqq = None
+        self.has_augmentation = False
+
+        aug_node = root.find('PP_NONLOCAL/PP_AUGMENTATION')
+        if aug_node is None:
+            return
+
+        q_node = aug_node.find('PP_Q')
+        if q_node is None or q_node.text is None:
+            return
+        q = np.fromstring(q_node.text, sep=' ', dtype=float)
+        expected = self.nproj * self.nproj
+        if q.size != expected:
+            raise RuntimeError(f'UPF v2 PP_Q size mismatch: expected {expected}, got {q.size}.')
+        self.qqq = q.reshape(self.nproj, self.nproj)
+        self.has_augmentation = True

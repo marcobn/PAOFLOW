@@ -1,24 +1,183 @@
-#
-# PAOFLOW
-#
-# Copyright 2016-2024 - Marco BUONGIORNO NARDELLI (mbn@unt.edu)
-#
-# Reference:
-#
-# F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
-# Advanced modeling of materials with PAOFLOW 2.0: New features and software design, Comp. Mat. Sci. 200, 110828 (2021).
-#
-# M. Buongiorno Nardelli, F. T. Cerasoli, M. Costa, S Curtarolo,R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
-# PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on
-# Atomic Orbital bases, including characterization of topological materials, Comp. Mat. Sci. vol. 143, 462 (2018).
-#
-# This file is distributed under the terms of the
-# GNU General Public License. See the file `License'
-# in the root directory of the present distribution,
-# or http://www.gnu.org/copyleft/gpl.txt .
-
-
 class DataController:
+    """Central data store and I/O manager for a PAOFLOW run.
+
+    ``DataController`` owns every piece of data that flows through a PAOFLOW
+    calculation.  It is created once by :class:`PAOFLOW.PAOFLOW` during
+    initialisation and is passed by reference to every physics kernel.  The
+    class is responsible for four distinct concerns:
+
+    1. **Data storage** — two flat dictionaries, ``data_arrays`` and
+       ``data_attributes``, hold all intermediate results and configuration
+       scalars respectively.  Physics modules read and write these dicts
+       directly via :meth:`data_dicts`.
+
+    2. **Initialisation and DFT ingestion** — reads the DFT output (QE
+       ``data-file-schema.xml`` / ``data-file.xml`` or VASP ``vasprun.xml``),
+       optionally reads a PAOFLOW XML input file, or constructs a Hamiltonian
+       from a tight-binding model.  All data is populated on rank 0 and then
+       broadcast to every MPI rank.
+
+    3. **MPI communication** — thin wrappers around ``mpi4py`` primitives for
+       broadcasting arrays, lists, and scalar attributes from one rank to all
+       others, and for scattering / gathering distributed arrays across the
+       k-point pool decomposition.
+
+    4. **File I/O** — writes band structures, Hamiltonians, Fermi-surface
+       files, k-point paths, and two-column data files to the output directory.
+
+    Data dictionaries
+    -----------------
+    ``data_arrays`` : dict
+        NumPy array payloads.  Common keys (populated progressively as the
+        calculation advances):
+
+        ===============  =================================================
+        Key              Content
+        ===============  =================================================
+        ``kpnts``        k-points from the DFT calculation
+        ``kpnts_wght``   BZ integration weights
+        ``a_vectors``    Lattice vectors (rows, in units of ``alat``)
+        ``tau``          Atomic positions (crystal coordinates)
+        ``atoms``        Atom species labels
+        ``species``      ``(label, pseudopotential)`` pairs
+        ``shells``       Angular-momentum shell list per species
+        ``U``            PAO projection matrix ``⟨φ|ψ_nk⟩``
+        ``Sks``          Overlap matrix S(k) (if ``save_overlaps=True``)
+        ``Hks``          k-space PAO Hamiltonian H(k)
+        ``HRs``          Real-space PAO Hamiltonian H(R)
+        ``Hksp``         Fourier-interpolated H(k) on the dense grid
+        ``E_k``          Band eigenvalues (scattered across k-pool)
+        ``v_k``          Band eigenvectors (scattered across k-pool)
+        ``pksp``         Momentum matrix elements p(k)
+        ``dHksp``        Gradient ∇_k H(k)
+        ``Sj``           Spin operator matrix (3, nawf, nawf)
+        ``Efield``       External electric field (3,) — default zeros
+        ``Bfield``       External magnetic field (3,) — default zeros
+        ``HubbardU``     On-site Hubbard-U corrections — default zeros
+        ``d_tensor``     Dielectric tensor component indices
+        ``t_tensor``     Transport tensor component indices
+        ``a_tensor``     Anomalous Hall tensor component indices
+        ``s_tensor``     Spin Hall tensor component indices
+        ===============  =================================================
+
+    ``data_attributes`` : dict
+        Scalar configuration values.  Common keys:
+
+        ================  =====================================================
+        Key               Content
+        ================  =====================================================
+        ``nawf``          Number of PAO basis functions
+        ``nbnds``         Number of DFT bands
+        ``nspin``         Number of spin channels (1 or 2)
+        ``nkpnts``        Total number of k-points
+        ``nk1,nk2,nk3``  k-grid dimensions
+        ``nelec``         Number of electrons
+        ``natoms``        Number of atoms in the unit cell
+        ``alat``          Lattice parameter (Bohr)
+        ``omega``         Unit-cell volume
+        ``npool``         Number of k-point pools
+        ``smearing``      Smearing type (``None``, ``'m-p'``, ``'gauss'``)
+        ``acbn0``         Whether ACBN0 orthogonalisation is active
+        ``verbose``       Verbosity flag
+        ``opath``         Absolute path to the output directory
+        ``fpath``         Absolute path to the DFT ``.save`` directory
+        ``abort_on_exception`` Re-raise exceptions immediately if ``True``
+        ================  =====================================================
+
+    Parameters (constructor)
+    ------------------------
+    workpath : str
+        Path to the working directory.
+    outputdir : str
+        Name of the output sub-directory (created under ``workpath``).
+    inputfile : str or None
+        Optional PAOFLOW XML input file.
+    model : dict or None
+        Tight-binding model specification; if provided, DFT input is ignored.
+    savedir : str or None
+        Path to the QE ``.save`` directory.
+    npool : int
+        Number of k-point pools for distributed memory execution.
+    smearing : str or None
+        BZ integration smearing type.
+    save_overlaps : bool
+        Keep the overlap matrices ``Sks`` after Hamiltonian construction.
+    acbn0 : bool
+        Activate ACBN0 orthogonalisation.
+    verbose : bool
+        Enable debugging output.
+    restart : bool
+        Skip initialisation (data will be loaded from a dump file).
+    dft : str
+        DFT back-end: ``'QE'`` or ``'VASP'``.
+
+    Methods — data access
+    ----------------------
+    data_dicts()
+        Return ``(data_arrays, data_attributes)`` as a 2-tuple.
+    print_data()
+        Print all keys in both data dictionaries (rank 0 only).
+
+    Methods — initialisation helpers
+    ----------------------------------
+    add_default_arrays()
+        Pre-populate ``data_arrays`` with zero-valued field arrays and
+        full-tensor component index arrays.
+    read_pao_inputfile()
+        Parse a PAOFLOW XML input file into ``data_attributes``.
+    read_qe_output()
+        Parse ``data-file-schema.xml`` or ``data-file.xml`` from a QE
+        ``.save`` directory.
+    read_vasp_output(symprec)
+        Parse ``vasprun.xml`` from a VASP calculation.
+    build_arrays_adhoc_soc()
+        Construct ``naw`` (orbital counts per atom) and ``orb_pseudo``
+        (orbital character labels) required for the ad-hoc spin-orbit
+        coupling routines.
+
+    Methods — MPI communication
+    -----------------------------
+    broadcast_single_array(key, dtype, root)
+        Broadcast a NumPy array stored at ``data_arrays[key]`` from
+        ``root`` to all ranks using ``MPI.Bcast``.
+    broadcast_single_list(key, root)
+        Broadcast a Python list stored at ``data_arrays[key]``.
+    broadcast_attribute(key, root)
+        Broadcast a scalar stored at ``data_attributes[key]``.
+    scatter_data_array(key)
+        Scatter ``data_arrays[key]`` across ranks along the first axis.
+    gather_data_array(key)
+        Gather a distributed array back to rank 0.
+
+    Methods — file output
+    ----------------------
+    write_bands(fname, bands)
+        Write per-spin band structure files ``<fname>_<ispin>.dat``.
+    write_bxsf(fname, bands, nbnd, indices)
+        Write Fermi-surface data in ``.bxsf`` format (for XCrysDen /
+        SKEAF).
+    write_HRs(fname)
+        Write the real-space Hamiltonian in the Wannier90 / Z2Pack
+        ``_hr.dat`` format.
+    write_Hk_acbn0()
+        Write ``H(k)``, ``S(k)``, k-points, and weights to files for
+        ACBN0 post-processing (binary ``.npy`` or plain text).
+    write_file_row_col(fname, col1, col2)
+        Write a two-column plain-text data file.
+    write_kpnts_path(fname, path, kpnts, b_vectors)
+        Write the k-point path in Cartesian reciprocal coordinates.
+
+    Notes
+    -----
+    - Only rank 0 reads and populates the dictionaries; all other ranks
+      receive the data via ``MPI.bcast`` at the end of ``__init__``.
+    - The ``error_handler`` attribute holds an :class:`ErrorHandler` instance;
+      ``report_exception`` is a convenience alias for its
+      ``report_exception`` method, used throughout the PAOFLOW codebase to
+      format and print stack traces without aborting unless
+      ``abort_on_exception`` is set.
+    """
+
     comm = rank = size = None
 
     data_arrays = data_attributes = None
@@ -36,6 +195,8 @@ class DataController:
         smearing,
         save_overlaps,
         acbn0,
+        sparse,
+        sparse_threshold,
         verbose,
         restart,
         dft,
@@ -51,6 +212,8 @@ class DataController:
             savedir (str): QE .save directory
             save_overlaps (bool): If True the overlap matrix will be saved in data_arrays
             acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
+            sparse (bool): If True, use sparse matrix representations
+            sparse_threshold (float): Sparsification threshold
             smearing (str): Smearing type (None, m-p, gauss)
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
@@ -58,8 +221,10 @@ class DataController:
             None
         """
         from os import mkdir
+        from os.path import exists, join
+
         from mpi4py import MPI
-        from os.path import join, exists
+
         from .ErrorHandler import ErrorHandler
 
         self.comm = MPI.COMM_WORLD
@@ -93,6 +258,8 @@ class DataController:
             attr['workpath'] = workpath
             attr['save_overlaps'] = save_overlaps
             attr['acbn0'] = acbn0
+            attr['sparse'] = sparse
+            attr['sparse_threshold'] = sparse_threshold
             attr['inputfile'], attr['outputdir'] = inputfile, outputdir
             attr['opath'] = join(workpath, outputdir)
             if model is None:
@@ -112,7 +279,7 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                from .defs.models import build_TB_model
+                from .models.models import build_TB_model
 
                 build_TB_model(self, model)
             else:
@@ -214,27 +381,41 @@ class DataController:
 
         else:
             for i in range(len(arry['atoms'])):
-                if arry['shells'][arry['atoms'][i]] == [0]:
+                shells_i = arry['shells'][arry['atoms'][i]]
+                matched = True
+                if shells_i == [0]:
                     naw.append(1)
                     orb.append('s')
-                if arry['shells'][arry['atoms'][i]] == [0, 1]:
+                elif shells_i == [0, 1]:
                     naw.append(4)
                     orb.append('sp')
-                if arry['shells'][arry['atoms'][i]] == [0, 1, 2]:
+                elif shells_i == [0, 1, 2]:
                     naw.append(9)
                     orb.append('spd')
-                if arry['shells'][arry['atoms'][i]] == [1, 0]:
+                elif shells_i == [1, 0]:
                     naw.append(4)
                     orb.append('ps')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 2]:
+                elif shells_i == [0, 0, 1, 2]:
                     naw.append(10)
                     orb.append('sspd')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1]:
+                elif shells_i == [0, 1, 2, 0]:
+                    naw.append(10)
+                    orb.append('spds')
+                elif shells_i == [0, 0, 1]:
                     naw.append(5)
                     orb.append('ssp')
-                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 1, 2]:
+                elif shells_i == [0, 0, 1, 1, 2]:
                     naw.append(13)
                     orb.append('ssppd')
+                else:
+                    matched = False
+                if not matched:
+                    # Fallback: any layout not in the hardcoded set is
+                    # routed through the generic SOC builder in
+                    # hamiltonian.do_spin_orbit (build_generic_soc).
+                    # naw is sum_{shells} (2l+1).
+                    naw.append(sum(2 * int(l) + 1 for l in shells_i))
+                    orb.append('generic')
             arry['orb_pseudo'] = orb
             arry['naw'] = np.array(naw)
 
@@ -299,7 +480,7 @@ class DataController:
         )
 
     def read_pao_inputfile(self):
-        from .defs.read_inputfile_xml_parse import read_inputfile_xml
+        from .inputs.read_inputfile_xml_parse import read_inputfile_xml
 
         read_inputfile_xml(
             self.data_attributes['workpath'], self.data_attributes['inputfile'], self
@@ -311,11 +492,11 @@ class DataController:
         fpath = self.data_attributes['fpath']
 
         if exists(fpath + '/data-file-schema.xml'):
-            from .defs.read_QE_xml import parse_qe_data_file_schema
+            from .inputs.read_QE_xml import parse_qe_data_file_schema
 
             parse_qe_data_file_schema(self, fpath + '/data-file-schema.xml')
         elif exists(fpath + '/data-file.xml'):
-            from .defs.read_QE_xml import parse_qe_data_file
+            from .inputs.read_QE_xml import parse_qe_data_file
 
             parse_qe_data_file(self, fpath, 'data-file.xml')
         else:
@@ -327,7 +508,7 @@ class DataController:
         fpath = self.data_attributes['fpath']
 
         if exists(fpath + '/vasprun.xml'):
-            from .defs.read_VASP import parse_vasprun_data
+            from .inputs.read_VASP import parse_vasprun_data
 
             parse_vasprun_data(self, fpath + '/vasprun.xml', symprec)
         else:
@@ -375,8 +556,8 @@ class DataController:
         attr = self.data_attributes
 
         if self.rank == 0:
-            from .defs.write2bxsf import write2bxsf
-            from .defs.write2bxsf4skeaf import write2bxsf4skeaf
+            from .writers.write2bxsf import write2bxsf
+            from .writers.write2bxsf4skeaf import write2bxsf4skeaf
 
             write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
             write2bxsf4skeaf(self, bands, nbnd, indices)
@@ -477,8 +658,9 @@ class DataController:
         # ----------------------
         # write to file Hks,Sks,kpnts,kpnts_wght
         # ----------------------
-        import numpy as np
         import os
+
+        import numpy as np
 
         if self.rank == 0:
             arry, attr = self.data_dicts()
@@ -578,9 +760,11 @@ class DataController:
         """
         try:
             if self.rank == 0:
-                import numpy as np
                 from os.path import join
-                from .defs.zero_pad import zero_pad
+
+                import numpy as np
+
+                from .utils.zero_pad import zero_pad
 
                 def HRs_write(nk1, nk2, nk3, nawf, ispin, f):
                     nkpts = nk1 * nk2 * nk3
@@ -734,7 +918,26 @@ class DataController:
         )
         if self.rank != root:
             self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
-        self.comm.Bcast(np.ascontiguousarray(self.data_arrays[key]), root=root)
+
+        # Some MPI stacks cannot handle very large single-message broadcasts
+        # reliably. Broadcast in bounded chunks to avoid hitting message/count
+        # implementation limits after repeated supercell doubling.
+        from mpi4py import MPI
+
+        arr = self.data_arrays[key]
+        if not arr.flags['C_CONTIGUOUS']:
+            arr = np.ascontiguousarray(arr)
+            self.data_arrays[key] = arr
+
+        mpidtype = MPI._typedict[np.dtype(arr.dtype).char]
+        flat = arr.reshape(-1)
+
+        max_chunk_bytes = 1 << 30
+        max_chunk_elems = max(1, max_chunk_bytes // arr.dtype.itemsize)
+
+        for start in range(0, flat.size, max_chunk_elems):
+            stop = min(start + max_chunk_elems, flat.size)
+            self.comm.Bcast([flat[start:stop], mpidtype], root=root)
 
     ### This section is under construction
     ### Only 'broadcast_single_array' should be used
@@ -753,13 +956,14 @@ class DataController:
             self.data_arrays = self.comm.recv(source=0)
 
     def scatter_data_array(self, key):
-        from .defs.communication import scatter_array
+        from .utils.communication import scatter_array
 
         self.data_arrays[key] = scatter_array(self.data_arrays[key])
 
     def gather_data_array(self, key):
         import numpy as np
-        from .defs.communication import gather_array
+
+        from .utils.communication import gather_array
 
         arr = self.data_arrays[key]
         aux = None

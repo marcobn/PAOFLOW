@@ -15,18 +15,18 @@ def main():
   paoflow.projectability()
   paoflow.pao_hamiltonian()
 
-# Inplane band-structure. Notice the oscilations around -10eV. This is due to few k-points. K-mesh 5x5x3 is only for testing. 
+# Inplane band-structure. Notice the oscilations around -10eV. This is due to few k-points. K-mesh 5x5x3 is only for testing.
   path = 'G-X-Y-G'
   special_points = {'G':[0.0, 0.0, 0.0],'X':[0.5, 0.0, 0.0],'Y':[0.0, 0.5, 0.0]}
   paoflow.bands(ibrav=0, nk=100, band_path=path, high_sym_points=special_points)
 
   # Bandstructure plot
-  outputdir='./output/' 
+  outputdir='./output/'
   f_band = outputdir + 'bands_0.dat'
   f_symp = outputdir + 'kpath_points.txt'
   pplt.plot_bands( f_band, f_symp, None, None, y_lim = (-10,5))
 
-# Interpolate Bands. K-mesh 10x10x6 is only for testing. 
+# Interpolate Bands. K-mesh 10x10x6 is only for testing.
   paoflow.interpolated_hamiltonian(nfft1=10,nfft2=10,nfft3=6)
   paoflow.pao_eigh()
   paoflow.gradient_and_momenta()
@@ -43,7 +43,7 @@ def main():
 
   print("               Calculating First Layer SHC")
   paoflow.spin_Hall(twoD=False,emin=-1.0, emax=1.0, ne=1001, s_tensor=[[0,1,2]],shc_proj=[0])
-  
+
   shc_0    = np.loadtxt('./output/shcEf_z_xy.dat')
   shc_0_ef = shc_0[500,1] # SHC at Fermi Level
 
@@ -72,7 +72,7 @@ def main():
       shc_layer[i] = np.loadtxt('./output/shcEf_z_xy.dat')
       shc_ef[i]    = shc_layer[i,500,1] # SHC at Fermi Level
 
-# Plot of total SHC x Layer resolved. 
+# Plot of total SHC x Layer resolved.
 
   fig = plt.figure(figsize=(8,5))
   plt.title(r'SHC : Total x Layers')
@@ -90,7 +90,7 @@ def main():
 
 # SHC: Total X Layers Sum. Here we are summing all layer contribution. No need to normalize for the layer number.
 
-  shc_layer_sum = shc_layer[0] + shc_layer[1]  + shc_layer[2]  + shc_layer[3] 
+  shc_layer_sum = shc_layer[0] + shc_layer[1]  + shc_layer[2]  + shc_layer[3]
 
   fig = plt.figure(figsize=(8,5))
   plt.title(r'SHC : Total x Layers sum')
@@ -112,4 +112,3 @@ def main():
 
 if __name__== '__main__':
   main()
-

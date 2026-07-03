@@ -6,7 +6,7 @@ requires = ["flit_core >=3.2,<4"]
 name = "PAOFLOW"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "License" }
+license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Marco Buongiorno Nardelli", email = "mbn@unt.edu" }]
 keywords = ["DFT", "Hamiltonians", "PAO"]
 dynamic = ["version", "description"]
@@ -14,16 +14,29 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: POSIX :: Linux",
 ]
-dependencies = ["numpy~=2.4", "scipy>=1.17,<2", "mpi4py~=4.1"]
+dependencies = [    "numpy>=2.0,<2.3",
+    "scipy>=1.14,<2",
+    "mpi4py~=4.1",
+    "pandas>=2.2,<3",]
 
 [project.optional-dependencies]
 weyl_search = ["z2pack", "tbmodels"]
 graphics = ["vtk", "matplotlib"]
 transport = ["pyyaml", "psutil", "pydantic"]
-dev = ["pre-commit>=2.20.0"]
+pyskeaf = ["scikit-image>=0.20", "shapely>=2.0", "joblib>=1.2", "pandas>=2.0"]
+phonon = ["phonopy>=2.21", "phono3py>=2.3", "seekpath>=2.0"]
+fast = ["numba>=0.58"]
+dev = ["pre-commit>=2.20.0", "pytest>=7"]
+sparse = ["petsc4py", "slepc4py"]
 
 [project.urls]
 Homepage = "https://github.com/marcobn/PAOFLOW"
+
+[project.scripts]
+pyskeaf = "PAOFLOW.pyskeaf.cli:main"
+paoflow-genbasis-ps = "PAOFLOW.basis_gen.cli:main"
+paoflow-gen-qe = "PAOFLOW.gen.aflow_qe:main"
+paoflow-gen = "PAOFLOW.gen.paoflow_driver:main"
 
 [tool.ruff]
 line-length = 100
@@ -38,3 +51,7 @@ lint.ignore = [
 
 [tool.ruff.format]
 quote-style = "single"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

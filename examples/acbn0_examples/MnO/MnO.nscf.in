@@ -1,0 +1,39 @@
+ &control
+   calculation  = 'nscf',
+   restart_mode = 'from_scratch',
+   prefix       = 'MnO'
+   disk_io      = 'low',
+   pseudo_dir   = '.',
+   ! verbosity    = 'high',
+ /
+ &system
+   ibrav = 0, celldm(1) = 10.289967, 
+   nat = 4, ntyp = 3, nbnd = 36,
+   ecutwfc = 60, 
+   occupations = 'tetrahedra_opt'
+   nspin = 2,
+   starting_magnetization(1) = -0.2,
+   starting_magnetization(2) = 0.2
+ /
+ &electrons
+   diagonalization = 'david',
+   diago_full_acc  = .true.,
+   conv_thr        =  1.0D-8,
+   mixing_beta     =  0.7,
+   startingwfc     = 'random',
+ /
+ ATOMIC_SPECIES
+   MnA   0.000   Mn.upf
+   MnB   0.000   Mn.upf
+   O     0.000   O.upf
+ ATOMIC_POSITIONS crystal
+   MnA   0.000   0.000   0.000
+   MnB   0.500   0.500   0.500
+   O     0.250   0.250   0.250
+   O     0.750   0.750   0.750
+ K_POINTS automatic
+   4  4  4   0  0  0
+ CELL_PARAMETERS alat
+    0.272169 0.680413 0.680413
+    0.680413 0.272169 0.680413
+    0.680413 0.680413 0.272169                                 

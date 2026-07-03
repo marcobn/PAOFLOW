@@ -1,0 +1,53 @@
+Example 16 — `minimal` vs `standard` vs `extended` projection presets
+====================================================================
+
+This example demonstrates the three string presets accepted by
+`PAOFLOW.projections(..., configuration=...)`:
+
+  * `"minimal"`  — pseudo-atomic wavefunctions (`PP_PSWFC`) read
+                   straight from each species' UPF.
+  * `"standard"` — minimal valence shells from the AE/pseudo-atom
+                   radial database (no polarization).
+  * `"extended"` — `"standard"` augmented by a rule-based
+                   polarization set (see
+                   `PAOFLOW/inputs/basis_presets.py`).
+
+The radial database is generated **on the fly from the UPF** by
+`PAOFLOW.basis_gen.generate_basis_for_pseudo` (also exposed as the
+`paoflow-genbasis-ps` console script).  Each subdirectory writes a
+local `BASIS_PS/<Elem>/` tree; the legacy hand-curated `BASIS/`
+distributed with the repo is **not** used.
+
+Four subdirectories cover complementary regimes:
+
+  Si_ONCV/      scalar-relativistic ONCV pseudo (insulator, fcc Si)
+  Si_USPP/      scalar-relativistic ULTRASOFT pseudo (insulator, fcc
+                Si).  Exercises the augmented (USPP/PAW) branch of
+                ``basis_gen`` with NLCC; compare against ``Si_ONCV/``.
+  Pt_REL/       fully-relativistic ONCV pseudo (metal, fcc Pt,
+                noncollinear + spin-orbit; j-resolved radials)
+  Pt_USPP_REL/  fully-relativistic ULTRASOFT pseudo (metal, fcc Pt,
+                noncollinear + spin-orbit; j-resolved radials).
+                Exercises the augmented (USPP/PAW) branch of
+                ``basis_gen``: the generalized eigenproblem
+                ``H u = eps S u`` with augmentation overlap
+                ``S = I + sum_ij q_ij |beta_i><beta_j|`` is solved on
+                the box mesh.  Compare against ``Pt_REL/`` (same atom,
+                NC pseudo) to verify the augmented solver reproduces
+                the NC result.
+
+Workflow in each subdirectory
+-----------------------------
+1) `pw.x < scf.in  > scf.out`
+2) `pw.x < nscf.in > nscf.out`
+3) `python main.py`
+
+`main.py` is self-contained: on first run it generates `BASIS_PS/`
+from the local UPF, then runs PAOFLOW three times (one per preset)
+through the projections -> projectability -> pao_hamiltonian -> bands
+pipeline and writes
+    output_minimal/bands_0.dat
+    output_standard/bands_0.dat
+    output_extended/bands_0.dat
+plus an overlay `bands_minimal_vs_standard_vs_extended.png`
+(matplotlib optional).

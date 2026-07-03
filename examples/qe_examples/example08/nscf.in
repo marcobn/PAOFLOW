@@ -8,10 +8,6 @@
    wf_collect = .false.,
 /
 &system
-   lda_plus_u = .true.,
-   Hubbard_U(1) = 0.166567,
-   Hubbard_U(2) = 2.152901,
-   lda_plus_u_kind = 1,
    lspinorb = .true.,
    noncolin = .true.,
 
@@ -49,6 +45,10 @@
 ATOMIC_SPECIES 
 Sn  118.71  Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
 Te  127.60  Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
+
+HUBBARD (atomic)
+U Sn-5p 0.166567
+U Te-5p 2.152901
 
 ATOMIC_POSITIONS (angstrom)
 Sn       3.209230901   3.359791015   1.808577660
