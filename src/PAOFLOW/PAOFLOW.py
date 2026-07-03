@@ -4071,6 +4071,11 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
+        # Record the supercell so the analyse-phase helpers (assemble_eph_tensor,
+        # eliashberg) can initialise phonopy without re-running the generate phase.
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
 
