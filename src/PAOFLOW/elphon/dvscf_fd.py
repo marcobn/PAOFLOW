@@ -54,6 +54,7 @@ def build_supercell_HRs(
     pthr=0.95,
     shift_type=1,
     return_shift=False,
+    return_symmetry_inputs=False,
 ):
     """Rebuild the PAO real-space Hamiltonian ``HRs`` for one supercell ``.save``.
 
@@ -61,7 +62,13 @@ def build_supercell_HRs(
     ``pao_hamiltonian``) on the displaced supercell and returns its ``HRs``
     array ``(nawf, nawf, nk1, nk2, nk3, nspin)``.  If ``return_shift`` is
     ``True`` also returns the completion energy ``eta`` (``attr['shift']``),
-    needed to build the good-projectability subspace projector.
+    needed to build the good-projectability subspace projector.  If
+    ``return_symmetry_inputs`` is ``True`` also returns the arrays needed to
+    build the crystal-symmetry operators (so a single reference-supercell build
+    can serve the ``dV`` finite difference *and* the symmetry expansion).
+
+    Extra return values follow ``HRs`` in the order ``shift``,
+    ``symmetry_inputs``.
     """
     from ..PAOFLOW import PAOFLOW
 
@@ -75,9 +82,26 @@ def build_supercell_HRs(
 
     arry, attr = pf.data_controller.data_dicts()
     hrs = np.asarray(arry['HRs'])
+    if not (return_shift or return_symmetry_inputs):
+        return hrs
+
+    extras = []
     if return_shift:
-        return hrs, float(attr['shift'])
-    return hrs
+        extras.append(float(attr['shift']))
+    if return_symmetry_inputs:
+        extras.append(
+            {
+                'a_vectors': np.asarray(arry['a_vectors']),
+                'tau': np.asarray(arry['tau']),
+                'alat': float(attr['alat']),
+                'sym_rot': np.asarray(arry['sym_rot']),
+                'equiv_atom': np.asarray(arry['equiv_atom']),
+                'shells_per_atom': arry['shells'],
+                'atom_labels': arry['atoms'],
+                'ngrid': tuple(int(n) for n in hrs.shape[2:5]),
+            }
+        )
+    return (hrs, *extras)
 
 
 def supercell_symmetry_operators(
@@ -100,29 +124,18 @@ def supercell_symmetry_operators(
     dict
         The operator set from :func:`build_dv_symmetry_operators`.
     """
-    from ..PAOFLOW import PAOFLOW
     from .symmetry import build_dv_symmetry_operators
 
-    pf = PAOFLOW(workpath=workpath, savedir=savedir, outputdir='.', verbose=False)
-    if basispath is not None:
-        pf.projections(basispath=basispath, configuration=configuration)
-    else:
-        pf.projections(configuration=configuration)
-    pf.projectability(pthr=pthr)
-    pf.pao_hamiltonian(shift_type=shift_type)
-
-    arry, attr = pf.data_controller.data_dicts()
-    ngrid = tuple(int(n) for n in np.asarray(arry['HRs']).shape[2:5])
-    return build_dv_symmetry_operators(
-        arry['a_vectors'],
-        arry['tau'],
-        float(attr['alat']),
-        arry['sym_rot'],
-        arry['equiv_atom'],
-        arry['shells'],
-        arry['atoms'],
-        ngrid,
+    _, sym_inputs = build_supercell_HRs(
+        savedir,
+        workpath=workpath,
+        configuration=configuration,
+        basispath=basispath,
+        pthr=pthr,
+        shift_type=shift_type,
+        return_symmetry_inputs=True,
     )
+    return build_dv_symmetry_operators(**sym_inputs)
 
 
 def good_subspace_projectors(HRs_ref, eta, tol=0.05):
@@ -318,7 +331,7 @@ def compute_dV(
     if verify_saves:
         _verify_save_displacements(edir, disps, reference_prefix)
 
-    def _hrs(prefix, return_shift=False):
+    def _hrs(prefix, return_shift=False, return_symmetry_inputs=False):
         return build_supercell_HRs(
             _save_dir_for(prefix),
             workpath=edir,
@@ -327,25 +340,31 @@ def compute_dV(
             pthr=pthr,
             shift_type=shift_type,
             return_shift=return_shift,
+            return_symmetry_inputs=return_symmetry_inputs,
         )
 
-    # Good-projectability subspace projector, built once from the reference
-    # supercell.  Projecting dV onto it removes the unphysical coupling through
-    # the eta-completion complement (the off-diagonal inter-band artifact), while
-    # preserving the physical (eigenvalue-pinned) deformation potential.
-    Pgood = None
-    if project_good_subspace:
-        if not reference_prefix:
-            raise ValueError('project_good_subspace needs the reference supercell prefix.')
-        h_ref_g, eta_ref = _hrs(reference_prefix, return_shift=True)
-        Pgood = good_subspace_projectors(h_ref_g, eta_ref)
-
-    # The reference (u = 0) Hamiltonian is only needed for forward differences.
+    # The reference (u = 0) supercell is needed for the good-subspace projector
+    # and for forward differences.  Build it at most once and -- when built --
+    # also capture its crystal-symmetry inputs so the downstream symmetry
+    # expansion can reuse them instead of rebuilding the reference Hamiltonian.
     needs_reference = any(_opposite_index(disps, i) is None for i in range(len(disps)))
-    if needs_reference:
+    ref_hrs = None
+    ref_sym_inputs = None
+    Pgood = None
+    if project_good_subspace or needs_reference:
         if not reference_prefix:
-            raise ValueError('A forward difference needs the reference supercell prefix.')
-        h_ref = _hrs(reference_prefix)
+            raise ValueError(
+                'The reference supercell prefix is required for the good-subspace '
+                'projection or forward differences.'
+            )
+        want_shift = project_good_subspace
+        ref = _hrs(reference_prefix, return_shift=want_shift, return_symmetry_inputs=True)
+        if want_shift:
+            ref_hrs, eta_ref, ref_sym_inputs = ref
+            Pgood = good_subspace_projectors(ref_hrs, eta_ref)
+        else:
+            ref_hrs, ref_sym_inputs = ref
+    h_ref = ref_hrs  # reused reference for forward differences
 
     directional = []
     used = set()
@@ -372,6 +391,7 @@ def compute_dV(
         'distance': distance,
         'reference_prefix': reference_prefix,
         'directional': directional,
+        'ref_symmetry_inputs': ref_sym_inputs,
     }
     arry['elphon_dV'] = result
     return result

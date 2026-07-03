@@ -161,21 +161,29 @@ def assemble_eph_tensor(
 
     do_expand = symmetry_expand is True or (symmetry_expand == 'auto' and _needs_expansion(by_atom))
     if do_expand:
-        from .dvscf_fd import _save_dir_for, supercell_symmetry_operators
-        from .symmetry import expand_directional_responses
+        from .symmetry import build_dv_symmetry_operators, expand_directional_responses
 
-        reference_prefix = result.get('reference_prefix')
-        if not reference_prefix:
-            raise ValueError('symmetry expansion requires the reference supercell prefix.')
-        edir = os.path.abspath(resolve_phonon_dir(data_controller, elphon_dir))
-        ops = supercell_symmetry_operators(
-            _save_dir_for(reference_prefix),
-            workpath=edir,
-            configuration=configuration,
-            basispath=basispath,
-            pthr=pthr,
-            shift_type=shift_type,
-        )
+        # Reuse the reference-supercell symmetry inputs cached by compute_dV
+        # (built together with the good-subspace projector / forward-difference
+        # reference), so the reference PAO Hamiltonian is not rebuilt again here.
+        sym_inputs = result.get('ref_symmetry_inputs')
+        if sym_inputs is not None:
+            ops = build_dv_symmetry_operators(**sym_inputs)
+        else:
+            from .dvscf_fd import _save_dir_for, supercell_symmetry_operators
+
+            reference_prefix = result.get('reference_prefix')
+            if not reference_prefix:
+                raise ValueError('symmetry expansion requires the reference supercell prefix.')
+            edir = os.path.abspath(resolve_phonon_dir(data_controller, elphon_dir))
+            ops = supercell_symmetry_operators(
+                _save_dir_for(reference_prefix),
+                workpath=edir,
+                configuration=configuration,
+                basispath=basispath,
+                pthr=pthr,
+                shift_type=shift_type,
+            )
         directional = expand_directional_responses(directional, ops)
 
     # Group directional derivatives by the primitive atom they displace.

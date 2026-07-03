@@ -2772,6 +2772,12 @@ def build_elphon_script(cfg):
         "DISPLACEMENT_MODE = {!r}   # 'symmetry' (1 displacement, expanded by symmetry) "
         "or 'cartesian'".format(cfg['displacement_mode'])
     )
+    lines.append(
+        'IS_PLUSMINUS = {!r}   # True = central (+/-) differences (2nd order, ~2x SCF runs); '
+        "'auto' = forward (symmetry-minimal)".format(
+            True if cfg.get('central_difference') else 'auto'
+        )
+    )
     lines.append('')
     lines.append('# PAO Hamiltonian / analyse settings.')
     lines.append(
@@ -2853,6 +2859,7 @@ def build_elphon_script(cfg):
     lines.append('        hubbard_file=HUBBARD_FILE,')
     lines.append('        configuration=CONFIGURATION,')
     lines.append('        displacement_mode=DISPLACEMENT_MODE,')
+    lines.append('        is_plusminus=IS_PLUSMINUS,')
     lines.append('    )')
     lines.append('    if _need_phonon_scf():')
     lines.append('        # Harmonic fc2 supercells (same cell) for the Eliashberg frequencies.')
@@ -3293,6 +3300,11 @@ def collect_elphon(common):
         'cartesian = explicit x,y,z)',
         ['symmetry', 'cartesian'],
         'symmetry',
+    )
+    cfg['central_difference'] = ask_yes_no(
+        'Use central differences (+/- displacements; second-order accurate, but '
+        'roughly doubles the number of displaced-supercell SCF runs)?',
+        False,
     )
     cfg['configuration'] = ask_choice(
         'PAO basis configuration', ['minimal', 'standard', 'extended'], 'standard'
