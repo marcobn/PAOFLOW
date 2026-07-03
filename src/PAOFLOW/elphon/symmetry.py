@@ -211,7 +211,7 @@ def build_dv_symmetry_operators(
     }
 
 
-def rotate_dV_under_symmetry(dV, isym, ops):
+def rotate_dV_under_symmetry(dV, isym, ops, chunk_bytes=128 * 1024 * 1024):
     """Rotate a supercell ``dV`` operator by space-group operation ``isym``.
 
     ``dV`` is the electronic response (a Hermitian-structured PAO operator) to
@@ -228,6 +228,12 @@ def rotate_dV_under_symmetry(dV, isym, ops):
         Index of the operation in ``ops``.
     ops : dict
         Operator set from :func:`build_dv_symmetry_operators`.
+    chunk_bytes : int, optional
+        Approximate memory budget (bytes) for the per-chunk working arrays of the
+        change-of-basis step.  The ``(k, spin)`` batch is processed in blocks so
+        peak memory stays bounded to roughly ``dVk`` + ``out`` + one chunk,
+        rather than several ``nawf**2 * N_tot`` copies (many GB for large
+        supercells).  Larger values trade memory for slightly larger GEMMs.
 
     Returns
     -------
@@ -242,7 +248,7 @@ def rotate_dV_under_symmetry(dV, isym, ops):
 
     U = ops['U'][isym]
     Ud = np.conj(U.T)
-    W = ops['symop'][isym]
+    W = np.asarray(ops['symop'][isym])
     shift = ops['phase'][isym]  # (natom, 3)
     a_index = ops['a_index']
     inv_flag = bool(ops['inv_flag'][isym])
@@ -254,27 +260,53 @@ def rotate_dV_under_symmetry(dV, isym, ops):
 
     # Bloch transform (e^{+2 pi i k.R}); matches the eliashberg convention.
     dVk = np.fft.ifftn(dV, axes=(2, 3, 4)) * ntot
-    out = np.zeros_like(dVk)
 
+    # Integer k-frequencies on the grid (C order matching the reshape below).
+    KF1, KF2, KF3 = np.meshgrid(kf1, kf2, kf3, indexing='ij')
+    kfrac = np.stack([KF1.ravel() / n1, KF2.ravel() / n2, KF3.ravel() / n3], axis=0)  # (3, nk)
+
+    # Per-orbital phase exp(-2 pi i shift.k) for every k at once: (nawf, nk).
     shift_orb = shift[a_index]  # (nawf, 3)
-    for i1 in range(n1):
-        for i2 in range(n2):
-            for i3 in range(n3):
-                k = np.array([kf1[i1] / n1, kf2[i2] / n2, kf3[i3] / n3])
-                ph = np.exp(-2.0j * np.pi * (shift_orb @ k))  # (nawf,)
-                Uk = U * ph[None, :]
-                Ukd = np.conj(Uk.T)
-                # target k' index
-                kp = W @ k
-                j1 = int(round(kp[0] * n1)) % n1
-                j2 = int(round(kp[1] * n2)) % n2
-                j3 = int(round(kp[2] * n3)) % n3
-                for s in range(nspin):
-                    THP = Uk @ dVk[:, :, i1, i2, i3, s] @ Ukd
-                    if inv_flag:
-                        THP = THP * U_inv
-                    out[:, :, j1, j2, j3, s] = THP
+    ph = np.exp(-2.0j * np.pi * (shift_orb @ kfrac))  # (nawf, nk)
 
+    # Scatter map k -> k' = (W k) (a permutation of the flat k-index).
+    newf = W @ np.stack([KF1.ravel(), KF2.ravel(), KF3.ravel()], axis=0)  # (3, nk)
+    j1 = np.rint(newf[0]).astype(int) % n1
+    j2 = np.rint(newf[1]).astype(int) % n2
+    j3 = np.rint(newf[2]).astype(int) % n3
+    tgt = (j1 * n2 + j2) * n3 + j3  # target flat k-index
+
+    # U_k M U_k^dagger  with  U_k = U diag(ph)  reduces to
+    #   U [ dVk * outer(ph, conj(ph)) ] U^dagger,
+    # i.e. an elementwise phase then a single k-independent change of basis.
+    # The batch (k, spin) is processed in chunks so the two contractions are
+    # single BLAS-sized GEMMs (batched matmul over 1000s of tiny matrices is
+    # latency bound), while peak memory stays bounded to ~dVk + out + one chunk
+    # -- a fully vectorised version would hold several nawf^2 * N_tot copies,
+    # which is many GB for large supercells.
+    dVk_flat = dVk.reshape(nawf, nawf, ntot, nspin)
+    out = np.empty_like(dVk_flat)
+
+    per_k = nawf * nawf * max(nspin, 1) * dVk.dtype.itemsize
+    chunk = int(np.clip(chunk_bytes // max(per_k, 1), 1, ntot))
+    Uinv_b = U_inv[:, :, None, None] if inv_flag else None
+    for c0 in range(0, ntot, chunk):
+        c1 = min(c0 + chunk, ntot)
+        nc = c1 - c0
+        nbc = nc * nspin
+        Mc = (
+            dVk_flat[:, :, c0:c1, :] * ph[:, None, c0:c1, None] * np.conj(ph)[None, :, c0:c1, None]
+        ).reshape(nawf, nawf, nbc)
+        # T[p, j] = sum_i U[p, i] Mc[i, j];  THP[p, q] = sum_j T[p, j] conj(U[q, j]).
+        Tc = (U @ Mc.reshape(nawf, nawf * nbc)).reshape(nawf, nawf, nbc)
+        Hc = (Tc.transpose(0, 2, 1).reshape(nawf * nbc, nawf) @ Ud).reshape(nawf, nbc, nawf)
+        Hc = Hc.transpose(0, 2, 1).reshape(nawf, nawf, nc, nspin)
+        if inv_flag:
+            Hc = Hc * Uinv_b
+        out[:, :, tgt[c0:c1], :] = Hc
+
+    del dVk, dVk_flat  # free the k-space input before the final transform
+    out = out.reshape(nawf, nawf, n1, n2, n3, nspin)
     dV_rot = np.fft.fftn(out, axes=(2, 3, 4)) / ntot
     if not np.iscomplexobj(dV):
         dV_rot = dV_rot.real
