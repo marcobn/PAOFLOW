@@ -80,6 +80,51 @@ def build_supercell_HRs(
     return hrs
 
 
+def supercell_symmetry_operators(
+    savedir,
+    workpath='.',
+    configuration='standard',
+    basispath=None,
+    pthr=0.95,
+    shift_type=1,
+):
+    """Crystal-symmetry operators of a (reference) supercell ``.save``.
+
+    Runs the PAO pipeline on the undisplaced supercell to obtain its space-group
+    operations, atomic positions and orbital layout, and packages them (via
+    :func:`PAOFLOW.elphon.symmetry.build_dv_symmetry_operators`) into the operator
+    set used to symmetry-rotate the supercell ``dV`` tensor.
+
+    Returns
+    -------
+    dict
+        The operator set from :func:`build_dv_symmetry_operators`.
+    """
+    from ..PAOFLOW import PAOFLOW
+    from .symmetry import build_dv_symmetry_operators
+
+    pf = PAOFLOW(workpath=workpath, savedir=savedir, outputdir='.', verbose=False)
+    if basispath is not None:
+        pf.projections(basispath=basispath, configuration=configuration)
+    else:
+        pf.projections(configuration=configuration)
+    pf.projectability(pthr=pthr)
+    pf.pao_hamiltonian(shift_type=shift_type)
+
+    arry, attr = pf.data_controller.data_dicts()
+    ngrid = tuple(int(n) for n in np.asarray(arry['HRs']).shape[2:5])
+    return build_dv_symmetry_operators(
+        arry['a_vectors'],
+        arry['tau'],
+        float(attr['alat']),
+        arry['sym_rot'],
+        arry['equiv_atom'],
+        arry['shells'],
+        arry['atoms'],
+        ngrid,
+    )
+
+
 def good_subspace_projectors(HRs_ref, eta, tol=0.05):
     """Build the good-projectability subspace projectors ``P_good(K)``.
 

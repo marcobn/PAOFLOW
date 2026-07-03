@@ -122,3 +122,213 @@ def cartesian_derivatives_from_directional(directions, responses, rcond=None):
     rhs = resp.reshape(dirs.shape[0], -1)
     sol, *_ = np.linalg.lstsq(dirs, rhs, rcond=rcond)  # (3, M)
     return sol.reshape((3,) + tensor_shape)
+
+
+def build_dv_symmetry_operators(
+    a_vectors, tau, alat, sym_rot, equiv_atom, shells_per_atom, atom_labels, ngrid
+):
+    """Prepare the crystal-symmetry operator set that rotates a supercell PAO
+    operator (``H`` or ``dV``) exactly as :mod:`PAOFLOW.hamiltonian.pao_sym`.
+
+    The returned operators act on a supercell-basis operator ``M(k)`` (Bloch
+    transform ``M(k) = sum_R M(R) exp(+2 pi i k.R)``) via
+
+    .. math::
+
+        M(W k) = U_k \\, M(k) \\, U_k^{\\dagger} \\;[\\times U_{inv}]
+
+    with ``U_k = U * exp(-2 pi i (shift[a_index] . k))``.  This convention has
+    been validated to reproduce ``H(Wk)`` to machine precision for every space
+    group operation of the Al 2x2x2 supercell.
+
+    Parameters
+    ----------
+    a_vectors : (3, 3) array
+        Lattice vectors as rows, in ``alat`` units (supercell cell).
+    tau : (natom, 3) array
+        Atomic positions in Cartesian (Bohr) coordinates.
+    alat : float
+        Lattice parameter (Bohr) used to normalise ``tau``.
+    sym_rot : (nsym, 3, 3) array
+        Fractional (crystal) rotation matrices.
+    equiv_atom : (nsym, natom) int array
+        ``equiv_atom[isym, i]`` is the atom that block ``i`` draws from under the
+        operation (the ``map_equiv_atoms`` convention).
+    shells_per_atom : dict
+        Mapping ``atom_label -> list of orbital l`` (PAOFLOW ``arry['shells']``).
+    atom_labels : sequence
+        Per-atom species labels (``arry['atoms']``).
+    ngrid : tuple(int, int, int)
+        The supercell ``R``/``k`` grid sizes ``(n1, n2, n3)``.
+
+    Returns
+    -------
+    dict
+        ``{'symop', 'symop_cart', 'U', 'phase', 'a_index', 'inv_flag',
+        'U_inv', 'equiv_atom', 'ngrid'}``.
+    """
+    import scipy.linalg as _LA
+
+    from ..hamiltonian import pao_sym as ps
+
+    a_vectors = np.asarray(a_vectors, dtype=float)
+    tau = np.asarray(tau, dtype=float)
+    equiv_atom = np.asarray(equiv_atom, dtype=int)
+
+    symop = ps.correct_roundoff(np.asarray(sym_rot, dtype=float))
+    inv_a = _LA.inv(a_vectors)
+    symop_cart = np.array([inv_a @ symop[i] @ a_vectors for i in range(symop.shape[0])])
+    symop_cart = ps.correct_roundoff(symop_cart, incl_hex=True, atol=1.0e-6)
+
+    atom_pos = np.around(ps.correct_roundoff((tau / alat) @ inv_a), 6)
+
+    shells = []
+    a_index = []
+    for i, lab in enumerate(atom_labels):
+        ash = list(shells_per_atom[lab])
+        shells += ash
+        a_index += [i] * int(np.sum([2 * n + 1 for n in ash]))
+    shells = np.array(shells)
+    a_index = np.array(a_index)
+
+    wigner, inv_flag = ps.get_wigner(symop_cart)
+    wigner = ps.convert_wigner_d(wigner)
+    U = ps.build_U_matrix(wigner, shells)
+    U = ps.add_U_wyc(U, ps.map_equiv_atoms(a_index, equiv_atom))
+    U_inv = ps.get_inv_op(shells)
+    phase = ps.get_phase_shifts(atom_pos, symop, equiv_atom)
+
+    return {
+        'symop': symop,
+        'symop_cart': symop_cart,
+        'U': U,
+        'phase': phase,
+        'a_index': a_index,
+        'inv_flag': np.asarray(inv_flag, dtype=int),
+        'U_inv': U_inv,
+        'equiv_atom': equiv_atom,
+        'ngrid': tuple(int(x) for x in ngrid),
+    }
+
+
+def rotate_dV_under_symmetry(dV, isym, ops):
+    """Rotate a supercell ``dV`` operator by space-group operation ``isym``.
+
+    ``dV`` is the electronic response (a Hermitian-structured PAO operator) to
+    displacing one supercell atom ``kappa`` along a direction ``d``.  The result
+    is the response of the *image* atom ``equiv_atom[isym, kappa]`` displaced
+    along ``symop_cart[isym] . d`` -- i.e. the caller relabels the displaced atom
+    and direction accordingly.
+
+    Parameters
+    ----------
+    dV : ndarray, shape (nawf, nawf, n1, n2, n3, nspin)
+        Supercell real-space derivative.
+    isym : int
+        Index of the operation in ``ops``.
+    ops : dict
+        Operator set from :func:`build_dv_symmetry_operators`.
+
+    Returns
+    -------
+    ndarray
+        Rotated ``dV`` of identical shape.
+    """
+    dV = np.asarray(dV)
+    nawf = dV.shape[0]
+    n1, n2, n3 = ops['ngrid']
+    ntot = n1 * n2 * n3
+    nspin = dV.shape[5]
+
+    U = ops['U'][isym]
+    Ud = np.conj(U.T)
+    W = ops['symop'][isym]
+    shift = ops['phase'][isym]  # (natom, 3)
+    a_index = ops['a_index']
+    inv_flag = bool(ops['inv_flag'][isym])
+    U_inv = ops['U_inv']
+
+    kf1 = np.fft.fftfreq(n1, 1.0 / n1).astype(int)
+    kf2 = np.fft.fftfreq(n2, 1.0 / n2).astype(int)
+    kf3 = np.fft.fftfreq(n3, 1.0 / n3).astype(int)
+
+    # Bloch transform (e^{+2 pi i k.R}); matches the eliashberg convention.
+    dVk = np.fft.ifftn(dV, axes=(2, 3, 4)) * ntot
+    out = np.zeros_like(dVk)
+
+    shift_orb = shift[a_index]  # (nawf, 3)
+    for i1 in range(n1):
+        for i2 in range(n2):
+            for i3 in range(n3):
+                k = np.array([kf1[i1] / n1, kf2[i2] / n2, kf3[i3] / n3])
+                ph = np.exp(-2.0j * np.pi * (shift_orb @ k))  # (nawf,)
+                Uk = U * ph[None, :]
+                Ukd = np.conj(Uk.T)
+                # target k' index
+                kp = W @ k
+                j1 = int(round(kp[0] * n1)) % n1
+                j2 = int(round(kp[1] * n2)) % n2
+                j3 = int(round(kp[2] * n3)) % n3
+                for s in range(nspin):
+                    THP = Uk @ dVk[:, :, i1, i2, i3, s] @ Ukd
+                    if inv_flag:
+                        THP = THP * U_inv
+                    out[:, :, j1, j2, j3, s] = THP
+
+    dV_rot = np.fft.fftn(out, axes=(2, 3, 4)) / ntot
+    if not np.iscomplexobj(dV):
+        dV_rot = dV_rot.real
+    return dV_rot
+
+
+def expand_directional_responses(directional, ops, tol=1.0e-4):
+    """Symmetry-expand a reduced set of directional ``dV`` responses.
+
+    A symmetry-reduced calculation (``displacement_mode='symmetry'``) measures
+    the Hamiltonian derivative along a *single* direction per inequivalent atom.
+    For each measured entry the site-symmetry operations of the displaced atom
+    are applied to generate the star ``{W.d}`` of directions with their rotated
+    ``dV`` tensors, so that every displaced atom acquires at least three linearly
+    independent directions -- the input the Cartesian least-squares solve
+    (:func:`cartesian_derivatives_from_directional`) requires.
+
+    Parameters
+    ----------
+    directional : list[dict]
+        Measured responses ``{sc_atom, displacement, dV}`` (Cartesian
+        ``displacement``; supercell-basis ``dV``).
+    ops : dict
+        Operator set from :func:`build_dv_symmetry_operators` (of the reference
+        supercell).
+    tol : float
+        Tolerance for treating two (anti-)parallel directions as duplicates.
+
+    Returns
+    -------
+    list[dict]
+        Expanded list of ``{sc_atom, displacement, dV}`` entries.
+    """
+    symop_cart = ops['symop_cart']
+    equiv = ops['equiv_atom']
+    nsym = symop_cart.shape[0]
+
+    expanded = []
+    for entry in directional:
+        k0 = int(entry['sc_atom'])
+        d0 = np.asarray(entry['displacement'], dtype=float)
+        dV0 = np.asarray(entry['dV'])
+        seen = []
+        for isym in range(nsym):
+            if int(equiv[isym, k0]) != k0:
+                continue  # site-symmetry operations only
+            d_new = symop_cart[isym] @ d0
+            norm = np.linalg.norm(d_new)
+            if norm < 1.0e-12:
+                continue
+            u = d_new / norm
+            if any(np.allclose(u, s, atol=tol) or np.allclose(u, -s, atol=tol) for s in seen):
+                continue
+            seen.append(u)
+            dV_new = rotate_dV_under_symmetry(dV0, isym, ops)
+            expanded.append({'sc_atom': k0, 'displacement': d_new.tolist(), 'dV': dV_new})
+    return expanded

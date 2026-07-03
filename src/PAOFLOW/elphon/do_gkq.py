@@ -17,9 +17,12 @@ the Cartesian derivative ``dH/du_{kappa,alpha}`` of the primitive hopping over
 the electron grid ``R_e`` and the commensurate phonon-cell grid ``R_p``.
 """
 
+import os
+
 import numpy as np
 
 from ..phonon.do_phonopy import init_phonopy
+from ..phonon.io import resolve_phonon_dir
 from .dvscf_fd import compute_dV
 from .fold import fold_dV_to_primitive, supercell_atom_translations, supercell_naw
 from .symmetry import cartesian_derivatives_from_directional
@@ -87,15 +90,22 @@ def assemble_eph_tensor(
     pthr=0.95,
     shift_type=1,
     enforce_asr=True,
+    symmetry_expand='auto',
 ):
     """Build the primitive Cartesian electron-phonon real-space tensor.
 
     Requires directional derivatives that span the three Cartesian directions
-    for every displaced atom (``displacement_mode='cartesian'``, or
-    ``'symmetry'`` once the Wigner-D expansion is applied).
+    for every displaced atom.  With ``displacement_mode='cartesian'`` these are
+    measured directly; with ``displacement_mode='symmetry'`` a single reduced
+    direction per atom is symmetry-expanded to the full star (Wigner-D rotation
+    of the PAO ``dV``) via :func:`PAOFLOW.elphon.symmetry.expand_directional_responses`.
 
     Parameters
     ----------
+    symmetry_expand : {'auto', True, False}, optional
+        Whether to symmetry-expand the directional responses.  ``'auto'``
+        (default) expands only when some displaced atom lacks three independent
+        directions; ``True`` always expands; ``False`` never does.
     enforce_asr : bool, optional
         If ``True`` (default), impose the translational acoustic sum rule on the
         assembled tensor via :func:`enforce_acoustic_sum_rule`.  The pre-
@@ -135,6 +145,38 @@ def assemble_eph_tensor(
     naw = supercell_naw(phonon, configuration, _pp_filenames(data_controller), pp_dir)
 
     supercell_matrix = phonon.supercell_matrix
+
+    # Symmetry-expand the reduced directional responses when some displaced atom
+    # lacks three independent directions (symmetry displacement mode).
+    def _needs_expansion(entries_by_atom):
+        for entries in entries_by_atom.values():
+            dirs = np.array([e['displacement'] for e in entries], dtype=float)
+            if dirs.shape[0] < 3 or np.linalg.matrix_rank(dirs, tol=1.0e-8) < 3:
+                return True
+        return False
+
+    by_atom = {}
+    for d in directional:
+        by_atom.setdefault(int(d['sc_atom']), []).append(d)
+
+    do_expand = symmetry_expand is True or (symmetry_expand == 'auto' and _needs_expansion(by_atom))
+    if do_expand:
+        from .dvscf_fd import _save_dir_for, supercell_symmetry_operators
+        from .symmetry import expand_directional_responses
+
+        reference_prefix = result.get('reference_prefix')
+        if not reference_prefix:
+            raise ValueError('symmetry expansion requires the reference supercell prefix.')
+        edir = os.path.abspath(resolve_phonon_dir(data_controller, elphon_dir))
+        ops = supercell_symmetry_operators(
+            _save_dir_for(reference_prefix),
+            workpath=edir,
+            configuration=configuration,
+            basispath=basispath,
+            pthr=pthr,
+            shift_type=shift_type,
+        )
+        directional = expand_directional_responses(directional, ops)
 
     # Group directional derivatives by the primitive atom they displace.
     by_prim = {}
