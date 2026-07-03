@@ -28,6 +28,8 @@ _AMU_KG = 1.66053906660e-27
 _BOHR_M = 5.29177210903e-11
 # 1 THz -> eV.
 THZ_TO_EV = 4.135667696e-3
+# 1 eV expressed as a temperature (E / k_B), in kelvin.
+EV_TO_K = 11604.518
 
 
 def bloch_hamiltonian(HR):
@@ -216,6 +218,130 @@ def _gaussian_delta(x, sigma):
     return np.exp(-0.5 * (x / sigma) ** 2) / (sigma * np.sqrt(2.0 * np.pi))
 
 
+def phonon_moments(lambda_qv, omega_thz):
+    r"""Coupling-weighted logarithmic and second phonon-frequency moments.
+
+    From the per-mode coupling ``lambda_qv`` and frequencies ``omega_thz`` (THz),
+    with the Eliashberg normalisation
+    ``a2F(w) = (1/Nq) sum_qv (1/2) lambda_qv w_qv delta(w - w_qv)`` (so
+    ``lambda = 2 int a2F/w dw``), the moments reduce to ``lambda_qv``-weighted
+    averages of the mode frequencies:
+
+    .. math::
+
+        \omega_{\log} = \exp\!\Big(\frac{\sum_{q\nu}\lambda_{q\nu}\ln\omega_{q\nu}}
+                                        {\sum_{q\nu}\lambda_{q\nu}}\Big),
+        \qquad
+        \bar\omega_2 = \Big(\frac{\sum_{q\nu}\lambda_{q\nu}\omega_{q\nu}^2}
+                                  {\sum_{q\nu}\lambda_{q\nu}}\Big)^{1/2}.
+
+    Computing them from the discrete mode sums (rather than the Gaussian-smeared
+    ``a2F`` array) avoids the artificial low-frequency tail near ``w -> 0``.
+
+    Parameters
+    ----------
+    lambda_qv : array_like
+        Per-mode coupling (any shape; flattened).
+    omega_thz : array_like
+        Matching phonon frequencies in THz.
+
+    Returns
+    -------
+    tuple(float, float)
+        ``(omega_log, omega_2)`` in eV.  ``(0.0, 0.0)`` when the total coupling
+        is non-positive.
+    """
+    lam = np.asarray(lambda_qv, dtype=float).ravel()
+    w = np.asarray(omega_thz, dtype=float).ravel() * THZ_TO_EV  # eV
+    mask = (w > 1.0e-6) & (lam > 0.0)
+    total = float(lam[mask].sum())
+    if total <= 0.0:
+        return 0.0, 0.0
+    ll = lam[mask]
+    wl = w[mask]
+    omega_log = float(np.exp(np.sum(ll * np.log(wl)) / total))
+    omega_2 = float(np.sqrt(np.sum(ll * wl**2) / total))
+    return omega_log, omega_2
+
+
+def mcmillan_allen_dynes_tc(lam, omega_log_ev, omega2_ev, mu_star=0.10):
+    r"""Superconducting ``Tc`` from the McMillan and Allen-Dynes equations.
+
+    .. math::
+
+        T_c^{\rm McM} = \frac{\omega_{\log}}{1.2}\,
+            \exp\!\Big[\frac{-1.04(1+\lambda)}{\lambda-\mu^*(1+0.62\lambda)}\Big],
+        \qquad T_c^{\rm AD} = f_1 f_2\, T_c^{\rm McM},
+
+    with the Allen-Dynes strong-coupling (``f1``) and shape (``f2``) corrections
+
+    .. math::
+
+        f_1 = \big[1+(\lambda/\Lambda_1)^{3/2}\big]^{1/3},\quad
+        f_2 = 1 + \frac{(\bar\omega_2/\omega_{\log}-1)\lambda^2}
+                        {\lambda^2+\Lambda_2^2},
+
+    ``Lambda_1 = 2.46(1+3.8\mu^*)``,
+    ``Lambda_2 = 1.82(1+6.3\mu^*)(\bar\omega_2/\omega_{\log})``.  When the
+    denominator ``lambda - mu*(1 + 0.62 lambda)`` is non-positive the equation
+    predicts no superconductivity and ``Tc = 0`` is returned.
+
+    Parameters
+    ----------
+    lam : float
+        Total electron-phonon coupling ``lambda``.
+    omega_log_ev, omega2_ev : float
+        Logarithmic and second moments (eV), e.g. from :func:`phonon_moments`.
+    mu_star : float, optional
+        Morel-Anderson Coulomb pseudopotential (default ``0.10``; typical
+        ``0.10-0.13``).
+
+    Returns
+    -------
+    dict
+        ``{'Tc_mcmillan_K', 'Tc_allen_dynes_K', 'omega_log_K', 'omega_2_K',
+        'f1', 'f2', 'mu_star'}``.
+    """
+    lam = float(lam)
+    mu_star = float(mu_star)
+    omega_log_ev = float(omega_log_ev)
+    omega2_ev = float(omega2_ev)
+    omega_log_K = omega_log_ev * EV_TO_K
+    omega_2_K = omega2_ev * EV_TO_K
+
+    denom = lam - mu_star * (1.0 + 0.62 * lam)
+    if denom <= 0.0 or omega_log_ev <= 0.0:
+        return {
+            'Tc_mcmillan_K': 0.0,
+            'Tc_allen_dynes_K': 0.0,
+            'omega_log_K': omega_log_K,
+            'omega_2_K': omega_2_K,
+            'f1': 1.0,
+            'f2': 1.0,
+            'mu_star': mu_star,
+        }
+
+    expf = np.exp(-1.04 * (1.0 + lam) / denom)
+    tc_mcm = omega_log_K / 1.2 * expf
+
+    ratio = omega2_ev / omega_log_ev
+    lam1 = 2.46 * (1.0 + 3.8 * mu_star)
+    lam2 = 1.82 * (1.0 + 6.3 * mu_star) * ratio
+    f1 = (1.0 + (lam / lam1) ** 1.5) ** (1.0 / 3.0)
+    f2 = 1.0 + ((ratio - 1.0) * lam**2) / (lam**2 + lam2**2)
+    tc_ad = f1 * f2 * omega_log_K / 1.2 * expf
+
+    return {
+        'Tc_mcmillan_K': float(tc_mcm),
+        'Tc_allen_dynes_K': float(tc_ad),
+        'omega_log_K': omega_log_K,
+        'omega_2_K': omega_2_K,
+        'f1': float(f1),
+        'f2': float(f2),
+        'mu_star': mu_star,
+    }
+
+
 def eliashberg(
     data_controller,
     g_R,
@@ -225,6 +351,7 @@ def eliashberg(
     nk_electron=None,
     nomega=400,
     omega_pad=1.2,
+    mu_star=0.10,
     return_gkq=False,
 ):
     """Assemble ``g_mn^v(k, q)`` and the isotropic ``a2F(omega)`` / ``lambda``.
@@ -240,6 +367,9 @@ def eliashberg(
         ``dH/du`` are Fourier-interpolated to it, decoupling the k-sampling from
         the supercell's ``R_e`` grid.  Must be divisible by every supercell size.
         Defaults to the native ``HRs`` grid.
+    mu_star : float, optional
+        Coulomb pseudopotential for the McMillan / Allen-Dynes ``Tc`` (default
+        ``0.10``).
     return_gkq : bool, optional
         If ``True``, also return the full ``g_kq`` array (``(nk, nq, nmode, nawf,
         nawf)``).  Off by default -- at large grids this is many GB.
@@ -248,9 +378,11 @@ def eliashberg(
     -------
     dict
         ``{'omega', 'a2F', 'lambda', 'lambda_qv', 'N_EF', 'q_frac', 'omega_q',
-        'gamma_acoustic', 'nk_electron'[, 'g_kq']}``.  ``gamma_acoustic`` is
-        ``max |g|`` over the three acoustic modes at ``q = Gamma`` (a small value
-        confirms the acoustic sum rule).
+        'gamma_acoustic', 'nk_electron', 'omega_log', 'omega_2', 'mu_star',
+        'Tc_mcmillan', 'Tc_allen_dynes', 'f1', 'f2'[, 'g_kq']}``.  ``omega_log``
+        and ``omega_2`` are in eV; the two ``Tc`` values are in kelvin.
+        ``gamma_acoustic`` is ``max |g|`` over the three acoustic modes at
+        ``q = Gamma`` (a small value confirms the acoustic sum rule).
     """
     arry, attr = data_controller.data_dicts()
     HR = np.asarray(arry['HRs'])
@@ -325,6 +457,10 @@ def eliashberg(
 
     lam = float(lam_qv.sum() / nq)
 
+    # Phonon moments and McMillan / Allen-Dynes Tc from the mode sums.
+    omega_log_ev, omega_2_ev = phonon_moments(lam_qv, freqs)
+    tc = mcmillan_allen_dynes_tc(lam, omega_log_ev, omega_2_ev, mu_star=mu_star)
+
     # a2F(omega): distribute lambda_qv * omega_qv / 2 as delta(omega - omega_qv).
     wmax = float(omega_all_ev.max()) * omega_pad
     omega = np.linspace(0.0, max(wmax, 1e-3), nomega)
@@ -348,6 +484,13 @@ def eliashberg(
         'omega_q': freqs,
         'gamma_acoustic': gamma_acoustic,
         'nk_electron': Nk,
+        'omega_log': omega_log_ev,
+        'omega_2': omega_2_ev,
+        'mu_star': float(mu_star),
+        'Tc_mcmillan': tc['Tc_mcmillan_K'],
+        'Tc_allen_dynes': tc['Tc_allen_dynes_K'],
+        'f1': tc['f1'],
+        'f2': tc['f2'],
     }
     if return_gkq:
         out['g_kq'] = g_kq

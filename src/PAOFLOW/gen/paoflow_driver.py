@@ -2816,6 +2816,10 @@ def build_elphon_script(cfg):
     )
     lines.append('NOMEGA = {}   # frequency points for a2F(omega)'.format(cfg['nomega']))
     lines.append(
+        'MU_STAR = {}   # Coulomb pseudopotential for the McMillan / Allen-Dynes Tc '
+        '(typical 0.10-0.13)'.format(cfg.get('mu_star', 0.10))
+    )
+    lines.append(
         'PHONON_FORCE_SETS = {!r}   # existing FORCE_SETS to reuse (skip the phonon SCF); '
         'None = compute it here'.format(cfg.get('phonon_force_sets') or None)
     )
@@ -2988,14 +2992,29 @@ def build_elphon_script(cfg):
     lines.append('        smearing_ev=SMEARING_EV,')
     lines.append('        nk_electron=NK_ELECTRON,')
     lines.append('        nomega=NOMEGA,')
+    lines.append('        mu_star=MU_STAR,')
     lines.append('    )')
     lines.append("    print('  lambda           = %.4f' % res['lambda'])")
     lines.append("    print('  N(E_F) per spin  = %.4f /eV' % res['N_EF'])")
     lines.append("    print('  gamma_acoustic (ASR check) = %.3e' % res['gamma_acoustic'])")
+    lines.append(
+        "    print('  omega_log        = %.2f K (%.4f meV)' % "
+        "(res['omega_log'] * 11604.518, res['omega_log'] * 1e3))"
+    )
+    lines.append(
+        "    print('  Tc (McMillan)    = %.3f K  [mu* = %.3f]' % "
+        "(res['Tc_mcmillan'], res['mu_star']))"
+    )
+    lines.append(
+        "    print('  Tc (Allen-Dynes) = %.3f K  [mu* = %.3f]' % "
+        "(res['Tc_allen_dynes'], res['mu_star']))"
+    )
     lines.append("    a2f = np.column_stack([res['omega'], res['a2F']])")
     lines.append(
         "    np.savetxt(os.path.join(outdir, 'a2F.dat'), a2f, "
-        "header='omega(eV)    a2F(omega)   (lambda=%.4f)' % res['lambda'])"
+        "header='omega(eV)    a2F(omega)   "
+        "(lambda=%.4f, omega_log=%.2fK, Tc_AD=%.3fK, mu*=%.3f)' % "
+        "(res['lambda'], res['omega_log'] * 11604.518, res['Tc_allen_dynes'], res['mu_star']))"
     )
     lines.append("    np.savez(os.path.join(outdir, 'eliashberg.npz'), **res)")
     lines.append("    print('  wrote', os.path.join(outdir, 'a2F.dat'))")
@@ -3059,6 +3078,8 @@ def build_elphon_plot_script(cfg):
     lines.append("    omega = d['omega'] * 1e3   # eV -> meV")
     lines.append("    a2F = d['a2F']")
     lines.append("    lam = float(d['lambda'])")
+    lines.append("    tc = float(d['Tc_allen_dynes']) if 'Tc_allen_dynes' in d else None")
+    lines.append("    mu = float(d['mu_star']) if 'mu_star' in d else None")
     lines.append('    # Cumulative lambda(omega) = 2 * integral_0^omega a2F(w)/w dw.')
     lines.append("    w = d['omega']")
     lines.append("    with np.errstate(divide='ignore', invalid='ignore'):")
@@ -3077,7 +3098,10 @@ def build_elphon_plot_script(cfg):
     lines.append("    ax2.plot(omega, lam_cum, color='C3', label=r'$\\lambda(\\omega)$')")
     lines.append("    ax2.set_ylabel(r'$\\lambda(\\omega)$', color='C3')")
     lines.append('    ax2.set_ylim(bottom=0.0)')
-    lines.append("    ax1.set_title(r'Eliashberg spectral function ($\\lambda = %.3f$)' % lam)")
+    lines.append("    title = r'Eliashberg spectral function ($\\lambda = %.3f$)' % lam")
+    lines.append('    if tc is not None:')
+    lines.append("        title += r'  $T_c^{AD} = %.2f$ K ($\\mu^* = %.2f$)' % (tc, mu)")
+    lines.append('    ax1.set_title(title)')
     lines.append('    fig.tight_layout()')
     lines.append('    plt.show()')
     lines.append('')
@@ -3330,6 +3354,9 @@ def collect_elphon(common):
         nk = ask_int('  Electronic k-grid nk (nk^3; 0 = native HRs grid)', 0)
         cfg['nk_electron'] = nk if nk > 0 else None
         cfg['nomega'] = ask_int('  Frequency points for a2F(omega)', 400)
+        cfg['mu_star'] = ask_float(
+            '  Coulomb pseudopotential mu* for the McMillan / Allen-Dynes Tc', 0.10
+        )
         cfg['phonon_force_sets'] = ask(
             '  Existing FORCE_SETS to reuse for the fc2 (blank = compute it here)', ''
         )
@@ -3337,6 +3364,7 @@ def collect_elphon(common):
         cfg['smearing_ev'] = 0.30
         cfg['nk_electron'] = None
         cfg['nomega'] = 400
+        cfg['mu_star'] = 0.10
         cfg['phonon_force_sets'] = ''
     print('\npw.x launch settings for the displaced-supercell SCF runs:')
     cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')

@@ -8,12 +8,16 @@ from PAOFLOW.elphon.eph_kq import (
     _AMU_KG,
     _BOHR_M,
     _HBAR_JS,
+    EV_TO_K,
+    THZ_TO_EV,
     assemble_g_bloch,
     bloch_hamiltonian,
     eliashberg,
     estates_on_grid,
     fourier_dHdu,
     fourier_dHdu_on_grid,
+    mcmillan_allen_dynes_tc,
+    phonon_moments,
     primitive_eigenstates,
     zero_point_amplitude,
 )
@@ -193,3 +197,88 @@ def test_eliashberg_requires_divisible_grid(monkeypatch):
     monkeypatch.setattr(gkq, 'phonon_modes', _fake_phonon_modes(natom, nmode))
     with pytest.raises(ValueError, match='divisible'):
         eliashberg(dc, g_R, phonon=None, nk_electron=8)  # 8 not divisible by 3
+
+
+# --------------------------------------------------------------------------- #
+# McMillan / Allen-Dynes critical temperature
+# --------------------------------------------------------------------------- #
+def test_phonon_moments_single_mode():
+    # A single populated mode: omega_log and omega_2 both equal that frequency.
+    w_thz = 5.0
+    lam_qv = np.array([[0.7]])
+    omega = np.array([[w_thz]])
+    w_log, w2 = phonon_moments(lam_qv, omega)
+    expected = w_thz * THZ_TO_EV
+    np.testing.assert_allclose(w_log, expected, rtol=1e-12)
+    np.testing.assert_allclose(w2, expected, rtol=1e-12)
+
+
+def test_phonon_moments_weighted_average():
+    # log-average weighted by lambda; RMS weighted by lambda; skips w<=0.
+    w = np.array([[2.0, 8.0, 0.0]])
+    lam = np.array([[1.0, 3.0, 5.0]])  # the zero-frequency mode is ignored
+    w_log, w2 = phonon_moments(lam, w)
+    tot = 1.0 + 3.0
+    exp_log = np.exp((1.0 * np.log(2.0) + 3.0 * np.log(8.0)) / tot) * THZ_TO_EV
+    exp_w2 = np.sqrt((1.0 * 2.0**2 + 3.0 * 8.0**2) / tot) * THZ_TO_EV
+    np.testing.assert_allclose(w_log, exp_log, rtol=1e-12)
+    np.testing.assert_allclose(w2, exp_w2, rtol=1e-12)
+
+
+def test_phonon_moments_zero_coupling():
+    w_log, w2 = phonon_moments(np.zeros((2, 3)), np.ones((2, 3)))
+    assert w_log == 0.0 and w2 == 0.0
+
+
+def test_mcmillan_tc_matches_closed_form():
+    # McMillan Tc against a hand evaluation (single mode -> omega_2 = omega_log,
+    # so f2 = 1; f1 supplies the only Allen-Dynes correction).
+    lam, mu = 1.0, 0.10
+    w_log_ev = 0.025  # eV
+    res = mcmillan_allen_dynes_tc(lam, w_log_ev, w_log_ev, mu_star=mu)
+    denom = lam - mu * (1.0 + 0.62 * lam)
+    expect_mcm = (w_log_ev * EV_TO_K / 1.2) * np.exp(-1.04 * (1.0 + lam) / denom)
+    np.testing.assert_allclose(res['Tc_mcmillan_K'], expect_mcm, rtol=1e-10)
+    # omega_2 == omega_log -> f2 exactly 1.
+    np.testing.assert_allclose(res['f2'], 1.0, rtol=1e-12)
+    lam1 = 2.46 * (1.0 + 3.8 * mu)
+    f1 = (1.0 + (lam / lam1) ** 1.5) ** (1.0 / 3.0)
+    np.testing.assert_allclose(res['f1'], f1, rtol=1e-10)
+    np.testing.assert_allclose(res['Tc_allen_dynes_K'], f1 * expect_mcm, rtol=1e-10)
+
+
+def test_allen_dynes_reduces_to_mcmillan_weak_coupling():
+    # Weak coupling: f1, f2 -> 1 so Allen-Dynes ~ McMillan.
+    res = mcmillan_allen_dynes_tc(0.3, 0.02, 0.02, mu_star=0.12)
+    np.testing.assert_allclose(res['f1'], 1.0, atol=5e-2)
+    np.testing.assert_allclose(res['f2'], 1.0, atol=1e-12)
+    np.testing.assert_allclose(
+        res['Tc_allen_dynes_K'], res['f1'] * res['Tc_mcmillan_K'], rtol=1e-10
+    )
+
+
+def test_tc_zero_when_denominator_nonpositive():
+    # lambda - mu*(1 + 0.62 lambda) <= 0 -> no superconductivity in this model.
+    res = mcmillan_allen_dynes_tc(0.10, 0.02, 0.02, mu_star=0.13)
+    assert res['Tc_mcmillan_K'] == 0.0
+    assert res['Tc_allen_dynes_K'] == 0.0
+
+
+def test_eliashberg_reports_tc(monkeypatch):
+    natom, nawf, nmode = 1, 2, 3
+    rng = np.random.default_rng(7)
+    g_R = rng.standard_normal((natom * 3, nawf, nawf, 6, 6, 6, 3, 3, 3, 1)) + 0j
+    HR = _hermitian_HR(nawf, 4, rng)
+    dc = _EphController(HR, efermi=0.0)
+    monkeypatch.setattr(gkq, 'phonon_modes', _fake_phonon_modes(natom, nmode))
+
+    out = eliashberg(dc, g_R, phonon=None, smearing_ev=0.5, nk_electron=6, mu_star=0.12)
+    for key in ('omega_log', 'omega_2', 'mu_star', 'Tc_mcmillan', 'Tc_allen_dynes', 'f1', 'f2'):
+        assert key in out
+    assert out['mu_star'] == 0.12
+    assert np.isfinite(out['Tc_mcmillan']) and out['Tc_mcmillan'] >= 0.0
+    assert np.isfinite(out['Tc_allen_dynes']) and out['Tc_allen_dynes'] >= 0.0
+    # Moments consistent with the standalone helper on the returned mode data.
+    w_log, w2 = phonon_moments(out['lambda_qv'], out['omega_q'])
+    np.testing.assert_allclose(out['omega_log'], w_log, rtol=1e-12)
+    np.testing.assert_allclose(out['omega_2'], w2, rtol=1e-12)
