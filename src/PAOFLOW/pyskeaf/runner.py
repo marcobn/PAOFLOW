@@ -368,8 +368,9 @@ def run_paoflow_bxsf_files(
 ) -> list[BXSFRun]:
     """Run selected PAOFLOW BXSF bands whose energy ranges contain ``E_F``.
 
-    PAOFLOW BXSF grids store energy in eV, but the legacy SKEAF ``config.in``
-    Fermi energy is in Rydberg. The eligibility test is performed in eV.
+    PAOFLOW BXSF grids and the Fermi-energy field in ``config.in`` use eV.
+    :func:`read_config_in` converts that field to internal Rydberg, so it is
+    converted back to eV here for the eligibility test.
     Select arbitrary BXSF names with ``filenames`` or every ``*.bxsf`` in
     ``input_dir`` with ``all_files=True``. If neither is supplied, the legacy
     filename in ``config.in`` is used.

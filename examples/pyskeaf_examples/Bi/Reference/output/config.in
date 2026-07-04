@@ -1,5 +1,5 @@
 Fermi_surf_band_4.bxsf                                    | Filename (50 chars. max)
-    0.000000                                        | Fermi energy (Ryd)
+    0.000000                                        | Fermi energy (eV)
  120                                                | Interpolated number of points per single side
   0.000000                                          | Theta (degrees)
   0.000000                                          | Phi (degrees)

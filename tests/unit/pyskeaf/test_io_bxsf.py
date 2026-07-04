@@ -40,7 +40,7 @@ def test_read_config_ignores_bang_comments_before_fixed_width(tmp_path):
     config = tmp_path / 'config.in'
     config.write_text(
         """cylinder.bxsf                    ! Filename (50 chars. max)
-    1.011660                     ! Fermi energy (Rydbergy)
+   13.764336                     ! Fermi energy (eV)
  60                             ! Interpolated number of points per single side
   0.000000                       ! Theta (degrees)
   0.000000                       ! Phi (degrees)
@@ -61,6 +61,7 @@ y                                ! Allow extremal orbits near super-cell walls?
     cfg = read_config_in(config)
 
     assert cfg.filename == 'cylinder.bxsf'
+    assert abs(cfg.fermi_energy - 1.011660) < 1.0e-6
     assert cfg.numint == 60
     assert cfg.num_rots == 19
 
@@ -68,8 +69,13 @@ y                                ! Allow extremal orbits near super-cell walls?
 def test_write_config_uses_bang_comments(tmp_path):
     config = tmp_path / 'config.in'
 
-    write_config_in(SkeafConfig(filename='tiny-pocket.bxsf', numint=120), config)
+    write_config_in(
+        SkeafConfig(filename='tiny-pocket.bxsf', fermi_energy=1.0, numint=120),
+        config,
+    )
 
     text = config.read_text(encoding='utf-8')
     assert '! Filename' in text
+    assert '13.605693' in text
+    assert 'Fermi energy (eV)' in text
     assert f'{chr(124)} Filename' not in text

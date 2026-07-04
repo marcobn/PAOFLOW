@@ -127,9 +127,10 @@ def make_slice_geometry(bxsf: BXSFData, numint: int, theta: float, phi: float) -
 
     R = rotation_matrix(theta, phi)
     h_vec = R[:, 2].copy()  # (qs, ps, c)
-    # Reciprocal vectors are stored as rows: p_cart = recip_ang.T @ f_frac.
-    # Therefore Cartesian -> fractional is inv(recip_ang.T) @ p_cart.
-    plr_inv = np.linalg.inv(bxsf.recip_ang.T)
+    # Match SKEAF's reciprocal-basis convention. This distinction matters for
+    # non-orthogonal lattices such as Bi, where transposing the basis changes
+    # the sampled slices and drops physical oscillation branches.
+    plr_inv = np.linalg.inv(bxsf.recip_ang)
 
     return SliceGeometry(
         theta=float(theta),

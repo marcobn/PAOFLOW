@@ -6,7 +6,7 @@ def main():
     cfg = read_config_in("config.in")
     results = run_paoflow_bxsf_files(
         cfg,
-        input_dir="output_paoflow",
+        input_dir="./Reference/output",
         all_files=True,
         output_dir="output_pyskeaf",
     )

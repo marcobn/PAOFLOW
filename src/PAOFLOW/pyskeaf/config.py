@@ -1,11 +1,11 @@
-"""``config.in`` round-trip support — backwards compatibility with the Fortran SKEAF.
+"""``config.in`` round-trip support for pyskeaf.
 
 The Fortran code reads ``config.in`` with fixed-format ``read`` statements
 (see ``skeaf_v1p3p0_r149.F90`` lines 564–589) and writes it with fixed-width
 ``write`` statements (lines 874–891).  The tagline at the right of every line
 is decorative — only the leading numeric/character field is parsed.  This
-module reproduces both the read and write conventions exactly so that a
-``config.in`` produced by either tool can be consumed by the other.
+module preserves that layout, but uses eV for the Fermi-energy field and
+converts it to Rydberg for pyskeaf's internal numerical routines.
 """
 
 from __future__ import annotations
@@ -14,6 +14,9 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
+
+
+RYDBERG_IN_EV = 13.605693122994
 
 
 @dataclass
@@ -25,7 +28,7 @@ class SkeafConfig:
     """
 
     filename: str = ''
-    fermi_energy: float = 0.0  # Ryd
+    fermi_energy: float = 0.0  # internal unit: Ryd; config.in uses eV
     numint: int = 1  # interpolated points per single cell side
     theta: float = 0.0  # rad — used when hvd != 'r'
     phi: float = 0.0  # rad — used when hvd != 'r'
@@ -57,8 +60,8 @@ def _strip_field(line: str, width: int) -> str:
 def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
     """Parse a ``config.in`` file in the format produced by the Fortran SKEAF.
 
-    Mirrors lines 565–589 of ``skeaf_v1p3p0_r149.F90``.  Angles are converted
-    from degrees (file) to radians (returned dataclass).
+    The Fermi energy is converted from eV in the file to Rydberg internally.
+    Angles are converted from degrees in the file to radians internally.
     """
     path = Path(path)
     with path.open('r') as fh:
@@ -73,7 +76,8 @@ def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
     #   F10.6, F10.6, F10.6, F10.6, I5
     cfg = SkeafConfig()
     cfg.filename = _strip_field(lines[0], 50)
-    cfg.fermi_energy = float(_strip_field(lines[1], 12))
+    fermi_energy_ev = float(_strip_field(lines[1], 12))
+    cfg.fermi_energy = fermi_energy_ev / RYDBERG_IN_EV
     cfg.numint = int(_strip_field(lines[2], 4))
 
     # Angles in degrees in the file.
@@ -100,11 +104,10 @@ def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
 
 
 def write_config_in(cfg: SkeafConfig, path: Union[str, Path] = 'config.in') -> None:
-    """Write *cfg* in the exact format produced by Fortran SKEAF.
+    """Write *cfg* using the SKEAF fixed-width layout.
 
-    Mirrors lines 874–891 of ``skeaf_v1p3p0_r149.F90`` so that the original
-    Fortran executable can read back files written by this Python port (and
-    vice versa).
+    ``cfg.fermi_energy`` is stored internally in Rydberg and converted to eV
+    for the second line of ``config.in``.
     """
     path = Path(path)
 
@@ -119,7 +122,8 @@ def write_config_in(cfg: SkeafConfig, path: Union[str, Path] = 'config.in') -> N
 
     with path.open('w') as fh:
         fh.write(_line(f'{cfg.filename:<50}', 'Filename (50 chars. max)'))
-        fh.write(_line(f'{cfg.fermi_energy:12.6f}', 'Fermi energy (Ryd)'))
+        fermi_energy_ev = cfg.fermi_energy * RYDBERG_IN_EV
+        fh.write(_line(f'{fermi_energy_ev:12.6f}', 'Fermi energy (eV)'))
         fh.write(_line(f'{cfg.numint:4d}', 'Interpolated number of points per single side'))
         fh.write(_line(f'{cfg.theta * rad2deg:10.6f}', 'Theta (degrees)'))
         fh.write(_line(f'{cfg.phi * rad2deg:10.6f}', 'Phi (degrees)'))

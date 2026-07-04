@@ -4,7 +4,7 @@ from PAOFLOW.pyskeaf.io_bxsf import BXSFData
 from PAOFLOW.pyskeaf.slice_ops import make_slice_geometry
 
 
-def test_plr_inverse_matches_row_vector_reciprocal_basis():
+def test_plr_inverse_matches_skeaf_reciprocal_basis_convention():
     recip = np.array(
         [
             [2.0, 0.5, 0.0],
@@ -25,6 +25,6 @@ def test_plr_inverse_matches_row_vector_reciprocal_basis():
 
     geom = make_slice_geometry(bxsf, numint=2, theta=0.0, phi=0.0)
     frac = np.array([0.25, 0.5, 0.75])
-    cart = recip.T @ frac
+    cart = recip @ frac
 
     assert np.allclose(geom.plr_inverse @ cart, frac)

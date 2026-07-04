@@ -1,6 +1,0 @@
- &projwfc
-    prefix = 'MgB2',
-    outdir='./'
-    lwrite_overlaps = .true.
-    lbinary_data  = .false.
- /
