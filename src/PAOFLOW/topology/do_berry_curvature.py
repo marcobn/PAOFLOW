@@ -115,8 +115,21 @@ def do_berry_curvature(data_controller):
                     .dot(arrays['v_k'][ik, :, :, ispin])
                 )[:bnd, :bnd]
 
-    deltab = 0.05
-    mu = -0.02  # chemical potential in eV)
+    # --- broadening / occupation controls (overridable via attributes) ---
+    #   bc_delta    : Lorentzian broadening in the energy denominator (eV).
+    #   bc_mu       : chemical potential (E_k are referenced to E_F, so 0.0 = E_F).
+    #                 NB: this used to be hard-coded to -0.02 eV, an arbitrary
+    #                 offset from the Fermi level; the default is now the Fermi
+    #                 level (0.0).
+    #   bc_smearing : occupation smearing kT (eV). 0 => sharp T=0 step (original
+    #                 behaviour). A finite value uses a Fermi-Dirac occupation so
+    #                 the band-summed curvature is CONTINUOUS along the path even
+    #                 for metals -- the sharp step makes the sum jump wherever a
+    #                 band crosses the Fermi level (e.g. along Gamma-M).
+    deltab = attributes.get('bc_delta', 0.05)
+    mu = attributes.get('bc_mu', 0.0)
+    kbt = attributes.get('bc_smearing', 0.0)
+
     Omj_zk = np.zeros((pks.shape[0], 1), dtype=float)
     Omj_znk = np.zeros((pks.shape[0], bnd), dtype=float)
     for ik in range(pks.shape[0]):
@@ -128,9 +141,13 @@ def do_berry_curvature(data_controller):
                         * np.imag(jks[ik, ipol, n, m, 0] * pks[ik, jpol, m, n, 0])
                         / ((arrays['E_k'][ik, m, 0] - arrays['E_k'][ik, n, 0]) ** 2 + deltab**2)
                     )
-        Omj_zk[ik] = np.sum(
-            Omj_znk[ik, :] * (0.5 * (1 - np.sign(arrays['E_k'][ik, :bnd, 0] - mu)))
-        )  # T=0.0K
+        en = arrays['E_k'][ik, :bnd, 0]
+        if kbt > 0.0:
+            # Fermi-Dirac occupation -> continuous band-summed curvature
+            occ = 1.0 / (np.exp(np.clip((en - mu) / kbt, -60.0, 60.0)) + 1.0)
+        else:
+            occ = 0.5 * (1.0 - np.sign(en - mu))  # T=0.0K sharp step (original)
+        Omj_zk[ik] = np.sum(Omj_znk[ik, :] * occ)
 
     indices = (curvature, LL[spol], LL[ipol], LL[jpol])
     lrng = list(range(nkpi)) if rank == 0 else None
@@ -146,10 +163,21 @@ def do_berry_curvature(data_controller):
     pks = velk = None
 
     Omj_zk = gather_full(Omj_zk, npool)
+    Omj_znk = gather_full(Omj_znk, npool)
     fOmj_zk = 'Omegaj_%s_%s_%s%s.dat' % (indices)
 
     data_controller.write_file_row_col(fOmj_zk, lrng, (Omj_zk[:, 0] if rank == 0 else None))
-    Omj_zk = fOmj_zk = None
+
+    # Band-resolved Berry curvature Omega_n(k): smooth per band (no occupation
+    # step), written in the bands_0.dat layout (k-index + one column per band).
+    # Use this for band-coloured "Berry-curvature texture" plots and as the
+    # occupation-independent alternative to the summed curve above.
+    if attributes.get('bc_write_bands', True):
+        fOmj_znk = 'Omegaj_%s_%s_%s%s_bands' % (indices)
+        data_controller.write_bands(
+            fOmj_znk, (Omj_znk[:, :, None] if rank == 0 else None)
+        )
+    Omj_zk = Omj_znk = fOmj_zk = None
 
 
 def band_loop_H(HRaux, R, kq, nawf, nspin):
