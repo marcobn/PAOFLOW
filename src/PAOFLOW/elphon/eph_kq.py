@@ -387,7 +387,12 @@ def eliashberg(
     arry, attr = data_controller.data_dicts()
     HR = np.asarray(arry['HRs'])
     nawf = HR.shape[0]
-    EF = float(attr['Efermi'])
+    # PAOFLOW references all eigenvalues to the Fermi level when reading the DFT
+    # data (``eigs -= Efermi`` in read_QE_xml), so the PAO ``HRs`` spectrum has
+    # E_F at 0.  The Fermi-surface delta window must therefore be centred on 0,
+    # not on the absolute ``attr['Efermi']`` (which would shift it off the bands
+    # and give N(E_F) = lambda = 0).
+    EF = 0.0
 
     sq = tuple(int(s) for s in g_R.shape[6:9])
     Nk = int(nk_electron) if nk_electron is not None else int(HR.shape[2])
