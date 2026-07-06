@@ -2293,10 +2293,13 @@ class PAOFLOW:
 
         attr = self.data_controller.data_attributes
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             do_fermisurf(self.data_controller)
@@ -2322,10 +2325,13 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             if attr['nspin'] == 1:
@@ -2449,10 +2455,13 @@ class PAOFLOW:
 
         if s_tensor is not None:
             arrays['s_tensor'] = np.array(s_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         if shc_proj is not None:
             arrays['shc_proj'] = np.array(shc_proj)
@@ -2493,10 +2502,13 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             if attr['nspin'] == 1:
@@ -2560,10 +2572,13 @@ class PAOFLOW:
 
         if o_tensor is not None:
             arrays['o_tensor'] = np.array(o_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         if ohc_proj is not None:
             arrays['ohc_proj'] = np.array(ohc_proj)
@@ -2649,6 +2664,14 @@ class PAOFLOW:
         )
 
         arrays, attr = self.data_controller.data_dicts()
+
+        # expose the unit-defining factors to do_rashba_edelstein_intra so its
+        # output uses the SAME chi = -hbar*kai/(jc*e*a0) normalization (and 2D
+        # rescale) as do_rashba_edelstein.
+        attr['ree_reg'] = reg
+        attr['ree_twoD'] = twoD
+        attr['ree_lt'] = lt
+        attr['ree_st'] = st
 
         ene = np.linspace(emin, emax, ne)
 
@@ -2786,10 +2809,13 @@ class PAOFLOW:
 
         if a_tensor is not None:
             arrays['a_tensor'] = np.array(a_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             do_anomalous_Hall(self.data_controller, do_ac)
