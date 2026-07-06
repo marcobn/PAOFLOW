@@ -230,13 +230,12 @@ If the answer is no, redesign the public API before refining backend code.
 
 ### Placement Rules
 
-| Category                   | Location                                         | New-module naming style                     |
-| -------------------------- | ------------------------------------------------ | ------------------------------------------- |
-| Spectrum features          | `src/PAOFLOW/spectrum/`                          | `*_solver.py`, `*_pipeline.py`              |
-| Hamiltonian features       | `src/PAOFLOW/hamiltonian/`                       | `*_ops.py`, `*_builder.py`                  |
-| Topology/response features | `src/PAOFLOW/topology/`, `src/PAOFLOW/response/` | descriptive domain names                    |
-| Transport redesign         | `src/PAOFLOW/transport/`                         | `*_core.py`, `*_pipeline.py`, `*_runner.py` |
-| New driver                 | `src/PAOFLOW/Transport.py`                       | class `Transport`                           |
+| Category                   | Location                                         | New-module naming style        |
+| -------------------------- | ------------------------------------------------ | ------------------------------ |
+| Spectrum features          | `src/PAOFLOW/spectrum/`                          | `*_solver.py`, `*_pipeline.py` |
+| Hamiltonian features       | `src/PAOFLOW/hamiltonian/`                       | `*_ops.py`, `*_builder.py`     |
+| Topology/response features | `src/PAOFLOW/topology/`, `src/PAOFLOW/response/` | descriptive domain names       |
+| New driver                 | `src/PAOFLOW/Transport.py`                       | class `Transport`              |
 
 ### Function Style for New Modules
 
@@ -324,14 +323,11 @@ Avoid new interfaces like:
 3. Should this result go into DataController?
    Only if reused later or required by shared workflow contracts.
 
-4. Is this transport redesign?
-   Route through `Transport.py` orchestrator with procedural backend modules.
-
-5. Are outputs changing?
+4. Are outputs changing?
    If yes, stop and split into separate feature change; redesign patches must preserve logic.
 
-6. Does the example `main.py` read like a physics workflow?
+5. Does the example `main.py` read like a physics workflow?
    If no, redesign the public API before changing more backend code.
 
-7. Is `main.py` exposing internal arrays or temporary objects?
+6. Is `main.py` exposing internal arrays or temporary objects?
    If yes, move that logic behind an orchestrator method or backend pipeline.
