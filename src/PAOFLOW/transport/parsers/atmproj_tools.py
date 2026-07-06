@@ -1,26 +1,13 @@
-from pathlib import Path
 from typing import Dict
 
-from PAOFLOW.DataController import DataController
 import numpy as np
 
-from PAOFLOW.transport.grid.rgrid import get_rgrid
-from PAOFLOW.transport.io.input_parameters import AtomicProjData, ConductorData
 import PAOFLOW.transport.io.log_module as log
-
-from PAOFLOW.transport.io.write_data import (
-    write_internal_format_files,
-    write_projectability_files,
-    write_overlap_files,
-)
+from PAOFLOW.DataController import DataController
+from PAOFLOW.transport.data import ConductorData
+from PAOFLOW.transport.grid.rgrid import get_rgrid
+from PAOFLOW.transport.io.write_data import populate_real_space_hamiltonian
 from PAOFLOW.transport.io.write_header import headered_function
-from PAOFLOW.transport.parsers.atmproj_parser_base import (
-    parse_eigenvalues,
-    parse_header,
-    parse_kpoints,
-    parse_overlaps,
-    parse_projections,
-)
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -29,60 +16,30 @@ from PAOFLOW.transport.utils.timing import timed_function
 def parse_atomic_proj(
     data: ConductorData, data_controller: DataController
 ) -> Dict[str, np.ndarray]:
-    file_proj = data.file_names.datafile_C
-    output_dir = data.file_names.output_dir
     opts = data.atomic_proj
 
-    arry, _ = data_controller.data_dicts()
+    arry, attr = data_controller.data_dicts()
 
-    proj_data = parse_atomic_proj_data(data, data_controller)
+    alat = float(attr['alat'])
+    arry['wk'] = arry['kpnts_wght'] / np.sum(arry['kpnts_wght'])
+    arry['vkpts_cartesian'] = arry['kpnts'].T * (2.0 * np.pi / alat)  # bohr^-1
 
-    log.log_proj_summary(
-        proj_data,
-        data,
-    )
+    log.log_proj_summary(data_controller, data)
 
-    hk_data = get_pao_hamiltonian(data_controller)
+    hk_data = reshape_pao_hamiltonian(data_controller)
 
     nk = np.array([1, 1, 4], dtype=int)  # TODO: confirm hardcoded grid
     nr = nk
     ivr, wr = get_rgrid(nr)
     hk_data.update({'ivr': ivr, 'wr': wr, 'nk': nk, 'nr': nr})
     arry.update(hk_data)
-    name = Path(file_proj).name
-    output_prefix = Path(output_dir) / name
-    write_internal_format_files(
-        Path(output_dir),
-        str(output_prefix),
-        data_controller,
-        hk_data,
-        proj_data,
-        opts.do_overlap_transformation,
-    )
 
-    write_projectability_files(output_dir, proj_data, hk_data['Hk'])
-    write_overlap_files(output_dir, hk_data['Sk'], opts.do_overlap_transformation)
+    populate_real_space_hamiltonian(data_controller, hk_data, opts.do_overlap_transformation)
 
     return hk_data
 
 
-def parse_atomic_proj_data(data: ConductorData, data_controller: DataController) -> AtomicProjData:
-    header = parse_header(data_controller)
-    kpt_data = parse_kpoints(data_controller)
-    eigvals = parse_eigenvalues(data_controller)
-    proj = parse_projections(data_controller)
-    overlap = parse_overlaps(data, data_controller)
-
-    return AtomicProjData(
-        **header,
-        **kpt_data,
-        eigvals=eigvals,
-        proj=proj,
-        overlap=overlap,
-    )
-
-
-def get_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:
+def reshape_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:
     arry, attr = data_controller.data_dicts()
     Hks_raw = arry['Hks']  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     HRs_raw = arry['HRs']  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)

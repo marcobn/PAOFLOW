@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from PAOFLOW.transport.parsers.atmproj_tools import get_pao_hamiltonian, parse_atomic_proj_data
+from PAOFLOW.transport.parsers.atmproj_tools import reshape_pao_hamiltonian
 
 
 class DummyDataController:
@@ -13,13 +13,6 @@ class DummyDataController:
 
     def data_dicts(self):
         return self._arry, self._attr
-
-
-class DummyConductorData:
-    class DummyAtomic:
-        do_overlap_transformation = False
-
-    atomic_proj = DummyAtomic()
 
 
 @pytest.mark.unit
@@ -34,34 +27,7 @@ def test_get_pao_hamiltonian_shapes():
     arry = {'Hks': hks, 'HRs': hrs}
     attr = {'nspin': nspin, 'nkpnts': nkpnts, 'nawf': nawf}
 
-    data = get_pao_hamiltonian(DummyDataController(arry, attr))
+    data = reshape_pao_hamiltonian(DummyDataController(arry, attr))
 
     assert data['Hk'].shape == (nspin, nkpnts, nawf, nawf)
     assert data['HR'].shape == (nspin, nkpnts, nawf, nawf)
-
-
-@pytest.mark.unit
-def test_parse_atomic_proj_data_builds_model():
-    """Atomic projection parser should combine header, k-point, and matrix data."""
-    arry = {
-        'kpnts': np.zeros((1, 3)),
-        'kpnts_wght': np.array([1.0]),
-        'b_vectors': np.eye(3),
-        'my_eigsmat': np.zeros((1, 1, 1)),
-        'U': np.zeros((1, 1, 1, 1), dtype=complex),
-    }
-    attr = {
-        'nbnds': 1,
-        'nkpnts': 1,
-        'nspin': 1,
-        'nawf': 1,
-        'nelec': 1.0,
-        'Efermi': 0.0,
-        'energy_units': 'eV',
-        'alat': 1.0,
-    }
-
-    data = parse_atomic_proj_data(DummyConductorData(), DummyDataController(arry, attr))
-
-    assert data.nbnds == 1
-    assert data.kpts.shape == (3, 1)

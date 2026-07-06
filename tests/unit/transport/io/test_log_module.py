@@ -1,10 +1,17 @@
 """Unit tests for logging helpers in transport IO."""
 
-import numpy as np
 import pytest
 
 from PAOFLOW.transport.io import log_module
-from PAOFLOW.transport.io.input_parameters import AtomicProjData
+
+
+class DummyDataController:
+    def __init__(self, arry, attr):
+        self._arry = arry
+        self._attr = attr
+
+    def data_dicts(self):
+        return self._arry, self._attr
 
 
 @pytest.mark.unit
@@ -30,19 +37,16 @@ def test_log_rank0_emits_only_on_rank_zero(monkeypatch):
 @pytest.mark.unit
 def test_log_proj_data_adds_overlap_message():
     """log_proj_data should include orthogonal basis message when overlap is off."""
-    proj_data = AtomicProjData(
-        nbnds=1,
-        nkpnts=1,
-        nspin=1,
-        nawf=1,
-        nelec=1.0,
-        efermi=0.0,
-        energy_units='eV',
-        kpts=np.zeros((3, 1)),
-        wk=np.ones(1),
-        eigvals=np.zeros((1, 1, 1)),
-        proj=np.zeros((1, 1, 1, 1), dtype=complex),
-    )
+    attr = {
+        'nbnds': 1,
+        'nkpnts': 1,
+        'nspin': 1,
+        'nawf': 1,
+        'nelec': 1.0,
+        'Efermi': 0.0,
+        'energy_units': 'eV',
+    }
+    data_controller = DummyDataController({}, attr)
 
     class DummyAtomic:
         do_overlap_transformation = False
@@ -50,6 +54,6 @@ def test_log_proj_data_adds_overlap_message():
     class DummyData:
         atomic_proj = DummyAtomic()
 
-    lines = log_module.log_proj_data(proj_data, DummyData())
+    lines = log_module.log_proj_data(data_controller, DummyData())
 
     assert any('orthogonal basis' in line for line in lines)
