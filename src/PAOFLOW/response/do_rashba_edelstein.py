@@ -182,9 +182,17 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
     import numpy as np
     from ..utils.perturb_split import perturb_split
     from ..utils.smearing import metpax, gaussian
-    from ..utils.constants import LL
+    from ..utils.constants import LL, HBAR, ELECTRONVOLT_SI, BOHR_RADIUS_CM
 
     arrays, attributes = data_controller.data_dicts()
+
+    # Unit-defining factors, shared with do_rashba_edelstein via the wrapper, so
+    # this intra-band routine reports chi_{ij} = -hbar * kai_{ij} / (jc_{jj} e a0)
+    # in the SAME units (kai = Sum <S_i><v_j> delta ; jc = Sum <v_j><v_j> delta).
+    reg = attributes.get('ree_reg', 1e-30)
+    twoD = attributes.get('ree_twoD', False)
+    lt = attributes.get('ree_lt', 1.0)
+    st = attributes.get('ree_st', 1.0)
 
     nawf = attributes['nawf']
     nspin = attributes['nspin']
@@ -216,13 +224,17 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
             #    arrays['degen'][ispin][ik]
             # )
 
+    j_kaux = np.zeros_like(arrays['v_k'])
+
     for ispin in range(attributes['nspin']):
         E_k = np.real(arrays['E_k'][:, :, ispin])
 
-        accaux = np.zeros((ne), dtype=float)
+        accaux = np.zeros((ne), dtype=float)   # kai numerator:  Sum <S_spol><v_ipol>
+        jcaux = np.zeros((ne), dtype=float)     # current (field dir.): Sum <v_ipol><v_ipol>
 
         for ik in range(nktot):
             v_kaux[ik, :, :, ispin] = O1[ik, spol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
+            j_kaux[ik, :, :, ispin] = O2[ik, ipol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
 
         if attributes['smearing'] != None:
             taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
@@ -240,19 +252,25 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
             accaux[n] += np.sum(
                 np.real(taux * np.diagonal(v_kaux[:, :, :, ispin], axis1=1, axis2=2))
             )
+            jcaux[n] += np.sum(
+                np.real(taux * np.diagonal(j_kaux[:, :, :, ispin], axis1=1, axis2=2))
+            )
 
         acc = np.zeros((ne), dtype=float) if rank == 0 else None
+        jc = np.zeros((ne), dtype=float) if rank == 0 else None
 
         comm.Reduce(accaux, acc, op=MPI.SUM)
-        accaux = None
+        comm.Reduce(jcaux, jc, op=MPI.SUM)
+        accaux = jcaux = None
 
+        # chi_{ij} = -hbar * kai / (jc * e * a0), as in do_rashba_edelstein.
+        # tau and E_x cancel in the kai/jc ratio, and so do the (1/nkpnts) and
+        # smearing normalizations (both numerator and denominator carry them).
+        chi = None
         if rank == 0:
-            if attributes['smearing'] == None:
-                acc /= float(attributes['nkpnts']) * np.sqrt(np.pi) * delta
-            else:
-                acc /= float(attributes['nkpnts'])
-
-        # cart_indices = (str(LL[ipol]),str(LL[spol]),str(ispin))
+            chi = -HBAR * acc / (jc * ELECTRONVOLT_SI * BOHR_RADIUS_CM + reg)
+            if twoD:
+                chi *= lt / st
 
         facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[ipol]), str(LL[spol]))
-        data_controller.write_file_row_col(facc, ene, acc)
+        data_controller.write_file_row_col(facc, ene, chi)
