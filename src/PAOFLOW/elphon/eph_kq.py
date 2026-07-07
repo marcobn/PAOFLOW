@@ -342,6 +342,126 @@ def mcmillan_allen_dynes_tc(lam, omega_log_ev, omega2_ev, mu_star=0.10):
     }
 
 
+def eliashberg_from_modes(
+    lambda_qv,
+    omega_qv_thz,
+    q_weights=None,
+    mu_star=0.10,
+    nomega=400,
+    omega_pad=1.2,
+    sigma_w_frac=0.05,
+    omega_max_thz=None,
+):
+    r"""Isotropic ``a2F(omega)``, ``lambda`` and ``Tc`` from per-mode coupling.
+
+    Property engine shared by the finite-difference :func:`eliashberg` driver and
+    by external couplings (e.g. Quantum ESPRESSO ``elph.inp_lambda``).  It takes
+    the mode-resolved coupling ``lambda_{q nu}`` and the matching phonon
+    frequencies and returns the Eliashberg spectral function and the derived
+    superconducting quantities, with no reference to the electronic states.
+
+    The Eliashberg function follows the standard normalisation
+
+    .. math::
+
+        \alpha^2 F(\omega) = \tfrac12 \sum_{q\nu} w_q\,\lambda_{q\nu}\,
+                             \omega_{q\nu}\,\delta(\omega - \omega_{q\nu}),
+        \qquad \lambda = \sum_{q\nu} w_q\,\lambda_{q\nu}
+                       = 2\int \frac{\alpha^2 F(\omega)}{\omega}\,d\omega,
+
+    with q-point weights ``w_q`` normalised to unit sum (uniform by default).
+
+    Parameters
+    ----------
+    lambda_qv : array_like, shape ``(nq, nmode)``
+        Mode-resolved coupling ``lambda_{q nu}``.
+    omega_qv_thz : array_like, shape ``(nq, nmode)``
+        Matching phonon frequencies in THz.
+    q_weights : array_like, shape ``(nq,)``, optional
+        Relative q-point weights (need not be normalised).  Defaults to uniform.
+    mu_star : float, optional
+        Coulomb pseudopotential for the McMillan / Allen-Dynes ``Tc`` (default
+        ``0.10``).
+    nomega : int, optional
+        Number of frequency points in the ``a2F`` grid (default ``400``).
+    omega_pad : float, optional
+        The ``a2F`` grid runs to ``omega_pad * max(omega)`` (default ``1.2``).
+    sigma_w_frac : float, optional
+        Gaussian broadening of ``a2F`` as a fraction of ``max(omega)`` (default
+        ``0.05``).
+    omega_max_thz : float, optional
+        Upper edge of the ``a2F`` frequency grid in THz (before ``omega_pad``);
+        defaults to the maximum mode frequency.
+
+    Returns
+    -------
+    dict
+        ``{'omega', 'a2F', 'lambda', 'lambda_qv', 'omega_q', 'q_weights',
+        'omega_log', 'omega_2', 'mu_star', 'Tc_mcmillan', 'Tc_allen_dynes',
+        'f1', 'f2'}``.  ``omega``, ``omega_log`` and ``omega_2`` are in eV; the
+        two ``Tc`` values are in kelvin.
+    """
+    lam_qv = np.asarray(lambda_qv, dtype=float)
+    freqs = np.asarray(omega_qv_thz, dtype=float)
+    if lam_qv.shape != freqs.shape:
+        raise ValueError('lambda_qv and omega_qv_thz must have the same shape.')
+    if lam_qv.ndim != 2:
+        raise ValueError('lambda_qv must be 2-D (nq, nmode).')
+    nq, nmode = lam_qv.shape
+
+    if q_weights is None:
+        w = np.full(nq, 1.0 / nq)
+    else:
+        w = np.asarray(q_weights, dtype=float).ravel()
+        if w.shape != (nq,):
+            raise ValueError('q_weights must have shape (nq,).')
+        total = w.sum()
+        if total <= 0.0:
+            raise ValueError('q_weights must sum to a positive value.')
+        w = w / total
+
+    # q-weighted mode coupling; the total lambda is the sum over (q, mode).
+    lam_weighted = w[:, None] * lam_qv
+    lam = float(lam_weighted.sum())
+
+    # Phonon moments weighted by the q-weighted coupling (the 1/nq of the uniform
+    # case cancels in the ratio, so this reduces to the plain mode sum).
+    omega_log_ev, omega_2_ev = phonon_moments(lam_weighted, freqs)
+    tc = mcmillan_allen_dynes_tc(lam, omega_log_ev, omega_2_ev, mu_star=mu_star)
+
+    omega_all_ev = freqs * THZ_TO_EV
+    omega_ref_ev = float(np.abs(omega_all_ev).max())
+    top_ev = (
+        float(omega_max_thz) * THZ_TO_EV if omega_max_thz is not None else omega_ref_ev
+    ) * omega_pad
+    omega = np.linspace(0.0, max(top_ev, 1e-3), nomega)
+    a2F = np.zeros(nomega)
+    sig_w = sigma_w_frac * max(omega_ref_ev, 1e-3)
+    for iq in range(nq):
+        for v in range(nmode):
+            o = omega_all_ev[iq, v]
+            if o <= 1.0e-6:
+                continue
+            weight = 0.5 * w[iq] * lam_qv[iq, v] * o
+            a2F += weight * _gaussian_delta(omega - o, sig_w)
+
+    return {
+        'omega': omega,
+        'a2F': a2F,
+        'lambda': lam,
+        'lambda_qv': lam_qv,
+        'omega_q': freqs,
+        'q_weights': w,
+        'omega_log': omega_log_ev,
+        'omega_2': omega_2_ev,
+        'mu_star': float(mu_star),
+        'Tc_mcmillan': tc['Tc_mcmillan_K'],
+        'Tc_allen_dynes': tc['Tc_allen_dynes_K'],
+        'f1': tc['f1'],
+        'f2': tc['f2'],
+    }
+
+
 def eliashberg(
     data_controller,
     g_R,
@@ -460,42 +580,34 @@ def eliashberg(
         if (qi, qj, qk) == (0, 0, 0):
             gamma_acoustic = float(np.max(np.abs(g[:, 0:3])))
 
-    lam = float(lam_qv.sum() / nq)
-
-    # Phonon moments and McMillan / Allen-Dynes Tc from the mode sums.
-    omega_log_ev, omega_2_ev = phonon_moments(lam_qv, freqs)
-    tc = mcmillan_allen_dynes_tc(lam, omega_log_ev, omega_2_ev, mu_star=mu_star)
-
-    # a2F(omega): distribute lambda_qv * omega_qv / 2 as delta(omega - omega_qv).
-    wmax = float(omega_all_ev.max()) * omega_pad
-    omega = np.linspace(0.0, max(wmax, 1e-3), nomega)
-    a2F = np.zeros(nomega)
-    sig_w = 0.05 * max(omega_all_ev.max(), 1e-3)
-    for iq in range(nq):
-        for v in range(nmode):
-            if omega_all_ev[iq, v] <= 1.0e-6:
-                continue
-            weight = 0.5 * lam_qv[iq, v] * omega_all_ev[iq, v]
-            a2F += weight * _gaussian_delta(omega - omega_all_ev[iq, v], sig_w)
-    a2F /= nq
+    # a2F(omega), lambda, phonon moments and Tc from the mode sums (uniform
+    # q-weights over the full commensurate grid).
+    props = eliashberg_from_modes(
+        lam_qv,
+        freqs,
+        q_weights=None,
+        mu_star=mu_star,
+        nomega=nomega,
+        omega_pad=omega_pad,
+    )
 
     out = {
-        'omega': omega,
-        'a2F': a2F,
-        'lambda': lam,
+        'omega': props['omega'],
+        'a2F': props['a2F'],
+        'lambda': props['lambda'],
         'lambda_qv': lam_qv,
         'N_EF': N_EF,
         'q_frac': q_frac,
         'omega_q': freqs,
         'gamma_acoustic': gamma_acoustic,
         'nk_electron': Nk,
-        'omega_log': omega_log_ev,
-        'omega_2': omega_2_ev,
+        'omega_log': props['omega_log'],
+        'omega_2': props['omega_2'],
         'mu_star': float(mu_star),
-        'Tc_mcmillan': tc['Tc_mcmillan_K'],
-        'Tc_allen_dynes': tc['Tc_allen_dynes_K'],
-        'f1': tc['f1'],
-        'f2': tc['f2'],
+        'Tc_mcmillan': props['Tc_mcmillan'],
+        'Tc_allen_dynes': props['Tc_allen_dynes'],
+        'f1': props['f1'],
+        'f2': props['f2'],
     }
     if return_gkq:
         out['g_kq'] = g_kq
