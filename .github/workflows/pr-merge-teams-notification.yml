@@ -77,9 +77,9 @@ jobs:
                 }
               ]
             }')
-
+          echo "Webhook host: $(echo "$TEAMS_WEBHOOK_URL" | sed -E 's#(https://[^/]+)/.*#\1#')"
           curl --fail-with-body \
             --request POST \
             --header 'Content-Type: application/json' \
-            --data "$payload" \
+            --data '{"text":"Test message from GitHub Actions"}' \
             "$TEAMS_WEBHOOK_URL"
