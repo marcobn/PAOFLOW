@@ -25,6 +25,7 @@ import os
 import xml.etree.ElementTree as ET
 
 import numpy as np
+from scipy.io import FortranFile
 from scipy.special import erf
 
 # Rydberg atomic units (matching QE upflib/upf_const).
@@ -173,7 +174,7 @@ def _grid_gvectors(fft, bg, tpiba):
     return gcart, (M1, M2, M3)
 
 
-def bare_dvloc_cart(vloc_by_type, q_cryst, info, atom_types=None):
+def bare_dvloc_cart(vloc_by_type, q_cryst, info, atom_types=None, gcut=None):
     """Bare local ionic derivative ``dV_loc/du`` in real space for one q.
 
     Parameters
@@ -209,6 +210,13 @@ def bare_dvloc_cart(vloc_by_type, q_cryst, info, atom_types=None):
     qcart = (q_cryst[0] * bg[0] + q_cryst[1] * bg[1] + q_cryst[2] * bg[2]) * tpiba
     qg = gcart + qcart  # (n1,n2,n3,3) physical inverse Bohr
     qgnorm = np.linalg.norm(qg, axis=-1)
+    # QE's compute_dvloc only fills reciprocal vectors G within the density
+    # cutoff sphere (ngms, |G| < sqrt(ecutrho)); the FFT-box corners are left
+    # zero.  Reproduce that mask so the reconstructed dV_loc has no spurious
+    # high-G content that would alias into the real-space matrix element.
+    gmask = None
+    if gcut is not None:
+        gmask = np.linalg.norm(gcart, axis=-1) <= gcut
 
     out = np.zeros((3 * nat, fft[0], fft[1], fft[2]), dtype=complex)
     for na in range(nat):
@@ -228,6 +236,8 @@ def bare_dvloc_cart(vloc_by_type, q_cryst, info, atom_types=None):
         base = -1j * vg * phase  # common factor
         for c in range(3):
             dvg = base * qg[..., c]  # -i v_loc (q+G)_c e^{-i(q+G).tau}
+            if gmask is not None:
+                dvg = dvg * gmask
             # real space cell-periodic part: sum_G dvg e^{iG.r} = N * ifftn(dvg)
             out[3 * na + c] = np.fft.ifftn(dvg) * (fft[0] * fft[1] * fft[2])
     return out
@@ -252,3 +262,54 @@ def load_vloc_for_run(info, pseudo_dir):
     for name, upf in info['species'].items():
         out[name] = read_upf_local(os.path.join(pseudo_dir, upf))
     return out
+
+
+def read_qe_dvloc(path, fft=None):
+    """Read QE's exact bare local ``dV_loc/du`` dumped by the patched ``elphon.f90``.
+
+    This is the drop-in, machine-accurate replacement for the analytic
+    reconstruction in :func:`bare_dvloc_cart`.  The patched Quantum ESPRESSO
+    ``ph.x`` (see the electron-phonon patch) writes, for one q-point, the bare
+    local potential derivative for every displacement *pattern* on the real-space
+    FFT grid, together with the pattern-to-Cartesian matrix ``U`` (identical to
+    the one stored for the induced ``dvscf``), so the result can be rotated to
+    Cartesian with :func:`PAOFLOW.elphon.qe_dvscf.dvscf_to_cartesian`.
+
+    File layout (Fortran unformatted, written on ``ionode``):
+
+    - rec1: ``nr1, nr2, nr3, nat, nmode(=3*nat), iq`` (int)
+    - rec2: ``xq(3)`` (real, tpiba)
+    - rec3: ``U(nmode, nmode)`` (complex, pattern -> Cartesian)
+    - rec4..: ``dvloc(nr1, nr2, nr3)`` for each of the ``nmode`` patterns
+      (complex, Ry; lattice-periodic derivative on the smooth grid)
+
+    Parameters
+    ----------
+    path : str
+        Path to ``dvloc.<iq>.dat``.
+    fft : tuple(int, int, int), optional
+        Expected FFT grid; if given, a mismatch raises ``ValueError``.
+
+    Returns
+    -------
+    dv : ndarray ``(nmode, nr1, nr2, nr3)`` complex
+        Bare local ``dV_loc/du`` in the **pattern** basis (Ry).
+    U : ndarray ``(nmode, nmode)`` complex
+        Pattern-to-Cartesian transformation (same convention as the induced
+        ``dvscf`` patterns).
+    xq : ndarray ``(3,)``
+        The q-point (tpiba, Cartesian) as written by QE.
+    """
+    f = FortranFile(path, 'r')
+    hdr = f.read_ints(np.int32)
+    nr1, nr2, nr3, nat, nmode, iq = (int(x) for x in hdr)
+    if fft is not None and (nr1, nr2, nr3) != tuple(fft):
+        f.close()
+        raise ValueError('dvloc grid %s != expected %s' % ((nr1, nr2, nr3), tuple(fft)))
+    xq = f.read_reals(np.float64)
+    U = f.read_reals(np.complex128).reshape(nmode, nmode, order='F')
+    dv = np.empty((nmode, nr1, nr2, nr3), dtype=complex)
+    for m in range(nmode):
+        dv[m] = f.read_reals(np.complex128).reshape(nr1, nr2, nr3, order='F')
+    f.close()
+    return dv, U, xq

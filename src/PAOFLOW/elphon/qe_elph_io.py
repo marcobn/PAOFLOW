@@ -377,3 +377,76 @@ def read_qe_dyn(path):
         eig[m] = cplx[: 3 * natom].reshape(natom, 3)
 
     return {'q': q, 'freq_thz': freq_thz, 'eigenvectors': eig}
+
+
+def read_qe_el_ph_mat(path):
+    """Read a patched-QE ``el_ph_mat`` dump (``elphmat.<iq>.dat``).
+
+    The dump is written by the PAOFLOW-patched ``PHonon/PH/elphon.f90``
+    (``elphsum``) and stores QE's *full* DFPT electron-phonon matrix elements on
+    the coarse k-grid for one (irreducible) q -- i.e. the complete
+    bare-local + bare-nonlocal + induced coupling (including any NLCC /
+    ultrasoft augmentation) that ``ph.x`` computes internally.  This is the input
+    for the atomic-orbital (Agapito & Bernardi, `Phys. Rev. B 97, 235146 (2018)
+    <https://doi.org/10.1103/PhysRevB.97.235146>`_) interpolation route, which
+    needs no potential reconstruction.
+
+    Parameters
+    ----------
+    path : str
+        Path to ``elphmat.<iq>.dat`` (Fortran unformatted).
+
+    Returns
+    -------
+    dict
+        ``{'nbnd', 'nksq', 'nat', 'nkstot', 'el_ph_mat', 'u', 'xq', 'xk',
+        'et'}``.  ``el_ph_mat`` is ``(nbnd, nbnd, nksq, 3*nat)`` in the
+        displacement-**pattern** basis (rotate to Cartesian with
+        :func:`el_ph_mat_to_cartesian` using ``u``); ``xk`` is ``(nksq, 3)`` (the
+        k-points, cartesian in ``tpiba``) and ``et`` is ``(nksq, nbnd)`` band
+        energies (Ry) at those k.  For a ``lgamma`` (``q=0``) run the stored k
+        and k+q lists coincide; otherwise the ``k`` sublist is extracted from the
+        interleaved ``(k, k+q)`` dump.
+    """
+    from scipy.io import FortranFile
+
+    with FortranFile(path, 'r') as f:
+        nbnd, nksq, nat, nkstot = (int(x) for x in f.read_ints(np.int32))
+        el = f.read_reals(np.complex128).reshape(nbnd, nbnd, nksq, 3 * nat, order='F')
+        u = f.read_reals(np.complex128).reshape(3 * nat, 3 * nat, order='F')
+        xq = f.read_reals(np.float64)
+        xk = f.read_reals(np.float64).reshape(3, nkstot, order='F').T
+        et = f.read_reals(np.float64).reshape(nbnd, nkstot, order='F').T
+    ik_k = np.arange(nksq) if nkstot == nksq else 2 * np.arange(nksq)
+    return {
+        'nbnd': int(nbnd),
+        'nksq': int(nksq),
+        'nat': int(nat),
+        'nkstot': int(nkstot),
+        'el_ph_mat': el,
+        'u': u,
+        'xq': xq,
+        'xk': xk[ik_k],
+        'et': et[ik_k],
+    }
+
+
+def el_ph_mat_to_cartesian(el_ph_mat, u):
+    """Rotate ``el_ph_mat`` from the displacement-pattern basis to Cartesian.
+
+    ``d^{cart}_{mn,c}(k) = sum_p conj(u_{c,p})\\, el_ph_mat_{mn,p}(k)`` with the
+    canonical QE pattern matrix ``u`` returned by :func:`read_qe_el_ph_mat`.
+
+    Parameters
+    ----------
+    el_ph_mat : ndarray ``(nbnd, nbnd, nksq, 3*nat)``
+        Pattern-basis matrix elements.
+    u : ndarray ``(3*nat, 3*nat)``
+        QE canonical displacement-pattern matrix.
+
+    Returns
+    -------
+    ndarray ``(nbnd, nbnd, nksq, 3*nat)``
+        Cartesian deformation potentials ``d_{mn,c}(k)``.
+    """
+    return np.einsum('cp,mnkp->mnkc', np.asarray(u).conj(), np.asarray(el_ph_mat))

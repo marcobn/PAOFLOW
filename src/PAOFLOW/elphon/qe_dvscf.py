@@ -136,8 +136,15 @@ def read_dvscf(path, nr, nmode, nspin=1):
 def dvscf_to_cartesian(dvscf_pattern, U):
     """Rotate ``dvscf`` from the pattern basis to Cartesian ``dV/du_{kappa alpha}``.
 
-    ``dvscf_cart[c] = sum_p U[c, p] dvscf_pattern[p]`` with ``U`` the unitary
+    ``dvscf_cart[c] = sum_p conj(U[c, p]) dvscf_pattern[p]`` with ``U`` the unitary
     pattern matrix from :func:`read_patterns` (columns = patterns).
+
+    The perturbation is linear in the displacement, so the pattern-basis response
+    is ``dvscf_pattern[p] = sum_c U[c, p] dvscf_cart[c]`` (i.e. ``dv_pat = U^T
+    dv_cart``).  Inverting with the unitarity of ``U`` gives ``dv_cart = conj(U)
+    dv_pat``.  The conjugate is essential for q-points whose displacement
+    patterns are complex (e.g. the star of a general q); for real patterns
+    ``conj(U) = U`` and the result is unchanged.
 
     Parameters
     ----------
@@ -154,7 +161,7 @@ def dvscf_to_cartesian(dvscf_pattern, U):
     dvscf_pattern = np.asarray(dvscf_pattern)
     grid_shape = dvscf_pattern.shape[1:]
     flat = dvscf_pattern.reshape(dvscf_pattern.shape[0], -1)  # (npert, ngrid)
-    cart = U @ flat  # (3*nat, ngrid)
+    cart = U.conj() @ flat  # (3*nat, ngrid) ; dv_cart = conj(U) dv_pattern
     return cart.reshape((U.shape[0],) + grid_shape)
 
 

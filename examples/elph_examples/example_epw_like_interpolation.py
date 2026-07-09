@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 """Example — Route 2 (EPW-like): reconstruct the coupling from QE ``dvscf``.
 
+.. deprecated::
+    This internal-reconstruction route is **superseded** by the atomic-orbital
+    (Agapito-Bernardi) route in ``example_ao_from_qe_coupling.py``, which reads
+    QE's full ``el_ph_mat`` and needs no bare-local / nonlocal / induced
+    reconstruction (and handles NLCC / ultrasoft for free).  The reconstruction
+    below is kept only as a physics/debugging harness: its coupling magnitude is
+    ~2.9x too large for Pb, traced to an irreducible ~0.4% cancellation between
+    the bare-local (271x) and induced (228x) terms -- not fixable at the
+    reconstruction level.  Prefer the AO route for any production use.
+
 Replace the EPW/Wannier interpolation with PAOFLOW's PAO interpolation:
 
   1. read the QE coarse-grid induced potential ``dvscf`` and the nscf
