@@ -233,7 +233,9 @@ def find_closed_orbits_in_slice(
 # Phase 4: cross-slice matching, extremum detection, averaging
 # ============================================================================
 
-from PAOFLOW.pyskeaf.slice_ops import SliceGeometry  # noqa: E402  (local import keeps Phase-3 self-contained)
+from PAOFLOW.pyskeaf.slice_ops import (
+    SliceGeometry,  # noqa: E402  (local import keeps Phase-3 self-contained)
+)
 
 
 @dataclass
@@ -697,7 +699,6 @@ def find_extremal(
     """
     n_slices = geom.numx
     dk = geom.zkseparation
-    dk2 = dk * dk
     out: List[ExtremalOrbit] = []
 
     for c_idx, ch in enumerate(chunks):
