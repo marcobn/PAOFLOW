@@ -48,10 +48,6 @@ jobs:
             --arg title "PR merged to $BASE_BRANCH" \
             --arg activity_title "#$PR_NUMBER $PR_TITLE" \
             --arg activity_subtitle "Merged by $MERGED_BY" \
-            --arg repo "$REPOSITORY" \
-            --arg base "$BASE_BRANCH" \
-            --arg head "$HEAD_BRANCH" \
-            --arg sha "$short_sha" \
             --arg pr_url "$PR_URL" \
             --arg run_url "$run_url" \
             '{
@@ -64,12 +60,7 @@ jobs:
                 {
                   "activityTitle": $activity_title,
                   "activitySubtitle": $activity_subtitle,
-                  "facts": [
-                    {"name": "Repository", "value": $repo},
-                    {"name": "Target branch", "value": $base},
-                    {"name": "Source branch", "value": $head},
-                    {"name": "Merge commit", "value": $sha}
-                  ],
+                  "text": "Developers: please rebase or merge the latest changes from the target branch into your own feature branches before continuing work.",
                   "markdown": true
                 }
               ],
@@ -81,7 +72,7 @@ jobs:
                 },
                 {
                   "@type": "OpenUri",
-                  "name": "View pull request",
+                  "name": "View workflow run",
                   "targets": [{"os": "default", "uri": $run_url}]
                 }
               ]
