@@ -2,7 +2,7 @@ name: Notify Teams on PR merge
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, closed]
     branches: [develop, main]
   workflow_dispatch:
 
@@ -43,9 +43,9 @@ jobs:
           short_sha="${MERGE_COMMIT_SHA:0:7}"
 
           payload=$(jq -n \
-            --arg summary "PR merged to $BASE_BRANCH" \
+            --arg summary "!!! This is a trial run. Please ignore message!!! PR merged to $BASE_BRANCH" \
             --arg theme_color "$theme_color" \
-            --arg title "PR merged to $BASE_BRANCH" \
+            --arg title "!!! This is a trial run. Please ignore message!!! PR merged to $BASE_BRANCH" \
             --arg activity_title "#$PR_NUMBER $PR_TITLE" \
             --arg activity_subtitle "Merged by $MERGED_BY" \
             --arg pr_url "$PR_URL" \
