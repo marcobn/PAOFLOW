@@ -1,8 +1,7 @@
----
 name: Notify Teams on PR merge
 
 on:
-  pull_request_target:
+  pull_request:
     types: [closed]
     branches: [develop, main]
   workflow_dispatch:
@@ -82,7 +81,7 @@ jobs:
                 },
                 {
                   "@type": "OpenUri",
-                  "name": "View workflow run",
+                  "name": "View pull request",
                   "targets": [{"os": "default", "uri": $run_url}]
                 }
               ]
