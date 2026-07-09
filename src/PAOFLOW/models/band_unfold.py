@@ -113,7 +113,7 @@ def _find_transformation_matrix(
 
 
 def _find_translations(a_pc: np.ndarray, M: np.ndarray, tol: float = 1e-6) -> np.ndarray:
-    """Find the N = :math:`|\\det M|` PC lattice translations inside the SC.
+    """Find the N = |det M| PC lattice translations inside the SC.
 
     Strategy: scan integer combinations  n1*a_pc[0] + n2*a_pc[1] + n3*a_pc[2]
     and keep those whose SC fractional coordinates lie in [0, 1)^3.
@@ -215,7 +215,7 @@ def _build_atom_map(
                 if np.max(np.abs(frac_diff)) < tol:
                     if I in used:
                         raise ValueError(
-                            f'SC atom {I} maps to multiple (α,ℓ) pairs. ' f'Check atom positions.'
+                            f'SC atom {I} maps to multiple (α,ℓ) pairs. Check atom positions.'
                         )
                     atom_map[alpha, ell] = I
                     used.add(I)
@@ -326,9 +326,6 @@ def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbo
     )
     arry, _ = pf.data_controller.data_dicts()
     nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
-
-    # Fix PAOFLOW j↔k axis swap  (sctau[ia,i,k,j] convention)
-    arry['HRs'] = np.swapaxes(arry['HRs'], 3, 4)
 
     get_R_grid_fft(pf.data_controller, nk1, nk2, nk3)
     R = arry['R'].copy()
