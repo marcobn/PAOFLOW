@@ -1045,6 +1045,61 @@ class PAOFLOW:
 
         self.report_module_time('j_to_lm_hamiltonian')
 
+    def mirror_chern_number(self, nbnd_occ='auto', z2pack=True, is_lm=False,
+                            symprec=1e-2, surface_kwargs=None, gap_check=True,
+                            auto_tighten=True, z2_fallback=True, verbose=True):
+        """
+        Mirror Chern number C_M of a 2D material (horizontal mirror sigma_h),
+        using Z2Pack for the sector Chern numbers.
+
+        In the lm basis the horizontal mirror is the constant operator
+        M_z = P_site (x) diag(eta_z) (x) diag(-i_up, +i_down); this rotates the
+        Hamiltonian to the lm basis, auto-detects the sigma_h atom permutation from
+        the relaxed coordinates, verifies [H(k), M_z] = 0, splits H into the +-i
+        eigen-sectors and computes each sector's Chern number, giving
+        C_M = (C_{+i} - C_{-i})/2 and nu = C_M mod 2.  A centrosymmetric layer with
+        no sigma_h falls back to the Z2 index over half the BZ.  Call after
+        'pao_hamiltonian' (fully-relativistic run); run serially.  Requires the
+        optional 'z2pack' and 'tbmodels' packages.
+
+        Arguments:
+            nbnd_occ (int|'auto'): number of occupied bands ('auto' = nelec).
+            z2pack (bool): run the Z2Pack Chern step (else only write sectors).
+            is_lm (bool): True if 'HRs' is already in the lm basis.
+            symprec (float): sigma_h detection tolerance (fractional).
+            surface_kwargs (dict): overrides for z2pack.surface.run (always win).
+            gap_check (bool): report the min direct / indirect gap.
+            auto_tighten (bool): tighten the Z2Pack sampling for a small direct
+                gap (< 0.20 eV), e.g. lower min_neighbour_dist / move_tol and
+                densify the loops; only for keys not set in surface_kwargs.
+            z2_fallback (bool): compute Z2 when no sigma_h is found.
+            verbose (bool): print progress.
+
+        Returns:
+            dict: sigma_h, glide, perm, z0, tau, residual, nawf, nocc, gap,
+                  C_plus, C_minus, C_M, nu, nu_z2 (None where not computed).
+        """
+        from .topology.do_mirror_chern import do_mirror_chern
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print("mirror_chern_number requires 'HRs'; run 'pao_hamiltonian' first.")
+            return None
+        try:
+            result = do_mirror_chern(
+                self.data_controller, nbnd_occ=nbnd_occ, z2pack=z2pack, is_lm=is_lm,
+                symprec=symprec, surface_kwargs=surface_kwargs, gap_check=gap_check,
+                auto_tighten=auto_tighten, z2_fallback=z2_fallback, verbose=verbose)
+        except Exception as e:
+            self.report_exception('mirror_chern_number')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('mirror_chern_number')
+        return result
+
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
