@@ -125,6 +125,7 @@ def compute_current_vs_bias(
     Notes
     -----
     Implements:
+
     .. math::
         I(V) = \int dE \; T(E) [f(E - \mu_L) - f(E - \mu_R)]
 

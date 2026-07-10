@@ -14,7 +14,7 @@ following stages:
    For each space-group rotation, the :math:`D^{(l)}` matrices are
    built via the ZYZ-convention Euler-angle decomposition
    (:func:`mat2eul`, :func:`eul2mat`, :func:`d_mat_l`) and converted
-   from the quantum-mechanics :math:`|lm\rangle` basis to the chemistry
+   from the quantum-mechanics :math:`|lm\\rangle` basis to the chemistry
    real-orbital basis (:func:`get_trans`, :func:`convert_wigner_d`).
    Spin–orbit variants (:func:`get_wigner_so`) handle half-integer
    :math:`j` channels.

@@ -119,40 +119,46 @@ def Slater_Koster(data_controller, params):
     Slater-Koster direction-cosine expressions.
 
     High-level workflow:
+
     - Read lattice vectors and atomic positions from params and set up basic
-        attributes (number of atoms, orbitals, hoppings).
+      attributes (number of atoms, orbitals, hoppings).
     - Compute reciprocal lattice vectors and the cell volume.
     - Build a 3x3x3 supercell of atomic positions to identify neighbors and
-        determine a first-neighbor cutoff.
+      determine a first-neighbor cutoff.
     - Construct the Dnm matrix (orbital-position differences) for gradient
-        calculations.
+      calculations.
     - Allocate the real-space Hamiltonian array HRs and fill on-site energies
-        and hopping terms using direction cosines and SK parameters.
+      and hopping terms using direction cosines and SK parameters.
 
     Data structure expectations (params):
+
     - params['model']['a_vectors']: 3x3 lattice vectors.
     - params['model']['atoms']: dict keyed by string indices ("0", "1", ...),
-        each containing:
-            - 'name': atomic species label
-            - 'tau': fractional/cartesian position in lattice units
-            - 'orbitals': list of orbital labels used to map on-site terms
-            - on-site energies keyed by orbital label
+      each containing:
+
+      - 'name': atomic species label
+      - 'tau': fractional/cartesian position in lattice units
+      - 'orbitals': list of orbital labels used to map on-site terms
+      - on-site energies keyed by orbital label
+
     - params['model']['hoppings']: either a flat dict of SK parameters with keys
-        'sss', 'sps', 'pps', 'ppp', etc., or a shell dict with 'nn' and optional
-        'nnn'/'nnnn' blocks containing those keys.
+      'sss', 'sps', 'pps', 'ppp', etc., or a shell dict with 'nn' and optional
+      'nnn'/'nnnn' blocks containing those keys.
 
     Output side-effects (data_controller):
+
     - arry['a_vectors'], arry['b_vectors'], arry['tau'], arry['atoms'],
-        arry['shells'], arry['norbitals'], arry['sctau'], arry['Dnm'],
-        arry['HRs']
+      arry['shells'], arry['norbitals'], arry['sctau'], arry['Dnm'],
+      arry['HRs']
     - attr['alat'], attr['omega'], attr['natoms'], attr['nawf'], attr['bnd'],
-        attr['nbnds'], attr['nk1'], attr['nk2'], attr['nk3'], attr['nkpnts'],
-        attr['nspin'], attr['dftSO'], attr['shift'], attr['cutoff']
+      attr['nbnds'], attr['nk1'], attr['nk2'], attr['nk3'], attr['nkpnts'],
+      attr['nspin'], attr['dftSO'], attr['shift'], attr['cutoff']
 
     Notes:
+
     - The neighbor search uses a 3x3x3 supercell for nn only, 5x5x5 when nnn
-        is enabled, and 7x7x7 when nnnn is enabled. Shells are determined from
-        distinct neighbor distances and mid-point cutoffs.
+      is enabled, and 7x7x7 when nnnn is enabled. Shells are determined from
+      distinct neighbor distances and mid-point cutoffs.
     - Only the unpolarized case is supported; spin-orbit is disabled here.
     """
 
@@ -996,7 +1002,7 @@ def SK_EDTB(data_controller, params):
         gamma : float or dict
             If float → single global screening strength.
             If dict  → per-channel {'sss': γ1, 'pps': γ2, …}
-                    or per-l-pair {'ss': γ1, 'sp': γ2, …}.
+            or per-l-pair {'ss': γ1, 'sp': γ2, …}.
         onsite_shift : dict, optional
             Per-orbital environment-dependent on-site correction strength.
             Keys are orbital labels ('s', 'p', 'd'); values are floats.

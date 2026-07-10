@@ -39,8 +39,7 @@ def do_dielectric_tensor(data_controller, ene):
 
     Output files (written to ``opath``)
     ------------------------------------
-    ``epsi_XY.dat``, ``epsr_XY.dat``, ``eels_XY.dat``, ``ieps_XY.dat``,
-    ``sigmar_XY.dat``, ``sigmai_XY.dat``
+    ``epsi_XY.dat``, ``epsr_XY.dat``, ``eels_XY.dat``, ``ieps_XY.dat``, ``sigmar_XY.dat``, ``sigmai_XY.dat``
         Two-column (energy, value) files for each tensor component ``XY``;
         spin-polarised runs also produce ``_0`` and ``_1`` variants.
         ``sigmar``/``sigmai`` are the real (absorptive) and imaginary

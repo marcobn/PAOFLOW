@@ -63,11 +63,12 @@ class PAOFLOW:
         Central data store; all arrays (``HRs``, ``Hks``, ``E_k``, …) and
         scalar attributes live in its ``data_arrays`` and ``data_attributes``
         dictionaries.
+
     comm, rank, size : MPI communicator and process identifiers.
 
     Methods — PAO Hamiltonian
     -------------------------
-    projections(\**kw)
+    projections(\\**kw)
         Compute PAO projections from pseudopotential or all-electron basis sets,
         replacing ``projwfc.x``.
     read_atomic_proj_QE()
@@ -911,6 +912,7 @@ class PAOFLOW:
             lambda_p (list of floats) :  p orbitals SOC strengh for each atom
             lambda_d (list of float)  :  d orbitals SOC strengh for each atom
             soc_shell_weights (dict, optional):
+
                 Per-shell SOC weights for the ``'generic'`` builder
                 (extended bases).  Keyed by species symbol, value is a
                 list of bool or float of the same length as
@@ -1484,21 +1486,23 @@ class PAOFLOW:
         Arguments:
           band_curvature (bool): also compute the band curvature.
           nonlocal_velocity (bool or None): enable the non-local
-            pseudopotential velocity correction.  When ``None`` (default)
-            the value falls back to ``attr['nonlocal_velocity']`` (False if
-            unset), preserving the legacy DataController-driven behaviour.
-            Pass ``True`` here to enable the correction directly from the
-            call without touching the DataController.
+          pseudopotential velocity correction.  When ``None`` (default)
+          the value falls back to ``attr['nonlocal_velocity']`` (False if
+          unset), preserving the legacy DataController-driven behaviour.
+          Pass ``True`` here to enable the correction directly from the
+          call without touching the DataController.
+
           nonlocal_velocity_inject (bool or None): fold the correction into
-            ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
-            it falls back to ``attr['nonlocal_velocity_inject']`` if set,
-            otherwise defaults to the resolved ``nonlocal_velocity`` value
-            (i.e. enabling the correction injects it by default; building
-            without injecting is diagnostic-only).
+          ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
+          it falls back to ``attr['nonlocal_velocity_inject']`` if set,
+          otherwise defaults to the resolved ``nonlocal_velocity`` value
+          (i.e. enabling the correction injects it by default; building
+          without injecting is diagnostic-only).
+
           nonlocal_velocity_sign (int or None): injection sign convention.
-            When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
-            if set, otherwise the calibrated per-path default is used
-            (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
+          When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
+          if set, otherwise the calibrated per-path default is used
+          (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
 
         Returns:
           None
@@ -1939,6 +1943,7 @@ class PAOFLOW:
     def density(self, nr1=48, nr2=48, nr3=48):
         """
         Calculate the Electron Density in real space
+
         Arguments:
             nr1,nr2,nr3: real space grid
 
@@ -2115,6 +2120,7 @@ class PAOFLOW:
     ):
         """
         Calculate the Rashba-Edelstein tensor
+
         Arguments:
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
@@ -2274,7 +2280,7 @@ class PAOFLOW:
         if attr['smearing'] == None:
             do_dos(self.data_controller, emin, emax, ne, delta)
         else:
-            do_dos_adaptive(self.data_controller, emin, emax, ne, delta)
+            do_dos_adaptive(self.data_controller, emin, emax, ne)
         do_doping(self.data_controller, temps, ene, fname)
 
         self.report_module_time('Doping')
@@ -2585,16 +2591,16 @@ class PAOFLOW:
         r"""
         Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
 
-                     \sum_n |v_nk|^4
-        IPR_nk = -----------------------
-                  ( \sum_n |v_nk|^2 )^2
+        .. math::
+
+            \text{IPR}_{nk} = \frac{\sum_n |v_{nk}|^4}{(\sum_n |v_{nk}|^2)^2}
 
         where n is the band index and k the k-point
 
         The final shape is (nspin,nkpts,nbands,3),
         where the last axis gives: 0 as the k-point coordinate,
-                                   1 the band energy, and
-                                   2 the inverse partition ratio
+        1 the band energy, and
+        2 the inverse partition ratio
 
         The result in saved to a ipr.npy file.
         To open the file one should use:
@@ -2645,16 +2651,18 @@ class PAOFLOW:
 
         Arguments:
             kspace_method (str): method used to sample the BZ:
-                                 *'path': 1D path along the BZ;
-                                 *'track': 1D path along x direction for several points in the y direction;
-                                 *'circle': circular path around a k-point, given center and radius;
-                                 *'square': retangular region with nk1 points along x and nk2 points along y. Region defined given x and y start and end points or full BZ.
+                                 \\*'path': 1D path along the BZ;
+                                 \\*'track': 1D path along x direction for several points in the y direction;
+                                 \\*'circle': circular path around a k-point, given center and radius;
+                                 \\*'square': retangular region with nk1 points along x and nk2 points along y. Region defined given x and y start and end points or full BZ.
+
             berry_path (str): A string representing the band path to follow. The first and last k-point must not be the same.
             berry_high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
             nk (int): Number of k-points to include in the path
             closed (bool, optional): whether or not to include the connection of the last and first points in the loop
             method (str, {'berry','zak'}): 'berry' returns the usual berry phase. 'zak' includes the Zak phase for 1D systems which takes into account the Bloch factor exp(-iG.r)
-                                            accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+            accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+
             sub (None or list of int, optional): index of selected bands to calculate the Berry phase
             occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None)
             kxlim (tuple, float): start and end points in x direction for sampling the BZ, used when kspace_method='square' .

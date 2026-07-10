@@ -17,7 +17,7 @@ Conventions
 * The H-vector spherical convention matches Fortran ``psetangle``:
 
       theta = atan2(v_y, v_x)             # azimuth in xy-plane
-      phi   = acos(v_z / |v|)             # polar angle from +z
+      phi   = acos(v_z / :math:`|v|`)             # polar angle from +z
 """
 
 from __future__ import annotations

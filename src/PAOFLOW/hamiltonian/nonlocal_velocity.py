@@ -1832,7 +1832,7 @@ def inject_into_dHksp(
 
 def build_jm_transformation_matrix(atomic_basis_rel, atomic_basis_scalar):
     """Assemble the (n_r, 2 n_s) rotation from spinor-doubled scalar PAO
-    to the relativistic |j, m_j> PAO basis.
+    to the relativistic :math:`|j, m_j\\rangle` PAO basis.
 
     Parameters
     ----------
@@ -1951,7 +1951,7 @@ def build_jm_transformation_matrix(atomic_basis_rel, atomic_basis_scalar):
 
 
 def rotate_dp_to_jm(delta_p_scalar, T):
-    """Rotate scalar Delta_p into the relativistic |j, m_j> basis.
+    """Rotate scalar Delta_p into the relativistic :math:`|j, m_j\\rangle` basis.
 
     Given ``delta_p_scalar`` of shape ``(..., n_s, n_s)`` and the
     transformation ``T`` of shape ``(n_r, 2 n_s)`` from

@@ -152,7 +152,7 @@ def read_relaxed_coordinates_QE(fname: str):
                     if 'alat' in unit or len(unit) == 0:
                         struct['lunit'] = 'alat'
                         if 'alat' in unit:
-                            cpattern = re.search('\(([^\)]+)\)', lines[eL])
+                            cpattern = re.search(r'\(([^\)]+)\)', lines[eL])
                             if cpattern is not None:
                                 alat = float(cpattern.group(0)[1:-1].split('=')[1])
                     else:
@@ -228,7 +228,7 @@ def struct_from_inputfile_QE(fname: str) -> dict:
         # Split inline commas without destroying Hubbard_occ tags
         block_args = []
         for m in match:
-            hcinds = set([s.end(0) - 1 for s in list(re.finditer('\(([^\)]+),', m))])
+            hcinds = set([s.end(0) - 1 for s in list(re.finditer(r'\(([^\)]+),', m))])
 
             if len(hcinds) == 0:
                 for s in m.split(','):
