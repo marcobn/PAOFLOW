@@ -7,7 +7,11 @@ pytest.importorskip('scipy')
 from scipy.io import FortranFile
 
 from PAOFLOW.elphon.do_ao_eph import _k_permutation, vertex_from_qe_elphmat
-from PAOFLOW.elphon.qe_elph_io import el_ph_mat_to_cartesian, read_qe_el_ph_mat
+from PAOFLOW.elphon.qe_elph_io import (
+    el_ph_mat_to_cartesian,
+    read_qe_ahc_gkk,
+    read_qe_el_ph_mat,
+)
 
 
 def _write_dump(path, nbnd, nksq, nat, nkstot, el, u, xq, xk, et):
@@ -129,3 +133,114 @@ def test_vertex_from_qe_elphmat_shape(tmp_path):
     gR, q_cryst = vertex_from_qe_elphmat(p, A, kcry, bg, ng)
     assert gR.shape == (nawf, nawf, ncart, ng[0], ng[1], ng[2])
     np.testing.assert_allclose(q_cryst, np.zeros(3), atol=1e-12)
+
+
+def test_read_qe_ahc_gkk_roundtrip(tmp_path):
+    """Synthetic AHC dump: check reshape/transpose and etk/etq layout."""
+    nbnd, nmodes, nk = 4, 3, 8
+    rng = np.random.default_rng(11)
+    # writer layout: complex (nbnd, ahc_nbnd, nmodes, nk) Fortran order, raw
+    gkk = rng.standard_normal((nbnd, nbnd, nmodes, nk)) + 1j * rng.standard_normal(
+        (nbnd, nbnd, nmodes, nk)
+    )
+    etk = rng.standard_normal((nbnd, nk))
+    etq = rng.standard_normal((nbnd, nk))
+    d = tmp_path
+    gkk.ravel(order='F').tofile(str(d / 'ahc_gkk_iq3.bin'))
+    etk.ravel(order='F').tofile(str(d / 'ahc_etk_iq3.bin'))
+    etq.ravel(order='F').tofile(str(d / 'ahc_etq_iq3.bin'))
+
+    out = read_qe_ahc_gkk(str(d), 3, nbnd, nmodes, nk)
+    assert out['el_cart'].shape == (nbnd, nbnd, nk, nmodes)
+    # el_cart(m, n, k, c) == gkk(ib=m, jb=n, imode=c, k)
+    np.testing.assert_allclose(out['el_cart'], np.transpose(gkk, (0, 1, 3, 2)), atol=1e-12)
+    np.testing.assert_allclose(out['etk'], etk.T, atol=1e-12)  # (nk, nbnd)
+    np.testing.assert_allclose(out['etq'], etq.T, atol=1e-12)
+
+
+def test_read_qe_ahc_gkk_size_check(tmp_path):
+    nbnd, nmodes, nk = 4, 3, 8
+    bad = np.zeros(nbnd * nbnd * nmodes * nk - 1, dtype=np.complex128)
+    bad.tofile(str(tmp_path / 'ahc_gkk_iq1.bin'))
+    with pytest.raises(ValueError):
+        read_qe_ahc_gkk(str(tmp_path), 1, nbnd, nmodes, nk)
+
+
+def test_lambda_q_dense_ws_fast_matches_slow():
+    """The precompute-once fast path must reproduce lambda_q_dense_ws exactly."""
+    from PAOFLOW.elphon.elph_bloch import (
+        lambda_q_dense_ws,
+        lambda_q_dense_ws_fast,
+        precompute_dense_electrons,
+    )
+
+    rng = np.random.default_rng(21)
+    nawf, ncart = 3, 3
+    ng = (2, 2, 2)
+    at = np.eye(3)
+    HRs = rng.standard_normal((nawf, nawf, 2, 2, 2, 1)) + 1j * rng.standard_normal(
+        (nawf, nawf, 2, 2, 2, 1)
+    )
+    gR = rng.standard_normal((nawf, nawf, ncart, 2, 2, 2)) + 1j * rng.standard_normal(
+        (nawf, nawf, ncart, 2, 2, 2)
+    )
+    zmass = rng.standard_normal((3, ncart))
+    freqs = np.array([2.0, 3.0, 4.0])
+    q = np.array([0.5, 0.0, 0.0])  # commensurate with Nk=4
+    Nk = 4
+
+    slow = lambda_q_dense_ws(gR, HRs, q, ng, at, zmass, freqs, [0.3], Nk, nelec=3)
+    elec = precompute_dense_electrons(HRs, at, Nk, [0.3], 3, ng)
+    fast = lambda_q_dense_ws_fast(gR, elec, q, zmass, freqs)
+    np.testing.assert_allclose(fast['lambda_qnu'], slow['lambda_qnu'], rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(fast['gamma_ghz'], slow['gamma_ghz'], rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(fast['dos_ef'], slow['dos_ef'], rtol=1e-9)
+
+
+def test_lambda_q_dense_ws_fast_rejects_incommensurate():
+    from PAOFLOW.elphon.elph_bloch import lambda_q_dense_ws_fast, precompute_dense_electrons
+
+    rng = np.random.default_rng(22)
+    nawf, ncart, ng = 3, 3, (2, 2, 2)
+    at = np.eye(3)
+    HRs = rng.standard_normal((nawf, nawf, 2, 2, 2, 1)) + 0j
+    gR = rng.standard_normal((nawf, nawf, ncart, 2, 2, 2)) + 0j
+    elec = precompute_dense_electrons(HRs, at, 4, [0.3], 3, ng)
+    with pytest.raises(ValueError):
+        # q = 1/3 is not commensurate with Nk = 4
+        lambda_q_dense_ws_fast(
+            gR,
+            elec,
+            np.array([1.0 / 3, 0.0, 0.0]),
+            rng.standard_normal((3, ncart)),
+            np.array([2.0, 3.0, 4.0]),
+        )
+
+
+def test_vertex_pao_R_vectorized_matches_loop():
+    """The batched PAO rotation must equal the explicit per-k loop."""
+    from PAOFLOW.elphon.elph_bloch import vertex_pao_R
+
+    rng = np.random.default_rng(31)
+    ng = (2, 2, 2)
+    nk = 8
+    nbnd, nawf, ncart = 4, 3, 3
+    ax = [np.arange(n) / n for n in ng]
+    kcry = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+    kidx = np.round(kcry * np.array(ng)).astype(int) % np.array(ng)
+    d = rng.standard_normal((nk, nbnd, nbnd, ncart)) + 1j * rng.standard_normal(
+        (nk, nbnd, nbnd, ncart)
+    )
+    A = rng.standard_normal((nbnd, nawf, nk)) + 1j * rng.standard_normal((nbnd, nawf, nk))
+    ikq = rng.permutation(nk)
+
+    gR = vertex_pao_R(d, A, ikq, kidx, ng)
+
+    gk = np.zeros((nawf, nawf, ncart, ng[0], ng[1], ng[2]), dtype=complex)
+    for k in range(nk):
+        i1, i2, i3 = kidx[k]
+        gk[:, :, :, i1, i2, i3] = np.einsum(
+            'mi,mnc,nj->ijc', A[:, :, ikq[k]].conj(), d[k], A[:, :, k]
+        )
+    gR_ref = np.fft.fftn(gk, axes=(3, 4, 5)) / (ng[0] * ng[1] * ng[2])
+    np.testing.assert_allclose(gR, gR_ref, rtol=1e-12, atol=1e-12)

@@ -36,26 +36,6 @@ ELPH_DATA=/path/to/qe/fc/files conda run -n work python example_qe_dfpt_properti
 Required inputs: the phonon force constants (`q2r.x`) and the coupling force
 constants (`matdyn.x` with `la2F=.true.`), one `a2Fmatdyn.NN` per smearing.
 
-## `example_epw_like_interpolation.py` — Route 2 (deprecated / debugging)
-
-**Superseded by the AO route above.** Reconstructs the full DFPT perturbation
-from the QE coarse-grid `dvscf` (`induced + bare local + bare nonlocal`), builds
-the Bloch vertex, rotates it into the PAO gauge, and interpolates to a dense
-grid. Produces the correct **structure** (α²F follows the phonon DOS) but the
-coupling magnitude |g|² is ~2.9× too large for Pb — an irreducible ~0.4%
-cancellation between the bare-local (271×) and induced (228×) terms, not fixable
-at the reconstruction level (see `Elphon_module.md` §6). Kept only as a
-physics/debugging harness.
-
-```bash
-ELPH_BASE=/path/to/exercise1_epw conda run -n work python example_epw_like_interpolation.py
-```
-
-Required inputs: a coarse `pw.x` nscf save on the **full** k-grid (`nosym`,
-`noinv`, `nbnd > nawf`, wavefunctions saved), the `ph.x` DFPT output on the same
-k-grid (`fildvscf`, `phsave/patterns.*.xml`), the `*.dyn*` files, and the
-pseudopotential UPF.
-
 ## Environment
 
 Run in the `work` conda env (editable `src` tree). Units: `HRs`/eigenvalues in

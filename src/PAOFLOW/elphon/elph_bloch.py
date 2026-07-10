@@ -1,28 +1,18 @@
-"""Bloch-space electron-phonon matrix elements from QE DFPT output (Phase 1A, EPW route).
+"""Shared Bloch / PAO-gauge vertex machinery for the electron-phonon AO route.
 
-Builds the coarse-grid electron-phonon vertex
+Provides the geometry reader and the interpolation primitives used by
+:mod:`PAOFLOW.elphon.do_ao_eph` to turn QE's coarse-grid Cartesian coupling into
+the dense-grid Eliashberg properties:
 
-.. math::
-
-    g_{mn,\\nu}(k, q) = \\sum_{\\kappa\\alpha}
-        \\frac{z^{\\nu}_{\\kappa\\alpha}(q)}{\\sqrt{2 M_\\kappa \\omega_{q\\nu}}}\\,
-        \\langle \\psi_{m,k+q} | \\partial_{\\kappa\\alpha} V_q | \\psi_{n,k}\\rangle
-
-directly from the QE ``nscf`` wavefunctions and the ``ph.x`` ``dvscf`` files --
-the PAOFLOW replacement for ``pw2wannier90`` + EPW's Bloch vertex.  The Cartesian
-deformation-potential matrix elements
-
-.. math::
-
-    d_{mn,\\kappa\\alpha}(k,q) = \\frac1{N_r}\\sum_r
-        [e^{-i G_0\\cdot r} u_{m,k'}(r)]^*\\, \\partial_{\\kappa\\alpha}V_q(r)\\, u_{n,k}(r)
-
-are contracted with the phonon eigenvectors ``z`` (from the QE dynamical matrix)
-and summed over the Fermi surface with the double-delta approximation to give the
-mode-resolved coupling ``lambda_{q\\nu}`` at each (irreducible) coarse ``q``.
-
-Only the *local* self-consistent part of the perturbation (``dvscf``) is included
-here; the nonlocal beta-projector derivative is a separate correction.
+* :func:`read_nscf` -- k-points, eigenvalues, Fermi level and lattice from the QE
+  ``data-file-schema.xml``;
+* :func:`kq_index_map` -- ``k -> (index of k+q on the grid, umklapp G0)``;
+* :func:`vertex_pao_R` -- rotate the band-basis Cartesian coupling into the PAO
+  gauge ``A_{k+q}^dagger d A_k`` and Fourier-transform it to the electron
+  real-space cells ``g(R_e)``;
+* :func:`lambda_q_dense_ws` -- Wigner-Seitz interpolate the electrons (``HRs``)
+  and the vertex to a dense grid and evaluate the Fermi-surface double delta ->
+  ``lambda_{q nu}``.
 """
 
 import os
@@ -30,23 +20,10 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from ..projection.do_atwfc_proj import fft_allwfc_G2R, read_QE_wfc
-
 HARTREE_TO_RY = 2.0
 RY_TO_THZ = 3289.842
 RY_TO_EV = 13.605693122994
 AMU_RY = 911.4442421
-
-
-class _DC:
-    """Minimal data-controller shim for :func:`read_QE_wfc`."""
-
-    def __init__(self, fpath, nspin=1):
-        self.data_attributes = {'fpath': fpath, 'nspin': nspin}
-        self.data_arrays = {}
-
-    def data_dicts(self):
-        return self.data_arrays, self.data_attributes
 
 
 def read_nscf(save_dir):
@@ -152,128 +129,6 @@ def kq_index_map(kpts_cryst, q_cryst, nkgrid, tol=1.0e-5):
     return ikq, G0
 
 
-def _umklapp_phase(G0, fft):
-    """``e^{-i G0.r}`` on the FFT grid for an integer reciprocal vector ``G0``."""
-    nr1, nr2, nr3 = fft
-    if not np.any(G0):
-        return None
-    a1 = np.exp(-2j * np.pi * G0[0] * np.arange(nr1) / nr1)
-    a2 = np.exp(-2j * np.pi * G0[1] * np.arange(nr2) / nr2)
-    a3 = np.exp(-2j * np.pi * G0[2] * np.arange(nr3) / nr3)
-    return a1[:, None, None] * a2[None, :, None] * a3[None, None, :]
-
-
-def _load_all_ur(save_dir, nk, fft, nspin=1):
-    """FFT every ``nscf`` wavefunction to real space: ``ur[ik]`` shape ``(nbnd, nr1,nr2,nr3)``."""
-    dc = _DC(save_dir, nspin=nspin)
-    ur = []
-    for ik in range(nk):
-        gk, wf = read_QE_wfc(dc, ik, 0)
-        ur.append(fft_allwfc_G2R(wf['wfc'], gk, fft[0], fft[1], fft[2], 1.0))
-    return ur
-
-
-def deformation_potential_q(ur, ikq, G0, dvscf_cart, fft):
-    """Cartesian deformation-potential matrix elements ``d_{mn,c}(k)`` for one q.
-
-    Parameters
-    ----------
-    ur : list of ndarray
-        Real-space cell-periodic wavefunctions ``u_{n,k}(r)`` per k
-        (``(nbnd, nr1, nr2, nr3)``).
-    ikq, G0 : ndarray
-        Output of :func:`kq_index_map`.
-    dvscf_cart : ndarray ``(3*nat, nr1, nr2, nr3)``
-        Cartesian ``dV/du`` for this q (from :func:`PAOFLOW.elphon.qe_dvscf`).
-    fft : tuple(int, int, int)
-
-    Returns
-    -------
-    ndarray ``(nk, nbnd, nbnd, 3*nat)`` complex
-        ``d[k, m, n, c] = <u_{m,k+q}| dvscf_c | u_{n,k}> / N_r``.
-    """
-    nk = len(ur)
-    nbnd = ur[0].shape[0]
-    ncart = dvscf_cart.shape[0]
-    nr = fft[0] * fft[1] * fft[2]
-    d = np.zeros((nk, nbnd, nbnd, ncart), dtype=complex)
-    dvflat = dvscf_cart.reshape(ncart, nr)
-    for ik in range(nk):
-        u_k = ur[ik].reshape(nbnd, nr)  # (n, r)
-        ph = _umklapp_phase(G0[ik], fft)
-        u_kq = ur[ikq[ik]]
-        if ph is not None:
-            u_kq = u_kq * ph
-        u_kq = u_kq.reshape(nbnd, nr)  # (m, r)
-        # d[m,n,c] = sum_r conj(u_kq[m,r]) dvflat[c,r] u_k[n,r] / nr
-        # = sum_r conj(u_kq[m,r]) * (dvflat[c,r] * u_k[n,r])
-        for c in range(ncart):
-            tmp = dvflat[c][None, :] * u_k  # (n, r)
-            d[ik, :, :, c] = (u_kq.conj() @ tmp.T) / nr  # (m, n)
-    return d
-
-
-def lambda_qnu(d, eigs_ry, ikq, zmass, freqs_thz, dos_ef, sigmas_ry):
-    """Mode-resolved ``lambda_{q nu}`` (per smearing) from the deformation potentials.
-
-    .. math::
-
-        \\lambda_{q\\nu}(\\sigma) = \\frac{1}{N_k N(E_F) \\omega_{q\\nu}^2}
-            \\sum_{k,m,n} \\Big| \\sum_{\\kappa\\alpha}
-            d_{mn,\\kappa\\alpha}(k)\\, z^{\\nu}_{\\kappa\\alpha}/\\sqrt{M_\\kappa}\\Big|^2
-            \\delta_\\sigma(\\varepsilon_{nk})\\,\\delta_\\sigma(\\varepsilon_{m,k+q})
-
-    with ``z`` the mass-weighted dynamical-matrix eigenvectors, ``M`` in Ry mass
-    units, energies and ``omega`` in Ry, ``N(E_F)`` in states/spin/Ry.
-
-    Parameters
-    ----------
-    d : ndarray ``(nk, nbnd, nbnd, 3*nat)``
-        Deformation potentials from :func:`deformation_potential_q`.
-    eigs_ry : ndarray ``(nk, nbnd)``
-        Band energies (Ry, referred to E_F).
-    ikq : ndarray ``(nk,)``
-    zmass : ndarray ``(nmode, 3*nat)``
-        Mass-weighted eigenvectors ``z^{nu}_{kappa alpha}/sqrt(M_kappa)`` already
-        divided by ``sqrt(M)`` (Ry mass units).
-    freqs_thz : ndarray ``(nmode,)``
-    dos_ef : float or ndarray ``(nsigma,)``
-        DOS at E_F (states/spin/Ry); scalar or per smearing.
-    sigmas_ry : ndarray ``(nsigma,)``
-
-    Returns
-    -------
-    ndarray ``(nsigma, nmode)``
-        ``lambda_{q nu}`` per smearing.
-    """
-    nk, nbnd = eigs_ry.shape
-    nmode = zmass.shape[0]
-    sigmas = np.atleast_1d(sigmas_ry)
-    dos = np.atleast_1d(dos_ef)
-    if dos.size == 1:
-        dos = np.repeat(dos, sigmas.size)
-
-    # g_nu[k,m,n] = sum_c d[k,m,n,c] zmass[nu,c]
-    g = np.einsum('kmnc,vc->kvmn', d, zmass)  # (nk, nmode, m, n)
-    absg2 = np.abs(g) ** 2
-
-    e_k = eigs_ry  # (nk, nbnd) at k, index n
-    e_kq = eigs_ry[ikq]  # (nk, nbnd) at k+q, index m
-
-    omega_ry = np.abs(freqs_thz) / RY_TO_THZ
-    out = np.zeros((sigmas.size, nmode))
-    for isig, sig in enumerate(sigmas):
-        dk = np.exp(-((e_k / sig) ** 2)) / (sig * np.sqrt(np.pi))  # (nk, n)
-        dkq = np.exp(-((e_kq / sig) ** 2)) / (sig * np.sqrt(np.pi))  # (nk, m)
-        # sum over k, m, n: |g|^2 delta(e_kq[m]) delta(e_k[n])
-        num = np.einsum('kvmn,km,kn->v', absg2, dkq, dk)  # (nmode,)
-        safe = omega_ry > 1.0e-8
-        lam = np.zeros(nmode)
-        lam[safe] = num[safe] / (nk * dos[isig] * omega_ry[safe] ** 2)
-        out[isig] = lam
-    return out
-
-
 # --------------------------------------------------------------------------- #
 # EPW-style electron interpolation of the vertex (dense k, k+q).
 # --------------------------------------------------------------------------- #
@@ -291,7 +146,8 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     Parameters
     ----------
     d : ndarray ``(nk, nbnd, nbnd, ncart)``
-        Band-basis Cartesian deformation potentials (:func:`deformation_potential_q`).
+        Band-basis Cartesian deformation potentials ``d_{mn,c}(k)`` (QE's
+        ``el_ph_mat`` / ``ahc_gkk`` on the coarse k-grid).
     A : ndarray ``(nbnd, nawf, nk)``
         PAO projections ``A_{n i}(k) = <psi_{nk}|phi_i>`` (``arry['U'][..., ispin]``).
     ikq : ndarray ``(nk,)``
@@ -308,13 +164,15 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     """
     nk, nbnd, _, ncart = d.shape
     nawf = A.shape[1]
+    # Batched PAO rotation g^{PAO}(k) = A_{k+q}^dagger d(k) A_k over all k at once
+    # (BLAS-backed einsum) instead of a Python loop over k-points.
+    Ak = np.transpose(A, (2, 0, 1))  # (nk, nbnd, nawf)
+    Akq = np.transpose(A[:, :, ikq], (2, 0, 1))  # (nk, nbnd, nawf)
+    gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq.conj(), d, Ak, optimize=True)  # (nk,nawf,nawf,ncart)
     gk = np.zeros((nawf, nawf, ncart, ng[0], ng[1], ng[2]), dtype=complex)
-    for k in range(nk):
-        Ak = A[:, :, k]  # (nbnd, nawf)
-        Akq = A[:, :, ikq[k]]  # (nbnd, nawf)
-        i1, i2, i3 = kgrid_idx[k]
-        # (nawf, nawf, ncart): A_{k+q}^dagger d_c A_k for each cart c
-        gk[:, :, :, i1, i2, i3] = np.einsum('mi,mnc,nj->ijc', Akq.conj(), d[k], Ak)
+    i1, i2, i3 = kgrid_idx[:, 0], kgrid_idx[:, 1], kgrid_idx[:, 2]
+    # each k maps to a unique coarse-grid cell, so this scatter is unambiguous
+    gk[:, :, :, i1, i2, i3] = np.moveaxis(gk_b, 0, -1)  # (nawf, nawf, ncart, nk)
     # k -> R (inverse of estates_on_grid's ifftn*N convention).
     gR = np.fft.fftn(gk, axes=(3, 4, 5)) / (ng[0] * ng[1] * ng[2])
     return gR
@@ -339,94 +197,6 @@ def _fermi_level(E_flat, sigma, nelec, spin_deg=2.0, niter=120):
         else:
             lo = mid
     return 0.5 * (lo + hi)
-
-
-def lambda_q_dense(gR, HRs, q_int, ng_coarse, zmass, freqs_thz, sigmas_ry, Nk, ispin=0, nelec=None):
-    """Converged ``lambda_{q nu}`` by interpolating the vertex to a dense ``Nk^3`` grid.
-
-    The PAO-gauge vertex ``gR`` (from :func:`vertex_pao_R`) and the electronic
-    states (from ``HRs``) are Fourier-interpolated to a dense k-grid; at each
-    dense k the vertex is rotated back to the interpolated band basis, contracted
-    with the phonon eigenvectors and summed over the Fermi surface with the
-    double-delta.  ``N(E_F)`` is evaluated on the same dense grid.
-
-    Parameters
-    ----------
-    gR : ndarray ``(nawf, nawf, ncart, n1, n2, n3)``
-        PAO-gauge vertex in real space for this q.
-    HRs : ndarray ``(nawf, nawf, n1, n2, n3, nspin)``
-        PAO Hamiltonian (E_F at 0), from ``pao_hamiltonian``.
-    q_int : tuple(int, int, int)
-        ``q`` in coarse-grid integer units (``round(q_cryst * ng_coarse)``).
-    ng_coarse : tuple(int, int, int)
-        Coarse k-grid dimensions.
-    zmass : ndarray ``(nmode, ncart)``
-        Mass-weighted phonon eigenvectors ``z / sqrt(M)`` (Ry mass units).
-    freqs_thz : ndarray ``(nmode,)``
-    sigmas_ry : ndarray ``(nsigma,)``
-    Nk : int
-        Dense grid size (must be a multiple of every ``ng_coarse`` entry).
-    ispin : int, optional
-
-    Returns
-    -------
-    dict
-        ``{'lambda_qnu' (nsigma, nmode), 'dos_ef' (nsigma,), 'nk_dense'}``.
-    """
-    from .eph_kq import _embed_fftfreq, estates_on_grid
-
-    for s in ng_coarse:
-        if Nk % s != 0:
-            raise ValueError('Nk=%d must be divisible by coarse grid %s' % (Nk, ng_coarse))
-
-    E, V = estates_on_grid(HRs, Nk)  # (Nk,Nk,Nk,nspin,nawf), (...,nawf,nawf)
-    E = E[:, :, :, ispin, :] / RY_TO_EV  # (Nk,Nk,Nk,nawf), E_F at 0, converted eV->Ry
-    Vg = V[:, :, :, ispin, :, :]  # (Nk,Nk,Nk,nawf,nawf)
-    nawf = E.shape[-1]
-    ncart = gR.shape[2]
-    nmode = zmass.shape[0]
-
-    # Interpolate the vertex to the dense grid (band-limited, same convention as H).
-    gRe = _embed_fftfreq(gR, (3, 4, 5), (Nk, Nk, Nk))
-    gkd = np.fft.ifftn(gRe, axes=(3, 4, 5)) * (Nk**3)  # (nawf,nawf,ncart,Nk,Nk,Nk)
-
-    # k+q as an index shift on the dense grid.
-    shift = tuple((Nk // ng_coarse[d]) * q_int[d] for d in range(3))
-    roll = (-shift[0], -shift[1], -shift[2])
-    Vkq = np.roll(Vg, roll, axis=(0, 1, 2))
-    Ekq = np.roll(E, roll, axis=(0, 1, 2))
-
-    nkd = Nk**3
-    Ef = E.reshape(nkd, nawf)
-    Ekqf = Ekq.reshape(nkd, nawf)
-    Vk = Vg.reshape(nkd, nawf, nawf)
-    Vkqf = Vkq.reshape(nkd, nawf, nawf)
-    gkf = np.moveaxis(gkd.reshape(nawf, nawf, ncart, nkd), 3, 0)  # (nkd,nawf,nawf,ncart)
-
-    # Rotate the PAO-gauge vertex into the interpolated band basis.
-    tmp = np.einsum('kim,kijc->kmjc', Vkqf.conj(), gkf)
-    gband = np.einsum('kmjc,kjn->kmnc', tmp, Vk)  # (nkd, m, n, c)
-    gnu = np.einsum('kmnc,vc->kvmn', gband, zmass)  # (nkd, nmode, m, n)
-    absg2 = np.abs(gnu) ** 2
-
-    omega_ry = np.abs(freqs_thz) / RY_TO_THZ
-    sigmas = np.atleast_1d(sigmas_ry)
-    lam = np.zeros((sigmas.size, nmode))
-    gam_ghz = np.zeros((sigmas.size, nmode))
-    dos_out = np.zeros(sigmas.size)
-    safe = omega_ry > 1.0e-8
-    ry_to_ghz = RY_TO_EV * 2.417989242e5  # 1 Ry -> GHz
-    for isig, sig in enumerate(sigmas):
-        ef = _fermi_level(Ef, sig, nelec) if nelec is not None else 0.0
-        dk = np.exp(-(((Ef - ef) / sig) ** 2)) / (sig * np.sqrt(np.pi))
-        dkq = np.exp(-(((Ekqf - ef) / sig) ** 2)) / (sig * np.sqrt(np.pi))
-        nef = dk.sum() / nkd  # DOS per spin at E_F (states/Ry)
-        dos_out[isig] = nef
-        num = np.einsum('kvmn,km,kn->v', absg2, dkq, dk)
-        # phonon linewidth gamma_qnu = pi * (1/Nk) sum_k |g|^2 delta delta  (Ry) -> GHz
-        gam_ghz[isig] = np.pi * num / nkd * ry_to_ghz
-        lam[isig, safe] = num[safe] / (nkd * nef * omega_ry[safe] ** 2)
-    return {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos_out, 'nk_dense': Nk}
 
 
 def _ws_lattice(ng, at, span=2):
@@ -588,3 +358,198 @@ def lambda_q_dense_ws(
         gam_ghz[isig] = np.pi * num[isig] / nkd * ry_to_ghz
         lam[isig, safe] = num[isig, safe] / (nkd * dos_out[isig] * omega_ry[safe] ** 2)
     return {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos_out, 'nk_dense': Nk}
+
+
+def precompute_dense_electrons(
+    HRs, at, Nk, sigmas_ry, nelec, ng_vertex, ispin=0, kblock=4096, fs_window=8.0
+):
+    """Dense-grid electron spectrum + Fermi-surface delta, shared by every q.
+
+    Diagonalises ``H(k)`` **once** on the regular ``Nk^3`` grid (Wigner-Seitz
+    interpolation of ``HRs``).  Because the electronic spectrum is q-independent,
+    ``E(k+q)`` / ``V(k+q)`` for any commensurate q are index shifts of this array,
+    so :func:`lambda_q_dense_ws_fast` needs no per-q re-diagonalisation (the
+    dominant cost of :func:`lambda_q_dense_ws` when looping over many q).  The
+    Wigner-Seitz phase of the coupling grid ``ng_vertex`` is cached too, so the
+    per-q vertex interpolation reduces to a single BLAS matmul.
+
+    Parameters
+    ----------
+    HRs : ndarray ``(nawf, nawf, m1, m2, m3, nspin)``
+        PAO Hamiltonian (``E_F`` at 0).
+    at : ndarray ``(3, 3)``
+        Real-lattice vectors (rows, alat units) for the Wigner-Seitz sums.
+    Nk : int
+        Dense grid size.
+    sigmas_ry : array_like
+        Fermi-surface smearing(s) (Ry).
+    nelec : float or None
+        Valence electrons for the dense Fermi-level recompute (``None`` -> 0).
+    ng_vertex : tuple(int, int, int)
+        Real-space grid of the coupling vertex ``gR`` (its ``shape[3:6]``).
+    ispin, kblock : int, optional
+    fs_window : float, optional
+        Fermi-surface window in smearings for the shell mask (default 8, exact to
+        ``exp(-fs_window^2)``); lower it to prune wide-band metals more aggressively.
+
+    Returns
+    -------
+    dict
+        Cache consumed by :func:`lambda_q_dense_ws_fast` -- keys ``Nk``, ``nawf``,
+        ``E`` ``(nkd, nawf)`` (Ry), ``V`` ``(nkd, nawf, nawf)``, ``dk``
+        ``(nsigma, nkd, nawf)``, ``dos`` ``(nsigma,)``, plus the cached vertex
+        Wigner-Seitz phase (``phkg``, ``Midxg``, ``Wg``, ``ng_vertex``).
+    """
+    nawf = HRs.shape[0]
+    H = HRs[:, :, :, :, :, ispin]
+    ng_H = H.shape[2:5]
+    NintH, WH, MidxH = _ws_lattice(ng_H, at)
+    Hn = np.transpose(H[:, :, MidxH[:, 0], MidxH[:, 1], MidxH[:, 2]], (2, 0, 1))
+    Hn = Hn * WH[:, None, None]
+    Hn_flat = Hn.reshape(Hn.shape[0], -1)
+
+    ax = [np.arange(Nk) / Nk for _ in range(3)]
+    K = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+    nkd = K.shape[0]
+    sigmas = np.atleast_1d(sigmas_ry)
+
+    E = np.empty((nkd, nawf))
+    V = np.empty((nkd, nawf, nawf), dtype=complex)
+    for s0 in range(0, nkd, kblock):
+        Kb = K[s0 : s0 + kblock]
+        phk = np.exp(2j * np.pi * (Kb @ NintH.T))
+        Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
+        Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
+        e, v = np.linalg.eigh(Hk)
+        E[s0 : s0 + Kb.shape[0]] = e / RY_TO_EV
+        V[s0 : s0 + Kb.shape[0]] = v
+
+    ef_sig = np.zeros(sigmas.size)
+    dk = np.empty((sigmas.size, nkd, nawf))
+    dos = np.zeros(sigmas.size)
+    for isig, sig in enumerate(sigmas):
+        ef = _fermi_level(E, sig, nelec) if nelec is not None else 0.0
+        ef_sig[isig] = ef
+        d = np.exp(-(((E - ef) / sig) ** 2)) / (sig * np.sqrt(np.pi))
+        dk[isig] = d
+        dos[isig] = d.sum() / nkd
+
+    # Fermi-surface shell: k with a band within ``fs_window`` smearings of E_F.
+    # The double delta is negligible (exp(-fs_window^2)) outside it, so it prunes
+    # the per-q vertex contraction to the states that actually scatter.
+    shell = np.empty((sigmas.size, nkd), dtype=bool)
+    for isig, sig in enumerate(sigmas):
+        shell[isig] = np.min(np.abs(E - ef_sig[isig]), axis=1) < fs_window * sig
+
+    Nintg, Wg, Midxg = _ws_lattice(tuple(ng_vertex), at)
+    phkg = np.exp(2j * np.pi * (K @ Nintg.T))  # (nkd, nwsg)
+    return {
+        'Nk': Nk,
+        'nawf': nawf,
+        'K': K,
+        'E': E,
+        'V': V,
+        'ef_sig': ef_sig,
+        'dk': dk,
+        'dos': dos,
+        'sigmas': sigmas,
+        'shell': shell,
+        'fs_window': fs_window,
+        'ng_vertex': tuple(int(n) for n in ng_vertex),
+        'Wg': Wg,
+        'Midxg': Midxg,
+        'phkg': phkg,
+    }
+
+
+def lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freqs_thz, kblock=4096):
+    """``lambda_{q nu}`` for one q, reusing a :func:`precompute_dense_electrons` cache.
+
+    Numerically identical to :func:`lambda_q_dense_ws` (deterministic ``eigh``),
+    but the q-independent dense electron spectrum, Fermi level and Fermi-surface
+    delta come from ``electrons``; only the coupling vertex is interpolated per q,
+    and ``k+q`` is an index shift (requires ``Nk`` commensurate with ``q``).
+
+    Parameters
+    ----------
+    gR : ndarray ``(nawf, nawf, ncart, n1, n2, n3)``
+        PAO-gauge vertex real-space cells for this q (grid == ``ng_vertex``).
+    electrons : dict
+        Output of :func:`precompute_dense_electrons`.
+    q_cryst : ndarray ``(3,)``
+        q-point (crystal coordinates); ``q * Nk`` must be integer.
+    zmass : ndarray ``(nmode, ncart)``
+    freqs_thz : ndarray ``(nmode,)``
+    kblock : int, optional
+
+    Returns
+    -------
+    dict
+        ``{'lambda_qnu', 'gamma_ghz', 'dos_ef', 'nk_dense'}``.
+    """
+    Nk = electrons['Nk']
+    nawf = electrons['nawf']
+    nkd = Nk**3
+    ncart = gR.shape[2]
+    nmode = zmass.shape[0]
+    if tuple(int(n) for n in gR.shape[3:6]) != electrons['ng_vertex']:
+        raise ValueError(
+            'vertex grid %s != cached ng_vertex %s' % (gR.shape[3:6], electrons['ng_vertex'])
+        )
+
+    shift = np.asarray(q_cryst, dtype=float) * Nk
+    if np.any(np.abs(shift - np.round(shift)) > 1.0e-6):
+        raise ValueError(
+            'Nk=%d must be commensurate with q=%s for the fast path' % (Nk, tuple(q_cryst))
+        )
+    shift = np.round(shift).astype(int)
+    roll = (-int(shift[0]), -int(shift[1]), -int(shift[2]))
+
+    Vk = electrons['V']
+    Vkq = np.roll(Vk.reshape(Nk, Nk, Nk, nawf, nawf), roll, axis=(0, 1, 2)).reshape(nkd, nawf, nawf)
+    dk_all = electrons['dk']  # (nsig, nkd, nawf)
+    nsig = dk_all.shape[0]
+    dkq_all = np.roll(dk_all.reshape(nsig, Nk, Nk, Nk, nawf), roll, axis=(1, 2, 3)).reshape(
+        nsig, nkd, nawf
+    )
+
+    Midxg, Wg, phkg = electrons['Midxg'], electrons['Wg'], electrons['phkg']
+    gn = np.transpose(gR[:, :, :, Midxg[:, 0], Midxg[:, 1], Midxg[:, 2]], (3, 0, 1, 2))
+    gn = gn * Wg[:, None, None, None]
+    gn_flat = gn.reshape(gn.shape[0], -1)
+
+    # Restrict to the Fermi-surface shell: only k with a band near E_F at BOTH k
+    # and k+q give a non-negligible double delta (exact to exp(-fs_window^2)).
+    shell = electrons.get('shell')
+    if shell is not None:
+        keep = np.zeros(nkd, dtype=bool)
+        for isig in range(nsig):
+            shq = np.roll(shell[isig].reshape(Nk, Nk, Nk), roll, axis=(0, 1, 2)).reshape(nkd)
+            keep |= shell[isig] & shq
+        idx = np.nonzero(keep)[0]
+    else:
+        idx = np.arange(nkd)
+
+    omega_ry = np.abs(freqs_thz) / RY_TO_THZ
+    safe = omega_ry > 1.0e-8
+    ry_to_ghz = RY_TO_EV * 2.417989242e5
+    num = np.zeros((nsig, nmode))
+    for s0 in range(0, idx.size, kblock):
+        ii = idx[s0 : s0 + kblock]
+        gk = (phkg[ii] @ gn_flat).reshape(-1, nawf, nawf, ncart)
+        tmp = np.einsum('bim,bijc->bmjc', Vkq[ii].conj(), gk, optimize=True)
+        gband = np.einsum('bmjc,bjn->bmnc', tmp, Vk[ii], optimize=True)
+        gnu = np.einsum('bmnc,vc->bvmn', gband, zmass, optimize=True)
+        absg2 = np.abs(gnu) ** 2
+        for isig in range(nsig):
+            num[isig] += np.einsum(
+                'bvmn,bm,bn->v', absg2, dkq_all[isig][ii], dk_all[isig][ii], optimize=True
+            )
+
+    lam = np.zeros((nsig, nmode))
+    gam_ghz = np.zeros((nsig, nmode))
+    dos = electrons['dos']
+    for isig in range(nsig):
+        gam_ghz[isig] = np.pi * num[isig] / nkd * ry_to_ghz
+        lam[isig, safe] = num[isig, safe] / (nkd * dos[isig] * omega_ry[safe] ** 2)
+    return {'lambda_qnu': lam, 'gamma_ghz': gam_ghz, 'dos_ef': dos, 'nk_dense': Nk}

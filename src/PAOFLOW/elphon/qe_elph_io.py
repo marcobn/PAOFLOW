@@ -450,3 +450,82 @@ def el_ph_mat_to_cartesian(el_ph_mat, u):
         Cartesian deformation potentials ``d_{mn,c}(k)``.
     """
     return np.einsum('cp,mnkp->mnkc', np.asarray(u).conj(), np.asarray(el_ph_mat))
+
+
+def read_qe_ahc_gkk(ahc_dir, iq, nbnd, nmodes, nk, ahc_nbnd=None):
+    """Read one q of the **unpatched** QE AHC electron-phonon dump.
+
+    Standard QE ``electron_phonon='ahc'`` (Lihm & Park; ``PHonon/PH/ahc.f90``)
+    writes, per q, the full DFPT coupling
+
+    ``ahc_gkk(ib, jb, imode) = <psi_{ib}(k+q)| dV/du_{q,imode} |psi_{jb}(k)>``
+
+    -- identical to ``el_ph_mat`` (bare local + bare nonlocal + induced) -- but
+    already in the **Cartesian** displacement basis (``imode = 3(iat-1)+idir``),
+    so no pattern rotation is needed.  This is the recommended, patch-free input
+    for the AO route on norm-conserving pseudopotentials (AHC is not implemented
+    for USPP / PAW / DFPT+U / magnetism -- use :func:`read_qe_el_ph_mat` there).
+
+    The files are plain Fortran direct-access binaries in ``ahc_dir``:
+
+    * ``ahc_gkk_iq<iq>.bin``  -- complex ``(nbnd, ahc_nbnd, nmodes, nk)`` (F order);
+    * ``ahc_etk_iq<iq>.bin``  -- real ``(nbnd, nk)`` band energies at ``k`` (Ry);
+    * ``ahc_etq_iq<iq>.bin``  -- real ``(nbnd, nk)`` band energies at ``k+q`` (Ry).
+
+    The k-record order is the ``ph.x`` (nscf) k-order, i.e. the same order as
+    :func:`~PAOFLOW.elphon.elph_bloch.read_nscf` ``kpts_cryst`` and the PAOFLOW
+    projections ``A_k`` for the same ``lead.save``.
+
+    Parameters
+    ----------
+    ahc_dir : str
+        Directory containing the ``ahc_*_iq<iq>.bin`` files.
+    iq : int
+        1-based q index (matches ``<prefix>.dyn<iq>``).
+    nbnd : int
+        Number of bands in the AHC run (the ``k+q`` index range).
+    nmodes : int
+        Number of phonon modes (``3*nat``).
+    nk : int
+        Number of k-points (``nk1*nk2*nk3``).
+    ahc_nbnd : int, optional
+        Number of ``k``-side bands stored (``jb`` range).  Defaults to ``nbnd``
+        (the recommended full-band setting ``ahc_nbnd=nbnd, ahc_nbndskip=0``).
+
+    Returns
+    -------
+    dict
+        ``{'el_cart', 'etk', 'etq', 'nbnd', 'ahc_nbnd', 'nmodes', 'nk'}``.
+        ``el_cart`` is ``(nbnd, ahc_nbnd, nk, nmodes)`` -- Cartesian deformation
+        potentials ``d_{mn,c}(k)`` (``m`` = k+q band, ``n`` = k band); ``etk`` and
+        ``etq`` are ``(nk, nbnd)`` band energies (Ry) at ``k`` and ``k+q``.
+    """
+    ahc_nbnd = int(nbnd if ahc_nbnd is None else ahc_nbnd)
+    gpath = os.path.join(ahc_dir, 'ahc_gkk_iq%d.bin' % int(iq))
+    g = np.fromfile(gpath, dtype=np.complex128)
+    expect = nbnd * ahc_nbnd * nmodes * nk
+    if g.size != expect:
+        raise ValueError(
+            'ahc_gkk size %d != nbnd*ahc_nbnd*nmodes*nk = %d for %s' % (g.size, expect, gpath)
+        )
+    g = g.reshape(nbnd, ahc_nbnd, nmodes, nk, order='F')  # (ib=k+q, jb=k, imode, k)
+    el_cart = np.transpose(g, (0, 1, 3, 2))  # (m, n, k, c)
+    etk = (
+        np.fromfile(os.path.join(ahc_dir, 'ahc_etk_iq%d.bin' % int(iq)), dtype=np.float64)
+        .reshape(nbnd, nk, order='F')
+        .T
+    )
+    etq = (
+        np.fromfile(os.path.join(ahc_dir, 'ahc_etq_iq%d.bin' % int(iq)), dtype=np.float64)
+        .reshape(nbnd, nk, order='F')
+        .T
+    )
+    return {
+        'el_cart': el_cart,
+        'etk': etk,
+        'etq': etq,
+        'nbnd': int(nbnd),
+        'ahc_nbnd': ahc_nbnd,
+        'nmodes': int(nmodes),
+        'nk': int(nk),
+    }

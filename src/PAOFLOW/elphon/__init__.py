@@ -22,7 +22,11 @@ The workflow is staged:
 Public entry point: :meth:`PAOFLOW.PAOFLOW.electron_phonon`.
 """
 
-from .do_ao_eph import eliashberg_from_qe_coupling, vertex_from_qe_elphmat
+from .do_ao_eph import (
+    eliashberg_from_qe_coupling,
+    vertex_from_qe_ahc,
+    vertex_from_qe_elphmat,
+)
 from .eph_kq import eliashberg, eliashberg_from_modes
 from .qe_elph_io import (
     el_ph_mat_to_cartesian,
@@ -30,6 +34,7 @@ from .qe_elph_io import (
     load_qe_coupling,
     read_elph_inp_lambda,
     read_lambda_in,
+    read_qe_ahc_gkk,
     read_qe_dyn,
     read_qe_el_ph_mat,
 )
@@ -50,8 +55,10 @@ __all__ = [
     'read_a2f_ifc',
     'read_elph_inp_lambda',
     'read_lambda_in',
+    'read_qe_ahc_gkk',
     'read_qe_dyn',
     'read_qe_el_ph_mat',
     'read_qe_ifc',
+    'vertex_from_qe_ahc',
     'vertex_from_qe_elphmat',
 ]

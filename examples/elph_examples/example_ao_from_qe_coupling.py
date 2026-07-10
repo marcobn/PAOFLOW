@@ -37,10 +37,16 @@ from PAOFLOW.elphon.elph_bloch import read_nscf
 BASE = os.environ.get('ELPH_BASE', './exercise1')  # dir with lead.save, elph_dir, *.dyn*
 BASIS = os.environ.get('PAOFLOW_BASIS', '../../BASIS')  # PAOFLOW atomic-orbital basis
 SAVEDIR = 'lead.save'  # nscf save directory (inside BASE)
-COUPLING_DIR = 'elph_dir'  # holds elphmat.<iq>.dat
-DYNPREFIX = 'pb'  # dynamical-matrix prefix (<DYNPREFIX>.dyn*)
+# Coupling source:
+#   'ahc'     -> unpatched QE AHC dumps (ahc_dir/ahc_gkk_iq<iq>.bin); NC pseudos.
+#   'elphmat' -> patched-QE el_ph_mat dumps (elph_dir/elphmat.<iq>.dat); any pseudo.
+SOURCE = os.environ.get('ELPH_SOURCE', 'ahc')
+COUPLING_DIR = 'ahc_dir' if SOURCE == 'ahc' else 'elph_dir'
+DYNPREFIX = 'lead'  # dynamical-matrix prefix (<DYNPREFIX>.dyn*)
 NG = (9, 9, 9)  # coarse coupling k-grid == pw.x SCF k-grid
-Q_WEIGHTS = [1, 8, 6, 12]  # star sizes of the irreducible q (3^3 mesh)
+# Star sizes of the q-points.  For the full AHC grid (all q written) use all 1s;
+# for the 4 irreducible q of the patched dump use the 3^3 star sizes [1,8,6,12].
+Q_WEIGHTS = [1] * 27 if SOURCE == 'ahc' else [1, 8, 6, 12]
 MASS_AMU = [207.2]  # atomic masses (amu), one per atom in the cell
 NELEC = 14  # valence electrons (dense E_F recompute)
 NK_DENSE = 18  # dense interpolation grid
@@ -73,6 +79,7 @@ def main():
         Q_WEIGHTS,
         NG,
         dyn_paths,
+        source=SOURCE,
         masses_amu=MASS_AMU,
         nk_dense=NK_DENSE,
         sigmas_ry=[SIGMA_RY],
@@ -81,7 +88,7 @@ def main():
     )
 
     kB = 8.617333262e-5  # eV/K
-    print('\nAO-route Eliashberg (Pb, 9^3 coarse -> %d^3 dense):' % NK_DENSE)
+    print('\nAO-route Eliashberg (Pb, 9^3 coarse -> %d^3 dense, source=%s):' % (NK_DENSE, SOURCE))
     print('  N(E_F)        = %.3f states/spin/Ry' % out['dos_ef'].mean())
     print('  lambda        = %.3f' % out['lambda'])
     print('  omega_log     = %.1f K' % (out['omega_log'] / kB))

@@ -23,9 +23,20 @@ import os
 
 import numpy as np
 
-from .elph_bloch import AMU_RY, kq_index_map, lambda_q_dense_ws, vertex_pao_R
+from .elph_bloch import (
+    AMU_RY,
+    kq_index_map,
+    lambda_q_dense_ws_fast,
+    precompute_dense_electrons,
+    vertex_pao_R,
+)
 from .eph_kq import eliashberg_from_modes
-from .qe_elph_io import el_ph_mat_to_cartesian, read_qe_dyn, read_qe_el_ph_mat
+from .qe_elph_io import (
+    el_ph_mat_to_cartesian,
+    read_qe_ahc_gkk,
+    read_qe_dyn,
+    read_qe_el_ph_mat,
+)
 
 
 def _k_permutation(kpts_cryst, xk_cart, bg, ng):
@@ -91,6 +102,42 @@ def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
     return gR, q_cryst
 
 
+def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk):
+    """PAO-gauge real-space vertex ``g(R_e)`` from one unpatched QE AHC dump.
+
+    Like :func:`vertex_from_qe_elphmat`, but reads the Cartesian ``ahc_gkk``
+    (:func:`~PAOFLOW.elphon.qe_elph_io.read_qe_ahc_gkk`): no pattern rotation and
+    no k-permutation -- the AHC records are already in the nscf k-order, the same
+    order as ``A`` and ``kpts_cryst`` for the same ``lead.save``.
+
+    Parameters
+    ----------
+    ahc_dir : str
+        Directory with the ``ahc_gkk_iq<iq>.bin`` files.
+    iq : int
+        1-based q index (matches ``<prefix>.dyn<iq>``).
+    A : ndarray ``(nbnd, nawf, nk)``
+        PAO projections.
+    kpts_cryst : ndarray ``(nk, 3)``
+        Coarse-grid k-points (crystal), nscf order.
+    q_cryst : ndarray ``(3,)``
+        q-point (crystal coordinates), from the ``.dyn`` file.
+    ng : tuple(int, int, int)
+        Coarse k-grid dimensions.
+    nbnd, nmodes, nk : int
+        AHC array dimensions.
+
+    Returns
+    -------
+    ndarray ``(nawf, nawf, ncart, n1, n2, n3)``
+    """
+    ahc = read_qe_ahc_gkk(ahc_dir, iq, nbnd, nmodes, nk)
+    d = np.transpose(ahc['el_cart'], (2, 0, 1, 3))  # (k, m, n, c), identity order
+    ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
+    kidx = np.round(kpts_cryst * np.asarray(ng)).astype(int) % np.asarray(ng)
+    return vertex_pao_R(d, A, ikq, kidx, ng)
+
+
 def eliashberg_from_qe_coupling(
     A,
     HRs,
@@ -102,6 +149,7 @@ def eliashberg_from_qe_coupling(
     ng,
     dyn_paths,
     elphmat_fmt='elphmat.%d.dat',
+    source='elphmat',
     masses_amu=None,
     nk_dense=18,
     sigmas_ry=(0.02,),
@@ -110,6 +158,7 @@ def eliashberg_from_qe_coupling(
     ispin=0,
     isig=0,
     sigma_w_frac=0.02,
+    fs_window=8.0,
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (AO route).
 
@@ -130,15 +179,21 @@ def eliashberg_from_qe_coupling(
     bg, at : ndarray ``(3, 3)``
         Reciprocal- and real-lattice vectors (rows).
     coupling_dir : str
-        Directory holding the ``elphmat.<iq>.dat`` dumps.
+        Directory holding the coupling files (``elphmat.<iq>.dat`` for
+        ``source='elphmat'``, or ``ahc_gkk_iq<iq>.bin`` for ``source='ahc'``).
     q_weights : array_like ``(nq,)``
-        Star sizes of the irreducible q-points (need not be normalised).
+        Star sizes of the irreducible q-points (need not be normalised).  For a
+        full un-reduced q-grid (e.g. the 27-point AHC output) use all ones.
     ng : tuple(int, int, int)
         Coarse coupling k-grid (== SCF grid).
     dyn_paths : sequence of str
-        One QE ``*.dyn`` file per irreducible q (for frequencies/eigenvectors).
+        One QE ``*.dyn`` file per q (for frequencies/eigenvectors; also supplies
+        the q-point for ``source='ahc'``).
     elphmat_fmt : str, optional
-        Filename template for the dumps (``%d`` is the 1-based q index).
+        Filename template for the patched dumps (``%d`` is the 1-based q index).
+    source : {'elphmat', 'ahc'}, optional
+        Coupling input: the patched ``el_ph_mat`` dump (any pseudo) or the
+        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only).
     masses_amu : array_like ``(natom,)``, optional
         Atomic masses (amu); required to mass-weight the phonon eigenvectors.
     nk_dense : int, optional
@@ -152,6 +207,11 @@ def eliashberg_from_qe_coupling(
     ispin, isig : int, optional
     sigma_w_frac : float, optional
         Gaussian width (fraction of max frequency) for the ``alpha^2F`` histogram.
+    fs_window : float, optional
+        Fermi-surface window (in smearings) used to prune the dense-grid double
+        delta: only k with a band within ``fs_window`` * ``sigma`` of E_F are kept.
+        The default (8) is exact to ``exp(-fs_window^2)``; lower it (e.g. 4-5) to
+        speed up metals with wide bands at a controlled tolerance.
 
     Returns
     -------
@@ -167,27 +227,29 @@ def eliashberg_from_qe_coupling(
         raise ValueError('masses_amu is required to mass-weight the phonon eigenvectors')
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY  # (3*natom,)
+    nbnd, nk = int(A.shape[0]), int(A.shape[2])
+    nmodes = int(mass_flat_ry.size)
+
+    # Diagonalise the dense electron spectrum ONCE; every q reuses it (E(k+q) /
+    # V(k+q) are index shifts), so the per-q cost is only the vertex interpolation.
+    electrons = precompute_dense_electrons(
+        HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window
+    )
 
     lam_qv, om_qv, dos_ef = [], [], []
     for iq in range(nq):
-        path = os.path.join(coupling_dir, elphmat_fmt % (iq + 1))
-        gR, q_cryst = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
         dyn = read_qe_dyn(dyn_paths[iq])
+        if source == 'ahc':
+            q_cryst = np.linalg.solve(bg.T, np.asarray(dyn['q'], dtype=float))
+            gR = vertex_from_qe_ahc(
+                coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+            )
+        else:
+            path = os.path.join(coupling_dir, elphmat_fmt % (iq + 1))
+            gR, q_cryst = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
         z = dyn['eigenvectors'].reshape(dyn['freq_thz'].size, -1)  # (nmode, 3*natom)
         zmass = z / np.sqrt(mass_flat_ry)[None, :]
-        res = lambda_q_dense_ws(
-            gR,
-            HRs,
-            q_cryst,
-            ng,
-            at,
-            zmass,
-            dyn['freq_thz'],
-            sigmas_ry,
-            nk_dense,
-            ispin=ispin,
-            nelec=nelec,
-        )
+        res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, dyn['freq_thz'])
         lam = res['lambda_qnu'][isig].copy()
         if np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6:
             lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
