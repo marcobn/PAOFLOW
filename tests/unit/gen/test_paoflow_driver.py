@@ -307,7 +307,7 @@ def test_build_phonon_plot_script_includes_reststrahlen():
 
 
 # --------------------------------------------------------------------------- #
-# Electron-phonon (AO route) workflow generation
+# Electron-phonon (PAO route) workflow generation
 # --------------------------------------------------------------------------- #
 def _elphon_cfg(**kw):
     cfg = dict(_COMMON)

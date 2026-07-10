@@ -1,4 +1,4 @@
-"""Unit tests for the atomic-orbital (Agapito-Bernardi) e-phonon route."""
+"""Unit tests for the pseudo-atomic-orbital (Agapito-Bernardi) e-phonon route."""
 
 import numpy as np
 import pytest
@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip('scipy')
 from scipy.io import FortranFile
 
-from PAOFLOW.elphon.do_ao_eph import _k_permutation, vertex_from_qe_elphmat
+from PAOFLOW.elphon.do_pao_eph import _k_permutation, vertex_from_qe_elphmat
 from PAOFLOW.elphon.qe_elph_io import (
     el_ph_mat_to_cartesian,
     read_qe_ahc_gkk,

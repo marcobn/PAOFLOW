@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Example — AO route (Agapito-Bernardi): interpolate QE's DFPT coupling in PAO.
+"""Example — PAO route (Agapito-Bernardi): interpolate QE's DFPT coupling in PAO.
 
 This is the recommended electron-phonon route.  It does **not** reconstruct the
 DFPT perturbation from ``dvscf``.  Instead it reads Quantum ESPRESSO's *full*
 coarse-grid coupling ``el_ph_mat`` (which already contains the bare local, bare
 nonlocal and induced parts, plus any NLCC / ultrasoft augmentation), rotates it
-into the PAOFLOW atomic-orbital (PAO) gauge, and Wigner-Seitz interpolates the
+into the PAOFLOW pseudo-atomic-orbital (PAO) gauge, and Wigner-Seitz interpolates the
 electrons and the vertex to a dense grid to evaluate the isotropic Eliashberg
 properties (``alpha^2F``, ``lambda``, ``omega_log``, ``Tc``).
 
@@ -22,20 +22,20 @@ The ``elphmat.<iq>.dat`` dumps are written by the PAOFLOW-patched
 
 Edit the CONFIG block, then::
 
-    conda run -n work python example_ao_from_qe_coupling.py
+    conda run -n work python example_pao_from_qe_coupling.py
 """
 
 import os
 
 from PAOFLOW import PAOFLOW
-from PAOFLOW.elphon.do_ao_eph import eliashberg_from_qe_coupling
+from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.elph_bloch import read_nscf
 
 # --------------------------------------------------------------------------- #
 # CONFIG -- edit for your system (paths are for the Pb 9^3 tutorial run).
 # --------------------------------------------------------------------------- #
 BASE = os.environ.get('ELPH_BASE', './exercise1')  # dir with lead.save, elph_dir, *.dyn*
-BASIS = os.environ.get('PAOFLOW_BASIS', '../../BASIS')  # PAOFLOW atomic-orbital basis
+BASIS = os.environ.get('PAOFLOW_BASIS', '../../BASIS')  # PAOFLOW pseudo-atomic-orbital basis
 SAVEDIR = 'lead.save'  # nscf save directory (inside BASE)
 # Coupling source:
 #   'ahc'     -> unpatched QE AHC dumps (ahc_dir/ahc_gkk_iq<iq>.bin); NC pseudos.
@@ -88,7 +88,7 @@ def main():
     )
 
     kB = 8.617333262e-5  # eV/K
-    print('\nAO-route Eliashberg (Pb, 9^3 coarse -> %d^3 dense, source=%s):' % (NK_DENSE, SOURCE))
+    print('\nPAO-route Eliashberg (Pb, 9^3 coarse -> %d^3 dense, source=%s):' % (NK_DENSE, SOURCE))
     print('  N(E_F)        = %.3f states/spin/Ry' % out['dos_ef'].mean())
     print('  lambda        = %.3f' % out['lambda'])
     print('  omega_log     = %.1f K' % (out['omega_log'] / kB))

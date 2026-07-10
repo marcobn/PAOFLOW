@@ -1,7 +1,7 @@
-"""Shared Bloch / PAO-gauge vertex machinery for the electron-phonon AO route.
+"""Shared Bloch / PAO-gauge vertex machinery for the electron-phonon PAO route.
 
 Provides the geometry reader and the interpolation primitives used by
-:mod:`PAOFLOW.elphon.do_ao_eph` to turn QE's coarse-grid Cartesian coupling into
+:mod:`PAOFLOW.elphon.do_pao_eph` to turn QE's coarse-grid Cartesian coupling into
 the dense-grid Eliashberg properties:
 
 * :func:`read_nscf` -- k-points, eigenvalues, Fermi level and lattice from the QE

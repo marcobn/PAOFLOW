@@ -22,7 +22,7 @@ The workflow is staged:
 Public entry point: :meth:`PAOFLOW.PAOFLOW.electron_phonon`.
 """
 
-from .do_ao_eph import (
+from .do_pao_eph import (
     eliashberg_from_qe_coupling,
     vertex_from_qe_ahc,
     vertex_from_qe_elphmat,

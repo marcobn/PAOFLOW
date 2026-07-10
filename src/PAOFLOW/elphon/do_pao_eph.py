@@ -1,12 +1,12 @@
-"""Atomic-orbital (Agapito-Bernardi) electron-phonon coupling driver.
+"""Pseudo-atomic-orbital (Agapito-Bernardi) electron-phonon coupling driver.
 
 This is the *interpolation* route of :mod:`PAOFLOW.elphon`: instead of
 reconstructing the DFPT perturbation from ``dvscf`` (bare local + nonlocal +
 induced), it reads Quantum ESPRESSO's **full** coarse-grid coupling
 ``el_ph_mat`` -- which already contains every contribution (including NLCC and
 ultrasoft augmentation) that ``ph.x`` computes -- rotates it into the PAOFLOW
-atomic-orbital (PAO) gauge, and Wigner-Seitz interpolates the electrons and the
-vertex to a dense grid to evaluate the isotropic Eliashberg properties.
+pseudo-atomic-orbital (PAO) gauge, and Wigner-Seitz interpolates the electrons
+and the vertex to a dense grid to evaluate the isotropic Eliashberg properties.
 
 Reference: L. A. Agapito and M. Bernardi, "Ab initio electron-phonon
 interactions using atomic orbital wave functions", `Phys. Rev. B 97, 235146
@@ -160,7 +160,7 @@ def eliashberg_from_qe_coupling(
     sigma_w_frac=0.02,
     fs_window=8.0,
 ):
-    """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (AO route).
+    """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
     For every irreducible q the coupling dump is rotated into the PAO gauge,
     Wigner-Seitz interpolated to a dense grid and reduced to ``lambda_{q nu}``;

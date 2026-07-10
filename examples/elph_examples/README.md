@@ -3,18 +3,18 @@
 Example scripts for the PAOFLOW el-ph module (`PAOFLOW.elphon`). See the
 full write-up in `PAOFLOW.wiki/Elphon_module.md`.
 
-## `example_ao_from_qe_coupling.py` — AO route (recommended)
+## `example_pao_from_qe_coupling.py` — PAO route (recommended)
 
-The atomic-orbital (Agapito & Bernardi, *Phys. Rev. B* **97**, 235146 (2018))
+The pseudo-atomic-orbital (Agapito & Bernardi, *Phys. Rev. B* **97**, 235146 (2018))
 route. Reads QE's **full** coarse-grid coupling `el_ph_mat` (which already
 contains the bare local, bare nonlocal and induced parts, plus any NLCC /
-ultrasoft augmentation), rotates it into the PAOFLOW atomic-orbital (PAO) gauge,
+ultrasoft augmentation), rotates it into the PAOFLOW pseudo-atomic-orbital (PAO) gauge,
 and Wigner–Seitz interpolates electrons + vertex to a dense grid for α²F, λ,
 ω_log and Tc. **No potential reconstruction** — so NLCC and ultrasoft pseudos
 work with no extra effort. Pb (9³→18³): λ ≈ 1.7, ω_log ≈ 56 K, Tc ≈ 8 K.
 
 ```bash
-ELPH_BASE=/path/to/exercise1 conda run -n work python example_ao_from_qe_coupling.py
+ELPH_BASE=/path/to/exercise1 conda run -n work python example_pao_from_qe_coupling.py
 ```
 
 Required inputs: a coarse `pw.x` nscf save on the full k-grid (`nosym`, `noinv`,

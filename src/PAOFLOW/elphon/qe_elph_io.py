@@ -387,9 +387,9 @@ def read_qe_el_ph_mat(path):
     the coarse k-grid for one (irreducible) q -- i.e. the complete
     bare-local + bare-nonlocal + induced coupling (including any NLCC /
     ultrasoft augmentation) that ``ph.x`` computes internally.  This is the input
-    for the atomic-orbital (Agapito & Bernardi, `Phys. Rev. B 97, 235146 (2018)
-    <https://doi.org/10.1103/PhysRevB.97.235146>`_) interpolation route, which
-    needs no potential reconstruction.
+    for the pseudo-atomic-orbital (Agapito & Bernardi, `Phys. Rev. B 97, 235146
+    (2018) <https://doi.org/10.1103/PhysRevB.97.235146>`_) interpolation route,
+    which needs no potential reconstruction.
 
     Parameters
     ----------
@@ -463,7 +463,7 @@ def read_qe_ahc_gkk(ahc_dir, iq, nbnd, nmodes, nk, ahc_nbnd=None):
     -- identical to ``el_ph_mat`` (bare local + bare nonlocal + induced) -- but
     already in the **Cartesian** displacement basis (``imode = 3(iat-1)+idir``),
     so no pattern rotation is needed.  This is the recommended, patch-free input
-    for the AO route on norm-conserving pseudopotentials (AHC is not implemented
+    for the PAO route on norm-conserving pseudopotentials (AHC is not implemented
     for USPP / PAW / DFPT+U / magnetism -- use :func:`read_qe_el_ph_mat` there).
 
     The files are plain Fortran direct-access binaries in ``ahc_dir``:
