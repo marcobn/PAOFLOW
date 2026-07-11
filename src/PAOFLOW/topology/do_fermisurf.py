@@ -100,7 +100,7 @@ def do_fermisurf(data_controller,type,project):
                         "spin_Sy": 1,
                         "spin_Sz": 2,}
                     projection = spintext[:, :, :, spin_component[project], :].real
-                elif project=='omega':
+                elif project=='omega':########TBI 
                     berry=arry['Om_znk_fermi']
                     print(berry.shape)
                     pass#TBI
