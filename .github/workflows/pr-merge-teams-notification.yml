@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  workflows: write
 
 jobs:
   notify-teams:
@@ -34,10 +35,9 @@ jobs:
             echo "::error::Missing repository secret MS_TEAMS_WEBHOOK_URL."
             exit 1
           fi
-          
           run_url="$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID"
           short_sha="${MERGE_COMMIT_SHA:0:7}"
-          
+
           payload=$(jq -n \
             --arg title "PR merged to $BASE_BRANCH" \
             --arg activity_title "#$PR_NUMBER $PR_TITLE" \
