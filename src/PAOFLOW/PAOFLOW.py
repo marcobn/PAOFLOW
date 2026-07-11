@@ -897,6 +897,7 @@ class PAOFLOW:
         theta=0.0,
         lambda_p=[0.0],
         lambda_d=[0.0],
+        lambda_f=[0.0],
         soc_strengh={},
         soc_species=True,
         soc_shell_weights=None,
@@ -911,6 +912,7 @@ class PAOFLOW:
             If soc_species = False
             lambda_p (list of floats) :  p orbitals SOC strengh for each atom
             lambda_d (list of float)  :  d orbitals SOC strengh for each atom
+            lambda_f (list of float)  :  f orbitals SOC strengh for each atom
             soc_shell_weights (dict, optional):
 
                 Per-shell SOC weights for the ``'generic'`` builder
@@ -940,17 +942,21 @@ class PAOFLOW:
         if soc_species == True:
             lambda_p = []
             lambda_d = []
+            lambda_f = []
             for i in range(len(arry['atoms'])):
                 lambda_p.append(soc_strengh[arry['atoms'][i]][0])
                 lambda_d.append(soc_strengh[arry['atoms'][i]][1])
+                lambda_f.append(soc_strengh[arry['atoms'][i]][2])
             arry['lambda_p'] = lambda_p
             arry['lambda_d'] = lambda_d
+            arry['lambda_f'] = lambda_f
         else:
             if 'lambda_p' not in arry:
                 arry['lambda_p'] = lambda_p[:]
             if 'lambda_d' not in arry:
                 arry['lambda_d'] = lambda_d[:]
-
+            if 'lambda_f' not in arry:
+                arry['lambda_f'] = lambda_f[:]
         if soc_shell_weights is not None:
             arry['soc_shell_weights'] = soc_shell_weights
 
