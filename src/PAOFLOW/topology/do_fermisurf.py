@@ -103,7 +103,7 @@ def do_fermisurf(data_controller,type,project):
                 elif project=='omega':
                     berry=arry['Om_znk_fermi']
                     print(berry.shape)
-                    pass#TO BE IMPLEMENTED
+                    pass#TBI
                 else:
                     projection=None
                 write_frmsf(
