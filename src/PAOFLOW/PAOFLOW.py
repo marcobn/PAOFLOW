@@ -1034,13 +1034,44 @@ class PAOFLOW:
             self.data_controller.build_arrays_adhoc_soc()
 
         try:
-            site_projeted_bands(self.data_controller)
+            site_projeted_bands(self.data_controller,type='BZ_path')
         except Exception as e:
             self.report_exception('site_projeted_bands')
             if self.data_controller.data_attributes['abort_on_exception']:
                 raise e
 
         self.report_module_time('site_projeted_bands')
+
+    def site_projected_fs(self, site_proj=[0]):
+        """
+        This routine calculates the wavefunction square wheights to produce a site projected fermi surface plot
+
+        Arguments:
+            site_proj (list of ints): Incides of the atomic site to project the bands
+
+        Returns:
+            None
+        """
+
+        from .spectrum.do_site_projected_bands import site_projeted_bands
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'site_proj' not in arry:
+            arry['site_proj'] = site_proj
+
+        if 'naw' not in arry:
+            self.data_controller.build_arrays_adhoc_soc()
+
+        try:
+            site_projeted_bands(self.data_controller,type='BZ_mesh')
+        except Exception as e:
+            self.report_exception('site_projeted_bands')
+            if self.data_controller.data_attributes['abort_on_exception']:
+                raise e
+
+        self.report_module_time('site_projeted_bands')
+
 
     def doubling_Hamiltonian(self, nx, ny, nz):
         """
@@ -1962,14 +1993,19 @@ class PAOFLOW:
             arrays['deltakp'] = arrays['deltakp'][:, :bnd]
             arrays['deltakp2'] = arrays['deltakp2'][:, :bnd]
 
-    def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0):
+    def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0,type='bxsf',project=None):
         """
         Calculate the Fermi Surface
 
         Arguments:
             fermi_up (float): The upper limit of the occupied energy range
             fermi_dw (float): The lower limit of the occupied energy range
-
+            type: 'bxsf' or 'fermisurfer'
+            project: project the following desired quantities in the FS, ***obs: only works for type='fermisurfer'
+            - 'velocity' needs   paoflow.pao_eigh()-> paoflow.gradient_and_momenta(), output in m/s
+            - 'orbital' needs site_projected_fs() 'spin_Sx'/'spin_Sy'/'spin_Sz'; output in [0,1]
+            - 'spin_Sx'/'spin_Sy'/'spin_Sz' needs spin_operator(spin_orbit=True)-> spin_texture() output in [-1/2,1/2]
+            - 'omega' needs topology(Berry=True)
         Returns:
             None
         """
@@ -1983,7 +2019,7 @@ class PAOFLOW:
             attr['fermi_dw'] = fermi_dw
 
         try:
-            do_fermisurf(self.data_controller)
+            do_fermisurf(self.data_controller,type,project)
         except Exception as e:
             self.report_exception('fermi_surface')
             if attr['abort_on_exception']:
