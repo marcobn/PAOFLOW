@@ -1,6 +1,6 @@
 import numpy as np
 
-from PAOFLOW.transport.io.input_parameters import Carriers
+from PAOFLOW.transport.data import Carriers
 
 
 def initialize_energy_grid(
@@ -32,6 +32,7 @@ def initialize_energy_grid(
     -----
     For 'phonons', the first energy is replaced with a small positive value
     to avoid numerical singularities at E = 0:
+
         egrid[0] = egrid[1] / 100.0
     """
     if ne <= 1:

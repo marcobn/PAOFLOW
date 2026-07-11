@@ -1,0 +1,79 @@
+/* ── Arrow alignment ─────────────────────────────────────────────────────────
+   Make each parent <li> a flex row so the toggle arrow always sits flush at
+   the right edge of the sidebar regardless of link text length or nesting.
+   The <details> child is forced onto its own row below via flex-basis: 100%.
+   ─────────────────────────────────────────────────────────────────────────── */
+.sidebar-tree-ready .sidebar-tree-parent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Link fills all space to the left of the toggle */
+.sidebar-tree-ready .sidebar-tree-parent > a {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  max-width: none;
+}
+
+/* Details always wraps below the link+toggle row */
+.sidebar-tree-ready .sidebar-tree-parent > details {
+  flex-basis: 100%;
+  min-width: 0;
+  order: 10;
+}
+
+/* Hide the native disclosure summary — our button replaces it */
+.sidebar-tree-ready .sidebar-tree-parent > details > summary {
+  display: none;
+}
+
+/* ── Toggle button ───────────────────────────────────────────────────────────
+   Fixed dimensions + flex-shrink: 0 keeps the button from moving or resizing.
+   ─────────────────────────────────────────────────────────────────────────── */
+.sidebar-tree-ready .sidebar-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.25rem;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.sidebar-tree-ready .sidebar-tree-toggle::before {
+  content: '\25B8';
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.sidebar-tree-ready .sidebar-tree-parent.is-open > .sidebar-tree-toggle::before {
+  transform: rotate(90deg);
+}
+
+/* ── Smooth collapse / expand ────────────────────────────────────────────────
+   The JS always keeps <details open> so the <ul> stays in the DOM and CSS can
+   animate it. max-height + opacity give a smooth slide-in on expand and a
+   quick fade on collapse without any layout jumps.
+   ─────────────────────────────────────────────────────────────────────────── */
+.sidebar-tree-ready .sidebar-tree-parent > details > ul {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+}
+
+.sidebar-tree-ready .sidebar-tree-parent.is-open > details > ul {
+  max-height: 1500px;
+  opacity: 1;
+  margin-top: 0.25rem;
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+}

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from PAOFLOW.DataController import DataController
 import numpy as np
 
+from PAOFLOW.DataController import DataController
+from PAOFLOW.transport.data import CalculationType, ConductorData
 from PAOFLOW.transport.hamiltonian.hamiltonian import HamiltonianSystem
-from PAOFLOW.transport.io.input_parameters import CalculationType, ConductorData
 from PAOFLOW.transport.parsers.read_matrix import read_matrix
+from PAOFLOW.transport.partition.directions import direction_axis
 from PAOFLOW.transport.utils.timing import timed_function
 
 
@@ -17,7 +18,7 @@ def initialize_hamiltonian_blocks(
     wr_par: np.ndarray,
     table_par: np.ndarray,
     ispin: int,
-    transport_direction: int,
+    transport_direction: str,
     calculation_type: CalculationType,
     data_controller: DataController,
     conductor_data: ConductorData | None = None,
@@ -31,16 +32,12 @@ def initialize_hamiltonian_blocks(
         Container object holding all OperatorBlock instances for the device.
     `ivr_par3D` : np.ndarray
         (3, nrtot) array of integer lattice vectors for real-space blocks.
-    `datafile_C` : str
-        Path to the `.ham` file for the central conductor region.
-    `datafile_L` : str
-        Path to the `.ham` file for the left lead region.
-    `datafile_R` : str
-        Path to the `.ham` file for the right lead region.
+    `data_controller` : DataController
+        Shared PAOFLOW data store providing the Hamiltonian/overlap arrays.
     `ispin` : int
         Spin index (0-based) to select the spin channel to load.
-    `transport_direction` : int
-        Index (1-based) of the transport direction (1 = x, 2 = y, 3 = z).
+    `transport_direction` : {'x', 'y', 'z'}
+        Transport direction.
     `calculation_type` : {"conductor", "bulk"}
         System configuration type.
 
@@ -50,15 +47,14 @@ def initialize_hamiltonian_blocks(
         Whether the left and right lead blocks are structurally and numerically identical.
     """
 
-    def extract_2D_ivrs(ivr3D: np.ndarray, transport_direction: int) -> np.ndarray:
-        if transport_direction == 1:
+    def extract_2D_ivrs(ivr3D: np.ndarray, transport_direction: str) -> np.ndarray:
+        axis = direction_axis(transport_direction)
+        if axis == 1:
             return ivr3D[1:, :]
-        elif transport_direction == 2:
+        elif axis == 2:
             return ivr3D[[0, 2], :]
-        elif transport_direction == 3:
+        elif axis == 3:
             return ivr3D[:2, :]
-        else:
-            raise ValueError(f'Invalid transport_direction: {transport_direction}')
 
     ham_system.allocate(ivr_par3D, conductor_data.hamiltonian_tags)
 
@@ -150,8 +146,6 @@ def initialize_hamiltonian_blocks(
 
 def check_leads_are_identical(
     ham_system: HamiltonianSystem,
-    datafile_L: str = '',
-    datafile_R: str = '',
     datafile_L_sgm: str = '',
     datafile_R_sgm: str = '',
 ) -> bool:
@@ -160,24 +154,18 @@ def check_leads_are_identical(
 
     Parameters
     ----------
-    `datafile_L` : str
-        Path to the left lead file.
-    `datafile_R` : str
-        Path to the right lead file.
+    `ham_system` : HamiltonianSystem
+        Transport Hamiltonian system with all blocks loaded.
     `datafile_L_sgm` : str
         Path to the left lead self-energy file.
     `datafile_R_sgm` : str
         Path to the right lead self-energy file.
-    `ham_system` : HamiltonianSystem
-        Transport Hamiltonian system with all blocks loaded.
 
     Returns
     -------
     `identical` : bool
         True if the left and right leads are identical.
     """
-    if datafile_L.strip() != datafile_R.strip():
-        return False
     if datafile_L_sgm.strip() != datafile_R_sgm.strip():
         return False
 

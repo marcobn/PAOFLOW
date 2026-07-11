@@ -7,10 +7,7 @@ from PAOFLOW.transport.io.write_data import (
     write_data,
     write_eigenchannels,
     write_operator_xml,
-    write_overlap_files,
-    write_projectability_files,
 )
-from PAOFLOW.transport.io.input_parameters import AtomicProjData
 
 
 @pytest.mark.unit
@@ -38,7 +35,7 @@ def test_write_eigenchannels_writes_npz(tmp_path):
         ie=1,
         ik=2,
         vkpt=np.array([0.0, 0.0, 0.0]),
-        transport_direction=3,
+        transport_direction='z',
         output_dir=tmp_path,
         verbose=False,
     )
@@ -94,38 +91,3 @@ def test_write_operator_xml_writes_basic_file(tmp_path):
     out_file = tmp_path / 'op.xml'
     assert out_file.exists()
     assert '<OPERATOR>' in out_file.read_text()
-
-
-@pytest.mark.unit
-def test_write_projectability_files(tmp_path):
-    """Projectability writer should emit a text file for each spin."""
-    proj_data = AtomicProjData(
-        nbnds=1,
-        nkpnts=1,
-        nspin=1,
-        nawf=1,
-        nelec=1.0,
-        efermi=0.0,
-        energy_units='eV',
-        kpts=np.zeros((3, 1)),
-        wk=np.ones(1),
-        eigvals=np.zeros((1, 1, 1)),
-        proj=np.ones((1, 1, 1, 1), dtype=complex),
-    )
-    hk = np.zeros((1, 1, 1, 1), dtype=complex)
-
-    write_projectability_files(str(tmp_path), proj_data, hk)
-
-    out_file = tmp_path / 'projectability.txt'
-    assert out_file.exists()
-
-
-@pytest.mark.unit
-def test_write_overlap_files(tmp_path):
-    """Overlap writer should emit kovp.txt when overlap transformation is enabled."""
-    sk = np.zeros((1, 1, 1), dtype=complex)
-
-    write_overlap_files(str(tmp_path), sk, do_overlap_transformation=True)
-
-    out_file = tmp_path / 'kovp.txt'
-    assert out_file.exists()

@@ -1251,9 +1251,9 @@ def _ask_float(prompt, default):
 def _one(pattern):
     """Return the first OUTPUTDIR file matching *pattern* (or None).
 
-    Patterns are written with an optional ``<prefix>.`` in front (e.g.
-    ``*.bands_0.dat``).  PAOFLOW may write the files either with that prefix
-    (``Si.bands_0.dat``) or without it (``bands_0.dat``), so a ``*.`` pattern
+    Patterns are written with an optional '<prefix>.' in front (e.g.
+    '*.bands_0.dat').  PAOFLOW may write the files either with that prefix
+    ('Si.bands_0.dat') or without it ('bands_0.dat'), so a '*.' pattern
     falls back to the prefix-less form.
     """
     hits = sorted(glob.glob(os.path.join(OUTPUTDIR, pattern)))
@@ -1265,7 +1265,7 @@ def _one(pattern):
 def _many(pattern):
     """Return all OUTPUTDIR files matching *pattern* (sorted).
 
-    As with :func:`_one`, a ``*.`` pattern also matches prefix-less files.
+    As with _one, a '*.' pattern also matches prefix-less files.
     """
     hits = sorted(glob.glob(os.path.join(OUTPUTDIR, pattern)))
     if not hits and pattern.startswith('*.'):
@@ -1313,10 +1313,10 @@ _SPIN_COLORS = ['tab:blue', 'tab:red', 'tab:green', 'tab:orange']
 
 
 def _spin_channels(pattern):
-    """Return ``([files], [labels])`` for the spin channels of *pattern*.
+    """Return ([files], [labels]) for the spin channels of *pattern*.
 
-    The generated patterns target the first spin channel through a ``_0`` tag.
-    A spin-polarized (nspin=2) run also writes the ``_1`` channel; when present
+    The generated patterns target the first spin channel through a '_0' tag.
+    A spin-polarized (nspin=2) run also writes the '_1' channel; when present
     both files are returned so the two channels can be overlaid in one figure.
     """
     f0 = _one(pattern)
@@ -1369,7 +1369,7 @@ def _overlay_transport(files, labels, title, y_label, scale=1.0, min_zero=False)
 def _overlay_bands_dos(band_files, dos_files, labels, sym_file, title):
     """Bands beside DOS with both spin channels overlaid on one figure.
 
-    Reproduces ``plot_dos_beside_bands`` but loops over the spin channels so
+    Reproduces plot_dos_beside_bands but loops over the spin channels so
     that the two channels share a single bands panel and a single DOS panel.
     """
     import numpy as np

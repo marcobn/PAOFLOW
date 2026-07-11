@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-from PAOFLOW.DataController import DataController
 from mpi4py import MPI
 
+from PAOFLOW.DataController import DataController
 from PAOFLOW.transport.grid.kpoints import (
     KpointsData,
     compute_fourier_phase_table,
@@ -18,42 +18,52 @@ from PAOFLOW.transport.hamiltonian.hamiltonian_init import (
     check_leads_are_identical,
     initialize_hamiltonian_blocks,
 )
-from PAOFLOW.transport.io.get_input_params import (
-    load_conductor_data_from_yaml,
-    load_current_data_from_yaml,
-)
-from PAOFLOW.transport.io.input_parameters import ConductorData, RuntimeData
+from PAOFLOW.transport.data import ConductorData, RuntimeData
 from PAOFLOW.transport.io.log_module import log_summary
+from PAOFLOW.transport.io.write_debug import (
+    write_internal_format_files,
+    write_overlap_files,
+    write_projectability_files,
+)
 from PAOFLOW.transport.parsers.atmproj_tools import parse_atomic_proj
-from PAOFLOW.transport.smearing.smearing_T import SmearingData
 from PAOFLOW.transport.smearing.smearing_base import smearing_func
+from PAOFLOW.transport.smearing.smearing_T import SmearingData
 from PAOFLOW.transport.utils.memusage import MemoryTracker
 from PAOFLOW.transport.workspace.workspace import Workspace
 
 
-def prepare_conductor(yaml_file: str, data_controller: DataController) -> ConductorData:
+def prepare_conductor_data(data: ConductorData, data_controller: DataController) -> ConductorData:
     """
-    Load input parameters from a YAML file and prepare core conductor data.
+    Prepare core conductor runtime data from an already validated input model.
 
     Parameters
     ----------
-    yaml_file : str
-        Path to the YAML input file.
+    data : ConductorData
+        Conductor input model with validated static fields.
+    data_controller : DataController
+        Shared PAOFLOW data store used to load atomic projections.
 
     Returns
     -------
-    data : ConductorData
-        Parsed conductor data object with runtime values initialized.
+    ConductorData
+        The same ``data`` instance with runtime fields initialized.
     """
-    data = load_conductor_data_from_yaml(yaml_file)
-
-    prefix = os.path.basename(data.file_names.datafile_C)
+    postfix = data.file_names.postfix
+    prefix = postfix
     work_dir = data.file_names.work_dir
     nproc = MPI.COMM_WORLD.Get_size()
 
     if data.carriers == 'electrons':
         hk_data = parse_atomic_proj(data, data_controller)
         nr_full = hk_data['nr']
+
+        if data.advanced.debug:
+            output_dir = data.file_names.output_dir
+            output_prefix = os.path.join(output_dir, f'transport{postfix}')
+            do_overlap = data.atomic_proj.do_overlap_transformation
+            write_internal_format_files(output_dir, output_prefix, data_controller, do_overlap)
+            write_projectability_files(output_dir, data_controller)
+            write_overlap_files(output_dir, data_controller, do_overlap)
     elif data.carriers == 'phonons':
         raise NotImplementedError('Phonon transport not yet implemented')
 
@@ -230,8 +240,6 @@ def prepare_hamiltonian_blocks_and_leads(
 
     data.advanced.leads_are_identical = check_leads_are_identical(
         ham_system=ham_sys,
-        datafile_L=data.file_names.datafile_L,
-        datafile_R=data.file_names.datafile_R,
         datafile_L_sgm=data.file_names.datafile_L_sgm,
         datafile_R_sgm=data.file_names.datafile_R_sgm,
     )
@@ -274,18 +282,35 @@ def prepare_workspace(data: ConductorData, memory_tracker: MemoryTracker) -> Wor
     return workspace
 
 
-def prepare_current(yaml_file: str) -> dict | None:
-    """
-    Load current calculation input parameters from YAML.
+def prepare_conductor_runtime(
+    data: ConductorData,
+    data_controller: DataController,
+    memory_tracker: MemoryTracker,
+) -> HamiltonianSystem:
+    """Prepare all runtime objects required to execute conductor transport.
 
     Parameters
     ----------
-    `yaml_file` : str
-        Path to the YAML input file (e.g. current.yaml).
+    data : ConductorData
+        Conductor input model with runtime fields already initialized.
+    data_controller : DataController
+        Shared PAOFLOW data store used by Hamiltonian block setup.
+    memory_tracker : MemoryTracker
+        Memory tracker updated by each preparation stage.
 
     Returns
     -------
-    `data` : dict or None
-        Parsed input parameters, or None if loading fails.
+    HamiltonianSystem
+        Prepared Hamiltonian system with initialized block operators.
+
+    Notes
+    -----
+    This function centralizes the common execution setup used by both
+    compatibility runners and the direct-argument ``Transport`` orchestrator.
     """
-    return load_current_data_from_yaml(yaml_file)
+    _ = prepare_smearing(data, memory_tracker)
+    _ = prepare_kpoints(data, memory_tracker)
+    hamiltonian_system = prepare_hamiltonian_system(data, memory_tracker)
+    prepare_hamiltonian_blocks_and_leads(data, hamiltonian_system, data_controller)
+    _ = prepare_workspace(data, memory_tracker)
+    return hamiltonian_system

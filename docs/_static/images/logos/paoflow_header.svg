@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="541" height="136" viewBox="213 39 541 136">
+  <defs>
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00853e"/>
+      <stop offset="45%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#00853e"/>
+    </linearGradient>
+    <filter id="glow" x="-15%" y="-40%" width="130%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <text x="480" y="140"
+        font-family="'Courier New', Courier, monospace"
+        font-size="100"
+        font-weight="bold"
+        letter-spacing="10"
+        fill="url(#titleGrad)"
+        text-anchor="middle"
+        filter="url(#glow)">PAOFLOW</text>
+</svg>

@@ -128,7 +128,7 @@ def read_pseudopotential(fpp):
     except Exception:
         with open(fpp) as ifo:
             ifs = ifo.read()
-        res = re.findall('(.*)\s*Wavefunction', ifs)[1:]
+        res = re.findall(r'(.*)\s*Wavefunction', ifs)[1:]
         sh = np.array(list(map(int, list([x.split()[1] for x in res]))))
 
     for i in elem.findall('PP_SPIN_ORB/'):

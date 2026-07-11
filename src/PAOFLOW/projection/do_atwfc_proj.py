@@ -1537,7 +1537,7 @@ def tesseral_to_ylm_matrix(l):
       (PAOFLOW's ``ylmgc`` convention).
 
     Derived numerically from :func:`calc_ylmg_complex_0` so it inherits
-    the non-standard odd-|m| signs.  ``l`` must be ``<= 3``.
+    the non-standard odd-:math:`|m|` signs.  ``l`` must be ``<= 3``.
     """
     if l > 3:
         raise NotImplementedError('l > 3 not supported')

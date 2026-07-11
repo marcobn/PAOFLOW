@@ -19,6 +19,8 @@ The Fortran builds the rotation matrix from slicing → BZ frame using
 
 via the explicit form
 
+.. code-block:: none
+
          | p²u + c    −p q u    q s |
     R =  | −p q u     q²u + c   p s |
          | −q s       −p s      c   |

@@ -1,40 +1,48 @@
-"""Radial Schroedinger solver for norm-conserving, USPP and PAW pseudopotentials.
+r"""Radial Schroedinger solver for norm-conserving, USPP and PAW pseudopotentials.
 
-The pseudo-atom Hamiltonian acting on the radial part u(r) = r R(r) of
-psi_{lm}(r) = R(r) Y_{lm} is, for a given (l, j) channel,
+The pseudo-atom Hamiltonian acting on the radial part :math:`u(r) = r R(r)` of
+:math:`\psi_{lm}(r) = R(r) Y_{lm}` is, for a given :math:`(l, j)` channel,
 
-    H u(r) = -1/2 u''(r) + [V_loc(r) + l(l+1)/(2 r^2)] u(r)
-             + r * sum_{i,j in (l,j)} beta_i(r) D_ij <beta_j | R>
+.. math::
 
-where <beta_j | R> = int beta_j(r) R(r) r^2 dr.  Using the UPF-stored
-quantity a_i(r) = r * beta_i(r) the nonlocal kernel in u-space becomes
+   H u(r) = -\frac{1}{2} u''(r) + \left[V_{\mathrm{loc}}(r) + \frac{l(l+1)}{2r^2}\right] u(r)
+             + r \sum_{i,j \in (l,j)} \beta_i(r) D_{ij} \langle\beta_j | R\rangle
+
+where :math:`\langle\beta_j | R\rangle = \int \beta_j(r) R(r) r^2 \, dr`.  Using the UPF-stored
+quantity :math:`a_i(r) = r \beta_i(r)` the nonlocal kernel in :math:`u`-space becomes
 the symmetric outer product
 
-    M(r, r') = sum_{i,j} a_i(r) D_ij a_j(r') .
+.. math::
+
+   M(r, r') = \sum_{i,j} a_i(r) D_{ij} a_j(r').
 
 For ultrasoft / PAW pseudopotentials the augmentation overlap operator
 
-    S = 1 + sum_{ij} q_ij |beta_i><beta_j|   ->   S_uu' = I + dr a Q a^T
+.. math::
+
+   S = 1 + \sum_{ij} q_{ij} |\beta_i\rangle\langle\beta_j|
+   \quad\rightarrow\quad
+   S_{uu'} = I + \mathrm{d}r\, a Q a^T
 
 is built from ``upf.qqq`` and the eigenproblem becomes the generalized
-``H u = eps S u`` (solved with ``scipy.linalg.eigh(H, S)``); the
-returned u(r) is then normalised to ``<u|S|u> dr = 1``.  For NC pseudos
+:math:`H u = \varepsilon S u` (solved with ``scipy.linalg.eigh(H, S)``); the
+returned :math:`u(r)` is then normalised to :math:`\langle u|S|u\rangle \, \mathrm{d}r = 1`.  For NC pseudos
 (no augmentation) the path collapses to ``np.linalg.eigh(H)`` with the
-ordinary L^2 normalisation.
+ordinary :math:`L^2` normalisation.
 
-We discretise on a uniform mesh r_k = k * dr, k = 1, ..., N-1 with
-u(0) = u(R_box) = 0, dr = R_box / N.  V_loc and a_i are interpolated
-(cubic spline) from the UPF log mesh onto this uniform grid; outside
-each projector's cutoff_radius a_i is zero.
+We discretise on a uniform mesh :math:`r_k = k \, \mathrm{d}r`, :math:`k = 1, \ldots, N-1`, with
+:math:`u(0) = u(R_{\mathrm{box}}) = 0`, :math:`\mathrm{d}r = R_{\mathrm{box}} / N`.  :math:`V_{\mathrm{loc}}`
+and :math:`a_i` are interpolated (cubic spline) from the UPF log mesh onto this uniform grid;
+outside each projector's cutoff_radius :math:`a_i` is zero.
 
-For SO UPFs the projectors are filtered by matching (l, j) -- callers
-that request (n, l) with j = None on an SO UPF get the j = l + 1/2
-channel by default (override via the j argument).
+For SO UPFs the projectors are filtered by matching :math:`(l, j)` -- callers
+that request :math:`(n, l)` with ``j = None`` on an SO UPF get the :math:`j = l + 1/2`
+channel by default (override via the ``j`` argument).
 
 All quantities are in Hartree atomic units.  Output radial functions
-are returned in the QE convention used by build_aewfc_basis: the
-returned wfc[k] equals r_k * R(r_k) (i.e. u(r_k)), normalised so that
-sum_k wfc[k]**2 * dr = 1.
+are returned in the QE convention used by ``build_aewfc_basis``: the
+returned ``wfc[k]`` equals :math:`r_k R(r_k)` (i.e. :math:`u(r_k)`), normalised so that
+:math:`\sum_k \mathrm{wfc}[k]^2 \, \mathrm{d}r = 1`.
 """
 
 from __future__ import annotations

@@ -23,7 +23,7 @@ def band_loop_H(ini_ik, end_ik, HRaux, kq, R):
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
-                         H(\\mathbf{R})\,e^{2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
+                         H(\\mathbf{R})\\,e^{2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
 
     for the k-point range ``[ini_ik, end_ik)``.  The phase factors are
     computed in vectorised form via ``np.tensordot``.

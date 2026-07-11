@@ -1,0 +1,451 @@
+/* ── Matrix color scheme ────────────────────────────────────────────────────
+   Overrides pydata-sphinx-theme CSS custom properties with matrix
+   (black and green) palette, matching the PAOFLOW brand aesthetic.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* ── Dark theme: full Matrix ────────────────────────────────────────────── */
+html[data-theme=dark] {
+  --paoflow-brand-green: #00853e;
+
+  --pst-color-primary: #00e040;
+  --pst-color-primary-text: #060e06;
+  --pst-color-primary-highlight: #00b833;
+  --pst-color-primary-highlight-text: #060e06;
+  --pst-color-primary-bg: #062006;
+
+  --pst-color-secondary: #00cc33;
+  --pst-color-secondary-text: #060e06;
+  --pst-color-secondary-highlight: #009e28;
+  --pst-color-secondary-highlight-text: #060e06;
+  --pst-color-secondary-bg: #041504;
+
+  --pst-color-accent: #39ff14;
+  --pst-color-accent-bg: #091f09;
+
+  --pst-color-info: #00c8a0;
+  --pst-color-info-text: #060e06;
+  --pst-color-info-highlight: #009e7e;
+  --pst-color-info-highlight-text: #060e06;
+  --pst-color-info-bg: #03201a;
+
+  --pst-color-success: #00e040;
+  --pst-color-success-text: #060e06;
+  --pst-color-success-highlight: #00b833;
+  --pst-color-success-highlight-text: #060e06;
+  --pst-color-success-bg: #062006;
+
+  --pst-color-warning: #d4a800;
+  --pst-color-warning-text: #060e06;
+  --pst-color-warning-highlight: #b08e00;
+  --pst-color-warning-highlight-text: #060e06;
+  --pst-color-warning-bg: #1c1800;
+
+  --pst-color-danger: #ff5555;
+  --pst-color-danger-text: #fff;
+  --pst-color-danger-highlight: #cc2222;
+  --pst-color-danger-highlight-text: #fff;
+  --pst-color-danger-bg: #200606;
+
+  --pst-color-text-base: #ffffff;
+  --pst-color-text-muted: #9ab8a0;
+  --pst-color-heading: var(--paoflow-brand-green);
+  --pst-color-shadow: rgba(0, 224, 64, 0.12);
+  --pst-color-border: #1c4020;
+  --pst-color-border-muted: #0f260f;
+  --pst-color-blockquote-notch: #00a030;
+  --pst-color-inline-code: #7eff7e;
+  --pst-color-inline-code-links: #00cc33;
+  --pst-color-target: #0a2a0a;
+  --pst-color-table: #ffffff;
+  --pst-color-table-row-hover-bg: #0d260d;
+  --pst-color-table-inner-border: #1c3a1c;
+  --pst-color-background: #060e06;
+  --pst-color-on-background: #0a160a;
+  --pst-color-surface: #0f1f0f;
+  --pst-color-on-surface: #ffffff;
+  --pst-color-link: #00e040;
+  --pst-color-link-hover: #39ff14;
+  --pst-color-table-outer-border: var(--pst-color-surface);
+  --pst-color-table-heading-bg: #0a200a;
+  --pst-color-table-row-zebra-high-bg: var(--pst-color-on-background);
+  --pst-color-table-row-zebra-low-bg: var(--pst-color-surface);
+  --pst-color-attention: var(--pst-color-warning);
+  --pst-color-attention-bg: var(--pst-color-warning-bg);
+
+  color-scheme: dark;
+}
+
+/* ── Light theme: forest terminal ───────────────────────────────────────── */
+html[data-theme=light] {
+  --pst-color-primary: #006622;
+  --pst-color-primary-text: #fff;
+  --pst-color-primary-highlight: #004d18;
+  --pst-color-primary-highlight-text: #fff;
+  --pst-color-primary-bg: #d4eedd;
+
+  --pst-color-secondary: #004d18;
+  --pst-color-secondary-text: #fff;
+  --pst-color-secondary-highlight: #003811;
+  --pst-color-secondary-highlight-text: #fff;
+  --pst-color-secondary-bg: #c2e8cc;
+
+  --pst-color-accent: #008030;
+  --pst-color-accent-bg: #d4eedd;
+
+  --pst-color-info: #006655;
+  --pst-color-info-bg: #bce8e0;
+
+  --pst-color-success: #006622;
+  --pst-color-success-bg: #d4eedd;
+
+  --pst-color-warning-bg: #fef8d6;
+  --pst-color-danger-bg: #fde8e8;
+
+  --pst-color-text-base: #0a1a0a;
+  --pst-color-text-muted: #2a5a2a;
+  --pst-color-heading: #004d18;
+  --pst-color-shadow: rgba(0, 80, 24, 0.12);
+  --pst-color-border: #88c898;
+  --pst-color-border-muted: rgba(0, 80, 24, 0.2);
+  --pst-color-blockquote-notch: #4a8a5a;
+  --pst-color-inline-code: #004d18;
+  --pst-color-inline-code-links: #003811;
+  --pst-color-target: #d4eedd;
+  --pst-color-table: #0a1a0a;
+  --pst-color-table-row-hover-bg: #c2e8cc;
+  --pst-color-table-inner-border: #c4e4cc;
+  --pst-color-background: #f6fcf6;
+  --pst-color-on-background: #eef8ee;
+  --pst-color-surface: #e4f2e6;
+  --pst-color-on-surface: #0a1a0a;
+  --pst-color-link: #006622;
+  --pst-color-link-hover: #004d18;
+  --pst-color-table-outer-border: var(--pst-color-surface);
+  --pst-color-table-heading-bg: var(--pst-color-surface);
+  --pst-color-table-row-zebra-high-bg: var(--pst-color-on-background);
+  --pst-color-table-row-zebra-low-bg: var(--pst-color-surface);
+  --pst-color-attention: var(--pst-color-warning);
+  --pst-color-attention-bg: var(--pst-color-warning-bg);
+}
+
+/* ── Unthemed fallback (before JS sets data-theme) ──────────────────────── */
+html:not([data-theme]) {
+  --paoflow-brand-green: #00853e;
+
+  --pst-color-primary: #00e040;
+  --pst-color-primary-bg: #062006;
+  --pst-color-secondary: #00cc33;
+  --pst-color-secondary-bg: #041504;
+  --pst-color-accent: #39ff14;
+  --pst-color-accent-bg: #091f09;
+  --pst-color-info: #00c8a0;
+  --pst-color-info-bg: #03201a;
+  --pst-color-warning-bg: #1c1800;
+  --pst-color-success: #00e040;
+  --pst-color-success-bg: #062006;
+  --pst-color-danger-bg: #200606;
+  --pst-color-text-base: #ffffff;
+  --pst-color-text-muted: #9ab8a0;
+  --pst-color-heading: var(--paoflow-brand-green);
+  --pst-color-border: #1c4020;
+  --pst-color-border-muted: #0f260f;
+  --pst-color-inline-code: #7eff7e;
+  --pst-color-inline-code-links: #00cc33;
+  --pst-color-background: #060e06;
+  --pst-color-on-background: #0a160a;
+  --pst-color-surface: #0f1f0f;
+  --pst-color-on-surface: #ffffff;
+  --pst-color-link: #00e040;
+  --pst-color-link-hover: #39ff14;
+  --pst-color-shadow: rgba(0, 224, 64, 0.12);
+
+  color-scheme: dark;
+}
+
+/* ── Dark theme extra polish ────────────────────────────────────────────── */
+html[data-theme=dark] ::selection {
+  background: rgba(0, 224, 64, 0.28);
+  color: #fff;
+}
+
+html[data-theme=dark]::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+html[data-theme=dark]::-webkit-scrollbar-track {
+  background: #060e06;
+}
+
+html[data-theme=dark]::-webkit-scrollbar-thumb {
+  background: #1c4020;
+  border-radius: 4px;
+}
+
+html[data-theme=dark]::-webkit-scrollbar-thumb:hover {
+  background: #00b833;
+}
+
+/* Header / navbar background in dark mode */
+html[data-theme=dark] .bd-header {
+  background-color: #060e06 !important;
+  border-bottom: 1px solid #1c4020 !important;
+}
+
+/* Sidebar background in dark mode */
+html[data-theme=dark] .bd-sidebar-primary {
+  background-color: #060e06 !important;
+  border-right: 1px solid #1c4020 !important;
+}
+
+/* Copy button code block surface */
+html[data-theme=dark] div.highlight,
+html[data-theme=dark] div[class*="highlight-"] {
+  background: #0a180a !important;
+  border: 1px solid #1c4020 !important;
+}
+
+/* Distinguish code blocks from notebook output blocks */
+div.highlight,
+.nbinput .highlight,
+div[class*="highlight-"] {
+  border: 1px solid var(--pst-color-border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--pst-color-shadow) 55%, transparent);
+  overflow: hidden;
+}
+
+div.highlight pre,
+.nbinput .highlight pre,
+div[class*="highlight-"] pre {
+  background: color-mix(in srgb, var(--pst-color-on-background) 94%, transparent) !important;
+}
+
+.nboutput,
+.nboutput .output,
+.nboutput .output_area,
+.nboutput .output pre {
+  background: color-mix(in srgb, var(--pst-color-surface) 90%, transparent) !important;
+}
+
+.nboutput,
+.nboutput .output,
+.nboutput .output_area {
+  border: 1px dashed var(--pst-color-border-muted) !important;
+  border-radius: 10px !important;
+}
+
+/* Syntax colors for highlighted code blocks */
+.highlight .k,
+.highlight .kn,
+.highlight .kp,
+.highlight .kr {
+  color: #00d4ff !important;
+}
+
+.highlight .nf,
+.highlight .fm {
+  color: #ffd166 !important;
+}
+
+.highlight .n,
+.highlight .nn,
+.highlight .nc {
+  color: #a7f3d0 !important;
+}
+
+.highlight .s,
+.highlight .sa,
+.highlight .sb,
+.highlight .sc,
+.highlight .sd,
+.highlight .s1,
+.highlight .s2 {
+  color: #ffb4a2 !important;
+}
+
+.highlight .mi,
+.highlight .mf,
+.highlight .il {
+  color: #f8f38d !important;
+}
+
+.highlight .c,
+.highlight .c1,
+.highlight .cm {
+  color: #8fb78f !important;
+  font-style: italic;
+}
+
+.highlight .o,
+.highlight .ow {
+  color: #ffd166 !important;
+}
+
+.highlight .p {
+  color: var(--pst-color-text-base) !important;
+}
+
+/* Keep copy buttons only for code blocks, not notebook outputs */
+.nboutput .copybtn,
+.output .copybtn,
+.jp-OutputArea .copybtn {
+  display: none !important;
+}
+
+/* Notebook cells: make all borders consistent and remove scroll boxes for equations */
+div.cell > div.cell_input {
+  border: 1px solid var(--pst-color-border) !important;
+  border-left: 1px solid var(--pst-color-border) !important;
+}
+
+div.cell:is(
+    .tag_output_scroll,
+    .tag_scroll-output,
+    .config_scroll_outputs
+  )
+  div.cell_output,
+div.cell.tag_scroll-input div.cell_input {
+  max-height: none !important;
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+}
+
+.cell_output .MathJax_Display,
+.cell_output .output.text_latex,
+.nboutput .MathJax_Display,
+.nboutput .output.text_latex {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Display equations should flow naturally with no local scrollbar gutter */
+div.math,
+.math.notranslate.nohighlight,
+.MathJax_Display,
+mjx-container[display="true"] {
+  overflow: visible !important;
+  overflow-x: visible !important;
+  overflow-y: visible !important;
+  scrollbar-width: none !important;
+}
+
+div.math::-webkit-scrollbar,
+.math.notranslate.nohighlight::-webkit-scrollbar,
+.MathJax_Display::-webkit-scrollbar,
+mjx-container[display="true"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.cell_output:has(.MathJax_Display),
+.nboutput:has(.MathJax_Display),
+.nboutput:has(.output.text_latex) {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Navbar logo sizing */
+.bd-header .navbar-brand img.logo__image {
+  height: 38px;
+  width: auto;
+}
+
+/* Active / current nav link indicator */
+html[data-theme=dark] .bd-header ul.navbar-nav > li.nav-item.current > .nav-link::before {
+  border-bottom-color: var(--paoflow-brand-green) !important;
+}
+
+/* ── GitHub icon: rounded square → circle ───────────────────────────────── */
+a.pst-navbar-icon[href*="github"] svg {
+  border-radius: 50%;
+  overflow: hidden;
+  display: block;
+}
+
+/* ── Theme toggle: suppress auto/system mode icon ───────────────────────── */
+.theme-switch-button .theme-switch[data-mode="auto"] {
+  display: none !important;
+}
+
+/* ── Gallery cards ───────────────────────────────────────────────────────── */
+.pf-gallery-img {
+  height: 210px;
+  width: 100%;
+  object-fit: contain;
+  background-color: var(--pst-color-on-background);
+  display: block;
+}
+
+.pf-gallery-card .sd-card-body {
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+.pf-gallery-card .sd-card-body p {
+  margin: 0;
+  font-size: 0.9em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.pf-gallery-card .sd-card-footer {
+  font-size: 0.8em;
+  color: var(--pst-color-text-muted);
+  padding: 0.5rem 1rem;
+}
+
+/* ── Team member entries (minimal, no cards) ─────────────────────────────── */
+.pf-team-member {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0;
+}
+
+.pf-team-member p {
+  margin: 0;
+}
+
+.pf-team-photo {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto 0.5rem;
+}
+
+/* Citation list with per-entry copy button */
+.pf-citation-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.pf-citation-entry {
+  margin: 0 0 1rem;
+}
+
+.pf-citation-text {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.pf-citation-copy {
+  border: 1px solid var(--pst-color-border);
+  border-radius: 8px;
+  background: var(--pst-color-surface);
+  color: var(--pst-color-text-base);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.86rem;
+}
+
+.pf-citation-copy:hover,
+.pf-citation-copy:focus-visible {
+  background: var(--pst-color-primary-bg);
+}
