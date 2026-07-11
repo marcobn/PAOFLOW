@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  workflows: write
 
 jobs:
   notify-teams:
@@ -34,18 +35,10 @@ jobs:
             echo "::error::Missing repository secret MS_TEAMS_WEBHOOK_URL."
             exit 1
           fi
-
-          theme_color="0078D4"
-          if [ "$BASE_BRANCH" = "main" ]; then
-            theme_color="2EB886"
-          fi
-
           run_url="$SERVER_URL/$REPOSITORY/actions/runs/$RUN_ID"
           short_sha="${MERGE_COMMIT_SHA:0:7}"
 
           payload=$(jq -n \
-            --arg summary "PR merged to $BASE_BRANCH" \
-            --arg theme_color "$theme_color" \
             --arg title "PR merged to $BASE_BRANCH" \
             --arg activity_title "#$PR_NUMBER $PR_TITLE" \
             --arg activity_subtitle "Merged by $MERGED_BY" \
@@ -56,40 +49,81 @@ jobs:
             --arg pr_url "$PR_URL" \
             --arg run_url "$run_url" \
             '{
-              "@type": "MessageCard",
-              "@context": "http://schema.org/extensions",
-              "summary": $summary,
-              "themeColor": $theme_color,
-              "title": $title,
-              "sections": [
+              "type": "message",
+              "attachments": [
                 {
-                  "activityTitle": $activity_title,
-                  "activitySubtitle": $activity_subtitle,
-                  "facts": [
-                    {"name": "Repository", "value": $repo},
-                    {"name": "Target branch", "value": $base},
-                    {"name": "Source branch", "value": $head},
-                    {"name": "Merge commit", "value": $sha}
-                  ],
-                  "markdown": true
-                }
-              ],
-              "potentialAction": [
-                {
-                  "@type": "OpenUri",
-                  "name": "View pull request",
-                  "targets": [{"os": "default", "uri": $pr_url}]
-                },
-                {
-                  "@type": "OpenUri",
-                  "name": "View workflow run",
-                  "targets": [{"os": "default", "uri": $run_url}]
+                  "contentType": "application/vnd.microsoft.card.adaptive",
+                  "contentUrl": null,
+                  "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.2",
+                    "body": [
+                      {
+                        "type": "TextBlock",
+                        "text": $title,
+                        "size": "Large",
+                        "weight": "Bolder",
+                        "color": "Good",
+                        "wrap": true
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": $activity_title,
+                        "weight": "Bolder",
+                        "spacing": "Medium",
+                        "wrap": true
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": $activity_subtitle,
+                        "isSubtle": true,
+                        "spacing": "None",
+                        "wrap": true
+                      },
+                      {
+                        "type": "FactSet",
+                        "spacing": "Medium",
+                        "facts": [
+                          {
+                            "title": "Repository",
+                            "value": $repo
+                          },
+                          {
+                            "title": "Target branch",
+                            "value": $base
+                          },
+                          {
+                            "title": "Source branch",
+                            "value": $head
+                          },
+                          {
+                            "title": "Merge commit",
+                            "value": $sha
+                          }
+                        ]
+                      }
+                    ],
+                    "actions": [
+                      {
+                        "type": "Action.OpenUrl",
+                        "title": "View pull request",
+                        "url": $pr_url
+                      },
+                      {
+                        "type": "Action.OpenUrl",
+                        "title": "View workflow run",
+                        "url": $run_url
+                      }
+                    ]
+                  }
                 }
               ]
             }')
-
           curl --fail-with-body \
             --request POST \
             --header 'Content-Type: application/json' \
             --data "$payload" \
             "$TEAMS_WEBHOOK_URL"
+
+...
