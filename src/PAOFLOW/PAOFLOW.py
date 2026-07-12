@@ -1036,7 +1036,7 @@ class PAOFLOW:
             self.data_controller.build_arrays_adhoc_soc()
 
         try:
-            site_projeted_bands(self.data_controller,type='BZ_path')
+            site_projeted_bands(self.data_controller, type='BZ_path')
         except Exception as e:
             self.report_exception('site_projeted_bands')
             if self.data_controller.data_attributes['abort_on_exception']:
@@ -1066,14 +1066,13 @@ class PAOFLOW:
             self.data_controller.build_arrays_adhoc_soc()
 
         try:
-            site_projeted_bands(self.data_controller,type='BZ_mesh')
+            site_projeted_bands(self.data_controller, type='BZ_mesh')
         except Exception as e:
             self.report_exception('site_projeted_bands')
             if self.data_controller.data_attributes['abort_on_exception']:
                 raise e
 
         self.report_module_time('site_projeted_bands')
-
 
     def doubling_Hamiltonian(self, nx, ny, nz):
         """
@@ -1998,7 +1997,7 @@ class PAOFLOW:
             arrays['deltakp'] = arrays['deltakp'][:, :bnd]
             arrays['deltakp2'] = arrays['deltakp2'][:, :bnd]
 
-    def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0,type='bxsf',project=None):
+    def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0, type='bxsf', project=None):
         """
         Calculate the Fermi Surface
 
@@ -2024,7 +2023,7 @@ class PAOFLOW:
             attr['fermi_dw'] = fermi_dw
 
         try:
-            do_fermisurf(self.data_controller,type,project)
+            do_fermisurf(self.data_controller, type, project)
         except Exception as e:
             self.report_exception('fermi_surface')
             if attr['abort_on_exception']:

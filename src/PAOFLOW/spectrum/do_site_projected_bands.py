@@ -1,4 +1,4 @@
-def site_projeted_bands(data_controller,type):
+def site_projeted_bands(data_controller, type):
     """Write site-projected band weights to a data file.
 
     Parameters
@@ -48,7 +48,7 @@ def site_projeted_bands(data_controller,type):
         s = int(attr['nawf'] / 2)
 
     nspin = arry['v_k'].shape[3]
-    if type=='BZ_path':
+    if type == 'BZ_path':
         for ispin in range(nspin):
             f = open(join(attr['opath'], 'site-projected-bands_' + str(ispin) + '.dat'), 'w')
 
@@ -76,20 +76,18 @@ def site_projeted_bands(data_controller,type):
                         )
                     )
             f.close()
-    elif type=='BZ_mesh':
+    elif type == 'BZ_mesh':
         arry['FS_orb'] = np.zeros_like(arry['E_k'], dtype=float)
         for ispin in range(nspin):
-        
             mask.fill(0)
-        
+
             for i in range(arry['site_proj'].shape[0]):
-            
-                idx = np.sum(arry['naw'][:arry['site_proj'][i]])
+                idx = np.sum(arry['naw'][: arry['site_proj'][i]])
                 fdx = idx + arry['naw'][arry['site_proj'][i]]
-        
+
                 mask[:, idx:fdx, :] = 1.0 + 0.0j
-                mask[:, idx+s:fdx+s, :] = 1.0 + 0.0j
-        
+                mask[:, idx + s : fdx + s, :] = 1.0 + 0.0j
+
             cs = mask * arry['v_k'][:, :, :, ispin]
-        
-            arry['FS_orb'][:, :, ispin] = np.sum(np.abs(cs)**2, axis=1)       
+
+            arry['FS_orb'][:, :, ispin] = np.sum(np.abs(cs) ** 2, axis=1)
