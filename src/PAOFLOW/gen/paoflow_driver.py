@@ -15,6 +15,14 @@ Two workflows are supported:
    the non-local velocity correction, so they are emitted as a **separate**
    PAOFLOW run in the same script.
 
+Two further workflows generate multi-phase driver scripts:
+
+3. **Harmonic phonons** (``main.phonon.py``) -- finite-displacement phonons via
+   phonopy (generate supercells -> run pw.x -> analyse forces).
+4. **Electron-phonon** (``main.elphon.py``) -- the pseudo-atomic-orbital (Agapito &
+   Bernardi) interpolation of QE's DFPT coupling into ``alpha^2F`` / ``lambda`` /
+   ``Tc`` (write the ph.x phonon + AHC inputs -> run QE -> analyse).
+
 The generated script is static and heavily commented so it is easy to tweak
 afterwards.
 """
@@ -788,6 +796,19 @@ def _hubbard_file_line(cfg):
     return 'HUBBARD_FILE = os.path.join(HERE, {!r})'.format(hf)
 
 
+def _derive_ph_command(pw_command):
+    """Derive a ``ph.x`` command from the user's ``pw.x`` command.
+
+    Keeps any parallelisation flags (e.g. ``-npool 4``, which ``ph.x`` also
+    accepts) by swapping only the executable token; falls back to ``ph.x`` when
+    no ``pw.x`` token is present.
+    """
+    pw_command = (pw_command or 'pw.x').strip()
+    if 'pw.x' in pw_command:
+        return pw_command.replace('pw.x', 'ph.x')
+    return 'ph.x'
+
+
 def build_phonon_script(cfg):
     """Assemble a main.phonon.py harmonic-phonon workflow from the config.
 
@@ -891,6 +912,35 @@ def build_phonon_script(cfg):
         )
     )
     lines.append('')
+    lines.append('# Quasi-harmonic approximation (QHA): isotropic volume scan combining the')
+    lines.append('# static E(V) with the harmonic F_vib(T, V) -> V(T), thermal expansion,')
+    lines.append('# bulk modulus, Gibbs energy, Cp and the Gruneisen parameter.')
+    lines.append(
+        'QHA = {}   # run the quasi-harmonic volume scan'.format(bool(cfg.get('qha', False)))
+    )
+    lines.append(
+        'QHA_NVOLUMES = {}   # sampled volumes: 5 (full EOS fit) or 3 (parabolic fit)'.format(
+            int(cfg.get('qha_nvolumes', 5))
+        )
+    )
+    lines.append(
+        'QHA_STRAIN = {}   # maximum linear strain of the scan'.format(cfg.get('qha_strain', 0.02))
+    )
+    lines.append(
+        "QHA_EOS = {!r}   # 'vinet', 'birch_murnaghan' or 'murnaghan' (QHA_NVOLUMES >= 4)".format(
+            cfg.get('qha_eos', 'vinet')
+        )
+    )
+    lines.append('QHA_TMIN = {}   # minimum temperature (K)'.format(cfg.get('qha_tmin', 0.0)))
+    lines.append('QHA_TMAX = {}   # maximum temperature (K)'.format(cfg.get('qha_tmax', 1000.0)))
+    lines.append('QHA_TSTEP = {}   # temperature step (K)'.format(cfg.get('qha_tstep', 10.0)))
+    lines.append(
+        'QHA_PRESSURE = {}   # external pressure (GPa) added as a pV term'.format(
+            cfg.get('qha_pressure', 0.0)
+        )
+    )
+    lines.append("QHA_DIR = 'qha'   # sub-directory (under OUTPUTDIR) for the volume scan")
+    lines.append('')
     lines.append('# HUBBARD card injected into the force (and lelfield) inputs.  Only on-site')
     lines.append('# U parameters are kept; intersite V lines are dropped (their atom indices')
     lines.append('# are not valid for the supercell).')
@@ -913,7 +963,14 @@ def build_phonon_script(cfg):
     lines.append('# pw.x launch settings for the supercell SCF runs (edit to your machine).')
     lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
     lines.append(
-        "QE_PATH = {!r}   # directory containing pw.x ('' -> use PATH)".format(cfg['qe_path'])
+        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+            cfg.get('qe_pw', 'pw.x')
+        )
+    )
+    lines.append(
+        'QE_PH = {!r}   # ph.x command for the Born DFPT run (may include flags)'.format(
+            _derive_ph_command(cfg.get('qe_pw', 'pw.x'))
+        )
     )
     lines.append('')
     lines.append('')
@@ -951,6 +1008,18 @@ def build_phonon_script(cfg):
     lines.append('            hubbard_file=HUBBARD_FILE,')
     lines.append('            forces=None,')
     lines.append('        )')
+    lines.append('    if QHA:')
+    lines.append('        p.quasi_harmonic(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            displacement_distance=DISPLACEMENT,')
+    lines.append('            nvolumes=QHA_NVOLUMES,')
+    lines.append('            strain=QHA_STRAIN,')
+    lines.append('            qha_dir=QHA_DIR,')
+    lines.append('            pp_dir=PP_DIR,')
+    lines.append('            prefix=PREFIX,')
+    lines.append('            hubbard_file=HUBBARD_FILE,')
+    lines.append('            forces=None,')
+    lines.append('        )')
     lines.append('')
     lines.append('')
     lines.append('def _job_done(path):')
@@ -970,7 +1039,7 @@ def build_phonon_script(cfg):
     lines.append("        print('No supercell inputs in {}; run the generate phase first.'.format(")
     lines.append('            indir))')
     lines.append('        sys.exit(1)')
-    lines.append("    pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('    pwx = QE_PW')
     lines.append('    for fin in inputs:')
     lines.append("        fout = fin[:-3] + '.out'")
     lines.append('        if _job_done(fout):')
@@ -987,7 +1056,7 @@ def build_phonon_script(cfg):
     lines.append('    """Phase 2 (Born): run the ph.x (DFPT) or lelfield pw.x field inputs."""')
     lines.append('    indir = os.path.join(HERE, OUTPUTDIR, PHONON_DIR)')
     lines.append("    if BORN_METHOD == 'dfpt':")
-    lines.append("        phx = os.path.join(QE_PATH, 'ph.x') if QE_PATH else 'ph.x'")
+    lines.append('        phx = QE_PH')
     lines.append("        fin = os.path.join(indir, 'ph_epsil.in')")
     lines.append('        if not os.path.isfile(fin):')
     lines.append("            print('No ph_epsil.in in {}; run the generate phase first.'.format(")
@@ -1007,7 +1076,7 @@ def build_phonon_script(cfg):
     lines.append("            print('No field-*.in in {}; run the generate phase first.'.format(")
     lines.append('                indir))')
     lines.append('            sys.exit(1)')
-    lines.append("        pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('        pwx = QE_PW')
     lines.append('        for fin in inputs:')
     lines.append("            fout = fin[:-3] + '.out'")
     lines.append('            if _job_done(fout):')
@@ -1018,6 +1087,34 @@ def build_phonon_script(cfg):
     lines.append('                inp=os.path.basename(fin), out=os.path.basename(fout))')
     lines.append("            print('  running:', os.path.basename(fin))")
     lines.append('            subprocess.run(cmd, shell=True, check=True, cwd=indir)')
+    lines.append('')
+    lines.append('')
+    lines.append('def run_qha():')
+    lines.append(
+        '    """Phase 2 (QHA): run pw.x on every volume\'s scf and displaced supercells."""'
+    )
+    lines.append('    base = os.path.join(HERE, OUTPUTDIR, QHA_DIR)')
+    lines.append("    vol_dirs = sorted(glob.glob(os.path.join(base, 'vol-*')))")
+    lines.append('    if not vol_dirs:')
+    lines.append(
+        "        print('No vol-* directories in {}; run the generate phase first.'.format("
+    )
+    lines.append('            base))')
+    lines.append('        sys.exit(1)')
+    lines.append('    pwx = QE_PW')
+    lines.append('    for vdir in vol_dirs:')
+    lines.append("        inputs = sorted(glob.glob(os.path.join(vdir, 'scf.in')))")
+    lines.append("        inputs += sorted(glob.glob(os.path.join(vdir, 'supercell-*.in')))")
+    lines.append('        for fin in inputs:')
+    lines.append("            fout = fin[:-3] + '.out'")
+    lines.append('            if _job_done(fout):')
+    lines.append("                print('  skip (already done):', os.path.relpath(fout, base))")
+    lines.append('                continue')
+    lines.append("            cmd = '{mpi} {pwx} -in {inp} > {out}'.format(")
+    lines.append('                mpi=MPI_QE, pwx=pwx,')
+    lines.append('                inp=os.path.basename(fin), out=os.path.basename(fout))')
+    lines.append("            print('  running:', os.path.relpath(fin, base))")
+    lines.append('            subprocess.run(cmd, shell=True, check=True, cwd=vdir)')
     lines.append('')
     lines.append('')
     lines.append('def analyse():')
@@ -1092,6 +1189,30 @@ def build_phonon_script(cfg):
     lines.append("            fname='phonon',")
     lines.append('        )')
     lines.append('')
+    lines.append('    # Quasi-harmonic approximation: harvest the volume scan and write V(T),')
+    lines.append('    # thermal expansion, bulk modulus, Gibbs energy, Cp and Gruneisen.')
+    lines.append('    if QHA:')
+    lines.append('        p.quasi_harmonic(')
+    lines.append('            supercell_matrix=SUPERCELL_MATRIX,')
+    lines.append('            displacement_distance=DISPLACEMENT,')
+    lines.append('            nvolumes=QHA_NVOLUMES,')
+    lines.append('            strain=QHA_STRAIN,')
+    lines.append("            forces='qe',")
+    lines.append('            qha_dir=QHA_DIR,')
+    lines.append('            mesh=MESH,')
+    lines.append('            t_min=QHA_TMIN,')
+    lines.append('            t_max=QHA_TMAX,')
+    lines.append('            t_step=QHA_TSTEP,')
+    lines.append('            eos=QHA_EOS,')
+    lines.append('            pressure=QHA_PRESSURE,')
+    lines.append('            ibrav=IBRAV,')
+    lines.append('            q_path=Q_PATH,')
+    lines.append('            q_labels=Q_LABELS,')
+    lines.append('            q_npoints=Q_NPOINTS,')
+    lines.append('            units=UNITS,')
+    lines.append("            fname='qha',")
+    lines.append('        )')
+    lines.append('')
     lines.append('')
     lines.append('def main():')
     lines.append('    parser = argparse.ArgumentParser(')
@@ -1112,6 +1233,8 @@ def build_phonon_script(cfg):
     lines.append('        run_supercells()')
     lines.append('        if BORN:')
     lines.append('            run_born()')
+    lines.append('        if QHA:')
+    lines.append('            run_qha()')
     lines.append("    if args.phase in ('analyse', 'all'):")
     lines.append('        analyse()')
     lines.append('')
@@ -1121,6 +1244,209 @@ def build_phonon_script(cfg):
     lines.append('')
 
     return '\n'.join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Electron-phonon (PAO route) workflow builder
+# --------------------------------------------------------------------------- #
+ELPHON_TEMPLATE = r'''#!/usr/bin/env python3
+"""PAOFLOW electron-phonon (Eliashberg) workflow -- PAO route (generated by paoflow_gen.py).
+
+Pseudo-atomic-orbital (Agapito & Bernardi, Phys. Rev. B 97, 235146 (2018)) interpolation
+of Quantum ESPRESSO's DFPT electron-phonon coupling.  PAOFLOW reads QE's *full*
+coarse-grid coupling (no potential reconstruction), rotates it into the PAO gauge
+and Wigner-Seitz interpolates electrons + vertex to a dense grid for alpha^2F,
+lambda, omega_log and Tc.
+
+Two phases:
+
+    python main.elphon.py inputs    # write the ph.x phonon + AHC input templates
+    python main.elphon.py analyse   # PAO interpolation -> alpha^2F, lambda, Tc
+
+Between them, run the two QE ph.x steps in the same outdir (typically on HPC):
+
+    1. phonon:  ph.x < <prefix>.ph.in    # full DFPT dvscf on the q-grid
+    2. ahc:     ph.x < <prefix>.ahc.in   # electron_phonon='ahc' -> ahc_dir/
+
+``fildvscf`` and ``fildyn`` MUST match between the two ph.x steps.  The AHC path
+(SOURCE='ahc') is for norm-conserving pseudopotentials; for ultrasoft / PAW use
+the patched-QE ``el_ph_mat`` dump (SOURCE='elphmat').
+"""
+
+import argparse
+import os
+import sys
+
+import numpy as np
+
+from PAOFLOW import PAOFLOW
+from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
+from PAOFLOW.elphon.elph_bloch import read_nscf
+
+
+# ----------------------------------------------------------------------- #
+# Configuration  (edit freely -- masses / NELEC / NBND are system-specific) #
+# ----------------------------------------------------------------------- #
+HERE = os.path.dirname(os.path.abspath(__file__))
+SAVEDIR = os.path.join(HERE, __SAVEDIR__)
+OUTPUTDIR = __OUTPUTDIR__
+PREFIX = __PREFIX__
+BASISDIR = os.path.join(HERE, __BASISDIR__)
+
+# Coupling source:
+#   'ahc'     -> unpatched QE AHC dumps (ahc_dir/ahc_gkk_iq<iq>.bin); NC pseudos.
+#   'elphmat' -> patched-QE el_ph_mat dumps (elph_dir/elphmat.<iq>.dat); any pseudo.
+SOURCE = __SOURCE__
+COUPLING_DIR = os.path.join(HERE, __COUPLING_DIR__)
+
+KGRID = __KGRID__          # SCF / coupling k-grid (== pw.x K_POINTS)
+QGRID = __QGRID__          # phonon q-grid (nq1, nq2, nq3)
+NBND = __NBND__            # bands in the nscf / AHC run (nbnd = ahc_nbnd)
+MASSES_AMU = __MASSES__    # atomic masses (amu), one per atom in the cell
+NELEC = __NELEC__          # valence electrons (dense E_F recompute)
+NK_DENSE = __NK_DENSE__    # dense interpolation grid
+SIGMA_RY = __SIGMA__       # Fermi-surface smearing (Ry)
+MU_STAR = __MU_STAR__      # Coulomb pseudopotential for Tc
+PTHR = __PTHR__            # projectability threshold
+DYNPREFIX = PREFIX         # <DYNPREFIX>.dyn<iq> phonon files
+
+# For SOURCE='elphmat' (patched, symmetry-reduced) set the irreducible-q star
+# weights here; leave empty (or use SOURCE='ahc') to sum the full q-grid with
+# unit weights.
+Q_WEIGHTS = __QWEIGHTS__
+
+
+def _phonon_input():
+    return '\n'.join([
+        '&inputph',
+        "  prefix='%s'," % PREFIX,
+        "  outdir='./',",
+        "  fildyn='%s.dyn'," % PREFIX,
+        "  fildvscf='dvscf',",
+        '  tr2_ph=1.0d-12,',
+        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % (QGRID[0], QGRID[1], QGRID[2]),
+        '/',
+        '',
+    ])
+
+
+def _ahc_input():
+    return '\n'.join([
+        '&inputph',
+        "  prefix='%s'," % PREFIX,
+        "  outdir='./',",
+        "  fildyn='%s.dyn'," % PREFIX,
+        "  fildvscf='dvscf',",
+        "  electron_phonon='ahc',",
+        '  ahc_nbnd=%d, ahc_nbndskip=0, skip_upperfan=.true.,' % NBND,
+        "  ahc_dir='ahc_dir/',",
+        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % (QGRID[0], QGRID[1], QGRID[2]),
+        '/',
+        '',
+    ])
+
+
+def inputs():
+    """Phase 1: write the ph.x phonon and AHC input templates."""
+    ph = os.path.join(HERE, PREFIX + '.ph.in')
+    ahc = os.path.join(HERE, PREFIX + '.ahc.in')
+    with open(ph, 'w') as fh:
+        fh.write(_phonon_input())
+    with open(ahc, 'w') as fh:
+        fh.write(_ahc_input())
+    print('Wrote %s' % ph)
+    print('Wrote %s' % ahc)
+    print('Run (same outdir), then `analyse`:')
+    print('  1) ph.x < %s' % os.path.basename(ph))
+    print('  2) ph.x < %s' % os.path.basename(ahc))
+
+
+def analyse():
+    """Phase 2: PAO interpolation of the QE coupling -> alpha^2F, lambda, Tc."""
+    if not os.path.isdir(SAVEDIR):
+        sys.exit('%s not found. Run pw.x (nscf) first.' % SAVEDIR)
+    if not os.path.isdir(COUPLING_DIR):
+        sys.exit('%s not found. Run the QE phonon + AHC steps first (phase: inputs).' % COUPLING_DIR)
+
+    pf = PAOFLOW.PAOFLOW(workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, verbose=False)
+    pf.projections(configuration='standard', basispath=BASISDIR)
+    pf.projectability(pthr=PTHR)
+    # Grab the projection matrices A_k BEFORE pao_hamiltonian (which deletes them).
+    A = pf.data_controller.data_arrays['U'][:, :, :, 0].copy()
+    pf.pao_hamiltonian()
+    HRs = pf.data_controller.data_arrays['HRs']
+    info = read_nscf(SAVEDIR)
+
+    if SOURCE == 'ahc' or not Q_WEIGHTS:
+        nq = QGRID[0] * QGRID[1] * QGRID[2]
+        q_weights = [1.0] * nq
+    else:
+        q_weights = list(Q_WEIGHTS)
+        nq = len(q_weights)
+    dyn_paths = [os.path.join(HERE, '%s.dyn%d' % (DYNPREFIX, i + 1)) for i in range(nq)]
+
+    out = eliashberg_from_qe_coupling(
+        A, HRs, info['kpts_cryst'], info['bg'], info['at'],
+        COUPLING_DIR, q_weights, tuple(KGRID), dyn_paths,
+        source=SOURCE, masses_amu=MASSES_AMU, nk_dense=NK_DENSE,
+        sigmas_ry=[SIGMA_RY], nelec=NELEC, mu_star=MU_STAR,
+    )
+
+    kB = 8.617333262e-5  # eV/K
+    print('PAO-route Eliashberg (%s, source=%s, Nk=%d):' % (PREFIX, SOURCE, NK_DENSE))
+    print('  N(E_F)   = %.3f states/spin/Ry' % out['dos_ef'].mean())
+    print('  lambda   = %.4f' % out['lambda'])
+    print('  <w_log>  = %.1f K' % (out['omega_log'] / kB))
+    print('  Tc (AD)  = %.2f K  (mu* = %.3f)' % (out['Tc_allen_dynes'], MU_STAR))
+
+    outdir = os.path.join(HERE, OUTPUTDIR)
+    os.makedirs(outdir, exist_ok=True)
+    a2f = os.path.join(outdir, 'alpha2F.dat')
+    np.savetxt(a2f, np.column_stack([out['omega'] * 1.0e3, out['a2F']]),
+               header='omega(meV)   alpha^2F(omega)')
+    print('  wrote %s' % a2f)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='PAOFLOW electron-phonon (PAO) workflow.')
+    parser.add_argument('phase', nargs='?', choices=['inputs', 'analyse', 'all'],
+                        default='all', help='Workflow phase to run (default: all).')
+    args = parser.parse_args()
+    if args.phase in ('inputs', 'all'):
+        inputs()
+    if args.phase in ('analyse', 'all'):
+        analyse()
+
+
+if __name__ == '__main__':
+    main()
+'''
+
+
+def build_elphon_script(cfg):
+    """Assemble a main.elphon.py electron-phonon (PAO route) workflow from the config."""
+    subs = {
+        '__SAVEDIR__': repr(cfg['savedir']),
+        '__OUTPUTDIR__': repr(cfg['outputdir']),
+        '__PREFIX__': repr(cfg['prefix']),
+        '__BASISDIR__': repr(cfg['basisdir']),
+        '__SOURCE__': repr(cfg['source']),
+        '__COUPLING_DIR__': repr(cfg['coupling_dir']),
+        '__KGRID__': repr(tuple(cfg['kgrid'])),
+        '__QGRID__': repr(tuple(cfg['qgrid'])),
+        '__NBND__': str(int(cfg['nbnd'])),
+        '__MASSES__': repr([float(m) for m in cfg['masses_amu']]),
+        '__NELEC__': str(int(cfg['nelec'])),
+        '__NK_DENSE__': str(int(cfg['nk_dense'])),
+        '__SIGMA__': repr(float(cfg['sigma_ry'])),
+        '__MU_STAR__': repr(float(cfg['mu_star'])),
+        '__PTHR__': repr(float(cfg['pthr'])),
+        '__QWEIGHTS__': repr([float(w) for w in cfg['q_weights']]),
+    }
+    content = ELPHON_TEMPLATE
+    for token, value in subs.items():
+        content = content.replace(token, value)
+    return content
 
 
 # --------------------------------------------------------------------------- #
@@ -1998,6 +2324,42 @@ def build_phonon_plot_script(cfg):
     lines.append('            filename=save_thermal,')
     lines.append('        )')
     lines.append('')
+    lines.append('    # Quasi-harmonic quantities: V(T), thermal expansion, bulk modulus, Cp and')
+    lines.append('    # the Gruneisen parameter, plus the static E-V curve.')
+    lines.append("    qha_volume = os.path.join(OUTPUTDIR, 'qha_volume.dat')")
+    lines.append('    if os.path.isfile(qha_volume):')
+    lines.append('        save_qha = None')
+    lines.append('        if args.save:')
+    lines.append('            stem, ext = os.path.splitext(args.save)')
+    lines.append("            save_qha = stem + '_qha' + (ext or '.png')")
+    lines.append('        pplt.plot_qha(')
+    lines.append('            volume_file=qha_volume,')
+    lines.append(
+        "            thermal_expansion_file=os.path.join(OUTPUTDIR, 'qha_thermal_expansion.dat'),"
+    )
+    lines.append("            bulk_modulus_file=os.path.join(OUTPUTDIR, 'qha_bulk_modulus.dat'),")
+    lines.append("            heat_capacity_file=os.path.join(OUTPUTDIR, 'qha_heat_capacity.dat'),")
+    lines.append("            gruneisen_file=os.path.join(OUTPUTDIR, 'qha_gruneisen.dat'),")
+    lines.append("            ev_file=os.path.join(OUTPUTDIR, 'qha_ev.dat'),")
+    lines.append("            title='Quasi-harmonic approximation',")
+    lines.append('            filename=save_qha,')
+    lines.append('        )')
+    lines.append('')
+    lines.append('    # Mode Gruneisen parameters along the q-path (dispersion style).')
+    lines.append("    qha_gband = os.path.join(OUTPUTDIR, 'qha_gruneisen_band.dat')")
+    lines.append('    if os.path.isfile(qha_gband):')
+    lines.append('        save_gband = None')
+    lines.append('        if args.save:')
+    lines.append('            stem, ext = os.path.splitext(args.save)')
+    lines.append("            save_gband = stem + '_gruneisen_band' + (ext or '.png')")
+    lines.append("        gband_labels = os.path.join(OUTPUTDIR, 'qha_gruneisen_band.labels')")
+    lines.append('        pplt.plot_gruneisen_band(')
+    lines.append('            qha_gband,')
+    lines.append('            labels_file=gband_labels if os.path.isfile(gband_labels) else None,')
+    lines.append("            title='Mode Gruneisen parameters',")
+    lines.append('            filename=save_gband,')
+    lines.append('        )')
+    lines.append('')
     lines.append("    ir = _path('_ir_spectrum.dat')")
     lines.append('    if os.path.isfile(ir):')
     lines.append('        save_ir = None')
@@ -2187,7 +2549,11 @@ def build_raman_script(cfg):
     lines.append('')
     lines.append('# pw.x launch settings for the displaced-cell SCF runs (edit to your machine).')
     lines.append('MPI_QE = {!r}'.format(cfg['mpi_qe']))
-    lines.append("QE_PATH = {!r}   # directory with pw.x ('' -> PATH)".format(cfg['qe_path']))
+    lines.append(
+        "QE_PW = {!r}   # pw.x command (may include flags, e.g. 'pw.x -npool 4')".format(
+            cfg.get('qe_pw', 'pw.x')
+        )
+    )
     lines.append('')
     lines.append('')
     lines.append("def ensure_basis(preset='extended'):")
@@ -2259,7 +2625,7 @@ def build_raman_script(cfg):
         "        print('No displaced-cell inputs in {}; run the generate phase first.'.format(base))"
     )
     lines.append('        sys.exit(1)')
-    lines.append("    pwx = os.path.join(QE_PATH, 'pw.x') if QE_PATH else 'pw.x'")
+    lines.append('    pwx = QE_PW')
     lines.append('    for fin in inputs:')
     lines.append('        cell_dir = os.path.dirname(fin)')
     lines.append("        fout = os.path.join(cell_dir, PREFIX + '.scf.out')")
@@ -2669,9 +3035,45 @@ def collect_phonon(common):
         cfg['vibdielectric_gamma'] = 4.0
         cfg['vibdielectric_emissivity'] = False
         cfg['vibdielectric_emis_temp'] = [300.0]
+    cfg['qha'] = ask_yes_no(
+        'Compute quasi-harmonic properties (thermal expansion, V(T), B(T), Gruneisen)?',
+        False,
+    )
+    if cfg['qha']:
+        cfg['qha_nvolumes'] = ask_choice(
+            '  Number of sampled volumes (5 = full EOS fit; 3 = parabolic fit)',
+            ['5', '3'],
+            '5',
+        )
+        cfg['qha_nvolumes'] = int(cfg['qha_nvolumes'])
+        cfg['qha_strain'] = ask_float('  Maximum linear strain of the volume scan', 0.02)
+        if cfg['qha_nvolumes'] >= 4:
+            cfg['qha_eos'] = ask_choice(
+                '  Equation of state',
+                ['vinet', 'birch_murnaghan', 'murnaghan'],
+                'vinet',
+            )
+        else:
+            cfg['qha_eos'] = 'vinet'
+        cfg['qha_tmin'] = ask_float('  Minimum temperature (K)', 0.0)
+        cfg['qha_tmax'] = ask_float('  Maximum temperature (K)', 1000.0)
+        cfg['qha_tstep'] = ask_float('  Temperature step (K)', 10.0)
+        cfg['qha_pressure'] = ask_float('  External pressure (GPa)', 0.0)
+    else:
+        cfg['qha_nvolumes'] = 5
+        cfg['qha_strain'] = 0.02
+        cfg['qha_eos'] = 'vinet'
+        cfg['qha_tmin'] = 0.0
+        cfg['qha_tmax'] = 1000.0
+        cfg['qha_tstep'] = 10.0
+        cfg['qha_pressure'] = 0.0
     print('\npw.x launch settings for the displaced-supercell SCF runs:')
     cfg['mpi_qe'] = ask('MPI command for pw.x', 'mpirun -np 4')
-    cfg['qe_path'] = ask('Quantum ESPRESSO bin path (dir with pw.x; blank = PATH)', '')
+    cfg['qe_pw'] = ask(
+        "pw.x executable/command (may include flags, e.g. 'pw.x', 'pw.x -npool 4', "
+        "'/opt/qe/bin/pw.x')",
+        'pw.x',
+    )
     cfg['plot'] = ask_yes_no('Also generate a plotting script (plot.phonon.py)?', True)
     cfg['raman_method'] = ask_choice(
         'Also generate a Raman workflow (main.raman.py)?  Pick the flavour '
@@ -2708,6 +3110,43 @@ def collect_phonon(common):
             cfg['raman_lifetime'] = 0.1
         cfg['raman_pthr'] = 0.95
         cfg['raman_configuration'] = 'extended'
+    return cfg
+
+
+def collect_elphon(common):
+    """Prompt for the electron-phonon (PAO route) configuration."""
+    cfg = dict(common)
+    cfg['source'] = ask_choice(
+        'Coupling source (ahc = unpatched QE, norm-conserving; '
+        'elphmat = patched QE, any pseudopotential)',
+        ['ahc', 'elphmat'],
+        'ahc',
+    )
+    cfg['coupling_dir'] = 'ahc_dir' if cfg['source'] == 'ahc' else 'elph_dir'
+    kg = ask_int('SCF / coupling k-grid per axis (NK1 = NK2 = NK3)', 9)
+    cfg['kgrid'] = [kg, kg, kg]
+    qg = ask_int('Phonon q-grid per axis (nq1 = nq2 = nq3)', 3)
+    cfg['qgrid'] = [qg, qg, qg]
+    cfg['nbnd'] = ask_int('Bands in the nscf / AHC run (nbnd = ahc_nbnd)', 0)
+    masses = ask('Atomic masses (amu), comma-separated, one per atom in the cell', '')
+    cfg['masses_amu'] = [float(x) for x in masses.replace(',', ' ').split() if x.strip()]
+    cfg['nelec'] = ask_int('Valence electrons (nelec)', 0)
+    cfg['nk_dense'] = ask_int('Dense interpolation grid per axis (NK_DENSE)', 18)
+    cfg['sigma_ry'] = ask_float('Fermi-surface smearing (Ry)', 0.02)
+    cfg['mu_star'] = ask_float('Coulomb pseudopotential mu* (for Tc)', 0.10)
+    cfg['pthr'] = ask_float('Projectability threshold (pthr)', 0.90)
+    if cfg['source'] == 'elphmat':
+        weights = ask(
+            'Irreducible-q star weights, comma-separated (blank = full grid, unit weights)', ''
+        )
+        cfg['q_weights'] = [float(x) for x in weights.replace(',', ' ').split() if x.strip()]
+    else:
+        cfg['q_weights'] = []
+    if cfg['nbnd'] <= 0 or not cfg['masses_amu'] or cfg['nelec'] <= 0:
+        print(
+            '\nNote: NBND, MASSES_AMU and NELEC are system-specific; edit the '
+            'generated main.elphon.py before running the "analyse" phase.'
+        )
     return cfg
 
 
@@ -2804,13 +3243,17 @@ def main(argv=None):
 
     workflow = ask_choice(
         'Which workflow?',
-        ['acbn0', 'run', 'phonon'],
+        ['acbn0', 'run', 'phonon', 'elphon'],
         'run',
     )
 
     # Each non-default workflow gets its own main.<workflow>.py name so it is
     # not confused with a regular PAOFLOW main.py; an explicit -o/--out wins.
-    _default_out = {'acbn0': 'main.acbn0.py', 'phonon': 'main.phonon.py'}
+    _default_out = {
+        'acbn0': 'main.acbn0.py',
+        'phonon': 'main.phonon.py',
+        'elphon': 'main.elphon.py',
+    }
     out_path = args.out or _default_out.get(workflow, 'main.py')
     if os.path.exists(out_path) and not args.force:
         sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(out_path))
@@ -2827,6 +3270,11 @@ def main(argv=None):
         if cfg is None:
             return 1
         content = build_phonon_script(cfg)
+    elif workflow == 'elphon':
+        cfg = collect_elphon(common)
+        if cfg is None:
+            return 1
+        content = build_elphon_script(cfg)
     else:
         cfg = collect_run(common)
         if cfg is None:

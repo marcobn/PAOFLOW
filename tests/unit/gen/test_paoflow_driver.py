@@ -304,3 +304,55 @@ def test_build_phonon_plot_script_includes_reststrahlen():
     # The reststrahlen (phonon) emissivity is plotted when present.
     assert "os.path.isfile(os.path.join(vibdir, 'emish_xx.dat'))" in text
     assert "['emish']" in text
+
+
+# --------------------------------------------------------------------------- #
+# Electron-phonon (PAO route) workflow generation
+# --------------------------------------------------------------------------- #
+def _elphon_cfg(**kw):
+    cfg = dict(_COMMON)
+    cfg.update(
+        {
+            'prefix': 'lead',
+            'savedir': 'lead.save',
+            'source': 'ahc',
+            'coupling_dir': 'ahc_dir',
+            'kgrid': [9, 9, 9],
+            'qgrid': [3, 3, 3],
+            'nbnd': 22,
+            'masses_amu': [207.2],
+            'nelec': 14,
+            'nk_dense': 18,
+            'sigma_ry': 0.02,
+            'mu_star': 0.10,
+            'pthr': 0.90,
+            'q_weights': [],
+        }
+    )
+    cfg.update(kw)
+    return cfg
+
+
+def test_build_elphon_script_compiles_and_wires_ahc():
+    text = d.build_elphon_script(_elphon_cfg())
+    compile(text, 'main.elphon.py', 'exec')  # must be valid Python
+    assert "SOURCE = 'ahc'" in text
+    assert 'KGRID = (9, 9, 9)' in text
+    assert 'QGRID = (3, 3, 3)' in text
+    assert 'MASSES_AMU = [207.2]' in text
+    assert 'NELEC = 14' in text
+    assert "COUPLING_DIR = os.path.join(HERE, 'ahc_dir')" in text
+    # the analyse phase calls the AO driver, and no tokens are left unsubstituted
+    assert 'eliashberg_from_qe_coupling(' in text
+    assert 'source=SOURCE,' in text
+    for tok in ('__SAVEDIR__', '__SOURCE__', '__KGRID__', '__MASSES__', '__QWEIGHTS__'):
+        assert tok not in text
+
+
+def test_build_elphon_script_elphmat_source():
+    text = d.build_elphon_script(
+        _elphon_cfg(source='elphmat', coupling_dir='elph_dir', q_weights=[1, 8, 6, 12])
+    )
+    assert "SOURCE = 'elphmat'" in text
+    assert "COUPLING_DIR = os.path.join(HERE, 'elph_dir')" in text
+    assert 'Q_WEIGHTS = [1.0, 8.0, 6.0, 12.0]' in text

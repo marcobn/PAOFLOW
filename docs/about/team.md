@@ -12,7 +12,7 @@ Meet the people behind PAOFLOW — researchers, developers, and contributors who
 
 **Marco Buongiorno Nardelli**
 
-Developer
+Director of the PAOFLOW project. Developer
 
 </div>
 :::

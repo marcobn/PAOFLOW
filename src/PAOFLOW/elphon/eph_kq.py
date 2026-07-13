@@ -1,0 +1,614 @@
+"""Bloch-basis electron-phonon matrix ``g_mn^v(k, q)`` and Eliashberg ``a2F``/``lambda`` (P3/P4).
+
+The real-space tensor ``g_R`` from :func:`PAOFLOW.elphon.do_gkq.assemble_eph_tensor`
+is Fourier-transformed to the electron momentum ``k`` and the (commensurate)
+phonon momentum ``q``, projected onto the primitive PAO Bloch states and combined
+with the phonon polarisations to give
+
+.. math::
+
+    g_{mn}^{v}(k, q) = \\sum_{\\kappa\\alpha}
+        \\sqrt{\\tfrac{\\hbar}{2 M_\\kappa \\omega_{qv}}}\\,
+        e_{\\kappa\\alpha}^{v}(q)\\,
+        \\langle m, k+q | \\partial H / \\partial u_{\\kappa\\alpha} | n, k \\rangle .
+
+Both Fourier transforms use the folded ``fftfreq`` real-space grid convention of
+PAOFLOW (:func:`PAOFLOW.utils.get_R_grid_fft.get_R_grid_fft`), so the electronic
+states (from an ``ifftn`` of the primitive ``HRs``) and ``dH/du`` share the same
+k-grid and the ``k+q`` transition is a pure index shift.  The 2x2x2 supercell
+supports the ``N_p = 8`` commensurate q-points; ``k`` runs over the full primitive
+FFT grid (22^3 for Al).
+"""
+
+import numpy as np
+
+# Physical constants (SI) for the zero-point displacement amplitude.
+_HBAR_JS = 1.054571817e-34
+_AMU_KG = 1.66053906660e-27
+_BOHR_M = 5.29177210903e-11
+# 1 THz -> eV.
+THZ_TO_EV = 4.135667696e-3
+# 1 eV expressed as a temperature (E / k_B), in kelvin.
+EV_TO_K = 11604.518
+
+
+def bloch_hamiltonian(HR):
+    """``H(k)`` on the native FFT grid from a folded-``fftfreq`` real-space ``HR``.
+
+    ``H(k) = sum_R H(R) e^{2 pi i k.R} = N * ifftn(H(R))`` (the fftfreq folding
+    leaves the phase unchanged).  ``HR`` has shape
+    ``(nawf, nawf, n1, n2, n3, nspin)``; the returned ``H(k)`` is indexed by the
+    integer k-grid point ``m`` with ``k_frac = m / N``.
+    """
+    HR = np.asarray(HR)
+    n1, n2, n3 = HR.shape[2:5]
+    return np.fft.ifftn(HR, axes=(2, 3, 4)) * (n1 * n2 * n3)
+
+
+def primitive_eigenstates(HR):
+    """Diagonalise ``H(k)`` on the primitive FFT grid.
+
+    Returns
+    -------
+    E : ndarray, shape ``(n1, n2, n3, nspin, nawf)``
+        Ascending eigenvalues (eV).
+    V : ndarray, shape ``(n1, n2, n3, nspin, nawf, nawf)``
+        Eigenvectors as columns (``V[..., :, b]`` is band ``b``).
+    """
+    Hk = bloch_hamiltonian(HR)  # (nawf, nawf, n1, n2, n3, nspin)
+    H = np.moveaxis(Hk, (0, 1), (-2, -1))  # (n1, n2, n3, nspin, nawf, nawf)
+    E, V = np.linalg.eigh(H, UPLO='U')
+    return E, V
+
+
+def fourier_dHdu(g_R):
+    """Fourier transform the real-space e-ph tensor to ``dH/du(k, q)``.
+
+    ``g_R`` has shape ``(ncart, nawf, nawf, e1, e2, e3, p1, p2, p3, nspin)`` with
+    the electron cells ``R_e`` on axes 3-5 and the phonon cells ``R_p`` on axes
+    6-8 (both folded-``fftfreq``).  Returns ``dHdu`` of shape
+    ``(ncart, nawf, nawf, k1, k2, k3, q1, q2, q3, nspin)`` with
+    ``k_frac = m_k / N_e`` and ``q_frac = m_q / N_p``.
+    """
+    g_R = np.asarray(g_R)
+    ne = int(np.prod(g_R.shape[3:6]))
+    npq = int(np.prod(g_R.shape[6:9]))
+    d = np.fft.ifftn(g_R, axes=(3, 4, 5)) * ne
+    d = np.fft.ifftn(d, axes=(6, 7, 8)) * npq
+    return d
+
+
+def _embed_fftfreq(A, axes, new_sizes):
+    """Zero-pad a folded-``fftfreq`` array to larger axis sizes (Fourier interpolation).
+
+    Each listed axis of ``A`` is indexed in ``numpy`` ``fftfreq`` order; the
+    entries are placed at the matching frequencies of a larger, zero-filled axis.
+    Transforming the padded array to k-space then interpolates onto a denser
+    k-grid (the standard band-limited Wannier/PAO interpolation).
+    """
+    for ax, nt in zip(axes, new_sizes):
+        nr = A.shape[ax]
+        if nt == nr:
+            continue
+        if nt < nr:
+            raise ValueError('target size %d smaller than source %d on axis %d' % (nt, nr, ax))
+        npos = (nr + 1) // 2  # non-negative frequencies: indices 0 .. npos-1
+        nneg = nr // 2  # negative frequencies: last nneg indices
+        shape = list(A.shape)
+        shape[ax] = nt
+        B = np.zeros(shape, dtype=A.dtype)
+        src_pos = [slice(None)] * A.ndim
+        src_pos[ax] = slice(0, npos)
+        dst_pos = [slice(None)] * A.ndim
+        dst_pos[ax] = slice(0, npos)
+        B[tuple(dst_pos)] = A[tuple(src_pos)]
+        if nneg:
+            src_neg = [slice(None)] * A.ndim
+            src_neg[ax] = slice(nr - nneg, nr)
+            dst_neg = [slice(None)] * A.ndim
+            dst_neg[ax] = slice(nt - nneg, nt)
+            B[tuple(dst_neg)] = A[tuple(src_neg)]
+        A = B
+    return A
+
+
+def estates_on_grid(HR, nk):
+    """Diagonalise ``H(k)`` on an ``nk^3`` grid, Fourier-interpolated from ``HR``.
+
+    ``HR`` (native grid ``n^3``) is zero-padded in R-space to ``nk^3`` and
+    transformed, giving band-limited PAO interpolation onto the denser grid.
+
+    Returns
+    -------
+    E : ndarray, shape ``(nk, nk, nk, nspin, nawf)``
+    V : ndarray, shape ``(nk, nk, nk, nspin, nawf, nawf)``
+    """
+    HR = np.asarray(HR)
+    HRp = _embed_fftfreq(HR, (2, 3, 4), (nk, nk, nk))
+    Hk = np.fft.ifftn(HRp, axes=(2, 3, 4)) * (nk**3)
+    H = np.moveaxis(Hk, (0, 1), (-2, -1))  # (nk, nk, nk, nspin, nawf, nawf)
+    E, V = np.linalg.eigh(H, UPLO='U')
+    return E, V
+
+
+def fourier_dHdu_on_grid(g_R, nk):
+    """``dH/du(k, q)`` with the electron k-grid Fourier-interpolated to ``nk^3``.
+
+    The electron cells ``R_e`` (axes 3-5) are zero-padded to ``nk`` before the
+    transform (k-interpolation); the phonon cells ``R_p`` (axes 6-8) are
+    transformed on their native grid, giving the ``S^3`` commensurate q-points.
+    Returns ``dHdu`` of shape ``(ncart, nawf, nawf, nk, nk, nk, q1, q2, q3, nspin)``.
+    """
+    g_R = np.asarray(g_R)
+    ge = _embed_fftfreq(g_R, (3, 4, 5), (nk, nk, nk))
+    d = np.fft.ifftn(ge, axes=(3, 4, 5)) * (nk**3)
+    npq = int(np.prod(g_R.shape[6:9]))
+    d = np.fft.ifftn(d, axes=(6, 7, 8)) * npq
+    return d
+
+
+def zero_point_amplitude(mass_amu, omega_thz, omega_floor_thz=1.0e-3):
+    """Zero-point displacement amplitude ``sqrt(hbar / (2 M omega))`` in Bohr.
+
+    ``mass_amu`` is a scalar (or array) atomic mass in amu, ``omega_thz`` the mode
+    frequency in THz.  Modes below ``omega_floor_thz`` (acoustic Gamma) return 0.
+    """
+    mass_amu, omega_thz = np.broadcast_arrays(
+        np.asarray(mass_amu, dtype=float), np.asarray(omega_thz, dtype=float)
+    )
+    omega_rad = 2.0 * np.pi * np.abs(omega_thz) * 1.0e12
+    m_kg = mass_amu * _AMU_KG
+    mask = np.abs(omega_thz) > omega_floor_thz
+    denom = np.where(mask, 2.0 * m_kg * omega_rad, 1.0)
+    a_m = np.sqrt(_HBAR_JS / denom)
+    return np.where(mask, a_m / _BOHR_M, 0.0)
+
+
+def _commensurate_qgrid(sq):
+    """List of commensurate q-points ``(m/sq)`` and their integer indices."""
+    q_frac, q_idx = [], []
+    for i in range(sq[0]):
+        for j in range(sq[1]):
+            for k in range(sq[2]):
+                q_frac.append((i / sq[0], j / sq[1], k / sq[2]))
+                q_idx.append((i, j, k))
+    return np.array(q_frac, dtype=float), q_idx
+
+
+def assemble_g_bloch(dHdu_kq, v_k, v_kq, eigvec_q, omega_thz, masses):
+    """Physical ``g_mn^v`` (eV) for one ``(k, q)`` transition.
+
+    Parameters
+    ----------
+    dHdu_kq : ndarray, ``(ncart, nawf, nawf)``
+        ``dH/du_{kappa alpha}`` (eV/Bohr) connecting ``k`` and ``k+q``.
+    v_k, v_kq : ndarray, ``(nawf, nbnd)``
+        Electronic eigenvectors (columns) at ``k`` and ``k+q``.
+    eigvec_q : ndarray, ``(natom, 3, nmode)``
+        Phonon polarisation vectors at ``q``.
+    omega_thz : ndarray, ``(nmode,)``
+        Phonon frequencies (THz).
+    masses : ndarray, ``(natom,)``
+        Atomic masses (amu).
+
+    Returns
+    -------
+    ndarray, ``(nmode, nbnd_kq, nbnd_k)`` complex
+        ``g_mn^v(k, q)`` in eV.
+    """
+    dHdu_kq = np.asarray(dHdu_kq)
+    v_k = np.asarray(v_k)
+    v_kq = np.asarray(v_kq)
+    eigvec_q = np.asarray(eigvec_q)
+    natom, three, nmode = eigvec_q.shape
+
+    # Cartesian derivatives in the electronic band basis: (ncart, nbnd_kq, nbnd_k).
+    dH_band = np.einsum('ai,cab,bj->cij', v_kq.conj(), dHdu_kq, v_k)
+
+    # Zero-point amplitude sqrt(hbar/2 M omega) (Bohr), per (atom, mode).
+    amp = zero_point_amplitude(masses[:, None], omega_thz[None, :])  # (natom, nmode)
+    # Cartesian displacement pattern per mode weighted by the amplitude: (nmode, ncart).
+    pattern = eigvec_q * amp[:, None, :]  # (natom, 3, nmode)
+    pattern = np.moveaxis(pattern.reshape(natom * three, nmode), 0, 1)  # (nmode, ncart)
+
+    return np.einsum('vc,cij->vij', pattern, dH_band)  # (nmode, nbnd_kq, nbnd_k)
+
+
+def _gaussian_delta(x, sigma):
+    return np.exp(-0.5 * (x / sigma) ** 2) / (sigma * np.sqrt(2.0 * np.pi))
+
+
+def phonon_moments(lambda_qv, omega_thz):
+    r"""Coupling-weighted logarithmic and second phonon-frequency moments.
+
+    From the per-mode coupling ``lambda_qv`` and frequencies ``omega_thz`` (THz),
+    with the Eliashberg normalisation
+    ``a2F(w) = (1/Nq) sum_qv (1/2) lambda_qv w_qv delta(w - w_qv)`` (so
+    ``lambda = 2 int a2F/w dw``), the moments reduce to ``lambda_qv``-weighted
+    averages of the mode frequencies:
+
+    .. math::
+
+        \omega_{\log} = \exp\!\Big(\frac{\sum_{q\nu}\lambda_{q\nu}\ln\omega_{q\nu}}
+                                        {\sum_{q\nu}\lambda_{q\nu}}\Big),
+        \qquad
+        \bar\omega_2 = \Big(\frac{\sum_{q\nu}\lambda_{q\nu}\omega_{q\nu}^2}
+                                  {\sum_{q\nu}\lambda_{q\nu}}\Big)^{1/2}.
+
+    Computing them from the discrete mode sums (rather than the Gaussian-smeared
+    ``a2F`` array) avoids the artificial low-frequency tail near ``w -> 0``.
+
+    Parameters
+    ----------
+    lambda_qv : array_like
+        Per-mode coupling (any shape; flattened).
+    omega_thz : array_like
+        Matching phonon frequencies in THz.
+
+    Returns
+    -------
+    tuple(float, float)
+        ``(omega_log, omega_2)`` in eV.  ``(0.0, 0.0)`` when the total coupling
+        is non-positive.
+    """
+    lam = np.asarray(lambda_qv, dtype=float).ravel()
+    w = np.asarray(omega_thz, dtype=float).ravel() * THZ_TO_EV  # eV
+    mask = (w > 1.0e-6) & (lam > 0.0)
+    total = float(lam[mask].sum())
+    if total <= 0.0:
+        return 0.0, 0.0
+    ll = lam[mask]
+    wl = w[mask]
+    omega_log = float(np.exp(np.sum(ll * np.log(wl)) / total))
+    omega_2 = float(np.sqrt(np.sum(ll * wl**2) / total))
+    return omega_log, omega_2
+
+
+def mcmillan_allen_dynes_tc(lam, omega_log_ev, omega2_ev, mu_star=0.10):
+    r"""Superconducting ``Tc`` from the McMillan and Allen-Dynes equations.
+
+    .. math::
+
+        T_c^{\rm McM} = \frac{\omega_{\log}}{1.2}\,
+            \exp\!\Big[\frac{-1.04(1+\lambda)}{\lambda-\mu^*(1+0.62\lambda)}\Big],
+        \qquad T_c^{\rm AD} = f_1 f_2\, T_c^{\rm McM},
+
+    with the Allen-Dynes strong-coupling (``f1``) and shape (``f2``) corrections
+
+    .. math::
+
+        f_1 = \big[1+(\lambda/\Lambda_1)^{3/2}\big]^{1/3},\quad
+        f_2 = 1 + \frac{(\bar\omega_2/\omega_{\log}-1)\lambda^2}
+                        {\lambda^2+\Lambda_2^2},
+
+    ``Lambda_1 = 2.46(1+3.8\mu^*)``,
+    ``Lambda_2 = 1.82(1+6.3\mu^*)(\bar\omega_2/\omega_{\log})``.  When the
+    denominator ``lambda - mu*(1 + 0.62 lambda)`` is non-positive the equation
+    predicts no superconductivity and ``Tc = 0`` is returned.
+
+    Parameters
+    ----------
+    lam : float
+        Total electron-phonon coupling ``lambda``.
+    omega_log_ev, omega2_ev : float
+        Logarithmic and second moments (eV), e.g. from :func:`phonon_moments`.
+    mu_star : float, optional
+        Morel-Anderson Coulomb pseudopotential (default ``0.10``; typical
+        ``0.10-0.13``).
+
+    Returns
+    -------
+    dict
+        ``{'Tc_mcmillan_K', 'Tc_allen_dynes_K', 'omega_log_K', 'omega_2_K',
+        'f1', 'f2', 'mu_star'}``.
+    """
+    lam = float(lam)
+    mu_star = float(mu_star)
+    omega_log_ev = float(omega_log_ev)
+    omega2_ev = float(omega2_ev)
+    omega_log_K = omega_log_ev * EV_TO_K
+    omega_2_K = omega2_ev * EV_TO_K
+
+    denom = lam - mu_star * (1.0 + 0.62 * lam)
+    if denom <= 0.0 or omega_log_ev <= 0.0:
+        return {
+            'Tc_mcmillan_K': 0.0,
+            'Tc_allen_dynes_K': 0.0,
+            'omega_log_K': omega_log_K,
+            'omega_2_K': omega_2_K,
+            'f1': 1.0,
+            'f2': 1.0,
+            'mu_star': mu_star,
+        }
+
+    expf = np.exp(-1.04 * (1.0 + lam) / denom)
+    tc_mcm = omega_log_K / 1.2 * expf
+
+    ratio = omega2_ev / omega_log_ev
+    lam1 = 2.46 * (1.0 + 3.8 * mu_star)
+    lam2 = 1.82 * (1.0 + 6.3 * mu_star) * ratio
+    f1 = (1.0 + (lam / lam1) ** 1.5) ** (1.0 / 3.0)
+    f2 = 1.0 + ((ratio - 1.0) * lam**2) / (lam**2 + lam2**2)
+    tc_ad = f1 * f2 * omega_log_K / 1.2 * expf
+
+    return {
+        'Tc_mcmillan_K': float(tc_mcm),
+        'Tc_allen_dynes_K': float(tc_ad),
+        'omega_log_K': omega_log_K,
+        'omega_2_K': omega_2_K,
+        'f1': float(f1),
+        'f2': float(f2),
+        'mu_star': mu_star,
+    }
+
+
+def eliashberg_from_modes(
+    lambda_qv,
+    omega_qv_thz,
+    q_weights=None,
+    mu_star=0.10,
+    nomega=400,
+    omega_pad=1.2,
+    sigma_w_frac=0.05,
+    omega_max_thz=None,
+):
+    r"""Isotropic ``a2F(omega)``, ``lambda`` and ``Tc`` from per-mode coupling.
+
+    Property engine shared by the finite-difference :func:`eliashberg` driver and
+    by external couplings (e.g. Quantum ESPRESSO ``elph.inp_lambda``).  It takes
+    the mode-resolved coupling ``lambda_{q nu}`` and the matching phonon
+    frequencies and returns the Eliashberg spectral function and the derived
+    superconducting quantities, with no reference to the electronic states.
+
+    The Eliashberg function follows the standard normalisation
+
+    .. math::
+
+        \alpha^2 F(\omega) = \tfrac12 \sum_{q\nu} w_q\,\lambda_{q\nu}\,
+                             \omega_{q\nu}\,\delta(\omega - \omega_{q\nu}),
+        \qquad \lambda = \sum_{q\nu} w_q\,\lambda_{q\nu}
+                       = 2\int \frac{\alpha^2 F(\omega)}{\omega}\,d\omega,
+
+    with q-point weights ``w_q`` normalised to unit sum (uniform by default).
+
+    Parameters
+    ----------
+    lambda_qv : array_like, shape ``(nq, nmode)``
+        Mode-resolved coupling ``lambda_{q nu}``.
+    omega_qv_thz : array_like, shape ``(nq, nmode)``
+        Matching phonon frequencies in THz.
+    q_weights : array_like, shape ``(nq,)``, optional
+        Relative q-point weights (need not be normalised).  Defaults to uniform.
+    mu_star : float, optional
+        Coulomb pseudopotential for the McMillan / Allen-Dynes ``Tc`` (default
+        ``0.10``).
+    nomega : int, optional
+        Number of frequency points in the ``a2F`` grid (default ``400``).
+    omega_pad : float, optional
+        The ``a2F`` grid runs to ``omega_pad * max(omega)`` (default ``1.2``).
+    sigma_w_frac : float, optional
+        Gaussian broadening of ``a2F`` as a fraction of ``max(omega)`` (default
+        ``0.05``).
+    omega_max_thz : float, optional
+        Upper edge of the ``a2F`` frequency grid in THz (before ``omega_pad``);
+        defaults to the maximum mode frequency.
+
+    Returns
+    -------
+    dict
+        ``{'omega', 'a2F', 'lambda', 'lambda_qv', 'omega_q', 'q_weights',
+        'omega_log', 'omega_2', 'mu_star', 'Tc_mcmillan', 'Tc_allen_dynes',
+        'f1', 'f2'}``.  ``omega``, ``omega_log`` and ``omega_2`` are in eV; the
+        two ``Tc`` values are in kelvin.
+    """
+    lam_qv = np.asarray(lambda_qv, dtype=float)
+    freqs = np.asarray(omega_qv_thz, dtype=float)
+    if lam_qv.shape != freqs.shape:
+        raise ValueError('lambda_qv and omega_qv_thz must have the same shape.')
+    if lam_qv.ndim != 2:
+        raise ValueError('lambda_qv must be 2-D (nq, nmode).')
+    nq, nmode = lam_qv.shape
+
+    if q_weights is None:
+        w = np.full(nq, 1.0 / nq)
+    else:
+        w = np.asarray(q_weights, dtype=float).ravel()
+        if w.shape != (nq,):
+            raise ValueError('q_weights must have shape (nq,).')
+        total = w.sum()
+        if total <= 0.0:
+            raise ValueError('q_weights must sum to a positive value.')
+        w = w / total
+
+    # q-weighted mode coupling; the total lambda is the sum over (q, mode).
+    lam_weighted = w[:, None] * lam_qv
+    lam = float(lam_weighted.sum())
+
+    # Phonon moments weighted by the q-weighted coupling (the 1/nq of the uniform
+    # case cancels in the ratio, so this reduces to the plain mode sum).
+    omega_log_ev, omega_2_ev = phonon_moments(lam_weighted, freqs)
+    tc = mcmillan_allen_dynes_tc(lam, omega_log_ev, omega_2_ev, mu_star=mu_star)
+
+    omega_all_ev = freqs * THZ_TO_EV
+    omega_ref_ev = float(np.abs(omega_all_ev).max())
+    top_ev = (
+        float(omega_max_thz) * THZ_TO_EV if omega_max_thz is not None else omega_ref_ev
+    ) * omega_pad
+    omega = np.linspace(0.0, max(top_ev, 1e-3), nomega)
+    a2F = np.zeros(nomega)
+    sig_w = sigma_w_frac * max(omega_ref_ev, 1e-3)
+    for iq in range(nq):
+        for v in range(nmode):
+            o = omega_all_ev[iq, v]
+            if o <= 1.0e-6:
+                continue
+            weight = 0.5 * w[iq] * lam_qv[iq, v] * o
+            a2F += weight * _gaussian_delta(omega - o, sig_w)
+
+    return {
+        'omega': omega,
+        'a2F': a2F,
+        'lambda': lam,
+        'lambda_qv': lam_qv,
+        'omega_q': freqs,
+        'q_weights': w,
+        'omega_log': omega_log_ev,
+        'omega_2': omega_2_ev,
+        'mu_star': float(mu_star),
+        'Tc_mcmillan': tc['Tc_mcmillan_K'],
+        'Tc_allen_dynes': tc['Tc_allen_dynes_K'],
+        'f1': tc['f1'],
+        'f2': tc['f2'],
+    }
+
+
+def eliashberg(
+    data_controller,
+    g_R,
+    phonon,
+    ispin=0,
+    smearing_ev=0.30,
+    nk_electron=None,
+    nomega=400,
+    omega_pad=1.2,
+    mu_star=0.10,
+    return_gkq=False,
+):
+    """Assemble ``g_mn^v(k, q)`` and the isotropic ``a2F(omega)`` / ``lambda``.
+
+    Uses the primitive PAO Hamiltonian (``arry['HRs']``) for the electronic
+    states and a phonopy object carrying the second-order force constants for the
+    phonon frequencies / eigenvectors at the commensurate q-points.
+
+    Parameters
+    ----------
+    nk_electron : int, optional
+        Electronic k-grid size (``nk_electron^3``); the electronic states and
+        ``dH/du`` are Fourier-interpolated to it, decoupling the k-sampling from
+        the supercell's ``R_e`` grid.  Must be divisible by every supercell size.
+        Defaults to the native ``HRs`` grid.
+    mu_star : float, optional
+        Coulomb pseudopotential for the McMillan / Allen-Dynes ``Tc`` (default
+        ``0.10``).
+    return_gkq : bool, optional
+        If ``True``, also return the full ``g_kq`` array (``(nk, nq, nmode, nawf,
+        nawf)``).  Off by default -- at large grids this is many GB.
+
+    Returns
+    -------
+    dict
+        ``{'omega', 'a2F', 'lambda', 'lambda_qv', 'N_EF', 'q_frac', 'omega_q',
+        'gamma_acoustic', 'nk_electron', 'omega_log', 'omega_2', 'mu_star',
+        'Tc_mcmillan', 'Tc_allen_dynes', 'f1', 'f2'[, 'g_kq']}``.  ``omega_log``
+        and ``omega_2`` are in eV; the two ``Tc`` values are in kelvin.
+        ``gamma_acoustic`` is ``max |g|`` over the three acoustic modes at
+        ``q = Gamma`` (a small value confirms the acoustic sum rule).
+    """
+    arry, attr = data_controller.data_dicts()
+    HR = np.asarray(arry['HRs'])
+    nawf = HR.shape[0]
+    # PAOFLOW references all eigenvalues to the Fermi level when reading the DFT
+    # data (``eigs -= Efermi`` in read_QE_xml), so the PAO ``HRs`` spectrum has
+    # E_F at 0.  The Fermi-surface delta window must therefore be centred on 0,
+    # not on the absolute ``attr['Efermi']`` (which would shift it off the bands
+    # and give N(E_F) = lambda = 0).
+    EF = 0.0
+
+    sq = tuple(int(s) for s in g_R.shape[6:9])
+    Nk = int(nk_electron) if nk_electron is not None else int(HR.shape[2])
+    for s in sq:
+        if Nk % s != 0:
+            raise ValueError(
+                'nk_electron=%d must be divisible by every supercell size %s.' % (Nk, sq)
+            )
+    nk = Nk**3
+    shift = (Nk // sq[0], Nk // sq[1], Nk // sq[2])
+
+    E, V = estates_on_grid(HR, Nk)  # (Nk,Nk,Nk,nspin,nawf), (...,nawf,nawf)
+    dHdu = fourier_dHdu_on_grid(g_R, Nk)  # (ncart,nawf,nawf,Nk,Nk,Nk,q1,q2,q3,nspin)
+    ncart = dHdu.shape[0]
+
+    q_frac, q_idx = _commensurate_qgrid(sq)
+    nq = len(q_idx)
+
+    from .gkq import phonon_modes
+
+    freqs, eigvecs, masses = phonon_modes(phonon, q_frac)  # (nq,nmode),(nq,natom,3,nmode)
+    nmode = freqs.shape[1]
+    natom = masses.shape[0]
+
+    delta_grid = _gaussian_delta(E[:, :, :, ispin, :] - EF, smearing_ev)  # (Nk,Nk,Nk,nawf)
+    N_EF = float(delta_grid.sum() / nk)  # DOS at E_F per spin (1/eV)
+    delta_flat = delta_grid.reshape(nk, nawf)
+
+    Vgrid = V[:, :, :, ispin, :, :]  # (Nk,Nk,Nk,nawf,nawf)
+    Vk_flat = Vgrid.reshape(nk, nawf, nawf)
+
+    lam_qv = np.zeros((nq, nmode), dtype=float)
+    omega_all_ev = freqs * THZ_TO_EV
+    gamma_acoustic = 0.0
+    g_kq = np.zeros((nk, nq, nmode, nawf, nawf), dtype=complex) if return_gkq else None
+
+    for iq, (qi, qj, qk) in enumerate(q_idx):
+        roll = (-qi * shift[0], -qj * shift[1], -qk * shift[2])
+        Vkq_flat = np.roll(Vgrid, roll, axis=(0, 1, 2)).reshape(nk, nawf, nawf)
+        dkq_flat = np.roll(delta_grid, roll, axis=(0, 1, 2)).reshape(nk, nawf)
+
+        # dH/du at this q, over the full k-grid: (nk, ncart, nawf, nawf).
+        dHq = np.moveaxis(
+            dHdu[:, :, :, :, :, :, qi, qj, qk, ispin].reshape(ncart, nawf, nawf, nk), 3, 0
+        )
+        # Rotate into the electronic band basis (batched over k).
+        tmp = np.einsum('kai,kcab->kcib', Vkq_flat.conj(), dHq)
+        dH_band = np.einsum('kcib,kbj->kcij', tmp, Vk_flat)  # (nk, ncart, nbnd_kq, nbnd_k)
+
+        # Mass-weighted, amplitude-scaled phonon pattern: (nmode, ncart).
+        amp = zero_point_amplitude(masses[:, None], freqs[iq][None, :])  # (natom, nmode)
+        pattern = np.moveaxis((eigvecs[iq] * amp[:, None, :]).reshape(natom * 3, nmode), 0, 1)
+        g = np.einsum('vc,kcij->kvij', pattern, dH_band)  # (nk, nmode, nbnd_kq, nbnd_k)
+
+        if return_gkq:
+            g_kq[:, iq] = g
+
+        # Fermi-surface double-delta: sum_{k,m,n} |g|^2 delta(e_{k+q,m}) delta(e_{k,n}).
+        w = np.abs(g) ** 2  # (nk, nmode, m, n)
+        num = np.einsum('kvmn,km,kn->v', w, dkq_flat, delta_flat)  # (nmode,)
+        oev = omega_all_ev[iq]
+        safe = oev > 1.0e-6
+        lam_qv[iq, safe] = (2.0 / (N_EF * nk)) * num[safe] / oev[safe]
+
+        if (qi, qj, qk) == (0, 0, 0):
+            gamma_acoustic = float(np.max(np.abs(g[:, 0:3])))
+
+    # a2F(omega), lambda, phonon moments and Tc from the mode sums (uniform
+    # q-weights over the full commensurate grid).
+    props = eliashberg_from_modes(
+        lam_qv,
+        freqs,
+        q_weights=None,
+        mu_star=mu_star,
+        nomega=nomega,
+        omega_pad=omega_pad,
+    )
+
+    out = {
+        'omega': props['omega'],
+        'a2F': props['a2F'],
+        'lambda': props['lambda'],
+        'lambda_qv': lam_qv,
+        'N_EF': N_EF,
+        'q_frac': q_frac,
+        'omega_q': freqs,
+        'gamma_acoustic': gamma_acoustic,
+        'nk_electron': Nk,
+        'omega_log': props['omega_log'],
+        'omega_2': props['omega_2'],
+        'mu_star': float(mu_star),
+        'Tc_mcmillan': props['Tc_mcmillan'],
+        'Tc_allen_dynes': props['Tc_allen_dynes'],
+        'f1': props['f1'],
+        'f2': props['f2'],
+    }
+    if return_gkq:
+        out['g_kq'] = g_kq
+    return out

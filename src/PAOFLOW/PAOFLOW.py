@@ -3796,3 +3796,327 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Vibrational Dielectric')
+
+    def quasi_harmonic(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        displacement_distance=None,
+        nvolumes=5,
+        strain=0.02,
+        forces=None,
+        qha_dir='qha',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        hubbard_card=None,
+        hubbard_file=None,
+        mesh=None,
+        t_min=0.0,
+        t_max=1000.0,
+        t_step=10.0,
+        eos='vinet',
+        pressure=0.0,
+        ibrav=None,
+        q_path=None,
+        q_labels=None,
+        q_npoints=101,
+        gruneisen_band=True,
+        gruneisen_cutoff=None,
+        units='THz',
+        fname='qha',
+    ):
+        """Quasi-harmonic approximation over an isotropic volume scan (Stage 4).
+
+        Combines the static DFT energy ``E(V)`` with the harmonic vibrational
+        free energy ``F_vib(T, V)`` sampled at ``nvolumes`` isotropically
+        strained cells to obtain the temperature-dependent equilibrium volume,
+        thermal expansion, bulk modulus, Gibbs free energy, constant-pressure
+        heat capacity and thermodynamic Gruneisen parameter.
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the strained cells and write,
+           under ``<outputdir>/<qha_dir>/vol-NN/``, a static unit-cell SCF input
+           (``scf.in``, for ``E(V)``) and the phonopy displaced supercells
+           (``supercell-NNN.in``, for the phonons).  Run ``pw.x`` on every
+           input, then re-call with ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): harvest the energies and forces, build
+           the force constants and thermal properties at each volume, and run
+           the QHA.
+
+        Arguments:
+            supercell_matrix: Supercell for the finite displacements (scalar,
+                length-3 or 3x3).  Required on the first call; reused afterwards.
+            primitive_matrix (optional): phonopy primitive transformation.
+            displacement_distance (float, optional): Displacement amplitude in
+                Bohr (default 0.01).
+            nvolumes (int): Number of sampled volumes, ``5`` (default) or ``3``.
+                ``5`` uses the full equation-of-state QHA
+                (:class:`phonopy.PhonopyQHA`); ``3`` uses a parabolic
+                ``F(V; T)`` fit (a four-parameter EOS needs at least four
+                points).
+            strain (float): Maximum linear strain of the scan; the volumes span
+                ``omega * (1 +/- strain)**3`` (default ``0.02``).
+            forces: ``None`` -> write the QE inputs only; ``'qe'`` -> harvest the
+                ``scf.out`` / ``supercell-NNN.out`` files and run the QHA.
+            qha_dir (str): Sub-directory (under ``outputdir``) holding the
+                per-volume ``vol-NN`` directories.
+            pp_dir (str, optional): Pseudopotential directory written into the
+                QE inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): QE ``prefix`` for the supercell runs.
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercells
+                (default: the unit-cell grid scaled by the supercell size).
+            hubbard_file (str, optional): ``pw.x`` input whose new-style
+                ``HUBBARD`` card is appended to every QE input (on-site ``U``
+                only; intersite ``V`` dropped).
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            mesh (optional): q-mesh for the per-volume thermal properties
+                (default ``[20, 20, 20]``).
+            t_min, t_max, t_step (float): Temperature grid (K).
+            eos (str): Equation of state for the ``nvolumes=5`` route,
+                ``'vinet'`` (default), ``'birch_murnaghan'`` or ``'murnaghan'``.
+            pressure (float): External pressure (GPa) added as a ``pV`` term.
+            ibrav (int, optional): Quantum ESPRESSO Bravais lattice index used to
+                derive the default q-path for the mode-Grueneisen dispersion.
+            q_path (optional): Explicit dispersion path (segments in fractional
+                reciprocal coordinates) for the mode-Grueneisen band; ``None``
+                derives it from ``ibrav``.
+            q_labels (optional): Tick labels matching ``q_path``.
+            q_npoints (int): q-points per path segment for the Grueneisen band.
+            gruneisen_band (bool): Also compute the mode-Grueneisen parameters
+                along the q-path (dispersion), written to
+                ``<fname>_gruneisen_band.dat``.
+            gruneisen_cutoff (float, optional): Frequency cutoff (in ``units``)
+                below which the acoustic ``1/omega**2`` divergence of the mode
+                Grueneisen parameter is masked near Gamma; ``None`` uses 1% of
+                the maximum frequency, ``0`` disables the masking.
+            units (str): Frequency units for the Grueneisen-band frequencies,
+                ``'THz'`` (default) or ``'cm-1'``.
+            fname (str): Output filename prefix; writes ``<fname>_ev.dat``,
+                ``<fname>_volume.dat``, ``<fname>_thermal_expansion.dat``,
+                ``<fname>_bulk_modulus.dat``, ``<fname>_gibbs.dat``,
+                ``<fname>_heat_capacity.dat``, ``<fname>_gruneisen.dat`` and
+                (when enabled) ``<fname>_gruneisen_band.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_qha import generate_qha_inputs, run_qha
+        from .phonon.io import read_hubbard_card
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+        if displacement_distance is not None:
+            attr['phonon_displacement_distance'] = displacement_distance
+        if mesh is not None:
+            attr['phonon_q_mesh'] = mesh
+        if ibrav is not None:
+            attr['ibrav'] = ibrav
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            if forces is None:
+                dirs = generate_qha_inputs(
+                    self.data_controller,
+                    nvolumes=nvolumes,
+                    strain=strain,
+                    qha_dir=qha_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote QHA inputs for %d volumes under %s. Run pw.x on '
+                        'every scf.in and supercell-NNN.in, then re-call '
+                        "quasi_harmonic(forces='qe')." % (len(dirs), qha_dir)
+                    )
+                self.report_module_time('Quasi-Harmonic (write inputs)')
+                return
+
+            if not (isinstance(forces, str) and forces.lower() == 'qe'):
+                raise ValueError(
+                    "quasi_harmonic forces must be None (write inputs) or 'qe' "
+                    '(harvest the QE outputs).'
+                )
+
+            run_qha(
+                self.data_controller,
+                nvolumes=nvolumes,
+                strain=strain,
+                qha_dir=qha_dir,
+                mesh=mesh,
+                t_min=t_min,
+                t_max=t_max,
+                t_step=t_step,
+                eos=eos,
+                pressure=pressure,
+                ibrav=ibrav,
+                q_path=q_path,
+                q_labels=q_labels,
+                q_npoints=q_npoints,
+                gruneisen_band=gruneisen_band,
+                gruneisen_cutoff=gruneisen_cutoff,
+                units=units,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('quasi_harmonic')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Quasi-Harmonic')
+
+    def electron_phonon(
+        self,
+        supercell_matrix=None,
+        displacement_distance=0.06,
+        forces=None,
+        elphon_dir='elphon',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        configuration='standard',
+        basispath=None,
+        nbnd=None,
+        is_plusminus='auto',
+        displacement_mode='symmetry',
+        pthr=0.95,
+        shift_type=1,
+        project_good_subspace=True,
+    ):
+        """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
+
+        Builds the electron-phonon matrix elements by finite-differencing the
+        PAO Hamiltonian with respect to atomic displacements (frozen phonon in a
+        supercell), reusing the projection / ``pao_hamiltonian`` pipeline and the
+        phonon module's supercell machinery.
+
+        The routine is two-phase:
+
+        1. **Generate** (``forces=None``): initialise the phonon supercell,
+           displace every atom of the reference primitive cell by
+           ``+/- displacement_distance`` along x, y and z, and write one static
+           ``pw.x`` SCF input per displaced supercell under
+           ``<outputdir>/<elphon_dir>/`` (plus the reference ``supercell.in`` and
+           a ``displacements.json`` manifest).  The displacement set is reduced
+           by the crystal symmetry (via phonopy), so only the inequivalent
+           displacements are computed (a single one for fcc metals).  Each
+           displaced run gets a unique ``prefix`` so its ``.save`` survives, and
+           ``nbnd`` is sized to the PAO projection basis of ``configuration``.
+           Run ``pw.x`` on each, then re-call with ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): rebuild the PAO Hamiltonian of every
+           displaced supercell and central-difference to ``dV = dH/du`` (stored
+           on the controller as ``elphon_dV``).  The ``g_mn^v(k, q)`` assembly
+           and the derived properties land in the next stage.
+
+        Arguments:
+            supercell_matrix: Supercell for the displacements (scalar, length-3
+                or 3x3). Required on the first call; reused afterwards.
+            displacement_distance (float): Displacement amplitude in Bohr
+                (default ``0.06``).
+            forces: ``None`` -> write the displaced-supercell inputs; ``'qe'`` ->
+                harvest and build ``dV``.
+            elphon_dir (str): Sub-directory (under ``outputdir``) for the
+                displaced supercells and the manifest.
+            pp_dir (str, optional): Pseudopotential directory written into the QE
+                inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): Base QE ``prefix`` for the supercell runs
+                (each displacement appends ``_dispNNN``).
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercells
+                (default: the unit-cell grid scaled by the supercell size).
+            hubbard_file (str, optional): ``pw.x`` input whose new-style
+                ``HUBBARD`` card is appended to every input (on-site ``U`` only).
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            configuration (str): PAO basis configuration (``'minimal'``,
+                ``'standard'`` or ``'extended'``) that sizes ``nbnd`` and drives
+                the analyse-phase projections.
+            basispath (str, optional): Local PAO basis directory used by the
+                analyse-phase projections.
+            nbnd (int, optional): Explicit band count for the displaced-supercell
+                SCF inputs (default: the PAO basis size for ``configuration``).
+            is_plusminus ({'auto', True, False}): Passed to phonopy's
+                displacement generation.  ``'auto'`` (default) keeps the
+                symmetry-minimal set and takes forward differences against the
+                reference supercell; ``True`` adds the explicit ``-`` for central
+                differences.
+            displacement_mode ({'symmetry', 'cartesian'}): ``'symmetry'``
+                (default) uses phonopy's symmetry-reduced displacements (the full
+                Cartesian tensor is reconstructed by the symmetry expansion);
+                ``'cartesian'`` displaces every reference-cell atom explicitly
+                along x, y and z (full Cartesian derivative directly, more runs).
+            pthr (float): Projectability threshold for the analyse phase.
+            shift_type (int): Hamiltonian shift scheme for the analyse phase.
+
+        Returns:
+            None
+        """
+        from .elphon.do_elphon import generate_eph_inputs, run_eph
+        from .phonon.io import read_hubbard_card
+
+        arry, attr = self.data_controller.data_dicts()
+
+        # Record the supercell so the analyse-phase helpers (assemble_eph_tensor,
+        # eliashberg) can initialise phonopy without re-running the generate phase.
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            if forces is None:
+                paths = generate_eph_inputs(
+                    self.data_controller,
+                    supercell_matrix=supercell_matrix,
+                    displacement_distance=displacement_distance,
+                    elphon_dir=elphon_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                    configuration=configuration,
+                    nbnd=nbnd,
+                    is_plusminus=is_plusminus,
+                    displacement_mode=displacement_mode,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote %d displaced-supercell QE inputs for electron-phonon '
+                        'under %s. Run pw.x on each, then re-call '
+                        "electron_phonon(forces='qe')." % (len(paths), elphon_dir)
+                    )
+                self.report_module_time('Electron-Phonon (write inputs)')
+                return
+
+            run_eph(
+                self.data_controller,
+                elphon_dir=elphon_dir,
+                configuration=configuration,
+                basispath=basispath,
+                pthr=pthr,
+                shift_type=shift_type,
+                project_good_subspace=project_good_subspace,
+            )
+
+        except Exception as e:
+            self.report_exception('electron_phonon')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Electron-Phonon')
