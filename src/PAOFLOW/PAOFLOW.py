@@ -1154,7 +1154,8 @@ class PAOFLOW:
         return result
 
     def orbital_chern_number(self, nbnd_occ='auto', nk=24, gap_tol=0.1,
-                             n_sectors='auto', is_lm=False, verbose=True):
+                             n_sectors='auto', is_lm=False, verbose=True,
+                             lz_channels=None):
         """
         Orbital Chern number C_L from the feature-spectrum topology of L_z
         (Yao, Chu, Bansil, Lin & Chang, arXiv:2503.08138) -- the orbital analogue
@@ -1170,6 +1171,12 @@ class PAOFLOW:
         Call after 'pao_hamiltonian' (fully-relativistic run); s/p/d shells only;
         pure numpy (no z2pack).
 
+        BASIS NOTE: L_z is a model operator, so C_L is basis dependent.  A minimal
+        valence basis (QE projwfc) gives the reference value; an extended internal
+        basis with polarization d shells can contaminate the valence L_z and drive
+        C_L to 0 (verified on blue-P).  Use 'lz_channels' to restrict L_z to the
+        physical valence character in that case.
+
         Arguments:
             nbnd_occ (int|'auto'): occupied bands ('auto' = nelec).
             nk (int): k-mesh (nk x nk) for the feature spectrum and FHS Chern.
@@ -1177,6 +1184,8 @@ class PAOFLOW:
             n_sectors (int|'auto'): number of feature sectors, or 'auto'.
             is_lm (bool): True if 'HRs' is already in the lm basis.
             verbose (bool): print progress.
+            lz_channels (iterable|None): restrict which l-shells carry L_z, e.g.
+                ('p',) drops the d contribution (valence orbital moment); None=all.
 
         Returns:
             dict: C_L, sector_cherns, sector_means, sector_sizes, n_sectors,
@@ -1193,7 +1202,7 @@ class PAOFLOW:
         try:
             result = do_orbital_chern(self.data_controller, nbnd_occ=nbnd_occ, nk=nk,
                                       gap_tol=gap_tol, n_sectors=n_sectors, is_lm=is_lm,
-                                      verbose=verbose)
+                                      verbose=verbose, lz_channels=lz_channels)
         except Exception as e:
             self.report_exception('orbital_chern_number')
             if attr['abort_on_exception']:
