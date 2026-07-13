@@ -58,3 +58,7 @@ If you use PAOFLOW in published work, please cite:
 
 PAOFLOW is distributed under the **GNU General Public License v3**.
 Copyright 2016–2026 Marco Buongiorno Nardelli and the PAOFLOW Development Team.
+
+## Funding
+
+Development of PAOFLOW has been made possible over the years by funding and support from: the National Science Foundation, the Department of Energy, the Department of Defense - MURI program, the University of North Texas, the Center for Materials Genomics at Duke University, the Santa Fe Institute. The Texas Advanced Computing Center (TACC) at the University of Texas, Austin, has provided computational resources.
