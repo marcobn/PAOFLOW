@@ -664,7 +664,7 @@ class PAOFLOW:
         else:
             raise Exception('atomic_proj.xml was not found.\n')
 
-        arry['lchia'] = {}
+        #arry['lchia'] = {}  # no longer needed remove soon arry['shells'] is enough
         arry['jchia'] = {}
         arry['shells'] = {}
         for at, pseudo in arry['species']:
@@ -673,7 +673,7 @@ class PAOFLOW:
                 upf = UPF(fname)
                 arry['shells'][at] = upf.shells
                 arry['jchia'][at] = upf.jchia
-                arry['lchia'][at] = upf.lchia
+                #arry['lchia'][at] = upf.lchia  # no longer needed remove soon
             else:
                 raise Exception('Pseudopotential not found: %s' % fname)
 

@@ -32,6 +32,8 @@ def j_matrix(data_controller, spol):
     nwfc = 0
     nnwfc = 0
 
+    arry['lchia']=arry['shells']
+
     for a in arry['atoms']:
         for p in range(len(arry['jchia'][a])):
             mj_max = float(arry['jchia'][a][p])
