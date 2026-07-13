@@ -1100,6 +1100,159 @@ class PAOFLOW:
         self.report_module_time('mirror_chern_number')
         return result
 
+    def hoti_characterize(self, method='indicators', nbnd_occ='auto', is_lm=False,
+                          symprec=1e-2, verbose=True):
+        """
+        Characterize a 2D higher-order topological insulator (HOTI) from the C_n
+        rotation-eigenvalue symmetry indicators (Benalcazar, Li & Hughes, PRB 99,
+        245151 (2019)): the nominal fractional CORNER CHARGE from the C_n
+        eigenvalues of the occupied bands at the high-symmetry momenta.
+
+        Auto-detects the lattice (hexagonal / square) and the principal rotation
+        C_n (n = highest of 6,4,3,2 that commutes with H at Gamma), counts the
+        rotation-eigenvalue multiplicities at Gamma and the C_m-invariant momenta,
+        and applies the corner-charge / polarization formulas for that n.  The
+        polarization must vanish for the corner charge to be well defined.
+
+        Spin-orbit caveat: Eq. 11 of the reference is spinless; for a spinful (SOC)
+        Hamiltonian the high-symmetry-point eigenvalues do NOT uniquely fix the
+        corner charge, so ``certified`` is False and ``corner_charge_set`` lists the
+        values over the admissible relabelings.  Use the real-space filling anomaly
+        or a nested Wilson loop for a certified spinful number.  Call after
+        'pao_hamiltonian'; symmorphic C_n and s/p/d shells only.
+
+        Arguments:
+            method (str): only 'indicators' is implemented.
+            nbnd_occ (int|'auto'): number of occupied bands ('auto' = nelec).
+            is_lm (bool): True if 'HRs' is already in the lm basis.
+            symprec (float): rotation-detection tolerance (fractional).
+            verbose (bool): print progress.
+
+        Returns:
+            dict: n, lattice, multiplicities, invariants, polarization,
+                  corner_charge, corner_charge_set, certified, residual, nocc.
+        """
+        if method != 'indicators':
+            raise NotImplementedError("only method='indicators' is implemented.")
+        from .topology.do_hoti_indicators import do_hoti_indicators
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print("hoti_characterize requires 'HRs'; run 'pao_hamiltonian' first.")
+            return None
+        try:
+            result = do_hoti_indicators(self.data_controller, nbnd_occ=nbnd_occ,
+                                        is_lm=is_lm, symprec=symprec, verbose=verbose)
+        except Exception as e:
+            self.report_exception('hoti_characterize')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('hoti_characterize')
+        return result
+
+    def orbital_chern_number(self, nbnd_occ='auto', nk=24, gap_tol=0.1,
+                             n_sectors='auto', is_lm=False, verbose=True):
+        """
+        Orbital Chern number C_L from the feature-spectrum topology of L_z
+        (Yao, Chu, Bansil, Lin & Chang, arXiv:2503.08138) -- the orbital analogue
+        of the spin Chern number.
+
+        Builds the orbital angular momentum L_z in the lm PAO basis, projects it
+        onto the occupied bands (the feature operator P L_z P), splits the
+        L_z-feature spectrum into gapped sectors, computes each sector's Chern
+        number with the Fukui-Hatsugai-Suzuki (L_z-resolved Wilson loop) method,
+        and returns C_L = (C^+ - C^-)/2 over the highest/lowest feature sectors.
+        A non-zero C_L signals an orbital Chern insulator (orbital Hall plateau in
+        the gap).  The feature spectrum must be gapped for C_L to be well defined.
+        Call after 'pao_hamiltonian' (fully-relativistic run); s/p/d shells only;
+        pure numpy (no z2pack).
+
+        Arguments:
+            nbnd_occ (int|'auto'): occupied bands ('auto' = nelec).
+            nk (int): k-mesh (nk x nk) for the feature spectrum and FHS Chern.
+            gap_tol (float): minimum feature-spectrum gap (hbar) to split sectors.
+            n_sectors (int|'auto'): number of feature sectors, or 'auto'.
+            is_lm (bool): True if 'HRs' is already in the lm basis.
+            verbose (bool): print progress.
+
+        Returns:
+            dict: C_L, sector_cherns, sector_means, sector_sizes, n_sectors,
+                  feature_gap, feature_range, C_total, nocc, nk, gapped.
+        """
+        from .topology.do_orbital_chern import do_orbital_chern
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print("orbital_chern_number requires 'HRs'; run 'pao_hamiltonian' first.")
+            return None
+        try:
+            result = do_orbital_chern(self.data_controller, nbnd_occ=nbnd_occ, nk=nk,
+                                      gap_tol=gap_tol, n_sectors=n_sectors, is_lm=is_lm,
+                                      verbose=verbose)
+        except Exception as e:
+            self.report_exception('orbital_chern_number')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('orbital_chern_number')
+        return result
+
+    def spin_chern_number(self, nbnd_occ='auto', nk=24, gap_tol=0.005,
+                          n_sectors='auto', is_lm=False, verbose=True):
+        """
+        Spin Chern number C_s (Prodan) from the feature-spectrum topology of S_z
+        -- the spin analogue of 'orbital_chern_number', and a Z2 sanity check.
+
+        Identical machinery to 'orbital_chern_number' but projects S_z (instead of
+        L_z) onto the occupied bands and splits the S_z-feature spectrum at
+        eigenvalue 0 into the two spin sectors near +-1/2, whose Chern numbers give
+        C_s = (C^+ - C^-)/2.  Its PARITY nu = C_s mod 2 is the Z2 index, so it
+        independently reproduces the z2pack / mirror-Chern Z2:  nu = 1 for a QSHI,
+        nu = 0 for a trivial insulator.  The split is well defined as long as the
+        number of positive feature eigenvalues is the same at every k (the spin
+        clusters never cross 0); strong spin mixing closes that gap -> C_s undefined
+        (use the z2pack Z2 instead).  NOTE: for a small spin gap the C_s MAGNITUDE
+        is mesh-sensitive (needs a dense nk), but the parity nu is robust (fixed by
+        C_total = 0).  Call after 'pao_hamiltonian' (fully-relativistic run); s/p/d.
+
+        Arguments:
+            nbnd_occ (int|'auto'): occupied bands ('auto' = nelec).
+            nk (int): k-mesh (nk x nk) for the feature spectrum and FHS Chern.
+            gap_tol (float): spin-gap noise floor; the split is gated mainly by the
+                positive-eigenvalue count being k-constant (default 0.005).
+            n_sectors (int|'auto'): number of feature sectors, or 'auto'.
+            is_lm (bool): True if 'HRs' is already in the lm basis.
+            verbose (bool): print progress.
+
+        Returns:
+            dict: C_s, nu (=C_s mod 2), sector_cherns, sector_means, sector_sizes,
+                  n_sectors, feature_gap, feature_range, C_total, nocc, nk, gapped.
+        """
+        from .topology.do_orbital_chern import do_orbital_chern
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print("spin_chern_number requires 'HRs'; run 'pao_hamiltonian' first.")
+            return None
+        try:
+            result = do_orbital_chern(self.data_controller, nbnd_occ=nbnd_occ, nk=nk,
+                                      gap_tol=gap_tol, n_sectors=n_sectors, is_lm=is_lm,
+                                      verbose=verbose, operator='S')
+        except Exception as e:
+            self.report_exception('spin_chern_number')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('spin_chern_number')
+        return result
+
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
