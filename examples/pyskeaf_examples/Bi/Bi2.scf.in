@@ -6,7 +6,7 @@
     calculation = 'scf'
     restart_mode = 'from_scratch',
     prefix = 'Bi2',
-    pseudo_dir = '/Users/marco/Local/Programs/PAOFLOW/PSEUDOS/nc-sr-05_pbe_standard_upf',
+    pseudo_dir = '../../../PSEUDOS/nc-sr-05_pbe_standard_upf',
     outdir = './'
  /
  &system
