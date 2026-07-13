@@ -32,6 +32,21 @@ The identical construction with S_z in place of L_z (``operator='S'``, see
 ``build_Sz``) is the original Prodan spin Chern number C_s; its parity
 nu = C_s mod 2 is the Z2 index, so it cross-checks the z2pack / mirror-Chern Z2
 for QSHIs (C_s = 1) versus trivial insulators (C_s = 0).
+
+Basis dependence of L_z (IMPORTANT)
+-----------------------------------
+The feature spectrum is that of the MODEL operator P L_z P, and the atomic L_z is
+basis dependent.  A minimal valence basis (e.g. QE projwfc s,p for blue-P) gives
+the reference C_L.  An EXTENDED internal basis that adds polarization d shells to
+sharpen the conduction bands leaks a small d-admixture into the valence Bloch
+states; the atomic L_z assigns those a spurious +-1/+-2 moment, splitting off an
+extra low-<L_z> sector whose Chern CANCELS the true one -> C_L collapses to 0 even
+though the occupied bands are unchanged.  Verified on blue phosphorene: minimal
+s,p -> C_L=1; extended (+3d,4d) full L_z -> C_L=0; extended with L_z restricted to
+p -> C_L=1.  Fix: pass ``lz_channels=('p',)`` (or the physical valence character,
+e.g. 'd' for a transition metal) to restrict L_z to the valence shell, so an
+extended Hamiltonian can be used for the conduction bands while C_L stays the
+basis-robust valence value.
 """
 
 from __future__ import annotations
@@ -46,14 +61,28 @@ from .do_mirror_chern import _orbital, fractional_coords, read_hr
 # --------------------------------------------------------------------------- #
 #  L_z in the lm [up|down] basis
 # --------------------------------------------------------------------------- #
-def build_Lz(labels):
+def build_Lz(labels, channels=None):
     """Orbital angular momentum L_z (units of hbar) in the lm [up|down] basis.
 
     L_z couples the |m| = 1 pairs (p_x,p_y), (d_xz,d_yz) with +-i and the |m| = 2
     pair (d_x2-y2, d_xy) with +-2i (QE real-harmonic order), and is identity on
     spin (same block in the up and down spin blocks).  Sign convention matches
     L_z p_x = +i p_y (Eq. 1 of arXiv:2503.08138).
+
+    channels: restrict which l-shells carry orbital moment, e.g. ('p',) keeps only
+        the p contribution and zeroes d, ('p','d') keeps both, None keeps all.
+        In an EXTENDED PAO basis the polarization d shells (added to sharpen the
+        conduction bands) leak a small d-admixture into the valence Bloch states;
+        the atomic L_z then assigns them spurious moment and can cancel the true
+        orbital Chern.  Restricting L_z to the physical VALENCE character (e.g. p
+        for a p-band material, d for a transition metal) removes that artifact and
+        makes C_L basis-robust -- see the blue-phosphorene note in the module doc.
     """
+    ell = {"s": "s", "pz": "p", "px": "p", "py": "p",
+           "dz2": "d", "dzx": "d", "dzy": "d", "dyz": "d", "dx2-y2": "d", "dxy": "d"}
+    keep = None if channels is None else set(channels)
+    def inc(nm):
+        return keep is None or ell.get(nm) in keep
     norb = len(labels) // 2
     names = [_orbital(l) for l in labels[:norb]]
     Lo = np.zeros((norb, norb), dtype=complex)
@@ -63,11 +92,14 @@ def build_Lz(labels):
         if nm in ("s", "pz", "dz2"):
             i += 1                                    # m = 0
         elif nm == "px":                              # (p_x, p_y): |m| = 1
-            Lo[i+1, i] = 1j; Lo[i, i+1] = -1j; i += 2
+            if inc(nm): Lo[i+1, i] = 1j; Lo[i, i+1] = -1j
+            i += 2
         elif nm == "dzx":                             # (d_xz, d_yz): |m| = 1
-            Lo[i+1, i] = 1j; Lo[i, i+1] = -1j; i += 2
+            if inc(nm): Lo[i+1, i] = 1j; Lo[i, i+1] = -1j
+            i += 2
         elif nm == "dx2-y2":                          # (d_x2-y2, d_xy): |m| = 2
-            Lo[i+1, i] = 2j; Lo[i, i+1] = -2j; i += 2
+            if inc(nm): Lo[i+1, i] = 2j; Lo[i, i+1] = -2j
+            i += 2
         else:
             raise ValueError("unexpected orbital %r" % nm)
     Lz = np.zeros((2*norb, 2*norb), dtype=complex)
@@ -127,7 +159,8 @@ def _fhs_chern(psi_mesh, cols, nk):
 
 # --------------------------------------------------------------------------- #
 def do_orbital_chern(data_controller, nbnd_occ="auto", nk=24, gap_tol=0.1,
-                     n_sectors="auto", is_lm=False, verbose=True, operator="L"):
+                     n_sectors="auto", is_lm=False, verbose=True, operator="L",
+                     lz_channels=None):
     """Feature-spectrum Chern number of P Op P (see module docstring).
 
     With ``operator='L'`` this is the orbital Chern number C_L; with
@@ -188,7 +221,10 @@ def do_orbital_chern(data_controller, nbnd_occ="auto", nk=24, gap_tol=0.1,
 
     num_wann, R_list, degen, H = read_hr(join(attr["opath"], fname))
     nawf = num_wann
-    Op = build_Lz(labels) if op == "L" else build_Sz(labels)
+    Op = build_Lz(labels, channels=lz_channels) if op == "L" else build_Sz(labels)
+    if verbose and op == "L" and lz_channels is not None:
+        print("%s: L_z restricted to channels %s (valence-shell orbital moment)"
+              % (tag, tuple(lz_channels)))
 
     # --- feature states on the k-mesh ----------------------------------------
     psi = [[None]*nk for _ in range(nk)]
