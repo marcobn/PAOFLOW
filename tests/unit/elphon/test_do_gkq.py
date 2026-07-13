@@ -80,7 +80,7 @@ def test_enforce_acoustic_sum_rule_zeroes_rigid_shift():
     cart_index = [(kappa, alpha) for kappa in range(natom) for alpha in range(3)]
 
     alphas = np.array([a for (_, a) in cart_index])
-    n_rp = 8
+    # n_rp = 8
 
     # Residual before enforcement, per Cartesian direction, summed over kappa & R_p.
     expected_sq = 0.0

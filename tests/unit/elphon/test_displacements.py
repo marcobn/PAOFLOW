@@ -168,7 +168,7 @@ def test_cartesian_mode_generates_three_axis_displacements(tmp_path):
 
 
 def test_cartesian_mode_plusminus_generates_six(tmp_path):
-    dc = _aluminium_controller(tmp_path)
+    # dc = _aluminium_controller(tmp_path)
     _, meta = generate_eph_displacements(
         init_phonopy(_aluminium_controller(tmp_path)),
         distance=0.06,
