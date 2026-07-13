@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  workflows: write
 
 jobs:
   notify-teams:
