@@ -1184,8 +1184,11 @@ class PAOFLOW:
             n_sectors (int|'auto'): number of feature sectors, or 'auto'.
             is_lm (bool): True if 'HRs' is already in the lm basis.
             verbose (bool): print progress.
-            lz_channels (iterable|None): restrict which l-shells carry L_z, e.g.
-                ('p',) drops the d contribution (valence orbital moment); None=all.
+            lz_channels (iterable|str|None): restrict which l-shells carry L_z.
+                None = all; a list e.g. ['d'] restricts to that shell (valence
+                orbital moment); 'auto' picks the shell from the VBM character and
+                keeps whichever of {'d','p'} gaps the feature spectrum (recommended
+                for heterogeneous batches -- d-band uses 'd', p-band uses 'p').
 
         Returns:
             dict: C_L, sector_cherns, sector_means, sector_sizes, n_sectors,
