@@ -102,31 +102,45 @@ def normalize_weights(w: np.ndarray) -> np.ndarray:
 
 
 def plot_weighted_bands(
-    outputdir, bands, sym_points, title, cbar_label, label, filename, y_lim, col
+    outputdir,
+    bands,
+    sym_points,
+    title,
+    cbar_label,
+    label,
+    filename,
+    y_lim,
+    col,
+    ax=None,bar=True
 ):
-    """ """
+    """Plot weighted band structure."""
 
     hline_style = {
-        'linestyle': '--',
+        'linestyle': '-',
         'linewidth': 1,
-        'color': 'blue',
-    }  # horizontal line style
+        'color': 'gray',
+    }
+
     vline_style = {
         'linestyle': '-',
         'linewidth': 1,
         'color': 'gray',
-    }  # horizontal line style
+    }
 
     w_norm = normalize_weights(bands['site_weight'].to_numpy())
 
-    fig = plt.figure()
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        created_fig = True
+    else:
+        fig = ax.figure
 
-    tit = '' if title is None else title
-    fig.suptitle(tit)
+    if title is not None:
+        ax.set_title(title)
 
-    ax = fig.add_subplot(111)
+    sizes = 4 + 7 * w_norm
 
-    sizes = 8 + 7 * w_norm  # marker size scaling
     sc = ax.scatter(
         bands['kindex'],
         bands['eigenvalue'],
@@ -136,47 +150,66 @@ def plot_weighted_bands(
         alpha=0.8,
         edgecolors='none',
     )
+    if bar==True:
+        fig.colorbar(sc, ax=ax, label=cbar_label if cbar_label is not None else "Weight")
 
-    if cbar_label is None:
-        fig.colorbar(sc, ax=ax, label='Weight')
-    else:
-        fig.colorbar(sc, ax=ax, label=cbar_label)
-
-    ax.hlines(0.0, sym_points[0][0], sym_points[0][len(sym_points[0]) - 1], **hline_style)
+    ax.hlines(
+        0.0,
+        sym_points[0][0],
+        sym_points[0][-1],
+        **hline_style,
+    )
 
     if y_lim is None:
         y_lim = ax.get_ylim()
+
     ax.set_xlim(0, bands.shape[1])
     ax.set_ylim(*y_lim)
+
     if sym_points is None:
         ax.xaxis.set_visible(False)
     else:
         ax.set_xticks(sym_points[0])
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], **vline_style)
+
     if label is None:
-        label = r'$\epsilon$($\mathbf{k}$) (eV)'
+        label = r'$\epsilon(\mathbf{k})$ (eV)'
 
     ax.set_ylabel(label, fontsize=12)
 
     if filename is not None:
-        if outputdir is None:
-            plt.savefig(filename, dpi=300, bbox_inches='tight')
-        else:
-            plt.savefig(outputdir + filename, dpi=300, bbox_inches='tight')
-    plt.show()
+        path = filename if outputdir is None else outputdir + filename
+        fig.savefig(path, dpi=300, bbox_inches="tight")
+
+    if created_fig:
+        plt.show()
+
+    return ax
 
 
-def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=True):
+def plot_bands(
+    bands,
+    sym_points,
+    title,
+    label,
+    y_lim,
+    col,
+    labels=None,
+    legend=True,
+    ax=None,
+):
     """Plot one or more band structures for comparison.
 
     Arguments:
       bands: ndarray (nbands, nkpts) or list of such arrays.
       col: single color or list of colors, one per dataset.
-      labels: optional list of legend labels, one per dataset.
-      legend: show legend when labels are provided (default True).
+      labels: optional list of legend labels.
+      legend: show legend when labels are provided.
+      ax: matplotlib Axes. If None, create a new figure.
     """
     import numpy as np
+    import matplotlib.pyplot as plt
 
     # --- normalise to list-of-arrays ---
     if isinstance(bands, np.ndarray):
@@ -195,6 +228,7 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
         'tab:purple',
         'tab:brown',
     ]
+
     if col is None:
         cols = [default_cols[i % len(default_cols)] for i in range(n_sets)]
     elif isinstance(col, (str, tuple)):
@@ -202,7 +236,7 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
             cols = [col]
         else:
             cols = [default_cols[i % len(default_cols)] for i in range(n_sets)]
-            cols[0] = col  # keep user colour for first dataset
+            cols[0] = col
     else:
         cols = list(col)
 
@@ -210,36 +244,47 @@ def plot_bands(bands, sym_points, title, label, y_lim, col, labels=None, legend=
     if labels is None:
         labels = [None] * n_sets
 
-    fig = plt.figure()
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        created_fig = True
+    else:
+        fig = ax.figure
 
-    tit = 'Band Structure' if title is None else title
-    fig.suptitle(tit)
+    if title is not None:
+        ax.set_title(title)
 
-    ax = fig.add_subplot(111)
-
-    for idx, (bset, c, lbl) in enumerate(zip(bands_list, cols, labels)):
+    for bset, c, lbl in zip(bands_list, cols, labels):
         for j, b in enumerate(bset):
-            ax.plot(b, color=c, label=lbl if j == 0 else None)
+            ax.plot(b, color=c,alpha=0.5, label=lbl if j == 0 else None)
 
     ref = bands_list[0]
+
     if y_lim is None:
         y_lim = ax.get_ylim()
+
     ax.set_xlim(0, ref.shape[1])
     ax.set_ylim(*y_lim)
+
     if sym_points is None:
         ax.xaxis.set_visible(False)
     else:
         ax.set_xticks(sym_points[0])
         ax.set_xticklabels(sym_points[1])
         ax.vlines(sym_points[0], y_lim[0], y_lim[1], color='gray')
+
     if label is None:
-        label = r'$\epsilon$($\mathbf{k}$) (eV)'
+        label = r'$\epsilon(\mathbf{k})$ (eV)'
+
     ax.set_ylabel(label, fontsize=12)
 
     if legend and any(l is not None for l in labels):
         ax.legend()
 
-    plt.show()
+    if created_fig:
+        plt.show()
+
+    return ax
 
 
 def plot_dos_beside_bands(

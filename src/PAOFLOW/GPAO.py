@@ -76,8 +76,7 @@ class GPAO:
         label=None,
         filename=None,
         y_lim=None,
-        col='black',
-    ):
+        col='black',axes=None,bar=True):
         """
         Plot the band structure
 
@@ -105,7 +104,7 @@ class GPAO:
             label,
             filename,
             y_lim,
-            col,
+            col,axes,bar
         )
 
     def plot_bands(
@@ -117,7 +116,7 @@ class GPAO:
         labels=None,
         y_lim=None,
         cols=None,
-        legend=True,
+        legend=True,ax=None
     ):
         """
         Plot one or more band structures for comparison.
@@ -145,7 +144,7 @@ class GPAO:
                 from .inputs.read_pao_output import read_band_path_PAO
 
                 sym_points = read_band_path_PAO(sym_points)
-        plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend)
+        plot_bands(bands_list, sym_points, title, label, y_lim, cols, labels, legend,ax)
 
     def plot_berry(
         self,
