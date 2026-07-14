@@ -243,7 +243,7 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
 
     out = dict(n=None, lattice=None, multiplicities={}, invariants={},
                polarization=None, corner_charge=None, corner_charge_set=None,
-               certified=False, residual=None, nocc=nocc)
+               certified=False, residual=None, nocc=nocc, error=None)
     if rank != 0:
         return comm.bcast(None, root=0)
 
@@ -261,7 +261,11 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
                                (np.linalg.norm(av[0, :2]) * np.linalg.norm(av[1, :2]))))
     lat = "hex" if abs(ang - 120) < 5 or abs(ang - 60) < 5 else ("sq" if abs(ang - 90) < 5 else None)
     if lat is None:
-        raise RuntimeError("unsupported lattice angle %.1f deg (need hexagonal or square/rect)." % ang)
+        out["error"] = ("unsupported lattice angle %.1f deg (need hexagonal or "
+                        "square/rectangular)" % ang)
+        if verbose:
+            print("hoti: %s -> corner charge not applicable" % out["error"])
+        return comm.bcast(out, root=0)
     out["lattice"] = lat
 
     HG = _Hk(H, R_list, [0.0, 0.0], nawf)
@@ -283,7 +287,11 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
             n = cand; out["residual"] = float(res)
             break
     if n is None:
-        raise RuntimeError("no symmorphic C_n rotation found (checked C6..C2).")
+        out["error"] = ("no out-of-plane C_n rotation (only in-plane C2 / mirrors) "
+                        "-- rotation corner-charge indicator not applicable")
+        if verbose:
+            print("hoti: %s" % out["error"])
+        return comm.bcast(out, root=0)
     out["n"] = n
     Mf = _M[(lat, n)]; Mrec = np.linalg.inv(Mf).T
     perm_n = rotation_map(frac, species, Mf, symprec)
