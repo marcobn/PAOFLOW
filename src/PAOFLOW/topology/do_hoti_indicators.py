@@ -170,6 +170,83 @@ def _count(eigs, m, spinful=True):
 
 
 # --------------------------------------------------------------------------- #
+#  Inversion (parity) Z4 indicator -- for centrosymmetric materials (e.g. 1T)
+# --------------------------------------------------------------------------- #
+_PARITY = {"s": 1, "pz": -1, "px": -1, "py": -1,                   # (-1)^l
+           "dz2": 1, "dzx": 1, "dzy": 1, "dyz": 1, "dx2-y2": 1, "dxy": 1}
+
+
+def inversion_map(frac, species, symprec=1e-2):
+    """Atom permutation under inversion (-f_a + t0 == f_b) and the center-doubling
+    t0, or None if the structure is not centrosymmetric.  Unlike the in-plane
+    rotations this flips z, so buckled top/bottom atoms are swapped."""
+    n = len(frac)
+    for b0 in range(n):
+        if species[b0] != species[0]:
+            continue
+        t0 = (frac[0] + frac[b0]) % 1.0                            # 2 * inversion center
+        perm = -np.ones(n, dtype=int); ok = True
+        for a in range(n):
+            img = -frac[a] + t0
+            hit = -1
+            for b in range(n):
+                if species[b] != species[a]:
+                    continue
+                d = img - frac[b]; d -= np.round(d)
+                if np.max(np.abs(d)) < symprec:
+                    hit = b; break
+            if hit < 0:
+                ok = False; break
+            perm[a] = hit
+        if ok:
+            return perm, t0
+    return None
+
+
+def parity_operator(kf, names, atom_of, frac, perm, spinful=True):
+    """Inversion operator P at momentum kf: parity (-1)^l per orbital, the atom
+    permutation under inversion, and the Bloch phase; spin-diagonal (inversion
+    commutes with spin).  spinful=False -> orbital block only (scalar run)."""
+    norb = len(names)
+    atoms = sorted(set(atom_of))
+    cols_of = {a: [j for j in range(norb) if atom_of[j] == a] for a in atoms}
+    par = np.array([_PARITY[n] for n in names])
+    kf = np.asarray(kf, float)
+    D = np.zeros((norb, norb), complex)
+    for a in atoms:
+        cols, rows = cols_of[a], cols_of[perm[a]]
+        ph = np.exp(2j*np.pi*(-kf @ frac[perm[a], :2] - kf @ frac[a, :2]))
+        for ii, c in enumerate(cols):
+            D[rows[ii], c] = par[c] * ph                           # same species -> aligned order
+    if not spinful:
+        return D
+    P = np.zeros((2*norb, 2*norb), complex)
+    P[:norb, :norb] = D
+    P[norb:, norb:] = D
+    return P
+
+
+def _z4_indicator(H, R_list, nawf, nocc, names, atom_of, frac, perm, spinful):
+    """2D inversion index  Z4 = (1/4) sum_{TRIM} (n^- - n^+)  mod 4  (spinful; the
+    Kramers factor is 1/2 for a scalar run), with Z2 = Z4 mod 2.  n^-/n^+ are the
+    occupied-band counts of inversion eigenvalue -1/+1 at the four 2D TRIMs.
+    Returns (z4, parities, max_residual)."""
+    trims = [[0.0, 0.0], [0.5, 0.0], [0.0, 0.5], [0.5, 0.5]]
+    bw = max(np.abs(H[R]).max() for R in R_list)
+    fac = 0.25 if spinful else 0.5
+    s = 0; par = {}; res = 0.0
+    for kf in trims:
+        P = parity_operator(kf, names, atom_of, frac, perm, spinful)
+        Hm = _Hk(H, R_list, kf, nawf)
+        res = max(res, np.abs(Hm @ P - P @ Hm).max() / bw)
+        w, V = np.linalg.eigh(Hm); Vo = V[:, :nocc]
+        pe = np.real(np.linalg.eigvals(Vo.conj().T @ P @ Vo))
+        npos = int(np.sum(pe > 1e-6)); nneg = int(np.sum(pe < -1e-6))
+        s += (nneg - npos); par["%.1f,%.1f" % (kf[0], kf[1])] = (npos, nneg)
+    return int(round(fac * s)) % 4, par, float(res)
+
+
+# --------------------------------------------------------------------------- #
 #  high-symmetry momenta and BBH formulas per principal rotation n
 # --------------------------------------------------------------------------- #
 def _hsp_table(lat, n):
@@ -253,7 +330,8 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
 
     out = dict(n=None, lattice=None, multiplicities={}, invariants={},
                polarization=None, corner_charge=None, corner_charge_set=None,
-               certified=False, residual=None, nocc=nocc, spinful=spinful, error=None)
+               certified=False, residual=None, nocc=nocc, spinful=spinful,
+               z4=None, z2_inv=None, error=None)
     if rank != 0:
         return comm.bcast(None, root=0)
 
@@ -268,6 +346,20 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
     atom_of = [_atom_index(l) for l in labels[:norb]]
     frac = fractional_coords(arry["tau"], arry["a_vectors"], attr["alat"])
     species = list(arry["atoms"])
+
+    # --- inversion Z4 indicator (centrosymmetric materials, e.g. 1T-TMDs) -----
+    # Independent of the rotation route below, so it is reported even for cells
+    # with no in-plane C_n.  Z4 = 2 -> HOTI (Z2 = 0); Z4 odd -> QSHI.
+    inv_op = inversion_map(frac, species, symprec)
+    if inv_op is not None:
+        z4, zpar, zres = _z4_indicator(H, R_list, nawf, nocc, names, atom_of,
+                                       frac, inv_op[0], spinful)
+        out["z4"] = int(z4); out["z2_inv"] = int(z4 % 2)
+        out["parities"] = zpar
+        if verbose:
+            print("hoti: inversion present -> Z4 = %d (Z2 = %d)%s  [H,P]/W=%.1e"
+                  % (z4, z4 % 2, "  HOTI" if z4 == 2 else
+                     ("  QSHI" if z4 % 2 else ""), zres))
 
     # --- lattice type from the in-plane cell angle ---------------------------
     av = np.asarray(arry["a_vectors"], float)
