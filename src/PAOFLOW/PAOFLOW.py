@@ -1114,6 +1114,12 @@ class PAOFLOW:
         and applies the corner-charge / polarization formulas for that n.  The
         polarization must vanish for the corner charge to be well defined.
 
+        For CENTROSYMMETRIC materials (e.g. 1T-TMDs) it ALSO returns the inversion
+        symmetry indicator Z4 = (1/4) sum_TRIM (n^- - n^+) mod 4 (with Z2 = Z4 mod 2)
+        from the parity eigenvalues at the four 2D TRIMs: Z4 = 2 -> HOTI (Z2 = 0),
+        Z4 odd -> QSHI.  The rotation route protects the 2H phase, the Z4 route the
+        1T phase, so both are reported and the applicable one is non-trivial.
+
         Spin-orbit caveat: Eq. 11 of the reference is spinless; for a spinful (SOC)
         Hamiltonian the high-symmetry-point eigenvalues do NOT uniquely fix the
         corner charge, so ``certified`` is False and ``corner_charge_set`` lists the
