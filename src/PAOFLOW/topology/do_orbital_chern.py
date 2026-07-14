@@ -157,6 +157,73 @@ def _fhs_chern(psi_mesh, cols, nk):
     return C / (2*np.pi)
 
 
+def _feature_mesh(H, R_list, nk, nawf, nocc, Op):
+    """Feature eigenvalues + feature Bloch states of P Op P on the nk x nk mesh."""
+    psi = [[None]*nk for _ in range(nk)]
+    feig = np.empty((nk, nk, nocc))
+    for i in range(nk):
+        for j in range(nk):
+            fw, P = _feature_states(_Hk(H, R_list, [i/nk, j/nk], nawf), Op, nocc)
+            feig[i, j] = fw
+            psi[i][j] = P
+    return feig, psi
+
+
+def _split_sectors(feig, op, gap_tol, n_sectors, nocc):
+    """Split the feature spectrum into sectors; return (ranges, gapped, feature_gap).
+    op='S' -> Prodan sign split at eigenvalue 0; op='L' -> band-index gap split."""
+    if op == "S":
+        npos_all = (feig > 0).sum(axis=2)
+        npos = int(npos_all[0, 0])
+        pos = np.where(feig > 0, feig, np.inf).min(axis=2)
+        neg = np.where(feig < 0, feig, -np.inf).max(axis=2)
+        spin_gap = float((pos - neg).min())
+        const = bool(npos_all.min() == npos_all.max())
+        gapped = bool(const and 0 < npos < nocc and spin_gap > gap_tol)
+        ranges = [(0, nocc - npos), (nocc - npos, nocc)] if gapped else [(0, nocc)]
+        return ranges, gapped, (spin_gap if const else 0.0)
+    band_gap = np.array([(feig[:, :, b+1] - feig[:, :, b]).min() for b in range(nocc-1)])
+    if n_sectors == "auto":
+        bounds = [b for b in range(nocc-1) if band_gap[b] > gap_tol]
+    else:
+        bounds = sorted(list(np.argsort(band_gap)[-(int(n_sectors)-1):])) if int(n_sectors) > 1 else []
+    edges = [0] + [b+1 for b in bounds] + [nocc]
+    ranges = [(edges[s], edges[s+1]) for s in range(len(edges)-1)]
+    gapped = bool(len(ranges) > 1 and (min([band_gap[b] for b in bounds]) > gap_tol if bounds else False))
+    feature_gap = float(min([band_gap[b] for b in bounds])) if bounds else 0.0
+    return ranges, gapped, feature_gap
+
+
+def _auto_channel_candidates(H, R_list, nawf, nocc, labels, nkc=10, ratio_thresh=1.8):
+    """Ordered L_z-channel candidates from the VBM orbital character.
+
+    Measures the VBM weight on the |m|>=1 orbitals (px,py / dzx,dyz,dx2-y2,dxy) --
+    the ones that carry L_z -- per shell.  If one shell clearly dominates (weight
+    ratio > ratio_thresh: a p-band or d-band material) the single dominant channel
+    is tried first; if the VBM is a genuine p-d hybrid (comparable weight, e.g.
+    OsSe2) BOTH channels are tried first, since restricting to one would spuriously
+    change C_L.  The caller keeps the first candidate that gaps the feature spectrum.
+    Returns (candidates, w_p, w_d) with candidates a list of channel-lists.
+    """
+    names = [_orbital(l) for l in labels]
+    mmask = {"p": np.array([n in ("px", "py") for n in names]),
+             "d": np.array([n in ("dzx", "dzy", "dyz", "dx2-y2", "dxy") for n in names])}
+    bestE, bw = -np.inf, None
+    for i in range(nkc):
+        for j in range(nkc):
+            w, V = np.linalg.eigh(_Hk(H, R_list, [i/nkc, j/nkc], nawf))
+            if w[nocc-1] > bestE:
+                bestE = w[nocc-1]; bw = np.abs(V[:, nocc-1])**2
+    wp, wd = float(bw[mmask["p"]].sum()), float(bw[mmask["d"]].sum())
+    dom, other = ("d", "p") if wd >= wp else ("p", "d")
+    ratio = max(wp, wd) / max(min(wp, wd), 1e-3)
+    if ratio > ratio_thresh:                       # one shell clearly dominates
+        candidates = [[dom], [dom, other], [other]]
+    else:                                          # genuine p-d hybrid -> use both
+        candidates = [[dom, other], [dom], [other]]
+    return candidates, wp, wd
+
+
 # --------------------------------------------------------------------------- #
 def do_orbital_chern(data_controller, nbnd_occ="auto", nk=24, gap_tol=0.1,
                      n_sectors="auto", is_lm=False, verbose=True, operator="L",
@@ -175,6 +242,10 @@ def do_orbital_chern(data_controller, nbnd_occ="auto", nk=24, gap_tol=0.1,
             or an int (split at the n_sectors-1 largest feature gaps).
         is_lm: True if 'HRs' is already the lm basis.
         operator: 'L' (orbital, L_z) or 'S' (spin, S_z).
+        lz_channels: which l-shells carry L_z (operator='L' only).  None = all;
+            a list e.g. ['d'] restricts to that shell; 'auto' picks the shell from
+            the VBM orbital character and keeps whichever of {'d','p'} gaps the
+            feature spectrum (recommended for heterogeneous batches).
 
     Returns dict: ``C_L`` (or ``C_s`` for operator='S'; the other is None),
     ``nu`` (C_s mod 2, only for operator='S'), ``sector_cherns`` (list,
@@ -212,63 +283,49 @@ def do_orbital_chern(data_controller, nbnd_occ="auto", nk=24, gap_tol=0.1,
         if stash_basis is not None:
             arry["basis"] = stash_basis
 
-    out = dict(C_L=None, C_s=None, nu=None, operator=op, C_plus=None, C_minus=None,
-               sector_cherns=None, sector_means=None, sector_sizes=None, n_sectors=None,
-               feature_gap=None, feature_range=None, C_total=None, nocc=nocc, nk=nk,
-               gapped=None)
+    out = dict(C_L=None, C_s=None, nu=None, operator=op, lz_channels=None,
+               C_plus=None, C_minus=None, sector_cherns=None, sector_means=None,
+               sector_sizes=None, n_sectors=None, feature_gap=None, feature_range=None,
+               C_total=None, nocc=nocc, nk=nk, gapped=None)
     if rank != 0:
         return comm.bcast(None, root=0)
 
     num_wann, R_list, degen, H = read_hr(join(attr["opath"], fname))
     nawf = num_wann
-    Op = build_Lz(labels, channels=lz_channels) if op == "L" else build_Sz(labels)
-    if verbose and op == "L" and lz_channels is not None:
-        print("%s: L_z restricted to channels %s (valence-shell orbital moment)"
-              % (tag, tuple(lz_channels)))
 
-    # --- feature states on the k-mesh ----------------------------------------
-    psi = [[None]*nk for _ in range(nk)]
-    feig = np.empty((nk, nk, nocc))
-    for i in range(nk):
-        for j in range(nk):
-            Hm = _Hk(H, R_list, [i/nk, j/nk], nawf)
-            fw, P = _feature_states(Hm, Op, nocc)
-            feig[i, j] = fw
-            psi[i][j] = P
+    # --- build the feature operator and split the spectrum into sectors -------
+    auto = (op == "L" and isinstance(lz_channels, str) and lz_channels.lower() == "auto")
+    if auto:
+        cands, wp, wd = _auto_channel_candidates(H, R_list, nawf, nocc, labels)
+        if verbose:
+            print("%s: auto L_z -- VBM |m|>=1 weight p=%.2f d=%.2f -> candidates %s"
+                  % (tag, wp, wd, cands))
+        chosen, feig, psi, ranges, gapped, fgap = cands[0], None, None, None, False, 0.0
+        for ch in cands:
+            Op = build_Lz(labels, channels=ch)
+            feig_c, psi_c = _feature_mesh(H, R_list, nk, nawf, nocc, Op)
+            ranges_c, gapped_c, fgap_c = _split_sectors(feig_c, op, gap_tol, n_sectors, nocc)
+            if psi is None or gapped_c:            # keep first candidate, prefer gapped
+                chosen, feig, psi, ranges, gapped, fgap = ch, feig_c, psi_c, ranges_c, gapped_c, fgap_c
+            if gapped_c:
+                break
+        out["lz_channels"] = list(chosen)
+        if verbose:
+            print("%s: auto selected channels=%s (gapped=%s)" % (tag, list(chosen), gapped))
+    else:
+        Op = build_Lz(labels, channels=lz_channels) if op == "L" else build_Sz(labels)
+        if op == "L":
+            out["lz_channels"] = list(lz_channels) if lz_channels is not None else None
+            if verbose and lz_channels is not None:
+                print("%s: L_z restricted to channels %s (valence-shell orbital moment)"
+                      % (tag, tuple(lz_channels)))
+        feig, psi = _feature_mesh(H, R_list, nk, nawf, nocc, Op)
+        ranges, gapped, fgap = _split_sectors(feig, op, gap_tol, n_sectors, nocc)
+
     fmin, fmax = feig.min(), feig.max()
     out["feature_range"] = (float(fmin), float(fmax))
-
-    if op == "S":
-        # --- spin Chern: Prodan split at feature eigenvalue 0 (spin up/down) ---
-        # The S_z-feature spectrum sits near +-1/2; the two spin sectors are the
-        # positive- and negative-eigenvalue halves, split at 0 (NOT at a fixed band
-        # index).  It is gapped iff the number of positive eigenvalues is the same
-        # at every k (clusters never cross 0); the spin gap is that eigenvalue-0 gap.
-        npos_all = (feig > 0).sum(axis=2)
-        npos = int(npos_all[0, 0])
-        pos = np.where(feig > 0, feig, np.inf).min(axis=2)
-        neg = np.where(feig < 0, feig, -np.inf).max(axis=2)
-        spin_gap = float((pos - neg).min())
-        const = bool(npos_all.min() == npos_all.max())
-        gapped = bool(const and 0 < npos < nocc and spin_gap > gap_tol)
-        ranges = [(0, nocc - npos), (nocc - npos, nocc)] if gapped else [(0, nocc)]
-        out["feature_gap"] = spin_gap if const else 0.0
-        out["gapped"] = gapped
-    else:
-        # --- orbital Chern: sectors from the (band-index) feature gaps ---------
-        # gap at boundary b = min over the mesh of the LOCAL (same-k) gap
-        # feat[b+1] - feat[b] (feature bands are sorted ascending per k).  A positive
-        # min means band b/b+1 never cross, so the sector membership is k-independent.
-        band_gap = np.array([(feig[:, :, b+1] - feig[:, :, b]).min() for b in range(nocc-1)])
-        if n_sectors == "auto":
-            bounds = [b for b in range(nocc-1) if band_gap[b] > gap_tol]
-        else:
-            bounds = list(np.argsort(band_gap)[-(int(n_sectors)-1):]) if int(n_sectors) > 1 else []
-            bounds = sorted(bounds)
-        edges = [0] + [b+1 for b in bounds] + [nocc]
-        ranges = [(edges[s], edges[s+1]) for s in range(len(edges)-1)]
-        out["gapped"] = bool(len(ranges) > 1 and (min([band_gap[b] for b in bounds]) > gap_tol if bounds else False))
-        out["feature_gap"] = float(min([band_gap[b] for b in bounds])) if bounds else 0.0
+    out["feature_gap"] = fgap
+    out["gapped"] = gapped
     out["n_sectors"] = len(ranges)
     out["sector_sizes"] = [hi - lo for lo, hi in ranges]
 
