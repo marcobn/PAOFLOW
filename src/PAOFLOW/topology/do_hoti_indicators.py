@@ -114,8 +114,10 @@ def rotation_map(frac, species, Mfrac, symprec=1e-2):
     return perm
 
 
-def rotation_operator(m, kf, names, atom_of, frac, perm, Mrec):
-    """C_m rotation operator at momentum kf in the lm [up|down] basis."""
+def rotation_operator(m, kf, names, atom_of, frac, perm, Mrec, spinful=True):
+    """C_m rotation operator at momentum kf.  spinful=True -> lm [up|down] basis
+    with the spin-1/2 rotation e^{-/+ i theta/2}; spinful=False -> orbital-only
+    (scalar-relativistic run, single orbital block)."""
     theta = 2*np.pi/m
     norb = len(names)
     O = _build_Ofull(names, atom_of, perm, theta)
@@ -125,6 +127,8 @@ def rotation_operator(m, kf, names, atom_of, frac, perm, Mrec):
                                     - np.asarray(kf) @ frac[atom_of[j], :2]))
                    for j in range(norb)])
     D = O * ph[None, :]
+    if not spinful:
+        return D                                    # orbital only, norb x norb
     su, sd = np.exp(-1j*theta/2), np.exp(+1j*theta/2)
     C = np.zeros((2*norb, 2*norb), complex)
     C[:norb, :norb] = su * D
@@ -146,13 +150,16 @@ def _occ_rot_eigs(Hm, C, nocc):
     return np.linalg.eigvals(Vo.conj().T @ C @ Vo)
 
 
-def _count(eigs, m):
-    """Multiplicities of the C_m eigenvalues, snapped to the m-th roots of -1
-    (spinful) with the spinless labels p=1..m (Pi_p = e^{2 pi i (p-1)/m}) recovered
-    by factoring the global phase e^{i pi/m}."""
-    # spinful allowed eigenvalues and their spinless label p (1-based)
-    allowed = [np.exp(1j*np.pi*(2*j+1)/m) for j in range(m)]        # m-th roots of -1
-    label = [((j) % m) + 1 for j in range(m)]                       # e^{i pi/m} * w^{j} -> p=j+1
+def _count(eigs, m, spinful=True):
+    """Multiplicities of the C_m eigenvalues with spinless labels p=1..m
+    (Pi_p = e^{2 pi i (p-1)/m}).  spinful=True: eigenvalues are the m-th roots of -1
+    (factor the global phase e^{i pi/m}); spinful=False: roots of +1 directly, so
+    the p-labels are canonical (no gauge freedom -> certified)."""
+    if spinful:
+        allowed = [np.exp(1j*np.pi*(2*j+1)/m) for j in range(m)]    # m-th roots of -1
+    else:
+        allowed = [np.exp(2j*np.pi*j/m) for j in range(m)]          # m-th roots of +1
+    label = [((j) % m) + 1 for j in range(m)]                       # -> p=j+1
     mult = {p: 0 for p in range(1, m+1)}
     dev = 0.0
     for e in eigs:
@@ -222,20 +229,23 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     arry, attr = data_controller.data_dicts()
-    if not attr.get("dftSO", False):
-        raise RuntimeError("hoti_characterize requires a fully-relativistic (dftSO) run.")
+    # spinful (SOC): C_n eigenvalues are the m-th roots of -1, so the spinless->p
+    # labeling has an unfixable global-phase gauge -> corner charge uncertified.
+    # spinless (scalar-relativistic): roots of +1, canonical p-labels -> certified.
+    spinful = bool(attr.get("dftSO", False))
 
     nelec = int(round(attr["nelec"]))
-    nocc = nelec if nbnd_occ == "auto" else int(nbnd_occ)
+    nocc = (nelec if spinful else nelec // 2) if nbnd_occ == "auto" else int(nbnd_occ)
 
-    if not is_lm:
+    # spinful HR is in the j basis -> rotate to lm; spinless HR is already real-lm.
+    if not is_lm and spinful:
         stash = {k: np.copy(arry[k]) for k in ("HRs", "Hks") if k in arry}
         stash_basis = arry.get("basis")
         j_to_lm_hamiltonian(data_controller)
     labels = lm_basis_labels(data_controller)
     fname = "hoti_lm_HRs.dat"
     data_controller.write_HRs(fname)
-    if not is_lm:
+    if not is_lm and spinful:
         for k, v in stash.items():
             arry[k] = v
         if stash_basis is not None:
@@ -243,15 +253,19 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
 
     out = dict(n=None, lattice=None, multiplicities={}, invariants={},
                polarization=None, corner_charge=None, corner_charge_set=None,
-               certified=False, residual=None, nocc=nocc, error=None)
+               certified=False, residual=None, nocc=nocc, spinful=spinful, error=None)
     if rank != 0:
         return comm.bcast(None, root=0)
 
     hr = join(attr["opath"], fname)
     num_wann, R_list, degen, H = read_hr(hr)
     nawf = num_wann
-    names = [_orbital(l) for l in labels[:nawf // 2]]
-    atom_of = [_atom_index(l) for l in labels[:nawf // 2]]
+    # C_n operator dimension: spinful basis is spin-doubled (norb = nawf/2), the
+    # spinless HR is a single orbital block (norb = nawf).  lm_basis_labels always
+    # lists the up block first, so labels[:norb] are the orbital names either way.
+    norb = nawf // 2 if spinful else nawf
+    names = [_orbital(l) for l in labels[:norb]]
+    atom_of = [_atom_index(l) for l in labels[:norb]]
     frac = fractional_coords(arry["tau"], arry["a_vectors"], attr["alat"])
     species = list(arry["atoms"])
 
@@ -281,7 +295,7 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
         if perm is None:
             continue
         Mrec = np.linalg.inv(Mf).T
-        C = rotation_operator(cand, [0.0, 0.0], names, atom_of, frac, perm, Mrec)
+        C = rotation_operator(cand, [0.0, 0.0], names, atom_of, frac, perm, Mrec, spinful)
         res = np.abs(HG @ C - C @ HG).max() / bandwidth
         if res < 1e-3:
             n = cand; out["residual"] = float(res)
@@ -303,10 +317,10 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
     def mult_at(kf, m):
         Mfm = _M[(lat, m)]; Mrm = np.linalg.inv(Mfm).T
         permm = rotation_map(frac, species, Mfm, symprec)
-        C = rotation_operator(m, kf, names, atom_of, frac, permm, Mrm)
+        C = rotation_operator(m, kf, names, atom_of, frac, permm, Mrm, spinful)
         Hm = _Hk(H, R_list, kf, nawf)
         r = np.abs(Hm @ C - C @ Hm).max() / bandwidth
-        mlt, dev = _count(_occ_rot_eigs(Hm, C, nocc), m)
+        mlt, dev = _count(_occ_rot_eigs(Hm, C, nocc), m, spinful)
         return mlt, r, dev
 
     table = _hsp_table(lat, n)
@@ -323,31 +337,40 @@ def do_hoti_indicators(data_controller, nbnd_occ="auto", is_lm=False,
                   % (name, m, dict(mlt), {p: inv[name][p] for p in inv[name]}, r, dev))
     out["invariants"] = inv
 
-    # --- polarization (must vanish) and nominal corner charge -----------------
+    # --- polarization (must vanish) and corner charge -------------------------
     p1, p2 = _polarization(n, inv)
     out["polarization"] = (float(p1 % 1.0), float(p2 % 1.0))
     Qc = _corner_charge(n, inv) % 1.0
     out["corner_charge"] = float(Qc)
-    # spinful: report the set over the 3-(or m-)fold relabeling of p
-    m_main = max(m_orders)
-    shifts = range(m_main)
-    qset = set()
-    for sh in shifts:
-        inv_sh = {name: {p: (inv[name][((p - 1 + sh) % len(inv[name])) + 1]) for p in inv[name]}
-                  for name in inv}
-        try:
-            qset.add(round(_corner_charge(n, inv_sh) % 1.0, 6))
-        except Exception:
-            pass
-    out["corner_charge_set"] = sorted(qset)
-    out["certified"] = False    # spinful: HSP eigenvalues do not fix the WCs
+    if spinful:
+        # the spinless->p labeling has a global-phase gauge; report the set over
+        # the m-fold relabeling of p (the corner charge is one of these).
+        m_main = max(m_orders)
+        qset = set()
+        for sh in range(m_main):
+            inv_sh = {name: {p: (inv[name][((p - 1 + sh) % len(inv[name])) + 1]) for p in inv[name]}
+                      for name in inv}
+            try:
+                qset.add(round(_corner_charge(n, inv_sh) % 1.0, 6))
+            except Exception:
+                pass
+        out["corner_charge_set"] = sorted(qset)
+        out["certified"] = False    # spinful: HSP eigenvalues do not fix the WCs
+    else:
+        # spinless: canonical p-labels -> the corner charge is unique and certified.
+        out["corner_charge_set"] = [round(float(Qc), 6)]
+        out["certified"] = True
 
     if verbose:
         pol_ok = abs(p1 % 1.0) < 1e-6 and abs(p2 % 1.0) < 1e-6
         print("hoti: polarization P=(%.3f, %.3f) e  %s"
               % (p1 % 1.0, p2 % 1.0, "(vanishes: corner charge well defined)"
                  if pol_ok else "(NONZERO: corner charge ill-defined until P removed)"))
-        print("hoti: nominal Q_corner = %.3f e ;  spinful set = %s e  (NOT certified: "
-              "HSP eigenvalues do not fix the spinful corner charge)"
-              % (Qc, out["corner_charge_set"]))
+        if spinful:
+            print("hoti: nominal Q_corner = %.3f e ;  spinful set = %s e  (NOT certified: "
+                  "HSP eigenvalues do not fix the spinful corner charge)"
+                  % (Qc, out["corner_charge_set"]))
+        else:
+            print("hoti: Q_corner = %.3f e  (CERTIFIED: scalar-relativistic, canonical "
+                  "C_%d eigenvalue labels)" % (Qc, n))
     return comm.bcast(out, root=0)
