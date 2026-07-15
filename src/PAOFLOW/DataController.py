@@ -296,9 +296,22 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                from .models.models import build_TB_model
+                from .models.tb_models import build_from_pythTB
 
-                build_TB_model(self, model)
+                if isinstance(model, dict):
+                    from .models.tb_models import predefined_models
+
+                    model = predefined_models(model)
+                else:
+                    print(
+                        'Check! System finite (nonperiodic) in one or more dimensions not implemented'
+                    )
+                try:
+                    build_from_pythTB(self, model)
+                except Exception as e:
+                    print('\nERROR: Could not build tight-binding model')
+                    self.report_exception('Data Controller Initialization')
+                    raise e
             else:
                 try:
                     if inputfile != None:
