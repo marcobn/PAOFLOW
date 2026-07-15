@@ -297,15 +297,15 @@ class DataController:
             # Read inputfile, if it exsts
             if model is not None:
                 if isinstance(model, dict):
-                    from .models.tb_models import predefined_models
+                    from .models.models import build_TB_model
 
-                    predefined_models(self, model)
+                    build_TB_model(self, model)
                 else:
                     print(
                         'Check! TB model finite (nonperiodic) in one or more dimensions not implemented'
                     )
                     try:
-                        from .models.tb_models import build_from_pythTB
+                        from .models.models import build_from_pythTB
 
                         build_from_pythTB(self, model)
                     except Exception as e:
