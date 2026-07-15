@@ -1016,7 +1016,7 @@ class PAOFLOW:
     def site_projected_bands(self, site_proj=[0]):
         """
         This routine calculates the wavefunction square wheights to produce a site projected band
-        structure.
+        structure along a Brillouin Zone path
 
         Arguments:
             site_proj (list of ints): Incides of the atomic site to project the bands
@@ -1047,7 +1047,7 @@ class PAOFLOW:
     def site_projected_fs(self, site_proj=[0]):
         """
         This routine calculates the wavefunction square wheights to produce a site projected band
-        structure.
+        structure for Fermi Surface visualization (entire Brillouin Zone).
 
         Arguments:
             site_proj (list of ints): Incides of the atomic site to project the bands
@@ -2002,19 +2002,48 @@ class PAOFLOW:
 
     def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0,type='bxsf',project=None):
         """
-        Calculate the Fermi Surface
+        Compute the Fermi surface and optionally export it for visualization.
 
-        Arguments:
-            fermi_up (float): The upper limit of the occupied energy range
-            fermi_dw (float): The lower limit of the occupied energy range
-            type: 'bxsf' or 'fermisurfer'
-            project: project the following desired quantities in the FS, ***obs: only works for type='fermisurfer'
-            - 'velocity' needs   paoflow.pao_eigh()-> paoflow.gradient_and_momenta(), output in m/s
-            - 'orbital' needs site_projected_fs() 'spin_Sx'/'spin_Sy'/'spin_Sz'; output in [0,1]
-            - 'spin_Sx'/'spin_Sy'/'spin_Sz' needs spin_operator(spin_orbit=True)-> spin_texture() output in [-1/2,1/2]
-            - 'omega' needs topology(Berry=True)
-        Returns:
-            None
+        Parameters
+        ----------
+        fermi_up : float, optional
+            Upper limit of the energy window (in eV) used to identify the
+            Fermi surface. Default is 1.0.
+        fermi_dw : float, optional
+            Lower limit of the energy window (in eV) used to identify the
+            Fermi surface. Default is -1.0.
+        type : {'bxsf', 'fermisurfer'}, optional
+            Output file format.
+
+            - ``'bxsf'``: BXSF format for XCrySDen.
+            - ``'fermisurfer'``: FermiSurfer format.
+        project : {'velocity', 'orbital', 'spin_Sx', 'spin_Sy', 'spin_Sz', 'omega'}, optional
+            Quantity to project onto the Fermi surface. Only available when
+            ``type='fermisurfer'``.
+
+            Supported projections are:
+
+            - ``'velocity'``: Fermi velocity in m/s.
+              Requires::
+
+                  pao_eigh()
+                  gradient_and_momenta()
+
+            - ``'orbital'``: Orbital character in the range [0, 1].
+              Requires::
+                  pao_eigh()
+                  site_projected_fs()
+
+            - ``'spin_Sx'``, ``'spin_Sy'``, ``'spin_Sz'``:
+              Spin expectation values in the range [-1/2, 1/2].
+              Requires::
+
+                  spin_operator(spin_orbit=True)
+                  spin_texture()
+
+        Returns
+        -------
+        None
         """
         from .topology.do_fermisurf import do_fermisurf
 

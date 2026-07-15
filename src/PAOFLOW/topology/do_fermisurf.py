@@ -118,7 +118,36 @@ def do_fermisurf(data_controller,type,project):
     comm.Barrier()
     E_kf = E_ks = None
 
-def write_frmsf(data_controller, fname, bands,projection):
+def write_frmsf(data_controller, fname, bands, projection):
+    """
+    Write a FermiSurfer (.frmsf) file.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Object providing the reciprocal lattice vectors and output path.
+    fname : str
+        Name of the output FermiSurfer file.
+    bands : ndarray
+        Band energies on the uniform k-point mesh with shape
+        ``(nk1, nk2, nk3, nbnd)``. Energies are assumed to be referenced to
+        the Fermi level.
+    projection : ndarray or None
+        Quantity to project onto the Fermi surface. Must have shape
+        ``(nk1, nk2, nk3, nbnd)``. If ``None``, only the band energies are
+        written.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    The output follows the FermiSurfer file specification. The reciprocal
+    lattice vectors are written first, followed by the band energies for each
+    band on the uniform k-point mesh. When ``projection`` is provided, its
+    values are appended after the energy data in the same ordering.
+    """
 
     import numpy as np
     from os.path import join
@@ -166,7 +195,35 @@ def write_frmsf(data_controller, fname, bands,projection):
 
 
 def Fermi_vel(data_controller,bands):
+    """
+    Compute the magnitude of the Fermi velocity on a uniform k-point mesh.
 
+    Parameters
+    ----------
+    data_controller : DataController
+        Object containing the reciprocal lattice vectors and mesh dimensions.
+    bands : ndarray
+        Band energies on a uniform k-point mesh with shape
+        ``(nk1, nk2, nk3, nbnd)``. Energies are expected in eV.
+
+    Returns
+    -------
+    ndarray
+        Magnitude of the Fermi velocity with shape
+        ``(nk1, nk2, nk3, nbnd)``, expressed in m/s.
+
+    Notes
+    -----
+    The energy gradient is evaluated using second-order finite differences
+    (`numpy.gradient`) along the three reciprocal-space directions. The
+    derivatives are transformed from fractional to Cartesian reciprocal
+    coordinates before computing the Euclidean norm. The velocity is obtained
+    from
+
+        v = (1 / ħ) ∇ₖE,
+
+    where ħ is expressed in eV·s.
+    """
     import numpy as np
 
 
