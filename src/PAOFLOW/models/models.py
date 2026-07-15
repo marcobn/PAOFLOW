@@ -2399,17 +2399,17 @@ def kane_mele_pythtb(delta, t, soc, rashba):
 
     .. math::
 
-        \mathbf{r}_1 = \frac{1}{3} \mathbf{a}_1 + \frac{1}{3} \mathbf{a}_2, 
+        \mathbf{r}_1 = \frac{1}{3} \mathbf{a}_1 + \frac{1}{3} \mathbf{a}_2,
         \quad \mathbf{r}_2 = \frac{2}{3} \mathbf{a}_1 + \frac{2}{3} \mathbf{a}_2
 
     The Hamiltonian in second-quantized form is given by:
 
     .. math::
 
-        H = \Delta \sum_{i} c_i^\dagger c_i + 
+        H = \Delta \sum_{i} c_i^\dagger c_i +
         t \sum_{\langle i,j \rangle} ( c_i^\dagger c_j + h.c.) +
         \lambda_{SO} \sum_{\langle \langle i,j \rangle \rangle} ( c_i^\dagger \sigma_z c_j + \text{h.c.}) + \\
-        \lambda_{R} \sum_{\langle i,j \rangle} ( c_i^\dagger \mathbf{\sigma} \times 
+        \lambda_{R} \sum_{\langle i,j \rangle} ( c_i^\dagger \mathbf{\sigma} \times
         \mathbf{\hat{d}}_{\langle i,j \rangle} c_j + \text{h.c.})
 
     Parameters
@@ -2599,7 +2599,6 @@ def fu_kane_mele_pythtb(t, soc, dt=[0, 0, 0, 0]):
 
 
 def graphene(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
@@ -2675,7 +2674,6 @@ def graphene(data_controller, params):
 
 
 def cubium(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
@@ -2751,7 +2749,6 @@ def cubium(data_controller, params):
 
 
 def cubium2(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
@@ -2830,7 +2827,6 @@ def cubium2(data_controller, params):
 
 
 def Kane_Mele(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
