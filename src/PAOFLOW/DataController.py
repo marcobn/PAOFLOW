@@ -251,7 +251,7 @@ class DataController:
         if model is not None:
             if (inputfile is not None or savedir is not None) and self.rank == 0:
                 print(
-                    "\nWARNING: Model specified in addition to inputfile or savedir. Model will be used."
+                    '\nWARNING: Model specified in addition to inputfile or savedir. Model will be used.'
                 )
         elif not restart and inputfile is None and savedir is None:
             if self.rank == 0:
@@ -268,33 +268,31 @@ class DataController:
             self.data_attributes = attr = {}
 
             # Set or update attributes
-            attr["dft"] = dft
-            attr["mpisize"] = self.size
-            attr["savedir"] = savedir
-            attr["verbose"] = verbose
-            attr["workpath"] = workpath
-            attr["save_overlaps"] = save_overlaps
-            attr["acbn0"] = acbn0
-            attr["sparse"] = sparse
-            attr["sparse_threshold"] = sparse_threshold
-            attr["inputfile"], attr["outputdir"] = inputfile, outputdir
-            attr["opath"] = join(workpath, outputdir)
+            attr['dft'] = dft
+            attr['mpisize'] = self.size
+            attr['savedir'] = savedir
+            attr['verbose'] = verbose
+            attr['workpath'] = workpath
+            attr['save_overlaps'] = save_overlaps
+            attr['acbn0'] = acbn0
+            attr['sparse'] = sparse
+            attr['sparse_threshold'] = sparse_threshold
+            attr['inputfile'], attr['outputdir'] = inputfile, outputdir
+            attr['opath'] = join(workpath, outputdir)
             if model is None:
-                attr["fpath"] = join(
-                    workpath, (savedir if inputfile == None else inputfile)
-                )
+                attr['fpath'] = join(workpath, (savedir if inputfile == None else inputfile))
 
             if inputfile == None:
-                attr["temp"] = 0.025852
-                attr["npool"], attr["smearing"] = npool, smearing
+                attr['temp'] = 0.025852
+                attr['npool'], attr['smearing'] = npool, smearing
 
             # Create the output directory
-            if not exists(attr["opath"]):
-                mkdir(attr["opath"])
+            if not exists(attr['opath']):
+                mkdir(attr['opath'])
 
             self.add_default_arrays()
 
-            attr["abort_on_exception"] = True
+            attr['abort_on_exception'] = True
 
             # Read inputfile, if it exsts
             if model is not None:
@@ -304,33 +302,31 @@ class DataController:
                     predefined_models(self, model)
                 else:
                     print(
-                        "Check! TB model finite (nonperiodic) in one or more dimensions not implemented"
+                        'Check! TB model finite (nonperiodic) in one or more dimensions not implemented'
                     )
                     try:
                         from .models.tb_models import build_from_pythTB
 
                         build_from_pythTB(self, model)
                     except Exception as e:
-                        print("\nERROR: Could not build tight-binding model")
-                        self.report_exception("Data Controller Initialization")
+                        print('\nERROR: Could not build tight-binding model')
+                        self.report_exception('Data Controller Initialization')
                         raise e
             else:
                 try:
                     if inputfile != None:
-                        if not exists(attr["fpath"]):
-                            raise Exception(
-                                "ERROR: Inputfile does not exist\n%s" % attr["fpath"]
-                            )
+                        if not exists(attr['fpath']):
+                            raise Exception('ERROR: Inputfile does not exist\n%s' % attr['fpath'])
                         self.read_pao_inputfile()
                     else:
-                        attr["do_spin_orbit"] = False
-                    if dft == "QE":
+                        attr['do_spin_orbit'] = False
+                    if dft == 'QE':
                         self.read_qe_output()
                     else:
                         self.read_vasp_output(symprec=1e-4)
                 except Exception as e:
-                    print("\nERROR: Could not read xml data file")
-                    self.report_exception("Data Controller Initialization")
+                    print('\nERROR: Could not read xml data file')
+                    self.report_exception('Data Controller Initialization')
                     raise e
 
         self.comm.Barrier()
@@ -341,8 +337,8 @@ class DataController:
                 self.data_arrays = self.comm.bcast(self.data_arrays, root=0)
                 self.data_attributes = self.comm.bcast(self.data_attributes, root=0)
             except Exception as e:
-                print("ERROR: MPI was unable to broadcast")
-                self.report_exception("Initialization Broadcast")
+                print('ERROR: MPI was unable to broadcast')
+                self.report_exception('Initialization Broadcast')
                 raise e
 
     def data_dicts(self):
@@ -368,11 +364,11 @@ class DataController:
             None
         """
         if self.rank == 0:
-            print("\nData Attributes:")
+            print('\nData Attributes:')
             print(self.data_attributes.keys())
-            print("\nData Arrays:")
+            print('\nData Arrays:')
             print(self.data_arrays.keys())
-            print("\n")
+            print('\n')
 
     def build_arrays_adhoc_soc(self):
         """
@@ -391,56 +387,56 @@ class DataController:
         orb = []
         naw = []
 
-        if attr["dftSO"] == True:
-            for i in range(len(arry["atoms"])):
-                if arry["shells"][arry["atoms"][i]] == [0]:
+        if attr['dftSO'] == True:
+            for i in range(len(arry['atoms'])):
+                if arry['shells'][arry['atoms'][i]] == [0]:
                     naw.append(2)
-                if arry["shells"][arry["atoms"][i]] == [0, 1]:
+                if arry['shells'][arry['atoms'][i]] == [0, 1]:
                     naw.append(8)
-                if arry["shells"][arry["atoms"][i]] == [0, 1, 2]:
+                if arry['shells'][arry['atoms'][i]] == [0, 1, 2]:
                     naw.append(18)
-                if arry["shells"][arry["atoms"][i]] == [1, 0]:
+                if arry['shells'][arry['atoms'][i]] == [1, 0]:
                     naw.append(8)
-                if arry["shells"][arry["atoms"][i]] == [0, 0, 1, 2]:
+                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 2]:
                     naw.append(20)
-                if arry["shells"][arry["atoms"][i]] == [0, 0, 1]:
+                if arry['shells'][arry['atoms'][i]] == [0, 0, 1]:
                     naw.append(10)
-                if arry["shells"][arry["atoms"][i]] == [0, 1, 1]:
+                if arry['shells'][arry['atoms'][i]] == [0, 1, 1]:
                     naw.append(8)
-                if arry["shells"][arry["atoms"][i]] == [0, 0, 1, 1, 2]:
+                if arry['shells'][arry['atoms'][i]] == [0, 0, 1, 1, 2]:
                     naw.append(26)
-                if arry["shells"][arry["atoms"][i]] == [0, 1, 1, 2, 2]:
+                if arry['shells'][arry['atoms'][i]] == [0, 1, 1, 2, 2]:
                     naw.append(18)
-            arry["naw"] = np.array(naw)
+            arry['naw'] = np.array(naw)
 
         else:
-            for i in range(len(arry["atoms"])):
-                shells_i = arry["shells"][arry["atoms"][i]]
+            for i in range(len(arry['atoms'])):
+                shells_i = arry['shells'][arry['atoms'][i]]
                 matched = True
                 if shells_i == [0]:
                     naw.append(1)
-                    orb.append("s")
+                    orb.append('s')
                 elif shells_i == [0, 1]:
                     naw.append(4)
-                    orb.append("sp")
+                    orb.append('sp')
                 elif shells_i == [0, 1, 2]:
                     naw.append(9)
-                    orb.append("spd")
+                    orb.append('spd')
                 elif shells_i == [1, 0]:
                     naw.append(4)
-                    orb.append("ps")
+                    orb.append('ps')
                 elif shells_i == [0, 0, 1, 2]:
                     naw.append(10)
-                    orb.append("sspd")
+                    orb.append('sspd')
                 elif shells_i == [0, 1, 2, 0]:
                     naw.append(10)
-                    orb.append("spds")
+                    orb.append('spds')
                 elif shells_i == [0, 0, 1]:
                     naw.append(5)
-                    orb.append("ssp")
+                    orb.append('ssp')
                 elif shells_i == [0, 0, 1, 1, 2]:
                     naw.append(13)
-                    orb.append("ssppd")
+                    orb.append('ssppd')
                 else:
                     matched = False
                 if not matched:
@@ -449,39 +445,39 @@ class DataController:
                     # hamiltonian.do_spin_orbit (build_generic_soc).
                     # naw is sum_{shells} (2l+1).
                     naw.append(sum(2 * int(l) + 1 for l in shells_i))
-                    orb.append("generic")
-            arry["orb_pseudo"] = orb
-            arry["naw"] = np.array(naw)
+                    orb.append('generic')
+            arry['orb_pseudo'] = orb
+            arry['naw'] = np.array(naw)
 
     def add_default_arrays(self):
         import numpy as np
 
         # Band Path
-        self.data_attributes["band_path"] = None
-        self.data_arrays["high_sym_points"] = {}
+        self.data_attributes['band_path'] = None
+        self.data_arrays['high_sym_points'] = {}
 
         # Electric Field
-        self.data_arrays["Efield"] = np.zeros(3, dtype=float)
+        self.data_arrays['Efield'] = np.zeros(3, dtype=float)
         # Magnetic Field
-        self.data_arrays["Bfield"] = np.zeros(3, dtype=float)
+        self.data_arrays['Bfield'] = np.zeros(3, dtype=float)
         # Hubbard Parameters
-        self.data_arrays["HubbardU"] = np.zeros(1, dtype=float)
+        self.data_arrays['HubbardU'] = np.zeros(1, dtype=float)
 
         # Tensor components
         # Dielectric function
-        self.data_arrays["d_tensor"] = np.array(
+        self.data_arrays['d_tensor'] = np.array(
             [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
         )
         # Boltzmann transport
-        self.data_arrays["t_tensor"] = np.array(
+        self.data_arrays['t_tensor'] = np.array(
             [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
         )
         # Berry curvature
-        self.data_arrays["a_tensor"] = np.array(
+        self.data_arrays['a_tensor'] = np.array(
             [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
         )
         # Spin Berry curvature
-        self.data_arrays["s_tensor"] = np.array(
+        self.data_arrays['s_tensor'] = np.array(
             [
                 [0, 0, 0],
                 [0, 1, 0],
@@ -517,36 +513,36 @@ class DataController:
         from .inputs.read_inputfile_xml_parse import read_inputfile_xml
 
         read_inputfile_xml(
-            self.data_attributes["workpath"], self.data_attributes["inputfile"], self
+            self.data_attributes['workpath'], self.data_attributes['inputfile'], self
         )
 
     def read_qe_output(self):
         from os.path import exists
 
-        fpath = self.data_attributes["fpath"]
+        fpath = self.data_attributes['fpath']
 
-        if exists(fpath + "/data-file-schema.xml"):
+        if exists(fpath + '/data-file-schema.xml'):
             from .inputs.read_QE_xml import parse_qe_data_file_schema
 
-            parse_qe_data_file_schema(self, fpath + "/data-file-schema.xml")
-        elif exists(fpath + "/data-file.xml"):
+            parse_qe_data_file_schema(self, fpath + '/data-file-schema.xml')
+        elif exists(fpath + '/data-file.xml'):
             from .inputs.read_QE_xml import parse_qe_data_file
 
-            parse_qe_data_file(self, fpath, "data-file.xml")
+            parse_qe_data_file(self, fpath, 'data-file.xml')
         else:
-            raise Exception("data-file.xml or data-file-schema.xml were not found.\n")
+            raise Exception('data-file.xml or data-file-schema.xml were not found.\n')
 
     def read_vasp_output(self, symprec):
         from os.path import exists
 
-        fpath = self.data_attributes["fpath"]
+        fpath = self.data_attributes['fpath']
 
-        if exists(fpath + "/vasprun.xml"):
+        if exists(fpath + '/vasprun.xml'):
             from .inputs.read_VASP import parse_vasprun_data
 
-            parse_vasprun_data(self, fpath + "/vasprun.xml", symprec)
+            parse_vasprun_data(self, fpath + '/vasprun.xml', symprec)
         else:
-            raise Exception("vasprun.xml was not found.\n")
+            raise Exception('vasprun.xml was not found.\n')
 
     def write_file_row_col(self, fname, col1, col2):
         """
@@ -564,15 +560,15 @@ class DataController:
             from os.path import join
 
             if len(col1) != len(col2):
-                print("ERROR: Cannot write file: %s" % fname)
-                print("Data does not have the same shape")
+                print('ERROR: Cannot write file: %s' % fname)
+                print('Data does not have the same shape')
                 self.comm.Abort()
 
             attr = self.data_attributes
 
-            with open(join(attr["opath"], fname), "w") as f:
+            with open(join(attr['opath'], fname), 'w') as f:
                 for i in range(len(col1)):
-                    f.write("%.5f %.15e\n" % (col1[i], col2[i]))
+                    f.write('%.5f %.15e\n' % (col1[i], col2[i]))
         self.comm.Barrier()
 
     def write_bxsf(self, fname, bands, nbnd, indices=None):
@@ -593,9 +589,7 @@ class DataController:
             from .writers.write2bxsf import write2bxsf
             from .writers.write2bxsf4skeaf import write2bxsf4skeaf
 
-            write2bxsf(
-                self, fname, bands, nbnd, indices, attr["fermi_up"], attr["fermi_dw"]
-            )
+            write2bxsf(self, fname, bands, nbnd, indices, attr['fermi_up'], attr['fermi_dw'])
             write2bxsf4skeaf(self, bands, nbnd, indices)
 
     def write_bands(self, fname, bands):
@@ -613,19 +607,14 @@ class DataController:
             from os.path import join
 
             arry, attr = self.data_dicts()
-            nspin, nkpi = attr["nspin"], arry["kq"].shape[1]
+            nspin, nkpi = attr['nspin'], arry['kq'].shape[1]
 
             for ispin in range(nspin):
-                with open(
-                    join(attr["opath"], fname + "_" + str(ispin) + ".dat"), "w"
-                ) as f:
+                with open(join(attr['opath'], fname + '_' + str(ispin) + '.dat'), 'w') as f:
                     for ik in range(nkpi):
                         f.write(
-                            " ".join(
-                                ["%6d" % ik]
-                                + ["% 14.8f" % j for j in bands[ik, :, ispin]]
-                            )
-                            + "\n"
+                            ' '.join(['%6d' % ik] + ['% 14.8f' % j for j in bands[ik, :, ispin]])
+                            + '\n'
                         )
         self.comm.Barrier()
 
@@ -644,12 +633,12 @@ class DataController:
             from os.path import join
 
             kpnts = b_vectors.T.dot(kpnts)
-            with open(join(self.data_attributes["opath"], fname), "w") as f:
+            with open(join(self.data_attributes['opath'], fname), 'w') as f:
                 f.write(path)
                 f.write(
-                    "".join(
+                    ''.join(
                         [
-                            "%s %s %s\n" % (kpnts[0, i], kpnts[1, i], kpnts[2, i])
+                            '%s %s %s\n' % (kpnts[0, i], kpnts[1, i], kpnts[2, i])
                             for i in range(kpnts.shape[1])
                         ]
                     )
@@ -705,15 +694,15 @@ class DataController:
 
         if self.rank == 0:
             arry, attr = self.data_dicts()
-            nspin = attr["nspin"]
-            inputpath = attr["opath"]
-            write_binary = attr["write_binary"]
-            nawf = attr["nawf"]
-            acbn0 = attr["acbn0"]
-            kpnts_wght = arry["kpnts_wght"]
-            kpnts = arry["kpnts"]
-            Hks = arry["Hks"]
-            Sks = arry["Sks"]
+            nspin = attr['nspin']
+            inputpath = attr['opath']
+            write_binary = attr['write_binary']
+            nawf = attr['nawf']
+            acbn0 = attr['acbn0']
+            kpnts_wght = arry['kpnts_wght']
+            kpnts = arry['kpnts']
+            Hks = arry['Hks']
+            Sks = arry['Sks']
             nkpnts = kpnts.shape[0]
 
             Skss = Sks.shape
@@ -721,38 +710,34 @@ class DataController:
                 if len(Skss) == 5:
                     Sks = Sks.reshape((Skss[0], Skss[1], Skss[2] * Skss[3] * Skss[4]))
                 else:
-                    Sks = Sks.reshape(
-                        (Skss[0], Skss[1], Skss[2] * Skss[3] * Skss[4], Skss[5])
-                    )
+                    Sks = Sks.reshape((Skss[0], Skss[1], Skss[2] * Skss[3] * Skss[4], Skss[5]))
 
             if write_binary:  # or whatever you want to call it
                 if nspin == 1:  # postfix .npy just to make it clear what they are
                     np.save(
-                        os.path.join(inputpath, "kham.npy"),
-                        np.ravel(Hks[..., 0], order="C"),
+                        os.path.join(inputpath, 'kham.npy'),
+                        np.ravel(Hks[..., 0], order='C'),
                     )
                 if nspin == 2:
                     np.save(
-                        os.path.join(inputpath, "kham_up.npy"),
-                        np.ravel(Hks[..., 0], order="C"),
+                        os.path.join(inputpath, 'kham_up.npy'),
+                        np.ravel(Hks[..., 0], order='C'),
                     )
                     np.save(
-                        os.path.join(inputpath, "kham_dn.npy"),
-                        np.ravel(Hks[..., 1], order="C"),
+                        os.path.join(inputpath, 'kham_dn.npy'),
+                        np.ravel(Hks[..., 1], order='C'),
                     )
                 if acbn0:
                     Sks = Sks[: Sks.shape[1], :, :]
-                    np.save(
-                        os.path.join(inputpath, "kovp.npy"), np.ravel(Sks, order="C")
-                    )
+                    np.save(os.path.join(inputpath, 'kovp.npy'), np.ravel(Sks, order='C'))
             else:
                 if nspin == 1:
-                    f = open(os.path.join(inputpath, "kham.txt"), "w")
+                    f = open(os.path.join(inputpath, 'kham.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
                             for j in range(nawf):
                                 f.write(
-                                    "%20.13f %20.13f \n"
+                                    '%20.13f %20.13f \n'
                                     % (
                                         np.real(Hks[i, j, ik, 0]),
                                         np.imag(Hks[i, j, ik, 0]),
@@ -760,24 +745,24 @@ class DataController:
                                 )
                     f.close()
                 elif nspin == 2:
-                    f = open(os.path.join(inputpath, "kham_up.txt"), "w")
+                    f = open(os.path.join(inputpath, 'kham_up.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
                             for j in range(nawf):
                                 f.write(
-                                    "%20.13f %20.13f \n"
+                                    '%20.13f %20.13f \n'
                                     % (
                                         np.real(Hks[i, j, ik, 0]),
                                         np.imag(Hks[i, j, ik, 0]),
                                     )
                                 )
                     f.close()
-                    f = open(os.path.join(inputpath, "kham_down.txt"), "w")
+                    f = open(os.path.join(inputpath, 'kham_down.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
                             for j in range(nawf):
                                 f.write(
-                                    "%20.13f %20.13f \n"
+                                    '%20.13f %20.13f \n'
                                     % (
                                         np.real(Hks[i, j, ik, 1]),
                                         np.imag(Hks[i, j, ik, 1]),
@@ -796,19 +781,16 @@ class DataController:
                             )
                 f.close()
             """
-            f = open(os.path.join(inputpath, "k.txt"), "w")
+            f = open(os.path.join(inputpath, 'k.txt'), 'w')
             for ik in range(nkpnts):
-                f.write(
-                    "%20.13f %20.13f %20.13f \n"
-                    % (kpnts[ik, 0], kpnts[ik, 1], kpnts[ik, 2])
-                )
+                f.write('%20.13f %20.13f %20.13f \n' % (kpnts[ik, 0], kpnts[ik, 1], kpnts[ik, 2]))
             f.close()
-            f = open(os.path.join(inputpath, "wk.txt"), "w")
+            f = open(os.path.join(inputpath, 'wk.txt'), 'w')
             for ik in range(nkpnts):
-                f.write("%20.13f \n" % (kpnts_wght[ik]))
+                f.write('%20.13f \n' % (kpnts_wght[ik]))
             f.close()
 
-            print("H(k),S(k),k,wk written to file")
+            print('H(k),S(k),k,wk written to file')
 
     def write_HRs(self, fname):
         """
@@ -830,10 +812,10 @@ class DataController:
 
                 def HRs_write(nk1, nk2, nk3, nawf, ispin, f):
                     nkpts = nk1 * nk2 * nk3
-                    f.write("PAOFLOW Generated \n")
-                    f.write("%5d \n" % nawf)
+                    f.write('PAOFLOW Generated \n')
+                    f.write('%5d \n' % nawf)
 
-                    f.write("%5d \n" % (nk1 * nk2 * nk3))
+                    f.write('%5d \n' % (nk1 * nk2 * nk3))
 
                     nl = 15
 
@@ -841,10 +823,10 @@ class DataController:
                     nlast = nkpts % nl  # number of items of laste line if needed
 
                     for j in range(nlines):
-                        f.write("1 " * nl)
-                        f.write("\n")
-                    f.write("1 " * nlast)
-                    f.write("\n")
+                        f.write('1 ' * nl)
+                        f.write('\n')
+                    f.write('1 ' * nlast)
+                    f.write('\n')
 
                     for i in range(nk1):
                         for j in range(nk2):
@@ -870,7 +852,7 @@ class DataController:
                                         # l+1,m+1 just to start from 1 not zero
 
                                         f.write(
-                                            "%3d %3d %3d %5d %5d %28.14f %28.14f\n"
+                                            '%3d %3d %3d %5d %5d %28.14f %28.14f\n'
                                             % (
                                                 ix,
                                                 iy,
@@ -884,7 +866,7 @@ class DataController:
 
                 arry, attr = self.data_dicts()
 
-                HRS = np.fft.ifftn(arry["Hks"], axes=(2, 3, 4))
+                HRS = np.fft.ifftn(arry['Hks'], axes=(2, 3, 4))
 
                 nawf, _, nk1, nk2, nk3, nspin = HRS.shape
                 # how to pad HR to make sure it's odd
@@ -925,18 +907,16 @@ class DataController:
                 HRS_interp = None
 
                 if nspin == 1:
-                    with open(join(attr["opath"], fname), "w") as f:
+                    with open(join(attr['opath'], fname), 'w') as f:
                         HRs_write(nk1, nk2, nk3, nawf, 0, f)
                 else:
                     for ispin in range(nspin):
-                        with open(
-                            join(attr["opath"], fname + "_" + str(ispin)), "w"
-                        ) as f:
+                        with open(join(attr['opath'], fname + '_' + str(ispin)), 'w') as f:
                             HRs_write(nk1, nk2, nk3, nawf, ispin, f)
 
         except Exception as e:
-            self.report_exception("Write Hamiltonian")
-            if self.data_attributes["abort_on_exception"]:
+            self.report_exception('Write Hamiltonian')
+            if self.data_attributes['abort_on_exception']:
                 raise e
 
         self.comm.Barrier()
@@ -988,7 +968,7 @@ class DataController:
             (None if self.rank != root else self.data_arrays[key].shape), root=root
         )
         if self.rank != root:
-            self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order="C")
+            self.data_arrays[key] = np.zeros(ashape, dtype=dtype, order='C')
 
         # Some MPI stacks cannot handle very large single-message broadcasts
         # reliably. Broadcast in bounded chunks to avoid hitting message/count
@@ -996,7 +976,7 @@ class DataController:
         from mpi4py import MPI
 
         arr = self.data_arrays[key]
-        if not arr.flags["C_CONTIGUOUS"]:
+        if not arr.flags['C_CONTIGUOUS']:
             arr = np.ascontiguousarray(arr)
             self.data_arrays[key] = arr
 

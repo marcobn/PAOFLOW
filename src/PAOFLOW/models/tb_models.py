@@ -27,7 +27,7 @@ def cubium_pythtb(t):
 
     cell = np.eye(3)
     orb = [[0, 0, 0]]
-    lat = Lattice(cell, orb, periodic_dirs="all")
+    lat = Lattice(cell, orb, periodic_dirs='all')
     model = TBModel(lattice=lat, spinful=False)
     # on-site
     onsite = -6 * t
@@ -45,7 +45,7 @@ def cubium2_pythtb(t, Eg):
 
     cell = np.eye(3)
     orb = [[0, 0, 0], [0, 0, 0]]
-    lat = Lattice(cell, orb, periodic_dirs="all")
+    lat = Lattice(cell, orb, periodic_dirs='all')
     model = TBModel(lattice=lat, spinful=False)
     # on-site
     onsite = -Eg / 2 - 6.0 * t
@@ -148,7 +148,7 @@ def checkerboard_pythtb(delta, t):
     model = TBModel(lattice=lat, spinful=False)
 
     # set on-site energies
-    model.set_onsite([-delta, delta], mode="set")
+    model.set_onsite([-delta, delta], mode='set')
 
     model.set_hop(t, 1, 0, [0, 0])
     model.set_hop(t, 1, 0, [1, 0])
@@ -271,15 +271,15 @@ def haldane_pythtb(delta: float, t1: float, t2: float, phi: float = np.pi / 2):
     lat = Lattice(lat_vecs, orb_vecs, periodic_dirs=[0, 1])
     model = TBModel(lattice=lat, spinful=False)
 
-    model.set_onsite([-delta, delta], mode="set")
+    model.set_onsite([-delta, delta], mode='set')
 
     for lvec in ([0, 0], [-1, 0], [0, -1]):
-        model.set_hop(t1, 0, 1, lvec, mode="set")
+        model.set_hop(t1, 0, 1, lvec, mode='set')
 
     for lvec in ([1, 0], [-1, 1], [0, -1]):
-        model.set_hop(t2 * np.exp(1j * phi), 0, 0, lvec, mode="set")
+        model.set_hop(t2 * np.exp(1j * phi), 0, 0, lvec, mode='set')
     for lvec in ([-1, 0], [1, -1], [0, 1]):
-        model.set_hop(t2 * np.exp(1j * phi), 1, 1, lvec, mode="set")
+        model.set_hop(t2 * np.exp(1j * phi), 1, 1, lvec, mode='set')
 
     return model
 
@@ -301,17 +301,17 @@ def kane_mele_pythtb(delta, t, soc, rashba):
 
     .. math::
 
-        \mathbf{r}_1 = \frac{1}{3} \mathbf{a}_1 + \frac{1}{3} \mathbf{a}_2, 
+        \mathbf{r}_1 = \frac{1}{3} \mathbf{a}_1 + \frac{1}{3} \mathbf{a}_2,
         \quad \mathbf{r}_2 = \frac{2}{3} \mathbf{a}_1 + \frac{2}{3} \mathbf{a}_2
 
     The Hamiltonian in second-quantized form is given by:
 
     .. math::
 
-        H = \Delta \sum_{i} c_i^\dagger c_i + 
+        H = \Delta \sum_{i} c_i^\dagger c_i +
         t \sum_{\langle i,j \rangle} ( c_i^\dagger c_j + h.c.) +
         \lambda_{SO} \sum_{\langle \langle i,j \rangle \rangle} ( c_i^\dagger \sigma_z c_j + \text{h.c.}) + \\
-        \lambda_{R} \sum_{\langle i,j \rangle} ( c_i^\dagger \mathbf{\sigma} \times 
+        \lambda_{R} \sum_{\langle i,j \rangle} ( c_i^\dagger \mathbf{\sigma} \times
         \mathbf{\hat{d}}_{\langle i,j \rangle} c_j + \text{h.c.})
 
     Parameters
@@ -383,15 +383,15 @@ def kane_mele_pythtb(delta, t, soc, rashba):
         0,
         1,
         [0, 0],
-        mode="add",
+        mode='add',
     )
-    ret_model.set_hop(1j * rashba * -sigma_x, 0, 1, [0, -1], mode="add")
+    ret_model.set_hop(1j * rashba * -sigma_x, 0, 1, [0, -1], mode='add')
     ret_model.set_hop(
         1j * rashba * ((1 / 2) * sigma_x + (np.sqrt(3) / 2) * sigma_y),
         0,
         1,
         [-1, 0],
-        mode="add",
+        mode='add',
     )
 
     return ret_model
@@ -501,421 +501,391 @@ def fu_kane_mele_pythtb(t, soc, dt=[0, 0, 0, 0]):
 
 
 def graphene(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
-    attr["nk1"] = 3
-    attr["nk2"] = 3
-    attr["nk3"] = 1
+    attr['nk1'] = 3
+    attr['nk2'] = 3
+    attr['nk3'] = 1
 
-    attr["nawf"] = 2
-    attr["nspin"] = 1
-    attr["natoms"] = 2
+    attr['nawf'] = 2
+    attr['nspin'] = 1
+    attr['natoms'] = 2
 
-    arry["naw"] = np.array([1, 1])
+    arry['naw'] = np.array([1, 1])
 
-    attr["alat"] = 2.46 * ANGSTROM_AU
+    attr['alat'] = 2.46 * ANGSTROM_AU
 
-    arry["HRs"] = np.zeros(
+    arry['HRs'] = np.zeros(
         (
-            attr["nawf"],
-            attr["nawf"],
-            attr["nk1"],
-            attr["nk2"],
-            attr["nk3"],
-            attr["nspin"],
+            attr['nawf'],
+            attr['nawf'],
+            attr['nk1'],
+            attr['nk2'],
+            attr['nk3'],
+            attr['nspin'],
         ),
         dtype=complex,
     )
 
     # H00
-    arry["HRs"][0, 0, 0, 0, 0, 0] = params["delta"] / 2
-    arry["HRs"][1, 1, 0, 0, 0, 0] = -params["delta"] / 2
+    arry['HRs'][0, 0, 0, 0, 0, 0] = params['delta'] / 2
+    arry['HRs'][1, 1, 0, 0, 0, 0] = -params['delta'] / 2
 
     # H00
-    arry["HRs"][0, 1, 0, 0, 0, 0] = params["t"]
-    arry["HRs"][1, 0, 0, 0, 0, 0] = params["t"]
+    arry['HRs'][0, 1, 0, 0, 0, 0] = params['t']
+    arry['HRs'][1, 0, 0, 0, 0, 0] = params['t']
 
     # H10
-    arry["HRs"][1, 0, 1, 0, 0, 0] = params["t"]
+    arry['HRs'][1, 0, 1, 0, 0, 0] = params['t']
 
     # H20
-    arry["HRs"][:, :, 2, 0, 0, 0] = np.conj(arry["HRs"][:, :, 1, 0, 0, 0]).T
+    arry['HRs'][:, :, 2, 0, 0, 0] = np.conj(arry['HRs'][:, :, 1, 0, 0, 0]).T
 
     # H01
-    arry["HRs"][1, 0, 0, 1, 0, 0] = params["t"]
+    arry['HRs'][1, 0, 0, 1, 0, 0] = params['t']
 
     # H02
-    arry["HRs"][:, :, 0, 2, 0, 0] = np.conj(arry["HRs"][:, :, 0, 1, 0, 0]).T
+    arry['HRs'][:, :, 0, 2, 0, 0] = np.conj(arry['HRs'][:, :, 0, 1, 0, 0]).T
 
     # Lattice Vectors
-    arry["a_vectors"] = np.zeros((3, 3), dtype=float)
-    arry["a_vectors"] = np.array([[1.0, 0, 0], [0.5, 3**0.5 / 2, 0], [0, 0, 10]])
-    arry["a_vectors"] = arry["a_vectors"]
+    arry['a_vectors'] = np.zeros((3, 3), dtype=float)
+    arry['a_vectors'] = np.array([[1.0, 0, 0], [0.5, 3**0.5 / 2, 0], [0, 0, 10]])
+    arry['a_vectors'] = arry['a_vectors']
 
     # Atomic coordinates
-    arry["tau"] = np.zeros((2, 3), dtype=float)
+    arry['tau'] = np.zeros((2, 3), dtype=float)
 
-    arry["tau"][0, 0] = 0.50000
-    arry["tau"][0, 1] = 0.28867
-    arry["tau"][1, 0] = 1.00000
-    arry["tau"][1, 1] = 0.57735
+    arry['tau'][0, 0] = 0.50000
+    arry['tau'][0, 1] = 0.28867
+    arry['tau'][1, 0] = 1.00000
+    arry['tau'][1, 1] = 0.57735
 
     # Reciprocal Lattice
-    arry["b_vectors"] = np.zeros((3, 3), dtype=float)
+    arry['b_vectors'] = np.zeros((3, 3), dtype=float)
     volume = np.dot(
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
-        arry["a_vectors"][2, :],
+        np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :]),
+        arry['a_vectors'][2, :],
     )
-    arry["b_vectors"][0, :] = (
-        np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
-    ) / volume
-    arry["b_vectors"][1, :] = (
-        np.cross(arry["a_vectors"][2, :], arry["a_vectors"][0, :])
-    ) / volume
-    arry["b_vectors"][2, :] = (
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :])
-    ) / volume
+    arry['b_vectors'][0, :] = (np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])) / volume
+    arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
+    arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
-    arry["atoms"] = ["C", "C"]
+    arry['atoms'] = ['C', 'C']
 
 
 def cubium(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
-    attr["nk1"] = 3
-    attr["nk2"] = 3
-    attr["nk3"] = 3
-    attr["Efermi"] = 6 * params["t"]
-    attr["nawf"] = 1
-    attr["nspin"] = 1
-    attr["natoms"] = 1
-    attr["bnd"] = 1
-    attr["shift"] = 0
-    attr["dftSO"] = False
-    attr["nkpnts"] = attr["nk1"] * attr["nk2"] * attr["nk3"]
-    attr["nbnds"] = 1
-    attr["nelec"] = 2
+    attr['nk1'] = 3
+    attr['nk2'] = 3
+    attr['nk3'] = 3
+    attr['Efermi'] = 6 * params['t']
+    attr['nawf'] = 1
+    attr['nspin'] = 1
+    attr['natoms'] = 1
+    attr['bnd'] = 1
+    attr['shift'] = 0
+    attr['dftSO'] = False
+    attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
+    attr['nbnds'] = 1
+    attr['nelec'] = 2
 
-    attr["alat"] = 1.0 * ANGSTROM_AU
-    attr["omega"] = attr["alat"] ** 3
+    attr['alat'] = 1.0 * ANGSTROM_AU
+    attr['omega'] = attr['alat'] ** 3
 
-    arry["HRs"] = np.zeros(
+    arry['HRs'] = np.zeros(
         (
-            attr["nawf"],
-            attr["nawf"],
-            attr["nk1"],
-            attr["nk2"],
-            attr["nk3"],
-            attr["nspin"],
+            attr['nawf'],
+            attr['nawf'],
+            attr['nk1'],
+            attr['nk2'],
+            attr['nk3'],
+            attr['nspin'],
         ),
         dtype=complex,
     )
 
     # H000
-    arry["HRs"][0, 0, 0, 0, 0, 0] = 0.0 - attr["Efermi"]
+    arry['HRs'][0, 0, 0, 0, 0, 0] = 0.0 - attr['Efermi']
 
     # H100
-    arry["HRs"][0, 0, 1, 0, 0, 0] = params["t"]
+    arry['HRs'][0, 0, 1, 0, 0, 0] = params['t']
 
     # H200
-    arry["HRs"][:, :, 2, 0, 0, 0] = np.conj(arry["HRs"][:, :, 1, 0, 0, 0]).T
+    arry['HRs'][:, :, 2, 0, 0, 0] = np.conj(arry['HRs'][:, :, 1, 0, 0, 0]).T
 
     # H010
-    arry["HRs"][0, 0, 0, 1, 0, 0] = params["t"]
+    arry['HRs'][0, 0, 0, 1, 0, 0] = params['t']
 
     # H020
-    arry["HRs"][:, :, 0, 2, 0, 0] = np.conj(arry["HRs"][:, :, 0, 1, 0, 0]).T
+    arry['HRs'][:, :, 0, 2, 0, 0] = np.conj(arry['HRs'][:, :, 0, 1, 0, 0]).T
 
     # H001
-    arry["HRs"][0, 0, 0, 0, 1, 0] = params["t"]
+    arry['HRs'][0, 0, 0, 0, 1, 0] = params['t']
 
     # H002
-    arry["HRs"][:, :, 0, 0, 2, 0] = np.conj(arry["HRs"][:, :, 0, 0, 1, 0]).T
+    arry['HRs'][:, :, 0, 0, 2, 0] = np.conj(arry['HRs'][:, :, 0, 0, 1, 0]).T
 
     # Lattice Vectors
-    arry["a_vectors"] = np.zeros((3, 3), dtype=float)
-    arry["a_vectors"] = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    arry['a_vectors'] = np.zeros((3, 3), dtype=float)
+    arry['a_vectors'] = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
 
     # Atomic coordinates
-    arry["tau"] = np.zeros((1, 3), dtype=float)
+    arry['tau'] = np.zeros((1, 3), dtype=float)
 
     # Reciprocal Lattice
-    arry["b_vectors"] = np.zeros((3, 3), dtype=float)
+    arry['b_vectors'] = np.zeros((3, 3), dtype=float)
     volume = np.dot(
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
-        arry["a_vectors"][2, :],
+        np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :]),
+        arry['a_vectors'][2, :],
     )
-    arry["b_vectors"][0, :] = (
-        np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
-    ) / volume
-    arry["b_vectors"][1, :] = (
-        np.cross(arry["a_vectors"][2, :], arry["a_vectors"][0, :])
-    ) / volume
-    arry["b_vectors"][2, :] = (
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :])
-    ) / volume
+    arry['b_vectors'][0, :] = (np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])) / volume
+    arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
+    arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
-    arry["atoms"] = ["Cu"]
+    arry['atoms'] = ['Cu']
 
 
 def cubium2(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
-    attr["nk1"] = 3
-    attr["nk2"] = 3
-    attr["nk3"] = 3
+    attr['nk1'] = 3
+    attr['nk2'] = 3
+    attr['nk3'] = 3
 
-    attr["nawf"] = 2
-    attr["nspin"] = 1
-    attr["natoms"] = 1
-    attr["bnd"] = 2
-    attr["shift"] = 0
-    attr["dftSO"] = False
-    attr["nkpnts"] = attr["nk1"] * attr["nk2"] * attr["nk3"]
-    attr["nbnds"] = 2
-    attr["nelec"] = 2
-    attr["alat"] = 1.0 * ANGSTROM_AU
-    attr["omega"] = attr["alat"] ** 3
+    attr['nawf'] = 2
+    attr['nspin'] = 1
+    attr['natoms'] = 1
+    attr['bnd'] = 2
+    attr['shift'] = 0
+    attr['dftSO'] = False
+    attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
+    attr['nbnds'] = 2
+    attr['nelec'] = 2
+    attr['alat'] = 1.0 * ANGSTROM_AU
+    attr['omega'] = attr['alat'] ** 3
 
-    arry["HRs"] = np.zeros(
+    arry['HRs'] = np.zeros(
         (
-            attr["nawf"],
-            attr["nawf"],
-            attr["nk1"],
-            attr["nk2"],
-            attr["nk3"],
-            attr["nspin"],
+            attr['nawf'],
+            attr['nawf'],
+            attr['nk1'],
+            attr['nk2'],
+            attr['nk3'],
+            attr['nspin'],
         ),
         dtype=complex,
     )
 
     # H000
-    arry["HRs"][0, 0, 0, 0, 0, 0] = -params["Eg"] / 2 - 6.0 * params["t"]
-    arry["HRs"][1, 1, 0, 0, 0, 0] = params["Eg"] / 2 + 6.0 * params["t"]
+    arry['HRs'][0, 0, 0, 0, 0, 0] = -params['Eg'] / 2 - 6.0 * params['t']
+    arry['HRs'][1, 1, 0, 0, 0, 0] = params['Eg'] / 2 + 6.0 * params['t']
 
     # H100
-    arry["HRs"][0, 0, 1, 0, 0, 0] = params["t"]
-    arry["HRs"][1, 1, 1, 0, 0, 0] = -params["t"]
+    arry['HRs'][0, 0, 1, 0, 0, 0] = params['t']
+    arry['HRs'][1, 1, 1, 0, 0, 0] = -params['t']
 
     # H200
-    arry["HRs"][:, :, 2, 0, 0, 0] = np.conj(arry["HRs"][:, :, 1, 0, 0, 0]).T
+    arry['HRs'][:, :, 2, 0, 0, 0] = np.conj(arry['HRs'][:, :, 1, 0, 0, 0]).T
 
     # H010
-    arry["HRs"][0, 0, 0, 1, 0, 0] = params["t"]
-    arry["HRs"][1, 1, 0, 1, 0, 0] = -params["t"]
+    arry['HRs'][0, 0, 0, 1, 0, 0] = params['t']
+    arry['HRs'][1, 1, 0, 1, 0, 0] = -params['t']
 
     # H020
-    arry["HRs"][:, :, 0, 2, 0, 0] = np.conj(arry["HRs"][:, :, 0, 1, 0, 0]).T
+    arry['HRs'][:, :, 0, 2, 0, 0] = np.conj(arry['HRs'][:, :, 0, 1, 0, 0]).T
 
     # H001
-    arry["HRs"][0, 0, 0, 0, 1, 0] = params["t"]
-    arry["HRs"][1, 1, 0, 0, 1, 0] = -params["t"]
+    arry['HRs'][0, 0, 0, 0, 1, 0] = params['t']
+    arry['HRs'][1, 1, 0, 0, 1, 0] = -params['t']
 
     # H002
-    arry["HRs"][:, :, 0, 0, 2, 0] = np.conj(arry["HRs"][:, :, 0, 0, 1, 0]).T
+    arry['HRs'][:, :, 0, 0, 2, 0] = np.conj(arry['HRs'][:, :, 0, 0, 1, 0]).T
 
     # Lattice Vectors
-    arry["a_vectors"] = np.zeros((3, 3), dtype=float)
-    arry["a_vectors"] = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    arry['a_vectors'] = np.zeros((3, 3), dtype=float)
+    arry['a_vectors'] = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
 
     # Atomic coordinates
-    arry["tau"] = np.zeros((1, 3), dtype=float)
+    arry['tau'] = np.zeros((1, 3), dtype=float)
 
     # Reciprocal Lattice
-    arry["b_vectors"] = np.zeros((3, 3), dtype=float)
+    arry['b_vectors'] = np.zeros((3, 3), dtype=float)
     volume = np.dot(
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
-        arry["a_vectors"][2, :],
+        np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :]),
+        arry['a_vectors'][2, :],
     )
-    arry["b_vectors"][0, :] = (
-        np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
-    ) / volume
-    arry["b_vectors"][1, :] = (
-        np.cross(arry["a_vectors"][2, :], arry["a_vectors"][0, :])
-    ) / volume
-    arry["b_vectors"][2, :] = (
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :])
-    ) / volume
+    arry['b_vectors'][0, :] = (np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])) / volume
+    arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
+    arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
-    arry["atoms"] = ["Cu"]
+    arry['atoms'] = ['Cu']
 
 
 def Kane_Mele(data_controller, params):
-
     from ..utils.constants import ANGSTROM_AU
 
     arry, attr = data_controller.data_dicts()
 
-    attr["nk1"] = 3
-    attr["nk2"] = 3
-    attr["nk3"] = 1
+    attr['nk1'] = 3
+    attr['nk2'] = 3
+    attr['nk3'] = 1
 
-    attr["nawf"] = 4
-    attr["bnd"] = 4
-    attr["shift"] = np.inf
-    attr["Efermi"] = 0.0
-    attr["nspin"] = 1
-    attr["natoms"] = 2
+    attr['nawf'] = 4
+    attr['bnd'] = 4
+    attr['shift'] = np.inf
+    attr['Efermi'] = 0.0
+    attr['nspin'] = 1
+    attr['natoms'] = 2
 
-    arry["naw"] = [2, 2]
+    arry['naw'] = [2, 2]
 
-    if "alat" not in params:
+    if 'alat' not in params:
         alat = 1.0
     else:
-        alat = params["alat"]
+        alat = params['alat']
 
-    attr["alat"] = alat * ANGSTROM_AU
+    attr['alat'] = alat * ANGSTROM_AU
 
-    t = params["t"]
-    soc_par = params["soc_par"]
+    t = params['t']
+    soc_par = params['soc_par']
     if soc_par > 0.0:
-        attr["dftSO"] = True
-    r_par = params["r_par"]
-    v_par = params["v_par"]
+        attr['dftSO'] = True
+    r_par = params['r_par']
+    v_par = params['v_par']
 
-    arry["HRs"] = np.zeros(
+    arry['HRs'] = np.zeros(
         (
-            attr["nawf"],
-            attr["nawf"],
-            attr["nk1"],
-            attr["nk2"],
-            attr["nk3"],
-            attr["nspin"],
+            attr['nawf'],
+            attr['nawf'],
+            attr['nk1'],
+            attr['nk2'],
+            attr['nk3'],
+            attr['nspin'],
         ),
         dtype=complex,
     )
 
     # H00
-    arry["HRs"][0, 0, 0, 0, 0, 0] = t * v_par
-    arry["HRs"][1, 1, 0, 0, 0, 0] = t * v_par
-    arry["HRs"][2, 2, 0, 0, 0, 0] = -t * v_par
-    arry["HRs"][3, 3, 0, 0, 0, 0] = -t * v_par
+    arry['HRs'][0, 0, 0, 0, 0, 0] = t * v_par
+    arry['HRs'][1, 1, 0, 0, 0, 0] = t * v_par
+    arry['HRs'][2, 2, 0, 0, 0, 0] = -t * v_par
+    arry['HRs'][3, 3, 0, 0, 0, 0] = -t * v_par
 
     # H00
-    arry["HRs"][0, 2, 0, 0, 0, 0] = t
-    arry["HRs"][1, 3, 0, 0, 0, 0] = t
-    arry["HRs"][2, 0, 0, 0, 0, 0] = t
-    arry["HRs"][3, 1, 0, 0, 0, 0] = t
+    arry['HRs'][0, 2, 0, 0, 0, 0] = t
+    arry['HRs'][1, 3, 0, 0, 0, 0] = t
+    arry['HRs'][2, 0, 0, 0, 0, 0] = t
+    arry['HRs'][3, 1, 0, 0, 0, 0] = t
 
     # H10
-    arry["HRs"][2, 0, 1, 0, 0, 0] = t
-    arry["HRs"][3, 1, 1, 0, 0, 0] = t
+    arry['HRs'][2, 0, 1, 0, 0, 0] = t
+    arry['HRs'][3, 1, 1, 0, 0, 0] = t
 
-    arry["HRs"][0, 0, 1, 0, 0, 0] = -complex(0.0, soc_par)
-    arry["HRs"][1, 1, 1, 0, 0, 0] = complex(0.0, soc_par)
-    arry["HRs"][2, 2, 1, 0, 0, 0] = complex(0.0, soc_par)
-    arry["HRs"][3, 3, 1, 0, 0, 0] = -complex(0.0, soc_par)
+    arry['HRs'][0, 0, 1, 0, 0, 0] = -complex(0.0, soc_par)
+    arry['HRs'][1, 1, 1, 0, 0, 0] = complex(0.0, soc_par)
+    arry['HRs'][2, 2, 1, 0, 0, 0] = complex(0.0, soc_par)
+    arry['HRs'][3, 3, 1, 0, 0, 0] = -complex(0.0, soc_par)
 
     ##H20
     # arry['HRs'][:,:,2,0,0,0] = np.conj(arry['HRs'][:,:,1,0,0,0]).T
 
     # H01
-    arry["HRs"][2, 0, 0, 1, 0, 0] = t
-    arry["HRs"][3, 1, 0, 1, 0, 0] = t
+    arry['HRs'][2, 0, 0, 1, 0, 0] = t
+    arry['HRs'][3, 1, 0, 1, 0, 0] = t
 
-    arry["HRs"][0, 0, 0, 1, 0, 0] = complex(0.0, soc_par)
-    arry["HRs"][1, 1, 0, 1, 0, 0] = -complex(0.0, soc_par)
-    arry["HRs"][2, 2, 0, 1, 0, 0] = -complex(0.0, soc_par)
-    arry["HRs"][3, 3, 0, 1, 0, 0] = complex(0.0, soc_par)
+    arry['HRs'][0, 0, 0, 1, 0, 0] = complex(0.0, soc_par)
+    arry['HRs'][1, 1, 0, 1, 0, 0] = -complex(0.0, soc_par)
+    arry['HRs'][2, 2, 0, 1, 0, 0] = -complex(0.0, soc_par)
+    arry['HRs'][3, 3, 0, 1, 0, 0] = complex(0.0, soc_par)
 
     ##H02
     # arry['HRs'][:,:,0,2,0,0] = np.conj(arry['HRs'][:,:,0,1,0,0]).T
 
     # H21
-    arry["HRs"][0, 0, 2, 1, 0, 0] = -complex(0.0, soc_par)
-    arry["HRs"][1, 1, 2, 1, 0, 0] = complex(0.0, soc_par)
-    arry["HRs"][2, 2, 2, 1, 0, 0] = complex(0.0, soc_par)
-    arry["HRs"][3, 3, 2, 1, 0, 0] = -complex(0.0, soc_par)
+    arry['HRs'][0, 0, 2, 1, 0, 0] = -complex(0.0, soc_par)
+    arry['HRs'][1, 1, 2, 1, 0, 0] = complex(0.0, soc_par)
+    arry['HRs'][2, 2, 2, 1, 0, 0] = complex(0.0, soc_par)
+    arry['HRs'][3, 3, 2, 1, 0, 0] = -complex(0.0, soc_par)
 
     ##H12
     ##arry['HRs'][:,:,1,2,0,0] = np.conj(arry['HRs'][:,:,2,1,0,0]).T
 
     r3h = np.sqrt(3.0) / 2.0
 
-    arry["HRs"][0, 3, 0, 0, 0, 0] += r_par * complex(
+    arry['HRs'][0, 3, 0, 0, 0, 0] += r_par * complex(
         -r3h, 0.5
     )  # 1j * r_par * (0.5 * 1 - r3h * -1j)
-    arry["HRs"][1, 2, 0, 0, 0, 0] += r_par * complex(
-        r3h, 0.5
-    )  # 1j * r_par * (0.5 * 1 - r3h * 1j)
-    arry["HRs"][3, 0, 0, 0, 0, 0] += r_par * complex(-r3h, -0.5)
-    arry["HRs"][2, 1, 0, 0, 0, 0] += r_par * complex(r3h, -0.5)
+    arry['HRs'][1, 2, 0, 0, 0, 0] += r_par * complex(r3h, 0.5)  # 1j * r_par * (0.5 * 1 - r3h * 1j)
+    arry['HRs'][3, 0, 0, 0, 0, 0] += r_par * complex(-r3h, -0.5)
+    arry['HRs'][2, 1, 0, 0, 0, 0] += r_par * complex(r3h, -0.5)
 
-    arry["HRs"][0, 3, 1, 0, 0, 0] += -r_par * complex(
+    arry['HRs'][0, 3, 1, 0, 0, 0] += -r_par * complex(
         r3h, 0.5
     )  # -1j * r_par * (0.5 * 1 + r3h * -1j)
-    arry["HRs"][1, 2, 1, 0, 0, 0] += -r_par * complex(
+    arry['HRs'][1, 2, 1, 0, 0, 0] += -r_par * complex(
         -r3h, 0.5
     )  # -1j * r_par * (0.5 * 1 + r3h * 1j)
 
-    arry["HRs"][0, 3, 0, 1, 0, 0] += complex(0.0, r_par)  # -1j * r_par * -1 * 1
-    arry["HRs"][1, 2, 0, 1, 0, 0] += complex(0.0, r_par)  # -1j * r_par * -1 * 1
+    arry['HRs'][0, 3, 0, 1, 0, 0] += complex(0.0, r_par)  # -1j * r_par * -1 * 1
+    arry['HRs'][1, 2, 0, 1, 0, 0] += complex(0.0, r_par)  # -1j * r_par * -1 * 1
 
     # H02
-    arry["HRs"][:, :, 0, 2, 0, 0] = np.conj(arry["HRs"][:, :, 0, 1, 0, 0]).T
+    arry['HRs'][:, :, 0, 2, 0, 0] = np.conj(arry['HRs'][:, :, 0, 1, 0, 0]).T
     # H20
-    arry["HRs"][:, :, 2, 0, 0, 0] = np.conj(arry["HRs"][:, :, 1, 0, 0, 0]).T
+    arry['HRs'][:, :, 2, 0, 0, 0] = np.conj(arry['HRs'][:, :, 1, 0, 0, 0]).T
     # H12
-    arry["HRs"][:, :, 1, 2, 0, 0] = np.conj(arry["HRs"][:, :, 2, 1, 0, 0]).T
+    arry['HRs'][:, :, 1, 2, 0, 0] = np.conj(arry['HRs'][:, :, 2, 1, 0, 0]).T
 
     # Lattice Vectors
-    arry["a_vectors"] = np.zeros((3, 3), dtype=float)
-    arry["a_vectors"] = np.array([[1.0, 0, 0], [0.5, 3**0.5 / 2, 0], [0, 0, 10]])
-    arry["a_vectors"] = arry["a_vectors"]
+    arry['a_vectors'] = np.zeros((3, 3), dtype=float)
+    arry['a_vectors'] = np.array([[1.0, 0, 0], [0.5, 3**0.5 / 2, 0], [0, 0, 10]])
+    arry['a_vectors'] = arry['a_vectors']
 
     # Spin properties
-    arry["Sj"] = np.zeros((3, 4, 4), dtype=complex)
+    arry['Sj'] = np.zeros((3, 4, 4), dtype=complex)
 
-    arry["Sj"][2, 0, 0] = 0.5
-    arry["Sj"][2, 1, 1] = -0.5
-    arry["Sj"][2, 2, 2] = 0.5
-    arry["Sj"][2, 3, 3] = -0.5
+    arry['Sj'][2, 0, 0] = 0.5
+    arry['Sj'][2, 1, 1] = -0.5
+    arry['Sj'][2, 2, 2] = 0.5
+    arry['Sj'][2, 3, 3] = -0.5
 
-    arry["Sj"][0, 0, 1] = 0.5
-    arry["Sj"][0, 1, 0] = 0.5
-    arry["Sj"][0, 2, 3] = 0.5
-    arry["Sj"][0, 3, 2] = 0.5
+    arry['Sj'][0, 0, 1] = 0.5
+    arry['Sj'][0, 1, 0] = 0.5
+    arry['Sj'][0, 2, 3] = 0.5
+    arry['Sj'][0, 3, 2] = 0.5
 
-    arry["Sj"][1, 0, 1] = -complex(0.0, 0.5)
-    arry["Sj"][1, 1, 0] = complex(0.0, 0.5)
-    arry["Sj"][1, 2, 3] = -complex(0.0, 0.5)
-    arry["Sj"][1, 3, 2] = complex(0.0, 0.5)
+    arry['Sj'][1, 0, 1] = -complex(0.0, 0.5)
+    arry['Sj'][1, 1, 0] = complex(0.0, 0.5)
+    arry['Sj'][1, 2, 3] = -complex(0.0, 0.5)
+    arry['Sj'][1, 3, 2] = complex(0.0, 0.5)
     # Atomic coordinates
-    arry["tau"] = np.zeros((2, 3), dtype=float)
-    arry["tau"][0] = np.dot([1 / 3, 1 / 3, 0.0], arry["a_vectors"])
-    arry["tau"][1] = np.dot([2 / 3, 2 / 3, 0.0], arry["a_vectors"])
+    arry['tau'] = np.zeros((2, 3), dtype=float)
+    arry['tau'][0] = np.dot([1 / 3, 1 / 3, 0.0], arry['a_vectors'])
+    arry['tau'][1] = np.dot([2 / 3, 2 / 3, 0.0], arry['a_vectors'])
 
-    arry["Dnm"] = np.zeros((4, 4, 3), dtype=float)
+    arry['Dnm'] = np.zeros((4, 4, 3), dtype=float)
     # Reciprocal Lattice
-    arry["b_vectors"] = np.zeros((3, 3), dtype=float)
+    arry['b_vectors'] = np.zeros((3, 3), dtype=float)
     volume = np.dot(
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :]),
-        arry["a_vectors"][2, :],
+        np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :]),
+        arry['a_vectors'][2, :],
     )
-    arry["b_vectors"][0, :] = (
-        np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
-    ) / volume
-    arry["b_vectors"][1, :] = (
-        np.cross(arry["a_vectors"][2, :], arry["a_vectors"][0, :])
-    ) / volume
-    arry["b_vectors"][2, :] = (
-        np.cross(arry["a_vectors"][0, :], arry["a_vectors"][1, :])
-    ) / volume
+    arry['b_vectors'][0, :] = (np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])) / volume
+    arry['b_vectors'][1, :] = (np.cross(arry['a_vectors'][2, :], arry['a_vectors'][0, :])) / volume
+    arry['b_vectors'][2, :] = (np.cross(arry['a_vectors'][0, :], arry['a_vectors'][1, :])) / volume
 
-    attr["omega"] = alat**3 * arry["a_vectors"][0, :].dot(
-        np.cross(arry["a_vectors"][1, :], arry["a_vectors"][2, :])
+    attr['omega'] = alat**3 * arry['a_vectors'][0, :].dot(
+        np.cross(arry['a_vectors'][1, :], arry['a_vectors'][2, :])
     )
 
-    arry["species"] = ["KM", "KM"]
+    arry['species'] = ['KM', 'KM']
 
 
 def build_from_pythTB(data_controller, my_model):
@@ -930,25 +900,25 @@ def build_from_pythTB(data_controller, my_model):
     norb = int(Lattice._orb_vecs_cart.shape[0])
 
     spinful = my_model._spinful
-    attr["dftSO"] = spinful
-    attr["adhoc_SO"] = spinful
-    attr["do_spin_orbit"] = spinful
-    arry["naw"] = [int(spinful) + 1] * norb  # Number of orbitals on each atom
-    attr["norb"] = norb * 2 if spinful else norb
-    attr["nawf"] = attr["bnd"] = attr["nbnds"] = attr["natoms"] = attr["norb"]
-    attr["nspin"] = 1
-    attr["Efermi"] = 0.0
-    attr["shift"] = np.inf
-    attr["alat"] = 1.0
-    attr["omega"] = Lattice._cell_vol
+    attr['dftSO'] = spinful
+    attr['adhoc_SO'] = spinful
+    attr['do_spin_orbit'] = spinful
+    arry['naw'] = [int(spinful) + 1] * norb  # Number of orbitals on each atom
+    attr['norb'] = norb * 2 if spinful else norb
+    attr['nawf'] = attr['bnd'] = attr['nbnds'] = attr['natoms'] = attr['norb']
+    attr['nspin'] = 1
+    attr['Efermi'] = 0.0
+    attr['shift'] = np.inf
+    attr['alat'] = 1.0
+    attr['omega'] = Lattice._cell_vol
 
-    arry["a_vectors"] = np.eye(3, 3)
-    arry["a_vectors"][:ndim, :ndim] = Lattice._lat_vectors
-    arry["b_vectors"] = np.eye(3, 3)
-    arry["b_vectors"][:ndim, :ndim] = Lattice._recip_lat
-    arry["b_vectors"] /= 2 * np.pi
-    tau = arry["tau"] = np.zeros((norb, 3))
-    arry["tau"][:, :ndim] = Lattice._orb_vecs_cart
+    arry['a_vectors'] = np.eye(3, 3)
+    arry['a_vectors'][:ndim, :ndim] = Lattice._lat_vectors
+    arry['b_vectors'] = np.eye(3, 3)
+    arry['b_vectors'][:ndim, :ndim] = Lattice._recip_lat
+    arry['b_vectors'] /= 2 * np.pi
+    tau = arry['tau'] = np.zeros((norb, 3))
+    arry['tau'][:, :ndim] = Lattice._orb_vecs_cart
 
     from_idx = hoptable.from_idx
     to_idx = hoptable.to_idx
@@ -957,36 +927,22 @@ def build_from_pythTB(data_controller, my_model):
     dR3[:, :ndim] = dR
     hopping = hoptable.amplitudes
     nks = np.max(dR3, axis=0) * 2 + 1
-    attr["nk1"] = nks[0]
-    attr["nk2"] = nks[1]
-    attr["nk3"] = nks[2]
-    attr["nkpnts"] = nks[0] * nks[1] * nks[2]
+    attr['nk1'] = nks[0]
+    attr['nk2'] = nks[1]
+    attr['nk3'] = nks[2]
+    attr['nkpnts'] = nks[0] * nks[1] * nks[2]
 
-    HRs = np.zeros(
-        (attr["norb"], attr["norb"], nks[0], nks[1], nks[2], 1), dtype=complex
-    )
+    HRs = np.zeros((attr['norb'], attr['norb'], nks[0], nks[1], nks[2], 1), dtype=complex)
     if spinful:
         for i, t in enumerate(hopping):
             t_conj = np.conjugate(t)
             HRs[from_idx[i], to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[0, 0]
-            HRs[from_idx[i] + norb, to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[
-                1, 0
-            ]
-            HRs[from_idx[i], to_idx[i] + norb, dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[
-                0, 1
-            ]
-            HRs[
-                from_idx[i] + norb, to_idx[i] + norb, dR3[i, 0], dR3[i, 1], dR3[i, 2], 0
-            ] = t[1, 1]
-            HRs[to_idx[i], from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[
-                0, 0
-            ]
-            HRs[
-                to_idx[i], from_idx[i] + norb, -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0
-            ] = t_conj[1, 0]
-            HRs[
-                to_idx[i] + norb, from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0
-            ] = t_conj[0, 1]
+            HRs[from_idx[i] + norb, to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[1, 0]
+            HRs[from_idx[i], to_idx[i] + norb, dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[0, 1]
+            HRs[from_idx[i] + norb, to_idx[i] + norb, dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t[1, 1]
+            HRs[to_idx[i], from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[0, 0]
+            HRs[to_idx[i], from_idx[i] + norb, -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[1, 0]
+            HRs[to_idx[i] + norb, from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = t_conj[0, 1]
             HRs[
                 to_idx[i] + norb,
                 from_idx[i] + norb,
@@ -1003,15 +959,13 @@ def build_from_pythTB(data_controller, my_model):
     else:
         for i, t in enumerate(hopping):
             HRs[from_idx[i], to_idx[i], dR3[i, 0], dR3[i, 1], dR3[i, 2], 0] = t
-            HRs[to_idx[i], from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = (
-                np.conjugate(t)
-            )
+            HRs[to_idx[i], from_idx[i], -dR3[i, 0], -dR3[i, 1], -dR3[i, 2], 0] = np.conjugate(t)
         for i, e in enumerate(site_energy):
             HRs[i, i, 0, 0, 0, 0] = e
 
-    arry["HRs"] = HRs
-    arry["Hks"] = np.zeros_like(arry["HRs"])
-    arry["Hks"] = FFT.fftn(arry["HRs"], axes=[2, 3, 4])
+    arry['HRs'] = HRs
+    arry['Hks'] = np.zeros_like(arry['HRs'])
+    arry['Hks'] = FFT.fftn(arry['HRs'], axes=[2, 3, 4])
 
     temp = np.zeros((norb, norb, 3))
     for n in range(norb):
@@ -1023,50 +977,48 @@ def build_from_pythTB(data_controller, my_model):
             Dnm[:, :, i] = np.matlib.repmat(temp[:, :, i], 2, 2)
     else:
         Dnm = temp
-    arry["Dnm"] = Dnm
+    arry['Dnm'] = Dnm
 
 
 def predefined_models(data_controller, params):
-    model_name = params["label"]
+    model_name = params['label']
     match model_name.upper():
-        case "CUBIUM_PYTHTB":
-            my_model = cubium_pythtb(params["t"])
+        case 'CUBIUM_PYTHTB':
+            my_model = cubium_pythtb(params['t'])
             build_from_pythTB(data_controller, my_model)
-        case "CUBIUM2_PYTHTB":
-            my_model = cubium2_pythtb(params["t"], params["Eg"])
+        case 'CUBIUM2_PYTHTB':
+            my_model = cubium2_pythtb(params['t'], params['Eg'])
             build_from_pythTB(data_controller, my_model)
-        case "SSH_PYTHTB":
-            my_model = ssh_pythtb(params["v"], params["w"])
+        case 'SSH_PYTHTB':
+            my_model = ssh_pythtb(params['v'], params['w'])
             build_from_pythTB(data_controller, my_model)
-        case "CHECKERBOARD_PYTHTB":
-            my_model = checkerboard_pythtb(params["delta"], params["t"])
+        case 'CHECKERBOARD_PYTHTB':
+            my_model = checkerboard_pythtb(params['delta'], params['t'])
             build_from_pythTB(data_controller, my_model)
-        case "GRAPHENE_PYTHTB":
-            my_model = graphene_pythtb(params["delta"], params["t"])
+        case 'GRAPHENE_PYTHTB':
+            my_model = graphene_pythtb(params['delta'], params['t'])
             build_from_pythTB(data_controller, my_model)
-        case "HALDANE_PYTHTB":
-            my_model = haldane_pythtb(
-                params["delta"], params["t1"], params["t2"], params["phi"]
-            )
+        case 'HALDANE_PYTHTB':
+            my_model = haldane_pythtb(params['delta'], params['t1'], params['t2'], params['phi'])
             build_from_pythTB(data_controller, my_model)
-        case "KANE_MELE_PYTHTB":
+        case 'KANE_MELE_PYTHTB':
             my_model = kane_mele_pythtb(
-                params["delta"], params["t"], params["soc"], params["rashba"]
+                params['delta'], params['t'], params['soc'], params['rashba']
             )
             build_from_pythTB(data_controller, my_model)
-        case "FU_KANE_MELE_PYTHTB":
-            my_model = fu_kane_mele_pythtb(params["t"], params["soc"], params["dt"])
+        case 'FU_KANE_MELE_PYTHTB':
+            my_model = fu_kane_mele_pythtb(params['t'], params['soc'], params['dt'])
             build_from_pythTB(data_controller, my_model)
-        case "GRAPHENE":
+        case 'GRAPHENE':
             graphene(data_controller, params)
-        case "CUBIUM":
+        case 'CUBIUM':
             cubium(data_controller, params)
-        case "CUBIUM2":
+        case 'CUBIUM2':
             cubium2(data_controller, params)
-        case "KANE_MELE":
+        case 'KANE_MELE':
             Kane_Mele(data_controller, params)
         case _:
-            print("Not a predefined model.")
+            print('Not a predefined model.')
             import sys
 
             sys.exit()
