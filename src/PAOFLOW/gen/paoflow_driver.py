@@ -1263,6 +1263,15 @@ Two phases:
     python main.elphon.py inputs    # write the ph.x phonon + AHC input templates
     python main.elphon.py analyse   # PAO interpolation -> alpha^2F, lambda, Tc
 
+The ``analyse`` phase parallelises the per-q interpolation over MPI ranks, so
+on a cluster launch it with mpirun for an (up to nq-fold) speedup::
+
+    mpirun -np N python main.elphon.py analyse
+
+The dense electron diagonalisation is done redundantly on every rank, so it is
+usually best to keep N at or below the number of q-points and let BLAS threads
+(OMP_NUM_THREADS) fill the remaining cores.
+
 Between them, run the two QE ph.x steps in the same outdir (typically on HPC):
 
     1. phonon:  ph.x < <prefix>.ph.in    # full DFPT dvscf on the q-grid
@@ -1278,6 +1287,7 @@ import os
 import sys
 
 import numpy as np
+from mpi4py import MPI
 
 from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
@@ -1391,6 +1401,11 @@ def analyse():
         source=SOURCE, masses_amu=MASSES_AMU, nk_dense=NK_DENSE,
         sigmas_ry=[SIGMA_RY], nelec=NELEC, mu_star=MU_STAR,
     )
+
+    # The Eliashberg result is identical on every rank (Allreduce inside the
+    # driver); only rank 0 reports and writes the output files.
+    if MPI.COMM_WORLD.Get_rank() != 0:
+        return
 
     kB = 8.617333262e-5  # eV/K
     print('PAO-route Eliashberg (%s, source=%s, Nk=%d):' % (PREFIX, SOURCE, NK_DENSE))

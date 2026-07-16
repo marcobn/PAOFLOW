@@ -159,6 +159,7 @@ def eliashberg_from_qe_coupling(
     isig=0,
     sigma_w_frac=0.02,
     fs_window=8.0,
+    comm=None,
 ):
     """Isotropic Eliashberg properties from QE's coarse ``el_ph_mat`` (PAO route).
 
@@ -212,6 +213,14 @@ def eliashberg_from_qe_coupling(
         delta: only k with a band within ``fs_window`` * ``sigma`` of E_F are kept.
         The default (8) is exact to ``exp(-fs_window^2)``; lower it (e.g. 4-5) to
         speed up metals with wide bands at a controlled tolerance.
+    comm : mpi4py communicator, optional
+        MPI communicator used to distribute the per-q loop (each q is an
+        independent unit of work reusing the shared dense-electron cache).
+        Defaults to ``MPI.COMM_WORLD``; run ``mpirun -np N python ...`` for an
+        (up to) ``N``-fold speedup, capped at ``nq`` ranks.  The dense electron
+        diagonalisation is computed redundantly on every rank (the cache is
+        needed by all q and is too large to broadcast cheaply); only the
+        per-q vertex interpolation is parallelised.
 
     Returns
     -------
@@ -236,8 +245,23 @@ def eliashberg_from_qe_coupling(
         HRs, at, nk_dense, sigmas_ry, nelec, tuple(ng), ispin=ispin, fs_window=fs_window
     )
 
-    lam_qv, om_qv, dos_ef = [], [], []
-    for iq in range(nq):
+    # Distribute the embarrassingly parallel per-q loop across MPI ranks: each q
+    # writes a disjoint slice of the (zero-initialised) output arrays, so a single
+    # in-place SUM reduction reconstructs the full grid on every rank.
+    from mpi4py import MPI
+
+    from ..utils.communication import load_balancing
+
+    if comm is None:
+        comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+    qstart, qstop = load_balancing(size, rank, nq)
+
+    lam_qv = np.zeros((nq, nmodes), dtype=float)
+    om_qv = np.zeros((nq, nmodes), dtype=float)
+    dos_ef = np.zeros(nq, dtype=float)
+    for iq in range(qstart, qstop):
         dyn = read_qe_dyn(dyn_paths[iq])
         if source == 'ahc':
             q_cryst = np.linalg.solve(bg.T, np.asarray(dyn['q'], dtype=float))
@@ -253,12 +277,15 @@ def eliashberg_from_qe_coupling(
         lam = res['lambda_qnu'][isig].copy()
         if np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6:
             lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
-        lam_qv.append(lam)
-        om_qv.append(np.abs(dyn['freq_thz']))
-        dos_ef.append(res['dos_ef'][isig])
+        lam_qv[iq] = lam
+        om_qv[iq] = np.abs(dyn['freq_thz'])
+        dos_ef[iq] = res['dos_ef'][isig]
 
-    lam_qv = np.asarray(lam_qv)
-    om_qv = np.asarray(om_qv)
+    if size > 1:
+        comm.Allreduce(MPI.IN_PLACE, lam_qv, op=MPI.SUM)
+        comm.Allreduce(MPI.IN_PLACE, om_qv, op=MPI.SUM)
+        comm.Allreduce(MPI.IN_PLACE, dos_ef, op=MPI.SUM)
+
     out = eliashberg_from_modes(
         lam_qv,
         om_qv,
