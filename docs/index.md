@@ -100,6 +100,5 @@ applications/index
 installation
 tutorials/index
 internals/index
-more/contribute
-about/contact
+more/contact
 ```
