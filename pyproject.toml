@@ -22,6 +22,7 @@ dependencies = ["numpy>=2.0,<2.3",
 [project.optional-dependencies]
 weyl_search = ["z2pack", "tbmodels"]
 graphics = ["vtk", "matplotlib","mendeleev"]
+fermisurface = ["mayavi", "scikit-image>=0.20"]
 transport = ["psutil"]
 pyskeaf = ["scikit-image>=0.20", "shapely>=2.0", "joblib>=1.2", "pandas>=2.0"]
 phonon = ["phonopy>=2.21", "phono3py>=2.3", "seekpath>=2.0"]
@@ -48,6 +49,7 @@ pyskeaf = "PAOFLOW.pyskeaf.cli:main"
 paoflow-genbasis-ps = "PAOFLOW.basis_gen.cli:main"
 paoflow-gen-qe = "PAOFLOW.gen.aflow_qe:main"
 paoflow-gen = "PAOFLOW.gen.paoflow_driver:main"
+fermi-plotter = "PAOFLOW.gen.fermi_plotter:main"
 
 [tool.ruff]
 line-length = 100
