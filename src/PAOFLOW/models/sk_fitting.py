@@ -155,56 +155,61 @@ from PAOFLOW.spectrum.kpnts_interpolation_mesh import get_path as _get_path
 #  1. Slater-Koster two-center integrals (standard √3 convention)
 # ═══════════════════════════════════════════════════════════════
 
-ORBITAL_NAMES = ('s', 'px', 'py', 'pz', 'dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2')
-SK_PARAM_NAMES = ['sss', 'sps', 'pps', 'ppp', 'sds', 'pds', 'pdp', 'dds', 'ddp', 'ddd']
+ORBITAL_NAMES = ("s", "px", "py", "pz", "dxy", "dyz", "dzx", "dx2-y2", "dz2")
+SK_PARAM_NAMES = ["sss", "sps", "pps", "ppp", "sds", "pds", "pdp", "dds", "ddp", "ddd"]
 SK_LABELS = [
-    'Vssσ',
-    'Vspσ',
-    'Vppσ',
-    'Vppπ',
-    'Vsdσ',
-    'Vpdσ',
-    'Vpdπ',
-    'Vddσ',
-    'Vddπ',
-    'Vddδ',
+    "Vssσ",
+    "Vspσ",
+    "Vppσ",
+    "Vppπ",
+    "Vsdσ",
+    "Vpdσ",
+    "Vpdπ",
+    "Vddσ",
+    "Vddπ",
+    "Vddδ",
 ]
 
 _SQ3 = np.sqrt(3.0)
 _HSQ3 = _SQ3 / 2.0
 
 SHELL_TO_ORBITALS = {
-    0: ['s'],
-    1: ['px', 'py', 'pz'],
-    2: ['dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2'],
+    0: ["s"],
+    1: ["px", "py", "pz"],
+    2: ["dxy", "dyz", "dzx", "dx2-y2", "dz2"],
 }
 
 # Active SK parameter names for each angular-momentum pair (l_lo, l_hi)
 LPAIR_ACTIVE_NAMES = {
-    (0, 0): ['sss'],
-    (0, 1): ['sps'],
-    (0, 2): ['sds'],
-    (1, 1): ['pps', 'ppp'],
-    (1, 2): ['pds', 'pdp'],
-    (2, 2): ['dds', 'ddp', 'ddd'],
+    (0, 0): ["sss"],
+    (0, 1): ["sps"],
+    (0, 2): ["sds"],
+    (1, 1): ["pps", "ppp"],
+    (1, 2): ["pds", "pdp"],
+    (2, 2): ["dds", "ddp", "ddd"],
 }
 LPAIR_ACTIVE_INDICES = {
-    lpair: [SK_PARAM_NAMES.index(n) for n in names] for lpair, names in LPAIR_ACTIVE_NAMES.items()
+    lpair: [SK_PARAM_NAMES.index(n) for n in names]
+    for lpair, names in LPAIR_ACTIVE_NAMES.items()
 }
 CHANNEL_LABELS = {
-    (0, 0): ['σ'],
-    (0, 1): ['σ'],
-    (0, 2): ['σ'],
-    (1, 1): ['σ', 'π'],
-    (1, 2): ['σ', 'π'],
-    (2, 2): ['σ', 'π', 'δ'],
+    (0, 0): ["σ"],
+    (0, 1): ["σ"],
+    (0, 2): ["σ"],
+    (1, 1): ["σ", "π"],
+    (1, 2): ["σ", "π"],
+    (2, 2): ["σ", "π", "δ"],
 }
 
 # Map each SK channel name to its (l, l') angular-momentum pair
-CHANNEL_L_MAP = {name: lpair for lpair, names in LPAIR_ACTIVE_NAMES.items() for name in names}
+CHANNEL_L_MAP = {
+    name: lpair for lpair, names in LPAIR_ACTIVE_NAMES.items() for name in names
+}
 
 
-def sk_element(orb_a: str, orb_b: str, lx: float, ly: float, lz: float, sh: dict) -> float:
+def sk_element(
+    orb_a: str, orb_b: str, lx: float, ly: float, lz: float, sh: dict
+) -> float:
     """Slater-Koster two-center hopping matrix element H(orb_a, orb_b).
 
     Parameters
@@ -224,79 +229,79 @@ def sk_element(orb_a: str, orb_b: str, lx: float, ly: float, lz: float, sh: dict
     sq3, hsq3 = _SQ3, _HSQ3
     l2, m2, n2 = lx * lx, ly * ly, lz * lz
     lm, ln, mn = lx * ly, lx * lz, ly * lz
-    pd = {'px': lx, 'py': ly, 'pz': lz}
-    do = {'dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2'}
+    pd = {"px": lx, "py": ly, "pz": lz}
+    do = {"dxy", "dyz", "dzx", "dx2-y2", "dz2"}
 
     # s-s
-    if orb_a == 's' and orb_b == 's':
-        return sh['sss']
+    if orb_a == "s" and orb_b == "s":
+        return sh["sss"]
 
     # s-p / p-s
-    if orb_a == 's' and orb_b in pd:
-        return pd[orb_b] * sh['sps']
-    if orb_b == 's' and orb_a in pd:
-        return -pd[orb_a] * sh['sps']
+    if orb_a == "s" and orb_b in pd:
+        return pd[orb_b] * sh["sps"]
+    if orb_b == "s" and orb_a in pd:
+        return -pd[orb_a] * sh["sps"]
 
     # p-p
     if orb_a in pd and orb_b in pd:
         if orb_a == orb_b:
             ll = pd[orb_a]
-            return ll**2 * sh['pps'] + (1 - ll**2) * sh['ppp']
-        return pd[orb_a] * pd[orb_b] * (sh['pps'] - sh['ppp'])
+            return ll**2 * sh["pps"] + (1 - ll**2) * sh["ppp"]
+        return pd[orb_a] * pd[orb_b] * (sh["pps"] - sh["ppp"])
 
     # s-d / d-s
     def _sd(d):
-        if d == 'dxy':
-            return sq3 * lm * sh['sds']
-        if d == 'dyz':
-            return sq3 * mn * sh['sds']
-        if d == 'dzx':
-            return sq3 * ln * sh['sds']
-        if d == 'dx2-y2':
-            return hsq3 * (l2 - m2) * sh['sds']
-        if d == 'dz2':
-            return (n2 - 0.5 * (l2 + m2)) * sh['sds']
+        if d == "dxy":
+            return sq3 * lm * sh["sds"]
+        if d == "dyz":
+            return sq3 * mn * sh["sds"]
+        if d == "dzx":
+            return sq3 * ln * sh["sds"]
+        if d == "dx2-y2":
+            return hsq3 * (l2 - m2) * sh["sds"]
+        if d == "dz2":
+            return (n2 - 0.5 * (l2 + m2)) * sh["sds"]
 
-    if orb_a == 's' and orb_b in do:
+    if orb_a == "s" and orb_b in do:
         return _sd(orb_b)
-    if orb_b == 's' and orb_a in do:
+    if orb_b == "s" and orb_a in do:
         return _sd(orb_a)
 
     # p-d / d-p
     def _pd(p, d):
-        S, P = sh['pds'], sh['pdp']
-        if p == 'px':
-            if d == 'dxy':
+        S, P = sh["pds"], sh["pdp"]
+        if p == "px":
+            if d == "dxy":
                 return sq3 * l2 * ly * S + ly * (1 - 2 * l2) * P
-            if d == 'dyz':
+            if d == "dyz":
                 return sq3 * lm * lz * S - 2 * lm * lz * P
-            if d == 'dzx':
+            if d == "dzx":
                 return sq3 * l2 * lz * S + lz * (1 - 2 * l2) * P
-            if d == 'dx2-y2':
+            if d == "dx2-y2":
                 return hsq3 * lx * (l2 - m2) * S + lx * (1 - l2 + m2) * P
-            if d == 'dz2':
+            if d == "dz2":
                 return lx * (n2 - 0.5 * (l2 + m2)) * S - sq3 * lx * n2 * P
-        if p == 'py':
-            if d == 'dxy':
+        if p == "py":
+            if d == "dxy":
                 return sq3 * m2 * lx * S + lx * (1 - 2 * m2) * P
-            if d == 'dyz':
+            if d == "dyz":
                 return sq3 * m2 * lz * S + lz * (1 - 2 * m2) * P
-            if d == 'dzx':
+            if d == "dzx":
                 return sq3 * lm * lz * S - 2 * lm * lz * P
-            if d == 'dx2-y2':
+            if d == "dx2-y2":
                 return hsq3 * ly * (l2 - m2) * S - ly * (1 + l2 - m2) * P
-            if d == 'dz2':
+            if d == "dz2":
                 return ly * (n2 - 0.5 * (l2 + m2)) * S - sq3 * ly * n2 * P
-        if p == 'pz':
-            if d == 'dxy':
+        if p == "pz":
+            if d == "dxy":
                 return sq3 * lm * lz * S - 2 * lm * lz * P
-            if d == 'dyz':
+            if d == "dyz":
                 return sq3 * n2 * ly * S + ly * (1 - 2 * n2) * P
-            if d == 'dzx':
+            if d == "dzx":
                 return sq3 * n2 * lx * S + lx * (1 - 2 * n2) * P
-            if d == 'dx2-y2':
+            if d == "dx2-y2":
                 return hsq3 * lz * (l2 - m2) * S - lz * (l2 - m2) * P
-            if d == 'dz2':
+            if d == "dz2":
                 return lz * (n2 - 0.5 * (l2 + m2)) * S + sq3 * lz * (l2 + m2) * P
         return 0.0
 
@@ -307,52 +312,60 @@ def sk_element(orb_a: str, orb_b: str, lx: float, ly: float, lz: float, sh: dict
 
     # d-d
     if orb_a in do and orb_b in do:
-        S, P, D = sh['dds'], sh['ddp'], sh['ddd']
+        S, P, D = sh["dds"], sh["ddp"], sh["ddd"]
         l2m2, l2n2, m2n2 = l2 * m2, l2 * n2, m2 * n2
         df = l2 - m2
         da, db = orb_a, orb_b
 
         # diagonal
-        if da == db == 'dxy':
+        if da == db == "dxy":
             return 3 * l2m2 * S + (l2 + m2 - 4 * l2m2) * P + (n2 + l2m2) * D
-        if da == db == 'dyz':
+        if da == db == "dyz":
             return 3 * m2n2 * S + (m2 + n2 - 4 * m2n2) * P + (l2 + m2n2) * D
-        if da == db == 'dzx':
+        if da == db == "dzx":
             return 3 * l2n2 * S + (l2 + n2 - 4 * l2n2) * P + (m2 + l2n2) * D
-        if da == db == 'dx2-y2':
+        if da == db == "dx2-y2":
             return 0.75 * df**2 * S + (l2 + m2 - df**2) * P + (n2 + 0.25 * df**2) * D
-        if da == db == 'dz2':
+        if da == db == "dz2":
             t = n2 - 0.5 * (l2 + m2)
             return t**2 * S + 3 * n2 * (l2 + m2) * P + 0.75 * (l2 + m2) ** 2 * D
 
         # off-diagonal
         p = frozenset([da, db])
-        if p == frozenset(['dxy', 'dyz']):
+        if p == frozenset(["dxy", "dyz"]):
             return 3 * lx * m2 * lz * S + ln * (1 - 4 * m2) * P + ln * (m2 - 1) * D
-        if p == frozenset(['dxy', 'dzx']):
+        if p == frozenset(["dxy", "dzx"]):
             return 3 * l2 * ly * lz * S + mn * (1 - 4 * l2) * P + mn * (l2 - 1) * D
-        if p == frozenset(['dyz', 'dzx']):
+        if p == frozenset(["dyz", "dzx"]):
             return 3 * ly * n2 * lx * S + lm * (1 - 4 * n2) * P + lm * (n2 - 1) * D
-        if p == frozenset(['dxy', 'dx2-y2']):
+        if p == frozenset(["dxy", "dx2-y2"]):
             return 1.5 * lm * df * S + 2 * lm * (m2 - l2) * P + 0.5 * lm * df * D
-        if p == frozenset(['dyz', 'dx2-y2']):
+        if p == frozenset(["dyz", "dx2-y2"]):
             return 1.5 * mn * df * S - mn * (1 + 2 * df) * P + mn * (1 + 0.5 * df) * D
-        if p == frozenset(['dzx', 'dx2-y2']):
+        if p == frozenset(["dzx", "dx2-y2"]):
             return 1.5 * ln * df * S + ln * (1 - 2 * df) * P - ln * (1 - 0.5 * df) * D
         # couplings to dz² (√3 factors)
         t = n2 - 0.5 * (l2 + m2)
-        if p == frozenset(['dxy', 'dz2']):
+        if p == frozenset(["dxy", "dz2"]):
             return sq3 * (lm * t * S - 2 * lm * n2 * P + 0.5 * lm * (1 + n2) * D)
-        if p == frozenset(['dyz', 'dz2']):
-            return sq3 * (mn * t * S + mn * (l2 + m2 - n2) * P - 0.5 * mn * (l2 + m2) * D)
-        if p == frozenset(['dzx', 'dz2']):
-            return sq3 * (ln * t * S + ln * (l2 + m2 - n2) * P - 0.5 * ln * (l2 + m2) * D)
-        if p == frozenset(['dx2-y2', 'dz2']):
-            return sq3 * (0.5 * df * t * S + n2 * (m2 - l2) * P + 0.25 * (1 + n2) * df * D)
+        if p == frozenset(["dyz", "dz2"]):
+            return sq3 * (
+                mn * t * S + mn * (l2 + m2 - n2) * P - 0.5 * mn * (l2 + m2) * D
+            )
+        if p == frozenset(["dzx", "dz2"]):
+            return sq3 * (
+                ln * t * S + ln * (l2 + m2 - n2) * P - 0.5 * ln * (l2 + m2) * D
+            )
+        if p == frozenset(["dx2-y2", "dz2"]):
+            return sq3 * (
+                0.5 * df * t * S + n2 * (m2 - l2) * P + 0.25 * (1 + n2) * df * D
+            )
     return 0.0
 
 
-def sk_design_row(orb_a: str, orb_b: str, lx: float, ly: float, lz: float) -> np.ndarray:
+def sk_design_row(
+    orb_a: str, orb_b: str, lx: float, ly: float, lz: float
+) -> np.ndarray:
     """Coefficient of each SK parameter for matrix element H(orb_a, orb_b).
 
     Returns
@@ -417,32 +430,53 @@ class SKFitter:
     # ── 2a. System setup ──────────────────────────────────────
 
     def _setup_system(self, arryp, attrp):
-        HRs = arryp['HRs']
-        self.a_vecs = arryp['a_vectors']
-        self.b_vecs = arryp['b_vectors']
-        self.alat = attrp['alat']
-        self.nat = attrp['natoms']
+        HRs = arryp["HRs"]
+        self.a_vecs = arryp["a_vectors"]
+        self.b_vecs = arryp["b_vectors"]
+        self.alat = attrp["alat"]
+        self.nat = attrp["natoms"]
         self.nawf = HRs.shape[0]
         self.nk1 = HRs.shape[2]
         self.nk2 = HRs.shape[3]
         self.nk3 = HRs.shape[4]
         self.HRs = HRs
 
-        self.atoms_list = arryp['atoms']
-        self.tau_bohr = arryp['tau']
+        self.atoms_list = arryp["atoms"]
+        self.tau_bohr = arryp["tau"]
         self.tau_alat = self.tau_bohr / self.alat
-        self.shells_dict = arryp['shells']
-        self.config_dict = arryp.get('configuration', None)
+        self.shells_dict = arryp["shells"]
+        self.config_dict = arryp.get("configuration", None)
         self.unique_species = list(dict.fromkeys(self.atoms_list))
 
-        # Canonical group list: union of all species' l-values, sorted.
-        # This ensures the group→l mapping is consistent across species
-        # even when different species list their shells in different order
-        # (e.g. Si: [0,1,2] vs Ge: [2,1,0]).
-        canonical_l = sorted(set(l for sp in self.unique_species for l in self.shells_dict[sp]))
-        self.n_groups = len(canonical_l)
-        self.group_l = list(canonical_l)
-        _l_to_group = {l_val: g for g, l_val in enumerate(self.group_l)}
+        # Canonical shell-group list keyed by (l, radial_rank).
+        #
+        # Each *radial* shell of a given angular momentum becomes its own
+        # group, enabling multi-configuration fits: a Si 'standard' basis
+        # [3S, 3P, 3D, 4S, 4P] yields five groups (3S, 3P, 3D, 4S, 4P) rather
+        # than collapsing 3S/4S (and 3P/4P) onto a single s/p channel.
+        # ``radial_rank`` is the 0-based order of appearance of a shell among
+        # all shells of the same l for a species (first s-shell → (0, 0),
+        # second s-shell → (0, 1), …).  A minimal basis with one shell per l
+        # reduces to the previous angular-momentum-only grouping.
+        #
+        # Group order follows the *configuration* order of the first species
+        # (first-seen insertion order) rather than a sorted (l, rank) order,
+        # so that shell-pair keys emitted in ``build_model_dict`` match the
+        # canonicalisation used by ``models.Slater_Koster`` (which orders
+        # pairs by configuration-list index).
+        self._species_shell_keys = {
+            sp: self._shell_keys(self.shells_dict[sp]) for sp in self.unique_species
+        }
+        canonical_keys = []
+        for sp in self.unique_species:
+            for k in self._species_shell_keys[sp]:
+                if k not in canonical_keys:
+                    canonical_keys.append(k)
+        self.n_groups = len(canonical_keys)
+        self.group_key = list(canonical_keys)  # list of (l, radial_rank)
+        self.group_l = [k[0] for k in canonical_keys]
+        self.is_multiconfig = any(rank > 0 for (_l, rank) in canonical_keys)
+        _key_to_group = {k: g for g, k in enumerate(canonical_keys)}
 
         # Per-atom orbital structure
         self.atom_orbitals = []
@@ -453,9 +487,10 @@ class SKFitter:
         idx = 0
         for iat in range(self.nat):
             sp = self.atoms_list[iat]
+            shell_keys = self._species_shell_keys[sp]
             orb_list, grp_list = [], []
-            for shell_l in self.shells_dict[sp]:
-                cg = _l_to_group[shell_l]
+            for shell_idx, shell_l in enumerate(self.shells_dict[sp]):
+                cg = _key_to_group[shell_keys[shell_idx]]
                 for orb_name in SHELL_TO_ORBITALS[shell_l]:
                     orb_list.append(orb_name)
                     grp_list.append(cg)
@@ -464,14 +499,12 @@ class SKFitter:
             self.atom_block_start.append(idx)
             self.norb_per_atom.append(len(orb_list))
             idx += len(orb_list)
-        assert idx == self.nawf, f'Total orbitals ({idx}) != nawf ({self.nawf})'
+        assert idx == self.nawf, f"Total orbitals ({idx}) != nawf ({self.nawf})"
 
-        sp0 = self.unique_species[0]
-        self.cfg_names = (
-            list(self.config_dict[sp0])
-            if self.config_dict
-            else [f'g{i}(l={self.group_l[i]})' for i in range(self.n_groups)]
-        )
+        # Representative label per group (used for parameter names and the
+        # exported model dict).  Prefer the species configuration label
+        # (e.g. '3S', '4S'); fall back to a synthetic 'l{l}#{rank}' tag.
+        self.cfg_names = [self._group_label(g) for g in range(self.n_groups)]
 
         # R-vectors and H(R) blocks
         R_list, HR_list = [], []
@@ -481,15 +514,55 @@ class SKFitter:
                     r1 = i1 if 2 * i1 <= self.nk1 else i1 - self.nk1
                     r2 = i2 if 2 * i2 <= self.nk2 else i2 - self.nk2
                     r3 = i3 if 2 * i3 <= self.nk3 else i3 - self.nk3
-                    R_cart = r1 * self.a_vecs[0] + r2 * self.a_vecs[1] + r3 * self.a_vecs[2]
+                    R_cart = (
+                        r1 * self.a_vecs[0] + r2 * self.a_vecs[1] + r3 * self.a_vecs[2]
+                    )
                     R_list.append(R_cart)
                     HR_list.append(HRs[:, :, i1, i2, i3, 0])
         self.R_arr = np.array(R_list)
         self.HR_arr = np.array(HR_list)
 
         if self.verbose:
-            print(f'SKFitter: {self.nat} atoms, nawf={self.nawf}, alat={self.alat:.4f} Bohr')
-            print(f'  Shell groups: {self.cfg_names} (l = {self.group_l})')
+            print(
+                f"SKFitter: {self.nat} atoms, nawf={self.nawf}, alat={self.alat:.4f} Bohr"
+            )
+            print(f"  Shell groups: {self.cfg_names} (l = {self.group_l})")
+
+    @staticmethod
+    def _shell_keys(shell_l_list):
+        """Assign each shell a ``(l, radial_rank)`` key.
+
+        ``radial_rank`` counts shells of the same angular momentum in their
+        order of appearance, so multiple radial shells with the same l
+        (e.g. 3S and 4S) receive distinct keys ``(0, 0)`` and ``(0, 1)``.
+        This is what lets the fitter treat each configuration shell as an
+        independent SK channel.
+        """
+        rank_counter = {}
+        keys = []
+        for l_val in shell_l_list:
+            r = rank_counter.get(l_val, 0)
+            keys.append((l_val, r))
+            rank_counter[l_val] = r + 1
+        return keys
+
+    def _group_label(self, g):
+        """Return a representative label for shell-group ``g``.
+
+        Uses the species configuration label (e.g. ``'3S'``, ``'4S'``) from
+        the first species carrying that ``(l, radial_rank)`` key when a
+        ``configuration`` dict is available; otherwise a synthetic
+        ``'l{l}#{rank}'`` tag.
+        """
+        key = self.group_key[g]
+        for sp in self.unique_species:
+            keys = self._species_shell_keys[sp]
+            if key in keys:
+                if self.config_dict is not None:
+                    return list(self.config_dict[sp])[keys.index(key)]
+                break
+        l_val, rank = key
+        return f"l{l_val}#{rank}"
 
     # ── 2b. Bond enumeration ──────────────────────────────────
 
@@ -510,7 +583,9 @@ class SKFitter:
                     r1 = i1 if 2 * i1 <= self.nk1 else i1 - self.nk1
                     r2 = i2 if 2 * i2 <= self.nk2 else i2 - self.nk2
                     r3 = i3 if 2 * i3 <= self.nk3 else i3 - self.nk3
-                    R_cart = r1 * self.a_vecs[0] + r2 * self.a_vecs[1] + r3 * self.a_vecs[2]
+                    R_cart = (
+                        r1 * self.a_vecs[0] + r2 * self.a_vecs[1] + r3 * self.a_vecs[2]
+                    )
                     for iat in range(self.nat):
                         for jat in range(self.nat):
                             d_vec = R_cart + self.tau_alat[jat] - self.tau_alat[iat]
@@ -542,14 +617,17 @@ class SKFitter:
 
         if self.verbose:
             n_show = min(5, len(self.shell_dists))
-            print(f'  Neighbor shells (first {n_show} of {len(self.shell_dists)}):')
+            print(f"  Neighbor shells (first {n_show} of {len(self.shell_dists)}):")
             for s, d in enumerate(self.shell_dists[:n_show]):
                 bonds = shell_bonds[d]
                 pairs = set((b[1], b[2]) for b in bonds)
-                pair_str = ', '.join(
-                    f'{self.atoms_list[i]}({i})→{self.atoms_list[j]}({j})' for i, j in sorted(pairs)
+                pair_str = ", ".join(
+                    f"{self.atoms_list[i]}({i})→{self.atoms_list[j]}({j})"
+                    for i, j in sorted(pairs)
                 )
-                print(f'    Shell {s + 1}: d={d:.5f}, {len(bonds):>3d} bonds  ({pair_str})')
+                print(
+                    f"    Shell {s + 1}: d={d:.5f}, {len(bonds):>3d} bonds  ({pair_str})"
+                )
 
     def _select_shells(self, n_shells: int):
         """Pick the neighbor shells to include in the fit."""
@@ -557,11 +635,11 @@ class SKFitter:
         self.shell_bonds_list = [
             self._shell_bonds[self.shell_dists[i]] for i in range(self.n_shells)
         ]
-        shell_tags = ['nn', 'nnn', 'nnnn', 'nnnnn']
+        shell_tags = ["nn", "nnn", "nnnn", "nnnnn"]
         self.shell_tags = shell_tags[: self.n_shells]
         if self.verbose:
             for i, tag in enumerate(self.shell_tags):
-                print(f'  Included: {tag} ({len(self.shell_bonds_list[i])} bonds)')
+                print(f"  Included: {tag} ({len(self.shell_bonds_list[i])} bonds)")
 
     # ── 2c. Parameter registry ────────────────────────────────
 
@@ -584,9 +662,9 @@ class SKFitter:
                 self.hop_pair_start[(ga, gb)] = self.n_hop
                 self.hop_pair_active[(ga, gb)] = active
 
-                pair_tag = f'{self.cfg_names[ga]}-{self.cfg_names[gb]}'
+                pair_tag = f"{self.cfg_names[ga]}-{self.cfg_names[gb]}"
                 for lab in labels:
-                    self.hop_param_labels.append(f'V({pair_tag}){lab}')
+                    self.hop_param_labels.append(f"V({pair_tag}){lab}")
                 self.n_hop += len(active)
 
         # On-site parameters
@@ -600,7 +678,7 @@ class SKFitter:
             cfg = (
                 list(self.config_dict[sp])
                 if self.config_dict
-                else [f'g{i}' for i in range(len(self.shells_dict[sp]))]
+                else [f"g{i}" for i in range(len(self.shells_dict[sp]))]
             )
             groups = self._get_onsite_groups(self.shells_dict[sp], cfg)
             self.species_onsite_groups[sp] = groups
@@ -611,13 +689,13 @@ class SKFitter:
         self.n_params = self.n_onsite + self.n_shells * self.n_hop
         self.param_labels = list(self.onsite_param_names)
         for i, tag in enumerate(self.shell_tags):
-            self.param_labels += [f'{tag.upper()}_{l}' for l in self.hop_param_labels]
+            self.param_labels += [f"{tag.upper()}_{l}" for l in self.hop_param_labels]
 
         if self.verbose:
             print(
-                f'  Parameters: {self.n_params} total '
-                f'({self.n_onsite} on-site + '
-                f'{self.n_shells}×{self.n_hop} hopping)'
+                f"  Parameters: {self.n_params} total "
+                f"({self.n_onsite} on-site + "
+                f"{self.n_shells}×{self.n_hop} hopping)"
             )
 
     @staticmethod
@@ -628,10 +706,10 @@ class SKFitter:
         for ig, (l_val, cfg) in enumerate(zip(shell_l_list, cfg_labels)):
             norb_l = 2 * l_val + 1
             if l_val <= 1:
-                groups.append((f'ε({cfg})', list(range(idx, idx + norb_l))))
+                groups.append((f"ε({cfg})", list(range(idx, idx + norb_l))))
             elif l_val == 2:
-                groups.append((f'ε({cfg}_t2g)', [idx, idx + 1, idx + 2]))
-                groups.append((f'ε({cfg}_eg)', [idx + 3, idx + 4]))
+                groups.append((f"ε({cfg}_t2g)", [idx, idx + 1, idx + 2]))
+                groups.append((f"ε({cfg}_eg)", [idx + 3, idx + 4]))
             idx += norb_l
         return groups
 
@@ -663,14 +741,14 @@ class SKFitter:
         phases_all = np.exp(2j * np.pi * (self.kpts @ self.R_arr.T))
         self.E_pao = np.zeros((self.Nk, self.nawf))
         for ik in range(self.Nk):
-            Hk = np.einsum('r,rij->ij', phases_all[ik], self.HR_arr)
+            Hk = np.einsum("r,rij->ij", phases_all[ik], self.HR_arr)
             self.E_pao[ik] = np.sort(np.linalg.eigvalsh(Hk).real)
 
         if self.verbose:
-            grid_str = f'{nk1}×{nk2}×{nk3}' if (nk1 != nk2 or nk2 != nk3) else str(nk1)
+            grid_str = f"{nk1}×{nk2}×{nk3}" if (nk1 != nk2 or nk2 != nk3) else str(nk1)
             print(
-                f'  Reference: {self.Nk} k-points (grid {grid_str}), {self.nawf} bands, '
-                f'E ∈ [{self.E_pao.min():.3f}, {self.E_pao.max():.3f}] eV'
+                f"  Reference: {self.Nk} k-points (grid {grid_str}), {self.nawf} bands, "
+                f"E ∈ [{self.E_pao.min():.3f}, {self.E_pao.max():.3f}] eV"
             )
 
     # ── 2e. Design tensors ────────────────────────────────────
@@ -730,10 +808,12 @@ class SKFitter:
             self._M_shells.append(M)
             self._R_shells.append(R)
             self._bond_groups_shells.append(
-                self._build_bond_groups(bonds, M, self.atom_block_start, self.atom_orbitals)
+                self._build_bond_groups(
+                    bonds, M, self.atom_block_start, self.atom_orbitals
+                )
             )
             if self.verbose:
-                print(f'  Design tensor ({self.shell_tags[i]}): {M.shape}')
+                print(f"  Design tensor ({self.shell_tags[i]}): {M.shape}")
 
     # ── 2f. On-site map ──────────────────────────────────────
 
@@ -746,7 +826,9 @@ class SKFitter:
             for ig, (_, local_indices) in enumerate(self.species_onsite_groups[sp]):
                 for li in local_indices:
                     self._onsite_map[pstart + ig, bi + li, bi + li] = 1.0
-        self._onsite_diag = np.array([np.diag(self._onsite_map[p]) for p in range(self.n_onsite)])
+        self._onsite_diag = np.array(
+            [np.diag(self._onsite_map[p]) for p in range(self.n_onsite)]
+        )
 
     # ── 2g. Precompute dH/dk arrays ──────────────────────────
 
@@ -763,13 +845,13 @@ class SKFitter:
             dHk = np.zeros((Nk, n_hop, nawf, nawf), dtype=complex)
             for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
                 dHk[:, :, bi : bi + no_i, bj : bj + no_j] += np.einsum(
-                    'kb,bpij->kpij', phases[:, idx], M_sub
+                    "kb,bpij->kpij", phases[:, idx], M_sub
                 )
             self._dHk_shells.append(dHk)
 
         mem_MB = sum(d.nbytes for d in self._dHk_shells) / 1e6
         if self.verbose:
-            print(f'  Precomputed dHk arrays: {mem_MB:.1f} MB')
+            print(f"  Precomputed dHk arrays: {mem_MB:.1f} MB")
 
     # ── 2g′. Regularization weights ──────────────────────────
 
@@ -799,7 +881,7 @@ class SKFitter:
         n_onsite, n_hop = self.n_onsite, self.n_hop
 
         # On-site contribution
-        H_onsite = np.einsum('p,pij->ij', p[:n_onsite], self._onsite_map)
+        H_onsite = np.einsum("p,pij->ij", p[:n_onsite], self._onsite_map)
 
         # Build H(k) via block-sparse groups
         Hk_all = np.broadcast_to(H_onsite, (Nk, nawf, nawf)).astype(complex).copy()
@@ -808,9 +890,9 @@ class SKFitter:
             i0 = n_onsite + s * n_hop
             V_s = p[i0 : i0 + n_hop]
             for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
-                wM = np.einsum('p,bpij->bij', V_s, M_sub)
+                wM = np.einsum("p,bpij->bij", V_s, M_sub)
                 Hk_all[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
-                    'kb,bij->kij', self._phases_shells[s][:, idx], wM
+                    "kb,bij->kij", self._phases_shells[s][:, idx], wM
                 )
 
         # Batch eigendecomposition
@@ -820,14 +902,16 @@ class SKFitter:
         # Hellmann-Feynman Jacobian
         dE_dp = np.zeros((Nk, nawf, self.n_params))
         psi_sq = np.abs(evecs_all) ** 2
-        dE_dp[:, :, :n_onsite] = np.einsum('kin,pi->knp', psi_sq, self._onsite_diag)
+        dE_dp[:, :, :n_onsite] = np.einsum("kin,pi->knp", psi_sq, self._onsite_diag)
 
         evecs_bcast = evecs_all[:, np.newaxis, :, :]
         for s in range(self.n_shells):
             i0 = n_onsite + s * n_hop
             i1 = i0 + n_hop
             tmp = np.matmul(self._dHk_shells[s], evecs_bcast)
-            dE_dp[:, :, i0:i1] = np.real(np.einsum('kin,kpin->knp', evecs_all.conj(), tmp))
+            dE_dp[:, :, i0:i1] = np.real(
+                np.einsum("kin,kpin->knp", evecs_all.conj(), tmp)
+            )
 
         return E_sk, dE_dp
 
@@ -850,7 +934,7 @@ class SKFitter:
             cfg = (
                 list(self.config_dict[sp])
                 if self.config_dict
-                else [f'g{i}' for i in range(len(self.shells_dict[sp]))]
+                else [f"g{i}" for i in range(len(self.shells_dict[sp]))]
             )
             sp_onsites = defaultdict(list)
             for iat in range(self.nat):
@@ -881,14 +965,14 @@ class SKFitter:
             norb_l = 2 * l_val + 1
             sub = diag_block[idx : idx + norb_l]
             if l_val == 0:
-                onsites[f'ε({cfg})'] = sub[0]
+                onsites[f"ε({cfg})"] = sub[0]
             elif l_val == 1:
-                onsites[f'ε({cfg})'] = np.mean(sub)
+                onsites[f"ε({cfg})"] = np.mean(sub)
             elif l_val == 2:
                 t2g_local = [1, 2, 4]  # dzx, dyz, dxy in QE ordering
                 eg_local = [0, 3]  # dz2, dx2-y2
-                onsites[f'ε({cfg}_t2g)'] = np.mean(sub[t2g_local])
-                onsites[f'ε({cfg}_eg)'] = np.mean(sub[eg_local])
+                onsites[f"ε({cfg}_t2g)"] = np.mean(sub[t2g_local])
+                onsites[f"ε({cfg}_eg)"] = np.mean(sub[eg_local])
             idx += norb_l
         return onsites
 
@@ -920,7 +1004,7 @@ class SKFitter:
             fun,
             p_init,
             jac=jac,
-            method='lm',
+            method="lm",
             ftol=ftol,
             xtol=xtol,
             gtol=gtol,
@@ -1006,9 +1090,9 @@ class SKFitter:
         )
 
         if self.verbose:
-            print(f'\n{"=" * 65}')
-            par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
-            print(f'Multi-start optimisation: {n_trials} trials{par_tag}')
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
+            print(f"Multi-start optimisation: {n_trials} trials{par_tag}")
 
         if use_parallel:
             from joblib import Parallel, delayed
@@ -1020,16 +1104,16 @@ class SKFitter:
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
-                print('-' * 50)
+                print("-" * 50)
             all_results = []
             best_so_far = np.inf
             for trial, p_init in enumerate(p_inits):
                 rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
                 all_results.append((rmse, p_opt, res))
-                tag = ' *' if rmse < best_so_far else ''
+                tag = " *" if rmse < best_so_far else ""
                 if rmse < best_so_far:
                     best_so_far = rmse
                 if self.verbose:
@@ -1037,8 +1121,8 @@ class SKFitter:
                         np.mean((self.eigenvalues(p_init) - self.E_pao).ravel() ** 2)
                     )
                     print(
-                        f'{trial + 1:5d}  {rmse_init * 1000:15.2f}  '
-                        f'{rmse * 1000:16.2f}  {res.nfev:5d}{tag}'
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
                     )
 
         # ── Collect results ──
@@ -1048,26 +1132,26 @@ class SKFitter:
 
         if self.verbose:
             if use_parallel:
-                print(f'  Completed {n_trials} trials in parallel')
-            print(f'{"=" * 65}')
+                print(f"  Completed {n_trials} trials in parallel")
+            print(f"{'=' * 65}")
             msg = (
-                f'Best RMSE = {best_rmse * 1000:.2f} meV, '
-                f'max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV'
+                f"Best RMSE = {best_rmse * 1000:.2f} meV, "
+                f"max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV"
             )
             if alpha > 0:
-                msg += f'  (α = {alpha:.4g})'
+                msg += f"  (α = {alpha:.4g})"
             print(msg)
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
-            print('-' * 43)
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
             for i, name in enumerate(self.param_labels):
-                print(f'{name:<30s}  {best_p[i]: .5f}')
+                print(f"{name:<30s}  {best_p[i]: .5f}")
 
         return {
-            'p_opt': best_p,
-            'rmse': best_rmse,
-            'max_err': np.max(np.abs(best_data_res)),
-            'all_results': all_results,
-            'param_labels': list(self.param_labels),
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "max_err": np.max(np.abs(best_data_res)),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
         }
 
     # ── 2k. Build PAOFLOW model dict ─────────────────────────
@@ -1097,14 +1181,31 @@ class SKFitter:
             Model dict with species-pair-keyed hoppings.
         """
 
-        # ── Flat SK-param dict for one shell ──
+        # ── SK-param dict for one shell ──
         def _build_hop(p_hop):
+            # Single configuration (one shell per l): flat SK dict, keyed by
+            # SK integral name ('sss', 'sps', ...) — the legacy format.
+            if not self.is_multiconfig:
+                d = {}
+                for ga, gb in self.hop_pair_list:
+                    start = self.hop_pair_start[(ga, gb)]
+                    active = self.hop_pair_active[(ga, gb)]
+                    for lk, sk_k in enumerate(active):
+                        d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+                return d
+            # Multi-configuration: one SK sub-dict per shell-pair, keyed by
+            # configuration labels ordered by group index (e.g. '3S-4S',
+            # '3S-3P').  This matches the canonicalisation used by
+            # models.Slater_Koster, which orders pairs by config-list index.
             d = {}
             for ga, gb in self.hop_pair_list:
                 start = self.hop_pair_start[(ga, gb)]
                 active = self.hop_pair_active[(ga, gb)]
+                pair_key = f"{self.cfg_names[ga]}-{self.cfg_names[gb]}"
+                sub = {}
                 for lk, sk_k in enumerate(active):
-                    d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+                    sub[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+                d[pair_key] = sub
             return d
 
         # ── Species-pair-keyed hoppings ──
@@ -1119,8 +1220,8 @@ class SKFitter:
         # Build atom list in Bohr for per-pair distance computation
         atoms_bohr = [
             {
-                'species': self.atoms_list[iat],
-                'tau': (self.tau_alat[iat] * self.alat).tolist(),
+                "species": self.atoms_list[iat],
+                "tau": (self.tau_alat[iat] * self.alat).tolist(),
             }
             for iat in range(self.nat)
         ]
@@ -1145,7 +1246,7 @@ class SKFitter:
                         if s < len(pair_dists)
                         else round(float(self.shell_dists[s] * self.alat), 6)
                     )
-                    shells.append({'r_ref': r_ref, 'params': dict(shell_params[s])})
+                    shells.append({"r_ref": r_ref, "params": dict(shell_params[s])})
                 hoppings[key] = shells
 
         # ── Atom dicts ──
@@ -1154,10 +1255,10 @@ class SKFitter:
             sp = self.atoms_list[iat]
             pstart = self.species_param_start[sp]
             groups = self.species_onsite_groups[sp]
-            atom_d = {'name': sp, 'tau': self.tau_alat[iat].tolist()}
+            atom_d = {"name": sp, "tau": self.tau_alat[iat].tolist()}
 
             if self.config_dict:
-                atom_d['configuration'] = list(self.config_dict[sp])
+                atom_d["configuration"] = list(self.config_dict[sp])
                 for ig, (pname, _) in enumerate(groups):
                     key = pname[2:-1]  # 'ε(3S)' → '3S'
                     atom_d[key] = float(p[pstart + ig])
@@ -1165,7 +1266,7 @@ class SKFitter:
                 orb_list = []
                 for shell_l in self.shells_dict[sp]:
                     orb_list.extend(SHELL_TO_ORBITALS[shell_l])
-                atom_d['orbitals'] = list(self.atom_orbitals[iat])
+                atom_d["orbitals"] = list(self.atom_orbitals[iat])
                 for ig, (_, local_indices) in enumerate(groups):
                     val = float(p[pstart + ig])
                     for li in local_indices:
@@ -1174,12 +1275,12 @@ class SKFitter:
             model_atoms[str(iat)] = atom_d
 
         return {
-            'label': 'Slater_Koster',
-            'alat': float(self.alat),
-            'model': {
-                'a_vectors': self.a_vecs.tolist(),
-                'atoms': model_atoms,
-                'hoppings': hoppings,
+            "label": "Slater_Koster",
+            "alat": float(self.alat),
+            "model": {
+                "a_vectors": self.a_vecs.tolist(),
+                "atoms": model_atoms,
+                "hoppings": hoppings,
             },
         }
 
@@ -1275,12 +1376,12 @@ class SKFitterEDTB(SKFitter):
     """
 
     _LPAIR_LABELS = {
-        (0, 0): 'ss',
-        (0, 1): 'sp',
-        (0, 2): 'sd',
-        (1, 1): 'pp',
-        (1, 2): 'pd',
-        (2, 2): 'dd',
+        (0, 0): "ss",
+        (0, 1): "sp",
+        (0, 2): "sd",
+        (1, 1): "pp",
+        (1, 2): "pd",
+        (2, 2): "dd",
     }
 
     def __init__(
@@ -1291,7 +1392,7 @@ class SKFitterEDTB(SKFitter):
         n_shells: int = 2,
         nkfit: int = 6,
         r_cut: float,
-        gamma_mode: str = 'global',
+        gamma_mode: str = "global",
         fit_onsite_shift: bool = False,
         verbose: bool = True,
     ):
@@ -1361,11 +1462,11 @@ class SKFitterEDTB(SKFitter):
             for s in range(self.n_shells):
                 sv = self.S_bonds[s]
                 print(
-                    f'  Screening ({self.shell_tags[s]}): '
-                    f'S̄={sv.mean():.3f}, '
-                    f'range=[{sv.min():.3f}, {sv.max():.3f}]'
+                    f"  Screening ({self.shell_tags[s]}): "
+                    f"S̄={sv.mean():.3f}, "
+                    f"range=[{sv.min():.3f}, {sv.max():.3f}]"
                 )
-            print('  Coordination: ' + ', '.join(f'{c:.2f}' for c in self.coord_i))
+            print("  Coordination: " + ", ".join(f"{c:.2f}" for c in self.coord_i))
 
     # ── 3b. EDTB parameter registry ──────────────────────────
 
@@ -1386,49 +1487,51 @@ class SKFitterEDTB(SKFitter):
         # hop param index → γ index (same mapping for every shell)
         self._hop_to_gamma = np.zeros(self.n_hop, dtype=int)
 
-        if gm == 'global':
+        if gm == "global":
             self.n_gamma = 1
-            self.gamma_labels = ['γ']
-        elif gm == 'per_lpair':
+            self.gamma_labels = ["γ"]
+        elif gm == "per_lpair":
             lp2i = {lp: i for i, lp in enumerate(self.active_lpairs)}
             self.n_gamma = len(self.active_lpairs)
-            self.gamma_labels = [f'γ_{self._LPAIR_LABELS[lp]}' for lp in self.active_lpairs]
+            self.gamma_labels = [
+                f"γ_{self._LPAIR_LABELS[lp]}" for lp in self.active_lpairs
+            ]
             for ga, gb in self.hop_pair_list:
                 la, lb = self.group_l[ga], self.group_l[gb]
                 gidx = lp2i[(min(la, lb), max(la, lb))]
                 st = self.hop_pair_start[(ga, gb)]
                 for lk in range(len(self.hop_pair_active[(ga, gb)])):
                     self._hop_to_gamma[st + lk] = gidx
-        elif gm == 'per_channel':
+        elif gm == "per_channel":
             ch2i = {ch: i for i, ch in enumerate(self.active_channels)}
             self.n_gamma = len(self.active_channels)
-            self.gamma_labels = [f'γ_{ch}' for ch in self.active_channels]
+            self.gamma_labels = [f"γ_{ch}" for ch in self.active_channels]
             for ga, gb in self.hop_pair_list:
                 st = self.hop_pair_start[(ga, gb)]
                 for lk, sk_idx in enumerate(self.hop_pair_active[(ga, gb)]):
                     self._hop_to_gamma[st + lk] = ch2i[SK_PARAM_NAMES[sk_idx]]
         else:
-            raise ValueError(f'Unknown gamma_mode: {gm!r}')
+            raise ValueError(f"Unknown gamma_mode: {gm!r}")
 
         # On-site shift η
         if self.fit_onsite_shift:
             present = set()
             for sp in self.unique_species:
                 for l_val in self.shells_dict[sp]:
-                    present.add({0: 's', 1: 'p', 2: 'd'}[l_val])
-            self.eta_orb_types = sorted(present, key='spd'.index)
+                    present.add({0: "s", 1: "p", 2: "d"}[l_val])
+            self.eta_orb_types = sorted(present, key="spd".index)
             self.n_eta = len(self.eta_orb_types)
-            self.eta_labels = [f'η_{t}' for t in self.eta_orb_types]
+            self.eta_labels = [f"η_{t}" for t in self.eta_orb_types]
             _otype = {
-                's': 's',
-                'px': 'p',
-                'py': 'p',
-                'pz': 'p',
-                'dxy': 'd',
-                'dyz': 'd',
-                'dzx': 'd',
-                'dx2-y2': 'd',
-                'dz2': 'd',
+                "s": "s",
+                "px": "p",
+                "py": "p",
+                "pz": "p",
+                "dxy": "d",
+                "dyz": "d",
+                "dzx": "d",
+                "dx2-y2": "d",
+                "dz2": "d",
             }
             self._eta_diag = np.zeros((self.n_eta, self.nawf))
             for iat in range(self.nat):
@@ -1452,14 +1555,16 @@ class SKFitterEDTB(SKFitter):
         self.param_labels.extend(self.eta_labels)
 
         if self.verbose:
-            print(f'  EDTB screening: {self.n_gamma} γ ({self.gamma_mode}), {self.n_eta} η')
-            print(f'  Total parameters: {self.n_params}')
+            print(
+                f"  EDTB screening: {self.n_gamma} γ ({self.gamma_mode}), {self.n_eta} η"
+            )
+            print(f"  Total parameters: {self.n_params}")
 
     # ── 3c. Regularization weights ────────────────────────────
 
     def _build_regularization_weights(self):
         """Extend Tikhonov weights to cover γ and η parameters."""
-        if not hasattr(self, 'n_gamma_start'):
+        if not hasattr(self, "n_gamma_start"):
             # Called from super().__init__() before EDTB setup
             super()._build_regularization_weights()
             return
@@ -1484,7 +1589,7 @@ class SKFitterEDTB(SKFitter):
         Uses block-sparse operations via bond_groups for sub-block efficiency.
         """
         # Guard: during super().__init__(), EDTB attrs are not set yet
-        if not hasattr(self, 'n_gamma_start'):
+        if not hasattr(self, "n_gamma_start"):
             return super()._eigenvalues_and_jacobian(p)
 
         Nk, nawf = self.Nk, self.nawf
@@ -1492,10 +1597,10 @@ class SKFitterEDTB(SKFitter):
         gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
 
         # ── on-site Hamiltonian ──
-        H0 = np.einsum('p,pij->ij', p[:n_onsite], self._onsite_map)
+        H0 = np.einsum("p,pij->ij", p[:n_onsite], self._onsite_map)
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
-            shift = np.einsum('q,qi->i', eta, self._eta_diag)
+            shift = np.einsum("q,qi->i", eta, self._eta_diag)
             H0[np.arange(nawf), np.arange(nawf)] += shift
 
         Hk = np.broadcast_to(H0, (Nk, nawf, nawf)).astype(complex).copy()
@@ -1514,14 +1619,14 @@ class SKFitterEDTB(SKFitter):
             for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
                 M_sc = sc_s[idx][:, :, None, None] * M_sub
                 dHk_s[:, :, bi : bi + no_i, bj : bj + no_j] += np.einsum(
-                    'kb,bpij->kpij', self._phases_shells[s][:, idx], M_sc
+                    "kb,bpij->kpij", self._phases_shells[s][:, idx], M_sc
                 )
             screened_dHk.append(dHk_s)
 
         # ── hopping contribution to H(k) ──
         for s in range(self.n_shells):
             i0 = n_onsite + s * n_hop
-            Hk += np.einsum('p,kpij->kij', p[i0 : i0 + n_hop], screened_dHk[s])
+            Hk += np.einsum("p,kpij->kij", p[i0 : i0 + n_hop], screened_dHk[s])
 
         # ── eigendecomposition ──
         evals, evecs = np.linalg.eigh(Hk)
@@ -1532,14 +1637,16 @@ class SKFitterEDTB(SKFitter):
         psi2 = np.abs(evecs) ** 2
 
         # ∂E/∂ε  (on-site)
-        dE_dp[:, :, :n_onsite] = np.einsum('kin,pi->knp', psi2, self._onsite_diag)
+        dE_dp[:, :, :n_onsite] = np.einsum("kin,pi->knp", psi2, self._onsite_diag)
 
         # ∂E/∂V  (hopping — through screened dHk)
         evecs_bc = evecs[:, np.newaxis, :, :]
         for s in range(self.n_shells):
             i0 = n_onsite + s * n_hop
             tmp = np.matmul(screened_dHk[s], evecs_bc)
-            dE_dp[:, :, i0 : i0 + n_hop] = np.real(np.einsum('kin,kpin->knp', evecs.conj(), tmp))
+            dE_dp[:, :, i0 : i0 + n_hop] = np.real(
+                np.einsum("kin,kpin->knp", evecs.conj(), tmp)
+            )
 
         # ∂E/∂γ_q  (block-sparse)
         for q in range(self.n_gamma):
@@ -1554,19 +1661,21 @@ class SKFitterEDTB(SKFitter):
                 for idx, bi, bj, no_i, no_j, M_sub in self._bond_groups_shells[s]:
                     VS = V[mask] * sc_s[idx][:, mask]
                     VS *= self.S_bonds[s][idx, None]
-                    wM = np.einsum('bp,bpij->bij', VS, M_sub[:, mask, :, :])
+                    wM = np.einsum("bp,bpij->bij", VS, M_sub[:, mask, :, :])
                     dH_dg[:, bi : bi + no_i, bj : bj + no_j] -= np.einsum(
-                        'kb,bij->kij', self._phases_shells[s][:, idx], wM
+                        "kb,bij->kij", self._phases_shells[s][:, idx], wM
                     )
             HFq = np.matmul(dH_dg, evecs)
             dE_dp[:, :, self.n_gamma_start + q] = np.real(
-                np.einsum('kin,kin->kn', evecs.conj(), HFq)
+                np.einsum("kin,kin->kn", evecs.conj(), HFq)
             )
 
         # ∂E/∂η_q  (on-site shift)
         if self.n_eta > 0:
             for q in range(self.n_eta):
-                dE_dp[:, :, self.n_eta_start + q] = np.einsum('kin,i->kn', psi2, self._eta_diag[q])
+                dE_dp[:, :, self.n_eta_start + q] = np.einsum(
+                    "kin,i->kn", psi2, self._eta_diag[q]
+                )
 
         return E_sk, dE_dp
 
@@ -1618,7 +1727,7 @@ class SKFitterEDTB(SKFitter):
         if p0_sk is not None:
             p0_sk = np.asarray(p0_sk, dtype=float)
             if p0_sk.shape[0] != self.n_sk:
-                raise ValueError(f'p0_sk length {p0_sk.shape[0]} != n_sk {self.n_sk}')
+                raise ValueError(f"p0_sk length {p0_sk.shape[0]} != n_sk {self.n_sk}")
         p0_onsite = self.extract_onsite_from_HR0()
         E_half = 0.5 * (self.E_pao.max() - self.E_pao.min())
         hop_scales = [E_half / np.sqrt(len(b)) for b in self.shell_bonds_list]
@@ -1642,8 +1751,8 @@ class SKFitterEDTB(SKFitter):
                     i0 = self.n_onsite + s * self.n_hop
                     p_init[i0 : i0 + self.n_hop] = rng.uniform(-sc, sc, self.n_hop)
             # γ: small positive random initialisation
-            p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = rng.uniform(
-                0.0, 0.01, self.n_gamma
+            p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
+                rng.uniform(0.0, 0.01, self.n_gamma)
             )
             p_inits.append(p_init)
 
@@ -1659,11 +1768,11 @@ class SKFitterEDTB(SKFitter):
         )
 
         if self.verbose:
-            print(f'\n{"=" * 65}')
-            par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
             print(
-                f'EDTB multi-start optimisation: {n_trials} trials, '
-                f'γ_mode={self.gamma_mode}{par_tag}'
+                f"EDTB multi-start optimisation: {n_trials} trials, "
+                f"γ_mode={self.gamma_mode}{par_tag}"
             )
 
         if use_parallel:
@@ -1676,25 +1785,28 @@ class SKFitterEDTB(SKFitter):
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
-                print('-' * 50)
+                print("-" * 50)
             all_results = []
             best_so_far = np.inf
             for trial, p_init in enumerate(p_inits):
                 rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
                 all_results.append((rmse, p_opt, res))
-                tag = ' *' if rmse < best_so_far else ''
+                tag = " *" if rmse < best_so_far else ""
                 if rmse < best_so_far:
                     best_so_far = rmse
                 if self.verbose:
                     rmse_init = np.sqrt(
-                        np.mean((self.eigenvalues(p_init[: self.n_sk]) - self.E_pao).ravel() ** 2)
+                        np.mean(
+                            (self.eigenvalues(p_init[: self.n_sk]) - self.E_pao).ravel()
+                            ** 2
+                        )
                     )
                     print(
-                        f'{trial + 1:5d}  {rmse_init * 1000:15.2f}  '
-                        f'{rmse * 1000:16.2f}  {res.nfev:5d}{tag}'
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
                     )
 
         # ── Collect results ──
@@ -1704,26 +1816,26 @@ class SKFitterEDTB(SKFitter):
 
         if self.verbose:
             if use_parallel:
-                print(f'  Completed {n_trials} trials in parallel')
-            print(f'{"=" * 65}')
+                print(f"  Completed {n_trials} trials in parallel")
+            print(f"{'=' * 65}")
             msg = (
-                f'Best RMSE = {best_rmse * 1000:.2f} meV, '
-                f'max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV'
+                f"Best RMSE = {best_rmse * 1000:.2f} meV, "
+                f"max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV"
             )
             if alpha > 0:
-                msg += f'  (α = {alpha:.4g})'
+                msg += f"  (α = {alpha:.4g})"
             print(msg)
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
-            print('-' * 43)
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
             for i, name in enumerate(self.param_labels):
-                print(f'{name:<30s}  {best_p[i]: .5f}')
+                print(f"{name:<30s}  {best_p[i]: .5f}")
 
         return {
-            'p_opt': best_p,
-            'rmse': best_rmse,
-            'max_err': np.max(np.abs(best_data_res)),
-            'all_results': all_results,
-            'param_labels': list(self.param_labels),
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "max_err": np.max(np.abs(best_data_res)),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
         }
 
     # ── 3f. Build PAOFLOW model dict ─────────────────────────
@@ -1747,20 +1859,23 @@ class SKFitterEDTB(SKFitter):
         """
         # Base SK dict (already species-pair-keyed hoppings)
         base = super().build_model_dict(p[: self.n_sk])
-        base['label'] = 'SK_EDTB'
+        base["label"] = "SK_EDTB"
 
         # Screening block — gamma keyed by species pair
         from .edtb_params import species_pair_key
 
         gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
-        if self.gamma_mode == 'global':
+        if self.gamma_mode == "global":
             gamma_val = float(gamma[0])
-        elif self.gamma_mode == 'per_lpair':
+        elif self.gamma_mode == "per_lpair":
             gamma_val = {
-                self._LPAIR_LABELS[lp]: float(gamma[i]) for i, lp in enumerate(self.active_lpairs)
+                self._LPAIR_LABELS[lp]: float(gamma[i])
+                for i, lp in enumerate(self.active_lpairs)
             }
-        elif self.gamma_mode == 'per_channel':
-            gamma_val = {ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)}
+        elif self.gamma_mode == "per_channel":
+            gamma_val = {
+                ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)
+            }
 
         sorted_species = sorted(set(self.unique_species))
         gamma_dict = {}
@@ -1772,15 +1887,15 @@ class SKFitterEDTB(SKFitter):
                 else:
                     gamma_dict[key] = gamma_val
 
-        screening = {'r_cut': self.r_cut_bohr, 'gamma': gamma_dict}
+        screening = {"r_cut": self.r_cut_bohr, "gamma": gamma_dict}
 
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
-            screening['onsite_shift'] = {
+            screening["onsite_shift"] = {
                 self.eta_orb_types[i]: float(eta[i]) for i in range(self.n_eta)
             }
 
-        base['model']['screening'] = screening
+        base["model"]["screening"] = screening
         return base
 
 
@@ -1872,7 +1987,7 @@ class MultiGeomEDTB:
         Heuristic: if the length of a lattice vector is > 2× the geometric
         mean of the other two, that direction is vacuum → use nkfit=1.
         """
-        a_vecs = arry['a_vectors']
+        a_vecs = arry["a_vectors"]
         lengths = np.array([np.linalg.norm(a_vecs[i]) for i in range(3)])
         # geo_mean = np.cbrt(np.prod(lengths))
         nk = [nkfit_base, nkfit_base, nkfit_base]
@@ -1888,26 +2003,30 @@ class MultiGeomEDTB:
         geometries: list[tuple[dict, dict]],
         *,
         n_shells: int = 2,
-        nkfit: int | str | list = 'auto',
+        nkfit: int | str | list = "auto",
         r_cut: float,
-        gamma_mode: str = 'global',
+        gamma_mode: str = "global",
         fit_onsite_shift: bool = False,
         weights: list[float] | None = None,
         verbose: bool = True,
     ):
         if len(geometries) < 2:
-            raise ValueError('MultiGeomEDTB requires at least 2 geometries')
+            raise ValueError("MultiGeomEDTB requires at least 2 geometries")
 
         self.n_geom = len(geometries)
         self.verbose = verbose
 
         # ── Resolve per-geometry nkfit ──
         nkfit_base = 6  # default base grid
-        if isinstance(nkfit, str) and nkfit == 'auto':
-            nkfit_per_geom = [self._detect_nkfit(arry, nkfit_base) for arry, _ in geometries]
+        if isinstance(nkfit, str) and nkfit == "auto":
+            nkfit_per_geom = [
+                self._detect_nkfit(arry, nkfit_base) for arry, _ in geometries
+            ]
         elif isinstance(nkfit, (int, np.integer)):
             nkfit_base = int(nkfit)
-            nkfit_per_geom = [self._detect_nkfit(arry, nkfit_base) for arry, _ in geometries]
+            nkfit_per_geom = [
+                self._detect_nkfit(arry, nkfit_base) for arry, _ in geometries
+            ]
         elif isinstance(nkfit, (list, tuple)) and len(nkfit) == len(geometries):
             nkfit_per_geom = []
             for nk in nkfit:
@@ -1916,17 +2035,19 @@ class MultiGeomEDTB:
                 else:
                     nkfit_per_geom.append(tuple(nk))
         else:
-            raise ValueError(f"nkfit must be 'auto', an int, or a list of length {len(geometries)}")
+            raise ValueError(
+                f"nkfit must be 'auto', an int, or a list of length {len(geometries)}"
+            )
 
         # ── Build one SKFitterEDTB per geometry ──
         if verbose:
-            print(f'MultiGeomEDTB: building {self.n_geom} sub-fitters …')
+            print(f"MultiGeomEDTB: building {self.n_geom} sub-fitters …")
 
         self.fitters: list[SKFitterEDTB] = []
         for ig, (arry, attr) in enumerate(geometries):
             nk = nkfit_per_geom[ig]
             if verbose:
-                print(f'\n── Geometry {ig} (nkfit={nk[0]}×{nk[1]}×{nk[2]}) ──')
+                print(f"\n── Geometry {ig} (nkfit={nk[0]}×{nk[1]}×{nk[2]}) ──")
             f = SKFitterEDTB(
                 arry,
                 attr,
@@ -1954,12 +2075,14 @@ class MultiGeomEDTB:
         for ig, f in enumerate(self.fitters[1:], 1):
             if f.n_params != ref.n_params:
                 raise ValueError(
-                    f'Geometry {ig}: n_params={f.n_params} != reference {ref.n_params}'
+                    f"Geometry {ig}: n_params={f.n_params} != reference {ref.n_params}"
                 )
             if f.n_hop != ref.n_hop:
-                raise ValueError(f'Geometry {ig}: n_hop={f.n_hop} != reference {ref.n_hop}')
+                raise ValueError(
+                    f"Geometry {ig}: n_hop={f.n_hop} != reference {ref.n_hop}"
+                )
             if f.param_labels != ref.param_labels:
-                raise ValueError(f'Geometry {ig}: param_labels mismatch with reference')
+                raise ValueError(f"Geometry {ig}: param_labels mismatch with reference")
 
         # ── Mirror key attributes from the reference fitter ──
         self.nawf_per_geom = [f.nawf for f in self.fitters]
@@ -1982,7 +2105,9 @@ class MultiGeomEDTB:
         else:
             self.weights = np.asarray(weights, dtype=float)
             if len(self.weights) != self.n_geom:
-                raise ValueError(f'len(weights)={len(self.weights)} != n_geom={self.n_geom}')
+                raise ValueError(
+                    f"len(weights)={len(self.weights)} != n_geom={self.n_geom}"
+                )
 
         # ── Per-geometry data size ──
         self.n_data_per_geom = [f.Nk * f.nawf for f in self.fitters]
@@ -1992,17 +2117,19 @@ class MultiGeomEDTB:
         self._reg_weights = ref._reg_weights.copy()
 
         if verbose:
-            print(f'\n{"=" * 65}')
-            print('MultiGeomEDTB summary:')
-            print(f'  {self.n_geom} geometries, {self.n_params} shared parameters')
-            print(f'  n_data_total = {self.n_data_total}')
+            print(f"\n{'=' * 65}")
+            print("MultiGeomEDTB summary:")
+            print(f"  {self.n_geom} geometries, {self.n_params} shared parameters")
+            print(f"  n_data_total = {self.n_data_total}")
             for ig, f in enumerate(self.fitters):
                 nk_str = (
-                    f'grid={"×".join(str(x) for x in f._nkfit_grid)}'
-                    if hasattr(f, '_nkfit_grid')
-                    else ''
+                    f"grid={'×'.join(str(x) for x in f._nkfit_grid)}"
+                    if hasattr(f, "_nkfit_grid")
+                    else ""
                 )
-                print(f'  Geom {ig}: Nk={f.Nk}, nawf={f.nawf}, alat={f.alat:.4f} Bohr  {nk_str}')
+                print(
+                    f"  Geom {ig}: Nk={f.Nk}, nawf={f.nawf}, alat={f.alat:.4f} Bohr  {nk_str}"
+                )
 
     # ── 4a-pre. Species harmonisation ────────────────────────
 
@@ -2039,7 +2166,8 @@ class MultiGeomEDTB:
                 list(all_config[all_species[0]])
                 if has_config and all_species[0] in all_config
                 else [
-                    f'g{i}(l={self.fitters[0].group_l[i]})' for i in range(self.fitters[0].n_groups)
+                    f"g{i}(l={self.fitters[0].group_l[i]})"
+                    for i in range(self.fitters[0].n_groups)
                 ]
             )
             labels_ok = all(f.cfg_names == ref_cfg for f in self.fitters)
@@ -2049,8 +2177,8 @@ class MultiGeomEDTB:
 
         if self.verbose:
             print(
-                f'\n  Harmonising species: '
-                f'{[f.unique_species for f in self.fitters]} → {all_species}'
+                f"\n  Harmonising species: "
+                f"{[f.unique_species for f in self.fitters]} → {all_species}"
             )
 
         # ── canonical cfg_names from the first species ──
@@ -2058,7 +2186,10 @@ class MultiGeomEDTB:
         ref_cfg_names = (
             list(all_config[sp0])
             if has_config and sp0 in all_config
-            else [f'g{i}(l={self.fitters[0].group_l[i]})' for i in range(self.fitters[0].n_groups)]
+            else [
+                f"g{i}(l={self.fitters[0].group_l[i]})"
+                for i in range(self.fitters[0].n_groups)
+            ]
         )
 
         # ── patch each sub-fitter ──
@@ -2084,9 +2215,9 @@ class MultiGeomEDTB:
                     la, lb = f.group_l[ga], f.group_l[gb]
                     lpair = (min(la, lb), max(la, lb))
                     labels = CHANNEL_LABELS[lpair]
-                    pair_tag = f'{f.cfg_names[ga]}-{f.cfg_names[gb]}'
+                    pair_tag = f"{f.cfg_names[ga]}-{f.cfg_names[gb]}"
                     for lab in labels:
-                        f.hop_param_labels.append(f'V({pair_tag}){lab}')
+                        f.hop_param_labels.append(f"V({pair_tag}){lab}")
 
             # d. rebuild onsite parameters for the full species set
             f.n_onsite = 0
@@ -2099,7 +2230,7 @@ class MultiGeomEDTB:
                 cfg = (
                     list(f.config_dict[sp])
                     if f.config_dict and sp in f.config_dict
-                    else [f'g{i}' for i in range(len(f.shells_dict[sp]))]
+                    else [f"g{i}" for i in range(len(f.shells_dict[sp]))]
                 )
                 groups = f._get_onsite_groups(f.shells_dict[sp], cfg)
                 f.species_onsite_groups[sp] = groups
@@ -2117,7 +2248,7 @@ class MultiGeomEDTB:
             # f. rebuild param_labels
             f.param_labels = list(f.onsite_param_names)
             for tag in f.shell_tags:
-                f.param_labels += [f'{tag.upper()}_{l}' for l in f.hop_param_labels]
+                f.param_labels += [f"{tag.upper()}_{l}" for l in f.hop_param_labels]
             f.param_labels.extend(f.gamma_labels)
             f.param_labels.extend(f.eta_labels)
 
@@ -2130,7 +2261,9 @@ class MultiGeomEDTB:
                 for ig, (_, local_indices) in enumerate(f.species_onsite_groups[sp]):
                     for li in local_indices:
                         f._onsite_map[pstart + ig, bi + li, bi + li] = 1.0
-            f._onsite_diag = np.array([np.diag(f._onsite_map[p]) for p in range(f.n_onsite)])
+            f._onsite_diag = np.array(
+                [np.diag(f._onsite_map[p]) for p in range(f.n_onsite)]
+            )
 
             # h. rebuild regularization weights
             f._build_regularization_weights()
@@ -2167,7 +2300,8 @@ class MultiGeomEDTB:
 
             with ThreadPoolExecutor(max_workers=self.n_geom) as pool:
                 futures = [
-                    pool.submit(self._eval_single_geometry, ig, p) for ig in range(self.n_geom)
+                    pool.submit(self._eval_single_geometry, ig, p)
+                    for ig in range(self.n_geom)
                 ]
                 results = [fut.result() for fut in futures]
             residuals = [r for r, _ in results]
@@ -2183,7 +2317,9 @@ class MultiGeomEDTB:
 
     # ── 4b. Single trial ─────────────────────────────────────
 
-    def _run_single_trial(self, p_init, alpha, max_nfev, ftol, xtol, gtol, fixed_onsite=None):
+    def _run_single_trial(
+        self, p_init, alpha, max_nfev, ftol, xtol, gtol, fixed_onsite=None
+    ):
         """Run one least-squares trial on the multi-geometry objective.
 
         Parameters
@@ -2228,7 +2364,7 @@ class MultiGeomEDTB:
                 fun,
                 p_init_red,
                 jac=jac,
-                method='lm',
+                method="lm",
                 ftol=ftol,
                 xtol=xtol,
                 gtol=gtol,
@@ -2253,7 +2389,7 @@ class MultiGeomEDTB:
             fun,
             p_init,
             jac=jac,
-            method='lm',
+            method="lm",
             ftol=ftol,
             xtol=xtol,
             gtol=gtol,
@@ -2279,7 +2415,7 @@ class MultiGeomEDTB:
             p_ig = f.extract_onsite_from_HR0()
             real_sp = (
                 self._geom_real_species[ig]
-                if hasattr(self, '_geom_real_species')
+                if hasattr(self, "_geom_real_species")
                 else set(f.unique_species)
             )
             for sp in real_sp:
@@ -2357,14 +2493,14 @@ class MultiGeomEDTB:
                 pstart = ref.species_param_start[sp]
                 for ig, (pname, orb_idx) in enumerate(ref.species_onsite_groups[sp]):
                     # Determine orbital type from group name suffix and size
-                    if pname.endswith('_t2g)'):
-                        key = 't2g'
-                    elif pname.endswith('_eg)'):
-                        key = 'eg'
+                    if pname.endswith("_t2g)"):
+                        key = "t2g"
+                    elif pname.endswith("_eg)"):
+                        key = "eg"
                     elif len(orb_idx) == 1:
-                        key = 's'
+                        key = "s"
                     elif len(orb_idx) == 3:
-                        key = 'p'
+                        key = "p"
                     else:
                         raise ValueError(
                             f"fix_onsite['{sp}']: cannot determine orbital "
@@ -2373,19 +2509,19 @@ class MultiGeomEDTB:
                     if key not in on_dict:
                         raise ValueError(
                             f"fix_onsite['{sp}']: missing key '{key}' "
-                            f'(available: {sorted(on_dict.keys())})'
+                            f"(available: {sorted(on_dict.keys())})"
                         )
                     fixed_onsite_vals[pstart + ig] = on_dict[key]
             if self.verbose:
-                print('\n  Fixing on-site energies (not fitted):')
+                print("\n  Fixing on-site energies (not fitted):")
                 for i, name in enumerate(self.param_labels[: self.n_onsite]):
-                    print(f'    {name} = {fixed_onsite_vals[i]:.6f}')
+                    print(f"    {name} = {fixed_onsite_vals[i]:.6f}")
 
         # ── SK initialisation ──
         if p0_sk is not None:
             p0_sk = np.asarray(p0_sk, dtype=float)
             if p0_sk.shape[0] != self.n_sk:
-                raise ValueError(f'p0_sk length {p0_sk.shape[0]} != n_sk {self.n_sk}')
+                raise ValueError(f"p0_sk length {p0_sk.shape[0]} != n_sk {self.n_sk}")
         p0_onsite = self.extract_onsite_from_HR0()
         E_half = 0.5 * (ref.E_pao.max() - ref.E_pao.min())
         hop_scales = [E_half / np.sqrt(len(b)) for b in ref.shell_bonds_list]
@@ -2409,8 +2545,8 @@ class MultiGeomEDTB:
                     i0 = self.n_onsite + s * self.n_hop
                     p_init[i0 : i0 + self.n_hop] = rng.uniform(-sc, sc, self.n_hop)
             # γ: small positive random initialisation
-            p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = rng.uniform(
-                0.0, 0.01, self.n_gamma
+            p_init[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
+                rng.uniform(0.0, 0.01, self.n_gamma)
             )
             if fixed_onsite_vals is not None:
                 p_init[: self.n_onsite] = fixed_onsite_vals
@@ -2443,39 +2579,41 @@ class MultiGeomEDTB:
             )
             total_threads = effective_jobs * geom_threads
 
-            print(f'\n{"=" * 65}')
-            par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
             print(
-                f'Multi-geometry EDTB optimisation: {n_trials} trials, '
-                f'{self.n_geom} geometries{par_tag}'
+                f"Multi-geometry EDTB optimisation: {n_trials} trials, "
+                f"{self.n_geom} geometries{par_tag}"
             )
 
             if use_parallel:
-                print('\n  Parallelism diagnostics:')
-                print(f'    CPU cores available          : {n_cpu}')
-                print(f'    Joblib worker processes       : {effective_jobs}')
-                print(f'    Geometry threads per process  : {geom_threads}')
-                print(f'    Total concurrent threads      : {total_threads}')
+                print("\n  Parallelism diagnostics:")
+                print(f"    CPU cores available          : {n_cpu}")
+                print(f"    Joblib worker processes       : {effective_jobs}")
+                print(f"    Geometry threads per process  : {geom_threads}")
+                print(f"    Total concurrent threads      : {total_threads}")
                 if total_threads > n_cpu:
                     import warnings
 
                     rec = max(1, n_cpu // geom_threads)
                     msg = (
-                        f'Thread oversubscription detected: {total_threads} '
-                        f'threads on {n_cpu} cores. '
-                        f'Each trial spawns {geom_threads} geometry threads '
-                        f'(ThreadPoolExecutor for {self.n_geom} geometries), '
-                        f'and joblib adds {effective_jobs} worker processes on '
-                        f'top. This causes cores to context-switch and thrash '
-                        f'caches, often making the fit *slower* than sequential. '
-                        f'Recommended: n_jobs={rec} (= {n_cpu} cores / '
-                        f'{geom_threads} geometry threads), or n_jobs=1 for '
-                        f'sequential trials with per-trial progress output.'
+                        f"Thread oversubscription detected: {total_threads} "
+                        f"threads on {n_cpu} cores. "
+                        f"Each trial spawns {geom_threads} geometry threads "
+                        f"(ThreadPoolExecutor for {self.n_geom} geometries), "
+                        f"and joblib adds {effective_jobs} worker processes on "
+                        f"top. This causes cores to context-switch and thrash "
+                        f"caches, often making the fit *slower* than sequential. "
+                        f"Recommended: n_jobs={rec} (= {n_cpu} cores / "
+                        f"{geom_threads} geometry threads), or n_jobs=1 for "
+                        f"sequential trials with per-trial progress output."
                     )
                     warnings.warn(msg, stacklevel=2)
-                    print(f'    ⚠ Recommended n_jobs ≤ {rec}  (cores / geometry_threads)')
+                    print(
+                        f"    ⚠ Recommended n_jobs ≤ {rec}  (cores / geometry_threads)"
+                    )
                 else:
-                    print('    ✓ Good: threads ≤ cores, no oversubscription')
+                    print("    ✓ Good: threads ≤ cores, no oversubscription")
 
         if use_parallel:
             import os
@@ -2484,10 +2622,10 @@ class MultiGeomEDTB:
 
             # Prevent OMP/MKL thread oversubscription when using
             # process-level parallelism via joblib.
-            old_omp = os.environ.get('OMP_NUM_THREADS')
-            old_mkl = os.environ.get('MKL_NUM_THREADS')
-            os.environ['OMP_NUM_THREADS'] = '1'
-            os.environ['MKL_NUM_THREADS'] = '1'
+            old_omp = os.environ.get("OMP_NUM_THREADS")
+            old_mkl = os.environ.get("MKL_NUM_THREADS")
+            os.environ["OMP_NUM_THREADS"] = "1"
+            os.environ["MKL_NUM_THREADS"] = "1"
             try:
                 results = Parallel(n_jobs=n_jobs)(
                     delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
@@ -2495,34 +2633,36 @@ class MultiGeomEDTB:
             finally:
                 # Restore original thread settings
                 if old_omp is None:
-                    os.environ.pop('OMP_NUM_THREADS', None)
+                    os.environ.pop("OMP_NUM_THREADS", None)
                 else:
-                    os.environ['OMP_NUM_THREADS'] = old_omp
+                    os.environ["OMP_NUM_THREADS"] = old_omp
                 if old_mkl is None:
-                    os.environ.pop('MKL_NUM_THREADS', None)
+                    os.environ.pop("MKL_NUM_THREADS", None)
                 else:
-                    os.environ['MKL_NUM_THREADS'] = old_mkl
+                    os.environ["MKL_NUM_THREADS"] = old_mkl
             all_results = [(r, p, res) for r, p, res in results]
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
-                print('-' * 50)
+                print("-" * 50)
             all_results = []
             best_so_far = np.inf
             for trial, p_init in enumerate(p_inits):
                 rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
                 all_results.append((rmse, p_opt, res))
-                tag = ' *' if rmse < best_so_far else ''
+                tag = " *" if rmse < best_so_far else ""
                 if rmse < best_so_far:
                     best_so_far = rmse
                 if self.verbose:
-                    rmse_init = np.sqrt(np.mean((ref.eigenvalues(p_init) - ref.E_pao).ravel() ** 2))
+                    rmse_init = np.sqrt(
+                        np.mean((ref.eigenvalues(p_init) - ref.E_pao).ravel() ** 2)
+                    )
                     print(
-                        f'{trial + 1:5d}  {rmse_init * 1000:15.2f}  '
-                        f'{rmse * 1000:16.2f}  {res.nfev:5d}{tag}'
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
                     )
 
         # ── Collect results ──
@@ -2540,33 +2680,45 @@ class MultiGeomEDTB:
 
         if self.verbose:
             if use_parallel:
-                print(f'  Completed {n_trials} trials in parallel')
-            print(f'{"=" * 65}')
-            print(f'Combined RMSE = {best_rmse * 1000:.2f} meV')
+                print(f"  Completed {n_trials} trials in parallel")
+            print(f"{'=' * 65}")
+            print(f"Combined RMSE = {best_rmse * 1000:.2f} meV")
             for ig, r in enumerate(per_geom_rmse):
-                print(f'  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})')
+                print(
+                    f"  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})"
+                )
             if alpha > 0:
-                print(f'  (α = {alpha:.4g})')
+                print(f"  (α = {alpha:.4g})")
             n_fitted = (
-                self.n_params - self.n_onsite if fixed_onsite_vals is not None else self.n_params
+                self.n_params - self.n_onsite
+                if fixed_onsite_vals is not None
+                else self.n_params
             )
             print(
-                f'  Parameters: {n_fitted} fitted'
-                + (f', {self.n_onsite} on-site fixed' if fixed_onsite_vals is not None else '')
+                f"  Parameters: {n_fitted} fitted"
+                + (
+                    f", {self.n_onsite} on-site fixed"
+                    if fixed_onsite_vals is not None
+                    else ""
+                )
             )
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
-            print('-' * 43)
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
             for i, name in enumerate(self.param_labels):
-                tag = ' (fixed)' if fixed_onsite_vals is not None and i < self.n_onsite else ''
-                print(f'{name:<30s}  {best_p[i]: .5f}{tag}')
+                tag = (
+                    " (fixed)"
+                    if fixed_onsite_vals is not None and i < self.n_onsite
+                    else ""
+                )
+                print(f"{name:<30s}  {best_p[i]: .5f}{tag}")
 
         return {
-            'p_opt': best_p,
-            'rmse': best_rmse,
-            'per_geom_rmse': per_geom_rmse,
-            'max_err': float(np.max(np.abs(best_res.fun[: self.n_data_total]))),
-            'all_results': all_results,
-            'param_labels': list(self.param_labels),
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "per_geom_rmse": per_geom_rmse,
+            "max_err": float(np.max(np.abs(best_res.fun[: self.n_data_total]))),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
         }
 
     # ── 4e. Build model dict ─────────────────────────────────
@@ -2594,7 +2746,7 @@ class MultiGeomEDTB:
             # Pick the first geometry that has all species
             all_sp = set(self.fitters[0].unique_species)
             geom_idx = 0
-            if hasattr(self, '_geom_real_species'):
+            if hasattr(self, "_geom_real_species"):
                 for ig, sp_set in enumerate(self._geom_real_species):
                     if sp_set >= all_sp:
                         geom_idx = ig
@@ -2663,12 +2815,12 @@ class MultiGeomEDTB_DD:
     """
 
     _LPAIR_LABELS = {
-        (0, 0): 'ss',
-        (0, 1): 'sp',
-        (0, 2): 'sd',
-        (1, 1): 'pp',
-        (1, 2): 'pd',
-        (2, 2): 'dd',
+        (0, 0): "ss",
+        (0, 1): "sp",
+        (0, 2): "sd",
+        (1, 1): "pp",
+        (1, 2): "pd",
+        (2, 2): "dd",
     }
 
     def __init__(
@@ -2678,7 +2830,7 @@ class MultiGeomEDTB_DD:
         r_0,
         r_c,
         r_cut,
-        gamma_mode='global',
+        gamma_mode="global",
         fit_onsite_shift=False,
         nkfit=6,
         weights=None,
@@ -2689,7 +2841,7 @@ class MultiGeomEDTB_DD:
 
         # ── Physical constants ───────────────────────────────
         arryp0, attrp0 = geometry_data[0]
-        self.alat = float(attrp0['alat'])
+        self.alat = float(attrp0["alat"])
         self.r_0_bohr = float(r_0)
         self.r_c_bohr = float(r_c)
         self.r_cut_bohr = float(r_cut)
@@ -2700,12 +2852,12 @@ class MultiGeomEDTB_DD:
         self.fit_onsite_shift = fit_onsite_shift
 
         # ── Shared atomic structure (from first geometry) ────
-        self.atoms_list = list(arryp0['atoms'])
+        self.atoms_list = list(arryp0["atoms"])
         self.unique_species = list(dict.fromkeys(self.atoms_list))
-        self.nat = int(attrp0['natoms'])
-        self.nawf = int(arryp0['HRs'].shape[0])
-        self.shells_dict = arryp0['shells']
-        self.config_dict = arryp0.get('configuration', None)
+        self.nat = int(attrp0["natoms"])
+        self.nawf = int(arryp0["HRs"].shape[0])
+        self.shells_dict = arryp0["shells"]
+        self.config_dict = arryp0.get("configuration", None)
         self._setup_orbital_structure()
 
         # ── Parameter layout ─────────────────────────────────
@@ -2715,19 +2867,19 @@ class MultiGeomEDTB_DD:
 
         if self.verbose:
             print(
-                f'\nMultiGeomEDTB_DD: {self.n_geom} geometries, {self.nat} atoms, nawf={self.nawf}'
+                f"\nMultiGeomEDTB_DD: {self.n_geom} geometries, {self.nat} atoms, nawf={self.nawf}"
             )
             print(
-                f'  r_0={self.r_0_bohr:.3f} Bohr, '
-                f'r_c={self.r_c_bohr:.3f} Bohr, '
-                f'r_cut={self.r_cut_bohr:.3f} Bohr'
+                f"  r_0={self.r_0_bohr:.3f} Bohr, "
+                f"r_c={self.r_c_bohr:.3f} Bohr, "
+                f"r_cut={self.r_cut_bohr:.3f} Bohr"
             )
-            print(f'  Parameters: {self.n_params} total')
+            print(f"  Parameters: {self.n_params} total")
             print(
-                f'    {self.n_onsite} on-site, '
-                f'{self.n_ch} V0, {self.n_ch} n, 1 n_c, '
-                f'{self.n_gamma} γ ({gamma_mode}), '
-                f'{self.n_eta} η'
+                f"    {self.n_onsite} on-site, "
+                f"{self.n_ch} V0, {self.n_ch} n, 1 n_c, "
+                f"{self.n_gamma} γ ({gamma_mode}), "
+                f"{self.n_eta} η"
             )
 
         # ── Per-geometry setup ───────────────────────────────
@@ -2742,7 +2894,7 @@ class MultiGeomEDTB_DD:
             gd = self._setup_one_geometry(arryp, attrp, nkfit_list[ig], ig)
             self._geom.append(gd)
 
-        self.n_data_per_geom = [g['Nk'] * g['nawf'] for g in self._geom]
+        self.n_data_per_geom = [g["Nk"] * g["nawf"] for g in self._geom]
         self.n_data_total = sum(self.n_data_per_geom)
 
         self._build_regularization_weights()
@@ -2756,7 +2908,7 @@ class MultiGeomEDTB_DD:
         self.cfg_names = (
             list(self.config_dict[sp0])
             if self.config_dict
-            else [f'g{i}(l={self.group_l[i]})' for i in range(self.n_groups)]
+            else [f"g{i}(l={self.group_l[i]})" for i in range(self.n_groups)]
         )
         self.atom_orbitals = []
         self.atom_orbital_group = []
@@ -2793,9 +2945,9 @@ class MultiGeomEDTB_DD:
                 self.hop_pair_list.append((ga, gb))
                 self.hop_pair_start[(ga, gb)] = self.n_hop
                 self.hop_pair_active[(ga, gb)] = active
-                tag = f'{self.cfg_names[ga]}-{self.cfg_names[gb]}'
+                tag = f"{self.cfg_names[ga]}-{self.cfg_names[gb]}"
                 for lab in labels:
-                    self.hop_labels.append(f'V({tag}){lab}')
+                    self.hop_labels.append(f"V({tag}){lab}")
                 self.n_hop += len(active)
         self.n_ch = self.n_hop  # alias for clarity
 
@@ -2811,7 +2963,7 @@ class MultiGeomEDTB_DD:
             cfg = (
                 list(self.config_dict[sp])
                 if self.config_dict
-                else [f'g{i}' for i in range(len(self.shells_dict[sp]))]
+                else [f"g{i}" for i in range(len(self.shells_dict[sp]))]
             )
             groups = SKFitter._get_onsite_groups(self.shells_dict[sp], cfg)
             self.species_onsite_groups[sp] = groups
@@ -2839,39 +2991,41 @@ class MultiGeomEDTB_DD:
         # hop index → gamma index
         self._hop_to_gamma = np.zeros(self.n_ch, dtype=int)
         gm = self.gamma_mode
-        if gm == 'global':
+        if gm == "global":
             self.n_gamma = 1
-            self.gamma_labels = ['γ']
-        elif gm == 'per_lpair':
+            self.gamma_labels = ["γ"]
+        elif gm == "per_lpair":
             lp2i = {lp: i for i, lp in enumerate(self.active_lpairs)}
             self.n_gamma = len(self.active_lpairs)
-            self.gamma_labels = [f'γ_{self._LPAIR_LABELS[lp]}' for lp in self.active_lpairs]
+            self.gamma_labels = [
+                f"γ_{self._LPAIR_LABELS[lp]}" for lp in self.active_lpairs
+            ]
             for ga, gb in self.hop_pair_list:
                 la, lb = self.group_l[ga], self.group_l[gb]
                 gidx = lp2i[(min(la, lb), max(la, lb))]
                 st = self.hop_pair_start[(ga, gb)]
                 for lk in range(len(self.hop_pair_active[(ga, gb)])):
                     self._hop_to_gamma[st + lk] = gidx
-        elif gm == 'per_channel':
+        elif gm == "per_channel":
             ch2i = {ch: i for i, ch in enumerate(self.active_channels)}
             self.n_gamma = len(self.active_channels)
-            self.gamma_labels = [f'γ_{ch}' for ch in self.active_channels]
+            self.gamma_labels = [f"γ_{ch}" for ch in self.active_channels]
             for ga, gb in self.hop_pair_list:
                 st = self.hop_pair_start[(ga, gb)]
                 for lk, sk_idx in enumerate(self.hop_pair_active[(ga, gb)]):
                     self._hop_to_gamma[st + lk] = ch2i[SK_PARAM_NAMES[sk_idx]]
         else:
-            raise ValueError(f'Unknown gamma_mode: {gm!r}')
+            raise ValueError(f"Unknown gamma_mode: {gm!r}")
 
         # η (on-site shift)
         if self.fit_onsite_shift:
             present = set()
             for sp in self.unique_species:
                 for l_val in self.shells_dict[sp]:
-                    present.add({0: 's', 1: 'p', 2: 'd'}[l_val])
-            self.eta_orb_types = sorted(present, key='spd'.index)
+                    present.add({0: "s", 1: "p", 2: "d"}[l_val])
+            self.eta_orb_types = sorted(present, key="spd".index)
             self.n_eta = len(self.eta_orb_types)
-            self.eta_labels = [f'η_{t}' for t in self.eta_orb_types]
+            self.eta_labels = [f"η_{t}" for t in self.eta_orb_types]
         else:
             self.eta_orb_types = []
             self.n_eta = 0
@@ -2887,9 +3041,9 @@ class MultiGeomEDTB_DD:
 
         # Labels
         self.param_labels = list(self.onsite_labels)
-        self.param_labels += [f'V0_{l}' for l in self.hop_labels]
-        self.param_labels += [f'n_{l}' for l in self.hop_labels]
-        self.param_labels.append('n_c')
+        self.param_labels += [f"V0_{l}" for l in self.hop_labels]
+        self.param_labels += [f"n_{l}" for l in self.hop_labels]
+        self.param_labels.append("n_c")
         self.param_labels += self.gamma_labels
         self.param_labels += self.eta_labels
 
@@ -2897,16 +3051,16 @@ class MultiGeomEDTB_DD:
 
     def _setup_one_geometry(self, arryp, attrp, nkfit, ig):
         """Pre-compute bonds, design tensors, screening, phases, ref eigenvalues."""
-        a_vecs = arryp['a_vectors']
-        tau_bohr = arryp['tau']
-        alat = float(attrp['alat'])
+        a_vecs = arryp["a_vectors"]
+        tau_bohr = arryp["tau"]
+        alat = float(attrp["alat"])
         tau_alat = tau_bohr / alat
-        nat = int(attrp['natoms'])
-        nawf = int(arryp['HRs'].shape[0])
-        b_vecs = arryp['b_vectors']
+        nat = int(attrp["natoms"])
+        nawf = int(arryp["HRs"].shape[0])
+        b_vecs = arryp["b_vectors"]
 
         # ── Reference eigenvalues ──
-        HRs = arryp['HRs']
+        HRs = arryp["HRs"]
         nk_dft = (HRs.shape[2], HRs.shape[3], HRs.shape[4])
         R_list, HR_list = [], []
         for i1 in range(nk_dft[0]):
@@ -2929,18 +3083,21 @@ class MultiGeomEDTB_DD:
             for ik2 in range(nk2):
                 for ik3 in range(nk3):
                     kpts.append(
-                        np.array([ik1 / max(nk1, 1), ik2 / max(nk2, 1), ik3 / max(nk3, 1)]) @ b_vecs
+                        np.array(
+                            [ik1 / max(nk1, 1), ik2 / max(nk2, 1), ik3 / max(nk3, 1)]
+                        )
+                        @ b_vecs
                     )
         kpts = np.array(kpts)
         Nk = len(kpts)
         phases_dft = np.exp(2j * np.pi * (kpts @ R_arr.T))
         E_pao = np.zeros((Nk, nawf))
         for ik in range(Nk):
-            Hk = np.einsum('r,rij->ij', phases_dft[ik], HR_arr)
+            Hk = np.einsum("r,rij->ij", phases_dft[ik], HR_arr)
             E_pao[ik] = np.sort(np.linalg.eigvalsh(Hk).real)
 
         # ── Per-geometry atom orbital structure ──
-        atoms_list_g = list(arryp['atoms'])
+        atoms_list_g = list(arryp["atoms"])
         atom_orbitals_g = []
         atom_orbital_group_g = []
         atom_block_start_g = []
@@ -3021,7 +3178,8 @@ class MultiGeomEDTB_DD:
                 np.where(
                     d >= r_cut_alat,
                     0.0,
-                    0.5 * (1.0 + np.cos(np.pi * (d - r_taper) / (r_cut_alat - r_taper))),
+                    0.5
+                    * (1.0 + np.cos(np.pi * (d - r_taper) / (r_cut_alat - r_taper))),
                 ),
             )
             fc[d < 1e-10] = 0.0
@@ -3044,7 +3202,9 @@ class MultiGeomEDTB_DD:
             sp = atoms_list_g[iat]
             bi = atom_block_start_g[iat]
             pstart = self.species_param_start[sp]
-            for ig_param, (_, local_indices) in enumerate(self.species_onsite_groups[sp]):
+            for ig_param, (_, local_indices) in enumerate(
+                self.species_onsite_groups[sp]
+            ):
                 for li in local_indices:
                     onsite_map[pstart + ig_param, bi + li, bi + li] = 1.0
         onsite_diag = np.array([np.diag(onsite_map[p]) for p in range(self.n_onsite)])
@@ -3053,15 +3213,15 @@ class MultiGeomEDTB_DD:
         eta_diag = None
         if self.n_eta > 0:
             _otype = {
-                's': 's',
-                'px': 'p',
-                'py': 'p',
-                'pz': 'p',
-                'dxy': 'd',
-                'dyz': 'd',
-                'dzx': 'd',
-                'dx2-y2': 'd',
-                'dz2': 'd',
+                "s": "s",
+                "px": "p",
+                "py": "p",
+                "pz": "p",
+                "dxy": "d",
+                "dyz": "d",
+                "dzx": "d",
+                "dx2-y2": "d",
+                "dz2": "d",
             }
             eta_diag = np.zeros((self.n_eta, nawf))
             for iat in range(nat):
@@ -3091,35 +3251,35 @@ class MultiGeomEDTB_DD:
 
         if self.verbose:
             print(
-                f'  Geom {ig}: {n_bonds} bonds, '
-                f'{Nk} k-pts (grid {nk1}×{nk2}×{nk3}), '
-                f'E ∈ [{E_pao.min():.3f}, {E_pao.max():.3f}] eV'
+                f"  Geom {ig}: {n_bonds} bonds, "
+                f"{Nk} k-pts (grid {nk1}×{nk2}×{nk3}), "
+                f"E ∈ [{E_pao.min():.3f}, {E_pao.max():.3f}] eV"
             )
 
         return {
-            'a_vecs': a_vecs,
-            'tau_alat': tau_alat,
-            'alat': alat,
-            'nawf': nawf,
-            'nat': nat,
-            'Nk': Nk,
-            'kpts': kpts,
-            'E_pao': E_pao,
-            'n_bonds': n_bonds,
-            'M': M,  # (n_bonds, n_ch, nawf, nawf)
-            'R_bond': R_bond,
-            'd_bonds': d_bonds,
-            'S_bonds': S_bonds,
-            'coord_i': coord_i,
-            'phases': phases,  # (Nk, n_bonds)
-            'bond_groups': bond_groups,
-            'onsite_map': onsite_map,
-            'onsite_diag': onsite_diag,
-            'eta_diag': eta_diag,
-            'b_vecs': arryp['b_vectors'],
-            'atoms_list': atoms_list_g,
-            'atom_orbitals': atom_orbitals_g,
-            'atom_block_start': atom_block_start_g,
+            "a_vecs": a_vecs,
+            "tau_alat": tau_alat,
+            "alat": alat,
+            "nawf": nawf,
+            "nat": nat,
+            "Nk": Nk,
+            "kpts": kpts,
+            "E_pao": E_pao,
+            "n_bonds": n_bonds,
+            "M": M,  # (n_bonds, n_ch, nawf, nawf)
+            "R_bond": R_bond,
+            "d_bonds": d_bonds,
+            "S_bonds": S_bonds,
+            "coord_i": coord_i,
+            "phases": phases,  # (Nk, n_bonds)
+            "bond_groups": bond_groups,
+            "onsite_map": onsite_map,
+            "onsite_diag": onsite_diag,
+            "eta_diag": eta_diag,
+            "b_vecs": arryp["b_vectors"],
+            "atoms_list": atoms_list_g,
+            "atom_orbitals": atom_orbitals_g,
+            "atom_block_start": atom_block_start_g,
         }
 
     # ── Forward model ─────────────────────────────────────────
@@ -3131,18 +3291,18 @@ class MultiGeomEDTB_DD:
         sub-block (e.g. 9×9 for C-C), giving up to (nawf/n_orb)² speed-up
         over dense (nawf×nawf) operations.
         """
-        Nk = gd['Nk']
-        nawf = gd['nawf']
-        d_bonds = gd['d_bonds']
-        S_bonds = gd['S_bonds']
-        phases = gd['phases']
+        Nk = gd["Nk"]
+        nawf = gd["nawf"]
+        d_bonds = gd["d_bonds"]
+        S_bonds = gd["S_bonds"]
+        phases = gd["phases"]
         # n_bonds = gd['n_bonds']
-        bond_groups = gd['bond_groups']
+        bond_groups = gd["bond_groups"]
 
         n_ch = self.n_ch
         n_onsite = self.n_onsite
-        r_0 = self.r_0_bohr / gd['alat']
-        r_c = self.r_c_bohr / gd['alat']
+        r_0 = self.r_0_bohr / gd["alat"]
+        r_c = self.r_c_bohr / gd["alat"]
 
         # Extract parameters
         V0 = p[self.V0_start : self.V0_start + n_ch]
@@ -3170,16 +3330,18 @@ class MultiGeomEDTB_DD:
         h = V0[None, :] * base * scale  # (n_bonds, n_ch)
 
         # ── H(k) via block-sparse groups ──
-        H_onsite = np.einsum('p,pij->ij', p[:n_onsite], gd['onsite_map'])
+        H_onsite = np.einsum("p,pij->ij", p[:n_onsite], gd["onsite_map"])
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
-            shift = np.einsum('q,qi->i', eta, gd['eta_diag'])
+            shift = np.einsum("q,qi->i", eta, gd["eta_diag"])
             H_onsite[np.arange(nawf), np.arange(nawf)] += shift
         Hk = np.broadcast_to(H_onsite, (Nk, nawf, nawf)).astype(complex).copy()
         for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
             h_grp = h[idx]  # (nb, n_ch)
-            wM = np.einsum('bp,bpij->bij', h_grp, M_sub)  # (nb, no_i, no_j)
-            Hk[:, bi : bi + no_i, bj : bj + no_j] += np.einsum('kb,bij->kij', phases[:, idx], wM)
+            wM = np.einsum("bp,bpij->bij", h_grp, M_sub)  # (nb, no_i, no_j)
+            Hk[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
+                "kb,bij->kij", phases[:, idx], wM
+            )
 
         # ── Eigendecomposition ──
         evals, evecs = np.linalg.eigh(Hk)
@@ -3190,7 +3352,7 @@ class MultiGeomEDTB_DD:
         psi2 = np.abs(evecs) ** 2
 
         # ∂E/∂ε
-        dE[:, :, :n_onsite] = np.einsum('kin,pi->knp', psi2, gd['onsite_diag'])
+        dE[:, :, :n_onsite] = np.einsum("kin,pi->knp", psi2, gd["onsite_diag"])
 
         # Block-sparse dHk builder (only populates nonzero sub-blocks)
         def _dHk_ch(w):
@@ -3199,7 +3361,7 @@ class MultiGeomEDTB_DD:
                 w_grp = w[idx]  # (nb, n_ch)
                 wM = M_sub * w_grp[:, :, None, None]  # (nb, n_ch, no_i, no_j)
                 dHk[:, :, bi : bi + no_i, bj : bj + no_j] += np.einsum(
-                    'kb,bpij->kpij', phases[:, idx], wM
+                    "kb,bpij->kpij", phases[:, idx], wM
                 )
             return dHk
 
@@ -3208,7 +3370,7 @@ class MultiGeomEDTB_DD:
         evecs_bc = evecs[:, np.newaxis, :, :]  # (Nk, 1, nawf, nawf)
         tmp = np.matmul(dHk_V0, evecs_bc)
         dE[:, :, self.V0_start : self.V0_start + n_ch] = np.real(
-            np.einsum('kin,kpin->knp', evecs.conj(), tmp)
+            np.einsum("kin,kpin->knp", evecs.conj(), tmp)
         )
 
         # ∂E/∂n_p
@@ -3217,7 +3379,7 @@ class MultiGeomEDTB_DD:
         dHk_n = _dHk_ch(w_n)
         tmp = np.matmul(dHk_n, evecs_bc)
         dE[:, :, self.n_start : self.n_start + n_ch] = np.real(
-            np.einsum('kin,kpin->knp', evecs.conj(), tmp)
+            np.einsum("kin,kpin->knp", evecs.conj(), tmp)
         )
 
         # ∂E/∂n_c  (block-sparse, channel-contracted)
@@ -3227,12 +3389,12 @@ class MultiGeomEDTB_DD:
         w_nc = h * (n_exp[None, :] * dg_dnc[:, None])  # (n_bonds, n_ch)
         dHk_nc = np.zeros((Nk, nawf, nawf), dtype=complex)
         for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
-            F_sub = np.einsum('bp,bpij->bij', w_nc[idx], M_sub)
+            F_sub = np.einsum("bp,bpij->bij", w_nc[idx], M_sub)
             dHk_nc[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
-                'kb,bij->kij', phases[:, idx], F_sub
+                "kb,bij->kij", phases[:, idx], F_sub
             )
         tmp_nc = np.matmul(dHk_nc, evecs)
-        dE[:, :, self.nc_idx] = np.real(np.einsum('kin,kin->kn', evecs.conj(), tmp_nc))
+        dE[:, :, self.nc_idx] = np.real(np.einsum("kin,kin->kn", evecs.conj(), tmp_nc))
 
         # ∂E/∂γ_q  (block-sparse, channel-contracted)
         for q in range(self.n_gamma):
@@ -3243,20 +3405,22 @@ class MultiGeomEDTB_DD:
             w_g[:, mask] = -S_bonds[:, None] * h[:, mask]
             dHk_g = np.zeros((Nk, nawf, nawf), dtype=complex)
             for idx, bi, bj, no_i, no_j, M_sub in bond_groups:
-                F_sub = np.einsum('bp,bpij->bij', w_g[idx], M_sub)
+                F_sub = np.einsum("bp,bpij->bij", w_g[idx], M_sub)
                 dHk_g[:, bi : bi + no_i, bj : bj + no_j] += np.einsum(
-                    'kb,bij->kij', phases[:, idx], F_sub
+                    "kb,bij->kij", phases[:, idx], F_sub
                 )
             tmp_g = np.matmul(dHk_g, evecs)
             dE[:, :, self.n_gamma_start + q] = np.real(
-                np.einsum('kin,kin->kn', evecs.conj(), tmp_g)
+                np.einsum("kin,kin->kn", evecs.conj(), tmp_g)
             )
 
         # ∂E/∂η_q
         if self.n_eta > 0:
-            eta_diag = gd['eta_diag']
+            eta_diag = gd["eta_diag"]
             for q in range(self.n_eta):
-                dE[:, :, self.n_eta_start + q] = np.einsum('kin,i->kn', psi2, eta_diag[q])
+                dE[:, :, self.n_eta_start + q] = np.einsum(
+                    "kin,i->kn", psi2, eta_diag[q]
+                )
 
         return E_sk, dE
 
@@ -3265,7 +3429,7 @@ class MultiGeomEDTB_DD:
     def _eval_single_geometry(self, ig, p):
         gd = self._geom[ig]
         E_sk, dE = self._eigenvalues_and_jacobian(p, gd)
-        res = (E_sk - gd['E_pao']).ravel()
+        res = (E_sk - gd["E_pao"]).ravel()
         J = dE.reshape(-1, self.n_params)
         w = self.weights[ig]
         return w * res, w * J
@@ -3276,12 +3440,15 @@ class MultiGeomEDTB_DD:
 
             with ThreadPoolExecutor(max_workers=self.n_geom) as pool:
                 futures = [
-                    pool.submit(self._eval_single_geometry, ig, p) for ig in range(self.n_geom)
+                    pool.submit(self._eval_single_geometry, ig, p)
+                    for ig in range(self.n_geom)
                 ]
                 results = [f.result() for f in futures]
         else:
             results = [self._eval_single_geometry(ig, p) for ig in range(self.n_geom)]
-        return np.concatenate([r for r, _ in results]), np.vstack([j for _, j in results])
+        return np.concatenate([r for r, _ in results]), np.vstack(
+            [j for _, j in results]
+        )
 
     # ── Regularization ────────────────────────────────────────
 
@@ -3323,10 +3490,10 @@ class MultiGeomEDTB_DD:
             max_nfev=max_nfev,
         )
         if use_bounds:
-            kw['bounds'] = bounds
-            kw['method'] = 'trf'
+            kw["bounds"] = bounds
+            kw["method"] = "trf"
         else:
-            kw['method'] = 'lm'
+            kw["method"] = "lm"
 
         res = least_squares(fun, p_init, **kw)
         rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))
@@ -3385,13 +3552,19 @@ class MultiGeomEDTB_DD:
                 sp = self.atoms_list[iat]
                 bi = self.atom_block_start[iat]
                 pstart = self.species_param_start[sp]
-                for ig_param, (_, local_indices) in enumerate(self.species_onsite_groups[sp]):
+                for ig_param, (_, local_indices) in enumerate(
+                    self.species_onsite_groups[sp]
+                ):
                     li0 = local_indices[0]
                     p0[pstart + ig_param] = (
-                        float(gd['E_pao'][0, bi + li0]) if gd['E_pao'].shape[1] > bi + li0 else 0.0
+                        float(gd["E_pao"][0, bi + li0])
+                        if gd["E_pao"].shape[1] > bi + li0
+                        else 0.0
                     )
             # V0: small random, n_exp: ~2, n_c: ~6
-            p0[self.V0_start : self.V0_start + self.n_ch] = rng.uniform(-1.0, 1.0, self.n_ch)
+            p0[self.V0_start : self.V0_start + self.n_ch] = rng.uniform(
+                -1.0, 1.0, self.n_ch
+            )
             p0[self.n_start : self.n_start + self.n_ch] = 2.0
             p0[self.nc_idx] = 6.5
             p0[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = 0.005
@@ -3403,11 +3576,15 @@ class MultiGeomEDTB_DD:
         for trial in range(n_trials):
             pi = p0.copy()
             if trial > 0:
-                pi[self.V0_start : self.V0_start + self.n_ch] *= 1.0 + 0.3 * rng.randn(self.n_ch)
-                pi[self.n_start : self.n_start + self.n_ch] += 0.5 * rng.randn(self.n_ch)
+                pi[self.V0_start : self.V0_start + self.n_ch] *= 1.0 + 0.3 * rng.randn(
+                    self.n_ch
+                )
+                pi[self.n_start : self.n_start + self.n_ch] += 0.5 * rng.randn(
+                    self.n_ch
+                )
                 pi[self.nc_idx] += 1.0 * rng.randn()
-                pi[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = rng.uniform(
-                    0.0, 0.02, self.n_gamma
+                pi[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = (
+                    rng.uniform(0.0, 0.02, self.n_gamma)
                 )
             p_inits.append(pi)
 
@@ -3436,81 +3613,87 @@ class MultiGeomEDTB_DD:
             )
             total_threads = effective_jobs * geom_threads
 
-            print(f'\n{"=" * 65}')
-            par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
-            print(f'DD EDTB optimisation: {n_trials} trials, {self.n_geom} geometries{par_tag}')
+            print(f"\n{'=' * 65}")
+            par_tag = f", n_jobs={n_jobs}" if use_parallel else ""
+            print(
+                f"DD EDTB optimisation: {n_trials} trials, {self.n_geom} geometries{par_tag}"
+            )
 
             if use_parallel:
-                print('\n  Parallelism diagnostics:')
-                print(f'    CPU cores available          : {n_cpu}')
-                print(f'    Joblib worker processes       : {effective_jobs}')
-                print(f'    Geometry threads per process  : {geom_threads}')
-                print(f'    Total concurrent threads      : {total_threads}')
+                print("\n  Parallelism diagnostics:")
+                print(f"    CPU cores available          : {n_cpu}")
+                print(f"    Joblib worker processes       : {effective_jobs}")
+                print(f"    Geometry threads per process  : {geom_threads}")
+                print(f"    Total concurrent threads      : {total_threads}")
                 if total_threads > n_cpu:
                     import warnings
 
                     rec = max(1, n_cpu // geom_threads)
                     msg = (
-                        f'Thread oversubscription detected: {total_threads} '
-                        f'threads on {n_cpu} cores. '
-                        f'Each trial spawns {geom_threads} geometry threads '
-                        f'(ThreadPoolExecutor for {self.n_geom} geometries), '
-                        f'and joblib adds {effective_jobs} worker processes on '
-                        f'top. This causes cores to context-switch and thrash '
-                        f'caches, often making the fit *slower* than sequential. '
-                        f'Recommended: n_jobs={rec} (= {n_cpu} cores / '
-                        f'{geom_threads} geometry threads), or n_jobs=1 for '
-                        f'sequential trials with per-trial progress output.'
+                        f"Thread oversubscription detected: {total_threads} "
+                        f"threads on {n_cpu} cores. "
+                        f"Each trial spawns {geom_threads} geometry threads "
+                        f"(ThreadPoolExecutor for {self.n_geom} geometries), "
+                        f"and joblib adds {effective_jobs} worker processes on "
+                        f"top. This causes cores to context-switch and thrash "
+                        f"caches, often making the fit *slower* than sequential. "
+                        f"Recommended: n_jobs={rec} (= {n_cpu} cores / "
+                        f"{geom_threads} geometry threads), or n_jobs=1 for "
+                        f"sequential trials with per-trial progress output."
                     )
                     warnings.warn(msg, stacklevel=2)
-                    print(f'    \u26a0 Recommended n_jobs \u2264 {rec}  (cores / geometry_threads)')
+                    print(
+                        f"    \u26a0 Recommended n_jobs \u2264 {rec}  (cores / geometry_threads)"
+                    )
                 else:
-                    print('    \u2713 Good: threads \u2264 cores, no oversubscription')
+                    print("    \u2713 Good: threads \u2264 cores, no oversubscription")
 
         if use_parallel:
             import os
 
             from joblib import Parallel, delayed
 
-            old_omp = os.environ.get('OMP_NUM_THREADS')
-            old_mkl = os.environ.get('MKL_NUM_THREADS')
-            os.environ['OMP_NUM_THREADS'] = '1'
-            os.environ['MKL_NUM_THREADS'] = '1'
+            old_omp = os.environ.get("OMP_NUM_THREADS")
+            old_mkl = os.environ.get("MKL_NUM_THREADS")
+            os.environ["OMP_NUM_THREADS"] = "1"
+            os.environ["MKL_NUM_THREADS"] = "1"
             try:
                 results = Parallel(n_jobs=n_jobs)(
                     delayed(self._run_single_trial)(p, **common_kw) for p in p_inits
                 )
             finally:
                 if old_omp is None:
-                    os.environ.pop('OMP_NUM_THREADS', None)
+                    os.environ.pop("OMP_NUM_THREADS", None)
                 else:
-                    os.environ['OMP_NUM_THREADS'] = old_omp
+                    os.environ["OMP_NUM_THREADS"] = old_omp
                 if old_mkl is None:
-                    os.environ.pop('MKL_NUM_THREADS', None)
+                    os.environ.pop("MKL_NUM_THREADS", None)
                 else:
-                    os.environ['MKL_NUM_THREADS'] = old_mkl
+                    os.environ["MKL_NUM_THREADS"] = old_mkl
             all_results = [(r, p, res) for r, p, res in results]
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
-                print('-' * 50)
+                print("-" * 50)
             all_results = []
             best_so_far = np.inf
             for trial, p_init in enumerate(p_inits):
                 rmse, p_opt, res = self._run_single_trial(p_init, **common_kw)
                 all_results.append((rmse, p_opt, res))
-                tag = ' *' if rmse < best_so_far else ''
+                tag = " *" if rmse < best_so_far else ""
                 if rmse < best_so_far:
                     best_so_far = rmse
                 if self.verbose:
                     E0, _ = self._eigenvalues_and_jacobian(p_init, self._geom[0])
-                    rmse_init = np.sqrt(np.mean((E0 - self._geom[0]['E_pao']).ravel() ** 2))
+                    rmse_init = np.sqrt(
+                        np.mean((E0 - self._geom[0]["E_pao"]).ravel() ** 2)
+                    )
                     print(
-                        f'{trial + 1:5d}  {rmse_init * 1000:15.2f}  '
-                        f'{rmse * 1000:16.2f}  {res.nfev:5d}{tag}'
+                        f"{trial + 1:5d}  {rmse_init * 1000:15.2f}  "
+                        f"{rmse * 1000:16.2f}  {res.nfev:5d}{tag}"
                     )
 
         all_results.sort(key=lambda x: x[0])
@@ -3526,22 +3709,24 @@ class MultiGeomEDTB_DD:
             offset += nd
 
         if self.verbose:
-            print(f'{"=" * 65}')
-            print(f'Combined RMSE = {best_rmse * 1000:.2f} meV')
+            print(f"{'=' * 65}")
+            print(f"Combined RMSE = {best_rmse * 1000:.2f} meV")
             for ig, r in enumerate(per_geom_rmse):
-                print(f'  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})')
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
-            print('-' * 43)
+                print(
+                    f"  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})"
+                )
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
+            print("-" * 43)
             for i, name in enumerate(self.param_labels):
-                print(f'{name:<30s}  {best_p[i]: .5f}')
+                print(f"{name:<30s}  {best_p[i]: .5f}")
 
         return {
-            'p_opt': best_p,
-            'rmse': best_rmse,
-            'per_geom_rmse': per_geom_rmse,
-            'max_err': float(np.max(np.abs(best_res.fun[:n_data]))),
-            'all_results': all_results,
-            'param_labels': list(self.param_labels),
+            "p_opt": best_p,
+            "rmse": best_rmse,
+            "per_geom_rmse": per_geom_rmse,
+            "max_err": float(np.max(np.abs(best_res.fun[:n_data]))),
+            "all_results": all_results,
+            "param_labels": list(self.param_labels),
         }
 
     # ── Build model dict ──────────────────────────────────────
@@ -3564,18 +3749,20 @@ class MultiGeomEDTB_DD:
         gd = self._geom[geom_idx]
 
         # Atoms dict
-        atoms_list_g = gd['atoms_list']
-        atom_orbitals_g = gd['atom_orbitals']
+        atoms_list_g = gd["atoms_list"]
+        atom_orbitals_g = gd["atom_orbitals"]
         atoms_dict = {}
-        for iat in range(gd['nat']):
+        for iat in range(gd["nat"]):
             sp = atoms_list_g[iat]
             pstart = self.species_param_start[sp]
             atom_d = {
-                'name': sp,
-                'tau': gd['tau_alat'][iat].tolist(),
-                'orbitals': list(atom_orbitals_g[iat]),
+                "name": sp,
+                "tau": gd["tau_alat"][iat].tolist(),
+                "orbitals": list(atom_orbitals_g[iat]),
             }
-            for ig_param, (pname, local_indices) in enumerate(self.species_onsite_groups[sp]):
+            for ig_param, (pname, local_indices) in enumerate(
+                self.species_onsite_groups[sp]
+            ):
                 e_val = float(p[pstart + ig_param])
                 for li in local_indices:
                     orb = atom_orbitals_g[iat][li]
@@ -3594,8 +3781,8 @@ class MultiGeomEDTB_DD:
             for lk, sk_k in enumerate(active):
                 ch_name = SK_PARAM_NAMES[sk_k]
                 channels[ch_name] = {
-                    'V0': float(V0[idx]),
-                    'n': float(n_exp[idx]),
+                    "V0": float(V0[idx]),
+                    "n": float(n_exp[idx]),
                 }
                 idx += 1
 
@@ -3604,34 +3791,37 @@ class MultiGeomEDTB_DD:
         sorted_species = sorted(set(self.unique_species))
         hoppings = {}
         dd_entry = {
-            'type': 'distance_dependent',
-            'r_0': self.r_0_bohr,
-            'r_c': self.r_c_bohr,
-            'n_c': n_c,
-            'channels': channels,
+            "type": "distance_dependent",
+            "r_0": self.r_0_bohr,
+            "r_c": self.r_c_bohr,
+            "n_c": n_c,
+            "channels": channels,
         }
         for i, sp1 in enumerate(sorted_species):
             for sp2 in sorted_species[i:]:
                 key = species_pair_key(sp1, sp2)
                 hoppings[key] = {
-                    'type': dd_entry['type'],
-                    'r_0': dd_entry['r_0'],
-                    'r_c': dd_entry['r_c'],
-                    'n_c': dd_entry['n_c'],
-                    'channels': {k: dict(v) for k, v in dd_entry['channels'].items()},
+                    "type": dd_entry["type"],
+                    "r_0": dd_entry["r_0"],
+                    "r_c": dd_entry["r_c"],
+                    "n_c": dd_entry["n_c"],
+                    "channels": {k: dict(v) for k, v in dd_entry["channels"].items()},
                 }
 
         # Screening
         gamma = p[self.n_gamma_start : self.n_gamma_start + self.n_gamma]
         gm = self.gamma_mode
-        if gm == 'global':
+        if gm == "global":
             gamma_val = float(gamma[0])
-        elif gm == 'per_lpair':
+        elif gm == "per_lpair":
             gamma_val = {
-                self._LPAIR_LABELS[lp]: float(gamma[i]) for i, lp in enumerate(self.active_lpairs)
+                self._LPAIR_LABELS[lp]: float(gamma[i])
+                for i, lp in enumerate(self.active_lpairs)
             }
-        elif gm == 'per_channel':
-            gamma_val = {ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)}
+        elif gm == "per_channel":
+            gamma_val = {
+                ch: float(gamma[i]) for i, ch in enumerate(self.active_channels)
+            }
         else:
             gamma_val = float(gamma[0])
 
@@ -3644,21 +3834,21 @@ class MultiGeomEDTB_DD:
                 else:
                     gamma_dict[key] = gamma_val
 
-        screening = {'r_cut': self.r_cut_bohr, 'gamma': gamma_dict}
+        screening = {"r_cut": self.r_cut_bohr, "gamma": gamma_dict}
         if self.n_eta > 0:
             eta = p[self.n_eta_start : self.n_eta_start + self.n_eta]
-            screening['onsite_shift'] = {
+            screening["onsite_shift"] = {
                 self.eta_orb_types[i]: float(eta[i]) for i in range(self.n_eta)
             }
 
         return {
-            'label': 'SK_EDTB',
-            'alat': float(gd['alat']),
-            'model': {
-                'a_vectors': gd['a_vecs'].tolist(),
-                'atoms': atoms_dict,
-                'hoppings': hoppings,
-                'screening': screening,
+            "label": "SK_EDTB",
+            "alat": float(gd["alat"]),
+            "model": {
+                "a_vectors": gd["a_vecs"].tolist(),
+                "atoms": atoms_dict,
+                "hoppings": hoppings,
+                "screening": screening,
             },
         }
 
@@ -3691,28 +3881,28 @@ class MultiGeomEDTB_DD:
         # ── On-site energies ──
         for sp in self.unique_species:
             pstart = self.species_param_start[sp]
-            onsite_vals = params['onsite'][sp]
+            onsite_vals = params["onsite"][sp]
             for ig_param, (pname, _) in enumerate(self.species_onsite_groups[sp]):
                 # pname is like "ε(2S)" — extract the orbital key
                 # Map to the JSON keys: s, p, t2g, eg
-                key = pname.split('(')[-1].rstrip(')')
+                key = pname.split("(")[-1].rstrip(")")
                 # config names like 2S → look up in onsite dict
                 _key_map = {
-                    '2S': 's',
-                    '3S': 's',
-                    's': 's',
-                    '2P': 'p',
-                    '3P': 'p',
-                    'p': 'p',
-                    '3D_t2g': 't2g',
-                    '3D_eg': 'eg',
-                    '4D_t2g': 't2g',
-                    '4D_eg': 'eg',
-                    '5D_t2g': 't2g',
-                    '5D_eg': 'eg',
-                    't2g': 't2g',
-                    'eg': 'eg',
-                    'd': 't2g',
+                    "2S": "s",
+                    "3S": "s",
+                    "s": "s",
+                    "2P": "p",
+                    "3P": "p",
+                    "p": "p",
+                    "3D_t2g": "t2g",
+                    "3D_eg": "eg",
+                    "4D_t2g": "t2g",
+                    "4D_eg": "eg",
+                    "5D_t2g": "t2g",
+                    "5D_eg": "eg",
+                    "t2g": "t2g",
+                    "eg": "eg",
+                    "d": "t2g",
                 }
                 json_key = _key_map.get(key, key.lower())
                 if json_key in onsite_vals:
@@ -3720,9 +3910,9 @@ class MultiGeomEDTB_DD:
 
         # ── Hopping channels: V0 and n ──
         sp0 = self.unique_species[0]
-        pair_key = f'{sp0}-{sp0}'
-        shells = params['hoppings'][pair_key]
-        r_ref = [s['r_ref'] for s in shells]
+        pair_key = f"{sp0}-{sp0}"
+        shells = params["hoppings"][pair_key]
+        r_ref = [s["r_ref"] for s in shells]
         r0 = self.r_0_bohr
 
         idx = 0
@@ -3731,13 +3921,13 @@ class MultiGeomEDTB_DD:
             for sk_k in active:
                 ch_name = SK_PARAM_NAMES[sk_k]
                 # V0 from nearest shell to r_0
-                v_1nn = shells[0]['params'].get(ch_name, 0.0)
+                v_1nn = shells[0]["params"].get(ch_name, 0.0)
                 p0[self.V0_start + idx] = v_1nn
 
                 # Estimate n from 1NN/2NN ratio
                 n_est = n_default
                 if len(shells) >= 2:
-                    v_2nn = shells[1]['params'].get(ch_name, 0.0)
+                    v_2nn = shells[1]["params"].get(ch_name, 0.0)
                     if abs(v_1nn) > 1e-6 and abs(v_2nn) > 1e-6:
                         # Goodwin at r_0 → V0, at r1 → V0*(r0/r1)^n * exp(n*g)
                         # With n_c_init and r_c, solve for n:
@@ -3758,15 +3948,15 @@ class MultiGeomEDTB_DD:
         p0[self.nc_idx] = n_c_init
 
         # ── Gamma (screening) ──
-        gamma_dict = params.get('screening', {}).get('gamma', {}).get(pair_key, {})
+        gamma_dict = params.get("screening", {}).get("gamma", {}).get(pair_key, {})
         if isinstance(gamma_dict, dict):
             gm = self.gamma_mode
-            if gm == 'per_lpair':
+            if gm == "per_lpair":
                 for i, lp in enumerate(self.active_lpairs):
                     lp_label = self._LPAIR_LABELS[lp]
                     if lp_label in gamma_dict:
                         p0[self.n_gamma_start + i] = gamma_dict[lp_label]
-            elif gm == 'per_channel':
+            elif gm == "per_channel":
                 for i, ch in enumerate(self.active_channels):
                     # Map channel to lpair label to look up gamma
                     for lp, label in self._LPAIR_LABELS.items():
@@ -3782,7 +3972,7 @@ class MultiGeomEDTB_DD:
                             if label in gamma_dict:
                                 p0[self.n_gamma_start + i] = gamma_dict[label]
                                 break
-            elif gm == 'global':
+            elif gm == "global":
                 vals = list(gamma_dict.values())
                 if vals:
                     p0[self.n_gamma_start] = np.mean(vals)
@@ -3790,9 +3980,9 @@ class MultiGeomEDTB_DD:
             p0[self.n_gamma_start : self.n_gamma_start + self.n_gamma] = gamma_dict
 
         if self.verbose:
-            print(f'\np0 from discrete-shell params ({len(p0)} parameters):')
+            print(f"\np0 from discrete-shell params ({len(p0)} parameters):")
             for i, name in enumerate(self.param_labels):
-                print(f'  {name:<30s}  {p0[i]: .5f}')
+                print(f"  {name:<30s}  {p0[i]: .5f}")
 
         return p0
 
@@ -3850,18 +4040,32 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         """
         # If nk <= 0, skip augmentation entirely to recover the original fit
         if nk <= 0:
-            print(f'  HSP k-points added: 0  (nk=0 → no augmentation); total Nk = {self.Nk}')
-            return 0, ''
+            print(
+                f"  HSP k-points added: 0  (nk=0 → no augmentation); total Nk = {self.Nk}"
+            )
+            return 0, ""
 
         # 2-pass dk scaling: first pass gets nk_trial, then rescale dk to hit ~nk
         dk_trial = 0.00001
         kq_trial, _ = _get_path(
-            ibrav, self.alat, self.a_vecs, dk_trial, self.b_vecs, band_path, special_points
+            ibrav,
+            self.alat,
+            self.a_vecs,
+            dk_trial,
+            self.b_vecs,
+            band_path,
+            special_points,
         )
         nk_trial = kq_trial.shape[1]
         scaled_dk = dk_trial * (nk_trial / max(nk, 1))
         kq_frac, path_str = _get_path(
-            ibrav, self.alat, self.a_vecs, scaled_dk, self.b_vecs, band_path, special_points
+            ibrav,
+            self.alat,
+            self.a_vecs,
+            scaled_dk,
+            self.b_vecs,
+            band_path,
+            special_points,
         )
 
         # Fractional → Cartesian (PAOFLOW convention: kfrac @ b_vecs)
@@ -3872,7 +4076,7 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         phases_hsp = np.exp(2j * np.pi * (kpts_hsp @ self.R_arr.T))
         E_hsp = np.zeros((nk_new, self.nawf))
         for ik in range(nk_new):
-            Hk = np.einsum('r,rij->ij', phases_hsp[ik], self.HR_arr)
+            Hk = np.einsum("r,rij->ij", phases_hsp[ik], self.HR_arr)
             E_hsp[ik] = np.sort(np.linalg.eigvalsh(Hk).real)
 
         # Augment fitting arrays
@@ -3882,7 +4086,7 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         self.Nk += nk_new
         self._precompute_dHk()  # rebuild k-dependent Hamiltonian tensors
 
-        print(f'  HSP k-points added: {nk_new}  (target ~{nk}); total Nk = {self.Nk}')
+        print(f"  HSP k-points added: {nk_new}  (target ~{nk}); total Nk = {self.Nk}")
         return nk_new, path_str
 
     # ── weighted least-squares trial ──────────────────────────────────
@@ -3913,7 +4117,14 @@ class SKFitterEDTBHSP(SKFitterEDTB):
             return last_jac[0]
 
         res = least_squares(
-            fun, p_init, jac=jac, method='lm', ftol=ftol, xtol=xtol, gtol=gtol, max_nfev=max_nfev
+            fun,
+            p_init,
+            jac=jac,
+            method="lm",
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            max_nfev=max_nfev,
         )
         rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))  # weighted RMSE
         return rmse, res.x.copy(), res
@@ -3936,7 +4147,7 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         np.ndarray
             SK parameter vector of length ``n_sk``.
         """
-        L_TO_KEY = {0: 's', 1: 'p', 2: 'd'}
+        L_TO_KEY = {0: "s", 1: "p", 2: "d"}
 
         p0 = np.zeros(self.n_sk)
 
@@ -3944,13 +4155,13 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         for sp in sorted(set(self.unique_species)):
             pstart = self.species_param_start[sp]
             groups = self.species_onsite_groups[sp]
-            onsite = params_dict['onsite'][sp]
+            onsite = params_dict["onsite"][sp]
             for ig, (pname, _) in enumerate(groups):
                 inner = pname[2:-1]  # 'g0', 'g1', 'g2_t2g', ...
-                if '_t2g' in inner:
-                    key = 't2g'
-                elif '_eg' in inner:
-                    key = 'eg'
+                if "_t2g" in inner:
+                    key = "t2g"
+                elif "_eg" in inner:
+                    key = "eg"
                 else:
                     # Use shells_dict (actual l-values) rather than group_l
                     # (which is just canonical indices 0,1,2,...)
@@ -3960,9 +4171,9 @@ class SKFitterEDTBHSP(SKFitterEDTB):
                 p0[pstart + ig] = onsite[key]
 
         # ── Hopping integrals ──
-        pair_key = list(params_dict['hoppings'].keys())[0]
+        pair_key = list(params_dict["hoppings"].keys())[0]
         for s in range(self.n_shells):
-            hop_params = params_dict['hoppings'][pair_key][s]['params']
+            hop_params = params_dict["hoppings"][pair_key][s]["params"]
             for ga, gb in self.hop_pair_list:
                 start = self.hop_pair_start[(ga, gb)]
                 active = self.hop_pair_active[(ga, gb)]

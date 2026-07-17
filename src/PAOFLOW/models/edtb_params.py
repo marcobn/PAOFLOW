@@ -61,54 +61,125 @@ import numpy as np
 #  Constants
 # ═══════════════════════════════════════════════════════════════
 
-CURRENT_VERSION = '1.0'
+CURRENT_VERSION = "1.0"
 
-SK_PARAM_NAMES = ['sss', 'sps', 'pps', 'ppp', 'sds', 'pds', 'pdp', 'dds', 'ddp', 'ddd']
+SK_PARAM_NAMES = ["sss", "sps", "pps", "ppp", "sds", "pds", "pdp", "dds", "ddp", "ddd"]
 
 L_ORBITALS = {
-    's': ['s'],
-    'p': ['px', 'py', 'pz'],
-    'd': ['dxy', 'dyz', 'dzx', 'dx2-y2', 'dz2'],
+    "s": ["s"],
+    "p": ["px", "py", "pz"],
+    "d": ["dxy", "dyz", "dzx", "dx2-y2", "dz2"],
 }
 
 # Canonical l-pair labels (sorted: l_lo ≤ l_hi)
-LPAIR_LABELS = ['ss', 'sp', 'sd', 'pp', 'pd', 'dd']
+LPAIR_LABELS = ["ss", "sp", "sd", "pp", "pd", "dd"]
 
 # Active SK integrals for each l-pair
 LPAIR_SK_NAMES = {
-    'ss': ['sss'],
-    'sp': ['sps'],
-    'sd': ['sds'],
-    'pp': ['pps', 'ppp'],
-    'pd': ['pds', 'pdp'],
-    'dd': ['dds', 'ddp', 'ddd'],
+    "ss": ["sss"],
+    "sp": ["sps"],
+    "sd": ["sds"],
+    "pp": ["pps", "ppp"],
+    "pd": ["pds", "pdp"],
+    "dd": ["dds", "ddp", "ddd"],
 }
 
 # Map individual orbital name → l-channel
 _ORB_TO_L = {
-    's': 's',
-    'px': 'p',
-    'py': 'p',
-    'pz': 'p',
-    'dxy': 'd',
-    'dyz': 'd',
-    'dzx': 'd',
-    'dx2-y2': 'd',
-    'dz2': 'd',
+    "s": "s",
+    "px": "p",
+    "py": "p",
+    "pz": "p",
+    "dxy": "d",
+    "dyz": "d",
+    "dzx": "d",
+    "dx2-y2": "d",
+    "dz2": "d",
 }
 
 # Map d-orbital name → cubic-harmonic on-site group
 _ORB_TO_D_GROUP = {
-    'dxy': 't2g',
-    'dyz': 't2g',
-    'dzx': 't2g',
-    'dx2-y2': 'eg',
-    'dz2': 'eg',
+    "dxy": "t2g",
+    "dyz": "t2g",
+    "dzx": "t2g",
+    "dx2-y2": "eg",
+    "dz2": "eg",
 }
 
 
 # Angular-momentum sort key (s=0, p=1, d=2, f=3)
-_L_ORDER = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
+_L_ORDER = {"s": 0, "p": 1, "d": 2, "f": 3}
+
+# Configuration-label angular momentum letter → integer l
+_CONFIG_L_LETTER_TO_L = {"S": 0, "P": 1, "D": 2, "F": 3}
+# Integer l → angular momentum letter (for l-pair SK lookups)
+_L_INT_TO_LETTER = {0: "s", 1: "p", 2: "d", 3: "f"}
+
+
+def _config_is_multiconfig(config: list) -> bool:
+    """True when a configuration lists more than one shell of the same l.
+
+    A multi-configuration basis (e.g. Si 'standard' = ['3S','3P','3D','4S',
+    '4P']) repeats an angular-momentum letter, which requires shell-resolved
+    on-site energies and shell-pair-keyed hoppings rather than the collapsed
+    angular-momentum-only schema.
+    """
+    letters = [str(c)[-1].upper() for c in config]
+    return len(letters) != len(set(letters))
+
+
+def _lpair_label_from_ints(la: int, lb: int) -> str:
+    """Return the canonical l-pair label (e.g. 'sp') for two integer l's."""
+    a, b = sorted((la, lb))
+    return _L_INT_TO_LETTER[a] + _L_INT_TO_LETTER[b]
+
+
+def _params_are_shell_pair_keyed(hop_params: dict) -> bool:
+    """Detect the multi-configuration hopping format.
+
+    Shell-pair-keyed params map a pair label ('3S-4S') to an SK sub-dict,
+    so their *values* are dicts.  Flat (single-configuration) params map an
+    SK name ('sss') to a float.
+    """
+    return any(isinstance(v, dict) for v in hop_params.values())
+
+
+def _validate_shell_pair_params(key: str, s: int, hop_params: dict) -> List[str]:
+    """Validate a multi-configuration (shell-pair-keyed) hopping block.
+
+    Each key is a configuration-label pair ('3S-4S') and each value must
+    carry exactly the SK integrals active for the pair's angular-momentum
+    combination.
+    """
+    errs: List[str] = []
+    for pk, sub in hop_params.items():
+        parts = pk.split("-")
+        if len(parts) != 2:
+            errs.append(f"hoppings['{key}'][{s}]: invalid shell-pair key '{pk}'")
+            continue
+        la = _CONFIG_L_LETTER_TO_L.get(parts[0][-1].upper())
+        lb = _CONFIG_L_LETTER_TO_L.get(parts[1][-1].upper())
+        if la is None or lb is None:
+            errs.append(
+                f"hoppings['{key}'][{s}]: unknown angular momentum in key '{pk}'"
+            )
+            continue
+        if not isinstance(sub, dict):
+            errs.append(f"hoppings['{key}'][{s}]['{pk}']: params must be a dict")
+            continue
+        needed = set(LPAIR_SK_NAMES[_lpair_label_from_ints(la, lb)])
+        got = set(sub.keys())
+        missing = needed - got
+        extra = got - needed
+        if missing:
+            errs.append(
+                f"hoppings['{key}'][{s}]['{pk}']: missing SK params {sorted(missing)}"
+            )
+        if extra:
+            errs.append(
+                f"hoppings['{key}'][{s}]['{pk}']: unexpected SK params {sorted(extra)}"
+            )
+    return errs
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -137,10 +208,12 @@ def species_pair_key(sp1: str, sp2: str) -> str:
     'Pt-Pt'
     """
     a, b = sorted([sp1, sp2])
-    return f'{a}-{b}'
+    return f"{a}-{b}"
 
 
-def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
+def active_sk_names_for_basis(
+    l_channels_a: List[str], l_channels_b: List[str]
+) -> List[str]:
     """Return the SK parameter names active for a given species-pair basis.
 
     Determines which Slater-Koster integrals are needed from the
@@ -165,7 +238,7 @@ def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) 
     seen = set()
     for la in l_channels_a:
         for lb in l_channels_b:
-            lp = ''.join(sorted([la, lb], key=lambda x: _L_ORDER.get(x, 99)))
+            lp = "".join(sorted([la, lb], key=lambda x: _L_ORDER.get(x, 99)))
             if lp in LPAIR_SK_NAMES:
                 for n in LPAIR_SK_NAMES[lp]:
                     if n not in seen:
@@ -198,7 +271,7 @@ def active_gamma_labels(l_channels_a: List[str], l_channels_b: List[str]) -> Lis
     seen = set()
     for la in l_channels_a:
         for lb in l_channels_b:
-            lp = ''.join(sorted([la, lb], key=lambda x: _L_ORDER.get(x, 99)))
+            lp = "".join(sorted([la, lb], key=lambda x: _L_ORDER.get(x, 99)))
             if lp in LPAIR_LABELS and lp not in seen:
                 labels.append(lp)
                 seen.add(lp)
@@ -232,7 +305,7 @@ def _orbital_to_onsite_group(orb: str, onsite_keys: set) -> str:
     l = _ORB_TO_L[orb]
     if l in onsite_keys:
         return l
-    if l == 'd':
+    if l == "d":
         group = _ORB_TO_D_GROUP[orb]
         if group in onsite_keys:
             return group
@@ -268,76 +341,79 @@ def validate_params(params: dict) -> List[str]:
     errors = []
 
     # ── Version ──
-    if 'edtb_version' not in params:
+    if "edtb_version" not in params:
         errors.append("Missing 'edtb_version'")
 
     # ── Basis ──
-    if 'basis' not in params:
+    if "basis" not in params:
         errors.append("Missing 'basis'")
         return errors  # cannot validate further
 
-    basis = params['basis']
+    basis = params["basis"]
     species_list = sorted(basis.keys())
 
     for sp in species_list:
         b = basis[sp]
-        if 'orbitals' not in b:
+        if "orbitals" not in b:
             errors.append(f"basis['{sp}']: missing 'orbitals'")
-        if 'l_channels' not in b:
+        if "l_channels" not in b:
             errors.append(f"basis['{sp}']: missing 'l_channels'")
         # Consistency: every orbital must map to a declared l-channel
-        if 'orbitals' in b and 'l_channels' in b:
-            for orb in b['orbitals']:
+        if "orbitals" in b and "l_channels" in b:
+            for orb in b["orbitals"]:
                 l = _ORB_TO_L.get(orb)
                 if l is None:
                     errors.append(f"basis['{sp}']: unknown orbital '{orb}'")
-                elif l not in b['l_channels']:
+                elif l not in b["l_channels"]:
                     errors.append(
                         f"basis['{sp}']: orbital '{orb}' (l={l}) "
-                        f'not in l_channels {b["l_channels"]}'
+                        f"not in l_channels {b['l_channels']}"
                     )
 
     # ── Onsite ──
-    if 'onsite' not in params:
+    if "onsite" not in params:
         errors.append("Missing 'onsite'")
     else:
         for sp in species_list:
-            if sp not in params['onsite']:
+            if sp not in params["onsite"]:
                 errors.append(f"onsite: missing species '{sp}'")
 
     # ── Hoppings ──
-    if 'hoppings' not in params:
+    if "hoppings" not in params:
         errors.append("Missing 'hoppings'")
     else:
         for i, sp1 in enumerate(species_list):
             for sp2 in species_list[i:]:
                 key = species_pair_key(sp1, sp2)
-                if key not in params['hoppings']:
+                if key not in params["hoppings"]:
                     errors.append(f"hoppings: missing species pair '{key}'")
                 else:
-                    shells = params['hoppings'][key]
-                    if isinstance(shells, dict) and shells.get('type') == 'distance_dependent':
+                    shells = params["hoppings"][key]
+                    if (
+                        isinstance(shells, dict)
+                        and shells.get("type") == "distance_dependent"
+                    ):
                         # ── Distance-dependent format ──
-                        for field in ('r_0', 'r_c', 'n_c', 'channels'):
+                        for field in ("r_0", "r_c", "n_c", "channels"):
                             if field not in shells:
                                 errors.append(f"hoppings['{key}']: missing '{field}'")
-                        if 'channels' in shells:
-                            lc_a = basis.get(sp1, {}).get('l_channels', [])
-                            lc_b = basis.get(sp2, {}).get('l_channels', [])
+                        if "channels" in shells:
+                            lc_a = basis.get(sp1, {}).get("l_channels", [])
+                            lc_b = basis.get(sp2, {}).get("l_channels", [])
                             expected_sk = set(active_sk_names_for_basis(lc_a, lc_b))
-                            got = set(shells['channels'].keys())
+                            got = set(shells["channels"].keys())
                             missing = expected_sk - got
                             if missing:
                                 errors.append(
                                     f"hoppings['{key}']: missing DD channels "
-                                    f'{sorted(missing)} for '
-                                    f'l_channels {lc_a}\u00d7{lc_b}'
+                                    f"{sorted(missing)} for "
+                                    f"l_channels {lc_a}\u00d7{lc_b}"
                                 )
-                            for ch_name, ch_val in shells['channels'].items():
+                            for ch_name, ch_val in shells["channels"].items():
                                 if (
                                     not isinstance(ch_val, dict)
-                                    or 'V0' not in ch_val
-                                    or 'n' not in ch_val
+                                    or "V0" not in ch_val
+                                    or "n" not in ch_val
                                 ):
                                     errors.append(
                                         f"hoppings['{key}'].channels['{ch_name}']: "
@@ -346,66 +422,77 @@ def validate_params(params: dict) -> List[str]:
                     elif not isinstance(shells, list) or len(shells) == 0:
                         errors.append(
                             f"hoppings['{key}']: must be a non-empty list of shells "
-                            f'or a distance_dependent dict'
+                            f"or a distance_dependent dict"
                         )
                     else:
                         # Expected SK param names for this species pair
-                        lc_a = basis.get(sp1, {}).get('l_channels', [])
-                        lc_b = basis.get(sp2, {}).get('l_channels', [])
+                        lc_a = basis.get(sp1, {}).get("l_channels", [])
+                        lc_b = basis.get(sp2, {}).get("l_channels", [])
                         expected_sk = set(active_sk_names_for_basis(lc_a, lc_b))
                         for s, shell in enumerate(shells):
-                            if 'r_ref' not in shell:
-                                errors.append(f"hoppings['{key}'][{s}]: missing 'r_ref'")
-                            if 'params' not in shell:
-                                errors.append(f"hoppings['{key}'][{s}]: missing 'params'")
+                            if "r_ref" not in shell:
+                                errors.append(
+                                    f"hoppings['{key}'][{s}]: missing 'r_ref'"
+                                )
+                            if "params" not in shell:
+                                errors.append(
+                                    f"hoppings['{key}'][{s}]: missing 'params'"
+                                )
+                                continue
+                            if _params_are_shell_pair_keyed(shell["params"]):
+                                # Multi-configuration: validate each shell-pair
+                                # SK sub-dict against its angular-momentum pair.
+                                errors.extend(
+                                    _validate_shell_pair_params(key, s, shell["params"])
+                                )
                             elif expected_sk:
-                                got = set(shell['params'].keys())
+                                got = set(shell["params"].keys())
                                 missing = expected_sk - got
                                 extra = got - expected_sk
                                 if missing:
                                     errors.append(
                                         f"hoppings['{key}'][{s}]: missing SK "
-                                        f'params {sorted(missing)} for '
-                                        f'l_channels {lc_a}\u00d7{lc_b}'
+                                        f"params {sorted(missing)} for "
+                                        f"l_channels {lc_a}\u00d7{lc_b}"
                                     )
                                 if extra:
                                     errors.append(
                                         f"hoppings['{key}'][{s}]: unexpected "
-                                        f'SK params {sorted(extra)} for '
-                                        f'l_channels {lc_a}\u00d7{lc_b}'
+                                        f"SK params {sorted(extra)} for "
+                                        f"l_channels {lc_a}\u00d7{lc_b}"
                                     )
 
     # ── Screening (optional) ──
-    if 'screening' in params:
-        scr = params['screening']
-        if 'r_cut' not in scr:
+    if "screening" in params:
+        scr = params["screening"]
+        if "r_cut" not in scr:
             errors.append("screening: missing 'r_cut'")
-        if 'gamma' not in scr:
+        if "gamma" not in scr:
             errors.append("screening: missing 'gamma'")
         else:
             for i, sp1 in enumerate(species_list):
                 for sp2 in species_list[i:]:
                     key = species_pair_key(sp1, sp2)
-                    if key not in scr['gamma']:
+                    if key not in scr["gamma"]:
                         errors.append(f"screening.gamma: missing species pair '{key}'")
-                    elif isinstance(scr['gamma'][key], dict):
-                        lc_a = basis.get(sp1, {}).get('l_channels', [])
-                        lc_b = basis.get(sp2, {}).get('l_channels', [])
+                    elif isinstance(scr["gamma"][key], dict):
+                        lc_a = basis.get(sp1, {}).get("l_channels", [])
+                        lc_b = basis.get(sp2, {}).get("l_channels", [])
                         expected_g = set(active_gamma_labels(lc_a, lc_b))
-                        got_g = set(scr['gamma'][key].keys())
+                        got_g = set(scr["gamma"][key].keys())
                         missing_g = expected_g - got_g
                         extra_g = got_g - expected_g
                         if missing_g:
                             errors.append(
                                 f"screening.gamma['{key}']: missing "
-                                f'labels {sorted(missing_g)} for '
-                                f'l_channels {lc_a}\u00d7{lc_b}'
+                                f"labels {sorted(missing_g)} for "
+                                f"l_channels {lc_a}\u00d7{lc_b}"
                             )
                         if extra_g:
                             errors.append(
                                 f"screening.gamma['{key}']: unexpected "
-                                f'labels {sorted(extra_g)} for '
-                                f'l_channels {lc_a}\u00d7{lc_b}'
+                                f"labels {sorted(extra_g)} for "
+                                f"l_channels {lc_a}\u00d7{lc_b}"
                             )
 
     return errors
@@ -431,28 +518,28 @@ def validate_geometry(geometry: dict) -> List[str]:
     """
     errors = []
 
-    if 'alat' not in geometry:
+    if "alat" not in geometry:
         errors.append("Missing 'alat'")
-    if 'a_vectors' not in geometry:
+    if "a_vectors" not in geometry:
         errors.append("Missing 'a_vectors'")
     else:
-        av = geometry['a_vectors']
+        av = geometry["a_vectors"]
         if not isinstance(av, list) or len(av) != 3:
             errors.append("'a_vectors' must be a list of 3 vectors")
         else:
             for i, v in enumerate(av):
                 if not isinstance(v, list) or len(v) != 3:
-                    errors.append(f'a_vectors[{i}]: must be a 3-element list')
+                    errors.append(f"a_vectors[{i}]: must be a 3-element list")
 
-    if 'atoms' not in geometry:
+    if "atoms" not in geometry:
         errors.append("Missing 'atoms'")
     else:
-        for i, atom in enumerate(geometry['atoms']):
-            if 'species' not in atom:
+        for i, atom in enumerate(geometry["atoms"]):
+            if "species" not in atom:
                 errors.append(f"atoms[{i}]: missing 'species'")
-            if 'tau' not in atom:
+            if "tau" not in atom:
                 errors.append(f"atoms[{i}]: missing 'tau'")
-            elif not isinstance(atom['tau'], list) or len(atom['tau']) != 3:
+            elif not isinstance(atom["tau"], list) or len(atom["tau"]) != 3:
                 errors.append(f"atoms[{i}]: 'tau' must be a 3-element list")
 
     return errors
@@ -463,7 +550,9 @@ def validate_geometry(geometry: dict) -> List[str]:
 # ═══════════════════════════════════════════════════════════════
 
 
-def write_params(filepath: Union[str, Path], params: dict, *, validate: bool = True) -> None:
+def write_params(
+    filepath: Union[str, Path], params: dict, *, validate: bool = True
+) -> None:
     """Write EDTB parameters to a JSON file.
 
     Parameters
@@ -483,10 +572,10 @@ def write_params(filepath: Union[str, Path], params: dict, *, validate: bool = T
     if validate:
         errors = validate_params(params)
         if errors:
-            raise ValueError('Invalid parameter dict:\n  ' + '\n  '.join(errors))
+            raise ValueError("Invalid parameter dict:\n  " + "\n  ".join(errors))
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         json.dump(params, f, indent=2)
 
 
@@ -511,7 +600,9 @@ def read_params(filepath: Union[str, Path], *, validate: bool = True) -> dict:
     if validate:
         errors = validate_params(params)
         if errors:
-            raise ValueError(f"Invalid parameter file '{filepath}':\n  " + '\n  '.join(errors))
+            raise ValueError(
+                f"Invalid parameter file '{filepath}':\n  " + "\n  ".join(errors)
+            )
     return params
 
 
@@ -520,7 +611,9 @@ def read_params(filepath: Union[str, Path], *, validate: bool = True) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 
-def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool = True) -> None:
+def write_geometry(
+    filepath: Union[str, Path], geometry: dict, *, validate: bool = True
+) -> None:
     """Write a geometry file (JSON).
 
     Parameters
@@ -535,10 +628,10 @@ def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool
     if validate:
         errors = validate_geometry(geometry)
         if errors:
-            raise ValueError('Invalid geometry dict:\n  ' + '\n  '.join(errors))
+            raise ValueError("Invalid geometry dict:\n  " + "\n  ".join(errors))
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         json.dump(geometry, f, indent=2)
 
 
@@ -568,7 +661,9 @@ def read_geometry(filepath: Union[str, Path], *, validate: bool = True) -> dict:
     if validate:
         errors = validate_geometry(geometry)
         if errors:
-            raise ValueError(f"Invalid geometry file '{filepath}':\n  " + '\n  '.join(errors))
+            raise ValueError(
+                f"Invalid geometry file '{filepath}':\n  " + "\n  ".join(errors)
+            )
     return geometry
 
 
@@ -612,7 +707,13 @@ def compute_shell_distances(a_vectors, tau_list, n_shells=3, r_max=20.0, tol=0.0
                     for n3 in range(-nmax, nmax + 1):
                         if ia == ib and n1 == 0 and n2 == 0 and n3 == 0:
                             continue
-                        R = taus[ib] - taus[ia] + n1 * a_vecs[0] + n2 * a_vecs[1] + n3 * a_vecs[2]
+                        R = (
+                            taus[ib]
+                            - taus[ia]
+                            + n1 * a_vecs[0]
+                            + n2 * a_vecs[1]
+                            + n3 * a_vecs[2]
+                        )
                         d = np.linalg.norm(R)
                         if 0 < d < r_max:
                             all_dists.add(round(d, 6))
@@ -628,7 +729,9 @@ def compute_shell_distances(a_vectors, tau_list, n_shells=3, r_max=20.0, tol=0.0
     return shells
 
 
-def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=20.0, tol=0.01):
+def compute_pair_shell_distances(
+    a_vectors, atoms, sp1, sp2, n_shells=3, r_max=20.0, tol=0.01
+):
     """Compute neighbor-shell distances for a specific species pair.
 
     Unlike ``compute_shell_distances`` (which pools all atom pairs),
@@ -657,9 +760,9 @@ def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=2
     a_vecs = np.asarray(a_vectors)
     nmax = int(np.ceil(r_max / np.min(np.linalg.norm(a_vecs, axis=1)))) + 1
 
-    idx_a = [i for i, at in enumerate(atoms) if at['species'] == sp1]
-    idx_b = [i for i, at in enumerate(atoms) if at['species'] == sp2]
-    taus = [np.asarray(at['tau']) for at in atoms]
+    idx_a = [i for i, at in enumerate(atoms) if at["species"] == sp1]
+    idx_b = [i for i, at in enumerate(atoms) if at["species"] == sp2]
+    taus = [np.asarray(at["tau"]) for at in atoms]
 
     all_dists: set = set()
     for ia in idx_a:
@@ -669,7 +772,13 @@ def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=2
                     for n3 in range(-nmax, nmax + 1):
                         if ia == ib and n1 == 0 and n2 == 0 and n3 == 0:
                             continue
-                        R = taus[ib] - taus[ia] + n1 * a_vecs[0] + n2 * a_vecs[1] + n3 * a_vecs[2]
+                        R = (
+                            taus[ib]
+                            - taus[ia]
+                            + n1 * a_vecs[0]
+                            + n2 * a_vecs[1]
+                            + n3 * a_vecs[2]
+                        )
                         d = float(np.linalg.norm(R))
                         if 0 < d < r_max:
                             all_dists.add(round(d, 6))
@@ -721,53 +830,62 @@ def from_model_dict(
     geometry : dict
         New-format geometry dict.
     """
-    m = model_dict['model']
-    alat = float(model_dict.get('alat', 1.0))
-    label = model_dict.get('label', '')
+    m = model_dict["model"]
+    alat = float(model_dict.get("alat", 1.0))
+    label = model_dict.get("label", "")
 
     # ── Detect hopping format ──
-    first_hop_value = next(iter(m['hoppings'].values()))
-    dd_format = isinstance(first_hop_value, dict) and 'channels' in first_hop_value
+    first_hop_value = next(iter(m["hoppings"].values()))
+    dd_format = isinstance(first_hop_value, dict) and "channels" in first_hop_value
     new_format = isinstance(first_hop_value, list)
 
     # ── Parse atoms ──
-    atoms_old = m['atoms']
+    atoms_old = m["atoms"]
     natoms = len(atoms_old)
 
     species_info: Dict[str, dict] = {}
     geom_atoms = []
 
     # Map configuration label (e.g. '2S', '3P', '3D') → l-channel
-    _CONFIG_TO_L = {'S': 's', 'P': 'p', 'D': 'd', 'F': 'f'}
+    _CONFIG_TO_L = {"S": "s", "P": "p", "D": "d", "F": "f"}
 
     for ia in range(natoms):
         atom = atoms_old[str(ia)]
-        sp = atom['name']
-        geom_atoms.append({'species': sp, 'tau': atom['tau']})
+        sp = atom["name"]
+        geom_atoms.append({"species": sp, "tau": atom["tau"]})
 
         if sp not in species_info:
-            if 'configuration' in atom:
+            if "configuration" in atom:
                 # Configuration-based atom (e.g. ['2S', '2P', '3D'])
-                config = atom['configuration']
+                config = atom["configuration"]
                 orbitals = []
+                orbital_shells = []
                 l_channels = []
                 for cfg_label in config:
                     l_char = cfg_label[-1].upper()  # '2S' → 'S'
                     lc = _CONFIG_TO_L.get(l_char)
                     if lc:
-                        orbitals.extend(L_ORBITALS[lc])
+                        shell_orbs = L_ORBITALS[lc]
+                        orbitals.extend(shell_orbs)
+                        orbital_shells.extend([cfg_label] * len(shell_orbs))
                         if lc not in l_channels:
                             l_channels.append(lc)
-                species_info[sp] = {'orbitals': orbitals, 'l_channels': l_channels}
+                info = {"orbitals": orbitals, "l_channels": l_channels}
+                # Preserve shell resolution for multi-configuration bases so
+                # the round-trip keeps 3S/4S (etc.) distinct.
+                if _config_is_multiconfig(config):
+                    info["configuration"] = list(config)
+                    info["orbital_shells"] = orbital_shells
+                species_info[sp] = info
             else:
                 # Orbital-based atom (e.g. orbitals=['s','px','py','pz'])
-                orbitals = list(atom.get('orbitals', []))
+                orbitals = list(atom.get("orbitals", []))
                 l_channels = []
                 for orb in orbitals:
                     l = _ORB_TO_L.get(orb)
                     if l and l not in l_channels:
                         l_channels.append(l)
-                species_info[sp] = {'orbitals': orbitals, 'l_channels': l_channels}
+                species_info[sp] = {"orbitals": orbitals, "l_channels": l_channels}
 
     # ── Basis ──
     basis = {sp: dict(info) for sp, info in species_info.items()}
@@ -776,55 +894,75 @@ def from_model_dict(
     onsite: Dict[str, dict] = {}
     for ia in range(natoms):
         atom = atoms_old[str(ia)]
-        sp = atom['name']
+        sp = atom["name"]
         if sp in onsite:
             continue
-        l_channels = species_info[sp]['l_channels']
+        l_channels = species_info[sp]["l_channels"]
         on: Dict[str, float] = {}
 
-        if 'configuration' in atom:
+        if "configuration" in atom:
             # Configuration-based: keys like '2S', '2P', '3D',
             # and for d-orbitals possibly '3D_t2g' / '3D_eg'
-            config = atom['configuration']
-            for cfg_label in config:
-                l_char = cfg_label[-1].upper()
-                lc = _CONFIG_TO_L.get(l_char)
-                if not lc:
-                    continue
-                if lc == 'd':
-                    key_t2g = f'{cfg_label}_t2g'
-                    key_eg = f'{cfg_label}_eg'
-                    if key_t2g in atom and key_eg in atom:
-                        val_t2g = atom[key_t2g]
-                        val_eg = atom[key_eg]
-                        if abs(val_t2g - val_eg) > 1e-10:
-                            on['t2g'] = val_t2g
-                            on['eg'] = val_eg
-                        else:
-                            on['d'] = val_t2g
+            config = atom["configuration"]
+            if _config_is_multiconfig(config):
+                # Multi-configuration: keep one on-site entry per shell
+                # (keyed by the configuration label, with _t2g/_eg for d
+                # shells) so 3S and 4S are not collapsed onto a single 's'.
+                for cfg_label in config:
+                    l_char = cfg_label[-1].upper()
+                    lc = _CONFIG_TO_L.get(l_char)
+                    if not lc:
+                        continue
+                    if lc == "d":
+                        key_t2g = f"{cfg_label}_t2g"
+                        key_eg = f"{cfg_label}_eg"
+                        if key_t2g in atom and key_eg in atom:
+                            on[key_t2g] = atom[key_t2g]
+                            on[key_eg] = atom[key_eg]
+                        elif cfg_label in atom:
+                            on[cfg_label] = atom[cfg_label]
                     elif cfg_label in atom:
-                        on['d'] = atom[cfg_label]
-                else:
-                    if cfg_label in atom:
-                        on[lc] = atom[cfg_label]
+                        on[cfg_label] = atom[cfg_label]
+            else:
+                for cfg_label in config:
+                    l_char = cfg_label[-1].upper()
+                    lc = _CONFIG_TO_L.get(l_char)
+                    if not lc:
+                        continue
+                    if lc == "d":
+                        key_t2g = f"{cfg_label}_t2g"
+                        key_eg = f"{cfg_label}_eg"
+                        if key_t2g in atom and key_eg in atom:
+                            val_t2g = atom[key_t2g]
+                            val_eg = atom[key_eg]
+                            if abs(val_t2g - val_eg) > 1e-10:
+                                on["t2g"] = val_t2g
+                                on["eg"] = val_eg
+                            else:
+                                on["d"] = val_t2g
+                        elif cfg_label in atom:
+                            on["d"] = atom[cfg_label]
+                    else:
+                        if cfg_label in atom:
+                            on[lc] = atom[cfg_label]
         else:
             # Orbital-based: keys like 's', 'px', 'dxy'
             for lc in l_channels:
-                if lc in ('s', 'p'):
+                if lc in ("s", "p"):
                     rep = L_ORBITALS[lc][0]  # "s" or "px"
                     if rep in atom:
                         on[lc] = atom[rep]
-                elif lc == 'd':
-                    val_t2g = atom.get('dxy')
-                    val_eg = atom.get('dx2-y2')
+                elif lc == "d":
+                    val_t2g = atom.get("dxy")
+                    val_eg = atom.get("dx2-y2")
                     if val_t2g is not None and val_eg is not None:
                         if abs(val_t2g - val_eg) > 1e-10:
-                            on['t2g'] = val_t2g
-                            on['eg'] = val_eg
+                            on["t2g"] = val_t2g
+                            on["eg"] = val_eg
                         else:
-                            on['d'] = val_t2g
+                            on["d"] = val_t2g
                     elif val_t2g is not None:
-                        on['d'] = val_t2g
+                        on["d"] = val_t2g
         onsite[sp] = on
 
     species_list = sorted(species_info.keys())
@@ -832,26 +970,27 @@ def from_model_dict(
     if dd_format:
         # ── Distance-dependent format: pass through ──
         hoppings = {}
-        for k, v in m['hoppings'].items():
+        for k, v in m["hoppings"].items():
             hoppings[k] = {
-                'type': 'distance_dependent',
-                'r_0': v['r_0'],
-                'r_c': v['r_c'],
-                'n_c': v['n_c'],
-                'channels': {ch: dict(cp) for ch, cp in v['channels'].items()},
+                "type": "distance_dependent",
+                "r_0": v["r_0"],
+                "r_c": v["r_c"],
+                "n_c": v["n_c"],
+                "channels": {ch: dict(cp) for ch, cp in v["channels"].items()},
             }
 
         # ── Screening ──
         screening = None
-        if 'screening' in m:
-            scr = m['screening']
-            gamma_raw = scr['gamma']
+        if "screening" in m:
+            scr = m["screening"]
+            gamma_raw = scr["gamma"]
             if isinstance(gamma_raw, dict):
                 first_g = next(iter(gamma_raw.values()))
                 if isinstance(first_g, (dict, float, int)):
-                    if any('-' in k for k in gamma_raw):
+                    if any("-" in k for k in gamma_raw):
                         gamma = {
-                            k: (dict(v) if isinstance(v, dict) else v) for k, v in gamma_raw.items()
+                            k: (dict(v) if isinstance(v, dict) else v)
+                            for k, v in gamma_raw.items()
                         }
                     else:
                         gamma = {}
@@ -865,27 +1004,28 @@ def from_model_dict(
                     for sp2 in species_list[i:]:
                         key = species_pair_key(sp1, sp2)
                         gamma[key] = float(gamma_raw)
-            screening = {'r_cut': scr['r_cut'], 'gamma': gamma}
-            if 'onsite_shift' in scr:
-                screening['onsite_shift'] = dict(scr['onsite_shift'])
+            screening = {"r_cut": scr["r_cut"], "gamma": gamma}
+            if "onsite_shift" in scr:
+                screening["onsite_shift"] = dict(scr["onsite_shift"])
 
     elif new_format:
         # ── New format: hoppings are already species-pair-keyed ──
-        hoppings = {k: list(v) for k, v in m['hoppings'].items()}
+        hoppings = {k: list(v) for k, v in m["hoppings"].items()}
 
         # ── Screening ──
         screening = None
-        if 'screening' in m:
-            scr = m['screening']
-            gamma_raw = scr['gamma']
+        if "screening" in m:
+            scr = m["screening"]
+            gamma_raw = scr["gamma"]
             # gamma may already be pair-keyed or bare
             if isinstance(gamma_raw, dict):
                 first_g = next(iter(gamma_raw.values()))
                 if isinstance(first_g, (dict, float, int)):
                     # Check if top-level keys are species-pair keys (contain '-')
-                    if any('-' in k for k in gamma_raw):
+                    if any("-" in k for k in gamma_raw):
                         gamma = {
-                            k: (dict(v) if isinstance(v, dict) else v) for k, v in gamma_raw.items()
+                            k: (dict(v) if isinstance(v, dict) else v)
+                            for k, v in gamma_raw.items()
                         }
                     else:
                         # Bare l-pair dict → wrap for every species pair
@@ -900,19 +1040,19 @@ def from_model_dict(
                     for sp2 in species_list[i:]:
                         key = species_pair_key(sp1, sp2)
                         gamma[key] = float(gamma_raw)
-            screening = {'r_cut': scr['r_cut'], 'gamma': gamma}
-            if 'onsite_shift' in scr:
-                screening['onsite_shift'] = dict(scr['onsite_shift'])
+            screening = {"r_cut": scr["r_cut"], "gamma": gamma}
+            if "onsite_shift" in scr:
+                screening["onsite_shift"] = dict(scr["onsite_shift"])
     else:
         # ── Old format: shell-tag keyed, species-blind ──
-        shell_tags = sorted(m['hoppings'].keys(), key=len)
-        a_vecs_bohr = np.array(m['a_vectors']) * alat
+        shell_tags = sorted(m["hoppings"].keys(), key=len)
+        a_vecs_bohr = np.array(m["a_vectors"]) * alat
 
         # Build atom list in Bohr for per-pair distance computation
         atoms_bohr = [
             {
-                'species': atoms_old[str(ia)]['name'],
-                'tau': (np.array(atoms_old[str(ia)]['tau']) * alat).tolist(),
+                "species": atoms_old[str(ia)]["name"],
+                "tau": (np.array(atoms_old[str(ia)]["tau"]) * alat).tolist(),
             }
             for ia in range(natoms)
         ]
@@ -942,20 +1082,20 @@ def from_model_dict(
 
                 shells = []
                 for tag in shell_tags:
-                    hop_data = m['hoppings'][tag]
+                    hop_data = m["hoppings"][tag]
                     shells.append(
                         {
-                            'r_ref': round(pair_dists[tag], 6),
-                            'params': {k: v for k, v in hop_data.items()},
+                            "r_ref": round(pair_dists[tag], 6),
+                            "params": {k: v for k, v in hop_data.items()},
                         }
                     )
                 hoppings[key] = shells
 
         # ── Screening ──
         screening = None
-        if 'screening' in m:
-            scr = m['screening']
-            gamma_raw = scr['gamma']
+        if "screening" in m:
+            scr = m["screening"]
+            gamma_raw = scr["gamma"]
             gamma: Dict[str, Any] = {}
             for i, sp1 in enumerate(species_list):
                 for sp2 in species_list[i:]:
@@ -964,23 +1104,23 @@ def from_model_dict(
                         gamma[key] = {k: v for k, v in gamma_raw.items()}
                     else:
                         gamma[key] = float(gamma_raw)
-            screening = {'r_cut': scr['r_cut'], 'gamma': gamma}
+            screening = {"r_cut": scr["r_cut"], "gamma": gamma}
 
     # ── Assemble ──
     params = {
-        'edtb_version': CURRENT_VERSION,
-        'description': f"Converted from '{label}' model",
-        'basis': basis,
-        'onsite': onsite,
-        'hoppings': hoppings,
+        "edtb_version": CURRENT_VERSION,
+        "description": f"Converted from '{label}' model",
+        "basis": basis,
+        "onsite": onsite,
+        "hoppings": hoppings,
     }
     if screening is not None:
-        params['screening'] = screening
+        params["screening"] = screening
 
     geometry = {
-        'alat': alat,
-        'a_vectors': m['a_vectors'],
-        'atoms': geom_atoms,
+        "alat": alat,
+        "a_vectors": m["a_vectors"],
+        "atoms": geom_atoms,
     }
 
     return params, geometry
@@ -1013,58 +1153,74 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
 
     # ── Atoms ──
     atoms_dict = {}
-    for ia, atom in enumerate(geometry['atoms']):
-        sp = atom['species']
-        basis_sp = params['basis'][sp]
-        on = params['onsite'][sp]
-        atom_d = {
-            'name': sp,
-            'tau': atom['tau'],
-            'orbitals': list(basis_sp['orbitals']),
-        }
-        on_keys = set(on.keys())
-        for orb in basis_sp['orbitals']:
-            group = _orbital_to_onsite_group(orb, on_keys)
-            atom_d[orb] = on[group]
+    for ia, atom in enumerate(geometry["atoms"]):
+        sp = atom["species"]
+        basis_sp = params["basis"][sp]
+        on = params["onsite"][sp]
+        if "configuration" in basis_sp:
+            # Multi-configuration: emit a shell-resolved atom so
+            # models.Slater_Koster routes each shell-pair to its own SK
+            # parameters and each shell to its own on-site energy.
+            atom_d = {
+                "name": sp,
+                "tau": atom["tau"],
+                "configuration": list(basis_sp["configuration"]),
+                "orbitals": list(basis_sp["orbitals"]),
+            }
+            for k, v in on.items():
+                atom_d[k] = v
+        else:
+            atom_d = {
+                "name": sp,
+                "tau": atom["tau"],
+                "orbitals": list(basis_sp["orbitals"]),
+            }
+            on_keys = set(on.keys())
+            for orb in basis_sp["orbitals"]:
+                group = _orbital_to_onsite_group(orb, on_keys)
+                atom_d[orb] = on[group]
         atoms_dict[str(ia)] = atom_d
 
     # ── Hoppings (pass-through, species-pair-keyed) ──
     hoppings = {}
-    for pair_key, shells in params['hoppings'].items():
-        if isinstance(shells, dict) and shells.get('type') == 'distance_dependent':
+    for pair_key, shells in params["hoppings"].items():
+        if isinstance(shells, dict) and shells.get("type") == "distance_dependent":
             hoppings[pair_key] = {
-                'type': 'distance_dependent',
-                'r_0': shells['r_0'],
-                'r_c': shells['r_c'],
-                'n_c': shells['n_c'],
-                'channels': {ch: dict(cp) for ch, cp in shells['channels'].items()},
+                "type": "distance_dependent",
+                "r_0": shells["r_0"],
+                "r_c": shells["r_c"],
+                "n_c": shells["n_c"],
+                "channels": {ch: dict(cp) for ch, cp in shells["channels"].items()},
             }
         else:
             hoppings[pair_key] = [
-                {'r_ref': shell['r_ref'], 'params': dict(shell['params'])} for shell in shells
+                {"r_ref": shell["r_ref"], "params": dict(shell["params"])}
+                for shell in shells
             ]
 
     # ── Model dict ──
-    has_screening = 'screening' in params
-    label = 'SK_EDTB' if has_screening else 'Slater_Koster'
+    has_screening = "screening" in params
+    label = "SK_EDTB" if has_screening else "Slater_Koster"
 
     model = {
-        'label': label,
-        'alat': geometry['alat'],
-        'model': {
-            'a_vectors': geometry['a_vectors'],
-            'atoms': atoms_dict,
-            'hoppings': hoppings,
+        "label": label,
+        "alat": geometry["alat"],
+        "model": {
+            "a_vectors": geometry["a_vectors"],
+            "atoms": atoms_dict,
+            "hoppings": hoppings,
         },
     }
 
     if has_screening:
-        scr = params['screening']
-        gamma = {k: (dict(v) if isinstance(v, dict) else v) for k, v in scr['gamma'].items()}
-        screening_out: Dict[str, Any] = {'r_cut': scr['r_cut'], 'gamma': gamma}
-        if 'onsite_shift' in scr:
-            screening_out['onsite_shift'] = dict(scr['onsite_shift'])
-        model['model']['screening'] = screening_out
+        scr = params["screening"]
+        gamma = {
+            k: (dict(v) if isinstance(v, dict) else v) for k, v in scr["gamma"].items()
+        }
+        screening_out: Dict[str, Any] = {"r_cut": scr["r_cut"], "gamma": gamma}
+        if "onsite_shift" in scr:
+            screening_out["onsite_shift"] = dict(scr["onsite_shift"])
+        model["model"]["screening"] = screening_out
 
     return model
 
@@ -1093,58 +1249,58 @@ def summarize_params(params: dict) -> str:
         Multi-line formatted summary string.
     """
     lines = []
-    lines.append(f'EDTB Parameters  (v{params.get("edtb_version", "?")})')
-    if 'description' in params:
-        lines.append(f'  {params["description"]}')
+    lines.append(f"EDTB Parameters  (v{params.get('edtb_version', '?')})")
+    if "description" in params:
+        lines.append(f"  {params['description']}")
 
-    basis = params.get('basis', {})
+    basis = params.get("basis", {})
     species = sorted(basis.keys())
-    lines.append(f'\nSpecies: {", ".join(species)}')
+    lines.append(f"\nSpecies: {', '.join(species)}")
 
     for sp in species:
         b = basis[sp]
         lines.append(
-            f'  {sp}: l_channels={b.get("l_channels", "?")}, norb={len(b.get("orbitals", []))}'
+            f"  {sp}: l_channels={b.get('l_channels', '?')}, norb={len(b.get('orbitals', []))}"
         )
-        on = params.get('onsite', {}).get(sp, {})
-        on_str = ', '.join(f'{k}={v:.4f}' for k, v in on.items())
-        lines.append(f'    onsite: {on_str}')
+        on = params.get("onsite", {}).get(sp, {})
+        on_str = ", ".join(f"{k}={v:.4f}" for k, v in on.items())
+        lines.append(f"    onsite: {on_str}")
 
-    hoppings = params.get('hoppings', {})
-    lines.append(f'\nHopping blocks: {len(hoppings)} species pairs')
+    hoppings = params.get("hoppings", {})
+    lines.append(f"\nHopping blocks: {len(hoppings)} species pairs")
     for key in sorted(hoppings.keys()):
         shells = hoppings[key]
-        if isinstance(shells, dict) and shells.get('type') == 'distance_dependent':
+        if isinstance(shells, dict) and shells.get("type") == "distance_dependent":
             lines.append(
-                f'  {key}: distance-dependent  r_0={shells.get("r_0", "?")}  r_c={shells.get("r_c", "?")} Bohr'
+                f"  {key}: distance-dependent  r_0={shells.get('r_0', '?')}  r_c={shells.get('r_c', '?')} Bohr"
             )
-            channels = shells.get('channels', {})
+            channels = shells.get("channels", {})
             for ch, cp in sorted(channels.items()):
-                lines.append(f'    {ch}: V0={cp["V0"]:.4f}, n={cp["n"]:.4f}')
+                lines.append(f"    {ch}: V0={cp['V0']:.4f}, n={cp['n']:.4f}")
         elif isinstance(shells, list):
-            lines.append(f'  {key}: {len(shells)} shells')
+            lines.append(f"  {key}: {len(shells)} shells")
             for s, sh in enumerate(shells):
-                r = sh.get('r_ref', '?')
-                npar = len(sh.get('params', {}))
-                lines.append(f'    shell {s + 1}: r_ref={r} Bohr, {npar} params')
+                r = sh.get("r_ref", "?")
+                npar = len(sh.get("params", {}))
+                lines.append(f"    shell {s + 1}: r_ref={r} Bohr, {npar} params")
         else:
-            lines.append(f'  {key}: {shells}')
+            lines.append(f"  {key}: {shells}")
 
-    if 'screening' in params:
-        scr = params['screening']
-        lines.append(f'\nScreening: r_cut={scr["r_cut"]} Bohr')
-        gamma = scr.get('gamma', {})
+    if "screening" in params:
+        scr = params["screening"]
+        lines.append(f"\nScreening: r_cut={scr['r_cut']} Bohr")
+        gamma = scr.get("gamma", {})
         for key in sorted(gamma.keys()):
             g = gamma[key]
             if isinstance(g, dict):
-                g_str = ', '.join(f'{k}={v:.4f}' for k, v in g.items())
+                g_str = ", ".join(f"{k}={v:.4f}" for k, v in g.items())
             else:
-                g_str = f'global={g:.4f}'
-            lines.append(f'  γ[{key}]: {g_str}')
+                g_str = f"global={g:.4f}"
+            lines.append(f"  γ[{key}]: {g_str}")
     else:
-        lines.append('\nScreening: none (pure SK)')
+        lines.append("\nScreening: none (pure SK)")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1225,10 +1381,10 @@ class EDTBModel:
         if validate:
             errors = validate_params(params)
             if errors:
-                raise ValueError('Invalid parameter dict:\n  ' + '\n  '.join(errors))
+                raise ValueError("Invalid parameter dict:\n  " + "\n  ".join(errors))
             errors = validate_geometry(geometry)
             if errors:
-                raise ValueError('Invalid geometry dict:\n  ' + '\n  '.join(errors))
+                raise ValueError("Invalid geometry dict:\n  " + "\n  ".join(errors))
         # Store deep copies to prevent mutation
         import copy
 
@@ -1244,7 +1400,7 @@ class EDTBModel:
         geometry_path: Union[str, Path],
         *,
         validate: bool = True,
-    ) -> 'EDTBModel':
+    ) -> "EDTBModel":
         """Load an EDTB model from JSON parameter and geometry files.
 
         Parameters
@@ -1270,7 +1426,7 @@ class EDTBModel:
         model_dict: dict,
         *,
         shell_distances: Optional[Dict[str, float]] = None,
-    ) -> 'EDTBModel':
+    ) -> "EDTBModel":
         """Convert a PAOFLOW model dict to an EDTBModel.
 
         Accepts **both** the old shell-tag-keyed format
@@ -1294,7 +1450,7 @@ class EDTBModel:
         return cls(params, geometry, validate=True)
 
     @classmethod
-    def from_fitter(cls, fitter, p_opt) -> 'EDTBModel':
+    def from_fitter(cls, fitter, p_opt) -> "EDTBModel":
         """Build an EDTBModel from a fitted SKFitter or SKFitterEDTB.
 
         Calls ``fitter.build_model_dict(p_opt)`` internally and converts
@@ -1354,7 +1510,7 @@ class EDTBModel:
 
     # ── Geometry transfer ─────────────────────────────────────
 
-    def with_geometry(self, geometry: dict) -> 'EDTBModel':
+    def with_geometry(self, geometry: dict) -> "EDTBModel":
         """Return a new EDTBModel with the same parameters but a different geometry.
 
         This is the main transferability mechanism: train once,
@@ -1377,13 +1533,13 @@ class EDTBModel:
             If the new geometry contains species not in the model.
         """
         # Check species compatibility
-        geom_species = {a['species'] for a in geometry['atoms']}
-        model_species = set(self._params['basis'].keys())
+        geom_species = {a["species"] for a in geometry["atoms"]}
+        model_species = set(self._params["basis"].keys())
         unknown = geom_species - model_species
         if unknown:
             raise ValueError(
-                f'Geometry contains species not in the model: '
-                f'{sorted(unknown)}.  Model species: {sorted(model_species)}.'
+                f"Geometry contains species not in the model: "
+                f"{sorted(unknown)}.  Model species: {sorted(model_species)}."
             )
         return EDTBModel(self._params, geometry)
 
@@ -1392,7 +1548,7 @@ class EDTBModel:
         cls,
         params_path: Union[str, Path],
         geometry_path: Union[str, Path],
-    ) -> 'EDTBModel':
+    ) -> "EDTBModel":
         """Load parameters from one file and geometry from another.
 
         Identical to :meth:`from_files`; provided for readability in
@@ -1422,7 +1578,7 @@ class EDTBModel:
         outputdir: Optional[str] = None,
         band_path: Optional[str] = None,
         high_sym_points: Optional[dict] = None,
-        smearing: str = 'gauss',
+        smearing: str = "gauss",
         verbose: bool = False,
     ) -> dict:
         """Compute the band structure using PAOFLOW.
@@ -1457,7 +1613,7 @@ class EDTBModel:
         model_dict = self.to_model_dict()
 
         if outputdir is None:
-            outputdir = f'edtb_{self.label}_{self.geometry["alat"]:.2f}'
+            outputdir = f"edtb_{self.label}_{self.geometry['alat']:.2f}"
 
         pao = PF.PAOFLOW(
             savedir=None,
@@ -1468,21 +1624,21 @@ class EDTBModel:
         )
         arry, attr = pao.data_controller.data_dicts()
 
-        bands_kw = {'ibrav': ibrav, 'nk': nk}
+        bands_kw = {"ibrav": ibrav, "nk": nk}
         if band_path is not None:
-            bands_kw['band_path'] = band_path
+            bands_kw["band_path"] = band_path
         if high_sym_points is not None:
-            bands_kw['high_sym_points'] = high_sym_points
+            bands_kw["high_sym_points"] = high_sym_points
 
         pao.bands(**bands_kw)
 
-        bands_file = f'{attr["outputdir"]}/bands_0.dat'
-        sym_file = f'{attr["outputdir"]}/kpath_points.txt'
+        bands_file = f"{attr['outputdir']}/bands_0.dat"
+        sym_file = f"{attr['outputdir']}/kpath_points.txt"
 
         return {
-            'bands_file': bands_file,
-            'sym_file': sym_file,
-            'paoflow': pao,
+            "bands_file": bands_file,
+            "sym_file": sym_file,
+            "paoflow": pao,
         }
 
     # ── Properties ────────────────────────────────────────────
@@ -1504,17 +1660,17 @@ class EDTBModel:
     @property
     def species(self) -> List[str]:
         """Sorted list of species in the model."""
-        return sorted(self._params['basis'].keys())
+        return sorted(self._params["basis"].keys())
 
     @property
     def n_species(self) -> int:
         """Number of distinct species."""
-        return len(self._params['basis'])
+        return len(self._params["basis"])
 
     @property
     def n_shells(self) -> int:
         """Maximum number of neighbor shells across species pairs."""
-        hoppings = self._params.get('hoppings', {})
+        hoppings = self._params.get("hoppings", {})
         if not hoppings:
             return 0
         return max(len(shells) for shells in hoppings.values())
@@ -1522,30 +1678,32 @@ class EDTBModel:
     @property
     def has_screening(self) -> bool:
         """Whether screening (EDTB) parameters are present."""
-        return 'screening' in self._params
+        return "screening" in self._params
 
     @property
     def label(self) -> str:
         """Model label: ``'SK_EDTB'`` or ``'Slater_Koster'``."""
-        return 'SK_EDTB' if self.has_screening else 'Slater_Koster'
+        return "SK_EDTB" if self.has_screening else "Slater_Koster"
 
     @property
     def alat(self) -> float:
         """Lattice parameter from the geometry (Bohr)."""
-        return self._geometry['alat']
+        return self._geometry["alat"]
 
     def summary(self) -> str:
         """Return a human-readable summary of the model."""
-        header = f'EDTBModel  [{self.label}]  alat={self.alat:.4f} Bohr'
-        geom_info = f'  geometry: {len(self._geometry["atoms"])} atoms, species={self.species}'
-        return header + '\n' + geom_info + '\n' + summarize_params(self._params)
+        header = f"EDTBModel  [{self.label}]  alat={self.alat:.4f} Bohr"
+        geom_info = (
+            f"  geometry: {len(self._geometry['atoms'])} atoms, species={self.species}"
+        )
+        return header + "\n" + geom_info + "\n" + summarize_params(self._params)
 
     def __repr__(self) -> str:
         return (
-            f'EDTBModel(label={self.label!r}, '
-            f'species={self.species}, '
-            f'n_shells={self.n_shells}, '
-            f'alat={self.alat:.4f})'
+            f"EDTBModel(label={self.label!r}, "
+            f"species={self.species}, "
+            f"n_shells={self.n_shells}, "
+            f"alat={self.alat:.4f})"
         )
 
     def __str__(self) -> str:
