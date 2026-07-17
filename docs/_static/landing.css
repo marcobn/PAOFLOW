@@ -88,40 +88,6 @@
   top: 1rem;
   right: 1rem;
   z-index: 1030;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  border: 1px solid var(--pst-color-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--pst-color-surface) 88%, transparent);
-  color: var(--pst-color-text-base);
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--pst-color-shadow) 70%, transparent);
-  padding: 0.45rem 0.75rem;
-  font: inherit;
-  font-size: 0.88rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.pf-landing .pf-landing-theme-toggle:hover,
-.pf-landing .pf-landing-theme-toggle:focus-visible {
-  background: var(--pst-color-primary-bg);
-  border-color: var(--pst-color-primary);
-  outline: none;
-}
-
-.pf-landing .pf-landing-theme-toggle::before {
-  content: "";
-  width: 0.72rem;
-  height: 0.72rem;
-  border-radius: 50%;
-  background: var(--pst-color-primary);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--pst-color-primary) 65%, transparent);
-}
-
-html[data-theme=light] .pf-landing .pf-landing-theme-toggle::before {
-  background: #f7c948;
-  box-shadow: 0 0 10px rgba(247, 201, 72, 0.45);
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */

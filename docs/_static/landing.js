@@ -30,11 +30,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var button = document.createElement('button');
     button.type = 'button';
-    button.className = 'pf-landing-theme-toggle';
+    button.className = 'btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only pf-landing-theme-toggle';
+    button.setAttribute('aria-label', 'Color mode');
+    button.setAttribute('data-bs-title', 'Color mode');
+    button.setAttribute('data-bs-placement', 'bottom');
+    button.setAttribute('data-bs-toggle', 'tooltip');
+    button.innerHTML = [
+      '<i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light" title="Light"></i>',
+      '<i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark" title="Dark"></i>',
+      '<i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto" title="System Settings"></i>',
+    ].join('');
 
     function syncButton() {
       var nextMode = currentMode() === 'light' ? 'dark' : 'light';
-      button.textContent = nextMode === 'light' ? 'Light' : 'Dark';
       button.setAttribute('aria-label', 'Switch to ' + nextMode + ' mode');
     }
 
