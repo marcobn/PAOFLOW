@@ -35,7 +35,7 @@
 }
 
 .pf-landing .paoflow-landing-hero {
-  margin-bottom: 0.5rem;
+  --pf-landing-copy-width: min(100%, 840px);
 }
 
 .pf-landing .paoflow-typewriter {
@@ -43,13 +43,13 @@
   --pf-title-color-mid: #4ade80;
   --pf-title-color-end: #00853e;
   display: inline-block;
-  width: min(100%, 39rem);
+  width: min(100%, 5.41em);
   min-height: 1.05em;
   font-family: "Courier New", Courier, monospace;
-  font-size: clamp(4rem, 11vw, 7.15rem);
+  font-size: clamp(5.5rem, 15vw, 9.7rem);
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-align: left;
   color: var(--pf-title-color-start);
   background: linear-gradient(90deg, var(--pf-title-color-start), var(--pf-title-color-mid), var(--pf-title-color-end));
