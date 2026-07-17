@@ -1,10 +1,12 @@
 import numpy as np
+
 from PAOFLOW import PAOFLOW
 from PAOFLOW.boltzmann.TauModel import TauModel
 
 
 def main():
 
+    adaptive_smearing = False
     # Start PAOFLOW, interpolate Hamiltonian, compute gradient an momenta
     paoflow = PAOFLOW.PAOFLOW(savedir='GaAs.save', smearing=None, npool=1, verbose=True)
     arry, attr = paoflow.data_controller.data_dicts()
@@ -74,6 +76,9 @@ def main():
         'piezo': 0.16,
         'ms': 0.7,
     }
+
+    if adaptive_smearing:
+        paoflow.adaptive_smearing()
 
     # Compute the transport properties for each temperature and chemical potential
     rho = []
