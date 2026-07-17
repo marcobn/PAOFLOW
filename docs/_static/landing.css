@@ -26,18 +26,102 @@
   display: none !important;
 }
 
-/* Hero SVG banner */
+/* Hero title */
+.pf-landing .paoflow-landing,
+.pf-landing .paoflow-landing-hero {
+  --pf-landing-copy-width: min(100%, 860px);
+  max-width: var(--pf-landing-copy-width);
+  margin-inline: auto;
+}
+
 .pf-landing .paoflow-landing-hero {
   margin-bottom: 0.5rem;
 }
 
-.pf-landing .paoflow-landing-hero img {
-  width: 100%;
-  max-width: 840px;
-  border-radius: 14px;
-  display: block;
-  margin: 0 auto;
-  background-color: transparent !important;
+.pf-landing .paoflow-typewriter {
+  --pf-title-color-start: #00853e;
+  --pf-title-color-mid: #4ade80;
+  --pf-title-color-end: #00853e;
+  display: inline-block;
+  width: min(100%, 39rem);
+  min-height: 1.05em;
+  font-family: "Courier New", Courier, monospace;
+  font-size: clamp(4rem, 11vw, 7.15rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-align: left;
+  color: var(--pf-title-color-start);
+  background: linear-gradient(90deg, var(--pf-title-color-start), var(--pf-title-color-mid), var(--pf-title-color-end));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(0, 133, 62, 0.95)) drop-shadow(0 0 12px rgba(74, 222, 128, 0.35));
+}
+
+.pf-landing .paoflow-typewriter::after {
+  content: "";
+  display: inline-block;
+  width: 0.08em;
+  height: 0.72em;
+  margin-left: 0.08em;
+  background: currentColor;
+  vertical-align: -0.02em;
+}
+
+.pf-landing .paoflow-typewriter.is-typing::after {
+  animation: pf-cursor-blink 0.8s steps(2, start) infinite;
+}
+
+.pf-landing .paoflow-typewriter.is-complete::after {
+  opacity: 0;
+}
+
+@keyframes pf-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.pf-landing .pf-landing-theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1030;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--pst-color-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--pst-color-surface) 88%, transparent);
+  color: var(--pst-color-text-base);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--pst-color-shadow) 70%, transparent);
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pf-landing .pf-landing-theme-toggle:hover,
+.pf-landing .pf-landing-theme-toggle:focus-visible {
+  background: var(--pst-color-primary-bg);
+  border-color: var(--pst-color-primary);
+  outline: none;
+}
+
+.pf-landing .pf-landing-theme-toggle::before {
+  content: "";
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  background: var(--pst-color-primary);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--pst-color-primary) 65%, transparent);
+}
+
+html[data-theme=light] .pf-landing .pf-landing-theme-toggle::before {
+  background: #f7c948;
+  box-shadow: 0 0 10px rgba(247, 201, 72, 0.45);
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
