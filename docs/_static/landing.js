@@ -85,6 +85,6 @@ document.addEventListener('DOMContentLoaded', function () {
         title.classList.remove('is-typing');
         title.classList.add('is-complete');
       }
-    }, 190 * (index + 1));
+    }, 100 * (index + 1));
   });
 });
