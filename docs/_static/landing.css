@@ -4,14 +4,9 @@
    affects any other page.
    ──────────────────────────────────────────────────────────────────────── */
 
-/* Hide the top navigation bar */
-.pf-landing header.bd-header {
-  display: none !important;
-}
-
 /* Add vertical padding for landing page */
 .pf-landing .bd-main {
-  padding: 5rem 0 8rem;
+  padding: 3rem 0 8rem;
 }
 
 /* Centre and constrain the content column */
@@ -36,6 +31,9 @@
 
 .pf-landing .paoflow-landing-hero {
   --pf-landing-copy-width: min(100%, 840px);
+  --pf-landing-header-align: center;
+  text-align: var(--pf-landing-header-align);
+  transform: translateX(2.0rem);
 }
 
 .pf-landing .paoflow-typewriter {
@@ -84,10 +82,7 @@
 }
 
 .pf-landing .pf-landing-theme-toggle {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 1030;
+  display: none !important;
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
