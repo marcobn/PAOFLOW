@@ -286,6 +286,72 @@ div[class*="highlight-"] pre {
   color: var(--pst-color-text-base) !important;
 }
 
+/* Light-mode syntax colors need darker ink than the dark Matrix palette above. */
+html[data-theme=light] div.highlight,
+html[data-theme=light] .nbinput .highlight,
+html[data-theme=light] div[class*="highlight-"] {
+  background: #f8fcf8 !important;
+  border-color: #6fb27e !important;
+}
+
+html[data-theme=light] div.highlight pre,
+html[data-theme=light] .nbinput .highlight pre,
+html[data-theme=light] div[class*="highlight-"] pre {
+  background: #f8fcf8 !important;
+  color: #102016 !important;
+}
+
+html[data-theme=light] .highlight .k,
+html[data-theme=light] .highlight .kn,
+html[data-theme=light] .highlight .kp,
+html[data-theme=light] .highlight .kr {
+  color: #005f8a !important;
+  font-weight: 600;
+}
+
+html[data-theme=light] .highlight .nf,
+html[data-theme=light] .highlight .fm {
+  color: #7a4a00 !important;
+}
+
+html[data-theme=light] .highlight .n,
+html[data-theme=light] .highlight .nn,
+html[data-theme=light] .highlight .nc {
+  color: #123c24 !important;
+}
+
+html[data-theme=light] .highlight .s,
+html[data-theme=light] .highlight .sa,
+html[data-theme=light] .highlight .sb,
+html[data-theme=light] .highlight .sc,
+html[data-theme=light] .highlight .sd,
+html[data-theme=light] .highlight .s1,
+html[data-theme=light] .highlight .s2 {
+  color: #8a3d12 !important;
+}
+
+html[data-theme=light] .highlight .mi,
+html[data-theme=light] .highlight .mf,
+html[data-theme=light] .highlight .il {
+  color: #6e5200 !important;
+}
+
+html[data-theme=light] .highlight .c,
+html[data-theme=light] .highlight .c1,
+html[data-theme=light] .highlight .cm {
+  color: #456b45 !important;
+  font-style: italic;
+}
+
+html[data-theme=light] .highlight .o,
+html[data-theme=light] .highlight .ow {
+  color: #6c4f00 !important;
+}
+
+html[data-theme=light] .highlight .p {
+  color: #102016 !important;
+}
+
 /* Keep copy buttons only for code blocks, not notebook outputs */
 .nboutput .copybtn,
 .output .copybtn,
@@ -351,7 +417,7 @@ mjx-container[display="true"]::-webkit-scrollbar {
 
 /* Navbar logo sizing */
 .bd-header .navbar-brand img.logo__image {
-  height: 38px;
+  height: 58px;
   width: auto;
 }
 

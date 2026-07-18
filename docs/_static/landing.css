@@ -4,14 +4,9 @@
    affects any other page.
    ──────────────────────────────────────────────────────────────────────── */
 
-/* Hide the top navigation bar */
-.pf-landing header.bd-header {
-  display: none !important;
-}
-
 /* Add vertical padding for landing page */
 .pf-landing .bd-main {
-  padding: 5rem 0 8rem;
+  padding: 3rem 0 8rem;
 }
 
 /* Centre and constrain the content column */
@@ -26,18 +21,68 @@
   display: none !important;
 }
 
-/* Hero SVG banner */
+/* Hero title */
+.pf-landing .paoflow-landing,
 .pf-landing .paoflow-landing-hero {
-  margin-bottom: 0.5rem;
+  --pf-landing-copy-width: min(100%, 860px);
+  max-width: var(--pf-landing-copy-width);
+  margin-inline: auto;
 }
 
-.pf-landing .paoflow-landing-hero img {
-  width: 100%;
-  max-width: 840px;
-  border-radius: 14px;
-  display: block;
-  margin: 0 auto;
-  background-color: transparent !important;
+.pf-landing .paoflow-landing-hero {
+  --pf-landing-copy-width: min(100%, 840px);
+  --pf-landing-header-align: center;
+  text-align: var(--pf-landing-header-align);
+  transform: translateX(2.0rem);
+}
+
+.pf-landing .paoflow-typewriter {
+  --pf-title-color-start: #00853e;
+  --pf-title-color-mid: #4ade80;
+  --pf-title-color-end: #00853e;
+  display: inline-block;
+  width: min(100%, 5.41em);
+  min-height: 1.05em;
+  font-family: "Courier New", Courier, monospace;
+  font-size: clamp(5.5rem, 15vw, 9.7rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-align: left;
+  color: var(--pf-title-color-start);
+  background: linear-gradient(90deg, var(--pf-title-color-start), var(--pf-title-color-mid), var(--pf-title-color-end));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 4px rgba(0, 133, 62, 0.95)) drop-shadow(0 0 12px rgba(74, 222, 128, 0.35));
+}
+
+.pf-landing .paoflow-typewriter::after {
+  content: "";
+  display: inline-block;
+  width: 0.08em;
+  height: 0.72em;
+  margin-left: 0.08em;
+  background: currentColor;
+  vertical-align: -0.02em;
+}
+
+.pf-landing .paoflow-typewriter.is-typing::after {
+  animation: pf-cursor-blink 0.8s steps(2, start) infinite;
+}
+
+.pf-landing .paoflow-typewriter.is-complete::after {
+  opacity: 0;
+}
+
+@keyframes pf-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.pf-landing .pf-landing-theme-toggle {
+  display: none !important;
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */

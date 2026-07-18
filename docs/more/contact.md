@@ -16,15 +16,14 @@ Before opening a new issue, a quick search of existing ones can save you time �
 
 ## Contributing
 
-PAOFLOW is an open project and contributions are welcome! We follow a discussion-first approach to make sure everyone's effort is well spent:
+PAOFLOW is an open project and contributions of all kinds are welcome — code, documentation, examples, bug reports, and feedback. We follow a **discussion-first** approach to make sure effort is well spent.
 
-1. Find an issue you'd like to work on — or open one describing what you have in mind.
-2. Leave a comment on the issue explaining the approach you're thinking of taking.
-3. Chat with the maintainers and get a feel for whether the direction fits the project.
-4. Once there's agreement on the approach, go ahead and start implementing.
-5. Open a Pull Request referencing the issue when you're ready.
+1. Find or open an issue for what you want to work on.
+2. Comment with your intended approach and get feedback from maintainers.
+3. Once the direction is agreed, start implementing.
+4. Open a Pull Request referencing the issue when ready.
 
-Starting with a conversation before diving into code helps avoid situations where a lot of work gets done in a direction that doesn't fit the project's roadmap. We want your contributions to land successfully, not be turned away at the door.
+Starting with a conversation before diving into code helps avoid situations where a lot of work goes in a direction that doesn't fit the project roadmap.
 
 ## Development Guidelines
 

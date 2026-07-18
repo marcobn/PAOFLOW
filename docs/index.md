@@ -2,7 +2,7 @@
 
 :::{div} sd-text-center paoflow-landing-hero
 
-![PAOFLOW](_static/images/logos/paoflow_header.svg)
+<span class="paoflow-typewriter" data-text="PAOFLOW" aria-label="PAOFLOW">PAOFLOW</span>
 
 :::
 
@@ -100,6 +100,5 @@ applications/index
 installation
 tutorials/index
 internals/index
-more/contribute
-about/contact
+more/contact
 ```
