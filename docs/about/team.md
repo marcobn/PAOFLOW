@@ -92,6 +92,18 @@ Developer
 :::{grid-item}
 
 <div class="pf-team-member">
+<img src="../_static/images/team/mia.jpeg" alt="Mia Falatko" class="pf-team-photo">
+
+**Mia Falatko**
+
+Developer
+
+</div>
+:::
+
+:::{grid-item}
+
+<div class="pf-team-member">
 <img src="../_static/images/team/anooja.jpeg" alt="Anooja Jayaraj" class="pf-team-photo">
 
 **Anooja Jayaraj**
