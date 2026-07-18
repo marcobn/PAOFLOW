@@ -103,6 +103,8 @@ html_theme = 'pydata_sphinx_theme'
 
 html_logo = '_static/images/logos/logo_documentation.png'
 
+html_favicon = '_static/images/logos/favicon.ico'
+
 html_show_sourcelink = False
 
 html_theme_options = {
