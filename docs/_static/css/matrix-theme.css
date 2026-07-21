@@ -464,29 +464,6 @@ a.pst-navbar-icon[href*="github"] svg {
   padding: 0.5rem 1rem;
 }
 
-/* ── Team member entries (minimal, no cards) ─────────────────────────────── */
-.pf-team-member {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0.25rem;
-  padding: 0.5rem 0;
-}
-
-.pf-team-member p {
-  margin: 0;
-}
-
-.pf-team-photo {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  object-fit: cover;
-  display: block;
-  margin: 0 auto 0.5rem;
-}
-
 /* Citation list with per-entry copy button */
 .pf-citation-list {
   margin: 0;
