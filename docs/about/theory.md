@@ -65,12 +65,3 @@ For low-dimensional systems, accurate interpolation can be challenging because f
 3. Direct access to velocity-related and Berry-phase-related quantities needed for transport and topology.
 
 This makes the approach practical for high-throughput and targeted studies of layered materials where both accuracy and speed are required.
-
-## References
-
-1. Cerasoli, F. _et al._ (2021). Advanced modeling of materials with PAOFLOW 2.0: New features and software design. _Computational Materials Science_, 200, 110828. https://doi.org/10.1016/j.commatsci.2021.110828
-2. Agapito, L. A., Curtarolo, S., & Buongiorno Nardelli, M. (2018). PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the projections of electronic wavefunctions on atomic orbital bases. _Computational Materials Science_, 143, 462-466. https://doi.org/10.1016/j.commatsci.2017.11.029
-3. Agapito, L. A. _et al._ (2013). Effective and accurate representation of extended Bloch states on finite Hilbert spaces. _Physical Review B_, 88, 165127. https://doi.org/10.1103/PhysRevB.88.165127
-4. Agapito, L. A. _et al._ (2016). Accurate tight-binding Hamiltonian matrices from ab-initio calculations: Minimal basis sets. _Physical Review B_, 93, 035104. https://doi.org/10.1103/PhysRevB.93.035104
-5. Agapito, L. A. _et al._ (2016). Accurate tight-binding Hamiltonians for 2D and layered materials. _Physical Review B_, 93, 125137. https://doi.org/10.1103/PhysRevB.93.125137
-6. Supka, A. R. _et al._ (2016). Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and optical spectroscopy from first principles. _Physical Review B_, 94, 165166. https://doi.org/10.1103/PhysRevB.94.165166

@@ -10,7 +10,7 @@ Meet the people behind PAOFLOW — researchers, developers, and contributors who
 <div class="pf-team-member">
 <img src="../_static/images/team/marco.jpeg" alt="Marco Buongiorno Nardelli" class="pf-team-photo">
 
-**Marco Buongiorno Nardelli**
+**<a href="https://www.ermes-unt.org/">Marco Buongiorno Nardelli</a>**
 
 Director of the PAOFLOW project. Developer
 
