@@ -478,8 +478,13 @@ def validate_params(params: dict) -> List[str]:
                     elif isinstance(scr["gamma"][key], dict):
                         lc_a = basis.get(sp1, {}).get("l_channels", [])
                         lc_b = basis.get(sp2, {}).get("l_channels", [])
-                        expected_g = set(active_gamma_labels(lc_a, lc_b))
                         got_g = set(scr["gamma"][key].keys())
+                        # gamma may be given per l-pair ('ss', 'sp', ...) or
+                        # per SK channel ('sss', 'sps', ...) — accept either.
+                        if got_g <= set(LPAIR_LABELS):
+                            expected_g = set(active_gamma_labels(lc_a, lc_b))
+                        else:
+                            expected_g = set(active_sk_names_for_basis(lc_a, lc_b))
                         missing_g = expected_g - got_g
                         extra_g = got_g - expected_g
                         if missing_g:
