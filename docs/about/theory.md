@@ -49,10 +49,19 @@ This is the core reason PAOFLOW is efficient: expensive first-principles informa
 
 From the interpolated PAO Hamiltonian, PAOFLOW evaluates derivatives and matrix elements needed for broad classes of observables:
 
-1. **Electronic structure:** band structures, DOS/PDOS, Fermiology.
-2. **Topological quantities:** Berry curvature and Hall-type responses (including spin Hall workflows).
-3. **Optical response:** dielectric and optical tensors from first-principles-derived matrix elements.
-4. **Transport coefficients:** conductivity and thermoelectric quantities via Boltzmann-type post-processing.
+| Domain | What PAOFLOW computes |
+|---|---|
+| **Electronic structure** | Band structures, density of states (total & projected), Fermi surfaces |
+| **Optical & dielectric response** | Complex dielectric tensor ε(ω), optical conductivity, joint density of states; non-local velocity correction for norm-conserving pseudopotentials |
+| **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity (Boltzmann transport) |
+| **Lattice dynamics & phonons** | Phonon dispersions, DOS and thermal properties ([phonopy](https://phonopy.github.io/phonopy/) finite-displacement); Born effective charges, ε∞ and LO–TO splitting; infrared (IR), non-resonant (Placzek) and resonant (Albrecht) Raman spectra; vibrational (ionic) dielectric ε(ω) and reststrahlen emissivity; quasi-harmonic approximation (thermal expansion, V(T), bulk modulus, C_p, thermodynamic and mode Grüneisen dispersion) |
+| **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, topological surface states |
+| **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
+| **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
+| **ACBN0** | Self-consistent Hubbard U and U+V via the extended ACBN0 functional |
+| **pyskeaf** | Fermi surface extremal orbit analysis (de Haas–van Alphen, Shubnikov–de Haas) |
+| **Landauer transport** | Quantum transport via Green's function/Landauer–Büttiker formalism |
+| **Interoperability** | Quantum ESPRESSO and VASP DFT code integration - other codes are in the development pipline (we welcome contributions from developers!)|
 
 Because all quantities come from a common Hamiltonian, cross-property comparisons are consistent by construction.
 
@@ -66,11 +75,22 @@ For low-dimensional systems, accurate interpolation can be challenging because f
 
 This makes the approach practical for high-throughput and targeted studies of layered materials where both accuracy and speed are required.
 
-## References
+**References**
 
-1. Cerasoli, F. _et al._ (2021). Advanced modeling of materials with PAOFLOW 2.0: New features and software design. _Computational Materials Science_, 200, 110828. https://doi.org/10.1016/j.commatsci.2021.110828
-2. Agapito, L. A., Curtarolo, S., & Buongiorno Nardelli, M. (2018). PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the projections of electronic wavefunctions on atomic orbital bases. _Computational Materials Science_, 143, 462-466. https://doi.org/10.1016/j.commatsci.2017.11.029
-3. Agapito, L. A. _et al._ (2013). Effective and accurate representation of extended Bloch states on finite Hilbert spaces. _Physical Review B_, 88, 165127. https://doi.org/10.1103/PhysRevB.88.165127
-4. Agapito, L. A. _et al._ (2016). Accurate tight-binding Hamiltonian matrices from ab-initio calculations: Minimal basis sets. _Physical Review B_, 93, 035104. https://doi.org/10.1103/PhysRevB.93.035104
-5. Agapito, L. A. _et al._ (2016). Accurate tight-binding Hamiltonians for 2D and layered materials. _Physical Review B_, 93, 125137. https://doi.org/10.1103/PhysRevB.93.125137
-6. Supka, A. R. _et al._ (2016). Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and optical spectroscopy from first principles. _Physical Review B_, 94, 165166. https://doi.org/10.1103/PhysRevB.94.165166
+> F.T. Cerasoli, A.R. Supka, A. Jayaraj, I. Siloi, M. Costa, J. Slawinska, S. Curtarolo, M. Fornari, D. Ceresoli, and M. Buongiorno Nardelli,
+> *Advanced modeling of materials with PAOFLOW 2.0: New features and software design*, Comp. Mat. Sci. **200**, 110828 (2021).
+
+> M. Buongiorno Nardelli, F.T. Cerasoli, M. Costa, S. Curtarolo, R. De Gennaro, M. Fornari, L. Liyanage, A. Supka and H. Wang,
+> *PAOFLOW: A utility to construct and operate on ab initio Hamiltonians from the Projections of electronic wavefunctions on Atomic Orbital bases, including characterization of topological materials*, Comp. Mat. Sci. **143**, 462 (2018).
+
+> L.A. Agapito, A. Ferretti, A. Calzolari, S. Curtarolo and M. Buongiorno Nardelli,
+> *Effective and accurate representation of extended Bloch states on finite Hilbert spaces*, Phys. Rev. B **88**, 165127 (2013).
+
+> L.A. Agapito, S. Ismail-Beigi, S. Curtarolo, M. Fornari and M. Buongiorno Nardelli,
+> *Accurate Tight-Binding Hamiltonian Matrices from Ab-Initio Calculations: Minimal Basis Sets*, Phys. Rev. B **93**, 035104 (2016).
+
+> L.A. Agapito, M. Fornari, D. Ceresoli, A. Ferretti, S. Curtarolo and M. Buongiorno Nardelli,
+> *Accurate Tight-Binding Hamiltonians for 2D and Layered Materials*, Phys. Rev. B **93**, 125137 (2016).
+
+> P. D'Amico, L. Agapito, A. Catellani, A. Ruini, S. Curtarolo, M. Fornari, M. Buongiorno Nardelli and A. Calzolari,
+> *Accurate ab initio tight-binding Hamiltonians: Effective tools for electronic transport and optical spectroscopy from first principles*, Phys. Rev. B **94**, 165166 (2016).

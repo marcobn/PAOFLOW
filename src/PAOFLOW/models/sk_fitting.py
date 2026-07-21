@@ -435,14 +435,35 @@ class SKFitter:
         self.config_dict = arryp.get('configuration', None)
         self.unique_species = list(dict.fromkeys(self.atoms_list))
 
-        # Canonical group list: union of all species' l-values, sorted.
-        # This ensures the group→l mapping is consistent across species
-        # even when different species list their shells in different order
-        # (e.g. Si: [0,1,2] vs Ge: [2,1,0]).
-        canonical_l = sorted(set(l for sp in self.unique_species for l in self.shells_dict[sp]))
-        self.n_groups = len(canonical_l)
-        self.group_l = list(canonical_l)
-        _l_to_group = {l_val: g for g, l_val in enumerate(self.group_l)}
+        # Canonical shell-group list keyed by (l, radial_rank).
+        #
+        # Each *radial* shell of a given angular momentum becomes its own
+        # group, enabling multi-configuration fits: a Si 'standard' basis
+        # [3S, 3P, 3D, 4S, 4P] yields five groups (3S, 3P, 3D, 4S, 4P) rather
+        # than collapsing 3S/4S (and 3P/4P) onto a single s/p channel.
+        # ``radial_rank`` is the 0-based order of appearance of a shell among
+        # all shells of the same l for a species (first s-shell → (0, 0),
+        # second s-shell → (0, 1), …).  A minimal basis with one shell per l
+        # reduces to the previous angular-momentum-only grouping.
+        #
+        # Group order follows the *configuration* order of the first species
+        # (first-seen insertion order) rather than a sorted (l, rank) order,
+        # so that shell-pair keys emitted in ``build_model_dict`` match the
+        # canonicalisation used by ``models.Slater_Koster`` (which orders
+        # pairs by configuration-list index).
+        self._species_shell_keys = {
+            sp: self._shell_keys(self.shells_dict[sp]) for sp in self.unique_species
+        }
+        canonical_keys = []
+        for sp in self.unique_species:
+            for k in self._species_shell_keys[sp]:
+                if k not in canonical_keys:
+                    canonical_keys.append(k)
+        self.n_groups = len(canonical_keys)
+        self.group_key = list(canonical_keys)  # list of (l, radial_rank)
+        self.group_l = [k[0] for k in canonical_keys]
+        self.is_multiconfig = any(rank > 0 for (_l, rank) in canonical_keys)
+        _key_to_group = {k: g for g, k in enumerate(canonical_keys)}
 
         # Per-atom orbital structure
         self.atom_orbitals = []
@@ -453,9 +474,10 @@ class SKFitter:
         idx = 0
         for iat in range(self.nat):
             sp = self.atoms_list[iat]
+            shell_keys = self._species_shell_keys[sp]
             orb_list, grp_list = [], []
-            for shell_l in self.shells_dict[sp]:
-                cg = _l_to_group[shell_l]
+            for shell_idx, shell_l in enumerate(self.shells_dict[sp]):
+                cg = _key_to_group[shell_keys[shell_idx]]
                 for orb_name in SHELL_TO_ORBITALS[shell_l]:
                     orb_list.append(orb_name)
                     grp_list.append(cg)
@@ -466,12 +488,10 @@ class SKFitter:
             idx += len(orb_list)
         assert idx == self.nawf, f'Total orbitals ({idx}) != nawf ({self.nawf})'
 
-        sp0 = self.unique_species[0]
-        self.cfg_names = (
-            list(self.config_dict[sp0])
-            if self.config_dict
-            else [f'g{i}(l={self.group_l[i]})' for i in range(self.n_groups)]
-        )
+        # Representative label per group (used for parameter names and the
+        # exported model dict).  Prefer the species configuration label
+        # (e.g. '3S', '4S'); fall back to a synthetic 'l{l}#{rank}' tag.
+        self.cfg_names = [self._group_label(g) for g in range(self.n_groups)]
 
         # R-vectors and H(R) blocks
         R_list, HR_list = [], []
@@ -490,6 +510,42 @@ class SKFitter:
         if self.verbose:
             print(f'SKFitter: {self.nat} atoms, nawf={self.nawf}, alat={self.alat:.4f} Bohr')
             print(f'  Shell groups: {self.cfg_names} (l = {self.group_l})')
+
+    @staticmethod
+    def _shell_keys(shell_l_list):
+        """Assign each shell a ``(l, radial_rank)`` key.
+
+        ``radial_rank`` counts shells of the same angular momentum in their
+        order of appearance, so multiple radial shells with the same l
+        (e.g. 3S and 4S) receive distinct keys ``(0, 0)`` and ``(0, 1)``.
+        This is what lets the fitter treat each configuration shell as an
+        independent SK channel.
+        """
+        rank_counter = {}
+        keys = []
+        for l_val in shell_l_list:
+            r = rank_counter.get(l_val, 0)
+            keys.append((l_val, r))
+            rank_counter[l_val] = r + 1
+        return keys
+
+    def _group_label(self, g):
+        """Return a representative label for shell-group ``g``.
+
+        Uses the species configuration label (e.g. ``'3S'``, ``'4S'``) from
+        the first species carrying that ``(l, radial_rank)`` key when a
+        ``configuration`` dict is available; otherwise a synthetic
+        ``'l{l}#{rank}'`` tag.
+        """
+        key = self.group_key[g]
+        for sp in self.unique_species:
+            keys = self._species_shell_keys[sp]
+            if key in keys:
+                if self.config_dict is not None:
+                    return list(self.config_dict[sp])[keys.index(key)]
+                break
+        l_val, rank = key
+        return f'l{l_val}#{rank}'
 
     # ── 2b. Bond enumeration ──────────────────────────────────
 
@@ -1006,7 +1062,7 @@ class SKFitter:
         )
 
         if self.verbose:
-            print(f'\n{"=" * 65}')
+            print(f"\n{'=' * 65}")
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(f'Multi-start optimisation: {n_trials} trials{par_tag}')
 
@@ -1020,8 +1076,8 @@ class SKFitter:
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
                 print('-' * 50)
             all_results = []
@@ -1049,7 +1105,7 @@ class SKFitter:
         if self.verbose:
             if use_parallel:
                 print(f'  Completed {n_trials} trials in parallel')
-            print(f'{"=" * 65}')
+            print(f"{'=' * 65}")
             msg = (
                 f'Best RMSE = {best_rmse * 1000:.2f} meV, '
                 f'max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV'
@@ -1057,7 +1113,7 @@ class SKFitter:
             if alpha > 0:
                 msg += f'  (α = {alpha:.4g})'
             print(msg)
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 print(f'{name:<30s}  {best_p[i]: .5f}')
@@ -1097,14 +1153,31 @@ class SKFitter:
             Model dict with species-pair-keyed hoppings.
         """
 
-        # ── Flat SK-param dict for one shell ──
+        # ── SK-param dict for one shell ──
         def _build_hop(p_hop):
+            # Single configuration (one shell per l): flat SK dict, keyed by
+            # SK integral name ('sss', 'sps', ...) — the legacy format.
+            if not self.is_multiconfig:
+                d = {}
+                for ga, gb in self.hop_pair_list:
+                    start = self.hop_pair_start[(ga, gb)]
+                    active = self.hop_pair_active[(ga, gb)]
+                    for lk, sk_k in enumerate(active):
+                        d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+                return d
+            # Multi-configuration: one SK sub-dict per shell-pair, keyed by
+            # configuration labels ordered by group index (e.g. '3S-4S',
+            # '3S-3P').  This matches the canonicalisation used by
+            # models.Slater_Koster, which orders pairs by config-list index.
             d = {}
             for ga, gb in self.hop_pair_list:
                 start = self.hop_pair_start[(ga, gb)]
                 active = self.hop_pair_active[(ga, gb)]
+                pair_key = f'{self.cfg_names[ga]}-{self.cfg_names[gb]}'
+                sub = {}
                 for lk, sk_k in enumerate(active):
-                    d[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+                    sub[SK_PARAM_NAMES[sk_k]] = float(p_hop[start + lk])
+                d[pair_key] = sub
             return d
 
         # ── Species-pair-keyed hoppings ──
@@ -1659,7 +1732,7 @@ class SKFitterEDTB(SKFitter):
         )
 
         if self.verbose:
-            print(f'\n{"=" * 65}')
+            print(f"\n{'=' * 65}")
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(
                 f'EDTB multi-start optimisation: {n_trials} trials, '
@@ -1676,8 +1749,8 @@ class SKFitterEDTB(SKFitter):
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
                 print('-' * 50)
             all_results = []
@@ -1705,7 +1778,7 @@ class SKFitterEDTB(SKFitter):
         if self.verbose:
             if use_parallel:
                 print(f'  Completed {n_trials} trials in parallel')
-            print(f'{"=" * 65}')
+            print(f"{'=' * 65}")
             msg = (
                 f'Best RMSE = {best_rmse * 1000:.2f} meV, '
                 f'max|δ| = {np.max(np.abs(best_data_res)) * 1000:.2f} meV'
@@ -1713,7 +1786,7 @@ class SKFitterEDTB(SKFitter):
             if alpha > 0:
                 msg += f'  (α = {alpha:.4g})'
             print(msg)
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 print(f'{name:<30s}  {best_p[i]: .5f}')
@@ -1992,13 +2065,13 @@ class MultiGeomEDTB:
         self._reg_weights = ref._reg_weights.copy()
 
         if verbose:
-            print(f'\n{"=" * 65}')
+            print(f"\n{'=' * 65}")
             print('MultiGeomEDTB summary:')
             print(f'  {self.n_geom} geometries, {self.n_params} shared parameters')
             print(f'  n_data_total = {self.n_data_total}')
             for ig, f in enumerate(self.fitters):
                 nk_str = (
-                    f'grid={"×".join(str(x) for x in f._nkfit_grid)}'
+                    f"grid={'×'.join(str(x) for x in f._nkfit_grid)}"
                     if hasattr(f, '_nkfit_grid')
                     else ''
                 )
@@ -2443,7 +2516,7 @@ class MultiGeomEDTB:
             )
             total_threads = effective_jobs * geom_threads
 
-            print(f'\n{"=" * 65}')
+            print(f"\n{'=' * 65}")
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(
                 f'Multi-geometry EDTB optimisation: {n_trials} trials, '
@@ -2506,8 +2579,8 @@ class MultiGeomEDTB:
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
                 print('-' * 50)
             all_results = []
@@ -2541,7 +2614,7 @@ class MultiGeomEDTB:
         if self.verbose:
             if use_parallel:
                 print(f'  Completed {n_trials} trials in parallel')
-            print(f'{"=" * 65}')
+            print(f"{'=' * 65}")
             print(f'Combined RMSE = {best_rmse * 1000:.2f} meV')
             for ig, r in enumerate(per_geom_rmse):
                 print(f'  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})')
@@ -2554,7 +2627,7 @@ class MultiGeomEDTB:
                 f'  Parameters: {n_fitted} fitted'
                 + (f', {self.n_onsite} on-site fixed' if fixed_onsite_vals is not None else '')
             )
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 tag = ' (fixed)' if fixed_onsite_vals is not None and i < self.n_onsite else ''
@@ -3436,7 +3509,7 @@ class MultiGeomEDTB_DD:
             )
             total_threads = effective_jobs * geom_threads
 
-            print(f'\n{"=" * 65}')
+            print(f"\n{'=' * 65}")
             par_tag = f', n_jobs={n_jobs}' if use_parallel else ''
             print(f'DD EDTB optimisation: {n_trials} trials, {self.n_geom} geometries{par_tag}')
 
@@ -3493,8 +3566,8 @@ class MultiGeomEDTB_DD:
         else:
             if self.verbose:
                 print(
-                    f'{"Trial":>5s}  {"Init RMSE (meV)":>15s}  '
-                    f'{"Final RMSE (meV)":>16s}  {"nfev":>5s}'
+                    f"{'Trial':>5s}  {'Init RMSE (meV)':>15s}  "
+                    f"{'Final RMSE (meV)':>16s}  {'nfev':>5s}"
                 )
                 print('-' * 50)
             all_results = []
@@ -3526,11 +3599,11 @@ class MultiGeomEDTB_DD:
             offset += nd
 
         if self.verbose:
-            print(f'{"=" * 65}')
+            print(f"{'=' * 65}")
             print(f'Combined RMSE = {best_rmse * 1000:.2f} meV')
             for ig, r in enumerate(per_geom_rmse):
                 print(f'  Geom {ig}: RMSE = {r * 1000:.2f} meV (w={self.weights[ig]:.2f})')
-            print(f'\n{"Parameter":<30s}  {"Value":>10s}')
+            print(f"\n{'Parameter':<30s}  {'Value':>10s}")
             print('-' * 43)
             for i, name in enumerate(self.param_labels):
                 print(f'{name:<30s}  {best_p[i]: .5f}')
@@ -3856,12 +3929,24 @@ class SKFitterEDTBHSP(SKFitterEDTB):
         # 2-pass dk scaling: first pass gets nk_trial, then rescale dk to hit ~nk
         dk_trial = 0.00001
         kq_trial, _ = _get_path(
-            ibrav, self.alat, self.a_vecs, dk_trial, self.b_vecs, band_path, special_points
+            ibrav,
+            self.alat,
+            self.a_vecs,
+            dk_trial,
+            self.b_vecs,
+            band_path,
+            special_points,
         )
         nk_trial = kq_trial.shape[1]
         scaled_dk = dk_trial * (nk_trial / max(nk, 1))
         kq_frac, path_str = _get_path(
-            ibrav, self.alat, self.a_vecs, scaled_dk, self.b_vecs, band_path, special_points
+            ibrav,
+            self.alat,
+            self.a_vecs,
+            scaled_dk,
+            self.b_vecs,
+            band_path,
+            special_points,
         )
 
         # Fractional → Cartesian (PAOFLOW convention: kfrac @ b_vecs)
@@ -3913,7 +3998,14 @@ class SKFitterEDTBHSP(SKFitterEDTB):
             return last_jac[0]
 
         res = least_squares(
-            fun, p_init, jac=jac, method='lm', ftol=ftol, xtol=xtol, gtol=gtol, max_nfev=max_nfev
+            fun,
+            p_init,
+            jac=jac,
+            method='lm',
+            ftol=ftol,
+            xtol=xtol,
+            gtol=gtol,
+            max_nfev=max_nfev,
         )
         rmse = np.sqrt(np.mean(res.fun[:n_data] ** 2))  # weighted RMSE
         return rmse, res.x.copy(), res

@@ -486,15 +486,15 @@ def Slater_Koster(data_controller, params):
                 if missing_keys:
                     raise KeyError(
                         f"Missing SK keys for {shell_name}/'{pair_key}' "
-                        f'(l-pair {lpair}): {", ".join(missing_keys)}'
+                        f"(l-pair {lpair}): {', '.join(missing_keys)}"
                     )
     else:
         for shell_name, shell_hoppings in hoppings_shells.items():
             missing_keys = [key for key in required_keys if key not in shell_hoppings]
             if missing_keys:
                 raise KeyError(
-                    f'Missing Slater-Koster hopping keys for '
-                    f'{shell_name}: {", ".join(missing_keys)}'
+                    f"Missing Slater-Koster hopping keys for "
+                    f"{shell_name}: {', '.join(missing_keys)}"
                 )
 
     elements = sorted(set(arry['atoms']))
@@ -1468,13 +1468,25 @@ def SK_EDTB(data_controller, params):
     _nk23 = nk2 * nk3
 
     def _screened_hoppings(shell_hoppings, S_ij, gmap=None):
-        """Return a copy of shell_hoppings with screening applied."""
+        """Return a copy of shell_hoppings with screening applied.
+
+        Handles both the flat single-configuration format
+        (``{'sss': val, ...}``) and the multi-configuration shell-pair
+        format (``{'3S-3P': {'sps': val, ...}, ...}``), where each shell
+        pair carries its own SK sub-dict.
+        """
         if gmap is None:
             gmap = gamma_map
         screened = {}
         for key, val in shell_hoppings.items():
-            g = gmap.get(key, 0.0)
-            screened[key] = val * np.exp(-g * S_ij)
+            if isinstance(val, dict):
+                # Multi-shell: key is a shell-pair ('3S-3P'), val an SK dict.
+                screened[key] = {
+                    sk: sv * np.exp(-gmap.get(sk, 0.0) * S_ij) for sk, sv in val.items()
+                }
+            else:
+                g = gmap.get(key, 0.0)
+                screened[key] = val * np.exp(-g * S_ij)
         return screened
 
     # ══════════════════════════════════════════════════════════════
@@ -1563,14 +1575,14 @@ def SK_EDTB(data_controller, params):
                 missing_ch = [k for k in required_keys if k not in pd['channels']]
                 if missing_ch:
                     raise KeyError(
-                        f'Missing SK channels in distance-dependent hoppings '
+                        f"Missing SK channels in distance-dependent hoppings "
                         f"for pair '{pk}': {', '.join(missing_ch)}"
                     )
         else:
             missing_ch = [k for k in required_keys if k not in _dd_channels]
             if missing_ch:
                 raise KeyError(
-                    f'Missing SK channels in distance-dependent hoppings: {", ".join(missing_ch)}'
+                    f"Missing SK channels in distance-dependent hoppings: {', '.join(missing_ch)}"
                 )
 
         elements = sorted(set(arry['atoms']))
@@ -1580,7 +1592,7 @@ def SK_EDTB(data_controller, params):
             gamma_str = ', '.join(
                 f'{pk}: {gv:.4g}'
                 if isinstance(gv, (int, float))
-                else f'{pk}: {{{", ".join(f"{kk}={vv:.4g}" for kk, vv in gv.items())}}}'
+                else f"{pk}: {{{', '.join(f'{kk}={vv:.4g}' for kk, vv in gv.items())}}}"
                 for pk, gv in gamma_spec.items()
             )
         else:
@@ -1597,12 +1609,12 @@ def SK_EDTB(data_controller, params):
             )
         else:
             print(
-                f'SK_EDTB (distance-dependent): elements={elements}, '
-                f'r_0={_dd_spec["r_0"]:.3f} Bohr, '
-                f'r_c={_dd_spec["r_c"]:.3f} Bohr ({_dd_r_c_alat:.4f} alat), '
-                f'n_c={_dd_n_c:.2f}, channels={len(_dd_channels)}, '
-                f'r_cut_screen={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), '
-                f'gamma=[{gamma_str}]'
+                f"SK_EDTB (distance-dependent): elements={elements}, "
+                f"r_0={_dd_spec['r_0']:.3f} Bohr, "
+                f"r_c={_dd_spec['r_c']:.3f} Bohr ({_dd_r_c_alat:.4f} alat), "
+                f"n_c={_dd_n_c:.2f}, channels={len(_dd_channels)}, "
+                f"r_cut_screen={r_cut_input:.3f} Bohr ({r_cut:.4f} alat), "
+                f"gamma=[{gamma_str}]"
             )
     else:
         if _multi_species:
@@ -1648,7 +1660,7 @@ def SK_EDTB(data_controller, params):
                     if missing_keys:
                         raise KeyError(
                             f"Missing SK keys for {shell_name}/'{pair_key}' "
-                            f'(l-pair {lpair}): {", ".join(missing_keys)}'
+                            f"(l-pair {lpair}): {', '.join(missing_keys)}"
                         )
         elif _multi_species:
             for pair_key, pair_shells in _ms_hoppings.items():
@@ -1656,16 +1668,16 @@ def SK_EDTB(data_controller, params):
                     missing_keys = [key for key in required_keys if key not in shell_hoppings_ms]
                     if missing_keys:
                         raise KeyError(
-                            f'Missing Slater-Koster hopping keys for '
-                            f'{pair_key}/{shell_name}: {", ".join(missing_keys)}'
+                            f"Missing Slater-Koster hopping keys for "
+                            f"{pair_key}/{shell_name}: {', '.join(missing_keys)}"
                         )
         else:
             for shell_name, shell_hoppings in hoppings_shells.items():
                 missing_keys = [key for key in required_keys if key not in shell_hoppings]
                 if missing_keys:
                     raise KeyError(
-                        f'Missing Slater-Koster hopping keys for '
-                        f'{shell_name}: {", ".join(missing_keys)}'
+                        f"Missing Slater-Koster hopping keys for "
+                        f"{shell_name}: {', '.join(missing_keys)}"
                     )
 
         elements = sorted(set(arry['atoms']))
@@ -1676,7 +1688,7 @@ def SK_EDTB(data_controller, params):
             gamma_str = ', '.join(
                 f'{pk}: {gv:.4g}'
                 if isinstance(gv, (int, float))
-                else f'{pk}: {{{", ".join(f"{k}={v:.4g}" for k, v in gv.items())}}}'
+                else f"{pk}: {{{', '.join(f'{k}={v:.4g}' for k, v in gv.items())}}}"
                 for pk, gv in gamma_spec.items()
             )
         else:
@@ -1945,7 +1957,9 @@ def SK_EDTB(data_controller, params):
                                     else gamma_map
                                 )
                                 shell_hop_data = _screened_hoppings(
-                                    _dd_hop_values_pair(dist_val, _pair_key), S_ij, gmap=_pair_gmap
+                                    _dd_hop_values_pair(dist_val, _pair_key),
+                                    S_ij,
+                                    gmap=_pair_gmap,
                                 )
                             else:
                                 shell_hop_data = _screened_hoppings(_dd_hop_values(dist_val), S_ij)
@@ -1957,7 +1971,9 @@ def SK_EDTB(data_controller, params):
                                 _gamma_maps.get(_pair_key, gamma_map) if _gamma_maps else gamma_map
                             )
                             shell_hop_data = _screened_hoppings(
-                                _ms_hoppings[_pair_key][shell_key], S_ij, gmap=_pair_gmap
+                                _ms_hoppings[_pair_key][shell_key],
+                                S_ij,
+                                gmap=_pair_gmap,
                             )
                         else:
                             shell_hop_data = _screened_hoppings(hoppings_shells[shell_key], S_ij)
