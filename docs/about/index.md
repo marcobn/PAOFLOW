@@ -61,6 +61,10 @@ If you use PAOFLOW in published work, please cite:
     Pseudohybrid Hubbard Density Functional for Accelerated Materials Discovery”. Physical Review X, 5.1 (Jan. 2015). doi: 10.1103/physrevx.5.011006</span>
     <button type="button" class="pf-citation-copy">Copy citation</button>
   </li>
+  <li class="pf-citation-entry">
+    <span class="pf-citation-text">A. Jayaraj, I. Siloi, M. Fornari, &amp; M. Buongiorno Nardelli (2022). Relaxation time approximations in PAOFLOW 2.0. Scientific Reports, 12, 8931. https://doi.org/10.1038/s41598-022-08931-5</span>
+    <button type="button" class="pf-citation-copy">Copy citation</button>
+  </li>
 </ol>
 ```
 
