@@ -296,9 +296,22 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                from .models.models import build_TB_model
+                if isinstance(model, dict):
+                    from .models.models import build_TB_model
 
-                build_TB_model(self, model)
+                    build_TB_model(self, model)
+                else:
+                    print(
+                        'Check! TB model finite (nonperiodic) in one or more dimensions not implemented'
+                    )
+                    try:
+                        from .models.models import build_from_pythTB
+
+                        build_from_pythTB(self, model)
+                    except Exception as e:
+                        print('\nERROR: Could not build tight-binding model')
+                        self.report_exception('Data Controller Initialization')
+                        raise e
             else:
                 try:
                     if inputfile != None:
@@ -701,13 +714,18 @@ class DataController:
 
             if write_binary:  # or whatever you want to call it
                 if nspin == 1:  # postfix .npy just to make it clear what they are
-                    np.save(os.path.join(inputpath, 'kham.npy'), np.ravel(Hks[..., 0], order='C'))
+                    np.save(
+                        os.path.join(inputpath, 'kham.npy'),
+                        np.ravel(Hks[..., 0], order='C'),
+                    )
                 if nspin == 2:
                     np.save(
-                        os.path.join(inputpath, 'kham_up.npy'), np.ravel(Hks[..., 0], order='C')
+                        os.path.join(inputpath, 'kham_up.npy'),
+                        np.ravel(Hks[..., 0], order='C'),
                     )
                     np.save(
-                        os.path.join(inputpath, 'kham_dn.npy'), np.ravel(Hks[..., 1], order='C')
+                        os.path.join(inputpath, 'kham_dn.npy'),
+                        np.ravel(Hks[..., 1], order='C'),
                     )
                 if acbn0:
                     Sks = Sks[: Sks.shape[1], :, :]
@@ -720,7 +738,10 @@ class DataController:
                             for j in range(nawf):
                                 f.write(
                                     '%20.13f %20.13f \n'
-                                    % (np.real(Hks[i, j, ik, 0]), np.imag(Hks[i, j, ik, 0]))
+                                    % (
+                                        np.real(Hks[i, j, ik, 0]),
+                                        np.imag(Hks[i, j, ik, 0]),
+                                    )
                                 )
                     f.close()
                 elif nspin == 2:
@@ -730,7 +751,10 @@ class DataController:
                             for j in range(nawf):
                                 f.write(
                                     '%20.13f %20.13f \n'
-                                    % (np.real(Hks[i, j, ik, 0]), np.imag(Hks[i, j, ik, 0]))
+                                    % (
+                                        np.real(Hks[i, j, ik, 0]),
+                                        np.imag(Hks[i, j, ik, 0]),
+                                    )
                                 )
                     f.close()
                     f = open(os.path.join(inputpath, 'kham_down.txt'), 'w')
@@ -739,7 +763,10 @@ class DataController:
                             for j in range(nawf):
                                 f.write(
                                     '%20.13f %20.13f \n'
-                                    % (np.real(Hks[i, j, ik, 1]), np.imag(Hks[i, j, ik, 1]))
+                                    % (
+                                        np.real(Hks[i, j, ik, 1]),
+                                        np.imag(Hks[i, j, ik, 1]),
+                                    )
                                 )
                     f.close()
             """
@@ -857,13 +884,20 @@ class DataController:
                     pad3 = 1
 
                 HRS_interp = np.zeros(
-                    (nawf, nawf, nk1 + pad1, nk2 + pad2, nk3 + pad3, nspin), dtype=complex
+                    (nawf, nawf, nk1 + pad1, nk2 + pad2, nk3 + pad3, nspin),
+                    dtype=complex,
                 )
                 for n in range(nawf):
                     for m in range(nawf):
                         for ispin in range(nspin):
                             HRS_interp[n, m, :, :, :, ispin] = zero_pad(
-                                HRS[n, m, :, :, :, ispin], nk1, nk2, nk3, pad1, pad2, pad3
+                                HRS[n, m, :, :, :, ispin],
+                                nk1,
+                                nk2,
+                                nk3,
+                                pad1,
+                                pad2,
+                                pad3,
                             )
 
                 nk1 += pad1
