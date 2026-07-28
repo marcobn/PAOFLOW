@@ -233,7 +233,9 @@ def find_closed_orbits_in_slice(
 # Phase 4: cross-slice matching, extremum detection, averaging
 # ============================================================================
 
-from PAOFLOW.pyskeaf.slice_ops import SliceGeometry  # noqa: E402  (local import keeps Phase-3 self-contained)
+from PAOFLOW.pyskeaf.slice_ops import (
+    SliceGeometry,  # noqa: E402  (local import keeps Phase-3 self-contained)
+)
 
 
 @dataclass
@@ -290,6 +292,9 @@ class AveragedOrbit:
 # ----------------------------------------------------------------------------
 # 4a. Cross-slice chunk matching (with bifurcation detection + floater loop)
 # ----------------------------------------------------------------------------
+
+_MAX_MATCH_SLICE_GAP = 3
+_RELAXED_MATCH_BADNESS_MAX = 5.0e-3
 
 
 def _bbox_overlap(a: SliceOrbit, b: SliceOrbit) -> bool:
@@ -370,6 +375,26 @@ def _match_conditions(
         return False
     # mcond(18-19): no-bifurcation flags
     return slice_no_bif and chunk_no_bif
+
+
+def _relaxed_match_conditions(
+    slice_orbit: SliceOrbit, chunk_orbit: SliceOrbit, slice_no_bif: bool, chunk_no_bif: bool
+) -> bool:
+    """Fallback match for small pockets that move farther than their own std."""
+    if not (slice_no_bif and chunk_no_bif):
+        return False
+    if slice_orbit.orbit_type != chunk_orbit.orbit_type:
+        return False
+    badness = _badness(chunk_orbit, slice_orbit)
+    if badness > _RELAXED_MATCH_BADNESS_MAX:
+        return False
+
+    avg_delta = np.abs(slice_orbit.avg_xy_frac - chunk_orbit.avg_xy_frac)
+    bbox_scale = np.maximum(
+        slice_orbit.max_xy_frac - slice_orbit.min_xy_frac,
+        chunk_orbit.max_xy_frac - chunk_orbit.min_xy_frac,
+    )
+    return bool(np.all(avg_delta <= np.maximum(0.05, 4.0 * bbox_scale)))
 
 
 def _detect_forward_bifurcation(
@@ -486,7 +511,10 @@ def _find_best_match(
         # Branch A: chunk already received an orbit on this slice (need to compare to second-last)
         if tail_slice == query_slice and n > 1:
             prev = ch.orbits[-2]
-            if not _match_conditions(query, prev, query_no_bif, ch.no_bif[-2]):
+            if not (
+                _match_conditions(query, prev, query_no_bif, ch.no_bif[-2])
+                or _relaxed_match_conditions(query, prev, query_no_bif, ch.no_bif[-2])
+            ):
                 continue
             bad = _badness(prev, query)
             # Floater rule: only displace if our badness beats both the
@@ -495,9 +523,12 @@ def _find_best_match(
                 best_badness = bad
                 best_chunk = c_idx
                 best_occupied = True
-        # Branch B: chunk's tail is on the previous slice — normal extension.
-        elif tail_slice == query_slice - 1:
-            if not _match_conditions(query, tail, query_no_bif, ch.no_bif[-1]):
+        # Branch B: chunk's tail is on a recent previous slice -- normal extension.
+        elif 1 <= query_slice - tail_slice <= _MAX_MATCH_SLICE_GAP:
+            if not (
+                _match_conditions(query, tail, query_no_bif, ch.no_bif[-1])
+                or _relaxed_match_conditions(query, tail, query_no_bif, ch.no_bif[-1])
+            ):
                 continue
             bad = _badness(tail, query)
             if bad < best_badness:
@@ -668,7 +699,6 @@ def find_extremal(
     """
     n_slices = geom.numx
     dk = geom.zkseparation
-    dk2 = dk * dk
     out: List[ExtremalOrbit] = []
 
     for c_idx, ch in enumerate(chunks):
@@ -679,13 +709,6 @@ def find_extremal(
             o = ch.orbits[pos]
             o_prev = ch.orbits[pos - 1]
             o_next = ch.orbits[pos + 1]
-            # Chunks may have gaps in slice_index when occupancy / floaters
-            # rearranged things; require strict consecutive slices for an
-            # interior extremum (matches Fortran's noprevarea/nonextarea flags).
-            if o_prev.slice_index != o.slice_index - 1:
-                continue
-            if o_next.slice_index != o.slice_index + 1:
-                continue
 
             # minextfreq cutoff
             if o.frequency_kT <= min_freq_kT:
@@ -711,7 +734,14 @@ def find_extremal(
             if not (is_min or is_max or is_flat):
                 continue
 
-            curvature = CONV_FSAREA_TO_KT * (a_prev + a_next - 2.0 * a) / dk2
+            h_prev = (o.slice_index - o_prev.slice_index) * dk
+            h_next = (o_next.slice_index - o.slice_index) * dk
+            curvature = (
+                CONV_FSAREA_TO_KT
+                * 2.0
+                * (((a_next - a) / h_next) - ((a - a_prev) / h_prev))
+                / (h_prev + h_next)
+            )
             ruc = _supercell_centroid_to_ruc(geom, o.avg_xy_frac, o.slice_index, n_slices)
             out.append(
                 ExtremalOrbit(
@@ -777,6 +807,17 @@ def _average_one_centre_group(
     out: List[AveragedOrbit] = []
     cluster: List[ExtremalOrbit] = []
 
+    def _unwrap_rucs(rucs: np.ndarray) -> np.ndarray:
+        if rucs.shape[0] <= 1:
+            return rucs.copy()
+        seed = rucs[0]
+        out = rucs.copy()
+        for i in range(1, out.shape[0]):
+            delta = out[i] - seed
+            out[i, delta > 0.5] -= 1.0
+            out[i, delta < -0.5] += 1.0
+        return out
+
     def flush(cluster: List[ExtremalOrbit]) -> None:
         if not cluster:
             return
@@ -784,7 +825,7 @@ def _average_one_centre_group(
         masses = np.array([e.slice_orbit.effective_mass for e in cluster])
         curvs = np.array([e.curvature_kT_A2 for e in cluster])
         types = np.array([float(e.slice_orbit.orbit_type) for e in cluster])
-        rucs = np.array([e.avg_xyz_ruc for e in cluster])  # (n, 3)
+        rucs = _unwrap_rucs(np.array([e.avg_xyz_ruc for e in cluster]))  # (n, 3)
         n = len(cluster)
         ddof = 1 if n > 1 else 0
         mean_xyz = rucs.mean(axis=0)
