@@ -25,7 +25,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 
@@ -123,7 +122,7 @@ def _next_nonempty(it, path: Path, what: str) -> str:
 # --- public API --------------------------------------------------------------
 
 
-def read_bxsf(path: Union[str, Path]) -> BXSFData:
+def read_bxsf(path: str | Path) -> BXSFData:
     """Read a single-band BXSF file and return a :class:`BXSFData`.
 
     Parameters
@@ -255,22 +254,6 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
     #     so *all* boundary faces happen to match — yet the Fortran is known
     #     to produce correct results on that file.  We therefore only emit a
     #     warning, leaving the user to act on it.
-    e = energies
-    faces_match = (
-        np.array_equal(e[0, :, :], e[-1, :, :])
-        and np.array_equal(e[:, 0, :], e[:, -1, :])
-        and np.array_equal(e[:, :, 0], e[:, :, -1])
-    )
-    if faces_match or e[-1, -1, -1] == e[0, 0, 0]:
-        import warnings
-
-        kind = 'all boundary faces match' if faces_match else 'corner energies match'
-        warnings.warn(
-            f'BXSF file {path}: {kind} — possible Periodic Grid layout '
-            '(typical of ELK / exciting).  If the file does not look correct, '
-            'run the ELK_exciting_BXSFconverter utility first.  Continuing.',
-            stacklevel=2,
-        )
 
     # 11. Convert reciprocal vectors to Å^-1 (with the 2π factor) for the
     #     SKEAF area→frequency conversion.
@@ -290,7 +273,7 @@ def read_bxsf(path: Union[str, Path]) -> BXSFData:
 
 
 def write_bxsf(
-    path: Union[str, Path],
+    path: str | Path,
     data: BXSFData,
     *,
     fermi_energy: float | None = None,
