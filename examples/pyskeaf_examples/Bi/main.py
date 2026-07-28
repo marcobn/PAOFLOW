@@ -54,7 +54,6 @@ PTHR = 0.95  # projectability threshold
 NFFT = (32, 32, 32)
 
 # SKEAF step.
-SKEAF_OUTPUTDIR = 'output_skeaf'
 CONFIG = 'config.in'
 colors = ['blue', 'green', 'yellow', 'red', 'black', 'magenta', 'orange', 'purple', 'brown']
 
@@ -72,16 +71,14 @@ def ensure_basis(preset='extended'):
         element = upf.element.strip()
         elem_dir = os.path.join(BASISPATH, element)
         expected = _default_shells(upf, preset=preset)
-        missing = [
-            s for s in expected if not os.path.exists(os.path.join(elem_dir, '{}.dat'.format(s)))
-        ]
+        missing = [s for s in expected if not os.path.exists(os.path.join(elem_dir, f'{s}.dat'))]
         if missing:
-            print('Generating pseudo-atom basis for {} under {} ...'.format(element, BASISPATH))
+            print(f'Generating pseudo-atom basis for {element} under {BASISPATH} ...')
             generate_basis_for_pseudo(
                 upf_path, BASISPATH.rstrip(os.sep), preset=preset, verbose=True
             )
         else:
-            print('Using existing pseudo-atom basis for {} under {}'.format(element, BASISPATH))
+            print(f'Using existing pseudo-atom basis for {element} under {BASISPATH}')
 
 
 def run_properties():
@@ -92,7 +89,7 @@ def run_properties():
         savedir=SAVEDIR,
         smearing=SMEARING,
         npool=NPOOL,
-        verbose=False,
+        verbose=True,
     )
 
     p.projections(basispath=BASISPATH, configuration=STD_BASIS)
@@ -115,7 +112,7 @@ def run_skeaf():
         cfg,
         input_dir=os.path.join(HERE, OUTPUTDIR),
         all_files=True,
-        output_dir=SKEAF_OUTPUTDIR,
+        output_dir=OUTPUTDIR,
     )
     for item in results:
         print(
@@ -126,8 +123,21 @@ def run_skeaf():
 
 
 def plot_freq(file, col):
+    if os.path.getsize(file) == 0:
+        print(f'{file}: skipped empty file')
+        return False
+    with open(file, encoding='utf-8') as handle:
+        next(handle, None)
+        if not any(line.strip() for line in handle):
+            print(f'{file}: skipped file with no data rows')
+            return False
 
     freq = np.loadtxt(file, delimiter=',', skiprows=1)
+    freq = np.atleast_2d(freq)
+    if freq.shape[1] < 3:
+        print(f'{file}: skipped malformed file with {freq.shape[1]} columns')
+        return False
+
     y = freq[:, 2]
     x = freq[:, 1]
 
@@ -139,27 +149,32 @@ def plot_freq(file, col):
     plt.xlabel('angle ($°$)', fontsize=20)
     plt.ylabel(r'$\rm{B_F}$ ($10^3$ T)', fontsize=20)
     plt.tick_params(axis='both', which='major', labelsize=18)
+    return True
 
 
 def plot_frequencies(colors):
     """Plot the SKEAF frequency-vs-angle results."""
-    files_nz = glob.glob(os.path.join(SKEAF_OUTPUTDIR, 'results_freqvsangle_*.out'))
+    files_nz = glob.glob(os.path.join(OUTPUTDIR, 'results_freqvsangle_*.out'))
     files_nz.sort()
     print(files_nz)
 
-    for i in range(len(files_nz)):
-        plot_freq(files_nz[i], colors[i])
+    for i, file in enumerate(files_nz):
+        if i >= len(colors):
+            print(f'{file}: skipped, no color configured')
+            continue
+        if not plot_freq(file, colors[i]):
+            continue
         print(' ')
-        print(files_nz[i], 'CORRECT ! !')
+        print(file, 'CORRECT ! !')
         print(' ')
 
     plt.tight_layout()
-    plt.savefig(os.path.join(SKEAF_OUTPUTDIR, 'plot_frequencies.png'), dpi=300)
+    plt.savefig(os.path.join(OUTPUTDIR, 'plot_frequencies.png'), dpi=300)
 
 
 def main():
     if not os.path.isdir(SAVEDIR):
-        print('{} not found. Run pw.x (scf then nscf) first.'.format(SAVEDIR))
+        print(f'{SAVEDIR} not found. Run pw.x (scf then nscf) first.')
         sys.exit(1)
 
     ensure_basis(preset='extended')
