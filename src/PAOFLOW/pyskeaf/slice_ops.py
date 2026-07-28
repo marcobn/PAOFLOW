@@ -189,10 +189,10 @@ def _bxsf_indices_from_slice(
 
     # Periodic wrap into [0, n-1).  Equivalent to Fortran's
     #   subtractor = floor(f / (n-1)) * (n-1);  d = f - subtractor + 1   (1-based)
-    # in 0-based form:
-    ux = fx - np.floor(fx / (nx - 1)) * (nx - 1)
-    uy = fy - np.floor(fy / (ny - 1)) * (ny - 1)
-    uz = fz - np.floor(fz / (nz - 1)) * (nz - 1)
+    # in 0-based form.
+    ux = np.mod(fx, nx - 1)
+    uy = np.mod(fy, ny - 1)
+    uz = np.mod(fz, nz - 1)
     return ux, uy, uz
 
 
@@ -238,8 +238,8 @@ def _interpolate_per_point(
     shape.  Each point uses its own 4×4×4 stencil with the same periodic-wrap
     convention as :mod:`PAOFLOW.pyskeaf.interp`.
     """
-    from PAOFLOW.pyskeaf.interp import _lagrange4_axis_weights
     from PAOFLOW.pyskeaf._numba_kernels import lagrange4_eval
+    from PAOFLOW.pyskeaf.interp import _lagrange4_axis_weights
 
     nx, ny, nz = energies.shape
     shape = ux.shape
