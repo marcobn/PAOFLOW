@@ -776,7 +776,7 @@ class ACBN0:
         from .projection.upf_gaussfit import gaussian_fit
         from .utils.header import header
 
-        header()
+        header(style='small')
         print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
 
         datafilepath = join(outputdir, 'data.pkl')
@@ -1041,7 +1041,7 @@ class ACBN0:
                 print(f'  {k} : {v}')
                 if converged and np.abs(self.uVals[k] - v) > convergence_threshold:
                     converged = False
-            print('', flush=True)
+            print(flush=True)
 
             self.uVals = new_U
 
@@ -1094,7 +1094,7 @@ class ACBN0:
 
         card = [self.hubbard_tag]
         for k, v in self.uVals.items():
-            card.append(' U {} {}'.format(k, v))
+            card.append(f' U {k} {v}')
 
         # Emit each undirected V channel only once.  QE's HUBBARD card
         # check (PW/src/read_cards.f90, card_hubbard) considers two V
@@ -1126,15 +1126,7 @@ class ACBN0:
                 grouped[canonical] = ((sym1, sym2, idx1, idx2), [v])
         for (sym1, sym2, idx1, idx2), vals in grouped.values():
             v_emit = sum(vals) / len(vals)
-            card.append(
-                ' V {} {} {} {} {}'.format(
-                    sym1,
-                    sym2,
-                    idx1,
-                    idx2,
-                    v_emit,
-                )
-            )
+            card.append(f' V {sym1} {sym2} {idx1} {idx2} {v_emit}')
 
         return card
 
@@ -2707,7 +2699,7 @@ class eACBN0(ACBN0):
                 if abs(mixed - old) > convergence_threshold:
                     converged = False
                 new_V[k] = mixed
-            print('', flush=True)
+            print(flush=True)
 
             self.uVals = new_U
             for k, v in new_V.items():
