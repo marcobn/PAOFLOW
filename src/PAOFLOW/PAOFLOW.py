@@ -56,6 +56,8 @@ class PAOFLOW:
         Resume from a previously saved ``.json`` dump (see :meth:`restart_dump`).
     dft : str, default ``'QE'``
         DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
+    header_style : str, default ``'color'``
+        header style ``'color'`` (large banner) or ``'minimal'`` (small title)
 
     Key attributes
     --------------
@@ -225,6 +227,7 @@ class PAOFLOW:
         verbose=False,
         restart=False,
         dft='QE',
+        header_style='color',
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -263,7 +266,7 @@ class PAOFLOW:
         # Initialize Time
         # --------------
         if self.rank == 0:
-            header()
+            header(style=header_style)
             self.start_time = self.reset_time = time()
 
         # Initialize Data Controller
@@ -1368,9 +1371,7 @@ class PAOFLOW:
             # Adjust 'npool' if arrays exceed MPI maximum
             int_max = 2147483647
             temp_pool = int(
-                np.ceil(
-                    (float(nawf**2 * nfft1 * nfft2 * nfft3 * 3 * attr['nspin']) / float(int_max))
-                )
+                np.ceil(float(nawf**2 * nfft1 * nfft2 * nfft3 * 3 * attr['nspin']) / float(int_max))
             )
             if temp_pool > attr['npool']:
                 if self.rank == 0:

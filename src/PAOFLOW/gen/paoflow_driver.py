@@ -47,15 +47,15 @@ def _input(prompt):
 
 def ask(prompt, default=None):
     """Ask for a free-text value with an optional default."""
-    suffix = ' [{}]'.format(default) if default is not None else ''
-    ans = _input('{}{}: '.format(prompt, suffix)).strip()
+    suffix = f' [{default}]' if default is not None else ''
+    ans = _input(f'{prompt}{suffix}: ').strip()
     return ans if ans else (default if default is not None else '')
 
 
 def ask_yes_no(prompt, default=False):
     """Ask a yes/no question."""
     d = 'Y/n' if default else 'y/N'
-    ans = _input('{} [{}]: '.format(prompt, d)).strip().lower()
+    ans = _input(f'{prompt} [{d}]: ').strip().lower()
     if not ans:
         return default
     return ans.startswith('y')
@@ -63,25 +63,25 @@ def ask_yes_no(prompt, default=False):
 
 def ask_int(prompt, default):
     """Ask for an integer value with a default."""
-    ans = _input('{} [{}]: '.format(prompt, default)).strip()
+    ans = _input(f'{prompt} [{default}]: ').strip()
     if not ans:
         return default
     try:
         return int(ans)
     except ValueError:
-        print('  (not an integer, using {})'.format(default))
+        print(f'  (not an integer, using {default})')
         return default
 
 
 def ask_float(prompt, default):
     """Ask for a floating-point value with a default."""
-    ans = _input('{} [{}]: '.format(prompt, default)).strip()
+    ans = _input(f'{prompt} [{default}]: ').strip()
     if not ans:
         return default
     try:
         return float(ans)
     except ValueError:
-        print('  (not a number, using {})'.format(default))
+        print(f'  (not a number, using {default})')
         return default
 
 
@@ -91,8 +91,8 @@ def ask_choice(prompt, choices, default):
         print(prompt)
         for i, choice in enumerate(choices, 1):
             mark = ' (default)' if choice == default else ''
-            print('  {}: {}{}'.format(i, choice, mark))
-        ans = _input('Choice [{}]: '.format(default)).strip()
+            print(f'  {i}: {choice}{mark}')
+        ans = _input(f'Choice [{default}]: ').strip()
         if not ans:
             return default
         if ans in choices:
@@ -120,7 +120,7 @@ def parse_laser_list(spec):
         return []
     if any(ch in spec for ch in '[]()') or 'range' in spec or ' for ' in spec:
         try:
-            value = eval(spec, {'__builtins__': {}}, {'range': range})  # noqa: S307
+            value = eval(spec, {'__builtins__': {}}, {'range': range})
         except Exception as exc:  # pragma: no cover - user input error path
             raise ValueError('Could not parse laser list %r: %s' % (spec, exc))
         values = [float(x) for x in value]
@@ -266,6 +266,32 @@ def ensure_basis(preset="extended"):
                 element, BASISPATH))
 '''
 
+PROJWFC_TEMPLATE_BLOCK = '''
+def ensure_projwfc_template():
+    """Write <PREFIX>.projwfc.in for the projwfc.x projector path if missing.
+
+    The ACBN0/eACBN0 driver runs projwfc.x from this template each SCF
+    iteration; lwrite_overlaps=.true. is required so the true non-orthogonal
+    atomic overlap S(k) is written (mandatory for intersite V).
+    """
+    if RANK != 0:
+        return
+    fname = "{}.projwfc.in".format(PREFIX)
+    if os.path.exists(fname):
+        return
+    with open(fname, "w") as fh:
+        fh.write("\\n".join([
+            "&projwfc",
+            "   prefix='{}'".format(PREFIX),
+            "   outdir='./'",
+            "   lwrite_overlaps = .true.",
+            "   lbinary_data = .false.",
+            "/",
+            "",
+        ]))
+    print("Wrote {}".format(fname))
+'''
+
 ENERGY_RANGE_BLOCK = '''
 def suggest_energy_window(p):
     """Print the full PAO band range (eV, rel. to E_F) as a suggested window.
@@ -317,7 +343,7 @@ def select_properties():
     """Show the property menu and return the ordered set of chosen keys."""
     print('\nAvailable properties:')
     for i, (_key, label) in enumerate(PROPERTY_MENU, 1):
-        print('  {}: {}'.format(i, label))
+        print(f'  {i}: {label}')
     raw = _input("Enter a comma/space separated list (e.g. '1 2 8'): ").strip()
     tokens = raw.replace(',', ' ').split()
     chosen = []
@@ -338,8 +364,8 @@ def select_properties():
 # --------------------------------------------------------------------------- #
 def _format_upfs_line(upfs):
     """Render the ``UPFS = [...]`` constant listing one pseudo per species."""
-    items = ', '.join('os.path.join(HERE, {!r})'.format(u) for u in upfs)
-    return 'UPFS = [{}]'.format(items)
+    items = ', '.join(f'os.path.join(HERE, {u!r})' for u in upfs)
+    return f'UPFS = [{items}]'
 
 
 # In-plane high-symmetry band paths for 2D systems (vacuum along c, kz = 0).
@@ -403,16 +429,38 @@ def _band_path_constant_lines(cfg):
         if band_path is None:
             return [
                 '# 2D system: restrict the band path to the in-plane (kz=0) points.',
-                '# No built-in 2D path for ibrav={}; fill these in:'.format(ibrav),
+                f'# No built-in 2D path for ibrav={ibrav}; fill these in:',
                 'BAND_PATH = None',
                 'HIGH_SYM = None',
             ]
         return [
             '# 2D system: in-plane band path only (vacuum along c, so kz=0).',
-            'BAND_PATH = {!r}'.format(band_path),
-            'HIGH_SYM = {}'.format(_format_high_sym(high_sym)),
+            f'BAND_PATH = {band_path!r}',
+            f'HIGH_SYM = {_format_high_sym(high_sym)}',
         ]
     return []
+
+
+def _uses_projwfc(cfg):
+    """True when the driver should read QE ``projwfc.x`` projections."""
+    return cfg.get('projector', 'internal') == 'projwfc'
+
+
+def _projection_lines(
+    cfg, var='p', basispath='BASISPATH', configuration='STD_BASIS', indent='    '
+):
+    """Source lines for the projection step, honouring ``cfg['projector']``.
+
+    ``internal`` builds PAOFLOW's own atomic projections; ``projwfc`` reads
+    the projections (and overlaps) written by QE ``projwfc.x`` instead.
+    """
+    if _uses_projwfc(cfg):
+        return [
+            indent + '# QE projwfc.x projections: run projwfc.x with',
+            indent + '# lwrite_overlaps=.true. into <prefix>.save before this step.',
+            f'{indent}{var}.read_atomic_proj_QE()',
+        ]
+    return [f'{indent}{var}.projections(basispath={basispath}, configuration={configuration})']
 
 
 def build_run_script(cfg):
@@ -446,6 +494,9 @@ def build_run_script(cfg):
         'STD_BASIS = {!r}   # basis configuration for standard properties'.format(cfg['std_basis'])
     )
     lines.append('PTHR = 0.95   # projectability threshold')
+    lines.append(
+        f'SAVE_OVERLAPS = {_uses_projwfc(cfg)}   # True reads QE projwfc.x overlaps (projwfc projector)'
+    )
     lines.append('')
     lines.append('IBRAV = {}'.format(cfg['ibrav']))
     lines.append('NK = {}   # k-points along the band path'.format(cfg['nk']))
@@ -483,10 +534,11 @@ def build_run_script(cfg):
         lines.append('        savedir=SAVEDIR,')
         lines.append('        smearing=SMEARING,')
         lines.append('        npool=NPOOL,')
+        lines.append('        save_overlaps=SAVE_OVERLAPS,')
         lines.append('        verbose=False,')
         lines.append('    )')
         lines.append('')
-        lines.append('    p.projections(basispath=BASISPATH, configuration=STD_BASIS)')
+        lines.extend(_projection_lines(cfg, configuration='STD_BASIS'))
         lines.append('    p.projectability(pthr=PTHR)')
         lines.append('    p.pao_hamiltonian()')
         lines.append('')
@@ -515,10 +567,11 @@ def build_run_script(cfg):
         lines.append('        savedir=SAVEDIR,')
         lines.append('        smearing=SMEARING,')
         lines.append('        npool=NPOOL,')
+        lines.append('        save_overlaps=SAVE_OVERLAPS,')
         lines.append('        verbose=False,')
         lines.append('    )')
         lines.append('')
-        lines.append("    p.projections(basispath=BASISPATH, configuration='extended')")
+        lines.extend(_projection_lines(cfg, configuration="'extended'"))
         lines.append('    p.projectability(pthr=PTHR)')
         lines.append('    p.pao_hamiltonian()')
         lines.append('    if NFFT is not None:')
@@ -547,7 +600,8 @@ def build_run_script(cfg):
     lines.append('        print("{} not found. Run pw.x (scf then nscf) first.".format(SAVEDIR))')
     lines.append('        sys.exit(1)')
     lines.append('')
-    lines.append("    ensure_basis(preset='extended')")
+    if not _uses_projwfc(cfg):
+        lines.append("    ensure_basis(preset='extended')")
     lines.append('    if "MPI" in globals():')
     lines.append('        MPI.COMM_WORLD.Barrier()')
     lines.append('')
@@ -660,10 +714,15 @@ def build_acbn0_script(cfg):
     lines.append('# ONCV / fully-relativistic pseudos often need a looser value than 0.01.')
     lines.append('GAUSSIAN_THRESHOLD = {}'.format(cfg['gaussian_threshold']))
     lines.append('')
+    lines.append(
+        f'USE_LOCAL_BASIS = {not _uses_projwfc(cfg)}   # False -> QE projwfc.x projectors '
+        '(required for eACBN0 V)'
+    )
+    lines.append('')
     lines.append('# Hubbard manifolds and their initial U (eV).')
     lines.append('HUBBARD_INIT = {')
     for orb, val in hubbard:
-        lines.append('    {!r}: {},'.format(orb, val))
+        lines.append(f'    {orb!r}: {val},')
     lines.append('}')
     if use_v:
         lines.append('')
@@ -674,6 +733,9 @@ def build_acbn0_script(cfg):
     lines.append('')
     lines.append(BASIS_GEN_BLOCK)
     lines.append('')
+    if _uses_projwfc(cfg):
+        lines.append(PROJWFC_TEMPLATE_BLOCK)
+        lines.append('')
     lines.append('def compute_bands(label):')
     lines.append('    """Reconstruct the PAO band structure from the current <PREFIX>.save')
     lines.append('    using the minimal basis and dump it to OUT/bands_<label>_0.dat.')
@@ -684,10 +746,15 @@ def build_acbn0_script(cfg):
     lines.append("        savedir='{}.save'.format(PREFIX),")
     lines.append("        smearing='gauss',")
     lines.append('        npool=1,')
+    if _uses_projwfc(cfg):
+        lines.append('        save_overlaps=True,')
     lines.append('        verbose=False,')
     lines.append('    )')
-    lines.append('    # Standard basis for the projections, as required for ACBN0.')
-    lines.append("    p.projections(basispath=BASISPATH, configuration='standard')")
+    if _uses_projwfc(cfg):
+        lines.append('    p.read_atomic_proj_QE()')
+    else:
+        lines.append('    # Standard basis for the projections, as required for ACBN0.')
+        lines.append("    p.projections(basispath=BASISPATH, configuration='standard')")
     lines.append('    p.projectability(pthr=0.95)')
     lines.append('    p.pao_hamiltonian()')
     if _wants_explicit_band_path(cfg):
@@ -699,7 +766,10 @@ def build_acbn0_script(cfg):
     lines.append('')
     lines.append('')
     lines.append('def main():')
-    lines.append("    ensure_basis(preset='extended')")
+    if _uses_projwfc(cfg):
+        lines.append('    ensure_projwfc_template()')
+    else:
+        lines.append("    ensure_basis(preset='extended')")
     lines.append('    if "MPI" in globals():')
     lines.append('        MPI.COMM_WORLD.Barrier()')
     lines.append('')
@@ -717,7 +787,7 @@ def build_acbn0_script(cfg):
     lines.append('        python_path=PY_PATH,')
     lines.append('        outputdir=OUT,')
     lines.append('        projection=PROJECTION,')
-    lines.append('        use_local_basis=True,')
+    lines.append('        use_local_basis=USE_LOCAL_BASIS,')
     lines.append('        basispath=BASISPATH,')
     lines.append("        configuration='standard',")
     lines.append('        gaussian_threshold=GAUSSIAN_THRESHOLD,')
@@ -745,7 +815,7 @@ def build_acbn0_script(cfg):
         lines.append('        python_path=PY_PATH,')
         lines.append('        outputdir=OUT,')
         lines.append('        projection=PROJECTION,')
-        lines.append('        use_local_basis=True,')
+        lines.append('        use_local_basis=USE_LOCAL_BASIS,')
         lines.append('        basispath=BASISPATH,')
         lines.append("        configuration='standard',")
         lines.append('        gaussian_threshold=GAUSSIAN_THRESHOLD,')
@@ -782,8 +852,8 @@ def _pp_dir_line(cfg):
     if ppd in ('', 'HERE', '.'):
         return 'PP_DIR = HERE   # directory containing the UPF pseudopotentials'
     if os.path.isabs(ppd):
-        return 'PP_DIR = {!r}'.format(ppd)
-    return 'PP_DIR = os.path.join(HERE, {!r})'.format(ppd)
+        return f'PP_DIR = {ppd!r}'
+    return f'PP_DIR = os.path.join(HERE, {ppd!r})'
 
 
 def _hubbard_file_line(cfg):
@@ -792,8 +862,8 @@ def _hubbard_file_line(cfg):
     if not hf:
         return 'HUBBARD_FILE = None   # pw.x input with a HUBBARD card (on-site U injected)'
     if os.path.isabs(hf):
-        return 'HUBBARD_FILE = {!r}'.format(hf)
-    return 'HUBBARD_FILE = os.path.join(HERE, {!r})'.format(hf)
+        return f'HUBBARD_FILE = {hf!r}'
+    return f'HUBBARD_FILE = os.path.join(HERE, {hf!r})'
 
 
 def _derive_ph_command(pw_command):
@@ -861,7 +931,7 @@ def build_phonon_script(cfg):
     lines.append(_pp_dir_line(cfg))
     lines.append('')
     lines.append('# Finite-displacement settings.')
-    lines.append('SUPERCELL_MATRIX = {}   # scalar, length-3 or 3x3'.format(sc))
+    lines.append(f'SUPERCELL_MATRIX = {sc}   # scalar, length-3 or 3x3')
     lines.append('DISPLACEMENT = {}   # displacement amplitude (Bohr)'.format(cfg['displacement']))
     lines.append('MESH = [{}, {}, {}]   # q-mesh for DOS / thermal properties'.format(*mesh))
     lines.append('UNITS = {!r}   # frequency units for the outputs'.format(cfg['units']))
@@ -1378,8 +1448,8 @@ def analyse():
     if not os.path.isdir(COUPLING_DIR):
         sys.exit('%s not found. Run the QE phonon + AHC steps first (phase: inputs).' % COUPLING_DIR)
 
-    pf = PAOFLOW.PAOFLOW(workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, verbose=False)
-    pf.projections(configuration='standard', basispath=BASISDIR)
+    pf = PAOFLOW.PAOFLOW(workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False)
+__PROJECTION_CALL__
     pf.projectability(pthr=PTHR)
     # Grab the projection matrices A_k BEFORE pao_hamiltonian (which deletes them).
     A = pf.data_controller.data_arrays['U'][:, :, :, 0].copy()
@@ -1464,6 +1534,10 @@ def build_elphon_script(cfg):
         '__MU_STAR__': repr(float(cfg['mu_star'])),
         '__PTHR__': repr(float(cfg['pthr'])),
         '__QWEIGHTS__': repr([float(w) for w in cfg['q_weights']]),
+        '__SAVE_OVERLAPS__': str(_uses_projwfc(cfg)),
+        '__PROJECTION_CALL__': '\n'.join(
+            _projection_lines(cfg, var='pf', basispath='BASISDIR', configuration="'standard'")
+        ),
     }
     content = ELPHON_TEMPLATE
     for token, value in subs.items():
@@ -1847,7 +1921,7 @@ def _overlay_bands_dos(band_files, dos_files, labels, sym_file, title):
 # Plot-function bodies keyed by an internal id.  Each value is a list of source
 # lines for a ``plot_<id>()`` function in the generated script.
 def _plot_func(name, body_lines):
-    return ['def {}():'.format(name)] + ['    ' + ln for ln in body_lines] + ['']
+    return [f'def {name}():'] + ['    ' + ln for ln in body_lines] + ['']
 
 
 def build_plot_script(cfg):
@@ -2066,19 +2140,17 @@ def build_plot_script(cfg):
             ),
         ]
         for label, fname, globs, ylim in optical_groups:
-            glob_calls = ' + '.join('_many({!r})'.format(gl) for gl in globs)
+            glob_calls = ' + '.join(f'_many({gl!r})' for gl in globs)
             funcs += _plot_func(
                 fname,
                 [
-                    'files = {}'.format(glob_calls),
+                    f'files = {glob_calls}',
                     "files = [f for f in files if '_th' not in os.path.basename(f)]",
                     'if not files:',
                     '    _missing(None)',
                     '    return',
                     'pplt.plot_dielectric(files if len(files) > 1 else files[0],',
-                    '                     title={!r}, x_lim=_ewin_optical(), y_lim={})'.format(
-                        label, ylim
-                    ),
+                    f'                     title={label!r}, x_lim=_ewin_optical(), y_lim={ylim})',
                 ],
             )
             menu.append((label, fname))
@@ -2163,7 +2235,7 @@ def build_plot_script(cfg):
     lines.append('# Ordered menu of available plots: (label, function).')
     lines.append('PLOTS = [')
     for label, fname in menu:
-        lines.append('    ({!r}, {}),'.format(label, fname))
+        lines.append(f'    ({label!r}, {fname}),')
     lines.append(']')
     lines.append('')
     lines.append('')
@@ -2517,7 +2589,7 @@ def build_raman_script(cfg):
 
     lines = []
     lines.append('#!/usr/bin/env python3')
-    lines.append('"""PAOFLOW {} Raman workflow (generated by paoflow_gen.py).'.format(title))
+    lines.append(f'"""PAOFLOW {title} Raman workflow (generated by paoflow_gen.py).')
     lines.append('')
     lines.append('Finite-difference Raman spectrum: the primitive cell is displaced by')
     lines.append('``+/-delta`` along every optical zone-centre eigenvector and the static')
@@ -2577,9 +2649,7 @@ def build_raman_script(cfg):
         )
     )
     if nbnd > 0:
-        lines.append(
-            'NBND = {}   # bands for the displaced SCF (empty states for optics)'.format(nbnd)
-        )
+        lines.append(f'NBND = {nbnd}   # bands for the displaced SCF (empty states for optics)')
     else:
         lines.append('NBND = None   # bands for the displaced SCF (None = QE default)')
     lines.append(
@@ -2596,9 +2666,7 @@ def build_raman_script(cfg):
         )
     )
     if nfft > 0:
-        lines.append(
-            'NFFT = ({n}, {n}, {n})   # double-grid interpolation; None to skip'.format(n=nfft)
-        )
+        lines.append(f'NFFT = ({nfft}, {nfft}, {nfft})   # double-grid interpolation; None to skip')
     else:
         lines.append('NFFT = None   # double-grid interpolation; None to skip')
     lines.append(
@@ -2622,9 +2690,7 @@ def build_raman_script(cfg):
     lines.append('')
     lines.append('# Raman cross-section options.')
     lines.append(
-        'LASER_NM = {}   # excitation wavelength(s) in nm; None, a float, or a list.'.format(
-            laser_repr
-        )
+        f'LASER_NM = {laser_repr}   # excitation wavelength(s) in nm; None, a float, or a list.'
     )
     lines.append(
         'TEMPERATURE = {}   # K, Bose (n+1) Stokes factor'.format(
@@ -2901,7 +2967,7 @@ def build_raman_plot_script(cfg):
     lines.append('        return')
     lines.append('')
     lines.append("    ax.set_xlabel('Laser energy (eV)', fontsize=12)")
-    lines.append('    ax.set_ylabel({}, fontsize=12)'.format(ylabel))
+    lines.append(f'    ax.set_ylabel({ylabel}, fontsize=12)')
     lines.append('    ax.set_ylim(0.0, ax.get_ylim()[1])')
     lines.append('    ax.grid(alpha=0.3)')
     lines.append("    ax.legend(title='mode', fontsize=9)")
@@ -2985,7 +3051,7 @@ def build_raman_plot_script(cfg):
     lines.append('    ax.set_xlim(*x_lim)')
     lines.append('    ax.set_ylim(0.0, ax.get_ylim()[1])')
     lines.append("    ax.set_xlabel('Frequency (%s)' % UNITS, fontsize=12)")
-    lines.append('    ax.set_ylabel({}, fontsize=12)'.format(ylabel))
+    lines.append(f'    ax.set_ylabel({ylabel}, fontsize=12)')
     lines.append('    ax.grid(alpha=0.3)')
     lines.append('    if multi:')
     lines.append("        ax.legend(title='excitation', fontsize=9)")
@@ -3021,6 +3087,11 @@ def collect_common(args, workdir):
     basisdir = ask('Basis directory name', 'BASIS_PS')
     ibrav = ask_int('ibrav (0 = read cell; needs band path for bands)', 0)
     is_2d = ask_yes_no('Is this a 2D system (slab with vacuum along c)?', False)
+    projector = ask_choice(
+        'Projector source (internal = PAOFLOW atomic projection; projwfc = QE projwfc.x)',
+        ['internal', 'projwfc'],
+        'internal',
+    )
     return {
         'savedir': savedir,
         'prefix': prefix,
@@ -3028,6 +3099,7 @@ def collect_common(args, workdir):
         'basisdir': basisdir,
         'ibrav': ibrav,
         'is_2d': is_2d,
+        'projector': projector,
         'outputdir': 'output',
         'workdir': workdir,
     }
@@ -3245,6 +3317,14 @@ def collect_acbn0(common):
     cfg['use_intersite_v'] = ask_yes_no(
         'Include intersite V (eACBN0)? (No = on-site U only, ACBN0)', False
     )
+    if cfg['use_intersite_v'] and not _uses_projwfc(cfg):
+        print(
+            '\nNote: intersite V (eACBN0) requires the true non-orthogonal atomic\n'
+            '  overlap S(k), which only the projwfc.x projector provides. The\n'
+            '  internal ortho-atomic projection dumps S(k)=I and gives wrong V.\n'
+            '  Switching the projector to projwfc for this workflow.'
+        )
+        cfg['projector'] = 'projwfc'
     cfg['projection'] = ask('Projection scheme', 'ortho-atomic')
     cfg['conv_thr'] = float(ask('U/V convergence threshold (eV)', '0.05'))
     cfg['nk'] = ask_int('Band path k-points (NK)', 400)
@@ -3345,7 +3425,7 @@ def main(argv=None):
     }
     out_path = args.out or _default_out.get(workflow, 'main.py')
     if os.path.exists(out_path) and not args.force:
-        sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(out_path))
+        sys.stderr.write(f'Refusing to overwrite {out_path} (use --force).\n')
         return 1
 
     common = collect_common(args, workdir)
@@ -3372,7 +3452,7 @@ def main(argv=None):
 
     with open(out_path, 'w', encoding='utf-8') as handle:
         handle.write(content)
-    print('\nWrote {}'.format(os.path.abspath(out_path)))
+    print(f'\nWrote {os.path.abspath(out_path)}')
 
     if workflow == 'acbn0':
         # Always pair the ACBN0 driver with a plot.acbn0.py that compares the
@@ -3380,61 +3460,59 @@ def main(argv=None):
         # DFT+U+V).
         plot_path = args.plot_out or 'plot.acbn0.py'
         if os.path.exists(plot_path) and not args.force:
-            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(plot_path))
+            sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
         else:
             plot_content = build_acbn0_plot_script(cfg)
             with open(plot_path, 'w', encoding='utf-8') as handle:
                 handle.write(plot_content)
-            print('Wrote {}'.format(os.path.abspath(plot_path)))
+            print(f'Wrote {os.path.abspath(plot_path)}')
     elif workflow == 'phonon':
         if args.plot or cfg.get('plot'):
             plot_path = args.plot_out or 'plot.phonon.py'
             if os.path.exists(plot_path) and not args.force:
-                sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(plot_path))
+                sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
             else:
                 plot_content = build_phonon_plot_script(cfg)
                 with open(plot_path, 'w', encoding='utf-8') as handle:
                     handle.write(plot_content)
-                print('Wrote {}'.format(os.path.abspath(plot_path)))
+                print(f'Wrote {os.path.abspath(plot_path)}')
         if cfg.get('raman'):
             raman_path = 'main.raman.py'
             if os.path.exists(raman_path) and not args.force:
-                sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(raman_path))
+                sys.stderr.write(f'Refusing to overwrite {raman_path} (use --force).\n')
             else:
                 raman_content = build_raman_script(cfg)
                 with open(raman_path, 'w', encoding='utf-8') as handle:
                     handle.write(raman_content)
-                print('Wrote {}'.format(os.path.abspath(raman_path)))
+                print(f'Wrote {os.path.abspath(raman_path)}')
             if args.plot or cfg.get('plot'):
                 raman_plot_path = 'plot.raman.py'
                 if os.path.exists(raman_plot_path) and not args.force:
-                    sys.stderr.write(
-                        'Refusing to overwrite {} (use --force).\n'.format(raman_plot_path)
-                    )
+                    sys.stderr.write(f'Refusing to overwrite {raman_plot_path} (use --force).\n')
                 else:
                     raman_plot_content = build_raman_plot_script(cfg)
                     with open(raman_plot_path, 'w', encoding='utf-8') as handle:
                         handle.write(raman_plot_content)
-                    print('Wrote {}'.format(os.path.abspath(raman_plot_path)))
+                    print(f'Wrote {os.path.abspath(raman_plot_path)}')
     elif workflow == 'elphon':
         # Always pair the elphon driver with a plot.elphon.py for alpha^2F / lambda.
         plot_path = args.plot_out or 'plot.elphon.py'
         if os.path.exists(plot_path) and not args.force:
-            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(plot_path))
+            sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
         else:
             plot_content = build_elphon_plot_script(cfg)
             with open(plot_path, 'w', encoding='utf-8') as handle:
                 handle.write(plot_content)
-            print('Wrote {}'.format(os.path.abspath(plot_path)))
+            print(f'Wrote {os.path.abspath(plot_path)}')
     elif args.plot or cfg.get('plot'):
         plot_path = args.plot_out or 'plot.py'
         if os.path.exists(plot_path) and not args.force:
-            sys.stderr.write('Refusing to overwrite {} (use --force).\n'.format(plot_path))
+            sys.stderr.write(f'Refusing to overwrite {plot_path} (use --force).\n')
         else:
             plot_content = build_plot_script(cfg)
             with open(plot_path, 'w', encoding='utf-8') as handle:
                 handle.write(plot_content)
-            print('Wrote {}'.format(os.path.abspath(plot_path)))
+            print(f'Wrote {os.path.abspath(plot_path)}')
 
     return 0
 
