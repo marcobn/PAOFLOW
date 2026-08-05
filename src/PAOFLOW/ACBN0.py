@@ -2418,6 +2418,17 @@ class eACBN0(ACBN0):
         result.update({f'n_{k}': v * scale for k, v in n_blocks.items()})
         return result
 
+    @staticmethod
+    def _overlap_is_identity(Sks, atol=1e-6):
+        """Return True if every per-k overlap block equals the identity.
+
+        Flags the ortho-atomic internal-basis dump (S(k) = I), which is
+        unsuitable for intersite V (see :meth:`run_eacbn0_V`).
+        """
+        nbasis = Sks.shape[0]
+        eye = np.eye(nbasis, dtype=Sks.dtype)
+        return bool(np.allclose(Sks, eye[:, :, None], atol=atol))
+
     def run_eacbn0_V(self, kpnts_are_cartesian=False):
         """Compute intersite Hubbard V for every pair registered in
         :attr:`self.vPairs` and return the updated mapping.
@@ -2465,6 +2476,25 @@ class eACBN0(ACBN0):
         kpnts, kwght, Sks, Hks_up, Hks_dn = self.read_ham_data(self.nspin)
         if self.nspin == 1:
             Hks_dn = Hks_up
+
+        # Intersite V requires the genuine non-orthogonal atomic overlap S(k):
+        # the off-site S_IJ(k) blocks carry the bond charge that defines
+        # n^{IJ}(R) and the denominator of Eq. (8).  The internal ortho-atomic
+        # (local-basis) projection folds those blocks into a Löwdin
+        # orthonormalisation and dumps S(k) = I, which silently corrupts V.
+        # Only the projwfc.x path (use_local_basis=False, lwrite_overlaps) keeps
+        # the true overlap.
+        if self._overlap_is_identity(Sks):
+            raise RuntimeError(
+                'Intersite Hubbard V requires the true non-orthogonal atomic '
+                'overlap S(k), but the dumped overlap is the identity. This is '
+                'the ortho-atomic (Löwdin) internal-basis projection, which is '
+                'valid for the on-site ACBN0 U but not for eACBN0 V (the '
+                'off-site S_IJ(k) blocks are orthonormalised away). Rerun '
+                'eACBN0 with the projwfc.x projector path '
+                '(use_local_basis=False), which writes lwrite_overlaps=.true. '
+                'and preserves S(k).'
+            )
 
         # Convert k-points to Cartesian Bohr^-1 if needed.
         if kpnts_are_cartesian:
