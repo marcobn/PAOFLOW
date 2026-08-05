@@ -25,7 +25,7 @@ def test_plr_inverse_matches_skeaf_reciprocal_basis_convention():
 
     geom = make_slice_geometry(bxsf, numint=2, theta=0.0, phi=0.0)
     frac = np.array([0.25, 0.5, 0.75])
-    cart = recip @ frac
+    cart = recip.T @ frac
 
     assert np.allclose(geom.plr_inverse @ cart, frac)
 
