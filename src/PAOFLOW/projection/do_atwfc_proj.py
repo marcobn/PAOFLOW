@@ -253,7 +253,7 @@ def build_pswfc_basis_all(data_controller):
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
     for na, (atom, tau, pswfc, pseudo, r) in enumerate(per_atom):
         if verbose and rank == 0:
-            print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
+            print(f'atom: {atom:2s}  pseudo: {pseudo:30s}  tau: {tau}')
 
         a_shells = []
         jchia = []
@@ -410,7 +410,7 @@ def build_aewfc_basis(data_controller):
                 r_grid = data[:, 0]
                 wfc = data[:, 1]
                 if verbose and rank == 0:
-                    print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, path, tau))
+                    print(f'atom: {atom:2s}  AEWFC: {path:30s}  tau: {tau}')
                 entries.append({'j': j_val, 'r': r_grid, 'wfc': wfc, 'task_idx': len(tasks)})
                 tasks.append((r_grid, wfc, l))
             shell_records.append({'label': shell_lbl, 'l': l, 'entries': entries})
@@ -468,11 +468,7 @@ def build_aewfc_basis(data_controller):
                         }
                     )
                     if verbose and rank == 0:
-                        print(
-                            '      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(
-                                len(basis), l, m, shell_lbl
-                            )
-                        )
+                        print(f'      atwfc: {len(basis):3d}  {shell_lbl}  l={l:d}, m={m:-d}')
 
         if atom not in shells:
             shells[atom] = ash
@@ -748,11 +744,11 @@ def read_QE_wfc(data_controller, ik, ispin):
     """
     arry, attr = data_controller.data_dicts()
     if attr['nspin'] == 1 or attr['nspin'] == 4:
-        wfcfile = 'wfc{0}'.format(ik + 1)
+        wfcfile = f'wfc{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 0:
-        wfcfile = 'wfcdw{0}'.format(ik + 1)
+        wfcfile = f'wfcdw{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 1:
-        wfcfile = 'wfcup{0}'.format(ik + 1)
+        wfcfile = f'wfcup{ik + 1}'
     else:
         print('no wfc file found')
 
@@ -1245,6 +1241,55 @@ def calc_proj_k(data_controller, basis, ik, ispin):
     oatwfc_k = ortho_atwfc_k(atwfc_k)
     proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
     return proj_k.T
+
+
+def calc_proj_and_ovlp_k(data_controller, basis, ik, ispin):
+    """Compute projections and the raw (pre-orthogonalisation) overlap at a k-point.
+
+    Identical to :func:`calc_proj_k` but additionally returns the
+    non-orthogonal atomic-orbital overlap matrix
+
+    .. math::
+
+        S_{\\mu\\nu}(\\mathbf{k}) =
+            \\langle \\phi_\\mu(\\mathbf{k}) | \\phi_\\nu(\\mathbf{k}) \\rangle
+
+    computed from the raw (un-orthogonalised) atomic wavefunctions in
+    G-space.  This is the same overlap that ``projwfc.x`` writes to
+    ``atomic_proj.xml`` when ``lwrite_overlaps = .true.``
+
+    Parameters
+    ----------
+    data_controller : DataController
+        See :func:`calc_proj_k`.
+    basis : list of dict
+        Atomic basis functions.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index.
+
+    Returns
+    -------
+    proj_k : np.ndarray, shape ``(nbnd, natwfc)``, complex
+        Projections :math:`\\langle \\psi_{n\\mathbf{k}} | \\phi_i \\rangle`.
+    Sk : np.ndarray, shape ``(natwfc, natwfc)``, complex
+        Raw (non-orthogonal) atomic-orbital overlap matrix.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr['dft'] == 'QE':
+        gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
+    else:
+        read_WAVECAR_header(data_controller)
+        gkspace, wfc = read_VASP_wfc(data_controller, ik, ispin)
+    atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
+    # Raw (pre-Löwdin) overlap: S_μν = <φ_μ|φ_ν>
+    # ``atwfc_k`` shape is (natwfc, igwx); the inner product over G-vectors
+    # gives the natwfc×natwfc Gram matrix.
+    Sk = atwfc_k @ atwfc_k.conj().T
+    oatwfc_k = ortho_atwfc_k(atwfc_k)
+    proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
+    return proj_k.T, Sk
 
 
 def calc_gkspace(data_controller, ik, gamma_only=False):

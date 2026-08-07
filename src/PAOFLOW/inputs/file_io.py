@@ -30,7 +30,7 @@ def struct_from_outputfile_QE(fname: str):
     import numpy as np
 
     if not isfile(fname):
-        msg = 'File {} does not exist.'.format(join(os.getcwd(), fname))
+        msg = f'File {join(os.getcwd(), fname)} does not exist.'
         raise FileNotFoundError(msg)
 
     struct = {'lunit': 'bohr', 'aunit': 'alat'}
@@ -208,7 +208,7 @@ def struct_from_inputfile_QE(fname: str) -> dict:
     from os.path import isfile
 
     if not isfile(fname):
-        raise FileNotFoundError('File {} does not exist.'.format(fname))
+        raise FileNotFoundError(f'File {fname} does not exist.')
 
     fstr = None
     with open(fname, 'r') as f:
@@ -365,19 +365,16 @@ def create_atomic_inputfile(calculation, blocks, cards):
         f.write('\n')
         for kb, vb in blocks.items():
             f.write(f' &{kb}\n')
-            for ks, vs in vb.items():
-                f.write(f'  {ks} = {vs}\n')
+            f.writelines(f'  {ks} = {vs}\n' for ks, vs in vb.items())
             f.write(' /\n\n')
 
         if 'ATOMIC_SPECIES' in cards:
-            for s in cards['ATOMIC_SPECIES']:
-                f.write(s + '\n')
+            f.writelines(s + '\n' for s in cards['ATOMIC_SPECIES'])
             f.write('\n')
             del cards['ATOMIC_SPECIES']
 
         for kc, vc in cards.items():
-            for s in vc:
-                f.write(s + '\n')
+            f.writelines(s + '\n' for s in vc)
             f.write('\n')
 
 
@@ -452,15 +449,19 @@ def _create_acbn0_local_basis_inputfile(
     """Write ``acbn0.py`` for the local-basis (projwfc-free) ACBN0 path.
 
     The generated script projects the DFT eigenstates onto PAOFLOW's
-    internal atomic basis, fixes the (orthonormal) overlap to the identity
-    so that the non-orthogonal correction in
-    :func:`PAOFLOW.hamiltonian.do_build_pao_hamiltonian.do_build_pao_hamiltonian`
-    is a no-op, dumps the PAO-orbital metadata and finally builds and writes
-    the +U Hamiltonian / overlap that :meth:`ACBN0.run_acbn0` consumes.
+    internal atomic basis.  When ``acbn0=True``, :meth:`PAOFLOW.projections`
+    automatically computes and stores the true non-orthogonal atomic-orbital
+    overlap S(k) in ``arry['Sks']``, so:
 
-    The metadata dump and the identity overlap must be set *before*
-    ``pao_hamiltonian`` because, with ``acbn0=True``, that call writes the
-    binary dumps and terminates the process with ``sys.exit(0)``.
+    * ``do_non_ortho`` (triggered inside ``pao_hamiltonian``) correctly
+      transforms ``H_orth -> S^{1/2} H S^{1/2}``.
+    * ``kovp.npy`` contains the genuine S(k), enabling the proper
+      generalised eigenproblem ``H c = e S c`` and Mulliken occupations
+      in :meth:`ACBN0.Dk` / :meth:`ACBN0._eigh_all_k`.
+
+    The PAO-orbital metadata is dumped before ``pao_hamiltonian`` because,
+    with ``acbn0=True``, that call writes the binary dumps and exits via
+    ``sys.exit(0)``.
     """
     basis_arg = 'None' if basispath is None else repr(basispath)
 
@@ -477,9 +478,13 @@ def _create_acbn0_local_basis_inputfile(
 
     lines = [
         'import os',
-        'import numpy as np',
         'from PAOFLOW import PAOFLOW',
         '',
+        '# ACBN0 with internal (local) basis projection.',
+        '# projections() computes the true non-orthogonal atomic-orbital overlap',
+        '# S(k) and stores it in arry["Sks"] when acbn0=True.  do_non_ortho then',
+        '# builds the correct H = S^{1/2} H_orth S^{1/2} and kovp.npy contains',
+        '# the genuine S(k) for the ACBN0 density-matrix / generalised eigenproblem.',
         'paoflow = PAOFLOW.PAOFLOW('
         f"outputdir='{outputdir}', savedir='{savedir}', "
         'save_overlaps=True, acbn0=True)',
@@ -487,18 +492,11 @@ def _create_acbn0_local_basis_inputfile(
         '',
         'arry, attr = paoflow.data_controller.data_dicts()',
         '',
-        '# The local projection orthonormalises the atomic orbitals, so the',
-        '# wavefunction overlap is the identity.  Set it explicitly so that',
-        '# do_non_ortho (called for acbn0=True) leaves H(k) unchanged and the',
-        '# dumped overlap kovp.npy is the identity (ortho-atomic scheme).',
-        "nawf = attr['nawf']",
-        "nkpnts = attr['nkpnts']",
-        "arry['Sks'] = np.repeat(np.eye(nawf, dtype=complex)[:, :, None], nkpnts, axis=2)",
-        '',
         '# Dump the PAO-orbital metadata (PAO order matches the dumped',
         '# Hamiltonian/overlap matrices) so that ACBN0.run_acbn0 can select',
         '# the Hubbard manifold by shell label and build the aligned',
         '# Gaussian basis.  Columns: index atom_index element l m label',
+        'import numpy as np',
         "tau = list(arry['tau'])",
         '',
         '',
