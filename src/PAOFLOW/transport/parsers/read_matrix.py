@@ -128,8 +128,10 @@ def read_matrix(
         raise ValueError('Unspecified ispin for spin-polarized case')
     ivr = ivr.T
 
-    # Check grid dimensions
-    nrtot_par = opr.H.shape[2]
+    # Real-space arrays are indexed by the transverse R-vectors, which is
+    # independent of the number of transverse k-points: a uniform mesh happens to
+    # use nk_par == nr_par, but a surface k-path does not.
+    nrtot_par = opr.ivr_par.shape[1]
     A = np.zeros((dim1, dim2, nrtot_par), dtype=complex)
     S = np.zeros((dim1, dim2, nrtot_par), dtype=complex)
 

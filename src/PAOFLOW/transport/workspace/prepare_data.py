@@ -13,6 +13,7 @@ from PAOFLOW.transport.grid.kpoints import (
     initialize_r_vectors,
     kpoints_mask,
 )
+from PAOFLOW.transport.grid.kpath import build_surface_kpath
 from PAOFLOW.transport.hamiltonian.hamiltonian import HamiltonianSystem
 from PAOFLOW.transport.hamiltonian.hamiltonian_init import (
     check_leads_are_identical,
@@ -76,12 +77,35 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
     s_par3d = kpoints_mask(s_par, 0, data.transport_direction)
     nr_par3d = kpoints_mask(nr_par, 1, data.transport_direction)
 
-    vkpt_par3D, wk_par = initialize_kpoints(
-        nk_par,
-        s_par=s_par,
-        transport_direction=data.transport_direction,
-        use_sym=data.symmetry.use_sym,
-    )
+    kpath_dist = None
+    kpath_ticks = None
+    kpath_labels = None
+
+    if data.surface_bands.enabled:
+        # Surface-projected band structure: sweep a transverse high-symmetry
+        # k-path instead of integrating over a uniform mesh.
+        surface_kpath = build_surface_kpath(
+            data_controller,
+            transport_direction=data.transport_direction,
+            band_path=data.surface_bands.band_path,
+            high_sym_points=data.surface_bands.high_sym_points,
+            ibrav=data.surface_bands.ibrav,
+            dk=data.surface_bands.dk,
+            nk_path=data.surface_bands.nk_path,
+        )
+        vkpt_par3D = surface_kpath.vkpt_par3D
+        wk_par = surface_kpath.wk_par
+        kpath_dist = surface_kpath.kdist
+        kpath_ticks = surface_kpath.ticks
+        kpath_labels = surface_kpath.labels
+    else:
+        vkpt_par3D, wk_par = initialize_kpoints(
+            nk_par,
+            s_par=s_par,
+            transport_direction=data.transport_direction,
+            use_sym=data.symmetry.use_sym,
+        )
+
     ivr_par3D, wr_par = initialize_r_vectors(nr_par, data.transport_direction)
 
     data.set_runtime_data(
@@ -100,6 +124,9 @@ def prepare_conductor_data(data: ConductorData, data_controller: DataController)
             wr_par=wr_par,
             nkpts_par=vkpt_par3D.shape[0],
             nrtot_par=ivr_par3D.shape[0],
+            kpath_dist=kpath_dist,
+            kpath_ticks=kpath_ticks,
+            kpath_labels=kpath_labels,
         )
     )
     log_summary(data)

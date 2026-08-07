@@ -86,6 +86,16 @@ _ADVANCED_FIELDS: frozenset[str] = frozenset(
         'leads_are_identical',
     }
 )
+_SURFACE_BANDS_FIELDS: frozenset[str] = frozenset(
+    {
+        'surface_bands',
+        'surface_band_path',
+        'surface_high_sym_points',
+        'surface_ibrav',
+        'surface_dk',
+        'surface_nk_path',
+    }
+)
 _TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
     {
         'dimL',
@@ -186,6 +196,37 @@ class AdvancedSettings:
     leads_are_identical: bool = True
 
 
+@dataclass(slots=True)
+class SurfaceBandSettings:
+    """Surface-projected band-structure (transverse k-path) settings.
+
+    Attributes
+    ----------
+    enabled : bool
+        If ``True``, sample a surface-projected transverse k-path instead of the
+        uniform Monkhorst-Pack mesh, and report the surface spectral function.
+    band_path : str or None
+        High-symmetry path string (e.g. ``'gG-X'``). ``None`` uses the default
+        path for ``ibrav``.
+    high_sym_points : dict or None
+        Explicit label -> fractional coordinate mapping. ``None`` uses the
+        tabulated points for ``ibrav``.
+    ibrav : int or None
+        Bravais lattice index used to resolve the default path.
+    dk : float
+        k-point spacing along the path. Ignored when ``nk_path`` is set.
+    nk_path : int or None
+        Target number of k-points on the path.
+    """
+
+    enabled: bool = False
+    band_path: str | None = None
+    high_sym_points: dict[str, Any] | None = None
+    ibrav: int | None = None
+    dk: float = 0.01
+    nk_path: int | None = None
+
+
 @dataclass
 class RuntimeData:
     nproc: int
@@ -202,6 +243,9 @@ class RuntimeData:
     wr_par: np.ndarray
     nkpts_par: int
     nrtot_par: int
+    kpath_dist: np.ndarray | None = None
+    kpath_ticks: np.ndarray | None = None
+    kpath_labels: list[str] | None = None
 
 
 @dataclass
@@ -214,6 +258,7 @@ class ConductorData:
     iteration: IterationConvergenceSettings
     atomic_proj: AtomicProjectionOverlapSettings
     advanced: AdvancedSettings
+    surface_bands: SurfaceBandSettings = field(default_factory=SurfaceBandSettings)
     dimL: int = 0
     dimR: int = 0
     dimC: int = 0
@@ -290,6 +335,17 @@ def build_conductor_data(**kwargs: Any) -> ConductorData:
     iteration = IterationConvergenceSettings(**extract(_ITERATION_FIELDS))
     atomic_proj = AtomicProjectionOverlapSettings(**extract(_ATOMIC_PROJ_FIELDS))
     advanced = AdvancedSettings(**extract(_ADVANCED_FIELDS))
+
+    surface_raw = extract(_SURFACE_BANDS_FIELDS)
+    surface_bands = SurfaceBandSettings(
+        enabled=surface_raw.get('surface_bands', False),
+        band_path=surface_raw.get('surface_band_path'),
+        high_sym_points=surface_raw.get('surface_high_sym_points'),
+        ibrav=surface_raw.get('surface_ibrav'),
+        dk=surface_raw.get('surface_dk', 0.01),
+        nk_path=surface_raw.get('surface_nk_path'),
+    )
+
     top_level = extract(_TOP_LEVEL_FIELDS)
 
     if remaining:
@@ -304,5 +360,6 @@ def build_conductor_data(**kwargs: Any) -> ConductorData:
         iteration=iteration,
         atomic_proj=atomic_proj,
         advanced=advanced,
+        surface_bands=surface_bands,
         **top_level,
     )

@@ -52,6 +52,7 @@ class Transport:
         self._onsite_shift_config: dict[str, Any] | None = None
         self._lead_convergence_config: dict[str, Any] | None = None
         self._eigenchannel_config: dict[str, Any] | None = None
+        self._surface_bands_config: dict[str, Any] | None = None
 
     def configure_energy_grid(
         self,
@@ -301,6 +302,70 @@ class Transport:
             apply_lead_convergence(self.conductor_data, self._lead_convergence_config)
         self.results = None
 
+    def configure_surface_bands(
+        self,
+        *,
+        band_path: str | None = None,
+        high_sym_points: dict[str, Any] | None = None,
+        ibrav: int | None = None,
+        dk: float = 0.01,
+        nk_path: int | None = None,
+    ) -> None:
+        r"""Enable the surface-projected band structure and set its k-path.
+
+        Switches transverse sampling from the uniform Monkhorst-Pack mesh to a
+        surface-projected high-symmetry k-path and puts the conductor in surface
+        mode, so the Green's function drops the right-lead self-energy and its
+        spectral function
+        :math:`A(k, E) = -\frac{1}{\pi}\mathrm{Im}\,\mathrm{Tr}\,G_s`
+        is the surface-projected bulk band structure.
+
+        Must be called **before** :meth:`build_hamiltonian_blocks`, like the
+        other ``configure_*`` methods, because the k-path is built during
+        Hamiltonian preparation.
+
+        Parameters
+        ----------
+        band_path : str or None, optional
+            High-symmetry path string, e.g. ``'gG-X'``. Choose segments lying in
+            the surface plane (perpendicular to the transport direction). When
+            ``None``, the default path for ``ibrav`` is used.
+        high_sym_points : dict or None, optional
+            Explicit label -> fractional coordinate mapping. When ``None``, the
+            tabulated points for ``ibrav`` are used.
+        ibrav : int or None, optional
+            Quantum ESPRESSO Bravais lattice index used to resolve the default
+            high-symmetry points. Required when the data controller has no
+            ``ibrav`` (for example when the SCF used ``ibrav=0``).
+        dk : float, optional
+            k-point spacing along the path. Ignored when ``nk_path`` is given.
+        nk_path : int or None, optional
+            Target number of k-points along the path.
+
+        Notes
+        -----
+        Surface bands need a genuine transverse ``R``-grid to disperse; this is
+        supplied automatically from the DFT Monkhorst-Pack mesh.
+        """
+        self._surface_bands_config = {
+            'surface_bands': True,
+            'surface_band_path': band_path,
+            'surface_high_sym_points': high_sym_points,
+            'surface_ibrav': ibrav,
+            'surface_dk': dk,
+            'surface_nk_path': nk_path,
+        }
+        if self.conductor_data is not None:
+            sb = self.conductor_data.surface_bands
+            sb.enabled = True
+            sb.band_path = band_path
+            sb.high_sym_points = high_sym_points
+            sb.ibrav = ibrav
+            sb.dk = dk
+            sb.nk_path = nk_path
+            self.conductor_data.advanced.surface = True
+        self.results = None
+
     def configure_eigenchannels(
         self,
         *,
@@ -432,6 +497,9 @@ class Transport:
         if self._energy_grid_config is not None:
             input_values.update(self._energy_grid_config)
 
+        if self._surface_bands_config is not None:
+            input_values.update(self._surface_bands_config)
+
         state = prepare_conductor_step_state(
             data_controller=self.data_controller,
             input_values=input_values,
@@ -454,6 +522,10 @@ class Transport:
         apply_onsite_shifts(state.data, self._onsite_shift_config)
         apply_lead_convergence(state.data, self._lead_convergence_config)
         apply_eigenchannels(state.data, self._eigenchannel_config)
+
+        # Surface bands imply surface mode regardless of lead-convergence config.
+        if state.data.surface_bands.enabled:
+            state.data.advanced.surface = True
 
         self.conductor_data = state.data
         self.blc_blocks = state.blc_blocks
@@ -643,6 +715,64 @@ class Transport:
             comm=comm,
         )
         return results.dos
+
+    def compute_surface_bands(
+        self,
+        *,
+        comm: MPI.Comm = MPI.COMM_WORLD,
+    ) -> NDArray[np.float64]:
+        r"""Compute the surface-projected band structure and write output files.
+
+        Requires :meth:`configure_surface_bands` to have been called before
+        :meth:`build_hamiltonian_blocks`, so that transverse sampling follows the
+        surface k-path rather than a uniform mesh.
+
+        Parameters
+        ----------
+        comm : MPI.Comm, optional
+            MPI communicator. Default is ``MPI.COMM_WORLD``.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Surface spectral function :math:`A(k, E)`, shape ``(ne, nkpts)``.
+
+        Raises
+        ------
+        RuntimeError
+            If surface-band mode was not configured before the Hamiltonian
+            blocks were built.
+
+        Notes
+        -----
+        Writes ``surfband*.dat`` (the ``(ne, nkpts)`` spectral map) along with
+        ``surfband_egrid*.dat`` and ``surfband_kpath*.dat`` axis files under the
+        configured output directory.
+        """
+        from PAOFLOW.transport.conductor_orchestration import compute_full_grid_results
+        from PAOFLOW.transport.conductor_writers import write_surface_bands
+
+        if self.conductor_data is None or not self.conductor_data.surface_bands.enabled:
+            raise RuntimeError(
+                'Call configure_surface_bands(...) before build_hamiltonian_blocks(...) '
+                'to compute a surface band structure.'
+            )
+
+        self.results = compute_full_grid_results(
+            conductor_data=self.conductor_data,
+            blc_blocks=self.blc_blocks,
+            energy_grid_config=self._energy_grid_config,
+            cached_results=self.results,
+            comm=comm,
+        )
+        results = self.results
+        write_surface_bands(
+            rank=comm.Get_rank(),
+            data=self.conductor_data,
+            dos_k=results.dos_k,
+            egrid=results.energy_grid,
+        )
+        return results.dos_k
 
     def compute_current(
         self,

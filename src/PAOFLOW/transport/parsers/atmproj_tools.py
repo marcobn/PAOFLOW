@@ -28,7 +28,7 @@ def parse_atomic_proj(
 
     hk_data = reshape_pao_hamiltonian(data_controller)
 
-    nk = np.array([1, 1, 4], dtype=int)  # TODO: confirm hardcoded grid
+    nk = np.array([attr['nk1'], attr['nk2'], attr['nk3']], dtype=int)
     nr = nk
     ivr, wr = get_rgrid(nr)
     hk_data.update({'ivr': ivr, 'wr': wr, 'nk': nk, 'nr': nr})
