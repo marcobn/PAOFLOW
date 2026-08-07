@@ -68,6 +68,18 @@ Meet the people behind PAOFLOW — researchers, developers, and contributors who
 :::{grid-item}
 
 <div class="pf-team-member">
+    <img class="pf-team-photo" src="../_static/images/team/jon.png" alt="Jonathan Red" />
+    <a class="pf-team-name" href="#">Jonathan Red</a>
+    <ul class="pf-team-roles">
+        <li class="pf-team-role">Technical Co-lead</li>
+        <li class="pf-team-role">Developer</li>
+    </ul>
+</div>
+:::
+
+:::{grid-item}
+
+<div class="pf-team-member">
     <img class="pf-team-photo" src="../_static/images/team/sergio.jpeg" alt="Sergio Alvarruiz" />
     <a class="pf-team-name" href="#">Sergio Alvarruiz</a>
     <ul class="pf-team-roles">
@@ -103,6 +115,17 @@ Meet the people behind PAOFLOW — researchers, developers, and contributors who
 <div class="pf-team-member">
     <img class="pf-team-photo" src="../_static/images/team/mia.jpeg" alt="Mia Falatko" />
     <a class="pf-team-name" href="#">Mia Falatko</a>
+    <ul class="pf-team-roles">
+        <li class="pf-team-role">Developer</li>
+    </ul>
+</div>
+:::
+
+:::{grid-item}
+
+<div class="pf-team-member">
+    <img class="pf-team-photo" src="../_static/images/team/karma.png" alt="Karma Tenzin" />
+    <a class="pf-team-name" href="#">Karma Tenzin</a>
     <ul class="pf-team-roles">
         <li class="pf-team-role">Developer</li>
     </ul>
