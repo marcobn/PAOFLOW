@@ -723,10 +723,21 @@ class ACBN0:
             PAOFLOW's internal projection onto the local atomic basis
             (:meth:`PAOFLOW.PAOFLOW.PAOFLOW.projections`) instead of from
             ``projwfc.x``.  ``projwfc.x`` is then never run and no
-            ``<prefix>.projwfc.in`` template is required.  The local
-            projection orthonormalises the atomic orbitals per k-point, so
-            the wavefunction overlap is the identity, i.e. the scheme is
-            intrinsically ``'ortho-atomic'``.
+            ``<prefix>.projwfc.in`` template is required.
+
+            With this option PAOFLOW automatically computes and stores the
+            true non-orthogonal atomic-orbital overlap
+            :math:`S_{\\mu\\nu}(\\mathbf{k})` so that the non-orthogonal
+            correction :math:`H \\to S^{1/2} H S^{1/2}` is applied
+            correctly and the genuine :math:`S(k)` is written to
+            ``kovp.npy``.  Both the on-site ACBN0 U and the intersite
+            eACBN0 V therefore work correctly with the internal basis.
+            The recommended ``configuration`` for ACBN0/eACBN0 is
+            ``'minimal'`` (UPF pseudo-atomic wavefunctions), which matches
+            the ``projwfc.x`` projectors most closely and gives the best
+            agreement with the reference values.  ``'standard'`` and
+            ``'extended'`` are also supported but may yield slightly
+            different U/V due to the larger Löwdin-orthogonalized basis.
         basispath : str, optional
             Directory containing the per-element ``<elem>/*.dat`` all-electron
             radial basis files.  Required when ``use_local_basis`` is
@@ -2447,10 +2458,18 @@ class eACBN0(ACBN0):
 
     @staticmethod
     def _overlap_is_identity(Sks, atol=1e-6):
-        """Return True if every per-k overlap block equals the identity.
+        """Return ``True`` if every per-k overlap block equals the identity.
 
-        Flags the ortho-atomic internal-basis dump (S(k) = I), which is
-        unsuitable for intersite V (see :meth:`run_eacbn0_V`).
+        With the current PAOFLOW code the internal projection path
+        (``use_local_basis=True``) already computes and stores the true
+        non-orthogonal atomic-orbital overlap S(k) in ``kovp.npy``, so this
+        check should normally return ``False``.
+
+        The check is retained as a safety net for stale ``kovp.npy`` files
+        that were written by an older PAOFLOW version (which incorrectly
+        dumped the identity).  :meth:`run_eacbn0_V` raises
+        :exc:`RuntimeError` when it returns ``True`` because intersite V
+        requires the genuine off-site S_{IJ}(k) blocks.
         """
         nbasis = Sks.shape[0]
         eye = np.eye(nbasis, dtype=Sks.dtype)
@@ -2506,21 +2525,20 @@ class eACBN0(ACBN0):
 
         # Intersite V requires the genuine non-orthogonal atomic overlap S(k):
         # the off-site S_IJ(k) blocks carry the bond charge that defines
-        # n^{IJ}(R) and the denominator of Eq. (8).  The internal ortho-atomic
-        # (local-basis) projection folds those blocks into a Löwdin
-        # orthonormalisation and dumps S(k) = I, which silently corrupts V.
-        # Only the projwfc.x path (use_local_basis=False, lwrite_overlaps) keeps
-        # the true overlap.
+        # n^{IJ}(R) and the denominator of Eq. (8).  With the current PAOFLOW
+        # code both the internal-basis path (use_local_basis=True, any
+        # configuration) and the projwfc.x path store the true S(k) in
+        # kovp.npy, so the check below is a safety net for stale output
+        # written by older PAOFLOW versions that erroneously dumped S(k) = I.
         if self._overlap_is_identity(Sks):
             raise RuntimeError(
                 'Intersite Hubbard V requires the true non-orthogonal atomic '
-                'overlap S(k), but the dumped overlap is the identity. This is '
-                'the ortho-atomic (Löwdin) internal-basis projection, which is '
-                'valid for the on-site ACBN0 U but not for eACBN0 V (the '
-                'off-site S_IJ(k) blocks are orthonormalised away). Rerun '
-                'eACBN0 with the projwfc.x projector path '
-                '(use_local_basis=False), which writes lwrite_overlaps=.true. '
-                'and preserves S(k).'
+                'overlap S(k), but kovp.npy contains the identity matrix. '
+                'This indicates a stale kovp.npy written by an older PAOFLOW '
+                'version that incorrectly set S(k) = I for the internal '
+                'projection path. Delete the output directory and re-run the '
+                'ACBN0 driver so that projections() recomputes the genuine '
+                'S(k) and writes it to kovp.npy.'
             )
 
         # Convert k-points to Cartesian Bohr^-1 if needed.

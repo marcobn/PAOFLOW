@@ -505,6 +505,7 @@ class PAOFLOW:
         from .projection.do_atwfc_proj import (
             build_aewfc_basis,
             build_pswfc_basis_all,
+            calc_proj_and_ovlp_k,
             calc_proj_k,
         )
         from .utils.communication import gather_array, load_balancing
@@ -580,13 +581,35 @@ class PAOFLOW:
                 for m in range(attr['nawf']):
                     arry['Dnm'][n, m, i] = basis[n]['tau'][i] - basis[m]['tau'][i]
 
+        # When the ACBN0 flag is active we need to collect the true non-orthogonal
+        # atomic-orbital overlap S(k) in addition to the projections so that:
+        #   1. do_non_ortho can produce the correct H = S^{1/2} H_orth S^{1/2}, and
+        #   2. kovp.npy contains the genuine S(k) for the ACBN0 density-matrix and
+        #      generalised eigenproblem in ACBN0.Dk / ACBN0._eigh_all_k.
+        # For non-ACBN0 runs the overhead of computing the overlap is unnecessary, so
+        # we keep the old single-return code path.
+        acbn0_active = bool(arry.get('acbn0', False) or attr.get('acbn0', False))
+
         ini_ik, end_ik = load_balancing(self.size, self.rank, nkpnts)
-        Unewaux = np.zeros((end_ik - ini_ik, nbnds, natwfc, nspin), dtype=complex)
-        for ispin in range(nspin):
-            for ik in range(ini_ik, end_ik):
-                Unewaux[ik - ini_ik, :, :, ispin] = calc_proj_k(
-                    self.data_controller, basis, ik, ispin
-                )
+        nk_local = end_ik - ini_ik
+        Unewaux = np.zeros((nk_local, nbnds, natwfc, nspin), dtype=complex)
+
+        if acbn0_active:
+            # Accumulate the per-k overlap; for nspin>1 both spin channels share
+            # the same atomic-orbital geometry so a single overlap per k suffices.
+            Skaux = np.zeros((nk_local, natwfc, natwfc), dtype=complex)
+            for ispin in range(nspin):
+                for ik in range(ini_ik, end_ik):
+                    proj_k, Sk = calc_proj_and_ovlp_k(self.data_controller, basis, ik, ispin)
+                    Unewaux[ik - ini_ik, :, :, ispin] = proj_k
+                    if ispin == 0:  # overlap is spin-independent
+                        Skaux[ik - ini_ik] = Sk
+        else:
+            for ispin in range(nspin):
+                for ik in range(ini_ik, end_ik):
+                    Unewaux[ik - ini_ik, :, :, ispin] = calc_proj_k(
+                        self.data_controller, basis, ik, ispin
+                    )
 
         Unew = np.zeros((nkpnts, nbnds, natwfc, nspin), dtype=complex) if self.rank == 0 else None
         gather_array(Unew, Unewaux)
@@ -596,6 +619,20 @@ class PAOFLOW:
 
         arry['U'] = Unew
         arry['basis'] = basis
+
+        if acbn0_active:
+            # Gather the distributed per-k overlaps on rank 0 and store as
+            # arry['Sks'] with shape (natwfc, natwfc, nkpnts) so that
+            # do_build_pao_hamiltonian's do_non_ortho call (and write_Hk_acbn0)
+            # pick it up transparently.  The ACBN0 loader in ACBN0.read_ham_data
+            # expects kovp.npy ravelled in C order from (natwfc, natwfc, nkpnts).
+            Snew = np.zeros((nkpnts, natwfc, natwfc), dtype=complex) if self.rank == 0 else None
+            gather_array(Snew, Skaux)
+            if self.rank == 0:
+                # Reorder to (natwfc, natwfc, nkpnts) expected by do_non_ortho
+                Snew = np.moveaxis(Snew, 0, 2)
+            Snew = self.comm.bcast(Snew, root=0)
+            arry['Sks'] = Snew
 
         self.report_module_time('Projections')
 
