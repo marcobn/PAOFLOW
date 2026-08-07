@@ -1281,6 +1281,13 @@ class ACBN0:
         density-matrix manifold (all atoms of the species, matching L) and
         ``basis_2e`` is the single representative shell used for the
         two-electron integrals.
+
+        Selection is label-aware: the projwfc ``wfc N`` index is mapped to
+        the pseudo's N-th ``PP_PSWFC`` shell label (via
+        :attr:`self.basis_labels`) so that a semicore shell of the same L as
+        the Hubbard valence shell (e.g. Mg ``2s`` alongside the ``3s``
+        valence) is excluded.  Without this filter the first (semicore)
+        shell would be picked, giving an unphysically large U.
         """
         manifolds = {}
         for orb in self.uVals:
@@ -1288,17 +1295,37 @@ class ACBN0:
             ustates = []
             species_label = orb.split('-')[0]
             horb = self.hubbard_orbital(orb)
+            shell_label = self._shell_label(orb)
+            labels = self.basis_labels.get(species_label)
             for n, sl in enumerate(state_lines):
-                stateN = re.findall(r'\(([^\)]+)\)', sl)
-                oele = stateN[0].strip()
-                oL = int(re.split('=| ', stateN[1])[1])
-                if species_label in oele and oL == horb:
+                mat = re.search(
+                    r'atom\s+\d+\s*\(\s*(\S+)\s*\)\s*,\s*wfc\s+(\d+)\s*\(\s*l\s*=\s*(\d+)',
+                    sl,
+                )
+                if mat is None:
+                    continue
+                oele = mat.group(1).strip()
+                wfc_idx = int(mat.group(2))
+                oL = int(mat.group(3))
+                if oL != horb:
+                    continue
+                # Map wfc index -> pseudo shell label and keep only the
+                # Hubbard valence shell, excluding same-L semicore shells.
+                if labels is not None and 0 <= wfc_idx - 1 < len(labels):
+                    if labels[wfc_idx - 1].upper() != shell_label:
+                        continue
+                if species_label in oele:
                     ostates.append(n)
                     if species_label == oele:
                         ustates.append(n)
+            if not ustates:
+                raise RuntimeError(
+                    f'No projwfc states matched Hubbard manifold {orb!r} '
+                    f'(species {species_label!r}, shell {shell_label!r}).'
+                )
             sstates = [ustates[0]]
-            for i, us in enumerate(ustates[1:]):
-                if us == 1 + sstates[i]:
+            for us in ustates[1:]:
+                if us == 1 + sstates[-1]:
                     sstates.append(us)
                 else:
                     break
