@@ -1,0 +1,31 @@
+ &control
+    calculation = 'scf'
+    restart_mode='from_scratch',
+    prefix='silicon',
+    pseudo_dir = './'
+    outdir='./output/qe'
+ /
+ &system
+!   Si(001)-oriented cell: simple tetragonal, a_tet = a_cub/sqrt(2), c = a_cub,
+!   with a_cub = 10.599478 bohr. The four basis atoms are the four (001) atomic
+!   planes of diamond Si, so the third lattice vector IS the surface normal and
+!   transport along 'z' gives the (001) surface. The fcc primitive cell cannot
+!   be used here: its a3 points along [110], i.e. it describes Si(110).
+    ibrav=  6, celldm(1) = 7.494962771, celldm(3) = 1.414213562,
+    nat=  4, ntyp= 1,
+    ecutwfc =18.0
+ /
+ &electrons
+    mixing_mode = 'plain'
+    mixing_beta = 0.7
+    conv_thr =  1.0d-12
+ /
+ATOMIC_SPECIES
+ Si  28.086 Si.pbe-tm-new-gipaw-v2.1.UPF
+ATOMIC_POSITIONS (crystal)
+ Si 0.00 0.00 0.00
+ Si 0.50 0.00 0.25
+ Si 0.50 0.50 0.50
+ Si 0.00 0.50 0.75
+K_POINTS {automatic}
+  8 8 6 0 0 0

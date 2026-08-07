@@ -1,0 +1,7 @@
+ &projwfc
+    prefix='silicon'
+    outdir='./output/qe'
+    filpdos='./silicon'
+    lwrite_overlaps = .true.
+    lbinary_data  = .false.
+ /
