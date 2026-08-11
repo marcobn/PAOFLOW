@@ -74,6 +74,8 @@ def _angular_momentum_matrices(l):
         Ly[0,1],Ly[1,0]=s6*1j,-s6*1j
         Ly[1,3],Ly[3,1],Ly[2,4],Ly[4,2]=1j*s10/2,-1j*s10/2,1j*s10/2,-1j*s10/2
         Ly[3,6],Ly[6,3],Ly[4,5],Ly[5,4]=s6/2,s6/2,-s6/2,-s6/2
+
+############################ FROM UPF_gaussfit f basis
         Lx = np.array([
     [0,          0,          1j*s6,          0,              0,          0,          0],
     [0,          0,          0,              0,       1j*s10/2,          0,          0],
@@ -93,9 +95,38 @@ def _angular_momentum_matrices(l):
     [0,          0,       0,          s6/2,             0,          0,          0],
     [0,          0,       0,             0,          s6/2,          0,          0]
 ], dtype=complex)
+    #############################################
+        
+    ########################## FROM wikipedia 
+    # https://en.wikipedia.org/wiki/Table_of_spherical_harmonics#Real_spherical_harmonics l=3
+    # in the order Y_3,m m= [0,1,-1,2,-2,3,-3]
+        Lx = np.array([
+    [0.+0.j,          0.+0.j,          0.+s6*1j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j],
+    [0.-s6*1j,  0.+0.j,          0.+0.j,         0.-s10/2j, 0.+0.j,          0.+0.j,          0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+s6/2j],
+    [0.+0.j,          0.-s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.-s6/2j, 0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s6/2j, 0.+0.j,          0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+0.j,         0.-s6/2j, 0.+0.j,          0.+0.j,          0.+0.j]
+], dtype=complex)
+
+        Ly = np.array([
+    [0.+0.j,          0.-s6*1j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j],
+    [0.+s6*1j,  0.+0.j,          0.+0.j,         0.-s10/2j, 0.+0.j,          0.+0.j,          0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.-s10/2j, 0.+0.j,          0.+0.j],
+    [0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.-s6/2j, 0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.-s6/2j],
+    [0.+0.j,          0.+0.j,          0.+0.j,         0.+s6/2j, 0.+0.j,          0.+0.j,          0.+0.j],
+    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s6/2j, 0.+0.j,          0.+0.j]
+], dtype=complex)
+        ####organizing based in calc_ylmg conv,
+        #U = np.diag([1,-1,-1,1,1,-1,-1])
+        #Lx = U @ Lx @ U
+        #Ly = U @ Ly @ U
+        #Lz = U @ Lz @ U
         #def reorder(M, perm):
         #    return M[np.ix_(perm, perm)]
-        #perm = [0,2,1,4,3,5,6]
+        #perm = [0,5,6,3,4,1,2]
         #Lx = reorder(Lx, perm)
         #Ly = reorder(Ly, perm)
         #Lz = reorder(Lz, perm)        
