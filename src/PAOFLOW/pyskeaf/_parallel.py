@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import warnings
+from typing import Any
 
 
 _RANK_ENV_VARS = (
@@ -15,6 +16,29 @@ _RANK_ENV_VARS = (
     'MV2_COMM_WORLD_RANK',
     'I_MPI_RANK',
 )
+
+
+def active_mpi_comm() -> Any | None:
+    """Return ``MPI.COMM_WORLD`` when more than one MPI rank is active.
+
+    Importing :mod:`mpi4py` is deliberately lazy so ordinary serial pyskeaf
+    imports remain cheap.  A one-rank MPI launch follows the serial/joblib
+    path, while a multi-rank Slurm or ``mpirun`` launch uses MPI collectives.
+    """
+    try:
+        from mpi4py import MPI
+    except (ImportError, RuntimeError) as error:
+        if mpi_rank() is not None:
+            raise RuntimeError(
+                'pyskeaf detected an MPI launcher, but mpi4py could not initialize. '
+                'Load the cluster MPI module before starting Python.'
+            ) from error
+        return None
+
+    if MPI.Is_finalized():
+        return None
+    comm = MPI.COMM_WORLD
+    return comm if comm.Get_size() > 1 else None
 
 
 def mpi_rank() -> int | None:
