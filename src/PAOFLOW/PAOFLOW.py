@@ -832,7 +832,7 @@ class PAOFLOW:
         high_sym_points=None,
         spin_orbit=False,
         fname='bands',
-        nk=500,
+        nk=500,write_QE_path=False
     ):
         """
         Compute the electronic band structure
@@ -870,7 +870,7 @@ class PAOFLOW:
             attr['do_spin_orbit'] = spin_orbit
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
-
+        attr['write_QE_bands']=write_QE_path
         # Prepare HRs for band computation with spin-orbit coupling
         try:
             do_bands(self.data_controller)
@@ -994,6 +994,8 @@ class PAOFLOW:
             )
 
         self.report_module_time('adhoc_spin_orbit')
+
+        
 
     def wave_function_projection(self, dimension=3):
         """

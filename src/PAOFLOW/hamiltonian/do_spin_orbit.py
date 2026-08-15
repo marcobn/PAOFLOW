@@ -126,7 +126,7 @@ def _angular_momentum_matrices(l):
         #Lz = U @ Lz @ U
         #def reorder(M, perm):
         #    return M[np.ix_(perm, perm)]
-        #perm = [0,5,6,3,4,1,2]
+        #perm = [0,2,4,6,1,3,5]
         #Lx = reorder(Lx, perm)
         #Ly = reorder(Ly, perm)
         #Lz = reorder(Lz, perm)        
