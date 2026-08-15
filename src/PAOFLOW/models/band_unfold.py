@@ -74,7 +74,19 @@ class UnfoldResult:
     M: np.ndarray = field(repr=False)
 
     def sum_rule_check(self) -> np.ndarray:
-        """Return Σ_n W_n(k) per k-point (should ≈ nawf_pc)."""
+        """Return Σ_n W_n(k) per k-point (should ≈ nawf_pc).
+
+        Notes
+        -----
+        The unfolded spectral weights obey the completeness (sum) rule
+
+        .. math::
+
+            \\sum_{n} w_n(\\mathbf{k}) \\approx n_{\\mathrm{awf}}^{PC},
+
+        i.e. at every k-point the SC spectral weights add up to the number
+        of orbitals in the primitive cell.
+        """
         return self.W.sum(axis=1)
 
 
@@ -97,6 +109,21 @@ def _find_transformation_matrix(
     Returns
     -------
     M : (3, 3) integer array.
+
+    Notes
+    -----
+    The SC lattice vectors are an integer linear combination of the PC
+    lattice vectors,
+
+    .. math::
+
+        \\mathbf{A}_{SC} = M \\, \\mathbf{A}_{PC},
+        \\qquad M = \\mathbf{A}_{SC}\\, \\mathbf{A}_{PC}^{-1},
+
+    where rows of :math:`\\mathbf{A}_{PC}`/:math:`\\mathbf{A}_{SC}` hold the
+    lattice vectors.  ``M`` is recovered by rounding the (in general
+    non-integer) float solution to the nearest integer and rejecting the
+    result if the residual exceeds ``tol``.
     """
     # a_sc[i] = Σ_j M[i,j] a_pc[j]   →   M = a_sc @ inv(a_pc)
     M_float = a_sc @ inv(a_pc)
@@ -104,16 +131,14 @@ def _find_transformation_matrix(
     residual = np.max(np.abs(M_float - M_int))
     if residual > tol:
         raise ValueError(
-            f"SC lattice vectors are not an integer multiple of PC vectors "
-            f"(max residual = {residual:.2e}).  Check that a_pc and a_sc are "
-            f"given in the same Cartesian frame and units."
+            f'SC lattice vectors are not an integer multiple of PC vectors '
+            f'(max residual = {residual:.2e}).  Check that a_pc and a_sc are '
+            f'given in the same Cartesian frame and units.'
         )
     return M_int
 
 
-def _find_translations(
-    a_pc: np.ndarray, M: np.ndarray, tol: float = 1e-6
-) -> np.ndarray:
+def _find_translations(a_pc: np.ndarray, M: np.ndarray, tol: float = 1e-6) -> np.ndarray:
     """Find the N = |det M| PC lattice translations inside the SC.
 
     Strategy: scan integer combinations  n1*a_pc[0] + n2*a_pc[1] + n3*a_pc[2]
@@ -127,6 +152,27 @@ def _find_translations(
     Returns
     -------
     R : (N, 3) array of translation vectors in Cartesian/alat units.
+
+    Notes
+    -----
+    The number of translations equals the cell-volume ratio
+
+    .. math::
+
+        N = |\\det M| = \\frac{V_{SC}}{V_{PC}}.
+
+    Each translation is a PC lattice vector
+
+    .. math::
+
+        \\mathbf{R}_\\ell = n_1\\, \\mathbf{a}_{PC,1}
+            + n_2\\, \\mathbf{a}_{PC,2} + n_3\\, \\mathbf{a}_{PC,3},
+            \\qquad n_1, n_2, n_3 \\in \\mathbb{Z},
+
+    kept only if its SC-fractional coordinates
+    :math:`\\mathbf{R}_\\ell \\, \\mathbf{A}_{SC}^{-1}` fall inside the unit
+    cell :math:`[0,1)^3`, which selects exactly the :math:`N` translations
+    that lie within one supercell.
     """
     N = int(abs(round(det(M.astype(float)))))
     a_sc = M.astype(float) @ a_pc
@@ -161,8 +207,8 @@ def _find_translations(
 
     if len(translations_frac) != N:
         raise RuntimeError(
-            f"Expected N={N} translations, found {len(translations_frac)}.  "
-            f"This is likely a bug — please report."
+            f'Expected N={N} translations, found {len(translations_frac)}.  '
+            f'This is likely a bug — please report.'
         )
 
     translations_frac = np.array(translations_frac)
@@ -195,6 +241,20 @@ def _build_atom_map(
     Returns
     -------
     atom_map : (n_at_pc, N) integer array, atom_map[α, ℓ] = SC atom index.
+
+    Notes
+    -----
+    For every PC atom :math:`\\alpha` and translation :math:`\\mathbf{R}_\\ell`
+    the matching SC atom :math:`I` satisfies
+
+    .. math::
+
+        \\boldsymbol{\\tau}_{PC}(\\alpha) + \\mathbf{R}_\\ell
+            \\equiv \\boldsymbol{\\tau}_{SC}(I) \\pmod{\\mathbf{A}_{SC}},
+
+    i.e. the two positions coincide modulo an SC lattice translation, up to
+    ``tol``.  Every SC atom must be claimed by exactly one :math:`(\\alpha,
+    \\ell)` pair for the supercell to be commensurate with the primitive cell.
     """
     n_at_pc = len(tau_pc)
     N = len(R_translations)
@@ -216,7 +276,7 @@ def _build_atom_map(
                 if np.max(np.abs(frac_diff)) < tol:
                     if I in used:
                         raise ValueError(
-                            f"SC atom {I} maps to multiple (α,ℓ) pairs. Check atom positions."
+                            f'SC atom {I} maps to multiple (α,ℓ) pairs. Check atom positions.'
                         )
                     atom_map[alpha, ell] = I
                     used.add(I)
@@ -224,15 +284,15 @@ def _build_atom_map(
                     break
             if not found:
                 raise ValueError(
-                    f"No SC atom found matching PC atom {alpha} + "
-                    f"R_{ell} = {target}.  Check positions/lattice vectors."
+                    f'No SC atom found matching PC atom {alpha} + '
+                    f'R_{ell} = {target}.  Check positions/lattice vectors.'
                 )
 
     if len(used) != n_at_sc:
         unmapped = set(range(n_at_sc)) - used
         raise ValueError(
-            f"SC atoms {unmapped} are not mapped to any PC atom + translation. "
-            f"The supercell may not be commensurate with the primitive cell."
+            f'SC atoms {unmapped} are not mapped to any PC atom + translation. '
+            f'The supercell may not be commensurate with the primitive cell.'
         )
     return atom_map
 
@@ -242,9 +302,7 @@ def _build_atom_map(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def make_kpath(
-    sym_points: dict, path_str: str, a_pc: np.ndarray, nk_per_seg: int = 80
-) -> tuple:
+def make_kpath(sym_points: dict, path_str: str, a_pc: np.ndarray, nk_per_seg: int = 80) -> tuple:
     """Generate a k-path from a string specification.
 
     Parameters
@@ -259,18 +317,37 @@ def make_kpath(
     kpath_cart : (nk, 3) Cartesian k-points.
     kdist      : (nk,) cumulative distance.
     sym_ticks  : list of (distance, label).
+
+    Notes
+    -----
+    The PC reciprocal lattice vectors are defined by
+
+    .. math::
+
+        \\mathbf{b}_i \\cdot \\mathbf{a}_j = \\delta_{ij},
+        \\qquad \\mathbf{B}_{PC} = \\mathbf{A}_{PC}^{-T},
+
+    so a fractional point ``frac`` maps to Cartesian coordinates as
+    ``frac @ b_pc``.  Each segment between two symmetry points is sampled
+    by linear interpolation
+
+    .. math::
+
+        \\mathbf{k}(t) = \\mathbf{k}_0 + t\\,(\\mathbf{k}_1 - \\mathbf{k}_0),
+        \\qquad t = 0, \\tfrac{1}{n_{\\rm seg}}, \\dots,
+        \\tfrac{n_{\\rm seg}-1}{n_{\\rm seg}}.
     """
     b_pc = inv(a_pc).T  # reciprocal lattice  (a_i · b_j = δ_ij)
 
-    pipe_segs = path_str.split("|")
+    pipe_segs = path_str.split('|')
     kpts_cart, kpts_dist, sym_ticks = [], [], []
     d = 0.0
 
     for iseg, seg_str in enumerate(pipe_segs):
-        labels = seg_str.split("-")
+        labels = seg_str.split('-')
         if iseg > 0:
             old_d, old_lbl = sym_ticks[-1]
-            sym_ticks[-1] = (old_d, old_lbl + "|" + labels[0])
+            sym_ticks[-1] = (old_d, old_lbl + '|' + labels[0])
         else:
             sym_ticks.append((d, labels[0]))
 
@@ -300,9 +377,7 @@ def make_kpath(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _extract_hamiltonian(
-    model_dict: dict, outputdir: str = "_unfold_tmp", verbose: bool = False
-):
+def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbose: bool = False):
     """Build a PAOFLOW model and extract HRs + R-grid.
 
     Parameters
@@ -318,19 +393,34 @@ def _extract_hamiltonian(
     nawf  : number of Wannier functions.
     nspin : number of spin channels.
     norbitals : (natoms,) orbital count per atom.
+
+    Notes
+    -----
+    ``HRs`` holds the real-space PAO Hamiltonian matrix elements
+    :math:`H_{mn}(\\mathbf{R})` produced by PAOFLOW through the inverse
+    Fourier transform of :math:`H_{mn}(\\mathbf{k})` over the DFT k-mesh,
+
+    .. math::
+
+        H_{mn}(\\mathbf{R}) = \\frac{1}{N_k}\\sum_{\\mathbf{k}}
+            H_{mn}(\\mathbf{k})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}.
+
+    ``R`` is the corresponding real-space lattice-vector grid, later used
+    to Fourier-transform back to an arbitrary k-point along the unfolding
+    path (see :func:`unfold_bands`).
     """
     # Fast path: a raw-PAOFLOW model dict carries its already-built HRs and
     # R-grid under the private "_paoflow" key. Reuse them directly instead of
     # rebuilding a TB model (whose "label" would not match any builtin model).
-    pao = model_dict.get("_paoflow")
+    pao = model_dict.get('_paoflow')
     if pao is not None:
-        nawf = int(pao["nawf"])
-        nspin = int(pao["nspin"])
-        HRs = np.asarray(pao["HRs"])
+        nawf = int(pao['nawf'])
+        nspin = int(pao['nspin'])
+        HRs = np.asarray(pao['HRs'])
         if HRs.ndim == 6:
             HRs = HRs.reshape(nawf, nawf, -1, nspin)
-        R = np.asarray(pao["R"], dtype=float)
-        return HRs.copy(), R.copy(), nawf, nspin, pao.get("norbitals")
+        R = np.asarray(pao['R'], dtype=float)
+        return HRs.copy(), R.copy(), nawf, nspin, pao.get('norbitals')
 
     from PAOFLOW import PAOFLOW as PF
     from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
@@ -339,17 +429,17 @@ def _extract_hamiltonian(
         savedir=None,
         model=model_dict,
         outputdir=outputdir,
-        smearing="gauss",
+        smearing='gauss',
         verbose=verbose,
     )
     arry, _ = pf.data_controller.data_dicts()
-    nawf, _, nk1, nk2, nk3, nspin = arry["HRs"].shape
+    nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
 
     get_R_grid_fft(pf.data_controller, nk1, nk2, nk3)
-    R = arry["R"].copy()
-    HRs = arry["HRs"].reshape(nawf, nawf, -1, nspin).copy()
+    R = arry['R'].copy()
+    HRs = arry['HRs'].reshape(nawf, nawf, -1, nspin).copy()
 
-    norbitals = arry.get("norbitals", None)
+    norbitals = arry.get('norbitals', None)
     return HRs, R, nawf, nspin, norbitals
 
 
@@ -373,6 +463,26 @@ def _compute_spectral_weights(evecs, orb_idx, uphi, nawf_sc, n_at_pc, N):
     Returns
     -------
     W : (nawf_sc,) spectral weights.
+
+    Notes
+    -----
+    This implements the Popescu-Zunger spectral weight (V. Popescu and
+    A. Zunger, Phys. Rev. B 85, 085201 (2012)), specialized to a real-space
+    atomic-orbital basis: for SC eigenstate :math:`n`, the weight is
+
+    .. math::
+
+        w_n(\\mathbf{k}) = \\frac{1}{N} \\sum_{\\alpha}\\sum_{m}
+            \\left| \\sum_{\\ell=1}^{N} e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}_\\ell}\\,
+            C^{n}_{\\alpha, m, \\ell}(\\mathbf{k}) \\right|^2,
+
+    where :math:`C^{n}_{\\alpha, m, \\ell}(\\mathbf{k})` is the SC
+    eigenvector coefficient of band :math:`n` on orbital :math:`m` of the
+    atom obtained by translating PC atom :math:`\\alpha` by
+    :math:`\\mathbf{R}_\\ell` (``uphi`` supplies the phase factors, ``psi``
+    the corresponding eigenvector components).  Summed over all SC bands
+    at fixed :math:`\\mathbf{k}`, the weights satisfy the sum rule
+    :math:`\\sum_n w_n(\\mathbf{k}) = n_{\\mathrm{awf}}^{PC}`.
     """
     W = np.zeros(nawf_sc)
     for alpha in range(n_at_pc):
@@ -380,7 +490,7 @@ def _compute_spectral_weights(evecs, orb_idx, uphi, nawf_sc, n_at_pc, N):
         idx = orb_idx[alpha]  # shape (N, norb_alpha)
         psi = evecs[idx, :]  # shape (N, norb_alpha, nawf_sc)
         # Project: sum over ℓ with phase
-        proj = np.einsum("r,rmn->mn", uphi, psi)  # (norb_alpha, nawf_sc)
+        proj = np.einsum('r,rmn->mn', uphi, psi)  # (norb_alpha, nawf_sc)
         W += np.sum(np.abs(proj) ** 2, axis=0)
     return W / N
 
@@ -416,49 +526,72 @@ def unfold_bands(
     Both model dicts must use the **same** alat.  The PC and SC lattice
     vectors (``a_vectors``) must be given in Cartesian units of alat (the
     PAOFLOW / EDTB convention).
+
+    At every k-point along the path, the PC and SC Bloch Hamiltonians are
+    built from the real-space Hamiltonians by Fourier transform,
+
+    .. math::
+
+        H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})\\,
+            e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}},
+
+    Hermitized as :math:`H(\\mathbf{k}) \\to \\tfrac{1}{2}\\left(H(\\mathbf{k})
+    + H(\\mathbf{k})^\\dagger\\right)` to remove round-off asymmetry, and
+    diagonalized,
+
+    .. math::
+
+        H(\\mathbf{k})\\, C_n(\\mathbf{k}) = E_n(\\mathbf{k})\\, C_n(\\mathbf{k}),
+
+    giving the PC reference eigenvalues ``E_pc`` and the SC eigenvalues
+    ``E_sc``/eigenvectors used by :func:`_compute_spectral_weights` to
+    obtain the spectral weights ``W`` (see that function's ``Notes`` for
+    the unfolding formula).  The completeness sum rule
+    :math:`\\sum_n W_n(\\mathbf{k}) \\approx n_{\\mathrm{awf}}^{PC}` is checked
+    at every k-point and a warning is issued if the deviation exceeds 0.01.
     """
     # ── 1. Lattice geometry ──────────────────────────────────────
-    a_pc = np.array(pc_model_dict["model"]["a_vectors"], dtype=float)
-    a_sc = np.array(sc_model_dict["model"]["a_vectors"], dtype=float)
+    a_pc = np.array(pc_model_dict['model']['a_vectors'], dtype=float)
+    a_sc = np.array(sc_model_dict['model']['a_vectors'], dtype=float)
 
     M = _find_transformation_matrix(a_pc, a_sc)
     N = int(abs(round(det(M.astype(float)))))
     R_translations = _find_translations(a_pc, M)
 
     if verbose:
-        print(f"Transformation matrix M (det = {N}):")
+        print(f'Transformation matrix M (det = {N}):')
         for row in M:
-            print(f"  {row}")
-        print(f"Found {N} translations inside SC.")
+            print(f'  {row}')
+        print(f'Found {N} translations inside SC.')
 
     # ── 2. Atom mapping ──────────────────────────────────────────
-    pc_atoms = pc_model_dict["model"]["atoms"]
-    sc_atoms = sc_model_dict["model"]["atoms"]
+    pc_atoms = pc_model_dict['model']['atoms']
+    sc_atoms = sc_model_dict['model']['atoms']
     n_at_pc = len(pc_atoms)
     n_at_sc = len(sc_atoms)
 
-    tau_pc = np.array([pc_atoms[str(i)]["tau"] for i in range(n_at_pc)])
-    tau_sc = np.array([sc_atoms[str(i)]["tau"] for i in range(n_at_sc)])
+    tau_pc = np.array([pc_atoms[str(i)]['tau'] for i in range(n_at_pc)])
+    tau_sc = np.array([sc_atoms[str(i)]['tau'] for i in range(n_at_sc)])
 
     atom_map = _build_atom_map(tau_pc, tau_sc, R_translations, a_sc)
 
     if verbose:
-        print("\nAtom mapping (PC atom α → SC atom I):")
+        print('\nAtom mapping (PC atom α → SC atom I):')
         for alpha in range(n_at_pc):
-            row = ", ".join(str(atom_map[alpha, ell]) for ell in range(N))
-            print(f"  α={alpha}: SC atoms [{row}]")
+            row = ', '.join(str(atom_map[alpha, ell]) for ell in range(N))
+            print(f'  α={alpha}: SC atoms [{row}]')
 
     # ── 3. Extract Hamiltonians ──────────────────────────────────
     if verbose:
-        print("\nBuilding PC Hamiltonian...")
+        print('\nBuilding PC Hamiltonian...')
     HRs_pc, R_pc, nawf_pc, nspin, norb_pc = _extract_hamiltonian(
-        pc_model_dict, "_unfold_pc", verbose=False
+        pc_model_dict, '_unfold_pc', verbose=False
     )
 
     if verbose:
-        print("Building SC Hamiltonian...")
+        print('Building SC Hamiltonian...')
     HRs_sc, R_sc, nawf_sc, _, norb_sc = _extract_hamiltonian(
-        sc_model_dict, "_unfold_sc", verbose=False
+        sc_model_dict, '_unfold_sc', verbose=False
     )
 
     # ── 4. Build orbital index table ─────────────────────────────
@@ -478,22 +611,22 @@ def unfold_bands(
             I = atom_map[alpha, ell]
             if norb_sc[I] != norb_alpha:
                 raise ValueError(
-                    f"Orbital count mismatch: SC atom {I} has {norb_sc[I]} "
-                    f"orbitals but SC atom {atom_map[alpha, 0]} has {norb_alpha}."
+                    f'Orbital count mismatch: SC atom {I} has {norb_sc[I]} '
+                    f'orbitals but SC atom {atom_map[alpha, 0]} has {norb_alpha}.'
                 )
             idx[ell, :] = atom_block_start_sc[I] + np.arange(norb_alpha)
         orb_idx.append(idx)
 
     if verbose:
         total_orb_pc = sum(norb_sc[atom_map[a, 0]] for a in range(n_at_pc))
-        print(f"\nPC: {nawf_pc} orbitals,  SC: {nawf_sc} orbitals,  N={N}")
-        print(f"Expected sum rule: Σ_n W_n(k) = {total_orb_pc}")
+        print(f'\nPC: {nawf_pc} orbitals,  SC: {nawf_sc} orbitals,  N={N}')
+        print(f'Expected sum rule: Σ_n W_n(k) = {total_orb_pc}')
 
     # ── 5. Generate k-path ───────────────────────────────────────
     kpath, kdist, sym_ticks = make_kpath(sym_points, path_str, a_pc, nk_per_seg)
     nk = len(kpath)
     if verbose:
-        print(f"k-path: {nk} points, {len(sym_ticks)} symmetry ticks")
+        print(f'k-path: {nk} points, {len(sym_ticks)} symmetry ticks')
 
     # ── 6. Fourier transform & unfold ────────────────────────────
     E_pc = np.zeros((nk, nawf_pc))
@@ -526,13 +659,13 @@ def unfold_bands(
     deviation = np.max(np.abs(wsum - expected))
     if verbose:
         print(
-            f"\nSum rule:  Σ_n W_n(k)  mean = {wsum.mean():.6f}  "
-            f"(expected {expected}),  max deviation = {deviation:.2e}"
+            f'\nSum rule:  Σ_n W_n(k)  mean = {wsum.mean():.6f}  '
+            f'(expected {expected}),  max deviation = {deviation:.2e}'
         )
     if deviation > 0.01:
         warnings.warn(
-            f"Sum-rule deviation {deviation:.4f} exceeds tolerance.  "
-            f"Check lattice vectors and atom positions."
+            f'Sum-rule deviation {deviation:.4f} exceeds tolerance.  '
+            f'Check lattice vectors and atom positions.'
         )
 
     return UnfoldResult(
@@ -602,7 +735,7 @@ def plot_unfolded(
     *,
     y_lim: tuple = (-12, 6),
     w_thresh: float = 0.02,
-    cmap: str = "Reds",
+    cmap: str = 'Reds',
     figsize: tuple = (10, 6),
     title: str | None = None,
     show: bool = True,
@@ -637,10 +770,10 @@ def plot_unfolded(
         ax.plot(
             result.kdist,
             result.E_pc[:, n],
-            "k-",
+            'k-',
             lw=1.5,
             alpha=0.5,
-            label="PC reference" if n == 0 else None,
+            label='PC reference' if n == 0 else None,
         )
 
     # Unfolded SC bands (scatter)
@@ -659,22 +792,22 @@ def plot_unfolded(
                 rasterized=True,
             )
 
-    ax.scatter([], [], c="red", s=20, label="SC unfolded")
+    ax.scatter([], [], c='red', s=20, label='SC unfolded')
 
     # Symmetry ticks
     tick_pos = [t[0] for t in result.sym_ticks]
     tick_lbl = [t[1] for t in result.sym_ticks]
     for x in tick_pos:
-        ax.axvline(x, color="gray", lw=0.5, alpha=0.5)
+        ax.axvline(x, color='gray', lw=0.5, alpha=0.5)
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_lbl, fontsize=11)
 
     ax.set_xlim(result.kdist[0], result.kdist[-1])
     ax.set_ylim(*y_lim)
-    ax.set_ylabel("Energy (eV)", fontsize=12)
+    ax.set_ylabel('Energy (eV)', fontsize=12)
     if title:
         ax.set_title(title, fontsize=13)
-    ax.legend(fontsize=10, loc="lower right")
+    ax.legend(fontsize=10, loc='lower right')
 
     if ax is None:
         plt.tight_layout()
@@ -691,37 +824,37 @@ def plot_unfolded(
 # These match PAOFLOW / Setyawan-Curtarolo conventions.
 
 FCC_SYM_POINTS = {
-    "Γ": [0.0, 0.0, 0.0],
-    "X": [0.5, 0.0, 0.5],
-    "W": [0.5, 0.25, 0.75],
-    "K": [0.375, 0.375, 0.75],
-    "L": [0.5, 0.5, 0.5],
-    "U": [0.625, 0.25, 0.625],
+    'Γ': [0.0, 0.0, 0.0],
+    'X': [0.5, 0.0, 0.5],
+    'W': [0.5, 0.25, 0.75],
+    'K': [0.375, 0.375, 0.75],
+    'L': [0.5, 0.5, 0.5],
+    'U': [0.625, 0.25, 0.625],
 }
-FCC_PATH = "Γ-X-W-K-Γ-L-U-W-L-K|U-X"
+FCC_PATH = 'Γ-X-W-K-Γ-L-U-W-L-K|U-X'
 
 BCC_SYM_POINTS = {
-    "Γ": [0.0, 0.0, 0.0],
-    "H": [0.5, -0.5, 0.5],
-    "P": [0.25, 0.25, 0.25],
-    "N": [0.0, 0.0, 0.5],
+    'Γ': [0.0, 0.0, 0.0],
+    'H': [0.5, -0.5, 0.5],
+    'P': [0.25, 0.25, 0.25],
+    'N': [0.0, 0.0, 0.5],
 }
-BCC_PATH = "Γ-H-N-Γ-P-H|P-N"
+BCC_PATH = 'Γ-H-N-Γ-P-H|P-N'
 
 HEX_SYM_POINTS = {
-    "Γ": [0.0, 0.0, 0.0],
-    "A": [0.0, 0.0, 0.5],
-    "H": [1 / 3, 1 / 3, 0.5],
-    "K": [1 / 3, 1 / 3, 0.0],
-    "L": [0.5, 0.0, 0.5],
-    "M": [0.5, 0.0, 0.0],
+    'Γ': [0.0, 0.0, 0.0],
+    'A': [0.0, 0.0, 0.5],
+    'H': [1 / 3, 1 / 3, 0.5],
+    'K': [1 / 3, 1 / 3, 0.0],
+    'L': [0.5, 0.0, 0.5],
+    'M': [0.5, 0.0, 0.0],
 }
-HEX_PATH = "Γ-M-K-Γ-A-L-H-A|L-M|K-H"
+HEX_PATH = 'Γ-M-K-Γ-A-L-H-A|L-M|K-H'
 
 CUB_SYM_POINTS = {
-    "Γ": [0.0, 0.0, 0.0],
-    "X": [0.0, 0.5, 0.0],
-    "M": [0.5, 0.5, 0.0],
-    "R": [0.5, 0.5, 0.5],
+    'Γ': [0.0, 0.0, 0.0],
+    'X': [0.0, 0.5, 0.0],
+    'M': [0.5, 0.5, 0.0],
+    'R': [0.5, 0.5, 0.5],
 }
-CUB_PATH = "Γ-X-M-Γ-R-X|M-R"
+CUB_PATH = 'Γ-X-M-Γ-R-X|M-R'
