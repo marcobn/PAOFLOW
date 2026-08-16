@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -144,14 +144,14 @@ def _params_are_shell_pair_keyed(hop_params: dict) -> bool:
     return any(isinstance(v, dict) for v in hop_params.values())
 
 
-def _validate_shell_pair_params(key: str, s: int, hop_params: dict) -> List[str]:
+def _validate_shell_pair_params(key: str, s: int, hop_params: dict) -> list[str]:
     """Validate a multi-configuration (shell-pair-keyed) hopping block.
 
     Each key is a configuration-label pair ('3S-4S') and each value must
     carry exactly the SK integrals active for the pair's angular-momentum
     combination.
     """
-    errs: List[str] = []
+    errs: list[str] = []
     for pk, sub in hop_params.items():
         parts = pk.split('-')
         if len(parts) != 2:
@@ -205,7 +205,7 @@ def species_pair_key(sp1: str, sp2: str) -> str:
     return f'{a}-{b}'
 
 
-def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
+def active_sk_names_for_basis(l_channels_a: list[str], l_channels_b: list[str]) -> list[str]:
     """Return the SK parameter names active for a given species-pair basis.
 
     Determines which Slater-Koster integrals are needed from the
@@ -239,7 +239,7 @@ def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) 
     return names
 
 
-def active_gamma_labels(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
+def active_gamma_labels(l_channels_a: list[str], l_channels_b: list[str]) -> list[str]:
     """Return the active screening-exponent (γ) labels for a species-pair basis.
 
     Analogous to :func:`active_sk_names_for_basis` but returns
@@ -311,7 +311,7 @@ def _orbital_to_onsite_group(orb: str, onsite_keys: set) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 
-def validate_params(params: dict) -> List[str]:
+def validate_params(params: dict) -> list[str]:
     """Validate an EDTB parameter dict against the schema.
 
     Checks for required top-level keys (``edtb_version``, ``basis``,
@@ -359,7 +359,7 @@ def validate_params(params: dict) -> List[str]:
                 elif l not in b['l_channels']:
                     errors.append(
                         f"basis['{sp}']: orbital '{orb}' (l={l}) "
-                        f"not in l_channels {b['l_channels']}"
+                        f'not in l_channels {b["l_channels"]}'
                     )
 
     # ── Onsite ──
@@ -486,7 +486,7 @@ def validate_params(params: dict) -> List[str]:
     return errors
 
 
-def validate_geometry(geometry: dict) -> List[str]:
+def validate_geometry(geometry: dict) -> list[str]:
     """Validate a geometry dict against the schema.
 
     Checks for required keys ``alat``, ``a_vectors`` (3×3 nested list),
@@ -538,7 +538,7 @@ def validate_geometry(geometry: dict) -> List[str]:
 # ═══════════════════════════════════════════════════════════════
 
 
-def write_params(filepath: Union[str, Path], params: dict, *, validate: bool = True) -> None:
+def write_params(filepath: str | Path, params: dict, *, validate: bool = True) -> None:
     """Write EDTB parameters to a JSON file.
 
     Parameters
@@ -565,7 +565,7 @@ def write_params(filepath: Union[str, Path], params: dict, *, validate: bool = T
         json.dump(params, f, indent=2)
 
 
-def read_params(filepath: Union[str, Path], *, validate: bool = True) -> dict:
+def read_params(filepath: str | Path, *, validate: bool = True) -> dict:
     """Read EDTB parameters from a JSON file.
 
     Parameters
@@ -595,7 +595,7 @@ def read_params(filepath: Union[str, Path], *, validate: bool = True) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 
-def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool = True) -> None:
+def write_geometry(filepath: str | Path, geometry: dict, *, validate: bool = True) -> None:
     """Write a geometry file (JSON).
 
     Parameters
@@ -617,7 +617,7 @@ def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool
         json.dump(geometry, f, indent=2)
 
 
-def read_geometry(filepath: Union[str, Path], *, validate: bool = True) -> dict:
+def read_geometry(filepath: str | Path, *, validate: bool = True) -> dict:
     """Read a geometry file (JSON).
 
     Parameters
@@ -749,7 +749,7 @@ def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=2
                         if 0 < d < r_max:
                             all_dists.add(round(d, 6))
 
-    shells: List[float] = []
+    shells: list[float] = []
     for d in sorted(all_dists):
         if not shells or abs(d - shells[-1]) > tol:
             shells.append(d)
@@ -765,8 +765,8 @@ def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=2
 
 
 def from_model_dict(
-    model_dict: dict, shell_distances: Optional[Dict[str, float]] = None
-) -> Tuple[dict, dict]:
+    model_dict: dict, shell_distances: dict[str, float] | None = None
+) -> tuple[dict, dict]:
     """Convert a PAOFLOW model dict to the new schema.
 
     Accepts **both** the old shell-tag-keyed format::
@@ -809,7 +809,7 @@ def from_model_dict(
     atoms_old = m['atoms']
     natoms = len(atoms_old)
 
-    species_info: Dict[str, dict] = {}
+    species_info: dict[str, dict] = {}
     geom_atoms = []
 
     # Map configuration label (e.g. '2S', '3P', '3D') → l-channel
@@ -857,14 +857,14 @@ def from_model_dict(
     basis = {sp: dict(info) for sp, info in species_info.items()}
 
     # ── Onsite ──
-    onsite: Dict[str, dict] = {}
+    onsite: dict[str, dict] = {}
     for ia in range(natoms):
         atom = atoms_old[str(ia)]
         sp = atom['name']
         if sp in onsite:
             continue
         l_channels = species_info[sp]['l_channels']
-        on: Dict[str, float] = {}
+        on: dict[str, float] = {}
 
         if 'configuration' in atom:
             # Configuration-based: keys like '2S', '2P', '3D',
@@ -1024,7 +1024,7 @@ def from_model_dict(
         # ── Hoppings ──
         # Old format is species-blind → same SK params for all pairs,
         # but r_ref is computed per pair from the actual lattice geometry.
-        hoppings: Dict[str, list] = {}
+        hoppings: dict[str, list] = {}
         for i, sp1 in enumerate(species_list):
             for sp2 in species_list[i:]:
                 key = species_pair_key(sp1, sp2)
@@ -1060,7 +1060,7 @@ def from_model_dict(
         if 'screening' in m:
             scr = m['screening']
             gamma_raw = scr['gamma']
-            gamma: Dict[str, Any] = {}
+            gamma: dict[str, Any] = {}
             for i, sp1 in enumerate(species_list):
                 for sp2 in species_list[i:]:
                     key = species_pair_key(sp1, sp2)
@@ -1178,7 +1178,7 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
     if has_screening:
         scr = params['screening']
         gamma = {k: (dict(v) if isinstance(v, dict) else v) for k, v in scr['gamma'].items()}
-        screening_out: Dict[str, Any] = {'r_cut': scr['r_cut'], 'gamma': gamma}
+        screening_out: dict[str, Any] = {'r_cut': scr['r_cut'], 'gamma': gamma}
         if 'onsite_shift' in scr:
             screening_out['onsite_shift'] = dict(scr['onsite_shift'])
         model['model']['screening'] = screening_out
@@ -1210,18 +1210,18 @@ def summarize_params(params: dict) -> str:
         Multi-line formatted summary string.
     """
     lines = []
-    lines.append(f"EDTB Parameters  (v{params.get('edtb_version', '?')})")
+    lines.append(f'EDTB Parameters  (v{params.get("edtb_version", "?")})')
     if 'description' in params:
-        lines.append(f"  {params['description']}")
+        lines.append(f'  {params["description"]}')
 
     basis = params.get('basis', {})
     species = sorted(basis.keys())
-    lines.append(f"\nSpecies: {', '.join(species)}")
+    lines.append(f'\nSpecies: {", ".join(species)}')
 
     for sp in species:
         b = basis[sp]
         lines.append(
-            f"  {sp}: l_channels={b.get('l_channels', '?')}, norb={len(b.get('orbitals', []))}"
+            f'  {sp}: l_channels={b.get("l_channels", "?")}, norb={len(b.get("orbitals", []))}'
         )
         on = params.get('onsite', {}).get(sp, {})
         on_str = ', '.join(f'{k}={v:.4f}' for k, v in on.items())
@@ -1233,11 +1233,11 @@ def summarize_params(params: dict) -> str:
         shells = hoppings[key]
         if isinstance(shells, dict) and shells.get('type') == 'distance_dependent':
             lines.append(
-                f"  {key}: distance-dependent  r_0={shells.get('r_0', '?')}  r_c={shells.get('r_c', '?')} Bohr"
+                f'  {key}: distance-dependent  r_0={shells.get("r_0", "?")}  r_c={shells.get("r_c", "?")} Bohr'
             )
             channels = shells.get('channels', {})
             for ch, cp in sorted(channels.items()):
-                lines.append(f"    {ch}: V0={cp['V0']:.4f}, n={cp['n']:.4f}")
+                lines.append(f'    {ch}: V0={cp["V0"]:.4f}, n={cp["n"]:.4f}')
         elif isinstance(shells, list):
             lines.append(f'  {key}: {len(shells)} shells')
             for s, sh in enumerate(shells):
@@ -1249,7 +1249,7 @@ def summarize_params(params: dict) -> str:
 
     if 'screening' in params:
         scr = params['screening']
-        lines.append(f"\nScreening: r_cut={scr['r_cut']} Bohr")
+        lines.append(f'\nScreening: r_cut={scr["r_cut"]} Bohr')
         gamma = scr.get('gamma', {})
         for key in sorted(gamma.keys()):
             g = gamma[key]
@@ -1357,11 +1357,11 @@ class EDTBModel:
     @classmethod
     def from_files(
         cls,
-        params_path: Union[str, Path],
-        geometry_path: Union[str, Path],
+        params_path: str | Path,
+        geometry_path: str | Path,
         *,
         validate: bool = True,
-    ) -> 'EDTBModel':
+    ) -> EDTBModel:
         """Load an EDTB model from JSON parameter and geometry files.
 
         Parameters
@@ -1386,8 +1386,8 @@ class EDTBModel:
         cls,
         model_dict: dict,
         *,
-        shell_distances: Optional[Dict[str, float]] = None,
-    ) -> 'EDTBModel':
+        shell_distances: dict[str, float] | None = None,
+    ) -> EDTBModel:
         """Convert a PAOFLOW model dict to an EDTBModel.
 
         Accepts **both** the old shell-tag-keyed format
@@ -1411,7 +1411,7 @@ class EDTBModel:
         return cls(params, geometry, validate=True)
 
     @classmethod
-    def from_fitter(cls, fitter, p_opt) -> 'EDTBModel':
+    def from_fitter(cls, fitter, p_opt) -> EDTBModel:
         """Build an EDTBModel from a fitted SKFitter or SKFitterEDTB.
 
         Calls ``fitter.build_model_dict(p_opt)`` internally and converts
@@ -1435,8 +1435,8 @@ class EDTBModel:
 
     def save(
         self,
-        params_path: Union[str, Path],
-        geometry_path: Optional[Union[str, Path]] = None,
+        params_path: str | Path,
+        geometry_path: str | Path | None = None,
         *,
         validate: bool = True,
     ) -> None:
@@ -1471,7 +1471,7 @@ class EDTBModel:
 
     # ── Geometry transfer ─────────────────────────────────────
 
-    def with_geometry(self, geometry: dict) -> 'EDTBModel':
+    def with_geometry(self, geometry: dict) -> EDTBModel:
         """Return a new EDTBModel with the same parameters but a different geometry.
 
         This is the main transferability mechanism: train once,
@@ -1507,9 +1507,9 @@ class EDTBModel:
     @classmethod
     def from_geometry_file(
         cls,
-        params_path: Union[str, Path],
-        geometry_path: Union[str, Path],
-    ) -> 'EDTBModel':
+        params_path: str | Path,
+        geometry_path: str | Path,
+    ) -> EDTBModel:
         """Load parameters from one file and geometry from another.
 
         Identical to :meth:`from_files`; provided for readability in
@@ -1536,9 +1536,9 @@ class EDTBModel:
         *,
         ibrav: int = 0,
         nk: int = 500,
-        outputdir: Optional[str] = None,
-        band_path: Optional[str] = None,
-        high_sym_points: Optional[dict] = None,
+        outputdir: str | None = None,
+        band_path: str | None = None,
+        high_sym_points: dict | None = None,
         smearing: str = 'gauss',
         verbose: bool = False,
     ) -> dict:
@@ -1569,38 +1569,21 @@ class EDTBModel:
             ``sym_file`` : str — path to ``kpath_points.txt``
             ``paoflow`` : PAOFLOW object (for further analysis)
         """
-        from PAOFLOW import PAOFLOW as PF
-
-        model_dict = self.to_model_dict()
+        from ._paoflow_runner import run_model_bands
 
         if outputdir is None:
-            outputdir = f"edtb_{self.label}_{self.geometry['alat']:.2f}"
+            outputdir = f'edtb_{self.label}_{self.geometry["alat"]:.2f}'
 
-        pao = PF.PAOFLOW(
-            savedir=None,
-            model=model_dict,
+        return run_model_bands(
+            self.to_model_dict(),
+            ibrav=ibrav,
+            nk=nk,
             outputdir=outputdir,
+            band_path=band_path,
+            high_sym_points=high_sym_points,
             smearing=smearing,
             verbose=verbose,
         )
-        arry, attr = pao.data_controller.data_dicts()
-
-        bands_kw = {'ibrav': ibrav, 'nk': nk}
-        if band_path is not None:
-            bands_kw['band_path'] = band_path
-        if high_sym_points is not None:
-            bands_kw['high_sym_points'] = high_sym_points
-
-        pao.bands(**bands_kw)
-
-        bands_file = f"{attr['outputdir']}/bands_0.dat"
-        sym_file = f"{attr['outputdir']}/kpath_points.txt"
-
-        return {
-            'bands_file': bands_file,
-            'sym_file': sym_file,
-            'paoflow': pao,
-        }
 
     # ── Properties ────────────────────────────────────────────
 
@@ -1619,7 +1602,7 @@ class EDTBModel:
         return copy.deepcopy(self._geometry)
 
     @property
-    def species(self) -> List[str]:
+    def species(self) -> list[str]:
         """Sorted list of species in the model."""
         return sorted(self._params['basis'].keys())
 
@@ -1654,7 +1637,7 @@ class EDTBModel:
     def summary(self) -> str:
         """Return a human-readable summary of the model."""
         header = f'EDTBModel  [{self.label}]  alat={self.alat:.4f} Bohr'
-        geom_info = f"  geometry: {len(self._geometry['atoms'])} atoms, species={self.species}"
+        geom_info = f'  geometry: {len(self._geometry["atoms"])} atoms, species={self.species}'
         return header + '\n' + geom_info + '\n' + summarize_params(self._params)
 
     def __repr__(self) -> str:

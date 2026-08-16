@@ -422,25 +422,9 @@ def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbo
         R = np.asarray(pao['R'], dtype=float)
         return HRs.copy(), R.copy(), nawf, nspin, pao.get('norbitals')
 
-    from PAOFLOW import PAOFLOW as PF
-    from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
+    from ._paoflow_runner import build_model_hamiltonian
 
-    pf = PF.PAOFLOW(
-        savedir=None,
-        model=model_dict,
-        outputdir=outputdir,
-        smearing='gauss',
-        verbose=verbose,
-    )
-    arry, _ = pf.data_controller.data_dicts()
-    nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
-
-    get_R_grid_fft(pf.data_controller, nk1, nk2, nk3)
-    R = arry['R'].copy()
-    HRs = arry['HRs'].reshape(nawf, nawf, -1, nspin).copy()
-
-    norbitals = arry.get('norbitals', None)
-    return HRs, R, nawf, nspin, norbitals
+    return build_model_hamiltonian(model_dict, outputdir=outputdir, verbose=verbose)
 
 
 # ═══════════════════════════════════════════════════════════════════════
