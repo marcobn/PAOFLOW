@@ -1,0 +1,69 @@
+"""Band structure along a high-symmetry path, sparse iterative version.
+
+Mirrors ``spectrum.do_bands`` scaffolding exactly — same k-path generation
+(``kpnts_interpolation_mesh``, including the Angstrom/Bohr ``alat`` dance
+and the in-place rotation of ``kq`` to Cartesian by ``b_vectors``), same
+MPI k-scatter — but replaces the dense Fourier sum + ``eigh`` with the
+fixed-pattern sparse assembly (``sign=+1``, the band-path phase
+convention) and the iterative ``solve_lowest``, computing only the lowest
+``nsel`` bands.  Eigenvectors are used solely to warm-start the next
+k-point and are never stored.
+
+Convention note: the dense path diagonalizes the upper triangle of a
+slightly non-Hermitian interpolated H(k) (``eigh(lower=False)``); the
+sparse path solves the exactly Hermitian interpolant (Nyquist-split, the
+``zero_pad`` convention).  The two differ by O(|H(R)| at the Nyquist
+shell), far below plotting resolution for converged R grids.
+"""
+
+import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+
+def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False):
+    """Compute ``arrays['E_k']`` (local slice, ``(nkpi_local, nsel, nspin)``)
+    along the interpolation path.  Returns nothing; mirrors dense layout."""
+    from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
+    from ..utils.communication import scatter_full
+    from ..utils.constants import ANGSTROM_AU
+    from .solver import solve_lowest
+
+    arrays, attr = data_controller.data_dicts()
+
+    # Bohr to Angstrom (dense do_bands does the same around path generation)
+    attr['alat'] /= ANGSTROM_AU
+
+    if 'ibrav' in attr:
+        kpnts_interpolation_mesh(data_controller)
+    if 'kq' not in arrays:
+        raise RuntimeError('sparse bands: need external kq for bands')
+
+    # rotate kq to Cartesian in place, replicating dense do_bands (the
+    # sparse assembler consumes Cartesian k with cart=True)
+    nkpi = arrays['kq'].shape[1]
+    for n in range(nkpi):
+        arrays['kq'][:, n] = np.dot(arrays['kq'][:, n], arrays['b_vectors'])
+
+    attr['alat'] *= ANGSTROM_AU
+
+    kq_aux = scatter_full(arrays['kq'].T.copy(), attr['npool'])  # (nk_local, 3)
+    nk_local = kq_aux.shape[0]
+    nspin = sparse_h.nspin
+
+    E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
+    for ispin in range(nspin):
+        v0 = None
+        for ik in range(nk_local):
+            hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=+1, cart=True)
+            E, V = solve_lowest(hk, nsel, v0=v0)
+            E_k[ik, :, ispin] = E
+            v0 = np.ascontiguousarray(V[:, 0])  # warm start; V is discarded
+            if verbose and rank == 0 and (ik + 1) % 100 == 0:
+                print(
+                    'Sparse bands progress: %d/%d local k-points' % (ik + 1, nk_local), flush=True
+                )
+
+    arrays['E_k'] = E_k
