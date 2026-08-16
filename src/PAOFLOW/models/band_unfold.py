@@ -534,6 +534,15 @@ def unfold_bands(
     :math:`\\sum_n W_n(\\mathbf{k}) \\approx n_{\\mathrm{awf}}^{PC}` is checked
     at every k-point and a warning is issued if the deviation exceeds 0.01.
     """
+    # Diagnostics are collective; only the root rank should print them.
+    if verbose:
+        try:
+            from mpi4py import MPI
+
+            verbose = MPI.COMM_WORLD.Get_rank() == 0
+        except ImportError:
+            pass
+
     # ── 1. Lattice geometry ──────────────────────────────────────
     a_pc = np.array(pc_model_dict['model']['a_vectors'], dtype=float)
     a_sc = np.array(sc_model_dict['model']['a_vectors'], dtype=float)
