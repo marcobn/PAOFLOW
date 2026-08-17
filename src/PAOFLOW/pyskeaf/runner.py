@@ -124,9 +124,7 @@ def _raise_mpi_output_errors(comm, local_exception, local_traceback) -> None:
     if local_exception is not None:
         raise local_exception
     details = '\n\n'.join(
-        f'MPI rank {rank}:\n{error}'
-        for rank, error in enumerate(errors)
-        if error is not None
+        f'MPI rank {rank}:\n{error}' for rank, error in enumerate(errors) if error is not None
     )
     raise RuntimeError(f'pyskeaf MPI output writing failed:\n{details}')
 
@@ -303,9 +301,7 @@ def run_angle_sweep(
 
     comm = active_mpi_comm()
     indexed_results = (
-        [_one(job) for job in jobs]
-        if comm is None
-        else _run_mpi_angle_jobs(jobs, _one, comm)
+        [_one(job) for job in jobs] if comm is None else _run_mpi_angle_jobs(jobs, _one, comm)
     )
     for _, angle_orbits in indexed_results:
         all_orbits.extend(angle_orbits)
