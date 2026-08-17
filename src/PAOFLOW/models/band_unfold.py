@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 from numpy.linalg import det, eigh, inv
@@ -75,7 +74,19 @@ class UnfoldResult:
     M: np.ndarray = field(repr=False)
 
     def sum_rule_check(self) -> np.ndarray:
-        """Return Σ_n W_n(k) per k-point (should ≈ nawf_pc)."""
+        """Return Σ_n W_n(k) per k-point (should ≈ nawf_pc).
+
+        Notes
+        -----
+        The unfolded spectral weights obey the completeness (sum) rule
+
+        .. math::
+
+            \\sum_{n} w_n(\\mathbf{k}) \\approx n_{\\mathrm{awf}}^{PC},
+
+        i.e. at every k-point the SC spectral weights add up to the number
+        of orbitals in the primitive cell.
+        """
         return self.W.sum(axis=1)
 
 
@@ -98,6 +109,21 @@ def _find_transformation_matrix(
     Returns
     -------
     M : (3, 3) integer array.
+
+    Notes
+    -----
+    The SC lattice vectors are an integer linear combination of the PC
+    lattice vectors,
+
+    .. math::
+
+        \\mathbf{A}_{SC} = M \\, \\mathbf{A}_{PC},
+        \\qquad M = \\mathbf{A}_{SC}\\, \\mathbf{A}_{PC}^{-1},
+
+    where rows of :math:`\\mathbf{A}_{PC}`/:math:`\\mathbf{A}_{SC}` hold the
+    lattice vectors.  ``M`` is recovered by rounding the (in general
+    non-integer) float solution to the nearest integer and rejecting the
+    result if the residual exceeds ``tol``.
     """
     # a_sc[i] = Σ_j M[i,j] a_pc[j]   →   M = a_sc @ inv(a_pc)
     M_float = a_sc @ inv(a_pc)
@@ -126,6 +152,27 @@ def _find_translations(a_pc: np.ndarray, M: np.ndarray, tol: float = 1e-6) -> np
     Returns
     -------
     R : (N, 3) array of translation vectors in Cartesian/alat units.
+
+    Notes
+    -----
+    The number of translations equals the cell-volume ratio
+
+    .. math::
+
+        N = |\\det M| = \\frac{V_{SC}}{V_{PC}}.
+
+    Each translation is a PC lattice vector
+
+    .. math::
+
+        \\mathbf{R}_\\ell = n_1\\, \\mathbf{a}_{PC,1}
+            + n_2\\, \\mathbf{a}_{PC,2} + n_3\\, \\mathbf{a}_{PC,3},
+            \\qquad n_1, n_2, n_3 \\in \\mathbb{Z},
+
+    kept only if its SC-fractional coordinates
+    :math:`\\mathbf{R}_\\ell \\, \\mathbf{A}_{SC}^{-1}` fall inside the unit
+    cell :math:`[0,1)^3`, which selects exactly the :math:`N` translations
+    that lie within one supercell.
     """
     N = int(abs(round(det(M.astype(float)))))
     a_sc = M.astype(float) @ a_pc
@@ -140,7 +187,7 @@ def _find_translations(a_pc: np.ndarray, M: np.ndarray, tol: float = 1e-6) -> np
         for n2 in range(-Nmax, Nmax + 1):
             for n3 in range(-Nmax, Nmax + 1):
                 R = n1 * a_pc[0] + n2 * a_pc[1] + n3 * a_pc[2]
-                frac = R @ inv_sc.T  # SC fractional coordinates
+                frac = R @ inv_sc  # SC fractional coordinates (rows = lattice vectors)
                 # Reduce to [0, 1)
                 frac_mod = frac - np.floor(frac + tol)
                 # Accept if in [0, 1)
@@ -194,6 +241,20 @@ def _build_atom_map(
     Returns
     -------
     atom_map : (n_at_pc, N) integer array, atom_map[α, ℓ] = SC atom index.
+
+    Notes
+    -----
+    For every PC atom :math:`\\alpha` and translation :math:`\\mathbf{R}_\\ell`
+    the matching SC atom :math:`I` satisfies
+
+    .. math::
+
+        \\boldsymbol{\\tau}_{PC}(\\alpha) + \\mathbf{R}_\\ell
+            \\equiv \\boldsymbol{\\tau}_{SC}(I) \\pmod{\\mathbf{A}_{SC}},
+
+    i.e. the two positions coincide modulo an SC lattice translation, up to
+    ``tol``.  Every SC atom must be claimed by exactly one :math:`(\\alpha,
+    \\ell)` pair for the supercell to be commensurate with the primitive cell.
     """
     n_at_pc = len(tau_pc)
     N = len(R_translations)
@@ -210,7 +271,7 @@ def _build_atom_map(
             found = False
             for I in range(n_at_sc):
                 diff = target - tau_sc[I]
-                frac_diff = diff @ inv_sc.T
+                frac_diff = diff @ inv_sc
                 frac_diff -= np.rint(frac_diff)
                 if np.max(np.abs(frac_diff)) < tol:
                     if I in used:
@@ -256,6 +317,25 @@ def make_kpath(sym_points: dict, path_str: str, a_pc: np.ndarray, nk_per_seg: in
     kpath_cart : (nk, 3) Cartesian k-points.
     kdist      : (nk,) cumulative distance.
     sym_ticks  : list of (distance, label).
+
+    Notes
+    -----
+    The PC reciprocal lattice vectors are defined by
+
+    .. math::
+
+        \\mathbf{b}_i \\cdot \\mathbf{a}_j = \\delta_{ij},
+        \\qquad \\mathbf{B}_{PC} = \\mathbf{A}_{PC}^{-T},
+
+    so a fractional point ``frac`` maps to Cartesian coordinates as
+    ``frac @ b_pc``.  Each segment between two symmetry points is sampled
+    by linear interpolation
+
+    .. math::
+
+        \\mathbf{k}(t) = \\mathbf{k}_0 + t\\,(\\mathbf{k}_1 - \\mathbf{k}_0),
+        \\qquad t = 0, \\tfrac{1}{n_{\\rm seg}}, \\dots,
+        \\tfrac{n_{\\rm seg}-1}{n_{\\rm seg}}.
     """
     b_pc = inv(a_pc).T  # reciprocal lattice  (a_i · b_j = δ_ij)
 
@@ -297,13 +377,12 @@ def make_kpath(sym_points: dict, path_str: str, a_pc: np.ndarray, nk_per_seg: in
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbose: bool = False):
+def _extract_hamiltonian(model_dict: dict, verbose: bool = False):
     """Build a PAOFLOW model and extract HRs + R-grid.
 
     Parameters
     ----------
     model_dict : PAOFLOW-compatible model dictionary.
-    outputdir  : temporary output directory name.
     verbose    : passed to PAOFLOW.
 
     Returns
@@ -313,26 +392,38 @@ def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbo
     nawf  : number of Wannier functions.
     nspin : number of spin channels.
     norbitals : (natoms,) orbital count per atom.
+
+    Notes
+    -----
+    ``HRs`` holds the real-space PAO Hamiltonian matrix elements
+    :math:`H_{mn}(\\mathbf{R})` produced by PAOFLOW through the inverse
+    Fourier transform of :math:`H_{mn}(\\mathbf{k})` over the DFT k-mesh,
+
+    .. math::
+
+        H_{mn}(\\mathbf{R}) = \\frac{1}{N_k}\\sum_{\\mathbf{k}}
+            H_{mn}(\\mathbf{k})\\, e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}}.
+
+    ``R`` is the corresponding real-space lattice-vector grid, later used
+    to Fourier-transform back to an arbitrary k-point along the unfolding
+    path (see :func:`unfold_bands`).
     """
-    from PAOFLOW import PAOFLOW as PF
-    from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
+    # Fast path: a raw-PAOFLOW model dict carries its already-built HRs and
+    # R-grid under the private "_paoflow" key. Reuse them directly instead of
+    # rebuilding a TB model (whose "label" would not match any builtin model).
+    pao = model_dict.get('_paoflow')
+    if pao is not None:
+        nawf = int(pao['nawf'])
+        nspin = int(pao['nspin'])
+        HRs = np.asarray(pao['HRs'])
+        if HRs.ndim == 6:
+            HRs = HRs.reshape(nawf, nawf, -1, nspin)
+        R = np.asarray(pao['R'], dtype=float)
+        return HRs.copy(), R.copy(), nawf, nspin, pao.get('norbitals')
 
-    pf = PF.PAOFLOW(
-        savedir=None,
-        model=model_dict,
-        outputdir=outputdir,
-        smearing='gauss',
-        verbose=verbose,
-    )
-    arry, _ = pf.data_controller.data_dicts()
-    nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
+    from ._paoflow_runner import build_model_hamiltonian
 
-    get_R_grid_fft(pf.data_controller, nk1, nk2, nk3)
-    R = arry['R'].copy()
-    HRs = arry['HRs'].reshape(nawf, nawf, -1, nspin).copy()
-
-    norbitals = arry.get('norbitals', None)
-    return HRs, R, nawf, nspin, norbitals
+    return build_model_hamiltonian(model_dict, verbose=verbose)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -355,6 +446,26 @@ def _compute_spectral_weights(evecs, orb_idx, uphi, nawf_sc, n_at_pc, N):
     Returns
     -------
     W : (nawf_sc,) spectral weights.
+
+    Notes
+    -----
+    This implements the Popescu-Zunger spectral weight (V. Popescu and
+    A. Zunger, Phys. Rev. B 85, 085201 (2012)), specialized to a real-space
+    atomic-orbital basis: for SC eigenstate :math:`n`, the weight is
+
+    .. math::
+
+        w_n(\\mathbf{k}) = \\frac{1}{N} \\sum_{\\alpha}\\sum_{m}
+            \\left| \\sum_{\\ell=1}^{N} e^{-2\\pi i \\mathbf{k}\\cdot\\mathbf{R}_\\ell}\\,
+            C^{n}_{\\alpha, m, \\ell}(\\mathbf{k}) \\right|^2,
+
+    where :math:`C^{n}_{\\alpha, m, \\ell}(\\mathbf{k})` is the SC
+    eigenvector coefficient of band :math:`n` on orbital :math:`m` of the
+    atom obtained by translating PC atom :math:`\\alpha` by
+    :math:`\\mathbf{R}_\\ell` (``uphi`` supplies the phase factors, ``psi``
+    the corresponding eigenvector components).  Summed over all SC bands
+    at fixed :math:`\\mathbf{k}`, the weights satisfy the sum rule
+    :math:`\\sum_n w_n(\\mathbf{k}) = n_{\\mathrm{awf}}^{PC}`.
     """
     W = np.zeros(nawf_sc)
     for alpha in range(n_at_pc):
@@ -398,7 +509,39 @@ def unfold_bands(
     Both model dicts must use the **same** alat.  The PC and SC lattice
     vectors (``a_vectors``) must be given in Cartesian units of alat (the
     PAOFLOW / EDTB convention).
+
+    At every k-point along the path, the PC and SC Bloch Hamiltonians are
+    built from the real-space Hamiltonians by Fourier transform,
+
+    .. math::
+
+        H(\\mathbf{k}) = \\sum_{\\mathbf{R}} H(\\mathbf{R})\\,
+            e^{2\\pi i \\mathbf{k}\\cdot\\mathbf{R}},
+
+    Hermitized as :math:`H(\\mathbf{k}) \\to \\tfrac{1}{2}\\left(H(\\mathbf{k})
+    + H(\\mathbf{k})^\\dagger\\right)` to remove round-off asymmetry, and
+    diagonalized,
+
+    .. math::
+
+        H(\\mathbf{k})\\, C_n(\\mathbf{k}) = E_n(\\mathbf{k})\\, C_n(\\mathbf{k}),
+
+    giving the PC reference eigenvalues ``E_pc`` and the SC eigenvalues
+    ``E_sc``/eigenvectors used by :func:`_compute_spectral_weights` to
+    obtain the spectral weights ``W`` (see that function's ``Notes`` for
+    the unfolding formula).  The completeness sum rule
+    :math:`\\sum_n W_n(\\mathbf{k}) \\approx n_{\\mathrm{awf}}^{PC}` is checked
+    at every k-point and a warning is issued if the deviation exceeds 0.01.
     """
+    # Diagnostics are collective; only the root rank should print them.
+    if verbose:
+        try:
+            from mpi4py import MPI
+
+            verbose = MPI.COMM_WORLD.Get_rank() == 0
+        except ImportError:
+            pass
+
     # ── 1. Lattice geometry ──────────────────────────────────────
     a_pc = np.array(pc_model_dict['model']['a_vectors'], dtype=float)
     a_sc = np.array(sc_model_dict['model']['a_vectors'], dtype=float)
@@ -433,15 +576,11 @@ def unfold_bands(
     # ── 3. Extract Hamiltonians ──────────────────────────────────
     if verbose:
         print('\nBuilding PC Hamiltonian...')
-    HRs_pc, R_pc, nawf_pc, nspin, norb_pc = _extract_hamiltonian(
-        pc_model_dict, '_unfold_pc', verbose=False
-    )
+    HRs_pc, R_pc, nawf_pc, nspin, norb_pc = _extract_hamiltonian(pc_model_dict, verbose=False)
 
     if verbose:
         print('Building SC Hamiltonian...')
-    HRs_sc, R_sc, nawf_sc, _, norb_sc = _extract_hamiltonian(
-        sc_model_dict, '_unfold_sc', verbose=False
-    )
+    HRs_sc, R_sc, nawf_sc, _, norb_sc = _extract_hamiltonian(sc_model_dict, verbose=False)
 
     # ── 4. Build orbital index table ─────────────────────────────
     # norb_sc[I] = number of orbitals on SC atom I.
@@ -586,7 +725,7 @@ def plot_unfolded(
     w_thresh: float = 0.02,
     cmap: str = 'Reds',
     figsize: tuple = (10, 6),
-    title: Optional[str] = None,
+    title: str | None = None,
     show: bool = True,
     ax=None,
 ):
