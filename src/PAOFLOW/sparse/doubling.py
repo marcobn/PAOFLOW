@@ -34,11 +34,12 @@ container's own ``a_vectors`` copy.
 
 import numpy as np
 
-from .hamiltonian import SparseHamiltonian
+from .hamiltonian import SparseHamiltonian, unique_R
 
 
 def double_axis(sph, axis):
     """Return a new :class:`SparseHamiltonian` doubled along ``axis`` (0..2)."""
+    sph._require_bonds('double_axis')
     triples = sph.R_int[sph.ridx].astype(np.int64)
     m = triples[:, axis]
     even = (m % 2) == 0
@@ -86,8 +87,10 @@ def double_axis(sph, axis):
     a_vectors = sph.a_vectors.copy()
     a_vectors[axis, :] *= 2.0
 
-    R_uniq, ridx = np.unique(new_triples, axis=0, return_inverse=True)
-    return SparseHamiltonian(
+    # R triples take at most nk1*nk2*nk3 distinct values, so the unique is a
+    # presence mask plus a lookup table -- O(nnz), no sort.
+    R_uniq, ridx = unique_R(new_triples, sph.nk_grid)
+    out = SparseHamiltonian(
         nawf=2 * nawf,
         nspin=sph.nspin,
         alat=sph.alat,
@@ -102,3 +105,5 @@ def double_axis(sph, axis):
         threshold=sph.threshold,
         drop_report=dict(sph.drop_report),
     )
+    out._doubled = True
+    return out

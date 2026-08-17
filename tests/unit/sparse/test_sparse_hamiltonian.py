@@ -182,6 +182,108 @@ def test_nspin_two_channels_assemble_independently():
         assert np.allclose(Hk, Hks[:, :, i, j, k, s], atol=1e-12)
 
 
+def _reference_hermitize(self):
+    """The pre-encoding implementation, kept here as the reference.
+
+    hermitize() replaced this np.unique(..., axis=0) void-view lexsort
+    with a single int64 key per bond.  The encoded key orders (row, col,
+    R) identically, so the replacement has to be bit-identical -- not
+    merely close: the bond order fixes the floating-point summation order
+    inside the assembly plan's add.reduceat.
+    """
+    triples = self.R_int[self.ridx].astype(np.int64)
+    mirrored = -triples
+    for axis in range(3):
+        nk = self.nk_grid[axis]
+        if nk % 2 == 0:
+            comp = mirrored[:, axis]
+            mirrored[:, axis] = np.where(comp == nk // 2, -(nk // 2), comp)
+    n = self.nnz
+    key = np.empty((2 * n, 5), dtype=np.int64)
+    key[:n, 0], key[:n, 1], key[:n, 2:] = self.rows, self.cols, triples
+    key[n:, 0], key[n:, 1], key[n:, 2:] = self.cols, self.rows, mirrored
+    vals = np.concatenate((0.5 * self.vals, 0.5 * np.conj(self.vals)))
+    dnm = np.concatenate((self.dnm, -self.dnm))
+    uniq, inv = np.unique(key, axis=0, return_inverse=True)
+    inv = inv.reshape(-1)
+    vals_m = np.zeros((len(uniq), self.nspin), dtype=np.complex128)
+    np.add.at(vals_m, inv, vals)
+    dnm_m = np.zeros((len(uniq), 3))
+    dnm_m[inv] = dnm
+    R_uniq, ridx = np.unique(uniq[:, 2:], axis=0, return_inverse=True)
+    return uniq[:, 0], uniq[:, 1], R_uniq, ridx.reshape(-1), vals_m, dnm_m
+
+
+def test_encoded_hermitize_matches_reference():
+    from PAOFLOW.sparse.doubling import double_axis
+
+    rng = np.random.default_rng(101)
+    dc, _ = _make_dc(rng)
+    base = SparseHamiltonian.from_data_controller(dc, threshold=1e-3)
+    raw = double_axis(double_axis(base, 0), 2)  # raw doubled list is non-Hermitian
+
+    for sph in (base, raw):
+        r, c, R, ri, v, d = _reference_hermitize(sph)
+        got = sph.hermitize()
+        assert np.array_equal(r.astype(np.int32), got.rows)
+        assert np.array_equal(c.astype(np.int32), got.cols)
+        assert np.array_equal(R.astype(np.int32), got.R_int)
+        assert np.array_equal(ri.astype(np.int32), got.ridx)
+        assert (v == got.vals).all(), 'values must be bit-identical, not merely close'
+        assert (d == got.dnm).all()
+
+
+def test_unique_R_matches_axis0_unique():
+    from PAOFLOW.sparse.hamiltonian import unique_R
+
+    rng = np.random.default_rng(103)
+    dc, _ = _make_dc(rng)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=1e-3)
+    triples = sph.R_int[sph.ridx].astype(np.int64)
+    R_ref, inv_ref = np.unique(triples, axis=0, return_inverse=True)
+    R_got, inv_got = unique_R(triples, sph.nk_grid)
+    assert np.array_equal(R_ref, R_got)
+    assert np.array_equal(inv_ref.reshape(-1), inv_got)
+
+
+def test_hermitize_is_noop_without_a_nyquist_asymmetry():
+    """On an already-Hermitian bond list hermitize() must not move a bit."""
+    rng = np.random.default_rng(107)
+    dc, _ = _make_dc(rng)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=1e-3)
+    assert sph.hermiticity_error() < 1e-12
+    once = sph.hermitize()
+    twice = once.hermitize()
+    assert np.array_equal(once.rows, twice.rows)
+    assert np.array_equal(once.ridx, twice.ridx)
+    assert np.abs(once.vals - twice.vals).max() < 1e-15
+
+
+def test_compact_frees_bonds_and_preserves_assembly():
+    rng = np.random.default_rng(109)
+    dc, _ = _make_dc(rng)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=1e-3)
+    kfrac = rng.standard_normal(3)
+    hk_before = sph.assemble_hk(kfrac).toarray()
+    dhk_before = [m.toarray() for m in sph.assemble_hk_dhk(kfrac)[1]]
+    nnz = sph.nnz
+
+    sph.compact()
+    assert sph.compacted and sph.nnz == nnz and sph.rows is None
+    assert np.array_equal(sph.assemble_hk(kfrac).toarray(), hk_before)
+    for a, b in zip(sph.assemble_hk_dhk(kfrac)[1], dhk_before):
+        assert np.array_equal(a.toarray(), b)
+
+    # mutation is refused loudly rather than working on stale data
+    import pytest as _pytest
+
+    from PAOFLOW.sparse.doubling import double_axis
+
+    for call in (sph.hermitize, sph.hermiticity_error, lambda: double_axis(sph, 0)):
+        with _pytest.raises(RuntimeError, match='compact'):
+            call()
+
+
 def test_pattern_reused_across_k():
     rng = np.random.default_rng(31)
     dc, _ = _make_dc(rng)

@@ -23,13 +23,17 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 
-def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False):
+def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto', ehi=None):
     """Compute ``arrays['E_k']`` (local slice, ``(nkpi_local, nsel, nspin)``)
-    along the interpolation path.  Returns nothing; mirrors dense layout."""
+    along the interpolation path.  Returns nothing; mirrors dense layout.
+
+    ``method`` picks the eigensolver branch once for the whole path;
+    ``ehi`` enables the same window-coverage guard the mesh pass uses."""
     from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
     from ..utils.communication import scatter_full
     from ..utils.constants import ANGSTROM_AU
-    from .solver import solve_lowest
+    from .mesh import check_window_coverage
+    from .solver import describe_method, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
 
@@ -53,17 +57,25 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False):
     nk_local = kq_aux.shape[0]
     nspin = sparse_h.nspin
 
+    if rank == 0:
+        print(describe_method(sparse_h.nawf, nsel, method=method), flush=True)
+
     E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
+    deficit = 0
+    step = max(1, min(100, nk_local // 10))
     for ispin in range(nspin):
         v0 = None
         for ik in range(nk_local):
             hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=+1, cart=True)
-            E, V = solve_lowest(hk, nsel, v0=v0)
+            E, V = solve_lowest(hk, nsel, v0=v0, method=method)
             E_k[ik, :, ispin] = E
             v0 = np.ascontiguousarray(V[:, 0])  # warm start; V is discarded
-            if verbose and rank == 0 and (ik + 1) % 100 == 0:
+            if ehi is not None and E[-1] < ehi:
+                deficit += 1
+            if verbose and rank == 0 and (ik + 1) % step == 0:
                 print(
                     'Sparse bands progress: %d/%d local k-points' % (ik + 1, nk_local), flush=True
                 )
 
     arrays['E_k'] = E_k
+    check_window_coverage(deficit, nsel, ehi, 'bands')

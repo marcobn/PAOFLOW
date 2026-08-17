@@ -31,12 +31,21 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(scope='module')
-def dense_and_sparse(tmp_path_factory):
+@pytest.fixture(scope='module', params=['arpack', 'dense'], ids=['solver=arpack', 'solver=dense'])
+def dense_and_sparse(request, tmp_path_factory):
+    """Parity must hold under *both* eigensolver branches.
+
+    The dispatch is convention-neutral by construction, and this is the
+    cheapest proof of it: the same index-wise comparison against the real
+    dense pipeline, once per branch.  Note that at the base cell
+    (nawf=18, bnd=9) 'auto' selects dense, so without forcing the branch
+    the ARPACK path would no longer be covered here at all.
+    """
     from PAOFLOW.PAOFLOW import PAOFLOW
     from PAOFLOW.SparsePAOFLOW import SparsePAOFLOW
 
-    out = str(tmp_path_factory.mktemp('mesh_parity'))
+    solver = request.param
+    out = str(tmp_path_factory.mktemp('mesh_parity_' + solver))
     cwd = os.getcwd()
     os.chdir(EXAMPLE)
     try:
@@ -63,6 +72,7 @@ def dense_and_sparse(tmp_path_factory):
             npool=1,
             verbose=False,
             threshold=0.0,
+            solver=solver,
         )
         q.read_atomic_proj_QE()
         q.projectability()

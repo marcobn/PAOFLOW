@@ -21,14 +21,22 @@ and computes properties from per-k iterative eigensolves.
    `(nawf, nawf, nR)` may ever exist.** No `Hksp`, `dHksp`, `pksp`, stored
    `v_k`, `deltakp2`. If a property "needs" one, redesign the property (see
    the consumer seam below), don't materialize the tensor.
-2. **No `.toarray()` / dense `eigh` anywhere, at any size** (user
-   requirement). Solves are strictly iterative (`solver.solve_lowest`:
-   ARPACK shift-invert; sparse `splu` is fine — sparse direct ≠ dense).
-   Dense arrays in *tests* as references are fine; in the pipeline, never.
+2. **No dense object may be indexed by k.** Per-k dense scratch is
+   allowed only when it is freed before the next k-point, and only within
+   the explicit bounds in rule 3. This *replaces* the original rule ("no
+   `.toarray()` / dense `eigh` anywhere, at any size"); the measurements
+   that forced the change, and the bounds that now stand in its place,
+   are in **Why the dense branch exists** below. Dense arrays in *tests*
+   as references are fine, as before.
 3. **Allowed dense objects, exhaustively:**
    - band-diagonal arrays `E_k`, `velkp`, `deltakp` — O(nk·nev), k-scattered;
    - ONE per-k eigenvector block `V (nawf, nev)`, discarded before the next
      k-point;
+   - the three per-k gradient blocks `W_l = (dH/dk_l) V`, same shape as
+     `V`, discarded with it (they replace recomputing that product inside
+     the degeneracy loop);
+   - ONE per-k `(nawf, nawf)` scratch inside `solver._solve_dense`, freed
+     on return, and only while `nawf <= dense_n_max` (4096 → ≤ 268 MB);
    - the base-cell (pre-doubling) input stage: `Hks`/`HRs` at the small
      original `nawf` is inherently dense QE input processing; it is
      converted by `SparseHamiltonian.from_data_controller` (the **single
@@ -36,6 +44,69 @@ and computes properties from per-k iterative eigensolves.
 4. Failure is loud: guards raise `NotImplementedError`/`RuntimeError` with
    actionable messages. There is no silent dense fallback — a user who hits
    a wall must know it, not swap 40 GB.
+
+## Why the dense branch exists (amendment to rule 2)
+
+The original rule was absolute: strictly iterative solves, no `.toarray()`
+at any size. It was replaced deliberately, not eroded. What changed:
+
+**The rule stopped buying anything in this regime.** scipy picks the Krylov
+dimension as `ncv = min(n, max(2k+1, 20))` with `k = nev + guard`. At
+`nev = bnd = nawf/2` that **degenerates to `ncv = n`**, so ARPACK allocates
+a dense `(n, n)` Arnoldi basis per k-point and does `O(n·ncv²)`
+reorthogonalization — the same per-k memory class as a dense `eigh`, at
+13–66× the cost (measured at n = 144/576/1152 on matched-density Hermitian
+matrices). Because `H` is complex, `eigsh` also delegates to the
+*non-symmetric* complex Arnoldi (`znaupd`/`zneupd`), not the cheap 3-term
+Lanczos recurrence the old docstring implied.
+
+**Two silent correctness failures, both specific to this workload.** Cell
+folding makes exact multiplets of 8–64 bands the normal case, and ARPACK
+handles them badly:
+
+- At scipy's default `ncv`, ARPACK returns **fewer copies than the true
+  multiplicity** and never raises — measured 15 of 32, 7 of 16, 6 of 8.
+  Every band above the multiplet is then shifted. `solve_lowest` now starts
+  at `ncv = min(n, max(4k+1, 40))`, which reproduced the exact multiplicity
+  in every case measured. **Do not lower it back.**
+- Even with all copies present, ARPACK's multiplet vectors are converged as
+  eigenvectors but **not orthogonalized against each other** (measured
+  singular values 0.89–1.10 across an 8-fold multiplet, projector error
+  6e-3). PDOS weights `|V_mn|²` and the `perturb_split` block
+  `V_D† (dH/dk) V_D` both assume an orthonormal basis, so this is a small,
+  silent, k-dependent error exactly at the degeneracies folding creates.
+  `_orthonormalize_degenerate` does a QR per degenerate group (any
+  orthonormal basis of the span is an equally valid eigenbasis) using the
+  same 5-decimal grouping as `do_eigh.get_degeneracies`.
+
+The dense `evr` branch has neither problem: `zheevr` returns an orthonormal
+cluster basis by construction. That is also why `evr` and not `evx` (which
+resolves clusters by inverse iteration) or `evd` (no subset support —
+measured 1.11–1.31 s vs 0.53 s at n=1152).
+
+**Bounds now in force**, in `solver.select_method`, deterministic in
+`(n, nev)` only so it is hoisted out of the k-loop and printed once:
+
+| condition | outcome |
+|---|---|
+| `method='dense'` / `'arpack'` | honoured verbatim (A/B validation) |
+| `nev + guard >= n - 1` | dense (no Krylov room) |
+| `nev + guard > n/8`, `n <= 4096` | dense |
+| `nev + guard > n/8`, `n > 4096` | loud `NotImplementedError` naming both exits |
+| otherwise | arpack, unchanged |
+
+**What this costs**: the backend is capped at `nawf ≈ 4096`. Past it the
+per-k `(n, n)` scratch stops being cheap and `select_method` raises **by
+design** — `nx=3` (`nawf=9216`, 1.36 GB/rank, ~270 s/k) needs the
+distributed bond list flagged below plus a distributed eigensolver
+(ELPA/SLEPc). `nx=2` is the ceiling for this architecture, stated rather
+than discovered.
+
+**What it does not change**: rule 1. No `O(nk·nawf²)` tensor is created,
+`test_sparse_mesh_parity.py` passes under **both** branches (it is
+parametrized over them — at the base cell `auto` picks dense, so without
+forcing, the ARPACK path would no longer be covered), and no phase,
+folding, `Dnm` or `perturb_split` convention moved.
 
 ## Architecture map
 
@@ -47,11 +118,16 @@ SparsePAOFLOW.py          driver; mirrors the dense PAOFLOW method names so an
                           NotImplementedError via __getattr__.
 sparse/hamiltonian.py     SparseHamiltonian: the bond list (rows, cols, ridx,
                           vals, dnm) + fixed-pattern CSR assembly plan +
-                          hermitize(). The only data structure in the backend.
+                          hermitize() + compact(). The only data structure in
+                          the backend. Bond keys are packed into one int64
+                          (encode_bond/unique_R) rather than sorted as (n,5)
+                          void views -- same ordering, ~11x faster, 8 B/row.
 sparse/doubling.py        double_axis: O(nnz) index arithmetic replicating the
                           dense doubling kernel bond-for-bond.
-sparse/solver.py          solve_lowest: shift-invert eigsh, retry ladder,
-                          loud failure.
+sparse/solver.py          solve_lowest: select_method dispatch (dense/ARPACK),
+                          shift-invert eigsh with a widened ncv, degenerate-
+                          group re-orthonormalization, retry ladder, loud
+                          failure. count_below for energy-window probes.
 sparse/bands.py           k-path eigenvalues (mirrors do_bands scaffolding).
 sparse/mesh.py            THE core: one fused pass over the BZ mesh producing
                           E_k / velkp / deltakp and feeding per-k consumers.
@@ -228,23 +304,42 @@ Ask, in order:
   end-to-end validation is *visual*, via
   `examples/qe_examples/example01/compare_sparse.ipynb` only. Unit tests
   guard component correctness (mechanisms, not outputs); keep that split.
-- **Don't let `nev` creep toward `nawf`** in new features. ARPACK cost and
-  the V block both blow up; the guard in `solve_lowest`
-  (`nev + guard >= n-1`) is a hard stop, not a suggestion.
+- **Don't let `nev` creep toward `nawf`** in new features. The V block is
+  O(nawf·nev) and the dense scratch O(nawf²); `nev` is what decides
+  whether this backend scales. The old enforcement — `solve_lowest`
+  raising at `nev + guard >= n-1` — is now a *dispatch trigger* rather
+  than an error, so the mechanism no longer punishes creep. The intent
+  survives as a loud warning from `describe_method` whenever
+  `nev/nawf > 0.5`, and as `energy_window()` pushing in the other
+  direction. Neither is automatic: **sizing `nev` is still the caller's
+  job.**
 - **Don't name new test modules with basenames that exist elsewhere**
   (`test_hamiltonian.py` collides with the transport suite — pytest
   imports break). Prefix with `test_sparse_`.
 
 ## Known limits and the intended next steps
 
-- **`nev = bnd = nawf/2` is a milestone choice, not the destiny.** At scale,
-  the per-k V block (`nawf × nev`) and ARPACK workspace are O(nawf²)/2. The
-  designed fix: energy-window `nev ≪ nawf` sized from
-  `emax + smearing margin`, with a per-k coverage guard (grow that k's
-  solve only — never re-solve the whole mesh) and `attr['bnd'] = nev` so
-  the dense consumers keep working. The transport driver already checks
-  window coverage (`emax` vs the lowest computed top band); generalize that
-  pattern.
+- **`nev = bnd = nawf/2` is a milestone choice, not the destiny.**
+  `SparsePAOFLOW.energy_window(emin, emax, margin)` now sizes `nev` from
+  the property range instead: it probes `count_below(ehi)` (zheevr
+  `subset_by_value`, eigenvalues only) at 16 deterministic k-points, pads
+  by `max(8, 2%)`, and sets `attr['bnd'] = nev`. Coverage is guarded per
+  k-point and reduced once after the loop, so a short window raises with
+  the exact `nev` to re-run at rather than truncating silently.
+  **It must be called after `doubling_Hamiltonian()`** — `doubling_attr_arry`
+  doubles `attr['bnd']` on every call — and the driver raises if the order
+  is wrong.
+  Two honest caveats. `attr['bnd']` **changes meaning** (from "projectable
+  bands × cell multiplier" to "bands inside the window"), so `bands_*.dat`
+  gains or loses columns and is not column-comparable across runs with and
+  without a window; the downstream math is unaffected (`do_dos_adaptive`'s
+  two `bnd` factors cancel, transport slices are `bnd`-independent). And
+  the window is **not** a route back to "strictly sparse": the fraction of
+  the spectrum below a fixed `emax` is scale-invariant under folding
+  (43/144 = 344/1152 ≈ 0.30), so `nev/nawf` stays put as the cell grows and
+  stays above the 1/8 dispatch threshold. For a DOS-from-`emin` run the
+  dense branch is permanent. Only an *interior* window (shift-invert near
+  E_F, transport only) would change that, and that is a different solver.
 - **The bond list is replicated per rank** (167 MB at 1e-4 here — fine).
   For very large systems, distribute bonds by rows and turn `assemble_hk`
   into a distributed operator for a distributed-memory solver. That is a
@@ -256,6 +351,25 @@ Ask, in order:
   the bond list can exceed the dense array in bytes (44 B/bond); the win
   is that it grows ×2 per doubling while dense grows ×4 — don't panic at
   base-cell stats.
+- **`rcut` semantics** (optional, **default `None`**): a *second and
+  physically different* truncation axis — bond length
+  `|alat·R_cart + tau_i - tau_j|` in Bohr, not matrix-element magnitude.
+  The two interact, so a run with `rcut` set is **not** comparable with
+  one without, and the threshold sweep above no longer characterises the
+  truncation on its own. Both are folded into the same `keep` mask, so
+  the printed `eig_bound` covers both. Like `threshold` it must be
+  applied at the base cell: `double_axis` zeroes `dnm` on cross-replica
+  blocks (deliberately — it replicates `block_diag(Dnm, Dnm)`), after
+  which the true bond vector is unrecoverable. The container carries a
+  `_doubled` flag to make that ordering checkable.
+  **The mask is symmetrized** over `(i,j,R) → (j,i,−R)`: off the Nyquist
+  plane that pairing is automatic, but on the folded Nyquist plane `−R`
+  maps onto `R` itself and the two partners have *different* lengths
+  (tens of Bohr apart), so an unsymmetrized mask silently breaks
+  Hermiticity. `test_sparse_cutoff.py` pins this.
+  No default value is blessed: the 20 Bohr figure that has been floated
+  comes from slot-count geometry, not an accuracy sweep. Calibrate
+  against `output/` at `nx=1` before adopting one.
 - **LOBPCG / block solvers** could exploit warm-started blocks along the
   mesh, but scipy's LOBPCG needs `nev ≲ n/5` — only viable after the
   energy-window step lands. The solver interface (`solve_lowest`) is the

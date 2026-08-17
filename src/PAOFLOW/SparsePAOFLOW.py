@@ -33,6 +33,8 @@ class SparsePAOFLOW:
         smearing='gauss',
         verbose=False,
         threshold=1.0e-3,
+        rcut=None,
+        solver='auto',
         restart=False,
         dft='QE',
     ):
@@ -43,6 +45,19 @@ class SparsePAOFLOW:
             converted to the sparse bond list.  The conversion prints a
             rigorous bound on the eigenvalue error this truncation can
             cause at any k-point.
+
+            rcut (float or None): optional real-space cutoff in Bohr on
+            the physical bond length, applied together with ``threshold``
+            at the base cell.  This is a second, physically different
+            truncation axis (bond length rather than matrix-element
+            magnitude) and the two interact, so results are not directly
+            comparable with an ``rcut=None`` run; the ``eig_bound``
+            printed at conversion covers both.  Default ``None``.
+
+            solver ('auto' | 'dense' | 'arpack'): per-k eigensolver
+            branch.  ``'auto'`` dispatches on ``(nawf, nev)`` — see
+            :func:`PAOFLOW.sparse.solver.select_method`.  The explicit
+            values force one branch for A/B validation.
         """
         self._pao = PAOFLOW(
             workpath=workpath,
@@ -59,8 +74,11 @@ class SparsePAOFLOW:
         self.comm = self._pao.comm
         self.rank = self._pao.rank
         self.threshold = float(threshold)
+        self.rcut = None if rcut is None else float(rcut)
+        self.solver = solver
         self.H = None  # SparseHamiltonian, set by pao_hamiltonian
         self._mesh_plan = {}  # parameters recorded for the fused mesh pass
+        self._window = None  # (emin, emax, margin, ehi) once energy_window ran
 
     # ------------------------------------------------------------------
     # Plumbing
@@ -127,12 +145,20 @@ class SparsePAOFLOW:
 
         def _convert():
             arrays, _ = self.data_controller.data_dicts()
-            self.H = SparseHamiltonian.from_data_controller(self.data_controller, self.threshold)
+            self.H = SparseHamiltonian.from_data_controller(
+                self.data_controller, self.threshold, rcut=self.rcut
+            )
             # the dense source must not outlive the conversion
             del arrays['HRs']
             arrays.pop('Hks', None)
             arrays.pop('Dnm', None)  # carried per bond by the container
             if self.rank == 0:
+                if self.rcut is not None:
+                    print(
+                        'Sparse conversion: real-space cutoff rcut = %.3f Bohr applied at the '
+                        'base cell, together with threshold = %.1e eV (both are folded into '
+                        'the eigenvalue bound below).' % (self.rcut, self.threshold)
+                    )
                 print(self.H.stats_line())
 
         self._guard('sparse_conversion', _convert)
@@ -152,6 +178,12 @@ class SparsePAOFLOW:
 
         self._require_H('doubling_Hamiltonian')
         arrays, attr = self.data_controller.data_dicts()
+        if self._window is not None:
+            raise RuntimeError(
+                'SparsePAOFLOW: energy_window() ran before doubling_Hamiltonian(). '
+                "doubling_attr_arry doubles attr['bnd'] on every call, which would scale the "
+                'window-sized nev by the cell multiplier. Call energy_window() after doubling.'
+            )
         attr['nx'], attr['ny'], attr['nz'] = nx, ny, nz
 
         def _double():
@@ -167,11 +199,108 @@ class SparsePAOFLOW:
                     arrays['a_vectors'][axis, :] *= 2
                     doubling_attr_arry(self.data_controller)
             self.H = self.H.hermitize()
+            # the bond list is final here: release the raw arrays the
+            # assembly plan duplicates (about half the steady-state bytes)
+            self.H.compact()
             if self.rank == 0:
                 print(self.H.stats_line())
 
         self._guard('doubling_Hamiltonian', _double)
         self._pao.report_module_time('doubling_Hamiltonian')
+
+    # ------------------------------------------------------------------
+    # Energy window: size nev from the property range instead of bnd
+    # ------------------------------------------------------------------
+
+    def energy_window(self, emin, emax, margin=1.0, nprobe=16, nev=None):
+        """Size the per-k solve from the property energy range.
+
+        MUST be called after ``doubling_Hamiltonian()`` and before
+        ``bands()`` / ``dos()`` / ``transport()``.  Sets ``attr['bnd']``,
+        which every downstream band-diagonal consumer reads, so the band
+        path and the mesh both pick the new width up automatically.
+
+        The window top is ``ehi = emax + margin``.  ``margin`` (eV) has to
+        cover the adaptive smearing tail (Yates widths here are
+        <~ 0.22 eV, so 4 sigma is <~ 0.9 eV) and the transport occupation
+        derivative at 300 K (~0.1 eV); 1.0 eV covers both.
+
+        ``nev`` is probed by counting eigenvalues below ``ehi`` at
+        ``nprobe`` deterministic k-points (Gamma, the supercell-BZ
+        corners, then strided mesh points) and padding by
+        ``max(8, 2%)``.  Pass ``nev`` explicitly to skip the probe.
+
+        Caveat, stated because it is easy to misread: this narrows the
+        solve but does not make the workload iterative again.  The
+        fraction of the spectrum below a fixed ``emax`` is scale
+        invariant under folding, so ``nev/nawf`` stays put as the cell
+        grows.  For a DOS-from-``emin`` run the dense branch is
+        permanent; only an *interior* window (shift-invert near E_F,
+        transport only) would change that, and that is a different
+        solver.
+
+        Note also that ``attr['bnd']`` changes meaning here, from "bands
+        with projectability > pthr, times the cell multiplier" to "bands
+        inside the property window".  The downstream normalizations are
+        unaffected (``do_dos_adaptive``'s two ``bnd`` factors cancel;
+        transport slices are ``bnd``-independent), but ``bands_*.dat``
+        gains or loses columns, so band files are not column-comparable
+        across runs with and without a window.
+        """
+        import itertools
+
+        from .sparse.solver import count_below
+
+        self._require_H('energy_window')
+        arrays, attr = self.data_controller.data_dicts()
+        ehi = float(emax) + float(margin)
+        nawf = self.H.nawf
+
+        def _window():
+            if nev is not None:
+                chosen, probed = int(nev), None
+            else:
+                from .utils.get_K_grid_fft import get_K_grid_fft_crystal
+
+                kprobe = np.array(list(itertools.product((0.0, 0.5), repeat=3)))  # Gamma + corners
+                extra = nprobe - len(kprobe)
+                if extra > 0:
+                    kgrid = get_K_grid_fft_crystal(attr['nk1'], attr['nk2'], attr['nk3'])
+                    stride = max(1, len(kgrid) // extra)
+                    kprobe = np.vstack((kprobe, kgrid[::stride][:extra]))
+
+                probed = 0
+                for ispin in range(self.H.nspin):
+                    for kf in kprobe:
+                        hk = self.H.assemble_hk(kf, ispin=ispin, sign=-1)
+                        probed = max(probed, count_below(hk, ehi))
+                chosen = min(nawf, probed + max(8, int(np.ceil(0.02 * probed))))
+
+            old = attr.get('bnd', nawf)
+            attr['bnd'] = chosen
+            self._window = (float(emin), float(emax), float(margin), ehi)
+            if self.rank == 0:
+                print(
+                    'Sparse energy window: [%.3f, %.3f] eV + %.3f margin -> ehi = %.3f eV.\n'
+                    "  nev = %d of nawf = %d (was bnd = %d)%s.  attr['bnd'] now means "
+                    "'bands inside the window', not 'projectable bands x cell multiplier'."
+                    % (
+                        emin,
+                        emax,
+                        margin,
+                        ehi,
+                        chosen,
+                        nawf,
+                        old,
+                        ''
+                        if probed is None
+                        else '; probe found %d over %d k-points' % (probed, len(kprobe)),
+                    ),
+                    flush=True,
+                )
+
+        self._guard('energy_window', _window)
+        self._pao.report_module_time('Energy window')
 
     # ------------------------------------------------------------------
     # Bands along a high-symmetry path
@@ -205,7 +334,14 @@ class SparsePAOFLOW:
             nsel = attr['bnd']
 
         def _bands():
-            do_bands_sparse(self.data_controller, self.H, nsel, verbose=attr['verbose'])
+            do_bands_sparse(
+                self.data_controller,
+                self.H,
+                nsel,
+                verbose=attr['verbose'],
+                method=self.solver,
+                ehi=None if self._window is None else self._window[3],
+            )
             E_kp = gather_full(arrays['E_k'], attr['npool'])
             self.data_controller.write_bands(fname, E_kp)
 
@@ -262,6 +398,16 @@ class SparsePAOFLOW:
         self._mesh_plan['smearing'] = smearing
         self._mesh_plan['afac'] = afac
 
+    def plan_pdos(self, emin=-10.0, emax=2.0, ne=1000):
+        """Register PDOS accumulation *before* the mesh pass runs.
+
+        The mesh is fused and streaming, so a PDOS consumer can only join
+        while the pass is executing.  Asking for PDOS after some other
+        property already triggered the mesh forces a full second pass.
+        Call this ahead of the first property (or simply call ``dos()``
+        before ``transport()``) to avoid that."""
+        self._mesh_plan['pdos_spec'] = (emin, emax, ne)
+
     def _ensure_mesh(self, pdos_spec=None):
         """Run the fused mesh pass if its results are not yet available
         (or if PDOS accumulation is requested but was not part of the
@@ -270,14 +416,21 @@ class SparsePAOFLOW:
         from .sparse.pdos import PdosConsumer
 
         arrays, attr = self.data_controller.data_dicts()
+        if pdos_spec is None:
+            pdos_spec = self._mesh_plan.get('pdos_spec')
         have = self._mesh_plan.get('executed', False)
         need_pdos = pdos_spec is not None and not self._mesh_plan.get('pdos_done', False)
         if have and not need_pdos:
             return
-        if have and need_pdos and self.rank == 0 and attr['verbose']:
+        if have and need_pdos and self.rank == 0:
+            # loud and unconditional: this doubles the run time
             print(
-                'Sparse mesh: re-running the fused pass to accumulate PDOS '
-                '(eigenvectors are never stored).'
+                'WARNING: Sparse mesh is being re-run from scratch to accumulate PDOS, '
+                'because the first property call did not request it. This costs a second '
+                'full pass over the k-mesh. Call plan_pdos(emin, emax, ne) before the '
+                'first property (or dos() before transport()) to fold PDOS into the '
+                'original pass.',
+                flush=True,
             )
 
         consumers = []
@@ -295,6 +448,8 @@ class SparsePAOFLOW:
                 afac=self._mesh_plan.get('afac'),
                 smearing=self._mesh_plan.get('smearing', attr.get('smearing', 'gauss')),
                 verbose=attr['verbose'],
+                method=self.solver,
+                ehi=None if self._window is None else self._window[3],
             )
 
         self._guard('sparse_mesh', _mesh)
