@@ -377,13 +377,12 @@ def make_kpath(sym_points: dict, path_str: str, a_pc: np.ndarray, nk_per_seg: in
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbose: bool = False):
+def _extract_hamiltonian(model_dict: dict, verbose: bool = False):
     """Build a PAOFLOW model and extract HRs + R-grid.
 
     Parameters
     ----------
     model_dict : PAOFLOW-compatible model dictionary.
-    outputdir  : temporary output directory name.
     verbose    : passed to PAOFLOW.
 
     Returns
@@ -424,7 +423,7 @@ def _extract_hamiltonian(model_dict: dict, outputdir: str = '_unfold_tmp', verbo
 
     from ._paoflow_runner import build_model_hamiltonian
 
-    return build_model_hamiltonian(model_dict, outputdir=outputdir, verbose=verbose)
+    return build_model_hamiltonian(model_dict, verbose=verbose)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -577,15 +576,11 @@ def unfold_bands(
     # ── 3. Extract Hamiltonians ──────────────────────────────────
     if verbose:
         print('\nBuilding PC Hamiltonian...')
-    HRs_pc, R_pc, nawf_pc, nspin, norb_pc = _extract_hamiltonian(
-        pc_model_dict, '_unfold_pc', verbose=False
-    )
+    HRs_pc, R_pc, nawf_pc, nspin, norb_pc = _extract_hamiltonian(pc_model_dict, verbose=False)
 
     if verbose:
         print('Building SC Hamiltonian...')
-    HRs_sc, R_sc, nawf_sc, _, norb_sc = _extract_hamiltonian(
-        sc_model_dict, '_unfold_sc', verbose=False
-    )
+    HRs_sc, R_sc, nawf_sc, _, norb_sc = _extract_hamiltonian(sc_model_dict, verbose=False)
 
     # ── 4. Build orbital index table ─────────────────────────────
     # norb_sc[I] = number of orbitals on SC atom I.

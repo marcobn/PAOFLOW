@@ -88,7 +88,7 @@ def run_model_bands(
 def build_model_hamiltonian(
     model_dict: dict,
     *,
-    outputdir: str = '_paoflow_tmp',
+    outputdir: str = './',
     smearing: str = 'gauss',
     verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, int, int, np.ndarray | None]:
