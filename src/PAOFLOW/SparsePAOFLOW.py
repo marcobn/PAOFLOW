@@ -20,6 +20,7 @@ from mpi4py import MPI
 
 from .PAOFLOW import PAOFLOW
 from .sparse.hamiltonian import SparseHamiltonian
+from .sparse.log import get_sparse_log
 
 
 def _available_memory_bytes():
@@ -109,6 +110,21 @@ class SparsePAOFLOW:
         self._mesh_plan = {}  # parameters recorded for the fused mesh pass
         self._window = None  # (emin, emax, margin, ehi) once energy_window ran
 
+        self.log = get_sparse_log(self.data_controller)
+        self.log.header(
+            'Sparse run configuration',
+            (
+                ('output directory', self.data_controller.data_attributes['opath']),
+                ('MPI ranks', self.comm.Get_size()),
+                ('k-point pools', npool),
+                ('threshold (eV)', '%.3e' % self.threshold),
+                ('rcut (Bohr)', 'none' if self.rcut is None else '%.3f' % self.rcut),
+                ('solver', self.solver),
+                ('smearing', smearing),
+                ('verbose', verbose),
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Plumbing
     # ------------------------------------------------------------------
@@ -181,14 +197,19 @@ class SparsePAOFLOW:
             del arrays['HRs']
             arrays.pop('Hks', None)
             arrays.pop('Dnm', None)  # carried per bond by the container
-            if self.rank == 0:
-                if self.rcut is not None:
-                    print(
-                        'Sparse conversion: real-space cutoff rcut = %.3f Bohr applied at the '
-                        'base cell, together with threshold = %.1e eV (both are folded into '
-                        'the eigenvalue bound below).' % (self.rcut, self.threshold)
-                    )
-                print(self.H.stats_line())
+            self.log.section('Base-cell conversion (dense H(R) -> sparse bond list)')
+            if self.rcut is not None:
+                self.log.write(
+                    'Real-space cutoff rcut = %.3f Bohr applied at the base cell, together\n'
+                    'with threshold = %.1e eV. Both truncations are folded into the\n'
+                    'eigenvalue bound below.' % (self.rcut, self.threshold)
+                )
+            else:
+                self.log.write(
+                    'Element threshold = %.1e eV applied at the base cell; no real-space '
+                    'cutoff.' % self.threshold
+                )
+            self.log.write(self.H.stats_line())
 
         self._guard('sparse_conversion', _convert)
         self._pao.report_module_time('Sparse conversion')
@@ -277,6 +298,9 @@ class SparsePAOFLOW:
             )
         )
 
+        self.log.section('Doubling pre-flight projection')
+        self.log.write(report)
+
         if proj['peak_bytes'] > budget and not force:
             exits = []
             if self.rcut is None:
@@ -305,8 +329,6 @@ class SparsePAOFLOW:
                 % (report, proj['peak_bytes'] / budget, '\n  - '.join(exits))
             )
 
-        if self.rank == 0 and attr['verbose']:
-            print(report, flush=True)
         return proj
 
     def doubling_Hamiltonian(self, nx, ny, nz, mem_budget_gb=None, force=False):
@@ -350,8 +372,8 @@ class SparsePAOFLOW:
             # the bond list is final here: release the raw arrays the
             # assembly plan duplicates (about half the steady-state bytes)
             self.H.compact()
-            if self.rank == 0:
-                print(self.H.stats_line())
+            self.log.section('Doubling (%d,%d,%d)' % (nx, ny, nz))
+            self.log.write(self.H.stats_line())
 
         self._guard('doubling_Hamiltonian', _double)
         self._pao.report_module_time('doubling_Hamiltonian')
@@ -427,25 +449,21 @@ class SparsePAOFLOW:
             old = attr.get('bnd', nawf)
             attr['bnd'] = chosen
             self._window = (float(emin), float(emax), float(margin), ehi)
-            if self.rank == 0:
-                print(
-                    'Sparse energy window: [%.3f, %.3f] eV + %.3f margin -> ehi = %.3f eV.\n'
-                    "  nev = %d of nawf = %d (was bnd = %d)%s.  attr['bnd'] now means "
-                    "'bands inside the window', not 'projectable bands x cell multiplier'."
-                    % (
-                        emin,
-                        emax,
-                        margin,
-                        ehi,
-                        chosen,
-                        nawf,
-                        old,
-                        ''
-                        if probed is None
-                        else '; probe found %d over %d k-points' % (probed, len(kprobe)),
-                    ),
-                    flush=True,
-                )
+            self.log.section('Energy window')
+            self.log.field('window (eV)', '[%.3f, %.3f] + %.3f margin' % (emin, emax, margin))
+            self.log.field('ehi (eV)', '%.3f' % ehi)
+            self.log.field('nev', '%d of nawf = %d (was bnd = %d)' % (chosen, nawf, old))
+            self.log.field(
+                'probe',
+                'skipped (nev given)'
+                if probed is None
+                else '%d bands found over %d k-points' % (probed, len(kprobe)),
+            )
+            self.log.write(
+                "attr['bnd'] now means 'bands inside the window', not 'projectable bands\n"
+                "x cell multiplier'; band files are not column-comparable with runs that\n"
+                'have no window.'
+            )
 
         self._guard('energy_window', _window)
         self._pao.report_module_time('Energy window')
@@ -516,11 +534,11 @@ class SparsePAOFLOW:
         ]
         attr['nk1'], attr['nk2'], attr['nk3'] = nfft
         attr['nkpnts'] = nfft[0] * nfft[1] * nfft[2]
-        if self.rank == 0 and attr['verbose']:
-            print(
-                'Sparse interpolation: property mesh set to %d x %d x %d '
-                '(no new data — bond list evaluated on the finer grid)' % tuple(nfft)
-            )
+        self.log.section('Interpolation')
+        self.log.write(
+            'Property mesh set to %d x %d x %d (no new data — the bond list is simply\n'
+            'evaluated on the finer grid; zero-padding H(R) is exact here).' % tuple(nfft)
+        )
         self._pao.report_module_time('R -> k with Zero Padding')
 
     # ------------------------------------------------------------------
@@ -572,14 +590,15 @@ class SparsePAOFLOW:
             return
         if have and need_pdos and self.rank == 0:
             # loud and unconditional: this doubles the run time
-            print(
+            message = (
                 'WARNING: Sparse mesh is being re-run from scratch to accumulate PDOS, '
                 'because the first property call did not request it. This costs a second '
                 'full pass over the k-mesh. Call plan_pdos(emin, emax, ne) before the '
                 'first property (or dos() before transport()) to fold PDOS into the '
-                'original pass.',
-                flush=True,
+                'original pass.'
             )
+            print(message, flush=True)
+            self.log.write('\n' + message)
 
         consumers = []
         if pdos_spec is not None:

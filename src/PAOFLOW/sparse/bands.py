@@ -17,10 +17,6 @@ shell), far below plotting resolution for converged R grids.
 """
 
 import numpy as np
-from mpi4py import MPI
-
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
 
 
 def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto', ehi=None):
@@ -32,6 +28,7 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto
     from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
     from ..utils.communication import scatter_full
     from ..utils.constants import ANGSTROM_AU
+    from .log import get_sparse_log
     from .mesh import check_window_coverage
     from .solver import describe_method, solve_lowest
 
@@ -57,8 +54,12 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto
     nk_local = kq_aux.shape[0]
     nspin = sparse_h.nspin
 
-    if rank == 0:
-        print(describe_method(sparse_h.nawf, nsel, method=method), flush=True)
+    log = get_sparse_log(data_controller)
+    log.section('Bands (path solve)')
+    log.field('k-points on path', nkpi)
+    log.field('bands requested', nsel)
+    log.field('window top ehi (eV)', 'none' if ehi is None else '%.3f' % ehi)
+    log.write(describe_method(sparse_h.nawf, nsel, method=method))
 
     E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
     deficit = 0
@@ -72,10 +73,8 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto
             v0 = np.ascontiguousarray(V[:, 0])  # warm start; V is discarded
             if ehi is not None and E[-1] < ehi:
                 deficit += 1
-            if verbose and rank == 0 and (ik + 1) % step == 0:
-                print(
-                    'Sparse bands progress: %d/%d local k-points' % (ik + 1, nk_local), flush=True
-                )
+            if verbose and (ik + 1) % step == 0:
+                log.write('  progress: %d/%d local k-points' % (ik + 1, nk_local))
 
     arrays['E_k'] = E_k
     check_window_coverage(deficit, nsel, ehi, 'bands')

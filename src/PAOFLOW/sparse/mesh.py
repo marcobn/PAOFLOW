@@ -56,6 +56,7 @@ def run_mesh(
     from ..spectrum.do_eigh import get_degeneracies
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
+    from .log import get_sparse_log
     from .solver import describe_method, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
@@ -72,8 +73,13 @@ def run_mesh(
     if afac is None:
         afac = 1.0 if smearing == 'm-p' else 0.7
 
-    if rank == 0:
-        print(describe_method(sparse_h.nawf, nev, method=method), flush=True)
+    log = get_sparse_log(data_controller)
+    log.section('Mesh pass (eigenvalues + velocities%s)' % (' + PDOS' if consumers else ''))
+    log.field('mesh', '%d x %d x %d  (%d k-points)' % (nk1, nk2, nk3, nkpnts))
+    log.field('bands per k (nev)', nev)
+    log.field('smearing', '%s, afac = %.3f' % (smearing, afac))
+    log.field('window top ehi (eV)', 'none' if ehi is None else '%.3f' % ehi)
+    log.write(describe_method(sparse_h.nawf, nev, method=method))
 
     E_k = np.zeros((nk_local, nev, nspin), dtype=float)
     velkp = np.zeros((nk_local, 3, nev, nspin), dtype=float)
@@ -120,8 +126,8 @@ def run_mesh(
                 c.on_k(ik, ispin, E, V, vel, delta)
             # V goes out of scope here — never stored
 
-            if verbose and rank == 0 and (ik + 1) % step == 0:
-                print('Sparse mesh progress: %d/%d local k-points' % (ik + 1, nk_local), flush=True)
+            if verbose and (ik + 1) % step == 0:
+                log.write('  progress: %d/%d local k-points' % (ik + 1, nk_local))
 
     arrays['E_k'] = E_k
     arrays['velkp'] = velkp
