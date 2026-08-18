@@ -292,3 +292,56 @@ def test_pattern_reused_across_k():
     plan_before = sph.plan
     sph.assemble_hk(rng.standard_normal(3))
     assert sph.plan is plan_before
+
+
+def test_project_doubling_bond_count_is_exact():
+    """The projection must match what doubling actually produces, since a
+    pre-flight gate that mis-sizes is worse than none."""
+    from PAOFLOW.sparse.doubling import double_axis
+
+    rng = np.random.default_rng(77)
+    dc, _ = _make_dc(rng)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
+
+    for nx, ny, nz in ((1, 0, 0), (1, 1, 0), (1, 1, 1), (2, 1, 1)):
+        proj = sph.project_doubling(nx, ny, nz)
+        assert proj['N'] == 2 ** (nx + ny + nz)
+        assert proj['nawf'] == sph.nawf * proj['N']
+
+        h = sph
+        for axis, reps in ((0, nx), (1, ny), (2, nz)):
+            for _ in range(reps):
+                h = double_axis(h, axis)
+        # exact: doubling replicates every bond twice per step
+        assert h.nnz == proj['nnz']
+        assert proj['dense_hk_bytes'] == 16 * proj['nawf'] ** 2
+
+
+def test_project_doubling_steady_brackets_hermitized_size():
+    """hermitize() unions the list with its mirror, so the real steady count
+    lies in [nnz, 2*nnz] -- the projection must not sit below it."""
+    from PAOFLOW.sparse.doubling import double_axis
+
+    rng = np.random.default_rng(78)
+    dc, _ = _make_dc(rng)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=0.3)  # asymmetric drops
+
+    proj = sph.project_doubling(1, 1, 1)
+    h = sph
+    for axis in (0, 1, 2):
+        h = double_axis(h, axis)
+    assert h.nnz == proj['nnz']
+    final = h.hermitize().nnz
+    assert proj['nnz'] <= final <= 2 * proj['nnz']
+
+    _, plan_b, peak_b = sph.bytes_per_bond()
+    assert peak_b > plan_b  # the transient, not the resting state, gates a run
+    assert proj['peak_bytes'] == proj['nnz'] * peak_b
+
+
+def test_project_doubling_zero_is_identity():
+    rng = np.random.default_rng(79)
+    dc, _ = _make_dc(rng)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
+    proj = sph.project_doubling(0, 0, 0)
+    assert proj['N'] == 1 and proj['nnz'] == sph.nnz and proj['nawf'] == sph.nawf

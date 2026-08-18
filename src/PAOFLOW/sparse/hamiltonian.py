@@ -41,6 +41,13 @@ correction (``Dnm`` term).  ``Dnm`` is stored per bond, never as a dense
 import numpy as np
 from scipy.sparse import csr_matrix
 
+# Bond-count growth across hermitize(), for size projection only.  The
+# operation unions the list with its mirrored conjugate, so the true factor
+# lies in [1, 2]: 1 when every (j,i,-R) partner is already present, 2 when
+# none is.  Thresholding drops partners asymmetrically, so it sits above 1;
+# measured 1.19 on example01 at nx=1, rounded up here.
+HERMITIZE_GROWTH = 1.25
+
 
 def _r_offsets(nk_grid):
     """Per-axis shift mapping folded components onto ``[0, nk)``.
@@ -566,6 +573,75 @@ class SparseHamiltonian:
             np.abs(self.vals).max(axis=1),
         )
         return float(err.max())
+
+    def bytes_per_bond(self):
+        """Bytes per bond for the three states a bond list passes through.
+
+        Returned as ``(container, plan, hermitize_peak)``, all per bond of
+        the list being described.  Derived from the actual allocations, so
+        these track the implementation rather than a remembered constant:
+
+        - ``container``: ``rows`` + ``cols`` + ``ridx`` (int32) + ``vals``
+          (complex128 per spin) + ``dnm`` (3 float64).
+        - ``plan``: what survives :meth:`compact` — ``ridx`` (int64),
+          ``vals`` (complex128 per spin), ``rcoef`` (3 float64), plus the
+          CSR pattern (``seg_starts`` int64 + ``indices`` int32, at most
+          one per bond).
+        - ``hermitize_peak``: everything :meth:`hermitize` holds at once,
+          counted per *input* bond — it works on ``2*nnz`` rows, so this is
+          the high-water mark of the whole doubling stage and the number
+          that decides whether a run fits.  Terms: ``triples`` +
+          ``mirrored`` (24 each), ``rows_all``/``cols_all`` (16),
+          ``triples_all`` (48), ``vals`` (32/spin), ``dnm`` (48), ``code``
+          (16), ``np.unique``'s sorted copy and argsort (32), ``inv`` +
+          ``first`` + ``uniq_code`` (48), the output arrays (~112), and the
+          input container that stays alive throughout.
+        """
+        container = 4 + 4 + 4 + 16 * self.nspin + 24
+        plan = 8 + 16 * self.nspin + 24 + 8 + 4
+        hermitize_peak = 24 + 24 + 16 + 48 + 32 * self.nspin + 48 + 16 + 32 + 48 + 112 + container
+        return container, plan, hermitize_peak
+
+    def project_doubling(self, nx, ny, nz):
+        """Project the cost of ``doubling_Hamiltonian(nx, ny, nz)`` without
+        running it.
+
+        Doubling is pure index arithmetic that replicates every bond
+        exactly twice per step (see :mod:`PAOFLOW.sparse.doubling`), so the
+        final bond count is ``nnz * 2**(nx+ny+nz)`` — exact, not a
+        heuristic.  ``nawf`` scales the same way.  The only estimated
+        quantity is the peak, which assumes ``hermitize`` is the
+        high-water mark of the stage (it is: the per-step ``double_axis``
+        transients act on lists at most half as long).
+
+        ``nnz`` is the count *entering* hermitization, which is what the
+        peak scales with.  Hermitization then takes the union of the list
+        with its mirrored conjugate, so the steady-state count lands
+        between ``nnz`` (list already Hermitian, every partner present)
+        and ``2*nnz`` (no partner present at all); thresholding drops
+        partners asymmetrically, so growth is the norm — measured 1.19x on
+        example01 at nx=1.  ``steady_bytes`` therefore carries
+        ``HERMITIZE_GROWTH``.
+
+        Returns a dict with ``d``, ``N``, ``nawf``, ``nnz``,
+        ``steady_bytes``, ``peak_bytes`` and ``dense_hk_bytes``.
+        """
+        d = int(nx) + int(ny) + int(nz)
+        if d < 0:
+            raise ValueError('project_doubling: negative doubling counts')
+        N = 1 << d
+        nnz_final = self.nnz * N
+        nawf_final = self.nawf * N
+        _, plan_b, peak_b = self.bytes_per_bond()
+        return {
+            'd': d,
+            'N': N,
+            'nawf': nawf_final,
+            'nnz': nnz_final,
+            'steady_bytes': int(nnz_final * HERMITIZE_GROWTH) * plan_b,
+            'peak_bytes': nnz_final * peak_b,
+            'dense_hk_bytes': 16 * nawf_final * nawf_final,
+        }
 
     def stats_line(self):
         mbytes = self.nnz * (4 + 4 + 4 + 16 * self.nspin + 24) / 1024**2

@@ -141,15 +141,10 @@ def _orthonormalize_degenerate(E, V, decimals=5):
     what counts as degenerate.
     """
     Er = np.around(E, decimals=decimals)
-    # boundaries where the rounded eigenvalue changes
     edges = np.flatnonzero(np.r_[True, Er[1:] != Er[:-1], True])
     for a, b in zip(edges[:-1], edges[1:]):
         if b - a > 1:
             Q, R = np.linalg.qr(V[:, a:b])
-            # A rank-deficient group means ARPACK returned duplicate
-            # directions rather than a basis: QR would then invent
-            # orthogonal columns that are not eigenvectors at all.  That
-            # is a wrong answer, not a slow one, so it fails loudly.
             if np.abs(np.diag(R)).min() < 1e-8:
                 raise RuntimeError(
                     'solve_lowest: the %d-fold degenerate group at E = %.6f eV came back '
@@ -240,22 +235,10 @@ def solve_lowest(
         sigma = gershgorin_lower(H) - 1.0
 
     def _sorted_lowest(E, V):
-        # ARPACK's return order follows the transformed problem and is not
-        # guaranteed ascending; sort before dropping the guard pairs, or
-        # degenerate copies land in the discarded tail.
         order = np.argsort(E)[:nev]
         return E[order], _orthonormalize_degenerate(E[order], V[:, order])
 
     attempts = []
-    # NOT scipy's default ncv = min(n, max(2k+1, 20)).  A Krylov space built
-    # from one starting vector holds at most one vector per degenerate
-    # eigenspace, and implicit restarting only partly makes up for it: at
-    # 2k+1 ARPACK silently returns *fewer copies* than the true multiplicity
-    # of a high-multiplicity eigenvalue (measured: 15 of 32, 7 of 16), which
-    # shifts every band above it without ever raising.  Cell folding makes
-    # 8-64-fold exact multiplets the normal case here, so the starting
-    # Krylov space is widened to 4k+1, which reproduced the exact
-    # multiplicity in every case measured.  Do not lower it back.
     ncv0 = min(n, max(4 * k + 1, 40))
     ncv = ncv0
     maxiter = None  # ARPACK default: n * 10
@@ -317,4 +300,4 @@ def count_below(H, ehi, dense_n_max=DENSE_N_MAX):
         check_finite=False,
         overwrite_a=True,
     )
-    return int(len(E))
+    return len(E)

@@ -22,6 +22,35 @@ from .PAOFLOW import PAOFLOW
 from .sparse.hamiltonian import SparseHamiltonian
 
 
+def _available_memory_bytes():
+    """Free memory from ``/proc/meminfo``, or ``None`` where unreadable.
+
+    ``MemAvailable`` rather than ``MemFree``: it accounts for reclaimable
+    page cache, which is what a large allocation can actually take over.
+    """
+    try:
+        with open('/proc/meminfo') as fh:
+            for line in fh:
+                if line.startswith('MemAvailable:'):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _node_local_ranks(comm):
+    """Ranks sharing this node, which all hold their own copy of the bond
+    list.  Falls back to the world size (the pessimistic reading) if the
+    MPI build has no shared-memory split."""
+    try:
+        node = comm.Split_type(MPI.COMM_TYPE_SHARED)
+        size = node.Get_size()
+        node.Free()
+        return size
+    except (AttributeError, MPI.Exception):
+        return comm.Get_size()
+
+
 class SparsePAOFLOW:
     def __init__(
         self,
@@ -168,11 +197,129 @@ class SparsePAOFLOW:
     # Doubling (purely sparse)
     # ------------------------------------------------------------------
 
-    def doubling_Hamiltonian(self, nx, ny, nz):
+    def _preflight_doubling(self, nx, ny, nz, mem_budget_gb=None, force=False):
+        """Project the cost of doubling before allocating anything.
+
+        ``nx, ny, nz`` are doubling *exponents*: the cell multiplier is
+        ``N = 2**(nx+ny+nz)``, so 4,4,4 is 64x the size of 2,2,2, not 2x.
+        That is easy to misjudge, and the failure mode without a gate is an
+        OOM kill minutes into an HPC job with no diagnostic. This raises in
+        under a second instead, with the projected numbers and the exits.
+
+        The bond list is replicated on every rank (doubling is deterministic
+        and needs no communication), so the budget is per rank and *more
+        ranks on a node makes the fit worse, not better*.
+        """
+        from .sparse.solver import DENSE_RATIO, select_method
+
+        attr = self.data_controller.data_attributes
+        proj = self.H.project_doubling(nx, ny, nz)
+        gb = 1024.0**3
+
+        local_ranks = _node_local_ranks(self.comm)
+        avail = _available_memory_bytes()
+        if mem_budget_gb is not None:
+            budget = float(mem_budget_gb) * gb
+            budget_src = 'mem_budget_gb=%.1f (caller)' % mem_budget_gb
+        elif avail is not None:
+            budget = 0.8 * avail / local_ranks
+            budget_src = '80%% of MemAvailable (%.1f GB) over %d rank(s) on this node' % (
+                avail / gb,
+                local_ranks,
+            )
+        else:
+            budget = 8.0 * gb
+            budget_src = 'default 8.0 GB (MemAvailable unreadable)'
+
+        # nev if energy_window() is never called: doubling_attr_arry doubles
+        # attr['bnd'] once per doubling.
+        bnd_final = int(attr['bnd']) * proj['N']
+        try:
+            solver_note = 'dispatch: %s' % (
+                select_method(proj['nawf'], bnd_final, method=self.solver)[0].upper()
+            )
+        except NotImplementedError:
+            solver_note = (
+                'solve REFUSED at nev=bnd=%d (%.0f%% of n, past the %.0f%% iterative '
+                'regime, and n > dense_n_max) — energy_window() would have to bring '
+                'nev under %d for this to run'
+                % (
+                    bnd_final,
+                    100.0 * bnd_final / proj['nawf'],
+                    100.0 * DENSE_RATIO,
+                    int(DENSE_RATIO * proj['nawf']),
+                )
+            )
+
+        report = (
+            'Doubling projection for nx,ny,nz = %d,%d,%d  (N = 2^%d = %d cells)\n'
+            '  nawf        %d -> %d\n'
+            '  bonds       %.3gM -> %.3gM  (doubling replicates each bond exactly 2x per step)\n'
+            '  peak/rank   %.2f GB during hermitize   [budget %.2f GB: %s]\n'
+            '  steady/rank %.2f GB after compact()\n'
+            '  dense H(k)  %.2f GB per k-point;  %s'
+            % (
+                nx,
+                ny,
+                nz,
+                proj['d'],
+                proj['N'],
+                self.H.nawf,
+                proj['nawf'],
+                self.H.nnz / 1e6,
+                proj['nnz'] / 1e6,
+                proj['peak_bytes'] / gb,
+                budget / gb,
+                budget_src,
+                proj['steady_bytes'] / gb,
+                proj['dense_hk_bytes'] / gb,
+                solver_note,
+            )
+        )
+
+        if proj['peak_bytes'] > budget and not force:
+            exits = []
+            if self.rcut is None:
+                exits.append(
+                    'set rcut (Bohr) in the constructor: the bond list is currently '
+                    'untruncated in real space, which is usually the largest single factor'
+                )
+            if proj['d'] > 1:
+                exits.append(
+                    'reduce the doubling count — d = nx+ny+nz is an exponent, so d-1 '
+                    'halves every number above (%.2f GB peak)' % (proj['peak_bytes'] / 2 / gb)
+                )
+            if local_ranks > 1:
+                exits.append(
+                    'run fewer ranks per node: the bond list is replicated, so %d ranks '
+                    'here each need the full %.2f GB' % (local_ranks, proj['peak_bytes'] / gb)
+                )
+            exits.append(
+                'raise the budget explicitly with '
+                'doubling_Hamiltonian(..., mem_budget_gb=...) or bypass with force=True '
+                'if this projection is wrong for your machine'
+            )
+            raise RuntimeError(
+                '%s\n\nProjected peak exceeds the budget by %.1fx. Refusing to start; '
+                'nothing has been allocated.\nExits:\n  - %s'
+                % (report, proj['peak_bytes'] / budget, '\n  - '.join(exits))
+            )
+
+        if self.rank == 0 and attr['verbose']:
+            print(report, flush=True)
+        return proj
+
+    def doubling_Hamiltonian(self, nx, ny, nz, mem_budget_gb=None, force=False):
         """Double the cell ``nx``/``ny``/``nz`` times along each lattice
         vector by index arithmetic on the bond list (never dense), then
         Hermitize once — the bond-level equivalent of the per-k
-        Hermitizations the dense pipeline applies downstream."""
+        Hermitizations the dense pipeline applies downstream.
+
+        ``nx``/``ny``/``nz`` are doubling counts, so the cell multiplier is
+        ``2**(nx+ny+nz)``.  A pre-flight projection refuses sizes that
+        cannot fit rather than letting them OOM part-way; see
+        :meth:`_preflight_doubling` for ``mem_budget_gb`` and ``force``.
+        """
         from .hamiltonian.do_doubling import doubling_attr_arry
         from .sparse.doubling import double_axis
 
@@ -184,6 +331,7 @@ class SparsePAOFLOW:
                 "doubling_attr_arry doubles attr['bnd'] on every call, which would scale the "
                 'window-sized nev by the cell multiplier. Call energy_window() after doubling.'
             )
+        self._preflight_doubling(nx, ny, nz, mem_budget_gb=mem_budget_gb, force=force)
         attr['nx'], attr['ny'], attr['nz'] = nx, ny, nz
 
         def _double():
