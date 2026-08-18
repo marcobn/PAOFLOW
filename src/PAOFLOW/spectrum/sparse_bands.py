@@ -16,7 +16,7 @@ import os
 
 import numpy as np
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import ArpackNoConvergence, eigsh
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 
@@ -1044,10 +1044,74 @@ class SparseEDTB:
         )
         return Hk
 
+    # ── Windowed eigensolver (shift-invert Lanczos + dense fallback) ─
+
+    # Matrices this small are always cheaper to diagonalise densely.
+    _DENSE_ALWAYS_NAWF = 1000
+    # Largest matrix we are willing to densify as a fallback on ARPACK failure.
+    _DENSE_MAX_NAWF = 6000
+
+    def _solve_window(self, Hk, n_eigs, sigma, return_eigenvectors, **kwargs):
+        """Return the ``n_eigs`` eigenpairs of ``Hk`` nearest ``sigma``.
+
+        Shift-invert Lanczos is efficient only when ``n_eigs << nawf``.  For
+        small matrices, or when a large fraction of the spectrum is requested,
+        ARPACK converges slowly or not at all — and its
+        :class:`ArpackNoConvergence` is not picklable, so a failure inside a
+        joblib/loky worker surfaces as an opaque ``BrokenProcessPool``.  We
+        therefore diagonalise densely in those regimes (fast and always
+        convergent), and fall back to dense if ARPACK fails; a genuinely
+        intractable case raises a plain (picklable) ``RuntimeError``.
+        """
+        n = self.nawf
+        n_eigs = min(n_eigs, n - 1)
+
+        # Use dense for tiny matrices or when a large fraction of the spectrum
+        # is requested (where shift-invert Lanczos struggles to converge).
+        use_dense = (n <= self._DENSE_ALWAYS_NAWF) or (n_eigs > n // 3)
+
+        if not use_dense:
+            try:
+                out = eigsh(
+                    Hk,
+                    k=n_eigs,
+                    sigma=sigma,
+                    which="LM" if sigma is not None else "SA",
+                    return_eigenvectors=return_eigenvectors,
+                    **kwargs,
+                )
+            except ArpackNoConvergence:
+                if n > self._DENSE_MAX_NAWF:
+                    raise RuntimeError(
+                        f"eigsh failed to converge for {n_eigs} eigenvalues "
+                        f"near sigma={sigma} (nawf={n}); increase 'maxiter'/'ncv' "
+                        f"or reduce n_eigs."
+                    ) from None
+                use_dense = True
+
+        if use_dense:
+            A = Hk.toarray()
+            A = 0.5 * (A + A.conj().T)
+            if return_eigenvectors:
+                w, v = np.linalg.eigh(A)
+            else:
+                w = np.linalg.eigvalsh(A)
+            if sigma is None:
+                sel = np.arange(n_eigs)
+            else:
+                sel = np.argsort(np.abs(w - sigma))[:n_eigs]
+            out = (w[sel], v[:, sel]) if return_eigenvectors else w[sel]
+
+        if return_eigenvectors:
+            evals, evecs = out
+            order = np.argsort(evals)
+            return evals[order], evecs[:, order]
+        return np.sort(out)
+
     # ── Eigenvalues at a single k-point ─────────────────────────
 
     def eigvals_at_k(self, k_frac, n_eigs=50, sigma=None, **kwargs):
-        """Compute selected eigenvalues at one k-point via Lanczos.
+        """Compute selected eigenvalues at one k-point.
 
         Parameters
         ----------
@@ -1055,10 +1119,9 @@ class SparseEDTB:
         n_eigs : int
             Number of eigenvalues to compute.
         sigma : float or None
-            Shift-invert target.  If provided, eigsh computes eigenvalues
-            nearest to sigma.  Much faster convergence for interior eigenvalues
-            but requires a sparse LU factorization.
-            If None, computes the smallest eigenvalues (which='SM').
+            Shift-invert target.  If provided, the eigenvalues nearest sigma
+            are returned (fast for interior eigenvalues); otherwise the
+            smallest eigenvalues are returned.
         **kwargs
             Extra arguments passed to scipy.sparse.linalg.eigsh.
 
@@ -1067,28 +1130,17 @@ class SparseEDTB:
         eigenvalues : ndarray, shape (n_eigs,)  sorted ascending
         """
         Hk = self.build_hk(k_frac)
-        n_eigs = min(n_eigs, self.nawf - 2)
-
-        if sigma is not None:
-            evals = eigsh(
-                Hk,
-                k=n_eigs,
-                sigma=sigma,
-                which="LM",
-                return_eigenvectors=False,
-                **kwargs,
-            )
-        else:
-            evals = eigsh(Hk, k=n_eigs, which="SA", return_eigenvectors=False, **kwargs)
-        return np.sort(evals)
+        return self._solve_window(
+            Hk, n_eigs, sigma, return_eigenvectors=False, **kwargs
+        )
 
     # ── Eigenpairs at a single k-point (for unfolding) ──────────
 
     def eigh_at_k(self, k_frac, n_eigs=50, sigma=None, **kwargs):
         """Compute selected eigenvalues *and* eigenvectors at one k-point.
 
-        Same solver as :meth:`eigvals_at_k` but also returns the Lanczos
-        eigenvectors, needed to build spectral weights when unfolding.
+        Same solver as :meth:`eigvals_at_k` but also returns the eigenvectors,
+        needed to build spectral weights when unfolding.
 
         Parameters
         ----------
@@ -1106,23 +1158,7 @@ class SparseEDTB:
         evecs : ndarray, shape (nawf, n_eigs)     columns match ``evals``
         """
         Hk = self.build_hk(k_frac)
-        n_eigs = min(n_eigs, self.nawf - 2)
-
-        if sigma is not None:
-            evals, evecs = eigsh(
-                Hk,
-                k=n_eigs,
-                sigma=sigma,
-                which="LM",
-                return_eigenvectors=True,
-                **kwargs,
-            )
-        else:
-            evals, evecs = eigsh(
-                Hk, k=n_eigs, which="SA", return_eigenvectors=True, **kwargs
-            )
-        order = np.argsort(evals)
-        return evals[order], evecs[:, order]
+        return self._solve_window(Hk, n_eigs, sigma, return_eigenvectors=True, **kwargs)
 
     # ── Full band structure ─────────────────────────────────────
 
