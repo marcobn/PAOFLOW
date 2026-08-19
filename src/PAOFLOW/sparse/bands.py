@@ -19,18 +19,18 @@ shell), far below plotting resolution for converged R grids.
 import numpy as np
 
 
-def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto', ehi=None):
+def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, hk_solver='auto', ehi=None):
     """Compute ``arrays['E_k']`` (local slice, ``(nkpi_local, nsel, nspin)``)
     along the interpolation path.  Returns nothing; mirrors dense layout.
 
-    ``method`` picks the eigensolver branch once for the whole path;
+    ``hk_solver`` picks the per-k kernel once for the whole path;
     ``ehi`` enables the same window-coverage guard the mesh pass uses."""
     from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
     from ..utils.communication import scatter_full
     from ..utils.constants import ANGSTROM_AU
     from .log import get_sparse_log
     from .mesh import check_window_coverage
-    from .solver import describe_method, solve_lowest
+    from .solver import describe_hk_solver, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
 
@@ -59,7 +59,7 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto
     log.field('k-points on path', nkpi)
     log.field('bands requested', nsel)
     log.field('window top ehi (eV)', 'none' if ehi is None else '%.3f' % ehi)
-    log.write(describe_method(sparse_h.nawf, nsel, method=method))
+    log.write(describe_hk_solver(sparse_h.nawf, nsel, hk_solver=hk_solver))
 
     E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
     deficit = 0
@@ -68,7 +68,7 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, method='auto
         v0 = None
         for ik in range(nk_local):
             hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=+1, cart=True)
-            E, V = solve_lowest(hk, nsel, v0=v0, method=method)
+            E, V = solve_lowest(hk, nsel, v0=v0, hk_solver=hk_solver)
             E_k[ik, :, ispin] = E
             v0 = np.ascontiguousarray(V[:, 0])  # warm start; V is discarded
             if ehi is not None and E[-1] < ehi:

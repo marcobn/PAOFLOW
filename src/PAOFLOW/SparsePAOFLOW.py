@@ -64,7 +64,7 @@ class SparsePAOFLOW:
         verbose=False,
         threshold=1.0e-3,
         rcut=None,
-        solver='auto',
+        hk_solver='auto',
         restart=False,
         dft='QE',
     ):
@@ -84,10 +84,17 @@ class SparsePAOFLOW:
             comparable with an ``rcut=None`` run; the ``eig_bound``
             printed at conversion covers both.  Default ``None``.
 
-            solver ('auto' | 'dense' | 'arpack'): per-k eigensolver
-            branch.  ``'auto'`` dispatches on ``(nawf, nev)`` — see
-            :func:`PAOFLOW.sparse.solver.select_method`.  The explicit
-            values force one branch for A/B validation.
+            hk_solver ('auto' | 'sparse' | 'dense'): kernel used to
+            diagonalize ``H(k)`` at a single k-point.  It names the
+            eigensolver only: ``'dense'`` does **not** put the run back on
+            the dense PAOFLOW pipeline — ``H(R)`` stays a bond list either
+            way, and no ``O(nk * nawf^2)`` tensor is ever formed.
+            ``'sparse'`` is ARPACK shift-invert and never densifies
+            ``H(k)``; ``'dense'`` is LAPACK ``zheevr`` on one ``(n, n)``
+            scratch matrix that is freed before the next k-point.
+            ``'auto'`` dispatches on ``(nawf, nev)`` — see
+            :func:`PAOFLOW.sparse.solver.select_hk_solver`.  The explicit
+            values force one kernel for A/B validation.  Default ``'auto'``.
         """
         self._pao = PAOFLOW(
             workpath=workpath,
@@ -105,7 +112,7 @@ class SparsePAOFLOW:
         self.rank = self._pao.rank
         self.threshold = float(threshold)
         self.rcut = None if rcut is None else float(rcut)
-        self.solver = solver
+        self.hk_solver = hk_solver
         self.H = None  # SparseHamiltonian, set by pao_hamiltonian
         self._mesh_plan = {}  # parameters recorded for the fused mesh pass
         self._window = None  # (emin, emax, margin, ehi) once energy_window ran
@@ -119,7 +126,7 @@ class SparsePAOFLOW:
                 ('k-point pools', npool),
                 ('threshold (eV)', '%.3e' % self.threshold),
                 ('rcut (Bohr)', 'none' if self.rcut is None else '%.3f' % self.rcut),
-                ('solver', self.solver),
+                ('H(k) solver', self.hk_solver),
                 ('smearing', smearing),
                 ('verbose', verbose),
             ),
@@ -231,7 +238,7 @@ class SparsePAOFLOW:
         and needs no communication), so the budget is per rank and *more
         ranks on a node makes the fit worse, not better*.
         """
-        from .sparse.solver import DENSE_RATIO, select_method
+        from .sparse.solver import DENSE_RATIO, select_hk_solver
 
         attr = self.data_controller.data_attributes
         proj = self.H.project_doubling(nx, ny, nz)
@@ -257,7 +264,7 @@ class SparsePAOFLOW:
         bnd_final = int(attr['bnd']) * proj['N']
         try:
             solver_note = 'dispatch: %s' % (
-                select_method(proj['nawf'], bnd_final, method=self.solver)[0].upper()
+                select_hk_solver(proj['nawf'], bnd_final, hk_solver=self.hk_solver)[0].upper()
             )
         except NotImplementedError:
             solver_note = (
@@ -505,7 +512,7 @@ class SparsePAOFLOW:
                 self.H,
                 nsel,
                 verbose=attr['verbose'],
-                method=self.solver,
+                hk_solver=self.hk_solver,
                 ehi=None if self._window is None else self._window[3],
             )
             E_kp = gather_full(arrays['E_k'], attr['npool'])
@@ -615,7 +622,7 @@ class SparsePAOFLOW:
                 afac=self._mesh_plan.get('afac'),
                 smearing=self._mesh_plan.get('smearing', attr.get('smearing', 'gauss')),
                 verbose=attr['verbose'],
-                method=self.solver,
+                hk_solver=self.hk_solver,
                 ehi=None if self._window is None else self._window[3],
             )
 

@@ -38,13 +38,13 @@ def run_mesh(
     afac=None,
     smearing='gauss',
     verbose=False,
-    method='auto',
+    hk_solver='auto',
     ehi=None,
 ):
     """Fused mesh pass.
 
-    ``method`` selects the eigensolver branch once for the whole loop (see
-    :func:`~PAOFLOW.sparse.solver.select_method`); it depends only on
+    ``hk_solver`` selects the per-k kernel once for the whole loop (see
+    :func:`~PAOFLOW.sparse.solver.select_hk_solver`); it depends only on
     ``(nawf, nev)``, so it cannot change from k-point to k-point.
 
     ``ehi`` (eV), when given, is the top of the energy window the caller
@@ -57,7 +57,7 @@ def run_mesh(
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
     from .log import get_sparse_log
-    from .solver import describe_method, solve_lowest
+    from .solver import describe_hk_solver, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
     nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
@@ -79,7 +79,7 @@ def run_mesh(
     log.field('bands per k (nev)', nev)
     log.field('smearing', '%s, afac = %.3f' % (smearing, afac))
     log.field('window top ehi (eV)', 'none' if ehi is None else '%.3f' % ehi)
-    log.write(describe_method(sparse_h.nawf, nev, method=method))
+    log.write(describe_hk_solver(sparse_h.nawf, nev, hk_solver=hk_solver))
 
     E_k = np.zeros((nk_local, nev, nspin), dtype=float)
     velkp = np.zeros((nk_local, 3, nev, nspin), dtype=float)
@@ -94,7 +94,7 @@ def run_mesh(
         v0 = None
         for ik in range(nk_local):
             hk, dhk = sparse_h.assemble_hk_dhk(kloc[ik], ispin=ispin, sign=-1)
-            E, V = solve_lowest(hk, nev, v0=v0, method=method)
+            E, V = solve_lowest(hk, nev, v0=v0, hk_solver=hk_solver)
             v0 = np.ascontiguousarray(V[:, 0])
 
             W = [dhk[l] @ V for l in range(3)]  # (nawf, nev) each

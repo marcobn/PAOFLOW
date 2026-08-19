@@ -1,7 +1,7 @@
 """solve_lowest: correctness against a dense reference (test-side only).
 
 Both dispatch branches are exercised.  Where a test is about the ARPACK
-mechanism specifically it forces ``method='arpack'``, since ``'auto'``
+mechanism specifically it forces ``hk_solver='sparse'``, since ``'auto'``
 now routes large-``nev`` cases to the dense branch.
 """
 
@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
-from PAOFLOW.sparse.solver import gershgorin_lower, select_method, solve_lowest
+from PAOFLOW.sparse.solver import gershgorin_lower, select_hk_solver, solve_lowest
 
 
 def _random_sparse_hermitian(rng, n, band=8, noise=0.05):
@@ -68,7 +68,7 @@ def test_warm_start_accepts_v0():
     assert np.allclose(E1, E2, atol=1e-9)
 
 
-def test_nev_too_close_to_n_raises_when_arpack_is_forced():
+def test_nev_too_close_to_n_raises_when_sparse_is_forced():
     """The hard stop still exists, but it is now a property of the ARPACK
     branch rather than of solve_lowest: k >= n-1 leaves no Krylov room.
     Under 'auto' the same case is simply dispatched to the dense branch
@@ -76,21 +76,21 @@ def test_nev_too_close_to_n_raises_when_arpack_is_forced():
     rng = np.random.default_rng(11)
     H, _ = _random_sparse_hermitian(rng, 30)
     with pytest.raises(NotImplementedError):
-        solve_lowest(H, 28, guard=4, method='arpack')
+        solve_lowest(H, 28, guard=4, hk_solver='sparse')
 
 
 def test_nev_too_close_to_n_dispatches_dense():
     """Same (nev, n) as above: 'auto' must solve it, not raise."""
     rng = np.random.default_rng(11)
     H, A = _random_sparse_hermitian(rng, 30)
-    assert select_method(30, 28)[0] == 'dense'
+    assert select_hk_solver(30, 28)[0] == 'dense'
     E, V = solve_lowest(H, 28, guard=4)
     assert np.allclose(E, np.linalg.eigvalsh(A)[:28], atol=1e-10)
     assert V.shape == (30, 28)
 
 
 @pytest.mark.parametrize('mult', [8, 16, 32])
-def test_arpack_returns_full_multiplicity(mult):
+def test_sparse_kernel_returns_full_multiplicity(mult):
     """Exact multiplets must come back with their true multiplicity.
 
     A Krylov space from a single start vector holds at most one vector per
@@ -108,40 +108,40 @@ def test_arpack_returns_full_multiplicity(mult):
     A = 0.5 * ((Q * evals[None, :]) @ Q.conj().T + ((Q * evals[None, :]) @ Q.conj().T).conj().T)
     H = csr_matrix(A)
     ref = np.linalg.eigvalsh(A)[:nev]
-    for method in ('arpack', 'dense'):
-        E, _ = solve_lowest(H, nev, method=method)
-        assert int(np.isclose(E, evals[8], atol=1e-7).sum()) == mult, method
-        assert np.allclose(E, ref, atol=1e-8), method
+    for hk_solver in ('sparse', 'dense'):
+        E, _ = solve_lowest(H, nev, hk_solver=hk_solver)
+        assert int(np.isclose(E, evals[8], atol=1e-7).sum()) == mult, hk_solver
+        assert np.allclose(E, ref, atol=1e-8), hk_solver
 
 
-def test_select_method_rule():
+def test_select_hk_solver_rule():
     # small nev fraction -> iterative
-    assert select_method(1000, 50)[0] == 'arpack'
+    assert select_hk_solver(1000, 50)[0] == 'sparse'
     # past the 1/8 ratio, still small enough for a dense scratch
-    assert select_method(1000, 500)[0] == 'dense'
+    assert select_hk_solver(1000, 500)[0] == 'dense'
     # no Krylov room at all
-    assert select_method(100, 97)[0] == 'dense'
+    assert select_hk_solver(100, 97)[0] == 'dense'
     # past the ratio and past dense_n_max: loud, naming both exits
     with pytest.raises(NotImplementedError, match='energy_window'):
-        select_method(9216, 4608)
+        select_hk_solver(9216, 4608)
     # explicit choices are honoured verbatim, including ones auto would refuse
-    assert select_method(9216, 4608, method='dense')[0] == 'dense'
-    assert select_method(9216, 4608, method='arpack')[0] == 'arpack'
+    assert select_hk_solver(9216, 4608, hk_solver='dense')[0] == 'dense'
+    assert select_hk_solver(9216, 4608, hk_solver='sparse')[0] == 'sparse'
     with pytest.raises(ValueError):
-        select_method(100, 10, method='lobpcg')
+        select_hk_solver(100, 10, hk_solver='lobpcg')
 
 
 @pytest.mark.parametrize('n', [200, 400])
 @pytest.mark.parametrize('frac', [0.12, 0.5])
-def test_dense_matches_arpack(n, frac):
+def test_dense_matches_sparse(n, frac):
     """The two branches must agree to well inside the physics floor."""
     rng = np.random.default_rng(101 + n)
     H, A = _random_sparse_hermitian(rng, n)
     nev = max(4, int(frac * n))
     E_ref = np.linalg.eigvalsh(A)[:nev]
 
-    E_d, V_d = solve_lowest(H, nev, method='dense')
-    E_a, V_a = solve_lowest(H, nev, method='arpack')
+    E_d, V_d = solve_lowest(H, nev, hk_solver='dense')
+    E_a, V_a = solve_lowest(H, nev, hk_solver='sparse')
     assert np.allclose(E_d, E_ref, atol=1e-9)
     assert np.allclose(E_d, E_a, atol=1e-9)
     for V in (V_d, V_a):
@@ -149,7 +149,7 @@ def test_dense_matches_arpack(n, frac):
         assert np.abs(R).max() < 1e-8
 
 
-def test_dense_gauge_invariants_match_arpack():
+def test_dense_gauge_invariants_match_sparse():
     """Eigenvectors are gauge-dependent (and the gauge differs between the
     branches inside degenerate clusters), so pin the quantities the
     pipeline actually consumes: band-diagonal expectation values on
@@ -164,8 +164,8 @@ def test_dense_gauge_invariants_match_arpack():
     A = 0.5 * (A + A.conj().T)
     H = csr_matrix(A)
     nev = 40
-    E_d, V_d = solve_lowest(H, nev, method='dense')
-    E_a, V_a = solve_lowest(H, nev, method='arpack')
+    E_d, V_d = solve_lowest(H, nev, hk_solver='dense')
+    E_a, V_a = solve_lowest(H, nev, hk_solver='sparse')
     assert np.allclose(E_d, E_a, atol=1e-8)
 
     # an observable with the structure of dH/dk
@@ -185,15 +185,15 @@ def test_dense_gauge_invariants_match_arpack():
     assert np.isclose(diag_d[D].sum(), diag_a[D].sum(), atol=1e-7)
 
 
-@pytest.mark.parametrize('method', ['arpack', 'dense'])
-def test_degenerate_block_is_orthonormal(method):
+@pytest.mark.parametrize('hk_solver', ['sparse', 'dense'])
+def test_degenerate_block_is_orthonormal(hk_solver):
     """Both branches must return an orthonormal basis on a multiplet.
 
     ARPACK converges each multiplet vector as an eigenvector but leaves
     the block oblique, which silently corrupts everything computed from a
     degenerate group -- PDOS weights |V_mn|^2 and the perturb_split block
     V_D^dag dH V_D both assume orthonormality.  Regression: without the
-    group QR in solve_lowest this fails for 'arpack' at 6e-1.
+    group QR in solve_lowest this fails for 'sparse' at 6e-1.
     """
     rng = np.random.default_rng(202)
     n, mult = 200, 8
@@ -204,7 +204,7 @@ def test_degenerate_block_is_orthonormal(method):
     A = 0.5 * (A + A.conj().T)
     H = csr_matrix(A)
     nev = 40
-    E, V = solve_lowest(H, nev, method=method)
+    E, V = solve_lowest(H, nev, hk_solver=hk_solver)
     B = V[:, 10 : 10 + mult]
     assert np.abs(B.conj().T @ B - np.eye(mult)).max() < 1e-10
     # and the block still spans the true eigenspace
@@ -220,7 +220,9 @@ def test_dense_ignores_v0_and_returns_contiguous():
     rng = np.random.default_rng(13)
     H, A = _random_sparse_hermitian(rng, 120)
     nev = 60
-    E, V = solve_lowest(H, nev, method='dense', v0=rng.standard_normal(120), tol=1e-3, sigma=-99.0)
+    E, V = solve_lowest(
+        H, nev, hk_solver='dense', v0=rng.standard_normal(120), tol=1e-3, sigma=-99.0
+    )
     assert V.flags['C_CONTIGUOUS']
     assert np.allclose(E, np.linalg.eigvalsh(A)[:nev], atol=1e-10)
 

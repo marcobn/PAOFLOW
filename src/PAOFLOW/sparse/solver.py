@@ -1,15 +1,19 @@
 """Lowest-eigenpair solver for sparse Bloch Hamiltonians.
 
-Two methods behind one entry point, chosen by :func:`select_method` from
-``(n, nev)`` alone:
+Two per-k-point kernels behind one entry point, chosen by
+:func:`select_hk_solver` from ``(n, nev)`` alone.  Both consume the same
+sparse ``H(k)`` assembled from the bond list, so the choice is only *how
+one k-point's matrix is diagonalized* — it never changes how ``H(R)`` is
+stored.  ``hk_solver='dense'`` does not put the run back on the dense
+PAOFLOW pipeline: there is no ``O(nk * n^2)`` tensor either way.
 
-**ARPACK shift-invert** (``eigsh``, shift below the spectrum via a
-Gershgorin bound, inverse applied with a sparse ``splu``) whenever the
-requested fraction of the spectrum is small.  This is the regime Lanczos
-is built for and the matrix is never densified.
+``hk_solver='sparse'`` — ARPACK shift-invert (``eigsh``, shift below the
+spectrum via a Gershgorin bound, inverse applied with a sparse ``splu``)
+whenever the requested fraction of the spectrum is small.  This is the
+regime Lanczos is built for and the matrix is never densified.
 
-**Dense** (``scipy.linalg.eigh``, ``driver='evr'``, ``subset_by_index``)
-when ``nev`` approaches ``n``.  This is a deliberate, measured exception
+``hk_solver='dense'`` — ``scipy.linalg.eigh``, ``driver='evr'``,
+``subset_by_index``, when ``nev`` approaches ``n``.  This is a deliberate, measured exception
 to the backend's "strictly iterative" rule — see the memory contract in
 ``sparse/README.md``.  The reason is that the rule stops buying anything
 in this regime: scipy's default Krylov dimension is
@@ -17,9 +21,9 @@ in this regime: scipy's default Krylov dimension is
 ``n/2`` it *degenerates to ``ncv = n``* and ARPACK internally allocates a
 dense ``(n, n)`` Arnoldi basis plus ``O(n*ncv^2)`` reorthogonalization —
 the same per-k memory class as a dense ``eigh``, at 13-66x the cost.  The
-dense branch allocates one ``(n, n)`` scratch matrix that is discarded
-before the next k-point; no global ``O(nk*n^2)`` tensor is ever formed,
-which is the contract that actually matters.
+``'dense'`` kernel allocates one ``(n, n)`` scratch matrix that is
+discarded before the next k-point; no global ``O(nk*n^2)`` tensor is ever
+formed, which is the contract that actually matters.
 
 Above ``dense_n_max`` the ``(n, n)`` scratch stops being cheap, so the
 mixed regime raises ``NotImplementedError`` naming both exits rather than
@@ -27,7 +31,7 @@ silently swapping tens of GB.  Failure stays loud everywhere: the ARPACK
 retry ladder ends in ``RuntimeError`` with diagnostics, and there is no
 silent fallback in either direction.
 
-Driver choice for the dense branch is ``evr`` (zheevr, MRRR).  ``evd``
+Driver choice for the ``'dense'`` kernel is ``evr`` (zheevr, MRRR).  ``evd``
 (divide and conquer) has no subset support and always computes all ``n``
 vectors; ``evx`` resolves clusters by inverse iteration with explicit
 reorthogonalization, whereas at ``N``-fold cell folding multiplets of
@@ -52,31 +56,33 @@ def gershgorin_lower(H):
     return float((diag - (abs_row_sums - np.abs(diag))).min())
 
 
-def select_method(n, nev, guard=4, method='auto', dense_ratio=DENSE_RATIO, dense_n_max=DENSE_N_MAX):
-    """Pick 'dense' or 'arpack' for an ``(n, nev)`` solve.
+def select_hk_solver(
+    n, nev, guard=4, hk_solver='auto', dense_ratio=DENSE_RATIO, dense_n_max=DENSE_N_MAX
+):
+    """Pick the per-k kernel, 'sparse' or 'dense', for an ``(n, nev)`` solve.
 
     Deterministic in ``(n, nev, guard)`` only — never in the matrix
     values — so it can be hoisted out of a k-loop and reported once.
     First match wins:
 
-    ===================================== ==========================
-    condition                             outcome
-    ===================================== ==========================
-    ``method`` is 'dense' or 'arpack'     honoured verbatim
-    ``nev + guard >= n - 1``              dense (no Krylov room)
-    ``nev + guard > ratio*n``, small n    dense
-    ``nev + guard > ratio*n``, large n    NotImplementedError
-    otherwise                             arpack
-    ===================================== ==========================
+    ====================================== ==========================
+    condition                              outcome
+    ====================================== ==========================
+    ``hk_solver`` is 'sparse' or 'dense'   honoured verbatim
+    ``nev + guard >= n - 1``               dense (no Krylov room)
+    ``nev + guard > ratio*n``, small n     dense
+    ``nev + guard > ratio*n``, large n     NotImplementedError
+    otherwise                              sparse
+    ====================================== ==========================
 
-    Returns ``(method, reason)``.
+    Returns ``(hk_solver, reason)``.
     """
     k = nev + guard
-    if method in ('dense', 'arpack'):
-        return method, "forced by solver='%s'" % method
-    if method != 'auto':
+    if hk_solver in ('sparse', 'dense'):
+        return hk_solver, "forced by hk_solver='%s'" % hk_solver
+    if hk_solver != 'auto':
         raise ValueError(
-            "select_method: method must be 'auto', 'dense' or 'arpack', got %r" % (method,)
+            "select_hk_solver: hk_solver must be 'auto', 'sparse' or 'dense', got %r" % (hk_solver,)
         )
     if k >= n - 1:
         return 'dense', 'nev+guard=%d leaves no Krylov room in n=%d (ARPACK needs k < n-1)' % (k, n)
@@ -91,22 +97,40 @@ def select_method(n, nev, guard=4, method='auto', dense_ratio=DENSE_RATIO, dense
             '(> %.1f%%), but n exceeds dense_n_max = %d, where the per-k (n,n) scratch '
             'matrix would be %.2f GB.\n'
             'Two exits: (a) reduce nev with SparsePAOFLOW.energy_window() so the solve '
-            'returns to the ARPACK regime, or (b) move to a distributed eigensolver '
-            '(ELPA/SLEPc) with a distributed bond list. There is no silent dense fallback.'
+            "returns to the hk_solver='sparse' regime, or (b) move to a distributed "
+            'eigensolver (ELPA/SLEPc) with a distributed bond list. There is no silent '
+            'dense fallback.'
             % (k, n, 100.0 * k / n, 100.0 * dense_ratio, dense_n_max, 16.0 * n * n / 1024**3)
         )
-    return 'arpack', 'nev+guard=%d is %.1f%% of n=%d' % (k, 100.0 * k / n, n)
+    return 'sparse', 'nev+guard=%d is %.1f%% of n=%d' % (k, 100.0 * k / n, n)
 
 
-def describe_method(n, nev, guard=4, method='auto', **kw):
-    """One-line report of the dispatch, for printing once per k-loop.
+def describe_hk_solver(n, nev, guard=4, hk_solver='auto', **kw):
+    """Multi-line report of the dispatch, for printing once per k-loop.
+
+    States what the choice does *and does not* change: 'dense' names the
+    per-k-point kernel, never the storage model, and the line says so
+    explicitly because 'DENSE' in a log emitted by the sparse backend
+    otherwise reads as 'this run fell back to dense PAOFLOW'.
 
     Carries the ``nev`` creep warning that the ``nev + guard >= n - 1``
-    hard stop used to enforce: the dense branch removes the error, so the
+    hard stop used to enforce: the dense kernel removes the error, so the
     intent has to survive as a warning.
     """
-    chosen, reason = select_method(n, nev, guard=guard, method=method, **kw)
-    line = 'Sparse solver: %s  (n=%d, nev=%d; %s)' % (chosen.upper(), n, nev, reason)
+    chosen, reason = select_hk_solver(n, nev, guard=guard, hk_solver=hk_solver, **kw)
+    if chosen == 'dense':
+        line = (
+            'H(k) solver: dense (LAPACK zheevr)\n'
+            '  H(R) stays a bond list; one (%d,%d) scratch = %.1f MB per k-point,\n'
+            '  freed before the next. No O(nk*n^2) tensor is formed.\n'
+            '  n=%d, nev=%d; %s' % (n, n, 16.0 * n * n / 1024**2, n, nev, reason)
+        )
+    else:
+        line = (
+            'H(k) solver: sparse (ARPACK shift-invert Lanczos)\n'
+            '  H(k) is never densified; only the Krylov basis is stored.\n'
+            '  n=%d, nev=%d; %s' % (n, nev, reason)
+        )
     if nev > 0.5 * n:
         line += (
             '\n  WARNING: nev/n = %.2f. The eigenvector block is O(n^2/2) and this run is '
@@ -133,7 +157,7 @@ def _orthonormalize_degenerate(E, V, decimals=5):
     Any orthonormal basis of the span is an equally valid eigenbasis
     (the gauge inside a degenerate subspace is free), so a QR of each
     group restores orthonormality without changing any gauge-invariant
-    quantity.  The dense ``evr`` branch returns such a basis by
+    quantity.  The ``'dense'`` ``evr`` kernel returns such a basis by
     construction and does not need this.
 
     Grouping uses the same 5-decimal rounding convention as
@@ -149,7 +173,7 @@ def _orthonormalize_degenerate(E, V, decimals=5):
                 raise RuntimeError(
                     'solve_lowest: the %d-fold degenerate group at E = %.6f eV came back '
                     'rank-deficient from ARPACK, so it does not span its eigenspace and '
-                    "cannot be repaired. Raise ncv, or use method='dense' at this size."
+                    "cannot be repaired. Raise ncv, or use hk_solver='dense' at this size."
                     % (b - a, E[a])
                 )
             V[:, a:b] = Q
@@ -176,7 +200,7 @@ def solve_lowest(
     v0=None,
     tol=0.0,
     guard=4,
-    method='auto',
+    hk_solver='auto',
     dense_ratio=DENSE_RATIO,
     dense_n_max=DENSE_N_MAX,
 ):
@@ -196,15 +220,16 @@ def solve_lowest(
     tol : float
         ARPACK relative tolerance; 0.0 means machine precision.
     guard : int
-        Extra pairs computed and discarded on the ARPACK path, so a
+        Extra pairs computed and discarded on the ``'sparse'`` path, so a
         degenerate cluster split exactly at ``nev`` does not stall
         convergence.
-    method : {'auto', 'dense', 'arpack'}
-        Dispatch, see :func:`select_method`.  ``'dense'`` and
-        ``'arpack'`` force a branch, for A/B validation.
+    hk_solver : {'auto', 'sparse', 'dense'}
+        Per-k kernel, see :func:`select_hk_solver`.  ``'sparse'`` and
+        ``'dense'`` force a kernel, for A/B validation.  Neither changes
+        how ``H(R)`` is stored.
 
     ``sigma``, ``v0``, ``tol`` and ``guard`` are ARPACK-only and are
-    ignored on the dense branch: ``evr`` returns exactly the requested
+    ignored on the ``'dense'`` kernel: ``evr`` returns exactly the requested
     index range with an orthonormal basis on each degenerate cluster, so
     it needs neither a guard nor the ``_sorted_lowest`` fixup.  The two
     branches agree to ~1e-9 eV but are **not** bit-identical (Householder
@@ -217,19 +242,19 @@ def solve_lowest(
     (E, V) : eigenvalues ``(nev,)`` ascending, eigenvectors ``(n, nev)``.
     """
     n = H.shape[0]
-    chosen, _ = select_method(
-        n, nev, guard=guard, method=method, dense_ratio=dense_ratio, dense_n_max=dense_n_max
+    chosen, _ = select_hk_solver(
+        n, nev, guard=guard, hk_solver=hk_solver, dense_ratio=dense_ratio, dense_n_max=dense_n_max
     )
     if chosen == 'dense':
         return _solve_dense(H, nev)
 
     k = nev + guard
     if k >= n - 1:
-        # only reachable with method='arpack' forced; 'auto' sends this to dense
+        # only reachable with hk_solver='sparse' forced; 'auto' sends this to dense
         raise NotImplementedError(
             'solve_lowest: nev + guard = %d is too close to the matrix size n = %d for '
             'iterative solution (ARPACK needs k < n - 1). Drop the explicit '
-            "method='arpack' to dispatch this size to the dense branch." % (k, n)
+            "hk_solver='sparse' to dispatch this size to the dense kernel." % (k, n)
         )
     if sigma is None:
         sigma = gershgorin_lower(H) - 1.0
@@ -282,7 +307,7 @@ def count_below(H, ehi, dense_n_max=DENSE_N_MAX):
 
     One tridiagonal reduction with ``zheevr``'s ``subset_by_value`` and no
     eigenvectors — the probe used to size an energy window.  Densifies,
-    so it carries the same size guard as the dense solve branch.
+    so it carries the same size guard as the ``'dense'`` kernel.
     """
     n = H.shape[0]
     if n > dense_n_max:

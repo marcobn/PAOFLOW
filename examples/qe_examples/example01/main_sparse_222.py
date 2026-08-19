@@ -59,7 +59,7 @@ def main():
         verbose=True,
         threshold=1.0e-4,
         rcut=None,
-        solver='auto',
+        hk_solver='auto',
     )
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
