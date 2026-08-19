@@ -302,6 +302,220 @@ def solve_lowest(
     )
 
 
+# --------------------------------------------------------------------------
+# Interior window: all eigenpairs inside [elo, ehi], counted from neither end
+# --------------------------------------------------------------------------
+#
+# `solve_lowest` answers "the nev lowest states", which forces every property
+# to carry the whole valence manifold even when its physics only needs a few
+# kT around E_F (Boltzmann transport, Fermi-surface quantities, flat bands in
+# a moire cell).  `solve_interior` answers "every state in [elo, ehi]" via
+# shift-invert Lanczos about the window centre, so the cost tracks the number
+# of states *in the window* rather than the number below it.
+#
+# Two properties that make this the regime ARPACK was built for: the count in
+# a narrow interior window is typically a fraction of a percent of the
+# spectrum, and -- unlike the from-the-bottom case -- that fraction is set by
+# the material's basis richness rather than by where E_F sits.  Under N-fold
+# folding both the count and n scale by N, so the fraction is scale-invariant
+# here too: a supercell neither helps nor hurts.
+#
+# The returned count is k-dependent by construction (a band crossing the
+# window edge is in at one k and out at the next).  Callers that need
+# rectangular arrays must pad; that is deliberately not done here, so this
+# function stays a pure eigensolver.
+
+INTERIOR_DENSE_N = 512
+INTERIOR_K0 = 16
+INTERIOR_GROWTH = 2.0
+INTERIOR_MAX_ATTEMPTS = 6
+
+
+def count_in_window(H, elo, ehi, dense_n_max=DENSE_N_MAX):
+    """Number of eigenvalues of ``H`` in ``[elo, ehi]``.
+
+    Companion to :func:`count_below` for sizing an interior window, and the
+    reference the sparse path is validated against.  Densifies, so it carries
+    the same size guard.
+    """
+    n = H.shape[0]
+    if n > dense_n_max:
+        raise NotImplementedError(
+            'count_in_window: the interior-window probe densifies H(k), which at n = %d '
+            'would need %.2f GB (dense_n_max = %d). Pass an explicit k0 to '
+            'solve_interior() to skip the probe.' % (n, 16.0 * n * n / 1024**3, dense_n_max)
+        )
+    A = H.toarray()
+    E = scipy.linalg.eigvalsh(
+        A,
+        subset_by_value=[float(elo), float(ehi)],
+        driver='evr',
+        check_finite=False,
+        overwrite_a=True,
+    )
+    return len(E)
+
+
+def _solve_interior_dense(H, elo, ehi):
+    """Every eigenpair in ``[elo, ehi]`` by ``zheevr``'s ``subset_by_value``.
+
+    Exact by construction and orthonormal on degenerate clusters, so it is
+    both the small-``n`` branch and the A/B reference for the sparse path.
+    """
+    A = H.toarray()
+    E, V = scipy.linalg.eigh(
+        A,
+        subset_by_value=[float(elo), float(ehi)],
+        driver='evr',
+        check_finite=False,
+        overwrite_a=True,
+    )
+    return E, np.ascontiguousarray(V)
+
+
+def solve_interior(
+    H,
+    elo,
+    ehi,
+    k0=None,
+    tol=0.0,
+    hk_solver='auto',
+    dense_n_max=DENSE_N_MAX,
+    interior_dense_n=INTERIOR_DENSE_N,
+    max_attempts=INTERIOR_MAX_ATTEMPTS,
+):
+    """All eigenpairs of a Hermitian sparse ``H`` with ``elo <= E <= ehi``.
+
+    Parameters
+    ----------
+    H : scipy.sparse matrix, shape (n, n), Hermitian
+    elo, ehi : float
+        Window bounds in eV, ``ehi > elo``.  Both are inclusive.
+    k0 : int or None
+        Starting Krylov request.  ARPACK is asked for the ``k0`` eigenvalues
+        nearest the window centre; if that set does not straddle *both* edges
+        of the window, ``k`` grows and the solve repeats.  A good ``k0`` (say
+        the count from a neighbouring k-point) removes the retries; a bad one
+        only costs time, never correctness -- a failed attempt measures the
+        local level density, so the next ``k`` is extrapolated rather than
+        merely doubled.
+    tol : float
+        ARPACK relative tolerance; 0.0 means machine precision.
+    hk_solver : {'auto', 'sparse', 'dense'}
+        ``'dense'`` uses ``subset_by_value`` directly; ``'sparse'`` forces
+        shift-invert; ``'auto'`` takes dense below ``interior_dense_n``, where
+        the ``splu`` factorization costs more than a direct subset solve, and
+        also falls back to dense if the window turns out to hold so much of
+        the spectrum that the Krylov request approaches ``n``.  Under
+        ``'sparse'`` that situation raises instead -- no silent fallback.
+
+    Returns
+    -------
+    (E, V) : eigenvalues ``(m,)`` ascending, eigenvectors ``(n, m)``, where
+    ``m`` is the number of states in the window.  ``m`` is **not** known in
+    advance and is legitimately 0 when the window lies in a gap; both arrays
+    come back correctly shaped in that case.
+
+    Degenerate groups are re-orthonormalized exactly as in
+    :func:`solve_lowest` -- required here, since a folded supercell or a
+    moire flat-band manifold puts multiplets inside the window by design.
+    """
+    n = H.shape[0]
+    elo = float(elo)
+    ehi = float(ehi)
+    if not ehi > elo:
+        raise ValueError('solve_interior: need ehi > elo, got [%g, %g]' % (elo, ehi))
+    if hk_solver not in ('auto', 'sparse', 'dense'):
+        raise ValueError(
+            "solve_interior: hk_solver must be 'auto', 'sparse' or 'dense', got %r" % (hk_solver,)
+        )
+
+    def _dense(reason):
+        if n > dense_n_max and hk_solver != 'dense':
+            raise NotImplementedError(
+                'solve_interior: %s, but n = %d exceeds dense_n_max = %d, where the (n,n) '
+                "scratch would be %.2f GB. Narrow the window, or pass hk_solver='dense' "
+                'explicitly if that allocation is affordable here.'
+                % (reason, n, dense_n_max, 16.0 * n * n / 1024**3)
+            )
+        return _solve_interior_dense(H, elo, ehi)
+
+    if hk_solver == 'dense':
+        return _solve_interior_dense(H, elo, ehi)
+    if hk_solver == 'auto' and n <= interior_dense_n:
+        return _solve_interior_dense(H, elo, ehi)
+    if n < 5:
+        return _dense('n = %d is too small for a Krylov solve' % n)
+
+    sigma = 0.5 * (elo + ehi)
+    k = max(1, int(INTERIOR_K0 if k0 is None else k0))
+    kmax = n - 2  # ARPACK needs k < n - 1
+    attempts = []
+
+    for _ in range(max_attempts):
+        k = min(k, kmax)
+        try:
+            E, V = eigsh(
+                H,
+                k=k,
+                sigma=sigma,
+                which='LM',
+                mode='normal',
+                tol=tol,
+                ncv=min(n, max(2 * k + 1, 20)),
+            )
+        except ArpackNoConvergence as err:
+            attempts.append('shift-invert(sigma=%.4f, k=%d): %s' % (sigma, k, err))
+            k = int(np.ceil(k * INTERIOR_GROWTH))
+            continue
+
+        order = np.argsort(E)
+        E = E[order]
+        V = V[:, order]
+        # The k values returned are the k closest to sigma.  If the set
+        # extends past BOTH window edges, every in-window state is inside it;
+        # otherwise states may lie beyond the last one converged.
+        if E[0] < elo and E[-1] > ehi:
+            mask = (E >= elo) & (E <= ehi)
+            Ew = E[mask]
+            Vw = np.ascontiguousarray(V[:, mask])
+            return Ew, _orthonormalize_degenerate(Ew, Vw)
+
+        if k >= kmax:
+            reason = 'the window holds nearly the whole spectrum (k reached n-2 = %d)' % kmax
+            if hk_solver == 'sparse':
+                raise RuntimeError(
+                    'solve_interior: %s, so shift-invert cannot bracket [%g, %g]. Drop the '
+                    "explicit hk_solver='sparse' to dispatch this to the dense branch."
+                    % (reason, elo, ehi)
+                )
+            return _dense(reason)
+        attempts.append(
+            'k=%d returned [%.4f, %.4f], which does not straddle [%g, %g]'
+            % (k, E[0], E[-1], elo, ehi)
+        )
+        # Extrapolate rather than double blindly: the k values just returned
+        # are the k nearest sigma, so k/span is a local estimate of the level
+        # density and (ehi-elo)*density + margin is roughly the k needed to
+        # bracket.  Blind doubling needs log2(m/k0) rounds to reach a window
+        # holding m states, which for a bad k0 exhausts max_attempts on a
+        # problem that is not actually hard.  Never shrink, and always make
+        # at least a factor INTERIOR_GROWTH of progress.
+        span = float(E[-1] - E[0])
+        est = k * 2.0
+        if span > 0.0:
+            est = 1.3 * (k / span) * (ehi - elo) + 8.0
+        k = int(np.ceil(max(est, k * INTERIOR_GROWTH)))
+
+    raise RuntimeError(
+        'solve_interior failed to bracket the window [%g, %g] of an n=%d matrix in %d '
+        'attempts (last k=%d).\nAttempts:\n  %s\n'
+        'Either the window holds a large fraction of the spectrum -- in which case use '
+        "hk_solver='dense' -- or ARPACK is not converging; raise tol or pass a larger k0."
+        % (elo, ehi, n, max_attempts, k, '\n  '.join(attempts))
+    )
+
+
 def count_below(H, ehi, dense_n_max=DENSE_N_MAX):
     """Number of eigenvalues of ``H`` at or below ``ehi``.
 
@@ -312,10 +526,9 @@ def count_below(H, ehi, dense_n_max=DENSE_N_MAX):
     n = H.shape[0]
     if n > dense_n_max:
         raise NotImplementedError(
-            'count_below: the energy-window probe densifies H(k), which at n = %d would need '
-            '%.2f GB (dense_n_max = %d). Pass an explicit nev to energy_window() to skip the '
-            'probe, or move to a distributed eigensolver.'
-            % (n, 16.0 * n * n / 1024**3, dense_n_max)
+            f'count_below: the energy-window probe densifies H(k), which at n = {n} would need '
+            f'{16.0 * n * n / 1024**3:.2f} GB (dense_n_max = {dense_n_max}). Pass an explicit '
+            'nev to energy_window() to skip the probe, or move to a distributed eigensolver.'
         )
     A = H.toarray()
     E = scipy.linalg.eigvalsh(

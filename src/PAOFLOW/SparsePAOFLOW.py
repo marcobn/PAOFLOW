@@ -113,6 +113,8 @@ class SparsePAOFLOW:
         self.threshold = float(threshold)
         self.rcut = None if rcut is None else float(rcut)
         self.hk_solver = hk_solver
+        self._interior = None  # (elo, ehi) when an interior window is active
+        self._skipped = []  # properties skipped because the window cannot support them
         self.H = None  # SparseHamiltonian, set by pao_hamiltonian
         self._mesh_plan = {}  # parameters recorded for the fused mesh pass
         self._window = None  # (emin, emax, margin, ehi) once energy_window ran
@@ -429,6 +431,12 @@ class SparsePAOFLOW:
         from .sparse.solver import count_below
 
         self._require_H('energy_window')
+        if self._interior is not None:
+            raise RuntimeError(
+                'SparsePAOFLOW: interior_window() is already active. The two window modes '
+                'are mutually exclusive -- one sizes nev from the bottom of the spectrum, '
+                'the other solves inside a window and never computes the states below it.'
+            )
         arrays, attr = self.data_controller.data_dicts()
         ehi = float(emax) + float(margin)
         nawf = self.H.nawf
@@ -475,6 +483,132 @@ class SparsePAOFLOW:
         self._guard('energy_window', _window)
         self._pao.report_module_time('Energy window')
 
+    def interior_window(self, elo, ehi, kT_margin_eV=0.26, smear_margin_eV=0.5):
+        """Solve *inside* ``[elo, ehi]`` instead of from the bottom of the spectrum.
+
+        MUST be called after ``doubling_Hamiltonian()`` and before any
+        property.  Mutually exclusive with :meth:`energy_window`.
+
+        This is the mode that makes the iterative kernel pay: the count in a
+        narrow interior window is a small fraction of the spectrum, whereas a
+        from-the-bottom window must reach E_F and so is 20-50% of it for any
+        real material.  The cost is that the states below ``elo`` are never
+        computed, which permanently removes three things:
+
+        - the total electron count, so anything fixed by charge neutrality
+          (carrier density, the Hall coefficient) cannot be evaluated;
+        - DoS/PDoS outside the window, which is *absent*, not zero;
+        - band indices, since the number of states in the window varies from
+          k-point to k-point.
+
+        Properties that need any of those are **skipped with a warning** and
+        the run continues to the next one; they are listed again at
+        ``finish_execution``.  Note this is a deliberate exception to the
+        backend's fail-loud rule, made because an interior run is normally a
+        batch of properties of which only some are supportable.
+
+        ``kT_margin_eV`` is the margin the transport occupation derivative
+        needs on each side of the chemical-potential scan; 0.26 eV is 10 kT at
+        300 K.  Raise it for higher temperatures.
+
+        ``smear_margin_eV`` is the analogous margin for DoS/PDoS.  Adaptive
+        smearing gives every state a finite width, so a state just below
+        ``elo`` -- one this mode never computes -- would still contribute
+        inside the window.  Plotted ranges are therefore clamped this far
+        inside each edge.  The default 0.5 eV covers the <~0.22 eV Yates
+        widths of a converged mesh at 4 sigma; coarse meshes have wider
+        smearing, so after the mesh runs the *measured* maximum width is
+        checked against this value and a warning is issued if it was too
+        small.
+        """
+        self._require_H('interior_window')
+        if self._window is not None:
+            raise RuntimeError(
+                'SparsePAOFLOW: energy_window() is already active. The two window modes '
+                'are mutually exclusive.'
+            )
+        elo, ehi = float(elo), float(ehi)
+        if not ehi > elo:
+            raise ValueError('interior_window: need ehi > elo, got [%g, %g]' % (elo, ehi))
+
+        self._interior = (elo, ehi)
+        self._kT_margin = float(kT_margin_eV)
+        self._smear_margin = float(smear_margin_eV)
+        self.log.section('Interior energy window')
+        self.log.field('window (eV)', '[%.3f, %.3f]' % (elo, ehi))
+        self.log.field('transport margin (eV)', '%.3f each side' % self._kT_margin)
+        self.log.field('DoS smearing margin (eV)', '%.3f each side' % self._smear_margin)
+        self.log.write(
+            'Only states inside the window are computed; nothing below elo exists.\n'
+            'DoS/PDoS ranges are clamped to the window, the transport chemical-potential\n'
+            'scan is clamped to [elo+margin, ehi-margin], and properties that need the\n'
+            'full occupied manifold (carrier density, Hall) are skipped with a warning.'
+        )
+        self._pao.report_module_time('Interior window')
+
+    def _skip(self, prop, reason):
+        """Warn loudly, record, and let the caller move to the next property."""
+        self._skipped.append((prop, reason))
+        message = (
+            'WARNING: sparse %s SKIPPED under interior_window(%.3f, %.3f) -- %s\n'
+            '         No output was written for it; the run continues.'
+            % (prop, self._interior[0], self._interior[1], reason)
+        )
+        if self.rank == 0:
+            print(message, flush=True)
+        self.log.write('\n' + message)
+
+    def _check_smearing_margin(self, prop, emin, emax):
+        """Warn if adaptive widths reach further past the window edge than the
+        margin allowed -- i.e. if uncomputed states below ``elo`` are leaking
+        into what was plotted."""
+        attr = self.data_controller.data_attributes
+        dmax = float(attr.get('sparse_interior_dmax', 0.0))
+        if dmax <= 0.0:
+            return
+        elo, ehi = self._interior
+        reach = 4.0 * dmax  # 4 sigma -> ~1e-7 relative tail
+        gap = min(float(emin) - elo, ehi - float(emax))
+        if reach > gap:
+            message = (
+                'WARNING: sparse %s may be contaminated near the interior-window edges.\n'
+                '         Measured max adaptive width %.3f eV reaches %.3f eV (4 sigma), but '
+                'the plotted\n         range [%.3f, %.3f] is only %.3f eV inside the window '
+                '[%.3f, %.3f].\n         States below elo were never computed, so their '
+                'smearing tails are missing.\n'
+                '         Widen the window or raise smear_margin_eV to at least %.3f.'
+                % (prop, dmax, reach, emin, emax, gap, elo, ehi, reach)
+            )
+            if self.rank == 0:
+                print(message, flush=True)
+            self.log.write('\n' + message)
+
+    def _clamp_to_window(self, prop, emin, emax, margin=0.0):
+        """Intersect a requested range with the interior window.
+
+        Returns ``(emin, emax)`` clamped, or ``None`` if nothing usable is
+        left -- in which case the caller skips the property.
+        """
+        elo, ehi = self._interior
+        lo, hi = max(float(emin), elo + margin), min(float(emax), ehi - margin)
+        if hi <= lo:
+            self._skip(
+                prop,
+                'the requested range [%.3f, %.3f] does not overlap the usable part of the '
+                'window [%.3f, %.3f]' % (emin, emax, elo + margin, ehi - margin),
+            )
+            return None
+        if (lo, hi) != (float(emin), float(emax)):
+            message = (
+                'WARNING: sparse %s range clamped from [%.3f, %.3f] to [%.3f, %.3f] by '
+                'interior_window; states outside the window were never computed.'
+                % (prop, emin, emax, lo, hi)
+            )
+            if self.rank == 0:
+                print(message, flush=True)
+            self.log.write('\n' + message)
+        return lo, hi
+
     # ------------------------------------------------------------------
     # Bands along a high-symmetry path
     # ------------------------------------------------------------------
@@ -514,6 +648,7 @@ class SparsePAOFLOW:
                 verbose=attr['verbose'],
                 hk_solver=self.hk_solver,
                 ehi=None if self._window is None else self._window[3],
+                interior=self._interior,
             )
             E_kp = gather_full(arrays['E_k'], attr['npool'])
             self.data_controller.write_bands(fname, E_kp)
@@ -624,6 +759,7 @@ class SparsePAOFLOW:
                 verbose=attr['verbose'],
                 hk_solver=self.hk_solver,
                 ehi=None if self._window is None else self._window[3],
+                interior=self._interior,
             )
 
         self._guard('sparse_mesh', _mesh)
@@ -642,7 +778,14 @@ class SparsePAOFLOW:
         from .spectrum.do_dos import do_dos_adaptive
 
         self._require_H('dos')
+        if self._interior is not None:
+            clamped = self._clamp_to_window('dos', emin, emax, margin=self._smear_margin)
+            if clamped is None:
+                return
+            emin, emax = clamped
         self._ensure_mesh(pdos_spec=(emin, emax, ne) if do_pdos else None)
+        if self._interior is not None:
+            self._check_smearing_margin('dos', emin, emax)
 
         def _dos():
             if do_dos:
@@ -669,11 +812,28 @@ class SparsePAOFLOW:
         """Boltzmann transport via the dense stack (it consumes only the
         band-diagonal ``velkp``/``E_k``/``deltakp`` the mesh produced)."""
         self._require_H('transport')
+        if self._interior is not None:
+            # the occupation derivative needs states within ~10 kT of every mu
+            # on the scan, so the window has to exceed the scan on both sides
+            margin = max(self._kT_margin, 10.0 * 8.617333e-5 * float(tmax))
+            clamped = self._clamp_to_window('transport', emin, emax, margin=margin)
+            if clamped is None:
+                return
+            emin, emax = clamped
+            if do_hall:
+                self._skip(
+                    'transport Hall term',
+                    'the Hall coefficient needs the total carrier count, which requires '
+                    'every occupied state; an interior window has none below elo. The '
+                    'rest of the transport tensor is still computed',
+                )
+                do_hall = False
+
         self._ensure_mesh()
 
         arrays, attr = self.data_controller.data_dicts()
         top = self.comm.allreduce(float(np.min(arrays['E_k'][:, -1, :])), op=MPI.MIN)
-        if emax > top:
+        if self._interior is None and emax > top:
             raise RuntimeError(
                 'sparse transport: requested emax=%.3f eV exceeds the lowest '
                 'computed top band (%.3f eV); the %d-band window does not cover '
@@ -699,5 +859,22 @@ class SparsePAOFLOW:
     # Bookkeeping
     # ------------------------------------------------------------------
 
+    def _report_skips(self):
+        """Restate every skipped property at the end, where it cannot be lost
+        in the scroll of a long run."""
+        if not self._skipped:
+            return
+        lines = [
+            '%d propert%s SKIPPED under the interior window:'
+            % (len(self._skipped), 'y was' if len(self._skipped) == 1 else 'ies were')
+        ]
+        lines += ['  - %s: %s' % (p, r) for p, r in self._skipped]
+        text = '\n'.join(lines)
+        if self.rank == 0:
+            print('\n' + text, flush=True)
+        self.log.section('Skipped properties')
+        self.log.write(text)
+
     def finish_execution(self):
+        self._report_skips()
         self._pao.finish_execution()

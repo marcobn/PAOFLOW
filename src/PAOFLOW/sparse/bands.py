@@ -17,20 +17,33 @@ shell), far below plotting resolution for converged R grids.
 """
 
 import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
 
 
-def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, hk_solver='auto', ehi=None):
+def do_bands_sparse(
+    data_controller, sparse_h, nsel, verbose=False, hk_solver='auto', ehi=None, interior=None
+):
     """Compute ``arrays['E_k']`` (local slice, ``(nkpi_local, nsel, nspin)``)
     along the interpolation path.  Returns nothing; mirrors dense layout.
 
     ``hk_solver`` picks the per-k kernel once for the whole path;
-    ``ehi`` enables the same window-coverage guard the mesh pass uses."""
+    ``ehi`` enables the same window-coverage guard the mesh pass uses.
+
+    ``interior`` (``(elo, ehi)``, eV) solves inside the window instead of from
+    the bottom.  The band count is then k-dependent, so the output is padded
+    to the global maximum with **NaN** — unlike the mesh pass, which pads with
+    a far-away energy because its consumers evaluate smearing kernels.  Here
+    the numbers are written straight to ``bands_*.dat`` and plotted, so a
+    missing state must read as missing rather than as a band at some
+    plausible-looking energy.  Columns are no longer band indices."""
     from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
     from ..utils.communication import scatter_full
     from ..utils.constants import ANGSTROM_AU
     from .log import get_sparse_log
     from .mesh import check_window_coverage
-    from .solver import describe_hk_solver, solve_lowest
+    from .solver import describe_hk_solver, solve_interior, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
 
@@ -57,24 +70,49 @@ def do_bands_sparse(data_controller, sparse_h, nsel, verbose=False, hk_solver='a
     log = get_sparse_log(data_controller)
     log.section('Bands (path solve)')
     log.field('k-points on path', nkpi)
-    log.field('bands requested', nsel)
+    if interior is None:
+        log.field('bands requested', nsel)
+    else:
+        log.field('interior window (eV)', '[%.3f, %.3f]' % (interior[0], interior[1]))
+        log.field('bands requested', 'k-dependent (interior solve); NaN-padded')
     log.field('window top ehi (eV)', 'none' if ehi is None else '%.3f' % ehi)
     log.write(describe_hk_solver(sparse_h.nawf, nsel, hk_solver=hk_solver))
 
-    E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
+    if interior is None:
+        E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
+    else:
+        acc = {}
     deficit = 0
     step = max(1, min(100, nk_local // 10))
     for ispin in range(nspin):
         v0 = None
+        k0 = None
         for ik in range(nk_local):
             hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=+1, cart=True)
-            E, V = solve_lowest(hk, nsel, v0=v0, hk_solver=hk_solver)
-            E_k[ik, :, ispin] = E
-            v0 = np.ascontiguousarray(V[:, 0])  # warm start; V is discarded
-            if ehi is not None and E[-1] < ehi:
-                deficit += 1
+            if interior is None:
+                E, V = solve_lowest(hk, nsel, v0=v0, hk_solver=hk_solver)
+                E_k[ik, :, ispin] = E
+                v0 = np.ascontiguousarray(V[:, 0])  # warm start; V is discarded
+                if ehi is not None and E[-1] < ehi:
+                    deficit += 1
+            else:
+                E, _ = solve_interior(hk, interior[0], interior[1], k0=k0, hk_solver=hk_solver)
+                acc[(ispin, ik)] = E
+                k0 = max(8, 2 * len(E))
             if verbose and (ik + 1) % step == 0:
                 log.write('  progress: %d/%d local k-points' % (ik + 1, nk_local))
 
+    if interior is not None:
+        local_max = max((len(E) for E in acc.values()), default=0)
+        m = int(comm.allreduce(int(local_max), op=MPI.MAX))
+        log.write(
+            '  interior window: up to %d states per k locally (padded to %d with NaN)'
+            % (local_max, m)
+        )
+        E_k = np.full((nk_local, max(m, 1), nspin), np.nan, dtype=float)
+        for (ispin, ik), E in acc.items():
+            E_k[ik, : len(E), ispin] = E
+
     arrays['E_k'] = E_k
-    check_window_coverage(deficit, nsel, ehi, 'bands')
+    if interior is None:
+        check_window_coverage(deficit, nsel, ehi, 'bands')
