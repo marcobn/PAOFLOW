@@ -36,44 +36,101 @@ per-bond coefficient ``1j * (alat * Rcart_l + Dnm_l)``, replicating
 ``hamiltonian.do_gradient`` (R term) plus its diagonal tight-binding
 correction (``Dnm`` term).  ``Dnm`` is stored per bond, never as a dense
 ``(nawf, nawf, 3)`` array.
+
+``HERMITIZE_GROWTH`` is the bond-count growth factor across
+:meth:`SparseHamiltonian.hermitize`, used for size projection only.  That
+operation unions the list with its mirrored conjugate, so the true factor
+lies in ``[1, 2]``: 1 when every ``(j,i,-R)`` partner is already present, 2
+when none is.  Thresholding drops partners asymmetrically, so it sits above
+1; measured 1.19 on example01 at nx=1, rounded up here.
 """
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from scipy.sparse import csr_matrix
 
-# Bond-count growth across hermitize(), for size projection only.  The
-# operation unions the list with its mirrored conjugate, so the true factor
-# lies in [1, 2]: 1 when every (j,i,-R) partner is already present, 2 when
-# none is.  Thresholding drops partners asymmetrically, so it sits above 1;
-# measured 1.19 on example01 at nx=1, rounded up here.
+if TYPE_CHECKING:
+    from PAOFLOW.DataController import DataController
+
 HERMITIZE_GROWTH = 1.25
 
 
-def _r_offsets(nk_grid):
+def _r_offsets(nk_grid: Sequence[int]) -> tuple[int, ...]:
     """Per-axis shift mapping folded components onto ``[0, nk)``.
 
+    Parameters
+    ----------
+    nk_grid : sequence of int
+        The three R-grid dimensions.
+
+    Returns
+    -------
+    tuple of int
+        The shift to add to each axis component.
+
+    Notes
+    -----
     A folded component lies in ``[-(nk//2), (nk-1)//2]`` for both parities,
     so adding ``nk//2`` lands it in ``[0, nk-1]`` exactly.
     """
     return tuple(int(nk) // 2 for nk in nk_grid)
 
 
-def encode_R(triples, nk_grid):
+def encode_R(triples: np.ndarray, nk_grid: Sequence[int]) -> np.ndarray:
     """Pack folded lattice triples into the linear FFT-box index.
 
-    Ascending code order is *identical* to the lexicographic order of
-    ``(m1, m2, m3)``, which is what ``np.unique(..., axis=0)`` produces —
-    the property that lets the encoded path stay bit-identical to the
-    void-view lexsort it replaces.
+    Parameters
+    ----------
+    triples : np.ndarray, shape (m, 3)
+        Folded integer lattice triples.
+    nk_grid : sequence of int
+        The three R-grid dimensions.
+
+    Returns
+    -------
+    np.ndarray, shape (m,), int64
+        One integer per triple, in ``[0, nk1*nk2*nk3)``.
+
+    Notes
+    -----
+    Each triple is shifted into the non-negative box and then read as a
+    three-digit number in mixed radix, most significant axis first.  Because
+    the shift is monotonic per axis, ascending code order is *identical* to
+    the lexicographic order of ``(m1, m2, m3)``, which is what
+    ``np.unique(..., axis=0)`` produces — the property that lets the encoded
+    path stay bit-identical to the void-view lexsort it replaces.
     """
-    n1, n2, n3 = (int(n) for n in nk_grid)
+    _, n2, n3 = (int(n) for n in nk_grid)
     o1, o2, o3 = _r_offsets(nk_grid)
     t = np.asarray(triples, dtype=np.int64)
     return ((t[:, 0] + o1) * n2 + (t[:, 1] + o2)) * n3 + (t[:, 2] + o3)
 
 
-def decode_R(codes, nk_grid):
-    """Inverse of :func:`encode_R`."""
+def decode_R(codes: np.ndarray, nk_grid: Sequence[int]) -> np.ndarray:
+    """Unpack linear FFT-box indices back into folded lattice triples.
+
+    Parameters
+    ----------
+    codes : np.ndarray, shape (m,)
+        Codes as produced by :func:`encode_R`.
+    nk_grid : sequence of int
+        The three R-grid dimensions.
+
+    Returns
+    -------
+    np.ndarray, shape (m, 3), int64
+        The folded lattice triples.
+
+    Notes
+    -----
+    Exact inverse of :func:`encode_R`: successive division and remainder
+    peel off the mixed-radix digits, and the per-axis offsets are subtracted
+    to return to folded coordinates.
+    """
     n1, n2, n3 = (int(n) for n in nk_grid)
     o1, o2, o3 = _r_offsets(nk_grid)
     codes = np.asarray(codes, dtype=np.int64)
@@ -84,20 +141,44 @@ def decode_R(codes, nk_grid):
     return out
 
 
-def unique_R(triples, nk_grid):
+def unique_R(triples: np.ndarray, nk_grid: Sequence[int]) -> tuple[np.ndarray, np.ndarray]:
     """``np.unique(triples, axis=0, return_inverse=True)`` in O(nnz).
 
-    Lattice triples take at most ``nk1*nk2*nk3`` distinct values, so the
-    sort is replaced by a presence mask plus a lookup table.  Output is
-    bit-identical to the ``axis=0`` form (same lexicographic ordering).
+    Parameters
+    ----------
+    triples : np.ndarray, shape (nnz, 3)
+        Folded lattice triples, one per bond, with repeats.
+    nk_grid : sequence of int
+        The three R-grid dimensions.
+
+    Returns
+    -------
+    (R_uniq, inverse) : tuple of np.ndarray
+        The distinct triples in lexicographic order, ``(nR, 3)``, and the
+        index into them for each input row, ``(nnz,)``.
+
+    Raises
+    ------
+    AssertionError
+        If any triple lies outside the folded window of the grid, which
+        would mean the caller produced a lattice vector the R grid cannot
+        represent.
+
+    Notes
+    -----
+    Lattice triples take at most ``nk1*nk2*nk3`` distinct values, a number
+    fixed by the grid and typically far smaller than the bond count.  So the
+    generic sort-based unique — ``O(nnz log nnz)`` on a structured array — is
+    replaced by a presence mask over the whole box plus a lookup table:
+    every bond is touched twice, and nothing is sorted.  Output is
+    bit-identical to the ``axis=0`` form, since the code order of
+    :func:`encode_R` reproduces lexicographic order.
     """
     n1, n2, n3 = (int(n) for n in nk_grid)
     box = n1 * n2 * n3
     code = encode_R(triples, nk_grid)
     if len(code) and (code.min() < 0 or code.max() >= box):
-        raise AssertionError(
-            'unique_R: lattice triple outside the folded %dx%dx%d window' % (n1, n2, n3)
-        )
+        raise AssertionError(f'unique_R: lattice triple outside the folded {n1}x{n2}x{n3} window')
     present = np.zeros(box, dtype=bool)
     present[code] = True
     uniq_codes = np.flatnonzero(present)
@@ -106,32 +187,79 @@ def unique_R(triples, nk_grid):
     return decode_R(uniq_codes, nk_grid), lut[code]
 
 
-def encode_bond(rows, cols, triples, nawf, nk_grid):
+def encode_bond(
+    rows: np.ndarray,
+    cols: np.ndarray,
+    triples: np.ndarray,
+    nawf: int,
+    nk_grid: Sequence[int],
+) -> np.ndarray:
     """Pack ``(row, col, m1, m2, m3)`` into one int64 key.
 
-    Row/column are the most significant digits, so ascending code order
+    Parameters
+    ----------
+    rows, cols : np.ndarray, shape (nnz,)
+        Orbital indices of each bond.
+    triples : np.ndarray, shape (nnz, 3)
+        Folded lattice triple of each bond.
+    nawf : int
+        Number of orbitals, the radix of the row/column digits.
+    nk_grid : sequence of int
+        The three R-grid dimensions.
+
+    Returns
+    -------
+    np.ndarray, shape (nnz,), int64
+        One key per bond, unique across the whole ``(orbital, orbital, R)``
+        space.
+
+    Raises
+    ------
+    NotImplementedError
+        If the key space does not fit in int64.
+
+    Notes
+    -----
+    Row and column are the most significant digits, so ascending code order
     reproduces the lexicographic ordering of the 5-column key array that
     ``np.unique(key, axis=0)`` returns — the bond list therefore comes out
     in exactly the same order as the void-view implementation, down to the
-    floating-point summation order of the assembly plan.
+    floating-point summation order of the assembly plan.  A single integer
+    key also sorts an order of magnitude faster than a structured array and
+    costs 8 bytes per bond instead of 40.
     """
     n1, n2, n3 = (int(n) for n in nk_grid)
     box = n1 * n2 * n3
     if int(nawf) ** 2 * box >= 2**62:
         raise NotImplementedError(
-            'encode_bond: nawf=%d on a %dx%dx%d R grid overflows the int64 bond key; '
-            'the encoded-key path needs nawf^2 * nR < 2^62.' % (nawf, n1, n2, n3)
+            f'encode_bond: nawf={nawf} on a {n1}x{n2}x{n3} R grid overflows the int64 bond '
+            'key; the encoded-key path needs nawf^2 * nR < 2^62.'
         )
     rc = np.asarray(rows, dtype=np.int64) * int(nawf) + np.asarray(cols, dtype=np.int64)
     return rc * box + encode_R(triples, nk_grid)
 
 
-def folded_R_triples(nk1, nk2, nk3):
+def folded_R_triples(nk1: int, nk2: int, nk3: int) -> np.ndarray:
     """Integer lattice triples of the FFT R grid, folded around zero.
 
-    Returns an ``(nk1*nk2*nk3, 3)`` int array whose row ``n`` is the
-    folded triple ``(m1, m2, m3)`` for linear index
-    ``n = k + j*nk3 + i*nk2*nk3``, replicating the fold used by
+    Parameters
+    ----------
+    nk1, nk2, nk3 : int
+        R-grid dimensions.
+
+    Returns
+    -------
+    np.ndarray, shape (nk1*nk2*nk3, 3), int32
+        Row ``n`` is the folded triple ``(m1, m2, m3)`` for linear index
+        ``n = k + j*nk3 + i*nk2*nk3``.
+
+    Notes
+    -----
+    An FFT indexes its real-space grid from 0 to ``nk-1``, but the second
+    half of that range represents *negative* lattice vectors: index
+    ``i >= nk/2`` means the cell at ``i - nk``.  Folding makes that explicit,
+    so a lattice triple can be used directly as a displacement in the phase
+    factor and in the bond length.  This replicates the fold used by
     ``utils.get_R_grid_fft`` (component ``i/nk >= 0.5`` mapped to
     ``i - nk``).
     """
@@ -150,6 +278,34 @@ def folded_R_triples(nk1, nk2, nk3):
 
 class SparseHamiltonian:
     """Thresholded bond list for H(R) with fixed-pattern k-space assembly.
+
+    Parameters
+    ----------
+    nawf : int
+        Number of atomic orbitals in the current cell.
+    nspin : int
+        Number of spin channels.
+    alat : float
+        Lattice constant in Bohr.
+    a_vectors : array_like, shape (3, 3)
+        Lattice vectors in units of ``alat`` (rows).
+    nk_grid : sequence of int
+        The three R-grid dimensions; fixed by the original DFT k-mesh and
+        unchanged by doubling.
+    R_int : array_like, shape (nR, 3)
+        Distinct folded lattice triples referenced by the bonds.
+    rows, cols : array_like, shape (nnz,)
+        Orbital indices of each bond.
+    ridx : array_like, shape (nnz,)
+        Index into ``R_int`` for each bond.
+    vals : array_like, shape (nnz, nspin)
+        Hamiltonian matrix element of each bond, in eV.
+    dnm : array_like, shape (nnz, 3)
+        Intra-cell orbital position difference of each bond, in Bohr.
+    threshold : float, optional
+        Magnitude below which H(R) entries were dropped (eV).
+    drop_report : dict or None, optional
+        Truncation statistics, carried alongside the data.
 
     Attributes
     ----------
@@ -175,24 +331,43 @@ class SparseHamiltonian:
         Truncation statistics; ``eig_bound`` is a rigorous upper bound on
         the eigenvalue shift caused by thresholding (max row sum of
         dropped magnitudes, valid at every k).
+
+    Notes
+    -----
+    A tight-binding Hamiltonian in real space is a list of hoppings: orbital
+    ``i`` in the home cell couples to orbital ``j`` in the cell displaced by
+    lattice vector ``R``, with some amplitude.  Almost all of those
+    amplitudes are negligible — the interaction decays with distance — so
+    storing the full ``(nawf, nawf, nR)`` array wastes memory that grows
+    quadratically with the cell.  Here only the surviving hoppings are
+    stored, as parallel arrays of row, column, R index and value.  Cell
+    doubling then costs a factor of two in memory instead of four.
+
+    The one operation the whole pipeline repeats is building
+    :math:`H(\\mathbf{k})` from these bonds, millions of times over a
+    k-mesh.  Each bond always lands in the same matrix entry regardless of
+    k, and only its phase factor changes, so the sparsity structure is
+    computed once (:attr:`plan`) and every k-point reuses it: multiply each
+    bond by its phase, sum the bonds that share a matrix entry, done.  No
+    sorting, no allocation of index arrays, no dense intermediate.
     """
 
     def __init__(
         self,
-        nawf,
-        nspin,
-        alat,
-        a_vectors,
-        nk_grid,
-        R_int,
-        rows,
-        cols,
-        ridx,
-        vals,
-        dnm,
-        threshold=0.0,
-        drop_report=None,
-    ):
+        nawf: int,
+        nspin: int,
+        alat: float,
+        a_vectors: np.ndarray,
+        nk_grid: Sequence[int],
+        R_int: np.ndarray,
+        rows: np.ndarray,
+        cols: np.ndarray,
+        ridx: np.ndarray,
+        vals: np.ndarray,
+        dnm: np.ndarray,
+        threshold: float = 0.0,
+        drop_report: dict[str, Any] | None = None,
+    ) -> None:
         self.nawf = int(nawf)
         self.nk_grid = tuple(int(n) for n in nk_grid)
         self.nspin = int(nspin)
@@ -215,63 +390,90 @@ class SparseHamiltonian:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_data_controller(cls, data_controller, threshold, rcut=None):
+    def from_data_controller(
+        cls, data_controller: DataController, threshold: float, rcut: float | None = None
+    ) -> SparseHamiltonian:
         """Threshold the dense ``HRs`` in a DataController into a bond list.
 
-        This is the single sanctioned dense-to-sparse boundary of the
-        sparse pipeline, intended for the base (pre-doubling) cell where
-        ``HRs`` is small.  The caller is responsible for deleting
-        ``arrays['HRs']`` afterwards.  Deterministic on every rank
-        (``HRs`` is broadcast by ``pao_hamiltonian``), so no MPI
-        communication is needed.
+        Parameters
+        ----------
+        data_controller : DataController
+            Run state holding the dense ``arrays['HRs']`` produced by
+            ``pao_hamiltonian``, plus ``a_vectors``, ``alat`` and, when
+            present, ``Dnm``.
+        threshold : float
+            Magnitude in eV below which a hopping is dropped.
+        rcut : float or None, optional
+            Additional bond-length cutoff in Bohr.
 
-        ``rcut`` (Bohr, optional) additionally drops bonds whose physical
-        length ``|alat*R + tau_i - tau_j|`` exceeds it.  It is applied as
-        part of ``keep``, not as a post-filter, so the reported
-        ``eig_bound`` covers both truncations.  It **must** be applied
-        here, at the base cell: ``doubling.double_axis`` zeroes ``dnm`` on
-        cross-replica blocks (replicating the dense ``block_diag(Dnm,
-        Dnm)`` semantics), after which the true bond vector is no longer
-        recoverable from the container.
+        Returns
+        -------
+        SparseHamiltonian
+            The thresholded bond list for the base cell.
 
-        Note that ``rcut`` is a physically *different* truncation axis
-        from ``threshold`` (bond length vs matrix-element magnitude) and
-        the two interact; the default is ``None``.
+        Notes
+        -----
+        This is the single sanctioned dense-to-sparse boundary of the sparse
+        pipeline, intended for the base (pre-doubling) cell where ``HRs`` is
+        small.  The caller is responsible for deleting ``arrays['HRs']``
+        afterwards.  Deterministic on every rank (``HRs`` is broadcast by
+        ``pao_hamiltonian``), so no MPI communication is needed.
+
+        A hopping is kept if it passes the threshold in *any* spin channel,
+        so both channels keep a common sparsity pattern and the assembly
+        plan is shared between them.
+
+        Truncation shifts the eigenvalues, and by how much is bounded rather
+        than guessed.  The dropped part of the Hamiltonian is itself a
+        Hermitian matrix at every k, and Gershgorin's theorem bounds its
+        spectral norm by its largest absolute row sum; a perturbation of
+        that norm can move an eigenvalue by at most that much.  Summing the
+        dropped magnitudes per row therefore gives ``eig_bound``, a rigorous
+        upper bound on the error introduced, valid at every k-point.
+
+        ``rcut`` drops bonds whose physical length ``|alat*R + tau_i -
+        tau_j|`` exceeds it.  It is applied as part of the keep mask, not as
+        a post-filter, so the reported ``eig_bound`` covers both truncations.
+        The kept set has to be closed under the Hermitian pairing ``(i,j,R)
+        -> (j,i,-R)`` or the bond list stops being Hermitian.  Off the
+        Nyquist plane that is automatic, since ``-R`` is a distinct grid
+        point at the same length.  On the folded Nyquist plane ``-R`` maps
+        onto ``R`` itself, so the two partners get *different* lengths
+        (measured: tens of Bohr apart) and a plain mask would silently break
+        Hermiticity there; a bond is therefore kept when either partner is
+        inside the cutoff.
+
+        ``rcut`` **must** be applied here, at the base cell:
+        ``doubling.double_axis`` zeroes ``dnm`` on cross-replica blocks
+        (replicating the dense ``block_diag(Dnm, Dnm)`` semantics), after
+        which the true bond vector is no longer recoverable from the
+        container.  Note also that ``rcut`` is a physically *different*
+        truncation axis from ``threshold`` (bond length vs matrix-element
+        magnitude) and the two interact; the default is ``None``.
         """
         arry, attr = data_controller.data_dicts()
         HRs = arry['HRs']
         nawf, _, nk1, nk2, nk3, nspin = HRs.shape
 
         flat = HRs.reshape(nawf, nawf, nk1 * nk2 * nk3, nspin)
-        mag = np.abs(flat).max(axis=3)  # (nawf, nawf, nR); bond kept if any spin passes
+        mag = np.abs(flat).max(axis=3)
         keep = mag > threshold
         if rcut is not None:
-            # bond vector alat*R_cart + Dnm, exactly the 'rcoef' of the gradient
             R_int = folded_R_triples(nk1, nk2, nk3)
             Rcart = (R_int.astype(float) @ arry['a_vectors']) * attr['alat']
             Dnm = arry['Dnm'] if 'Dnm' in arry else np.zeros((nawf, nawf, 3))
             dist = np.linalg.norm(Dnm[:, :, None, :] + Rcart[None, None, :, :], axis=3)
-            # The kept set has to be closed under the Hermitian pairing
-            # (i,j,R) -> (j,i,-R) or the bond list stops being Hermitian.
-            # Off the Nyquist plane that is automatic, since -R is a distinct
-            # grid point and |-R + tau_j - tau_i| = |R + tau_i - tau_j|.  On
-            # the folded Nyquist plane -R maps onto R itself, so the two
-            # partners get *different* lengths (measured: tens of Bohr apart)
-            # and a plain mask would silently break Hermiticity there.  Keep
-            # a bond if either partner is inside the cutoff.
             minus = _minus_R_index(R_int, (nk1, nk2, nk3))
             dist = np.minimum(dist, dist.transpose(1, 0, 2)[:, :, minus])
             keep &= dist <= float(rcut)
         rows, cols, ridx = np.nonzero(keep)
 
-        # Gershgorin-type bound on the eigenvalue shift from truncation:
-        # for any k, |eig(H) - eig(H_kept)| <= ||dH(k)||_2 <= max_i sum_{j,R} |dropped_ij(R)|
         dropped = np.where(keep, 0.0, mag)
         row_sums = dropped.sum(axis=(1, 2))
         drop_report = {
             'threshold': float(threshold),
             'rcut': None if rcut is None else float(rcut),
-            'nnz': int(len(rows)),
+            'nnz': len(rows),
             'density': len(rows) / max(mag.size, 1),
             'mbytes': (len(rows) * (4 + 4 + 4 + 16 * nspin + 24)) / 1024**2,
             'dense_mbytes': HRs.nbytes / 1024**2,
@@ -305,14 +507,37 @@ class SparseHamiltonian:
     # Fixed-pattern assembly plan
     # ------------------------------------------------------------------
 
-    def _nyquist_split(self):
+    def _nyquist_split(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Expand bonds on the folded Nyquist planes into half-weight pairs.
 
-        Returns per-bond arrays ``(rows, cols, triples, vals, dnm)`` where
-        every bond whose R has a component at ``-nk/2`` (even nk only) is
-        duplicated into ``-nk/2`` and ``+nk/2`` at half weight, per axis —
+        Returns
+        -------
+        (rows, cols, triples, vals, dnm) : tuple of np.ndarray
+            Per-bond arrays in which every bond whose R has a component at
+            ``-nk/2`` (even ``nk`` only) has been duplicated into ``-nk/2``
+            and ``+nk/2`` at half weight, per axis.
+
+        Notes
+        -----
+        On an even grid the highest-frequency lattice plane is its own
+        mirror image: ``-nk/2`` and ``+nk/2`` label the same folded index, so
+        the plane has no distinct partner to pair with under ``R -> -R``.
+        Left alone, its contribution to the Fourier sum is not Hermitian at
+        k-points away from the original mesh, and the iterative eigensolver
+        requires an exactly Hermitian operator.
+
+        Splitting the plane's weight evenly between ``-nk/2`` and ``+nk/2``
+        restores the symmetry: the two phases are complex conjugates, so
+        their average is real-symmetric in the right way.  At original-grid
+        k-points the two phases coincide and the split changes nothing, so
+        grid values are bit-for-bit what the dense pipeline gets.  This is
         the bond-list equivalent of ``utils.zero_pad``.  The stored bond
-        list is not modified.
+        list is not modified — the split lives only inside the plan, so
+        doubling continues to operate on folded-grid coordinates.
+
+        A list that has already been hermitized carries an explicit
+        ``+nk/2`` plane; splitting again would halve weights that are
+        already paired, so that case is detected and skipped.
         """
         rows = self.rows
         cols = self.cols
@@ -324,8 +549,6 @@ class SparseHamiltonian:
             if nk % 2 != 0:
                 continue
             if (triples[:, axis] == nk // 2).any():
-                # +nk/2 already present (hermitized list): the plane is
-                # explicitly paired, splitting again would skew weights
                 continue
             hit = triples[:, axis] == -(nk // 2)
             if not hit.any():
@@ -341,11 +564,29 @@ class SparseHamiltonian:
             dnm = np.concatenate((dnm, dnm[hit]))
         return rows, cols, triples, vals, dnm
 
-    def _build_plan(self):
-        """Sort bonds into CSR order once; per-k assembly only refills data."""
+    def _build_plan(self) -> None:
+        """Sort bonds into CSR order once; per-k assembly only refills data.
+
+        Notes
+        -----
+        The plan is everything about ``H(k)`` that does not depend on k.
+        Bonds are Nyquist-split, grouped by the matrix entry they land in,
+        and sorted into compressed-row order; the boundaries between groups
+        are recorded so that summing a group is one segmented reduction.
+        The distinct lattice vectors are collected separately, so a k-point
+        evaluates one phase per lattice vector rather than one per bond.
+
+        The gradient coefficients ``alat * Rcart + dnm`` are precomputed on
+        the same ordering, since they too are k-independent: the derivative
+        of the phase factor with respect to k brings down exactly this bond
+        displacement.
+
+        The sort is stable, so bonds landing in the same matrix entry are
+        summed in a fixed order and the assembly is reproducible to the last
+        bit across runs.
+        """
         rows, cols, triples, vals, dnm = self._nyquist_split()
 
-        # compact unique-R list so per-k phases are computed once per R
         R_uniq, ridx = np.unique(triples, axis=0, return_inverse=True)
 
         pair = rows.astype(np.int64) * self.nawf + cols
@@ -358,9 +599,9 @@ class SparseHamiltonian:
         counts = np.bincount((upair // self.nawf).astype(np.intp), minlength=self.nawf)
         indptr = np.concatenate(([0], np.cumsum(counts))).astype(np.int32)
 
-        Rcart = R_uniq.astype(float) @ self.a_vectors  # units of alat
+        Rcart = R_uniq.astype(float) @ self.a_vectors
         ridx = ridx[order]
-        rcoef = self.alat * Rcart[ridx] + dnm[order]  # (nnz', 3), Bohr
+        rcoef = self.alat * Rcart[ridx] + dnm[order]
 
         self._plan = {
             'seg_starts': seg_starts,
@@ -374,18 +615,48 @@ class SparseHamiltonian:
         }
 
     @property
-    def plan(self):
+    def plan(self) -> dict[str, np.ndarray]:
+        """The k-independent assembly plan, built on first access.
+
+        Notes
+        -----
+        Keys are ``seg_starts`` (segment boundaries of the reduction),
+        ``indices`` and ``indptr`` (the CSR pattern), ``R_uniq`` and
+        ``Rcart`` (distinct lattice vectors, fractional and Cartesian in
+        units of ``alat``), ``ridx`` (lattice vector of each ordered bond),
+        ``vals`` (bond values in plan order) and ``rcoef`` (gradient
+        coefficients in Bohr).
+        """
         if self._plan is None:
             self._build_plan()
         return self._plan
 
-    def invalidate_plan(self):
-        """Call after mutating geometry (a_vectors) so coefficients rebuild."""
+    def invalidate_plan(self) -> None:
+        """Discard the cached plan so geometry changes take effect.
+
+        Notes
+        -----
+        Call after mutating ``a_vectors``: the Cartesian lattice vectors and
+        the gradient coefficients are baked into the plan, so a stale plan
+        would silently keep using the old cell.
+        """
         self._plan = None
 
-    def compact(self):
+    def compact(self) -> SparseHamiltonian:
         """Build the assembly plan and release the raw bond arrays.
 
+        Returns
+        -------
+        SparseHamiltonian
+            ``self``, for chaining.
+
+        Raises
+        ------
+        RuntimeError
+            If already compacted.
+
+        Notes
+        -----
         The plan already carries everything per-k assembly needs (ordered
         values, CSR indices, gradient coefficients), so after it is built
         ``rows``/``cols``/``dnm``/``vals`` are dead weight — roughly half
@@ -393,11 +664,12 @@ class SparseHamiltonian:
         final, i.e. after the last ``double_axis`` and ``hermitize``.
 
         Irreversible: anything that mutates or inspects the bond list
-        (``hermitize``, ``hermiticity_error``, ``double_axis``) raises
-        afterwards.  Assembly, and therefore every property, is unaffected.
+        (:meth:`hermitize`, :meth:`hermiticity_error`,
+        :func:`~PAOFLOW.sparse.doubling.double_axis`) raises afterwards.
+        Assembly, and therefore every property, is unaffected.
         """
         self._require_bonds('compact')
-        self.plan  # force the build while the raw arrays are still here
+        self.plan
         self._compact_nnz = self.nnz
         self.rows = None
         self.cols = None
@@ -406,48 +678,123 @@ class SparseHamiltonian:
         return self
 
     @property
-    def compacted(self):
+    def compacted(self) -> bool:
+        """Whether :meth:`compact` has released the raw bond arrays."""
         return self._compact_nnz is not None
 
-    def _require_bonds(self, caller):
+    def _require_bonds(self, caller: str) -> None:
+        """Raise if the raw bond arrays needed by ``caller`` are gone."""
         if self.compacted:
             raise RuntimeError(
-                'SparseHamiltonian.%s needs the raw bond arrays, which compact() '
-                'released. Do all doubling and hermitization before compact().' % caller
+                f'SparseHamiltonian.{caller} needs the raw bond arrays, which compact() '
+                'released. Do all doubling and hermitization before compact().'
             )
 
     # ------------------------------------------------------------------
     # k-space assembly
     # ------------------------------------------------------------------
 
-    def _phase_arg(self, kvec, cart):
-        """Dimensionless k.R per lattice vector, shape (nR,).
+    def _phase_arg(self, kvec: np.ndarray, cart: bool) -> np.ndarray:
+        """Dimensionless ``k.R`` per lattice vector.
 
-        ``cart=False``: k in crystal coordinates, k.R = kfrac . m.
-        ``cart=True``: k Cartesian in units of 2 pi / alat (the dense
-        band-path convention after the ``b_vectors`` rotation in
-        ``do_bands``); k.R uses the Cartesian R of the *current* cell,
-        replicating ``band_loop_H`` exactly (including doubled cells,
-        where ``b_vectors`` remain those of the original cell).
+        Parameters
+        ----------
+        kvec : np.ndarray, shape (3,)
+            The k-point, in the frame selected by ``cart``.
+        cart : bool
+            ``False``: k in crystal coordinates, so ``k.R = kfrac . m``.
+            ``True``: k Cartesian in units of ``2 pi / alat`` (the dense
+            band-path convention after the ``b_vectors`` rotation in
+            ``do_bands``), so ``k.R`` uses the Cartesian R of the *current*
+            cell.
+
+        Returns
+        -------
+        np.ndarray, shape (nR,)
+            The dot product for each distinct lattice vector.
+
+        Notes
+        -----
+        The Cartesian branch replicates ``band_loop_H`` exactly, including
+        doubled cells, where ``b_vectors`` remain those of the original cell
+        and the doubling shows up in the Cartesian R instead.
         """
         p = self.plan
         if cart:
             return p['Rcart'] @ np.asarray(kvec, dtype=float)
         return p['R_uniq'] @ np.asarray(kvec, dtype=float)
 
-    def assemble_hk(self, kvec, ispin=0, sign=-1, cart=False):
-        """Assemble H(k) as a CSR matrix on the fixed union pattern."""
+    def assemble_hk(
+        self, kvec: np.ndarray, ispin: int = 0, sign: int = -1, cart: bool = False
+    ) -> csr_matrix:
+        """Assemble ``H(k)`` as a CSR matrix on the fixed union pattern.
+
+        Parameters
+        ----------
+        kvec : np.ndarray, shape (3,)
+            The k-point, in the frame selected by ``cart``.
+        ispin : int, optional
+            Spin channel.
+        sign : {-1, +1}, optional
+            Sign of the Fourier phase: ``-1`` is the FFT mesh convention,
+            ``+1`` the band-path convention.
+        cart : bool, optional
+            Whether ``kvec`` is Cartesian; see :meth:`_phase_arg`.
+
+        Returns
+        -------
+        scipy.sparse.csr_matrix, shape (nawf, nawf)
+            The Bloch Hamiltonian at this k-point, in eV.
+
+        Notes
+        -----
+        Each lattice vector contributes a phase :math:`e^{s 2\\pi i
+        \\mathbf{k} \\cdot \\mathbf{R}}`; every bond is multiplied by the
+        phase of its own lattice vector, and bonds sharing a matrix entry are
+        summed with one segmented reduction over the precomputed group
+        boundaries.  The CSR index arrays come straight from the plan, so no
+        sorting or index construction happens per k-point.
+        """
         p = self.plan
         phase = np.exp((sign * 2.0j * np.pi) * self._phase_arg(kvec, cart))
         vp = p['vals'][:, ispin] * phase[p['ridx']]
         data = np.add.reduceat(vp, p['seg_starts'])
         return csr_matrix((data, p['indices'], p['indptr']), shape=(self.nawf, self.nawf))
 
-    def assemble_hk_dhk(self, kvec, ispin=0, sign=-1, cart=False):
-        """Assemble H(k) and its gradient [dH/dk_0, dH/dk_1, dH/dk_2].
+    def assemble_hk_dhk(
+        self, kvec: np.ndarray, ispin: int = 0, sign: int = -1, cart: bool = False
+    ) -> tuple[csr_matrix, list[csr_matrix]]:
+        """Assemble ``H(k)`` and its gradient with respect to k.
 
-        The gradient replicates ``hamiltonian.do_gradient``: per bond,
-        ``dH_l = 1j * (alat * Rcart_l + Dnm_l) * H_ij(R) * phase``.
+        Parameters
+        ----------
+        kvec : np.ndarray, shape (3,)
+            The k-point, in the frame selected by ``cart``.
+        ispin : int, optional
+            Spin channel.
+        sign : {-1, +1}, optional
+            Sign of the Fourier phase; see :meth:`assemble_hk`.
+        cart : bool, optional
+            Whether ``kvec`` is Cartesian; see :meth:`_phase_arg`.
+
+        Returns
+        -------
+        (hk, dhk) : tuple
+            The Bloch Hamiltonian, and a list of its three Cartesian
+            derivatives ``[dH/dk_0, dH/dk_1, dH/dk_2]``, all CSR matrices of
+            shape ``(nawf, nawf)``.
+
+        Notes
+        -----
+        Differentiating the Fourier sum with respect to k brings down a
+        factor of the bond displacement, so the gradient shares the phase
+        factors and the sparsity pattern of :math:`H(k)` and costs only three
+        more segmented reductions.  Per bond the coefficient is
+        ``1j * (alat * Rcart_l + Dnm_l)``, replicating
+        ``hamiltonian.do_gradient``: the ``Rcart`` term is the displacement
+        between cells, and the ``Dnm`` term is the tight-binding correction
+        for the offset between the two orbitals inside the cell.  Both are
+        precomputed in the plan as ``rcoef``.
         """
         p = self.plan
         phase = np.exp((sign * 2.0j * np.pi) * self._phase_arg(kvec, cart))
@@ -466,25 +813,54 @@ class SparseHamiltonian:
     # Hermitization
     # ------------------------------------------------------------------
 
-    def hermitize(self):
+    def hermitize(self) -> SparseHamiltonian:
         """Return the bond-level Hermitian average ``(B + B^dagger)/2``.
 
-        ``B^dagger`` is the transposed, conjugated bond list at ``-R``,
-        with ``-R`` folded back into the R window (``+nk/2 -> -nk/2`` on
-        even axes), so the result stays in folded-grid coordinates and
-        the assembly plan's Nyquist split applies uniformly.  Combined
-        with that split, this is *exactly* equivalent to replacing
+        Returns
+        -------
+        SparseHamiltonian
+            A new bond list, exactly Hermitian at every k-point.
+
+        Raises
+        ------
+        RuntimeError
+            If the bond arrays have been released by :meth:`compact`.
+
+        Notes
+        -----
+        A Hamiltonian must be Hermitian, which in real space means the
+        hopping from orbital ``j`` in cell ``-R`` to orbital ``i`` in the
+        home cell is the complex conjugate of the hopping from ``i`` to
+        ``j`` at ``R``.  This method enforces that by averaging the bond list
+        with its own transposed conjugate: each bond ``(i, j, R, v)`` is
+        paired with ``(j, i, -R, conj(v))``, both at half weight, and bonds
+        that then coincide are added together.  The mirrored ``-R`` is folded
+        back into the R window (``+nk/2 -> -nk/2`` on even axes), so the
+        result stays in folded-grid coordinates and the assembly plan's
+        Nyquist split applies uniformly.
+
+        Combined with that split, this is *exactly* equivalent to replacing
         ``H(k)`` by ``(H(k) + H(k)^dagger)/2`` at every k-point — the
         operation the dense pipeline applies to ``Hksp``/``dHksp`` in
-        ``gradient_and_momenta`` — done once, in real space.
+        ``gradient_and_momenta`` — done once, in real space, instead of at
+        every k-point.
 
-        Needed because the dense doubling kernel (which sparse doubling
-        replicates bond-for-bond) maps the base cell's self-paired
-        Nyquist plane asymmetrically, leaving the doubled ``H(R)``
-        slightly non-Hermitian; the dense pipeline mops this up with
-        per-k Hermitizations and one-triangle ``eigh`` reads, while the
-        sparse solver requires an exactly Hermitian operator.  On an
-        already Hermitian bond list this is an exact no-op.
+        It is needed because the dense doubling kernel (which sparse
+        doubling replicates bond-for-bond) maps the base cell's self-paired
+        Nyquist plane asymmetrically, leaving the doubled ``H(R)`` slightly
+        non-Hermitian; the dense pipeline mops this up with per-k
+        Hermitizations and one-triangle ``eigh`` reads, while the sparse
+        solver requires an exactly Hermitian operator.  On an already
+        Hermitian bond list this is an exact no-op.
+
+        The merge groups bonds by a single int64 key (:func:`encode_bond`)
+        rather than by ``np.unique`` over a ``(2*nnz, 5)`` array: same
+        ordering, roughly 17x faster, and 8 bytes per row instead of 40 —
+        which matters because this step is the memory high-water mark of the
+        whole doubling stage.  The position differences ``dnm`` are a per-pair
+        property rather than a weight, so members of a group carry identical
+        values and are assigned rather than summed; the antisymmetry
+        ``Dnm_ij = -Dnm_ji`` is applied to the mirrored half.
         """
         self._require_bonds('hermitize')
         triples = self.R_int[self.ridx].astype(np.int64)
@@ -498,17 +874,15 @@ class SparseHamiltonian:
         cols_all = np.concatenate((self.cols, self.rows))
         triples_all = np.concatenate((triples, mirrored))
         vals = np.concatenate((0.5 * self.vals, 0.5 * np.conj(self.vals)))
-        dnm = np.concatenate((self.dnm, -self.dnm))  # Dnm_ij = -Dnm_ji
+        dnm = np.concatenate((self.dnm, -self.dnm))
 
-        # One int64 key per bond instead of np.unique's void-view lexsort over
-        # a (2*nnz, 5) array: same ordering, ~17x faster and 8 B/row not 40.
         code = encode_bond(rows_all, cols_all, triples_all, self.nawf, self.nk_grid)
         uniq_code, first, inv = np.unique(code, return_index=True, return_inverse=True)
         inv = inv.reshape(-1)
         vals_m = np.zeros((len(uniq_code), self.nspin), dtype=np.complex128)
         np.add.at(vals_m, inv, vals)
         dnm_m = np.zeros((len(uniq_code), 3))
-        dnm_m[inv] = dnm  # group members carry identical dnm (not a weight)
+        dnm_m[inv] = dnm
 
         R_uniq, ridx = unique_R(triples_all[first], self.nk_grid)
         out = SparseHamiltonian(
@@ -534,18 +908,38 @@ class SparseHamiltonian:
     # ------------------------------------------------------------------
 
     @property
-    def nnz(self):
+    def nnz(self) -> int:
+        """Number of stored bonds, before or after :meth:`compact`."""
         return self._compact_nnz if self.compacted else len(self.rows)
 
-    def density(self):
+    def density(self) -> float:
+        """Fraction of the full ``(nawf, nawf, nR)`` array that is stored."""
         return self.nnz / (self.nawf * self.nawf * len(self.R_int))
 
-    def hermiticity_error(self):
-        """Max |H_ij(R) - conj(H_ji(-R))| over stored bonds (diagnostic).
+    def hermiticity_error(self) -> float:
+        """Max ``|H_ij(R) - conj(H_ji(-R))|`` over stored bonds.
 
-        Bonds whose (j, i, -R) partner was dropped by thresholding
-        contribute |H_ij(R)| directly.  Fully vectorized: usable as a
-        production assertion at tens of millions of bonds.
+        Returns
+        -------
+        float
+            The largest Hermiticity violation, in eV; 0.0 for an empty list.
+
+        Raises
+        ------
+        RuntimeError
+            If the bond arrays have been released by :meth:`compact`.
+
+        Notes
+        -----
+        Diagnostic counterpart of :meth:`hermitize`: it measures how far the
+        stored list is from Hermitian without changing it.  Each bond is
+        looked up against its ``(j, i, -R)`` partner through a sorted search
+        on the packed bond key.  A bond whose partner was dropped by
+        thresholding has nothing to cancel against, so it contributes its own
+        magnitude to the error.
+
+        Fully vectorized: usable as a production assertion at tens of
+        millions of bonds.
         """
         self._require_bonds('hermiticity_error')
         if self.nnz == 0:
@@ -566,7 +960,6 @@ class SparseHamiltonian:
         found = (sorted_code[pos] == partner_code) & (mr >= 0)
         partner = order[pos]
 
-        # where the partner is missing the bond is its own error
         err = np.where(
             found,
             np.abs(self.vals - np.conj(self.vals[partner])).max(axis=1),
@@ -574,12 +967,18 @@ class SparseHamiltonian:
         )
         return float(err.max())
 
-    def bytes_per_bond(self):
+    def bytes_per_bond(self) -> tuple[int, int, int]:
         """Bytes per bond for the three states a bond list passes through.
 
-        Returned as ``(container, plan, hermitize_peak)``, all per bond of
-        the list being described.  Derived from the actual allocations, so
-        these track the implementation rather than a remembered constant:
+        Returns
+        -------
+        (container, plan, hermitize_peak) : tuple of int
+            All per bond of the list being described.
+
+        Notes
+        -----
+        Derived from the actual allocations, so these track the
+        implementation rather than a remembered constant:
 
         - ``container``: ``rows`` + ``cols`` + ``ridx`` (int32) + ``vals``
           (complex128 per spin) + ``dnm`` (3 float64).
@@ -602,10 +1001,30 @@ class SparseHamiltonian:
         hermitize_peak = 24 + 24 + 16 + 48 + 32 * self.nspin + 48 + 16 + 32 + 48 + 112 + container
         return container, plan, hermitize_peak
 
-    def project_doubling(self, nx, ny, nz):
-        """Project the cost of ``doubling_Hamiltonian(nx, ny, nz)`` without
-        running it.
+    def project_doubling(self, nx: int, ny: int, nz: int) -> dict[str, Any]:
+        """Project the cost of ``doubling_Hamiltonian(nx, ny, nz)``.
 
+        Parameters
+        ----------
+        nx, ny, nz : int
+            Number of doublings along each axis.
+
+        Returns
+        -------
+        dict
+            ``d`` (total doublings), ``N`` (cell multiplier ``2**d``),
+            ``nawf`` and ``nnz`` after doubling, ``steady_bytes`` (the
+            resident cost of the final plan), ``peak_bytes`` (the
+            high-water mark during hermitization) and ``dense_hk_bytes``
+            (one dense ``H(k)`` at the final size, for comparison).
+
+        Raises
+        ------
+        ValueError
+            If any doubling count is negative.
+
+        Notes
+        -----
         Doubling is pure index arithmetic that replicates every bond
         exactly twice per step (see :mod:`PAOFLOW.sparse.doubling`), so the
         final bond count is ``nnz * 2**(nx+ny+nz)`` — exact, not a
@@ -623,8 +1042,9 @@ class SparseHamiltonian:
         example01 at nx=1.  ``steady_bytes`` therefore carries
         ``HERMITIZE_GROWTH``.
 
-        Returns a dict with ``d``, ``N``, ``nawf``, ``nnz``,
-        ``steady_bytes``, ``peak_bytes`` and ``dense_hk_bytes``.
+        Running this before the doubling itself is the point: it lets a run
+        fail immediately with a number, instead of after hours, in the
+        out-of-memory killer.
         """
         d = int(nx) + int(ny) + int(nz)
         if d < 0:
@@ -643,32 +1063,50 @@ class SparseHamiltonian:
             'dense_hk_bytes': 16 * nawf_final * nawf_final,
         }
 
-    def stats_line(self):
+    def stats_line(self) -> str:
+        """One-line summary of size, sparsity and truncation quality.
+
+        Returns
+        -------
+        str
+            Orbital count, number of lattice vectors, bond count, density,
+            memory, the dense-array equivalent, and the rigorous bound on
+            the eigenvalue shift caused by thresholding.
+        """
         mbytes = self.nnz * (4 + 4 + 4 + 16 * self.nspin + 24) / 1024**2
         dense_mbytes = (self.nawf**2 * np.prod(self.nk_grid) * self.nspin * 16) / 1024**2
         return (
-            'Sparse H(R): nawf=%d, nR=%d, nnz=%.3gM, density=%.2e, mem=%.1f MB '
-            '(dense equivalent %.1f MB), truncation eig-shift bound=%.2e eV'
-            % (
-                self.nawf,
-                len(self.R_int),
-                self.nnz / 1e6,
-                self.density(),
-                mbytes,
-                dense_mbytes,
-                self.drop_report.get('eig_bound', 0.0),
-            )
+            f'Sparse H(R): nawf={self.nawf}, nR={len(self.R_int)}, nnz={self.nnz / 1e6:.3g}M, '
+            f'density={self.density():.2e}, mem={mbytes:.1f} MB '
+            f'(dense equivalent {dense_mbytes:.1f} MB), '
+            f'truncation eig-shift bound={self.drop_report.get("eig_bound", 0.0):.2e} eV'
         )
 
 
-def _minus_R_index(R_int, nk_grid):
-    """Index of -R for each row of R_int, folding Nyquist components onto
-    themselves (for even grids, -(-nk/2) folds back to -nk/2).
+def _minus_R_index(R_int: np.ndarray, nk_grid: Sequence[int]) -> np.ndarray:
+    """Index of ``-R`` for each row of ``R_int``.
 
-    Returns ``-1`` where -R is not present in ``R_int`` at all, which a
-    thresholded bond list can produce.  The window comes from ``nk_grid``
+    Parameters
+    ----------
+    R_int : np.ndarray, shape (nR, 3)
+        Folded lattice triples.
+    nk_grid : sequence of int
+        The three R-grid dimensions, which define the folding window.
+
+    Returns
+    -------
+    np.ndarray, shape (nR,), int64
+        Row index of ``-R`` within ``R_int``, or ``-1`` where ``-R`` is not
+        present at all, which a thresholded bond list can produce.
+
+    Notes
+    -----
+    Negating a folded lattice vector can leave the window, so components at
+    ``+nk/2`` on an even axis are folded back onto ``-nk/2``; the Nyquist
+    plane is therefore its own negative.  The window comes from ``nk_grid``
     rather than from the extent of ``R_int``, so a sparse R list folds
-    correctly.
+    correctly.  The lookup itself is a table over the whole FFT box, built
+    from the packed codes of :func:`encode_R`.
     """
     n1, n2, n3 = (int(n) for n in nk_grid)
     box = n1 * n2 * n3

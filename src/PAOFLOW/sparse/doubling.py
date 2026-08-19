@@ -32,13 +32,72 @@ The driver remains responsible for the accompanying metadata updates
 container's own ``a_vectors`` copy.
 """
 
+from __future__ import annotations
+
 import numpy as np
 
 from .hamiltonian import SparseHamiltonian, unique_R
 
 
-def double_axis(sph, axis):
-    """Return a new :class:`SparseHamiltonian` doubled along ``axis`` (0..2)."""
+def double_axis(sph: SparseHamiltonian, axis: int) -> SparseHamiltonian:
+    """Return a new bond list for the cell doubled along one axis.
+
+    Parameters
+    ----------
+    sph : SparseHamiltonian
+        Bond list of the current cell.  Left unmodified; its raw bond
+        arrays must still be present, i.e. it must not have been
+        compacted.
+    axis : int
+        Lattice axis to double, 0, 1 or 2.
+
+    Returns
+    -------
+    SparseHamiltonian
+        Bond list of the doubled cell: ``2 * nawf`` orbitals, ``2 * nnz``
+        bonds, the same R grid, and ``a_vectors`` with the doubled axis
+        scaled by two.
+
+    Raises
+    ------
+    AssertionError
+        If a mapped lattice index leaves the folded window of the R grid,
+        which would mean the halved index no longer names a vector of the
+        supercell's own lattice.
+    RuntimeError
+        If ``sph`` has been compacted and no longer holds the bond arrays.
+
+    Notes
+    -----
+    Doubling a cell along an axis means describing the same crystal with a
+    unit cell twice as long, holding two copies of the original basis.  The
+    orbital index therefore doubles: orbital ``i`` of the first replica
+    keeps index ``i``, orbital ``i`` of the second gets ``i + nawf``.  A
+    hopping that used to reach from cell ``m`` to cell ``0`` now either
+    stays inside one supercell (connecting the two replicas) or crosses to
+    a neighbouring supercell, depending on whether ``m`` is even or odd:
+
+    - even ``m`` connects like-numbered replicas and lands on supercell
+      ``m/2``, contributing to both diagonal blocks;
+    - odd ``m`` connects the two different replicas and lands on
+      supercells ``(m ± 1) / 2``, contributing to the two off-diagonal
+      blocks.
+
+    Python's floor division implements the even case exactly, negative
+    indices included, and the ``±1`` offsets of the odd case pick out the
+    two supercells a cross-replica hopping reaches.  So the whole operation
+    is integer arithmetic on the axis component of each bond plus an offset
+    on its row or column index — no matrix is ever built, and the bond
+    count merely doubles.  The dense kernel, by
+    contrast, allocates the full ``(2 nawf, 2 nawf, ...)`` array and pays
+    four times the memory per doubling.
+
+    The intra-cell orbital position differences ``dnm``, which enter the
+    velocity operator, are kept on the diagonal blocks and zeroed on the
+    off-diagonal ones.  This follows the dense convention exactly: the
+    dense driver rebuilds ``Dnm`` for the doubled cell as a block-diagonal
+    repeat, which leaves cross-replica pairs at zero.
+    """
     sph._require_bonds('double_axis')
     triples = sph.R_int[sph.ridx].astype(np.int64)
     m = triples[:, axis]
@@ -47,11 +106,11 @@ def double_axis(sph, axis):
     nawf = sph.nawf
 
     t_diag = triples[even].copy()
-    t_diag[:, axis] = m[even] // 2  # exact for negatives (even m)
+    t_diag[:, axis] = m[even] // 2
     t_ur = triples[odd].copy()
-    t_ur[:, axis] = (m[odd] + 1) // 2  # (0,1) block: m = 2M - 1
+    t_ur[:, axis] = (m[odd] + 1) // 2
     t_ll = triples[odd].copy()
-    t_ll[:, axis] = (m[odd] - 1) // 2  # (1,0) block: m = 2M + 1
+    t_ll[:, axis] = (m[odd] - 1) // 2
 
     nk = sph.nk_grid[axis]
     lo = -(nk // 2)
@@ -60,15 +119,15 @@ def double_axis(sph, axis):
         if len(t) and (t[:, axis].min() < lo or t[:, axis].max() > hi):
             raise AssertionError(
                 'double_axis: mapped lattice index outside the folded window '
-                '[%d, %d] of the %d-point grid' % (lo, hi, nk)
+                f'[{lo}, {hi}] of the {nk}-point grid'
             )
 
     rows = np.concatenate(
         (
             sph.rows[even],
-            sph.rows[even] + nawf,  # (0,0), (1,1)
+            sph.rows[even] + nawf,
             sph.rows[odd],
-            sph.rows[odd] + nawf,  # (0,1), (1,0)
+            sph.rows[odd] + nawf,
         )
     )
     cols = np.concatenate(
@@ -87,8 +146,6 @@ def double_axis(sph, axis):
     a_vectors = sph.a_vectors.copy()
     a_vectors[axis, :] *= 2.0
 
-    # R triples take at most nk1*nk2*nk3 distinct values, so the unique is a
-    # presence mask plus a lookup table -- O(nnz), no sort.
     R_uniq, ridx = unique_R(new_triples, sph.nk_grid)
     out = SparseHamiltonian(
         nawf=2 * nawf,

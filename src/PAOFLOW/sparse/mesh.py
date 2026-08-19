@@ -21,29 +21,106 @@ The mesh phase convention is ``sign=-1`` (the dense ``fftn`` convention),
 and the k ordering matches the dense pipeline's FFT-grid linearization
 ``n = k + j*nk3 + i*nk2*nk3``, so per-k quantities are index-comparable
 with the dense arrays.
+
+``PAD_ENERGY_OFFSET`` and ``PAD_DELTA`` are the sentinel energy offset and
+smearing width used to pad an interior-window solve to a rectangular block;
+:func:`run_mesh` explains why they take these values.
 """
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 from mpi4py import MPI
 
+if TYPE_CHECKING:
+    from PAOFLOW.DataController import DataController
+
+    from .hamiltonian import SparseHamiltonian
+    from .log import SparseLog, _NullLog
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-# Sentinels for the padding an interior window needs (its band count varies
-# from k-point to k-point).  The energy sits far outside any plotted range so
-# every smearing kernel evaluates to exactly zero there, the velocity is zero
-# so the state carries no transport weight, and the width is O(1) rather than
-# 0 because the smearing kernels divide by it.
 PAD_ENERGY_OFFSET = 1.0e3
 PAD_DELTA = 1.0
 
 
-def _band_diagonal_velocities(E, V, dhk):
-    """``v_ln = <n| dH/dk_l |n>`` with degenerate groups resolved.
+class MeshConsumer(Protocol):
+    """Interface a fused-mesh consumer must implement.
 
-    Shared by the from-the-bottom and interior paths; the only difference
-    between them is how many states arrive here, so ``m = len(E)`` is read
-    from the input rather than passed in.  Returns ``(3, m)``.
+    Notes
+    -----
+    A consumer is a property accumulator that needs the eigenvectors, which
+    the mesh pass refuses to store.  Instead of returning them, the mesh
+    hands each consumer one k-point's results while they are still live and
+    then frees the block, so a consumer must extract whatever scalar
+    quantity it needs inside :meth:`on_k` and must not keep a reference to
+    ``V``.  :class:`~PAOFLOW.sparse.pdos.PdosConsumer` is the canonical
+    implementation.
+    """
+
+    def on_k(
+        self,
+        ik: int,
+        ispin: int,
+        E: np.ndarray,
+        V: np.ndarray,
+        vel: np.ndarray,
+        delta: np.ndarray,
+    ) -> None:
+        """Accumulate one k-point's contribution."""
+        ...
+
+    def finalize(self, data_controller: DataController) -> None:
+        """Reduce across ranks and write results, after the loop ends."""
+        ...
+
+
+def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) -> np.ndarray:
+    """Band velocities ``v_ln = <n| dH/dk_l |n>``, degeneracies resolved.
+
+    Parameters
+    ----------
+    E : np.ndarray, shape (m,)
+        Eigenvalues at this k-point (eV), ascending.
+    V : np.ndarray, shape (nawf, m)
+        Matching eigenvector block, orthonormal.
+    dhk : sequence of scipy.sparse matrix
+        The three Cartesian derivatives ``dH/dk_l`` at this k-point.
+
+    Returns
+    -------
+    np.ndarray, shape (3, m)
+        Band-diagonal velocity of each state along each Cartesian
+        direction.
+
+    Notes
+    -----
+    By the Hellmann-Feynman theorem the group velocity of band :math:`n` is
+    the expectation value of the Hamiltonian's k-derivative in that band's
+    own state, :math:`v_{ln} = \\langle n | \\partial H / \\partial k_l | n
+    \\rangle` — no derivative of the eigenvector is needed.
+
+    That formula is ambiguous when states are degenerate, because any
+    rotation within a degenerate subspace is an equally valid eigenbasis and
+    the diagonal elements change under it.  The physically meaningful
+    velocities are the eigenvalues of the velocity operator *restricted to
+    the degenerate subspace*, so for each degenerate group the small block
+    :math:`V_D^\\dagger (\\partial H/\\partial k_l) V_D` is formed,
+    Hermitized against round-off, and diagonalized; its ascending
+    eigenvalues replace the diagonal entries.  This is the same convention
+    the dense pipeline applies through ``utils.perturb_split``, and it
+    matters at exactly the folded supercells this backend targets, where
+    multiplets are the rule.
+
+    The products ``(dH/dk_l) V`` are computed once for the whole block and
+    reused inside the degeneracy loop, since restricting to a group is just
+    a column selection of the same product.  The routine is shared by the
+    from-the-bottom and interior solves; they differ only in how many states
+    arrive, which is read from ``E``.
     """
     from ..spectrum.do_eigh import get_degeneracies
 
@@ -52,14 +129,10 @@ def _band_diagonal_velocities(E, V, dhk):
     if m == 0:
         return vel
 
-    W = [dhk[l] @ V for l in range(3)]  # (nawf, m) each
+    W = [dhk[l] @ V for l in range(3)]
     for l in range(3):
         vel[l] = np.einsum('an,an->n', np.conj(V), W[l]).real
 
-    # degenerate groups: replace diagonal entries by the ascending
-    # eigenvalues of the group block (perturb_split convention).
-    # (dhk_l @ V)[:, D] == dhk_l @ V[:, D] exactly, so the group
-    # block reuses W instead of re-running the sparse matmul.
     for D in get_degeneracies(E[None, :, None], m)[0][0]:
         VD = V[:, D]
         for l in range(3):
@@ -70,36 +143,114 @@ def _band_diagonal_velocities(E, V, dhk):
 
 
 def run_mesh(
-    data_controller,
-    sparse_h,
-    nev,
-    consumers=(),
-    afac=None,
-    smearing='gauss',
-    verbose=False,
-    hk_solver='auto',
-    ehi=None,
-    interior=None,
-):
-    """Fused mesh pass.
+    data_controller: DataController,
+    sparse_h: SparseHamiltonian,
+    nev: int,
+    consumers: Sequence[MeshConsumer] = (),
+    afac: float | None = None,
+    smearing: str = 'gauss',
+    verbose: bool = False,
+    hk_solver: str = 'auto',
+    ehi: float | None = None,
+    interior: tuple[float, float] | None = None,
+) -> None:
+    """Walk the local share of the BZ mesh, producing all band-diagonal data.
 
-    ``hk_solver`` selects the per-k kernel once for the whole loop (see
-    :func:`~PAOFLOW.sparse.solver.select_hk_solver`); it depends only on
-    ``(nawf, nev)``, so it cannot change from k-point to k-point.
+    Parameters
+    ----------
+    data_controller : DataController
+        Run state.  Supplies the mesh dimensions and cell volume, and
+        receives ``arrays['E_k']``, ``arrays['velkp']`` and
+        ``arrays['deltakp']`` — this rank's k-slice, in the dense layout.
+    sparse_h : SparseHamiltonian
+        Bond list the Bloch Hamiltonian and its gradient are assembled
+        from at each k-point.
+    nev : int
+        Number of lowest bands per k-point.  Ignored when ``interior`` is
+        given.
+    consumers : sequence of MeshConsumer, optional
+        Property accumulators fed one k-point at a time and finalized
+        after the loop.
+    afac : float or None, optional
+        Prefactor of the adaptive smearing width.  Defaults to the value
+        the dense pipeline uses for the chosen ``smearing``.
+    smearing : str, optional
+        Smearing kernel name; sets the default ``afac``.
+    verbose : bool, optional
+        Log progress every few percent of this rank's k-points.
+    hk_solver : {'auto', 'sparse', 'dense'}, optional
+        Per-k-point kernel, selected once for the whole loop (see
+        :func:`~PAOFLOW.sparse.solver.select_hk_solver`).  It depends only
+        on ``(nawf, nev)``, so it cannot change from k-point to k-point.
+    ehi : float or None, optional
+        Top of the energy window ``nev`` was sized for (eV).  Every k-point
+        whose highest computed band falls below it is counted, and a
+        non-zero global count raises after the loop with the ``nev`` needed
+        to re-run — no silent truncation, and no whole-mesh redo triggered
+        from inside the loop.
+    interior : (float, float) or None, optional
+        Energy window ``(elo, ehi)`` in eV.  Switches to the interior
+        solver: every state inside the window, none below it.
 
-    ``ehi`` (eV), when given, is the top of the energy window the caller
-    sized ``nev`` for.  Every k-point whose highest computed band falls
-    below it is counted, and a non-zero global count raises after the loop
-    with the ``nev`` needed to re-run — no silent truncation, and no
-    whole-mesh redo triggered from inside the loop.
+    Returns
+    -------
+    None
+        Results are written into ``data_controller`` arrays and pushed to
+        the consumers.
 
-    ``interior`` (``(elo, ehi)``, eV) switches to the interior solver: every
-    state inside the window, none below it.  The count is then k-dependent by
-    construction, so the per-k results are accumulated and padded to the
-    global maximum afterwards (see ``PAD_ENERGY_OFFSET``); ``nev`` is ignored
-    and ``attr['bnd']`` is set to that maximum.  ``solve_interior`` guarantees
-    completeness inside the window or raises, so the ``ehi`` deficit counter
-    does not apply and is skipped.
+    Notes
+    -----
+    Every band-diagonal property in the pipeline — density of states,
+    projected DOS, Boltzmann transport — is a Brillouin-zone sum over
+    quantities that depend on one band at one k-point: its energy, its
+    velocity, and the width of the smearing that stands in for the delta
+    function.  The dense pipeline computes those in separate passes, each
+    reading a stored eigenvector tensor.  Here they are produced in a
+    single fused loop, so the eigenvectors never outlive the k-point that
+    produced them.
+
+    Three things come out of each k-point.  The eigenvalues are the band
+    energies.  The band-diagonal velocities follow from the Hellmann-Feynman
+    theorem (see :func:`_band_diagonal_velocities`) using the same sparse
+    assembly of :math:`\\partial H/\\partial k` that gives :math:`H(k)`.
+    The adaptive smearing width is the Yates estimate ``afac * dk * |v_n|``:
+    the energy of a band changes by roughly its velocity times the k-point
+    spacing between one mesh point and the next, so a band that disperses
+    steeply must be smeared more widely than a flat one to make a discrete
+    mesh sum approximate a continuous integral.
+
+    Consecutive mesh points are close in k, so each solve is seeded from
+    its predecessor: the from-the-bottom branch reuses the previous ground
+    state as the starting vector, and the interior branch reuses the
+    previous state count as its Krylov size estimate.  Both are convergence
+    aids only and cannot change the converged result.
+
+    Which states are computed depends on the mode.  From the bottom, each
+    k-point returns exactly ``nev`` states and the output arrays are
+    rectangular by construction.  With an ``interior`` window, the number of
+    states inside the window is k-dependent (a band crossing an edge is in
+    at one k-point and out at the next), so the per-k results are collected
+    and padded to the global maximum afterwards; ``attr['bnd']`` is set to
+    that maximum.  The padding is deliberately not neutral-looking: the
+    energy sits far outside any plotted range so every smearing kernel
+    evaluates to zero there, the velocity is zero so the state carries no
+    transport weight, and the width is ``O(1)`` rather than zero only
+    because the smearing kernels divide by it.  ``solve_interior``
+    guarantees completeness inside the window or raises, so the ``ehi``
+    deficit counter does not apply there and is skipped.
+
+    An interior solve also records ``attr['sparse_interior_dmax']``, the
+    largest *real* adaptive width over the whole mesh with padding excluded.
+    Consumers need it to know how far a smearing tail reaches past the
+    window edge: a state just below ``elo`` still contributes inside the
+    window, so a DOS plotted too close to the edge is contaminated by states
+    that were never computed.  It is recorded here because only the mesh
+    pass knows the widths.
+
+    Progress logging uses an interval of one tenth of this rank's k-points,
+    capped at 100.  A fixed interval of 100 would print nothing at all on a
+    coarse supercell mesh (216 k-points over four ranks is 54 each), which
+    is exactly the run slow enough to want progress from.
     """
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
@@ -110,30 +261,27 @@ def run_mesh(
     nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
     attr['nkpnts'] = nkpnts = nk1 * nk2 * nk3
 
-    kfrac_all = get_K_grid_fft_crystal(nk1, nk2, nk3)  # (nktot, 3), dense ordering
+    kfrac_all = get_K_grid_fft_crystal(nk1, nk2, nk3)
     kloc = scatter_full(kfrac_all, attr['npool'])
     nk_local = kloc.shape[0]
     nspin = sparse_h.nspin
 
-    # Yates widths, as in do_adaptive_smearing
     dk = (8.0 * np.pi**3 / attr['omega'] / nkpnts) ** (1.0 / 3.0)
     if afac is None:
         afac = 1.0 if smearing == 'm-p' else 0.7
 
     log = get_sparse_log(data_controller)
-    log.section('Mesh pass (eigenvalues + velocities%s)' % (' + PDOS' if consumers else ''))
-    log.field('mesh', '%d x %d x %d  (%d k-points)' % (nk1, nk2, nk3, nkpnts))
+    log.section(f'Mesh pass (eigenvalues + velocities{" + PDOS" if consumers else ""})')
+    log.field('mesh', f'{nk1} x {nk2} x {nk3}  ({nkpnts} k-points)')
     if interior is None:
         log.field('bands per k (nev)', nev)
     else:
-        log.field('interior window (eV)', '[%.3f, %.3f]' % (interior[0], interior[1]))
+        log.field('interior window (eV)', f'[{interior[0]:.3f}, {interior[1]:.3f}]')
         log.field('bands per k', 'k-dependent (interior solve); padded after the loop')
-    log.field('smearing', '%s, afac = %.3f' % (smearing, afac))
-    log.field('window top ehi (eV)', 'none' if ehi is None else '%.3f' % ehi)
+    log.field('smearing', f'{smearing}, afac = {afac:.3f}')
+    log.field('window top ehi (eV)', 'none' if ehi is None else f'{ehi:.3f}')
     log.write(describe_hk_solver(sparse_h.nawf, nev, hk_solver=hk_solver))
 
-    # from-the-bottom: rectangular by construction, so preallocate as before.
-    # interior: the count is k-dependent, so collect and pad afterwards.
     if interior is None:
         E_k = np.zeros((nk_local, nev, nspin), dtype=float)
         velkp = np.zeros((nk_local, 3, nev, nspin), dtype=float)
@@ -141,9 +289,6 @@ def run_mesh(
     else:
         acc = {}
     deficit = 0
-    # a fixed interval of 100 prints nothing at all on a coarse supercell mesh
-    # (216 k-points over 4 ranks is 54 each), which is exactly the run that
-    # takes long enough to want progress
     step = max(1, min(100, nk_local // 10))
 
     for ispin in range(nspin):
@@ -155,13 +300,11 @@ def run_mesh(
                 E, V = solve_lowest(hk, nev, v0=v0, hk_solver=hk_solver)
                 v0 = np.ascontiguousarray(V[:, 0])
             else:
-                # the neighbouring k-point's count is a good Krylov estimate,
-                # the same idea as the v0 warm start on the other branch
                 E, V = solve_interior(hk, interior[0], interior[1], k0=k0, hk_solver=hk_solver)
                 k0 = max(8, 2 * len(E))
 
             vel = _band_diagonal_velocities(E, V, dhk)
-            delta = afac * dk * np.linalg.norm(vel, axis=0)  # (m,)
+            delta = afac * dk * np.linalg.norm(vel, axis=0)
 
             if interior is None:
                 if ehi is not None and E[-1] < ehi:
@@ -174,19 +317,13 @@ def run_mesh(
 
             for c in consumers:
                 c.on_k(ik, ispin, E, V, vel, delta)
-            # V goes out of scope here — never stored
 
             if verbose and (ik + 1) % step == 0:
-                log.write('  progress: %d/%d local k-points' % (ik + 1, nk_local))
+                log.write(f'  progress: {ik + 1}/{nk_local} local k-points')
 
     if interior is not None:
         E_k, velkp, deltakp = _pad_interior(acc, nk_local, nspin, interior[1], log)
         attr['bnd'] = E_k.shape[1]
-        # Largest *real* adaptive width, padding excluded.  Consumers need it
-        # to know how far a smearing tail reaches past the window edge: a state
-        # just below elo still contributes inside the window, so a DoS plotted
-        # too close to the edge is contaminated by states that were never
-        # computed.  Recorded here because only the mesh knows the widths.
         local = max((float(d.max()) for (_, _, d) in acc.values() if len(d)), default=0.0)
         attr['sparse_interior_dmax'] = float(comm.allreduce(local, op=MPI.MAX))
 
@@ -201,18 +338,57 @@ def run_mesh(
         c.finalize(data_controller)
 
 
-def _pad_interior(acc, nk_local, nspin, ehi, log):
-    """Pad k-dependent interior results to one rectangular block.
+def _pad_interior(
+    acc: dict[tuple[int, int], tuple[np.ndarray, np.ndarray, np.ndarray]],
+    nk_local: int,
+    nspin: int,
+    ehi: float,
+    log: SparseLog | _NullLog,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Pad k-dependent interior results into one rectangular block.
 
-    The width is the maximum over *all* ranks, not the local one, so the
-    scattered arrays stay index-comparable with the dense conventions and a
-    later ``gather_full`` cannot straddle two different band counts.
+    Parameters
+    ----------
+    acc : dict
+        Per-k results, keyed by ``(ispin, ik)`` and holding
+        ``(E, vel, delta)`` with a k-dependent number of states.
+    nk_local : int
+        Number of k-points on this rank.
+    nspin : int
+        Number of spin channels.
+    ehi : float
+        Top of the interior window (eV); the padding energy is placed far
+        above it.
+    log : SparseLog or _NullLog
+        Logger for the achieved and padded state counts.
+
+    Returns
+    -------
+    (E_k, velkp, deltakp) : tuple of np.ndarray
+        Rectangular arrays in the dense layout, ``(nk_local, m, nspin)``,
+        ``(nk_local, 3, m, nspin)`` and ``(nk_local, m, nspin)``.
+
+    Raises
+    ------
+    RuntimeError
+        If no k-point on any rank found a state in the window, which almost
+        always means the window was placed outside the spectrum rather than
+        inside a real gap.
+
+    Notes
+    -----
+    The width ``m`` is the maximum over *all* ranks, not the local one, so
+    the scattered arrays stay index-comparable with the dense conventions
+    and a later ``gather_full`` cannot straddle two different band counts.
+    See :func:`run_mesh` for what the padding values mean and why they are
+    chosen to be inert rather than zero.
     """
     local_max = max((len(E) for (E, _, _) in acc.values()), default=0)
     m = int(comm.allreduce(int(local_max), op=MPI.MAX))
+    local_min = min((len(E) for (E, _, _) in acc.values()), default=0)
     log.write(
-        '  interior window: %d-%d states per k locally, padded to %d (global max)'
-        % (min((len(E) for (E, _, _) in acc.values()), default=0), local_max, m)
+        f'  interior window: {local_min}-{local_max} states per k locally, '
+        f'padded to {m} (global max)'
     )
     if m == 0:
         raise RuntimeError(
@@ -232,20 +408,52 @@ def _pad_interior(acc, nk_local, nspin, ehi, log):
     return E_k, velkp, deltakp
 
 
-def check_window_coverage(deficit, nev, ehi, tag):
+def check_window_coverage(deficit: int, nev: int, ehi: float | None, tag: str) -> None:
     """Raise if any k-point's computed spectrum stopped below the window.
 
-    Collective: the local deficit counts are summed across ranks, so
-    every rank raises together rather than one rank hanging in a later
-    reduction.  The message names the exact ``nev`` to re-run with.
+    Parameters
+    ----------
+    deficit : int
+        Number of local k-points whose highest computed band fell below
+        ``ehi``.
+    nev : int
+        Band count the solve was run with, quoted in the message.
+    ehi : float or None
+        Top of the requested energy window (eV).  ``None`` disables the
+        check entirely.
+    tag : str
+        Name of the calling stage, for the message.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    RuntimeError
+        If any rank reported a deficit.
+
+    Notes
+    -----
+    A from-the-bottom solve returns a fixed number of bands, but how far up
+    in energy those bands reach is k-dependent.  If the requested window
+    extends above the highest computed band at some k-point, every property
+    integrated over that window is quietly missing states there — the kind
+    of error that produces a plausible plot with the wrong answer.
+
+    The check is collective: the local counts are summed across ranks, so
+    every rank raises together rather than one rank raising while the others
+    hang in a later reduction.  The message names the exact ``nev`` to
+    re-run with.
     """
     if ehi is None:
         return
     total = comm.allreduce(int(deficit), op=MPI.SUM)
     if total:
+        suggested = nev + max(8, int(0.1 * nev) + 1)
         raise RuntimeError(
-            'sparse %s: %d k-point(s) had their highest computed band below the requested '
-            'window top ehi = %.3f eV, so the %d-band solve does not cover it. Re-run with a '
-            'larger nev (energy_window(..., nev=%d) or a wider margin). No results were '
-            'truncated silently.' % (tag, total, ehi, nev, nev + max(8, int(0.1 * nev) + 1))
+            f'sparse {tag}: {total} k-point(s) had their highest computed band below the '
+            f'requested window top ehi = {ehi:.3f} eV, so the {nev}-band solve does not cover '
+            f'it. Re-run with a larger nev (energy_window(..., nev={suggested}) or a wider '
+            'margin). No results were truncated silently.'
         )
