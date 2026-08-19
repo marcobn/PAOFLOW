@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pre-commit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,7 +64,7 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
 
   qe-integration-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: pre-commit
     strategy:
       fail-fast: false
@@ -133,7 +133,7 @@ jobs:
           if-no-files-found: ignore
 
   transport-integration-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: pre-commit
     strategy:
       fail-fast: false
