@@ -1,0 +1,50 @@
+ &control
+    calculation = 'nscf'
+    restart_mode = 'from_scratch'
+    prefix = 'bi2se3'
+    pseudo_dir = '../../../PSEUDOS/nc-fr-04_pbe_standard'
+    outdir = './output/qe'
+    verbosity = 'high'
+    wf_collect = .true.
+ /
+ &system
+    ibrav = 4
+    A = 4.138
+    C = 28.64
+    nat = 15, ntyp = 2
+    ecutwfc = 80.0
+    ecutrho = 320.0
+    noncolin = .true.
+    lspinorb = .true.
+    occupations = 'smearing', smearing = 'marzari-vanderbilt', degauss = 0.005
+    nbnd = 300
+    nosym = .true.
+    noinv = .true.
+ /
+ &electrons
+    mixing_mode = 'plain'
+    mixing_beta = 0.3
+    conv_thr = 1.0d-8
+    electron_maxstep = 200
+ /
+ATOMIC_SPECIES
+ Bi  0.0  Bi.upf
+ Se  0.0  Se.upf
+ATOMIC_POSITIONS crystal
+ Se  0.0000000000  0.0000000000  0.0450333333
+ Bi  0.3333333333  0.6666666667  0.0992000000
+ Se  0.6666666667  0.3333333333  0.1666666667
+ Bi  0.0000000000  0.0000000000  0.2341333333
+ Se  0.3333333333  0.6666666667  0.2883000000
+ Se  0.6666666667  0.3333333333  0.3783666667
+ Bi  0.0000000000  0.0000000000  0.4325333333
+ Se  0.3333333333  0.6666666667  0.5000000000
+ Bi  0.6666666667  0.3333333333  0.5674666667
+ Se  0.0000000000  0.0000000000  0.6216333333
+ Se  0.3333333333  0.6666666667  0.7117000000
+ Bi  0.6666666667  0.3333333333  0.7658666667
+ Se  0.0000000000  0.0000000000  0.8333333333
+ Bi  0.3333333333  0.6666666667  0.9008000000
+ Se  0.6666666667  0.3333333333  0.9549666667
+K_POINTS (automatic)
+  6 6 3  0 0 0

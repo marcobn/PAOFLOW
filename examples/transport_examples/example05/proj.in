@@ -1,0 +1,6 @@
+   &PROJWFC
+      prefix = 'bi2se3',
+      outdir = './output/qe'
+      filpdos = './bi2se3'
+      lwrite_overlaps = .TRUE.
+   /
