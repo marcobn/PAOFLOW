@@ -17,7 +17,7 @@ def main():
 
     # Dimension of the grid is doubled by default
     #  e.g. 12x12x12 -> 24x24x24
-    paoflow.interpolated_hamiltonian(nfft1=12, nfft2=12, nfft3=12)
+    paoflow.interpolated_hamiltonian()
 
     # Calculate eigenvalues on the entire BZ grid
     paoflow.pao_eigh()
