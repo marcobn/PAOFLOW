@@ -12,7 +12,6 @@ def main():
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
     paoflow.pao_hamiltonian()
-    paoflow.doubling_Hamiltonian(nx=1, ny=1, nz=1)
     # Calculate eigenvalues on the default ibrav=2 path
     paoflow.bands(ibrav=2, nk=2000)
 
