@@ -19,6 +19,7 @@ def main():
     paoflow.pao_hamiltonian()
 
     paoflow.doubling_Hamiltonian(nx=1, ny=1, nz=1)
+    paoflow.energy_window(emin=-12.0, emax=2.2)
 
     paoflow.bands(ibrav=2, nk=2000)
     paoflow.interpolated_hamiltonian(nfft1=12, nfft2=12, nfft3=12)
