@@ -1,7 +1,3 @@
-# Sparse counterpart of main.py: identical call sequence, purely sparse
-# backend from pao_hamiltonian onward.  All parameters live here — edit
-# `threshold` (eV) to trade accuracy for memory; the conversion prints a
-# rigorous bound on the eigenvalue shift the truncation can cause.
 from PAOFLOW.SparsePAOFLOW import SparsePAOFLOW
 
 
