@@ -32,10 +32,13 @@ D_LAYER = A_CUB / 4.0
 # Vacuum thickness separating periodic images along z (bohr).
 VACUUM = 30.0
 
-# Number of atomic planes. 32 reproduces the paper; the PAO basis is 9 orbitals
-# per atom, so nbnd = 9*NLAYERS and the nscf cost grows steeply. 16 layers is
-# enough to converge the surface states and runs in a fraction of the time.
-NLAYERS = 16
+# Number of atomic planes. 32 reproduces the paper: the upper panel of Fig. 10
+# owes its dense ladder of nested subbands to the k_z quantisation of a 32-layer
+# slab, so a thinner slab gives visibly fewer curves even though the surface
+# states themselves are already converged. The PAO basis is 9 orbitals per atom,
+# so nbnd scales with NLAYERS and the nscf cost grows steeply -- drop to 16 for
+# a quick check.
+NLAYERS = 32
 
 # In-plane fractional positions of the four inequivalent (001) planes.
 _PATTERN = [(0.0, 0.0), (0.5, 0.0), (0.5, 0.5), (0.0, 0.5)]
@@ -86,6 +89,7 @@ _TEMPLATE = """ &control
     mixing_mode = 'plain'
     mixing_beta = 0.3
     conv_thr = {conv_thr}
+    electron_maxstep = 300
  /
 ATOMIC_SPECIES
  Si  28.086 {pseudo}
@@ -115,12 +119,17 @@ def write_inputs(nlayers=NLAYERS):
         )
 
     # PAOFLOW needs a uniform Gamma-centred mesh and the full PAO manifold:
-    # nbnd must be at least nawf = 9 orbitals x nlayers atoms.
+    # nbnd must be at least nawf = 9 orbitals x nlayers atoms. Add 15% headroom
+    # -- with nbnd == nawf exactly the highest PAO states have nothing to project
+    # onto and the count of bands above the projectability threshold drops (the
+    # 4-atom bulk run keeps only 21 of 36 for this reason). A slab also carries
+    # low-lying vacuum states with near-zero projectability that consume part of
+    # the band count before any Si-derived state is reached.
     with open('nscf.in', 'w') as f:
         f.write(
             _TEMPLATE.format(
                 calculation='nscf',
-                extra_system=f'  nbnd = {9 * nlayers}, nosym=.true., noinv=.true.,',
+                extra_system=f'  nbnd = {int(9 * nlayers * 1.15)}, nosym=.true., noinv=.true.,',
                 conv_thr='1.0d-8',
                 kmesh='6 6 1',
                 **common,
@@ -128,7 +137,7 @@ def write_inputs(nlayers=NLAYERS):
         )
 
     print(f'wrote scf.in and nscf.in for a {nlayers}-layer Si(001) slab')
-    print(f'  c/a_tet = {celldm3:.4f}   nbnd = {9 * nlayers}   nawf = {9 * nlayers}')
+    print(f'  c/a_tet = {celldm3:.4f}   nbnd = {int(9 * nlayers * 1.15)}   nawf = {9 * nlayers}')
 
 
 if __name__ == '__main__':

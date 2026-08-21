@@ -2,6 +2,12 @@
 
 PW_EXEC="/home/anooja/Work/software/qe-7.4.1/bin/pw.x"
 PP_EXEC="/home/anooja/Work/software/qe-7.4.1/bin/projwfc.x"
+
+# This QE build is serial ("Serial version" in the output header). Do NOT wrap
+# pw.x in mpirun: it launches N independent copies, only one of which receives
+# stdin, and the rest die with "could not find namelist &control". Scale with
+# OpenMP threads instead.
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 qe_output_dir="output/qe/"
 pao_output_dir="output/paoflow/"
 mkdir -p "$qe_output_dir"

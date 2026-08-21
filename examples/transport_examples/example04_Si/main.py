@@ -65,13 +65,32 @@ def main():
         niterx=200, transfer_thr=1.0e-7, nprint=20, nfailx=5, surface=True
     )
 
-    # Energies are referenced to E_F = 0: PAOFLOW subtracts the SCF Fermi level
-    # when reading the QE eigenvalues, so no efermi_bulk shift is needed.
+    # Energies are referenced to E_F = 0, but for this run that zero is the
+    # valence-band MAXIMUM, not a Fermi level. With occupations='fixed' QE writes
+    # <fermi_energy> equal to <highestOccupiedLevel> (both 0.19345 Ha here), and
+    # PAOFLOW subtracts it in read_QE_xml.py. The QE gap is 0.000 .. +0.756 eV.
+    #
+    # This is why the map below looks like a semiconductor while Fig. 10 looks
+    # metallic: the Si(001)-1x1 dangling-bond band fills the gap from +0.29 to
+    # +0.74 eV, so drawing E_F at the bulk VBM puts the zero underneath the
+    # entire surface band. Fig. 10 instead puts 0 at the Fermi level of the
+    # *terminated* system (the metallic slab of panel 1), which lies inside that
+    # band. Nothing here computes that level: the surface Green's function is
+    # built from the truncated BULK Hamiltonian with no surface self-consistency
+    # and no charge-neutrality condition, so the filling is not an output of this
+    # calculation. Take the shift from the slab run to align the two panels.
+    #
+    # Window: the Si valence band is only 11.3 eV wide (QE band 1 bottoms out at
+    # -11.34 eV, the PAO Hamiltonian at -11.43 eV), so emin=-18 left a third of
+    # the panel dead. More importantly, emax must clear the bulk gap: the
+    # Si(001)-1x1 dangling-bond surface state disperses from +0.29 to +0.71 eV
+    # and is the brightest feature in the whole map -- the counterpart of the
+    # states crossing E_F in Fig. 10. An emax of 0.4 clips it after 0.1 eV.
     transport.configure_energy_grid(
-        emin=-18.0,
-        emax=0.4,
-        ne=400,
-        delta=0.01,
+        emin=-12.5,
+        emax=2.0,
+        ne=450,
+        delta=0.05,
     )
 
     transport.configure_outputs(

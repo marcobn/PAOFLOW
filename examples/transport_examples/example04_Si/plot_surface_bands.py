@@ -17,12 +17,15 @@ import numpy as np
 OUTPUT_DIR = './output/paoflow'
 POSTFIX = '_surf'
 
+# Conduction-band minimum from the QE run, in the same E - E_VBM reference.
+GAP_CBM = 0.756
+
 # Display names for the path labels emitted by the PAOFLOW band-path generator.
 LABEL_MAP = {
-    'gG': r'$\Gamma$',
-    'gS': r'$\Sigma$',
-    'gD': r'$\Delta$',
-    'gL': r'$\Lambda$',
+    'gG': r'$\overline{\Gamma}$',
+    'X': r'$\overline{\mathrm{X}}$',
+    'M': r'$\overline{\mathrm{M}}$',
+    'gS': r'$\overline{\Sigma}$',
 }
 
 
@@ -75,9 +78,13 @@ def main():
     ax.set_xticklabels(labels)
     for t in ticks[1:-1]:
         ax.axvline(kdist[t], color='w', lw=0.5, alpha=0.5)
+    # E = 0 is the valence-band maximum (QE <highestOccupiedLevel>), not mid-gap.
+    # Mark the bulk gap so surface states inside it are unmistakable -- those are
+    # the dangling-bond states that make Fig. 10's slab metallic.
     ax.axhline(0.0, color='w', ls='--', lw=0.8, alpha=0.8)
+    ax.axhline(GAP_CBM, color='w', ls=':', lw=0.8, alpha=0.6)
 
-    ax.set_ylabel(r'$E - E_F$ (eV)')
+    ax.set_ylabel(r'$E - E_\mathrm{VBM}$ (eV)')
     ax.set_title('Si(001) surface-projected bulk band structure')
     fig.colorbar(image, ax=ax, label=r'$A(k,E)$ (normalized)')
     fig.tight_layout()

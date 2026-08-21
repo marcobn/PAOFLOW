@@ -18,6 +18,7 @@ import numpy as np
 
 from build_slab import NLAYERS, PREFIX
 from PAOFLOW import PAOFLOW
+from PAOFLOW.spectrum.kpnts_interpolation_mesh import _getHighSymPoints
 
 
 def main():
@@ -36,7 +37,27 @@ def main():
     # ibrav=6 (simple tetragonal) matches the slab cell; its tabulated X point
     # is (0, 1/2, 0), i.e. in the surface plane, and coincides with the Xbar
     # used by the semi-infinite calculation in the parent directory.
-    paoflow.bands(ibrav=6, band_path='gG-X', nk=200)
+    #
+    # high_sym_points MUST be passed explicitly. kpnts_interpolation_mesh.py:518
+    # reads
+    #
+    #     bp, hsp = (band_path, high_sym_points) if len(high_sym_points) != 0 \
+    #               else (None, None)
+    #
+    # and high_sym_points defaults to {} (DataController.py:451), so calling
+    # bands(band_path='gG-X') on its own silently DISCARDS the path and falls
+    # back to the full default TET path gG-X-M-gG-Z-R-A-Z|X-R|M-A. There is no
+    # warning; the only symptom is a band panel that will not line up with the
+    # NEGF panel next door, which builds its own path through
+    # transport/grid/kpath.py and resolves the tabulated points properly.
+    arrays, attr = paoflow.data_controller.data_dicts()
+    high_sym_points, _ = _getHighSymPoints(6, attr['alat'], arrays['a_vectors'])
+    paoflow.bands(
+        ibrav=6,
+        band_path='gG-X',
+        high_sym_points=high_sym_points,
+        nk=200,
+    )
 
     # Two outermost planes on each face. The slab is symmetric, so both faces
     # carry the same surface states; including all four planes just doubles the
