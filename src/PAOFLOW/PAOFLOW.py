@@ -4158,3 +4158,71 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Electron-Phonon')
+        
+
+    def kubo_linear_response(self,
+                            # eqn = [1,2,3,4,5],
+                            eqn = 5,
+                            # prop = ['ree','shc','cond'],
+                            prop = 'shc',
+                            twoD = False,
+                            gamma = 0.02,
+                            s_tensor = None,
+                            ree_tensor = None,
+                            eminH=-1.0,
+                            emaxH=1.0,
+                            esize=200):
+        
+        arry,attr = self.data_controller.data_dicts()      
+        
+        # arry['eqn'] = eqn
+        # arry['prop'] = prop
+        # arry['gamma'] = gamma
+        attr['eqn'] = eqn
+        attr['prop'] = prop
+        attr['gamma'] = gamma
+        attr['twoD'] = twoD
+        attr['eminH'] = eminH
+        attr['emaxH'] = np.amin(np.array([attr['shift'],emaxH]))
+        attr['esize'] = esize
+        
+        if s_tensor is not None:
+            arry['s_tensor'] = s_tensor
+        
+        if ree_tensor is not None:
+            arry['ree_tensor'] = ree_tensor
+        else:
+            arry['ree_tensor'] = arry['a_tensor']
+        
+        if 'deltakp' not in arry:
+            if 'pksp' not in arry:
+                self.gradient_and_momenta()
+            self.adaptive_smearing()
+            arry['pksp'] = None ###recalculates later with perturb_split function
+            arry['deltakp2'] = None ##not needed for now
+        
+        # if 'ree' in prop or 'shc' in prop:
+        if prop == 'shc' or prop == 'ree':
+            if 'Sj' not in arry:
+                self.spin_operator()
+            
+        # if 'selected_bands' not in arry:
+        #     arry['selected_bands'] = list(range(attr['bnd']))
+            
+        if 1 in eqn:
+            from .response.linear_response_eqn1 import linear_response_eqn1
+            linear_response_eqn1(self.data_controller)
+            self.report_module_time('Kubo Eqn.(1) in completed in: ')
+            self.comm.Barrier()
+        
+        # if 2 in eqn or 3 in eqn or 4 in eqn:
+        #     from .defs.linear_response_eqn234 import do_seperate_chi1s
+        #     do_seperate_chi1s(self.data_controller)
+        #     self.report_module_time('Kubo Eqn.(2/3/4) in completed in: ')
+        #     self.comm.Barrier()
+        
+        # if 5 in eqn:
+        #     from .defs.linear_response_eqn5 import do_chi2_simple
+        #     do_chi2_simple(self.data_controller)
+        #     self.report_module_time('Kubo Eqn.(5) in completed in: ')
+        #     self.comm.Barrier()
