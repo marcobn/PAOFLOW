@@ -13,17 +13,20 @@ import   numpy as np
 import copy
 
 class soc_fitter:
-    def __init__(self, pao_sr,bands_soc_path,orb={},ibrav=0,fermi_level=0,nkpts=100):
+    def __init__(self, 
+                 pao_sr,bands_soc_path,orb={},ibrav=0,fermi_level=0,nkpts=100,guess=0.2,N_extra_bands=0):
         arry, attr = pao_sr.data_controller.data_dicts()
         self.pao_sr=pao_sr
         self.pao_fit_sr=pao_sr
         self.nkpts=nkpts
         self.soc_shell_dict,self.which_pdf_dict=soc_mask(self,orb)
         self.ibrav=ibrav
-        self.begin_bnd_fit,self.end_bnd_fit = calc_1st_bnd(self),attr['nelec']+2
+        self.begin_bnd_fit,self.end_bnd_fit = calc_1st_bnd(self),attr['nelec']+N_extra_bands
         self.Ef=fermi_level
+        self.guess=guess
         self.FR_bands=read_qe_bands(bands_soc_path,self.Ef)
         self.soc_strengh_dict=fit_soc_strength(self)
+        plot_final_bands(self)
     
         #print(self.begin_bnd_fit,self.soc_shell_dict,self.which_pdf_dict)
     def band_error(self, params, dft_bands):
@@ -44,9 +47,9 @@ class soc_fitter:
             )
 
         diff = pao_fit - dft_fit
-
+        print(np.mean(diff**2))
         return np.mean(diff**2)
-
+    
     def run_paoflow_soc(self, params):
 
         paoflow = copy.deepcopy(self.pao_fit_sr)
@@ -77,7 +80,7 @@ def fit_soc_strength(self):
         len(positions)
         for positions in self.which_pdf_dict.values()
     )
-    initial = [0.2] * n_soc
+    initial = [self.guess] * n_soc
 
     res = so.minimize(
         self.band_error,
@@ -87,11 +90,18 @@ def fit_soc_strength(self):
         bounds=[(0.0, None)] * len(initial),
         options={'maxiter': 25}
     )
-
+#    res = so.minimize_scalar(
+#        lambda x: self.band_error([x], self.FR_bands),
+#        bounds=(0.0, 3.0),
+#        method='bounded',
+#        options={
+#            'xatol': 1e-6,
+#            'maxiter': 25
+#        }
+#    )
     print("SOC fitted:", res.x)
 
     SOC_final_dict = build_soc_dict(self,res.x)
-    plot_final_bands(self)
     return SOC_final_dict
 
 
@@ -101,18 +111,18 @@ def build_soc_dict(self, params):
 
     param_index = 0
 
-    for elem, positions in self.which_pdf_dict.items():
+    for elem, orbitals in self.which_pdf_dict.items():
 
         values = [0.0, 0.0, 0.0]
 
-        for pos in positions:
+        for orb in orbitals:
             if param_index >= len(params):
                 raise ValueError(
                     "Number of SOC parameters is smaller than "
                     "the number of requested SOC orbitals."
                 )
 
-            values[pos] = params[param_index]
+            values[orb] = params[param_index]
             param_index += 1
 
         soc_dict[elem] = values
@@ -298,9 +308,9 @@ def plot_final_bands(self):
             label='DFT SOC' if i == 0 else None
         )
 
-    ax.set_xlabel('k-path')
-    ax.set_ylabel('Energy (eV)')
-    ax.set_title('Final SOC fit')
+    ax.set_xlabel(r'$\vec k$')
+    ax.set_ylabel(r'$E-E_F$ (eV)')
+    ax.set_title(f'{self.soc_strengh_dict}')
 
     ax.legend()
     ax.grid(alpha=0.25)
