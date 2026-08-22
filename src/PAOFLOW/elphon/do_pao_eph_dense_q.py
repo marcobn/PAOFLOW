@@ -531,6 +531,12 @@ def eliashberg_dense_q(
         if tau_cryst is not None and species is not None:
             rots = _crystal_point_group(sym_rots, tau_cryst, species)
         qmesh, qweights = irreducible_qmesh(nq_dense, rots, at, bg)
+        if rank == 0:
+            print(
+                '  dense-q symmetry: %d irreducible / %d full q  (%.1fx fewer)'
+                % (qmesh.shape[0], nq_dense**3, nq_dense**3 / qmesh.shape[0]),
+                flush=True,
+            )
     else:
         ax = [np.arange(nq_dense) / nq_dense for _ in range(3)]
         qmesh = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
