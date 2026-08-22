@@ -62,6 +62,19 @@ def read_nscf(save_dir):
     fft_el = out.find('basis_set/fft_grid')
     fft = (int(fft_el.attrib['nr1']), int(fft_el.attrib['nr2']), int(fft_el.attrib['nr3']))
 
+    # Lattice point-group rotations (crystal axes, integer); QE writes the full
+    # holohedry (nrot) even under nosym.  Filter by the atomic basis before using
+    # them (see _crystal_point_group) to get the true crystal point group.
+    syms = out.find('symmetries')
+    s_cryst = None
+    if syms is not None:
+        s_cryst = np.array(
+            [
+                [int(round(float(x))) for x in s.find('rotation').text.split()]
+                for s in syms.findall('symmetry')
+            ]
+        ).reshape(-1, 3, 3)
+
     ef_ha = out.find('band_structure/fermi_energy')
     ef_ry = float(ef_ha.text) * HARTREE_TO_RY
 
@@ -91,6 +104,7 @@ def read_nscf(save_dir):
         'tau_cryst': tau_cryst,
         'atom_names': atom_names,
         'species': species,
+        's_cryst': s_cryst,
     }
 
 

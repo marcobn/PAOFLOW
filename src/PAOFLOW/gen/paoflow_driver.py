@@ -1705,6 +1705,7 @@ __PROJECTION_CALL__
         phonon_at_q, nq_dense=NQ_DENSE, source=SOURCE,
         masses_amu=MASSES_AMU, nk_dense=NK_DENSE, sigmas_ry=[SIGMA_RY],
         nelec=NELEC, mu_star=MU_STAR,
+        sym_rots=info['s_cryst'], tau_cryst=info['tau_cryst'], species=info['atom_names'],
     )
 
     # The Eliashberg result is identical on every rank (Allreduce inside the

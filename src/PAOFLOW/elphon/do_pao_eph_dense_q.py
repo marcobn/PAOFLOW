@@ -305,6 +305,81 @@ def _phonon_modes_at_q(q_cryst, phonon_at_q):
 # --------------------------------------------------------------------------- #
 # 4. Dense-q driver
 # --------------------------------------------------------------------------- #
+def _crystal_point_group(s_cryst, tau_cryst, species, tol=1.0e-4):
+    """Filter the lattice rotations down to the true crystal point group.
+
+    Keeps each integer rotation ``S`` (crystal axes, acting on real-space crystal
+    coordinates as ``r' = S r``) for which some translation ``t`` maps every atom
+    onto an atom of the same species -- i.e. ``S`` is the rotational part of a
+    space-group operation.  Prevents over-symmetrising the q-grid for crystals
+    whose basis lowers the symmetry below the lattice holohedry.
+    """
+    tau = np.asarray(tau_cryst, dtype=float) % 1.0
+    sp = np.asarray(species)
+    same0 = np.nonzero(sp == sp[0])[0]
+    keep = []
+    for S in s_cryst:
+        S = np.asarray(S)
+        rot = (tau @ S.T) % 1.0  # S r for every atom (row-vector form)
+        for b0 in same0:
+            t = (tau[b0] - rot[0]) % 1.0
+            shifted = (rot + t) % 1.0
+            ok = True
+            for a in range(len(tau)):
+                d = np.abs(((shifted[a] - tau + 0.5) % 1.0) - 0.5)
+                if not np.any(np.all(d < tol, axis=1) & (sp == sp[a])):
+                    ok = False
+                    break
+            if ok:
+                keep.append(S)
+                break
+    return keep
+
+
+def irreducible_qmesh(nq, rots_cryst, at, bg, include_tr=True):
+    """Fold a Gamma-centred ``nq^3`` q-grid into the irreducible wedge.
+
+    The rotations (integer crystal-axis matrices) are applied in Cartesian
+    (``R = at^T S at^-T``); because they form an orthogonal group, the orbit is
+    independent of the ``S`` vs ``S^T`` convention.  Time reversal (``q -> -q``)
+    is added by default (``lambda_q = lambda_{-q}``).
+
+    Returns
+    -------
+    q_reps : ndarray ``(nir, 3)``
+        One representative q per star (crystal coordinates).
+    weights : ndarray ``(nir,)``
+        Star multiplicities (sum to ``nq^3``).
+    """
+    ax = [np.arange(nq) / nq for _ in range(3)]
+    qm = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+    A = np.asarray(at, dtype=float).T
+    Ainv = np.linalg.inv(A)
+    Rs = [A @ np.asarray(S, dtype=float) @ Ainv for S in rots_cryst]
+    if include_tr:
+        Rs = Rs + [-R for R in Rs]
+    BT = np.asarray(bg, dtype=float).T
+    Binv = np.linalg.inv(BT)
+    lab2idx = {tuple(np.round(q * nq).astype(int) % nq): i for i, q in enumerate(qm)}
+    assigned = -np.ones(len(qm), dtype=int)
+    reps, wts = [], []
+    for i in range(len(qm)):
+        if assigned[i] >= 0:
+            continue
+        qc = BT @ qm[i]
+        orbit = set()
+        for R in Rs:
+            y = Binv @ (R @ qc)
+            yl = np.round(y * nq)
+            if np.allclose(y * nq, yl, atol=1.0e-6):
+                orbit.add(lab2idx[tuple(yl.astype(int) % nq)])
+        for j in orbit:
+            assigned[j] = len(reps)
+        reps.append(i)
+        wts.append(len(orbit))
+    return qm[reps], np.asarray(wts, dtype=float)
+
+
 def eliashberg_dense_q(
     A,
     HRs,
@@ -329,6 +404,9 @@ def eliashberg_dense_q(
     sigma_w_frac=0.02,
     fs_window=8.0,
     min_freq_thz=0.0,
+    sym_rots=None,
+    tau_cryst=None,
+    species=None,
     comm=None,
 ):
     """SKETCH: Eliashberg properties with BOTH k and q interpolated.
@@ -358,6 +436,16 @@ def eliashberg_dense_q(
         spurious soft/imaginary modes whose ``1/omega^2`` blows up ``lambda``;
         genuine near-Gamma acoustic modes contribute negligibly (their coupling
         vanishes), so raising this to a few kelvin (~0.05-0.1 THz) is safe.
+    sym_rots : ndarray ``(nrot, 3, 3)``, optional
+        Lattice point-group rotations (crystal axes, integer), e.g. ``read_nscf``
+        ``'s_cryst'``.  When given, the dense q-grid is folded to its irreducible
+        wedge (with star-multiplicity weights), evaluating only the inequivalent
+        q -- an up-to-48x (cubic) speedup with an identical result.  ``tau_cryst``
+        and ``species`` filter the holohedry down to the true crystal point group.
+    tau_cryst : ndarray ``(natom, 3)``, optional
+        Atomic positions (crystal coords) for the point-group basis filter.
+    species : sequence, optional
+        Per-atom species labels for the basis filter.
     comm : mpi4py communicator, optional
         Distributes the dense-q loop across ranks (``MPI.COMM_WORLD`` by default);
         run ``mpirun -np N python ...`` for an up-to-``nq_dense^3``-fold speedup.
@@ -436,8 +524,17 @@ def eliashberg_dense_q(
     )
 
     # --- (b) dense q-grid loop (distributed over MPI ranks) ---------------- #
-    ax = [np.arange(nq_dense) / nq_dense for _ in range(3)]
-    qmesh = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+    # Fold to the irreducible wedge when symmetries are supplied (identical
+    # result, far fewer q); otherwise sample the full grid with unit weights.
+    if sym_rots is not None:
+        rots = sym_rots
+        if tau_cryst is not None and species is not None:
+            rots = _crystal_point_group(sym_rots, tau_cryst, species)
+        qmesh, qweights = irreducible_qmesh(nq_dense, rots, at, bg)
+    else:
+        ax = [np.arange(nq_dense) / nq_dense for _ in range(3)]
+        qmesh = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+        qweights = np.ones(qmesh.shape[0])
     nqd = qmesh.shape[0]
     qstart, qstop = load_balancing(size, rank, nqd)
     lam_qv = np.zeros((nqd, nmodes))
@@ -462,9 +559,9 @@ def eliashberg_dense_q(
 
     win.Free()  # release the shared g(R_e, R_p) window (all reads are done)
 
-    # uniform weights: the dense q-grid is the full (unreduced) BZ sampling.
+    # star-multiplicity weights (unit weights when no symmetry folding).
     out = eliashberg_from_modes(
-        lam_qv, om_qv, q_weights=np.ones(nqd), mu_star=mu_star, sigma_w_frac=sigma_w_frac
+        lam_qv, om_qv, q_weights=qweights, mu_star=mu_star, sigma_w_frac=sigma_w_frac
     )
     out['lambda_qv'] = lam_qv
     out['omega_qv_thz'] = om_qv
