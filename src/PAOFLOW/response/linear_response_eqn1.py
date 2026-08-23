@@ -84,6 +84,8 @@ def calc_chi1(data_controller = None, tensor = None):
     prop_aux = np.zeros((nk,len(ene),nbnd, nspin), dtype=float)
     for ispin in range(nspin):
         for ie in range(len(ene)):
+            if rank == 0:
+                print(f'computing for {ie}/{len(ene)}: {ene[ie]}')
             for ik in range(nk):
                 for n in range(nbnd):
                     for m in range(nbnd):

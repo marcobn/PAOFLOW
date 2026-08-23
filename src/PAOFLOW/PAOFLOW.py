@@ -4209,10 +4209,10 @@ class PAOFLOW:
         # if 'selected_bands' not in arry:
         #     arry['selected_bands'] = list(range(attr['bnd']))
             
-        if 1 in eqn:
-            from .response.linear_response_eqn1 import linear_response_eqn1
+        if eqn == 1:
+            from .response.linear_response_eqn1_v3 import linear_response_eqn1
             linear_response_eqn1(self.data_controller)
-            self.report_module_time('Kubo Eqn.(1) in completed in: ')
+            self.report_module_time('Linear response Eqn.(1) completed')
             self.comm.Barrier()
         
         # if 2 in eqn or 3 in eqn or 4 in eqn:

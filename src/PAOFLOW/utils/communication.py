@@ -382,6 +382,35 @@ def gather_scatter(arr, scatter_axis, npool):
 
     return temp
 
+# ================================================================
+# NEW FUNCTION
+# ================================================================
+def reduce_full(arr, sroot=0):
+    """
+    - Sum an array over all MPI ranks and return the result on sroot.
+    Parameters
+    ----------
+    arr : numpy.ndarray
+        Local array on each MPI rank. All ranks must have arrays
+        with the same shape and dtype.
+
+    sroot : int
+        MPI rank that receives the reduced result.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        Sum over all MPI ranks on sroot.
+        None on all other ranks.
+    """
+    if rank == sroot:
+        arr_full = np.empty_like(arr)
+    else:
+        arr_full = None
+    comm.Reduce(arr,arr_full,op=MPI.SUM,root=sroot)
+    
+    return arr_full
+
 
 def gen_window(array, root=0):
     """Create a shared-memory window containing a copy of ``array``.
