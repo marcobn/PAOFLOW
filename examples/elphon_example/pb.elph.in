@@ -1,0 +1,14 @@
+ &inputph
+   prefix='lead',
+   outdir='./',
+   fildvscf='dvscf',        ! <-- was 'pbdv'; must match the phonon run
+   fildyn='lead.dyn',       ! <-- was 'pb.dyn'; match the phonon run
+   electron_phonon='ahc',
+   ahc_nbnd=22,
+   ahc_nbndskip=0,
+   skip_upperfan=.true.,
+   ahc_dir='ahc_dir/',
+   ldisp=.true., nq1=6, nq2=6, nq3=6,
+   tr2_ph=1.0d-12, amass(1)=207.2,
+   recover = .t.
+ /
