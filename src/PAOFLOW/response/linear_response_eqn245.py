@@ -60,7 +60,7 @@ def calc_chi(data_controller):
     if attr['response'] == 'shc' and attr['t_odd'] == True:
         if attr['intraband'] or attr['interband']:
             for tensor in arry['s_tensor']:
-                spol, jpol, ipol = tensor[0], tensor[1], tensor[2]
+                spol, ipol = tensor[0], tensor[2]
                 if rank == 0:
                     start_time = time.time()
                 jdHksp = do_spin_current(data_controller=data_controller, tensor=tensor)
