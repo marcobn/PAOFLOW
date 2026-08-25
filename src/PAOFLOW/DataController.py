@@ -570,6 +570,35 @@ class DataController:
                 for i in range(len(col1)):
                     f.write('%.5f %.15e\n' % (col1[i], col2[i]))
         self.comm.Barrier()
+        
+    def write_file_row_col_units(self, fname, col1, col2, unit1, unit2):
+        """
+        Write a file with 2 columns and units in the header.
+
+        Arguments:
+            fname (str): Name of the file (written to outputdir)
+            col1 (ndarray): 1D array of values for the first column
+            col2 (ndarray): 1D array of values for the second column
+            unit1 (str): Unit of col1
+            unit2 (str): Unit of col2
+        Returns:
+            None
+        """
+        if self.rank == 0:
+            from os.path import join
+
+            if len(col1) != len(col2):
+                print('ERROR: Cannot write file: %s' % fname)
+                print('Data does not have the same shape')
+                self.comm.Abort()
+            attr = self.data_attributes
+            with open(join(attr['opath'], fname), 'w') as f:
+                # Header
+                f.write(f'# {unit1:<30} {unit2}\n')
+                # Data
+                for x, y in zip(col1, col2):
+                    f.write(f'{x:12.5f} {y:25.15e}\n')
+        self.comm.Barrier()
 
     def write_bxsf(self, fname, bands, nbnd, indices=None):
         """

@@ -12,9 +12,9 @@ from ..utils.smearing import (gaussian,intgaussian,intmetpax)
 
 bohr_to_cm = 5.29177249e-9
 
-def do_seperate_chi1s(data_controller):
+def calc_chi(data_controller):
     arry,attr = data_controller.data_dicts()
-    if attr['prop'] == 'ree' or attr['prop'] == 'shc':
+    if attr['response'] == 'ree' or attr['response'] == 'shc':
         if attr['dftSO'] == False:
             if rank == 0:
                 print('Relativistic calculation with SO required')
@@ -22,9 +22,11 @@ def do_seperate_chi1s(data_controller):
             comm.Barrier()  
     nk, nbnd, nspin = arry['E_k'].shape
                   
-    if attr['prop'] == 'shc':
+    if attr['response'] == 'shc' and attr['full_chi2'] and attr['t_odd'] == False:
         for tensor in arry['s_tensor']:
-            spol, jpol, ipol = tensor[0],tensor[1],tensor[2]       
+            spol, jpol, ipol = tensor[0],tensor[1],tensor[2] 
+            if rank == 0:
+                start_time = time.time()      
             jdHksp = do_spin_current(data_controller = data_controller, tensor=tensor)  
             oper_matrix1 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
             oper_matrix2 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
@@ -32,17 +34,44 @@ def do_seperate_chi1s(data_controller):
                 for ispin in range(jdHksp.shape[3]):
                     oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])       
             jdHksp = None 
-            if attr['eqn'] == 4:
-                calc_chi2(data_controller = data_controller,tensor=tensor,prop='shc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
-            if attr['eqn'] == 2:
-                fermi_surf(data_controller = data_controller,tensor=tensor,prop='shc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
-            if attr['eqn'] == 3:
-                fermi_sea(data_controller = data_controller,tensor=tensor,prop='shc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+            calc_chi2(data_controller = data_controller,tensor=tensor,prop='shc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
             oper_matrix1=oper_matrix2=None
             jdHksp=None
+            if rank == 0:
+                end_time = time.time()
+                total_time = (end_time - start_time) / 60.0
+                print(f'EVEN SHC [{tensor[0]}{tensor[1]}{tensor[2]}] completed in {total_time:.4f} mins.')
         
-    if attr['prop']  == 'ree':
+    if attr['response'] == 'shc' and attr['t_odd'] == True:
+        if attr['intraband'] or attr['interband']:
+            for tensor in arry['s_tensor']:
+                spol, jpol, ipol = tensor[0],tensor[1],tensor[2] 
+                if rank == 0:
+                    start_time = time.time()      
+                jdHksp = do_spin_current(data_controller = data_controller, tensor=tensor)  
+                oper_matrix1 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
+                oper_matrix2 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
+                for ik in range(jdHksp.shape[0]):
+                    for ispin in range(jdHksp.shape[3]):
+                        oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(jdHksp[ik,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])       
+                jdHksp = None                     
+                if attr['intraband']:
+                    fermi_surf(data_controller = data_controller,tensor=tensor,prop='shc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                if attr['interband']:
+                    fermi_sea(data_controller = data_controller,tensor=tensor,prop='shc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                oper_matrix1=oper_matrix2=None
+                jdHksp=None
+                if rank == 0:
+                    end_time = time.time()
+                    total_time = (end_time - start_time) / 60.0
+                    print(f'ODD SHC [{tensor[0]}{tensor[1]}{tensor[2]}] completed in {total_time:.4f} mins.')
+        else:
+            pass 
+                         
+    if attr['response']  == 'ree' and attr['full_chi2'] and attr['t_odd'] == True:
         for tensor in arry['ree_tensor']:
+            if rank == 0:
+                start_time = time.time()  
             spol,ipol = tensor[0],tensor[1] 
             oper_matrix1 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
             oper_matrix2 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
@@ -50,34 +79,78 @@ def do_seperate_chi1s(data_controller):
             for ik in range(nk):
                 for ispin in range(nspin):
                     oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(arry['Sj'][spol,:,:], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])  
-            if attr['eqn'] == 4:
-                calc_chi2(data_controller = data_controller,tensor=tensor,prop='ree',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
-            if attr['eqn']== 2:
-                fermi_surf(data_controller = data_controller,tensor=tensor,prop='ree',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
-            if attr['eqn'] == 3:
-                fermi_sea(data_controller = data_controller,tensor=tensor,prop='ree',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+            calc_chi2(data_controller = data_controller,tensor=tensor,prop='ree',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
             oper_matrix1=oper_matrix2=None
+            if rank == 0:
+                end_time = time.time()
+                total_time = (end_time - start_time) / 60.0
+                print(f'ODD REE [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
                     
-    if attr['prop'] == 'cond':
+    if attr['response']  == 'ree' and attr['t_odd'] == False:
+        if attr['intraband'] or attr['interband']:
+            for tensor in arry['ree_tensor']:
+                if rank == 0:
+                    start_time = time.time()  
+                spol,ipol = tensor[0],tensor[1] 
+                oper_matrix1 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
+                oper_matrix2 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
+                spol, ipol = tensor[0],tensor[1]         
+                for ik in range(nk):
+                    for ispin in range(nspin):
+                        oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(arry['Sj'][spol,:,:], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])  
+                if attr['intraband']:
+                    fermi_surf(data_controller = data_controller,tensor=tensor,prop='ree',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                if attr['interband']:
+                    fermi_sea(data_controller = data_controller,tensor=tensor,prop='ree',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                oper_matrix1=oper_matrix2=None
+                if rank == 0:
+                    end_time = time.time()
+                    total_time = (end_time - start_time) / 60.0
+                    print(f'EVEN REE [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')                  
+                    
+    if attr['response'] == 'ahc' and attr['full_chi2']:
         for tensor in arry['ree_tensor']:
+            if rank == 0:
+                start_time = time.time() 
             cpol,ipol = tensor[0],tensor[1]
             oper_matrix1 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
             oper_matrix2 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
             cpol, ipol = tensor[0],tensor[1]         
             for ik in range(nk):
                 for ispin in range(nspin):
-                    oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(arry['dHksp'][ik,cpol,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])                  
-            if attr['eqn'] == 4:
-                calc_chi2(data_controller = data_controller,tensor=tensor,prop='cond',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
-            if attr['eqn'] == 2:
-                fermi_surf(data_controller = data_controller,tensor=tensor,prop='cond',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
-            if attr['eqn'] == 3:
-                fermi_sea(data_controller = data_controller,tensor=tensor,prop='cond',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                    oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(arry['dHksp'][ik,cpol,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+            calc_chi2(data_controller = data_controller,tensor=tensor,prop='ahc',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
             oper_matrix1=oper_matrix2=None
+            if rank == 0:
+                end_time = time.time()
+                total_time = (end_time - start_time) / 60.0
+                print(f'AHC [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
                             
+    if attr['response'] == 'cond':
+        if attr['intraband'] or attr['interband']:
+            for tensor in arry['ree_tensor']:
+                if rank == 0:
+                    start_time = time.time() 
+                cpol,ipol = tensor[0],tensor[1]
+                oper_matrix1 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
+                oper_matrix2 = np.empty((nk,nbnd,nbnd,nspin), dtype=complex)
+                cpol, ipol = tensor[0],tensor[1]         
+                for ik in range(nk):
+                    for ispin in range(nspin):
+                        oper_matrix1[ik,:,:,ispin],oper_matrix2[ik,:,:,ispin] = perturb_split(arry['dHksp'][ik,cpol,:,:,ispin], arry['dHksp'][ik,ipol,:,:,ispin], arry['v_k'][ik,:,:,ispin], arry['degen'][ispin][ik])
+                if attr['intraband']:
+                    fermi_surf(data_controller = data_controller,tensor=tensor,prop='cond',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                if attr['interband']:
+                    fermi_sea(data_controller = data_controller,tensor=tensor,prop='cond',oper_matrix1=oper_matrix1, oper_matrix2=oper_matrix2)
+                oper_matrix1=oper_matrix2=None
+                if rank == 0:
+                    end_time = time.time()
+                    total_time = (end_time - start_time) / 60.0
+                    print(f'Cond [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
+                
 
 def calc_chi2(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_matrix2=None):
-    '''EQUATION (4)'''
+    '''EQUATION (2)'''
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
     attr['emaxH'] = np.amin(np.array([attr['shift'], attr['emaxH']]))
@@ -93,15 +166,10 @@ def calc_chi2(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
         cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1))* attr['alat']**2)
     else:
         cgs_conv = (1.0e8* ANGSTROM_AU* ELECTRONVOLT_SI**2/ (H_OVER_TPI * attr['omega']))
-    # ============================================================
-    # SHC / REE
-    # ============================================================
+
     if prop == 'shc' or prop == 'ree':
         # --------------------------------------------------------
-        # This array is only nk x nbnd.
-        # We keep this because it contains the band-resolved
-        # contribution that is subsequently multiplied by the
-        # energy-dependent smearing function.
+        # aux1 array is only nk x nbnd
         # --------------------------------------------------------
         aux1 = np.zeros((nk, nbnd),dtype=float)
         for ik in range(nk):
@@ -115,7 +183,7 @@ def calc_chi2(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
             # Remove diagonal contribution
             np.fill_diagonal(aux, 0.0)
             # ----------------------------------------------------
-            # Equation (4)
+            # Equation (2)
             # ----------------------------------------------------
             aux = (2.0* np.imag(aux)* (gamma**2 - E_nm))
             aux /= ((E_nm + gamma**2)**2+ deltab**2)
@@ -159,19 +227,20 @@ def calc_chi2(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
         xzy = ['x', 'y', 'z']
         if prop == 'shc':
             spol, jpol, ipol = (tensor[0],tensor[1],tensor[2])
-            fname = (f'SHC_eqn4_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+            fname = (f'SHC_EVEN_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Chi [(hbar/e)(S/cm)]'
             
         if prop == 'ree':
             spol, ipol = tensor[0], tensor[1]
-            fname = (f'REE_eqn4_{xzy[spol]}{xzy[ipol]}.dat')
+            fname = (f'REE_ODD_{xzy[spol]}{xzy[ipol]}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Chi [hbar*(cm/V)]'
 
-        data_controller.write_file_row_col(fname,ene,aux2_full)
+        # data_controller.write_file_row_col(fname,ene,aux2_full)
+        data_controller.write_file_row_col_units(fname,ene,aux2_full, unit1, unit2)
         aux2_full = None
-
-    # ============================================================
-    # CONDUCTIVITY
-    # ============================================================
-    if prop == 'cond':
+    if prop == 'ahc':
         for ispin in range(nspin):
             # ----------------------------------------------------
             # band-resolved quantity for every local k-point.
@@ -211,15 +280,20 @@ def calc_chi2(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
                 aux2_full *= cgs_conv
             xzy = ['x', 'y', 'z']
             cpol, ipol = (tensor[0],tensor[1])
-            fname = (f'AHE_eqn4_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat')
-            data_controller.write_file_row_col(fname,ene,aux2_full)
+            if nspin == 1:
+                fname = (f'AHC_{xzy[cpol]}{xzy[ipol]}.dat')
+            else:
+                fname = (f'AHC_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'AH Conductivity [S/cm]'
+            # data_controller.write_file_row_col(fname,ene,aux2_full)
+            data_controller.write_file_row_col_units(fname,ene,aux2_full, unit1, unit2)
             aux2_full = None
     oper_matrix1 = None
     oper_matrix2 = None
                 
 def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_matrix2=None):
-    
-    '''Equation 2'''
+    '''Equation (4)'''
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
     gamma = attr['gamma']
@@ -231,8 +305,7 @@ def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper
     # ------------------------------------------------------------
     if attr['twoD']:
         av0 = arry['a_vectors'][0, :]
-        av1 = arry['a_vectors'][1, :]
-        
+        av1 = arry['a_vectors'][1, :]    
         cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1))* attr['alat']**2)
     else:
         cgs_conv = (1.0e8* ANGSTROM_AU* ELECTRONVOLT_SI**2/ (H_OVER_TPI * attr['omega']))
@@ -251,9 +324,8 @@ def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper
         # 1/2 [A + A^T]
         # --------------------------------------------------------
         numerator = np.real(oper_matrix1 * oper_matrix2)
-        
         for ik in range(nk):
-            numerator[ik, :, :] = 0.5 * (numerator[ik, :, :]+ np.conj(numerator[ik, :, :].T))
+            numerator[ik, :] = 0.5 * (numerator[ik, :]+ np.conj(numerator[ik, :].T))
         oper_matrix1 = None
         oper_matrix2 = None
         # --------------------------------------------------------
@@ -261,11 +333,8 @@ def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper
         # we directly accumulate the total contribution for each energy.
         # local_response has only:(esize,)
         # --------------------------------------------------------
-        
         local_response = np.zeros(len(ene),dtype=float)
-
-        # Flatten once so that the final contraction can be
-        # performed as a dot product.
+        # Flatten once so that the final contraction can be performed as a dot product.
         numerator_flat = numerator.ravel()
         for ie in range(len(ene)):
             smear = gaussian(arry['E_k'][:, :, 0],ene[ie],arry['deltakp'][:, :, 0])
@@ -292,11 +361,16 @@ def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper
         xzy = ['x', 'y', 'z']
         if prop == 'shc':
             spol, jpol, ipol = (tensor[0],tensor[1],tensor[2])
-            fname = (f'SHC_eqn2_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+            fname = (f'SHC_ODD_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Chi [(hbar/e)(S/cm)]'
         if prop == 'ree':
             spol, ipol = (tensor[0],tensor[1])
-            fname = (f'REE_eqn2_{xzy[spol]}{xzy[ipol]}.dat')
-        data_controller.write_file_row_col(fname,ene,aux_full)
+            fname = (f'REE_EVEN_{xzy[spol]}{xzy[ipol]}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Chi [hbar*(cm/V)]'
+        # data_controller.write_file_row_col(fname,ene,aux_full)
+        data_controller.write_file_row_col_units(fname,ene,aux_full, unit1, unit2)
         aux_full = None
     # ============================================================
     # CONDUCTIVITY
@@ -308,7 +382,6 @@ def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper
             # ----------------------------------------------------
             oper_matrix1_spin = np.diagonal(oper_matrix1[:, :, :, ispin],axis1=1,axis2=2)
             oper_matrix2_spin = np.diagonal(oper_matrix2[:, :, :, ispin],axis1=1,axis2=2)
-
             # ----------------------------------------------------
             # Numerator
             # ----------------------------------------------------
@@ -345,13 +418,21 @@ def fermi_surf(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper
             # ----------------------------------------------------
             cpol, ipol = (tensor[0],tensor[1])
             xzy = ['x', 'y', 'z']
-            fname = (f'Cond_eqn2_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat')
-            data_controller.write_file_row_col(fname,ene,aux_full)
+            if nspin == 1:
+                fname = (f'Cond_{xzy[cpol]}{xzy[ipol]}.dat')
+            else: 
+                fname = (f'Cond_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat')  
+            unit1 = 'Energy [eV]'
+            unit2 = 'Conductivity [S/cm]'
+            
+            # data_controller.write_file_row_col(fname,ene,aux_full)
+            data_controller.write_file_row_col_units(fname,ene,aux_full, unit1, unit2)
             aux_full = None
-            
-            
+        oper_matrix1 = None
+        oper_matrix2 = None
+                        
 def fermi_sea(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_matrix2=None):
-    '''EQUATION (3)'''
+    '''EQUATION (5)'''
     arry, attr = data_controller.data_dicts()
     nk, nbnd, nspin = arry['E_k'].shape
     deltab = 0.001
@@ -426,11 +507,16 @@ def fermi_sea(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
         xzy = ['x', 'y', 'z']
         if prop == 'shc':
             spol, jpol, ipol = (tensor[0],tensor[1],tensor[2])
-            fname = (f'SHC_eqn3_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+            fname = (f'SHC_ODD_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Chi [(hbar/e)(S/cm)]'
         if prop == 'ree':
             spol, ipol = (tensor[0],tensor[1])
-            fname = (f'REE_eqn3_{xzy[spol]}{xzy[ipol]}.dat')
-        data_controller.write_file_row_col(fname,ene,shc_aux_full)
+            fname = (f'REE_EVEN_{xzy[spol]}{xzy[ipol]}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Chi [hbar*(cm/V)]'
+        # data_controller.write_file_row_col(fname,ene,shc_aux_full)
+        data_controller.write_file_row_col_units(fname,ene,shc_aux_full, unit1, unit2)
         shc_aux_full = None
 
     # ============================================================
@@ -439,8 +525,8 @@ def fermi_sea(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
     if prop == 'cond':
         nk, nbnd, nspin = arry['E_k'].shape
         for ispin in range(nspin):
-            oper_matrix1 = oper_matrix1[:, :, :, ispin]
-            oper_matrix2 = oper_matrix2[:, :, :, ispin]
+            # oper_matrix1 = oper_matrix1[:, :, :, ispin]
+            # oper_matrix2 = oper_matrix2[:, :, :, ispin]
             # ----------------------------------------------------
             # Energy-independent part.
             # Shape:(local_nk, nbnd)
@@ -450,15 +536,15 @@ def fermi_sea(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
                 E = arry['E_k'][ik, :, ispin]
                 # NO SQUARE HERE
                 E_nm = E - E[:, None]
-                aux = (oper_matrix1[ik, :, :]* oper_matrix2[ik, :, :].T)
+                aux = (oper_matrix1[ik, :, :,ispin]* oper_matrix2[ik, :, :,ispin].T)
                 np.fill_diagonal(aux, 0.0)
                 # Minus sign for conductivity
                 aux = (-2.0* np.real(aux)* gamma* E_nm)
                 aux /= ((E_nm**2 + gamma**2)**2+ deltab**2)
                 aux_odd[ik, :] = np.sum(aux,axis=1)
                 aux = None
-            oper_matrix1 = None
-            oper_matrix2 = None
+            # oper_matrix1 = None
+            # oper_matrix2 = None
             # ----------------------------------------------------
             # No (nk, esize) array.
             # ----------------------------------------------------
@@ -484,12 +570,18 @@ def fermi_sea(data_controller=None,tensor=None,prop=None,oper_matrix1=None,oper_
             # ----------------------------------------------------
             cpol, ipol = (tensor[0],tensor[1])
             xzy = ['x', 'y', 'z']
-            fname = (f'Cond_eqn3_{xzy[cpol]}{xzy[ipol]}.dat')
-            # Keep outside rank == 0
-            data_controller.write_file_row_col(fname,ene,shc_aux_full)
+            if nspin == 1:
+                fname = (f'Cond_{xzy[cpol]}{xzy[ipol]}.dat')
+            else:
+                fname = (f'Cond_{xzy[cpol]}{xzy[ipol]}_ispin{ispin}.dat')
+            unit1 = 'Energy [eV]'
+            unit2 = 'Conductivity [S/cm]'
+            # data_controller.write_file_row_col(fname,ene,shc_aux_full)
+            data_controller.write_file_row_col_units(fname,ene,shc_aux_full, unit1, unit2)
             shc_aux_full = None
-            
-                
+        oper_matrix1 = None
+        oper_matrix2 = None
+                            
 def do_spin_current (data_controller = None, tensor=None):
     spol, jpol, ipol = tensor[0],tensor[1],tensor[2]            
     arry,attr = data_controller.data_dicts()

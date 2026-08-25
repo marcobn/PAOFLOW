@@ -2142,6 +2142,7 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Spin Hall Conductivity')
+        
 
     def rashba_edelstein(
         self,
@@ -4159,70 +4160,77 @@ class PAOFLOW:
 
         self.report_module_time('Electron-Phonon')
         
-
-    def kubo_linear_response(self,
-                            # eqn = [1,2,3,4,5],
-                            eqn = 5,
-                            # prop = ['ree','shc','cond'],
-                            prop = 'shc',
-                            twoD = False,
-                            gamma = 0.02,
-                            s_tensor = None,
-                            ree_tensor = None,
-                            eminH=-1.0,
-                            emaxH=1.0,
-                            esize=200):
+    def linear_response(self,
+                        response = 'shc',
+                        gamma = 0.01,
+                        twoD = False,
+                        t_odd = False,
+                        full_chi2 = False,
+                        intraband = False,
+                        interband = False,
+                        s_tensor = None,
+                        a_tensor = None,
+                        eminH = -1.0,
+                        emaxH = 1.0,
+                        esize = 200):
         
         arry,attr = self.data_controller.data_dicts()      
-        
-        # arry['eqn'] = eqn
-        # arry['prop'] = prop
-        # arry['gamma'] = gamma
-        attr['eqn'] = eqn
-        attr['prop'] = prop
+        attr['response'] = response
         attr['gamma'] = gamma
         attr['twoD'] = twoD
         attr['eminH'] = eminH
         attr['emaxH'] = np.amin(np.array([attr['shift'],emaxH]))
         attr['esize'] = esize
+        attr['intraband'] = intraband
+        attr['interband'] = interband
+        attr['t_odd'] = t_odd
+        attr['full_chi2'] = full_chi2
         
         if s_tensor is not None:
-            arry['s_tensor'] = s_tensor
-        
-        if ree_tensor is not None:
-            arry['ree_tensor'] = ree_tensor
+            arry['ree_tensor'] = a_tensor
         else:
             arry['ree_tensor'] = arry['a_tensor']
-        
+            
+        if s_tensor is not None:
+            arry['shc_tensor'] = s_tensor
+        else:
+            arry['shc_tensor'] = arry['s_tensor'] 
+             
+        if response == 'shc' or response == 'ree':
+            if 'Sj' not in arry:
+                self.spin_operator()    
         if 'deltakp' not in arry:
             if 'pksp' not in arry:
                 self.gradient_and_momenta()
             self.adaptive_smearing()
-            arry['pksp'] = None ###recalculates later with perturb_split function
-            arry['deltakp2'] = None ##not needed for now
-        
-        # if 'ree' in prop or 'shc' in prop:
-        if prop == 'shc' or prop == 'ree':
-            if 'Sj' not in arry:
-                self.spin_operator()
             
-        # if 'selected_bands' not in arry:
-        #     arry['selected_bands'] = list(range(attr['bnd']))
-            
-        if eqn == 1:
-            from .response.linear_response_eqn1_v3 import linear_response_eqn1
-            linear_response_eqn1(self.data_controller)
-            self.report_module_time('Linear response Eqn.(1) completed')
-            self.comm.Barrier()
         
-        # if 2 in eqn or 3 in eqn or 4 in eqn:
-        #     from .defs.linear_response_eqn234 import do_seperate_chi1s
-        #     do_seperate_chi1s(self.data_controller)
-        #     self.report_module_time('Kubo Eqn.(2/3/4) in completed in: ')
-        #     self.comm.Barrier()
+        if response == 'shc':
+            if t_odd:
+                module = ('linear_response_eqn245' if intraband or interband else 'linear_response_eqn1')
+            else:
+                module = ('linear_response_eqn245' if full_chi2 else 'linear_response_eqn3')
+        elif response == 'ree':
+            if t_odd:
+                module = ('linear_response_eqn245' if full_chi2 else 'linear_response_eqn3')
+            else:
+                module = ('linear_response_eqn245' if intraband or interband else 'linear_response_eqn1')
+        elif response == 'cond':
+            module = ('linear_response_eqn245' if intraband or interband else 'linear_response_eqn1')
+
+        elif response == 'ahc':
+            module = ('linear_response_eqn245' if full_chi2 else 'linear_response_eqn3')
+        else:
+            raise ValueError(f'Unknown response type: {response}')
+
+        if module == 'linear_response_eqn245':
+            from .response.linear_response_eqn245 import calc_chi
+        elif module == 'linear_response_eqn1':
+            from .response.linear_response_eqn1 import calc_chi
+        else:
+            from .response.linear_response_eqn3 import calc_chi
+             
+        calc_chi(self.data_controller)
+        self.report_module_time('Linear response completed')
+        self.comm.Barrier()
         
-        # if 5 in eqn:
-        #     from .defs.linear_response_eqn5 import do_chi2_simple
-        #     do_chi2_simple(self.data_controller)
-        #     self.report_module_time('Kubo Eqn.(5) in completed in: ')
-        #     self.comm.Barrier()

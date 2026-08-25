@@ -10,12 +10,13 @@ from ..utils.smearing import gaussian,intgaussian,intmetpax
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 bohr_to_cm = 5.29177249e-9
-def do_chi2_simple(data_controller):
+
+def calc_chi(data_controller):
     arry, attr = data_controller.data_dicts()
     # ------------------------------------------------------------
     # Check SO calculation
     # ------------------------------------------------------------
-    if attr['prop'] == 'ree' or attr['prop'] == 'shc':
+    if attr['response'] == 'ree' or attr['response'] == 'shc':
         if attr['dftSO'] == False:
             if rank == 0:
                 print('Relativistic calculation with SO required')
@@ -33,10 +34,10 @@ def do_chi2_simple(data_controller):
     # ------------------------------------------------------------
     # Select tensors
     # ------------------------------------------------------------
-    if attr['prop'] == 'shc':
-        my_tensor = arry['s_tensor']
+    if attr['response'] == 'shc':
+        my_tensor = arry['shc_tensor']
         
-    if attr['prop'] == 'ree' or attr['prop'] == 'cond':
+    if attr['response'] == 'ree' or attr['response'] == 'ahc':
         my_tensor = arry['ree_tensor']
     # ------------------------------------------------------------
     # Calculate each requested tensor
@@ -50,14 +51,14 @@ def do_chi2_simple(data_controller):
             end_time = time.time()
             total_time = (end_time - start_time) / 60.0
             
-            if attr['prop'] == 'shc':
+            if attr['response'] == 'shc':
                 print(f'EVEN SHC [{tensor[0]}{tensor[1]}{tensor[2]}] completed in {total_time:.4f} mins.')
 
-            if attr['prop'] == 'ree':
+            if attr['response'] == 'ree':
                 print(f'ODD REE [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
 
-            if attr['prop'] == 'cond':
-                print(f'Conductivity [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
+            if attr['response'] == 'ahc':
+                print(f'AHC [{tensor[0]}{tensor[1]}] completed in {total_time:.4f} mins.')
 
 
 def calc_chi2(data_controller=None, tensor=None):
@@ -78,7 +79,7 @@ def calc_chi2(data_controller=None, tensor=None):
     # ------------------------------------------------------------
     # SHC
     # ------------------------------------------------------------
-    if attr['prop'] == 'shc':
+    if attr['response'] == 'shc':
         spol, jpol, ipol = tensor
         jksp_op = spin_current(data_controller=data_controller,tensor=tensor)
         for ispin in range(nspin):
@@ -88,7 +89,7 @@ def calc_chi2(data_controller=None, tensor=None):
     # ------------------------------------------------------------
     # REE
     # ------------------------------------------------------------
-    if attr['prop'] == 'ree':
+    if attr['response'] == 'ree':
         spol, ipol = tensor
         for ispin in range(nspin):
             for ik in range(nk):
@@ -96,7 +97,7 @@ def calc_chi2(data_controller=None, tensor=None):
     # ------------------------------------------------------------
     # CONDUCTIVITY
     # ------------------------------------------------------------
-    if attr['prop'] == 'cond':
+    if attr['response'] == 'ahc':
         cpol, ipol = tensor
         for ispin in range(nspin):
             for ik in range(nk):
@@ -110,7 +111,7 @@ def calc_chi2(data_controller=None, tensor=None):
     Om_znkaux = np.zeros((nk, nbnd, nspin),dtype=float)
     for ispin in range(nspin):
         for ik in range(nk):
-            E = arry['E_k'][ik,arry['selected_bands'],ispin]
+            E = arry['E_k'][ik,:,ispin]
             # ----------------------------------------------------
             # E_nm = (E_n - E_m)^2 + deltap^2
             # ----------------------------------------------------
@@ -139,26 +140,23 @@ def calc_chi2(data_controller=None, tensor=None):
     # Calculate energy-dependent response.
     # ------------------------------------------------------------
     for ispin in range(nspin):
-        E_k = arry['E_k'][:, :, ispin]
-        deltakp = arry['deltakp'][:, :, ispin]
-        Om_nk = Om_znkaux[:, :, ispin]
         for i in range(esize):
             # ----------------------------------------------------
             # Calculate smearing function.
             # ----------------------------------------------------
             if attr['smearing'] == 'gauss':
-                smear = intgaussian(E_k,ene[i],deltakp)
+                smear = intgaussian(arry['E_k'][:,:,ispin],ene[i],arry['deltakp'][:, :, ispin])
             elif attr['smearing'] == 'm-p':
-                smear = intmetpax(E_k,ene[i],deltakp)
+                smear = intmetpax(arry['E_k'][:,:,ispin],ene[i],arry['deltakp'][:, :, ispin])
             else:
-                smear = (0.5* (-np.sign(E_k - ene[i])+ 1))
+                smear = (0.5* (-np.sign(arry['E_k'][:,:,ispin] - ene[i])+ 1))
             # ----------------------------------------------------
             # perform BOTH sums immediately: sum_k sum_n Omega_nk * smear_kn
             # ----------------------------------------------------
-            local_response[i, ispin] = np.sum(Om_nk * smear)
+            local_response[i, ispin] = np.sum(Om_znkaux[:,:,ispin] * smear)
             smear = None
     Om_znkaux = None
-
+    local_response = np.sum(local_response, axis = 1)
     # ============================================================
     # MPI REDUCTION
     # local_response has shape: (esize, nspin)
@@ -172,34 +170,34 @@ def calc_chi2(data_controller=None, tensor=None):
     # GLOBAL NORMALIZATION + UNIT CONVERSION + OUTPUT
     # ============================================================
     if rank == 0:
-        xzy = ['x', 'y', 'z']
         # --------------------------------------------------------
         # SHC
         # --------------------------------------------------------
-        if attr['prop'] == 'shc':
+        if attr['response'] == 'shc':
             Om_zk *= attr['cgs_conv']
             Om_zk /= float(attr['nkpnts'])
-
-            fname = (f'SHC_eqn5_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
-            data_controller.write_file_row_col(fname,ene,Om_zk)
-
-        # --------------------------------------------------------
-        # REE
-        # --------------------------------------------------------
-        if attr['prop'] == 'ree':
+        if attr['response'] == 'ree':
             Om_zk *= bohr_to_cm
             Om_zk /= float(attr['nkpnts'])
-            fname = (f'REE_eqn5_{xzy[spol]}{xzy[ipol]}.dat')
-            data_controller.write_file_row_col(fname,ene,Om_zk)
-            
-        # --------------------------------------------------------
-        # CONDUCTIVITY / AHE
-        # --------------------------------------------------------
-        if attr['prop'] == 'cond':
+        if attr['response'] == 'ahc':
             Om_zk *= attr['cgs_conv']
             Om_zk /= float(attr['nkpnts'])
-            fname = (f'AHE_eqn5_{xzy[cpol]}{xzy[ipol]}.dat')
-            data_controller.write_file_row_col(fname,ene,Om_zk)
+            
+    xzy = ['x', 'y', 'z']  
+    if attr['response'] == 'shc':
+        fname = (f'SHC_EVEN_{xzy[spol]}_{xzy[jpol]}{xzy[ipol]}.dat')
+        unit1 = 'Energy [eV]'
+        unit2 = 'Chi [(hbar/e)(S/cm)]'
+    if attr['response'] == 'ree':
+        fname = (f'REE_ODD_{xzy[spol]}{xzy[ipol]}.dat')
+        unit1 = 'Energy [eV]'
+        unit2 = 'Chi [hbar*(cm/V)]'
+    if attr['response'] == 'ahc':
+        fname = (f'AHC_{xzy[cpol]}{xzy[ipol]}.dat')
+        unit1 = 'Energy [eV]'
+        unit2 = 'AH Conductivity [S/cm]'
+    # data_controller.write_file_row_col(fname,ene,Om_zk)
+    data_controller.write_file_row_col_units(fname,ene,Om_zk, unit1, unit2)
     ene = None
     Om_zk = None
 
