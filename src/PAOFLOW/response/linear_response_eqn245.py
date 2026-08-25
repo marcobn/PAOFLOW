@@ -26,7 +26,7 @@ def calc_chi(data_controller):
 
     if attr['response'] == 'shc' and attr['full_chi2'] and attr['t_odd'] == False:
         for tensor in arry['s_tensor']:
-            spol, jpol, ipol = tensor[0], tensor[1], tensor[2]
+            spol, ipol = tensor[0], tensor[2]
             if rank == 0:
                 start_time = time.time()
             jdHksp = do_spin_current(data_controller=data_controller, tensor=tensor)
@@ -682,7 +682,7 @@ def fermi_sea(data_controller=None, tensor=None, prop=None, oper_matrix1=None, o
 
 
 def do_spin_current(data_controller=None, tensor=None):
-    spol, jpol, ipol = tensor[0], tensor[1], tensor[2]
+    spol, jpol = tensor[0], tensor[1]
     arry, attr = data_controller.data_dicts()
     Sj = arry['Sj'][spol]
     snktot, _, nawf, nawf, nspin = arry['dHksp'].shape
