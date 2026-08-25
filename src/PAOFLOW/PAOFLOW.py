@@ -4173,7 +4173,50 @@ class PAOFLOW:
                         eminH = -1.0,
                         emaxH = 1.0,
                         esize = 200):
+        """
+        Calculate various linear response tensors: 
+            1. Spin Hall conductivity tensors
+            2. Rashba-Edelstein effect tensors
+            3. Charge conductivity tensors
+            4. Anomolous Hall effect tensors
+        All of above tensors can be computed for both magnetic(broken time-reversible symmetry) and nonmagnetic systems.
         
+        Arguments:
+            response (string) : 
+                response to be calculated; Acceptable strings: 'shc', 'ahc', 'ree', 'cond'
+            gamma (float): 
+                spectral broadening to be used 
+            t_odd (boolean): 
+                If True, tensor components that is odd under time-reversible symmetry will be calculated
+            full_chi2 (boolean):
+                If True, Gamma dependent Eqn. (2) will be used to compute the tensor. Refer tutorial03 for equation reference.
+            intraband (boolean) :
+                If True, only intraband contribution <nk|oper|nk> will be calculated 
+            interband (boolean) :
+                If True, only interband contribution <nk|oper|mk> (for n not equal to m) will be calculated 
+            s_tensor (nested list):
+                List of tensor elements to calculate for SHE
+                                  Ex: To calculate xxx and zxy use [[0,0,0],[2,0,1]])
+                                  first index = spin polarization
+                                  second index = spin current
+                                  third index = applied electric field
+            a_tensor (nested list):
+                List of tensor elements to calculate for REE/AHE/Conductivity
+                                  Ex: [[1,2],[0,1]]
+                                  firs index: direction of the response
+                                  second index: direction of of applied electric field
+            twoD (bool): 
+                True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
+            eminH (float):
+                The minimum energy in the range
+            emaxH (float):
+                The maximum energy in the range
+            esize (int): 
+                The number of energy increments
+                
+        Returns:
+            None
+        """
         arry,attr = self.data_controller.data_dicts()      
         attr['response'] = response
         attr['gamma'] = gamma
