@@ -570,7 +570,7 @@ class DataController:
                 for i in range(len(col1)):
                     f.write('%.5f %.15e\n' % (col1[i], col2[i]))
         self.comm.Barrier()
-        
+
     def write_file_row_col_units(self, fname, col1, col2, unit1, unit2):
         """
         Write a file with 2 columns and units in the header.

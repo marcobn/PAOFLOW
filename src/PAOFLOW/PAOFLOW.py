@@ -2142,7 +2142,6 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Spin Hall Conductivity')
-        
 
     def rashba_edelstein(
         self,
@@ -4159,41 +4158,43 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Electron-Phonon')
-        
-    def linear_response(self,
-                        response = 'shc',
-                        gamma = 0.01,
-                        twoD = False,
-                        t_odd = False,
-                        full_chi2 = False,
-                        intraband = False,
-                        interband = False,
-                        s_tensor = None,
-                        a_tensor = None,
-                        eminH = -1.0,
-                        emaxH = 1.0,
-                        esize = 200):
+
+    def linear_response(
+        self,
+        response='shc',
+        gamma=0.01,
+        twoD=False,
+        t_odd=False,
+        full_chi2=False,
+        intraband=False,
+        interband=False,
+        s_tensor=None,
+        a_tensor=None,
+        eminH=-1.0,
+        emaxH=1.0,
+        esize=200,
+    ):
         """
-        Calculate various linear response tensors: 
+        Calculate various linear response tensors:
             1. Spin Hall conductivity tensors
             2. Rashba-Edelstein effect tensors
             3. Charge conductivity tensors
             4. Anomolous Hall effect tensors
         All of above tensors can be computed for both magnetic(broken time-reversible symmetry) and nonmagnetic systems.
-        
+
         Arguments:
-            response (string) : 
+            response (string) :
                 response to be calculated; Acceptable strings: 'shc', 'ahc', 'ree', 'cond'
-            gamma (float): 
-                spectral broadening to be used 
-            t_odd (boolean): 
+            gamma (float):
+                spectral broadening to be used
+            t_odd (boolean):
                 If True, tensor components that is odd under time-reversible symmetry will be calculated
             full_chi2 (boolean):
                 If True, Gamma dependent Eqn. (2) will be used to compute the tensor. Refer tutorial03 for equation reference.
             intraband (boolean) :
-                If True, only intraband contribution <nk|oper|nk> will be calculated 
+                If True, only intraband contribution <nk|oper|nk> will be calculated
             interband (boolean) :
-                If True, only interband contribution <nk|oper|mk> (for n not equal to m) will be calculated 
+                If True, only interband contribution <nk|oper|mk> (for n not equal to m) will be calculated
             s_tensor (nested list):
                 List of tensor elements to calculate for SHE
                                   Ex: To calculate xxx and zxy use [[0,0,0],[2,0,1]])
@@ -4205,64 +4206,67 @@ class PAOFLOW:
                                   Ex: [[1,2],[0,1]]
                                   firs index: direction of the response
                                   second index: direction of of applied electric field
-            twoD (bool): 
+            twoD (bool):
                 True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
             eminH (float):
                 The minimum energy in the range
             emaxH (float):
                 The maximum energy in the range
-            esize (int): 
+            esize (int):
                 The number of energy increments
-                
+
         Returns:
             None
         """
-        arry,attr = self.data_controller.data_dicts()      
+        arry, attr = self.data_controller.data_dicts()
         attr['response'] = response
         attr['gamma'] = gamma
         attr['twoD'] = twoD
         attr['eminH'] = eminH
-        attr['emaxH'] = np.amin(np.array([attr['shift'],emaxH]))
+        attr['emaxH'] = np.amin(np.array([attr['shift'], emaxH]))
         attr['esize'] = esize
         attr['intraband'] = intraband
         attr['interband'] = interband
         attr['t_odd'] = t_odd
         attr['full_chi2'] = full_chi2
-        
+
         if s_tensor is not None:
             arry['ree_tensor'] = a_tensor
         else:
             arry['ree_tensor'] = arry['a_tensor']
-            
+
         if s_tensor is not None:
             arry['shc_tensor'] = s_tensor
         else:
-            arry['shc_tensor'] = arry['s_tensor'] 
-             
+            arry['shc_tensor'] = arry['s_tensor']
+
         if response == 'shc' or response == 'ree':
             if 'Sj' not in arry:
-                self.spin_operator()    
+                self.spin_operator()
         if 'deltakp' not in arry:
             if 'pksp' not in arry:
                 self.gradient_and_momenta()
             self.adaptive_smearing()
-            
-        
+
         if response == 'shc':
             if t_odd:
-                module = ('linear_response_eqn245' if intraband or interband else 'linear_response_eqn1')
+                module = (
+                    'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+                )
             else:
-                module = ('linear_response_eqn245' if full_chi2 else 'linear_response_eqn3')
+                module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
         elif response == 'ree':
             if t_odd:
-                module = ('linear_response_eqn245' if full_chi2 else 'linear_response_eqn3')
+                module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
             else:
-                module = ('linear_response_eqn245' if intraband or interband else 'linear_response_eqn1')
+                module = (
+                    'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+                )
         elif response == 'cond':
-            module = ('linear_response_eqn245' if intraband or interband else 'linear_response_eqn1')
+            module = 'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
 
         elif response == 'ahc':
-            module = ('linear_response_eqn245' if full_chi2 else 'linear_response_eqn3')
+            module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
         else:
             raise ValueError(f'Unknown response type: {response}')
 
@@ -4272,8 +4276,7 @@ class PAOFLOW:
             from .response.linear_response_eqn1 import calc_chi
         else:
             from .response.linear_response_eqn3 import calc_chi
-             
+
         calc_chi(self.data_controller)
         self.report_module_time('Linear response completed')
         self.comm.Barrier()
-        

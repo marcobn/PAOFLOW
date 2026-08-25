@@ -382,6 +382,7 @@ def gather_scatter(arr, scatter_axis, npool):
 
     return temp
 
+
 # ================================================================
 # NEW FUNCTION
 # ================================================================
@@ -407,8 +408,8 @@ def reduce_full(arr, sroot=0):
         arr_full = np.empty_like(arr)
     else:
         arr_full = None
-    comm.Reduce(arr,arr_full,op=MPI.SUM,root=sroot)
-    
+    comm.Reduce(arr, arr_full, op=MPI.SUM, root=sroot)
+
     return arr_full
 
 
