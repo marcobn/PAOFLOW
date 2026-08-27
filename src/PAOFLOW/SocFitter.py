@@ -3,6 +3,9 @@
 # read the FR bands, compare it kpt with ad hoc FR, 
 # fit up to the last band with Proj > 95%
 
+
+
+#START DOING A FIT OVER A RANGE OF EXPECTED SOC VALUES
 import numpy as np
 from PAOFLOW import PAOFLOW
 from PAOFLOW import GPAO
@@ -30,7 +33,7 @@ class soc_fitter:
     
         #print(self.begin_bnd_fit,self.soc_shell_dict,self.which_pdf_dict)
     def band_error(self, params, dft_bands):
-
+        
         pao_bands = self.run_paoflow_soc(params)
 
         nbnd_min = self.begin_bnd_fit
@@ -49,7 +52,7 @@ class soc_fitter:
         diff = pao_fit - dft_fit
         print(np.mean(diff**2))
         return np.mean(diff**2)
-    
+
     def run_paoflow_soc(self, params):
 
         paoflow = copy.deepcopy(self.pao_fit_sr)
@@ -75,33 +78,37 @@ class soc_fitter:
         return bands
 
 def fit_soc_strength(self):
-
-    n_soc = sum(
-        len(positions)
-        for positions in self.which_pdf_dict.values()
-    )
-    initial = [self.guess] * n_soc
-
-    res = so.minimize(
-        self.band_error,
-        initial,
-        args=(self.FR_bands,),
-        method='L-BFGS-B',
-        bounds=[(0.0, None)] * len(initial),
-        options={'maxiter': 25}
-    )
-#    res = so.minimize_scalar(
-#        lambda x: self.band_error([x], self.FR_bands),
-#        bounds=(0.0, 3.0),
-#        method='bounded',
-#        options={
-#            'xatol': 1e-6,
-#            'maxiter': 25
-#        }
+# "SMART FIT"
+#    n_soc = sum(
+#        len(positions)
+#        for positions in self.which_pdf_dict.values()
 #    )
-    print("SOC fitted:", res.x)
+#    initial = [self.guess] * n_soc
+#    res = so.minimize(
+#        self.band_error,
+#        initial,
+#        args=(self.FR_bands,),
+#        method='L-BFGS-B',
+#        bounds=[(0.0, None)] * len(initial),
+#        options={'maxiter': 25}
+#    )
+#    print("SOC fitted:", res.x)
+#    SOC_final_dict = build_soc_dict(self,res.x)
 
-    SOC_final_dict = build_soc_dict(self,res.x)
+
+# UGLIEST FIT
+    soc_element=1#estimate_soc('X')
+    soc_values=np.linspace(soc_element*0.,soc_element*2,40)
+    list_errors=np.array([self.band_error(params=[i],dft_bands=self.FR_bands) for i in soc_values])
+    output_path = './output/soc_vs_error.png'
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(soc_values,list_errors)
+    ax.set_xlabel(r'$\xi$ (eV)')
+    ax.set_ylabel(r'(pao_fit - dft)$^2$ (eV$^2$)')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print([np.argmin(list_errors)])
+    SOC_final_dict=build_soc_dict(self,[soc_values[np.argmin(list_errors)]])
     return SOC_final_dict
 
 
