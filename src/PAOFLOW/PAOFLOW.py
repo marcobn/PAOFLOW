@@ -863,6 +863,103 @@ class PAOFLOW:
                 raise e
         self.report_module_time('write_Hamiltonian')
 
+    def save_sparse_hamiltonian(
+        self,
+        fname='sparse_hamiltonian.npz',
+        bond_order=3,
+        r_cut=None,
+        magnitude_tol=1.0e-8,
+    ):
+        """
+        Truncate the real-space Hamiltonian 'HRs' to a neighbour-shell cutoff and save it.
+
+        The archive holds the surviving matrix elements as a labelled bond list
+        (atoms, species and orbital names per element) together with the geometry
+        and run metadata needed by 'load_sparse_hamiltonian'.
+
+        Arguments:
+            fname (str): File name for the sparse Hamiltonian archive (written to outputdir)
+            bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
+            r_cut (float): Explicit bond-length cutoff in Bohr, overriding bond_order
+            magnitude_tol (float): Discard matrix elements smaller than this in every spin channel
+
+        Returns:
+            None
+
+        """
+        from .hamiltonian.sparse_hamiltonian import (
+            sparsify_real_space_hamiltonian,
+            write_sparse_hamiltonian,
+        )
+
+        try:
+            if self.rank == 0:
+                attr = self.data_controller.data_attributes
+                bundle = sparsify_real_space_hamiltonian(
+                    self.data_controller,
+                    bond_order=bond_order,
+                    r_cut=r_cut,
+                    magnitude_tol=magnitude_tol,
+                    verbose=attr['verbose'],
+                )
+                write_sparse_hamiltonian(self.data_controller, bundle, fname)
+        except Exception as e:
+            self.report_exception('save_sparse_hamiltonian')
+            if self.data_controller.data_attributes['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+        self.report_module_time('save_sparse_hamiltonian')
+
+    def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+        """
+        Restore a run from an archive written by 'save_sparse_hamiltonian'.
+
+        Rebuilds the dense 'HRs' from the stored bonds and repopulates the geometry,
+        orbital map and FFT grids, so that subsequent steps (bands, dos, transport)
+        proceed exactly as after 'pao_hamiltonian'.
+
+        Works on an instance created with restart=True, which needs neither a '.save'
+        directory nor a model.
+
+        Arguments:
+            fname (str): File name of the sparse Hamiltonian archive
+
+        Returns:
+            None
+
+        """
+        from .hamiltonian.sparse_hamiltonian import (
+            read_sparse_hamiltonian,
+            restore_data_controller,
+        )
+
+        try:
+            from os.path import exists, isabs, join
+
+            #  A restart instance leaves both data dictionaries set to None.
+            if self.data_controller.data_attributes is None:
+                self.data_controller.data_arrays = {}
+                self.data_controller.data_attributes = {'abort_on_exception': True}
+                self.data_controller.add_default_arrays()
+
+            attr = self.data_controller.data_attributes
+            attr.setdefault('scipyfft', True)
+            attr.setdefault('abort_on_exception', True)
+
+            path = fname
+            if not isabs(fname) and not exists(fname) and 'opath' in attr:
+                path = join(attr['opath'], fname)
+            bundle = read_sparse_hamiltonian(path)
+            restore_data_controller(self.data_controller, bundle)
+        except Exception as e:
+            self.report_exception('load_sparse_hamiltonian')
+            if (self.data_controller.data_attributes or {}).get('abort_on_exception', True):
+                raise e
+
+        self.comm.Barrier()
+        self.report_module_time('load_sparse_hamiltonian')
+
     def bands(
         self,
         ibrav=None,
