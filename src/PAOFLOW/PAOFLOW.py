@@ -280,8 +280,6 @@ class PAOFLOW:
             smearing,
             save_overlaps,
             acbn0,
-            False,
-            1.0e-6,
             verbose,
             restart,
             dft,
