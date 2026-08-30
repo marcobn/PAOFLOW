@@ -48,11 +48,35 @@ Your description of the new tutorial goes here.
 
 :::
 
+---
+
+## How-Tos
+
+How-Tos are shorter and more targeted than tutorials. Instead of teaching a workflow end-to-end, each one answers a specific practical question: how to set something up, which flags matter, and how to check that the result is right.
+
+::::{grid} 1 2 2 2
+:gutter: 4
+:class-container: tutorials-grid
+
+:::{grid-item-card}
+:link: howtos/sparse-workflow
+:link-type: doc
+:class-card: landing-card
+
+{octicon}`stack;1.8em;sd-text-muted`
+
+**Building a sparse workflow**
+
+Run PAOFLOW on systems and grids too large for the dense pipeline to hold in memory.
+:::
+
+::::
+
 ```{toctree}
 :hidden:
 :maxdepth: 2
 
 tutorial01
 tutorial02
-tutorial03
+howtos/index
 ```

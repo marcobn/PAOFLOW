@@ -14,7 +14,10 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: POSIX :: Linux",
 ]
-dependencies = ["numpy>=2.0,<2.3",
+dependencies = ["numpy>=2.0,<2.5; python_version < '3.14'",
+    # numpy < 2.3 silently corrupts large function-local arrays under
+    # CPython 3.14 (temporary-elision misfires with deferred refcounts)
+    "numpy>=2.3.2,<2.5; python_version >= '3.14'",
     "scipy>=1.14,<2",
     "mpi4py~=4.1",
     "pandas>=2.2,<3",]
@@ -28,7 +31,6 @@ pyskeaf = ["scikit-image>=0.20", "shapely>=2.0", "joblib>=1.2", "pandas>=2.0"]
 phonon = ["phonopy>=2.21", "phono3py>=2.3", "seekpath>=2.0"]
 fast = ["numba>=0.58"]
 dev = ["pre-commit>=2.20.0", "pytest>=7"]
-sparse = ["petsc4py", "slepc4py"]
 docs = [
     "sphinx>=8",
     "myst-parser>=4",

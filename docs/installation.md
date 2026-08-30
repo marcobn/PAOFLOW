@@ -38,9 +38,6 @@ pip install "PAOFLOW[weyl_search]"
 # JIT compilation via Numba (speed-up for dense k-grids)
 pip install "PAOFLOW[fast]"
 
-# Sparse matrix solvers (requires PETSc/SLEPc system libraries)
-pip install "PAOFLOW[sparse]"
-
 # All common extras at once
 pip install "PAOFLOW[graphics,transport,pyskeaf,fast]"
 ```
