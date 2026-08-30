@@ -34,7 +34,19 @@ Electronic structure: build a PAO Hamiltonian, interpolate band structure, and c
 Transport properties: compute Boltzmann transport tensors and extend the workflow with relaxation-time models.
 :::
 
-::::
+:::{grid-item-card}
+:link: tutorial03
+:link-type: doc
+:class-card: landing-card
+
+{octicon}`book;1.8em;sd-text-muted`
+
+**Tutorial 03**
+
+Your description of the new tutorial goes here.
+:::
+
+:::
 
 ---
 

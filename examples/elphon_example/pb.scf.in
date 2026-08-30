@@ -1,0 +1,28 @@
+ &control
+    calculation='scf'
+    restart_mode='from_scratch',
+    prefix='lead',
+    pseudo_dir = './',
+    outdir='./'
+    wf_collect = .true.
+ /
+ &system
+    ibrav=  2, 
+    celldm(1) = 9.2225583816,
+    nat= 1,
+    ntyp= 1,
+    ecutwfc = 30.0
+    occupations='smearing',
+    smearing='marzari-vanderbilt',
+    degauss=0.05
+ /
+ &electrons
+    conv_thr =  1.0d-10
+    mixing_beta = 0.7
+ /
+ATOMIC_SPECIES
+ Pb 207.2 pb_s.UPF
+ATOMIC_POSITIONS
+ Pb 0.00 0.00 0.00
+K_POINTS {automatic}
+ 9 9 9  0 0 0
