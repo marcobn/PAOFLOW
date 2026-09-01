@@ -32,14 +32,34 @@ class soc_fitter:
         plot_final_bands(self)
     
         #print(self.begin_bnd_fit,self.soc_shell_dict,self.which_pdf_dict)
+#    def band_error(self, params, dft_bands):
+#        
+#        pao_bands = self.run_paoflow_soc(params)
+#
+#        nbnd_min = self.begin_bnd_fit
+#        nbnd_max = self.end_bnd_fit
+#
+#        pao_fit = pao_bands[:, nbnd_min+1:nbnd_max+1]
+#        dft_fit = dft_bands[:, nbnd_min:nbnd_max]
+#
+#        if pao_fit.shape != dft_fit.shape:
+#            raise ValueError(
+#                f"Band shape mismatch: "
+#                f"PAOFLOW={pao_fit.shape}, "
+#                f"DFT={dft_fit.shape}"
+#            )
+#
+#        diff = pao_fit - dft_fit
+#        print(np.mean(diff**2))
+#        return np.mean(diff**2)
     def band_error(self, params, dft_bands):
-        
+
         pao_bands = self.run_paoflow_soc(params)
 
         nbnd_min = self.begin_bnd_fit
         nbnd_max = self.end_bnd_fit
 
-        pao_fit = pao_bands[:, nbnd_min:nbnd_max]
+        pao_fit = pao_bands[:, nbnd_min+1:nbnd_max+1]
         dft_fit = dft_bands[:, nbnd_min:nbnd_max]
 
         if pao_fit.shape != dft_fit.shape:
@@ -50,8 +70,52 @@ class soc_fitter:
             )
 
         diff = pao_fit - dft_fit
-        print(np.mean(diff**2))
-        return np.mean(diff**2)
+
+        error = np.mean(diff**2)
+
+        # ============================================================
+        # Plot
+        # ============================================================
+
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(8, 6))
+
+        nkpts, nbands = pao_fit.shape
+
+        for ibnd in range(nbands):
+            plt.plot(
+                range(nkpts),
+                dft_fit[:, ibnd],
+                'k-',
+                linewidth=1.5,
+                label='DFT' if ibnd == 0 else None
+            )
+
+            plt.plot(
+                range(nkpts),
+                pao_fit[:, ibnd],
+                'r--',
+                linewidth=1.0,
+                label='PAOFLOW' if ibnd == 0 else None
+            )
+
+        plt.axhline(0, linestyle='--', linewidth=0.8)
+
+        plt.xlabel("k-point")
+        plt.ylabel("Energy (eV)")
+        plt.legend()
+        plt.title(f"MSE = {error:.6e}")
+
+        plt.tight_layout()
+        plt.savefig('./output/QExPAO_bnd.png')
+
+        print(error)
+
+        return error
+
+
+
 
     def run_paoflow_soc(self, params):
 
@@ -79,36 +143,39 @@ class soc_fitter:
 
 def fit_soc_strength(self):
 # "SMART FIT"
-#    n_soc = sum(
-#        len(positions)
-#        for positions in self.which_pdf_dict.values()
-#    )
-#    initial = [self.guess] * n_soc
-#    res = so.minimize(
-#        self.band_error,
-#        initial,
-#        args=(self.FR_bands,),
-#        method='L-BFGS-B',
-#        bounds=[(0.0, None)] * len(initial),
-#        options={'maxiter': 25}
-#    )
-#    print("SOC fitted:", res.x)
-#    SOC_final_dict = build_soc_dict(self,res.x)
+    n_soc = sum(
+        len(positions)
+        for positions in self.which_pdf_dict.values()
+    )
+    element=next(iter(self.soc_shell_dict))
+    soc_element=estimate_soc(element)
+    initial = [soc_element]*n_soc
+    res = so.minimize(
+        self.band_error,
+        initial,
+        args=(self.FR_bands,),
+        method='L-BFGS-B',
+        bounds=[(soc_element*0.6, soc_element*1.4)] * len(initial),
+        options={'maxiter': 40}
+    )
+    print("SOC fitted:", res.x)
+    SOC_final_dict = build_soc_dict(self,res.x)
 
 
 # UGLIEST FIT
-    soc_element=1#estimate_soc('X')
-    soc_values=np.linspace(soc_element*0.,soc_element*2,40)
-    list_errors=np.array([self.band_error(params=[i],dft_bands=self.FR_bands) for i in soc_values])
-    output_path = './output/soc_vs_error.png'
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(soc_values,list_errors)
-    ax.set_xlabel(r'$\xi$ (eV)')
-    ax.set_ylabel(r'(pao_fit - dft)$^2$ (eV$^2$)')
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close(fig)
-    print([np.argmin(list_errors)])
-    SOC_final_dict=build_soc_dict(self,[soc_values[np.argmin(list_errors)]])
+#    element=next(iter(self.soc_shell_dict))
+#    soc_element=estimate_soc(element)
+#    soc_values=np.linspace(soc_element*0.8,soc_element*3,40)
+#    list_errors=np.array([self.band_error(params=[i],dft_bands=self.FR_bands) for i in soc_values])
+#    output_path = './output/soc_vs_error.png'
+#    fig, ax = plt.subplots(figsize=(8, 6))
+#    ax.scatter(soc_values,list_errors)
+#    ax.set_xlabel(r'$\xi$ (eV)')
+#    ax.set_ylabel(r'(pao_fit - dft)$^2$ (eV$^2$)')
+#    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+#    plt.close(fig)
+#    print([np.argmin(list_errors)])
+#    SOC_final_dict=build_soc_dict(self,[soc_values[np.argmin(list_errors)]])
     return SOC_final_dict
 
 
@@ -196,7 +263,7 @@ def read_qe_bands(filename, fermi_level):
     return dft_bands
 
 
-def soc_mask(self, orb):
+def soc_mask(self, orb,soc_strenghts=None):
 
     arry, attr = self.pao_sr.data_controller.data_dicts()
 
@@ -332,3 +399,245 @@ def plot_final_bands(self):
     plt.close(fig)
 
     print(f'Final SOC band comparison saved to {output_path}')
+
+def estimate_soc(El):
+
+    soc = {
+
+        # ============================================================
+        # p orbitals
+        # ============================================================
+
+        # 3p
+        "Al": 0.015,
+        "Si": 0.030,
+        "P" : 0.051,
+        "S" : 0.080,
+        "Cl": 0.117,
+
+        # 4p
+        "Ga": 0.107,
+        "Ge": 0.172,
+        "As": 0.251,
+        "Se": 0.344,
+        "Br": 0.453,
+
+        # 5p
+        "In": 0.209,
+        "Sn": 0.309,
+        "Sb": 0.421,
+        "Te": 0.543,
+        "I" : 0.686,
+
+        # 6p
+        "Tl": 0.85,
+        "Pb": 0.90,
+        "Bi": 1.10,
+        "Po": 1.20,
+        "At": 1.30,
+
+
+        # ============================================================
+        # d orbitals
+        # ============================================================
+
+            # 3d
+        "Sc": 0.010,
+        "Ti": 0.014,
+        "V" : 0.018,
+        "Cr": 0.022,
+        "Mn": 0.027,
+        "Fe": 0.032,
+        "Co": 0.038,
+        "Ni": 0.045,
+        "Cu": 0.055,
+        "Zn": 0.065,
+
+        # 4d
+        "Y" : 0.039,
+        "Zr": 0.058,
+        "Nb": 0.069,
+        "Mo": 0.091,
+        "Tc": 0.128,
+        "Ru": 0.143,
+        "Rh": 0.174,
+        "Pd": 0.193,
+        "Ag": 0.246,
+        "Cd": 0.306,
+
+        # 5d
+        "Hf": 0.191,
+        "Ta": 0.248,
+        "W" : 0.308,
+        "Re": 0.373,
+        "Os": 0.441,
+        "Ir": 0.514,
+        "Pt": 0.556,
+        "Au": 0.556,
+        "Hg": 0.63,
+
+        #4F
+        "La": 0.2,
+        "Ce": 0.2,
+        "Pr": 0.2,
+        "Nd": 0.2,
+        "Pm": 0.2,
+        "Sm": 0.2,
+        "Eu": 0.2,
+        "Gd": 0.2,
+        "Tb": 0.2,
+        "Dy": 0.2,
+        "Ho": 0.2,
+        "Er": 0.2,
+        "Tm": 0.2,
+        "Yb": 0.2,
+        "Lu": 0.2,
+
+
+    }
+
+    if El not in soc:
+        raise ValueError(f"No SOC estimate available for element: {El}")
+
+    return soc[El]
+
+
+def get_orbitals(dict):
+
+    orbital = {
+
+        # ============================================================
+        # p orbitals
+        # ============================================================
+
+        # 3p
+        "Al": "3P",
+        "Si": "3P",
+        "P" : "3P",
+        "S" : "3P",
+        "Cl": "3P",
+
+        # 4p
+        "Ga": "4P",
+        "Ge": "4P",
+        "As": "4P",
+        "Se": "4P",
+        "Br": "4P",
+
+        # 5p
+        "In": "5P",
+        "Sn": "5P",
+        "Sb": "5P",
+        "Te": "5P",
+        "I" : "5P",
+
+        # 6p
+        "Tl": "6P",
+        "Pb": "6P",
+        "Bi": "6P",
+        "Po": "6P",
+        "At": "6P",
+
+
+        # ============================================================
+        # d orbitals
+        # ============================================================
+
+            # 3d
+        "Sc": "3D",
+        "Ti": "3D",
+        "V" : "3D",
+        "Cr": "3D",
+        "Mn": "3D",
+        "Fe": "3D",
+        "Co": "3D",
+        "Ni": "3D",
+        "Cu": "3D",
+        "Zn": "3D",
+
+        # 4d
+        "Y" : "4D",
+        "Zr": "4D",
+        "Nb": "4D",
+        "Mo": "4D",
+        "Tc": "4D",
+        "Ru": "4D",
+        "Rh": "4D",
+        "Pd": "4D",
+        "Ag": "4D",
+        "Cd": "4D",
+
+        # 5d
+        "Hf": "5D",
+        "Ta": "5D",
+        "W" : "5D",
+        "Re": "5D",
+        "Os": "5D",
+        "Ir": "5D",
+        "Pt": "5D",
+        "Au": "5D",
+        "Hg": "5D",
+
+        # 4f
+        "La": "4F",
+        "Ce": "4F",
+        "Pr": "4F",
+        "Nd": "4F",
+        "Pm": "4F",
+        "Sm": "4F",
+        "Eu": "4F",
+        "Gd": "4F",
+        "Tb": "4F",
+        "Dy": "4F",
+        "Ho": "4F",
+        "Er": "4F",
+        "Tm": "4F",
+        "Yb": "4F",
+        "Lu": "4F",
+    }
+
+    filtered = {}
+
+    for El, orbitals in dict.items():
+
+        if El not in orbital:
+            continue
+
+        target = orbital[El]
+
+        filtered[El] = [orb for orb in orbitals if orb == target]
+
+    return filtered
+
+def build_automatic_adhoc_soc(calc):
+    arry, attr = calc.data_controller.data_dicts()
+
+    soc_shell_weights = {}
+    soc_strengh = {}
+    orbital_position = {
+        'P': 0,
+        'D': 1,
+        'F': 2,
+    }
+
+    orb=get_orbitals(arry['configuration'])
+    print(orb)
+    for elem, shells in arry['configuration'].items():
+        mask = [0.0] * len(shells)
+        positions = []
+        pdf_strengh=[0.,0.,0.]
+        if elem in orb:
+
+            for target_shell in orb[elem]:
+
+                target_shell = target_shell.upper()
+                for i, shell in enumerate(shells):
+                    if shell.upper() == target_shell:
+                        mask[i] = 1.0
+                orbital = target_shell[-1]
+                pdf_strengh[orbital_position[orbital]]=estimate_soc(elem)
+                
+        soc_shell_weights[elem] = mask
+        soc_strengh[elem] = pdf_strengh
+    print(f'YOUR AUTOMATIC PARAMS FOR SOC CALCULATION ARE:\nsoc_strengh={soc_shell_weights}\nsoc_shell_weights={soc_strengh}')
+    return soc_strengh,soc_shell_weights

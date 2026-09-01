@@ -29,9 +29,9 @@ def _angular_momentum_matrices(l):
     """Return ``(Lx, Ly, Lz)`` as Hermitian ``(2l+1, 2l+1)`` complex matrices
     in the QE real-tesseral basis.
 
-    Hardcoded for ``l = 0, 1, 2`` (the only channels exposed by the rest
+    Hardcoded for ``l = 0, 1, 2, 3`` (the only channels exposed by the rest
     of PAOFLOW's adhoc SOC).  Values are read off the existing
-    ``soc_p_*`` / ``soc_d_*`` kernels so the generic builder is
+    ``soc_p_*`` / ``soc_d_*``/``soc_f_*`` kernels so the generic builder is
     bit-for-bit compatible with them.
     """
     if l == 0:
@@ -64,42 +64,16 @@ def _angular_momentum_matrices(l):
         Lz[3, 4] = -2j
         Lz[4, 3] = 2j
         return Lx, Ly, Lz
+    ########################## FROM wikipedia 
+    # https://en.wikipedia.org/wiki/Table_of_spherical_harmonics#Real_spherical_harmonics 
+    # l=3
+    # in the order Y_3,m m= [0,1,-1,2,-2,3,-3]
     if l==3:
         s6,s10=np.sqrt(6.0),np.sqrt(10.0)
-        Lx,Ly,Lz=np.zeros((7,7), dtype=complex),np.zeros((7, 7), dtype=complex),np.zeros((7, 7), dtype=complex)
+
+        Lz=np.zeros((7,7), dtype=complex)
         Lz[1,2],Lz[2,1],Lz[3,4],Lz[4,3],Lz[5,6],Lz[6,5]= -1j,1j,-2j,2j,-3j,3j
-        Lx[0,2],Lx[2,0]=-s6*1j,+s6*1j
-        Lx[1,4],Lx[4,1],Lx[2,3],Lx[3,2]=-1j*s10/2,1j*s10/2,1j*s10/2,-1j*s10/2
-        Lx[3,5],Lx[5,3],Lx[4,6],Lx[6,4]=s6/2,s6/2,s6/2,s6/2
-        Ly[0,1],Ly[1,0]=s6*1j,-s6*1j
-        Ly[1,3],Ly[3,1],Ly[2,4],Ly[4,2]=1j*s10/2,-1j*s10/2,1j*s10/2,-1j*s10/2
-        Ly[3,6],Ly[6,3],Ly[4,5],Ly[5,4]=s6/2,s6/2,-s6/2,-s6/2
-
-############################ FROM UPF_gaussfit f basis
-        Lx = np.array([
-    [0,          0,          1j*s6,          0,              0,          0,          0],
-    [0,          0,          0,              0,       1j*s10/2,          0,          0],
-    [-1j*s6,     0,          0,      -1j*s10/2,       0,                0,          0],
-    [0,          0,      1j*s10/2,          0,         0,               0,      s6/2],
-    [0,     -1j*s10/2,       0,             0,         0,          -s6/2,          0],
-    [0,          0,          0,             0,      s6/2,               0,          0],
-    [0,          0,          0,         -s6/2,        0,                0,          0]
-], dtype=complex)
-
-        Ly = np.array([
-    [0,      -1j*s6,      0,             0,              0,          0,          0],
-    [1j*s6,      0,       0,       -1j*s10/2,           0,          0,          0],
-    [0,          0,       0,             0,       -1j*s10/2,        0,          0],
-    [0,      1j*s10/2,    0,             0,             0,      -s6/2,          0],
-    [0,          0,   1j*s10/2,          0,             0,          0,      -s6/2],
-    [0,          0,       0,          s6/2,             0,          0,          0],
-    [0,          0,       0,             0,          s6/2,          0,          0]
-], dtype=complex)
-    #############################################
         
-    ########################## FROM wikipedia 
-    # https://en.wikipedia.org/wiki/Table_of_spherical_harmonics#Real_spherical_harmonics l=3
-    # in the order Y_3,m m= [0,1,-1,2,-2,3,-3]
         Lx = np.array([
     [0.+0.j,          0.+0.j,          0.+s6*1j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j],
     [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j],
@@ -119,17 +93,7 @@ def _angular_momentum_matrices(l):
     [0.+0.j,          0.+0.j,          0.+0.j,         0.+s6/2j, 0.+0.j,          0.+0.j,          0.+0.j],
     [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s6/2j, 0.+0.j,          0.+0.j]
 ], dtype=complex)
-        ####organizing based in calc_ylmg conv,
-        #U = np.diag([1,-1,-1,1,1,-1,-1])
-        #Lx = U @ Lx @ U
-        #Ly = U @ Ly @ U
-        #Lz = U @ Lz @ U
-        #def reorder(M, perm):
-        #    return M[np.ix_(perm, perm)]
-        #perm = [0,2,4,6,1,3,5]
-        #Lx = reorder(Lx, perm)
-        #Ly = reorder(Ly, perm)
-        #Lz = reorder(Lz, perm)        
+  
         return Lx,Ly,Lz
 
 
@@ -261,7 +225,7 @@ def do_spin_orbit_H(data_controller):
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
         Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
-        ``naw``, ``orb_pseudo``, ``lambda_p``, ``lambda_d``.
+        ``naw``, ``orb_pseudo``, ``lambda_p``, ``lambda_d``.,``lambda_f``
         Required attributes: ``natoms``, ``theta``, ``phi``.
 
     Returns
@@ -283,8 +247,8 @@ def do_spin_orbit_H(data_controller):
     :math:`H_{\\uparrow\\uparrow} = H_{\\downarrow\\downarrow} = H_0`.  For
     a magnetic system the two spin channels are taken from the two spin
     components of ``HRs``.  The SOC term is added only at the
-    :math:`\\mathbf{R}=(0,0,0)` site; p- and d-channel couplings are weighted
-    by ``lambda_p`` and ``lambda_d``, respectively.
+    :math:`\\mathbf{R}=(0,0,0)` site; p-/d-/f-channel couplings are weighted
+    by ``lambda_p`` and ``lambda_d``,``lambda_f``, respectively.
     """
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 

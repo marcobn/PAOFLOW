@@ -927,10 +927,12 @@ class PAOFLOW:
             None
 
         """
+
+        #IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
         import scipy.linalg as la
-
+        from .SocFitter import build_automatic_adhoc_soc
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
-
+        from .utils.soc_header import soc_header
         arry, attr = self.data_controller.data_dicts()
         attr['do_spin_orbit'] = attr['adhoc_SO'] = True
 
@@ -938,7 +940,9 @@ class PAOFLOW:
             attr['phi'] = phi
         if 'theta' not in attr:
             attr['theta'] = theta
-
+        if soc_strengh=={}:
+            soc_header()
+            soc_strengh,soc_shell_weights=build_automatic_adhoc_soc(self)
         if soc_species == True:
             lambda_p = []
             lambda_d = []
