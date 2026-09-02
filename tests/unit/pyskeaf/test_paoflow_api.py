@@ -42,9 +42,7 @@ def _install_serial_mpi(monkeypatch):
     monkeypatch.setitem(sys.modules, 'mpi4py', SimpleNamespace(MPI=mpi))
 
 
-def test_paoflow_initializes_from_bxsf_when_savedir_is_unreadable(
-    monkeypatch, tmp_path
-):
+def test_paoflow_initializes_from_bxsf_when_savedir_is_unreadable(monkeypatch, tmp_path):
     _install_serial_mpi(monkeypatch)
 
     output_path = tmp_path / 'output'
@@ -65,9 +63,7 @@ def test_paoflow_initializes_from_bxsf_when_savedir_is_unreadable(
     assert set(arrays) >= {'Efield', 'Bfield', 'HubbardU'}
 
 
-def test_readable_dft_data_take_precedence_over_existing_bxsf(
-    monkeypatch, tmp_path
-):
+def test_readable_dft_data_take_precedence_over_existing_bxsf(monkeypatch, tmp_path):
     _install_serial_mpi(monkeypatch)
     output_path = tmp_path / 'output'
     output_path.mkdir()
@@ -90,9 +86,7 @@ def test_readable_dft_data_take_precedence_over_existing_bxsf(
     assert attributes['fpath'] == str(savedir)
 
 
-def test_initialization_stops_when_dft_and_bxsf_are_both_missing(
-    monkeypatch, tmp_path, capsys
-):
+def test_initialization_stops_when_dft_and_bxsf_are_both_missing(monkeypatch, tmp_path, capsys):
     _install_serial_mpi(monkeypatch)
 
     with pytest.raises(SystemExit):
@@ -174,9 +168,7 @@ def test_paoflow_pyskeaf_maps_single_field_and_forces_one_angle(monkeypatch, tmp
     assert captured['write_auxiliary_files'] is True
 
 
-def test_paoflow_pyskeaf_all_selects_only_standard_bands_in_numeric_order(
-    monkeypatch, tmp_path
-):
+def test_paoflow_pyskeaf_all_selects_only_standard_bands_in_numeric_order(monkeypatch, tmp_path):
     for filename in ('Fermi_surf_band_10.bxsf', 'Fermi_surf_band_2.bxsf', 'manual.bxsf'):
         (tmp_path / filename).touch()
     captured = {}

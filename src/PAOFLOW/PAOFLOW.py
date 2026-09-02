@@ -303,10 +303,7 @@ class PAOFLOW:
                 print('Run starting from Restart data.')
             else:
                 if attr.get('bxsf_only', False):
-                    print(
-                        'PySKEAF-only execution using BXSF files in %s'
-                        % attr['opath']
-                    )
+                    print('PySKEAF-only execution using BXSF files in %s' % attr['opath'])
                 elif self.size == 1:
                     print('Serial execution')
                 else:
@@ -317,12 +314,7 @@ class PAOFLOW:
                     )
 
         # Do memory checks
-        if (
-            model is None
-            and not restart
-            and self.rank == 0
-            and not attr.get('bxsf_only', False)
-        ):
+        if model is None and not restart and self.rank == 0 and not attr.get('bxsf_only', False):
             gbyte = self.memory_check()
             print('Estimated maximum array size: %.2f GBytes\n' % (gbyte))
 
@@ -2263,8 +2255,7 @@ class PAOFLOW:
                 values = (_real(value, 'fermi_energy'),)
             elif isinstance(value, (tuple, list)):
                 values = tuple(
-                    _real(item, f'fermi_energy[{index}]')
-                    for index, item in enumerate(value)
+                    _real(item, f'fermi_energy[{index}]') for index, item in enumerate(value)
                 )
             else:
                 raise _input_error(
@@ -2296,8 +2287,7 @@ class PAOFLOW:
                     f'{name} must be a real number or a pair of real numbers.',
                 ) from error
             if len(values) != 2 or any(
-                not isinstance(item, Real) or isinstance(item, (bool, np.bool_))
-                for item in values
+                not isinstance(item, Real) or isinstance(item, (bool, np.bool_)) for item in values
             ):
                 raise _input_error(
                     TypeError,
@@ -2431,12 +2421,9 @@ class PAOFLOW:
         def report_progress(item, fermi_energy_ev):
             if self.rank != 0:
                 return
-            message = (
-                'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
-            )
+            message = 'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
             print(
-                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: '
-                f'{message}',
+                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: ' f'{message}',
                 flush=True,
             )
 

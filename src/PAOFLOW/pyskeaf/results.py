@@ -112,17 +112,13 @@ def _default_result_path(result: SKEAFResult, stem: str) -> Path:
     return Path(f'qo_EF_{token}_{stem}.out')
 
 
-def write_results_freqvsangle(
-    result: SKEAFResult, path: Union[str, Path, None] = None
-) -> None:
+def write_results_freqvsangle(result: SKEAFResult, path: Union[str, Path, None] = None) -> None:
     """Write the CSV-style frequency-vs-angle result.
 
     Columns are comma-separated for compatibility with existing plotting
     scripts, and each field has a fixed width shared by the header and data.
     """
-    header = ',  '.join(
-        f'{label:^{width}}' for label, width in _FREQUENCY_COLUMNS
-    ) + '\n'
+    header = ',  '.join(f'{label:^{width}}' for label, width in _FREQUENCY_COLUMNS) + '\n'
     rad2deg = 180.0 / np.pi
     lines = [header]
     for orb in result.orbits:
@@ -136,15 +132,11 @@ def write_results_freqvsangle(
             f'{orb.num_copies:12d}',
         )
         lines.append(',  '.join(fields) + '\n')
-    output_path = Path(path) if path is not None else _default_result_path(
-        result, 'freqvsangle'
-    )
+    output_path = Path(path) if path is not None else _default_result_path(result, 'freqvsangle')
     output_path.write_text(''.join(lines))
 
 
-def write_results_short(
-    result: SKEAFResult, path: Union[str, Path, None] = None
-) -> None:
+def write_results_short(result: SKEAFResult, path: Union[str, Path, None] = None) -> None:
     """Write the human-readable short result.
 
     Mirrors the per-angle block at skeaf_v1p3p0_r149.F90:2780–2810.  Header
@@ -155,15 +147,11 @@ def write_results_short(
     text = _results_header(result, brief=True) + _per_angle_blocks(
         result, include_outline_pointer=False
     )
-    output_path = Path(path) if path is not None else _default_result_path(
-        result, 'short'
-    )
+    output_path = Path(path) if path is not None else _default_result_path(result, 'short')
     output_path.write_text(text)
 
 
-def write_results_long(
-    result: SKEAFResult, path: Union[str, Path, None] = None
-) -> None:
+def write_results_long(result: SKEAFResult, path: Union[str, Path, None] = None) -> None:
     """Write the verbose long result (every orbit copy listed).
 
     Same structure as the short result but additionally records the
@@ -173,9 +161,7 @@ def write_results_long(
     text = _results_header(result, brief=False) + _per_angle_blocks(
         result, include_outline_pointer=True
     )
-    output_path = Path(path) if path is not None else _default_result_path(
-        result, 'long'
-    )
+    output_path = Path(path) if path is not None else _default_result_path(result, 'long')
     output_path.write_text(text)
 
 
@@ -283,9 +269,7 @@ def _results_header(result: SKEAFResult, *, brief: bool) -> str:
         rad2deg = 180.0 / np.pi
         b_field = _PUBLIC_B_FIELD_NAMES.get(cfg.hvd, str(cfg.hvd))
         if cfg.hvd == 'r':
-            out.append(
-                f' b_field = {b_field}   num_angles = {cfg.num_rots:5d}\n'
-            )
+            out.append(f' b_field = {b_field}   num_angles = {cfg.num_rots:5d}\n')
             out.append(
                 f' Azimuthal = {cfg.theta_start * rad2deg:10.6f} to '
                 f'{cfg.theta_end * rad2deg:10.6f} degrees;  '
@@ -314,10 +298,7 @@ def _results_header(result: SKEAFResult, *, brief: bool) -> str:
                 'to be included in the output.\n'
             )
         else:
-            out.append(
-                ' Extremal orbits near super-cell walls are REJECTED '
-                'from the output.\n'
-            )
+            out.append(' Extremal orbits near super-cell walls are REJECTED ' 'from the output.\n')
     if result.dos_at_ef is not None:
         out.append(f' DOS at E_F: {result.dos_at_ef:14.6E} states/Ryd/cell\n')
     if result.band_volume is not None:

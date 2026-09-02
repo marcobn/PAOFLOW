@@ -252,9 +252,9 @@ class DataController:
         if dft_path is None:
             direct_dft_data_available = False
         elif dft == 'QE':
-            direct_dft_data_available = exists(
-                join(dft_path, 'data-file-schema.xml')
-            ) or exists(join(dft_path, 'data-file.xml'))
+            direct_dft_data_available = exists(join(dft_path, 'data-file-schema.xml')) or exists(
+                join(dft_path, 'data-file.xml')
+            )
         else:
             direct_dft_data_available = exists(join(dft_path, 'vasprun.xml'))
 

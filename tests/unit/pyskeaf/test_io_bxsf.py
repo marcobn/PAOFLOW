@@ -229,8 +229,7 @@ def test_result_outputs_use_public_angle_names_and_aligned_columns(tmp_path):
             'coords. for averaging:'
         ) in text
         assert (
-            'Extremal orbits near super-cell walls are ALLOWED to be included '
-            'in the output.'
+            'Extremal orbits near super-cell walls are ALLOWED to be included ' 'in the output.'
         ) in text
 
     for path in (outline_ang_path, outline_au_path):
