@@ -120,7 +120,11 @@ def test_nonverbose_run_writes_only_prefixed_frequency_result(monkeypatch, tmp_p
     monkeypatch.setattr(runner, 'write_results_long', fail_if_called)
     monkeypatch.setattr(runner, 'write_orbit_outlines', fail_if_called)
 
-    cfg = SkeafConfig(hvd='n', numint=2)
+    cfg = SkeafConfig(
+        hvd='n',
+        numint=2,
+        fermi_energy=0.2 / runner._RYDBERG_IN_EV,
+    )
     bxsf = SimpleNamespace(filename='manual_7.bxsf', fermi_energy=0.0, recip_ang=np.eye(3))
 
     runner.run_skeaf(
@@ -131,7 +135,7 @@ def test_nonverbose_run_writes_only_prefixed_frequency_result(monkeypatch, tmp_p
         write_auxiliary_files=False,
     )
 
-    assert written == ['qo_results_freqvsangle_manual_7.out']
+    assert written == ['qo_EF_0.2_freqvsangle_manual_7.out']
 
 
 def test_paoflow_bxsf_band_energies_remain_in_rydberg(monkeypatch, tmp_path):

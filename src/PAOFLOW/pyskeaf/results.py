@@ -1,7 +1,8 @@
 """Result dataclasses and output writers for PAOFLOW.pyskeaf.
 
-PAOFLOW uses a ``qo_results_`` prefix for quantum-oscillation outputs so they
-remain identifiable when written beside other PAOFLOW results.
+PAOFLOW uses a ``qo_EF_<energy>_`` prefix for quantum-oscillation outputs so
+results from different Fermi energies remain identifiable and cannot silently
+overwrite one another.
 
 Phase 1 only defines the dataclasses and stubs the writers; full output
 formatting will be filled in as later phases produce real orbit data.
@@ -89,10 +90,32 @@ class SKEAFResult:
 # --- writers (stubs to be fleshed out in later phases) ----------------------
 
 
+def fermi_energy_filename_token(fermi_energy_ev: float) -> str:
+    """Return a stable, compact eV value for a quantum-oscillation filename."""
+    value = float(fermi_energy_ev)
+    if not np.isfinite(value):
+        raise ValueError('Fermi energy must be finite.')
+    if value == 0.0:
+        value = 0.0
+    return np.format_float_positional(
+        value,
+        precision=15,
+        unique=False,
+        fractional=False,
+        trim='-',
+    )
+
+
+def _default_result_path(result: SKEAFResult, stem: str) -> Path:
+    energy_ev = result.fermi_energy * RYDBERG_IN_EV
+    token = fermi_energy_filename_token(energy_ev)
+    return Path(f'qo_EF_{token}_{stem}.out')
+
+
 def write_results_freqvsangle(
-    result: SKEAFResult, path: Union[str, Path] = 'qo_results_freqvsangle.out'
+    result: SKEAFResult, path: Union[str, Path, None] = None
 ) -> None:
-    """Write the CSV-style ``qo_results_freqvsangle.out``.
+    """Write the CSV-style frequency-vs-angle result.
 
     Columns are comma-separated for compatibility with existing plotting
     scripts, and each field has a fixed width shared by the header and data.
@@ -113,13 +136,16 @@ def write_results_freqvsangle(
             f'{orb.num_copies:12d}',
         )
         lines.append(',  '.join(fields) + '\n')
-    Path(path).write_text(''.join(lines))
+    output_path = Path(path) if path is not None else _default_result_path(
+        result, 'freqvsangle'
+    )
+    output_path.write_text(''.join(lines))
 
 
 def write_results_short(
-    result: SKEAFResult, path: Union[str, Path] = 'qo_results_short.out'
+    result: SKEAFResult, path: Union[str, Path, None] = None
 ) -> None:
-    """Write the human-readable ``qo_results_short.out``.
+    """Write the human-readable short result.
 
     Mirrors the per-angle block at skeaf_v1p3p0_r149.F90:2780–2810.  Header
     comes from :func:`_results_header`.  Orbits are written in the order they
@@ -129,28 +155,34 @@ def write_results_short(
     text = _results_header(result, brief=True) + _per_angle_blocks(
         result, include_outline_pointer=False
     )
-    Path(path).write_text(text)
+    output_path = Path(path) if path is not None else _default_result_path(
+        result, 'short'
+    )
+    output_path.write_text(text)
 
 
 def write_results_long(
-    result: SKEAFResult, path: Union[str, Path] = 'qo_results_long.out'
+    result: SKEAFResult, path: Union[str, Path, None] = None
 ) -> None:
-    """Write the verbose ``qo_results_long.out`` (every orbit copy listed).
+    """Write the verbose long result (every orbit copy listed).
 
-    Same structure as ``qo_results_short.out`` but additionally records the
+    Same structure as the short result but additionally records the
     representative-copy slice index and orbit number used for the outline file
     (Fortran F90:986–988).
     """
     text = _results_header(result, brief=False) + _per_angle_blocks(
         result, include_outline_pointer=True
     )
-    Path(path).write_text(text)
+    output_path = Path(path) if path is not None else _default_result_path(
+        result, 'long'
+    )
+    output_path.write_text(text)
 
 
 def write_orbit_outlines(
     result: SKEAFResult,
-    path_invang: Union[str, Path] = 'qo_results_orbitoutlines_invAng.out',
-    path_invau: Union[str, Path] = 'qo_results_orbitoutlines_invau.out',
+    path_invang: Union[str, Path, None] = None,
+    path_invau: Union[str, Path, None] = None,
 ) -> None:
     """Write the orbit-outline coordinate files in both Å⁻¹ and a.u.⁻¹.
 
@@ -214,8 +246,18 @@ def write_orbit_outlines(
             for px, py, pz in o.outline_au:
                 lines_au.append(f' {px:13.6E} {py:13.6E} {pz:13.6E}\n')
 
-    Path(path_invang).write_text(''.join(lines_ang))
-    Path(path_invau).write_text(''.join(lines_au))
+    output_invang = (
+        Path(path_invang)
+        if path_invang is not None
+        else _default_result_path(result, 'orbitoutlines_invAng')
+    )
+    output_invau = (
+        Path(path_invau)
+        if path_invau is not None
+        else _default_result_path(result, 'orbitoutlines_invau')
+    )
+    output_invang.write_text(''.join(lines_ang))
+    output_invau.write_text(''.join(lines_au))
 
 
 # --- internal header / per-angle helpers ------------------------------------

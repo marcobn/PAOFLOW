@@ -2143,7 +2143,8 @@ class PAOFLOW:
 
         self.report_module_time('Fermi Surface')
 
-    def pyskeaf(self,
+    def pyskeaf(
+        self,
         fermi_energy=0.0,
         num_interpolation=100,
         b_field='non_principal',
@@ -2156,6 +2157,7 @@ class PAOFLOW:
         allow_wall_orbits=True,
         bands='all',
         verbose=False,
+        **unknown_options,
     ):
         """Calculate quantum-oscillation frequencies with pyskeaf.
 
@@ -2166,8 +2168,10 @@ class PAOFLOW:
 
         Parameters
         ----------
-        fermi_energy : float, default 0.0
-            Fermi energy in eV. It is converted to Rydberg internally.
+        fermi_energy : float, tuple of float, or list of float, default 0.0
+            Fermi energy in eV. A scalar runs one energy. A Python tuple or
+            list supplies the explicit energies to scan. Values are converted
+            to Rydberg internally.
         num_interpolation : int, default 100
             Number of interpolated points per reciprocal-cell side.
         b_field : {'b1', 'b2', 'b3', 'non_principal', 'rotation'}
@@ -2193,73 +2197,145 @@ class PAOFLOW:
             stems, with the ``.bxsf`` extension optional.
         verbose : bool, default False
             Also write short, long, and orbit-outline diagnostic files. The
-            physical ``qo_results_freqvsangle_*.out`` files are always written.
+            physical ``qo_EF_<energy>_freqvsangle_*.out`` files are always
+            written.
 
         Returns
         -------
         list of PAOFLOW.pyskeaf.runner.BXSFRun
-            Per-band calculation or skip results.
+            Per-energy, per-band calculation or skip results, ordered first by
+            Fermi energy and then by the selected bands.
         """
         import math
         from numbers import Integral, Real
         from pathlib import Path
 
         from .pyskeaf.config import RYDBERG_IN_EV, SkeafConfig
+        from .pyskeaf.results import fermi_energy_filename_token
         from .pyskeaf.runner import run_paoflow_bxsf_files
 
         attr = self.data_controller.data_attributes
 
+        usage = (
+            'Correct PAOFLOW.pyskeaf() format:\n'
+            '  paoflow.pyskeaf(\n'
+            '      fermi_energy=0.0,  # eV; or explicit values as '
+            '(-0.01, 0.0, 0.2, 1.0) or [-0.01, 0.0, 0.2, 1.0]\n'
+            '      num_interpolation=100,  # integer >= 2\n'
+            "      b_field='non_principal',  # 'b1', 'b2', 'b3', "
+            "'non_principal', or 'rotation'\n"
+            '      azimuthal=0.0,  # degrees; scalar or two-value pair\n'
+            '      polar=0.0,  # degrees; scalar or two-value pair\n'
+            '      num_angles=1,  # integer; >= 2 for a rotation\n'
+            '      minimum_frequency=0.0,  # kT; nonnegative\n'
+            '      frequency_tolerance=0.01,  # positive\n'
+            '      orbit_tolerance=0.05,  # positive\n'
+            '      allow_wall_orbits=True,  # bool\n'
+            "      bands='all',  # or 1, 'custom_name', or "
+            "(1, 8, 'custom_name')\n"
+            '      verbose=False,  # bool\n'
+            '  )\n'
+            'For rotation, provide two values for both azimuthal and polar; '
+            "b_field is then set to 'rotation' automatically. BXSF filename "
+            'extensions are optional in bands.'
+        )
+
+        def _input_error(exception_type, message):
+            return exception_type(f'{message}\n\n{usage}')
+
+        if unknown_options:
+            names = ', '.join(sorted(unknown_options))
+            raise _input_error(
+                TypeError,
+                f'Unknown pyskeaf option(s): {names}.',
+            )
+
         def _real(value, name):
             if not isinstance(value, Real) or isinstance(value, (bool, np.bool_)):
-                raise TypeError(f'{name} must be a real number.')
-            return float(value)
+                raise _input_error(TypeError, f'{name} must be a real number.')
+            result = float(value)
+            if not math.isfinite(result):
+                raise _input_error(ValueError, f'{name} must be finite.')
+            return result
+
+        def _fermi_energy_values(value):
+            if isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
+                values = (_real(value, 'fermi_energy'),)
+            elif isinstance(value, (tuple, list)):
+                values = tuple(
+                    _real(item, f'fermi_energy[{index}]')
+                    for index, item in enumerate(value)
+                )
+            else:
+                raise _input_error(
+                    TypeError,
+                    'fermi_energy must be a real number or an explicit Python '
+                    'tuple/list of real numbers.',
+                )
+            if not values:
+                raise _input_error(
+                    ValueError,
+                    'fermi_energy must contain at least one value.',
+                )
+            tokens = [fermi_energy_filename_token(item) for item in values]
+            if len(tokens) != len(set(tokens)):
+                raise _input_error(
+                    ValueError,
+                    'fermi_energy values must produce distinct output filename values.',
+                )
+            return values
 
         def _real_values(value, name):
             if isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
-                return (float(value),)
+                return (_real(value, name),)
             try:
                 values = tuple(value)
             except TypeError as error:
-                raise TypeError(
-                    f'{name} must be a real number or a pair of real numbers.'
+                raise _input_error(
+                    TypeError,
+                    f'{name} must be a real number or a pair of real numbers.',
                 ) from error
             if len(values) != 2 or any(
                 not isinstance(item, Real) or isinstance(item, (bool, np.bool_))
                 for item in values
             ):
-                raise TypeError(f'{name} must be a real number or a pair of real numbers.')
-            return tuple(float(item) for item in values)
+                raise _input_error(
+                    TypeError,
+                    f'{name} must be a real number or a pair of real numbers.',
+                )
+            return tuple(_real(item, name) for item in values)
 
         azimuthal_values = _real_values(azimuthal, 'azimuthal')
         polar_values = _real_values(polar, 'polar')
         if len(azimuthal_values) != len(polar_values):
-            raise ValueError(
-                'azimuthal and polar must both be scalars or both be two-element pairs.'
+            raise _input_error(
+                ValueError,
+                'azimuthal and polar must both be scalars or both be two-element pairs.',
             )
 
         if not isinstance(num_interpolation, Integral) or isinstance(
             num_interpolation, (bool, np.bool_)
         ):
-            raise TypeError('num_interpolation must be an integer.')
+            raise _input_error(TypeError, 'num_interpolation must be an integer.')
         if num_interpolation < 2:
-            raise ValueError('num_interpolation must be at least 2.')
+            raise _input_error(ValueError, 'num_interpolation must be at least 2.')
         if not isinstance(num_angles, Integral) or isinstance(num_angles, (bool, np.bool_)):
-            raise TypeError('num_angles must be an integer.')
+            raise _input_error(TypeError, 'num_angles must be an integer.')
         if not isinstance(allow_wall_orbits, (bool, np.bool_)):
-            raise TypeError('allow_wall_orbits must be True or False.')
+            raise _input_error(TypeError, 'allow_wall_orbits must be True or False.')
         if not isinstance(verbose, (bool, np.bool_)):
-            raise TypeError('verbose must be True or False.')
+            raise _input_error(TypeError, 'verbose must be True or False.')
 
-        fermi_energy = _real(fermi_energy, 'fermi_energy')
+        fermi_energies = _fermi_energy_values(fermi_energy)
         minimum_frequency = _real(minimum_frequency, 'minimum_frequency')
         frequency_tolerance = _real(frequency_tolerance, 'frequency_tolerance')
         orbit_tolerance = _real(orbit_tolerance, 'orbit_tolerance')
         if minimum_frequency < 0.0:
-            raise ValueError('minimum_frequency cannot be negative.')
+            raise _input_error(ValueError, 'minimum_frequency cannot be negative.')
         if frequency_tolerance <= 0.0:
-            raise ValueError('frequency_tolerance must be positive.')
+            raise _input_error(ValueError, 'frequency_tolerance must be positive.')
         if orbit_tolerance <= 0.0:
-            raise ValueError('orbit_tolerance must be positive.')
+            raise _input_error(ValueError, 'orbit_tolerance must be positive.')
 
         field_map = {
             'b1': 'a',
@@ -2270,22 +2346,28 @@ class PAOFLOW:
         }
         field_name = str(b_field).lower()
         if field_name not in field_map:
-            raise ValueError(f'b_field must be one of {tuple(field_map)}, got {b_field!r}.')
+            raise _input_error(
+                ValueError,
+                f'b_field must be one of {tuple(field_map)}, got {b_field!r}.',
+            )
 
         rotating = len(azimuthal_values) == 2
         if rotating:
             field_name = 'rotation'
             if num_angles < 2:
-                raise ValueError('num_angles must be at least 2 for a rotation calculation.')
+                raise _input_error(
+                    ValueError,
+                    'num_angles must be at least 2 for a rotation calculation.',
+                )
         else:
             if field_name == 'rotation':
-                raise ValueError(
-                    "b_field='rotation' requires two-element azimuthal and polar values."
+                raise _input_error(
+                    ValueError,
+                    "b_field='rotation' requires two-element azimuthal and polar values.",
                 )
             num_angles = 1
 
-        config = SkeafConfig(
-            fermi_energy=fermi_energy / RYDBERG_IN_EV,
+        config_options = dict(
             numint=int(num_interpolation),
             theta=math.radians(azimuthal_values[0]),
             phi=math.radians(polar_values[0]),
@@ -2318,7 +2400,10 @@ class PAOFLOW:
             for selection in selections:
                 if isinstance(selection, Integral) and not isinstance(selection, (bool, np.bool_)):
                     if selection < 1:
-                        raise ValueError('PAOFLOW band numbers must be positive integers.')
+                        raise _input_error(
+                            ValueError,
+                            'PAOFLOW band numbers must be positive integers.',
+                        )
                     filename = f'Fermi_surf_band_{int(selection)}.bxsf'
                 elif isinstance(selection, (str, Path)):
                     selected_path = Path(selection)
@@ -2328,7 +2413,10 @@ class PAOFLOW:
                         else f'{selected_path.name}.bxsf'
                     )
                 else:
-                    raise TypeError('Each bands entry must be an integer or a BXSF filename stem.')
+                    raise _input_error(
+                        TypeError,
+                        'Each bands entry must be an integer or a BXSF filename stem.',
+                    )
                 filenames.append(filename)
 
         if not filenames:
@@ -2338,26 +2426,38 @@ class PAOFLOW:
                 'Run paoflow.fermi_surface() first or select custom BXSF files.'
             )
         if len(filenames) != len(set(filenames)):
-            raise ValueError('bands contains duplicate BXSF selections.')
+            raise _input_error(ValueError, 'bands contains duplicate BXSF selections.')
 
-        def report_progress(item):
+        def report_progress(item, fermi_energy_ev):
             if self.rank != 0:
                 return
             message = (
                 'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
             )
-            print(f'{item.path.name}: {message}', flush=True)
+            print(
+                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: '
+                f'{message}',
+                flush=True,
+            )
 
         results = []
         try:
-            results = run_paoflow_bxsf_files(
-                config,
-                input_dir=output_path,
-                filenames=filenames,
-                output_dir=output_path,
-                write_auxiliary_files=verbose,
-                progress_callback=report_progress,
-            )
+            for fermi_energy_ev in fermi_energies:
+                config = SkeafConfig(
+                    fermi_energy=fermi_energy_ev / RYDBERG_IN_EV,
+                    **config_options,
+                )
+                energy_results = run_paoflow_bxsf_files(
+                    config,
+                    input_dir=output_path,
+                    filenames=filenames,
+                    output_dir=output_path,
+                    write_auxiliary_files=verbose,
+                    progress_callback=lambda item, energy=fermi_energy_ev: report_progress(
+                        item, energy
+                    ),
+                )
+                results.extend(energy_results)
         except Exception as error:
             self.report_exception('pyskeaf')
             if attr['abort_on_exception']:

@@ -2,7 +2,12 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from PAOFLOW.pyskeaf.config import SkeafConfig, read_config_in, write_config_in
+from PAOFLOW.pyskeaf.config import (
+    RYDBERG_IN_EV,
+    SkeafConfig,
+    read_config_in,
+    write_config_in,
+)
 from PAOFLOW.pyskeaf.io_bxsf import BXSFData, read_bxsf
 from PAOFLOW.pyskeaf.results import (
     Orbit,
@@ -250,3 +255,37 @@ def test_result_outputs_use_public_angle_names_and_aligned_columns(tmp_path):
     assert ',  ' in lines[0] and ',  ' in lines[1]
     data = np.loadtxt(frequency_path, delimiter=',', skiprows=1)
     assert np.allclose(data[:3], [45.0, 90.0, 1.25])
+
+
+def test_default_result_filenames_include_fermi_energy_ev(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    bxsf = BXSFData(
+        filename='band.bxsf',
+        fermi_energy=0.0,
+        nx=2,
+        ny=2,
+        nz=2,
+        recip_au=np.eye(3),
+        recip_ang=np.eye(3),
+        energies=np.zeros((2, 2, 2)),
+    )
+    result = SKEAFResult(
+        config_filename='',
+        bxsf_filename=bxsf.filename,
+        fermi_energy=0.2 / RYDBERG_IN_EV,
+        config=SkeafConfig(),
+        bxsf=bxsf,
+    )
+
+    write_results_freqvsangle(result)
+    write_results_short(result)
+    write_results_long(result)
+    write_orbit_outlines(result)
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        'qo_EF_0.2_freqvsangle.out',
+        'qo_EF_0.2_long.out',
+        'qo_EF_0.2_orbitoutlines_invAng.out',
+        'qo_EF_0.2_orbitoutlines_invau.out',
+        'qo_EF_0.2_short.out',
+    ]

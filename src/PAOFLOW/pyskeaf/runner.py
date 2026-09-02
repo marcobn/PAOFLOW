@@ -43,6 +43,7 @@ from PAOFLOW.pyskeaf._parallel import active_mpi_comm
 from PAOFLOW.pyskeaf.results import (
     Orbit,
     SKEAFResult,
+    fermi_energy_filename_token,
     write_orbit_outlines,
     write_results_freqvsangle,
     write_results_long,
@@ -455,14 +456,16 @@ def run_skeaf(
             out = Path(output_dir) if output_dir is not None else Path.cwd()
             out.mkdir(parents=True, exist_ok=True)
             suffix = f'_{output_suffix}' if output_suffix else ''
-            write_results_freqvsangle(result, out / f'qo_results_freqvsangle{suffix}.out')
+            energy_ev = result.fermi_energy * _RYDBERG_IN_EV
+            prefix = f'qo_EF_{fermi_energy_filename_token(energy_ev)}_'
+            write_results_freqvsangle(result, out / f'{prefix}freqvsangle{suffix}.out')
             if write_auxiliary_files:
-                write_results_short(result, out / f'qo_results_short{suffix}.out')
-                write_results_long(result, out / f'qo_results_long{suffix}.out')
+                write_results_short(result, out / f'{prefix}short{suffix}.out')
+                write_results_long(result, out / f'{prefix}long{suffix}.out')
                 write_orbit_outlines(
                     result,
-                    out / f'qo_results_orbitoutlines_invAng{suffix}.out',
-                    out / f'qo_results_orbitoutlines_invau{suffix}.out',
+                    out / f'{prefix}orbitoutlines_invAng{suffix}.out',
+                    out / f'{prefix}orbitoutlines_invau{suffix}.out',
                 )
         except Exception as error:
             output_exception = error
@@ -495,9 +498,10 @@ def run_paoflow_bxsf_files(
     ``input_dir`` with ``all_files=True``. If neither is supplied, the legacy
     filename in ``config.in`` is used.
 
-    Output files use the trailing numeric band index when present, e.g.
-    ``qo_results_short_1.out`` for ``Fermi_surf_band_1.bxsf``. Arbitrary
-    filenames use their complete stem, e.g. ``qo_results_short_manual_name.out``.
+    Output files include the Fermi energy in eV and use the trailing numeric
+    band index when present, e.g. ``qo_EF_0_short_1.out`` for
+    ``Fermi_surf_band_1.bxsf`` at 0 eV. Arbitrary filenames use their complete
+    stem, e.g. ``qo_EF_0_short_manual_name.out``.
     ``progress_callback`` is invoked after each band is calculated or skipped.
     """
     if not isinstance(config, SkeafConfig):

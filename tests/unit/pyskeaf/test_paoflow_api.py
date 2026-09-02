@@ -3,11 +3,13 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 import PAOFLOW.pyskeaf.runner as runner
 from PAOFLOW.DataController import DataController
 from PAOFLOW.PAOFLOW import PAOFLOW
+from PAOFLOW.pyskeaf.config import RYDBERG_IN_EV
 
 
 def _paoflow_stub(output_path):
@@ -191,3 +193,92 @@ def test_paoflow_pyskeaf_all_selects_only_standard_bands_in_numeric_order(
         'Fermi_surf_band_2.bxsf',
         'Fermi_surf_band_10.bxsf',
     ]
+
+
+def test_paoflow_pyskeaf_runs_explicit_fermi_energy_tuple(monkeypatch, tmp_path):
+    energies_ry = []
+
+    def fake_run(config, **kwargs):
+        energies_ry.append(config.fermi_energy)
+        return [config.fermi_energy]
+
+    monkeypatch.setattr(runner, 'run_paoflow_bxsf_files', fake_run)
+
+    results = PAOFLOW.pyskeaf(
+        _paoflow_stub(tmp_path),
+        fermi_energy=(-0.01, 0.0, 0.2, 1.0),
+        bands=1,
+    )
+
+    assert np.allclose(
+        np.asarray(energies_ry) * RYDBERG_IN_EV,
+        [-0.01, 0.0, 0.2, 1.0],
+    )
+    assert len(results) == 4
+
+
+def test_paoflow_pyskeaf_runs_explicit_fermi_energy_list(monkeypatch, tmp_path):
+    energies_ry = []
+
+    def fake_run(config, **kwargs):
+        energies_ry.append(config.fermi_energy)
+        return []
+
+    monkeypatch.setattr(runner, 'run_paoflow_bxsf_files', fake_run)
+
+    PAOFLOW.pyskeaf(
+        _paoflow_stub(tmp_path),
+        fermi_energy=[-0.01, 1.0, 6],
+        bands=1,
+    )
+
+    assert np.allclose(
+        np.asarray(energies_ry) * RYDBERG_IN_EV,
+        [-0.01, 1.0, 6.0],
+    )
+
+
+def test_paoflow_pyskeaf_rejects_duplicate_energy_filenames(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, 'run_paoflow_bxsf_files', lambda *args, **kwargs: [])
+
+    with pytest.raises(ValueError, match='distinct output filename'):
+        PAOFLOW.pyskeaf(
+            _paoflow_stub(tmp_path),
+            fermi_energy=(0.0, -0.0),
+            bands=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ('kwargs', 'exception_type', 'specific_message'),
+    [
+        ({'num_interpolation': '100'}, TypeError, 'must be an integer'),
+        ({'b_field': 'a'}, ValueError, 'must be one of'),
+        (
+            {'fermi_energy': [-0.01, 'bad', 2.5]},
+            TypeError,
+            'fermi_energy[1] must be a real number',
+        ),
+        (
+            {'fermi_energy': np.array([-0.01, 0.0, 0.2])},
+            TypeError,
+            'explicit Python tuple/list',
+        ),
+        ({'theta': 0.0}, TypeError, 'Unknown pyskeaf option(s): theta'),
+    ],
+)
+def test_paoflow_pyskeaf_input_errors_include_complete_usage(
+    tmp_path, kwargs, exception_type, specific_message
+):
+    with pytest.raises(exception_type) as error:
+        PAOFLOW.pyskeaf(_paoflow_stub(tmp_path), bands=1, **kwargs)
+
+    message = str(error.value)
+    assert specific_message in message
+    assert 'Correct PAOFLOW.pyskeaf() format:' in message
+    assert 'fermi_energy=0.0' in message
+    assert '[-0.01, 0.0, 0.2, 1.0]' in message
+    assert "b_field='non_principal'" in message
+    assert 'azimuthal=0.0' in message
+    assert "bands='all'" in message
+    assert 'verbose=False' in message

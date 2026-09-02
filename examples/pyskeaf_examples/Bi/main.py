@@ -145,7 +145,7 @@ def plot_freq(file, col):
 
 def plot_frequencies(colors):
     """Plot the SKEAF frequency-vs-angle results."""
-    files_nz = glob.glob(os.path.join(OUTPUTDIR, 'qo_results_freqvsangle_*.out'))
+    files_nz = glob.glob(os.path.join(OUTPUTDIR, 'qo_EF_*_freqvsangle_*.out'))
     files_nz.sort()
     print(files_nz)
 
