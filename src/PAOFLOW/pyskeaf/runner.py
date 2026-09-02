@@ -15,6 +15,7 @@ reference for the call sequence.
 from __future__ import annotations
 
 import logging
+import re
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,7 @@ from PAOFLOW.pyskeaf.results import (
 logger = logging.getLogger(__name__)
 
 _RYDBERG_IN_EV = 13.605693122994
+_PAOFLOW_BAND_STEM_RE = re.compile(r'^Fermi_surf_band_(\d+)$')
 
 
 @dataclass
@@ -322,6 +324,7 @@ def run_skeaf(
     write_files: bool = True,
     output_dir: Union[str, Path, None] = None,
     output_suffix: str = '',
+    write_auxiliary_files: bool = True,
 ) -> SKEAFResult:
     """Top-level driver: run SKEAF as defined by ``config``.
 
@@ -337,6 +340,9 @@ def run_skeaf(
         written to ``output_dir`` (cwd if not given).
     output_dir
         Destination directory for output files.  Created if missing.
+    write_auxiliary_files
+        Also write short, long, and orbit-outline diagnostic files. The
+        frequency-vs-angle result is always written when ``write_files`` is true.
 
     Notes
     -----
@@ -449,14 +455,15 @@ def run_skeaf(
             out = Path(output_dir) if output_dir is not None else Path.cwd()
             out.mkdir(parents=True, exist_ok=True)
             suffix = f'_{output_suffix}' if output_suffix else ''
-            write_results_freqvsangle(result, out / f'results_freqvsangle{suffix}.out')
-            write_results_short(result, out / f'results_short{suffix}.out')
-            write_results_long(result, out / f'results_long{suffix}.out')
-            write_orbit_outlines(
-                result,
-                out / f'results_orbitoutlines_invAng{suffix}.out',
-                out / f'results_orbitoutlines_invau{suffix}.out',
-            )
+            write_results_freqvsangle(result, out / f'qo_results_freqvsangle{suffix}.out')
+            if write_auxiliary_files:
+                write_results_short(result, out / f'qo_results_short{suffix}.out')
+                write_results_long(result, out / f'qo_results_long{suffix}.out')
+                write_orbit_outlines(
+                    result,
+                    out / f'qo_results_orbitoutlines_invAng{suffix}.out',
+                    out / f'qo_results_orbitoutlines_invau{suffix}.out',
+                )
         except Exception as error:
             output_exception = error
             output_traceback = traceback.format_exc()
@@ -475,6 +482,8 @@ def run_paoflow_bxsf_files(
     all_files: bool = False,
     output_dir: Union[str, Path, None] = None,
     write_files: bool = True,
+    write_auxiliary_files: bool = True,
+    progress_callback: Callable[[BXSFRun], None] | None = None,
 ) -> list[BXSFRun]:
     """Run selected PAOFLOW BXSF bands whose energy ranges contain ``E_F``.
 
@@ -487,8 +496,9 @@ def run_paoflow_bxsf_files(
     filename in ``config.in`` is used.
 
     Output files use the trailing numeric band index when present, e.g.
-    ``results_short_1.out`` for ``Fermi_surf_band_1.bxsf``. Arbitrary
-    filenames use their complete stem, e.g. ``results_short_manual_name.out``.
+    ``qo_results_short_1.out`` for ``Fermi_surf_band_1.bxsf``. Arbitrary
+    filenames use their complete stem, e.g. ``qo_results_short_manual_name.out``.
+    ``progress_callback`` is invoked after each band is calculated or skipped.
     """
     if not isinstance(config, SkeafConfig):
         config = read_config_in(config)
@@ -509,13 +519,19 @@ def run_paoflow_bxsf_files(
 
     fermi_energy_ev = config.fermi_energy * _RYDBERG_IN_EV
     results: list[BXSFRun] = []
+
+    def record(item: BXSFRun) -> None:
+        results.append(item)
+        if progress_callback is not None:
+            progress_callback(item)
+
     for path in paths:
         if not path.is_file():
             raise FileNotFoundError(f'BXSF file not found: {path}')
         try:
             bxsf = read_bxsf(path)
         except BXSFError as error:
-            results.append(
+            record(
                 BXSFRun(
                     path,
                     float('nan'),
@@ -535,19 +551,17 @@ def run_paoflow_bxsf_files(
                 f'Fermi energy {fermi_energy_ev:.6f} eV is outside '
                 f'[{minimum_ev:.6f}, {maximum_ev:.6f}] eV.'
             )
-            results.append(item)
+            record(item)
             continue
 
+        standard_match = _PAOFLOW_BAND_STEM_RE.fullmatch(path.stem)
         item.result = run_skeaf(
             config,
             bxsf,
             write_files=write_files,
             output_dir=output_dir,
-            output_suffix=(
-                path.stem.rsplit('_', 1)[-1]
-                if '_' in path.stem and path.stem.rsplit('_', 1)[-1].isdigit()
-                else path.stem
-            ),
+            output_suffix=standard_match.group(1) if standard_match else path.stem,
+            write_auxiliary_files=write_auxiliary_files,
         )
-        results.append(item)
+        record(item)
     return results

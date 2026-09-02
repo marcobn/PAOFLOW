@@ -99,6 +99,41 @@ def test_nonroot_mpi_rank_does_not_write_output(monkeypatch, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_nonverbose_run_writes_only_prefixed_frequency_result(monkeypatch, tmp_path):
+    written = []
+    monkeypatch.setattr(runner, 'active_mpi_comm', lambda: None)
+    monkeypatch.setattr(
+        runner,
+        'run_at_angle',
+        lambda *args, **kwargs: SimpleNamespace(orbits=[]),
+    )
+    monkeypatch.setattr(
+        runner,
+        'write_results_freqvsangle',
+        lambda result, path: written.append(path.name),
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError('an auxiliary result writer was called')
+
+    monkeypatch.setattr(runner, 'write_results_short', fail_if_called)
+    monkeypatch.setattr(runner, 'write_results_long', fail_if_called)
+    monkeypatch.setattr(runner, 'write_orbit_outlines', fail_if_called)
+
+    cfg = SkeafConfig(hvd='n', numint=2)
+    bxsf = SimpleNamespace(filename='manual_7.bxsf', fermi_energy=0.0, recip_ang=np.eye(3))
+
+    runner.run_skeaf(
+        cfg,
+        bxsf,
+        output_dir=tmp_path,
+        output_suffix='manual_7',
+        write_auxiliary_files=False,
+    )
+
+    assert written == ['qo_results_freqvsangle_manual_7.out']
+
+
 def test_paoflow_bxsf_band_energies_remain_in_rydberg(monkeypatch, tmp_path):
     path = tmp_path / 'Fermi_surf_band_1.bxsf'
     path.touch()
@@ -134,3 +169,80 @@ def test_paoflow_bxsf_band_energies_remain_in_rydberg(monkeypatch, tmp_path):
     assert np.array_equal(passed_energies[0], energies_ry)
     assert np.isclose(runs[0].minimum_ev, -0.01 * runner._RYDBERG_IN_EV)
     assert np.isclose(runs[0].maximum_ev, 0.01 * runner._RYDBERG_IN_EV)
+
+
+def test_custom_bxsf_uses_complete_stem_for_output_suffix(monkeypatch, tmp_path):
+    path = tmp_path / 'manual_band_7.bxsf'
+    path.touch()
+    bxsf = BXSFData(
+        filename=str(path),
+        fermi_energy=0.0,
+        nx=1,
+        ny=1,
+        nz=2,
+        recip_au=np.eye(3),
+        recip_ang=np.eye(3),
+        energies=np.array([[[-0.01, 0.01]]]),
+    )
+    calls = []
+    monkeypatch.setattr(runner, 'read_bxsf', lambda unused_path: bxsf)
+
+    def fake_run_skeaf(config, data, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(runner, 'run_skeaf', fake_run_skeaf)
+
+    runner.run_paoflow_bxsf_files(
+        SkeafConfig(fermi_energy=0.0),
+        input_dir=tmp_path,
+        filenames=[path.name],
+        write_auxiliary_files=False,
+    )
+
+    assert calls[0]['output_suffix'] == 'manual_band_7'
+    assert calls[0]['write_auxiliary_files'] is False
+
+
+def test_paoflow_bxsf_progress_is_reported_after_each_file(monkeypatch, tmp_path):
+    paths = [
+        tmp_path / 'Fermi_surf_band_1.bxsf',
+        tmp_path / 'Fermi_surf_band_2.bxsf',
+    ]
+    for path in paths:
+        path.touch()
+
+    def fake_read_bxsf(path):
+        energies = (
+            np.array([[[-0.01, 0.01]]])
+            if path.name.endswith('_1.bxsf')
+            else np.array([[[0.02, 0.03]]])
+        )
+        return BXSFData(
+            filename=str(path),
+            fermi_energy=0.0,
+            nx=1,
+            ny=1,
+            nz=2,
+            recip_au=np.eye(3),
+            recip_ang=np.eye(3),
+            energies=energies,
+        )
+
+    monkeypatch.setattr(runner, 'read_bxsf', fake_read_bxsf)
+    monkeypatch.setattr(runner, 'run_skeaf', lambda *args, **kwargs: SimpleNamespace())
+    progress = []
+
+    runs = runner.run_paoflow_bxsf_files(
+        SkeafConfig(fermi_energy=0.0),
+        input_dir=tmp_path,
+        all_files=True,
+        progress_callback=lambda item: progress.append(
+            (item.path.name, item.calculated, item.skipped_reason)
+        ),
+    )
+
+    assert len(runs) == 2
+    assert progress[0] == ('Fermi_surf_band_1.bxsf', True, None)
+    assert progress[1][0:2] == ('Fermi_surf_band_2.bxsf', False)
+    assert 'outside' in progress[1][2]

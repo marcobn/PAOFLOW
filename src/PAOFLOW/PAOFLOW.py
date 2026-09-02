@@ -33,6 +33,8 @@ class PAOFLOW:
         Path to the working directory.
     outputdir : str, default ``'output'``
         Name of the output sub-directory created under ``workpath``.
+        When this directory already contains BXSF files and no readable DFT
+        data are available, PAOFLOW initializes for a PySKEAF-only calculation.
     inputfile : str, optional
         Path to an XML input file that configures the run.
     savedir : str, optional
@@ -118,6 +120,8 @@ class PAOFLOW:
         Real-space electron density on a uniform grid.
     fermi_surface(fermi_up, fermi_dw)
         Extract the Fermi surface within an energy window.
+    pyskeaf(fermi_energy, num_interpolation, b_field, azimuthal, polar, ...)
+        Calculate quantum-oscillation frequencies from SKEAF-compatible BXSF bands.
     spin_texture(fermi_up, fermi_dw)
         Map the spin expectation value ⟨S⟩ across the Fermi surface.
     wave_function_projection(dimension)
@@ -298,7 +302,12 @@ class PAOFLOW:
             if restart:
                 print('Run starting from Restart data.')
             else:
-                if self.size == 1:
+                if attr.get('bxsf_only', False):
+                    print(
+                        'PySKEAF-only execution using BXSF files in %s'
+                        % attr['opath']
+                    )
+                elif self.size == 1:
                     print('Serial execution')
                 else:
                     print(
@@ -308,7 +317,12 @@ class PAOFLOW:
                     )
 
         # Do memory checks
-        if model is None and not restart and self.rank == 0:
+        if (
+            model is None
+            and not restart
+            and self.rank == 0
+            and not attr.get('bxsf_only', False)
+        ):
             gbyte = self.memory_check()
             print('Estimated maximum array size: %.2f GBytes\n' % (gbyte))
 
@@ -2128,6 +2142,229 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Fermi Surface')
+
+    def pyskeaf(self,
+        fermi_energy=0.0,
+        num_interpolation=100,
+        b_field='non_principal',
+        azimuthal=0.0,
+        polar=0.0,
+        num_angles=1,
+        minimum_frequency=0.0,
+        frequency_tolerance=0.01,
+        orbit_tolerance=0.05,
+        allow_wall_orbits=True,
+        bands='all',
+        verbose=False,
+    ):
+        """Calculate quantum-oscillation frequencies with pyskeaf.
+
+        Use single-band, SKEAF-compatible BXSF files created by
+        :meth:`fermi_surface`, or initialize PAOFLOW with only ``outputdir``
+        when existing BXSF files are already present there. Custom files may
+        be selected by their extensionless names.
+
+        Parameters
+        ----------
+        fermi_energy : float, default 0.0
+            Fermi energy in eV. It is converted to Rydberg internally.
+        num_interpolation : int, default 100
+            Number of interpolated points per reciprocal-cell side.
+        b_field : {'b1', 'b2', 'b3', 'non_principal', 'rotation'}
+            Magnetic-field direction. Two-element ``azimuthal`` and ``polar``
+            values automatically select ``'rotation'``.
+        azimuthal, polar : float or pair of float
+            Azimuthal (theta) and polar (phi) angles in degrees. Scalars
+            select one orientation; pairs define the endpoints of a rotation.
+        num_angles : int, default 1
+            Number of equally spaced orientations in a rotation. Scalar
+            angles always imply one orientation.
+        minimum_frequency : float, default 0.0
+            Minimum reported extremal frequency in kT.
+        frequency_tolerance : float, default 0.01
+            Maximum fractional frequency difference used when averaging.
+        orbit_tolerance : float, default 0.05
+            Maximum fractional reciprocal-cell distance used when averaging.
+        allow_wall_orbits : bool, default True
+            Include extrema close to supercell walls.
+        bands : 'all', int, str, or sequence, default 'all'
+            ``'all'`` selects every ``Fermi_surf_band_*.bxsf`` file. Integers
+            select standard PAOFLOW band suffixes. Strings select custom BXSF
+            stems, with the ``.bxsf`` extension optional.
+        verbose : bool, default False
+            Also write short, long, and orbit-outline diagnostic files. The
+            physical ``qo_results_freqvsangle_*.out`` files are always written.
+
+        Returns
+        -------
+        list of PAOFLOW.pyskeaf.runner.BXSFRun
+            Per-band calculation or skip results.
+        """
+        import math
+        from numbers import Integral, Real
+        from pathlib import Path
+
+        from .pyskeaf.config import RYDBERG_IN_EV, SkeafConfig
+        from .pyskeaf.runner import run_paoflow_bxsf_files
+
+        attr = self.data_controller.data_attributes
+
+        def _real(value, name):
+            if not isinstance(value, Real) or isinstance(value, (bool, np.bool_)):
+                raise TypeError(f'{name} must be a real number.')
+            return float(value)
+
+        def _real_values(value, name):
+            if isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
+                return (float(value),)
+            try:
+                values = tuple(value)
+            except TypeError as error:
+                raise TypeError(
+                    f'{name} must be a real number or a pair of real numbers.'
+                ) from error
+            if len(values) != 2 or any(
+                not isinstance(item, Real) or isinstance(item, (bool, np.bool_))
+                for item in values
+            ):
+                raise TypeError(f'{name} must be a real number or a pair of real numbers.')
+            return tuple(float(item) for item in values)
+
+        azimuthal_values = _real_values(azimuthal, 'azimuthal')
+        polar_values = _real_values(polar, 'polar')
+        if len(azimuthal_values) != len(polar_values):
+            raise ValueError(
+                'azimuthal and polar must both be scalars or both be two-element pairs.'
+            )
+
+        if not isinstance(num_interpolation, Integral) or isinstance(
+            num_interpolation, (bool, np.bool_)
+        ):
+            raise TypeError('num_interpolation must be an integer.')
+        if num_interpolation < 2:
+            raise ValueError('num_interpolation must be at least 2.')
+        if not isinstance(num_angles, Integral) or isinstance(num_angles, (bool, np.bool_)):
+            raise TypeError('num_angles must be an integer.')
+        if not isinstance(allow_wall_orbits, (bool, np.bool_)):
+            raise TypeError('allow_wall_orbits must be True or False.')
+        if not isinstance(verbose, (bool, np.bool_)):
+            raise TypeError('verbose must be True or False.')
+
+        fermi_energy = _real(fermi_energy, 'fermi_energy')
+        minimum_frequency = _real(minimum_frequency, 'minimum_frequency')
+        frequency_tolerance = _real(frequency_tolerance, 'frequency_tolerance')
+        orbit_tolerance = _real(orbit_tolerance, 'orbit_tolerance')
+        if minimum_frequency < 0.0:
+            raise ValueError('minimum_frequency cannot be negative.')
+        if frequency_tolerance <= 0.0:
+            raise ValueError('frequency_tolerance must be positive.')
+        if orbit_tolerance <= 0.0:
+            raise ValueError('orbit_tolerance must be positive.')
+
+        field_map = {
+            'b1': 'a',
+            'b2': 'b',
+            'b3': 'c',
+            'non_principal': 'n',
+            'rotation': 'r',
+        }
+        field_name = str(b_field).lower()
+        if field_name not in field_map:
+            raise ValueError(f'b_field must be one of {tuple(field_map)}, got {b_field!r}.')
+
+        rotating = len(azimuthal_values) == 2
+        if rotating:
+            field_name = 'rotation'
+            if num_angles < 2:
+                raise ValueError('num_angles must be at least 2 for a rotation calculation.')
+        else:
+            if field_name == 'rotation':
+                raise ValueError(
+                    "b_field='rotation' requires two-element azimuthal and polar values."
+                )
+            num_angles = 1
+
+        config = SkeafConfig(
+            fermi_energy=fermi_energy / RYDBERG_IN_EV,
+            numint=int(num_interpolation),
+            theta=math.radians(azimuthal_values[0]),
+            phi=math.radians(polar_values[0]),
+            hvd=field_map[field_name],
+            min_extfreq=minimum_frequency,
+            freq_same_frac=frequency_tolerance,
+            avg_same_frac=orbit_tolerance,
+            allow_ext_near_walls=allow_wall_orbits,
+            theta_start=math.radians(azimuthal_values[0]),
+            theta_end=math.radians(azimuthal_values[-1]),
+            phi_start=math.radians(polar_values[0]),
+            phi_end=math.radians(polar_values[-1]),
+            num_rots=int(num_angles),
+        )
+
+        output_path = Path(attr['opath'])
+
+        def _standard_band_number(path):
+            stem = path.stem
+            prefix = 'Fermi_surf_band_'
+            suffix = stem[len(prefix) :] if stem.startswith(prefix) else ''
+            return (0, int(suffix)) if suffix.isdigit() else (1, stem)
+
+        if isinstance(bands, str) and bands.lower() == 'all':
+            paths = sorted(output_path.glob('Fermi_surf_band_*.bxsf'), key=_standard_band_number)
+            filenames = [path.name for path in paths]
+        else:
+            selections = bands if isinstance(bands, (list, tuple, set)) else (bands,)
+            filenames = []
+            for selection in selections:
+                if isinstance(selection, Integral) and not isinstance(selection, (bool, np.bool_)):
+                    if selection < 1:
+                        raise ValueError('PAOFLOW band numbers must be positive integers.')
+                    filename = f'Fermi_surf_band_{int(selection)}.bxsf'
+                elif isinstance(selection, (str, Path)):
+                    selected_path = Path(selection)
+                    filename = (
+                        selected_path.name
+                        if selected_path.suffix.lower() == '.bxsf'
+                        else f'{selected_path.name}.bxsf'
+                    )
+                else:
+                    raise TypeError('Each bands entry must be an integer or a BXSF filename stem.')
+                filenames.append(filename)
+
+        if not filenames:
+            raise FileNotFoundError(
+                'No Fermi_surf_band_*.bxsf files found in PAOFLOW output directory '
+                f'{output_path}. '
+                'Run paoflow.fermi_surface() first or select custom BXSF files.'
+            )
+        if len(filenames) != len(set(filenames)):
+            raise ValueError('bands contains duplicate BXSF selections.')
+
+        def report_progress(item):
+            if self.rank != 0:
+                return
+            message = (
+                'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
+            )
+            print(f'{item.path.name}: {message}', flush=True)
+
+        results = []
+        try:
+            results = run_paoflow_bxsf_files(
+                config,
+                input_dir=output_path,
+                filenames=filenames,
+                output_dir=output_path,
+                write_auxiliary_files=verbose,
+                progress_callback=report_progress,
+            )
+        except Exception as error:
+            self.report_exception('pyskeaf')
+            if attr['abort_on_exception']:
+                raise error
+
+        self.report_module_time('Quantum Oscillations')
+        return results
 
     def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0):
         """
