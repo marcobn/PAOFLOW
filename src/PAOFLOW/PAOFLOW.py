@@ -832,7 +832,7 @@ class PAOFLOW:
         high_sym_points=None,
         spin_orbit=False,
         fname='bands',
-        nk=500,
+        nk=500,write_QE_path=False
     ):
         """
         Compute the electronic band structure
@@ -870,7 +870,7 @@ class PAOFLOW:
             attr['do_spin_orbit'] = spin_orbit
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
-
+        attr['write_QE_bands']=write_QE_path
         # Prepare HRs for band computation with spin-orbit coupling
         try:
             do_bands(self.data_controller)
@@ -897,6 +897,7 @@ class PAOFLOW:
         theta=0.0,
         lambda_p=[0.0],
         lambda_d=[0.0],
+        lambda_f=[0.0],
         soc_strengh={},
         soc_species=True,
         soc_shell_weights=None,
@@ -911,6 +912,7 @@ class PAOFLOW:
             If soc_species = False
             lambda_p (list of floats) :  p orbitals SOC strengh for each atom
             lambda_d (list of float)  :  d orbitals SOC strengh for each atom
+            lambda_f (list of float)  :  f orbitals SOC strengh for each atom
             soc_shell_weights (dict, optional):
 
                 Per-shell SOC weights for the ``'generic'`` builder
@@ -925,10 +927,12 @@ class PAOFLOW:
             None
 
         """
+
+        #IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
         import scipy.linalg as la
-
+        from .SocFitter import build_automatic_adhoc_soc
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
-
+        from .utils.soc_header import soc_header
         arry, attr = self.data_controller.data_dicts()
         attr['do_spin_orbit'] = attr['adhoc_SO'] = True
 
@@ -936,21 +940,27 @@ class PAOFLOW:
             attr['phi'] = phi
         if 'theta' not in attr:
             attr['theta'] = theta
-
+        if soc_strengh=={}:
+            soc_header()
+            soc_strengh,soc_shell_weights=build_automatic_adhoc_soc(self)
         if soc_species == True:
             lambda_p = []
             lambda_d = []
+            lambda_f = []
             for i in range(len(arry['atoms'])):
                 lambda_p.append(soc_strengh[arry['atoms'][i]][0])
                 lambda_d.append(soc_strengh[arry['atoms'][i]][1])
+                lambda_f.append(soc_strengh[arry['atoms'][i]][2])
             arry['lambda_p'] = lambda_p
             arry['lambda_d'] = lambda_d
+            arry['lambda_f'] = lambda_f
         else:
             if 'lambda_p' not in arry:
                 arry['lambda_p'] = lambda_p[:]
             if 'lambda_d' not in arry:
                 arry['lambda_d'] = lambda_d[:]
-
+            if 'lambda_f' not in arry:
+                arry['lambda_f'] = lambda_f[:]
         if soc_shell_weights is not None:
             arry['soc_shell_weights'] = soc_shell_weights
 
