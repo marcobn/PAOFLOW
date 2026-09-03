@@ -4,7 +4,7 @@
 Runs the whole de Haas-van Alphen (SKEAF) workflow in one script:
 
   1. PAOFLOW builds the PAO Hamiltonian and writes the Fermi-surface .bxsf files.
-  2. pyskeaf reads config.in and runs SKEAF over those .bxsf files.
+  2. The native PAOFLOW pyskeaf method runs SKEAF over those .bxsf files.
   3. The frequency-vs-angle results are plotted.
 
 Run with:
@@ -25,8 +25,6 @@ from PAOFLOW import PAOFLOW
 from PAOFLOW.basis_gen import generate_basis_for_pseudo
 from PAOFLOW.basis_gen.driver import _default_shells
 from PAOFLOW.inputs.read_upf import UPF as _UPFParser
-from PAOFLOW.pyskeaf.config import read_config_in
-from PAOFLOW.pyskeaf.runner import run_paoflow_bxsf_files
 
 try:
     from mpi4py import MPI
@@ -53,8 +51,6 @@ PTHR = 0.95  # projectability threshold
 # Double-grid interpolation (denser FFT grid). Set to None to skip.
 NFFT = (32, 32, 32)
 
-# SKEAF step.
-CONFIG = 'config.in'
 colors = ['blue', 'green', 'yellow', 'red', 'black', 'magenta', 'orange', 'purple', 'brown']
 
 
@@ -102,24 +98,19 @@ def run_properties():
 
     p.fermi_surface()
 
-    p.finish_execution()
-
-
-def run_skeaf():
-    """Run SKEAF over the freshly generated Fermi-surface .bxsf files."""
-    cfg = read_config_in(CONFIG)
-    results = run_paoflow_bxsf_files(
-        cfg,
-        input_dir=os.path.join(HERE, OUTPUTDIR),
-        all_files=True,
-        output_dir=OUTPUTDIR,
+    p.pyskeaf(
+        fermi_energy=0.0,
+        num_interpolation=60,
+        azimuthal=(0.0, 0.0),
+        polar=(0.0, 90.0),
+        num_angles=37,
+        frequency_tolerance=0.01,
+        orbit_tolerance=0.05,
+        allow_wall_orbits=True,
+        verbose=False,
     )
-    for item in results:
-        print(
-            f'{item.path.name}: calculated'
-            if item.calculated
-            else f'{item.path.name}: skipped - {item.skipped_reason}'
-        )
+
+    p.finish_execution()
 
 
 def plot_freq(file, col):
@@ -154,7 +145,7 @@ def plot_freq(file, col):
 
 def plot_frequencies(colors):
     """Plot the SKEAF frequency-vs-angle results."""
-    files_nz = glob.glob(os.path.join(OUTPUTDIR, 'results_freqvsangle_*.out'))
+    files_nz = glob.glob(os.path.join(OUTPUTDIR, 'qo_EF_*_freqvsangle_*.out'))
     files_nz.sort()
     print(files_nz)
 
@@ -183,9 +174,8 @@ def main():
 
     run_properties()
 
-    # pyskeaf and matplotlib are single-process; run them on rank 0 only.
+    # Matplotlib is single-process; pyskeaf already ran collectively above.
     if RANK == 0:
-        run_skeaf()
         plot_frequencies(colors)
 
 

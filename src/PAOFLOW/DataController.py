@@ -106,7 +106,9 @@ class DataController:
     workpath : str
         Path to the working directory.
     outputdir : str
-        Name of the output sub-directory (created under ``workpath``).
+        Name of the output sub-directory (created under ``workpath``). An
+        existing directory containing BXSF files supports PySKEAF-only
+        initialization when no readable DFT source is available.
     inputfile : str or None
         Optional PAOFLOW XML input file.
     model : dict or None
@@ -233,6 +235,7 @@ class DataController:
         Returns:
             None
         """
+        from glob import glob
         from os import mkdir
         from os.path import exists, join
 
@@ -244,17 +247,49 @@ class DataController:
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
 
+        output_has_bxsf = bool(glob(join(workpath, outputdir, '*.bxsf')))
+        dft_path = join(workpath, savedir) if savedir is not None else None
+        if dft_path is None:
+            direct_dft_data_available = False
+        elif dft == 'QE':
+            direct_dft_data_available = exists(join(dft_path, 'data-file-schema.xml')) or exists(
+                join(dft_path, 'data-file.xml')
+            )
+        else:
+            direct_dft_data_available = exists(join(dft_path, 'vasprun.xml'))
+
+        bxsf_only = (
+            model is None
+            and not restart
+            and inputfile is None
+            and not direct_dft_data_available
+            and output_has_bxsf
+        )
+
         if model is not None:
             if (inputfile is not None or savedir is not None) and self.rank == 0:
                 print(
                     '\nWARNING: Model specified in addition to inputfile or savedir. Model will be used.'
                 )
-        elif not restart and inputfile is None and savedir is None:
+        elif (
+            not restart
+            and inputfile is None
+            and not direct_dft_data_available
+            and not output_has_bxsf
+        ):
             if self.rank == 0:
+                requested_path = dft_path if dft_path is not None else 'no savedir'
                 print(
-                    "\nERROR: Must specify '.save' directory path, either in PAOFLOW constructor or in an inputfile."
+                    f'\nERROR: No readable {dft} data were found at {requested_path}, '
+                    f'and no BXSF files were found in {join(workpath, outputdir)}.'
                 )
             quit()
+
+        if bxsf_only and savedir is not None and self.rank == 0:
+            print(
+                f'\nWARNING: No readable {dft} data were found at {dft_path}. '
+                f'Using existing BXSF files in {join(workpath, outputdir)}.'
+            )
 
         self.error_handler = ErrorHandler()
         self.report_exception = self.error_handler.report_exception
@@ -269,11 +304,12 @@ class DataController:
             attr['savedir'] = savedir
             attr['verbose'] = verbose
             attr['workpath'] = workpath
+            attr['bxsf_only'] = bxsf_only
             attr['save_overlaps'] = save_overlaps
             attr['acbn0'] = acbn0
             attr['inputfile'], attr['outputdir'] = inputfile, outputdir
             attr['opath'] = join(workpath, outputdir)
-            if model is None:
+            if model is None and not bxsf_only:
                 attr['fpath'] = join(workpath, (savedir if inputfile == None else inputfile))
 
             if inputfile == None:
@@ -306,7 +342,7 @@ class DataController:
                         print('\nERROR: Could not build tight-binding model')
                         self.report_exception('Data Controller Initialization')
                         raise e
-            else:
+            elif not bxsf_only:
                 try:
                     if inputfile != None:
                         if not exists(attr['fpath']):

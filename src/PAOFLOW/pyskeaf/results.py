@@ -1,10 +1,8 @@
 """Result dataclasses and output writers for PAOFLOW.pyskeaf.
 
-The output filenames are kept identical to those produced by the Fortran
-SKEAF (``results_freqvsangle.out``, ``results_short.out``,
-``results_long.out``, ``results_orbitoutlines_invAng.out``,
-``results_orbitoutlines_invau.out``) so that downstream plotting scripts
-(e.g. ``Cylinder/plot.py``) keep working unmodified.
+PAOFLOW uses a ``qo_EF_<energy>_`` prefix for quantum-oscillation outputs so
+results from different Fermi energies remain identifiable and cannot silently
+overwrite one another.
 
 Phase 1 only defines the dataclasses and stubs the writers; full output
 formatting will be filled in as later phases produce real orbit data.
@@ -19,6 +17,26 @@ from typing import Union
 import numpy as np
 
 from PAOFLOW.pyskeaf.constants import BUILD_NUMBER
+from PAOFLOW.pyskeaf.config import RYDBERG_IN_EV
+
+
+_PUBLIC_B_FIELD_NAMES = {
+    'a': 'b1',
+    'b': 'b2',
+    'c': 'b3',
+    'n': 'non_principal',
+    'r': 'rotation',
+}
+
+_FREQUENCY_COLUMNS = (
+    ('Azimuthal(deg)', 16),
+    ('Polar(deg)', 14),
+    ('Freq(kT)', 16),
+    ('mstar(me)', 16),
+    ('Curv(kTA2)', 16),
+    ('Type(+e-h)', 12),
+    ('NumOrbCopy', 12),
+)
 
 
 @dataclass
@@ -72,34 +90,54 @@ class SKEAFResult:
 # --- writers (stubs to be fleshed out in later phases) ----------------------
 
 
-def write_results_freqvsangle(
-    result: SKEAFResult, path: Union[str, Path] = 'results_freqvsangle.out'
-) -> None:
-    """Write the CSV-style ``results_freqvsangle.out`` (Fortran-compatible).
+def fermi_energy_filename_token(fermi_energy_ev: float) -> str:
+    """Return a stable, compact eV value for a quantum-oscillation filename."""
+    value = float(fermi_energy_ev)
+    if not np.isfinite(value):
+        raise ValueError('Fermi energy must be finite.')
+    if value == 0.0:
+        value = 0.0
+    return np.format_float_positional(
+        value,
+        precision=15,
+        unique=False,
+        fractional=False,
+        trim='-',
+    )
 
-    Columns: ``Theta(deg),Phi(deg),Freq(kT),mstar(me),Curv(kTA2),Type(+e-h),NumOrbCopy``.
-    Numeric format matches Fortran ``write(19, '(F10.6, ",", F10.6, ",", ES14.6, "," ...))``
-    at skeaf_v1p3p0_r149.F90:2701.
+
+def _default_result_path(result: SKEAFResult, stem: str) -> Path:
+    energy_ev = result.fermi_energy * RYDBERG_IN_EV
+    token = fermi_energy_filename_token(energy_ev)
+    return Path(f'qo_EF_{token}_{stem}.out')
+
+
+def write_results_freqvsangle(result: SKEAFResult, path: Union[str, Path, None] = None) -> None:
+    """Write the CSV-style frequency-vs-angle result.
+
+    Columns are comma-separated for compatibility with existing plotting
+    scripts, and each field has a fixed width shared by the header and data.
     """
-    header = 'Theta(deg),Phi(deg),Freq(kT),mstar(me),' 'Curv(kTA2),Type(+e-h),NumOrbCopy\n'
+    header = ',  '.join(f'{label:^{width}}' for label, width in _FREQUENCY_COLUMNS) + '\n'
     rad2deg = 180.0 / np.pi
     lines = [header]
     for orb in result.orbits:
-        theta_deg = orb.theta * rad2deg
-        phi_deg = orb.phi * rad2deg
-        # Fortran ES14.6 is 14-wide with 6 fractional digits in scientific form.
-        # F10.6 is 10-wide fixed.  F6.3 is 6-wide fixed.  I5 is right-justified width 5.
-        lines.append(
-            f'{theta_deg:10.6f},{phi_deg:10.6f},'
-            f'{orb.frequency_kT:14.6E},{orb.effective_mass:14.6E},'
-            f'{orb.curvature:14.6E},{float(orb.orbit_type):6.3f},'
-            f'{orb.num_copies:5d}\n'
+        fields = (
+            f'{orb.theta * rad2deg:16.6f}',
+            f'{orb.phi * rad2deg:14.6f}',
+            f'{orb.frequency_kT:16.6E}',
+            f'{orb.effective_mass:16.6E}',
+            f'{orb.curvature:16.6E}',
+            f'{float(orb.orbit_type):12.3f}',
+            f'{orb.num_copies:12d}',
         )
-    Path(path).write_text(''.join(lines))
+        lines.append(',  '.join(fields) + '\n')
+    output_path = Path(path) if path is not None else _default_result_path(result, 'freqvsangle')
+    output_path.write_text(''.join(lines))
 
 
-def write_results_short(result: SKEAFResult, path: Union[str, Path] = 'results_short.out') -> None:
-    """Write the human-readable ``results_short.out`` (Fortran-compatible).
+def write_results_short(result: SKEAFResult, path: Union[str, Path, None] = None) -> None:
+    """Write the human-readable short result.
 
     Mirrors the per-angle block at skeaf_v1p3p0_r149.F90:2780–2810.  Header
     comes from :func:`_results_header`.  Orbits are written in the order they
@@ -109,26 +147,28 @@ def write_results_short(result: SKEAFResult, path: Union[str, Path] = 'results_s
     text = _results_header(result, brief=True) + _per_angle_blocks(
         result, include_outline_pointer=False
     )
-    Path(path).write_text(text)
+    output_path = Path(path) if path is not None else _default_result_path(result, 'short')
+    output_path.write_text(text)
 
 
-def write_results_long(result: SKEAFResult, path: Union[str, Path] = 'results_long.out') -> None:
-    """Write the verbose ``results_long.out`` (every orbit copy listed).
+def write_results_long(result: SKEAFResult, path: Union[str, Path, None] = None) -> None:
+    """Write the verbose long result (every orbit copy listed).
 
-    Same structure as ``results_short.out`` but additionally records the
+    Same structure as the short result but additionally records the
     representative-copy slice index and orbit number used for the outline file
     (Fortran F90:986–988).
     """
     text = _results_header(result, brief=False) + _per_angle_blocks(
         result, include_outline_pointer=True
     )
-    Path(path).write_text(text)
+    output_path = Path(path) if path is not None else _default_result_path(result, 'long')
+    output_path.write_text(text)
 
 
 def write_orbit_outlines(
     result: SKEAFResult,
-    path_invang: Union[str, Path] = 'results_orbitoutlines_invAng.out',
-    path_invau: Union[str, Path] = 'results_orbitoutlines_invau.out',
+    path_invang: Union[str, Path, None] = None,
+    path_invau: Union[str, Path, None] = None,
 ) -> None:
     """Write the orbit-outline coordinate files in both Å⁻¹ and a.u.⁻¹.
 
@@ -156,14 +196,14 @@ def write_orbit_outlines(
     for (theta, phi), orbs in by_angle.items():
         n_with_contour = sum(1 for o in orbs if o.outline_ang is not None)
         header_ang = (
-            f'Theta(deg) = {theta * rad2deg:10.6f} , '
-            f'Phi(deg) = {phi * rad2deg:10.6f} , '
+            f'Azimuthal(deg) = {theta * rad2deg:10.6f} , '
+            f'Polar(deg) = {phi * rad2deg:10.6f} , '
             f'Number of orbits = {n_with_contour:5d} , '
             f'(Angstrom^-1) units\n'
         )
         header_au = (
-            f'Theta(deg) = {theta * rad2deg:10.6f} , '
-            f'Phi(deg) = {phi * rad2deg:10.6f} , '
+            f'Azimuthal(deg) = {theta * rad2deg:10.6f} , '
+            f'Polar(deg) = {phi * rad2deg:10.6f} , '
             f'Number of orbits = {n_with_contour:5d} , '
             f'(a.u.^-1) units\n'
         )
@@ -192,15 +232,25 @@ def write_orbit_outlines(
             for px, py, pz in o.outline_au:
                 lines_au.append(f' {px:13.6E} {py:13.6E} {pz:13.6E}\n')
 
-    Path(path_invang).write_text(''.join(lines_ang))
-    Path(path_invau).write_text(''.join(lines_au))
+    output_invang = (
+        Path(path_invang)
+        if path_invang is not None
+        else _default_result_path(result, 'orbitoutlines_invAng')
+    )
+    output_invau = (
+        Path(path_invau)
+        if path_invau is not None
+        else _default_result_path(result, 'orbitoutlines_invau')
+    )
+    output_invang.write_text(''.join(lines_ang))
+    output_invau.write_text(''.join(lines_au))
 
 
 # --- internal header / per-angle helpers ------------------------------------
 
 
 def _results_header(result: SKEAFResult, *, brief: bool) -> str:
-    """Compose the shared header for ``results_short.out`` / ``results_long.out``.
+    """Compose the shared header for short and long result files.
 
     Tag ``brief`` is currently unused (both files share an identical header in
     Fortran F90:894–945) but is reserved for future divergence.
@@ -211,27 +261,26 @@ def _results_header(result: SKEAFResult, *, brief: bool) -> str:
     out = [f' {label} results file generated by S.K.E.A.F. {BUILD_NUMBER}\n', ' \n']
     if bxsf is not None:
         out.append(f' XCrysDen FS filename: {bxsf.filename:<50}\n')
-        out.append(f' Fermi energy: {result.fermi_energy:12.6f} Ryd \n')
+        fermi_energy_ev = result.fermi_energy * RYDBERG_IN_EV
+        out.append(f' Fermi energy: {fermi_energy_ev:12.6f} eV \n')
         out.append(f' Original     nx = {bxsf.nx:4d}  ny = {bxsf.ny:4d}' f'  nz = {bxsf.nz:4d}\n')
     if cfg is not None:
-        out.append(f' New      numint = {cfg.numint:4d}\n')
+        out.append(f' num_interpolation = {cfg.numint:4d}\n')
         rad2deg = 180.0 / np.pi
+        b_field = _PUBLIC_B_FIELD_NAMES.get(cfg.hvd, str(cfg.hvd))
         if cfg.hvd == 'r':
+            out.append(f' b_field = {b_field}   num_angles = {cfg.num_rots:5d}\n')
             out.append(
-                f' H-vector direction: {cfg.hvd}   '
-                f'Number of auto rotated angles = {cfg.num_rots:5d}\n'
-            )
-            out.append(
-                f' Theta = {cfg.theta_start * rad2deg:10.6f} to '
+                f' Azimuthal = {cfg.theta_start * rad2deg:10.6f} to '
                 f'{cfg.theta_end * rad2deg:10.6f} degrees;  '
-                f'Phi = {cfg.phi_start * rad2deg:10.6f} to '
+                f'Polar = {cfg.phi_start * rad2deg:10.6f} to '
                 f'{cfg.phi_end * rad2deg:10.6f} degrees \n'
             )
         else:
             out.append(
-                f' H-vector direction: {cfg.hvd}   '
-                f'Theta = {cfg.theta * rad2deg:10.6f} degrees   '
-                f'Phi = {cfg.phi * rad2deg:10.6f} degrees \n'
+                f' b_field = {b_field}   '
+                f'Azimuthal = {cfg.theta * rad2deg:10.6f} degrees   '
+                f'Polar = {cfg.phi * rad2deg:10.6f} degrees \n'
             )
         out.append(f' Minimum extremal FS freq.: {cfg.min_extfreq:8.4f} kT \n')
         out.append(
@@ -281,8 +330,8 @@ def _per_angle_blocks(result: SKEAFResult, *, include_outline_pointer: bool) -> 
     for i, ((theta, phi), orbs) in enumerate(by_angle, start=1):
         out.append(
             f' ANGLE {i:5d} of {n_total:5d}    '
-            f'theta = {theta * rad2deg:10.6f} degrees, '
-            f'phi = {phi * rad2deg:10.6f} degrees\n'
+            f'azimuthal = {theta * rad2deg:10.6f} degrees, '
+            f'polar = {phi * rad2deg:10.6f} degrees\n'
         )
         for o in orbs:
             out.append(

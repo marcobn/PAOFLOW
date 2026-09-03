@@ -105,9 +105,6 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
         k1, k2, k3 = int(nk1 % 2 == 0), int(nk2 % 2 == 0), int(nk3 % 2 == 0)
     else:
         k1, k2, k3 = 0, 0, 0
-    if verbose:
-        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
-
     kpnts_temp, kpnt_weights_temp = [], []
     for ks in k_elem.findall("./varray[@name='kpointlist']/v"):
         kpnts_temp.append([float(k) for k in ks.text.strip().split()])
@@ -122,6 +119,9 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     eigs = np.empty((nbnds, nkpnts, nspin), dtype=float)
     E_elem = root.find('./calculation/eigenvalues')
     Efermi = float(root.find(".//dos/i[@name='efermi']").text.strip())
+    if verbose:
+        print(f'DFT Fermi energy: {Efermi:.9f} eV')
+        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
     for i, kpt in enumerate(E_elem.findall(".//set[@comment='spin 1']/set")):
         energy_at_k = []
         for e in kpt.findall('./r'):
