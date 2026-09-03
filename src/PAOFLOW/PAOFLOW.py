@@ -967,7 +967,8 @@ class PAOFLOW:
         high_sym_points=None,
         spin_orbit=False,
         fname='bands',
-        nk=500,write_QE_path=False
+        nk=500,
+        write_QE_path=False,
     ):
         """
         Compute the electronic band structure
@@ -1006,7 +1007,7 @@ class PAOFLOW:
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
 
-        attr['write_QE_bands']=write_QE_path
+        attr['write_QE_bands'] = write_QE_path
         # Prepare HRs for band computation with spin-orbit coupling
         try:
             do_bands(self.data_controller)
@@ -1064,11 +1065,12 @@ class PAOFLOW:
 
         """
 
-        #IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
+        # IMPLEMENT HERE< AUTOMATIC SHELLS AND SOC strenght CALLING {"M":[0,0,0,1,0,0]}
         import scipy.linalg as la
         from .SocFitter import build_automatic_adhoc_soc
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
         from .utils.soc_header import soc_header
+
         arry, attr = self.data_controller.data_dicts()
         attr['do_spin_orbit'] = attr['adhoc_SO'] = True
 
@@ -1076,9 +1078,9 @@ class PAOFLOW:
             attr['phi'] = phi
         if 'theta' not in attr:
             attr['theta'] = theta
-        if soc_strengh=={}:
+        if soc_strengh == {}:
             soc_header()
-            soc_strengh,soc_shell_weights=build_automatic_adhoc_soc(self)
+            soc_strengh, soc_shell_weights = build_automatic_adhoc_soc(self)
         if soc_species == True:
             lambda_p = []
             lambda_d = []

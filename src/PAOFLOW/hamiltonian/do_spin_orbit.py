@@ -65,39 +65,155 @@ def _angular_momentum_matrices(l):
         Lz[3, 4] = -2j
         Lz[4, 3] = 2j
         return Lx, Ly, Lz
-    ########################## FROM wikipedia 
-    # https://en.wikipedia.org/wiki/Table_of_spherical_harmonics#Real_spherical_harmonics 
+    ########################## FROM wikipedia
+    # https://en.wikipedia.org/wiki/Table_of_spherical_harmonics#Real_spherical_harmonics
     # l=3
     # in the order Y_3,m m= [0,1,-1,2,-2,3,-3]
-    if l==3:
-        s6,s10=np.sqrt(6.0),np.sqrt(10.0)
+    if l == 3:
+        s6, s10 = np.sqrt(6.0), np.sqrt(10.0)
 
-        Lz=np.zeros((7,7), dtype=complex)
-        Lz[1,2],Lz[2,1],Lz[3,4],Lz[4,3],Lz[5,6],Lz[6,5]= -1j,1j,-2j,2j,-3j,3j
-        
-        Lx = np.array([
-    [0.+0.j,          0.+0.j,          0.+s6*1j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j],
-    [0.-s6*1j,  0.+0.j,          0.+0.j,         0.-s10/2j, 0.+0.j,          0.+0.j,          0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+s6/2j],
-    [0.+0.j,          0.-s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.-s6/2j, 0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s6/2j, 0.+0.j,          0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+0.j,         0.-s6/2j, 0.+0.j,          0.+0.j,          0.+0.j]
-], dtype=complex)
+        Lz = np.zeros((7, 7), dtype=complex)
+        Lz[1, 2], Lz[2, 1], Lz[3, 4], Lz[4, 3], Lz[5, 6], Lz[6, 5] = -1j, 1j, -2j, 2j, -3j, 3j
 
-        Ly = np.array([
-    [0.+0.j,          0.-s6*1j, 0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j,          0.+0.j],
-    [0.+s6*1j,  0.+0.j,          0.+0.j,         0.-s10/2j, 0.+0.j,          0.+0.j,          0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.-s10/2j, 0.+0.j,          0.+0.j],
-    [0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.-s6/2j, 0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+s10/2j, 0.+0.j,          0.+0.j,          0.+0.j,          0.-s6/2j],
-    [0.+0.j,          0.+0.j,          0.+0.j,         0.+s6/2j, 0.+0.j,          0.+0.j,          0.+0.j],
-    [0.+0.j,          0.+0.j,          0.+0.j,         0.+0.j,          0.+s6/2j, 0.+0.j,          0.+0.j]
-], dtype=complex)
-  
-        return Lx,Ly,Lz
+        Lx = np.array(
+            [
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 - s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+            ],
+            dtype=complex,
+        )
 
+        Ly = np.array(
+            [
+                [
+                    0.0 + 0.0j,
+                    0.0 - s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+            ],
+            dtype=complex,
+        )
 
+        return Lx, Ly, Lz
 
 
 def _shell_soc_block(theta, phi, l):
@@ -209,7 +325,7 @@ def build_generic_soc(theta, phi, shells_list, norb, active_shells=None):
         raise ValueError(
             'shells_list orbital count (%d) does not match norb (%d).' % (offset, norb)
         )
-    return HR_p, HR_d,HR_f
+    return HR_p, HR_d, HR_f
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +429,7 @@ def do_spin_orbit_H(data_controller):
             shells_for_atom = arry['shells'][arry['atoms'][n]]
             sw_map = arry.get('soc_shell_weights')
             weights = sw_map.get(arry['atoms'][n]) if sw_map else None
-            HR_soc_p[:, :], HR_soc_d[:, :],HR_soc_f[:, :] = build_generic_soc(
+            HR_soc_p[:, :], HR_soc_d[:, :], HR_soc_f[:, :] = build_generic_soc(
                 theta, phi, shells_for_atom, norb, active_shells=weights
             )
 
@@ -332,7 +448,7 @@ def do_spin_orbit_H(data_controller):
         HR_double[ddi:ddj, ddi:ddj, 0, 0, 0, 0] += (
             socStrengh[n, 0] * HR_soc_p[norb : 2 * norb, norb : 2 * norb]
             + socStrengh[n, 1] * HR_soc_d[norb : 2 * norb, norb : 2 * norb]
-            +socStrengh[n, 2] * HR_soc_f[norb : 2 * norb, norb : 2 * norb]
+            + socStrengh[n, 2] * HR_soc_f[norb : 2 * norb, norb : 2 * norb]
         )
         # Up-Down
         HR_double[uui:uuj, udi:udj, 0, 0, 0, 0] += (
@@ -352,6 +468,7 @@ def do_spin_orbit_H(data_controller):
         attr['nawf'] = arry['HRs'].shape[0]
 
     arry['naw'] = np.append(arry['naw'], arry['naw'])
+
 
 ################### PSEUDOPOTENTIAL PS ##############################33
 def soc_p_ps(theta, phi, norb):

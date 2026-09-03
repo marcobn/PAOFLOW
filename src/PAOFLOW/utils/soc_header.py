@@ -1,4 +1,3 @@
-
 def soc_header(style='color'):
     """Print the PAOFLOW logo.
 
@@ -10,9 +9,7 @@ def soc_header(style='color'):
         'color'    – large logo in UNT green with decorative separators and subtitle (requires a 24-bit colour terminal).
         'markdown' – large logo wrapped in a fenced code block (README / Sphinx).
     """
-    large = (
-        'NO SOC STRENGHT AND SHELLS DICT WERE FOUND...\n STARTING AUTOMATIC AD HOC SOC\n !!!!Adjust the strenght manually if necessary, these are averaged values'
-    )
+    large = 'NO SOC STRENGHT AND SHELLS DICT WERE FOUND...\n STARTING AUTOMATIC AD HOC SOC\n !!!!Adjust the strenght manually if necessary, these are averaged values'
     small = (
         'ppppp     aa     oooooo  ffff  l     oooooo  ww        ww\n'
         'p  pp    aaaa    oo  oo  ffff  l     oo  oo   ww  ww  ww\n'

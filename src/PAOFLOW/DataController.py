@@ -666,8 +666,8 @@ class DataController:
                         ]
                     )
                 )
-        
-            if self.data_attributes['write_QE_bands']==True:
+
+            if self.data_attributes['write_QE_bands'] == True:
                 with open(join(self.data_attributes['opath'], 'kpath.pwscf'), 'w') as f:
                     f.write('K_POINTS tpiba\n')
                     f.write(f'{kpnts.shape[1]}\n')
