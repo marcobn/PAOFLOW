@@ -219,8 +219,8 @@ class PAOFLOW:
 
     def __init__(
         self,
-        workpath='./',
-        outputdir='output',
+        workpath="./",
+        outputdir="output",
         inputfile=None,
         savedir=None,
         model=None,
@@ -230,8 +230,8 @@ class PAOFLOW:
         acbn0=False,
         verbose=False,
         restart=False,
-        dft='QE',
-        header_style='color',
+        dft="QE",
+        header_style="color",
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -295,30 +295,37 @@ class PAOFLOW:
             # Data Attributes
             attr = self.data_controller.data_attributes
 
-            attr['scipyfft'] = True
+            attr["scipyfft"] = True
 
         # Report execution information
         if self.rank == 0:
             if restart:
-                print('Run starting from Restart data.')
+                print("Run starting from Restart data.")
             else:
-                if attr.get('bxsf_only', False):
-                    print('PySKEAF-only execution using BXSF files in %s' % attr['opath'])
+                if attr.get("bxsf_only", False):
+                    print(
+                        "PySKEAF-only execution using BXSF files in %s" % attr["opath"]
+                    )
                 elif self.size == 1:
-                    print('Serial execution')
+                    print("Serial execution")
                 else:
                     print(
-                        'Parallel execution on %d processors and %d pool'
-                        % (self.size, attr['npool'])
-                        + ('' if attr['npool'] == 1 else 's')
+                        "Parallel execution on %d processors and %d pool"
+                        % (self.size, attr["npool"])
+                        + ("" if attr["npool"] == 1 else "s")
                     )
 
         # Do memory checks
-        if model is None and not restart and self.rank == 0 and not attr.get('bxsf_only', False):
+        if (
+            model is None
+            and not restart
+            and self.rank == 0
+            and not attr.get("bxsf_only", False)
+        ):
             gbyte = self.memory_check()
-            print('Estimated maximum array size: %.2f GBytes\n' % (gbyte))
+            print("Estimated maximum array size: %.2f GBytes\n" % (gbyte))
 
-        self.report_module_time('Initialization')
+        self.report_module_time("Initialization")
 
     def report_module_time(self, mname):
         from time import time
@@ -330,16 +337,16 @@ class PAOFLOW:
             spaces = 35
             lmn = len(mname)
             if len(mname) > spaces:
-                print('DEBUG: Please use a shorter module tag.')
+                print("DEBUG: Please use a shorter module tag.")
                 self.comm.Abort()
 
             # Format string and print
             lms = spaces - lmn
             dt = time() - self.reset_time
-            print('%s in: %s %8.3f sec' % (mname, lms * ' ', dt), flush=True)
+            print("%s in: %s %8.3f sec" % (mname, lms * " ", dt), flush=True)
             self.reset_time = time()
 
-    def restart_dump(self, fname_prefix='paoflow_dump'):
+    def restart_dump(self, fname_prefix="paoflow_dump"):
         """
         Saves the necessary information to restart a PAOFLOW run from any step in calculation.
 
@@ -351,15 +358,15 @@ class PAOFLOW:
         """
         from pickle import HIGHEST_PROTOCOL, dump
 
-        fname = fname_prefix + '_%d' % self.rank + '.json'
+        fname = fname_prefix + "_%d" % self.rank + ".json"
 
         arry, attr = self.data_controller.data_dicts()
-        with open(fname, 'wb') as f:
+        with open(fname, "wb") as f:
             dump([arry, attr], f, HIGHEST_PROTOCOL)
 
-        self.report_module_time('Restart DUMP')
+        self.report_module_time("Restart DUMP")
 
-    def restart_load(self, fname_prefix='paoflow_dump'):
+    def restart_load(self, fname_prefix="paoflow_dump"):
         """
         Loads the previously dumped save files and populates the DataController with said data.
 
@@ -372,23 +379,27 @@ class PAOFLOW:
         from os.path import exists
         from pickle import load
 
-        fname = fname_prefix + '_%d' % self.rank + '.json'
+        fname = fname_prefix + "_%d" % self.rank + ".json"
         if not exists(fname):
-            print('Restart file named %s does not exist.' % fname)
-            raise OSError('File: %s not found.' % fname)
+            print("Restart file named %s does not exist." % fname)
+            raise OSError("File: %s not found." % fname)
 
         arry, attr = None, None
-        with open(fname, 'rb') as f:
+        with open(fname, "rb") as f:
             arry, attr = load(f)
 
-        if self.size != attr['mpisize']:
-            print('Restarted runs must use the same number of cores as the original run.')
-            raise ValueError('Number of processors does not match that of the previous run.')
+        if self.size != attr["mpisize"]:
+            print(
+                "Restarted runs must use the same number of cores as the original run."
+            )
+            raise ValueError(
+                "Number of processors does not match that of the previous run."
+            )
 
         self.data_controller.data_arrays = arry
         self.data_controller.data_attributes = attr
 
-        self.report_module_time('Restart LOAD')
+        self.report_module_time("Restart LOAD")
 
     def memory_check(self):
         """
@@ -405,8 +416,8 @@ class PAOFLOW:
         ff = self.gb_fudge_factor
         bytes_per_complex = 128 // 8
         arry, attr = self.data_controller.data_dicts()
-        nd1, nd2, nd3 = attr['nk1'], attr['nk2'], attr['nk3']
-        spins, num_wave_functions = attr['nspin'], attr['nawf']
+        nd1, nd2, nd3 = attr["nk1"], attr["nk2"], attr["nk3"]
+        spins, num_wave_functions = attr["nspin"], attr["nawf"]
         return (
             num_wave_functions**2
             * (nd1 * nd2 * nd3)
@@ -434,9 +445,9 @@ class PAOFLOW:
 
         if self.rank == 0:
             tt = time() - self.start_time
-            print('Total CPU time =%s%8.3f sec' % (25 * ' ', tt))
+            print("Total CPU time =%s%8.3f sec" % (25 * " ", tt))
 
-        verbose = self.data_controller.data_attributes['verbose']
+        verbose = self.data_controller.data_attributes["verbose"]
 
         if verbose:
             # Add up memory usage from each core
@@ -446,10 +457,12 @@ class PAOFLOW:
             self.comm.Reduce(mem, mem0, op=MPI.SUM, root=0)
 
             if self.rank == 0:
-                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / 1024.0**2))
-                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / 1024.0**2))
+                print("Memory usage on rank 0:  %6.4f GB" % (mem[0] / 1024.0**2))
+                print(
+                    "Maximum concurrent memory usage:  %6.4f GB" % (mem0[0] / 1024.0**2)
+                )
 
-    def projections(self, internal=False, basispath=None, configuration=None):
+    def projections(self, configuration=None, basispath=None, internal=None):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
@@ -457,38 +470,30 @@ class PAOFLOW:
 
         Parameters
         ----------
-        internal : bool, optional
-            If ``True``, use the all-electron internal basis (loaded from
-            ``basispath``) instead of the pseudopotential basis.  Always
-            forced ``True`` for VASP calculations.
         basispath : str, optional
             Directory containing the per-element ``BASIS/<elem>/*.dat``
-            files.  Required when ``internal`` is ``True`` or when
-            ``configuration`` is a preset string.
+            files.  Required when configuration is "standard", "extended" or when
+            configuration is a preset string.
         configuration : dict, str, or None, optional
             How to build the projection basis:
 
-            * ``"minimal"`` — use the pseudo-atomic wavefunctions
+            * "minimal" — use the pseudo-atomic wavefunctions
               shipped in each species' UPF file (smooth, matches the
-              default QE projwfc behaviour).  ``internal`` is ignored.
+              default QE projwfc behaviour). This is internal = False
               Spans the valence bands well; conduction states need
-              ``"standard"``, ``"extended"`` or an explicit
+              "standard", "extended" or an explicit
               configuration dict.
-            * ``"standard"`` — AE basis built from ``basispath``: the
+            * "standard" — AE basis built from ``basispath``: the
               minimal valence set augmented with (a) the next missing
               angular-momentum channel at ``nmax`` (e.g. ``3D`` for
               Si) and (b) ``(n+1)L`` for each occupied shell — see
               :func:`PAOFLOW.inputs.basis_presets.standard_augmentation`.
               Provides a moderate set of conduction states without the
-              full ``"extended"`` polarization.  ``internal`` is
-              ignored.
-            * ``"extended"`` — AE basis built from ``basispath``: the
+              full "extended" polarization.
+            * "extended" — AE basis built from ``basispath``: the
               UPF valence shells plus a generous rule-based set of
               polarization shells (see
               :func:`PAOFLOW.inputs.basis_presets.extended_augmentation`).
-              ``internal`` is ignored.  Equivalent to the
-              ``internal=True`` legacy path with an auto-generated
-              configuration dict.
             * ``dict`` — explicit per-element mapping
               ``{element: spec}``.  Each ``spec`` may be a list of shell
               labels (``['3S', '3P', '4S']`` — used verbatim) or a preset
@@ -496,10 +501,11 @@ class PAOFLOW:
               that element.  This lets you ask for a curated preset on
               some species while hand-picking orbitals on others, e.g.
               ``{'Ga': 'standard', 'As': ['4S', '4P', '3D']}``.  Consumed
-              by the AE-only builder (pass ``internal=True``).
+              by the AE-only builder.
               Backwards-compatible with previous releases.
             * ``None`` — keep whatever is already stored in
               ``arry['configuration']`` (legacy behaviour).
+        internal: for backward compatibility only, not used
         """
 
         from .inputs.basis_presets import (
@@ -517,32 +523,38 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if basispath is not None:
-            attr['basispath'] = basispath
+            attr["basispath"] = basispath
 
         preset = None
         if configuration is not None:
             if isinstance(configuration, str):
+                if attr["dft"] == "VASP":
+                    raise TypeError(
+                        "configuration must be a user-defined dict when input is from VASP"
+                    )
                 preset = configuration.lower()
-                arry['configuration'] = resolve_configuration(self.data_controller, configuration)
-                if attr.get('verbose') and self.rank == 0:
+                arry["configuration"] = resolve_configuration(
+                    self.data_controller, configuration
+                )
+                if attr.get("verbose") and self.rank == 0:
                     print("Resolved configuration preset '%s':" % configuration)
-                    for elem, shells in arry['configuration'].items():
-                        print('  %-3s : %s' % (elem, ', '.join(shells)))
+                    for elem, shells in arry["configuration"].items():
+                        print("  %-3s : %s" % (elem, ", ".join(shells)))
             elif isinstance(configuration, dict):
                 # Per-element dict: each value may be an explicit list of
                 # shells or a preset name ('standard', 'extended', ...), so
                 # the user can ask for a curated preset on some species
                 # while hand-picking orbitals on others.
-                arry['configuration'] = resolve_configuration_dict(
+                arry["configuration"] = resolve_configuration_dict(
                     self.data_controller, configuration
                 )
-                if attr.get('verbose') and self.rank == 0:
-                    print('Resolved configuration dict:')
-                    for elem, shells in arry['configuration'].items():
-                        print('  %-3s : %s' % (elem, ', '.join(shells)))
+                if attr.get("verbose") and self.rank == 0:
+                    print("Resolved configuration dict:")
+                    for elem, shells in arry["configuration"].items():
+                        print("  %-3s : %s" % (elem, ", ".join(shells)))
             else:
                 raise TypeError(
-                    'configuration must be a dict, a preset string '
+                    "configuration must be a dict, a preset string "
                     "('minimal', 'standard' or 'extended'), or None; got %r"
                     % type(configuration).__name__
                 )
@@ -553,17 +565,10 @@ class PAOFLOW:
         #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
-        # Presets override the ``internal`` flag because they imply a
-        # specific scheme.
-        if preset == 'minimal':
-            basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
-        elif preset in ('standard', 'extended'):
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
-        elif internal or attr['dft'] == 'VASP':
-            # Legacy AE-only path (explicit dict configuration).
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
+        if preset == "minimal":
+            basis, arry["shells"] = build_pswfc_basis_all(self.data_controller)
         else:
-            basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
+            basis, arry["shells"] = build_aewfc_basis(self.data_controller)
 
         # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
         # tau, label) so that downstream modules can reconstruct the
@@ -571,19 +576,19 @@ class PAOFLOW:
         # by ``hamiltonian.nonlocal_velocity.load_pao_orbitals`` when the
         # production run uses an AE / extended basis that does not match
         # the UPF pswfc set.
-        arry['atomic_basis'] = basis
+        arry["atomic_basis"] = basis
 
-        nkpnts = len(arry['kpnts'])
-        nbnds = attr['nbnds']
-        nspin = attr['nspin']
+        nkpnts = len(arry["kpnts"])
+        nbnds = attr["nbnds"]
+        nspin = attr["nspin"]
         natwfc = len(basis)
-        attr['nawf'] = natwfc
+        attr["nawf"] = natwfc
 
-        arry['Dnm'] = np.empty((attr['nawf'], attr['nawf'], 3))
+        arry["Dnm"] = np.empty((attr["nawf"], attr["nawf"], 3))
         for i in range(3):
-            for n in range(attr['nawf']):
-                for m in range(attr['nawf']):
-                    arry['Dnm'][n, m, i] = basis[n]['tau'][i] - basis[m]['tau'][i]
+            for n in range(attr["nawf"]):
+                for m in range(attr["nawf"]):
+                    arry["Dnm"][n, m, i] = basis[n]["tau"][i] - basis[m]["tau"][i]
 
         # When the ACBN0 flag is active we need to collect the true non-orthogonal
         # atomic-orbital overlap S(k) in addition to the projections so that:
@@ -592,7 +597,7 @@ class PAOFLOW:
         #      generalised eigenproblem in ACBN0.Dk / ACBN0._eigh_all_k.
         # For non-ACBN0 runs the overhead of computing the overlap is unnecessary, so
         # we keep the old single-return code path.
-        acbn0_active = bool(arry.get('acbn0', False) or attr.get('acbn0', False))
+        acbn0_active = bool(arry.get("acbn0", False) or attr.get("acbn0", False))
 
         ini_ik, end_ik = load_balancing(self.size, self.rank, nkpnts)
         nk_local = end_ik - ini_ik
@@ -604,7 +609,9 @@ class PAOFLOW:
             Skaux = np.zeros((nk_local, natwfc, natwfc), dtype=complex)
             for ispin in range(nspin):
                 for ik in range(ini_ik, end_ik):
-                    proj_k, Sk = calc_proj_and_ovlp_k(self.data_controller, basis, ik, ispin)
+                    proj_k, Sk = calc_proj_and_ovlp_k(
+                        self.data_controller, basis, ik, ispin
+                    )
                     Unewaux[ik - ini_ik, :, :, ispin] = proj_k
                     if ispin == 0:  # overlap is spin-independent
                         Skaux[ik - ini_ik] = Sk
@@ -615,14 +622,18 @@ class PAOFLOW:
                         self.data_controller, basis, ik, ispin
                     )
 
-        Unew = np.zeros((nkpnts, nbnds, natwfc, nspin), dtype=complex) if self.rank == 0 else None
+        Unew = (
+            np.zeros((nkpnts, nbnds, natwfc, nspin), dtype=complex)
+            if self.rank == 0
+            else None
+        )
         gather_array(Unew, Unewaux)
         if self.rank == 0:
             Unew = np.moveaxis(Unew, 0, 2)
         Unew = self.comm.bcast(Unew, root=0)
 
-        arry['U'] = Unew
-        arry['basis'] = basis
+        arry["U"] = Unew
+        arry["basis"] = basis
 
         if acbn0_active:
             # Gather the distributed per-k overlaps on rank 0 and store as
@@ -630,15 +641,19 @@ class PAOFLOW:
             # do_build_pao_hamiltonian's do_non_ortho call (and write_Hk_acbn0)
             # pick it up transparently.  The ACBN0 loader in ACBN0.read_ham_data
             # expects kovp.npy ravelled in C order from (natwfc, natwfc, nkpnts).
-            Snew = np.zeros((nkpnts, natwfc, natwfc), dtype=complex) if self.rank == 0 else None
+            Snew = (
+                np.zeros((nkpnts, natwfc, natwfc), dtype=complex)
+                if self.rank == 0
+                else None
+            )
             gather_array(Snew, Skaux)
             if self.rank == 0:
                 # Reorder to (natwfc, natwfc, nkpnts) expected by do_non_ortho
                 Snew = np.moveaxis(Snew, 0, 2)
             Snew = self.comm.bcast(Snew, root=0)
-            arry['Sks'] = Snew
+            arry["Sks"] = Snew
 
-        self.report_module_time('Projections')
+        self.report_module_time("Projections")
 
     def read_atomic_proj_QE(self):
         """
@@ -652,49 +667,49 @@ class PAOFLOW:
         from .projection.do_atwfc_proj import build_pswfc_basis_all
 
         arry, attr = self.data_controller.data_dicts()
-        fpath = attr['fpath']
-        if exists(join(fpath, 'atomic_proj.xml')):
+        fpath = attr["fpath"]
+        if exists(join(fpath, "atomic_proj.xml")):
             from .inputs.read_QE_xml import parse_qe_atomic_proj
 
-            if attr['acbn0'] and not attr['save_overlaps']:
+            if attr["acbn0"] and not attr["save_overlaps"]:
                 if self.rank == 0:
                     print(
-                        'WARNING: ACBN0 requires wavefunction overlaps. Setting save_overlaps to True.'
+                        "WARNING: ACBN0 requires wavefunction overlaps. Setting save_overlaps to True."
                     )
-                attr['save_overlaps'] = True
-            parse_qe_atomic_proj(self.data_controller, join(fpath, 'atomic_proj.xml'))
+                attr["save_overlaps"] = True
+            parse_qe_atomic_proj(self.data_controller, join(fpath, "atomic_proj.xml"))
         else:
-            raise Exception('atomic_proj.xml was not found.\n')
+            raise Exception("atomic_proj.xml was not found.\n")
 
-        arry['jchia'] = {}
-        arry['shells'] = {}
-        for at, pseudo in arry['species']:
-            fname = join(attr['fpath'], pseudo)
+        arry["jchia"] = {}
+        arry["shells"] = {}
+        for at, pseudo in arry["species"]:
+            fname = join(attr["fpath"], pseudo)
             if exists(fname):
                 upf = UPF(fname)
-                arry['shells'][at] = upf.shells
-                arry['jchia'][at] = upf.jchia
+                arry["shells"][at] = upf.shells
+                arry["jchia"][at] = upf.jchia
             else:
-                raise Exception('Pseudopotential not found: %s' % fname)
+                raise Exception("Pseudopotential not found: %s" % fname)
 
         # Silencing verbose for a moment
-        verbose_status = attr['verbose']
+        verbose_status = attr["verbose"]
         if verbose_status == True:
-            attr['verbose'] = False
+            attr["verbose"] = False
         basis, _ = build_pswfc_basis_all(self.data_controller)
         # Restoring verbose
         if verbose_status == True:
-            attr['verbose'] = True
+            attr["verbose"] = True
 
-        arry['Dnm'] = np.empty((attr['nawf'], attr['nawf'], 3))
+        arry["Dnm"] = np.empty((attr["nawf"], attr["nawf"], 3))
         for i in range(3):
-            for n in range(attr['nawf']):
-                for m in range(attr['nawf']):
-                    arry['Dnm'][n, m, i] = basis[n]['tau'][i] - basis[m]['tau'][i]
+            for n in range(attr["nawf"]):
+                for m in range(attr["nawf"]):
+                    arry["Dnm"][n, m, i] = basis[n]["tau"][i] - basis[m]["tau"][i]
 
-        arry['basis'] = basis
+        arry["basis"] = basis
 
-    def projectability(self, pthr=0.95, shift='auto'):
+    def projectability(self, pthr=0.95, shift="auto"):
         """
         Calculate the Projectability Matrix to determine how many states need to be shifted
 
@@ -709,19 +724,19 @@ class PAOFLOW:
 
         attr = self.data_controller.data_attributes
 
-        if 'pthr' not in attr:
-            attr['pthr'] = pthr
-        if 'shift' not in attr:
-            attr['shift'] = shift
+        if "pthr" not in attr:
+            attr["pthr"] = pthr
+        if "shift" not in attr:
+            attr["shift"] = shift
 
         try:
             do_projectability(self.data_controller)
         except Exception as e:
-            self.report_exception('projectability')
-            if attr['abort_on_exception']:
+            self.report_exception("projectability")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Projectability')
+        self.report_module_time("Projectability")
 
     def pao_hamiltonian(
         self,
@@ -754,62 +769,62 @@ class PAOFLOW:
         arrays, attr = self.data_controller.data_dicts()
 
         if insulator:
-            attr['insulator'] = True
-        if 'shift_type' not in attr:
-            attr['shift_type'] = shift_type
-        if 'write_binary' not in attr:
-            attr['write_binary'] = write_binary
+            attr["insulator"] = True
+        if "shift_type" not in attr:
+            attr["shift_type"] = shift_type
+        if "write_binary" not in attr:
+            attr["write_binary"] = write_binary
 
-        attr['symm_thresh'] = thresh
-        attr['symmetrize'] = symmetrize
-        attr['symm_max_iter'] = max_iter
-        attr['expand_wedge'] = expand_wedge
+        attr["symm_thresh"] = thresh
+        attr["symmetrize"] = symmetrize
+        attr["symm_max_iter"] = max_iter
+        attr["expand_wedge"] = expand_wedge
         #  Skip open_grid when all k-points are included (no symmetry)
         #  Note expand_wedge is still required for VASP even not using symmetry.
         #  This is because we need find_equiv_k() in paosym to have the correct k-point ordering.
 
-        if attr['symmetrize'] and attr['acbn0']:
+        if attr["symmetrize"] and attr["acbn0"]:
             if self.rank == 0:
                 print(
-                    'WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true.'
+                    "WARNING: Non-ortho is currently not supported with pao_sym. Use nosym=.true., noinv=.true."
                 )
 
         try:
             do_build_pao_hamiltonian(self.data_controller)
-            self.data_controller.broadcast_single_array('Hks')
+            self.data_controller.broadcast_single_array("Hks")
 
         except Exception as e:
-            self.report_exception('pao_hamiltonian')
-            if attr['abort_on_exception']:
+            self.report_exception("pao_hamiltonian")
+            if attr["abort_on_exception"]:
                 raise e
-        self.report_module_time('Building Hks')
+        self.report_module_time("Building Hks")
 
         # Done with U and Sks
-        del arrays['U']
+        del arrays["U"]
 
         try:
             do_Hks_to_HRs(self.data_controller)
 
             ### PARALLELIZATION
-            self.data_controller.broadcast_single_array('HRs')
+            self.data_controller.broadcast_single_array("HRs")
 
             get_K_grid_fft(self.data_controller)
         except Exception as e:
-            self.report_exception('pao_hamiltonian')
-            if attr['abort_on_exception']:
+            self.report_exception("pao_hamiltonian")
+            if attr["abort_on_exception"]:
                 raise e
-        self.report_module_time('k -> R')
+        self.report_module_time("k -> R")
 
     def minimal(self, first_band=None, R=False):
         from .projection.do_minimal import do_minimal
 
-        raise Exception('ONLY FOR ARCHIVAL PUTPOSES - DO NOT USE')
+        raise Exception("ONLY FOR ARCHIVAL PUTPOSES - DO NOT USE")
         do_minimal(self.data_controller, first_band)
         if R:
             from .hamiltonian.do_build_pao_hamiltonian import do_Hks_to_HRs
 
             do_Hks_to_HRs(self.data_controller)
-            self.data_controller.broadcast_single_array('HRs')
+            self.data_controller.broadcast_single_array("HRs")
 
     def add_external_fields(self, Efield=[0.0], Bfield=[0.0], HubbardU=[0.0]):
         """
@@ -827,13 +842,13 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if any(v != 0.0 for v in Efield):
-            arry['Efield'] = np.array(Efield)
+            arry["Efield"] = np.array(Efield)
         if any(v != 0.0 for v in Bfield):
-            arry['Bfield'] = np.array(Bfield)
+            arry["Bfield"] = np.array(Bfield)
         if any(v != 0.0 for v in HubbardU):
-            arry['HubbardU'] = np.array(HubbardU)
+            arry["HubbardU"] = np.array(HubbardU)
 
-        Efield, Bfield, HubbardU = arry['Efield'], arry['Bfield'], arry['HubbardU']
+        Efield, Bfield, HubbardU = arry["Efield"], arry["Bfield"], arry["HubbardU"]
 
         try:
             # Add external fields or non scf ACBN0 correction
@@ -841,16 +856,16 @@ class PAOFLOW:
                 from .hamiltonian.add_ext_field import add_ext_field
 
                 add_ext_field(self.data_controller)
-                if self.rank == 0 and attr['verbose']:
-                    print('External Fields Added')
+                if self.rank == 0 and attr["verbose"]:
+                    print("External Fields Added")
         except Exception as e:
-            self.report_exception('add_external_fields')
-            if attr['abort_on_exception']:
+            self.report_exception("add_external_fields")
+            if attr["abort_on_exception"]:
                 raise e
 
         self.comm.Barrier()
 
-    def write_Hamiltonian(self, fname='hamiltonian.dat'):
+    def write_Hamiltonian(self, fname="hamiltonian.dat"):
         """
         Write 'HRs' to file for use with Z2 Pack
 
@@ -864,14 +879,14 @@ class PAOFLOW:
         try:
             self.data_controller.write_HRs(fname)
         except Exception as e:
-            self.report_exception('write_Hamiltonian')
-            if self.data_controller.data_attributes['abort_on_exception']:
+            self.report_exception("write_Hamiltonian")
+            if self.data_controller.data_attributes["abort_on_exception"]:
                 raise e
-        self.report_module_time('write_Hamiltonian')
+        self.report_module_time("write_Hamiltonian")
 
     def save_sparse_hamiltonian(
         self,
-        fname='sparse_hamiltonian.npz',
+        fname="sparse_hamiltonian.npz",
         bond_order=3,
         r_cut=None,
         magnitude_tol=1.0e-8,
@@ -906,18 +921,18 @@ class PAOFLOW:
                     bond_order=bond_order,
                     r_cut=r_cut,
                     magnitude_tol=magnitude_tol,
-                    verbose=attr['verbose'],
+                    verbose=attr["verbose"],
                 )
                 write_sparse_hamiltonian(self.data_controller, bundle, fname)
         except Exception as e:
-            self.report_exception('save_sparse_hamiltonian')
-            if self.data_controller.data_attributes['abort_on_exception']:
+            self.report_exception("save_sparse_hamiltonian")
+            if self.data_controller.data_attributes["abort_on_exception"]:
                 raise e
 
         self.comm.Barrier()
-        self.report_module_time('save_sparse_hamiltonian')
+        self.report_module_time("save_sparse_hamiltonian")
 
-    def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+    def load_sparse_hamiltonian(self, fname="sparse_hamiltonian.npz"):
         """
         Restore a run from an archive written by 'save_sparse_hamiltonian'.
 
@@ -946,25 +961,27 @@ class PAOFLOW:
             #  A restart instance leaves both data dictionaries set to None.
             if self.data_controller.data_attributes is None:
                 self.data_controller.data_arrays = {}
-                self.data_controller.data_attributes = {'abort_on_exception': True}
+                self.data_controller.data_attributes = {"abort_on_exception": True}
                 self.data_controller.add_default_arrays()
 
             attr = self.data_controller.data_attributes
-            attr.setdefault('scipyfft', True)
-            attr.setdefault('abort_on_exception', True)
+            attr.setdefault("scipyfft", True)
+            attr.setdefault("abort_on_exception", True)
 
             path = fname
-            if not isabs(fname) and not exists(fname) and 'opath' in attr:
-                path = join(attr['opath'], fname)
+            if not isabs(fname) and not exists(fname) and "opath" in attr:
+                path = join(attr["opath"], fname)
             bundle = read_sparse_hamiltonian(path)
             restore_data_controller(self.data_controller, bundle)
         except Exception as e:
-            self.report_exception('load_sparse_hamiltonian')
-            if (self.data_controller.data_attributes or {}).get('abort_on_exception', True):
+            self.report_exception("load_sparse_hamiltonian")
+            if (self.data_controller.data_attributes or {}).get(
+                "abort_on_exception", True
+            ):
                 raise e
 
         self.comm.Barrier()
-        self.report_module_time('load_sparse_hamiltonian')
+        self.report_module_time("load_sparse_hamiltonian")
 
     def bands(
         self,
@@ -972,7 +989,7 @@ class PAOFLOW:
         band_path=None,
         high_sym_points=None,
         spin_orbit=False,
-        fname='bands',
+        fname="bands",
         nk=500,
     ):
         """
@@ -996,40 +1013,46 @@ class PAOFLOW:
         arrays, attr = self.data_controller.data_dicts()
 
         if ibrav is not None:
-            attr['ibrav'] = ibrav
+            attr["ibrav"] = ibrav
 
-        if 'ibrav' not in attr and 'kq' not in arrays:
+        if "ibrav" not in attr and "kq" not in arrays:
             if band_path is None or high_sym_points is None:
                 if self.rank == 0:
                     print("Must specify the high-symmetry path, 'kq', or 'ibrav'")
 
-        if 'nk' not in attr:
-            attr['nk'] = nk
+        if "nk" not in attr:
+            attr["nk"] = nk
         if band_path is not None:
-            attr['band_path'] = band_path
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+            attr["band_path"] = band_path
+        if "do_spin_orbit" not in attr:
+            attr["do_spin_orbit"] = spin_orbit
         if high_sym_points is not None:
-            arrays['high_sym_points'] = high_sym_points
+            arrays["high_sym_points"] = high_sym_points
 
         # Prepare HRs for band computation with spin-orbit coupling
         try:
             do_bands(self.data_controller)
-            if self.rank == 0 and 'nkpnts' in attr and arrays['kq'].shape[1] == attr['nkpnts']:
-                print('WARNING: The bands kpath and nscf calculations have the same size.')
+            if (
+                self.rank == 0
+                and "nkpnts" in attr
+                and arrays["kq"].shape[1] == attr["nkpnts"]
+            ):
+                print(
+                    "WARNING: The bands kpath and nscf calculations have the same size."
+                )
                 print(
                     "Spin Texture calculation should be performed after 'pao_eigh' to ensure integration across the entire BZ.\n"
                 )
 
-            E_kp = gather_full(arrays['E_k'], attr['npool'])
+            E_kp = gather_full(arrays["E_k"], attr["npool"])
             self.data_controller.write_bands(fname, E_kp)
             E_kp = None
         except Exception as e:
-            self.report_exception('bands')
-            if attr['abort_on_exception']:
+            self.report_exception("bands")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Bands')
+        self.report_module_time("Bands")
 
     def adhoc_spin_orbit(
         self,
@@ -1071,64 +1094,64 @@ class PAOFLOW:
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
-        attr['do_spin_orbit'] = attr['adhoc_SO'] = True
+        attr["do_spin_orbit"] = attr["adhoc_SO"] = True
 
-        if 'phi' not in attr:
-            attr['phi'] = phi
-        if 'theta' not in attr:
-            attr['theta'] = theta
+        if "phi" not in attr:
+            attr["phi"] = phi
+        if "theta" not in attr:
+            attr["theta"] = theta
 
         if soc_species == True:
             lambda_p = []
             lambda_d = []
-            for i in range(len(arry['atoms'])):
-                lambda_p.append(soc_strengh[arry['atoms'][i]][0])
-                lambda_d.append(soc_strengh[arry['atoms'][i]][1])
-            arry['lambda_p'] = lambda_p
-            arry['lambda_d'] = lambda_d
+            for i in range(len(arry["atoms"])):
+                lambda_p.append(soc_strengh[arry["atoms"][i]][0])
+                lambda_d.append(soc_strengh[arry["atoms"][i]][1])
+            arry["lambda_p"] = lambda_p
+            arry["lambda_d"] = lambda_d
         else:
-            if 'lambda_p' not in arry:
-                arry['lambda_p'] = lambda_p[:]
-            if 'lambda_d' not in arry:
-                arry['lambda_d'] = lambda_d[:]
+            if "lambda_p" not in arry:
+                arry["lambda_p"] = lambda_p[:]
+            if "lambda_d" not in arry:
+                arry["lambda_d"] = lambda_d[:]
 
         if soc_shell_weights is not None:
-            arry['soc_shell_weights'] = soc_shell_weights
+            arry["soc_shell_weights"] = soc_shell_weights
 
         self.data_controller.build_arrays_adhoc_soc()
 
         # Check if the pseudo potential or internal basis configuraton is implemented
-        if len(arry['orb_pseudo']) == attr['natoms']:
+        if len(arry["orb_pseudo"]) == attr["natoms"]:
             # add SOC
             do_spin_orbit_H(self.data_controller)
             # Rezising
-            attr['bnd'] *= 2
-            attr['dftSO'] = True
-            attr['nspin'] = 1
-            attr['nawf'] = arry['HRs'].shape[0]
+            attr["bnd"] *= 2
+            attr["dftSO"] = True
+            attr["nspin"] = 1
+            attr["nawf"] = arry["HRs"].shape[0]
 
-            if 'Dnm' in arry:
-                Dnm_double = np.empty((attr['nawf'], attr['nawf'], 3))
+            if "Dnm" in arry:
+                Dnm_double = np.empty((attr["nawf"], attr["nawf"], 3))
             for i in range(3):
-                Dnm = arry['Dnm'][:, :, i]
+                Dnm = arry["Dnm"][:, :, i]
                 Dnm_double[:, :, i] = la.block_diag(*[Dnm, Dnm])
-            arry['Dnm'] = Dnm_double
+            arry["Dnm"] = Dnm_double
             Dnm_double = None
             Dnm = None
 
             # for write Hamiltonian
-            if 'Hks' in arry:
-                del arry['Hks']
-            arry['Hks'] = np.fft.fftn(arry['HRs'], axes=(2, 3, 4))
+            if "Hks" in arry:
+                del arry["Hks"]
+            arry["Hks"] = np.fft.fftn(arry["HRs"], axes=(2, 3, 4))
         else:
-            self.report_module_time('adhoc_spin_orbit')
+            self.report_module_time("adhoc_spin_orbit")
             raise (
                 NotImplementedError(
-                    'Pseudo potential or internal basis configuration not implemented'
+                    "Pseudo potential or internal basis configuration not implemented"
                 )
             )
 
-        self.report_module_time('adhoc_spin_orbit')
+        self.report_module_time("adhoc_spin_orbit")
 
     def wave_function_projection(self, dimension=3):
         """
@@ -1148,11 +1171,11 @@ class PAOFLOW:
         try:
             wave_function_site_projection(self.data_controller)
         except Exception as e:
-            self.report_exception('wave_function_projection')
-            if self.data_controller.data_attributes['abort_on_exception']:
+            self.report_exception("wave_function_projection")
+            if self.data_controller.data_attributes["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('wave_function_projection')
+        self.report_module_time("wave_function_projection")
 
     def site_projected_bands(self, site_proj=[0]):
         """
@@ -1170,20 +1193,20 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'site_proj' not in arry:
-            arry['site_proj'] = site_proj
+        if "site_proj" not in arry:
+            arry["site_proj"] = site_proj
 
-        if 'naw' not in arry:
+        if "naw" not in arry:
             self.data_controller.build_arrays_adhoc_soc()
 
         try:
             site_projeted_bands(self.data_controller)
         except Exception as e:
-            self.report_exception('site_projeted_bands')
-            if self.data_controller.data_attributes['abort_on_exception']:
+            self.report_exception("site_projeted_bands")
+            if self.data_controller.data_attributes["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('site_projeted_bands')
+        self.report_module_time("site_projeted_bands")
 
     def doubling_Hamiltonian(self, nx, ny, nz):
         """
@@ -1201,29 +1224,31 @@ class PAOFLOW:
         from .hamiltonian.do_doubling import doubling_HRs
 
         arrays, attributes = self.data_controller.data_dicts()
-        attributes['nx'], attributes['ny'], attributes['nz'] = nx, ny, nz
+        attributes["nx"], attributes["ny"], attributes["nz"] = nx, ny, nz
 
         try:
             if self.rank == 0:
                 doubling_HRs(self.data_controller)
 
             array_list = [
-                'HRs',
-                'naw',
-                'Dnm',
-                'a_vectors',
-                'tau',
-                'atoms',
-                'sh',
-                'nl',
-                'Sj',
-                'lambda_p',
-                'lambda_d',
-                'orb_pseudo',
+                "HRs",
+                "naw",
+                "Dnm",
+                "a_vectors",
+                "tau",
+                "atoms",
+                "sh",
+                "nl",
+                "Sj",
+                "lambda_p",
+                "lambda_d",
+                "orb_pseudo",
             ]
 
             for arry in array_list:
-                has_key = self.comm.bcast((arry in arrays) if self.rank == 0 else None, root=0)
+                has_key = self.comm.bcast(
+                    (arry in arrays) if self.rank == 0 else None, root=0
+                )
                 if not has_key:
                     continue
 
@@ -1231,47 +1256,47 @@ class PAOFLOW:
                     try:
                         arry_type = arrays[arry].dtype
 
-                        if arry_type == 'float64':
-                            bcast_mode = 'float'
-                        elif arry_type == 'complex128':
-                            bcast_mode = 'complex'
-                        elif arry_type == 'int32':
-                            bcast_mode = 'int'
+                        if arry_type == "float64":
+                            bcast_mode = "float"
+                        elif arry_type == "complex128":
+                            bcast_mode = "complex"
+                        elif arry_type == "int32":
+                            bcast_mode = "int"
                         else:
-                            bcast_mode = 'list'
+                            bcast_mode = "list"
                     except AttributeError:
-                        bcast_mode = 'list'
+                        bcast_mode = "list"
                 else:
                     bcast_mode = None
 
                 bcast_mode = self.comm.bcast(bcast_mode, root=0)
-                if bcast_mode == 'float':
+                if bcast_mode == "float":
                     self.data_controller.broadcast_single_array(arry, dtype=float)
-                elif bcast_mode == 'complex':
+                elif bcast_mode == "complex":
                     self.data_controller.broadcast_single_array(arry)
-                elif bcast_mode == 'int':
+                elif bcast_mode == "int":
                     self.data_controller.broadcast_single_array(arry, dtype=int)
                 else:
                     self.data_controller.broadcast_single_list(arry)
 
             attr_list = [
-                'nawf',
-                'natoms',
-                'nelec',
-                'nbnds',
-                'bnd',
-                'omega',
+                "nawf",
+                "natoms",
+                "nelec",
+                "nbnds",
+                "bnd",
+                "omega",
             ]
             for attr in attr_list:
                 if attr in attributes:
                     self.data_controller.broadcast_attribute(attr)
 
         except Exception as e:
-            self.report_exception('doubling_Hamiltonian')
-            if attributes['abort_on_exception']:
+            self.report_exception("doubling_Hamiltonian")
+            if attributes["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('doubling_Hamiltonian')
+        self.report_module_time("doubling_Hamiltonian")
 
     def cutting_Hamiltonian(self, x=False, y=False, z=False):
         """
@@ -1289,23 +1314,23 @@ class PAOFLOW:
 
         try:
             if x:
-                for i in range(attr['nk1'] - 1, 0, -1):
-                    arry['HRs'] = np.delete(arry['HRs'], i, 2)
+                for i in range(attr["nk1"] - 1, 0, -1):
+                    arry["HRs"] = np.delete(arry["HRs"], i, 2)
             if y:
-                for i in range(attr['nk2'] - 1, 0, -1):
-                    arry['HRs'] = np.delete(arry['HRs'], i, 3)
+                for i in range(attr["nk2"] - 1, 0, -1):
+                    arry["HRs"] = np.delete(arry["HRs"], i, 3)
             if z:
-                for i in range(attr['nk3'] - 1, 0, -1):
-                    arry['HRs'] = np.delete(arry['HRs'], i, 4)
+                for i in range(attr["nk3"] - 1, 0, -1):
+                    arry["HRs"] = np.delete(arry["HRs"], i, 4)
 
-            _, _, attr['nk1'], attr['nk2'], attr['nk3'], _ = arry['HRs'].shape
-            attr['nkpnts'] = attr['nk1'] * attr['nk2'] * attr['nk3']
+            _, _, attr["nk1"], attr["nk2"], attr["nk3"], _ = arry["HRs"].shape
+            attr["nkpnts"] = attr["nk1"] * attr["nk2"] * attr["nk3"]
         except Exception as e:
-            self.report_exception('cutting_Hamiltonian')
-            if attr['abort_on_exception']:
+            self.report_exception("cutting_Hamiltonian")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('cutting_Hamiltonian')
+        self.report_module_time("cutting_Hamiltonian")
 
     def spin_operator(self, spin_orbit=False, sh_l=None, sh_j=None):
         """
@@ -1324,27 +1349,27 @@ class PAOFLOW:
         """
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
-        adhoc_SO = 'adhoc_SO' in attr and attr['adhoc_SO']
+        if "do_spin_orbit" not in attr:
+            attr["do_spin_orbit"] = spin_orbit
+        adhoc_SO = "adhoc_SO" in attr and attr["adhoc_SO"]
 
-        if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
+        if ("sh_l" not in arrays and "sh_j" not in arrays) and not adhoc_SO:
             if sh_l is None and sh_j is None:
-                sh = arrays['shells']
+                sh = arrays["shells"]
                 shells, jchia = [], []
-                for i, a in enumerate(arrays['atoms']):
+                for i, a in enumerate(arrays["atoms"]):
                     ash = []
                     for v in sh[a]:
                         ash += [v, v] if v == 0 else [v]
                     shells += ash[::2]
                     for l in ash[::2]:
                         jchia += [0.5, 0.5] if l == 0 else [l - 0.5, l + 0.5]
-                arrays['sh_j'] = np.array(jchia)[::2]
-                arrays['sh_l'] = np.array(shells)
+                arrays["sh_j"] = np.array(jchia)[::2]
+                arrays["sh_l"] = np.array(shells)
             else:
-                arrays['sh_l'], arrays['sh_j'] = sh_l, sh_j
+                arrays["sh_l"], arrays["sh_j"] = sh_l, sh_j
         try:
-            nawf = attr['nawf']
+            nawf = attr["nawf"]
 
             # Compute spin operators
             # Pauli matrices (x,y,z)
@@ -1395,12 +1420,14 @@ class PAOFLOW:
 
                 # Spin operator matrix  in the basis of |j,m_j,l,s> (full SO)
                 for spol in range(3):
-                    Sj[spol, :, :] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
+                    Sj[spol, :, :] = clebsch_gordan(
+                        nawf, arrays["sh_l"], arrays["sh_j"], spol
+                    )
 
-            arrays['Sj'] = Sj
+            arrays["Sj"] = Sj
         except Exception as e:
-            self.report_exception('spin_operator')
-            if attr['abort_on_exception']:
+            self.report_exception("spin_operator")
+            if attr["abort_on_exception"]:
                 raise e
 
     def topology(
@@ -1434,40 +1461,40 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'Berry' not in attr:
-            attr['Berry'] = Berry
-        if 'eff_mass' not in attr:
-            attr['eff_mass'] = eff_mass
-        if 'spin_Hall' not in attr:
-            attr['spin_Hall'] = spin_Hall
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if "Berry" not in attr:
+            attr["Berry"] = Berry
+        if "eff_mass" not in attr:
+            attr["eff_mass"] = eff_mass
+        if "spin_Hall" not in attr:
+            attr["spin_Hall"] = spin_Hall
+        if "do_spin_orbit" not in attr:
+            attr["do_spin_orbit"] = spin_orbit
 
-        attr['spol'] = spol
-        attr['ipol'] = ipol
-        attr['jpol'] = jpol
+        attr["spol"] = spol
+        attr["ipol"] = ipol
+        attr["jpol"] = jpol
 
-        if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
+        if attr["spol"] is None or attr["ipol"] is None or attr["jpol"] is None:
             if self.rank == 0:
                 print("Must specify 'spol', 'ipol', and 'jpol'")
             quit()
 
-        if spin_Hall and 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+        if spin_Hall and "Sj" not in arrays:
+            self.spin_operator(spin_orbit=attr["do_spin_orbit"])
 
         try:
             do_topology(self.data_controller)
         except Exception as e:
-            self.report_exception('topology')
-            if attr['abort_on_exception']:
+            self.report_exception("topology")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Band Topology')
+        self.report_module_time("Band Topology")
 
-        arrays.pop('R', None)
-        arrays.pop('idx', None)
-        arrays.pop('Rfft', None)
-        arrays.pop('R_wght', None)
+        arrays.pop("R", None)
+        arrays.pop("idx", None)
+        arrays.pop("Rfft", None)
+        arrays.pop("R_wght", None)
 
     def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False):
         """
@@ -1490,11 +1517,11 @@ class PAOFLOW:
         arrays, attr = self.data_controller.data_dicts()
 
         try:
-            if 'HRs' not in arrays:
-                raise KeyError('HRs')
+            if "HRs" not in arrays:
+                raise KeyError("HRs")
 
-            nawf = attr['nawf']
-            nko1, nko2, nko3 = attr['nk1'], attr['nk2'], attr['nk3']
+            nawf = attr["nawf"]
+            nko1, nko2, nko3 = attr["nk1"], attr["nk2"], attr["nk3"]
 
             # Automatically doubles grid in any direction with unspecified nfft value
             if nfft1 == 0:
@@ -1504,34 +1531,40 @@ class PAOFLOW:
             if nfft3 == 0:
                 nfft3 = 2 * nko3
 
-            attr['nfft1'], attr['nfft2'], attr['nfft3'] = nfft1, nfft2, nfft3
+            attr["nfft1"], attr["nfft2"], attr["nfft3"] = nfft1, nfft2, nfft3
 
             # Adjust 'npool' if arrays exceed MPI maximum
             int_max = 2147483647
             temp_pool = int(
-                np.ceil(float(nawf**2 * nfft1 * nfft2 * nfft3 * 3 * attr['nspin']) / float(int_max))
+                np.ceil(
+                    float(nawf**2 * nfft1 * nfft2 * nfft3 * 3 * attr["nspin"])
+                    / float(int_max)
+                )
             )
-            if temp_pool > attr['npool']:
+            if temp_pool > attr["npool"]:
                 if self.rank == 0:
-                    print('Warning: %s too low. Setting npool to %s' % (attr['npool'], temp_pool))
-                attr['npool'] = temp_pool
+                    print(
+                        "Warning: %s too low. Setting npool to %s"
+                        % (attr["npool"], temp_pool)
+                    )
+                attr["npool"] = temp_pool
 
             # Fourier interpolation on extended grid (zero padding)
             do_double_grid(self.data_controller)
-            snawf, _, _, _, nspin = arrays['Hksp'].shape
-            arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf, attr['nkpnts'], nspin))
-            arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
+            snawf, _, _, _, nspin = arrays["Hksp"].shape
+            arrays["Hksp"] = np.reshape(arrays["Hksp"], (snawf, attr["nkpnts"], nspin))
+            arrays["Hksp"] = gather_scatter(arrays["Hksp"], 1, attr["npool"])
 
-            snktot = arrays['Hksp'].shape[1]
+            snktot = arrays["Hksp"].shape[1]
             if reshift_Ef:
-                Hksp = arrays['Hksp'].reshape((nawf, nawf, snktot, nspin))
+                Hksp = arrays["Hksp"].reshape((nawf, nawf, snktot, nspin))
                 Ef = E_Fermi(Hksp, self.data_controller, parallel=True)
                 dinds = np.diag_indices(nawf)
                 Hksp[dinds[0], dinds[1]] -= Ef
-                arrays['Hksp'] = np.moveaxis(Hksp, 2, 0)
+                arrays["Hksp"] = np.moveaxis(Hksp, 2, 0)
             else:
-                arrays['Hksp'] = np.reshape(
-                    np.moveaxis(arrays['Hksp'], 0, 1), (snktot, nawf, nawf, nspin)
+                arrays["Hksp"] = np.reshape(
+                    np.moveaxis(arrays["Hksp"], 0, 1), (snktot, nawf, nawf, nspin)
                 )
 
             get_K_grid_fft(self.data_controller)
@@ -1539,20 +1572,20 @@ class PAOFLOW:
             # Report new memory requirements
             if self.rank == 0:
                 gbyte = self.memory_check()
-                if attr['verbose']:
-                    print('Performing Fourier interpolation on a larger grid.')
+                if attr["verbose"]:
+                    print("Performing Fourier interpolation on a larger grid.")
                     print(
-                        'd : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d'
+                        "d : nk -> nfft\n1 : %d -> %d\n2 : %d -> %d\n3 : %d -> %d"
                         % (nko1, nfft1, nko2, nfft2, nko3, nfft3)
                     )
-                print('New estimated maximum array size: %.2f GBytes' % gbyte)
+                print("New estimated maximum array size: %.2f GBytes" % gbyte)
 
         except Exception as e:
-            self.report_exception('interpolated_hamiltonian')
-            if attr['abort_on_exception']:
+            self.report_exception("interpolated_hamiltonian")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('R -> k with Zero Padding')
+        self.report_module_time("R -> k with Zero Padding")
 
     def pao_eigh(self, bval=0):
         """
@@ -1570,47 +1603,49 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'bval' not in attr:
-            attr['bval'] = bval
+        if "bval" not in attr:
+            attr["bval"] = bval
 
         # HRs and Hks are replaced with Hksp
-        if 'HRs' in arrays:
-            del arrays['HRs']
+        if "HRs" in arrays:
+            del arrays["HRs"]
 
         try:
-            if 'Hksp' not in arrays:
+            if "Hksp" not in arrays:
                 if self.rank == 0:
-                    nktot = attr['nkpnts']
-                    nawf, _, nk1, nk2, nk3, nspin = arrays['Hks'].shape
-                    arrays['Hks'] = np.moveaxis(
-                        np.reshape(arrays['Hks'], (nawf, nawf, nktot, nspin), order='C'),
+                    nktot = attr["nkpnts"]
+                    nawf, _, nk1, nk2, nk3, nspin = arrays["Hks"].shape
+                    arrays["Hks"] = np.moveaxis(
+                        np.reshape(
+                            arrays["Hks"], (nawf, nawf, nktot, nspin), order="C"
+                        ),
                         2,
                         0,
                     )
                 else:
-                    arrays['Hks'] = None
-                arrays['Hksp'] = scatter_full(arrays['Hks'], attr['npool'])
-                del arrays['Hks']
+                    arrays["Hks"] = None
+                arrays["Hksp"] = scatter_full(arrays["Hks"], attr["npool"])
+                del arrays["Hks"]
 
             do_pao_eigh(self.data_controller)
 
             ### PARALLELIZATION
             ## DEV: Sample RunTime Here
             ## DEV: Parallelize search for amax & subtract for all processes.
-            if 'HubbardU' in arrays and arrays['HubbardU'].any() != 0.0:
-                arrays['E_k'] = gather_full(arrays['E_k'], attr['npool'])
+            if "HubbardU" in arrays and arrays["HubbardU"].any() != 0.0:
+                arrays["E_k"] = gather_full(arrays["E_k"], attr["npool"])
                 if self.rank == 0:
-                    if attr['verbose']:
-                        print('Shifting Eigenvalues to top of valence band.')
-                    arrays['E_k'] -= np.amax(arrays['E_k'][:, attr['bval'], :])
+                    if attr["verbose"]:
+                        print("Shifting Eigenvalues to top of valence band.")
+                    arrays["E_k"] -= np.amax(arrays["E_k"][:, attr["bval"], :])
                 self.comm.Barrier()
-                arrays['E_k'] = scatter_full(arrays['E_k'], attr['npool'])
+                arrays["E_k"] = scatter_full(arrays["E_k"], attr["npool"])
         except Exception as e:
-            self.report_exception('pao_eigh')
-            if attr['abort_on_exception']:
+            self.report_exception("pao_eigh")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Eigenvalues')
+        self.report_module_time("Eigenvalues")
 
     def gradient_and_momenta(
         self,
@@ -1655,54 +1690,63 @@ class PAOFLOW:
         arrays, attr = self.data_controller.data_dicts()
 
         try:
-            snktot, nawf, _, nspin = arrays['Hksp'].shape
+            snktot, nawf, _, nspin = arrays["Hksp"].shape
 
             for ik in range(snktot):
                 for ispin in range(nspin):
                     # make sure Hksp is hermitian (it should be)
-                    arrays['Hksp'][ik, :, :, ispin] = (
-                        np.conj(arrays['Hksp'][ik, :, :, ispin].T) + arrays['Hksp'][ik, :, :, ispin]
+                    arrays["Hksp"][ik, :, :, ispin] = (
+                        np.conj(arrays["Hksp"][ik, :, :, ispin].T)
+                        + arrays["Hksp"][ik, :, :, ispin]
                     ) / 2.0
 
-            arrays['Hksp'] = np.reshape(arrays['Hksp'], (snktot, nawf**2, nspin))
-            arrays['Hksp'] = np.moveaxis(gather_scatter(arrays['Hksp'], 1, attr['npool']), 0, 1)
-            snawf, _, nspin = arrays['Hksp'].shape
-            arrays['Hksp'] = np.reshape(
-                arrays['Hksp'], (snawf, attr['nk1'], attr['nk2'], attr['nk3'], nspin)
+            arrays["Hksp"] = np.reshape(arrays["Hksp"], (snktot, nawf**2, nspin))
+            arrays["Hksp"] = np.moveaxis(
+                gather_scatter(arrays["Hksp"], 1, attr["npool"]), 0, 1
+            )
+            snawf, _, nspin = arrays["Hksp"].shape
+            arrays["Hksp"] = np.reshape(
+                arrays["Hksp"], (snawf, attr["nk1"], attr["nk2"], attr["nk3"], nspin)
             )
 
             do_gradient(self.data_controller)
 
             if not band_curvature:
                 # No more need for k-space Hamiltonian
-                del arrays['Hksp']
+                del arrays["Hksp"]
 
             ### PARALLELIZATION
             # gather dHksp on nawf*nawf and scatter on k points
-            arrays['dHksp'] = np.reshape(arrays['dHksp'], (snawf, attr['nkpnts'], 3, nspin))
-            arrays['dHksp'] = np.moveaxis(gather_scatter(arrays['dHksp'], 1, attr['npool']), 0, 2)
-            arrays['dHksp'] = np.reshape(arrays['dHksp'], (snktot, 3, nawf, nawf, nspin), order='C')
+            arrays["dHksp"] = np.reshape(
+                arrays["dHksp"], (snawf, attr["nkpnts"], 3, nspin)
+            )
+            arrays["dHksp"] = np.moveaxis(
+                gather_scatter(arrays["dHksp"], 1, attr["npool"]), 0, 2
+            )
+            arrays["dHksp"] = np.reshape(
+                arrays["dHksp"], (snktot, 3, nawf, nawf, nspin), order="C"
+            )
 
             for nk in range(snktot):
                 for i in range(3):
                     for s in range(nspin):
-                        arrays['dHksp'][nk, i, :, :, s] = (
-                            arrays['dHksp'][nk, i, :, :, s]
-                            + np.conj(arrays['dHksp'][nk, i, :, :, s].T)
+                        arrays["dHksp"][nk, i, :, :, s] = (
+                            arrays["dHksp"][nk, i, :, :, s]
+                            + np.conj(arrays["dHksp"][nk, i, :, :, s].T)
                         ) / 2.0
             if band_curvature:
                 from .spectrum.do_band_curvature import do_band_curvature
 
                 do_band_curvature(self.data_controller)
                 # No more need for k-space Hamiltonian
-                del arrays['Hksp']
+                del arrays["Hksp"]
 
         except Exception as e:
-            self.report_exception('gradient_and_momenta')
-            if attr['abort_on_exception']:
+            self.report_exception("gradient_and_momenta")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Gradient')
+        self.report_module_time("Gradient")
 
         # ---- Optional non-local pseudopotential velocity correction ----
         # Enable via the ``nonlocal_velocity`` kwarg (preferred) or
@@ -1716,14 +1760,14 @@ class PAOFLOW:
         # fully-relativistic jm-kspace) inside
         # :meth:`nonlocal_velocity_correction`.
         if nonlocal_velocity is None:
-            nlv_enabled = bool(attr.get('nonlocal_velocity', False))
+            nlv_enabled = bool(attr.get("nonlocal_velocity", False))
         else:
             nlv_enabled = bool(nonlocal_velocity)
 
         if nonlocal_velocity_inject is not None:
             nlv_inject = bool(nonlocal_velocity_inject)
-        elif 'nonlocal_velocity_inject' in attr:
-            nlv_inject = bool(attr['nonlocal_velocity_inject'])
+        elif "nonlocal_velocity_inject" in attr:
+            nlv_inject = bool(attr["nonlocal_velocity_inject"])
         else:
             # Enabling the correction injects it by default; building Delta_p
             # without injecting is a diagnostic-only mode.
@@ -1731,8 +1775,8 @@ class PAOFLOW:
 
         if nonlocal_velocity_sign is not None:
             nlv_sign = int(nonlocal_velocity_sign)
-        elif attr.get('nonlocal_velocity_sign', None) is not None:
-            nlv_sign = int(attr['nonlocal_velocity_sign'])
+        elif attr.get("nonlocal_velocity_sign", None) is not None:
+            nlv_sign = int(attr["nonlocal_velocity_sign"])
         else:
             nlv_sign = None
 
@@ -1749,9 +1793,11 @@ class PAOFLOW:
             # from the bare dHksp first and stash its diagonal so
             # do_adaptive_smearing can use the uncontaminated group velocity.
             do_momentum(self.data_controller)
-            nb = arrays['pksp'].shape[2]
+            nb = arrays["pksp"].shape[2]
             bdiag = np.arange(nb)
-            arrays['velkp_bare'] = np.ascontiguousarray(arrays['pksp'][:, :, bdiag, bdiag, :])
+            arrays["velkp_bare"] = np.ascontiguousarray(
+                arrays["pksp"][:, :, bdiag, bdiag, :]
+            )
 
             self.nonlocal_velocity_correction(
                 inject=nlv_inject,
@@ -1761,7 +1807,7 @@ class PAOFLOW:
         ### DEV: Proposed to remove this and calculate pksp or velkp when required
         # Compute the momentum operator p_n,m(k) (and kinetic energy operator)
         do_momentum(self.data_controller)
-        self.report_module_time('Momenta')
+        self.report_module_time("Momenta")
 
     def nonlocal_velocity_correction(
         self,
@@ -1769,7 +1815,7 @@ class PAOFLOW:
         q_max: float = 15.0,
         n_q: int = 300,
         pao_tol: float = 1.0e-3,
-        units: str = 'rydberg',
+        units: str = "rydberg",
         inject: bool = False,
         sign: int = None,
     ):
@@ -1869,9 +1915,11 @@ class PAOFLOW:
         #   * NL_JM_ROTATION=1  -- Phase D scalar->jm spin-trace rotation
         #     (build_jm_transformation_matrix + rotate_dp_to_jm); breaks
         #     cubic isotropy, retained only for diagnostics.
-        fully_rel = bool(attr.get('dftSO', False)) and not bool(attr.get('adhoc_SO', False))
-        scalar_tile = _os.environ.get('NL_SCALAR_TILE') == '1'
-        jm_rotation = _os.environ.get('NL_JM_ROTATION') == '1'
+        fully_rel = bool(attr.get("dftSO", False)) and not bool(
+            attr.get("adhoc_SO", False)
+        )
+        scalar_tile = _os.environ.get("NL_SCALAR_TILE") == "1"
+        jm_rotation = _os.environ.get("NL_JM_ROTATION") == "1"
         jm_kspace = fully_rel and not scalar_tile and not jm_rotation
 
         # Resolve the calibrated default injection sign per path when the
@@ -1884,21 +1932,21 @@ class PAOFLOW:
             sign = -1 if jm_kspace else +1
         sign = int(sign)
         try:
-            if '_NL_beta_catalog' not in arry:
-                arry['_NL_beta_catalog'] = load_beta_projectors(self.data_controller)
-            if '_NL_pao_catalog' not in arry:
-                arry['_NL_pao_catalog'] = load_pao_orbitals(self.data_controller)
-            beta_cat = arry['_NL_beta_catalog']
-            pao_cat = arry['_NL_pao_catalog']
+            if "_NL_beta_catalog" not in arry:
+                arry["_NL_beta_catalog"] = load_beta_projectors(self.data_controller)
+            if "_NL_pao_catalog" not in arry:
+                arry["_NL_pao_catalog"] = load_pao_orbitals(self.data_controller)
+            beta_cat = arry["_NL_beta_catalog"]
+            pao_cat = arry["_NL_pao_catalog"]
 
-            if '_NL_tables' not in arry:
-                a_cart = np.asarray(arry['a_vectors']) * float(attr['alat'])
+            if "_NL_tables" not in arry:
+                a_cart = np.asarray(arry["a_vectors"]) * float(attr["alat"])
                 pairs = enumerate_nl_pairs(beta_cat, pao_cat, a_cart, pao_tol=pao_tol)
-                arry['_NL_pairs'] = pairs
-                arry['_NL_tables'] = build_nl_real_space_tables(
+                arry["_NL_pairs"] = pairs
+                arry["_NL_tables"] = build_nl_real_space_tables(
                     beta_cat, pao_cat, pairs, q_max=q_max, n_q=n_q
                 )
-            tables = arry['_NL_tables']
+            tables = arry["_NL_tables"]
 
             def _build_dP(kgrid_slice):
                 if jm_kspace:
@@ -1909,7 +1957,7 @@ class PAOFLOW:
                         pao_cat,
                         tables,
                         kgrid_slice,
-                        float(attr['alat']),
+                        float(attr["alat"]),
                         units=units,
                     )
                 return compute_nonlocal_velocity_on_grid(
@@ -1917,7 +1965,7 @@ class PAOFLOW:
                     pao_cat,
                     tables,
                     kgrid_slice,
-                    float(attr['alat']),
+                    float(attr["alat"]),
                     units=units,
                 )
 
@@ -1936,8 +1984,8 @@ class PAOFLOW:
                 scatter_full,
             )
 
-            if attr.get('mpisize', 1) > 1:
-                kgrid = np.asarray(arry['kgrid'])
+            if attr.get("mpisize", 1) > 1:
+                kgrid = np.asarray(arry["kgrid"])
                 nktot = kgrid.shape[1]
                 ks, ke = load_balancing(self.size, self.rank, nktot)
                 dP_part = np.ascontiguousarray(_build_dP(kgrid[:, ks:ke]))
@@ -1947,49 +1995,49 @@ class PAOFLOW:
                     dP = None
                 gather_array(dP, dP_part)
                 if self.rank == 0:
-                    dP_local = scatter_full(np.ascontiguousarray(dP), attr['npool'])
+                    dP_local = scatter_full(np.ascontiguousarray(dP), attr["npool"])
                 else:
-                    dP_local = scatter_full(None, attr['npool'])
+                    dP_local = scatter_full(None, attr["npool"])
             else:
-                dP_local = _build_dP(arry['kgrid'])
+                dP_local = _build_dP(arry["kgrid"])
 
             # Legacy Phase D: rotate the scalar Delta_p into the (j, m_j)
             # relativistic basis used by ``dHksp`` via a spin-trace (gated
             # behind NL_JM_ROTATION=1; the Option A jm-kspace builder above
             # is the default and does not use this path).
             if jm_rotation:
-                if '_NL_jm_T' not in arry:
-                    if 'atomic_basis' not in arry:
+                if "_NL_jm_T" not in arry:
+                    if "atomic_basis" not in arry:
                         raise RuntimeError(
-                            'nonlocal_velocity_correction: jm rotation requires '
+                            "nonlocal_velocity_correction: jm rotation requires "
                             "arry['atomic_basis'] (the relativistic basis); "
-                            'run projections() before this method.'
+                            "run projections() before this method."
                         )
                     basis_scalar = [
                         {
-                            'atom': pao_cat.sites[o.site_index].label,
-                            'label': o.label,
-                            'l': o.l,
+                            "atom": pao_cat.sites[o.site_index].label,
+                            "label": o.label,
+                            "l": o.l,
                         }
                         for o in pao_cat.basis
                     ]
-                    arry['_NL_jm_T'] = build_jm_transformation_matrix(
-                        arry['atomic_basis'], basis_scalar
+                    arry["_NL_jm_T"] = build_jm_transformation_matrix(
+                        arry["atomic_basis"], basis_scalar
                     )
-                dP_local = rotate_dp_to_jm(dP_local, arry['_NL_jm_T'])
+                dP_local = rotate_dp_to_jm(dP_local, arry["_NL_jm_T"])
 
-            arry['Delta_pksp'] = dP_local
+            arry["Delta_pksp"] = dP_local
 
             if inject:
-                inject_into_dHksp(arry['dHksp'], dP_local, units=units, sign=sign)
+                inject_into_dHksp(arry["dHksp"], dP_local, units=units, sign=sign)
         except Exception as e:
-            self.report_exception('nonlocal_velocity_correction')
-            if attr.get('abort_on_exception', True):
+            self.report_exception("nonlocal_velocity_correction")
+            if attr.get("abort_on_exception", True):
                 raise e
 
-        self.report_module_time('NL velocity correction')
+        self.report_module_time("NL velocity correction")
 
-    def adaptive_smearing(self, smearing='gauss', afac=None):
+    def adaptive_smearing(self, smearing="gauss", afac=None):
         """
         Calculate the Adaptive Smearing parameters
         Populates DataController with 'deltakp' and 'deltakp2'
@@ -2005,8 +2053,8 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['smearing'] = smearing
-        if smearing != 'gauss' and smearing != 'm-p':
+        attr["smearing"] = smearing
+        if smearing != "gauss" and smearing != "m-p":
             raise ValueError(
                 "Smearing type %s not supported.\nSmearing types are 'gauss' and 'm-p'"
                 % str(smearing)
@@ -2014,10 +2062,10 @@ class PAOFLOW:
         try:
             do_adaptive_smearing(self.data_controller, smearing, afac)
         except Exception as e:
-            self.report_exception('adaptive_smearing')
-            if attr['abort_on_exception']:
+            self.report_exception("adaptive_smearing")
+            if attr["abort_on_exception"]:
                 raise e
-        self.report_module_time('Adaptive Smearing')
+        self.report_module_time("Adaptive Smearing")
 
     def dos(self, do_dos=True, do_pdos=True, delta=0.01, emin=-10.0, emax=2.0, ne=1000):
         """
@@ -2037,11 +2085,11 @@ class PAOFLOW:
         """
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'smearing' not in attr:
-            attr['smearing'] = None
+        if "smearing" not in attr:
+            attr["smearing"] = None
 
         try:
-            if attr['smearing'] is None:
+            if attr["smearing"] is None:
                 if do_dos:
                     from .spectrum.do_dos import do_dos
 
@@ -2051,7 +2099,7 @@ class PAOFLOW:
 
                     do_pdos(self.data_controller, emin, emax, ne, delta)
             else:
-                if 'deltakp' not in arrays:
+                if "deltakp" not in arrays:
                     if do_dos:
                         from .spectrum.do_dos import do_dos
 
@@ -2070,12 +2118,14 @@ class PAOFLOW:
 
                         do_pdos_adaptive(self.data_controller, emin, emax, ne)
         except Exception as e:
-            self.report_exception('dos')
-            if attr['abort_on_exception']:
+            self.report_exception("dos")
+            if attr["abort_on_exception"]:
                 raise e
 
-        mname = 'DoS%s' % (
-            '' if attr['smearing'] is None or 'deltakp' not in arrays else ' (Adaptive Smearing)'
+        mname = "DoS%s" % (
+            ""
+            if attr["smearing"] is None or "deltakp" not in arrays
+            else " (Adaptive Smearing)"
         )
         self.report_module_time(mname)
 
@@ -2093,18 +2143,18 @@ class PAOFLOW:
 
         do_density(self.data_controller, nr1, nr2, nr3)
 
-        self.report_module_time('Density')
+        self.report_module_time("Density")
 
     def trim_non_projectable_bands(self):
         arrays, attributes = self.data_controller.data_dicts()
 
-        bnd = attributes['nawf'] = attributes['bnd']
+        bnd = attributes["nawf"] = attributes["bnd"]
 
-        arrays['E_k'] = arrays['E_k'][:, :bnd]
-        arrays['pksp'] = arrays['pksp'][:, :, :bnd, :bnd]
-        if 'deltakp' in arrays:
-            arrays['deltakp'] = arrays['deltakp'][:, :bnd]
-            arrays['deltakp2'] = arrays['deltakp2'][:, :bnd]
+        arrays["E_k"] = arrays["E_k"][:, :bnd]
+        arrays["pksp"] = arrays["pksp"][:, :, :bnd, :bnd]
+        if "deltakp" in arrays:
+            arrays["deltakp"] = arrays["deltakp"][:, :bnd]
+            arrays["deltakp2"] = arrays["deltakp2"][:, :bnd]
 
     def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0):
         """
@@ -2121,25 +2171,25 @@ class PAOFLOW:
 
         attr = self.data_controller.data_attributes
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        if "fermi_up" not in attr:
+            attr["fermi_up"] = fermi_up
+        if "fermi_dw" not in attr:
+            attr["fermi_dw"] = fermi_dw
 
         try:
             do_fermisurf(self.data_controller)
         except Exception as e:
-            self.report_exception('fermi_surface')
-            if attr['abort_on_exception']:
+            self.report_exception("fermi_surface")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Fermi Surface')
+        self.report_module_time("Fermi Surface")
 
     def pyskeaf(
         self,
         fermi_energy=0.0,
         num_interpolation=100,
-        b_field='non_principal',
+        b_field="non_principal",
         azimuthal=0.0,
         polar=0.0,
         num_angles=1,
@@ -2147,7 +2197,7 @@ class PAOFLOW:
         frequency_tolerance=0.01,
         orbit_tolerance=0.05,
         allow_wall_orbits=True,
-        bands='all',
+        bands="all",
         verbose=False,
         **unknown_options,
     ):
@@ -2209,70 +2259,71 @@ class PAOFLOW:
         attr = self.data_controller.data_attributes
 
         usage = (
-            'Correct PAOFLOW.pyskeaf() format:\n'
-            '  paoflow.pyskeaf(\n'
-            '      fermi_energy=0.0,  # eV; or explicit values as '
-            '(-0.01, 0.0, 0.2, 1.0) or [-0.01, 0.0, 0.2, 1.0]\n'
-            '      num_interpolation=100,  # integer >= 2\n'
+            "Correct PAOFLOW.pyskeaf() format:\n"
+            "  paoflow.pyskeaf(\n"
+            "      fermi_energy=0.0,  # eV; or explicit values as "
+            "(-0.01, 0.0, 0.2, 1.0) or [-0.01, 0.0, 0.2, 1.0]\n"
+            "      num_interpolation=100,  # integer >= 2\n"
             "      b_field='non_principal',  # 'b1', 'b2', 'b3', "
             "'non_principal', or 'rotation'\n"
-            '      azimuthal=0.0,  # degrees; scalar or two-value pair\n'
-            '      polar=0.0,  # degrees; scalar or two-value pair\n'
-            '      num_angles=1,  # integer; >= 2 for a rotation\n'
-            '      minimum_frequency=0.0,  # kT; nonnegative\n'
-            '      frequency_tolerance=0.01,  # positive\n'
-            '      orbit_tolerance=0.05,  # positive\n'
-            '      allow_wall_orbits=True,  # bool\n'
+            "      azimuthal=0.0,  # degrees; scalar or two-value pair\n"
+            "      polar=0.0,  # degrees; scalar or two-value pair\n"
+            "      num_angles=1,  # integer; >= 2 for a rotation\n"
+            "      minimum_frequency=0.0,  # kT; nonnegative\n"
+            "      frequency_tolerance=0.01,  # positive\n"
+            "      orbit_tolerance=0.05,  # positive\n"
+            "      allow_wall_orbits=True,  # bool\n"
             "      bands='all',  # or 1, 'custom_name', or "
             "(1, 8, 'custom_name')\n"
-            '      verbose=False,  # bool\n'
-            '  )\n'
-            'For rotation, provide two values for both azimuthal and polar; '
+            "      verbose=False,  # bool\n"
+            "  )\n"
+            "For rotation, provide two values for both azimuthal and polar; "
             "b_field is then set to 'rotation' automatically. BXSF filename "
-            'extensions are optional in bands.'
+            "extensions are optional in bands."
         )
 
         def _input_error(exception_type, message):
-            return exception_type(f'{message}\n\n{usage}')
+            return exception_type(f"{message}\n\n{usage}")
 
         if unknown_options:
-            names = ', '.join(sorted(unknown_options))
+            names = ", ".join(sorted(unknown_options))
             raise _input_error(
                 TypeError,
-                f'Unknown pyskeaf option(s): {names}.',
+                f"Unknown pyskeaf option(s): {names}.",
             )
 
         def _real(value, name):
             if not isinstance(value, Real) or isinstance(value, (bool, np.bool_)):
-                raise _input_error(TypeError, f'{name} must be a real number.')
+                raise _input_error(TypeError, f"{name} must be a real number.")
             result = float(value)
             if not math.isfinite(result):
-                raise _input_error(ValueError, f'{name} must be finite.')
+                raise _input_error(ValueError, f"{name} must be finite.")
             return result
 
         def _fermi_energy_values(value):
             if isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
-                values = (_real(value, 'fermi_energy'),)
+                values = (_real(value, "fermi_energy"),)
             elif isinstance(value, (tuple, list)):
                 values = tuple(
-                    _real(item, f'fermi_energy[{index}]') for index, item in enumerate(value)
+                    _real(item, f"fermi_energy[{index}]")
+                    for index, item in enumerate(value)
                 )
             else:
                 raise _input_error(
                     TypeError,
-                    'fermi_energy must be a real number or an explicit Python '
-                    'tuple/list of real numbers.',
+                    "fermi_energy must be a real number or an explicit Python "
+                    "tuple/list of real numbers.",
                 )
             if not values:
                 raise _input_error(
                     ValueError,
-                    'fermi_energy must contain at least one value.',
+                    "fermi_energy must contain at least one value.",
                 )
             tokens = [fermi_energy_filename_token(item) for item in values]
             if len(tokens) != len(set(tokens)):
                 raise _input_error(
                     ValueError,
-                    'fermi_energy values must produce distinct output filename values.',
+                    "fermi_energy values must produce distinct output filename values.",
                 )
             return values
 
@@ -2284,73 +2335,76 @@ class PAOFLOW:
             except TypeError as error:
                 raise _input_error(
                     TypeError,
-                    f'{name} must be a real number or a pair of real numbers.',
+                    f"{name} must be a real number or a pair of real numbers.",
                 ) from error
             if len(values) != 2 or any(
-                not isinstance(item, Real) or isinstance(item, (bool, np.bool_)) for item in values
+                not isinstance(item, Real) or isinstance(item, (bool, np.bool_))
+                for item in values
             ):
                 raise _input_error(
                     TypeError,
-                    f'{name} must be a real number or a pair of real numbers.',
+                    f"{name} must be a real number or a pair of real numbers.",
                 )
             return tuple(_real(item, name) for item in values)
 
-        azimuthal_values = _real_values(azimuthal, 'azimuthal')
-        polar_values = _real_values(polar, 'polar')
+        azimuthal_values = _real_values(azimuthal, "azimuthal")
+        polar_values = _real_values(polar, "polar")
         if len(azimuthal_values) != len(polar_values):
             raise _input_error(
                 ValueError,
-                'azimuthal and polar must both be scalars or both be two-element pairs.',
+                "azimuthal and polar must both be scalars or both be two-element pairs.",
             )
 
         if not isinstance(num_interpolation, Integral) or isinstance(
             num_interpolation, (bool, np.bool_)
         ):
-            raise _input_error(TypeError, 'num_interpolation must be an integer.')
+            raise _input_error(TypeError, "num_interpolation must be an integer.")
         if num_interpolation < 2:
-            raise _input_error(ValueError, 'num_interpolation must be at least 2.')
-        if not isinstance(num_angles, Integral) or isinstance(num_angles, (bool, np.bool_)):
-            raise _input_error(TypeError, 'num_angles must be an integer.')
+            raise _input_error(ValueError, "num_interpolation must be at least 2.")
+        if not isinstance(num_angles, Integral) or isinstance(
+            num_angles, (bool, np.bool_)
+        ):
+            raise _input_error(TypeError, "num_angles must be an integer.")
         if not isinstance(allow_wall_orbits, (bool, np.bool_)):
-            raise _input_error(TypeError, 'allow_wall_orbits must be True or False.')
+            raise _input_error(TypeError, "allow_wall_orbits must be True or False.")
         if not isinstance(verbose, (bool, np.bool_)):
-            raise _input_error(TypeError, 'verbose must be True or False.')
+            raise _input_error(TypeError, "verbose must be True or False.")
 
         fermi_energies = _fermi_energy_values(fermi_energy)
-        minimum_frequency = _real(minimum_frequency, 'minimum_frequency')
-        frequency_tolerance = _real(frequency_tolerance, 'frequency_tolerance')
-        orbit_tolerance = _real(orbit_tolerance, 'orbit_tolerance')
+        minimum_frequency = _real(minimum_frequency, "minimum_frequency")
+        frequency_tolerance = _real(frequency_tolerance, "frequency_tolerance")
+        orbit_tolerance = _real(orbit_tolerance, "orbit_tolerance")
         if minimum_frequency < 0.0:
-            raise _input_error(ValueError, 'minimum_frequency cannot be negative.')
+            raise _input_error(ValueError, "minimum_frequency cannot be negative.")
         if frequency_tolerance <= 0.0:
-            raise _input_error(ValueError, 'frequency_tolerance must be positive.')
+            raise _input_error(ValueError, "frequency_tolerance must be positive.")
         if orbit_tolerance <= 0.0:
-            raise _input_error(ValueError, 'orbit_tolerance must be positive.')
+            raise _input_error(ValueError, "orbit_tolerance must be positive.")
 
         field_map = {
-            'b1': 'a',
-            'b2': 'b',
-            'b3': 'c',
-            'non_principal': 'n',
-            'rotation': 'r',
+            "b1": "a",
+            "b2": "b",
+            "b3": "c",
+            "non_principal": "n",
+            "rotation": "r",
         }
         field_name = str(b_field).lower()
         if field_name not in field_map:
             raise _input_error(
                 ValueError,
-                f'b_field must be one of {tuple(field_map)}, got {b_field!r}.',
+                f"b_field must be one of {tuple(field_map)}, got {b_field!r}.",
             )
 
         rotating = len(azimuthal_values) == 2
         if rotating:
-            field_name = 'rotation'
+            field_name = "rotation"
             if num_angles < 2:
                 raise _input_error(
                     ValueError,
-                    'num_angles must be at least 2 for a rotation calculation.',
+                    "num_angles must be at least 2 for a rotation calculation.",
                 )
         else:
-            if field_name == 'rotation':
+            if field_name == "rotation":
                 raise _input_error(
                     ValueError,
                     "b_field='rotation' requires two-element azimuthal and polar values.",
@@ -2373,57 +2427,63 @@ class PAOFLOW:
             num_rots=int(num_angles),
         )
 
-        output_path = Path(attr['opath'])
+        output_path = Path(attr["opath"])
 
         def _standard_band_number(path):
             stem = path.stem
-            prefix = 'Fermi_surf_band_'
-            suffix = stem[len(prefix) :] if stem.startswith(prefix) else ''
+            prefix = "Fermi_surf_band_"
+            suffix = stem[len(prefix) :] if stem.startswith(prefix) else ""
             return (0, int(suffix)) if suffix.isdigit() else (1, stem)
 
-        if isinstance(bands, str) and bands.lower() == 'all':
-            paths = sorted(output_path.glob('Fermi_surf_band_*.bxsf'), key=_standard_band_number)
+        if isinstance(bands, str) and bands.lower() == "all":
+            paths = sorted(
+                output_path.glob("Fermi_surf_band_*.bxsf"), key=_standard_band_number
+            )
             filenames = [path.name for path in paths]
         else:
             selections = bands if isinstance(bands, (list, tuple, set)) else (bands,)
             filenames = []
             for selection in selections:
-                if isinstance(selection, Integral) and not isinstance(selection, (bool, np.bool_)):
+                if isinstance(selection, Integral) and not isinstance(
+                    selection, (bool, np.bool_)
+                ):
                     if selection < 1:
                         raise _input_error(
                             ValueError,
-                            'PAOFLOW band numbers must be positive integers.',
+                            "PAOFLOW band numbers must be positive integers.",
                         )
-                    filename = f'Fermi_surf_band_{int(selection)}.bxsf'
+                    filename = f"Fermi_surf_band_{int(selection)}.bxsf"
                 elif isinstance(selection, (str, Path)):
                     selected_path = Path(selection)
                     filename = (
                         selected_path.name
-                        if selected_path.suffix.lower() == '.bxsf'
-                        else f'{selected_path.name}.bxsf'
+                        if selected_path.suffix.lower() == ".bxsf"
+                        else f"{selected_path.name}.bxsf"
                     )
                 else:
                     raise _input_error(
                         TypeError,
-                        'Each bands entry must be an integer or a BXSF filename stem.',
+                        "Each bands entry must be an integer or a BXSF filename stem.",
                     )
                 filenames.append(filename)
 
         if not filenames:
             raise FileNotFoundError(
-                'No Fermi_surf_band_*.bxsf files found in PAOFLOW output directory '
-                f'{output_path}. '
-                'Run paoflow.fermi_surface() first or select custom BXSF files.'
+                "No Fermi_surf_band_*.bxsf files found in PAOFLOW output directory "
+                f"{output_path}. "
+                "Run paoflow.fermi_surface() first or select custom BXSF files."
             )
         if len(filenames) != len(set(filenames)):
-            raise _input_error(ValueError, 'bands contains duplicate BXSF selections.')
+            raise _input_error(ValueError, "bands contains duplicate BXSF selections.")
 
         def report_progress(item, fermi_energy_ev):
             if self.rank != 0:
                 return
-            message = 'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
+            message = (
+                "calculated" if item.calculated else f"skipped - {item.skipped_reason}"
+            )
             print(
-                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: ' f'{message}',
+                f"{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: {message}",
                 flush=True,
             )
 
@@ -2440,17 +2500,17 @@ class PAOFLOW:
                     filenames=filenames,
                     output_dir=output_path,
                     write_auxiliary_files=verbose,
-                    progress_callback=lambda item, energy=fermi_energy_ev: report_progress(
-                        item, energy
+                    progress_callback=lambda item, energy=fermi_energy_ev: (
+                        report_progress(item, energy)
                     ),
                 )
                 results.extend(energy_results)
         except Exception as error:
-            self.report_exception('pyskeaf')
-            if attr['abort_on_exception']:
+            self.report_exception("pyskeaf")
+            if attr["abort_on_exception"]:
                 raise error
 
-        self.report_module_time('Quantum Oscillations')
+        self.report_module_time("Quantum Oscillations")
         return results
 
     def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0):
@@ -2468,23 +2528,23 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        if "fermi_up" not in attr:
+            attr["fermi_up"] = fermi_up
+        if "fermi_dw" not in attr:
+            attr["fermi_dw"] = fermi_dw
 
         try:
-            if attr['nspin'] == 1:
-                if 'Sj' not in arry:
+            if attr["nspin"] == 1:
+                if "Sj" not in arry:
                     self.spin_operator()
                 do_spin_texture(self.data_controller)
-                self.report_module_time('Spin Texture')
+                self.report_module_time("Spin Texture")
             else:
                 if self.rank == 0:
-                    print('Cannot compute spin texture with nspin=2')
+                    print("Cannot compute spin texture with nspin=2")
         except Exception as e:
-            self.report_exception('spin_texture')
-            if attr['abort_on_exception']:
+            self.report_exception("spin_texture")
+            if attr["abort_on_exception"]:
                 raise e
 
         self.comm.Barrier()
@@ -2529,38 +2589,38 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'], attr['emaxH'] = emin, emax
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
+        attr["eminH"], attr["emaxH"] = emin, emax
+        attr["deltaH"] = delta
+        attr["esizeH"] = ne
 
         if s_tensor is not None:
-            arrays['s_tensor'] = np.array(s_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+            arrays["s_tensor"] = np.array(s_tensor)
+        if "fermi_up" not in attr:
+            attr["fermi_up"] = fermi_up
+        if "fermi_dw" not in attr:
+            attr["fermi_dw"] = fermi_dw
 
         if shc_proj is not None:
-            arrays['shc_proj'] = np.array(shc_proj)
+            arrays["shc_proj"] = np.array(shc_proj)
 
-        if 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+        if "Sj" not in arrays:
+            self.spin_operator(spin_orbit=attr["do_spin_orbit"])
 
         try:
             if shc_proj == None:
-                P = np.eye(attr['nawf'])
+                P = np.eye(attr["nawf"])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
             else:
-                arrays['naw'] = orbital_array(self.data_controller)
-                P = do_projection_operator(self.data_controller, arrays['shc_proj'])
+                arrays["naw"] = orbital_array(self.data_controller)
+                P = do_projection_operator(self.data_controller, arrays["shc_proj"])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
 
         except Exception as e:
-            self.report_exception('spin_Hall')
-            if attr['abort_on_exception']:
+            self.report_exception("spin_Hall")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Spin Hall Conductivity')
+        self.report_module_time("Spin Hall Conductivity")
 
     def rashba_edelstein(
         self,
@@ -2595,19 +2655,21 @@ class PAOFLOW:
         from .response.do_rashba_edelstein import do_rashba_edelstein
 
         arrays, attr = self.data_controller.data_dicts()
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
+        attr["deltaH"] = delta
+        attr["esizeH"] = ne
 
         ene = np.linspace(emin, emax, ne)
         try:
-            do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
+            do_rashba_edelstein(
+                self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file
+            )
 
         except Exception as e:
-            self.report_exception('rashba_edelstein')
-            if attr['abort_on_exception']:
+            self.report_exception("rashba_edelstein")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Rashba_Edelstein')
+        self.report_module_time("Rashba_Edelstein")
 
     def anomalous_Hall(
         self,
@@ -2640,26 +2702,26 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        attr['eminH'] = emin
-        attr['emaxH'] = emax
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
+        attr["eminH"] = emin
+        attr["emaxH"] = emax
+        attr["deltaH"] = delta
+        attr["esizeH"] = ne
 
         if a_tensor is not None:
-            arrays['a_tensor'] = np.array(a_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+            arrays["a_tensor"] = np.array(a_tensor)
+        if "fermi_up" not in attr:
+            attr["fermi_up"] = fermi_up
+        if "fermi_dw" not in attr:
+            attr["fermi_dw"] = fermi_dw
 
         try:
             do_anomalous_Hall(self.data_controller, do_ac)
         except Exception as e:
-            self.report_exception('anomalous_Hall')
-            if attr['abort_on_exception']:
+            self.report_exception("anomalous_Hall")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Anomalous Hall Conductivity')
+        self.report_module_time("Anomalous Hall Conductivity")
 
     def effective_mass(self, emin=-1.0, emax=1.0, ne=1000):
         """
@@ -2684,11 +2746,11 @@ class PAOFLOW:
             do_effective_mass(self.data_controller)
 
         except Exception as e:
-            self.report_exception('effective_mass')
-            if attr['abort_on_exception']:
+            self.report_exception("effective_mass")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Effective mass')
+        self.report_module_time("Effective mass")
 
     def doping(
         self,
@@ -2701,7 +2763,7 @@ class PAOFLOW:
         ne=1000,
         doping_conc=0.0,
         core_electrons=0.0,
-        fname='doping_',
+        fname="doping_",
     ):
         """
         Calculate the chemical potential that corresponds to specified doping for different temperatures
@@ -2725,22 +2787,22 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'delta' not in attr:
-            attr['delta'] = delta
-        if 'doping_conc' not in attr:
-            attr['doping_conc'] = doping_conc
-        if 'core_electrons' not in attr:
-            attr['core_electrons'] = core_electrons
+        if "delta" not in attr:
+            attr["delta"] = delta
+        if "doping_conc" not in attr:
+            attr["doping_conc"] = doping_conc
+        if "core_electrons" not in attr:
+            attr["core_electrons"] = core_electrons
 
         ene = np.linspace(emin, emax, ne)
         temps = np.linspace(tmin, tmax, nt)
-        if attr['smearing'] == None:
+        if attr["smearing"] == None:
             do_dos(self.data_controller, emin, emax, ne, delta)
         else:
             do_dos_adaptive(self.data_controller, emin, emax, ne)
         do_doping(self.data_controller, temps, ene, fname)
 
-        self.report_module_time('Doping')
+        self.report_module_time("Doping")
 
     def transport(
         self,
@@ -2781,20 +2843,20 @@ class PAOFLOW:
         from .boltzmann.do_transport import do_transport
 
         arrays, attr = self.data_controller.data_dicts()
-        if 'tau_dict' not in attr:
-            attr['tau_dict'] = tau_dict
+        if "tau_dict" not in attr:
+            attr["tau_dict"] = tau_dict
 
         ene = np.linspace(emin, emax, ne)
         temps = np.linspace(tmin, tmax, nt)
         sc, sw = scattering_channels, scattering_weights
         try:
-            bnd = attr['bnd']
-            if 'pksp' in arrays:
-                velkp = np.zeros((arrays['pksp'].shape[0], 3, bnd, attr['nspin']))
+            bnd = attr["bnd"]
+            if "pksp" in arrays:
+                velkp = np.zeros((arrays["pksp"].shape[0], 3, bnd, attr["nspin"]))
                 for n in range(bnd):
-                    velkp[:, :, n, :] = np.real(arrays['pksp'][:, :, n, n, :])
-            elif 'velkp' in arrays:
-                velkp = np.ascontiguousarray(arrays['velkp'][:, :, :bnd, :])
+                    velkp[:, :, n, :] = np.real(arrays["pksp"][:, :, n, n, :])
+            elif "velkp" in arrays:
+                velkp = np.ascontiguousarray(arrays["velkp"][:, :, :bnd, :])
 
             do_transport(
                 self.data_controller,
@@ -2809,11 +2871,11 @@ class PAOFLOW:
             )
 
         except Exception as e:
-            self.report_exception('transport')
-            if attr['abort_on_exception']:
+            self.report_exception("transport")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Transport')
+        self.report_module_time("Transport")
 
     def dielectric_tensor(
         self,
@@ -2968,23 +3030,27 @@ class PAOFLOW:
 
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'degauss' not in attr:
-            attr['degauss'] = degauss
-        if 'delta' not in attr:
-            attr['delta'] = delta
-        attr['intrasmear'] = intrasmear
-        attr['emissivity'] = emissivity
-        attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
-        attr['emis_ntheta'] = int(emis_ntheta)
-        attr['emis_temperature'] = np.atleast_1d(np.array(emis_temperature, dtype=float))
-        if d_tensor == 'all':
+        if "degauss" not in attr:
+            attr["degauss"] = degauss
+        if "delta" not in attr:
+            attr["delta"] = delta
+        attr["intrasmear"] = intrasmear
+        attr["emissivity"] = emissivity
+        attr["emis_angles"] = np.atleast_1d(np.array(emis_angles, dtype=float))
+        attr["emis_ntheta"] = int(emis_ntheta)
+        attr["emis_temperature"] = np.atleast_1d(
+            np.array(emis_temperature, dtype=float)
+        )
+        if d_tensor == "all":
             pass
-        elif d_tensor == 'diag':
-            arrays['d_tensor'] = np.array([[0, 0], [1, 1], [2, 2]])
-        elif d_tensor == 'offdiag':
-            arrays['d_tensor'] = np.array([[0, 1], [1, 0], [0, 2], [2, 0], [1, 2], [2, 1]])
+        elif d_tensor == "diag":
+            arrays["d_tensor"] = np.array([[0, 0], [1, 1], [2, 2]])
+        elif d_tensor == "offdiag":
+            arrays["d_tensor"] = np.array(
+                [[0, 1], [1, 0], [0, 2], [2, 0], [1, 2], [2, 1]]
+            )
         else:
-            arrays['d_tensor'] = np.array(d_tensor)
+            arrays["d_tensor"] = np.array(d_tensor)
 
         # -----------------------------------------------
         # Compute dielectric tensor (Re and Im epsilon)
@@ -2993,13 +3059,13 @@ class PAOFLOW:
             ene = np.linspace(emin, emax, ne)
             do_dielectric_tensor(self.data_controller, ene)
         except Exception as e:
-            self.report_exception('dielectric_tensor')
-            if attr['abort_on_exception']:
+            self.report_exception("dielectric_tensor")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Dielectric Tensor')
+        self.report_module_time("Dielectric Tensor")
 
-    def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
+    def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype="gauss"):
         """
         Calculate the Dielectric Tensor
 
@@ -3016,35 +3082,35 @@ class PAOFLOW:
         from .response.do_epsilon import do_jdos
 
         _, attr = self.data_controller.data_dicts()
-        if 'delta' not in attr:
-            attr['delta'] = delta
+        if "delta" not in attr:
+            attr["delta"] = delta
 
         try:
             ene = np.linspace(emin, emax, ne)
             do_jdos(self.data_controller, ene, jdos_smeartype)
         except Exception as e:
-            self.report_exception('joint density of states')
-            if attr['abort_on_exception']:
+            self.report_exception("joint density of states")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Joint density of states')
+        self.report_module_time("Joint density of states")
 
     def find_weyl_points(self, symmetrize=None, test_rad=0.01, search_grid=[8, 8, 8]):
         from .topology.do_find_Weyl import find_weyl
 
         try:
             if symmetrize is not None:
-                self.data_controller.data_attributes['symmetrize'] = symmetrize
+                self.data_controller.data_attributes["symmetrize"] = symmetrize
             find_weyl(self.data_controller, test_rad, search_grid)
 
         except Exception as e:
-            self.report_exception('pao_hamiltonian')
-            if self.data_controller.data_attributes['abort_on_exception']:
+            self.report_exception("pao_hamiltonian")
+            if self.data_controller.data_attributes["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Weyl Search')
+        self.report_module_time("Weyl Search")
 
-    def ipr(self, fname='ipr'):
+    def ipr(self, fname="ipr"):
         r"""
         Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
 
@@ -3072,26 +3138,26 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         try:
-            arry['ipr'] = inverse_participation_ratio(self.data_controller)
-            np.save(join(attr['opath'], fname + '.npy'), arry['ipr'])
+            arry["ipr"] = inverse_participation_ratio(self.data_controller)
+            np.save(join(attr["opath"], fname + ".npy"), arry["ipr"])
 
         except Exception as e:
-            self.report_exception('ipr')
-            if attr['abort_on_exception']:
+            self.report_exception("ipr")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Inverse Participation Ratio (IPR)')
+        self.report_module_time("Inverse Participation Ratio (IPR)")
 
     def berry_phase(
         self,
-        kspace_method='path',
+        kspace_method="path",
         berry_path=None,
         high_sym_points=None,
         kpath_funct=None,
         nk1=100,
         nk2=100,
         closed=True,
-        method='berry',
+        method="berry",
         sub=None,
         occupied=True,
         kradius=None,
@@ -3099,7 +3165,7 @@ class PAOFLOW:
         kxlim=(-0.5, 0.5),
         kylim=(-0.5, 0.5),
         eigvals=False,
-        fname='berry_phase',
+        fname="berry_phase",
         contin=False,
     ):
         """
@@ -3139,55 +3205,57 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         kspace_method = kspace_method.lower()
-        attr['berry_kspace_method'] = kspace_method
+        attr["berry_kspace_method"] = kspace_method
 
-        attr['berry_path'] = berry_path
-        arry['berry_high_sym_points'] = high_sym_points
+        attr["berry_path"] = berry_path
+        arry["berry_high_sym_points"] = high_sym_points
 
-        attr['berry_nk'] = nk1
-        attr['berry_nk1'] = nk1
-        attr['berry_nk2'] = nk2
+        attr["berry_nk"] = nk1
+        attr["berry_nk1"] = nk1
+        attr["berry_nk2"] = nk2
 
-        attr['berry_kpath_funct'] = kpath_funct
+        attr["berry_kpath_funct"] = kpath_funct
 
-        arry['berry_kxlim'] = kxlim
-        arry['berry_kylim'] = kylim
+        arry["berry_kxlim"] = kxlim
+        arry["berry_kylim"] = kylim
 
-        if kspace_method != 'square':
-            attr['berry_eigvals'] = eigvals
+        if kspace_method != "square":
+            attr["berry_eigvals"] = eigvals
         else:
-            attr['berry_eigvals'] = False
+            attr["berry_eigvals"] = False
 
-        attr['berry_kradius'] = kradius
-        arry['berry_kcenter'] = np.array(kcenter)
-        attr['berry_eigvals'] = eigvals
+        attr["berry_kradius"] = kradius
+        arry["berry_kcenter"] = np.array(kcenter)
+        attr["berry_eigvals"] = eigvals
 
         method = method.lower()
-        if method in ['berry', 'zak']:
-            attr['berry_method'] = method
+        if method in ["berry", "zak"]:
+            attr["berry_method"] = method
         else:
-            print("method should be either berry or zak. Falling back to method = 'berry'")
-            attr['berry_method'] = 'berry'
+            print(
+                "method should be either berry or zak. Falling back to method = 'berry'"
+            )
+            attr["berry_method"] = "berry"
 
-        arry['berry_sub'] = sub
+        arry["berry_sub"] = sub
         if sub != None or (sub == None and not occupied):
-            attr['berry_occupied'] = False
+            attr["berry_occupied"] = False
         else:
-            attr['berry_occupied'] = occupied
+            attr["berry_occupied"] = occupied
 
-        attr['berry_closed'] = closed
-        attr['berry_contin'] = contin
-        attr['berry_fname'] = fname
+        attr["berry_closed"] = closed
+        attr["berry_contin"] = contin
+        attr["berry_fname"] = fname
 
         try:
             do_berry_phase(self)
 
         except Exception as e:
-            self.report_exception('berry_phase')
-            if attr['abort_on_exception']:
+            self.report_exception("berry_phase")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Berry phase')
+        self.report_module_time("Berry phase")
 
     def phonon_setup(
         self,
@@ -3223,20 +3291,20 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
-        attr['phonon_supercell_matrix'] = supercell_matrix
-        attr['phonon_primitive_matrix'] = primitive_matrix
-        attr['phonon_displacement_distance'] = displacement_distance
-        attr['phonon_q_mesh'] = q_mesh
-        arry['phonon_q_path'] = q_path
+        attr["phonon_supercell_matrix"] = supercell_matrix
+        attr["phonon_primitive_matrix"] = primitive_matrix
+        attr["phonon_displacement_distance"] = displacement_distance
+        attr["phonon_q_mesh"] = q_mesh
+        arry["phonon_q_path"] = q_path
 
         try:
             init_phonopy(self.data_controller)
         except Exception as e:
-            self.report_exception('phonon_setup')
-            if attr['abort_on_exception']:
+            self.report_exception("phonon_setup")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Phonon Setup')
+        self.report_module_time("Phonon Setup")
 
     def phonons(
         self,
@@ -3244,7 +3312,7 @@ class PAOFLOW:
         primitive_matrix=None,
         displacement_distance=None,
         forces=None,
-        phonon_dir='phonon',
+        phonon_dir="phonon",
         pp_dir=None,
         prefix=None,
         kgrid=None,
@@ -3265,8 +3333,8 @@ class PAOFLOW:
         t_min=0.0,
         t_max=1000.0,
         t_step=10.0,
-        units='THz',
-        fname='phonon',
+        units="THz",
+        fname="phonon",
     ):
         """Harmonic phonons via phonopy finite displacements (Stage 1).
 
@@ -3358,15 +3426,15 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
         if primitive_matrix is not None:
-            attr['phonon_primitive_matrix'] = primitive_matrix
+            attr["phonon_primitive_matrix"] = primitive_matrix
         if displacement_distance is not None:
-            attr['phonon_displacement_distance'] = displacement_distance
+            attr["phonon_displacement_distance"] = displacement_distance
         if mesh is not None:
-            attr['phonon_q_mesh'] = mesh
+            attr["phonon_q_mesh"] = mesh
         if ibrav is not None:
-            attr['ibrav'] = ibrav
+            attr["ibrav"] = ibrav
 
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
@@ -3389,13 +3457,13 @@ class PAOFLOW:
                 )
                 if self.rank == 0:
                     print(
-                        'Wrote %d displaced-supercell QE inputs. Run pw.x on each, '
+                        "Wrote %d displaced-supercell QE inputs. Run pw.x on each, "
                         "then re-call phonons(forces='qe')." % len(paths)
                     )
-                self.report_module_time('Phonons (write inputs)')
+                self.report_module_time("Phonons (write inputs)")
                 return
 
-            if isinstance(forces, str) and forces.lower() == 'qe':
+            if isinstance(forces, str) and forces.lower() == "qe":
                 harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
                 produce_force_constants(self.data_controller)
             elif isinstance(forces, str):
@@ -3424,7 +3492,9 @@ class PAOFLOW:
                     fname=fname,
                 )
             if do_dos:
-                compute_phonon_dos(self.data_controller, mesh=mesh, units=units, fname=fname)
+                compute_phonon_dos(
+                    self.data_controller, mesh=mesh, units=units, fname=fname
+                )
             if do_thermal:
                 compute_thermal_properties(
                     self.data_controller,
@@ -3436,19 +3506,19 @@ class PAOFLOW:
                 )
 
         except Exception as e:
-            self.report_exception('phonons')
-            if attr['abort_on_exception']:
+            self.report_exception("phonons")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Phonons')
+        self.report_module_time("Phonons")
 
     def born_charges(
         self,
         supercell_matrix=None,
         primitive_matrix=None,
-        method='dfpt',
+        method="dfpt",
         forces=None,
-        phonon_dir='phonon',
+        phonon_dir="phonon",
         pp_dir=None,
         prefix=None,
         outdir=None,
@@ -3522,18 +3592,22 @@ class PAOFLOW:
         """
         from .phonon.do_born_charges import compute_born_and_epsilon
         from .phonon.do_phonopy import generate_displacements, init_phonopy
-        from .phonon.io import read_hubbard_card, write_field_inputs, write_ph_epsil_input
+        from .phonon.io import (
+            read_hubbard_card,
+            write_field_inputs,
+            write_ph_epsil_input,
+        )
 
         arry, attr = self.data_controller.data_dicts()
 
         method = str(method).lower()
-        if method not in ('dfpt', 'field'):
+        if method not in ("dfpt", "field"):
             raise ValueError("born_charges method must be 'dfpt' or 'field'.")
 
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
         if primitive_matrix is not None:
-            attr['phonon_primitive_matrix'] = primitive_matrix
+            attr["phonon_primitive_matrix"] = primitive_matrix
 
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
@@ -3543,7 +3617,7 @@ class PAOFLOW:
             generate_displacements(self.data_controller)
 
             if forces is None:
-                if method == 'dfpt':
+                if method == "dfpt":
                     path = write_ph_epsil_input(
                         self.data_controller,
                         phonon_dir=phonon_dir,
@@ -3552,7 +3626,7 @@ class PAOFLOW:
                     )
                     if self.rank == 0:
                         print(
-                            'Wrote ph.x input %s. Run ph.x on it, then re-call '
+                            "Wrote ph.x input %s. Run ph.x on it, then re-call "
                             "born_charges(method='dfpt', forces='qe')." % path
                         )
                 else:
@@ -3568,13 +3642,14 @@ class PAOFLOW:
                     )
                     if self.rank == 0:
                         print(
-                            'Wrote %d lelfield QE inputs. Run pw.x on each, then '
-                            "re-call born_charges(method='field', forces='qe')." % len(paths)
+                            "Wrote %d lelfield QE inputs. Run pw.x on each, then "
+                            "re-call born_charges(method='field', forces='qe')."
+                            % len(paths)
                         )
-                self.report_module_time('Born Charges (write inputs)')
+                self.report_module_time("Born Charges (write inputs)")
                 return
 
-            if isinstance(forces, str) and forces.lower() == 'qe':
+            if isinstance(forces, str) and forces.lower() == "qe":
                 compute_born_and_epsilon(
                     self.data_controller,
                     method=method,
@@ -3586,22 +3661,22 @@ class PAOFLOW:
             else:
                 raise ValueError(
                     "born_charges forces must be None (write inputs) or 'qe' "
-                    '(harvest the QE output).'
+                    "(harvest the QE output)."
                 )
 
         except Exception as e:
-            self.report_exception('born_charges')
-            if attr['abort_on_exception']:
+            self.report_exception("born_charges")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Born Charges')
+        self.report_module_time("Born Charges")
 
     def ir_spectrum(
         self,
         supercell_matrix=None,
         primitive_matrix=None,
-        forces='qe',
-        phonon_dir='phonon',
+        forces="qe",
+        phonon_dir="phonon",
         born_file=None,
         born=None,
         dielectric=None,
@@ -3609,8 +3684,8 @@ class PAOFLOW:
         freq_max=None,
         npoints=2000,
         gamma=4.0,
-        units='cm-1',
-        fname='phonon',
+        units="cm-1",
+        fname="phonon",
     ):
         """Infrared spectrum from Born charges and zone-centre eigenvectors (Stage 3).
 
@@ -3665,15 +3740,15 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
         if primitive_matrix is not None:
-            attr['phonon_primitive_matrix'] = primitive_matrix
+            attr["phonon_primitive_matrix"] = primitive_matrix
 
         try:
             init_phonopy(self.data_controller)
             generate_displacements(self.data_controller)
 
-            if isinstance(forces, str) and forces.lower() == 'qe':
+            if isinstance(forces, str) and forces.lower() == "qe":
                 harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
                 produce_force_constants(self.data_controller)
             elif isinstance(forces, str):
@@ -3696,23 +3771,23 @@ class PAOFLOW:
             )
 
         except Exception as e:
-            self.report_exception('ir_spectrum')
-            if attr['abort_on_exception']:
+            self.report_exception("ir_spectrum")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('IR Spectrum')
+        self.report_module_time("IR Spectrum")
 
     def _raman_cell_epsilon(
         self,
         savedir,
         workpath,
         basispath,
-        configuration='extended',
+        configuration="extended",
         pthr=0.95,
         nonlocal_velocity=True,
         nfft=None,
         e_static=0.05,
-        eps_outdir='eps',
+        eps_outdir="eps",
         energies=None,
         lifetime=0.1,
         e_window=None,
@@ -3744,8 +3819,8 @@ class PAOFLOW:
             workpath=workpath,
             outputdir=eps_outdir,
             savedir=savedir,
-            smearing=attr.get('smearing', 'gauss'),
-            npool=attr.get('npool', 1),
+            smearing=attr.get("smearing", "gauss"),
+            npool=attr.get("npool", 1),
             verbose=False,
         )
         pf.projections(basispath=basispath, configuration=configuration)
@@ -3761,39 +3836,47 @@ class PAOFLOW:
         if energies is None:
             pf.dielectric_tensor(emin=0.0, emax=e_static, ne=2, d_tensor=d_tensor)
             _, pat = pf.data_controller.data_dicts()
-            return read_static_epsilon(pat['opath'], nspin=int(pat.get('nspin', 1)))
+            return read_static_epsilon(pat["opath"], nspin=int(pat.get("nspin", 1)))
 
         energies = np.atleast_1d(np.asarray(energies, dtype=float))
-        grid_max = float(e_window) if e_window else float(np.max(energies)) * 1.25 + 5.0 * lifetime
+        grid_max = (
+            float(e_window)
+            if e_window
+            else float(np.max(energies)) * 1.25 + 5.0 * lifetime
+        )
         grid_ne = (
             int(e_ne)
             if e_ne
             else max(201, int(np.ceil(grid_max / max(lifetime / 4.0, 1.0e-3))) + 1)
         )
-        pf.dielectric_tensor(delta=lifetime, emin=0.0, emax=grid_max, ne=grid_ne, d_tensor=d_tensor)
+        pf.dielectric_tensor(
+            delta=lifetime, emin=0.0, emax=grid_max, ne=grid_ne, d_tensor=d_tensor
+        )
         _, pat = pf.data_controller.data_dicts()
-        nspin = int(pat.get('nspin', 1))
-        stack = np.stack([read_epsilon_at(pat['opath'], energy=e, nspin=nspin) for e in energies])
+        nspin = int(pat.get("nspin", 1))
+        stack = np.stack(
+            [read_epsilon_at(pat["opath"], energy=e, nspin=nspin) for e in energies]
+        )
         if return_static:
-            return stack, read_static_epsilon(pat['opath'], nspin=nspin)
+            return stack, read_static_epsilon(pat["opath"], nspin=nspin)
         return stack
 
     def raman_spectrum(
         self,
         supercell_matrix=None,
         primitive_matrix=None,
-        forces='qe',
-        phonon_dir='phonon',
-        raman_dir='raman',
+        forces="qe",
+        phonon_dir="phonon",
+        raman_dir="raman",
         delta=0.05,
         nbnd=None,
         basispath=None,
-        configuration='extended',
+        configuration="extended",
         pthr=0.95,
         nonlocal_velocity=True,
         nfft=None,
         e_static=0.05,
-        method='static',
+        method="static",
         lifetime=0.1,
         e_window=None,
         e_ne=None,
@@ -3804,8 +3887,8 @@ class PAOFLOW:
         freq_max=None,
         npoints=2000,
         gamma=4.0,
-        units='cm-1',
-        fname='phonon',
+        units="cm-1",
+        fname="phonon",
         generate=None,
     ):
         """Raman spectrum by finite differences of the dielectric tensor (Stage 4).
@@ -3915,15 +3998,15 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
         if primitive_matrix is not None:
-            attr['phonon_primitive_matrix'] = primitive_matrix
+            attr["phonon_primitive_matrix"] = primitive_matrix
 
         try:
             init_phonopy(self.data_controller)
             generate_displacements(self.data_controller)
 
-            if isinstance(forces, str) and forces.lower() == 'qe':
+            if isinstance(forces, str) and forces.lower() == "qe":
                 harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
                 produce_force_constants(self.data_controller)
             elif isinstance(forces, str):
@@ -3938,8 +4021,12 @@ class PAOFLOW:
                 from os.path import isdir
 
                 try:
-                    _, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
-                    run_analyse = bool(entries) and all(isdir(save) for _, _, _, save in entries)
+                    _, entries = raman_cell_dirs(
+                        self.data_controller, raman_dir=raman_dir
+                    )
+                    run_analyse = bool(entries) and all(
+                        isdir(save) for _, _, _, save in entries
+                    )
                 except FileNotFoundError:
                     run_analyse = False
             elif generate is True:
@@ -3954,33 +4041,35 @@ class PAOFLOW:
                     raman_dir=raman_dir,
                     nbnd=nbnd,
                 )
-                if self.rank == 0 and attr.get('verbose', False):
+                if self.rank == 0 and attr.get("verbose", False):
                     print(
-                        'Raman: displaced-cell SCF inputs written; run them, then re-run to analyse.'
+                        "Raman: displaced-cell SCF inputs written; run them, then re-run to analyse."
                     )
-                self.report_module_time('Raman Spectrum')
+                self.report_module_time("Raman Spectrum")
                 return
 
             # --- analyse phase -------------------------------------------------
-            phonon = arry['phonopy']
+            phonon = arry["phonopy"]
             nmodes = 3 * len(phonon.primitive)
-            optical, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+            optical, entries = raman_cell_dirs(
+                self.data_controller, raman_dir=raman_dir
+            )
 
             # Laser wavelength(s) / photon energies for the resonance harvest.
             method_l = str(method).lower()
-            if method_l not in ('static', 'resonance', 'all'):
+            if method_l not in ("static", "resonance", "all"):
                 raise ValueError(
                     "raman_spectrum: method must be 'static', 'resonance' or 'all' "
-                    '(got %r).' % method
+                    "(got %r)." % method
                 )
-            want_static = method_l in ('static', 'all')
-            want_resonance = method_l in ('resonance', 'all')
+            want_static = method_l in ("static", "all")
+            want_resonance = method_l in ("resonance", "all")
 
             if want_resonance:
                 if laser_nm is None:
                     raise ValueError(
-                        'raman_spectrum(method=%r) requires laser_nm=... '
-                        '(the excitation wavelength(s) in nm).' % method_l
+                        "raman_spectrum(method=%r) requires laser_nm=... "
+                        "(the excitation wavelength(s) in nm)." % method_l
                     )
                 laser_list = [float(x) for x in np.atleast_1d(laser_nm)]
                 # E(eV) = h c / lambda, with h c = 1239.841984 eV*nm.
@@ -3989,11 +4078,11 @@ class PAOFLOW:
                 laser_list = []
                 res_energies = []
 
-            if dielectric_callback is not None and method_l == 'all':
+            if dielectric_callback is not None and method_l == "all":
                 raise ValueError(
-                    'raman_spectrum: dielectric_callback is not supported with '
+                    "raman_spectrum: dielectric_callback is not supported with "
                     "method='all'; call method='static' and method='resonance' "
-                    'separately with your callback instead.'
+                    "separately with your callback instead."
                 )
 
             # One output channel per spectrum to produce.  Each carries its own
@@ -4004,24 +4093,24 @@ class PAOFLOW:
             if want_static:
                 # Bare Placzek for 'all'; pass the (scalar) laser through for a
                 # plain static run to preserve the historical behaviour.
-                static_laser = laser_nm if method_l == 'static' else None
+                static_laser = laser_nm if method_l == "static" else None
                 static_channel = {
-                    'fname': fname + '_static' if method_l == 'all' else fname,
-                    'laser': static_laser,
-                    'plus': np.zeros((nmodes, 3, 3), dtype=float),
-                    'minus': np.zeros((nmodes, 3, 3), dtype=float),
+                    "fname": fname + "_static" if method_l == "all" else fname,
+                    "laser": static_laser,
+                    "plus": np.zeros((nmodes, 3, 3), dtype=float),
+                    "minus": np.zeros((nmodes, 3, 3), dtype=float),
                 }
                 channels.append(static_channel)
 
             res_channels = []
-            multi = method_l == 'all' or len(laser_list) > 1
+            multi = method_l == "all" or len(laser_list) > 1
             for i, nm in enumerate(laser_list):
                 ch = {
-                    'fname': '%s_%dnm' % (fname, int(round(nm))) if multi else fname,
-                    'laser': nm,
-                    'plus': np.zeros((nmodes, 3, 3), dtype=complex),
-                    'minus': np.zeros((nmodes, 3, 3), dtype=complex),
-                    'index': i,
+                    "fname": "%s_%dnm" % (fname, int(round(nm))) if multi else fname,
+                    "laser": nm,
+                    "plus": np.zeros((nmodes, 3, 3), dtype=complex),
+                    "minus": np.zeros((nmodes, 3, 3), dtype=complex),
+                    "index": i,
                 }
                 channels.append(ch)
                 res_channels.append(ch)
@@ -4039,8 +4128,8 @@ class PAOFLOW:
                 elif want_resonance:
                     if basispath is None:
                         raise ValueError(
-                            'raman_spectrum analyse phase needs basispath=... '
-                            '(or a dielectric_callback) for the internal PAO projections.'
+                            "raman_spectrum analyse phase needs basispath=... "
+                            "(or a dielectric_callback) for the internal PAO projections."
                         )
                     out = self._raman_cell_epsilon(
                         save,
@@ -4063,8 +4152,8 @@ class PAOFLOW:
                 else:
                     if basispath is None:
                         raise ValueError(
-                            'raman_spectrum analyse phase needs basispath=... '
-                            '(or a dielectric_callback) for the internal PAO projections.'
+                            "raman_spectrum analyse phase needs basispath=... "
+                            "(or a dielectric_callback) for the internal PAO projections."
                         )
                     stat = self._raman_cell_epsilon(
                         save,
@@ -4077,45 +4166,45 @@ class PAOFLOW:
                         e_static=e_static,
                     )
 
-                key = 'plus' if sign == '+' else 'minus'
+                key = "plus" if sign == "+" else "minus"
                 if static_channel is not None and stat is not None:
                     static_channel[key][v] = np.real(stat)
                 if res_stack is not None:
                     res_stack = np.asarray(res_stack)
                     for ch in res_channels:
-                        ch[key][v] = res_stack[ch['index']]
+                        ch[key][v] = res_stack[ch["index"]]
                 computed[v] = True
 
             for ch in channels:
                 compute_raman_spectrum(
                     self.data_controller,
-                    ch['plus'],
-                    ch['minus'],
+                    ch["plus"],
+                    ch["minus"],
                     delta,
                     computed=computed,
-                    laser_nm=ch['laser'],
+                    laser_nm=ch["laser"],
                     temperature=temperature,
                     freq_min=freq_min,
                     freq_max=freq_max,
                     npoints=npoints,
                     gamma=gamma,
                     units=units,
-                    fname=ch['fname'],
+                    fname=ch["fname"],
                 )
 
         except Exception as e:
-            self.report_exception('raman_spectrum')
-            if attr['abort_on_exception']:
+            self.report_exception("raman_spectrum")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Raman Spectrum')
+        self.report_module_time("Raman Spectrum")
 
     def vibrational_dielectric(
         self,
         supercell_matrix=None,
         primitive_matrix=None,
-        forces='qe',
-        phonon_dir='phonon',
+        forces="qe",
+        phonon_dir="phonon",
         born_file=None,
         born=None,
         dielectric=None,
@@ -4123,14 +4212,14 @@ class PAOFLOW:
         freq_min=None,
         freq_max=None,
         npoints=2000,
-        units='cm-1',
+        units="cm-1",
         emit_ev=True,
         emissivity=False,
         emis_angles=(0.0,),
         emis_ntheta=64,
         emis_temperature=(300.0,),
-        outdir='vibdielectric',
-        fname='phonon',
+        outdir="vibdielectric",
+        fname="phonon",
     ):
         """Vibrational (ionic) dielectric function eps(omega) (Stage 5).
 
@@ -4211,15 +4300,15 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
         if primitive_matrix is not None:
-            attr['phonon_primitive_matrix'] = primitive_matrix
+            attr["phonon_primitive_matrix"] = primitive_matrix
 
         try:
             init_phonopy(self.data_controller)
             generate_displacements(self.data_controller)
 
-            if isinstance(forces, str) and forces.lower() == 'qe':
+            if isinstance(forces, str) and forces.lower() == "qe":
                 harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
                 produce_force_constants(self.data_controller)
             elif isinstance(forces, str):
@@ -4248,11 +4337,11 @@ class PAOFLOW:
             )
 
         except Exception as e:
-            self.report_exception('vibrational_dielectric')
-            if attr['abort_on_exception']:
+            self.report_exception("vibrational_dielectric")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Vibrational Dielectric')
+        self.report_module_time("Vibrational Dielectric")
 
     def quasi_harmonic(
         self,
@@ -4262,7 +4351,7 @@ class PAOFLOW:
         nvolumes=5,
         strain=0.02,
         forces=None,
-        qha_dir='qha',
+        qha_dir="qha",
         pp_dir=None,
         prefix=None,
         kgrid=None,
@@ -4272,7 +4361,7 @@ class PAOFLOW:
         t_min=0.0,
         t_max=1000.0,
         t_step=10.0,
-        eos='vinet',
+        eos="vinet",
         pressure=0.0,
         ibrav=None,
         q_path=None,
@@ -4280,8 +4369,8 @@ class PAOFLOW:
         q_npoints=101,
         gruneisen_band=True,
         gruneisen_cutoff=None,
-        units='THz',
-        fname='qha',
+        units="THz",
+        fname="qha",
     ):
         """Quasi-harmonic approximation over an isotropic volume scan (Stage 4).
 
@@ -4367,15 +4456,15 @@ class PAOFLOW:
         arry, attr = self.data_controller.data_dicts()
 
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
         if primitive_matrix is not None:
-            attr['phonon_primitive_matrix'] = primitive_matrix
+            attr["phonon_primitive_matrix"] = primitive_matrix
         if displacement_distance is not None:
-            attr['phonon_displacement_distance'] = displacement_distance
+            attr["phonon_displacement_distance"] = displacement_distance
         if mesh is not None:
-            attr['phonon_q_mesh'] = mesh
+            attr["phonon_q_mesh"] = mesh
         if ibrav is not None:
-            attr['ibrav'] = ibrav
+            attr["ibrav"] = ibrav
 
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
@@ -4394,17 +4483,17 @@ class PAOFLOW:
                 )
                 if self.rank == 0:
                     print(
-                        'Wrote QHA inputs for %d volumes under %s. Run pw.x on '
-                        'every scf.in and supercell-NNN.in, then re-call '
+                        "Wrote QHA inputs for %d volumes under %s. Run pw.x on "
+                        "every scf.in and supercell-NNN.in, then re-call "
                         "quasi_harmonic(forces='qe')." % (len(dirs), qha_dir)
                     )
-                self.report_module_time('Quasi-Harmonic (write inputs)')
+                self.report_module_time("Quasi-Harmonic (write inputs)")
                 return
 
-            if not (isinstance(forces, str) and forces.lower() == 'qe'):
+            if not (isinstance(forces, str) and forces.lower() == "qe"):
                 raise ValueError(
                     "quasi_harmonic forces must be None (write inputs) or 'qe' "
-                    '(harvest the QE outputs).'
+                    "(harvest the QE outputs)."
                 )
 
             run_qha(
@@ -4429,28 +4518,28 @@ class PAOFLOW:
             )
 
         except Exception as e:
-            self.report_exception('quasi_harmonic')
-            if attr['abort_on_exception']:
+            self.report_exception("quasi_harmonic")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Quasi-Harmonic')
+        self.report_module_time("Quasi-Harmonic")
 
     def electron_phonon(
         self,
         supercell_matrix=None,
         displacement_distance=0.06,
         forces=None,
-        elphon_dir='elphon',
+        elphon_dir="elphon",
         pp_dir=None,
         prefix=None,
         kgrid=None,
         hubbard_file=None,
         hubbard_card=None,
-        configuration='standard',
+        configuration="standard",
         basispath=None,
         nbnd=None,
-        is_plusminus='auto',
-        displacement_mode='symmetry',
+        is_plusminus="auto",
+        displacement_mode="symmetry",
         pthr=0.95,
         shift_type=1,
         project_good_subspace=True,
@@ -4531,7 +4620,7 @@ class PAOFLOW:
         # Record the supercell so the analyse-phase helpers (assemble_eph_tensor,
         # eliashberg) can initialise phonopy without re-running the generate phase.
         if supercell_matrix is not None:
-            attr['phonon_supercell_matrix'] = supercell_matrix
+            attr["phonon_supercell_matrix"] = supercell_matrix
 
         if hubbard_card is None and hubbard_file is not None:
             hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
@@ -4554,11 +4643,11 @@ class PAOFLOW:
                 )
                 if self.rank == 0:
                     print(
-                        'Wrote %d displaced-supercell QE inputs for electron-phonon '
-                        'under %s. Run pw.x on each, then re-call '
+                        "Wrote %d displaced-supercell QE inputs for electron-phonon "
+                        "under %s. Run pw.x on each, then re-call "
                         "electron_phonon(forces='qe')." % (len(paths), elphon_dir)
                     )
-                self.report_module_time('Electron-Phonon (write inputs)')
+                self.report_module_time("Electron-Phonon (write inputs)")
                 return
 
             run_eph(
@@ -4572,15 +4661,15 @@ class PAOFLOW:
             )
 
         except Exception as e:
-            self.report_exception('electron_phonon')
-            if attr['abort_on_exception']:
+            self.report_exception("electron_phonon")
+            if attr["abort_on_exception"]:
                 raise e
 
-        self.report_module_time('Electron-Phonon')
+        self.report_module_time("Electron-Phonon")
 
     def linear_response(
         self,
-        response='shc',
+        response="shc",
         gamma=0.01,
         twoD=False,
         t_odd=False,
@@ -4638,64 +4727,76 @@ class PAOFLOW:
             None
         """
         arry, attr = self.data_controller.data_dicts()
-        attr['response'] = response
-        attr['gamma'] = gamma
-        attr['twoD'] = twoD
-        attr['eminH'] = eminH
-        attr['emaxH'] = np.amin(np.array([attr['shift'], emaxH]))
-        attr['esize'] = esize
-        attr['intraband'] = intraband
-        attr['interband'] = interband
-        attr['t_odd'] = t_odd
-        attr['full_chi2'] = full_chi2
+        attr["response"] = response
+        attr["gamma"] = gamma
+        attr["twoD"] = twoD
+        attr["eminH"] = eminH
+        attr["emaxH"] = np.amin(np.array([attr["shift"], emaxH]))
+        attr["esize"] = esize
+        attr["intraband"] = intraband
+        attr["interband"] = interband
+        attr["t_odd"] = t_odd
+        attr["full_chi2"] = full_chi2
 
         if s_tensor is not None:
-            arry['ree_tensor'] = a_tensor
+            arry["ree_tensor"] = a_tensor
         else:
-            arry['ree_tensor'] = arry['a_tensor']
+            arry["ree_tensor"] = arry["a_tensor"]
 
         if s_tensor is not None:
-            arry['shc_tensor'] = s_tensor
+            arry["shc_tensor"] = s_tensor
         else:
-            arry['shc_tensor'] = arry['s_tensor']
+            arry["shc_tensor"] = arry["s_tensor"]
 
-        if response == 'shc' or response == 'ree':
-            if 'Sj' not in arry:
+        if response == "shc" or response == "ree":
+            if "Sj" not in arry:
                 self.spin_operator()
-        if 'deltakp' not in arry:
-            if 'pksp' not in arry:
+        if "deltakp" not in arry:
+            if "pksp" not in arry:
                 self.gradient_and_momenta()
             self.adaptive_smearing()
 
-        if response == 'shc':
+        if response == "shc":
             if t_odd:
                 module = (
-                    'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+                    "linear_response_eqn245"
+                    if intraband or interband
+                    else "linear_response_eqn1"
                 )
-            else:
-                module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
-        elif response == 'ree':
-            if t_odd:
-                module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
             else:
                 module = (
-                    'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+                    "linear_response_eqn245" if full_chi2 else "linear_response_eqn3"
                 )
-        elif response == 'cond':
-            module = 'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+        elif response == "ree":
+            if t_odd:
+                module = (
+                    "linear_response_eqn245" if full_chi2 else "linear_response_eqn3"
+                )
+            else:
+                module = (
+                    "linear_response_eqn245"
+                    if intraband or interband
+                    else "linear_response_eqn1"
+                )
+        elif response == "cond":
+            module = (
+                "linear_response_eqn245"
+                if intraband or interband
+                else "linear_response_eqn1"
+            )
 
-        elif response == 'ahc':
-            module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
+        elif response == "ahc":
+            module = "linear_response_eqn245" if full_chi2 else "linear_response_eqn3"
         else:
-            raise ValueError(f'Unknown response type: {response}')
+            raise ValueError(f"Unknown response type: {response}")
 
-        if module == 'linear_response_eqn245':
+        if module == "linear_response_eqn245":
             from .response.linear_response_eqn245 import calc_chi
-        elif module == 'linear_response_eqn1':
+        elif module == "linear_response_eqn1":
             from .response.linear_response_eqn1 import calc_chi
         else:
             from .response.linear_response_eqn3 import calc_chi
 
         calc_chi(self.data_controller)
-        self.report_module_time('Linear response completed')
+        self.report_module_time("Linear response completed")
         self.comm.Barrier()

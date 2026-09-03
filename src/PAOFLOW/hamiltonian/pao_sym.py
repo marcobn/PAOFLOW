@@ -509,7 +509,7 @@ def d_mat_l(AL, BE, GA, l):
             )
 
             # loop over w for summation
-            for w in range(0, w_max):
+            for w in range(w_max):
                 # factorials in denominator must be positive
                 df1 = int(l + mp - w)
                 df2 = int(l - m - w)
@@ -546,20 +546,13 @@ def get_wigner(symop):
     inv_flag = np.zeros((symop.shape[0]), dtype=bool)
 
     for i in range(symop.shape[0]):
-        # get euler angles alpha,beta,gamma from the symop
-        AL, BE, GA = mat2eul(symop[i])
-        AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
-
         # check if there is an inversion in the symop
-        if not np.all(np.isclose(eul2mat(AL, BE, GA), symop[i])):
+        if np.linalg.det(symop[i]) > 0:
+            # get euler angles alpha,beta,gamma from the symop
+            AL, BE, GA = mat2eul(symop[i])
+        else:
             inv_flag[i] = True
             AL, BE, GA = mat2eul(-symop[i])
-            AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
-            if not np.all(np.isclose(eul2mat(AL, BE, GA), -symop[i])):
-                print('ERROR IN MAT2EUL!')
-                print(i + 1)
-                print(symop[i])
-                raise SystemExit
 
         # wigner_d matrix for l=0
         wigner_l0[i] = d_mat_l(AL, BE, GA, 0)
@@ -588,29 +581,13 @@ def get_wigner_so(symop):
     inv_flag = np.zeros((symop.shape[0]), dtype=bool)
 
     for i in range(symop.shape[0]):
-        # get euler angles alpha,beta,gamma from the symop
-        AL, BE, GA = mat2eul(symop[i])
-        AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
         # check if there is an inversion in the symop
-        if not np.all(
-            np.isclose(correct_roundoff(eul2mat(AL, BE, GA)), symop[i], atol=1.0e-3, rtol=1.0e-2)
-        ):
+        if np.linalg.det(symop[i]) > 0:
+            # get euler angles alpha,beta,gamma from the symop
+            AL, BE, GA = mat2eul(symop[i])
+        else:
             inv_flag[i] = True
-
             AL, BE, GA = mat2eul(-symop[i])
-            AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
-            if not np.all(
-                np.isclose(
-                    correct_roundoff(eul2mat(AL, BE, GA)), -symop[i], atol=1.0e-3, rtol=1.0e-2
-                )
-            ):
-                print('ERROR IN MAT2EUL!')
-                print(i + 1)
-                print('RESULT')
-                print(-eul2mat(AL, BE, GA))
-                print('CORRECT')
-                print(symop[i])
-                raise SystemExit
 
         # wigner_d for l=0
         wigner_j05[i] = d_mat_l(AL, BE, GA, 0.5)
