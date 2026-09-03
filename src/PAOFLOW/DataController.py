@@ -666,6 +666,19 @@ class DataController:
                         ]
                     )
                 )
+
+            if self.data_attributes['write_QE_bands'] == True:
+                with open(join(self.data_attributes['opath'], 'kpath.pwscf'), 'w') as f:
+                    f.write('K_POINTS tpiba\n')
+                    f.write(f'{kpnts.shape[1]}\n')
+                    f.write(
+                        ''.join(
+                            [
+                                '%s %s %s 1.0 \n' % (kpnts[0, i], kpnts[1, i], kpnts[2, i])
+                                for i in range(kpnts.shape[1])
+                            ]
+                        )
+                    )
         self.comm.Barrier()
 
     #  def write_xsf ( self, data, fname='rs_plot.xsf' ):
