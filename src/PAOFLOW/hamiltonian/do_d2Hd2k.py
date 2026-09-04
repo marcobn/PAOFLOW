@@ -22,6 +22,14 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
         Distributed real-space Hamiltonian in the FFT representation, where
         each element already contains the factor :math:`i \\cdot a_{\\text{lat}}`
         (i.e. ``HR * 1j * alat``).
+    dHksp : np.ndarray, shape ``(nkpnts, 3, nawf, nawf, nspin)``
+        Gradient of the k-space Hamiltonian.  Its ``i`` component at each
+        k-point is passed to :func:`perturb_split` as the perturbation that
+        defines the rotated basis (see Notes).
+    Dnm : np.ndarray, shape ``(snawf, 3)``
+        Cartesian factors, one per distributed real-space element ``n``,
+        entering the three additional terms of the second derivative
+        (see Notes).
     Rfft : np.ndarray, shape ``(nk1, nk2, nk3, 3)``
         Real-space grid vectors used as multiplication factors in FFT-based
         gradient computation.
@@ -46,6 +54,17 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
         :math:`\\langle n | d^2H / dk_i dk_j | n \\rangle` in the Bloch
         eigenstate basis for the six unique ``ij`` pairs
         ``xx, yy, zz, xy, xz, yz``.
+    vel_degen : list
+        Nested list of shape ``[6][nspin][nkpnts]`` holding the degenerate
+        subspaces of the band velocity along ``i``, obtained by applying
+        :func:`get_degeneracies` to the diagonal of ``dH/dk_i`` in the
+        rotated basis.  Each entry is a list of index groups, one group per
+        degenerate subspace.
+    degen_M : list
+        Nested list of shape ``[6][nspin][nkpnts]`` holding, for each
+        subspace listed in ``vel_degen``, the corresponding diagonal block
+        of :math:`d^2H / dk_i dk_j` in the rotated basis, i.e. an
+        ``np.ndarray`` of shape ``(ul - ll, ul - ll)``.
     dvec_list : list
         Nested list of shape ``[6][nspin][nkpnts]`` containing the modified
         eigenvector arrays after degenerate-subspace diagonalisation (used
@@ -62,11 +81,21 @@ def do_d2Hd2k_ij(Hksp, dHksp, Dnm, Rfft, alat, npool, v_kp, bnd, degen):
 
         d^2 H(\\mathbf{k}) / dk_i dk_j
             = \\mathcal{F}\\left[ R_i R_j \\cdot H(\\mathbf{R}) \\cdot i \\cdot a_{\\text{lat}} \\right]
+            + D_i D_j \\cdot \\mathcal{F}\\left[ H(\\mathbf{R}) \\cdot i / a_{\\text{lat}} \\right]
+            + D_i \\cdot \\mathcal{F}\\left[ R_j \\cdot H(\\mathbf{R}) \\cdot i \\right]
+            + D_j \\cdot \\mathcal{F}\\left[ R_i \\cdot H(\\mathbf{R}) \\cdot i \\right]
 
     where :math:`R_i` is the *i*-th Cartesian component of the real-space
-    lattice vector grid ``Rfft``.  The result is then projected onto the
-    Bloch eigenstate basis using :func:`perturb_split` to correctly handle
-    degenerate bands.
+    lattice vector grid ``Rfft`` and :math:`D_i` is ``Dnm[:, i]``.  The four
+    terms are the expansion of
+    :math:`\\mathcal{F}[(a_{\\text{lat}} R_i + D_i)(a_{\\text{lat}} R_j + D_j)
+    \\cdot H(\\mathbf{R}) \\cdot i / a_{\\text{lat}}]`.  The result is then
+    projected onto the Bloch eigenstate basis using :func:`perturb_split` to
+    correctly handle degenerate bands.  The basis is built from the first
+    argument of :func:`perturb_split`, which is ``dH/dk_i``, so degenerate
+    bands are resolved by the velocity along ``i`` rather than by the second
+    derivative itself; that rotated velocity is reused to build ``vel_degen``
+    and ``degen_M``.
     """
     # ----------------------
     # Compute the gradient of the k-space Hamiltonian

@@ -142,7 +142,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
 
 
 def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
-    r"""Compute the anomalous (Hall) Boltzmann transport tensor L0_hall.
+    r"""Compute the anomalous (Hall) Boltzmann transport tensors L0_hall and L1_hall.
 
     Evaluates the rank-3 Hall conductivity kernel
 
@@ -158,6 +158,17 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
     where :math:`\\epsilon_{pqr}` is the Levi-Civita symbol and
     :math:`M^{-1}_{jq}` is the inverse effective-mass tensor from
     ``arry['d2Ed2k']``.
+
+    ``L0_hall`` is the zeroth energy moment of this kernel and ``L1_hall``
+    its first moment, weighted by :math:`(E_{n\\mathbf{k}} - \\varepsilon)`.
+
+    When ``smearing`` is ``None`` the Fermi-Dirac derivative
+    ``1/(4T cosh\u00b2(...))`` is evaluated analytically and each moment is
+    obtained from a separate :func:`L_loop_hall` call, selected through its
+    ``alpha`` argument.  When adaptive smearing is enabled (``'gauss'`` or
+    ``'m-p'``) the kernel is evaluated once on an extended energy grid and
+    both moments are obtained by convolution with the Fermi window via
+    Simpson quadrature.
 
     Parameters
     ----------
@@ -181,8 +192,8 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
     Returns
     -------
-    L0_hall : ndarray, shape (3, 3, 3, ne), or None
-        Hall transport tensor on rank 0; ``None`` on all other ranks.
+    L0_hall, L1_hall : ndarray, shape (3, 3, 3, ne), or (None, None)
+        Hall transport tensor on rank 0; ``(None, None)`` on all other ranks.
     """
     from scipy.integrate import simpson
 
@@ -457,11 +468,17 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         \\left(\\sum_{qr} \\epsilon_{pqr}\\,
         v^i_{n\\mathbf{k}}\\, v^r_{n\\mathbf{k}}\\,
         M^{-1}_{jq,n\\mathbf{k}}\\right)
-        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)
+        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)\\,
+        (E_{n\\mathbf{k}} - \\varepsilon)^\\alpha
 
     The Levi-Civita symbol :math:`\\epsilon_{pqr}` is a static rank-3
     tensor; the inverse effective-mass tensor components are read
     from ``arry['d2Ed2k']`` and assembled into a full 3\u00d73 matrix.
+
+    The :math:`(E - \\varepsilon)^\\alpha` factor is applied only in the
+    Fermi-Dirac branch; with adaptive smearing the kernel is returned for
+    ``alpha`` = 0 irrespective of the argument, and the energy moment is
+    taken by the caller.
 
     Parameters
     ----------
@@ -481,7 +498,8 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         Tensor component pairs (used to unpack the symmetric effective-mass
         tensor stored as 6 independent components).
     alpha : int
-        Power of the energy factor (currently always 0 for Hall).
+        Power of the ``(E - \u03b5)`` kernel: 0 or 1.  Honoured only when
+        ``smearing`` is ``None``.
     ispin : int
         Spin channel index.
 
@@ -537,7 +555,9 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
     Minv = M_inv[:, :, :, :, ispin]  # (j, q, k, bnd)
     if smearing is None:
         Ediff = Ek[:, :, None] - ene[None, None, :]
+        EtoAlpha = np.power(Ediff, alpha)
         smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
+        smearA = smearA * EtoAlpha
     else:
         delk = arrays['deltakp'][:, :bnd, ispin][:, :, None]
         if smearing == 'gauss':
