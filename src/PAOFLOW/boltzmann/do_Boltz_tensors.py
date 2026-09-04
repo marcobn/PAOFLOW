@@ -66,7 +66,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
     #### Forced t_tensor to have all components
     t_tensor = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
 
-    # Quick call function for L_loop (None is smearing type)
+    # Quick call function for L_loop
     fLloop = lambda spol: L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, spol, ispin)
 
     # Quick call function for Zeros on rank Zero
@@ -184,6 +184,8 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
     L0_hall : ndarray, shape (3, 3, 3, ne), or None
         Hall transport tensor on rank 0; ``None`` on all other ranks.
     """
+    from scipy.integrate import simpson
+
     arrays, _ = data_controller.data_dicts()
 
     esize = ene.size
@@ -192,17 +194,62 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
     #### Forced t_tensor to have all components
     t_tensor = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
 
-    # Quick call function for L_loop (None is smearing type)
-
     # Quick call function for Zeros on rank Zero
     zoz = lambda r: np.zeros((3, 3, 3, esize), dtype=float) if r == 0 else None
 
-    L0_hall = zoz(rank)
-    L0_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 0, ispin)
-    comm.Reduce(L0_hall_aux, L0_hall, op=MPI.SUM)
-    L0_hall_aux = None
+    if smearing is None:
+        L0_hall = zoz(rank)
+        L0_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 0, ispin)
+        comm.Reduce(L0_hall_aux, L0_hall, op=MPI.SUM)
+        L0_hall_aux = None
 
-    return L0_hall if rank == 0 else None
+        L1_hall = zoz(rank)
+        L1_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 1, ispin)
+        comm.Reduce(L1_hall_aux, L1_hall, op=MPI.SUM)
+        L1_hall_aux = None
+    else:
+        L0_hall = zoz(rank)
+        L1_hall = zoz(rank)
+
+        # Fixed threshold
+        thresh = 1e-9
+        dE_max = 2 * temp * np.arccosh(1 / np.sqrt(thresh))
+
+        if len(ene) > 1:
+            dE = ene[1] - ene[0]
+        else:
+            dE = 2 * temp * np.arccosh(1 / np.sqrt(thresh)) * 1e-2 + 1e-8
+
+        lower = np.flip(np.arange(ene[0] - dE, ene[0] - dE_max - dE, -dE))
+        upper = np.arange(ene[-1] + dE, ene[-1] + dE_max + dE, dE)
+        ene_aux = np.concatenate((lower, ene, upper))
+
+        L0_hall_ext = np.zeros((3, 3, 3, ene_aux.size), dtype=float) if rank == 0 else None
+        L0_hall_aux = L_loop_hall(
+            data_controller, temp, smearing, ene_aux, velkp, t_tensor, 0, ispin
+        )
+        comm.Reduce(L0_hall_aux, L0_hall_ext, op=MPI.SUM)
+        L0_hall_aux = None
+
+        if rank == 0:
+            # Interpolate
+            ene_int = np.linspace(ene_aux[0], ene_aux[-1], 2 * ene_aux.size - 1)
+            L0_hall_int = np.zeros((3, 3, 3, ene_int.size), dtype=float)
+            for h_indx in np.ndindex((3, 3, 3)):
+                L0_hall_int[h_indx[0], h_indx[1], h_indx[2], :] = np.interp(
+                    ene_int, ene_aux, L0_hall_ext[h_indx[0], h_indx[1], h_indx[2], :]
+                )
+
+            for i, ef in enumerate(ene):
+                fermi_smear = 1 / (4 * temp * (np.cosh((ene_int - ef) / (2 * temp)) ** 2))
+
+                for h_indx in np.ndindex((3, 3, 3)):
+                    L_hall_smear_aux = L0_hall_int[h_indx[0], h_indx[1], h_indx[2], :] * fermi_smear
+                    L0_hall[h_indx[0], h_indx[1], h_indx[2], i] = simpson(L_hall_smear_aux, ene_int)
+                    L1_hall[h_indx[0], h_indx[1], h_indx[2], i] = simpson(
+                        L_hall_smear_aux * (ene_int - ef), ene_int
+                    )
+    return (L0_hall, L1_hall) if rank == 0 else (None, None)
 
 
 def get_tau(data_controller, temp, channels, weights):
