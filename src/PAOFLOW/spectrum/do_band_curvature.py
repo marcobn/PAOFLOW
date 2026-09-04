@@ -5,7 +5,8 @@ def do_band_curvature(data_controller):
     ----------
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
-        Required arrays: ``Hksp``, ``Rfft``, ``E_k``, ``dHksp``, ``v_k``, ``degen``.
+        Required arrays: ``Hksp``, ``Rfft``, ``E_k``, ``dHksp``, ``Dnm``,
+        ``v_k``, ``degen``.
         Required attributes: ``bnd``, ``nawf``, ``alat``, ``npool``.
 
     Returns
@@ -20,7 +21,7 @@ def do_band_curvature(data_controller):
 
     Notes
     -----
-    The curvature tensor is computed in two steps.
+    The curvature tensor is computed in three steps.
 
     First, the diagonal matrix elements of :math:`d^2H/dk_i dk_j` in the
     Bloch eigenstate basis are obtained by calling :func:`do_d2Hd2k_ij`.
@@ -39,8 +40,17 @@ def do_band_curvature(data_controller):
 
     Degenerate subspaces are handled by :func:`perturb_split` and the
     modified eigenvector set returned in ``dvec_list`` is reused here.
-    Pairs with :math:`|E_n - E_m| < 10^{-5}` eV are excluded to avoid
+    Pairs with :math:`|E_n - E_m| < 10^{-3}` eV are excluded to avoid
     numerical divergences.
+
+    Third, for the degenerate subspaces returned in ``degen_idx``, the
+    diagonal elements obtained above are overwritten by the eigenvalues of
+    the subspace block :math:`M + P + P^{\\dagger}`, where :math:`M` is the
+    block of :math:`d^2H/dk_i dk_j` returned in ``degen_d2Hdk`` and
+    :math:`P = \\partial_{k_i} H \\, [\\partial_{k_j} H / (E_n - E_m)]`
+    restricted to the same block.  This resolves the subspaces in which the
+    perturbative sum above is ill-defined because the bands are degenerate
+    in both energy and band velocity.
     """
 
     import numpy as np

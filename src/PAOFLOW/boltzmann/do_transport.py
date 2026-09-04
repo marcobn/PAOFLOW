@@ -22,7 +22,8 @@ def do_transport(
     weights : array_like
         k-point weights passed to :func:`do_Boltz_tensors`.
     do_hall : bool
-        If ``True``, also compute the antisymmetric Hall coefficient tensor.
+        If ``True``, also compute the antisymmetric Hall coefficient tensor
+        and the Nernst tensor.
     write_to_file : bool
         If ``True``, write all transport tensors to formatted ``.dat`` files
         in ``opath``.
@@ -44,8 +45,13 @@ def do_transport(
           :math:`\\kappa` in W m⁻¹ K⁻¹.
         - ``PF[smearing]_{ispin}.dat``: power factor
           :math:`S^2 \\sigma` in W m⁻¹ K⁻².
-        - ``hall_trace_{ispin}.dat`` (if ``do_hall``): trace of the Hall
-          coefficient tensor :math:`R_H` in m³ C⁻¹.
+        - ``hall_trace[smearing]_{ispin}.dat`` (if ``do_hall``): trace of the
+          Hall coefficient tensor :math:`R_H` in m³ C⁻¹.
+        - ``hall[smearing]_{ispin}.dat`` (if ``do_hall``): the nine
+          antisymmetrised components :math:`(R_{ijr} - R_{jir})/2` of the Hall
+          coefficient tensor in m³ C⁻¹.
+        - ``nernst[smearing]_{ispin}.dat`` (if ``do_hall``): the eighteen
+          off-diagonal components :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹.
 
         When ``save_tensors`` is ``True``, adds the following keys to
         ``data_controller.data_arrays``:
@@ -58,6 +64,10 @@ def do_transport(
           conductivity tensor in W m⁻¹ K⁻¹.
         - ``R_hall_trace`` : np.ndarray, shape ``(esize,)`` — averaged
           Hall coefficient in m³ C⁻¹ (only if ``do_hall``).
+        - ``R_hall`` : np.ndarray, shape ``(3, 3, 3, esize)`` — Hall
+          coefficient tensor in m³ C⁻¹ (only if ``do_hall``).
+        - ``nernst`` : np.ndarray, shape ``(3, 3, 3, esize)`` — Nernst
+          tensor (only if ``do_hall``).
 
     Notes
     -----
@@ -79,10 +89,18 @@ def do_transport(
 
     .. math::
 
-        R_H = (\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
+        R_H = -(\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
 
     and reported as the average of the three even-permutation components
     :math:`(R_{012} + R_{201} + R_{120}) / 3`.
+
+    The Nernst tensor is built from the Hall coefficient and the first-order
+    Hall transport tensor :math:`\\mathcal{L}^{(1,\\text{Hall})}` as
+
+    .. math::
+
+        N = R_H\\, \\mathcal{L}^{(1)} +
+            (\\sigma^{-1})\\, \\mathcal{L}^{(1,\\text{Hall})}
 
     Conversion factors: ``siemen_conv = 6.9884`` converts internal units to
     S m⁻¹ × 10⁻²¹; ``temp_conv = 11604.525`` converts Kelvin to eV⁻¹;
@@ -216,7 +234,7 @@ def do_transport(
                 if write_to_file:
                     for i in range(esize):
                         wtup(fsigma, gtup(sigma, i))
-                    sigma = None
+
                 if save_tensors:
                     arrays['sigma'] = sigma
 
@@ -258,14 +276,14 @@ def do_transport(
                 if write_to_file:
                     for i in range(esize):
                         wtup(fkappa, gtup(kappa, i))
-                    kappa = None
+
                 if save_tensors:
                     arrays['kappa'] = kappa
 
                 PF = np.zeros((3, 3, esize), dtype=float)
                 for n in range(esize):
                     PF[:, :, n] = np.dot(np.dot(S[:, :, n], L0[:, :, n]), S[:, :, n]) * 1.0e21
-                S = L0 = None
+                S = L0 = sigma = kappa = None
                 if write_to_file:
                     for i in range(esize):
                         wtup(fPF, gtup(PF, i))
@@ -321,13 +339,9 @@ def do_transport(
                     for n in range(esize):
                         try:
                             for r in range(3):
-                                nernst[:, :, r, n] = (
-                                    R_hall[:, :, r, n] @ L1[:, :, n]
-                                    + npl.inv(L0_unconverted[:, :, n])
-                                    @ L1_hall[:, :, r, n]
-                                    * siemen_conv
-                                    * hall_SI
-                                )
+                                nernst[:, :, r, n] = (R_hall[:, :, r, n] @ L1[:, :, n]) + (
+                                    npl.inv(L0_unconverted[:, :, n]) @ L1_hall[:, :, r, n]
+                                ) * siemen_conv * hall_SI
 
                         except Exception:
                             from ..utils.report_exception import report_exception
