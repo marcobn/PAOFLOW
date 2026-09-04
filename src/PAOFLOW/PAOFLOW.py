@@ -2149,6 +2149,7 @@ class PAOFLOW:
         allow_wall_orbits=True,
         bands='all',
         verbose=False,
+        n_jobs=1,
         **unknown_options,
     ):
         """Calculate quantum-oscillation frequencies with pyskeaf.
@@ -2371,6 +2372,7 @@ class PAOFLOW:
             phi_start=math.radians(polar_values[0]),
             phi_end=math.radians(polar_values[-1]),
             num_rots=int(num_angles),
+            n_jobs=n_jobs,
         )
 
         output_path = Path(attr['opath'])
@@ -2423,7 +2425,7 @@ class PAOFLOW:
                 return
             message = 'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
             print(
-                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: ' f'{message}',
+                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: {message}',
                 flush=True,
             )
 
