@@ -3000,9 +3000,32 @@ class PAOFLOW:
                         ipol = arrays['ree_tensor'][i, 0]
                         spol = arrays['ree_tensor'][i, 1]
 
-                        do_rashba_edelstein_intra(
-                            self.data_controller, 'orbital', ene, delta, ipol, spol, arrays['Lj'], P
-                        )
+                        if ree_proj == None:
+                            P = np.eye(attr['nawf'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'orbital',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Lj'],
+                                P,
+                            )
+                        else:
+                            if 'naw' not in arrays:
+                                arrays['naw'] = orbital_array(self.data_controller)
+                            P = do_projection_operator(self.data_controller, arrays['ree_proj'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'orbital',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Lj'],
+                                P,
+                            )
 
             else:
                 if spin == True:
