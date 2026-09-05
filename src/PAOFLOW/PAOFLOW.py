@@ -439,15 +439,19 @@ class PAOFLOW:
         verbose = self.data_controller.data_attributes['verbose']
 
         if verbose:
-            # Add up memory usage from each core
+            # Add up memory usage from each core.  ru_maxrss is in kilobytes on
+            # Linux but in bytes on macOS/BSD.
+            import sys
+
+            to_gb = 1024.0**3 if sys.platform == 'darwin' else 1024.0**2
             mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             mem = np.array([mem], dtype=float)
             mem0 = np.zeros(1, dtype=float) if self.rank == 0 else None
             self.comm.Reduce(mem, mem0, op=MPI.SUM, root=0)
 
             if self.rank == 0:
-                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / 1024.0**2))
-                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / 1024.0**2))
+                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
+                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
     def projections(self, internal=False, basispath=None, configuration=None):
         """
@@ -2150,6 +2154,7 @@ class PAOFLOW:
         bands='all',
         verbose=False,
         n_jobs=1,
+        angle_timeout=None,
         **unknown_options,
     ):
         """Calculate quantum-oscillation frequencies with pyskeaf.
@@ -2192,6 +2197,14 @@ class PAOFLOW:
             Also write short, long, and orbit-outline diagnostic files. The
             physical ``qo_EF_<energy>_freqvsangle_*.out`` files are always
             written.
+        n_jobs : int, default 1
+            Number of parallel worker processes used for the angle sweep.
+            Ignored under MPI, which distributes angles across ranks instead.
+        angle_timeout : float or None, default None
+            Seconds allowed for any single angle when ``n_jobs`` exceeds 1.
+            ``None`` waits indefinitely. Set it above the expected per-angle
+            runtime to turn a stalled worker into a ``TimeoutError`` instead of
+            an unbounded hang.
 
         Returns
         -------
@@ -2227,6 +2240,8 @@ class PAOFLOW:
             "      bands='all',  # or 1, 'custom_name', or "
             "(1, 8, 'custom_name')\n"
             '      verbose=False,  # bool\n'
+            '      n_jobs=1,  # parallel workers for the angle sweep\n'
+            '      angle_timeout=None,  # seconds per angle, or None\n'
             '  )\n'
             'For rotation, provide two values for both azimuthal and polar; '
             "b_field is then set to 'rotation' automatically. BXSF filename "
@@ -2316,6 +2331,10 @@ class PAOFLOW:
             raise _input_error(TypeError, 'allow_wall_orbits must be True or False.')
         if not isinstance(verbose, (bool, np.bool_)):
             raise _input_error(TypeError, 'verbose must be True or False.')
+        if angle_timeout is not None:
+            angle_timeout = _real(angle_timeout, 'angle_timeout')
+            if angle_timeout <= 0.0:
+                raise _input_error(ValueError, 'angle_timeout must be positive or None.')
 
         fermi_energies = _fermi_energy_values(fermi_energy)
         minimum_frequency = _real(minimum_frequency, 'minimum_frequency')
@@ -2373,6 +2392,7 @@ class PAOFLOW:
             phi_end=math.radians(polar_values[-1]),
             num_rots=int(num_angles),
             n_jobs=n_jobs,
+            angle_timeout=angle_timeout,
         )
 
         output_path = Path(attr['opath'])

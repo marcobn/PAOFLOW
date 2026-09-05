@@ -13,8 +13,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
-
 
 RYDBERG_IN_EV = 13.605693122994
 
@@ -44,6 +42,7 @@ class SkeafConfig:
     num_rots: int = 1  # number of angles in auto-rotation
     # Phase 6 — runtime knobs (not part of the Fortran config.in format).
     n_jobs: int = 1  # joblib workers for parallel angle sweeps
+    angle_timeout: float | None = None  # seconds allowed per parallel angle
 
 
 def _strip_field(line: str, width: int) -> str:
@@ -57,7 +56,7 @@ def _strip_field(line: str, width: int) -> str:
     return field if field else line[:width].strip()
 
 
-def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
+def read_config_in(path: str | Path = 'config.in') -> SkeafConfig:
     """Parse a ``config.in`` file in the format produced by the Fortran SKEAF.
 
     The Fermi energy is converted from eV in the file to Rydberg internally.
@@ -68,7 +67,7 @@ def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
         lines = fh.readlines()
     if len(lines) < 15:
         raise ValueError(
-            f'{path}: expected at least 15 lines, got {len(lines)}.  ' 'Is this a SKEAF config.in?'
+            f'{path}: expected at least 15 lines, got {len(lines)}.  Is this a SKEAF config.in?'
         )
 
     # Field widths match the Fortran read formats:
@@ -103,7 +102,7 @@ def read_config_in(path: Union[str, Path] = 'config.in') -> SkeafConfig:
     return cfg
 
 
-def write_config_in(cfg: SkeafConfig, path: Union[str, Path] = 'config.in') -> None:
+def write_config_in(cfg: SkeafConfig, path: str | Path = 'config.in') -> None:
     """Write *cfg* using the SKEAF fixed-width layout.
 
     ``cfg.fermi_energy`` is stored internally in Rydberg and converted to eV

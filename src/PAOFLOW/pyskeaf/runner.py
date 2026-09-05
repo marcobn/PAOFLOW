@@ -14,6 +14,7 @@ reference for the call sequence.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import traceback
@@ -54,6 +55,20 @@ logger = logging.getLogger(__name__)
 
 _RYDBERG_IN_EV = 13.605693122994
 _PAOFLOW_BAND_STEM_RE = re.compile(r'^Fermi_surf_band_(\d+)$')
+
+# One angle easily runs longer than loky's 300 s default idle timeout, so workers
+# waiting on the stragglers of a sweep get reaped and the respawn race can leave
+# a submitted angle without a result, hanging the run indefinitely.
+_IDLE_WORKER_TIMEOUT = 86400.0
+
+
+def _loky_backend_kwargs() -> dict:
+    """Backend kwargs keeping idle loky workers alive, when joblib exposes them."""
+    from joblib._parallel_backends import LokyBackend
+
+    if 'idle_worker_timeout' in inspect.signature(LokyBackend.configure).parameters:
+        return {'idle_worker_timeout': _IDLE_WORKER_TIMEOUT}
+    return {}
 
 
 @dataclass
@@ -444,7 +459,13 @@ def run_skeaf(
         from joblib import Parallel, delayed
 
         logger.info('Dispatching %d angle(s) to %d joblib workers (loky backend)', n_angles, n_jobs)
-        results = Parallel(n_jobs=n_jobs, backend='loky')(delayed(_one)(j) for j in jobs)
+        results = Parallel(
+            n_jobs=n_jobs,
+            backend='loky',
+            batch_size=1,
+            timeout=getattr(config, 'angle_timeout', None),
+            **_loky_backend_kwargs(),
+        )(delayed(_one)(j) for j in jobs)
 
     for _, angle_orbits in results:
         all_orbits.extend(angle_orbits)
