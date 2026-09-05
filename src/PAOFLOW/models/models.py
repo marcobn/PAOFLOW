@@ -3007,7 +3007,7 @@ def build_from_pythTB(data_controller, my_model):
     dR3 = np.zeros((dR.shape[0], 3), dtype=int)
     dR3[:, :ndim] = dR
     hopping = hoptable.amplitudes
-    nks = np.max(dR3, axis=0) * 2 + 1
+    nks = np.max(np.abs(dR3), axis=0) * 2 + 1
     attr['nk1'] = nks[0]
     attr['nk2'] = nks[1]
     attr['nk3'] = nks[2]
