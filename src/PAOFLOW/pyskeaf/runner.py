@@ -17,21 +17,17 @@ from __future__ import annotations
 import logging
 import re
 import traceback
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Union
 
 import numpy as np
 
+from PAOFLOW.pyskeaf._parallel import active_mpi_comm
 from PAOFLOW.pyskeaf.config import SkeafConfig, read_config_in
 from PAOFLOW.pyskeaf.constants import CONV_AU_TO_ANG
 from PAOFLOW.pyskeaf.geometry import set_field_angle
 from PAOFLOW.pyskeaf.io_bxsf import BXSFData, BXSFError, read_bxsf
-from PAOFLOW.pyskeaf.slice_ops import (
-    SliceGeometry,
-    build_slice,
-    make_slice_geometry,
-)
 from PAOFLOW.pyskeaf.orbits import (
     AveragedOrbit,
     average_orbits,
@@ -39,7 +35,6 @@ from PAOFLOW.pyskeaf.orbits import (
     find_extremal,
     match_chunks,
 )
-from PAOFLOW.pyskeaf._parallel import active_mpi_comm
 from PAOFLOW.pyskeaf.results import (
     Orbit,
     SKEAFResult,
@@ -48,6 +43,11 @@ from PAOFLOW.pyskeaf.results import (
     write_results_freqvsangle,
     write_results_long,
     write_results_short,
+)
+from PAOFLOW.pyskeaf.slice_ops import (
+    SliceGeometry,
+    build_slice,
+    make_slice_geometry,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,16 @@ class BXSFRun:
     @property
     def calculated(self) -> bool:
         return self.result is not None
+
+
+def _without_energy_grid(bxsf: BXSFData) -> BXSFData:
+    """Return a copy of ``bxsf`` whose ``(nx, ny, nz)`` energy grid is dropped.
+
+    Header metadata (filename, dimensions, reciprocal vectors) is preserved so
+    result writers keep working, while a multi-file sweep no longer holds one
+    full grid alive per completed band.
+    """
+    return replace(bxsf, energies=np.empty((0, 0, 0)))
 
 
 def _run_mpi_angle_jobs(jobs, worker: Callable, comm):
@@ -138,7 +148,7 @@ def run_at_angle(
     phi: float,
     *,
     numint: int,
-    fermi_energy: Optional[float] = None,
+    fermi_energy: float | None = None,
     min_freq_kT: float = 0.0,
     freq_same_frac: float = 0.01,
     avg_same_frac: float = 0.05,
@@ -290,7 +300,7 @@ def run_angle_sweep(
     In a multi-rank MPI launch this is a collective call: every rank must call
     it, and the angles are divided among ``MPI.COMM_WORLD``.
     """
-    all_orbits: List[Orbit] = []
+    all_orbits: list[Orbit] = []
     fe = kwargs.get('fermi_energy', bxsf.fermi_energy)
     jobs = [
         (index, float(theta), float(phi))
@@ -319,11 +329,11 @@ def run_angle_sweep(
 
 
 def run_skeaf(
-    config: Union[SkeafConfig, str, Path],
-    bxsf: Optional[BXSFData] = None,
+    config: SkeafConfig | str | Path,
+    bxsf: BXSFData | None = None,
     *,
     write_files: bool = True,
-    output_dir: Union[str, Path, None] = None,
+    output_dir: str | Path | None = None,
     output_suffix: str = '',
     write_auxiliary_files: bool = True,
 ) -> SKEAFResult:
@@ -374,7 +384,7 @@ def run_skeaf(
         thetas = np.array([theta_one])
         phis = np.array([phi_one])
 
-    all_orbits: List[Orbit] = []
+    all_orbits: list[Orbit] = []
     n_angles = len(thetas)
     n_jobs = int(getattr(config, 'n_jobs', 1) or 1)
     comm = active_mpi_comm()
@@ -478,12 +488,12 @@ def run_skeaf(
 
 
 def run_paoflow_bxsf_files(
-    config: Union[SkeafConfig, str, Path],
+    config: SkeafConfig | str | Path,
     *,
-    input_dir: Union[str, Path],
-    filenames: Sequence[Union[str, Path]] | None = None,
+    input_dir: str | Path,
+    filenames: Sequence[str | Path] | None = None,
     all_files: bool = False,
-    output_dir: Union[str, Path, None] = None,
+    output_dir: str | Path | None = None,
     write_files: bool = True,
     write_auxiliary_files: bool = True,
     progress_callback: Callable[[BXSFRun], None] | None = None,
@@ -503,6 +513,8 @@ def run_paoflow_bxsf_files(
     ``Fermi_surf_band_1.bxsf`` at 0 eV. Arbitrary filenames use their complete
     stem, e.g. ``qo_EF_0_short_manual_name.out``.
     ``progress_callback`` is invoked after each band is calculated or skipped.
+    The returned :class:`BXSFRun` results carry BXSF header metadata but not
+    the band energy grid, so scanning many files does not accumulate them.
     """
     if not isinstance(config, SkeafConfig):
         config = read_config_in(config)
@@ -532,6 +544,7 @@ def run_paoflow_bxsf_files(
     for path in paths:
         if not path.is_file():
             raise FileNotFoundError(f'BXSF file not found: {path}')
+        bxsf = None  # release the previous band's grid before reading the next
         try:
             bxsf = read_bxsf(path)
         except BXSFError as error:
@@ -567,5 +580,7 @@ def run_paoflow_bxsf_files(
             output_suffix=standard_match.group(1) if standard_match else path.stem,
             write_auxiliary_files=write_auxiliary_files,
         )
+        item.result.bxsf = _without_energy_grid(bxsf)
         record(item)
+    bxsf = None
     return results
