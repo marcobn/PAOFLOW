@@ -28,7 +28,6 @@ grouping with periodic ±1 wrap, and the freq-similarity averaging.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
 
@@ -103,7 +102,7 @@ def find_closed_orbits_in_slice(
     *,
     keep_too_small: bool = False,
     keep_open: bool = False,
-) -> List[SliceOrbit]:
+) -> list[SliceOrbit]:
     """Locate every closed FS orbit in one slice and compute its observables.
 
     Parameters
@@ -133,7 +132,7 @@ def find_closed_orbits_in_slice(
     grad_x = np.gradient(slice2d.energies, dx, axis=0, edge_order=2)
     grad_y = np.gradient(slice2d.energies, dy, axis=1, edge_order=2)
 
-    out: List[SliceOrbit] = []
+    out: list[SliceOrbit] = []
     for poly in contours:
         rows = poly[:, 0]
         cols = poly[:, 1]
@@ -234,7 +233,7 @@ def find_closed_orbits_in_slice(
 # ============================================================================
 
 from PAOFLOW.pyskeaf.slice_ops import (
-    SliceGeometry,  # noqa: E402  (local import keeps Phase-3 self-contained)
+    SliceGeometry,
 )
 
 
@@ -249,11 +248,11 @@ class Chunk:
     that orbit was found on.
     """
 
-    orbits: List[SliceOrbit]
-    no_bif: List[bool]
+    orbits: list[SliceOrbit]
+    no_bif: list[bool]
 
     @property
-    def slice_indices(self) -> List[int]:
+    def slice_indices(self) -> list[int]:
         return [o.slice_index for o in self.orbits]
 
     def __len__(self) -> int:
@@ -398,7 +397,7 @@ def _relaxed_match_conditions(
 
 
 def _detect_forward_bifurcation(
-    chunk_tail: SliceOrbit, slice_orbits: List[SliceOrbit], other_chunk_tails: List[SliceOrbit]
+    chunk_tail: SliceOrbit, slice_orbits: list[SliceOrbit], other_chunk_tails: list[SliceOrbit]
 ) -> bool:
     """Translate the forward-bifurcation block (Fortran lines 1423–1521).
 
@@ -447,7 +446,7 @@ def _detect_forward_bifurcation(
 
 
 def _detect_reverse_bifurcation(
-    slice_orbit: SliceOrbit, chunk_tails: List[SliceOrbit], other_slice_orbits: List[SliceOrbit]
+    slice_orbit: SliceOrbit, chunk_tails: list[SliceOrbit], other_slice_orbits: list[SliceOrbit]
 ) -> bool:
     """Forward/reverse symmetric: count chunk-tails that point uniquely back at this orbit."""
     n_unique = 0
@@ -490,26 +489,30 @@ def _find_best_match(
     query: SliceOrbit,
     query_no_bif: bool,
     query_slice: int,
-    chunks: List[Chunk],
-    prior_badnesses: List[List[float]],
+    chunks: list[Chunk],
+    prior_badnesses: list[list[float]],
+    candidates: list[int],
 ) -> tuple[int | None, bool, float]:
     """Pick the chunk whose latest orbit best matches ``query`` from slice ``query_slice``.
 
     Returns ``(chunk_idx, occupied, best_badness)`` where ``occupied`` is True
     if the matched chunk already received a tail on the *current* slice (i.e.
     floater needed).  ``chunk_idx is None`` means no match was found.
+    ``candidates`` lists, in ascending order, the chunk indices still close
+    enough to ``query_slice`` to match; older chunks can never satisfy either
+    branch below, so excluding them changes nothing but the cost.
 
     Mirrors the dual branch (numcfs>1 vs ==slice) at Fortran lines 1604–1769.
     """
     best_chunk = None
     best_occupied = False
     best_badness = 1e300
-    for c_idx, ch in enumerate(chunks):
+    for c_idx in candidates:
+        ch = chunks[c_idx]
         tail = ch.orbits[-1]
         tail_slice = tail.slice_index
-        n = len(ch)
         # Branch A: chunk already received an orbit on this slice (need to compare to second-last)
-        if tail_slice == query_slice and n > 1:
+        if tail_slice == query_slice and len(ch.orbits) > 1:
             prev = ch.orbits[-2]
             if not (
                 _match_conditions(query, prev, query_no_bif, ch.no_bif[-2])
@@ -539,7 +542,7 @@ def _find_best_match(
 
 
 def _append_to_chunk(
-    chunk: Chunk, orbit: SliceOrbit, prior_badnesses: List[float], badness: float
+    chunk: Chunk, orbit: SliceOrbit, prior_badnesses: list[float], badness: float
 ) -> None:
     """Extend ``chunk`` with a new orbit and record its match badness."""
     chunk.orbits.append(orbit)
@@ -548,13 +551,14 @@ def _append_to_chunk(
 
 
 def _start_new_chunk(
-    chunks: List[Chunk], prior_badnesses: List[List[float]], orbit: SliceOrbit
+    chunks: list[Chunk], prior_badnesses: list[list[float]], orbit: SliceOrbit, active: list[int]
 ) -> None:
+    active.append(len(chunks))
     chunks.append(Chunk(orbits=[orbit], no_bif=[True]))
     prior_badnesses.append([0.0])
 
 
-def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
+def match_chunks(per_slice_orbits: list[list[SliceOrbit]]) -> list[Chunk]:
     """Build chunks from a list of per-slice orbit lists.
 
     ``per_slice_orbits[s-1]`` (1-based slice ``s``) is the output of
@@ -565,21 +569,27 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
     forward/reverse bifurcation detection and the floater displacement loop
     (capped at 500 iterations per slice-orbit, matching Fortran).
     """
-    chunks: List[Chunk] = []
+    chunks: list[Chunk] = []
     # Parallel array of per-orbit "prior badness" — needed for the floater rule.
-    prior_badnesses: List[List[float]] = []
+    prior_badnesses: list[list[float]] = []
+    # Ascending indices of chunks whose tail is recent enough to still match.
+    # A chunk drops out for good once it is skipped, since only a match can
+    # advance its tail.
+    active: list[int] = []
 
     for slice_idx_zero, orbits_this_slice in enumerate(per_slice_orbits):
         slice_idx = slice_idx_zero + 1  # 1-based to match Fortran
+        oldest_matchable = slice_idx - _MAX_MATCH_SLICE_GAP
+        active = [i for i in active if chunks[i].orbits[-1].slice_index >= oldest_matchable]
 
         # Reset slfsnobif default (True).
         slice_no_bif = [True] * len(orbits_this_slice)
 
         if chunks:
             tails_prev = [
-                (i, ch.orbits[-1])
-                for i, ch in enumerate(chunks)
-                if ch.orbits[-1].slice_index == slice_idx - 1
+                (i, chunks[i].orbits[-1])
+                for i in active
+                if chunks[i].orbits[-1].slice_index == slice_idx - 1
             ]
             tails_prev_only = [t for _, t in tails_prev]
 
@@ -598,7 +608,7 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
         # Now do the actual matching, in the order Fortran does (orbit by orbit).
         for fs_idx, fs in enumerate(orbits_this_slice):
             if not chunks:
-                _start_new_chunk(chunks, prior_badnesses, fs)
+                _start_new_chunk(chunks, prior_badnesses, fs, active)
                 continue
 
             best_chunk, occupied, badness = _find_best_match(
@@ -607,9 +617,10 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
                 slice_idx,
                 chunks,
                 prior_badnesses,
+                active,
             )
             if best_chunk is None:
-                _start_new_chunk(chunks, prior_badnesses, fs)
+                _start_new_chunk(chunks, prior_badnesses, fs, active)
                 continue
             if not occupied:
                 _append_to_chunk(chunks[best_chunk], fs, prior_badnesses[best_chunk], badness)
@@ -630,9 +641,10 @@ def match_chunks(per_slice_orbits: List[List[SliceOrbit]]) -> List[Chunk]:
                     slice_idx,
                     chunks,
                     prior_badnesses,
+                    active,
                 )
                 if f_chunk is None:
-                    _start_new_chunk(chunks, prior_badnesses, float_orbit)
+                    _start_new_chunk(chunks, prior_badnesses, float_orbit, active)
                     break
                 if not f_occupied:
                     _append_to_chunk(chunks[f_chunk], float_orbit, prior_badnesses[f_chunk], f_bad)
@@ -682,12 +694,12 @@ def _supercell_centroid_to_ruc(
 
 
 def find_extremal(
-    chunks: List[Chunk],
+    chunks: list[Chunk],
     geom: SliceGeometry,
     *,
     min_freq_kT: float = 0.0,
     allow_near_walls: bool = False,
-) -> List[ExtremalOrbit]:
+) -> list[ExtremalOrbit]:
     """Find extremal orbits within each chunk (Fortran lines 1965–2050).
 
     For each interior position in a chunk (i.e. not at chunk endpoints),
@@ -699,7 +711,7 @@ def find_extremal(
     """
     n_slices = geom.numx
     dk = geom.zkseparation
-    out: List[ExtremalOrbit] = []
+    out: list[ExtremalOrbit] = []
 
     for c_idx, ch in enumerate(chunks):
         n = len(ch)
@@ -761,8 +773,8 @@ def find_extremal(
 
 
 def _group_by_centre(
-    extrema: List[ExtremalOrbit], avg_same_frac: float
-) -> List[List[ExtremalOrbit]]:
+    extrema: list[ExtremalOrbit], avg_same_frac: float
+) -> list[list[ExtremalOrbit]]:
     """Greedy grouping of extrema by similar RUC centroid (with periodic ±1 wrap).
 
     Matches Fortran lines 2188–2266: at each pass the seed is element 0 of the
@@ -771,11 +783,11 @@ def _group_by_centre(
     empty.  Returns one list per group.
     """
     remaining = list(extrema)
-    groups: List[List[ExtremalOrbit]] = []
+    groups: list[list[ExtremalOrbit]] = []
     while remaining:
         seed = remaining[0]
-        same: List[ExtremalOrbit] = [seed]
-        rest: List[ExtremalOrbit] = []
+        same: list[ExtremalOrbit] = [seed]
+        rest: list[ExtremalOrbit] = []
         for cand in remaining[1:]:
             in_same = True
             for axis in range(3):
@@ -795,8 +807,8 @@ def _group_by_centre(
 
 
 def _average_one_centre_group(
-    group: List[ExtremalOrbit], freq_same_frac: float
-) -> List[AveragedOrbit]:
+    group: list[ExtremalOrbit], freq_same_frac: float
+) -> list[AveragedOrbit]:
     """Sort one centre-group by frequency and merge consecutive entries within ``freq_same_frac``.
 
     Mirrors lines 2284–2453.  Uses a *running tail* comparison: orbit i joins
@@ -804,8 +816,8 @@ def _average_one_centre_group(
     the largest frequency in the cluster so far.
     """
     sorted_by_f = sorted(group, key=lambda e: e.slice_orbit.frequency_kT)
-    out: List[AveragedOrbit] = []
-    cluster: List[ExtremalOrbit] = []
+    out: list[AveragedOrbit] = []
+    cluster: list[ExtremalOrbit] = []
 
     def _unwrap_rucs(rucs: np.ndarray) -> np.ndarray:
         if rucs.shape[0] <= 1:
@@ -818,7 +830,7 @@ def _average_one_centre_group(
             out[i, delta < -0.5] += 1.0
         return out
 
-    def flush(cluster: List[ExtremalOrbit]) -> None:
+    def flush(cluster: list[ExtremalOrbit]) -> None:
         if not cluster:
             return
         freqs = np.array([e.slice_orbit.frequency_kT for e in cluster])
@@ -865,8 +877,8 @@ def _average_one_centre_group(
 
 
 def average_orbits(
-    extrema: List[ExtremalOrbit], *, freq_same_frac: float = 0.01, avg_same_frac: float = 0.05
-) -> List[AveragedOrbit]:
+    extrema: list[ExtremalOrbit], *, freq_same_frac: float = 0.01, avg_same_frac: float = 0.05
+) -> list[AveragedOrbit]:
     """Group supercell-copy extrema, average each group, and return sorted-by-frequency.
 
     Combines the same-centre grouping (lines 2188–2266) with the per-group
@@ -874,7 +886,7 @@ def average_orbits(
     (lines 2474–2538).
     """
     groups = _group_by_centre(extrema, avg_same_frac)
-    av: List[AveragedOrbit] = []
+    av: list[AveragedOrbit] = []
     for g in groups:
         av.extend(_average_one_centre_group(g, freq_same_frac))
     av.sort(key=lambda a: a.frequency_kT)
