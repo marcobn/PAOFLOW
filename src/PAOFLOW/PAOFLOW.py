@@ -780,6 +780,8 @@ class PAOFLOW:
                 )
 
         try:
+            if self.rank == 0:
+                print('enter do_build_pao_hamiltonian')
             do_build_pao_hamiltonian(self.data_controller)
             self.data_controller.broadcast_single_array('Hks')
 
