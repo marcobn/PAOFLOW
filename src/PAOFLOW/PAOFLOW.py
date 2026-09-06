@@ -516,7 +516,7 @@ class PAOFLOW:
             calc_proj_and_ovlp_k,
             calc_proj_k,
         )
-        from .utils.communication import gather_array, load_balancing
+        from .utils.communication import gather_full, scatter_full
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -598,8 +598,11 @@ class PAOFLOW:
         # we keep the old single-return code path.
         acbn0_active = bool(arry.get('acbn0', False) or attr.get('acbn0', False))
 
-        ini_ik, end_ik = load_balancing(self.size, self.rank, nkpnts)
-        nk_local = end_ik - ini_ik
+        # Scatter the k-points with scatter_full, not load_balancing: the two
+        # agree only for npool == 1, and this partition has to match the one
+        # build_Hks and DataController.full_projections use.
+        k_local = scatter_full(np.arange(nkpnts, dtype=int), attr['npool'])
+        nk_local = k_local.size
         Unewaux = np.zeros((nk_local, nbnds, natwfc, nspin), dtype=complex)
 
         if acbn0_active:
@@ -607,25 +610,23 @@ class PAOFLOW:
             # the same atomic-orbital geometry so a single overlap per k suffices.
             Skaux = np.zeros((nk_local, natwfc, natwfc), dtype=complex)
             for ispin in range(nspin):
-                for ik in range(ini_ik, end_ik):
+                for ikl in range(nk_local):
+                    ik = int(k_local[ikl])
                     proj_k, Sk = calc_proj_and_ovlp_k(self.data_controller, basis, ik, ispin)
-                    Unewaux[ik - ini_ik, :, :, ispin] = proj_k
+                    Unewaux[ikl, :, :, ispin] = proj_k
                     if ispin == 0:  # overlap is spin-independent
-                        Skaux[ik - ini_ik] = Sk
+                        Skaux[ikl] = Sk
         else:
             for ispin in range(nspin):
-                for ik in range(ini_ik, end_ik):
-                    Unewaux[ik - ini_ik, :, :, ispin] = calc_proj_k(
-                        self.data_controller, basis, ik, ispin
+                for ikl in range(nk_local):
+                    Unewaux[ikl, :, :, ispin] = calc_proj_k(
+                        self.data_controller, basis, int(k_local[ikl]), ispin
                     )
 
-        Unew = np.zeros((nkpnts, nbnds, natwfc, nspin), dtype=complex) if self.rank == 0 else None
-        gather_array(Unew, Unewaux)
-        if self.rank == 0:
-            Unew = np.moveaxis(Unew, 0, 2)
-        Unew = self.comm.bcast(Unew, root=0)
-
-        arry['U'] = Unew
+        # Keep U scattered over k-points: replicating it on every rank is the
+        # dominant memory cost for large systems.  Use
+        # DataController.full_projections() to assemble it on demand.
+        arry['U_local'] = Unewaux
         arry['basis'] = basis
 
         if acbn0_active:
@@ -634,13 +635,13 @@ class PAOFLOW:
             # do_build_pao_hamiltonian's do_non_ortho call (and write_Hk_acbn0)
             # pick it up transparently.  The ACBN0 loader in ACBN0.read_ham_data
             # expects kovp.npy ravelled in C order from (natwfc, natwfc, nkpnts).
-            Snew = np.zeros((nkpnts, natwfc, natwfc), dtype=complex) if self.rank == 0 else None
-            gather_array(Snew, Skaux)
+            Snew = gather_full(Skaux, attr['npool'])
+            del Skaux
             if self.rank == 0:
                 # Reorder to (natwfc, natwfc, nkpnts) expected by do_non_ortho
-                Snew = np.moveaxis(Snew, 0, 2)
-            Snew = self.comm.bcast(Snew, root=0)
-            arry['Sks'] = Snew
+                arry['Sks'] = np.ascontiguousarray(np.moveaxis(Snew, 0, 2))
+            del Snew
+            self.data_controller.broadcast_single_array('Sks')
 
         self.report_module_time('Projections')
 
@@ -789,7 +790,9 @@ class PAOFLOW:
         self.report_module_time('Building Hks')
 
         # Done with U and Sks
-        del arrays['U']
+        for key in ('U', 'U_local'):
+            if key in arrays:
+                del arrays[key]
 
         try:
             do_Hks_to_HRs(self.data_controller)

@@ -124,7 +124,7 @@ q-grid from Quantum ESPRESSO:
      ultrasoft, PAW), including NLCC.
 4. **PAOFLOW electronic structure**: `projections` + `projectability` +
    `pao_hamiltonian` on the same nscf save, giving the PAO projections `A_k`
-   (grab `data_arrays['U'][...,ispin]` **before** `pao_hamiltonian`, which
+   (grab `full_projections()[...,ispin]` **before** `pao_hamiltonian`, which
    deletes it) and the PAO Hamiltonian `HRs`.
 
 ---
@@ -333,7 +333,7 @@ worked was simply using an adequately fine DFPT q-grid.
   [Elphon module status log](Elphon_module) §6.2 for the fully worked-out
   cautionary tale from the finite-difference-from-`dvscf` attempt).
 - **Grab `A_k` before `pao_hamiltonian`.** `pao_hamiltonian()` deletes
-  `data_arrays['U']`; copy it immediately after `projectability`.
+  `full_projections()`; copy it immediately after `projectability`.
 - **Units.** `HRs`/eigenvalues in eV; QE smearing (`sigmas_ry`) and phonon
   frequencies from `.dyn`/dumps in Ry/THz as documented per function
   (`RY_TO_EV`, `RY_TO_THZ`, `AMU_RY` constants in `elph_bloch.py`).
@@ -360,7 +360,7 @@ from PAOFLOW.elphon.do_pao_eph_dense_q import (
 pf = PAOFLOW.PAOFLOW(workpath=..., outputdir='output', savedir='<prefix>.save')
 pf.projections(configuration='standard', basispath=BASIS)
 pf.projectability(pthr=0.90)
-A = pf.data_controller.data_arrays['U'][:, :, :, 0].copy()   # BEFORE pao_hamiltonian
+A = pf.data_controller.full_projections()[:, :, :, 0].copy()   # BEFORE pao_hamiltonian
 pf.pao_hamiltonian()
 HRs = pf.data_controller.data_arrays['HRs']
 info = read_nscf(SAVEDIR)                                     # includes info['s_cryst']
