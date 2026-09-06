@@ -1477,7 +1477,7 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
-    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False):
+    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
         """
         Calculate the interpolated Hamiltonian with the method of zero padding
         Populates DataController with 'Hksp'.
@@ -1486,6 +1486,10 @@ class PAOFLOW:
             nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
             nfft2 (int): Desired size of the interpolated Hamiltonian's second dimension
             nfft3 (int): Desired size of the interpolated Hamiltonian's third dimension
+            free_HRs (bool): Release 'HRs' once it has been interpolated. It is replicated
+                on every rank, so keeping it roughly doubles the peak footprint of this
+                step. Set False only when calling 'topology' or 'berry_phase' afterwards
+                without an intervening 'pao_eigh' (which frees it regardless).
 
         Returns:
             None
@@ -1526,6 +1530,10 @@ class PAOFLOW:
 
             # Fourier interpolation on extended grid (zero padding)
             do_double_grid(self.data_controller)
+            # do_double_grid has taken its scattered copy; the replicated original is
+            # dead weight through the gather_scatter peak below.
+            if free_HRs and 'HRs' in arrays:
+                del arrays['HRs']
             snawf, _, _, _, nspin = arrays['Hksp'].shape
             arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf, attr['nkpnts'], nspin))
             arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
