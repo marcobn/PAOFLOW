@@ -1097,6 +1097,24 @@ class DataController:
         self.data_arrays['U_local'] = scatter_full(kmajor, self.data_attributes['npool'])
         return self.data_arrays['U_local']
 
+    def full_hamiltonian_k(self):
+        """Return the k-space PAO Hamiltonian on every rank.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``, complex
+            ``Hks`` for the whole grid, identical on all ranks.
+
+        Notes
+        -----
+        ``pao_hamiltonian`` leaves ``Hks`` on rank 0 only, since it is one of
+        the largest arrays in the run and nearly every consumer is already
+        rank-0 guarded.  Call this from the few that are not; it costs one full
+        copy per rank.  Collective: every rank must call it.
+        """
+        self.broadcast_single_array('Hks')
+        return self.data_arrays['Hks']
+
     def full_projections(self):
         """Assemble the complete PAO projection matrix on every rank.
 

@@ -780,10 +780,9 @@ class PAOFLOW:
                 )
 
         try:
-            if self.rank == 0:
-                print('enter do_build_pao_hamiltonian')
             do_build_pao_hamiltonian(self.data_controller)
-            self.data_controller.broadcast_single_array('Hks')
+            # Hks stays on rank 0: every consumer either guards on rank 0 or goes
+            # through DataController.full_hamiltonian_k().
 
         except Exception as e:
             self.report_exception('pao_hamiltonian')

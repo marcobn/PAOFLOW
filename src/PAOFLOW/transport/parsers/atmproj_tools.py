@@ -1,5 +1,3 @@
-from typing import Dict
-
 import numpy as np
 
 import PAOFLOW.transport.io.log_module as log
@@ -15,7 +13,7 @@ from PAOFLOW.transport.utils.timing import timed_function
 @headered_function('Conductor Initialization')
 def parse_atomic_proj(
     data: ConductorData, data_controller: DataController
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     opts = data.atomic_proj
 
     arry, attr = data_controller.data_dicts()
@@ -39,9 +37,9 @@ def parse_atomic_proj(
     return hk_data
 
 
-def reshape_pao_hamiltonian(data_controller: DataController) -> Dict[str, np.ndarray]:
+def reshape_pao_hamiltonian(data_controller: DataController) -> dict[str, np.ndarray]:
     arry, attr = data_controller.data_dicts()
-    Hks_raw = arry['Hks']  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
+    Hks_raw = data_controller.full_hamiltonian_k()  # (nawf, nawf, nk1, nk2, nk3, nspin)
     HRs_raw = arry['HRs']  # shape: (nawf, nawf, nk1, nk2, nk3, nspin)
     nspin = attr['nspin']
     nkpnts = attr['nkpnts']

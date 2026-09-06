@@ -269,5 +269,4 @@ def do_Hks_to_HRs(data_controller):
     # ----------------------------------------------------------
     if rank == 0:
         # Original k grid to R grid
-        arry['HRs'] = np.zeros_like(arry['Hks'])
         arry['HRs'] = FFT.ifftn(arry['Hks'], axes=[2, 3, 4])
