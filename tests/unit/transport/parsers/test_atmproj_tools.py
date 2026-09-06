@@ -14,6 +14,9 @@ class DummyDataController:
     def data_dicts(self):
         return self._arry, self._attr
 
+    def full_hamiltonian_k(self):
+        return self._arry['Hks']
+
 
 @pytest.mark.unit
 def test_get_pao_hamiltonian_shapes():

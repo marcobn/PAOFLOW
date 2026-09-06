@@ -439,15 +439,19 @@ class PAOFLOW:
         verbose = self.data_controller.data_attributes['verbose']
 
         if verbose:
-            # Add up memory usage from each core
+            # Add up memory usage from each core.  ru_maxrss is in kilobytes on
+            # Linux but in bytes on macOS/BSD.
+            import sys
+
+            to_gb = 1024.0**3 if sys.platform == 'darwin' else 1024.0**2
             mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             mem = np.array([mem], dtype=float)
             mem0 = np.zeros(1, dtype=float) if self.rank == 0 else None
             self.comm.Reduce(mem, mem0, op=MPI.SUM, root=0)
 
             if self.rank == 0:
-                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / 1024.0**2))
-                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / 1024.0**2))
+                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
+                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
     def projections(self, internal=False, basispath=None, configuration=None):
         """
@@ -512,7 +516,7 @@ class PAOFLOW:
             calc_proj_and_ovlp_k,
             calc_proj_k,
         )
-        from .utils.communication import gather_array, load_balancing
+        from .utils.communication import gather_full, scatter_full
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -594,8 +598,11 @@ class PAOFLOW:
         # we keep the old single-return code path.
         acbn0_active = bool(arry.get('acbn0', False) or attr.get('acbn0', False))
 
-        ini_ik, end_ik = load_balancing(self.size, self.rank, nkpnts)
-        nk_local = end_ik - ini_ik
+        # Scatter the k-points with scatter_full, not load_balancing: the two
+        # agree only for npool == 1, and this partition has to match the one
+        # build_Hks and DataController.full_projections use.
+        k_local = scatter_full(np.arange(nkpnts, dtype=int), attr['npool'])
+        nk_local = k_local.size
         Unewaux = np.zeros((nk_local, nbnds, natwfc, nspin), dtype=complex)
 
         if acbn0_active:
@@ -603,25 +610,23 @@ class PAOFLOW:
             # the same atomic-orbital geometry so a single overlap per k suffices.
             Skaux = np.zeros((nk_local, natwfc, natwfc), dtype=complex)
             for ispin in range(nspin):
-                for ik in range(ini_ik, end_ik):
+                for ikl in range(nk_local):
+                    ik = int(k_local[ikl])
                     proj_k, Sk = calc_proj_and_ovlp_k(self.data_controller, basis, ik, ispin)
-                    Unewaux[ik - ini_ik, :, :, ispin] = proj_k
+                    Unewaux[ikl, :, :, ispin] = proj_k
                     if ispin == 0:  # overlap is spin-independent
-                        Skaux[ik - ini_ik] = Sk
+                        Skaux[ikl] = Sk
         else:
             for ispin in range(nspin):
-                for ik in range(ini_ik, end_ik):
-                    Unewaux[ik - ini_ik, :, :, ispin] = calc_proj_k(
-                        self.data_controller, basis, ik, ispin
+                for ikl in range(nk_local):
+                    Unewaux[ikl, :, :, ispin] = calc_proj_k(
+                        self.data_controller, basis, int(k_local[ikl]), ispin
                     )
 
-        Unew = np.zeros((nkpnts, nbnds, natwfc, nspin), dtype=complex) if self.rank == 0 else None
-        gather_array(Unew, Unewaux)
-        if self.rank == 0:
-            Unew = np.moveaxis(Unew, 0, 2)
-        Unew = self.comm.bcast(Unew, root=0)
-
-        arry['U'] = Unew
+        # Keep U scattered over k-points: replicating it on every rank is the
+        # dominant memory cost for large systems.  Use
+        # DataController.full_projections() to assemble it on demand.
+        arry['U_local'] = Unewaux
         arry['basis'] = basis
 
         if acbn0_active:
@@ -630,13 +635,13 @@ class PAOFLOW:
             # do_build_pao_hamiltonian's do_non_ortho call (and write_Hk_acbn0)
             # pick it up transparently.  The ACBN0 loader in ACBN0.read_ham_data
             # expects kovp.npy ravelled in C order from (natwfc, natwfc, nkpnts).
-            Snew = np.zeros((nkpnts, natwfc, natwfc), dtype=complex) if self.rank == 0 else None
-            gather_array(Snew, Skaux)
+            Snew = gather_full(Skaux, attr['npool'])
+            del Skaux
             if self.rank == 0:
                 # Reorder to (natwfc, natwfc, nkpnts) expected by do_non_ortho
-                Snew = np.moveaxis(Snew, 0, 2)
-            Snew = self.comm.bcast(Snew, root=0)
-            arry['Sks'] = Snew
+                arry['Sks'] = np.ascontiguousarray(np.moveaxis(Snew, 0, 2))
+            del Snew
+            self.data_controller.broadcast_single_array('Sks')
 
         self.report_module_time('Projections')
 
@@ -776,7 +781,8 @@ class PAOFLOW:
 
         try:
             do_build_pao_hamiltonian(self.data_controller)
-            self.data_controller.broadcast_single_array('Hks')
+            # Hks stays on rank 0: every consumer either guards on rank 0 or goes
+            # through DataController.full_hamiltonian_k().
 
         except Exception as e:
             self.report_exception('pao_hamiltonian')
@@ -785,7 +791,9 @@ class PAOFLOW:
         self.report_module_time('Building Hks')
 
         # Done with U and Sks
-        del arrays['U']
+        for key in ('U', 'U_local'):
+            if key in arrays:
+                del arrays[key]
 
         try:
             do_Hks_to_HRs(self.data_controller)
@@ -1469,7 +1477,7 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
-    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False):
+    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
         """
         Calculate the interpolated Hamiltonian with the method of zero padding
         Populates DataController with 'Hksp'.
@@ -1478,6 +1486,10 @@ class PAOFLOW:
             nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
             nfft2 (int): Desired size of the interpolated Hamiltonian's second dimension
             nfft3 (int): Desired size of the interpolated Hamiltonian's third dimension
+            free_HRs (bool): Release 'HRs' once it has been interpolated. It is replicated
+                on every rank, so keeping it roughly doubles the peak footprint of this
+                step. Set False only when calling 'topology' or 'berry_phase' afterwards
+                without an intervening 'pao_eigh' (which frees it regardless).
 
         Returns:
             None
@@ -1518,6 +1530,10 @@ class PAOFLOW:
 
             # Fourier interpolation on extended grid (zero padding)
             do_double_grid(self.data_controller)
+            # do_double_grid has taken its scattered copy; the replicated original is
+            # dead weight through the gather_scatter peak below.
+            if free_HRs and 'HRs' in arrays:
+                del arrays['HRs']
             snawf, _, _, _, nspin = arrays['Hksp'].shape
             arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf, attr['nkpnts'], nspin))
             arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
@@ -2149,6 +2165,8 @@ class PAOFLOW:
         allow_wall_orbits=True,
         bands='all',
         verbose=False,
+        n_jobs=1,
+        angle_timeout=None,
         **unknown_options,
     ):
         """Calculate quantum-oscillation frequencies with pyskeaf.
@@ -2191,6 +2209,14 @@ class PAOFLOW:
             Also write short, long, and orbit-outline diagnostic files. The
             physical ``qo_EF_<energy>_freqvsangle_*.out`` files are always
             written.
+        n_jobs : int, default 1
+            Number of parallel worker processes used for the angle sweep.
+            Ignored under MPI, which distributes angles across ranks instead.
+        angle_timeout : float or None, default None
+            Seconds allowed for any single angle when ``n_jobs`` exceeds 1.
+            ``None`` waits indefinitely. Set it above the expected per-angle
+            runtime to turn a stalled worker into a ``TimeoutError`` instead of
+            an unbounded hang.
 
         Returns
         -------
@@ -2226,6 +2252,8 @@ class PAOFLOW:
             "      bands='all',  # or 1, 'custom_name', or "
             "(1, 8, 'custom_name')\n"
             '      verbose=False,  # bool\n'
+            '      n_jobs=1,  # parallel workers for the angle sweep\n'
+            '      angle_timeout=None,  # seconds per angle, or None\n'
             '  )\n'
             'For rotation, provide two values for both azimuthal and polar; '
             "b_field is then set to 'rotation' automatically. BXSF filename "
@@ -2315,6 +2343,10 @@ class PAOFLOW:
             raise _input_error(TypeError, 'allow_wall_orbits must be True or False.')
         if not isinstance(verbose, (bool, np.bool_)):
             raise _input_error(TypeError, 'verbose must be True or False.')
+        if angle_timeout is not None:
+            angle_timeout = _real(angle_timeout, 'angle_timeout')
+            if angle_timeout <= 0.0:
+                raise _input_error(ValueError, 'angle_timeout must be positive or None.')
 
         fermi_energies = _fermi_energy_values(fermi_energy)
         minimum_frequency = _real(minimum_frequency, 'minimum_frequency')
@@ -2371,6 +2403,8 @@ class PAOFLOW:
             phi_start=math.radians(polar_values[0]),
             phi_end=math.radians(polar_values[-1]),
             num_rots=int(num_angles),
+            n_jobs=n_jobs,
+            angle_timeout=angle_timeout,
         )
 
         output_path = Path(attr['opath'])
@@ -2423,7 +2457,7 @@ class PAOFLOW:
                 return
             message = 'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
             print(
-                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: ' f'{message}',
+                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: {message}',
                 flush=True,
             )
 
