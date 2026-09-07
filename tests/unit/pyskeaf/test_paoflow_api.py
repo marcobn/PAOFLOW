@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import PAOFLOW.pyskeaf.runner as runner
 from PAOFLOW.DataController import DataController
 from PAOFLOW.PAOFLOW import PAOFLOW
+from PAOFLOW.pyskeaf import runner
 from PAOFLOW.pyskeaf.config import RYDBERG_IN_EV
 
 
@@ -166,6 +166,29 @@ def test_paoflow_pyskeaf_maps_single_field_and_forces_one_angle(monkeypatch, tmp
     assert math.isclose(math.degrees(cfg.phi), 34.0)
     assert captured['filenames'] == ['Fermi_surf_band_3.bxsf']
     assert captured['write_auxiliary_files'] is True
+
+
+def test_paoflow_pyskeaf_maps_angle_timeout(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(config, **kwargs):
+        captured['config'] = config
+        return []
+
+    monkeypatch.setattr(runner, 'run_paoflow_bxsf_files', fake_run)
+
+    PAOFLOW.pyskeaf(_paoflow_stub(tmp_path), bands=1, n_jobs=4, angle_timeout=900.0)
+    assert captured['config'].angle_timeout == 900.0
+
+    PAOFLOW.pyskeaf(_paoflow_stub(tmp_path), bands=1)
+    assert captured['config'].angle_timeout is None
+
+
+def test_paoflow_pyskeaf_rejects_nonpositive_angle_timeout(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, 'run_paoflow_bxsf_files', lambda *args, **kwargs: [])
+
+    with pytest.raises(ValueError, match='angle_timeout must be positive'):
+        PAOFLOW.pyskeaf(_paoflow_stub(tmp_path), bands=1, angle_timeout=0.0)
 
 
 def test_paoflow_pyskeaf_all_selects_only_standard_bands_in_numeric_order(monkeypatch, tmp_path):

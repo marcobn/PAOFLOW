@@ -1455,7 +1455,7 @@ def analyse():
 __PROJECTION_CALL__
     pf.projectability(pthr=PTHR)
     # Grab the projection matrices A_k BEFORE pao_hamiltonian (which deletes them).
-    A = pf.data_controller.data_arrays['U'][:, :, :, 0].copy()
+    A = pf.data_controller.full_projections()[:, :, :, 0].copy()
     pf.pao_hamiltonian()
     HRs = pf.data_controller.data_arrays['HRs']
     info = read_nscf(SAVEDIR)
@@ -1683,7 +1683,7 @@ def analyse():
 __PROJECTION_CALL__
     pf.projectability(pthr=PTHR)
     # Grab the projection matrices A_k BEFORE pao_hamiltonian (which deletes them).
-    A = pf.data_controller.data_arrays['U'][:, :, :, 0].copy()
+    A = pf.data_controller.full_projections()[:, :, :, 0].copy()
     pf.pao_hamiltonian()
     HRs = pf.data_controller.data_arrays['HRs']
     info = read_nscf(SAVEDIR)

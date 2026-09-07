@@ -62,6 +62,10 @@ import numpy as np
 from PAOFLOW.pyskeaf.geometry import k_axis_lengths
 from PAOFLOW.pyskeaf.io_bxsf import BXSFData
 
+# Sample points evaluated per interpolation block; caps the (M, 4) index and
+# weight scratch at a few MB regardless of ``numint``.
+_SLICE_BLOCK_POINTS = 1 << 16
+
 
 @dataclass
 class SliceGeometry:
@@ -203,18 +207,24 @@ def build_slice(
     """Build the 2D energy slice at index ``slice_index`` (1-based, in [1, numx]).
 
     Each of the ``numx · numy`` sample points is independently rotated into the
-    BZ frame and Lagrange-interpolated.  Memory usage: O(numx²) scratch for
-    fractional indices.
+    BZ frame and Lagrange-interpolated.  Points are processed in row blocks of
+    at most ``_SLICE_BLOCK_POINTS`` so scratch memory stays bounded instead of
+    scaling as O(numx²); results are identical to the unblocked evaluation
+    because every point is independent.
     """
     if not (1 <= slice_index <= geom.numx):
         raise ValueError(f'slice_index {slice_index} outside [1, {geom.numx}]')
 
     nx, ny, nz = bxsf.energies.shape
-    ti = np.arange(1, geom.numx + 1, dtype=float)
-    tj = np.arange(1, geom.numx + 1, dtype=float)
-    ux, uy, uz = _bxsf_indices_from_slice(geom, ti, tj, slice_index, nx, ny, nz)
-
-    energies = _interpolate_per_point(bxsf.energies, ux, uy, uz)
+    numx = geom.numx
+    tj = np.arange(1, numx + 1, dtype=float)
+    energies = np.empty((numx, numx), dtype=np.float64)
+    rows_per_block = max(1, _SLICE_BLOCK_POINTS // numx)
+    for start in range(0, numx, rows_per_block):
+        stop = min(start + rows_per_block, numx)
+        ti = np.arange(start + 1, stop + 1, dtype=float)
+        ux, uy, uz = _bxsf_indices_from_slice(geom, ti, tj, slice_index, nx, ny, nz)
+        energies[start:stop] = _interpolate_per_point(bxsf.energies, ux, uy, uz)
 
     z_prime = ((slice_index - 1) / (geom.numint - 1) - 1.0) * geom.maxlreciplat
     return Slice2D(

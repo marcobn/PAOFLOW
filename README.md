@@ -23,15 +23,18 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 | Domain | What PAOFLOW computes |
 |---|---|
 | **Electronic structure** | Band structures, density of states (total & projected), Fermi surfaces |
+| **Self-consistent Hubbard correction** | he ACBN0 and eACBN0 pseudohybrid density functionals for calculations of U and V parameters in the DFT+U and DFT+U+V methods |
+| **Spin & magnetism** | Spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
 | **Optical & dielectric response** | Complex dielectric tensor ε(ω), optical conductivity, joint density of states; non-local velocity correction for norm-conserving pseudopotentials |
 | **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity (Boltzmann transport) |
+| **Kubo-formula response** | anomalous Hall, spin Hall, and orbital Hall conductivities based on Berry curvature integration |
 | **Lattice dynamics & phonons** | Phonon dispersions, DOS and thermal properties ([phonopy](https://phonopy.github.io/phonopy/) finite-displacement); Born effective charges, ε∞ and LO–TO splitting; infrared (IR), non-resonant (Placzek) and resonant (Albrecht) Raman spectra; vibrational (ionic) dielectric ε(ω) and reststrahlen emissivity; quasi-harmonic approximation (thermal expansion, V(T), bulk modulus, C_p, thermodynamic and mode Grüneisen dispersion) |
-| **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, topological surface states |
-| **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
-| **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
-| **ACBN0** | Self-consistent Hubbard U and U+V via the extended ACBN0 functional |
-| **pyskeaf** | Fermi surface extremal orbit analysis (de Haas–van Alphen, Shubnikov–de Haas) |
-| **Landauer transport** | Quantum transport via Green's function/Landauer–Büttiker formalism |
+| **Electron-phonon coupling from pseudo-atomic-orbitals interpolation** | electron-phonon coupling, Eliashberg function, superconducting transition temperature |
+| **Topology** | Berry curvature, Z₂ invariants, topological surface states |
+| **Model Hamiltonians** | Kane–Mele and custom lattice models |
+| **Environment-dependent tight-binding models** | Slater-Koster parameterization with structural transferability |
+| **Quantum oscillation analysis** | de Haas-van Alphen and Shubnikov-de Haas frequencies and effective masses via Fermi surface extreme orbit finder |
+| **Landauer-Büttiker quantum transport** | Transmission functions, conductance, and current-voltage characteristics for nanoscale conductor/lead geometries |
 | **Interoperability** | Quantum ESPRESSO and VASP DFT code integration - other codes are in the development pipline (we welcome contributions from developers!)|
 
 ---

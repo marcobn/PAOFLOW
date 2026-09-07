@@ -17,6 +17,9 @@ class DummyDataController:
     def data_dicts(self):
         return self._arry, self._attr
 
+    def full_projections(self):
+        return self._arry['U']
+
 
 @pytest.mark.unit
 def test_write_projectability_files(tmp_path):

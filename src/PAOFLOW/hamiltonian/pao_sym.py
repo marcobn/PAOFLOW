@@ -509,7 +509,7 @@ def d_mat_l(AL, BE, GA, l):
             )
 
             # loop over w for summation
-            for w in range(0, w_max):
+            for w in range(w_max):
                 # factorials in denominator must be positive
                 df1 = int(l + mp - w)
                 df2 = int(l - m - w)
@@ -1169,12 +1169,17 @@ def open_grid(
         if not (spin_orb and mag_calc):
             Hksp = enforce_t_rev(Hksp, nk1, nk2, nk3, spin_orb, U_inv, jchia)
 
-    else:
+    elif symm_grid:
         Hksp = np.zeros((full_grid.shape[0], nawf, nawf), dtype=complex)
 
-    comm.Bcast(Hksp)
+    else:
+        # Only rank 0's copy is consumed, so skip the full-grid replication.
+        Hksp = None
 
     if symm_grid:
+        # symmetrize_grid indexes the whole grid on every rank.
+        comm.Bcast(Hksp)
+
         symop_inv = np.zeros_like(symop)
         for i in range(symop.shape[0]):
             symop_inv[i] = LA.inv(symop[i])
@@ -1495,12 +1500,17 @@ def open_grid_nspin2(
 
         Hksp = np.stack((Hksp_up, Hksp_down), axis=-1)
 
-    else:
+    elif symm_grid:
         Hksp = np.zeros((full_grid.shape[0], nawf, nawf, 2), dtype=complex)
 
-    comm.Bcast(Hksp)
+    else:
+        # Only rank 0's copy is consumed, so skip the full-grid replication.
+        Hksp = None
 
     if symm_grid:
+        # symmetrize_grid_nspin2 indexes the whole grid on every rank.
+        comm.Bcast(Hksp)
+
         symop_inv = np.zeros_like(symop)
         for i in range(symop.shape[0]):
             symop_inv[i] = LA.inv(symop[i])
@@ -1825,7 +1835,8 @@ def _expand_kspace_hermitian(Aks, ctx):
             ctx['verbose'],
             ctx['npool'],
         )
-        A_full = A_full[..., np.newaxis]
+        if rank == 0:
+            A_full = A_full[..., np.newaxis]
     else:
         A_full = open_grid_nspin2(
             Aksp,

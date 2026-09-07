@@ -98,45 +98,40 @@ def write_internal_format_files(
         f.write(f'fermi_energy="{fermi_energy:.15E}"/>\n')
 
         f.write('    <DIRECT_LATTICE type="real" size="9" columns="3" units="bohr">\n')
-        for row in avec.T:
-            f.write(' ' + '  '.join(f'{x:.15E}' for x in row) + '\n')
+        f.writelines(' ' + '  '.join(f'{x:.15E}' for x in row) + '\n' for row in avec.T)
         f.write('    </DIRECT_LATTICE>\n')
 
         f.write('    <RECIPROCAL_LATTICE type="real" size="9" columns="3" units="bohr^-1">\n')
-        for row in bvec.T:
-            f.write(' ' + '  '.join(f'{x:.15E}' for x in row) + '\n')
+        f.writelines(' ' + '  '.join(f'{x:.15E}' for x in row) + '\n' for row in bvec.T)
         f.write('    </RECIPROCAL_LATTICE>\n')
 
         f.write(f'    <VKPT type="real" size="{3 * nkpnts}" columns="3" units="crystal">\n')
-        for i in range(vkpts_crystal.shape[1]):
-            f.write(' ' + '  '.join(f'{vkpts_crystal[j, i]:.15E}' for j in range(3)) + '\n')
+        f.writelines(
+            ' ' + '  '.join(f'{vkpts_crystal[j, i]:.15E}' for j in range(3)) + '\n'
+            for i in range(vkpts_crystal.shape[1])
+        )
         f.write('    </VKPT>\n')
 
         f.write(f'    <WK type="real" size="{nkpnts}">\n')
-        for w in wk:
-            f.write(f' {w:.15E}\n')
+        f.writelines(f' {w:.15E}\n' for w in wk)
         f.write('    </WK>\n')
         f.write(f'    <IVR type="integer" size="{3 * nrtot}" columns="3" units="crystal">\n')
-        for row in ivr:
-            f.write(' {:10d}{:10d}{:10d} \n'.format(*row))
+        f.writelines(' {:10d}{:10d}{:10d} \n'.format(*row) for row in ivr)
         f.write('    </IVR>\n')
         f.write(f'    <WR type="real" size="{nrtot}">\n')
-        for w in wr:
-            f.write(f' {w:.15E}\n')
+        f.writelines(f' {w:.15E}\n' for w in wr)
         f.write('    </WR>\n')
         f.write('    <RHAM>\n')
         for ir in range(nrtot):
             tag = f'VR.{ir + 1}'
             f.write(f'      <{tag} type="complex" size="{dim * dim}">\n')
-            for z in Hr[ir].flatten():
-                f.write(f' {z.real:> .15E},{z.imag:> .15E}\n')
+            f.writelines(f' {z.real:> .15E},{z.imag:> .15E}\n' for z in Hr[ir].flatten())
             f.write(f'      </{tag}>\n')
 
             if have_overlap:
                 tag = f'OVERLAP.{ir + 1}'
                 f.write(f'      <{tag} type="complex" size="{dim * dim}">\n')
-                for z in Sr[ir].flatten():
-                    f.write(f' {z.real:> .15E},{z.imag:> .15E}\n')
+                f.writelines(f' {z.real:> .15E},{z.imag:> .15E}\n' for z in Sr[ir].flatten())
                 f.write(f'      </{tag}>\n')
         f.write('    </RHAM>\n')
         write_kham(Hk, f)
@@ -202,7 +197,7 @@ def write_kham(
 def write_projectability_files(output_dir: str, data_controller: DataController) -> None:
     arry, attr = data_controller.data_dicts()
     Hk = arry['Hk']
-    proj = arry['U'].swapaxes(0, 1)
+    proj = data_controller.full_projections().swapaxes(0, 1)
     eigvals = arry['my_eigsmat']
     nbnds = attr['nbnds']
     nspin, nkpnts, _, _ = Hk.shape
@@ -241,6 +236,7 @@ def write_overlap_files(
         for ik in range(nR):
             mat = Sk[:, :, ik]
             for i in range(nawf):
-                for j in range(nawf):
-                    f.write(f'{mat[i, j].real:20.13f}  {mat[i, j].imag:20.13f}\n')
+                f.writelines(
+                    f'{mat[i, j].real:20.13f}  {mat[i, j].imag:20.13f}\n' for j in range(nawf)
+                )
     log_rank0('Printed overlap matrices to kovp.txt')

@@ -597,8 +597,7 @@ class DataController:
             attr = self.data_attributes
 
             with open(join(attr['opath'], fname), 'w') as f:
-                for i in range(len(col1)):
-                    f.write('%.5f %.15e\n' % (col1[i], col2[i]))
+                f.writelines('%.5f %.15e\n' % (col1[i], col2[i]) for i in range(len(col1)))
         self.comm.Barrier()
 
     def write_file_row_col_units(self, fname, col1, col2, unit1, unit2):
@@ -626,8 +625,7 @@ class DataController:
                 # Header
                 f.write(f'# {unit1:<30} {unit2}\n')
                 # Data
-                for x, y in zip(col1, col2):
-                    f.write(f'{x:12.5f} {y:25.15e}\n')
+                f.writelines(f'{x:12.5f} {y:25.15e}\n' for x, y in zip(col1, col2))
         self.comm.Barrier()
 
     def write_bxsf(self, fname, bands, nbnd, indices=None):
@@ -670,11 +668,10 @@ class DataController:
 
             for ispin in range(nspin):
                 with open(join(attr['opath'], fname + '_' + str(ispin) + '.dat'), 'w') as f:
-                    for ik in range(nkpi):
-                        f.write(
-                            ' '.join(['%6d' % ik] + ['% 14.8f' % j for j in bands[ik, :, ispin]])
-                            + '\n'
-                        )
+                    f.writelines(
+                        ' '.join(['%6d' % ik] + ['% 14.8f' % j for j in bands[ik, :, ispin]]) + '\n'
+                        for ik in range(nkpi)
+                    )
         self.comm.Barrier()
 
     def write_kpnts_path(self, fname, path, kpnts, b_vectors):
@@ -794,39 +791,39 @@ class DataController:
                     f = open(os.path.join(inputpath, 'kham.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
-                            for j in range(nawf):
-                                f.write(
-                                    '%20.13f %20.13f \n'
-                                    % (
-                                        np.real(Hks[i, j, ik, 0]),
-                                        np.imag(Hks[i, j, ik, 0]),
-                                    )
+                            f.writelines(
+                                '%20.13f %20.13f \n'
+                                % (
+                                    np.real(Hks[i, j, ik, 0]),
+                                    np.imag(Hks[i, j, ik, 0]),
                                 )
+                                for j in range(nawf)
+                            )
                     f.close()
                 elif nspin == 2:
                     f = open(os.path.join(inputpath, 'kham_up.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
-                            for j in range(nawf):
-                                f.write(
-                                    '%20.13f %20.13f \n'
-                                    % (
-                                        np.real(Hks[i, j, ik, 0]),
-                                        np.imag(Hks[i, j, ik, 0]),
-                                    )
+                            f.writelines(
+                                '%20.13f %20.13f \n'
+                                % (
+                                    np.real(Hks[i, j, ik, 0]),
+                                    np.imag(Hks[i, j, ik, 0]),
                                 )
+                                for j in range(nawf)
+                            )
                     f.close()
                     f = open(os.path.join(inputpath, 'kham_down.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
-                            for j in range(nawf):
-                                f.write(
-                                    '%20.13f %20.13f \n'
-                                    % (
-                                        np.real(Hks[i, j, ik, 1]),
-                                        np.imag(Hks[i, j, ik, 1]),
-                                    )
+                            f.writelines(
+                                '%20.13f %20.13f \n'
+                                % (
+                                    np.real(Hks[i, j, ik, 1]),
+                                    np.imag(Hks[i, j, ik, 1]),
                                 )
+                                for j in range(nawf)
+                            )
                     f.close()
             """
             if acbn0:
@@ -1069,6 +1066,85 @@ class DataController:
         from .utils.communication import scatter_array
 
         self.data_arrays[key] = scatter_array(self.data_arrays[key])
+
+    def local_projections(self):
+        """Return this rank's k-share of the PAO projection matrix.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nk_local, nbnds, nawf, nspin)``, complex
+            The rank-local block of ``U``, k-major so that the partition
+            matches :func:`~.communication.scatter_full` / ``gather_full``.
+
+        Notes
+        -----
+        :meth:`PAOFLOW.PAOFLOW.projections` never assembles the full array: it
+        stores each rank's share directly as ``U_local``.  When the projections
+        were instead read whole from ``atomic_proj.xml`` the full ``U`` is
+        scattered here on first use and cached.
+        """
+        import numpy as np
+
+        from .utils.communication import scatter_full
+
+        if 'U_local' in self.data_arrays:
+            return self.data_arrays['U_local']
+
+        # (nbnds, nawf, nkpnts, nspin) -> k-major, so scatter_full splits on k.
+        kmajor = None
+        if self.rank == 0:
+            kmajor = np.ascontiguousarray(np.moveaxis(self.data_arrays['U'], 2, 0))
+        self.data_arrays['U_local'] = scatter_full(kmajor, self.data_attributes['npool'])
+        return self.data_arrays['U_local']
+
+    def full_hamiltonian_k(self):
+        """Return the k-space PAO Hamiltonian on every rank.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``, complex
+            ``Hks`` for the whole grid, identical on all ranks.
+
+        Notes
+        -----
+        ``pao_hamiltonian`` leaves ``Hks`` on rank 0 only, since it is one of
+        the largest arrays in the run and nearly every consumer is already
+        rank-0 guarded.  Call this from the few that are not; it costs one full
+        copy per rank.  Collective: every rank must call it.
+        """
+        self.broadcast_single_array('Hks')
+        return self.data_arrays['Hks']
+
+    def full_projections(self):
+        """Assemble the complete PAO projection matrix on every rank.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nbnds, nawf, nkpnts, nspin)``, complex
+            The projection coefficients :math:`A_{ni}(\\mathbf{k})` for every
+            k-point, identical on all ranks.
+
+        Notes
+        -----
+        ``U`` is kept scattered over k-points so that large systems do not
+        replicate it on every rank, so this gather is deliberately explicit.
+        Call it *before* :meth:`PAOFLOW.PAOFLOW.pao_hamiltonian`, which frees
+        the projections.  The assembled array is cached under ``'U'``; it costs
+        one full copy per rank.
+        """
+        import numpy as np
+
+        from .utils.communication import gather_full
+
+        if 'U' in self.data_arrays and self.data_arrays['U'] is not None:
+            return self.data_arrays['U']
+
+        full = gather_full(self.data_arrays['U_local'], self.data_attributes['npool'])
+        if self.rank == 0:
+            self.data_arrays['U'] = np.ascontiguousarray(np.moveaxis(full, 0, 2))
+        del full
+        self.broadcast_single_array('U')
+        return self.data_arrays['U']
 
     def gather_data_array(self, key):
         import numpy as np

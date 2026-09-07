@@ -15,7 +15,7 @@ def build_Pn(nawf, nbnds, nkpnts, nspin, U):
         Number of k-points.
     nspin : int
         Number of spin channels.
-    U : np.ndarray, shape ``(nawf, nbnds, nkpnts, nspin)``
+    U : np.ndarray, shape ``(nbnds, nawf, nkpnts, nspin)``
         Overlap matrix between PAO projectors and DFT eigenstates.
 
     Returns
@@ -45,6 +45,42 @@ def build_Pn(nawf, nbnds, nkpnts, nspin, U):
     return Pn
 
 
+def build_Pn_distributed(data_controller):
+    """Compute the projectability from each rank's k-share and reduce.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Provides :meth:`~.DataController.DataController.local_projections`
+        and the ``nbnds``, ``nkpnts`` and ``nspin`` attributes.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnds,)``, float
+        The same :math:`P_n` as :func:`build_Pn`, available on every rank.
+
+    Notes
+    -----
+    :math:`P_n` is a plain sum over k-points, so it reduces exactly without
+    ever assembling the full projection matrix.
+    """
+    attributes = data_controller.data_attributes
+    nbnds = attributes['nbnds']
+    nkpnts = attributes['nkpnts']
+    nspin = attributes['nspin']
+
+    U_local = data_controller.local_projections()
+    Pn_local = np.zeros(nbnds, dtype=float)
+    for ispin in range(nspin):
+        for ikl in range(U_local.shape[0]):
+            uu = U_local[ikl, :, :, ispin]  # (nbnds, nawf)
+            Pn_local += np.real(np.sum(np.conj(uu) * uu, axis=1)) / nkpnts / nspin
+
+    Pn = np.zeros_like(Pn_local)
+    MPI.COMM_WORLD.Allreduce(Pn_local, Pn, op=MPI.SUM)
+    return Pn
+
+
 def do_projectability(data_controller):
     """Determine the number of well-projected bands and the optimal energy shift.
 
@@ -70,8 +106,9 @@ def do_projectability(data_controller):
 
     Notes
     -----
-    Only rank 0 calls :func:`build_Pn` and determines ``bnd`` and ``shift``.
-    Both values are then broadcast via
+    :func:`build_Pn_distributed` reduces the projectability over all ranks, so
+    the full projection matrix is never assembled.  ``bnd`` and ``shift`` are
+    still decided on rank 0 and broadcast via
     :meth:`DataController.broadcast_attribute`.  A warning is printed if all
     bands meet the threshold, indicating that the number of DFT bands may be
     too small.
@@ -85,11 +122,12 @@ def do_projectability(data_controller):
 
     shift = attr['shift']
 
+    # Collective: every rank contributes its k-share.
+    Pn = build_Pn_distributed(data_controller)
+
     if rank != 0:
         attr['shift'] = None
     else:
-        Pn = build_Pn(attr['nawf'], attr['nbnds'], attr['nkpnts'], attr['nspin'], arry['U'])
-
         if attr['verbose']:
             print('Projectability vector: \n', Pn)
 
