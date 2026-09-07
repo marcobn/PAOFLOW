@@ -453,7 +453,7 @@ class PAOFLOW:
                 print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
-    def projections(self, internal=False, basispath=None, configuration=None):
+    def projections(self, configuration=None, basispath=None, internal=None):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
@@ -461,38 +461,30 @@ class PAOFLOW:
 
         Parameters
         ----------
-        internal : bool, optional
-            If ``True``, use the all-electron internal basis (loaded from
-            ``basispath``) instead of the pseudopotential basis.  Always
-            forced ``True`` for VASP calculations.
         basispath : str, optional
             Directory containing the per-element ``BASIS/<elem>/*.dat``
-            files.  Required when ``internal`` is ``True`` or when
-            ``configuration`` is a preset string.
+            files.  Required when configuration is "standard", "extended" or when
+            configuration is a preset string.
         configuration : dict, str, or None, optional
             How to build the projection basis:
 
-            * ``"minimal"`` — use the pseudo-atomic wavefunctions
+            * "minimal" — use the pseudo-atomic wavefunctions
               shipped in each species' UPF file (smooth, matches the
-              default QE projwfc behaviour).  ``internal`` is ignored.
+              default QE projwfc behaviour). This is internal = False
               Spans the valence bands well; conduction states need
-              ``"standard"``, ``"extended"`` or an explicit
+              "standard", "extended" or an explicit
               configuration dict.
-            * ``"standard"`` — AE basis built from ``basispath``: the
+            * "standard" — AE basis built from ``basispath``: the
               minimal valence set augmented with (a) the next missing
               angular-momentum channel at ``nmax`` (e.g. ``3D`` for
               Si) and (b) ``(n+1)L`` for each occupied shell — see
               :func:`PAOFLOW.inputs.basis_presets.standard_augmentation`.
               Provides a moderate set of conduction states without the
-              full ``"extended"`` polarization.  ``internal`` is
-              ignored.
-            * ``"extended"`` — AE basis built from ``basispath``: the
+              full "extended" polarization.
+            * "extended" — AE basis built from ``basispath``: the
               UPF valence shells plus a generous rule-based set of
               polarization shells (see
               :func:`PAOFLOW.inputs.basis_presets.extended_augmentation`).
-              ``internal`` is ignored.  Equivalent to the
-              ``internal=True`` legacy path with an auto-generated
-              configuration dict.
             * ``dict`` — explicit per-element mapping
               ``{element: spec}``.  Each ``spec`` may be a list of shell
               labels (``['3S', '3P', '4S']`` — used verbatim) or a preset
@@ -500,10 +492,11 @@ class PAOFLOW:
               that element.  This lets you ask for a curated preset on
               some species while hand-picking orbitals on others, e.g.
               ``{'Ga': 'standard', 'As': ['4S', '4P', '3D']}``.  Consumed
-              by the AE-only builder (pass ``internal=True``).
+              by the AE-only builder.
               Backwards-compatible with previous releases.
             * ``None`` — keep whatever is already stored in
               ``arry['configuration']`` (legacy behaviour).
+        internal: for backward compatibility only, not used
         """
 
         from .inputs.basis_presets import (
@@ -526,6 +519,10 @@ class PAOFLOW:
         preset = None
         if configuration is not None:
             if isinstance(configuration, str):
+                if attr['dft'] == 'VASP':
+                    raise TypeError(
+                        'configuration must be a user-defined dict when input is from VASP'
+                    )
                 preset = configuration.lower()
                 arry['configuration'] = resolve_configuration(self.data_controller, configuration)
                 if attr.get('verbose') and self.rank == 0:
@@ -557,17 +554,10 @@ class PAOFLOW:
         #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
-        # Presets override the ``internal`` flag because they imply a
-        # specific scheme.
         if preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
-        elif preset in ('standard', 'extended'):
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
-        elif internal or attr['dft'] == 'VASP':
-            # Legacy AE-only path (explicit dict configuration).
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
         else:
-            basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
+            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
 
         # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
         # tau, label) so that downstream modules can reconstruct the
