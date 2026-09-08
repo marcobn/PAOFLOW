@@ -516,12 +516,14 @@ class PAOFLOW:
         if basispath is not None:
             attr['basispath'] = basispath
 
+        preset = None
         if configuration is not None:
             if isinstance(configuration, str):
                 if attr['dft'] == 'VASP':
                     raise TypeError(
                         'configuration must be a user-defined dict when input is from VASP'
                     )
+                preset = configuration.lower()
                 arry['configuration'] = resolve_configuration(self.data_controller, configuration)
                 if attr.get('verbose') and self.rank == 0:
                     print("Resolved configuration preset '%s':" % configuration)
@@ -535,6 +537,7 @@ class PAOFLOW:
                 arry['configuration'] = resolve_configuration_dict(
                     self.data_controller, configuration
                 )
+                preset = 'dict'
                 if attr.get('verbose') and self.rank == 0:
                     print('Resolved configuration dict:')
                     for elem, shells in arry['configuration'].items():
@@ -552,7 +555,7 @@ class PAOFLOW:
         #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
-        if configuration == None or configuration.lower() == 'minimal':
+        if preset == None or preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
         else:
             basis, arry['shells'] = build_aewfc_basis(self.data_controller)
