@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,12 @@ extensions = [
     'sphinx_copybutton',
     'autoapi.extension',
 ]
+
+# Fast live-preview mode (see serve_docs.sh): viewcode regenerates every
+# _modules/*.html page on every build, which dominates incremental rebuilds.
+DOCS_FAST = os.environ.get('PAOFLOW_DOCS_FAST', '') not in ('', '0')
+if DOCS_FAST:
+    extensions.remove('sphinx.ext.viewcode')
 
 nb_execution_mode = 'off'
 
