@@ -43,10 +43,10 @@ Transport properties: compute Boltzmann transport tensors and extend the workflo
 
 **Tutorial 03**
 
-Your description of the new tutorial goes here.
+Running linear response calculations
 :::
 
-:::
+::::
 
 ---
 
