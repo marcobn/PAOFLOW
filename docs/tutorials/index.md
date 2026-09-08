@@ -15,8 +15,6 @@ Each tutorial walks through a complete workflow end-to-end: from the required in
 :link-type: doc
 :class-card: landing-card
 
-{octicon}`book;1.8em;sd-text-muted`
-
 **Tutorial 01**
 
 Electronic structure: build a PAO Hamiltonian, interpolate band structure, and compute the density of states.
@@ -27,8 +25,6 @@ Electronic structure: build a PAO Hamiltonian, interpolate band structure, and c
 :link-type: doc
 :class-card: landing-card
 
-{octicon}`graph;1.8em;sd-text-muted`
-
 **Tutorial 02**
 
 Transport properties: compute Boltzmann transport tensors and extend the workflow with relaxation-time models.
@@ -38,8 +34,6 @@ Transport properties: compute Boltzmann transport tensors and extend the workflo
 :link: tutorial03
 :link-type: doc
 :class-card: landing-card
-
-{octicon}`book;1.8em;sd-text-muted`
 
 **Tutorial 03**
 
@@ -63,8 +57,6 @@ How-Tos are shorter and more targeted than tutorials. Instead of teaching a work
 :link-type: doc
 :class-card: landing-card
 
-{octicon}`stack;1.8em;sd-text-muted`
-
 **Building a sparse workflow**
 
 Run PAOFLOW on systems and grids too large for the dense pipeline to hold in memory.
@@ -75,9 +67,8 @@ Run PAOFLOW on systems and grids too large for the dense pipeline to hold in mem
 ```{toctree}
 :hidden:
 :maxdepth: 2
+:glob:
 
-tutorial01
-tutorial02
-tutorial03
+tutorial*
 howtos/index
 ```
