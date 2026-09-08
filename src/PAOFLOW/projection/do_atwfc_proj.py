@@ -763,7 +763,7 @@ def read_QE_wfc(data_controller, ik, ispin):
             xk = np.frombuffer(record[1:7], np.float64)
             ispin = record[7]
             gamma_only = record[8] != 0
-            scalef = np.frombuffer(record[9:], np.float64)[0]
+            # scalef = np.frombuffer(record[9:], np.float64)[0]
             # print('ik =', ik, '  ispin =', ispin, '  gamma_only =', gamma_only, '  scalef =', scalef)
             # print('xk =', xk)
 
