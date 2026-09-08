@@ -552,7 +552,7 @@ class PAOFLOW:
         #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
-        if configuration.lower() == 'minimal' or configuration == None:
+        if configuration == None or configuration.lower() == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
         else:
             basis, arry['shells'] = build_aewfc_basis(self.data_controller)
