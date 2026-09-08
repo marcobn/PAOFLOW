@@ -78,5 +78,6 @@ Run PAOFLOW on systems and grids too large for the dense pipeline to hold in mem
 
 tutorial01
 tutorial02
+tutorial03
 howtos/index
 ```
