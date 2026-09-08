@@ -463,25 +463,25 @@ class PAOFLOW:
         ----------
         basispath : str, optional
             Directory containing the per-element ``BASIS/<elem>/*.dat``
-            files.  Required when configuration is "standard", "extended" or when
+            files.  Required when configuration is 'standard', 'extended' or when
             configuration is a preset string.
         configuration : dict, str, or None, optional
             How to build the projection basis:
 
-            * "minimal" — use the pseudo-atomic wavefunctions
+            * ``'minimal'`` — use the pseudo-atomic wavefunctions
               shipped in each species' UPF file (smooth, matches the
               default QE projwfc behaviour). This is internal = False
               Spans the valence bands well; conduction states need
               "standard", "extended" or an explicit
               configuration dict.
-            * "standard" — AE basis built from ``basispath``: the
+            * ``'standard'`` — AE basis built from ``basispath``: the
               minimal valence set augmented with (a) the next missing
               angular-momentum channel at ``nmax`` (e.g. ``3D`` for
               Si) and (b) ``(n+1)L`` for each occupied shell — see
               :func:`PAOFLOW.inputs.basis_presets.standard_augmentation`.
               Provides a moderate set of conduction states without the
               full "extended" polarization.
-            * "extended" — AE basis built from ``basispath``: the
+            * ``'extended'`` — AE basis built from ``basispath``: the
               UPF valence shells plus a generous rule-based set of
               polarization shells (see
               :func:`PAOFLOW.inputs.basis_presets.extended_augmentation`).
@@ -516,14 +516,12 @@ class PAOFLOW:
         if basispath is not None:
             attr['basispath'] = basispath
 
-        preset = None
         if configuration is not None:
             if isinstance(configuration, str):
                 if attr['dft'] == 'VASP':
                     raise TypeError(
                         'configuration must be a user-defined dict when input is from VASP'
                     )
-                preset = configuration.lower()
                 arry['configuration'] = resolve_configuration(self.data_controller, configuration)
                 if attr.get('verbose') and self.rank == 0:
                     print("Resolved configuration preset '%s':" % configuration)
@@ -554,7 +552,7 @@ class PAOFLOW:
         #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
-        if preset == 'minimal':
+        if configuration.lower() == 'minimal' or configuration == None:
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
         else:
             basis, arry['shells'] = build_aewfc_basis(self.data_controller)
