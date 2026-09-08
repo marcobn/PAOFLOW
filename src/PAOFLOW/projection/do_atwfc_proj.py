@@ -789,7 +789,7 @@ def read_QE_wfc(data_controller, ik, ispin):
                 xk = np.array(h5.attrs['xk'])
                 ispin = int(h5.attrs['ispin'])
                 gamma_only = 'TRUE' in h5.attrs['gamma_only'].decode()
-                scalef = float(h5.attrs['scale_factor'])
+                # scalef = float(h5.attrs['scale_factor'])
                 igwx = int(h5.attrs['igwx'])
                 npol = int(h5.attrs['npol'])
                 nbnd = int(h5.attrs['nbnd'])
