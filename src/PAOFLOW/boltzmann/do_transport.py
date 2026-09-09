@@ -50,8 +50,8 @@ def do_transport(
         - ``hall[smearing]_{ispin}.dat`` (if ``do_hall``): the nine
           antisymmetrised components :math:`(R_{ijr} - R_{jir})/2` of the Hall
           coefficient tensor in m³ C⁻¹.
-        - ``nernst[smearing]_{ispin}.dat`` (if ``do_hall``): the eighteen
-          off-diagonal components :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹.
+        - ``nernst[smearing]_{ispin}.dat`` (if ``do_hall``): all 27 components
+          :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹.
 
         When ``save_tensors`` is ``True``, adds the following keys to
         ``data_controller.data_arrays``:
@@ -67,7 +67,7 @@ def do_transport(
         - ``R_hall`` : np.ndarray, shape ``(3, 3, 3, esize)`` — Hall
           coefficient tensor in m³ C⁻¹ (only if ``do_hall``).
         - ``nernst`` : np.ndarray, shape ``(3, 3, 3, esize)`` — Nernst
-          tensor (only if ``do_hall``).
+          tensor in V K⁻¹ T⁻¹ (only if ``do_hall``).
 
     Notes
     -----
@@ -188,7 +188,7 @@ def do_transport(
                 )
 
                 wtup_nernst = lambda fn, tu: fn.write(
-                    '%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n'
+                    '%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n'
                     % tu
                 )
                 gtup_nernst = lambda tu, i: (
@@ -212,6 +212,15 @@ def do_transport(
                     tu[2, 1, 1, i],
                     tu[1, 2, 2, i],
                     tu[2, 1, 2, i],
+                    tu[0, 0, 0, i],
+                    tu[0, 0, 1, i],
+                    tu[0, 0, 2, i],
+                    tu[1, 1, 0, i],
+                    tu[1, 1, 1, i],
+                    tu[1, 1, 2, i],
+                    tu[2, 2, 0, i],
+                    tu[2, 2, 1, i],
+                    tu[2, 2, 2, i],
                 )
 
             L0, L1, L2 = do_Boltz_tensors(
