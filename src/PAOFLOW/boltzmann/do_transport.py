@@ -136,10 +136,10 @@ def do_transport(
                     fhall = ojf('hall', ispin)
                     fnernst = ojf('nernst', ispin)
             else:
-                fsigma = ojf('sigma_' + attr['smearing'], ispin)
-                fPF = ojf('PF_' + attr['smearing'], ispin)
-                fkappa = ojf('kappa_' + attr['smearing'], ispin)
-                fSeebeck = ojf('Seebeck_' + attr['smearing'], ispin)
+                fsigma = ojf('sigma' + attr['smearing'], ispin)
+                fPF = ojf('PF' + attr['smearing'], ispin)
+                fkappa = ojf('kappa' + attr['smearing'], ispin)
+                fSeebeck = ojf('Seebeck' + attr['smearing'], ispin)
                 if do_hall:
                     fhall_trace = ojf('hall_trace_' + attr['smearing'], ispin)
                     fhall = ojf('hall_' + attr['smearing'], ispin)
