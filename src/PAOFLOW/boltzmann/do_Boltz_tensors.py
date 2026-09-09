@@ -66,7 +66,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
     #### Forced t_tensor to have all components
     t_tensor = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
 
-    # Quick call function for L_loop (None is smearing type)
+    # Quick call function for L_loop
     fLloop = lambda spol: L_loop(data_controller, temp, smearing, ene, velkp, t_tensor, spol, ispin)
 
     # Quick call function for Zeros on rank Zero
@@ -142,7 +142,7 @@ def do_Boltz_tensors(data_controller, smearing, temp, ene, velkp, ispin, channel
 
 
 def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, channels, weights):
-    r"""Compute the anomalous (Hall) Boltzmann transport tensor L0_hall.
+    r"""Compute the anomalous (Hall) Boltzmann transport tensors L0_hall and L1_hall.
 
     Evaluates the rank-3 Hall conductivity kernel
 
@@ -158,6 +158,17 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
     where :math:`\\epsilon_{pqr}` is the Levi-Civita symbol and
     :math:`M^{-1}_{jq}` is the inverse effective-mass tensor from
     ``arry['d2Ed2k']``.
+
+    ``L0_hall`` is the zeroth energy moment of this kernel and ``L1_hall``
+    its first moment, weighted by :math:`(E_{n\\mathbf{k}} - \\varepsilon)`.
+
+    When ``smearing`` is ``None`` the Fermi-Dirac derivative
+    ``1/(4T cosh\u00b2(...))`` is evaluated analytically and each moment is
+    obtained from a separate :func:`L_loop_hall` call, selected through its
+    ``alpha`` argument.  When adaptive smearing is enabled (``'gauss'`` or
+    ``'m-p'``) the kernel is evaluated once on an extended energy grid and
+    both moments are obtained by convolution with the Fermi window via
+    Simpson quadrature.
 
     Parameters
     ----------
@@ -181,9 +192,11 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
 
     Returns
     -------
-    L0_hall : ndarray, shape (3, 3, 3, ne), or None
-        Hall transport tensor on rank 0; ``None`` on all other ranks.
+    L0_hall, L1_hall : ndarray, shape (3, 3, 3, ne), or (None, None)
+        Hall transport tensor on rank 0; ``(None, None)`` on all other ranks.
     """
+    from scipy.integrate import simpson
+
     arrays, _ = data_controller.data_dicts()
 
     esize = ene.size
@@ -192,17 +205,62 @@ def do_Boltz_tensors_hall(data_controller, smearing, temp, ene, velkp, ispin, ch
     #### Forced t_tensor to have all components
     t_tensor = np.array([[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]], dtype=int)
 
-    # Quick call function for L_loop (None is smearing type)
-
     # Quick call function for Zeros on rank Zero
     zoz = lambda r: np.zeros((3, 3, 3, esize), dtype=float) if r == 0 else None
 
-    L0_hall = zoz(rank)
-    L0_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 0, ispin)
-    comm.Reduce(L0_hall_aux, L0_hall, op=MPI.SUM)
-    L0_hall_aux = None
+    if smearing is None:
+        L0_hall = zoz(rank)
+        L0_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 0, ispin)
+        comm.Reduce(L0_hall_aux, L0_hall, op=MPI.SUM)
+        L0_hall_aux = None
 
-    return L0_hall if rank == 0 else None
+        L1_hall = zoz(rank)
+        L1_hall_aux = L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, 1, ispin)
+        comm.Reduce(L1_hall_aux, L1_hall, op=MPI.SUM)
+        L1_hall_aux = None
+    else:
+        L0_hall = zoz(rank)
+        L1_hall = zoz(rank)
+
+        # Fixed threshold
+        thresh = 1e-9
+        dE_max = 2 * temp * np.arccosh(1 / np.sqrt(thresh))
+
+        if len(ene) > 1:
+            dE = ene[1] - ene[0]
+        else:
+            dE = 2 * temp * np.arccosh(1 / np.sqrt(thresh)) * 1e-2 + 1e-8
+
+        lower = np.flip(np.arange(ene[0] - dE, ene[0] - dE_max - dE, -dE))
+        upper = np.arange(ene[-1] + dE, ene[-1] + dE_max + dE, dE)
+        ene_aux = np.concatenate((lower, ene, upper))
+
+        L0_hall_ext = np.zeros((3, 3, 3, ene_aux.size), dtype=float) if rank == 0 else None
+        L0_hall_aux = L_loop_hall(
+            data_controller, temp, smearing, ene_aux, velkp, t_tensor, 0, ispin
+        )
+        comm.Reduce(L0_hall_aux, L0_hall_ext, op=MPI.SUM)
+        L0_hall_aux = None
+
+        if rank == 0:
+            # Interpolate
+            ene_int = np.linspace(ene_aux[0], ene_aux[-1], 2 * ene_aux.size - 1)
+            L0_hall_int = np.zeros((3, 3, 3, ene_int.size), dtype=float)
+            for h_indx in np.ndindex((3, 3, 3)):
+                L0_hall_int[h_indx[0], h_indx[1], h_indx[2], :] = np.interp(
+                    ene_int, ene_aux, L0_hall_ext[h_indx[0], h_indx[1], h_indx[2], :]
+                )
+
+            for i, ef in enumerate(ene):
+                fermi_smear = 1 / (4 * temp * (np.cosh((ene_int - ef) / (2 * temp)) ** 2))
+
+                for h_indx in np.ndindex((3, 3, 3)):
+                    L_hall_smear_aux = L0_hall_int[h_indx[0], h_indx[1], h_indx[2], :] * fermi_smear
+                    L0_hall[h_indx[0], h_indx[1], h_indx[2], i] = simpson(L_hall_smear_aux, ene_int)
+                    L1_hall[h_indx[0], h_indx[1], h_indx[2], i] = simpson(
+                        L_hall_smear_aux * (ene_int - ef), ene_int
+                    )
+    return (L0_hall, L1_hall) if rank == 0 else (None, None)
 
 
 def get_tau(data_controller, temp, channels, weights):
@@ -410,11 +468,17 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         \\left(\\sum_{qr} \\epsilon_{pqr}\\,
         v^i_{n\\mathbf{k}}\\, v^r_{n\\mathbf{k}}\\,
         M^{-1}_{jq,n\\mathbf{k}}\\right)
-        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)
+        \\sigma(E_{n\\mathbf{k}}, \\varepsilon, \\delta_k)\\,
+        (E_{n\\mathbf{k}} - \\varepsilon)^\\alpha
 
     The Levi-Civita symbol :math:`\\epsilon_{pqr}` is a static rank-3
     tensor; the inverse effective-mass tensor components are read
     from ``arry['d2Ed2k']`` and assembled into a full 3\u00d73 matrix.
+
+    The :math:`(E - \\varepsilon)^\\alpha` factor is applied only in the
+    Fermi-Dirac branch; with adaptive smearing the kernel is returned for
+    ``alpha`` = 0 irrespective of the argument, and the energy moment is
+    taken by the caller.
 
     Parameters
     ----------
@@ -434,7 +498,8 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
         Tensor component pairs (used to unpack the symmetric effective-mass
         tensor stored as 6 independent components).
     alpha : int
-        Power of the energy factor (currently always 0 for Hall).
+        Power of the ``(E - \u03b5)`` kernel: 0 or 1.  Honoured only when
+        ``smearing`` is ``None``.
     ispin : int
         Spin channel index.
 
@@ -490,7 +555,9 @@ def L_loop_hall(data_controller, temp, smearing, ene, velkp, t_tensor, alpha, is
     Minv = M_inv[:, :, :, :, ispin]  # (j, q, k, bnd)
     if smearing is None:
         Ediff = Ek[:, :, None] - ene[None, None, :]
+        EtoAlpha = np.power(Ediff, alpha)
         smearA = 1.0 / (4 * temp * (np.cosh(Ediff / (2 * temp)) ** 2))
+        smearA = smearA * EtoAlpha
     else:
         delk = arrays['deltakp'][:, :bnd, ispin][:, :, None]
         if smearing == 'gauss':

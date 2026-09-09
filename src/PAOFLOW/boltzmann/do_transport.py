@@ -22,7 +22,8 @@ def do_transport(
     weights : array_like
         k-point weights passed to :func:`do_Boltz_tensors`.
     do_hall : bool
-        If ``True``, also compute the antisymmetric Hall coefficient tensor.
+        If ``True``, also compute the antisymmetric Hall coefficient tensor
+        and the Nernst tensor.
     write_to_file : bool
         If ``True``, write all transport tensors to formatted ``.dat`` files
         in ``opath``.
@@ -44,8 +45,13 @@ def do_transport(
           :math:`\\kappa` in W m⁻¹ K⁻¹.
         - ``PF[smearing]_{ispin}.dat``: power factor
           :math:`S^2 \\sigma` in W m⁻¹ K⁻².
-        - ``hall_trace_{ispin}.dat`` (if ``do_hall``): trace of the Hall
-          coefficient tensor :math:`R_H` in m³ C⁻¹.
+        - ``hall_trace[smearing]_{ispin}.dat`` (if ``do_hall``): trace of the
+          Hall coefficient tensor :math:`R_H` in m³ C⁻¹.
+        - ``hall[smearing]_{ispin}.dat`` (if ``do_hall``): the nine
+          antisymmetrised components :math:`(R_{ijr} - R_{jir})/2` of the Hall
+          coefficient tensor in m³ C⁻¹.
+        - ``nernst[smearing]_{ispin}.dat`` (if ``do_hall``): all 27 components
+          :math:`N_{ijr}` of the Nernst tensor in V K⁻¹ T⁻¹.
 
         When ``save_tensors`` is ``True``, adds the following keys to
         ``data_controller.data_arrays``:
@@ -58,6 +64,10 @@ def do_transport(
           conductivity tensor in W m⁻¹ K⁻¹.
         - ``R_hall_trace`` : np.ndarray, shape ``(esize,)`` — averaged
           Hall coefficient in m³ C⁻¹ (only if ``do_hall``).
+        - ``R_hall`` : np.ndarray, shape ``(3, 3, 3, esize)`` — Hall
+          coefficient tensor in m³ C⁻¹ (only if ``do_hall``).
+        - ``nernst`` : np.ndarray, shape ``(3, 3, 3, esize)`` — Nernst
+          tensor in V K⁻¹ T⁻¹ (only if ``do_hall``).
 
     Notes
     -----
@@ -79,10 +89,18 @@ def do_transport(
 
     .. math::
 
-        R_H = (\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
+        R_H = -(\\sigma^{-1})\\, \\mathcal{L}^{(0,\\text{Hall})}\\, (\\sigma^{-1})
 
     and reported as the average of the three even-permutation components
     :math:`(R_{012} + R_{201} + R_{120}) / 3`.
+
+    The Nernst tensor is built from the Hall coefficient and the first-order
+    Hall transport tensor :math:`\\mathcal{L}^{(1,\\text{Hall})}` as
+
+    .. math::
+
+        N = R_H\\, \\mathcal{L}^{(1)} +
+            (\\sigma^{-1})\\, \\mathcal{L}^{(1,\\text{Hall})}
 
     Conversion factors: ``siemen_conv = 6.9884`` converts internal units to
     S m⁻¹ × 10⁻²¹; ``temp_conv = 11604.525`` converts Kelvin to eV⁻¹;
@@ -113,13 +131,19 @@ def do_transport(
                 fPF = ojf('PF', ispin)
                 fkappa = ojf('kappa', ispin)
                 fSeebeck = ojf('Seebeck', ispin)
+                if do_hall:
+                    fhall_trace = ojf('hall_trace', ispin)
+                    fhall = ojf('hall', ispin)
+                    fnernst = ojf('nernst', ispin)
             else:
                 fsigma = ojf('sigma' + attr['smearing'], ispin)
                 fPF = ojf('PF' + attr['smearing'], ispin)
                 fkappa = ojf('kappa' + attr['smearing'], ispin)
                 fSeebeck = ojf('Seebeck' + attr['smearing'], ispin)
-            if do_hall:
-                fhall = ojf('hall_trace', ispin)
+                if do_hall:
+                    fhall_trace = ojf('hall_trace_' + attr['smearing'], ispin)
+                    fhall = ojf('hall_' + attr['smearing'], ispin)
+                    fnernst = ojf('nernst_' + attr['smearing'], ispin)
 
         for temp in temps:
             itemp = temp / temp_conv
@@ -142,16 +166,70 @@ def do_transport(
             )
 
             if do_hall:
-                wtup_hall = lambda fn, tu: fn.write('%8.2f % .5f % 9.5e \n' % tu)
-                gtup_hall = lambda tu, i: (temp, ene[i], tu[i])
+                wtup_hall_trace = lambda fn, tu: fn.write('%8.2f % .5f % 9.5e \n' % tu)
+                gtup_hall_trace = lambda tu, i: (temp, ene[i], tu[i])
+
+                wtup_full_hall = lambda fn, tu: fn.write(
+                    '%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n'
+                    % tu
+                )
+                gtup_full_hall = lambda tu, i: (
+                    temp,
+                    ene[i],
+                    (tu[0, 1, 2, i] - tu[1, 0, 2, i]) / 2,
+                    (tu[0, 2, 1, i] - tu[2, 0, 1, i]) / 2,
+                    (tu[1, 2, 0, i] - tu[2, 1, 0, i]) / 2,
+                    (tu[0, 1, 0, i] - tu[1, 0, 0, i]) / 2,
+                    (tu[0, 1, 1, i] - tu[1, 0, 1, i]) / 2,
+                    (tu[0, 2, 0, i] - tu[2, 0, 0, i]) / 2,
+                    (tu[0, 2, 2, i] - tu[2, 0, 2, i]) / 2,
+                    (tu[1, 2, 1, i] - tu[2, 1, 1, i]) / 2,
+                    (tu[1, 2, 2, i] - tu[2, 1, 2, i]) / 2,
+                )
+
+                wtup_nernst = lambda fn, tu: fn.write(
+                    '%8.2f % .5f % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e % 9.5e \n'
+                    % tu
+                )
+                gtup_nernst = lambda tu, i: (
+                    temp,
+                    ene[i],
+                    tu[0, 1, 2, i],
+                    tu[1, 0, 2, i],
+                    tu[0, 2, 1, i],
+                    tu[2, 0, 1, i],
+                    tu[1, 2, 0, i],
+                    tu[2, 1, 0, i],
+                    tu[0, 1, 0, i],
+                    tu[1, 0, 0, i],
+                    tu[0, 1, 1, i],
+                    tu[1, 0, 1, i],
+                    tu[0, 2, 0, i],
+                    tu[2, 0, 0, i],
+                    tu[0, 2, 2, i],
+                    tu[2, 0, 2, i],
+                    tu[1, 2, 1, i],
+                    tu[2, 1, 1, i],
+                    tu[1, 2, 2, i],
+                    tu[2, 1, 2, i],
+                    tu[0, 0, 0, i],
+                    tu[0, 0, 1, i],
+                    tu[0, 0, 2, i],
+                    tu[1, 1, 0, i],
+                    tu[1, 1, 1, i],
+                    tu[1, 1, 2, i],
+                    tu[2, 2, 0, i],
+                    tu[2, 2, 1, i],
+                    tu[2, 2, 2, i],
+                )
 
             L0, L1, L2 = do_Boltz_tensors(
                 data_controller, attr['smearing'], itemp, ene, velkp, ispin, channels, weights
             )
 
             if do_hall:
-                L0_hall = do_Boltz_tensors_hall(
-                    data_controller, None, itemp, ene, velkp, ispin, channels, weights
+                L0_hall, L1_hall = do_Boltz_tensors_hall(
+                    data_controller, attr['smearing'], itemp, ene, velkp, ispin, channels, weights
                 )
 
             if rank == 0:
@@ -165,43 +243,9 @@ def do_transport(
                 if write_to_file:
                     for i in range(esize):
                         wtup(fsigma, gtup(sigma, i))
-                    sigma = None
+
                 if save_tensors:
                     arrays['sigma'] = sigma
-
-                if do_hall:
-                    L0_hall *= spin_mult / (attr['omega'])
-                    R_hall = np.zeros((3, 3, 3, esize), dtype=float)
-                    R_hall_trace = np.zeros((esize), dtype=float)
-                    for n in range(esize):
-                        try:
-                            for r in range(3):
-                                R_hall[:, :, r, n] = (
-                                    npl.inv(L0_unconverted[:, :, n])
-                                    @ L0_hall[:, :, r, n]
-                                    @ npl.inv(L0_unconverted[:, :, n])
-                                )
-                                # ----------------------
-                                # The equivalent to the trace of the Hall tensor is an average
-                                # over the even permutations of [0, 1, 2].
-                                # ----------------------
-                            R_hall_trace[n] = (
-                                (R_hall[0, 1, 2, n] + R_hall[2, 0, 1, n] + R_hall[1, 2, 0, n])
-                                * hall_SI
-                                / 3
-                            )
-
-                        except Exception:
-                            from ..utils.report_exception import report_exception
-
-                            print('check t_tensor components - matrix cannot be singular')
-                            report_exception()
-                            raise
-                    if write_to_file:
-                        for i in range(esize):
-                            wtup_hall(fhall, gtup_hall(R_hall_trace, i))
-                    if save_tensors:
-                        arrays['R_hall_trace'] = R_hall_trace
 
                 # ----------------------
                 # Seebeck (in units of V/K)
@@ -237,22 +281,92 @@ def do_transport(
                     kappa[:, :, n] = (
                         L2[:, :, n] - temp * L1[:, :, n] @ npl.inv(L0[:, :, n]) @ L1[:, :, n]
                     ) * 1.0e6
-                L1 = L2 = None
+                L2 = None
                 if write_to_file:
                     for i in range(esize):
                         wtup(fkappa, gtup(kappa, i))
-                    kappa = None
+
                 if save_tensors:
                     arrays['kappa'] = kappa
 
                 PF = np.zeros((3, 3, esize), dtype=float)
                 for n in range(esize):
                     PF[:, :, n] = np.dot(np.dot(S[:, :, n], L0[:, :, n]), S[:, :, n]) * 1.0e21
-                S = L0 = None
+                S = L0 = sigma = kappa = None
                 if write_to_file:
                     for i in range(esize):
                         wtup(fPF, gtup(PF, i))
                     PF = None
+
+                if do_hall:
+                    L0_hall *= spin_mult / (attr['omega'])
+
+                    R_hall = np.zeros((3, 3, 3, esize), dtype=float)
+                    R_hall_trace = np.zeros((esize), dtype=float)
+                    for n in range(esize):
+                        try:
+                            for r in range(3):
+                                R_hall[:, :, r, n] = (
+                                    -npl.inv(L0_unconverted[:, :, n])
+                                    @ L0_hall[:, :, r, n]
+                                    @ npl.inv(L0_unconverted[:, :, n])
+                                )
+                                # ----------------------
+                                # The equivalent to the trace of the Hall tensor is an average
+                                # over the even permutations of [0, 1, 2].
+                                # ----------------------
+                            R_hall_trace[n] = (
+                                (R_hall[0, 1, 2, n] + R_hall[2, 0, 1, n] + R_hall[1, 2, 0, n])
+                                * hall_SI
+                                / 3
+                            )
+
+                        except Exception:
+                            from ..utils.report_exception import report_exception
+
+                            print('check t_tensor components - matrix cannot be singular')
+                            report_exception()
+                            raise
+
+                    if write_to_file:
+                        for i in range(esize):
+                            wtup_hall_trace(fhall_trace, gtup_hall_trace(R_hall_trace, i))
+                    if save_tensors:
+                        arrays['R_hall_trace'] = R_hall_trace
+
+                    R_hall *= hall_SI
+
+                    if write_to_file:
+                        for i in range(esize):
+                            wtup_full_hall(fhall, gtup_full_hall(R_hall, i))
+                    if save_tensors:
+                        arrays['R_hall'] = R_hall
+
+                    L1_hall *= spin_mult / (temp * attr['omega'])
+
+                    nernst = np.zeros((3, 3, 3, esize), dtype=float)
+                    for n in range(esize):
+                        try:
+                            for r in range(3):
+                                nernst[:, :, r, n] = (R_hall[:, :, r, n] @ L1[:, :, n]) + (
+                                    npl.inv(L0_unconverted[:, :, n]) @ L1_hall[:, :, r, n]
+                                ) * siemen_conv * hall_SI
+
+                        except Exception:
+                            from ..utils.report_exception import report_exception
+
+                            print('check t_tensor components - matrix cannot be singular')
+                            report_exception()
+                            raise
+
+                    nernst *= 1e21
+
+                    if write_to_file:
+                        for i in range(esize):
+                            wtup_nernst(fnernst, gtup_nernst(nernst, i))
+                    if save_tensors:
+                        arrays['nernst'] = nernst
+
             comm.Barrier()
 
         if write_to_file:
@@ -261,11 +375,15 @@ def do_transport(
             fkappa.close()
             fSeebeck.close()
             if do_hall:
+                fhall_trace.close()
                 fhall.close()
+                fnernst.close()
 
         if save_tensors:
             data_controller.broadcast_single_array('sigma', dtype=float)
             data_controller.broadcast_single_array('S', dtype=float)
             data_controller.broadcast_single_array('kappa', dtype=float)
             if do_hall:
+                data_controller.broadcast_single_array('R_hall', dtype=float)
+                data_controller.broadcast_single_array('nernst', dtype=float)
                 data_controller.broadcast_single_array('R_hall_trace', dtype=float)
