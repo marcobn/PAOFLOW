@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 project = 'PAOFLOW'
 author = 'PAOFLOW developers'
-release = '2.9.3'
+release = '3.0.0'
 
 extensions = [
     'myst_nb',
