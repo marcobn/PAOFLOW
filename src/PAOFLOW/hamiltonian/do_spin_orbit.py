@@ -18,7 +18,8 @@ import numpy as np
 #
 # The convention follows the existing kernels:
 #   * Tesseral order per shell: m=0, then (m=+kc, m=+ks) for k=1..l
-#     (i.e. for l=1: pz, px, py; for l=2: dz2, dxz, dyz, dx2-y2, dxy).
+#     (i.e. for l=1: pz, px, py; for l=2: dz2, dxz, dyz, dx2-y2, dxy;
+#     for l=3: fz3, fxz2,fyz2, fzx2-y2, fxyz, fxx2-3y2, fy3x2-y2)
 #   * Quantisation axis n̂ = (sinθ cosφ, sinθ sinφ, cosθ);
 #     θ̂ = (cosθ cosφ, cosθ sinφ, -sinθ); φ̂ = (-sinφ, cosφ, 0).
 #   * H_UU = +(L·n̂)/2,  H_DD = -(L·n̂)/2,
@@ -29,9 +30,9 @@ def _angular_momentum_matrices(l):
     """Return ``(Lx, Ly, Lz)`` as Hermitian ``(2l+1, 2l+1)`` complex matrices
     in the QE real-tesseral basis.
 
-    Hardcoded for ``l = 0, 1, 2`` (the only channels exposed by the rest
+    Hardcoded for ``l = 0, 1, 2, 3`` (the only channels exposed by the rest
     of PAOFLOW's adhoc SOC).  Values are read off the existing
-    ``soc_p_*`` / ``soc_d_*`` kernels so the generic builder is
+    ``soc_p_*`` / ``soc_d_*``/``soc_f_*`` kernels so the generic builder is
     bit-for-bit compatible with them.
     """
     if l == 0:
@@ -64,7 +65,155 @@ def _angular_momentum_matrices(l):
         Lz[3, 4] = -2j
         Lz[4, 3] = 2j
         return Lx, Ly, Lz
-    raise NotImplementedError('Generic SOC builder only supports l=0,1,2 (s/p/d). Got l=%d.' % l)
+    ########################## FROM wikipedia
+    # https://en.wikipedia.org/wiki/Table_of_spherical_harmonics#Real_spherical_harmonics
+    # l=3
+    # in the order Y_3,m m= [0,1,-1,2,-2,3,-3]
+    if l == 3:
+        s6, s10 = np.sqrt(6.0), np.sqrt(10.0)
+
+        Lz = np.zeros((7, 7), dtype=complex)
+        Lz[1, 2], Lz[2, 1], Lz[3, 4], Lz[4, 3], Lz[5, 6], Lz[6, 5] = -1j, 1j, -2j, 2j, -3j, 3j
+
+        Lx = np.array(
+            [
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 - s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+            ],
+            dtype=complex,
+        )
+
+        Ly = np.array(
+            [
+                [
+                    0.0 + 0.0j,
+                    0.0 - s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + s6 * 1j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s10 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 - s6 / 2j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+                [
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                    0.0 + s6 / 2j,
+                    0.0 + 0.0j,
+                    0.0 + 0.0j,
+                ],
+            ],
+            dtype=complex,
+        )
+
+        return Lx, Ly, Lz
 
 
 def _shell_soc_block(theta, phi, l):
@@ -132,6 +281,7 @@ def build_generic_soc(theta, phi, shells_list, norb, active_shells=None):
     """
     HR_p = np.zeros((2 * norb, 2 * norb), dtype=complex)
     HR_d = np.zeros((2 * norb, 2 * norb), dtype=complex)
+    HR_f = np.zeros((2 * norb, 2 * norb), dtype=complex)
     if active_shells is None:
         counts = {}
         weights = []
@@ -155,7 +305,15 @@ def build_generic_soc(theta, phi, shells_list, norb, active_shells=None):
             offset += n
             continue
         H = _shell_soc_block(theta, phi, l)
-        target = HR_p if l == 1 else HR_d
+        if l == 1:
+            target = HR_p
+        elif l == 2:
+            target = HR_d
+        elif l == 3:
+            target = HR_f
+        else:
+            offset += n
+            continue
         sl_up = slice(offset, offset + n)
         sl_dn = slice(offset + norb, offset + norb + n)
         target[sl_up, sl_up] += w * H[:n, :n]
@@ -167,7 +325,7 @@ def build_generic_soc(theta, phi, shells_list, norb, active_shells=None):
         raise ValueError(
             'shells_list orbital count (%d) does not match norb (%d).' % (offset, norb)
         )
-    return HR_p, HR_d
+    return HR_p, HR_d, HR_f
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +342,7 @@ def do_spin_orbit_H(data_controller):
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
         Required arrays: ``HRs`` (shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``),
-        ``naw``, ``orb_pseudo``, ``lambda_p``, ``lambda_d``.
+        ``naw``, ``orb_pseudo``, ``lambda_p``, ``lambda_d``.,``lambda_f``
         Required attributes: ``natoms``, ``theta``, ``phi``.
 
     Returns
@@ -206,8 +364,8 @@ def do_spin_orbit_H(data_controller):
     :math:`H_{\\uparrow\\uparrow} = H_{\\downarrow\\downarrow} = H_0`.  For
     a magnetic system the two spin channels are taken from the two spin
     components of ``HRs``.  The SOC term is added only at the
-    :math:`\\mathbf{R}=(0,0,0)` site; p- and d-channel couplings are weighted
-    by ``lambda_p`` and ``lambda_d``, respectively.
+    :math:`\\mathbf{R}=(0,0,0)` site; p-/d-/f-channel couplings are weighted
+    by ``lambda_p`` and ``lambda_d``,``lambda_f``, respectively.
     """
     # construct TB spin orbit Hamiltonian (following Abate and Asdente, Phys. Rev. 140, A1303 (1965))
 
@@ -219,9 +377,10 @@ def do_spin_orbit_H(data_controller):
 
     nawf, _, nk1, nk2, nk3, nspin = arry['HRs'].shape
 
-    socStrengh = np.zeros((natoms, 2), dtype=float)
+    socStrengh = np.zeros((natoms, 3), dtype=float)
     socStrengh[:, 0] = arry['lambda_p'][0:natoms]
     socStrengh[:, 1] = arry['lambda_d'][0:natoms]
+    socStrengh[:, 2] = arry['lambda_f'][0:natoms]
 
     HR_double = np.zeros((2 * nawf, 2 * nawf, nk1, nk2, nk3, 1), dtype=complex)
 
@@ -245,7 +404,7 @@ def do_spin_orbit_H(data_controller):
     for n, norb in enumerate(norb_array):
         HR_soc_p = np.zeros((2 * norb, 2 * norb), dtype=complex)
         HR_soc_d = np.zeros((2 * norb, 2 * norb), dtype=complex)
-
+        HR_soc_f = np.zeros((2 * norb, 2 * norb), dtype=complex)
         if orb_pseudo[n] == 's':
             pass
         if orb_pseudo[n] == 'sp':
@@ -270,7 +429,7 @@ def do_spin_orbit_H(data_controller):
             shells_for_atom = arry['shells'][arry['atoms'][n]]
             sw_map = arry.get('soc_shell_weights')
             weights = sw_map.get(arry['atoms'][n]) if sw_map else None
-            HR_soc_p[:, :], HR_soc_d[:, :] = build_generic_soc(
+            HR_soc_p[:, :], HR_soc_d[:, :], HR_soc_f[:, :] = build_generic_soc(
                 theta, phi, shells_for_atom, norb, active_shells=weights
             )
 
@@ -283,21 +442,25 @@ def do_spin_orbit_H(data_controller):
         HR_double[uui:uuj, uui:uuj, 0, 0, 0, 0] += (
             socStrengh[n, 0] * HR_soc_p[0:norb, 0:norb]
             + socStrengh[n, 1] * HR_soc_d[0:norb, 0:norb]
+            + socStrengh[n, 2] * HR_soc_f[0:norb, 0:norb]
         )
         # Down-Down
         HR_double[ddi:ddj, ddi:ddj, 0, 0, 0, 0] += (
             socStrengh[n, 0] * HR_soc_p[norb : 2 * norb, norb : 2 * norb]
             + socStrengh[n, 1] * HR_soc_d[norb : 2 * norb, norb : 2 * norb]
+            + socStrengh[n, 2] * HR_soc_f[norb : 2 * norb, norb : 2 * norb]
         )
         # Up-Down
         HR_double[uui:uuj, udi:udj, 0, 0, 0, 0] += (
             socStrengh[n, 0] * HR_soc_p[0:norb, norb : 2 * norb]
             + socStrengh[n, 1] * HR_soc_d[0:norb, norb : 2 * norb]
+            + socStrengh[n, 2] * HR_soc_f[0:norb, norb : 2 * norb]
         )
         # Down-Up
         HR_double[ddi:ddj, uui:uuj, 0, 0, 0, 0] += (
             socStrengh[n, 0] * HR_soc_p[norb : 2 * norb, 0:norb]
             + socStrengh[n, 1] * HR_soc_d[norb : 2 * norb, 0:norb]
+            + socStrengh[n, 2] * HR_soc_f[norb : 2 * norb, 0:norb]
         )
 
         del arry['HRs']
