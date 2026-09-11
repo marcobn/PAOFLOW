@@ -152,7 +152,7 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     dftMag = (nspin == 1 and dftSO and finite_magmom) or (nspin == 2 and finite_magmom)
 
     _, atom_numbers = np.unique(atoms, return_inverse=True)
-    a_scaled = np.array(a_Angstrom)/np.max(np.abs(np.array(a_Angstrom)))
+    a_scaled = np.array(a_Angstrom) / np.max(np.abs(np.array(a_Angstrom)))
     cell = (a_scaled, pos_arry, atom_numbers)
     if nkpnts == nk1 * nk2 * nk3:
         # Check whether VASP calculation uses symmetry (ISYM = -1, 0, or 2)
