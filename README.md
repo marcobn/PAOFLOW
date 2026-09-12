@@ -33,7 +33,7 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 | **Topology** | Berry curvature, Z₂ invariants, topological surface states |
 | **Model Hamiltonians** | Kane–Mele and custom lattice models |
 | **Environment-dependent tight-binding models** | Slater-Koster parameterization with structural transferability |
-| **Quantum oscillation analysis** | de Haas-van Alphen and Shubnikov-de Haas frequencies and effective masses via Fermi surface extreme orbit finder, including a CLI for display Fermi surfaces ad B vector(s) for easier interpretation |
+| **Quantum oscillation analysis** | de Haas-van Alphen and Shubnikov-de Haas frequencies and effective masses via Fermi surface extreme orbit finder, including fermi-plotter, a CLI for display Fermi surfaces and B vector(s) for easier interpretation |
 | **Landauer-Büttiker quantum transport** | Transmission functions, conductance, and current-voltage characteristics for nanoscale conductor/lead geometries |
 | **Interoperability** | Quantum ESPRESSO and VASP DFT code integration - other codes are in the development pipline (we welcome contributions from developers!)|
 
