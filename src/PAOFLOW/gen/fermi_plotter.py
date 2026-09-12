@@ -1198,8 +1198,14 @@ def _parse_bands(spec: str | None, available: list[int]) -> list[int]:
 
 
 def _parse_supercell(spec: str) -> tuple[int, int, int]:
-    """Parse ``"2"`` or ``"2,2,3"`` into a repetition triple."""
-    parts = [p for p in re.split(r'[,\s x]+', spec.strip().lower()) if p]
+    """Parse a repetition count into a triple.
+
+    Accepts a single count applied to all three directions (``"3"``) or an
+    explicit triple, with or without brackets and using commas, spaces or
+    ``x`` as separators: ``"2,2,3"``, ``"(2,2,3)"``, ``"2 2 3"``, ``"2x2x3"``.
+    """
+    cleaned = spec.strip().lower().strip('()[]{}')
+    parts = [p for p in re.split(r'[,\s x]+', cleaned) if p]
     try:
         vals = [int(p) for p in parts]
     except ValueError:
@@ -1300,7 +1306,9 @@ def _build_parser() -> argparse.ArgumentParser:
         '--supercell',
         default='1',
         metavar='N|NX,NY,NZ',
-        help='Replicate the Fermi sheets over this many reciprocal cells (default 1).',
+        help='Replicate the Fermi sheets over this many cells (default 1). A single '
+        'N repeats N times along every reciprocal vector; a triple such as '
+        '2,1,3 (brackets optional) sets each direction independently.',
     )
     p.add_argument(
         '--center',
