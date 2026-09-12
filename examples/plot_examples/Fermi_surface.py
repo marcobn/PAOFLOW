@@ -10,6 +10,14 @@ equivalently run::
 The example below renders the composite Fermi surface of the example08 QE run,
 coloured by Fermi velocity, in an interactive Mayavi window.  Requires the
 ``fermisurface`` extra (``pip install "PAOFLOW[fermisurface]"``).
+
+To view several reciprocal cells with a Gamma point at the centre, and to
+overlay the SKEAF field axis together with the plane it slices the surface
+with (same option names as :meth:`PAOFLOW.PAOFLOW.pyskeaf`)::
+
+    fermi-plotter FermiSurf_0.bxsf --supercell 2 --center \
+        --b-field non_principal --azimuthal 30 --polar 45 \
+        --field-plane --field-label --opacity 0.6
 """
 
 import sys

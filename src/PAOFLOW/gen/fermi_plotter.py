@@ -24,6 +24,21 @@ A subset of bands, upsampled 2x for smoother sheets, saved to PNG::
 
     fermi-plotter FermiSurf_0.bxsf --band 57,58 --interp 2 --save fermi.png
 
+A 2x2x2 block of reciprocal cells with a Gamma point at the centre::
+
+    fermi-plotter FermiSurf_0.bxsf --supercell 2 --center
+
+The SKEAF magnetic-field axis and its slice plane, using the same field
+selector and angles as :meth:`PAOFLOW.PAOFLOW.pyskeaf`::
+
+    fermi-plotter FermiSurf_0.bxsf --b-field non_principal --azimuthal 30 \\
+        --polar 45 --field-plane --field-label --opacity 0.6
+
+A field rotation, drawn as start/end arrows joined by the swept arc::
+
+    fermi-plotter FermiSurf_0.bxsf --b-field rotation --azimuthal 0,90 \\
+        --polar 45,45 --num-angles 7
+
 Only one spin channel is handled per run; point the tool at the desired
 ``FermiSurf_{ispin}.bxsf`` file directly.
 
@@ -35,10 +50,12 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import math
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -303,28 +320,324 @@ def fermi_velocity_field(energy: np.ndarray, recip: np.ndarray) -> np.ndarray:
     return np.linalg.norm(grad_k, axis=-1)
 
 
+def _box_edges(origin: np.ndarray, v0: np.ndarray, v1: np.ndarray, v2: np.ndarray):
+    """Return the 12 line segments (list of ``(p0, p1)``) of a parallelepiped.
+
+    Parameters
+    ----------
+    origin : np.ndarray, shape (3,)
+        Cartesian position of the ``(0, 0, 0)`` corner.
+    v0, v1, v2 : np.ndarray, shape (3,)
+        Spanning vectors of the box.
+
+    Returns
+    -------
+    list of tuple[np.ndarray, np.ndarray]
+        Edge endpoint pairs.
+    """
+    vecs = (np.asarray(v0, dtype=float), np.asarray(v1, dtype=float), np.asarray(v2, dtype=float))
+    corners = {
+        key: origin + key[0] * vecs[0] + key[1] * vecs[1] + key[2] * vecs[2]
+        for key in itertools.product((0, 1), repeat=3)
+    }
+    edges = []
+    for key, p0 in corners.items():
+        for axis in range(3):
+            if key[axis] == 0:
+                nb = list(key)
+                nb[axis] = 1
+                edges.append((p0, corners[tuple(nb)]))
+    return edges
+
+
 def _cell_edges(recip: np.ndarray):
     """Return line segments (list of (p0, p1)) for the reciprocal cell box."""
-    corners = []
-    for a in (0, 1):
-        for b in (0, 1):
-            for c in (0, 1):
-                corners.append(a * recip[0] + b * recip[1] + c * recip[2])
-    corners = np.array(corners)
-    idx = {(a, b, c): a * 4 + b * 2 + c for a in (0, 1) for b in (0, 1) for c in (0, 1)}
-    edges = []
-    for (a, b, c), i0 in idx.items():
-        for axis in range(3):
-            nb = [a, b, c]
-            if nb[axis] == 0:
-                nb[axis] = 1
-                edges.append((corners[i0], corners[idx[tuple(nb)]]))
-    return edges
+    return _box_edges(np.zeros(3), recip[0], recip[1], recip[2])
+
+
+# --------------------------------------------------------------------------- #
+# Supercell replication
+# --------------------------------------------------------------------------- #
+
+
+def central_replica(ncell: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Return the index of the replica closest to the centre of the block."""
+    cx, cy, cz = (int(n) // 2 for n in ncell)
+    return cx, cy, cz
+
+
+def supercell_translations(
+    recip: np.ndarray,
+    ncell: tuple[int, int, int] = (1, 1, 1),
+    center: bool = False,
+) -> np.ndarray:
+    """Cartesian offsets replicating the reciprocal cell over an ``ncell`` block.
+
+    Parameters
+    ----------
+    recip : np.ndarray, shape (3, 3)
+        Reciprocal spanning vectors (rows).
+    ncell : tuple[int, int, int], optional
+        Number of repetitions along each reciprocal vector (default no
+        replication).  Replicas grow in the ``+b_i`` directions, so element
+        ``0`` is always the original cell.
+    center : bool, optional
+        Shift the block so the origin of the central replica sits at the
+        Cartesian origin.
+
+    Returns
+    -------
+    np.ndarray, shape (nx*ny*nz, 3)
+        Translation :math:`i\\mathbf b_0 + j\\mathbf b_1 + k\\mathbf b_2` for each
+        replica, in C order over ``(i, j, k)``.
+
+    Notes
+    -----
+    The centring shift is an *integer* combination of reciprocal vectors, so
+    the Cartesian origin always lands on a :math:`\\Gamma` point and no vertex
+    needs to be wrapped (wrapping fractional coordinates into
+    :math:`[-1/2, 1/2)` would tear every triangle crossing a cell face).  A
+    single cell has no interior replica, so ``center`` is then a no-op.
+    """
+    nx, ny, nz = (int(n) for n in ncell)
+    if min(nx, ny, nz) < 1:
+        raise ValueError(f'supercell repetitions must be >= 1, got {ncell}')
+
+    idx = np.stack(
+        np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing='ij'),
+        axis=-1,
+    ).reshape(-1, 3)
+    trans = idx.astype(float) @ recip
+    if center:
+        trans = trans - np.asarray(central_replica(ncell), dtype=float) @ recip
+    return trans
+
+
+def tile_mesh(
+    cart: np.ndarray,
+    faces: np.ndarray,
+    scalars: np.ndarray,
+    translations: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Replicate a triangular mesh by a set of translations.
+
+    Parameters
+    ----------
+    cart : np.ndarray, shape (nv, 3)
+        Vertex positions.
+    faces : np.ndarray, shape (nf, 3)
+        Triangle vertex indices.
+    scalars : np.ndarray, shape (nv,)
+        Per-vertex scalars (the Fermi speed used for colouring).
+    translations : np.ndarray, shape (nc, 3)
+        Offsets from :func:`supercell_translations`.
+
+    Returns
+    -------
+    tuple of np.ndarray
+        Concatenated ``(vertices, faces, scalars)`` for all replicas, so the
+        whole block can be drawn as a single Mayavi actor.
+
+    Notes
+    -----
+    The BXSF grid carries the periodic wrap plane, so the iso-surface is
+    continuous across cell faces and plain translation tiles it seamlessly —
+    no second marching-cubes pass is needed.
+    """
+    ncopy = translations.shape[0]
+    nvert = cart.shape[0]
+    cart_t = (cart[None, :, :] + translations[:, None, :]).reshape(-1, 3)
+    faces_t = (faces[None, :, :] + (np.arange(ncopy) * nvert)[:, None, None]).reshape(
+        -1, faces.shape[1]
+    )
+    return cart_t, faces_t, np.tile(scalars, ncopy)
+
+
+# --------------------------------------------------------------------------- #
+# SKEAF field geometry
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class FieldSpec:
+    """Magnetic-field geometry to overlay, in SKEAF conventions.
+
+    Attributes
+    ----------
+    hvd : str
+        SKEAF field selector: ``'a'``, ``'b'``, ``'c'`` align with reciprocal
+        vector 0, 1, 2; ``'n'`` uses ``theta``/``phi``; ``'r'`` sweeps from
+        ``(theta, phi)`` to ``(theta_end, phi_end)``.
+    theta, phi : float
+        Azimuth and polar angle in **radians** (``theta`` is PAOFLOW's
+        ``azimuthal``, ``phi`` its ``polar``).
+    theta_end, phi_end : float
+        Sweep endpoint in radians; used only for ``hvd='r'``.
+    num_angles : int
+        Number of orientations in the sweep.
+    show_plane : bool
+        Draw a translucent plane normal to the field, i.e. the plane SKEAF
+        slices the Fermi surface with.
+    show_label : bool
+        Annotate the arrow with its angles.
+    """
+
+    hvd: str = 'n'
+    theta: float = 0.0
+    phi: float = 0.0
+    theta_end: float = 0.0
+    phi_end: float = 0.0
+    num_angles: int = 1
+    show_plane: bool = False
+    show_label: bool = False
+
+
+def resolve_field_angles(
+    recip: np.ndarray, hvd: str, theta: float = 0.0, phi: float = 0.0
+) -> tuple[float, float]:
+    """Resolve a SKEAF ``hvd`` selector to ``(theta, phi)`` in radians.
+
+    Delegates to :func:`PAOFLOW.pyskeaf.geometry.set_field_angle` so the arrow
+    can never drift from the geometry SKEAF actually uses.  Only the direction
+    of ``recip`` matters, so its scaling (BXSF stores :math:`2\\pi/a` units,
+    pyskeaf documents |AA|:sup:`-1`) is irrelevant.
+    """
+    # Deferred: importing PAOFLOW.pyskeaf pulls in its runner (joblib/numba).
+    from PAOFLOW.pyskeaf.geometry import set_field_angle
+
+    return set_field_angle(np.asarray(recip, dtype=float), cast(Any, hvd), theta, phi)
+
+
+def field_direction(theta: float, phi: float) -> np.ndarray:
+    """Cartesian unit vector of the field axis for angles in radians.
+
+    Notes
+    -----
+    Inverts the SKEAF convention ``theta = atan2(v_y, v_x)``,
+    ``phi = arccos(v_z / |v|)``:
+
+    .. math::
+
+        \\hat{\\mathbf H} = (\\sin\\phi\\cos\\theta,\\;
+                            \\sin\\phi\\sin\\theta,\\;
+                            \\cos\\phi)
+    """
+    sin_phi = math.sin(phi)
+    return np.array([sin_phi * math.cos(theta), sin_phi * math.sin(theta), math.cos(phi)])
+
+
+def field_sweep_arc(theta0: float, phi0: float, theta1: float, phi1: float, num: int) -> np.ndarray:
+    """Unit vectors traced by a SKEAF rotation sweep.
+
+    Parameters
+    ----------
+    theta0, phi0, theta1, phi1 : float
+        Sweep endpoints in radians.
+    num : int
+        Number of orientations (clamped to at least 2).
+
+    Returns
+    -------
+    np.ndarray, shape (num, 3)
+        Field directions at each step of the sweep.
+
+    Notes
+    -----
+    ``theta`` and ``phi`` are stepped *independently and linearly*, matching
+    :func:`PAOFLOW.pyskeaf.runner.run_angle_sweep`; the path is therefore not
+    a great circle unless the endpoints happen to lie on one.
+    """
+    npts = max(2, int(num))
+    thetas = np.linspace(theta0, theta1, npts)
+    phis = np.linspace(phi0, phi1, npts)
+    sin_phi = np.sin(phis)
+    return np.stack([sin_phi * np.cos(thetas), sin_phi * np.sin(thetas), np.cos(phis)], axis=1)
+
+
+def plane_basis(normal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return two orthonormal vectors spanning the plane normal to ``normal``."""
+    n = np.asarray(normal, dtype=float)
+    n = n / np.linalg.norm(n)
+    seed = np.array([1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = np.cross(n, seed)
+    u /= np.linalg.norm(u)
+    return u, np.cross(n, u)
 
 
 # --------------------------------------------------------------------------- #
 # Rendering
 # --------------------------------------------------------------------------- #
+
+
+def _draw_field(mlab, fig, recip, field: FieldSpec, anchor: np.ndarray, length: float) -> None:
+    """Overlay the SKEAF field axis (and optionally its slice plane) on ``fig``."""
+    arrow_color = (0.05, 0.25, 0.85)
+
+    theta, phi = resolve_field_angles(recip, field.hvd, field.theta, field.phi)
+    directions = [(theta, phi, field_direction(theta, phi))]
+
+    if field.hvd == 'r':
+        theta_end, phi_end = field.theta_end, field.phi_end
+        arc = field_sweep_arc(theta, phi, theta_end, phi_end, field.num_angles)
+        directions.append((theta_end, phi_end, arc[-1]))
+        path = anchor + 0.75 * length * arc
+        mlab.plot3d(
+            path[:, 0],
+            path[:, 1],
+            path[:, 2],
+            color=arrow_color,
+            tube_radius=0.008 * length,
+            figure=fig,
+        )
+
+    for ang_t, ang_p, vec in directions:
+        quiver = mlab.quiver3d(
+            anchor[0],
+            anchor[1],
+            anchor[2],
+            vec[0],
+            vec[1],
+            vec[2],
+            mode='arrow',
+            scale_factor=length,
+            color=arrow_color,
+            resolution=24,
+            figure=fig,
+        )
+        # VTK's default arrow glyph is far too stubby at these scales.
+        quiver.glyph.glyph_source.glyph_position = 'tail'
+        source = quiver.glyph.glyph_source.glyph_source
+        source.shaft_radius = 0.012
+        source.tip_radius = 0.045
+        source.tip_length = 0.18
+        if field.show_label:
+            tip = anchor + 1.05 * length * vec
+            mlab.text3d(
+                tip[0],
+                tip[1],
+                tip[2],
+                f'H ({math.degrees(ang_t):.0f}, {math.degrees(ang_p):.0f})',
+                color=arrow_color,
+                scale=0.07 * length,
+                figure=fig,
+            )
+
+    if field.show_plane:
+        # SKEAF searches for extremal orbits on planes normal to H.
+        normal = directions[0][2]
+        u, v = plane_basis(normal)
+        half = 0.9 * length
+        corners = np.array(
+            [[anchor + su * half * u + sv * half * v for sv in (-1.0, 1.0)] for su in (-1.0, 1.0)]
+        )
+        mlab.mesh(
+            corners[..., 0],
+            corners[..., 1],
+            corners[..., 2],
+            color=(0.4, 0.55, 0.95),
+            opacity=0.25,
+            figure=fig,
+        )
 
 
 def plot_fermi_surface(
@@ -335,6 +648,9 @@ def plot_fermi_surface(
     cmap: str = 'jet',
     opacity: float = 1.0,
     show_bz: bool = True,
+    supercell: tuple[int, int, int] = (1, 1, 1),
+    center: bool = False,
+    field: FieldSpec | None = None,
     figsize: tuple[int, int] = (900, 700),
     save: str | None = None,
 ) -> None:
@@ -356,7 +672,16 @@ def plot_fermi_surface(
     opacity : float, optional
         Surface opacity in ``[0, 1]``.
     show_bz : bool, optional
-        Draw the reciprocal-cell parallelepiped wireframe.
+        Draw the reciprocal-cell parallelepiped wireframe.  With a supercell,
+        the outer block is drawn in grey and the central cell highlighted.
+    supercell : tuple[int, int, int], optional
+        Number of cell repetitions along each reciprocal vector (default
+        ``(1, 1, 1)``).  The sheets are replicated by translation.
+    center : bool, optional
+        Put the central replica's origin (a :math:`\\Gamma` point) at the
+        Cartesian origin.  No-op for a single cell.
+    field : FieldSpec, optional
+        SKEAF magnetic-field geometry to overlay.  ``None`` draws nothing.
     figsize : tuple[int, int], optional
         Render window size in pixels.
     save : str, optional
@@ -370,6 +695,14 @@ def plot_fermi_surface(
 
     level = data.fermi_energy + fermi_shift
     fig = mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0, 0, 0), size=figsize)
+
+    trans = supercell_translations(data.recip, supercell, center)
+    ncopy = trans.shape[0]
+    if ncopy > 64:
+        print(
+            f'warning: {ncopy} replicas requested; rendering may be slow.',
+            file=sys.stderr,
+        )
 
     # Global velocity range across selected bands for a shared colour scale.
     speeds_min, speeds_max = np.inf, -np.inf
@@ -406,6 +739,7 @@ def plot_fermi_surface(
         frac = verts / span
         cart = frac @ data.recip
         vspeed = map_coordinates(speed, verts.T, order=1, mode='nearest')
+        cart, faces, vspeed = tile_mesh(cart, faces, vspeed, trans)
         mesh = mlab.triangular_mesh(
             cart[:, 0],
             cart[:, 1],
@@ -420,8 +754,11 @@ def plot_fermi_surface(
         )
         mesh.name = f'band_{label}'
 
+    block_origin = trans[0]  # supercell_translations orders the (0,0,0) replica first
+    block_span = np.asarray(supercell, dtype=float)[:, None] * data.recip
+
     if show_bz:
-        for p0, p1 in _cell_edges(data.recip):
+        for p0, p1 in _box_edges(block_origin, *block_span):
             mlab.plot3d(
                 [p0[0], p1[0]],
                 [p0[1], p1[1]],
@@ -431,6 +768,23 @@ def plot_fermi_surface(
                 line_width=1.5,
                 figure=fig,
             )
+        if ncopy > 1:
+            cell_origin = block_origin + np.asarray(central_replica(supercell), float) @ data.recip
+            for p0, p1 in _box_edges(cell_origin, *data.recip):
+                mlab.plot3d(
+                    [p0[0], p1[0]],
+                    [p0[1], p1[1]],
+                    [p0[2], p1[2]],
+                    color=(0.85, 0.15, 0.15),
+                    tube_radius=None,
+                    line_width=3.0,
+                    figure=fig,
+                )
+
+    if field is not None:
+        anchor = block_origin + 0.5 * block_span.sum(axis=0)
+        length = 0.6 * np.linalg.norm(block_span, axis=1).max()
+        _draw_field(mlab, fig, data.recip, field, anchor, length)
 
     mlab.colorbar(title='|grad E|  (Fermi velocity)', orientation='vertical', nb_labels=5)
     mlab.orientation_axes()
@@ -456,6 +810,66 @@ def _parse_bands(spec: str | None, available: list[int]) -> list[int]:
     if missing:
         raise SystemExit(f'band(s) {missing} not in file; available: {sorted(available)}')
     return labels
+
+
+def _parse_supercell(spec: str) -> tuple[int, int, int]:
+    """Parse ``"2"`` or ``"2,2,3"`` into a repetition triple."""
+    parts = [p for p in re.split(r'[,\s x]+', spec.strip().lower()) if p]
+    try:
+        vals = [int(p) for p in parts]
+    except ValueError:
+        raise SystemExit(f'bad --supercell "{spec}", expected N or NX,NY,NZ.') from None
+    if len(vals) == 1:
+        vals = vals * 3
+    if len(vals) != 3 or min(vals) < 1:
+        raise SystemExit(f'bad --supercell "{spec}", expected N or NX,NY,NZ with each >= 1.')
+    return (vals[0], vals[1], vals[2])
+
+
+def _parse_angles(spec: str, name: str) -> tuple[float, ...]:
+    """Parse a scalar or a ``start,end`` pair of angles in degrees."""
+    parts = [p for p in re.split(r'[,\s]+', spec.strip()) if p]
+    try:
+        vals = tuple(float(p) for p in parts)
+    except ValueError:
+        raise SystemExit(f'bad {name} "{spec}", expected a number or "start,end".') from None
+    if len(vals) not in (1, 2):
+        raise SystemExit(f'bad {name} "{spec}", expected a number or "start,end".')
+    return vals
+
+
+def _build_field(args) -> FieldSpec | None:
+    """Translate the pyskeaf-style CLI flags into a :class:`FieldSpec`."""
+    if args.b_field is None:
+        return None
+
+    field_map = {'b1': 'a', 'b2': 'b', 'b3': 'c', 'non_principal': 'n', 'rotation': 'r'}
+    hvd = field_map[args.b_field]
+
+    azimuthal = _parse_angles(args.azimuthal, '--azimuthal')
+    polar = _parse_angles(args.polar, '--polar')
+    if len(azimuthal) != len(polar):
+        raise SystemExit('--azimuthal and --polar must both be scalars or both be pairs.')
+
+    # Same rule as PAOFLOW.pyskeaf(): two-element angle pairs mean a rotation.
+    rotating = len(azimuthal) == 2
+    if rotating:
+        hvd = 'r'
+        if args.num_angles < 2:
+            raise SystemExit('--num-angles must be at least 2 for a rotation.')
+    elif hvd == 'r':
+        raise SystemExit("--b-field rotation requires 'start,end' --azimuthal and --polar.")
+
+    return FieldSpec(
+        hvd=hvd,
+        theta=math.radians(azimuthal[0]),
+        phi=math.radians(polar[0]),
+        theta_end=math.radians(azimuthal[-1]),
+        phi_end=math.radians(polar[-1]),
+        num_angles=args.num_angles if rotating else 1,
+        show_plane=args.field_plane,
+        show_label=args.field_label,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -488,6 +902,55 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument('--opacity', type=float, default=1.0, help='Surface opacity 0..1 (default 1).')
     p.add_argument('--no-bz', action='store_true', help='Hide the reciprocal-cell box.')
     p.add_argument(
+        '--supercell',
+        default='1',
+        metavar='N|NX,NY,NZ',
+        help='Replicate the Fermi sheets over this many reciprocal cells (default 1).',
+    )
+    p.add_argument(
+        '--center',
+        action='store_true',
+        help='Put a Gamma point at the centre of the displayed block. Needs a '
+        'supercell to have any effect (e.g. --supercell 2 --center).',
+    )
+    p.add_argument(
+        '--b-field',
+        choices=('b1', 'b2', 'b3', 'non_principal', 'rotation'),
+        default=None,
+        help='Draw the SKEAF magnetic-field axis, using the same selector as '
+        'PAOFLOW.pyskeaf(). Omit to draw no field.',
+    )
+    p.add_argument(
+        '--azimuthal',
+        default='0',
+        metavar='DEG|D0,D1',
+        help='Field azimuth theta in degrees; a "start,end" pair implies a rotation.',
+    )
+    p.add_argument(
+        '--polar',
+        default='0',
+        metavar='DEG|D0,D1',
+        help='Field polar angle phi in degrees; a "start,end" pair implies a rotation.',
+    )
+    p.add_argument(
+        '--num-angles',
+        type=int,
+        default=1,
+        metavar='N',
+        help='Number of orientations sampled along a field rotation (default 1).',
+    )
+    p.add_argument(
+        '--field-plane',
+        action='store_true',
+        help='Also draw the translucent plane normal to the field, i.e. the plane '
+        'SKEAF slices the Fermi surface with. Pair with --opacity < 1 to see it.',
+    )
+    p.add_argument(
+        '--field-label',
+        action='store_true',
+        help='Annotate the field arrow with its (theta, phi) in degrees.',
+    )
+    p.add_argument(
         '--size', default='900x700', metavar='WxH', help='Window size in pixels (default 900x700).'
     )
     p.add_argument(
@@ -509,6 +972,8 @@ def main(argv: list[str] | None = None) -> int:
 
     data = read_fermi_bxsf(path)
     labels = _parse_bands(args.band, list(data.bands.keys()))
+    supercell = _parse_supercell(args.supercell)
+    field = _build_field(args)
     try:
         w, h = (int(v) for v in args.size.lower().split('x'))
     except ValueError:
@@ -528,6 +993,9 @@ def main(argv: list[str] | None = None) -> int:
             cmap=args.cmap,
             opacity=args.opacity,
             show_bz=not args.no_bz,
+            supercell=supercell,
+            center=args.center,
+            field=field,
             figsize=(w, h),
             save=args.save,
         )
