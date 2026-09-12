@@ -3,9 +3,9 @@
 Reads a Fermi-surface BXSF file written by PAOFLOW (``FermiSurf_{ispin}.bxsf``,
 produced by :func:`PAOFLOW.writers.write2bxsf.write2bxsf`) and renders the
 Fermi sheets as interactive iso-surfaces with Mayavi.  The surfaces are
-extracted with marching cubes and coloured by the Fermi velocity
-:math:`|\\nabla_{\\mathbf k} E|`.  The Mayavi window supports rotation, zoom and
-pan out of the box.
+extracted with marching cubes, folded into the first Brillouin zone and
+coloured by the Fermi velocity :math:`|\\nabla_{\\mathbf k} E|`.  The Mayavi
+window supports rotation, zoom and pan out of the box.
 
 This module backs the ``fermi-plotter`` console script (see ``[project.scripts]``
 in ``pyproject.toml``).
@@ -27,6 +27,10 @@ A subset of bands, upsampled 2x for smoother sheets, saved to PNG::
 A 2x2x2 block of reciprocal cells with a Gamma point at the centre::
 
     fermi-plotter FermiSurf_0.bxsf --supercell 2 --center
+
+The raw reciprocal parallelepiped instead of the true zone::
+
+    fermi-plotter FermiSurf_0.bxsf --bz cell
 
 The SKEAF magnetic-field axis and its slice plane, using the same field
 selector and angles as :meth:`PAOFLOW.PAOFLOW.pyskeaf`::
@@ -356,6 +360,373 @@ def _cell_edges(recip: np.ndarray):
 
 
 # --------------------------------------------------------------------------- #
+# First Brillouin zone
+# --------------------------------------------------------------------------- #
+
+
+def reciprocal_neighbours(recip: np.ndarray, order: int = 2) -> np.ndarray:
+    """Reciprocal-lattice vectors around the origin, excluding :math:`\\Gamma`.
+
+    Parameters
+    ----------
+    recip : np.ndarray, shape (3, 3)
+        Reciprocal spanning vectors (rows).
+    order : int, optional
+        Largest ``|n_i|`` in :math:`\\mathbf G = n_1\\mathbf b_1 + n_2\\mathbf b_2
+        + n_3\\mathbf b_3` (default 2).
+
+    Returns
+    -------
+    np.ndarray, shape ((2*order+1)**3 - 1, 3)
+        Cartesian neighbour vectors.
+    """
+    rng = np.arange(-order, order + 1)
+    idx = np.stack(np.meshgrid(rng, rng, rng, indexing='ij'), axis=-1).reshape(-1, 3)
+    return idx[np.any(idx != 0, axis=1)].astype(float) @ recip
+
+
+def reduce_basis(basis: np.ndarray, iterations: int = 50) -> np.ndarray:
+    """Greedily shorten a lattice basis without changing the lattice.
+
+    Parameters
+    ----------
+    basis : np.ndarray, shape (3, 3)
+        Spanning vectors (rows).
+    iterations : int, optional
+        Maximum reduction sweeps (default 50).
+
+    Returns
+    -------
+    np.ndarray, shape (3, 3)
+        A near-Minkowski-reduced basis of the same lattice.
+
+    Notes
+    -----
+    Only integer multiples of one row are subtracted from another and rows are
+    permuted, both unimodular operations, so the lattice — and hence its
+    Wigner-Seitz cell — is unchanged.  Reduction matters because the number of
+    neighbour shells needed to close the Brillouin zone depends on how skewed
+    the *basis* is, not on the lattice itself.
+    """
+    reduced = np.array(basis, dtype=float)
+    for _ in range(iterations):
+        reduced = reduced[np.argsort(np.linalg.norm(reduced, axis=1))]
+        changed = False
+        for i in range(3):
+            for j in range(i + 1, 3):
+                factor = np.dot(reduced[j], reduced[i]) / np.dot(reduced[i], reduced[i])
+                step = int(np.round(factor))
+                if step != 0:
+                    reduced[j] -= step * reduced[i]
+                    changed = True
+        if not changed:
+            break
+    return reduced
+
+
+def _facet_polygons(verts: np.ndarray, hull, tol: int = 6) -> list[np.ndarray]:
+    """Merge the coplanar hull simplices into cyclically ordered polygons."""
+    groups: dict[tuple, set[int]] = {}
+    for simplex, equation in zip(hull.simplices, hull.equations):
+        groups.setdefault(tuple(np.round(equation, tol)), set()).update(int(i) for i in simplex)
+
+    polygons = []
+    for equation, members in groups.items():
+        idx = np.array(sorted(members))
+        pts = verts[idx]
+        axis_u, axis_v = plane_basis(np.array(equation[:3]))
+        rel = pts - pts.mean(axis=0)
+        polygons.append(idx[np.argsort(np.arctan2(rel @ axis_v, rel @ axis_u))])
+    return polygons
+
+
+def brillouin_zone(recip: np.ndarray, max_order: int = 4) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Build the first Brillouin zone of an arbitrary reciprocal lattice.
+
+    Parameters
+    ----------
+    recip : np.ndarray, shape (3, 3)
+        Reciprocal spanning vectors (rows).
+    max_order : int, optional
+        Largest neighbour shell tried before giving up (default 4).
+
+    Returns
+    -------
+    vertices : np.ndarray, shape (nv, 3)
+        BZ corners, centred on :math:`\\Gamma`.
+    faces : list[np.ndarray]
+        One array of vertex indices per facet, ordered cyclically.
+
+    Raises
+    ------
+    RuntimeError
+        If no neighbour shell up to ``max_order`` reproduces the primitive
+        cell volume.
+
+    Notes
+    -----
+    The first BZ is the Wigner-Seitz cell of the reciprocal lattice: the set
+    of k closer to :math:`\\Gamma` than to any other reciprocal-lattice point.
+    It is obtained here as the Voronoi region of the origin, which makes the
+    construction purely geometric and therefore identical for every Bravais
+    lattice — no per-crystal-system tabulation is involved.
+
+    The basis is reduced first (see :func:`reduce_basis`) and the neighbour
+    shell is then grown until the polyhedron volume matches
+    :math:`|\\det(\\mathbf b)|`.  Because the Wigner-Seitz cell tiles space,
+    that equality is a sufficient check that no bounding plane was missed.
+    """
+    from scipy.spatial import ConvexHull, Voronoi
+
+    target = abs(float(np.linalg.det(recip)))
+    if target <= 0.0:
+        raise RuntimeError('reciprocal vectors are degenerate; cannot build a Brillouin zone.')
+
+    reduced = reduce_basis(recip)
+    for order in range(1, max_order + 1):
+        points = np.vstack([np.zeros((1, 3)), reciprocal_neighbours(reduced, order)])
+        voronoi = Voronoi(points)
+        region = voronoi.regions[voronoi.point_region[0]]
+        if -1 in region or len(region) < 4:
+            continue
+        verts = voronoi.vertices[region]
+        hull = ConvexHull(verts)
+        if abs(hull.volume - target) <= 1.0e-6 * target:
+            return verts, _facet_polygons(verts, hull)
+
+    raise RuntimeError(
+        f'could not close the Brillouin zone within neighbour order {max_order}; '
+        'the reciprocal basis is unusually skewed.'
+    )
+
+
+def bz_edges(verts: np.ndarray, faces: list[np.ndarray]) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Return the unique polyhedron edges as ``(p0, p1)`` endpoint pairs."""
+    seen = set()
+    edges = []
+    for poly in faces:
+        for a, b in zip(poly, np.roll(poly, -1)):
+            key = (min(int(a), int(b)), max(int(a), int(b)))
+            if key not in seen:
+                seen.add(key)
+                edges.append((verts[a], verts[b]))
+    return edges
+
+
+def bz_planes(verts: np.ndarray, faces: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """Outward half-space description of the Brillouin zone.
+
+    Parameters
+    ----------
+    verts : np.ndarray, shape (nv, 3)
+        BZ corners from :func:`brillouin_zone`.
+    faces : list[np.ndarray]
+        Facet polygons from :func:`brillouin_zone`.
+
+    Returns
+    -------
+    normals : np.ndarray, shape (nf, 3)
+        Outward unit normals.
+    offsets : np.ndarray, shape (nf,)
+        Plane distances from :math:`\\Gamma`, so the zone interior is
+        ``k @ normals[i] <= offsets[i]`` for every facet.
+    """
+    normals = np.empty((len(faces), 3))
+    offsets = np.empty(len(faces))
+    for i, poly in enumerate(faces):
+        pts = verts[poly]
+        normal = np.cross(pts[1] - pts[0], pts[2] - pts[0])
+        normal /= np.linalg.norm(normal)
+        centre = pts.mean(axis=0)
+        if np.dot(normal, centre) < 0.0:
+            normal = -normal
+        normals[i] = normal
+        offsets[i] = np.dot(normal, centre)
+    return normals, offsets
+
+
+def select_near_bz(
+    cart: np.ndarray,
+    faces: np.ndarray,
+    scalars: np.ndarray,
+    normals: np.ndarray,
+    offsets: np.ndarray,
+    tol: float = 1.0e-9,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Drop triangles that lie wholly outside the Brillouin zone.
+
+    Parameters
+    ----------
+    cart : np.ndarray, shape (nv, 3)
+        Vertex positions.
+    faces : np.ndarray, shape (nf, 3)
+        Triangle vertex indices.
+    scalars : np.ndarray, shape (nv,)
+        Per-vertex scalars.
+    normals, offsets : np.ndarray
+        Half-space description from :func:`bz_planes`.
+    tol : float, optional
+        Slack on the outside test, in reciprocal-length units.
+
+    Returns
+    -------
+    tuple of np.ndarray
+        ``(vertices, faces, scalars)`` keeping only triangles that touch the
+        zone.  Vertices are unshared (three per surviving triangle).
+
+    Notes
+    -----
+    This is the trivial-reject half of the clip: a triangle whose three
+    corners all violate the *same* facet plane cannot intersect the zone.
+    Triangles straddling a face are kept whole here and cut exactly later by
+    the renderer, so no geometry is lost.
+    """
+    tri = cart[faces]
+    # (nf, 3 corners, nplanes) signed distances outside each facet plane
+    outside = np.einsum('fck,pk->fcp', tri, normals) - offsets[None, None, :] > tol
+    keep = ~outside.all(axis=1).any(axis=1)
+
+    tri = tri[keep]
+    values = scalars[faces][keep]
+    nface = tri.shape[0]
+    return (
+        tri.reshape(-1, 3),
+        np.arange(3 * nface).reshape(nface, 3),
+        values.reshape(-1),
+    )
+
+
+def _clip_one_plane(tri, values, normal, offset):
+    """Sutherland-Hodgman clip of triangles against a single half-space."""
+    dist = tri @ normal - offset
+    inside = dist <= 0.0
+    count = inside.sum(axis=1)
+
+    def rotate(sel, pivot):
+        """Reorder each triangle so the odd-one-out vertex comes first."""
+        order = (pivot[:, None] + np.arange(3)[None, :]) % 3
+        return (
+            np.take_along_axis(tri[sel], order[..., None], axis=1),
+            np.take_along_axis(values[sel], order, axis=1),
+            np.take_along_axis(dist[sel], order, axis=1),
+        )
+
+    def cut(v0, v1, s0, s1, d0, d1):
+        frac = (d0 / (d0 - d1))[..., None]
+        return v0 + frac * (v1 - v0), s0 + frac[..., 0] * (s1 - s0)
+
+    pieces, weights = [], []
+
+    whole = count == 3
+    if whole.any():
+        pieces.append(tri[whole])
+        weights.append(values[whole])
+
+    one = count == 1
+    if one.any():
+        v, s, d = rotate(one, np.argmax(inside[one], axis=1))
+        a, sa = cut(v[:, 0], v[:, 1], s[:, 0], s[:, 1], d[:, 0], d[:, 1])
+        b, sb = cut(v[:, 0], v[:, 2], s[:, 0], s[:, 2], d[:, 0], d[:, 2])
+        pieces.append(np.stack([v[:, 0], a, b], axis=1))
+        weights.append(np.stack([s[:, 0], sa, sb], axis=1))
+
+    two = count == 2
+    if two.any():
+        v, s, d = rotate(two, np.argmin(inside[two], axis=1))
+        a, sa = cut(v[:, 0], v[:, 1], s[:, 0], s[:, 1], d[:, 0], d[:, 1])
+        b, sb = cut(v[:, 0], v[:, 2], s[:, 0], s[:, 2], d[:, 0], d[:, 2])
+        pieces.append(np.stack([a, v[:, 1], v[:, 2]], axis=1))
+        weights.append(np.stack([sa, s[:, 1], s[:, 2]], axis=1))
+        pieces.append(np.stack([a, v[:, 2], b], axis=1))
+        weights.append(np.stack([sa, s[:, 2], sb], axis=1))
+
+    if not pieces:
+        return np.empty((0, 3, 3)), np.empty((0, 3))
+    return np.concatenate(pieces), np.concatenate(weights)
+
+
+def clip_to_planes(
+    tri: np.ndarray, values: np.ndarray, normals: np.ndarray, offsets: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Clip triangles to the convex region ``k @ normals[i] <= offsets[i]``.
+
+    Parameters
+    ----------
+    tri : np.ndarray, shape (nf, 3, 3)
+        Triangle corner positions.
+    values : np.ndarray, shape (nf, 3)
+        Per-corner scalars, interpolated linearly onto any new corner.
+    normals : np.ndarray, shape (np, 3)
+        Outward unit normals of the bounding half-spaces.
+    offsets : np.ndarray, shape (np,)
+        Plane distances from the origin.
+
+    Returns
+    -------
+    tuple of np.ndarray
+        Clipped ``(tri, values)``.  Triangles crossing a plane are cut and
+        re-triangulated, so the trimmed surface follows the boundary exactly
+        instead of overhanging it.
+    """
+    for normal, offset in zip(normals, offsets):
+        if tri.shape[0] == 0:
+            break
+        tri, values = _clip_one_plane(tri, values, normal, offset)
+    return tri, values
+
+
+def fold_into_bz(
+    cart: np.ndarray,
+    faces: np.ndarray,
+    scalars: np.ndarray,
+    recip: np.ndarray,
+    normals: np.ndarray,
+    offsets: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Gather the periodic images of a sheet that reach into the first BZ.
+
+    Parameters
+    ----------
+    cart : np.ndarray, shape (nv, 3)
+        Vertex positions, spanning the reciprocal parallelepiped.
+    faces : np.ndarray, shape (nf, 3)
+        Triangle vertex indices.
+    scalars : np.ndarray, shape (nv,)
+        Per-vertex scalars.
+    recip : np.ndarray, shape (3, 3)
+        Reciprocal spanning vectors (rows).
+    normals, offsets : np.ndarray
+        Half-space description from :func:`bz_planes`.
+
+    Returns
+    -------
+    tuple of np.ndarray
+        ``(vertices, faces, scalars)`` of the sheet trimmed to the zone.
+        Vertices are unshared (three per triangle).
+
+    Notes
+    -----
+    The iso-surface is periodic, so every part of the zone is covered by some
+    lattice translation of the parallelepiped.  All 27 translations of the
+    reduced basis are laid down, trivially rejected against the zone, and then
+    clipped exactly.  Because the Wigner-Seitz cell and the primitive cell
+    have equal volume, the result holds about one cell's worth of triangles.
+    """
+    images = np.vstack([np.zeros((1, 3)), reciprocal_neighbours(reduce_basis(recip), 1)])
+    cart, faces, scalars = select_near_bz(
+        *tile_mesh(cart, faces, scalars, images), normals, offsets
+    )
+
+    tri, values = clip_to_planes(cart[faces], scalars[faces], normals, offsets)
+    nface = tri.shape[0]
+    return (
+        tri.reshape(-1, 3),
+        np.arange(3 * nface).reshape(nface, 3),
+        values.reshape(-1),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Supercell replication
 # --------------------------------------------------------------------------- #
 
@@ -640,6 +1011,20 @@ def _draw_field(mlab, fig, recip, field: FieldSpec, anchor: np.ndarray, length: 
         )
 
 
+def _draw_edges(mlab, fig, edges, color, line_width) -> None:
+    """Draw a set of disjoint line segments as one actor."""
+    pts = np.asarray(edges, dtype=float).reshape(-1, 3)
+    src = mlab.pipeline.scalar_scatter(pts[:, 0], pts[:, 1], pts[:, 2], figure=fig)
+    src.mlab_source.dataset.lines = np.arange(pts.shape[0]).reshape(-1, 2)
+    src.update()
+    mlab.pipeline.surface(
+        mlab.pipeline.stripper(src, figure=fig),
+        color=color,
+        line_width=line_width,
+        figure=fig,
+    )
+
+
 def plot_fermi_surface(
     data: FermiSurfData,
     band_labels: list[int],
@@ -647,7 +1032,7 @@ def plot_fermi_surface(
     fermi_shift: float = 0.0,
     cmap: str = 'jet',
     opacity: float = 1.0,
-    show_bz: bool = True,
+    bz: str = 'ws',
     supercell: tuple[int, int, int] = (1, 1, 1),
     center: bool = False,
     field: FieldSpec | None = None,
@@ -671,15 +1056,18 @@ def plot_fermi_surface(
         Mayavi/VTK colormap name for the velocity colouring.
     opacity : float, optional
         Surface opacity in ``[0, 1]``.
-    show_bz : bool, optional
-        Draw the reciprocal-cell parallelepiped wireframe.  With a supercell,
-        the outer block is drawn in grey and the central cell highlighted.
+    bz : {'ws', 'cell', 'none'}, optional
+        Zone drawn and used to place the sheets.  ``'ws'`` (default) folds the
+        sheets into the true first Brillouin zone and outlines that
+        polyhedron; ``'cell'`` keeps the raw reciprocal parallelepiped;
+        ``'none'`` draws no outline (sheets stay in the parallelepiped).
     supercell : tuple[int, int, int], optional
         Number of cell repetitions along each reciprocal vector (default
         ``(1, 1, 1)``).  The sheets are replicated by translation.
     center : bool, optional
         Put the central replica's origin (a :math:`\\Gamma` point) at the
-        Cartesian origin.  No-op for a single cell.
+        Cartesian origin.  No-op for a single cell, and redundant with
+        ``bz='ws'``, whose zone is centred on :math:`\\Gamma` already.
     field : FieldSpec, optional
         SKEAF magnetic-field geometry to overlay.  ``None`` draws nothing.
     figsize : tuple[int, int], optional
@@ -693,6 +1081,9 @@ def plot_fermi_surface(
     from scipy.ndimage import map_coordinates
     from skimage import measure
 
+    if bz not in ('ws', 'cell', 'none'):
+        raise ValueError(f"bz must be 'ws', 'cell' or 'none', got {bz!r}")
+
     level = data.fermi_energy + fermi_shift
     fig = mlab.figure(bgcolor=(1, 1, 1), fgcolor=(0, 0, 0), size=figsize)
 
@@ -703,6 +1094,9 @@ def plot_fermi_surface(
             f'warning: {ncopy} replicas requested; rendering may be slow.',
             file=sys.stderr,
         )
+
+    zone = brillouin_zone(data.recip) if bz == 'ws' else None
+    planes = bz_planes(*zone) if zone is not None else None
 
     # Global velocity range across selected bands for a shared colour scale.
     speeds_min, speeds_max = np.inf, -np.inf
@@ -739,6 +1133,8 @@ def plot_fermi_surface(
         frac = verts / span
         cart = frac @ data.recip
         vspeed = map_coordinates(speed, verts.T, order=1, mode='nearest')
+        if planes is not None:
+            cart, faces, vspeed = fold_into_bz(cart, faces, vspeed, data.recip, *planes)
         cart, faces, vspeed = tile_mesh(cart, faces, vspeed, trans)
         mesh = mlab.triangular_mesh(
             cart[:, 0],
@@ -756,33 +1152,22 @@ def plot_fermi_surface(
 
     block_origin = trans[0]  # supercell_translations orders the (0,0,0) replica first
     block_span = np.asarray(supercell, dtype=float)[:, None] * data.recip
+    central_offset = block_origin + np.asarray(central_replica(supercell), float) @ data.recip
 
-    if show_bz:
-        for p0, p1 in _box_edges(block_origin, *block_span):
-            mlab.plot3d(
-                [p0[0], p1[0]],
-                [p0[1], p1[1]],
-                [p0[2], p1[2]],
-                color=(0.3, 0.3, 0.3),
-                tube_radius=None,
-                line_width=1.5,
-                figure=fig,
-            )
+    if zone is not None:
+        edges_bz = bz_edges(*zone)
+        outer = [(p0 + t, p1 + t) for t in trans for p0, p1 in edges_bz]
+        _draw_edges(mlab, fig, outer, (0.3, 0.3, 0.3), 1.5)
         if ncopy > 1:
-            cell_origin = block_origin + np.asarray(central_replica(supercell), float) @ data.recip
-            for p0, p1 in _box_edges(cell_origin, *data.recip):
-                mlab.plot3d(
-                    [p0[0], p1[0]],
-                    [p0[1], p1[1]],
-                    [p0[2], p1[2]],
-                    color=(0.85, 0.15, 0.15),
-                    tube_radius=None,
-                    line_width=3.0,
-                    figure=fig,
-                )
+            inner = [(p0 + central_offset, p1 + central_offset) for p0, p1 in edges_bz]
+            _draw_edges(mlab, fig, inner, (0.85, 0.15, 0.15), 3.0)
+    elif bz == 'cell':
+        _draw_edges(mlab, fig, _box_edges(block_origin, *block_span), (0.3, 0.3, 0.3), 1.5)
+        if ncopy > 1:
+            _draw_edges(mlab, fig, _box_edges(central_offset, *data.recip), (0.85, 0.15, 0.15), 3.0)
 
     if field is not None:
-        anchor = block_origin + 0.5 * block_span.sum(axis=0)
+        anchor = central_offset if zone is not None else block_origin + 0.5 * block_span.sum(axis=0)
         length = 0.6 * np.linalg.norm(block_span, axis=1).max()
         _draw_field(mlab, fig, data.recip, field, anchor, length)
 
@@ -900,7 +1285,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument('--cmap', default='jet', help='Colormap for velocity colouring (default jet).')
     p.add_argument('--opacity', type=float, default=1.0, help='Surface opacity 0..1 (default 1).')
-    p.add_argument('--no-bz', action='store_true', help='Hide the reciprocal-cell box.')
+    p.add_argument(
+        '--bz',
+        choices=('ws', 'cell', 'none'),
+        default='ws',
+        help='Zone to draw: "ws" (default) folds the sheets into the true first '
+        'Brillouin zone, as XCrySDen does; "cell" keeps the raw reciprocal '
+        'parallelepiped; "none" draws no outline.',
+    )
+    p.add_argument(
+        '--no-bz', action='store_true', help='Hide the zone outline (same as --bz none).'
+    )
     p.add_argument(
         '--supercell',
         default='1',
@@ -992,7 +1387,7 @@ def main(argv: list[str] | None = None) -> int:
             fermi_shift=args.fermi_shift,
             cmap=args.cmap,
             opacity=args.opacity,
-            show_bz=not args.no_bz,
+            bz='none' if args.no_bz else args.bz,
             supercell=supercell,
             center=args.center,
             field=field,

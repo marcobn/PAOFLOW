@@ -19,11 +19,19 @@ from PAOFLOW.gen.fermi_plotter import (
     _build_parser,
     _cell_edges,
     _parse_supercell,
+    brillouin_zone,
+    bz_edges,
+    bz_planes,
     central_replica,
+    clip_to_planes,
     field_direction,
     field_sweep_arc,
+    fold_into_bz,
     plane_basis,
+    reciprocal_neighbours,
+    reduce_basis,
     resolve_field_angles,
+    select_near_bz,
     supercell_translations,
     tile_mesh,
 )
@@ -37,11 +45,239 @@ RECIP = np.array(
     ]
 )
 
+# One representative reciprocal basis per Bravais family, plus a real
+# face-centred orthorhombic (ORCF1) cell taken from a Nb1Sn2 QE run and a
+# deliberately non-reduced basis of the simple cubic lattice.
+LATTICES = {
+    'cubic': np.eye(3),
+    'tetragonal': np.diag([1.0, 1.0, 0.4]),
+    'orthorhombic': np.diag([0.7, 1.1, 1.6]),
+    'bcc_recip': np.array([[-1.0, 1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0]]),
+    'fcc_recip': np.array([[0.0, 1.0, 1.0], [1.0, 0.0, 1.0], [1.0, 1.0, 0.0]]),
+    'hexagonal': np.array(
+        [[1.0, -1.0 / math.sqrt(3.0), 0.0], [0.0, 2.0 / math.sqrt(3.0), 0.0], [0.0, 0.0, 0.6]]
+    ),
+    'triclinic': RECIP,
+    'orcf1_nb1sn2': np.array(
+        [
+            [-3.172282, 1.556733, 0.527974],
+            [3.172282, -1.556733, 0.527974],
+            [3.172282, 1.556733, -0.527974],
+        ]
+    ),
+    'non_reduced_cubic': np.array([[1.0, 0.0, 0.0], [3.0, 1.0, 0.0], [0.0, 4.0, 1.0]]),
+}
+
 
 def _sorted_rows(points, decimals=6):
     rounded = np.round(np.asarray(points, dtype=float), decimals)
     order = np.lexsort((rounded[:, 2], rounded[:, 1], rounded[:, 0]))
     return rounded[order]
+
+
+def _triangle_area(tri):
+    cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    return 0.5 * np.linalg.norm(cross, axis=1).sum()
+
+
+def _periodic_isosurface(recip, n=20):
+    """A closed, lattice-periodic sheet meshed on the wrap-closed cell grid."""
+    measure = pytest.importorskip('skimage.measure')
+    frac = np.linspace(0.0, 1.0, n + 1)
+    fx, fy, fz = np.meshgrid(frac, frac, frac, indexing='ij')
+    energy = np.cos(2 * np.pi * fx) + np.cos(2 * np.pi * fy) + np.cos(2 * np.pi * fz)
+    verts, faces, _, _ = measure.marching_cubes(energy, level=0.0)
+    cart = (verts / n) @ recip
+    return cart, faces, np.linalg.norm(cart, axis=1)
+
+
+# --------------------------------------------------------------------------- #
+# Brillouin zone
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize('name', sorted(LATTICES))
+def test_bz_closes_for_every_lattice(name):
+    """The zone must tile space, i.e. carry exactly the primitive cell volume."""
+    hull_mod = pytest.importorskip('scipy.spatial')
+    recip = LATTICES[name]
+    verts, faces = brillouin_zone(recip)
+    volume = hull_mod.ConvexHull(verts).volume
+    assert np.isclose(volume, abs(np.linalg.det(recip)), rtol=1e-6)
+    assert len(faces) >= 6
+
+
+@pytest.mark.parametrize('name', sorted(LATTICES))
+def test_bz_is_a_convex_polyhedron(name):
+    """Euler's formula V - E + F = 2 holds for any convex polyhedron."""
+    verts, faces = brillouin_zone(LATTICES[name])
+    edges = bz_edges(verts, faces)
+    assert len(verts) - len(edges) + len(faces) == 2
+
+
+@pytest.mark.parametrize('name', sorted(LATTICES))
+def test_bz_corners_are_closest_to_gamma(name):
+    """Defining property of the Wigner-Seitz cell."""
+    recip = LATTICES[name]
+    verts, _ = brillouin_zone(recip)
+    neighbours = reciprocal_neighbours(reduce_basis(recip), 2)
+    to_gamma = np.linalg.norm(verts, axis=1)
+    to_others = np.linalg.norm(verts[:, None, :] - neighbours[None, :, :], axis=2).min(axis=1)
+    assert np.all(to_gamma <= to_others + 1e-9)
+
+
+@pytest.mark.parametrize('name', sorted(LATTICES))
+def test_bz_is_inversion_symmetric(name):
+    verts, _ = brillouin_zone(LATTICES[name])
+    rounded = np.round(verts, 8)
+    assert {tuple(v) for v in rounded} == {tuple(-v) for v in rounded}
+
+
+@pytest.mark.parametrize(
+    'name,nfaces,nverts',
+    [
+        # simple cubic -> cube
+        ('cubic', 6, 8),
+        # reciprocal of fcc is bcc -> truncated octahedron
+        ('bcc_recip', 14, 24),
+        # reciprocal of bcc is fcc -> rhombic dodecahedron
+        ('fcc_recip', 12, 14),
+        # hexagonal -> hexagonal prism
+        ('hexagonal', 8, 12),
+    ],
+)
+def test_bz_matches_textbook_shapes(name, nfaces, nverts):
+    verts, faces = brillouin_zone(LATTICES[name])
+    assert len(faces) == nfaces
+    assert len(verts) == nverts
+
+
+def test_bz_is_a_lattice_property_not_a_basis_property():
+    """A non-reduced basis of the cubic lattice must give the same cube."""
+    plain, _ = brillouin_zone(LATTICES['cubic'])
+    skewed, _ = brillouin_zone(LATTICES['non_reduced_cubic'])
+    np.testing.assert_allclose(_sorted_rows(plain), _sorted_rows(skewed), atol=1e-9)
+
+
+def test_reduce_basis_preserves_the_lattice():
+    for name, recip in LATTICES.items():
+        reduced = reduce_basis(recip)
+        # the change of basis must be an integer, unimodular matrix
+        transform = reduced @ np.linalg.inv(recip)
+        np.testing.assert_allclose(transform, np.round(transform), atol=1e-9, err_msg=name)
+        assert np.isclose(abs(np.linalg.det(transform)), 1.0), name
+
+
+def test_reduce_basis_shortens_a_skewed_basis():
+    reduced = reduce_basis(LATTICES['non_reduced_cubic'])
+    assert np.allclose(np.sort(np.linalg.norm(reduced, axis=1)), [1.0, 1.0, 1.0])
+
+
+@pytest.mark.parametrize('name', sorted(LATTICES))
+def test_bz_planes_bound_the_zone(name):
+    verts, faces = brillouin_zone(LATTICES[name])
+    normals, offsets = bz_planes(verts, faces)
+    np.testing.assert_allclose(np.linalg.norm(normals, axis=1), 1.0)
+    assert np.all(offsets > 0.0)
+    assert np.all(verts @ normals.T <= offsets[None, :] + 1e-9)
+
+
+# --------------------------------------------------------------------------- #
+# Clipping and folding into the zone
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize('name', ['cubic', 'bcc_recip', 'orcf1_nb1sn2', 'triclinic'])
+def test_clipping_keeps_geometry_inside_the_zone(name):
+    recip = LATTICES[name]
+    verts, faces = brillouin_zone(recip)
+    normals, offsets = bz_planes(verts, faces)
+
+    rng = np.random.default_rng(5)
+    tri = rng.random((500, 3, 3)) @ recip
+    values = rng.random((500, 3))
+    clipped, kept = clip_to_planes(tri, values, normals, offsets)
+
+    assert np.all(clipped.reshape(-1, 3) @ normals.T <= offsets[None, :] + 1e-9)
+    # interpolated scalars can only ever lie between the original corner values
+    assert kept.min() >= values.min() - 1e-9
+    assert kept.max() <= values.max() + 1e-9
+
+
+def test_clipping_a_fully_interior_triangle_is_a_no_op():
+    verts, faces = brillouin_zone(LATTICES['cubic'])
+    normals, offsets = bz_planes(verts, faces)
+    tri = np.array([[[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.0, 0.1, 0.0]]])
+    values = np.array([[1.0, 2.0, 3.0]])
+    clipped, kept = clip_to_planes(tri, values, normals, offsets)
+    np.testing.assert_allclose(clipped, tri)
+    np.testing.assert_allclose(kept, values)
+
+
+def test_clipping_drops_a_fully_exterior_triangle():
+    verts, faces = brillouin_zone(LATTICES['cubic'])
+    normals, offsets = bz_planes(verts, faces)
+    far = np.array([[[9.0, 9.0, 9.0], [9.1, 9.0, 9.0], [9.0, 9.1, 9.0]]])
+    clipped, _ = clip_to_planes(far, np.ones((1, 3)), normals, offsets)
+    assert clipped.shape[0] == 0
+
+
+def test_clipping_halves_a_straddling_triangle():
+    """Cut a big triangle with the x = 1/2 face of the cubic zone."""
+    normals = np.array([[1.0, 0.0, 0.0]])
+    offsets = np.array([0.5])
+    tri = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]])
+    clipped, _ = clip_to_planes(tri, np.ones((1, 3)), normals, offsets)
+    assert np.all(clipped[..., 0] <= 0.5 + 1e-12)
+    # the half-plane cuts off exactly 1/4 of this right triangle's area
+    assert np.isclose(_triangle_area(clipped), 0.75 * _triangle_area(tri))
+
+
+def test_select_near_bz_keeps_only_touching_triangles():
+    recip = LATTICES['cubic']
+    verts, faces = brillouin_zone(recip)
+    normals, offsets = bz_planes(verts, faces)
+
+    cart = np.array(
+        [
+            [0.0, 0.0, 0.0],  # inside
+            [0.1, 0.0, 0.0],
+            [0.0, 0.1, 0.0],
+            [9.0, 9.0, 9.0],  # far outside
+            [9.1, 9.0, 9.0],
+            [9.0, 9.1, 9.0],
+        ]
+    )
+    tri_faces = np.array([[0, 1, 2], [3, 4, 5]])
+    kept_cart, kept_faces, _ = select_near_bz(cart, tri_faces, np.ones(len(cart)), normals, offsets)
+    assert kept_faces.shape[0] == 1
+    np.testing.assert_allclose(_sorted_rows(kept_cart), _sorted_rows(cart[:3]))
+
+
+@pytest.mark.parametrize('name', ['cubic', 'tetragonal', 'bcc_recip', 'fcc_recip', 'orcf1_nb1sn2'])
+def test_folding_conserves_surface_area(name):
+    """A periodic sheet has the same area in the zone as in the cell."""
+    recip = LATTICES[name]
+    cart, faces, scalars = _periodic_isosurface(recip)
+    verts, bz_faces = brillouin_zone(recip)
+    normals, offsets = bz_planes(verts, bz_faces)
+
+    folded_cart, folded_faces, _ = fold_into_bz(cart, faces, scalars, recip, normals, offsets)
+
+    area_cell = _triangle_area(cart[faces])
+    area_zone = _triangle_area(folded_cart[folded_faces])
+    assert np.isclose(area_zone, area_cell, rtol=2e-3)
+
+
+@pytest.mark.parametrize('name', ['cubic', 'bcc_recip', 'orcf1_nb1sn2'])
+def test_folded_sheet_stays_inside_the_zone(name):
+    recip = LATTICES[name]
+    cart, faces, scalars = _periodic_isosurface(recip)
+    verts, bz_faces = brillouin_zone(recip)
+    normals, offsets = bz_planes(verts, bz_faces)
+
+    folded_cart, _, _ = fold_into_bz(cart, faces, scalars, recip, normals, offsets)
+    assert np.all(folded_cart @ normals.T <= offsets[None, :] + 1e-8)
 
 
 # --------------------------------------------------------------------------- #
@@ -339,3 +575,17 @@ def test_plane_and_label_flags_are_opt_in():
     both = _field_from_argv(['--b-field', 'b1', '--field-plane', '--field-label'])
     assert both.show_plane
     assert both.show_label
+
+
+def test_bz_defaults_to_the_true_brillouin_zone():
+    assert _build_parser().parse_args(['dummy.bxsf']).bz == 'ws'
+
+
+@pytest.mark.parametrize('choice', ['ws', 'cell', 'none'])
+def test_bz_choices_are_accepted(choice):
+    assert _build_parser().parse_args(['dummy.bxsf', '--bz', choice]).bz == choice
+
+
+def test_bz_rejects_unknown_choice():
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(['dummy.bxsf', '--bz', 'octahedron'])
