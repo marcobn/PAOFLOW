@@ -1,11 +1,18 @@
 # import matplotlib.pyplot as plt
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import scipy.optimize as OP
 from mpi4py import MPI
-from numpy import linalg as LAN
+from numpy.typing import NDArray
 
 from ..utils.communication import gather_full, scatter_full
 from ..utils.constants import BOHR_RADIUS_ANGS
+
+if TYPE_CHECKING:
+    from PAOFLOW.DataController import DataController
 
 # initialize parallel execution
 comm = MPI.COMM_WORLD
@@ -15,88 +22,158 @@ size = comm.Get_size()
 # np.set_printoptions(precision=8, threshold=100, edgeitems=50, linewidth=350, suppress=True)
 
 
-def band_loop_H(ini_ik, end_ik, HRaux, kq, R):
-    """Fourier-transform H(R) to H(k) for a slice of k-points.
+def pack_HR(HRaux: NDArray[np.complexfloating], ispin: int = 0) -> NDArray[np.complexfloating]:
+    """Pack one spin channel of ``H(R)`` into a contiguous matrix for BLAS.
 
-    Evaluates
+    Parameters
+    ----------
+    HRaux : ndarray, shape ``(nawf, nawf, nR, nspin)``, complex
+        Real-space Hamiltonian on the R-grid in crystal coordinates.
+    ispin : int, optional
+        Spin channel to extract (default ``0``).
 
+    Returns
+    -------
+    ndarray, shape ``(nawf*nawf, nR)``, complex
+        C-contiguous packing of the requested spin channel.  For
+        ``nspin == 1`` this is a view and no data is copied.
+
+    Notes
+    -----
+    In this layout the Fourier sum over ``R`` is a single matrix-vector
+    (or matrix-matrix) product.  Slicing the spin axis of the original
+    ``(nawf, nawf, nR, nspin)`` array yields a strided view, which forces
+    NumPy to copy the whole Hamiltonian on *every* contraction; packing
+    once here removes that copy from the optimisation loop.
+    """
+    nawf = HRaux.shape[0]
+    return np.ascontiguousarray(HRaux[:, :, :, ispin]).reshape(nawf * nawf, -1)
+
+
+def build_Hk(
+    HRpack: NDArray[np.complexfloating],
+    nawf: int,
+    kq: NDArray[np.floating],
+    R: NDArray[np.floating],
+) -> NDArray[np.complexfloating]:
+    """Fourier-transform the packed ``H(R)`` to ``H(k)`` at a single k-point.
+
+    Parameters
+    ----------
+    HRpack : ndarray, shape ``(nawf*nawf, nR)``, complex
+        Packed Hamiltonian from :func:`pack_HR`.
+    nawf : int
+        Dimension of the Hamiltonian matrix.
+    kq : ndarray, shape ``(3,)``, float
+        k-point in crystal (fractional) coordinates.
+    R : ndarray, shape ``(nR, 3)``, float
+        Real-space lattice vectors produced by :func:`get_R_grid_fft`.
+
+    Returns
+    -------
+    ndarray, shape ``(nawf, nawf)``, complex
+        The Hamiltonian at ``kq``.
+
+    Notes
+    -----
     .. math::
 
         H(\\mathbf{k}) = \\sum_{\\mathbf{R}}
                          H(\\mathbf{R})\\,e^{2\\pi i\\mathbf{k}\\cdot\\mathbf{R}}
 
-    for the k-point range ``[ini_ik, end_ik)``.  The phase factors are
-    computed in vectorised form via ``np.tensordot``.
-
-    Parameters
-    ----------
-    ini_ik : int
-        Start index of the k-point slice (inclusive).
-    end_ik : int
-        End index of the k-point slice (exclusive).
-    HRaux : ndarray, shape (nawf, nawf, nR, nspin)
-        Real-space Hamiltonian on the R-grid in crystal coordinates.
-    kq : ndarray, shape (3, nkpnts)
-        k-points in crystal (fractional) coordinates.
-    R : ndarray, shape (nR, 3)
-        Real-space lattice vectors produced by :func:`get_R_grid_fft`.
-
-    Returns
-    -------
-    auxh : ndarray, shape (nawf, nawf, 1, nspin)
-        Complex H(k) for the requested k-point slice.
+    The dot product :math:`\\mathbf{k}\\cdot\\mathbf{R}` is accumulated in
+    real arithmetic before exponentiation, and the R-sum is a single
+    ``ZGEMV`` call with no temporaries.
     """
-    nawf, _, _, nspin = HRaux.shape
-    kdot = np.zeros((1, R.shape[0]), dtype=complex, order='C')
-    kdot = np.tensordot(R, 2.0j * np.pi * kq[:, ini_ik:end_ik], axes=([1], [0]))
-    np.exp(kdot, kdot)
-
-    auxh = np.zeros((nawf, nawf, 1, nspin), dtype=complex, order='C')
-    for ispin in range(nspin):
-        auxh[:, :, ini_ik:end_ik, ispin] = np.tensordot(
-            HRaux[:, :, :, ispin], kdot, axes=([2], [0])
-        )
-    return auxh
+    phase = np.exp((2.0j * np.pi) * (R @ kq))
+    return HRpack.dot(phase).reshape(nawf, nawf)
 
 
-def gen_eigs(HRaux, kq, R):
-    """Compute band eigenvalues at a single k-point.
-
-    Builds H(k) via :func:`band_loop_H` and diagonalises it with
-    ``numpy.linalg.eigvalsh`` (upper triangle, Hermitian) for each spin
-    channel.
+def build_Hk_batch(
+    HRpack: NDArray[np.complexfloating],
+    nawf: int,
+    kq: NDArray[np.floating],
+    R: NDArray[np.floating],
+) -> NDArray[np.complexfloating]:
+    """Fourier-transform the packed ``H(R)`` to ``H(k)`` for a block of k-points.
 
     Parameters
     ----------
-    HRaux : ndarray, shape (nawf, nawf, nR, nspin)
-        Real-space Hamiltonian.
-    kq : ndarray, shape (3,)
-        Single k-point in crystal (fractional) coordinates.
-    R : ndarray, shape (nR, 3)
+    HRpack : ndarray, shape ``(nawf*nawf, nR)``, complex
+        Packed Hamiltonian from :func:`pack_HR`.
+    nawf : int
+        Dimension of the Hamiltonian matrix.
+    kq : ndarray, shape ``(nk, 3)``, float
+        k-points in crystal (fractional) coordinates.
+    R : ndarray, shape ``(nR, 3)``, float
         Real-space lattice vectors.
 
     Returns
     -------
-    E_kp : ndarray, shape (1, nawf, nspin)
-        Sorted eigenvalues in ascending order for each spin channel.
+    ndarray, shape ``(nk, nawf, nawf)``, complex
+        The Hamiltonian at each k-point.
+
+    Notes
+    -----
+    Identical to :func:`build_Hk` but evaluates the R-sum as a single
+    ``ZGEMM``.  The one-k-point kernel is memory-bandwidth bound (it
+    streams the whole Hamiltonian for :math:`\\mathcal{O}(n_{awf}^2 n_R)`
+    flops), so amortising that traffic over a block of k-points is much
+    faster per point.
     """
-    # Load balancing
-
-    nawf, _, _, nspin = HRaux.shape
-    E_kp = np.zeros((1, nawf, nspin), dtype=np.float64)
-
-    kq = kq[:, None]
-
-    #  Hks_int  = np.zeros((nawf,nawf,1,nspin),dtype=complex,order='C') # final data arrays
-    Hks_int = band_loop_H(0, 1, HRaux, kq, R)
-
-    for ispin in range(nspin):
-        E_kp[:, :, ispin] = LAN.eigvalsh(Hks_int[:, :, 0, ispin], UPLO='U')
-
-    return E_kp
+    phases = np.exp((2.0j * np.pi) * (kq @ R.T))
+    return phases.dot(HRpack.T).reshape(-1, nawf, nawf)
 
 
-def get_gap(HR, kq, R, nelec):
+def band_energies(
+    HRpack: NDArray[np.complexfloating],
+    nawf: int,
+    kq: NDArray[np.floating],
+    R: NDArray[np.floating],
+) -> NDArray[np.float64]:
+    """Compute band eigenvalues for one or many k-points.
+
+    Parameters
+    ----------
+    HRpack : ndarray, shape ``(nawf*nawf, nR)``, complex
+        Packed Hamiltonian from :func:`pack_HR`.
+    nawf : int
+        Dimension of the Hamiltonian matrix.
+    kq : ndarray, shape ``(3,)`` or ``(nk, 3)``, float
+        k-point(s) in crystal (fractional) coordinates.
+    R : ndarray, shape ``(nR, 3)``, float
+        Real-space lattice vectors.
+
+    Returns
+    -------
+    ndarray, shape ``(nk, nawf)``, float
+        Eigenvalues in ascending order, Hermitian upper triangle.
+
+    Notes
+    -----
+    k-points are processed in blocks sized to keep the batched
+    Hamiltonian below roughly 16 MB.
+    """
+    kq = np.atleast_2d(kq)
+    nk = kq.shape[0]
+    E = np.empty((nk, nawf), dtype=np.float64)
+
+    chunk = int(min(1024, max(1, 1000000 // (nawf * nawf))))
+    for ini_ik in range(0, nk, chunk):
+        end_ik = min(ini_ik + chunk, nk)
+        Hks = build_Hk_batch(HRpack, nawf, kq[ini_ik:end_ik], R)
+        E[ini_ik:end_ik] = np.linalg.eigvalsh(Hks, UPLO='U')
+
+    return E
+
+
+def get_gap(
+    HRpack: NDArray[np.complexfloating],
+    nawf: int,
+    kq: NDArray[np.floating],
+    R: NDArray[np.floating],
+    nelec: int,
+) -> float:
     """Return the direct band gap at k-point ``kq`` between bands ``nelec-1`` and ``nelec``.
 
     This is the scalar objective function minimised by :func:`find_min` to
@@ -105,11 +182,13 @@ def get_gap(HR, kq, R, nelec):
 
     Parameters
     ----------
-    HR : ndarray, shape (nawf, nawf, nR, nspin)
-        Real-space Hamiltonian.
-    kq : ndarray, shape (3,)
+    HRpack : ndarray, shape ``(nawf*nawf, nR)``, complex
+        Packed Hamiltonian from :func:`pack_HR`.
+    nawf : int
+        Dimension of the Hamiltonian matrix.
+    kq : ndarray, shape ``(3,)``, float
         k-point in crystal (fractional) coordinates.
-    R : ndarray, shape (nR, 3)
+    R : ndarray, shape ``(nR, 3)``, float
         Real-space lattice vectors.
     nelec : int
         Number of occupied bands; the gap is evaluated between band
@@ -119,12 +198,82 @@ def get_gap(HR, kq, R, nelec):
     -------
     float
         Energy difference ``E[nelec] - E[nelec - 1]`` at ``kq``.
+
+    Notes
+    -----
+    Only the first spin channel is built, since the gap is defined on
+    ``ispin = 0``.
     """
-    E_kp = gen_eigs(HR, kq, R)
-    return E_kp[0, nelec, 0] - E_kp[0, nelec - 1, 0]
+    eigs = np.linalg.eigvalsh(build_Hk(HRpack, nawf, kq, R), UPLO='U')
+    return float(eigs[nelec] - eigs[nelec - 1])
 
 
-def get_R_grid_fft(nr1, nr2, nr3):
+# corners of the unit cube, used to sample each search box
+_BOX_CORNERS = np.array([[i, j, k] for i in (0.0, 1.0) for j in (0.0, 1.0) for k in (0.0, 1.0)])
+
+
+def screen_boxes(
+    HRpack: NDArray[np.complexfloating],
+    nawf: int,
+    R: NDArray[np.floating],
+    nelec: int,
+    lo: NDArray[np.floating],
+    hi: NDArray[np.floating],
+    factor: float = 2.0,
+) -> NDArray[np.bool_]:
+    """Flag the search boxes that can plausibly contain a band crossing.
+
+    Parameters
+    ----------
+    HRpack : ndarray, shape ``(nawf*nawf, nR)``, complex
+        Packed Hamiltonian from :func:`pack_HR`.
+    nawf : int
+        Dimension of the Hamiltonian matrix.
+    R : ndarray, shape ``(nR, 3)``, float
+        Real-space lattice vectors.
+    nelec : int
+        Number of occupied bands.
+    lo, hi : ndarray, shape ``(nbox, 3)``, float
+        Lower and upper corners of each search box, in crystal
+        coordinates.
+    factor : float, optional
+        Safety margin on the gap-variation bound (default ``2.0``).
+        Larger values keep more boxes.
+
+    Returns
+    -------
+    ndarray, shape ``(nbox,)``, bool
+        ``True`` for boxes that must be handed to the optimiser.
+
+    Notes
+    -----
+    The gap is sampled on a 9-point stencil (centre plus the eight
+    corners) of every box in a single batched evaluation; adjacent boxes
+    share corners, so the stencil is de-duplicated first.  A box is
+    discarded when its smallest sampled gap exceeds ``factor`` times the
+    largest gap variation observed across the box, i.e. when a linear
+    (Lipschitz) extrapolation of the sampled slope cannot reach zero
+    inside the box.  This is a heuristic, not a proof: it assumes the gap
+    does not develop structure finer than the box on which it is
+    sampled.  Pass ``factor <= 0`` in :func:`find_min` to disable.
+    """
+    nbox = lo.shape[0]
+    bbox = hi - lo
+
+    stencil = np.empty((nbox, 1 + _BOX_CORNERS.shape[0], 3))
+    stencil[:, 0] = lo + 0.5 * bbox
+    stencil[:, 1:] = lo[:, None, :] + _BOX_CORNERS[None] * bbox[:, None, :]
+
+    # corners shared between neighbouring boxes agree only to round-off
+    kpts, inv = np.unique(np.around(stencil.reshape(-1, 3), 12), axis=0, return_inverse=True)
+    E = band_energies(HRpack, nawf, kpts, R)
+    gaps = (E[:, nelec] - E[:, nelec - 1])[inv.reshape(-1)].reshape(nbox, -1)
+
+    spread = np.max(np.abs(gaps[:, 1:] - gaps[:, :1]), axis=1)
+    return gaps.min(axis=1) <= factor * spread
+
+
+def get_R_grid_fft(nr1: int, nr2: int, nr3: int) -> NDArray[np.float64]:
     """Build the real-space R-grid corresponding to an FFT supercell.
 
     Generates all ``nr1 * nr2 * nr3`` lattice vectors in fractional
@@ -143,41 +292,23 @@ def get_R_grid_fft(nr1, nr2, nr3):
         Lattice vectors in units of the corresponding primitive vectors,
         ordered as ``k + j*nr3 + i*nr2*nr3``.
     """
-    R = np.zeros((nr1 * nr2 * nr3, 3))
+    nr = np.array([nr1, nr2, nr3], dtype=np.float64)[:, None]
 
-    for i in range(nr1):
-        for j in range(nr2):
-            for k in range(nr3):
-                n = k + j * nr3 + i * nr2 * nr3
-                Rx = float(i) / float(nr1)
-                Ry = float(j) / float(nr2)
-                Rz = float(k) / float(nr3)
-                if Rx >= 0.5:
-                    Rx = Rx - 1.0
-                if Ry >= 0.5:
-                    Ry = Ry - 1.0
-                if Rz >= 0.5:
-                    Rz = Rz - 1.0
-                Rx -= int(Rx)
-                Ry -= int(Ry)
-                Rz -= int(Rz)
+    R = np.indices((nr1, nr2, nr3), dtype=np.float64).reshape(3, -1) / nr
+    R[R >= 0.5] -= 1.0
 
-                R[n, 0] = Rx * nr1
-                R[n, 1] = Ry * nr2
-                R[n, 2] = Rz * nr3
-
-    return R
+    return np.ascontiguousarray((R * nr).T)
 
 
 def get_search_grid(
-    nk1,
-    nk2,
-    nk3,
+    nk1: int,
+    nk2: int,
+    nk3: int,
     snk1_range=[-0.5, 0.5],
     snk2_range=[-0.5, 0.5],
     snk3_range=[-0.5, 0.5],
-    endpoint=False,
-):
+    endpoint: bool = False,
+) -> NDArray[np.float64]:
     """Generate a uniform 3-D search grid in fractional BZ coordinates.
 
     Creates a full-factorial mesh with ``nk1 * nk2 * nk3`` points by
@@ -210,7 +341,7 @@ def get_search_grid(
     return np.array(np.meshgrid(nk1_arr, nk2_arr, nk3_arr, indexing='ij')).T.reshape(-1, 3)
 
 
-def find_weyl(data_controller, test_rad, search_grid):
+def find_weyl(data_controller: DataController, test_rad: float, search_grid: list[int]) -> None:
     """Locate and classify Weyl points in the Brillouin zone.
 
     Orchestrates the full Weyl-point search workflow:
@@ -222,7 +353,9 @@ def find_weyl(data_controller, test_rad, search_grid):
     3. Optionally uses ``z2pack`` to compute the Chern number on a small
        sphere around each candidate; points with non-zero Chern number are
        confirmed as Weyl points.  If ``z2pack`` is unavailable, chirality
-       is recorded as ``'?'``.
+       is recorded as ``'?'``.  The candidates are distributed over the
+       MPI ranks, each of which builds its own ``tbmodels`` model from
+       ``hamiltonian.dat``.
     4. Writes a summary table to ``weyl_points.dat`` in ``attr['opath']``.
 
     Parameters
@@ -230,14 +363,20 @@ def find_weyl(data_controller, test_rad, search_grid):
     data_controller : DataController
         Provides ``HRs``, ``sym_rot``, ``b_vectors``, ``sym_TR``,
         ``nelec``, ``symmetrize``, ``verbose``, ``dftMAG``, ``dftSO``,
-        ``alat``, ``opath``.
+        ``alat``, ``opath``.  The optional attribute
+        ``weyl_screen_factor`` (default ``2.0``) tunes the box screening
+        of :func:`screen_boxes`; set it to ``0`` to disable.
     test_rad : float
         Radius (in fractional BZ units) of the ``z2pack`` Chern-number
-        sphere.  Clamped to the half-distance between the nearest pair of
-        candidates.
+        sphere.  Currently unused: the radius is fixed at ``0.005``.
     search_grid : list of int, length 3
         ``[nk1, nk2, nk3]`` number of cells to divide the BZ into for the
         initial coarse gap-minimisation search.
+
+    Returns
+    -------
+    None
+        Writes ``weyl_points.dat`` to ``attr['opath']`` on rank ``0``.
 
     Output files (written to ``opath``)
     ------------------------------------
@@ -261,105 +400,124 @@ def find_weyl(data_controller, test_rad, search_grid):
     nawf, _, nk1, nk2, nk3, nspin = HRs.shape
     R = get_R_grid_fft(nk1, nk2, nk3)
 
-    HRs = np.reshape(HRs, (nawf, nawf, nk1 * nk2 * nk3, nspin))
+    HRpack = pack_HR(np.reshape(HRs, (nawf, nawf, nk1 * nk2 * nk3, nspin)))
 
     mag_soc = np.logical_and(attr['dftMAG'], attr['dftSO'])
 
-    CAND, ene = find_min(HRs, nelec, R, b_vectors, symf, verbose, search_grid)
+    CAND, _ = find_min(
+        HRpack,
+        nawf,
+        nelec,
+        R,
+        symf,
+        verbose,
+        search_grid,
+        attr.get('weyl_screen_factor', 2.0),
+    )
 
-    WEYL = {}
-    if rank == 0:
-        if symf:
-            # get all equiv k
-            CAND = get_equiv_k(CAND, symops, TR_flag, mag_soc)
+    if rank == 0 and symf:
+        # get all equiv k
+        CAND = get_equiv_k(CAND, symops, TR_flag, mag_soc)
+    CAND = comm.bcast(CAND if rank == 0 else None, root=0)
 
-        if verbose:
-            print()
-            for i in range(CAND.shape[0]):
-                E_kp = gen_eigs(HRs, CAND[i], R)
-                ene = E_kp[0, nelec, 0]
-                gap = E_kp[0, nelec, 0] - E_kp[0, nelec - 1, 0]
-                tup = (i + 1,) + tuple(CAND[i][j] for j in range(3)) + (ene, gap)
-                print(
-                    'Weyl point candidate #%d crystal coord: [ %6.4f %6.4f %6.4f ] ene=%.4f gap=%.6e'
-                    % tup
-                )
+    eigs = band_energies(HRpack, nawf, CAND, R)
+    ene = eigs[:, nelec]
+    gaps = eigs[:, nelec] - eigs[:, nelec - 1]
 
-                in_cart = b_vectors.T.dot(CAND[i])
-                tup = (i + 1,) + tuple(in_cart[j] for j in range(3)) + (ene, gap)
-                print(
-                    'Weyl point candidate #%d 2pi/alat     : [ %6.4f %6.4f %6.4f ] ene=%.4f gap=%.6e'
-                    % tup
-                )
-                print()
-
-        try:
-            import tbmodels
-            import z2pack
-
-            model = tbmodels.Model.from_wannier_files(
-                hr_file=os.path.join(attr['opath'], 'hamiltonian.dat')
+    if rank == 0 and verbose:
+        print()
+        for i in range(CAND.shape[0]):
+            tup = (i + 1,) + tuple(CAND[i][j] for j in range(3)) + (ene[i], gaps[i])
+            print(
+                'Weyl point candidate #%d crystal coord: [ %6.4f %6.4f %6.4f ] ene=%.4f gap=%.6e'
+                % tup
             )
-            system = z2pack.tb.System(model, bands=nelec)
 
-            candidates = 0
-
-            if not verbose:
-                import logging
-
-                logging.getLogger('z2pack').setLevel(logging.WARNING)
-
-            for kq in CAND:
-                # if distance between two candidates is very small
-                k_rad = np.amin(np.sqrt(np.sum((kq - CAND) ** 2, axis=1))) * 0.5
-                if k_rad > test_rad:
-                    k_rad = test_rad
-                k_rad = 0.005
-
-                surface = z2pack.shape.Sphere(center=tuple(kq), radius=k_rad)
-                result_1 = z2pack.surface.run(system=system, surface=surface)
-                invariant = z2pack.invariant.chern(result_1)
-
-                if invariant != 0:
-                    candidates += 1
-                    WEYL[str(kq).replace(',', '')] = invariant
-
-        except ModuleNotFoundError:
-            print('Could not load z2pack to verify chirality of weyl points')
-            for kq in CAND:
-                WEYL[str(kq).replace(',', '')] = '?'
-
-        if verbose:
+            in_cart = b_vectors.T.dot(CAND[i])
+            tup = (i + 1,) + tuple(in_cart[j] for j in range(3)) + (ene[i], gaps[i])
+            print(
+                'Weyl point candidate #%d 2pi/alat     : [ %6.4f %6.4f %6.4f ] ene=%.4f gap=%.6e'
+                % tup
+            )
             print()
 
-        wcs = '{0:>3} {1:>10} {2:>10} {3:>10} {4:>2} {5:>7}\n'.format(
-            '#', '2pi/alat', '2pi/alat', '2pi/alat', 'C', 'ene'
+    ncand = CAND.shape[0]
+    chirality = np.zeros(ncand)
+    have_chern = True
+
+    try:
+        import tbmodels
+        import z2pack
+    except ModuleNotFoundError:
+        have_chern = False
+        if rank == 0:
+            print('Could not load z2pack to verify chirality of weyl points')
+
+    if have_chern:
+        if not verbose:
+            import logging
+
+            logging.getLogger('z2pack').setLevel(logging.WARNING)
+
+        model = tbmodels.Model.from_wannier_files(
+            hr_file=os.path.join(attr['opath'], 'hamiltonian.dat')
         )
-        wcs += '  #   alat = {0} angstrom\n'.format(attr['alat'] * BOHR_RADIUS_ANGS)
-        wcs += '-' * 72 + '\n'
+        system = z2pack.tb.System(model, bands=nelec)
 
-        for j, k in enumerate(WEYL.keys()):
-            fm = np.array(list(map(float, k[1:-1].split())))
-            E_kp = gen_eigs(HRs, fm, R)
-            ene = E_kp[0, nelec, 0]
-            fm = b_vectors.T.dot(fm[:, None])[:, 0]
-            try:
-                if verbose:
-                    fstring = 'Found Candidate No. {0} at [{1:>7.4f} {2:>7.4f} {3:>7.4f}] with Chirality:{4:>2} ene={5:>7.4f}'
-                    print(fstring.format(j + 1, fm[0], fm[1], fm[2], int(WEYL[k]), ene))
-                wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2} {5:>7.4f}\n'.format(
-                    j + 1, fm[0], fm[1], fm[2], int(WEYL[k]), ene
-                )
-            except:
-                wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2} {5:>7.4f}\n'.format(
-                    j + 1, fm[0], fm[1], fm[2], WEYL[k], ene
-                )
+        # NOTE: the test_rad / nearest-candidate clamp is inactive, radius is fixed
+        k_rad = 0.005
 
-        with open(os.path.join(attr['opath'], 'weyl_points.dat'), 'w') as ofo:
-            ofo.write(wcs)
+        # candidates are spread round-robin over the ranks
+        local = []
+        for i in range(rank, ncand, size):
+            surface = z2pack.shape.Sphere(center=tuple(CAND[i]), radius=k_rad)
+            result_1 = z2pack.surface.run(system=system, surface=surface)
+            local.append((i, z2pack.invariant.chern(result_1)))
+
+        for part in comm.allgather(local):
+            for i, invariant in part:
+                chirality[i] = invariant
+
+        confirmed = np.flatnonzero(chirality != 0.0)
+    else:
+        confirmed = np.arange(ncand)
+
+    if rank != 0:
+        return
+
+    if verbose:
+        print()
+
+    wcs = '{0:>3} {1:>10} {2:>10} {3:>10} {4:>2} {5:>7}\n'.format(
+        '#', '2pi/alat', '2pi/alat', '2pi/alat', 'C', 'ene'
+    )
+    wcs += '  #   alat = {0} angstrom\n'.format(attr['alat'] * BOHR_RADIUS_ANGS)
+    wcs += '-' * 72 + '\n'
+
+    for j, i in enumerate(confirmed):
+        fm = b_vectors.T.dot(CAND[i])
+        chern = int(chirality[i]) if have_chern else '?'
+        if verbose and have_chern:
+            fstring = 'Found Candidate No. {0} at [{1:>7.4f} {2:>7.4f} {3:>7.4f}] with Chirality:{4:>2} ene={5:>7.4f}'
+            print(fstring.format(j + 1, fm[0], fm[1], fm[2], chern, ene[i]))
+        wcs += '{0:>3d} {1:>10.4f} {2:>10.4f} {3:>10.4f} {4:>2} {5:>7.4f}\n'.format(
+            j + 1, fm[0], fm[1], fm[2], chern, ene[i]
+        )
+
+    with open(os.path.join(attr['opath'], 'weyl_points.dat'), 'w') as ofo:
+        ofo.write(wcs)
 
 
-def find_min(HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8, 8, 8]):
+def find_min(
+    HRpack: NDArray[np.complexfloating],
+    nawf: int,
+    nelec: int,
+    R: NDArray[np.floating],
+    symf: bool,
+    verbose: bool,
+    search_grid: list[int] = [8, 8, 8],
+    screen_factor: float = 2.0,
+) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
     """Find band-gap minima across the BZ using local optimisation.
 
     Divides the first BZ into ``nk1 * nk2 * nk3`` rectangular boxes and
@@ -368,6 +526,10 @@ def find_min(HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8, 8, 8]):
     across MPI ranks for parallelism; partial results are collected with
     :func:`~.communication.gather_full`.
 
+    Boxes are first screened with :func:`screen_boxes`, which samples the
+    gap on a batched 9-point stencil and skips boxes that cannot reach
+    zero; this removes the great majority of the optimiser calls.
+
     On rank 0, candidates with a gap smaller than ``1e-5`` are retained.
     If symmetry is enabled (``symf``), they are further de-duplicated by
     sorting on energy and removing entries with identical energies (to
@@ -375,21 +537,23 @@ def find_min(HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8, 8, 8]):
 
     Parameters
     ----------
-    HRs : ndarray, shape (nawf, nawf, nR, nspin)
-        Real-space Hamiltonian.
+    HRpack : ndarray, shape ``(nawf*nawf, nR)``, complex
+        Packed Hamiltonian from :func:`pack_HR`.
+    nawf : int
+        Dimension of the Hamiltonian matrix.
     nelec : int
         Number of occupied bands; gap is ``E[nelec] - E[nelec-1]``.
     R : ndarray, shape (nR, 3)
         Real-space lattice vectors from :func:`get_R_grid_fft`.
-    a_vectors : ndarray, shape (3, 3)
-        Reciprocal lattice vectors (unused directly here; kept for
-        interface consistency).
     symf : bool
         If ``True``, de-duplicate candidates using energy degeneracy.
     verbose : bool
         Print intermediate candidate information to stdout.
     search_grid : list of int, optional
         ``[nk1, nk2, nk3]`` subdivision of the BZ.  Default ``[8, 8, 8]``.
+    screen_factor : float, optional
+        Safety margin passed to :func:`screen_boxes`.  Values ``<= 0``
+        disable screening and optimise inside every box.
 
     Returns
     -------
@@ -398,60 +562,55 @@ def find_min(HRs, nelec, R, a_vectors, symf, verbose, search_grid=[8, 8, 8]):
     ene : ndarray, shape (nc,) or ``None`` on non-root ranks
         Energy at the LUMO band for each candidate.
     """
-    snk = tuple(search_grid[i] for i in range(3))
-    # snk2 = search_grid[1]
-    # snk3 = search_grid[2]
-    # search_grid = do_search_grid(snk1,snk2,snk3)
-    search_grid = get_search_grid(*snk)
+    snk = (search_grid[0], search_grid[1], search_grid[2])
+    grid_K = get_search_grid(snk[0], snk[1], snk[2])
 
     # get the search grid off possible HSP
     end = np.array([0.5] * 3)
     start = np.array([-0.5] * 3)
-    # end1 = end2 = end3 = 0.5
-    # start1 = start2 = start3 = -0.5
-    bounds_K = np.zeros((search_grid.shape[0], 3, 2))
-    # guess_K   = np.zeros((search_grid.shape[0],3))
-
-    # do the bounds for each search subsection of FBZ
-    # search in boxes
-    bounds_K[:, :, 0] = search_grid
     bbox = np.array([(end[i] - start[i]) / snk[i] for i in range(3)])
-    bounds_K[:, :, 1] = search_grid + bbox
-    # initial guess is in the middle of each box
-    guess_K = search_grid + 0.5 * bbox
 
-    sgi = np.arange(bounds_K.shape[0], dtype=int)
-    sgi = scatter_full(sgi, 1)
-    print('finding Weyl points... rank={0} npoints={1}'.format(rank, sgi.shape[0]))
+    # only this rank's share of the boxes is materialised
+    box_lo = scatter_full(grid_K, 1)
+    box_hi = box_lo + bbox
+    print('finding Weyl points... rank={0} npoints={1}'.format(rank, box_lo.shape[0]))
 
-    candidates = np.zeros((sgi.shape[0], 3))
+    # bounds for each search subsection of FBZ, initial guess in the middle
+    bounds_K = np.stack((box_lo, box_hi), axis=-1)
+    guess_K = box_lo + 0.5 * bbox
 
-    lam_XiP = lambda K: get_gap(HRs, K, R, nelec)
-    for i in range(sgi.shape[0]):
+    if screen_factor > 0.0:
+        alive = screen_boxes(HRpack, nawf, R, nelec, box_lo, box_hi, screen_factor)
+    else:
+        alive = np.ones(box_lo.shape[0], dtype=bool)
+
+    # column 3 flags a converged box; gather_full requires the full partition
+    candidates = np.zeros((box_lo.shape[0], 4))
+
+    lam_XiP = lambda K: get_gap(HRpack, nawf, K, R, nelec)
+    for i in np.flatnonzero(alive):
         solx = OP.minimize(
             lam_XiP,
-            guess_K[sgi[i]],
-            bounds=bounds_K[sgi[i]],
+            guess_K[i],
+            bounds=bounds_K[i],
             method='L-BFGS-B',
             options={'ftol': 1.0e-14, 'gtol': 1.0e-12},
         )
 
         if np.abs(solx.fun) < 1.0e-5:
-            candidates[i] = solx.x
+            candidates[i, :3] = solx.x
+            candidates[i, 3] = 1.0
 
     candidates = gather_full(candidates, 1)
 
     ene = None
     if rank == 0:
         # filter out non hits
-        candidates = candidates[np.where(np.sum(candidates, axis=1) != 0.0)]
+        candidates = candidates[candidates[:, 3] > 0.5, :3]
         # calculate energy at each candidate to reduce equiv ones
-        ene = np.zeros((candidates.shape[0]))
-        gaps = np.zeros((candidates.shape[0]))
-        for i in range(ene.shape[0]):
-            eigs = gen_eigs(HRs, candidates[i], R)[0, :, 0]
-            ene[i] = eigs[nelec]
-            gaps[i] = eigs[nelec] - eigs[nelec - 1]
+        eigs = band_energies(HRpack, nawf, candidates, R)
+        ene = eigs[:, nelec]
+        gaps = eigs[:, nelec] - eigs[:, nelec - 1]
 
         if symf:
             # sort by gap size (should be nearly zero)
