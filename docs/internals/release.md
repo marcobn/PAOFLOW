@@ -14,13 +14,13 @@ The test asset pipeline manages a combined archive (`qe_test_assets.tar.gz`) tha
 
 ### Key scripts
 
-| Script | What it does |
-|--------|-------------|
-| `create_assets.sh` | Runs QE calculations and PAOFLOW analyses to generate raw outputs |
-| `build_tar.sh` | Packages everything into the archive (supports `--repack` for partial updates) |
-| `build_assets.py` | Internal helper used by the packaging logic |
-| `submit.sh` | SLURM wrapper for running on HPC systems |
-| `upload_release_assets.sh` | Uploads the archive and checksums to a GitHub release |
+| Script                     | What it does                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `create_assets.sh`         | Runs QE calculations and PAOFLOW analyses to generate raw outputs              |
+| `build_tar.sh`             | Packages everything into the archive (supports `--repack` for partial updates) |
+| `build_assets.py`          | Internal helper used by the packaging logic                                    |
+| `submit.sh`                | SLURM wrapper for running on HPC systems                                       |
+| `upload_release_assets.sh` | Uploads the archive and checksums to a GitHub release                          |
 
 All scripts live under `.github/assets_generation/`.
 
@@ -56,3 +56,28 @@ This uploads the archive and its SHA256 checksum to the GitHub release. After pu
 CI runs the full test suite on every pull request targeting `develop`. Integration tests download the QE assets from whichever release is specified in `.github/workflows/ci.yaml`.
 
 See [Testing](testing.md) for guidance on interpreting CI failures and deciding whether to fix code, regenerate references, or adjust comparison thresholds.
+
+## Tutorial Assets
+
+Tutorial data is published separately as `tutorial_assets.tar.gz` on the same
+release. Generated tutorial payload is ignored by Git. Examples that run
+easily on a laptop contain only trimmed QE `.save` data, while examples that
+require HPC resources also contain the PAOFLOW output files used for plots.
+
+Place each generated payload under
+`.github/assets_generation/tutorials/tutorialNN/`, build the complete archive,
+and upload it:
+
+```text
+tutorialNN/
+	system.save/
+	output/       # HPC-generated plotting files only, when needed
+```
+
+```bash
+python .github/assets_generation/tutorials/build_assets.py
+.github/assets_generation/tutorials/upload_release_assets.sh
+```
+
+See [Writing Tutorials and How-Tos](tutorials-howtos.md) for the payload and
+notebook requirements.
