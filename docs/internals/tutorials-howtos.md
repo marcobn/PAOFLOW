@@ -82,7 +82,7 @@ from urllib.request import urlretrieve
 
 asset_url = (
   'https://github.com/marcobn/PAOFLOW/releases/download/'
-  'integration-assets-v1/tutorial_assets.tar.gz'
+  'tutorial-assets-v1/tutorial_assets.tar.gz'
 )
 archive_path = Path('tutorial_assets.tar.gz')
 asset_prefix = 'tutorialNN/'
@@ -126,15 +126,25 @@ python .github/assets_generation/tutorials/build_assets.py
 ```
 
 The helper includes XML and UPF files from every `.save` directory and includes
-`output/` when present. It writes the ignored
-`_assets/tutorial_assets.tar.gz`. Inspect the archive, then run the upload
-helper. It regenerates the checksum and replaces both assets on the existing
+`output/` when present. It writes the ignored `tutorial_assets.tar.gz` beside
+the helper. Inspect the archive, then run the upload helper. It regenerates the
+checksum and publishes both files under the dedicated `tutorial-assets-v1`
 release:
 
 ```bash
-tar -tzf .github/assets_generation/tutorials/_assets/tutorial_assets.tar.gz
+tar -tzf .github/assets_generation/tutorials/tutorial_assets.tar.gz
 .github/assets_generation/tutorials/upload_release_assets.sh
 ```
+
+Tutorial asset releases are immutable. When the payload changes, increment the
+tag and update every tutorial URL in the same change:
+
+```bash
+.github/assets_generation/tutorials/upload_release_assets.sh tutorial-assets-v2
+```
+
+Do not publish tutorial data under `integration-assets-vN`; those releases are
+reserved for CI regression inputs and references.
 
 ## Structure and Style
 
