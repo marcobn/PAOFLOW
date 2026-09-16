@@ -121,6 +121,8 @@ pseudo/
 *.swp
 *wfc*
 **/*.xml
+.github/assets_generation/tutorials/_assets/
+.github/assets_generation/tutorials/tutorial_SHA256SUMS
 *.out
 *tar.gz
 Reference2/

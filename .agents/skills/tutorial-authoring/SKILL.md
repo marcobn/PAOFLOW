@@ -175,8 +175,8 @@ generated payload under:
 ```
 
 The single `build_assets.py` helper packages these directories as
-`tutorial_assets.tar.gz`. `_assets/` and generated `.save` directories must
-remain ignored by Git.
+`tutorial_assets.tar.gz`. Generated archives, checksums, and `.save`
+directories must remain ignored by Git.
 
 Later tutorials and how-tos reuse an existing asset when the input calculation
 is unchanged. They link to the owning tutorial as a prerequisite and name it in
@@ -219,7 +219,7 @@ from urllib.request import urlretrieve
 
 asset_url = (
    'https://github.com/marcobn/PAOFLOW/releases/download/'
-   'integration-assets-v1/tutorial_assets.tar.gz'
+   'tutorial-assets-v1/tutorial_assets.tar.gz'
 )
 archive_path = Path('tutorial_assets.tar.gz')
 asset_prefix = 'tutorial01/'
@@ -239,7 +239,10 @@ data in reader-facing instructions.
 
 Build payloads with
 `python .github/assets_generation/tutorials/build_assets.py`, inspect the
-archive, then generate its checksum and upload both release assets with `gh`.
+archive, then publish it with `upload_release_assets.sh`. Tutorial asset tags
+are immutable: when the payload changes, publish the next
+`tutorial-assets-vN` tag and update every notebook URL. Never publish tutorial
+data under an `integration-assets-vN` tag.
 
 ### Notebook Downloads
 
@@ -296,6 +299,8 @@ separate and make both generation paths explicit.
 - [ ] HPC payloads contain the PAOFLOW files used by plotting cells.
 - [ ] HPC plotting reads packaged output while generation steps remain documented.
 - [ ] Public asset URLs work without a repository checkout.
+- [ ] Tutorial URLs pin an immutable `tutorial-assets-vN` release, not an
+      integration-test or PAOFLOW package release.
 - [ ] A Sphinx download role provides the source notebook from the built page.
 - [ ] All cells run top to bottom in a clean environment.
 - [ ] Public calls and argument names match the current PAOFLOW API.

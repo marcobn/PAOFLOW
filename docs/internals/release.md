@@ -59,10 +59,17 @@ See [Testing](testing.md) for guidance on interpreting CI failures and deciding 
 
 ## Tutorial Assets
 
-Tutorial data is published separately as `tutorial_assets.tar.gz` on the same
-release. Generated tutorial payload is ignored by Git. Examples that run
-easily on a laptop contain only trimmed QE `.save` data, while examples that
-require HPC resources also contain the PAOFLOW output files used for plots.
+Tutorial data has an independent release lifecycle from PAOFLOW and its
+integration-test assets. Publish `tutorial_assets.tar.gz` and
+`tutorial_SHA256SUMS` under an immutable tag such as `tutorial-assets-v1`.
+PAOFLOW patch and minor releases continue using that tag until the tutorial
+payload changes; publish `tutorial-assets-v2` rather than replacing assets in
+the existing release.
+
+The tutorial archive must not contain integration-test references. Examples
+that run easily on a laptop contain only trimmed QE `.save` data, while
+examples that require HPC resources also contain the PAOFLOW output files used
+for plots.
 
 Place each generated payload under
 `.github/assets_generation/tutorials/tutorialNN/`, build the complete archive,
@@ -78,6 +85,18 @@ tutorialNN/
 python .github/assets_generation/tutorials/build_assets.py
 .github/assets_generation/tutorials/upload_release_assets.sh
 ```
+
+The upload helper defaults to `tutorial-assets-v1`, creates the release when
+needed, and refuses to overwrite existing tutorial assets. Pass the next
+versioned tag explicitly when publishing a changed payload:
+
+```bash
+.github/assets_generation/tutorials/upload_release_assets.sh tutorial-assets-v2
+```
+
+Normal PAOFLOW releases should record the compatible tutorial asset tag in
+their release notes. Integration-test archives remain on their separate
+`integration-assets-vN` release and continue to be pinned independently by CI.
 
 See [Writing Tutorials and How-Tos](tutorials-howtos.md) for the payload and
 notebook requirements.
