@@ -151,6 +151,8 @@ exclude_patterns = [
     '_build',
     'Thumbs.db',
     '.DS_Store',
+    'tutorials/tutorial-template.ipynb',
+    'tutorials/howtos/how-to-template.ipynb',
     'api/generated/PAOFLOW.defs.rst',
     'api/generated/PAOFLOW.defs.*.rst',
 ]

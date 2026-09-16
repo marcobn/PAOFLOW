@@ -37,6 +37,7 @@ contributing
 :caption: Documentation Standards
 
 docstrings
+tutorials-howtos
 
 ```
 
