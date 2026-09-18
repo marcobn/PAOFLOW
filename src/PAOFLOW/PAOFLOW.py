@@ -3422,6 +3422,7 @@ class PAOFLOW:
                                 P,
                             )
                         else:
+                            arrays['ree_proj'] = np.array(ree_proj)
                             if 'naw' not in arrays:
                                 arrays['naw'] = orbital_array(self.data_controller)
                             P = do_projection_operator(self.data_controller, arrays['ree_proj'])
@@ -3435,7 +3436,6 @@ class PAOFLOW:
                                 arrays['Sj'],
                                 P,
                             )
-
                 if orbital is True:
                     if 'Lj' not in arrays:
                         self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
@@ -3457,6 +3457,7 @@ class PAOFLOW:
                                 P,
                             )
                         else:
+                            arrays['ree_proj'] = np.array(ree_proj)
                             if 'naw' not in arrays:
                                 arrays['naw'] = orbital_array(self.data_controller)
                             P = do_projection_operator(self.data_controller, arrays['ree_proj'])
