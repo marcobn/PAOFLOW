@@ -1,0 +1,32 @@
+ &control
+    calculation = 'scf'
+    restart_mode='from_scratch',
+    prefix='SnTe',
+    pseudo_dir ='./'
+    outdir='./'
+    verbosity = "high"
+ /
+ &system
+    ibrav=  6, nat=  2, ntyp= 2,
+    celldm(1) = 8.62,
+    celldm(3) = 4.5,
+    ecutwfc = 60.0,
+    ecutrho = 600.0,
+    occupations='smearing', smearing='gaussian', degauss=0.001
+    lspinorb=.true.,
+    noncolin=.true.,
+    starting_magnetization=0.0,
+ /
+ &electrons
+    mixing_mode = 'plain'
+    mixing_beta = 0.7
+    conv_thr =  1.0d-8
+/
+ATOMIC_SPECIES
+Sn  118.71000  Sn.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
+Te  127.60000  Te.rel-pbe-dn-kjpaw_psl.1.0.0.UPF
+ATOMIC_POSITIONS crystal
+Sn       0.000000000   0.000000000   0.000000000
+Te       0.500000000   0.500000000   0.000000000
+K_POINTS (automatic)
+  15 15 1  0 0 0
