@@ -777,7 +777,7 @@ def build_acbn0_script(cfg):
     lines.append('        MPI.COMM_WORLD.Barrier()')
     lines.append('')
     lines.append('    # ------------------------------------------------------------------ #')
-    lines.append('    # ACBN0: self-consistent on-site U                                    #')
+    lines.append('    # Plain DFT reference + ACBN0 self-consistent on-site U               #')
     lines.append('    # ------------------------------------------------------------------ #')
     lines.append('    a = ACBN0(')
     lines.append('        PREFIX,')
@@ -795,6 +795,12 @@ def build_acbn0_script(cfg):
     lines.append("        configuration='standard',")
     lines.append('        gaussian_threshold=GAUSSIAN_THRESHOLD,')
     lines.append('    )')
+    lines.append('    # First QE run: a plain-DFT scf (every U set to zero) that seeds the')
+    lines.append('    # charge density for the loop and gives the uncorrected reference bands.')
+    lines.append('    a.set_hubbard_parameters({k: 0.0 for k in HUBBARD_INIT})')
+    lines.append('    a.run_dft(PREFIX, a.uspecies, a.uVals)')
+    lines.append("    compute_bands('DFT')")
+    lines.append('')
     lines.append('    a.set_hubbard_parameters(dict(HUBBARD_INIT))')
     lines.append('    a.optimize_hubbard_U(convergence_threshold=CONV_THR)')
     lines.append("    compute_bands('U')")
@@ -2568,8 +2574,8 @@ def build_acbn0_plot_script(cfg):
         "    if stem.endswith('_0'):",
         '        stem = stem[:-2]',
         '    cases.append((stem, fn))',
-        '# Show the on-site-U case before the longer U+V label.',
-        'cases.sort(key=lambda kv: (len(kv[0]), kv[0]))',
+        '# Plain DFT first, then DFT+U, then DFT+U+V.',
+        'cases.sort(key=lambda kv: (_CASE_ORDER.get(kv[0], 99), kv[0]))',
         "sym = _one('*.kpath_points.txt')",
         'sym_points = read_band_path_PAO(sym) if sym else None',
         'y_lim = _ewin()',
@@ -2605,9 +2611,11 @@ def build_acbn0_plot_script(cfg):
     lines.append('')
     lines.append('# Human-readable names for the ACBN0 band-structure cases.')
     lines.append('_CASE_LABELS = {')
+    lines.append("    'DFT': 'DFT (U = 0)',")
     lines.append("    'U': 'DFT+U (ACBN0)',")
     lines.append("    'UV': 'DFT+U+V (eACBN0)',")
     lines.append('}')
+    lines.append("_CASE_ORDER = {'DFT': 0, 'U': 1, 'UV': 2}")
     lines.append('')
     lines.append('')
     lines.extend(_plot_func('plot_acbn0_bands', body))
