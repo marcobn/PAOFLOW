@@ -68,10 +68,12 @@ def do_rashba_edelstein(
     the finite-temperature derivative of the Fermi-Dirac function
     :math:`-\\partial f / \\partial E`.
     """
-    import numpy as np
     from os.path import join
+
+    import numpy as np
+
+    from ..utils.constants import BOHR_RADIUS_CM, ELECTRONVOLT_SI, HBAR
     from ..utils.smearing import gaussian
-    from ..utils.constants import ELECTRONVOLT_SI, BOHR_RADIUS_CM, HBAR
 
     comm, rank = data_controller.comm, data_controller.rank
     arrays, attr = data_controller.data_dicts()
@@ -160,10 +162,10 @@ def do_rashba_edelstein(
         )
 
         if write_to_file:
-            fkai = open(join(attr['opath'], filename + '_kai.dat'), 'w')
-            fcurrent = open(join(attr['opath'], filename + '_current.dat'), 'w')
+            fkai = open(join(attr['opath'], filename + 'kai.dat'), 'w')
+            fcurrent = open(join(attr['opath'], filename + 'current.dat'), 'w')
 
-            ofE = lambda si, sj: open(join(attr['opath'], filename + f'_Ekai_{si}{sj}.dat'), 'w')
+            ofE = lambda si, sj: open(join(attr['opath'], filename + f'Ekai_{si}{sj}.dat'), 'w')
             fEkai = [[ofE(sEkai[i], sEkai[j]) for j in range(3)] for i in range(3)]
 
             for ie in range(esize):
@@ -182,9 +184,10 @@ def do_rashba_edelstein(
 
 def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, spol, Op1, P):
     import numpy as np
+
+    from ..utils.constants import BOHR_RADIUS_CM, ELECTRONVOLT_SI, HBAR, LL
     from ..utils.perturb_split import perturb_split
-    from ..utils.smearing import metpax, gaussian
-    from ..utils.constants import LL, HBAR, ELECTRONVOLT_SI, BOHR_RADIUS_CM
+    from ..utils.smearing import gaussian, metpax
 
     arrays, attributes = data_controller.data_dicts()
 

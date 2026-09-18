@@ -1528,7 +1528,7 @@ class PAOFLOW:
                 raise e
 
     def orbital_operator(self, adhoc_SO=False):
-        from .topology.j_matrix import j_matrix, build_orb_list_and_indices, build_L_from_orb
+        from .topology.j_matrix import build_L_from_orb, build_orb_list_and_indices, j_matrix
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -2897,11 +2897,11 @@ class PAOFLOW:
             None
         """
 
-        from .response.do_Hall import do_orbital_Hall
         from .projection.projection_operator import (
             do_projection_operator,
             orbital_array,
         )
+        from .response.do_Hall import do_orbital_Hall
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -2998,11 +2998,11 @@ class PAOFLOW:
         Returns:
             None
         """
-        from .response.do_rashba_edelstein import do_rashba_edelstein, do_rashba_edelstein_intra
         from .projection.projection_operator import (
             do_projection_operator,
             orbital_array,
         )
+        from .response.do_rashba_edelstein import do_rashba_edelstein, do_rashba_edelstein_intra
 
         arrays, attr = self.data_controller.data_dicts()
 
@@ -3112,7 +3112,7 @@ class PAOFLOW:
                         st,
                         write_to_file,
                         arrays['sktxt'],
-                        'spin',
+                        '',
                     )
                 if orbital == True:
                     self.orbital_texture(fermi_up=emax, fermi_dw=emin)
@@ -3126,7 +3126,7 @@ class PAOFLOW:
                         st,
                         write_to_file,
                         arrays['oktxt'],
-                        'orbital',
+                        'orbital_',
                     )
 
         except Exception as e:
