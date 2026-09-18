@@ -52,7 +52,6 @@ def do_berry_curvature(data_controller):
     curvature = attributes['curvature']
 
     alat = attributes['alat'] / ANGSTROM_AU
-    b_vectors = arrays['b_vectors']
 
     # Compute momenta and kinetic energy
     kq_aux = scatter_full(arrays['kq'].T, npool)
