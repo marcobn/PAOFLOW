@@ -55,32 +55,40 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
     if rank == 0 and attr['verbose']:
         print('Writing bxsf files for Spin Berry Curvature')
 
+    snktot, _, nawf, _, nspin = arry['dHksp'].shape
+
     for n in range(s_tensor.shape[0]):
         ipol = s_tensor[n][0]
         jpol = s_tensor[n][1]
         spol = s_tensor[n][2]
+        Sj = arry['Sj'][spol]
+
         # ----------------------------------------------
         # Compute the spin current operator j^l_n,m(k)
         # ----------------------------------------------
-        jdHksp = do_spin_current(data_controller, spol, ipol)
+        # The spin current is built one k-point at a time to avoid holding a
+        # full (snktot,nawf,nawf,nspin) temporary alongside the two outputs.
+        jksp_is = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
+        pksp_j = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
 
-        jksp_is = np.empty_like(jdHksp)
-        pksp_j = np.empty_like(jdHksp)
-
-        for ik in range(jdHksp.shape[0]):
-            for ispin in range(jdHksp.shape[3]):
+        for ik in range(snktot):
+            for ispin in range(nspin):
+                dHk = arry['dHksp'][ik, ipol, :, :, ispin]
+                jdHk = 0.5 * (Sj @ dHk + dHk @ Sj)
                 jksp_is[ik, :, :, ispin], pksp_j[ik, :, :, ispin] = perturb_split(
-                    0.5 * (P @ jdHksp[ik, :, :, ispin] + jdHksp[ik, :, :, ispin] @ P),
+                    0.5 * (P @ jdHk + jdHk @ P),
                     arry['dHksp'][ik, jpol, :, :, ispin],
                     arry['v_k'][ik, :, :, ispin],
                     arry['degen'][ispin][ik],
                 )
-        jdHksp = None
+        dHk = jdHk = None
 
         # ---------------------------------
         # Compute spin Berry curvature...
         # ---------------------------------
         ene, shc, Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
+
+        jksp_is = pksp_j = None
 
         if rank == 0:
             if twoD:
@@ -107,22 +115,24 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
         ene = shc = None
 
         if do_ac:
-            jdHksp = do_spin_current(data_controller, spol, ipol)
+            jksp_js = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
+            pksp_i = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
 
-            jksp_js = np.empty_like(jdHksp)
-            pksp_i = np.empty_like(jdHksp)
-
-            for ik in range(jdHksp.shape[0]):
-                for ispin in range(jdHksp.shape[3]):
+            for ik in range(snktot):
+                for ispin in range(nspin):
+                    dHk = arry['dHksp'][ik, ipol, :, :, ispin]
                     jksp_js[ik, :, :, ispin], pksp_i[ik, :, :, ispin] = perturb_split(
-                        jdHksp[ik, :, :, ispin],
+                        0.5 * (Sj @ dHk + dHk @ Sj),
                         arry['dHksp'][ik, jpol, :, :, ispin],
                         arry['v_k'][ik, :, :, ispin],
                         arry['degen'][ispin][ik],
                     )
-            jdHksp = None
+            dHk = None
 
             ene, sigxy = do_ac_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
+
+            jksp_js = pksp_i = None
+
             if rank == 0:
                 sigxy *= cgs_conv
 
@@ -237,6 +247,8 @@ def do_anomalous_Hall(data_controller, do_ac):
 
             fsigR = 'MCDr_%s%s.dat' % cart_indices
             data_controller.write_file_row_col(fsigR, ene, sigxyr)
+
+        pksp_i = pksp_j = None
 
 
 def do_Berry_curvature(data_controller, jksp, pksp):
