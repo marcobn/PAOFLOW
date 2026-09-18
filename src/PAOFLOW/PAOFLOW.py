@@ -662,7 +662,7 @@ class PAOFLOW:
         else:
             raise Exception('atomic_proj.xml was not found.\n')
 
-        #arry['lchia'] = {}  # no longer needed remove soon arry['shells'] is enough
+        # arry['lchia'] = {}  # no longer needed remove soon arry['shells'] is enough
         arry['jchia'] = {}
         arry['shells'] = {}
         for at, pseudo in arry['species']:
@@ -671,7 +671,7 @@ class PAOFLOW:
                 upf = UPF(fname)
                 arry['shells'][at] = upf.shells
                 arry['jchia'][at] = upf.jchia
-                #arry['lchia'][at] = upf.lchia  # no longer needed remove soon
+                # arry['lchia'][at] = upf.lchia  # no longer needed remove soon
             else:
                 raise Exception('Pseudopotential not found: %s' % fname)
 
@@ -1067,7 +1067,6 @@ class PAOFLOW:
             None
 
         """
-        import scipy.linalg as la
 
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
 
@@ -1165,7 +1164,7 @@ class PAOFLOW:
         if 'HRs' not in arry:
             if self.rank == 0:
                 print(
-                    "j_to_lm_hamiltonian requires the real-space Hamiltonian "
+                    'j_to_lm_hamiltonian requires the real-space Hamiltonian '
                     "'HRs'; run 'pao_hamiltonian' first."
                 )
             return
@@ -1185,9 +1184,18 @@ class PAOFLOW:
 
         self.report_module_time('j_to_lm_hamiltonian')
 
-    def mirror_chern_number(self, nbnd_occ='auto', z2pack=True, is_lm=False,
-                            symprec=1e-2, surface_kwargs=None, gap_check=True,
-                            auto_tighten=True, z2_fallback=True, verbose=True):
+    def mirror_chern_number(
+        self,
+        nbnd_occ='auto',
+        z2pack=True,
+        is_lm=False,
+        symprec=1e-2,
+        surface_kwargs=None,
+        gap_check=True,
+        auto_tighten=True,
+        z2_fallback=True,
+        verbose=True,
+    ):
         """
         Mirror Chern number C_M of a 2D material (horizontal mirror sigma_h),
         using Z2Pack for the sector Chern numbers.
@@ -1229,9 +1237,17 @@ class PAOFLOW:
             return None
         try:
             result = do_mirror_chern(
-                self.data_controller, nbnd_occ=nbnd_occ, z2pack=z2pack, is_lm=is_lm,
-                symprec=symprec, surface_kwargs=surface_kwargs, gap_check=gap_check,
-                auto_tighten=auto_tighten, z2_fallback=z2_fallback, verbose=verbose)
+                self.data_controller,
+                nbnd_occ=nbnd_occ,
+                z2pack=z2pack,
+                is_lm=is_lm,
+                symprec=symprec,
+                surface_kwargs=surface_kwargs,
+                gap_check=gap_check,
+                auto_tighten=auto_tighten,
+                z2_fallback=z2_fallback,
+                verbose=verbose,
+            )
         except Exception as e:
             self.report_exception('mirror_chern_number')
             if attr['abort_on_exception']:
@@ -2823,7 +2839,6 @@ class PAOFLOW:
         """
         from .topology.do_orbital_texture import do_orbital_texture
 
-
         arry, attr = self.data_controller.data_dicts()
 
         # Use THIS routine's own energy window. (Previously guarded by
@@ -2881,7 +2896,7 @@ class PAOFLOW:
         Returns:
             None
         """
-        
+
         from .response.do_Hall import do_orbital_Hall
         from .projection.projection_operator import (
             do_projection_operator,
@@ -2926,6 +2941,7 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Orbital Hall Conductivity')
+
     def conductivity(self, delta=0.01, emin=-10.0, emax=2.0, ne=1000, cond_tensor=None):
         from .response.do_conductivity import do_conductivity
 

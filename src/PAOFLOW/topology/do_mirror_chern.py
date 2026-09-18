@@ -52,29 +52,29 @@ from os.path import join
 
 import numpy as np
 
-Z_ODD = {"pz", "dzx", "dzy"}          # z-odd real harmonics -> eta_z = -1
-_SITE_RE = re.compile(r"(\d+)$")
+Z_ODD = {'pz', 'dzx', 'dzy'}  # z-odd real harmonics -> eta_z = -1
+_SITE_RE = re.compile(r'(\d+)$')
 
 
 # --------------------------------------------------------------------------- #
 #  lm-label parsing
 # --------------------------------------------------------------------------- #
-def _orbital(label):      # 'Ti2_dzx#2_up' -> 'dzx'
-    return label.split("_")[1].split("#")[0]
+def _orbital(label):  # 'Ti2_dzx#2_up' -> 'dzx'
+    return label.split('_')[1].split('#')[0]
 
 
 def _orbital_full(label):  # 'Ti2_dzx#2_up' -> 'dzx#2'
-    return label.split("_")[1]
+    return label.split('_')[1]
 
 
-def _spin(label):          # -> 'up' / 'down'
-    return label.split("_")[-1]
+def _spin(label):  # -> 'up' / 'down'
+    return label.split('_')[-1]
 
 
-def _atom_index(label):    # 'Ti2_dzx#2_up' -> 2
-    m = _SITE_RE.search(label.split("_")[0])
+def _atom_index(label):  # 'Ti2_dzx#2_up' -> 2
+    m = _SITE_RE.search(label.split('_')[0])
     if not m:
-        raise ValueError("no atom index in label %r" % label)
+        raise ValueError('no atom index in label %r' % label)
     return int(m.group(1))
 
 
@@ -133,8 +133,8 @@ def site_permutation(frac, species, symprec=1e-2, perp=2):
         if perm is not None:
             return perm, z0, np.asarray(tau, float)
     raise ValueError(
-        "no horizontal mirror sigma_h maps the atom set onto itself "
-        "(symprec=%g): the layer is not sigma_h-symmetric." % symprec
+        'no horizontal mirror sigma_h maps the atom set onto itself '
+        '(symprec=%g): the layer is not sigma_h-symmetric.' % symprec
     )
 
 
@@ -148,7 +148,7 @@ def mirror_operator(labels, perm):
     Mz = np.zeros((n, n), dtype=complex)
     for j, l in enumerate(labels):
         eta = -1 if _orbital(l) in Z_ODD else +1
-        spin = -1j if _spin(l) == "up" else +1j
+        spin = -1j if _spin(l) == 'up' else +1j
         i = key[(perm[_atom_index(l)], _orbital_full(l), _spin(l))]
         Mz[i, j] = eta * spin
     return Mz
@@ -161,13 +161,13 @@ def mirror_eigenbasis(Mz, tol=1e-6):
     """
     A = 1j * np.asarray(Mz)
     if np.max(np.abs(A - A.conj().T)) > 1e-8:
-        raise ValueError("i*M_z is not Hermitian; check the mirror operator.")
+        raise ValueError('i*M_z is not Hermitian; check the mirror operator.')
     w, V = np.linalg.eigh(A)
     if np.max(np.abs(np.abs(w) - 1.0)) > tol:
-        raise ValueError("M_z eigenvalues are not +-i.")
+        raise ValueError('M_z eigenvalues are not +-i.')
     plus, minus = w < 0, w > 0
     if plus.sum() != minus.sum():
-        raise ValueError("mirror sectors are unbalanced (%d vs %d)." % (plus.sum(), minus.sum()))
+        raise ValueError('mirror sectors are unbalanced (%d vs %d).' % (plus.sum(), minus.sum()))
     return V[:, plus], V[:, minus]
 
 
@@ -178,8 +178,11 @@ def check_commutator(R_list, H, Mz):
         HR = H[R]
         max_all = max(max_all, np.abs(HR).max())
         max_comm = max(max_comm, np.abs(HR @ Mz - Mz @ HR).max())
-    return {"max_comm": max_comm, "max_all": max_all,
-            "ratio": max_comm / max_all if max_all else np.nan}
+    return {
+        'max_comm': max_comm,
+        'max_all': max_all,
+        'ratio': max_comm / max_all if max_all else np.nan,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -198,10 +201,10 @@ def read_hr(fname):
         ndata, read = nrpts * num_wann * num_wann, 0
         while read < ndata:
             line = f.readline()
-            if line == "":
-                raise EOFError("hr.dat ended early (%d/%d)" % (read, ndata))
+            if line == '':
+                raise EOFError('hr.dat ended early (%d/%d)' % (read, ndata))
             tok = line.split()
-            if not tok:                       # PAOFLOW appends a blank line when nrpts%15==0
+            if not tok:  # PAOFLOW appends a blank line when nrpts%15==0
                 continue
             Rx, Ry, Rz, m, nn = (int(t) for t in tok[:5])
             R = (Rx, Ry, Rz)
@@ -216,21 +219,23 @@ def read_hr(fname):
 def rotate_sector_hr(R_list, degen, H, U, fname):
     """Write H_sec(R) = U^dag H(R) U as a stand-alone hr.dat."""
     Ud, nsec = U.conj().T, U.shape[1]
-    with open(fname, "w") as f:
-        f.write("PAOFLOW mirror-sector Hamiltonian\n")
-        f.write("%5d\n%5d\n" % (nsec, len(R_list)))
+    with open(fname, 'w') as f:
+        f.write('PAOFLOW mirror-sector Hamiltonian\n')
+        f.write('%5d\n%5d\n' % (nsec, len(R_list)))
         for i, d in enumerate(degen):
-            f.write("%5d" % d)
+            f.write('%5d' % d)
             if (i + 1) % 15 == 0:
-                f.write("\n")
+                f.write('\n')
         if len(degen) % 15 != 0:
-            f.write("\n")
+            f.write('\n')
         for R in R_list:
             sub = Ud @ H[R] @ U
             for c in range(nsec):
                 for r in range(nsec):
-                    f.write("%3d %3d %3d %5d %5d %28.14f %28.14f\n"
-                            % (R[0], R[1], R[2], r + 1, c + 1, sub[r, c].real, sub[r, c].imag))
+                    f.write(
+                        '%3d %3d %3d %5d %5d %28.14f %28.14f\n'
+                        % (R[0], R[1], R[2], r + 1, c + 1, sub[r, c].real, sub[r, c].imag)
+                    )
     return fname
 
 
@@ -239,22 +244,27 @@ def rotate_sector_hr(R_list, degen, H, U, fname):
 # --------------------------------------------------------------------------- #
 def _load_model(hr_file):
     import tbmodels
+
     return tbmodels.Model.from_wannier_files(hr_file=hr_file)
 
 
 def _chern(hr_file, occ, skw):
     import z2pack
+
     model = _load_model(hr_file)
-    res = z2pack.surface.run(system=z2pack.tb.System(model, bands=occ),
-                             surface=lambda s, t: [s, t, 0.0], **skw)
+    res = z2pack.surface.run(
+        system=z2pack.tb.System(model, bands=occ), surface=lambda s, t: [s, t, 0.0], **skw
+    )
     return z2pack.invariant.chern(res)
 
 
 def _z2_half(hr_file, occ, skw):
     import z2pack
+
     model = _load_model(hr_file)
-    res = z2pack.surface.run(system=z2pack.tb.System(model, bands=occ),
-                             surface=lambda s, t: [s / 2, t, 0.0], **skw)
+    res = z2pack.surface.run(
+        system=z2pack.tb.System(model, bands=occ), surface=lambda s, t: [s / 2, t, 0.0], **skw
+    )
     return z2pack.invariant.z2(res)
 
 
@@ -265,7 +275,9 @@ def _min_gap(hr_file, occ, nk=24):
     for kx in ks:
         for ky in ks:
             ev = np.sort(np.linalg.eigvalsh(model.hamilton([kx, ky, 0.0])))
-            dg = min(dg, ev[occ] - ev[occ - 1]); vbm = max(vbm, ev[occ - 1]); cbm = min(cbm, ev[occ])
+            dg = min(dg, ev[occ] - ev[occ - 1])
+            vbm = max(vbm, ev[occ - 1])
+            cbm = min(cbm, ev[occ])
     return dg, cbm - vbm
 
 
@@ -283,25 +295,52 @@ def _auto_tighten(gap, skw, user_keys):
     if gap is None or gap >= 0.20:
         return skw, {}
     if gap >= 0.10:
-        p = dict(min_neighbour_dist=1e-3, move_tol=0.20, gap_tol=0.25,
-                 iterator=range(15, 151, 6), num_lines=15)
+        p = dict(
+            min_neighbour_dist=1e-3,
+            move_tol=0.20,
+            gap_tol=0.25,
+            iterator=range(15, 151, 6),
+            num_lines=15,
+        )
     elif gap >= 0.05:
-        p = dict(min_neighbour_dist=1e-4, move_tol=0.15, gap_tol=0.20, pos_tol=2e-3,
-                 iterator=range(21, 201, 10), num_lines=21)
+        p = dict(
+            min_neighbour_dist=1e-4,
+            move_tol=0.15,
+            gap_tol=0.20,
+            pos_tol=2e-3,
+            iterator=range(21, 201, 10),
+            num_lines=21,
+        )
     else:
-        p = dict(min_neighbour_dist=1e-5, move_tol=0.10, gap_tol=0.15, pos_tol=1e-3,
-                 iterator=range(31, 301, 10), num_lines=31)
+        p = dict(
+            min_neighbour_dist=1e-5,
+            move_tol=0.10,
+            gap_tol=0.15,
+            pos_tol=1e-3,
+            iterator=range(31, 301, 10),
+            num_lines=31,
+        )
     applied = {k: v for k, v in p.items() if k not in user_keys}
-    skw2 = dict(skw); skw2.update(applied)
+    skw2 = dict(skw)
+    skw2.update(applied)
     return skw2, applied
 
 
 # --------------------------------------------------------------------------- #
 #  main entry point
 # --------------------------------------------------------------------------- #
-def do_mirror_chern(data_controller, nbnd_occ="auto", z2pack=True, is_lm=False,
-                    symprec=1e-2, surface_kwargs=None, gap_check=True,
-                    auto_tighten=True, z2_fallback=True, verbose=True):
+def do_mirror_chern(
+    data_controller,
+    nbnd_occ='auto',
+    z2pack=True,
+    is_lm=False,
+    symprec=1e-2,
+    surface_kwargs=None,
+    gap_check=True,
+    auto_tighten=True,
+    z2_fallback=True,
+    verbose=True,
+):
     """Compute the mirror Chern number C_M (see module docstring).
 
     When ``auto_tighten`` is set (default), the min direct gap is measured first
@@ -321,37 +360,51 @@ def do_mirror_chern(data_controller, nbnd_occ="auto", z2pack=True, is_lm=False,
     rank = comm.Get_rank()
     arry, attr = data_controller.data_dicts()
 
-    if not attr.get("dftSO", False):
-        raise RuntimeError("mirror_chern_number requires a fully-relativistic (dftSO) run.")
+    if not attr.get('dftSO', False):
+        raise RuntimeError('mirror_chern_number requires a fully-relativistic (dftSO) run.')
 
-    nelec = int(round(attr["nelec"]))
-    nocc = nelec if nbnd_occ == "auto" else int(nbnd_occ)
+    nelec = int(round(attr['nelec']))
+    nocc = nelec if nbnd_occ == 'auto' else int(nbnd_occ)
     skw = dict(pos_tol=1e-2, iterator=range(11, 61, 4), load=False)
     if surface_kwargs:
         skw.update(surface_kwargs)
 
     # ---- lm Hamiltonian on disk (non-destructive) ---------------------------
     if not is_lm:
-        stash = {k: np.copy(arry[k]) for k in ("HRs", "Hks") if k in arry}
-        stash_basis = arry.get("basis")
+        stash = {k: np.copy(arry[k]) for k in ('HRs', 'Hks') if k in arry}
+        stash_basis = arry.get('basis')
         j_to_lm_hamiltonian(data_controller)
     labels = lm_basis_labels(data_controller)
-    fname = "mirror_chern_lm_HRs.dat"
+    fname = 'mirror_chern_lm_HRs.dat'
     data_controller.write_HRs(fname)
     if not is_lm:
         for k, v in stash.items():
             arry[k] = v
         if stash_basis is not None:
-            arry["basis"] = stash_basis
+            arry['basis'] = stash_basis
 
-    out = dict(sigma_h=False, glide=False, perm=None, z0=None, tau=None,
-               residual=None, nawf=len(labels), nocc=nocc, gap=None, gap_direct=None,
-               C_plus=None, C_minus=None, C_M=None, nu=None, nu_z2=None)
+    out = dict(
+        sigma_h=False,
+        glide=False,
+        perm=None,
+        z0=None,
+        tau=None,
+        residual=None,
+        nawf=len(labels),
+        nocc=nocc,
+        gap=None,
+        gap_direct=None,
+        C_plus=None,
+        C_minus=None,
+        C_M=None,
+        nu=None,
+        nu_z2=None,
+    )
 
     if rank != 0:
         return comm.bcast(None, root=0)
 
-    opath = attr["opath"]
+    opath = attr['opath']
     hr_lm = join(opath, fname)
 
     # ---- gap (drives auto-tightening of the Z2Pack sampling) ----------------
@@ -359,77 +412,88 @@ def do_mirror_chern(data_controller, nbnd_occ="auto", z2pack=True, is_lm=False,
     if gap_check or (auto_tighten and z2pack):
         try:
             dg, ig = _min_gap(hr_lm, nocc)
-            out["gap"], out["gap_direct"] = float(ig), float(dg)
+            out['gap'], out['gap_direct'] = float(ig), float(dg)
             if verbose:
-                print("mirror_chern: gap (fill %d) direct=%.4f indirect=%.4f eV"
-                      % (nocc, dg, ig))
+                print('mirror_chern: gap (fill %d) direct=%.4f indirect=%.4f eV' % (nocc, dg, ig))
         except Exception as e:
             if verbose:
-                print("mirror_chern: gap not computed (%s)" % e)
+                print('mirror_chern: gap not computed (%s)' % e)
     if auto_tighten and z2pack:
         skw, applied = _auto_tighten(dg, skw, set((surface_kwargs or {}).keys()))
         if applied and verbose:
-            print("mirror_chern: small direct gap (%.3f eV) -> auto-tightened z2pack: %s"
-                  % (dg, ", ".join("%s=%s" % (k, v) for k, v in applied.items())))
+            print(
+                'mirror_chern: small direct gap (%.3f eV) -> auto-tightened z2pack: %s'
+                % (dg, ', '.join('%s=%s' % (k, v) for k, v in applied.items()))
+            )
 
     # ---- geometry: sigma_h permutation --------------------------------------
-    frac = fractional_coords(arry["tau"], arry["a_vectors"], attr["alat"])
-    species = list(arry["atoms"])
+    frac = fractional_coords(arry['tau'], arry['a_vectors'], attr['alat'])
+    species = list(arry['atoms'])
     try:
         perm, z0, tau = site_permutation(frac, species, symprec=symprec)
         out.update(sigma_h=True, perm=perm.tolist(), z0=float(z0), tau=tau.tolist())
-        out["glide"] = bool(np.max(np.abs(tau)) > symprec)
+        out['glide'] = bool(np.max(np.abs(tau)) > symprec)
     except ValueError as e:
         if verbose:
-            print("mirror_chern: %s" % e)
+            print('mirror_chern: %s' % e)
         perm = None
 
     # ---- no sigma_h: optional Z2 fallback -----------------------------------
     if perm is None:
         if verbose:
-            print("mirror_chern: no sigma_h -> C_M undefined.")
+            print('mirror_chern: no sigma_h -> C_M undefined.')
         if z2pack and z2_fallback:
-            out["nu_z2"] = int(_z2_half(hr_lm, nocc, skw))
+            out['nu_z2'] = int(_z2_half(hr_lm, nocc, skw))
             if verbose:
-                print("mirror_chern: Z2 (half BZ) = %d" % out["nu_z2"])
+                print('mirror_chern: Z2 (half BZ) = %d' % out['nu_z2'])
         return comm.bcast(out, root=0)
 
     # ---- build M_z, feasibility gate ----------------------------------------
     num_wann, R_list, degen, H = read_hr(hr_lm)
     Mz = mirror_operator(labels, perm)
     diag = check_commutator(R_list, H, Mz)
-    out["residual"] = float(diag["ratio"])
+    out['residual'] = float(diag['ratio'])
     if verbose:
-        print("mirror_chern: sigma_h z0=%.4f perm=%s%s" %
-              (z0, perm.tolist(), "  (GLIDE tau=%s)" % tau.tolist() if out["glide"] else ""))
-        print("mirror_chern: [H,M_z] residual = %.2e (bandwidth %.1f eV)"
-              % (diag["ratio"], diag["max_all"]))
-    if diag["ratio"] > 1e-3:
-        print("mirror_chern: WARNING large mirror-breaking residual; C_M unreliable.")
+        print(
+            'mirror_chern: sigma_h z0=%.4f perm=%s%s'
+            % (z0, perm.tolist(), '  (GLIDE tau=%s)' % tau.tolist() if out['glide'] else '')
+        )
+        print(
+            'mirror_chern: [H,M_z] residual = %.2e (bandwidth %.1f eV)'
+            % (diag['ratio'], diag['max_all'])
+        )
+    if diag['ratio'] > 1e-3:
+        print('mirror_chern: WARNING large mirror-breaking residual; C_M unreliable.')
 
-    if out["glide"]:
-        print("mirror_chern: glide sigma_h (nonsymmorphic) -> sector Chern not "
-              "implemented (needs k-dependent eigenspaces); returning diagnostics only.")
+    if out['glide']:
+        print(
+            'mirror_chern: glide sigma_h (nonsymmorphic) -> sector Chern not '
+            'implemented (needs k-dependent eigenspaces); returning diagnostics only.'
+        )
         return comm.bcast(out, root=0)
 
     # ---- split, Chern per sector --------------------------------------------
     U_plus, U_minus = mirror_eigenbasis(Mz)
-    hr_p = join(opath, "mirror_chern_Mz+i.dat")
-    hr_m = join(opath, "mirror_chern_Mz-i.dat")
+    hr_p = join(opath, 'mirror_chern_Mz+i.dat')
+    hr_m = join(opath, 'mirror_chern_Mz-i.dat')
     rotate_sector_hr(R_list, degen, H, U_plus, hr_p)
     rotate_sector_hr(R_list, degen, H, U_minus, hr_m)
 
     if z2pack:
         occ_sec = nocc // 2
-        out["C_plus"] = float(_chern(hr_p, occ_sec, skw))
-        out["C_minus"] = float(_chern(hr_m, occ_sec, skw))
-        out["C_M"] = 0.5 * (out["C_plus"] - out["C_minus"])
-        out["nu"] = int(round(out["C_M"])) % 2
+        out['C_plus'] = float(_chern(hr_p, occ_sec, skw))
+        out['C_minus'] = float(_chern(hr_m, occ_sec, skw))
+        out['C_M'] = 0.5 * (out['C_plus'] - out['C_minus'])
+        out['nu'] = int(round(out['C_M'])) % 2
         if verbose:
-            print("mirror_chern: C(+i)=%+.3f C(-i)=%+.3f  ->  C_M=%+.3f  nu=%d"
-                  % (out["C_plus"], out["C_minus"], out["C_M"], out["nu"]))
+            print(
+                'mirror_chern: C(+i)=%+.3f C(-i)=%+.3f  ->  C_M=%+.3f  nu=%d'
+                % (out['C_plus'], out['C_minus'], out['C_M'], out['nu'])
+            )
     elif verbose:
-        print("mirror_chern: wrote sector Hamiltonians (z2pack=False); "
-              "run z2pack.invariant.chern on %s / %s." % (hr_p, hr_m))
+        print(
+            'mirror_chern: wrote sector Hamiltonians (z2pack=False); '
+            'run z2pack.invariant.chern on %s / %s.' % (hr_p, hr_m)
+        )
 
     return comm.bcast(out, root=0)

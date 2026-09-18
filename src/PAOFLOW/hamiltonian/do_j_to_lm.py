@@ -191,16 +191,14 @@ def build_U_spd(shells, output_order='global_spin_block', check_unitary=True):
         U = block_diag(blocks)
     else:
         raise ValueError(
-            "output_order must be 'global_spin_block', 'spin_block', or "
-            "'orbital_spin'."
+            "output_order must be 'global_spin_block', 'spin_block', or " "'orbital_spin'."
         )
 
     if check_unitary:
         err = np.max(np.abs(U.conj().T @ U - np.eye(U.shape[1], dtype=complex)))
         if err > 1e-12:
             raise ValueError(
-                'J -> lm transformation matrix is not unitary. '
-                'max |U^dag U - I| = %g' % err
+                'J -> lm transformation matrix is not unitary. ' 'max |U^dag U - I| = %g' % err
             )
     return U
 
@@ -265,9 +263,7 @@ def _build_lm_basis(arry):
             if n > 0:
                 label = '%s%d' % (label, n + 1)
             for m in range(1, 2 * l + 2):
-                basis.append(
-                    {'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': label}
-                )
+                basis.append({'atom': atom, 'tau': tau, 'l': l, 'm': m, 'label': label})
     return basis
 
 
@@ -298,9 +294,7 @@ def j_basis_labels(data_controller):
             j2_list = [1] if l == 0 else [2 * l - 1, 2 * l + 1]  # 2j per j block
             for j2 in j2_list:
                 for mj2 in range(-j2, j2 + 1, 2):  # m_j ascending
-                    labels.append(
-                        '%s_%s_j%s_mj%s' % (site, tag, _fmt_half(j2), _fmt_half(mj2))
-                    )
+                    labels.append('%s_%s_j%s_mj%s' % (site, tag, _fmt_half(j2), _fmt_half(mj2)))
     return labels
 
 

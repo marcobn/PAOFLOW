@@ -178,6 +178,8 @@ def do_rashba_edelstein(
             for i in range(3):
                 for j in range(3):
                     fEkai[i][j].close()
+
+
 def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, spol, Op1, P):
     import numpy as np
     from ..utils.perturb_split import perturb_split
@@ -229,8 +231,8 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
     for ispin in range(attributes['nspin']):
         E_k = np.real(arrays['E_k'][:, :, ispin])
 
-        accaux = np.zeros((ne), dtype=float)   # kai numerator:  Sum <S_spol><v_ipol>
-        jcaux = np.zeros((ne), dtype=float)     # current (field dir.): Sum <v_ipol><v_ipol>
+        accaux = np.zeros((ne), dtype=float)  # kai numerator:  Sum <S_spol><v_ipol>
+        jcaux = np.zeros((ne), dtype=float)  # current (field dir.): Sum <v_ipol><v_ipol>
 
         for ik in range(nktot):
             v_kaux[ik, :, :, ispin] = O1[ik, spol, :, :, ispin] * O2[ik, ipol, :, :, ispin]

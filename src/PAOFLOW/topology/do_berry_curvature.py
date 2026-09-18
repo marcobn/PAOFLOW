@@ -174,9 +174,7 @@ def do_berry_curvature(data_controller):
     # occupation-independent alternative to the summed curve above.
     if attributes.get('bc_write_bands', True):
         fOmj_znk = 'Omegaj_%s_%s_%s%s_bands' % (indices)
-        data_controller.write_bands(
-            fOmj_znk, (Omj_znk[:, :, None] if rank == 0 else None)
-        )
+        data_controller.write_bands(fOmj_znk, (Omj_znk[:, :, None] if rank == 0 else None))
     Omj_zk = Omj_znk = fOmj_zk = None
 
 
