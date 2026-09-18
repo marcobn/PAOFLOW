@@ -62,7 +62,7 @@ def spinor(l, j, m, spin):
 
 
 def clebsch_gordan(nawf, sh_l, sh_j, spol):
-    """Build the spin operator matrix in the coupled \u007cj, m_j, l, s\u27e9 basis.
+    """Build the spin operator matrix in the coupled :math:`\\lvert j, m_j, l, s \\rangle` basis.
 
     Parameters
     ----------
@@ -81,7 +81,7 @@ def clebsch_gordan(nawf, sh_l, sh_j, spol):
     -------
     np.ndarray, shape ``(nawf, nawf)``, complex
         The spin operator :math:`S^{spol}` expressed in the
-        :math:`|j, m_j, l, s\\rangle` basis.
+        :math:`\\lvert j, m_j, l, s \\rangle` basis.
 
     Notes
     -----
@@ -95,7 +95,7 @@ def clebsch_gordan(nawf, sh_l, sh_j, spol):
         S_j = T_n \\, S_l \\, T_n^\\top
 
     where :math:`S_l` is the Pauli spin operator in the
-    :math:`|l, m_l, s, s_z\\rangle` basis.  Raises ``ValueError`` if the
+    :math:`\\lvert l, m_l, s, s_z \\rangle` basis.  Raises ``ValueError`` if the
     shell occupancies implied by ``sh_l`` do not sum to ``nawf``.
     """
     import numpy as np

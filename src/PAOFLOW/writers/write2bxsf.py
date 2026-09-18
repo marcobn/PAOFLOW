@@ -7,7 +7,7 @@ def write2bxsf(data_controller, fname, bands, nbnd, indices, fermi_up, fermi_dw)
         Object providing ``data_arrays`` and ``data_attributes``.
         Required arrays: ``b_vectors`` (shape ``(3, 3)``).
         Required attributes: ``alat``, ``nk1``, ``nk2``, ``nk3``,
-        ``Efermi``, ``workpath``, ``outputdir``.
+        ``workpath``, ``outputdir``.
     fname : str
         Output filename (written inside ``{workpath}/{outputdir}/``).
     bands : np.ndarray, shape ``(nk1, nk2, nk3+1, nbnd)``
@@ -36,6 +36,8 @@ def write2bxsf(data_controller, fname, bands, nbnd, indices, fermi_up, fermi_dw)
     one extra point is appended in each direction by repeating the first
     row/column/plane, yielding an ``(nk1+1, nk2+1, nk3+1)`` grid.
     Reciprocal-lattice vectors are output in units of :math:`2\\pi / a_{\\rm lat}`.
+    PAOFLOW eigenvalues are shifted by the DFT Fermi energy before this writer
+    is called, so the Fermi energy stored in this file is always zero.
     """
     from os.path import join
 
@@ -48,18 +50,17 @@ def write2bxsf(data_controller, fname, bands, nbnd, indices, fermi_up, fermi_dw)
     if indices is None:
         indices = np.zeros(nbnd, dtype=float)
 
-    Efermi = attributes['Efermi']
     alat, b_vectors = attributes['alat'], arrays['b_vectors']
     nx, ny, nz = attributes['nk1'], attributes['nk2'], attributes['nk3']
 
     with open(join(attributes['workpath'], attributes['outputdir'], '{0}'.format(fname)), 'w') as f:
         f.write(
             '\nBEGIN_INFO\n  Fermi Energy: {:15.9f}\n  Shift Range: {:12.9f}eV to{:12.9f}eV\nEND_INFO\n'.format(
-                Efermi, fermi_dw, fermi_up
+                0.0, fermi_dw, fermi_up
             )
         )
         # BXSF scalar-field header
-        f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBANDGRID_3D_BANDS\n')
+        f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBEGIN_BANDGRID_3D_BANDS\n')
         # number of points in each direction
         f.write('{:12d}\n'.format(nbnd))
         f.write('{:12d}{:12d}{:12d}\n'.format(nx + 1, ny + 1, nz + 1))

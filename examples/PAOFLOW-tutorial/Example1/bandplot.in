@@ -1,6 +1,0 @@
- &bands
-    prefix  = 'silicon'
-    outdir='./'
-    filband = 'sibands.dat'
-    !   lsym=.true.
- /

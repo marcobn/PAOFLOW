@@ -105,9 +105,6 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
         k1, k2, k3 = int(nk1 % 2 == 0), int(nk2 % 2 == 0), int(nk3 % 2 == 0)
     else:
         k1, k2, k3 = 0, 0, 0
-    if verbose:
-        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
-
     kpnts_temp, kpnt_weights_temp = [], []
     for ks in k_elem.findall("./varray[@name='kpointlist']/v"):
         kpnts_temp.append([float(k) for k in ks.text.strip().split()])
@@ -122,6 +119,9 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     eigs = np.empty((nbnds, nkpnts, nspin), dtype=float)
     E_elem = root.find('./calculation/eigenvalues')
     Efermi = float(root.find(".//dos/i[@name='efermi']").text.strip())
+    if verbose:
+        print(f'DFT Fermi energy: {Efermi:.9f} eV')
+        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
     for i, kpt in enumerate(E_elem.findall(".//set[@comment='spin 1']/set")):
         energy_at_k = []
         for e in kpt.findall('./r'):
@@ -152,7 +152,8 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     dftMag = (nspin == 1 and dftSO and finite_magmom) or (nspin == 2 and finite_magmom)
 
     _, atom_numbers = np.unique(atoms, return_inverse=True)
-    cell = (a_Angstrom, pos_arry, atom_numbers)
+    a_scaled = np.array(a_Angstrom) / np.max(np.abs(np.array(a_Angstrom)))
+    cell = (a_scaled, pos_arry, atom_numbers)
     if nkpnts == nk1 * nk2 * nk3:
         # Check whether VASP calculation uses symmetry (ISYM = -1, 0, or 2)
         ID = np.identity(3, dtype=int)
@@ -166,7 +167,7 @@ def parse_vasprun_data(data_controller, fname, symprec=1e-4):
     else:
         #  get symmetry from spglib
         if dftMag:
-            cell_mag = (a_Angstrom, pos_arry, atom_numbers, magmom)
+            cell_mag = (a_scaled, pos_arry, atom_numbers, magmom)
             spglib_sym = spglib.get_magnetic_symmetry(cell_mag, symprec=symprec)
             sym_rot = spglib_sym['rotations']
             shifts = spglib_sym['translations']

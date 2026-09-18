@@ -59,7 +59,7 @@ def write2bxsf4skeaf(data_controller, bands, nbnd, indices):
         ) as f:
             f.write('\nBEGIN_INFO\n  Fermi Energy: {:15.9f}\nEND_INFO\n'.format(Efermi))
             # BXSF scalar-field header
-            f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBANDGRID_3D_BANDS\n')
+            f.write('\nBEGIN_BLOCK_BANDGRID_3D\nband_energies\nBEGIN_BANDGRID_3D_BANDS\n')
             # number of points in each direction
             f.write('{:12d}\n'.format(1))
             f.write('{:12d}{:12d}{:12d}\n'.format(nx + 1, ny + 1, nz + 1))

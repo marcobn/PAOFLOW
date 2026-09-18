@@ -87,9 +87,6 @@ def parse_qe_data_file_schema(data_controller, fname):
     mpg = elem.find('band_structure/starting_k_points/monkhorst_pack').attrib
     k1, k2, k3 = int(mpg['k1']), int(mpg['k2']), int(mpg['k3'])
     nk1, nk2, nk3 = int(mpg['nk1']), int(mpg['nk2']), int(mpg['nk3'])
-    if verbose:
-        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
-
     bs = elem.find('band_structure')
     nkpnts = int(bs.find('nks').text)
     nelec = int(float(bs.find('nelec').text))
@@ -126,6 +123,9 @@ def parse_qe_data_file_schema(data_controller, fname):
             print('Fermi energy not located in QE data file.')
             raise e
     Efermi = float(ef_text) * Hart2eV
+    if verbose:
+        print(f'DFT Fermi energy: {Efermi:.9f} eV')
+        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
 
     kpnts = np.empty((nkpnts, 3), dtype=float)
     kpnt_weights = np.empty((nkpnts), dtype=float)
@@ -279,9 +279,6 @@ def parse_qe_data_file(data_controller, fpath, fname):
     mpg = root.find('BRILLOUIN_ZONE/MONKHORST_PACK_GRID').attrib
     nk1, nk2, nk3 = int(mpg['nk1']), int(mpg['nk2']), int(mpg['nk3'])
 
-    if verbose:
-        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
-
     ecutrho = float(root.find('PLANE_WAVES/RHO_CUTOFF').text.strip())
 
     a_vectors, b_vectors = [], []
@@ -312,6 +309,9 @@ def parse_qe_data_file(data_controller, fpath, fname):
     nbnds = int(bs.find('NUMBER_OF_BANDS').text.strip())
     nelec = int(float(bs.find('NUMBER_OF_ELECTRONS').text.strip()))
     Efermi = float(bs.find('FERMI_ENERGY').text.strip()) * Hart2eV
+    if verbose:
+        print(f'DFT Fermi energy: {Efermi:.9f} eV')
+        print('Monkhorst and Pack grid:', nk1, nk2, nk3, k1, k2, k3)
     lsda = True if root.find('SPIN/LSDA').text.strip() == 'T' else False
     nspin = 2 if lsda else 1
 

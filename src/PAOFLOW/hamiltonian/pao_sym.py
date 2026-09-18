@@ -14,7 +14,7 @@ following stages:
    For each space-group rotation, the :math:`D^{(l)}` matrices are
    built via the ZYZ-convention Euler-angle decomposition
    (:func:`mat2eul`, :func:`eul2mat`, :func:`d_mat_l`) and converted
-   from the quantum-mechanics :math:`|lm\rangle` basis to the chemistry
+   from the quantum-mechanics :math:`|lm\\rangle` basis to the chemistry
    real-orbital basis (:func:`get_trans`, :func:`convert_wigner_d`).
    Spin–orbit variants (:func:`get_wigner_so`) handle half-integer
    :math:`j` channels.
@@ -509,7 +509,7 @@ def d_mat_l(AL, BE, GA, l):
             )
 
             # loop over w for summation
-            for w in range(0, w_max):
+            for w in range(w_max):
                 # factorials in denominator must be positive
                 df1 = int(l + mp - w)
                 df2 = int(l - m - w)
@@ -546,20 +546,13 @@ def get_wigner(symop):
     inv_flag = np.zeros((symop.shape[0]), dtype=bool)
 
     for i in range(symop.shape[0]):
-        # get euler angles alpha,beta,gamma from the symop
-        AL, BE, GA = mat2eul(symop[i])
-        AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
-
         # check if there is an inversion in the symop
-        if not np.all(np.isclose(eul2mat(AL, BE, GA), symop[i])):
+        if np.linalg.det(symop[i]) > 0:
+            # get euler angles alpha,beta,gamma from the symop
+            AL, BE, GA = mat2eul(symop[i])
+        else:
             inv_flag[i] = True
             AL, BE, GA = mat2eul(-symop[i])
-            AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
-            if not np.all(np.isclose(eul2mat(AL, BE, GA), -symop[i])):
-                print('ERROR IN MAT2EUL!')
-                print(i + 1)
-                print(symop[i])
-                raise SystemExit
 
         # wigner_d matrix for l=0
         wigner_l0[i] = d_mat_l(AL, BE, GA, 0)
@@ -588,29 +581,13 @@ def get_wigner_so(symop):
     inv_flag = np.zeros((symop.shape[0]), dtype=bool)
 
     for i in range(symop.shape[0]):
-        # get euler angles alpha,beta,gamma from the symop
-        AL, BE, GA = mat2eul(symop[i])
-        AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
         # check if there is an inversion in the symop
-        if not np.all(
-            np.isclose(correct_roundoff(eul2mat(AL, BE, GA)), symop[i], atol=1.0e-3, rtol=1.0e-2)
-        ):
+        if np.linalg.det(symop[i]) > 0:
+            # get euler angles alpha,beta,gamma from the symop
+            AL, BE, GA = mat2eul(symop[i])
+        else:
             inv_flag[i] = True
-
             AL, BE, GA = mat2eul(-symop[i])
-            AL, BE, GA = np.deg2rad(np.around(np.rad2deg([AL, BE, GA]), decimals=0))
-            if not np.all(
-                np.isclose(
-                    correct_roundoff(eul2mat(AL, BE, GA)), -symop[i], atol=1.0e-3, rtol=1.0e-2
-                )
-            ):
-                print('ERROR IN MAT2EUL!')
-                print(i + 1)
-                print('RESULT')
-                print(-eul2mat(AL, BE, GA))
-                print('CORRECT')
-                print(symop[i])
-                raise SystemExit
 
         # wigner_d for l=0
         wigner_j05[i] = d_mat_l(AL, BE, GA, 0.5)
@@ -1169,12 +1146,17 @@ def open_grid(
         if not (spin_orb and mag_calc):
             Hksp = enforce_t_rev(Hksp, nk1, nk2, nk3, spin_orb, U_inv, jchia)
 
-    else:
+    elif symm_grid:
         Hksp = np.zeros((full_grid.shape[0], nawf, nawf), dtype=complex)
 
-    comm.Bcast(Hksp)
+    else:
+        # Only rank 0's copy is consumed, so skip the full-grid replication.
+        Hksp = None
 
     if symm_grid:
+        # symmetrize_grid indexes the whole grid on every rank.
+        comm.Bcast(Hksp)
+
         symop_inv = np.zeros_like(symop)
         for i in range(symop.shape[0]):
             symop_inv[i] = LA.inv(symop[i])
@@ -1495,12 +1477,17 @@ def open_grid_nspin2(
 
         Hksp = np.stack((Hksp_up, Hksp_down), axis=-1)
 
-    else:
+    elif symm_grid:
         Hksp = np.zeros((full_grid.shape[0], nawf, nawf, 2), dtype=complex)
 
-    comm.Bcast(Hksp)
+    else:
+        # Only rank 0's copy is consumed, so skip the full-grid replication.
+        Hksp = None
 
     if symm_grid:
+        # symmetrize_grid_nspin2 indexes the whole grid on every rank.
+        comm.Bcast(Hksp)
+
         symop_inv = np.zeros_like(symop)
         for i in range(symop.shape[0]):
             symop_inv[i] = LA.inv(symop[i])
@@ -1825,7 +1812,8 @@ def _expand_kspace_hermitian(Aks, ctx):
             ctx['verbose'],
             ctx['npool'],
         )
-        A_full = A_full[..., np.newaxis]
+        if rank == 0:
+            A_full = A_full[..., np.newaxis]
     else:
         A_full = open_grid_nspin2(
             Aksp,

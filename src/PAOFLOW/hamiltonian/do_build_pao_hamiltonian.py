@@ -3,6 +3,7 @@ from mpi4py import MPI
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
+size = comm.Get_size()
 
 
 ### Reformat
@@ -13,15 +14,17 @@ def build_Hks(data_controller):
     ----------
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
-        Required arrays: ``U`` (shape ``(nawf, nbnds, nkpnts, nspin)``),
-        ``my_eigsmat`` (shape ``(nbnds, nkpnts, nspin)``).
+        Required arrays: ``my_eigsmat`` (shape ``(nbnds, nkpnts, nspin)``).
+        The projections are read through
+        :meth:`~PAOFLOW.DataController.DataController.local_projections`.
         Required attributes: ``bnd``, ``nawf``, ``nspin``, ``nkpnts``,
-        ``shift``, ``shift_type``.
+        ``npool``, ``shift``, ``shift_type``.
 
     Returns
     -------
-    np.ndarray, shape ``(nawf, nawf, nkpnts, nspin)``, complex
-        The PAO Hamiltonian in k-space.
+    np.ndarray or None
+        On rank 0, the PAO Hamiltonian in k-space with shape
+        ``(nawf, nawf, nkpnts, nspin)``; ``None`` on all other ranks.
 
     Notes
     -----
@@ -37,8 +40,14 @@ def build_Hks(data_controller):
     eigenvalues, following the shift schemes of Buongiorno Nardelli *et al.*
     PRB 2013 (``shift_type=0``) and PRB 2016 (``shift_type=1``), or no shift
     (``shift_type=2``).  Hermiticity is enforced after each k-point.
+
+    The k-point loop is distributed over MPI ranks, so each rank builds and
+    stores only its own ``nkpnts / size`` share before the result is gathered
+    on rank 0.
     """
     from scipy import linalg as spl
+
+    from ..utils.communication import gather_full, scatter_full
 
     arrays, attributes = data_controller.data_dicts()
 
@@ -47,6 +56,7 @@ def build_Hks(data_controller):
     eta = attributes['shift']
     nspin = attributes['nspin']
     nkpnts = attributes['nkpnts']
+    npool = attributes['npool']
     shift_type = attributes['shift_type']
     # Local (per-k) projectability threshold.  Bands whose squared PAO
     # projection at a given k falls below this value are excluded from the
@@ -58,19 +68,22 @@ def build_Hks(data_controller):
     # to unit norm, corrupting H(k) at that point.
     pthr_local = attributes.get('pthr_local', 0.5 * attributes.get('pthr', 0.95))
 
-    U = arrays['U']
+    U_local = data_controller.local_projections()
     my_eigsmat = arrays['my_eigsmat']
 
-    Hksaux = np.zeros((nawf, nawf, nkpnts, nspin), dtype=complex)
-    Hks = np.zeros((nawf, nawf, nkpnts, nspin), dtype=complex)
+    # Same partition as U_local; needed to index the (replicated) eigenvalues.
+    k_local = scatter_full(np.arange(nkpnts, dtype=int), npool)
 
-    for ik in range(nkpnts):
+    Hks_local = np.zeros((k_local.size, nawf, nawf, nspin), dtype=complex)
+
+    for ikl in range(k_local.size):
+        ik = int(k_local[ikl])
         for ispin in range(nspin):
             my_eigs = my_eigsmat[:, ik, ispin]
 
             # Building the Hamiltonian matrix
             UU = np.transpose(
-                U[:, :, ik, ispin]
+                U_local[ikl, :, :, ispin]
             )  # transpose of U. Now the columns of UU are the eigenvector of length nawf
             proj_k = np.real(np.sum(np.conj(UU) * UU, axis=0))
             # Avoid division by zero for vanishing projections.
@@ -84,27 +97,26 @@ def build_Hks(data_controller):
             sel = [n for n in range(bnd) if my_eigs[n] <= eta and proj_k[n] > pthr_local]
             bnd_ik = len(sel)
             if bnd_ik == 0:
-                if rank == 0:
-                    print('No Eigenvalues in the selected energy range')
+                print('No Eigenvalues in the selected energy range')
                 comm.Abort()
             ac = UU[:, sel]  # filtering: per-k projectability + energy cutoff
             ee1 = np.diag(my_eigs[sel])
             if shift_type == 0:
                 # option 1 (PRB 2013)
-                Hksaux[:, :, ik, ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta * (
+                hk = ac.dot(ee1).dot(np.conj(ac).T) + eta * (
                     np.identity(nawf) - ac.dot(np.conj(ac).T)
                 )
 
             elif shift_type == 1:
                 # option 2 (PRB 2016)
                 aux_p = spl.inv(np.dot(np.conj(ac).T, ac))
-                Hksaux[:, :, ik, ispin] = ac.dot(ee1).dot(np.conj(ac).T) + eta * (
+                hk = ac.dot(ee1).dot(np.conj(ac).T) + eta * (
                     np.identity(nawf) - ac.dot(aux_p).dot(np.conj(ac).T)
                 )
 
             elif shift_type == 2:
                 # no shift
-                Hksaux[:, :, ik, ispin] = ac.dot(ee1).dot(np.conj(ac).T)
+                hk = ac.dot(ee1).dot(np.conj(ac).T)
 
             else:
                 if rank == 0:
@@ -112,11 +124,12 @@ def build_Hks(data_controller):
                 comm.Abort()
 
             # Enforce Hermiticity (just in case...)
-            Hksaux[:, :, ik, ispin] = 0.5 * (
-                Hksaux[:, :, ik, ispin] + np.conj(Hksaux[:, :, ik, ispin].T)
-            )
-            Hks = Hksaux
-    return Hks
+            Hks_local[ikl, :, :, ispin] = 0.5 * (hk + np.conj(hk.T))
+
+    Hks = gather_full(Hks_local, npool)
+    if rank != 0:
+        return None
+    return np.ascontiguousarray(np.transpose(Hks, axes=(1, 2, 0, 3)))
 
 
 def do_build_pao_hamiltonian(data_controller):
@@ -162,6 +175,11 @@ def do_build_pao_hamiltonian(data_controller):
 
     if attr['expand_wedge']:
         from .pao_sym import open_grid_wrapper
+
+        # open_grid_wrapper reads Hks on every rank, so undo the rank-0-only
+        # layout build_Hks returns.  The IBZ wedge is small compared with the
+        # full grid, so this replication is cheap.
+        data_controller.broadcast_single_array('Hks')
 
         # Expands both Hks and (when present) Sks from the IBZ wedge
         # to the full BZ.  Both transform identically under the point
@@ -251,5 +269,4 @@ def do_Hks_to_HRs(data_controller):
     # ----------------------------------------------------------
     if rank == 0:
         # Original k grid to R grid
-        arry['HRs'] = np.zeros_like(arry['Hks'])
         arry['HRs'] = FFT.ifftn(arry['Hks'], axes=[2, 3, 4])

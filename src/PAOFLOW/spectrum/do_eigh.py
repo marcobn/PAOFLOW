@@ -1,6 +1,5 @@
 import numpy as np
 from numpy import linalg as npl
-from scipy import linalg as spl
 
 
 def get_degeneracies(E_k, bnd):
@@ -89,10 +88,12 @@ def do_pao_eigh(data_controller):
     arrays['v_k'] = np.zeros((snktot, nawf, nawf, nspin), dtype=complex)
 
     for ispin in range(nspin):
-        for n in range(snktot):
-            arrays['E_k'][n, :, ispin], arrays['v_k'][n, :, :, ispin] = eigh(
-                arrays['Hksp'][n, :, :, ispin], UPLO='U'
-            )
+        # Batched Hermitian diagonalisation over the whole k-slice: one LAPACK
+        # call per spin instead of a per-k Python loop. eigh broadcasts over the
+        # leading axis, eigenvalues ascending, eigenvectors as columns.
+        E, V = eigh(arrays['Hksp'][:, :, :, ispin], UPLO='U')
+        arrays['E_k'][:, :, ispin] = E
+        arrays['v_k'][:, :, :, ispin] = V
 
     # arrays['degen'] = get_degeneracies(arrays['E_k'], attributes['nawf'])
     arrays['degen'] = get_degeneracies(arrays['E_k'], attributes['bnd'])
@@ -137,16 +138,26 @@ def do_eigh_calc(HRaux, SRaux, kq, R, read_S):
     E_kp = np.empty((nkpi, nawf, nspin), dtype=float)
     v_kp = np.empty((nkpi, nawf, nawf, nspin), dtype=complex)
 
-    for ispin in range(nspin):
-        for ik in range(nkpi):
-            if read_S:
-                E_kp[ik, :, ispin], v_kp[ik, :, :, ispin] = spl.eigh(
-                    Hks_int[:, :, ik, ispin], Sks_int[:, :, ik]
-                )
-            else:
-                E_kp[ik, :, ispin], v_kp[ik, :, :, ispin] = npl.eigh(
-                    Hks_int[:, :, ik, ispin], UPLO='U'
-                )
+    if read_S:
+        # Generalised problem H v = e S v, batched over k via Cholesky S = L Lᴴ:
+        # M = L⁻¹ H L⁻ᴴ is Hermitian, eigh(M) gives e and y; v = L⁻ᴴ y. This
+        # mirrors scipy.linalg.eigh(H, S) for every k in a few LAPACK calls.
+        S = np.moveaxis(Sks_int, 2, 0)  # (nkpi, nawf, nawf)
+        L = npl.cholesky(S)
+        Linv = npl.inv(L)
+        for ispin in range(nspin):
+            H = np.moveaxis(Hks_int[:, :, :, ispin], 2, 0)  # (nkpi, nawf, nawf)
+            M = Linv @ H @ np.conj(np.transpose(Linv, (0, 2, 1)))
+            E, y = npl.eigh(M, UPLO='U')
+            v = np.conj(np.transpose(Linv, (0, 2, 1))) @ y
+            E_kp[:, :, ispin] = E
+            v_kp[:, :, :, ispin] = v
+    else:
+        for ispin in range(nspin):
+            H = np.moveaxis(Hks_int[:, :, :, ispin], 2, 0)  # (nkpi, nawf, nawf)
+            E, V = npl.eigh(H, UPLO='U')
+            E_kp[:, :, ispin] = E
+            v_kp[:, :, :, ispin] = V
 
     return (E_kp, v_kp)
 

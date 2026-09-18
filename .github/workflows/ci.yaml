@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pre-commit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,7 +64,7 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
 
   qe-integration-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: pre-commit
     strategy:
       fail-fast: false
@@ -88,7 +88,7 @@ jobs:
 
       PAOFLOW_QE_TEST_ASSET_URL: https://github.com/marcobn/PAOFLOW/releases/download/integration-assets-v1/qe_test_assets.tar.gz
 
-      PAOFLOW_QE_TEST_ASSET_SHA256: "f5a96ac232ccf90d33f4fd47cff8281bd948d8e5b29dd67a196e1486998e4b81"
+      PAOFLOW_QE_TEST_ASSET_SHA256: "45412f34ebf9fd1bea9d1df958048a63793836a35e779a51c69ed8770a7955dc"
 
     steps:
       - uses: actions/checkout@v4
@@ -133,7 +133,7 @@ jobs:
           if-no-files-found: ignore
 
   transport-integration-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: pre-commit
     strategy:
       fail-fast: false

@@ -1,0 +1,52 @@
+from PAOFLOW import PAOFLOW
+from PAOFLOW.Transport import Transport
+
+
+def main():
+    paoflow = PAOFLOW.PAOFLOW(
+        savedir='al5.save',
+        outputdir='output',
+        smearing='gauss',
+        npool=1,
+        verbose=True,
+        save_overlaps=True,
+    )
+
+    paoflow.read_atomic_proj_QE()
+    paoflow.projectability(pthr=0.95)
+    paoflow.pao_hamiltonian(
+        shift_type=1,
+        expand_wedge=False,
+    )
+    paoflow.projections()
+
+    transport = Transport(paoflow.data_controller)
+
+    transport.define_partition(central_atoms='ALL', transport_direction='z')
+
+    transport.build_hamiltonian_blocks(
+        calculation_type='bulk',
+        use_sym=False,
+        do_overlap_transformation=False,
+    )
+
+    transport.configure_energy_grid(
+        emin=-7.0,
+        emax=2.0,
+        ne=100,
+        delta=0.0005,
+    )
+
+    transport.configure_outputs(
+        output_dir='./output',
+        postfix='_bulk',
+    )
+
+    transport.compute_leads_self_energy(write=True)
+    transport.compute_greens_functions(write=True)
+    transport.compute_transmission()
+    transport.compute_dos()
+
+
+if __name__ == '__main__':
+    main()

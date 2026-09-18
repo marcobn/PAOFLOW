@@ -1,0 +1,11 @@
+{% extends "!layout.html" %}
+
+{#
+  Show the Sphinx/PyData theme credits only on the landing page.
+  `pagename` is "index" for docs/index.md.
+#}
+{% block footer %}
+  {% if pagename == "index" %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}

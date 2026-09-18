@@ -23,14 +23,18 @@ PAOFLOW is an open-source Python framework for constructing and operating on **a
 | Domain | What PAOFLOW computes |
 |---|---|
 | **Electronic structure** | Band structures, density of states (total & projected), Fermi surfaces |
+| **Self-consistent Hubbard correction** | he ACBN0 and eACBN0 pseudohybrid density functionals for calculations of U and V parameters in the DFT+U and DFT+U+V methods |
+| **Spin & magnetism** | Spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
 | **Optical & dielectric response** | Complex dielectric tensor ε(ω), optical conductivity, joint density of states; non-local velocity correction for norm-conserving pseudopotentials |
 | **Transport** | Electrical conductivity, Seebeck coefficient, electronic thermal conductivity (Boltzmann transport) |
-| **Topology** | Berry curvature, anomalous Hall conductivity, Z₂ invariants, topological surface states |
-| **Spin & magnetism** | Spin Hall conductivity, spin texture, non-collinear and fully-relativistic (SOC) Hamiltonians |
-| **Model Hamiltonians** | Slater–Koster tight-binding models, Kane–Mele, custom lattice models |
-| **ACBN0** | Self-consistent Hubbard U and U+V via the extended ACBN0 functional |
-| **pyskeaf** | Fermi surface extremal orbit analysis (de Haas–van Alphen, Shubnikov–de Haas) |
-| **Landauer transport** | Quantum transport via Green's function/Landauer–Büttiker formalism |
+| **Kubo-formula response** | anomalous Hall, spin Hall, and orbital Hall conductivities based on Berry curvature integration |
+| **Lattice dynamics & phonons** | Phonon dispersions, DOS and thermal properties ([phonopy](https://phonopy.github.io/phonopy/) finite-displacement); Born effective charges, ε∞ and LO–TO splitting; infrared (IR), non-resonant (Placzek) and resonant (Albrecht) Raman spectra; vibrational (ionic) dielectric ε(ω) and reststrahlen emissivity; quasi-harmonic approximation (thermal expansion, V(T), bulk modulus, C_p, thermodynamic and mode Grüneisen dispersion) |
+| **Electron-phonon coupling from pseudo-atomic-orbitals interpolation** | electron-phonon coupling, Eliashberg function, superconducting transition temperature |
+| **Topology** | Berry curvature, Z₂ invariants, topological surface states |
+| **Model Hamiltonians** | Kane–Mele and custom lattice models |
+| **Environment-dependent tight-binding models** | Slater-Koster parameterization with structural transferability |
+| **Quantum oscillation analysis** | de Haas-van Alphen and Shubnikov-de Haas frequencies and effective masses via Fermi surface extreme orbit finder, including fermi-plotter, a CLI for display Fermi surfaces and B vector(s) for easier interpretation |
+| **Landauer-Büttiker quantum transport** | Transmission functions, conductance, and current-voltage characteristics for nanoscale conductor/lead geometries |
 | **Interoperability** | Quantum ESPRESSO and VASP DFT code integration - other codes are in the development pipline (we welcome contributions from developers!)|
 
 ---
@@ -66,14 +70,36 @@ PAOFLOW ships two small, dependency-light command-line generators that automate
 the repetitive parts of setting up a study. They are installed with the package
 as console commands:
 
-1. **`paoflow-gen-qe`** — build a Quantum ESPRESSO `scf` input from an
-   [AFLOW](https://aflow.org) database entry, with sensible defaults for
-   smearing, magnetism, spin–orbit coupling, and the number of bands needed for
-   PAOFLOW's extended-basis projections. Pseudopotentials from the Pseudo Dojo repository (https://www.pseudo-dojo.org/), are included in the distribution and should be used for the input generation.
-2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script
-   (`main.py`) from the output of a Quantum ESPRESSO run, and optionally a
-   companion **plotting script** (`plot.py`) that visualizes exactly the
-   properties you selected.
+1. **`paoflow-gen-qe`** — build a Quantum ESPRESSO `scf` input from an online
+   materials database entry, with sensible defaults for smearing, magnetism,
+   spin–orbit coupling, and the number of bands needed for PAOFLOW's
+   extended-basis projections. Two databases are supported and auto-detected
+   from the identifier (or selected with `--source`):
+   [AFLOW](https://aflow.org) for bulk (3D) crystals and
+   [C2DB](https://cmr.fysik.dtu.dk/c2db/c2db.html) for two-dimensional
+   materials, where the input is set up with vacuum padding, an in-plane
+   **k**-grid, and `assume_isolated='2D'`. When a database provides no
+   **k**-mesh, dimension- and metallicity-aware defaults are used and a caveat
+   reminds you to check **k**-point convergence. Pseudopotentials from the
+   Pseudo Dojo repository (https://www.pseudo-dojo.org/), are included in the
+   distribution and should be used for the input generation.
+2. **`paoflow-gen`** — interactively generate a PAOFLOW driver script from the
+   output of a Quantum ESPRESSO run. It offers three workflows:
+   - **regular** — a property-run driver (`main.py`) that computes the
+     properties you select (bands, DOS/PDOS, transport, optical, topology,
+     …), with a 2D-aware band path, plus an optional companion **plotting
+     script** (`plot.py`) that visualizes exactly those properties.
+   - **acbn0** — a self-consistent Hubbard *U* (ACBN0) / on-site *U* + intersite
+     *V* (eACBN0) driver (`main.acbn0.py`), paired with a `plot.acbn0.py` that
+     overlays the band structures of the converged cases (DFT+U and, for
+     eACBN0, DFT+U+V) for direct comparison.
+   - **phonon** — a three-phase lattice-dynamics driver (`main.phonon.py`)
+     that writes the displaced-supercell `pw.x` inputs, harvests the forces
+     and assembles the phonon dispersion, DOS, thermal properties and (with
+     Born charges) the LO–TO splitting. Optionally it also emits a companion
+     **Raman workflow** (`main.raman.py`) for the non-resonant (Placzek)
+     Raman spectrum, plus matching `plot.phonon.py` / `plot.raman.py` scripts.
+   - **elphon** - sets up a driver for the interpolation of electron-phonon matrix elements from a DFPT calculation (AHC).
 ---
 
 ## For Researchers
@@ -83,6 +109,8 @@ PAOFLOW has been used in high-throughput screening campaigns, topological materi
 ## For Industry & HPC
 
 PAOFLOW is MPI-parallel, NumPy/SciPy-based, and designed to plug into existing DFT workflows with minimal overhead. The PAO Hamiltonian is orders of magnitude cheaper to diagonalize than the full DFT problem, enabling dense **k**-point sampling and fine spectral resolution at low computational cost.
+
+An **optional Rust backend** ([`rust/`](rust/)) further accelerates the heaviest numerical kernels — the ACBN0/eACBN0 four-centre Coulomb integrals (ERIs) and the dielectric/JDOS response loops. It is fully optional and imported opportunistically: when the compiled `paoflow_rs` module is unavailable, PAOFLOW falls back to its pure-Python/NumPy implementation with numerically identical results (parity < 1e-12). See the [Rust backend guide](rust/README.md) for build and usage instructions.
 
 ---
 

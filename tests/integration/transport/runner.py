@@ -30,18 +30,24 @@ def build_commands(job_dir: Path) -> List[List[str]]:
 
     mc = job_dir / 'main_conductor.py'
     if mc.exists():
-        if (job_dir / 'conductor.yaml').exists():
+        conductor_inputs = sorted(job_dir.glob('conductor*.yaml'))
+        if not conductor_inputs:
+            commands.append([sys.executable, str(mc)])
+        elif (job_dir / 'conductor.yaml').exists():
             commands.append([sys.executable, str(mc)])
         else:
-            for y in sorted(job_dir.glob('conductor*.yaml')):
+            for y in conductor_inputs:
                 commands.append([sys.executable, str(mc), str(y.name)])
 
     mcu = job_dir / 'main_current.py'
     if mcu.exists():
-        if (job_dir / 'current.yaml').exists():
+        current_inputs = sorted(job_dir.glob('current*.yaml'))
+        if not current_inputs:
+            commands.append([sys.executable, str(mcu)])
+        elif (job_dir / 'current.yaml').exists():
             commands.append([sys.executable, str(mcu)])
         else:
-            for y in sorted(job_dir.glob('current*.yaml')):
+            for y in current_inputs:
                 commands.append([sys.executable, str(mcu), str(y.name)])
 
     return commands

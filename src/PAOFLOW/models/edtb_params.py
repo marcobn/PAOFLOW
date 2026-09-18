@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -110,6 +110,71 @@ _ORB_TO_D_GROUP = {
 # Angular-momentum sort key (s=0, p=1, d=2, f=3)
 _L_ORDER = {'s': 0, 'p': 1, 'd': 2, 'f': 3}
 
+# Configuration-label angular momentum letter → integer l
+_CONFIG_L_LETTER_TO_L = {'S': 0, 'P': 1, 'D': 2, 'F': 3}
+# Integer l → angular momentum letter (for l-pair SK lookups)
+_L_INT_TO_LETTER = {0: 's', 1: 'p', 2: 'd', 3: 'f'}
+
+
+def _config_is_multiconfig(config: list) -> bool:
+    """True when a configuration lists more than one shell of the same l.
+
+    A multi-configuration basis (e.g. Si 'standard' = ['3S','3P','3D','4S',
+    '4P']) repeats an angular-momentum letter, which requires shell-resolved
+    on-site energies and shell-pair-keyed hoppings rather than the collapsed
+    angular-momentum-only schema.
+    """
+    letters = [str(c)[-1].upper() for c in config]
+    return len(letters) != len(set(letters))
+
+
+def _lpair_label_from_ints(la: int, lb: int) -> str:
+    """Return the canonical l-pair label (e.g. 'sp') for two integer l's."""
+    a, b = sorted((la, lb))
+    return _L_INT_TO_LETTER[a] + _L_INT_TO_LETTER[b]
+
+
+def _params_are_shell_pair_keyed(hop_params: dict) -> bool:
+    """Detect the multi-configuration hopping format.
+
+    Shell-pair-keyed params map a pair label ('3S-4S') to an SK sub-dict,
+    so their *values* are dicts.  Flat (single-configuration) params map an
+    SK name ('sss') to a float.
+    """
+    return any(isinstance(v, dict) for v in hop_params.values())
+
+
+def _validate_shell_pair_params(key: str, s: int, hop_params: dict) -> list[str]:
+    """Validate a multi-configuration (shell-pair-keyed) hopping block.
+
+    Each key is a configuration-label pair ('3S-4S') and each value must
+    carry exactly the SK integrals active for the pair's angular-momentum
+    combination.
+    """
+    errs: list[str] = []
+    for pk, sub in hop_params.items():
+        parts = pk.split('-')
+        if len(parts) != 2:
+            errs.append(f"hoppings['{key}'][{s}]: invalid shell-pair key '{pk}'")
+            continue
+        la = _CONFIG_L_LETTER_TO_L.get(parts[0][-1].upper())
+        lb = _CONFIG_L_LETTER_TO_L.get(parts[1][-1].upper())
+        if la is None or lb is None:
+            errs.append(f"hoppings['{key}'][{s}]: unknown angular momentum in key '{pk}'")
+            continue
+        if not isinstance(sub, dict):
+            errs.append(f"hoppings['{key}'][{s}]['{pk}']: params must be a dict")
+            continue
+        needed = set(LPAIR_SK_NAMES[_lpair_label_from_ints(la, lb)])
+        got = set(sub.keys())
+        missing = needed - got
+        extra = got - needed
+        if missing:
+            errs.append(f"hoppings['{key}'][{s}]['{pk}']: missing SK params {sorted(missing)}")
+        if extra:
+            errs.append(f"hoppings['{key}'][{s}]['{pk}']: unexpected SK params {sorted(extra)}")
+    return errs
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Utility helpers
@@ -140,7 +205,7 @@ def species_pair_key(sp1: str, sp2: str) -> str:
     return f'{a}-{b}'
 
 
-def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
+def active_sk_names_for_basis(l_channels_a: list[str], l_channels_b: list[str]) -> list[str]:
     """Return the SK parameter names active for a given species-pair basis.
 
     Determines which Slater-Koster integrals are needed from the
@@ -174,7 +239,7 @@ def active_sk_names_for_basis(l_channels_a: List[str], l_channels_b: List[str]) 
     return names
 
 
-def active_gamma_labels(l_channels_a: List[str], l_channels_b: List[str]) -> List[str]:
+def active_gamma_labels(l_channels_a: list[str], l_channels_b: list[str]) -> list[str]:
     """Return the active screening-exponent (γ) labels for a species-pair basis.
 
     Analogous to :func:`active_sk_names_for_basis` but returns
@@ -246,7 +311,7 @@ def _orbital_to_onsite_group(orb: str, onsite_keys: set) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 
-def validate_params(params: dict) -> List[str]:
+def validate_params(params: dict) -> list[str]:
     """Validate an EDTB parameter dict against the schema.
 
     Checks for required top-level keys (``edtb_version``, ``basis``,
@@ -358,6 +423,11 @@ def validate_params(params: dict) -> List[str]:
                                 errors.append(f"hoppings['{key}'][{s}]: missing 'r_ref'")
                             if 'params' not in shell:
                                 errors.append(f"hoppings['{key}'][{s}]: missing 'params'")
+                                continue
+                            if _params_are_shell_pair_keyed(shell['params']):
+                                # Multi-configuration: validate each shell-pair
+                                # SK sub-dict against its angular-momentum pair.
+                                errors.extend(_validate_shell_pair_params(key, s, shell['params']))
                             elif expected_sk:
                                 got = set(shell['params'].keys())
                                 missing = expected_sk - got
@@ -391,8 +461,13 @@ def validate_params(params: dict) -> List[str]:
                     elif isinstance(scr['gamma'][key], dict):
                         lc_a = basis.get(sp1, {}).get('l_channels', [])
                         lc_b = basis.get(sp2, {}).get('l_channels', [])
-                        expected_g = set(active_gamma_labels(lc_a, lc_b))
                         got_g = set(scr['gamma'][key].keys())
+                        # gamma may be given per l-pair ('ss', 'sp', ...) or
+                        # per SK channel ('sss', 'sps', ...) — accept either.
+                        if got_g <= set(LPAIR_LABELS):
+                            expected_g = set(active_gamma_labels(lc_a, lc_b))
+                        else:
+                            expected_g = set(active_sk_names_for_basis(lc_a, lc_b))
                         missing_g = expected_g - got_g
                         extra_g = got_g - expected_g
                         if missing_g:
@@ -411,7 +486,7 @@ def validate_params(params: dict) -> List[str]:
     return errors
 
 
-def validate_geometry(geometry: dict) -> List[str]:
+def validate_geometry(geometry: dict) -> list[str]:
     """Validate a geometry dict against the schema.
 
     Checks for required keys ``alat``, ``a_vectors`` (3×3 nested list),
@@ -463,7 +538,7 @@ def validate_geometry(geometry: dict) -> List[str]:
 # ═══════════════════════════════════════════════════════════════
 
 
-def write_params(filepath: Union[str, Path], params: dict, *, validate: bool = True) -> None:
+def write_params(filepath: str | Path, params: dict, *, validate: bool = True) -> None:
     """Write EDTB parameters to a JSON file.
 
     Parameters
@@ -490,7 +565,7 @@ def write_params(filepath: Union[str, Path], params: dict, *, validate: bool = T
         json.dump(params, f, indent=2)
 
 
-def read_params(filepath: Union[str, Path], *, validate: bool = True) -> dict:
+def read_params(filepath: str | Path, *, validate: bool = True) -> dict:
     """Read EDTB parameters from a JSON file.
 
     Parameters
@@ -520,7 +595,7 @@ def read_params(filepath: Union[str, Path], *, validate: bool = True) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 
-def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool = True) -> None:
+def write_geometry(filepath: str | Path, geometry: dict, *, validate: bool = True) -> None:
     """Write a geometry file (JSON).
 
     Parameters
@@ -542,7 +617,7 @@ def write_geometry(filepath: Union[str, Path], geometry: dict, *, validate: bool
         json.dump(geometry, f, indent=2)
 
 
-def read_geometry(filepath: Union[str, Path], *, validate: bool = True) -> dict:
+def read_geometry(filepath: str | Path, *, validate: bool = True) -> dict:
     """Read a geometry file (JSON).
 
     Parameters
@@ -674,7 +749,7 @@ def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=2
                         if 0 < d < r_max:
                             all_dists.add(round(d, 6))
 
-    shells: List[float] = []
+    shells: list[float] = []
     for d in sorted(all_dists):
         if not shells or abs(d - shells[-1]) > tol:
             shells.append(d)
@@ -690,8 +765,8 @@ def compute_pair_shell_distances(a_vectors, atoms, sp1, sp2, n_shells=3, r_max=2
 
 
 def from_model_dict(
-    model_dict: dict, shell_distances: Optional[Dict[str, float]] = None
-) -> Tuple[dict, dict]:
+    model_dict: dict, shell_distances: dict[str, float] | None = None
+) -> tuple[dict, dict]:
     """Convert a PAOFLOW model dict to the new schema.
 
     Accepts **both** the old shell-tag-keyed format::
@@ -734,7 +809,7 @@ def from_model_dict(
     atoms_old = m['atoms']
     natoms = len(atoms_old)
 
-    species_info: Dict[str, dict] = {}
+    species_info: dict[str, dict] = {}
     geom_atoms = []
 
     # Map configuration label (e.g. '2S', '3P', '3D') → l-channel
@@ -750,15 +825,24 @@ def from_model_dict(
                 # Configuration-based atom (e.g. ['2S', '2P', '3D'])
                 config = atom['configuration']
                 orbitals = []
+                orbital_shells = []
                 l_channels = []
                 for cfg_label in config:
                     l_char = cfg_label[-1].upper()  # '2S' → 'S'
                     lc = _CONFIG_TO_L.get(l_char)
                     if lc:
-                        orbitals.extend(L_ORBITALS[lc])
+                        shell_orbs = L_ORBITALS[lc]
+                        orbitals.extend(shell_orbs)
+                        orbital_shells.extend([cfg_label] * len(shell_orbs))
                         if lc not in l_channels:
                             l_channels.append(lc)
-                species_info[sp] = {'orbitals': orbitals, 'l_channels': l_channels}
+                info = {'orbitals': orbitals, 'l_channels': l_channels}
+                # Preserve shell resolution for multi-configuration bases so
+                # the round-trip keeps 3S/4S (etc.) distinct.
+                if _config_is_multiconfig(config):
+                    info['configuration'] = list(config)
+                    info['orbital_shells'] = orbital_shells
+                species_info[sp] = info
             else:
                 # Orbital-based atom (e.g. orbitals=['s','px','py','pz'])
                 orbitals = list(atom.get('orbitals', []))
@@ -773,40 +857,60 @@ def from_model_dict(
     basis = {sp: dict(info) for sp, info in species_info.items()}
 
     # ── Onsite ──
-    onsite: Dict[str, dict] = {}
+    onsite: dict[str, dict] = {}
     for ia in range(natoms):
         atom = atoms_old[str(ia)]
         sp = atom['name']
         if sp in onsite:
             continue
         l_channels = species_info[sp]['l_channels']
-        on: Dict[str, float] = {}
+        on: dict[str, float] = {}
 
         if 'configuration' in atom:
             # Configuration-based: keys like '2S', '2P', '3D',
             # and for d-orbitals possibly '3D_t2g' / '3D_eg'
             config = atom['configuration']
-            for cfg_label in config:
-                l_char = cfg_label[-1].upper()
-                lc = _CONFIG_TO_L.get(l_char)
-                if not lc:
-                    continue
-                if lc == 'd':
-                    key_t2g = f'{cfg_label}_t2g'
-                    key_eg = f'{cfg_label}_eg'
-                    if key_t2g in atom and key_eg in atom:
-                        val_t2g = atom[key_t2g]
-                        val_eg = atom[key_eg]
-                        if abs(val_t2g - val_eg) > 1e-10:
-                            on['t2g'] = val_t2g
-                            on['eg'] = val_eg
-                        else:
-                            on['d'] = val_t2g
+            if _config_is_multiconfig(config):
+                # Multi-configuration: keep one on-site entry per shell
+                # (keyed by the configuration label, with _t2g/_eg for d
+                # shells) so 3S and 4S are not collapsed onto a single 's'.
+                for cfg_label in config:
+                    l_char = cfg_label[-1].upper()
+                    lc = _CONFIG_TO_L.get(l_char)
+                    if not lc:
+                        continue
+                    if lc == 'd':
+                        key_t2g = f'{cfg_label}_t2g'
+                        key_eg = f'{cfg_label}_eg'
+                        if key_t2g in atom and key_eg in atom:
+                            on[key_t2g] = atom[key_t2g]
+                            on[key_eg] = atom[key_eg]
+                        elif cfg_label in atom:
+                            on[cfg_label] = atom[cfg_label]
                     elif cfg_label in atom:
-                        on['d'] = atom[cfg_label]
-                else:
-                    if cfg_label in atom:
-                        on[lc] = atom[cfg_label]
+                        on[cfg_label] = atom[cfg_label]
+            else:
+                for cfg_label in config:
+                    l_char = cfg_label[-1].upper()
+                    lc = _CONFIG_TO_L.get(l_char)
+                    if not lc:
+                        continue
+                    if lc == 'd':
+                        key_t2g = f'{cfg_label}_t2g'
+                        key_eg = f'{cfg_label}_eg'
+                        if key_t2g in atom and key_eg in atom:
+                            val_t2g = atom[key_t2g]
+                            val_eg = atom[key_eg]
+                            if abs(val_t2g - val_eg) > 1e-10:
+                                on['t2g'] = val_t2g
+                                on['eg'] = val_eg
+                            else:
+                                on['d'] = val_t2g
+                        elif cfg_label in atom:
+                            on['d'] = atom[cfg_label]
+                    else:
+                        if cfg_label in atom:
+                            on[lc] = atom[cfg_label]
         else:
             # Orbital-based: keys like 's', 'px', 'dxy'
             for lc in l_channels:
@@ -920,7 +1024,7 @@ def from_model_dict(
         # ── Hoppings ──
         # Old format is species-blind → same SK params for all pairs,
         # but r_ref is computed per pair from the actual lattice geometry.
-        hoppings: Dict[str, list] = {}
+        hoppings: dict[str, list] = {}
         for i, sp1 in enumerate(species_list):
             for sp2 in species_list[i:]:
                 key = species_pair_key(sp1, sp2)
@@ -956,7 +1060,7 @@ def from_model_dict(
         if 'screening' in m:
             scr = m['screening']
             gamma_raw = scr['gamma']
-            gamma: Dict[str, Any] = {}
+            gamma: dict[str, Any] = {}
             for i, sp1 in enumerate(species_list):
                 for sp2 in species_list[i:]:
                     key = species_pair_key(sp1, sp2)
@@ -1017,15 +1121,28 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
         sp = atom['species']
         basis_sp = params['basis'][sp]
         on = params['onsite'][sp]
-        atom_d = {
-            'name': sp,
-            'tau': atom['tau'],
-            'orbitals': list(basis_sp['orbitals']),
-        }
-        on_keys = set(on.keys())
-        for orb in basis_sp['orbitals']:
-            group = _orbital_to_onsite_group(orb, on_keys)
-            atom_d[orb] = on[group]
+        if 'configuration' in basis_sp:
+            # Multi-configuration: emit a shell-resolved atom so
+            # models.Slater_Koster routes each shell-pair to its own SK
+            # parameters and each shell to its own on-site energy.
+            atom_d = {
+                'name': sp,
+                'tau': atom['tau'],
+                'configuration': list(basis_sp['configuration']),
+                'orbitals': list(basis_sp['orbitals']),
+            }
+            for k, v in on.items():
+                atom_d[k] = v
+        else:
+            atom_d = {
+                'name': sp,
+                'tau': atom['tau'],
+                'orbitals': list(basis_sp['orbitals']),
+            }
+            on_keys = set(on.keys())
+            for orb in basis_sp['orbitals']:
+                group = _orbital_to_onsite_group(orb, on_keys)
+                atom_d[orb] = on[group]
         atoms_dict[str(ia)] = atom_d
 
     # ── Hoppings (pass-through, species-pair-keyed) ──
@@ -1061,7 +1178,7 @@ def to_model_dict(params: dict, geometry: dict) -> dict:
     if has_screening:
         scr = params['screening']
         gamma = {k: (dict(v) if isinstance(v, dict) else v) for k, v in scr['gamma'].items()}
-        screening_out: Dict[str, Any] = {'r_cut': scr['r_cut'], 'gamma': gamma}
+        screening_out: dict[str, Any] = {'r_cut': scr['r_cut'], 'gamma': gamma}
         if 'onsite_shift' in scr:
             screening_out['onsite_shift'] = dict(scr['onsite_shift'])
         model['model']['screening'] = screening_out
@@ -1240,11 +1357,11 @@ class EDTBModel:
     @classmethod
     def from_files(
         cls,
-        params_path: Union[str, Path],
-        geometry_path: Union[str, Path],
+        params_path: str | Path,
+        geometry_path: str | Path,
         *,
         validate: bool = True,
-    ) -> 'EDTBModel':
+    ) -> EDTBModel:
         """Load an EDTB model from JSON parameter and geometry files.
 
         Parameters
@@ -1269,8 +1386,8 @@ class EDTBModel:
         cls,
         model_dict: dict,
         *,
-        shell_distances: Optional[Dict[str, float]] = None,
-    ) -> 'EDTBModel':
+        shell_distances: dict[str, float] | None = None,
+    ) -> EDTBModel:
         """Convert a PAOFLOW model dict to an EDTBModel.
 
         Accepts **both** the old shell-tag-keyed format
@@ -1294,7 +1411,7 @@ class EDTBModel:
         return cls(params, geometry, validate=True)
 
     @classmethod
-    def from_fitter(cls, fitter, p_opt) -> 'EDTBModel':
+    def from_fitter(cls, fitter, p_opt) -> EDTBModel:
         """Build an EDTBModel from a fitted SKFitter or SKFitterEDTB.
 
         Calls ``fitter.build_model_dict(p_opt)`` internally and converts
@@ -1318,8 +1435,8 @@ class EDTBModel:
 
     def save(
         self,
-        params_path: Union[str, Path],
-        geometry_path: Optional[Union[str, Path]] = None,
+        params_path: str | Path,
+        geometry_path: str | Path | None = None,
         *,
         validate: bool = True,
     ) -> None:
@@ -1354,7 +1471,7 @@ class EDTBModel:
 
     # ── Geometry transfer ─────────────────────────────────────
 
-    def with_geometry(self, geometry: dict) -> 'EDTBModel':
+    def with_geometry(self, geometry: dict) -> EDTBModel:
         """Return a new EDTBModel with the same parameters but a different geometry.
 
         This is the main transferability mechanism: train once,
@@ -1390,9 +1507,9 @@ class EDTBModel:
     @classmethod
     def from_geometry_file(
         cls,
-        params_path: Union[str, Path],
-        geometry_path: Union[str, Path],
-    ) -> 'EDTBModel':
+        params_path: str | Path,
+        geometry_path: str | Path,
+    ) -> EDTBModel:
         """Load parameters from one file and geometry from another.
 
         Identical to :meth:`from_files`; provided for readability in
@@ -1419,9 +1536,9 @@ class EDTBModel:
         *,
         ibrav: int = 0,
         nk: int = 500,
-        outputdir: Optional[str] = None,
-        band_path: Optional[str] = None,
-        high_sym_points: Optional[dict] = None,
+        outputdir: str | None = None,
+        band_path: str | None = None,
+        high_sym_points: dict | None = None,
         smearing: str = 'gauss',
         verbose: bool = False,
     ) -> dict:
@@ -1452,38 +1569,21 @@ class EDTBModel:
             ``sym_file`` : str — path to ``kpath_points.txt``
             ``paoflow`` : PAOFLOW object (for further analysis)
         """
-        from PAOFLOW import PAOFLOW as PF
-
-        model_dict = self.to_model_dict()
+        from ._paoflow_runner import run_model_bands
 
         if outputdir is None:
             outputdir = f'edtb_{self.label}_{self.geometry["alat"]:.2f}'
 
-        pao = PF.PAOFLOW(
-            savedir=None,
-            model=model_dict,
+        return run_model_bands(
+            self.to_model_dict(),
+            ibrav=ibrav,
+            nk=nk,
             outputdir=outputdir,
+            band_path=band_path,
+            high_sym_points=high_sym_points,
             smearing=smearing,
             verbose=verbose,
         )
-        arry, attr = pao.data_controller.data_dicts()
-
-        bands_kw = {'ibrav': ibrav, 'nk': nk}
-        if band_path is not None:
-            bands_kw['band_path'] = band_path
-        if high_sym_points is not None:
-            bands_kw['high_sym_points'] = high_sym_points
-
-        pao.bands(**bands_kw)
-
-        bands_file = f'{attr["outputdir"]}/bands_0.dat'
-        sym_file = f'{attr["outputdir"]}/kpath_points.txt'
-
-        return {
-            'bands_file': bands_file,
-            'sym_file': sym_file,
-            'paoflow': pao,
-        }
 
     # ── Properties ────────────────────────────────────────────
 
@@ -1502,7 +1602,7 @@ class EDTBModel:
         return copy.deepcopy(self._geometry)
 
     @property
-    def species(self) -> List[str]:
+    def species(self) -> list[str]:
         """Sorted list of species in the model."""
         return sorted(self._params['basis'].keys())
 

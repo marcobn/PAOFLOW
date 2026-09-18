@@ -58,38 +58,58 @@ class DataController:
         ``t_tensor``     Transport tensor component indices
         ``a_tensor``     Anomalous Hall tensor component indices
         ``s_tensor``     Spin Hall tensor component indices
+        ``o_tensor``     Orbital Hall tensor component indices
         ===============  =================================================
 
     ``data_attributes`` : dict
         Scalar configuration values.  Common keys:
 
-        ================  =====================================================
-        Key               Content
-        ================  =====================================================
-        ``nawf``          Number of PAO basis functions
-        ``nbnds``         Number of DFT bands
-        ``nspin``         Number of spin channels (1 or 2)
-        ``nkpnts``        Total number of k-points
-        ``nk1,nk2,nk3``  k-grid dimensions
-        ``nelec``         Number of electrons
-        ``natoms``        Number of atoms in the unit cell
-        ``alat``          Lattice parameter (Bohr)
-        ``omega``         Unit-cell volume
-        ``npool``         Number of k-point pools
-        ``smearing``      Smearing type (``None``, ``'m-p'``, ``'gauss'``)
-        ``acbn0``         Whether ACBN0 orthogonalisation is active
-        ``verbose``       Verbosity flag
-        ``opath``         Absolute path to the output directory
-        ``fpath``         Absolute path to the DFT ``.save`` directory
-        ``abort_on_exception`` Re-raise exceptions immediately if ``True``
-        ================  =====================================================
+        .. list-table::
+           :header-rows: 1
+
+           * - Key
+             - Content
+           * - ``nawf``
+             - Number of PAO basis functions
+           * - ``nbnds``
+             - Number of DFT bands
+           * - ``nspin``
+             - Number of spin channels (1 or 2)
+           * - ``nkpnts``
+             - Total number of k-points
+           * - ``nk1,nk2,nk3``
+             - k-grid dimensions
+           * - ``nelec``
+             - Number of electrons
+           * - ``natoms``
+             - Number of atoms in the unit cell
+           * - ``alat``
+             - Lattice parameter (Bohr)
+           * - ``omega``
+             - Unit-cell volume
+           * - ``npool``
+             - Number of k-point pools
+           * - ``smearing``
+             - Smearing type (``None``, ``'m-p'``, ``'gauss'``)
+           * - ``acbn0``
+             - Whether ACBN0 orthogonalisation is active
+           * - ``verbose``
+             - Verbosity flag
+           * - ``opath``
+             - Absolute path to the output directory
+           * - ``fpath``
+             - Absolute path to the DFT ``.save`` directory
+           * - ``abort_on_exception``
+             - Re-raise exceptions immediately if ``True``
 
     Parameters (constructor)
     ------------------------
     workpath : str
         Path to the working directory.
     outputdir : str
-        Name of the output sub-directory (created under ``workpath``).
+        Name of the output sub-directory (created under ``workpath``). An
+        existing directory containing BXSF files supports PySKEAF-only
+        initialization when no readable DFT source is available.
     inputfile : str or None
         Optional PAOFLOW XML input file.
     model : dict or None
@@ -195,8 +215,6 @@ class DataController:
         smearing,
         save_overlaps,
         acbn0,
-        sparse,
-        sparse_threshold,
         verbose,
         restart,
         dft,
@@ -212,14 +230,13 @@ class DataController:
             savedir (str): QE .save directory
             save_overlaps (bool): If True the overlap matrix will be saved in data_arrays
             acbn0 (bool): If True the Hamiltonian will be Orthogonalized after construction
-            sparse (bool): If True, use sparse matrix representations
-            sparse_threshold (float): Sparsification threshold
             smearing (str): Smearing type (None, m-p, gauss)
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
         Returns:
             None
         """
+        from glob import glob
         from os import mkdir
         from os.path import exists, join
 
@@ -231,17 +248,49 @@ class DataController:
         self.rank = self.comm.Get_rank()
         self.size = self.comm.Get_size()
 
+        output_has_bxsf = bool(glob(join(workpath, outputdir, '*.bxsf')))
+        dft_path = join(workpath, savedir) if savedir is not None else None
+        if dft_path is None:
+            direct_dft_data_available = False
+        elif dft == 'QE':
+            direct_dft_data_available = exists(join(dft_path, 'data-file-schema.xml')) or exists(
+                join(dft_path, 'data-file.xml')
+            )
+        else:
+            direct_dft_data_available = exists(join(dft_path, 'vasprun.xml'))
+
+        bxsf_only = (
+            model is None
+            and not restart
+            and inputfile is None
+            and not direct_dft_data_available
+            and output_has_bxsf
+        )
+
         if model is not None:
             if (inputfile is not None or savedir is not None) and self.rank == 0:
                 print(
                     '\nWARNING: Model specified in addition to inputfile or savedir. Model will be used.'
                 )
-        elif not restart and inputfile is None and savedir is None:
+        elif (
+            not restart
+            and inputfile is None
+            and not direct_dft_data_available
+            and not output_has_bxsf
+        ):
             if self.rank == 0:
+                requested_path = dft_path if dft_path is not None else 'no savedir'
                 print(
-                    "\nERROR: Must specify '.save' directory path, either in PAOFLOW constructor or in an inputfile."
+                    f'\nERROR: No readable {dft} data were found at {requested_path}, '
+                    f'and no BXSF files were found in {join(workpath, outputdir)}.'
                 )
             quit()
+
+        if bxsf_only and savedir is not None and self.rank == 0:
+            print(
+                f'\nWARNING: No readable {dft} data were found at {dft_path}. '
+                f'Using existing BXSF files in {join(workpath, outputdir)}.'
+            )
 
         self.error_handler = ErrorHandler()
         self.report_exception = self.error_handler.report_exception
@@ -251,18 +300,18 @@ class DataController:
             self.data_attributes = attr = {}
 
             # Set or update attributes
+            attr['adhoc_SO'] = False
             attr['dft'] = dft
             attr['mpisize'] = self.size
             attr['savedir'] = savedir
             attr['verbose'] = verbose
             attr['workpath'] = workpath
+            attr['bxsf_only'] = bxsf_only
             attr['save_overlaps'] = save_overlaps
             attr['acbn0'] = acbn0
-            attr['sparse'] = sparse
-            attr['sparse_threshold'] = sparse_threshold
             attr['inputfile'], attr['outputdir'] = inputfile, outputdir
             attr['opath'] = join(workpath, outputdir)
-            if model is None:
+            if model is None and not bxsf_only:
                 attr['fpath'] = join(workpath, (savedir if inputfile == None else inputfile))
 
             if inputfile == None:
@@ -279,10 +328,23 @@ class DataController:
 
             # Read inputfile, if it exsts
             if model is not None:
-                from .models.models import build_TB_model
+                if isinstance(model, dict):
+                    from .models.models import build_TB_model
 
-                build_TB_model(self, model)
-            else:
+                    build_TB_model(self, model)
+                else:
+                    print(
+                        'Check! TB model finite (nonperiodic) in one or more dimensions not implemented'
+                    )
+                    try:
+                        from .models.models import build_from_pythTB
+
+                        build_from_pythTB(self, model)
+                    except Exception as e:
+                        print('\nERROR: Could not build tight-binding model')
+                        self.report_exception('Data Controller Initialization')
+                        raise e
+            elif not bxsf_only:
                 try:
                     if inputfile != None:
                         if not exists(attr['fpath']):
@@ -356,6 +418,7 @@ class DataController:
 
         orb = []
         naw = []
+        orb_atom = []
 
         if attr['dftSO'] == True:
             for i in range(len(arry['atoms'])):
@@ -386,27 +449,65 @@ class DataController:
                 if shells_i == [0]:
                     naw.append(1)
                     orb.append('s')
+                    orb_atom.append(['s'])
                 elif shells_i == [0, 1]:
                     naw.append(4)
                     orb.append('sp')
+                    orb_atom.append(['s', 'p_z', 'p_x', 'p_y'])
                 elif shells_i == [0, 1, 2]:
                     naw.append(9)
                     orb.append('spd')
+                    orb_atom.append(
+                        ['s', 'p_z', 'p_x', 'p_y', 'd_3z2_r2', 'd_zx', 'd_yz', 'd_x2_y2', 'd_xy']
+                    )
                 elif shells_i == [1, 0]:
                     naw.append(4)
                     orb.append('ps')
+                    orb_atom.append(['p_z', 'p_x', 'p_y', 's'])
                 elif shells_i == [0, 0, 1, 2]:
                     naw.append(10)
                     orb.append('sspd')
+                    orb_atom.append(
+                        [
+                            's',
+                            's',
+                            'p_z',
+                            'p_x',
+                            'p_y',
+                            'd_3z2_r2',
+                            'd_zx',
+                            'd_yz',
+                            'd_x2_y2',
+                            'd_xy',
+                        ]
+                    )
                 elif shells_i == [0, 1, 2, 0]:
                     naw.append(10)
                     orb.append('spds')
                 elif shells_i == [0, 0, 1]:
                     naw.append(5)
                     orb.append('ssp')
+                    orb_atom.append(['s', 's', 'p_z', 'p_x', 'p_y'])
                 elif shells_i == [0, 0, 1, 1, 2]:
                     naw.append(13)
                     orb.append('ssppd')
+                    orb_atom.append(
+                        [
+                            's',
+                            's',
+                            'p_z',
+                            'p_x',
+                            'p_y',
+                            'p_z',
+                            'p_x',
+                            'p_y',
+                            'd_3z2_r2',
+                            'd_zx',
+                            'd_yz',
+                            'd_x2_y2',
+                            'd_xy',
+                        ]
+                    )
                 else:
                     matched = False
                 if not matched:
@@ -418,6 +519,7 @@ class DataController:
                     orb.append('generic')
             arry['orb_pseudo'] = orb
             arry['naw'] = np.array(naw)
+            arry['orb_atom'] = [(a, o) for a, o in zip(arry['atoms'], orb_atom)]
 
     def add_default_arrays(self):
         import numpy as np
@@ -448,6 +550,38 @@ class DataController:
         )
         # Spin Berry curvature
         self.data_arrays['s_tensor'] = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 2, 0],
+                [1, 0, 0],
+                [1, 1, 0],
+                [1, 2, 0],
+                [2, 0, 0],
+                [2, 1, 0],
+                [2, 2, 0],
+                [0, 0, 1],
+                [0, 1, 1],
+                [0, 2, 1],
+                [1, 0, 1],
+                [1, 1, 1],
+                [1, 2, 1],
+                [2, 0, 1],
+                [2, 1, 1],
+                [2, 2, 1],
+                [0, 0, 2],
+                [0, 1, 2],
+                [0, 2, 2],
+                [1, 0, 2],
+                [1, 1, 2],
+                [1, 2, 2],
+                [2, 0, 2],
+                [2, 1, 2],
+                [2, 2, 2],
+            ]
+        )
+        # Orbital Berry curvature
+        self.data_arrays['o_tensor'] = np.array(
             [
                 [0, 0, 0],
                 [0, 1, 0],
@@ -537,8 +671,35 @@ class DataController:
             attr = self.data_attributes
 
             with open(join(attr['opath'], fname), 'w') as f:
-                for i in range(len(col1)):
-                    f.write('%.5f %.15e\n' % (col1[i], col2[i]))
+                f.writelines('%.5f %.15e\n' % (col1[i], col2[i]) for i in range(len(col1)))
+        self.comm.Barrier()
+
+    def write_file_row_col_units(self, fname, col1, col2, unit1, unit2):
+        """
+        Write a file with 2 columns and units in the header.
+
+        Arguments:
+            fname (str): Name of the file (written to outputdir)
+            col1 (ndarray): 1D array of values for the first column
+            col2 (ndarray): 1D array of values for the second column
+            unit1 (str): Unit of col1
+            unit2 (str): Unit of col2
+        Returns:
+            None
+        """
+        if self.rank == 0:
+            from os.path import join
+
+            if len(col1) != len(col2):
+                print('ERROR: Cannot write file: %s' % fname)
+                print('Data does not have the same shape')
+                self.comm.Abort()
+            attr = self.data_attributes
+            with open(join(attr['opath'], fname), 'w') as f:
+                # Header
+                f.write(f'# {unit1:<30} {unit2}\n')
+                # Data
+                f.writelines(f'{x:12.5f} {y:25.15e}\n' for x, y in zip(col1, col2))
         self.comm.Barrier()
 
     def write_bxsf(self, fname, bands, nbnd, indices=None):
@@ -581,11 +742,10 @@ class DataController:
 
             for ispin in range(nspin):
                 with open(join(attr['opath'], fname + '_' + str(ispin) + '.dat'), 'w') as f:
-                    for ik in range(nkpi):
-                        f.write(
-                            ' '.join(['%6d' % ik] + ['% 14.8f' % j for j in bands[ik, :, ispin]])
-                            + '\n'
-                        )
+                    f.writelines(
+                        ' '.join(['%6d' % ik] + ['% 14.8f' % j for j in bands[ik, :, ispin]]) + '\n'
+                        for ik in range(nkpi)
+                    )
         self.comm.Barrier()
 
     def write_kpnts_path(self, fname, path, kpnts, b_vectors):
@@ -684,13 +844,18 @@ class DataController:
 
             if write_binary:  # or whatever you want to call it
                 if nspin == 1:  # postfix .npy just to make it clear what they are
-                    np.save(os.path.join(inputpath, 'kham.npy'), np.ravel(Hks[..., 0], order='C'))
+                    np.save(
+                        os.path.join(inputpath, 'kham.npy'),
+                        np.ravel(Hks[..., 0], order='C'),
+                    )
                 if nspin == 2:
                     np.save(
-                        os.path.join(inputpath, 'kham_up.npy'), np.ravel(Hks[..., 0], order='C')
+                        os.path.join(inputpath, 'kham_up.npy'),
+                        np.ravel(Hks[..., 0], order='C'),
                     )
                     np.save(
-                        os.path.join(inputpath, 'kham_dn.npy'), np.ravel(Hks[..., 1], order='C')
+                        os.path.join(inputpath, 'kham_dn.npy'),
+                        np.ravel(Hks[..., 1], order='C'),
                     )
                 if acbn0:
                     Sks = Sks[: Sks.shape[1], :, :]
@@ -700,30 +865,39 @@ class DataController:
                     f = open(os.path.join(inputpath, 'kham.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
-                            for j in range(nawf):
-                                f.write(
-                                    '%20.13f %20.13f \n'
-                                    % (np.real(Hks[i, j, ik, 0]), np.imag(Hks[i, j, ik, 0]))
+                            f.writelines(
+                                '%20.13f %20.13f \n'
+                                % (
+                                    np.real(Hks[i, j, ik, 0]),
+                                    np.imag(Hks[i, j, ik, 0]),
                                 )
+                                for j in range(nawf)
+                            )
                     f.close()
                 elif nspin == 2:
                     f = open(os.path.join(inputpath, 'kham_up.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
-                            for j in range(nawf):
-                                f.write(
-                                    '%20.13f %20.13f \n'
-                                    % (np.real(Hks[i, j, ik, 0]), np.imag(Hks[i, j, ik, 0]))
+                            f.writelines(
+                                '%20.13f %20.13f \n'
+                                % (
+                                    np.real(Hks[i, j, ik, 0]),
+                                    np.imag(Hks[i, j, ik, 0]),
                                 )
+                                for j in range(nawf)
+                            )
                     f.close()
                     f = open(os.path.join(inputpath, 'kham_down.txt'), 'w')
                     for ik in range(nkpnts):
                         for i in range(nawf):
-                            for j in range(nawf):
-                                f.write(
-                                    '%20.13f %20.13f \n'
-                                    % (np.real(Hks[i, j, ik, 1]), np.imag(Hks[i, j, ik, 1]))
+                            f.writelines(
+                                '%20.13f %20.13f \n'
+                                % (
+                                    np.real(Hks[i, j, ik, 1]),
+                                    np.imag(Hks[i, j, ik, 1]),
                                 )
+                                for j in range(nawf)
+                            )
                     f.close()
             """
             if acbn0:
@@ -840,13 +1014,20 @@ class DataController:
                     pad3 = 1
 
                 HRS_interp = np.zeros(
-                    (nawf, nawf, nk1 + pad1, nk2 + pad2, nk3 + pad3, nspin), dtype=complex
+                    (nawf, nawf, nk1 + pad1, nk2 + pad2, nk3 + pad3, nspin),
+                    dtype=complex,
                 )
                 for n in range(nawf):
                     for m in range(nawf):
                         for ispin in range(nspin):
                             HRS_interp[n, m, :, :, :, ispin] = zero_pad(
-                                HRS[n, m, :, :, :, ispin], nk1, nk2, nk3, pad1, pad2, pad3
+                                HRS[n, m, :, :, :, ispin],
+                                nk1,
+                                nk2,
+                                nk3,
+                                pad1,
+                                pad2,
+                                pad3,
                             )
 
                 nk1 += pad1
@@ -959,6 +1140,85 @@ class DataController:
         from .utils.communication import scatter_array
 
         self.data_arrays[key] = scatter_array(self.data_arrays[key])
+
+    def local_projections(self):
+        """Return this rank's k-share of the PAO projection matrix.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nk_local, nbnds, nawf, nspin)``, complex
+            The rank-local block of ``U``, k-major so that the partition
+            matches :func:`~.communication.scatter_full` / ``gather_full``.
+
+        Notes
+        -----
+        :meth:`PAOFLOW.PAOFLOW.projections` never assembles the full array: it
+        stores each rank's share directly as ``U_local``.  When the projections
+        were instead read whole from ``atomic_proj.xml`` the full ``U`` is
+        scattered here on first use and cached.
+        """
+        import numpy as np
+
+        from .utils.communication import scatter_full
+
+        if 'U_local' in self.data_arrays:
+            return self.data_arrays['U_local']
+
+        # (nbnds, nawf, nkpnts, nspin) -> k-major, so scatter_full splits on k.
+        kmajor = None
+        if self.rank == 0:
+            kmajor = np.ascontiguousarray(np.moveaxis(self.data_arrays['U'], 2, 0))
+        self.data_arrays['U_local'] = scatter_full(kmajor, self.data_attributes['npool'])
+        return self.data_arrays['U_local']
+
+    def full_hamiltonian_k(self):
+        """Return the k-space PAO Hamiltonian on every rank.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nawf, nawf, nk1, nk2, nk3, nspin)``, complex
+            ``Hks`` for the whole grid, identical on all ranks.
+
+        Notes
+        -----
+        ``pao_hamiltonian`` leaves ``Hks`` on rank 0 only, since it is one of
+        the largest arrays in the run and nearly every consumer is already
+        rank-0 guarded.  Call this from the few that are not; it costs one full
+        copy per rank.  Collective: every rank must call it.
+        """
+        self.broadcast_single_array('Hks')
+        return self.data_arrays['Hks']
+
+    def full_projections(self):
+        """Assemble the complete PAO projection matrix on every rank.
+
+        Returns
+        -------
+        np.ndarray, shape ``(nbnds, nawf, nkpnts, nspin)``, complex
+            The projection coefficients :math:`A_{ni}(\\mathbf{k})` for every
+            k-point, identical on all ranks.
+
+        Notes
+        -----
+        ``U`` is kept scattered over k-points so that large systems do not
+        replicate it on every rank, so this gather is deliberately explicit.
+        Call it *before* :meth:`PAOFLOW.PAOFLOW.pao_hamiltonian`, which frees
+        the projections.  The assembled array is cached under ``'U'``; it costs
+        one full copy per rank.
+        """
+        import numpy as np
+
+        from .utils.communication import gather_full
+
+        if 'U' in self.data_arrays and self.data_arrays['U'] is not None:
+            return self.data_arrays['U']
+
+        full = gather_full(self.data_arrays['U_local'], self.data_attributes['npool'])
+        if self.rank == 0:
+            self.data_arrays['U'] = np.ascontiguousarray(np.moveaxis(full, 0, 2))
+        del full
+        self.broadcast_single_array('U')
+        return self.data_arrays['U']
 
     def gather_data_array(self, key):
         import numpy as np

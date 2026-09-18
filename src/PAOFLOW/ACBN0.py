@@ -170,6 +170,8 @@ from os.path import expanduser, isfile, join
 import numpy as np
 from mpi4py import MPI
 
+from . import acbn0_native as _acbn0_native
+
 BOHR_RADIUS_ANGS = 0.529177210903
 ANGS_TO_BOHR = 1.0 / BOHR_RADIUS_ANGS
 HARTREE_TO_EV = 27.211396132
@@ -400,12 +402,21 @@ class ACBN0_Hartree(_HartreeKernel):
         # ``contr_coulomb`` of real Cartesian Gaussians returns a real
         # scalar; coerce to ``float`` so the gathered dict and downstream
         # ERI tensor stay real.
-        local_vals = {
-            (int(a), int(b), int(c), int(d)): float(
-                self.coulomb(basis[idx[a]], basis[idx[b]], basis[idx[c]], basis[idx[d]])
-            )
-            for a, b, c, d in my_keys
-        }
+        if _acbn0_native.available():
+            # Batched Rust path: evaluate the whole rank-local chunk in one
+            # FFI call over the Hubbard-active sub-basis (local indices).
+            active = [basis[i] for i in idx]
+            vals = _acbn0_native.eri_batch(active, my_keys)
+            local_vals = {
+                (int(a), int(b), int(c), int(d)): float(v) for (a, b, c, d), v in zip(my_keys, vals)
+            }
+        else:
+            local_vals = {
+                (int(a), int(b), int(c), int(d)): float(
+                    self.coulomb(basis[idx[a]], basis[idx[b]], basis[idx[c]], basis[idx[d]])
+                )
+                for a, b, c, d in my_keys
+            }
 
         all_local = self.comm.allgather(local_vals)
         eri_dict = {}
@@ -635,12 +646,19 @@ class eACBN0_Hartree(_HartreeKernel):
         # tensor stay real (densities are complex, so contractions will
         # naturally promote to complex without spurious imaginary noise
         # from the integral side).
-        local_vals = {
-            (int(i), int(k), int(j), int(l)): float(
-                self.coulomb(gauss_I[i], gauss_I[k], gauss_J[j], gauss_J[l])
-            )
-            for i, k, j, l in my_keys
-        }
+        if _acbn0_native.available():
+            # Batched Rust path: i,k index gauss_I and j,l index gauss_J.
+            vals = _acbn0_native.eri_batch_2c(gauss_I, gauss_J, my_keys)
+            local_vals = {
+                (int(i), int(k), int(j), int(l)): float(v) for (i, k, j, l), v in zip(my_keys, vals)
+            }
+        else:
+            local_vals = {
+                (int(i), int(k), int(j), int(l)): float(
+                    self.coulomb(gauss_I[i], gauss_I[k], gauss_J[j], gauss_J[l])
+                )
+                for i, k, j, l in my_keys
+            }
 
         all_local = self.comm.allgather(local_vals)
         eri_dict = {}
@@ -705,10 +723,21 @@ class ACBN0:
             PAOFLOW's internal projection onto the local atomic basis
             (:meth:`PAOFLOW.PAOFLOW.PAOFLOW.projections`) instead of from
             ``projwfc.x``.  ``projwfc.x`` is then never run and no
-            ``<prefix>.projwfc.in`` template is required.  The local
-            projection orthonormalises the atomic orbitals per k-point, so
-            the wavefunction overlap is the identity, i.e. the scheme is
-            intrinsically ``'ortho-atomic'``.
+            ``<prefix>.projwfc.in`` template is required.
+
+            With this option PAOFLOW automatically computes and stores the
+            true non-orthogonal atomic-orbital overlap
+            :math:`S_{\\mu\\nu}(\\mathbf{k})` so that the non-orthogonal
+            correction :math:`H \\to S^{1/2} H S^{1/2}` is applied
+            correctly and the genuine :math:`S(k)` is written to
+            ``kovp.npy``.  Both the on-site ACBN0 U and the intersite
+            eACBN0 V therefore work correctly with the internal basis.
+            The recommended ``configuration`` for ACBN0/eACBN0 is
+            ``'minimal'`` (UPF pseudo-atomic wavefunctions), which matches
+            the ``projwfc.x`` projectors most closely and gives the best
+            agreement with the reference values.  ``'standard'`` and
+            ``'extended'`` are also supported but may yield slightly
+            different U/V due to the larger Löwdin-orthogonalized basis.
         basispath : str, optional
             Directory containing the per-element ``<elem>/*.dat`` all-electron
             radial basis files.  Required when ``use_local_basis`` is
@@ -758,7 +787,7 @@ class ACBN0:
         from .projection.upf_gaussfit import gaussian_fit
         from .utils.header import header
 
-        header()
+        header(style='small')
         print('\nPerforming ACBN0 self-consistent determination of Hubbard U corrections.\n')
 
         datafilepath = join(outputdir, 'data.pkl')
@@ -865,6 +894,7 @@ class ACBN0:
         pseudo_dir = self.blocks.get('control', {}).get('pseudo_dir', '')
         pseudo_dir = expanduser(pseudo_dir.strip().strip('"').strip("'"))
         self.basis = {}
+        self.basis_labels = {}
         self.uspecies = []
         for s in self.cards['ATOMIC_SPECIES'][1:]:
             ele, _, pp = s.split()
@@ -872,8 +902,9 @@ class ACBN0:
             pp_path = pp
             if not isfile(pp_path) and pseudo_dir:
                 pp_path = join(pseudo_dir, pp)
-            atno, basis = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
+            atno, basis, labels = gaussian_fit(pp_path, threshold=self.gaussian_threshold)
             self.basis[ele] = basis
+            self.basis_labels[ele] = labels
 
         # Store U values from input template
         if 'HUBBARD' in self.cards:
@@ -1021,7 +1052,7 @@ class ACBN0:
                 print(f'  {k} : {v}')
                 if converged and np.abs(self.uVals[k] - v) > convergence_threshold:
                     converged = False
-            print('', flush=True)
+            print(flush=True)
 
             self.uVals = new_U
 
@@ -1074,7 +1105,7 @@ class ACBN0:
 
         card = [self.hubbard_tag]
         for k, v in self.uVals.items():
-            card.append(' U {} {}'.format(k, v))
+            card.append(f' U {k} {v}')
 
         # Emit each undirected V channel only once.  QE's HUBBARD card
         # check (PW/src/read_cards.f90, card_hubbard) considers two V
@@ -1106,15 +1137,7 @@ class ACBN0:
                 grouped[canonical] = ((sym1, sym2, idx1, idx2), [v])
         for (sym1, sym2, idx1, idx2), vals in grouped.values():
             v_emit = sum(vals) / len(vals)
-            card.append(
-                ' V {} {} {} {} {}'.format(
-                    sym1,
-                    sym2,
-                    idx1,
-                    idx2,
-                    v_emit,
-                )
-            )
+            card.append(f' V {sym1} {sym2} {idx1} {idx2} {v_emit}')
 
         return card
 
@@ -1269,6 +1292,13 @@ class ACBN0:
         density-matrix manifold (all atoms of the species, matching L) and
         ``basis_2e`` is the single representative shell used for the
         two-electron integrals.
+
+        Selection is label-aware: the projwfc ``wfc N`` index is mapped to
+        the pseudo's N-th ``PP_PSWFC`` shell label (via
+        :attr:`self.basis_labels`) so that a semicore shell of the same L as
+        the Hubbard valence shell (e.g. Mg ``2s`` alongside the ``3s``
+        valence) is excluded.  Without this filter the first (semicore)
+        shell would be picked, giving an unphysically large U.
         """
         manifolds = {}
         for orb in self.uVals:
@@ -1276,17 +1306,37 @@ class ACBN0:
             ustates = []
             species_label = orb.split('-')[0]
             horb = self.hubbard_orbital(orb)
+            shell_label = self._shell_label(orb)
+            labels = self.basis_labels.get(species_label)
             for n, sl in enumerate(state_lines):
-                stateN = re.findall(r'\(([^\)]+)\)', sl)
-                oele = stateN[0].strip()
-                oL = int(re.split('=| ', stateN[1])[1])
-                if species_label in oele and oL == horb:
+                mat = re.search(
+                    r'atom\s+\d+\s*\(\s*(\S+)\s*\)\s*,\s*wfc\s+(\d+)\s*\(\s*l\s*=\s*(\d+)',
+                    sl,
+                )
+                if mat is None:
+                    continue
+                oele = mat.group(1).strip()
+                wfc_idx = int(mat.group(2))
+                oL = int(mat.group(3))
+                if oL != horb:
+                    continue
+                # Map wfc index -> pseudo shell label and keep only the
+                # Hubbard valence shell, excluding same-L semicore shells.
+                if labels is not None and 0 <= wfc_idx - 1 < len(labels):
+                    if labels[wfc_idx - 1].upper() != shell_label:
+                        continue
+                if species_label in oele:
                     ostates.append(n)
                     if species_label == oele:
                         ustates.append(n)
+            if not ustates:
+                raise RuntimeError(
+                    f'No projwfc states matched Hubbard manifold {orb!r} '
+                    f'(species {species_label!r}, shell {shell_label!r}).'
+                )
             sstates = [ustates[0]]
-            for i, us in enumerate(ustates[1:]):
-                if us == 1 + sstates[i]:
+            for us in ustates[1:]:
+                if us == 1 + sstates[-1]:
                     sstates.append(us)
                 else:
                     break
@@ -1412,27 +1462,41 @@ class ACBN0:
             for atom_idx, entries in by_atom.items():
                 entries.sort(key=lambda d: d['index'])
                 pos = coords[atom_idx - 1]
-                gs = self._atom_shell_gaussians(species_label, pos, horb)
+                gs = self._atom_shell_gaussians(species_label, pos, horb, shell_label)
                 if len(gs) != len(entries):
                     raise RuntimeError(
                         f'Gaussian shell mismatch for {orb!r} on atom '
                         f'{atom_idx}: {len(gs)} Gaussians vs {len(entries)} '
-                        'PAO orbitals. The UPF must provide exactly one '
-                        f'l={horb} shell for species {species_label!r}.'
+                        f'PAO orbitals. The UPF must provide exactly one '
+                        f'l={horb} shell labelled {shell_label!r} for '
+                        f'species {species_label!r}.'
                     )
                 for e, bf in zip(entries, gs):
                     gauss_basis[e['index']] = bf
         return gauss_basis
 
-    def _atom_shell_gaussians(self, ele, pos_angstrom, L):
+    def _atom_shell_gaussians(self, ele, pos_angstrom, L, shell_label=None):
         """Build the CGBFs of the ``(ele, L)`` shell centred at
         ``pos_angstrom`` (Cartesian Ångström).  Returns a list with one
-        CGBF per magnetic component (``2L+1`` Gaussians)."""
+        CGBF per magnetic component (``2L+1`` Gaussians).
+
+        When ``shell_label`` is given (e.g. ``'2S'``) only the UPF
+        pseudo-wavefunction carrying that label is used.  This is required
+        for pseudopotentials that include semicore states of the same
+        angular momentum as the Hubbard valence shell (e.g. Li ``1s`` +
+        ``2s``), where selecting purely by ``L`` would return more Gaussian
+        shells than the single label-selected PAO valence orbital.
+        """
         from .utils.pyints import CGBF
 
         gauss = []
         origin_bohr = np.asarray(pos_angstrom) * ANGS_TO_BOHR
-        for shell in self.basis[ele]:
+        labels = self.basis_labels.get(ele)
+        wanted = None if shell_label is None else shell_label.upper()
+        for ishell, shell in enumerate(self.basis[ele]):
+            if wanted is not None and labels is not None:
+                if labels[ishell].upper() != wanted:
+                    continue
             for subshell in shell:
                 lx, ly, lz, _, _ = subshell[0]
                 if lx + ly + lz != L:
@@ -2392,6 +2456,25 @@ class eACBN0(ACBN0):
         result.update({f'n_{k}': v * scale for k, v in n_blocks.items()})
         return result
 
+    @staticmethod
+    def _overlap_is_identity(Sks, atol=1e-6):
+        """Return ``True`` if every per-k overlap block equals the identity.
+
+        With the current PAOFLOW code the internal projection path
+        (``use_local_basis=True``) already computes and stores the true
+        non-orthogonal atomic-orbital overlap S(k) in ``kovp.npy``, so this
+        check should normally return ``False``.
+
+        The check is retained as a safety net for stale ``kovp.npy`` files
+        that were written by an older PAOFLOW version (which incorrectly
+        dumped the identity).  :meth:`run_eacbn0_V` raises
+        :exc:`RuntimeError` when it returns ``True`` because intersite V
+        requires the genuine off-site S_{IJ}(k) blocks.
+        """
+        nbasis = Sks.shape[0]
+        eye = np.eye(nbasis, dtype=Sks.dtype)
+        return bool(np.allclose(Sks, eye[:, :, None], atol=atol))
+
     def run_eacbn0_V(self, kpnts_are_cartesian=False):
         """Compute intersite Hubbard V for every pair registered in
         :attr:`self.vPairs` and return the updated mapping.
@@ -2439,6 +2522,24 @@ class eACBN0(ACBN0):
         kpnts, kwght, Sks, Hks_up, Hks_dn = self.read_ham_data(self.nspin)
         if self.nspin == 1:
             Hks_dn = Hks_up
+
+        # Intersite V requires the genuine non-orthogonal atomic overlap S(k):
+        # the off-site S_IJ(k) blocks carry the bond charge that defines
+        # n^{IJ}(R) and the denominator of Eq. (8).  With the current PAOFLOW
+        # code both the internal-basis path (use_local_basis=True, any
+        # configuration) and the projwfc.x path store the true S(k) in
+        # kovp.npy, so the check below is a safety net for stale output
+        # written by older PAOFLOW versions that erroneously dumped S(k) = I.
+        if self._overlap_is_identity(Sks):
+            raise RuntimeError(
+                'Intersite Hubbard V requires the true non-orthogonal atomic '
+                'overlap S(k), but kovp.npy contains the identity matrix. '
+                'This indicates a stale kovp.npy written by an older PAOFLOW '
+                'version that incorrectly set S(k) = I for the internal '
+                'projection path. Delete the output directory and re-run the '
+                'ACBN0 driver so that projections() recomputes the genuine '
+                'S(k) and writes it to kovp.npy.'
+            )
 
         # Convert k-points to Cartesian Bohr^-1 if needed.
         if kpnts_are_cartesian:
@@ -2532,11 +2633,14 @@ class eACBN0(ACBN0):
                 den -= float((nIJ * nJI.T).real.sum())
 
             # --- Numerator (Eq. 8 num): launch the MPI kernel -----------
-            gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1)
+            lbl1 = orb1.upper() if self.use_local_basis else None
+            lbl2 = orb2.upper() if self.use_local_basis else None
+            gauss_I = self._atom_shell_gaussians(ele1, coords_A[i1 - 1], L1, lbl1)
             gauss_J = self._atom_shell_gaussians(
                 ele2,
                 coords_A[i2 - 1] + meta['R_cart'],
                 L2,
+                lbl2,
             )
             if len(gauss_I) != basis_I.size or len(gauss_J) != basis_J.size:
                 raise RuntimeError(
@@ -2670,7 +2774,7 @@ class eACBN0(ACBN0):
                 if abs(mixed - old) > convergence_threshold:
                     converged = False
                 new_V[k] = mixed
-            print('', flush=True)
+            print(flush=True)
 
             self.uVals = new_U
             for k, v in new_V.items():

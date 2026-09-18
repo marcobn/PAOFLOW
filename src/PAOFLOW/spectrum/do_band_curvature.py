@@ -5,7 +5,8 @@ def do_band_curvature(data_controller):
     ----------
     data_controller : DataController
         Object providing ``data_arrays`` and ``data_attributes``.
-        Required arrays: ``Hksp``, ``Rfft``, ``E_k``, ``dHksp``, ``v_k``, ``degen``.
+        Required arrays: ``Hksp``, ``Rfft``, ``E_k``, ``dHksp``, ``Dnm``,
+        ``v_k``, ``degen``.
         Required attributes: ``bnd``, ``nawf``, ``alat``, ``npool``.
 
     Returns
@@ -20,7 +21,7 @@ def do_band_curvature(data_controller):
 
     Notes
     -----
-    The curvature tensor is computed in two steps.
+    The curvature tensor is computed in three steps.
 
     First, the diagonal matrix elements of :math:`d^2H/dk_i dk_j` in the
     Bloch eigenstate basis are obtained by calling :func:`do_d2Hd2k_ij`.
@@ -39,23 +40,46 @@ def do_band_curvature(data_controller):
 
     Degenerate subspaces are handled by :func:`perturb_split` and the
     modified eigenvector set returned in ``dvec_list`` is reused here.
-    Pairs with :math:`|E_n - E_m| < 10^{-5}` eV are excluded to avoid
+    Pairs with :math:`|E_n - E_m| < 10^{-3}` eV are excluded to avoid
     numerical divergences.
+
+    Third, for the degenerate subspaces returned in ``degen_idx``, the
+    diagonal elements obtained above are overwritten by the eigenvalues of
+    the subspace block :math:`M + P + P^{\\dagger}`, where :math:`M` is the
+    block of :math:`d^2H/dk_i dk_j` returned in ``degen_d2Hdk`` and
+    :math:`P = \\partial_{k_i} H \\, [\\partial_{k_j} H / (E_n - E_m)]`
+    restricted to the same block.  This resolves the subspaces in which the
+    perturbative sum above is ill-defined because the bands are degenerate
+    in both energy and band velocity.
     """
 
     import numpy as np
+    from numpy.linalg import eigh
 
     from ..hamiltonian.do_d2Hd2k import do_d2Hd2k_ij
+    from ..utils.communication import scatter_full
 
     ary, attr = data_controller.data_dicts()
     bnd = attr['bnd']
     nawf = attr['nawf']
     E_k = ary['E_k']
 
+    Dnm = scatter_full(
+        np.reshape(ary['Dnm'], (attr['nawf'] * attr['nawf'], 3), order='C'), attr['npool']
+    )
+
     # not really the inverse mass tensor..it's actually tksp
     # but we are calling it d2Ed2k for now to save memory.
-    d2Ed2k, dvec_list = do_d2Hd2k_ij(
-        ary['Hksp'], ary['Rfft'], attr['alat'], attr['npool'], ary['v_k'], bnd, ary['degen']
+    d2Ed2k, degen_idx, degen_d2Hdk, dvec_list = do_d2Hd2k_ij(
+        ary['Hksp'],
+        ary['dHksp'],
+        Dnm,
+        ary['Rfft'],
+        attr['alat'],
+        attr['npool'],
+        ary['v_k'],
+        bnd,
+        ary['degen'],
     )
 
     # d2Ed2k is only the 6 unique components of the curvature
@@ -73,7 +97,7 @@ def do_band_curvature(data_controller):
             # ij component of second derivative of the energy is:
             # tksp_ij + sum_i( (pksp_i*pksp_j.T + pksp_j*pksp_i.T)/(E_i-E_j) )
             E_temp = ((E_k[ik, :, ispin] - E_k[ik, :, ispin][:, None])[:, :]).T
-            E_temp[np.where(np.abs(E_temp) < 1.0e-5)] = np.inf
+            E_temp[np.where(np.abs(E_temp) < 1.0e-3)] = np.inf
 
             for ij in range(ij_ind.shape[0]):
                 ipol = ij_ind[ij, 0]
@@ -92,5 +116,21 @@ def do_band_curvature(data_controller):
                 d2Ed2k[ij, ik, :, ispin] += np.sum(
                     (((pksp_i * pksp_j.T + pksp_j * pksp_i.T) / E_temp).real), axis=1
                 )[:bnd]
+
+                # second order perturbation for degeneracies of E and dEdk
+                if degen_idx[ij][ispin][ik]:
+                    for i in range(len(degen_idx[ij][ispin][ik])):
+                        ll = degen_idx[ij][ispin][ik][i][0]
+                        ul = degen_idx[ij][ispin][ik][i][-1] + 1
+
+                        degen_d2Ed2k = (
+                            degen_d2Hdk[ij][ispin][ik][i]
+                            + pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul, ll:ul])
+                            + (pksp_i[ll:ul, ll:ul] @ (pksp_j[ll:ul, ll:ul] / E_temp[ll:ul, ll:ul]))
+                            .conj()
+                            .T
+                        )
+
+                        d2Ed2k[ij, ik, ll:ul, ispin], _ = eigh(degen_d2Ed2k)
 
     ary['d2Ed2k'] = d2Ed2k

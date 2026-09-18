@@ -32,10 +32,8 @@ def compute_surface_green_function(
     `transfer_matrix_conj` : np.ndarray
         Left-going transfer matrix `T†` of shape (dim, dim).
     `igreen` : {-1, 0, 1}
-        Green’s function type:
-        -1: left surface,
-         0: bulk,
-         1: right surface.
+        Green’s function type: ``-1`` for left surface, ``0`` for bulk,
+        ``1`` for right surface.
     `delta` : float
         Small imaginary shift to stabilize inversion.
 

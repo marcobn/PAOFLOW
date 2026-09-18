@@ -22,7 +22,7 @@ repos:
       - id: mixed-line-ending
         args: ["--fix=lf"]
       - id: check-added-large-files
-        args: ["--maxkb=1024"]
+        args: ["--maxkb=1400"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.7.3

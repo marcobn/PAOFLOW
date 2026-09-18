@@ -714,4 +714,4 @@ def gaussian_fit(xml_file, threshold=0.5):
     if atno == -1:
         raise Exception('ERROR: Could not determine atomic information')
 
-    return atno, basis
+    return atno, basis, labels

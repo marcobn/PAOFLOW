@@ -253,7 +253,7 @@ def build_pswfc_basis_all(data_controller):
     # ----- Pass 2: build the basis dictionaries (cheap, replicated).
     for na, (atom, tau, pswfc, pseudo, r) in enumerate(per_atom):
         if verbose and rank == 0:
-            print('atom: {0:2s}  pseudo: {1:30s}  tau: {2}'.format(atom, pseudo, tau))
+            print(f'atom: {atom:2s}  pseudo: {pseudo:30s}  tau: {tau}')
 
         a_shells = []
         jchia = []
@@ -410,7 +410,7 @@ def build_aewfc_basis(data_controller):
                 r_grid = data[:, 0]
                 wfc = data[:, 1]
                 if verbose and rank == 0:
-                    print('atom: {0:2s}  AEWFC: {1:30s}  tau: {2}'.format(atom, path, tau))
+                    print(f'atom: {atom:2s}  AEWFC: {path:30s}  tau: {tau}')
                 entries.append({'j': j_val, 'r': r_grid, 'wfc': wfc, 'task_idx': len(tasks)})
                 tasks.append((r_grid, wfc, l))
             shell_records.append({'label': shell_lbl, 'l': l, 'entries': entries})
@@ -468,11 +468,7 @@ def build_aewfc_basis(data_controller):
                         }
                     )
                     if verbose and rank == 0:
-                        print(
-                            '      atwfc: {0:3d}  {3}  l={1:d}, m={2:-d}'.format(
-                                len(basis), l, m, shell_lbl
-                            )
-                        )
+                        print(f'      atwfc: {len(basis):3d}  {shell_lbl}  l={l:d}, m={m:-d}')
 
         if atom not in shells:
             shells[atom] = ash
@@ -748,51 +744,88 @@ def read_QE_wfc(data_controller, ik, ispin):
     """
     arry, attr = data_controller.data_dicts()
     if attr['nspin'] == 1 or attr['nspin'] == 4:
-        wfcfile = 'wfc{0}.dat'.format(ik + 1)
+        wfcfile = f'wfc{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 0:
-        wfcfile = 'wfcdw{0}.dat'.format(ik + 1)
+        wfcfile = f'wfcdw{ik + 1}'
     elif attr['nspin'] == 2 and ispin == 1:
-        wfcfile = 'wfcup{0}.dat'.format(ik + 1)
+        wfcfile = f'wfcup{ik + 1}'
     else:
         print('no wfc file found')
 
-    with FortranFile(os.path.join(attr['fpath'], wfcfile), 'r') as f:
-        record = f.read_ints(np.int32)
-        assert len(record) == 11, 'something wrong reading fortran binary file'
+    try:
+        with FortranFile(os.path.join(attr['fpath'], wfcfile + '.dat'), 'r') as f:
+            record = f.read_ints(np.int32)
+            assert len(record) == 11, 'something wrong reading fortran binary file'
 
-        ik_ = record[0]
-        assert ik + 1 == ik_, 'wrong k-point in wfc file???'
+            ik_ = record[0]
+            assert ik + 1 == ik_, 'wrong k-point in wfc file???'
 
-        xk = np.frombuffer(record[1:7], np.float64)
-        ispin = record[7]
-        gamma_only = record[8] != 0
-        scalef = np.frombuffer(record[9:], np.float64)[0]
-        # print('ik =', ik, '  ispin =', ispin, '  gamma_only =', gamma_only, '  scalef =', scalef)
-        # print('xk =', xk)
+            xk = np.frombuffer(record[1:7], np.float64)
+            ispin = record[7]
+            gamma_only = record[8] != 0
+            # scalef = np.frombuffer(record[9:], np.float64)[0]
+            # print('ik =', ik, '  ispin =', ispin, '  gamma_only =', gamma_only, '  scalef =', scalef)
+            # print('xk =', xk)
 
-        ngw, igwx, npol, nbnd = f.read_ints(np.int32)
-        # print('ngw =', ngw, '  igwx = ', igwx, '  npol = ', npol, '  nbnd = ', nbnd)
-        bg = f.read_reals(np.float64).reshape(3, 3, order='F')
-        # print('bg = ', bg)
-        mill = f.read_ints(np.int32).reshape(3, igwx, order='F')
-        # print('mill.shape = ', mill.shape)
+            ngw, igwx, npol, nbnd = f.read_ints(np.int32)
+            # print('ngw =', ngw, '  igwx = ', igwx, '  npol = ', npol, '  nbnd = ', nbnd)
+            bg = f.read_reals(np.float64).reshape(3, 3, order='F')
+            # print('bg = ', bg)
+            mill = f.read_ints(np.int32).reshape(3, igwx, order='F')
+            # print('mill.shape = ', mill.shape)
 
-        wfc = []
-        for i in range(nbnd):
-            wfc.append(f.read_reals(np.complex128))
+            wfc = []
+            for i in range(nbnd):
+                wfc.append(f.read_reals(np.complex128))
 
-    # compute overlap
-    ovp = np.zeros((nbnd, nbnd), dtype=complex)
-    for n in range(nbnd):
-        for m in range(nbnd):
-            ovp[n, m] = np.sum(np.conj(wfc[n]).dot(wfc[m]))
+    except:
+        try:
+            import h5py
+
+            with h5py.File(os.path.join(attr['fpath'], wfcfile + '.hdf5'), 'r') as h5:
+                ik_ = int(h5.attrs['ik'])
+                assert ik + 1 == ik_, 'wrong k-point in wfc file???'
+
+                xk = np.array(h5.attrs['xk'])
+                ispin = int(h5.attrs['ispin'])
+                gamma_only = 'TRUE' in h5.attrs['gamma_only'].decode()
+                # scalef = float(h5.attrs['scale_factor'])
+                igwx = int(h5.attrs['igwx'])
+                npol = int(h5.attrs['npol'])
+                nbnd = int(h5.attrs['nbnd'])
+
+                miller_dataset = h5['MillerIndices']
+                bg = np.transpose(
+                    np.array(
+                        [
+                            miller_dataset.attrs['bg1'],
+                            miller_dataset.attrs['bg2'],
+                            miller_dataset.attrs['bg3'],
+                        ],
+                        dtype=np.float64,
+                    )
+                )
+                mill = np.transpose(np.array(miller_dataset, dtype=np.int64))
+
+                evc = np.array(h5['evc'], dtype=np.float64)
+                wfc = evc[:, 0::2] + 1j * evc[:, 1::2]
+        except:
+            raise Exception('no wfc file found')
+
+    # Symmetric (Loewdin) orthonormalisation of the DFT bands.  The overlap is a
+    # single Hermitian GEMM rather than an nbnd**2 Python loop, and the inverse
+    # square root reuses the eigendecomposition instead of calling sqrtm (~13x
+    # faster overall at nbnd=400). See ortho_atwfc_k for the same identity:
+    # solve(sqrtm(ovp).T, wfc) == (ovp^-1/2).conj() @ wfc for Hermitian ovp.
+    wfc = np.asarray(wfc)
+    ovp = wfc.conj() @ wfc.T
     eigs, eigv = np.linalg.eigh(ovp)
-    assert np.all(eigs >= 0)
+    assert np.all(eigs >= -1e-12)
+    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
+    owfc = ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
 
-    X = scipy.linalg.sqrtm(ovp)
-    owfc = np.linalg.solve(X.T, wfc)
-
-    wfc = np.array(wfc) * scalef
+    # ``scalef`` is deliberately not applied: Loewdin orthonormalisation makes
+    # ``owfc`` independent of any global scale on the input.
     gkspace = {'xk': xk, 'igwx': igwx, 'mill': mill, 'bg': bg, 'gamma_only': gamma_only}
     return gkspace, {'wfc': owfc, 'npol': npol, 'nbnd': nbnd, 'ispin': ispin}
 
@@ -1212,6 +1245,55 @@ def calc_proj_k(data_controller, basis, ik, ispin):
     return proj_k.T
 
 
+def calc_proj_and_ovlp_k(data_controller, basis, ik, ispin):
+    """Compute projections and the raw (pre-orthogonalisation) overlap at a k-point.
+
+    Identical to :func:`calc_proj_k` but additionally returns the
+    non-orthogonal atomic-orbital overlap matrix
+
+    .. math::
+
+        S_{\\mu\\nu}(\\mathbf{k}) =
+            \\langle \\phi_\\mu(\\mathbf{k}) | \\phi_\\nu(\\mathbf{k}) \\rangle
+
+    computed from the raw (un-orthogonalised) atomic wavefunctions in
+    G-space.  This is the same overlap that ``projwfc.x`` writes to
+    ``atomic_proj.xml`` when ``lwrite_overlaps = .true.``
+
+    Parameters
+    ----------
+    data_controller : DataController
+        See :func:`calc_proj_k`.
+    basis : list of dict
+        Atomic basis functions.
+    ik : int
+        Zero-based k-point index.
+    ispin : int
+        Spin index.
+
+    Returns
+    -------
+    proj_k : np.ndarray, shape ``(nbnd, natwfc)``, complex
+        Projections :math:`\\langle \\psi_{n\\mathbf{k}} | \\phi_i \\rangle`.
+    Sk : np.ndarray, shape ``(natwfc, natwfc)``, complex
+        Raw (non-orthogonal) atomic-orbital overlap matrix.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr['dft'] == 'QE':
+        gkspace, wfc = read_QE_wfc(data_controller, ik, ispin)
+    else:
+        read_WAVECAR_header(data_controller)
+        gkspace, wfc = read_VASP_wfc(data_controller, ik, ispin)
+    atwfc_k = calc_atwfc_k(basis, gkspace, attr['dftSO'])
+    # Raw (pre-Löwdin) overlap: S_μν = <φ_μ|φ_ν>
+    # ``atwfc_k`` shape is (natwfc, igwx); the inner product over G-vectors
+    # gives the natwfc×natwfc Gram matrix.
+    Sk = atwfc_k @ atwfc_k.conj().T
+    oatwfc_k = ortho_atwfc_k(atwfc_k)
+    proj_k = np.dot(np.conj(oatwfc_k), wfc['wfc'].T)
+    return proj_k.T, Sk
+
+
 def calc_gkspace(data_controller, ik, gamma_only=False):
     """Compute the G-vector set and k+G space parameters for a given k-point.
 
@@ -1421,16 +1503,13 @@ def read_VASP_wfc(data_controller, ik, ispin):
     wfc = []
     for ibnd in range(nbnd):
         wfc.append(readBandCoeff(data_controller, ispin, ik, ibnd))
-    # compute overlap
-    ovp = np.zeros((nbnd, nbnd), dtype=complex)
-    for n in range(nbnd):
-        for m in range(nbnd):
-            ovp[n, m] = np.sum(np.conj(wfc[n]).dot(wfc[m]))
+    # Loewdin orthonormalisation; see read_QE_wfc for the identity used here.
+    wfc = np.asarray(wfc)
+    ovp = wfc.conj() @ wfc.T
     eigs, eigv = np.linalg.eigh(ovp)
-    assert np.all(eigs >= 0)
-
-    X = scipy.linalg.sqrtm(ovp)
-    owfc = np.linalg.solve(X.T, wfc)
+    assert np.all(eigs >= -1e-12)
+    inv_sqrt = 1.0 / np.sqrt(np.clip(eigs, 1e-30, None))
+    owfc = ((eigv.conj() * inv_sqrt) @ eigv.T) @ wfc
 
     gkspace = {
         'xk': xk,
@@ -1537,7 +1616,7 @@ def tesseral_to_ylm_matrix(l):
       (PAOFLOW's ``ylmgc`` convention).
 
     Derived numerically from :func:`calc_ylmg_complex_0` so it inherits
-    the non-standard odd-|m| signs.  ``l`` must be ``<= 3``.
+    the non-standard odd-:math:`|m|` signs.  ``l`` must be ``<= 3``.
     """
     if l > 3:
         raise NotImplementedError('l > 3 not supported')

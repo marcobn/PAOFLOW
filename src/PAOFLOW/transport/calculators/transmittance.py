@@ -3,7 +3,7 @@ import numpy as np
 from numpy.linalg import eigh
 from scipy.linalg import solve
 
-from PAOFLOW.transport.io.input_parameters import ConductFormula
+from PAOFLOW.transport.data import ConductFormula
 from PAOFLOW.transport.utils.timing import timed_function
 
 

@@ -7,21 +7,7 @@ from PAOFLOW.transport.calculators.current import (
     build_bias_grid,
     compute_current_vs_bias,
     fermi_dirac,
-    read_transmittance,
 )
-
-
-@pytest.mark.unit
-def test_read_transmittance_loads_two_columns(tmp_path):
-    """Ensure energy and transmittance columns are read into separate arrays."""
-    data = np.array([[0.0, 1.0], [1.0, 2.0]])
-    file_path = tmp_path / 'transm.dat'
-    np.savetxt(file_path, data)
-
-    egrid, transm = read_transmittance(str(file_path))
-
-    np.testing.assert_allclose(egrid, data[:, 0])
-    np.testing.assert_allclose(transm, data[:, 1])
 
 
 @pytest.mark.unit

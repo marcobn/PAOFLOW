@@ -18,9 +18,10 @@ def do_fermisurf(data_controller):
 
         - ``FermiSurf_{ispin}.bxsf``: BXSF file containing all bands that
           intersect the Fermi window ``[fermi_dw, fermi_up]``.
-        - ``Fermi_surf_band_{ib}_{ispin}.npz``: compressed NumPy archive with
+        - ``Fermi_surf_band_{i}_{ispin}.npz``: compressed NumPy archive with
           the band eigenvalues on the full 3-D k-grid (key ``nameband``,
-          shape ``(nk1, nk2, nk3)``).
+          shape ``(nk1, nk2, nk3)``), where ``i`` matches the compact
+          per-band BXSF suffix ``Fermi_surf_band_{i+1}.bxsf``.
 
     Notes
     -----
@@ -38,9 +39,10 @@ def do_fermisurf(data_controller):
     Only MPI rank 0 performs the band selection, the file I/O, and the NPZ
     saves; all ranks synchronise at the end via ``MPI.Barrier``.
     """
+    from os.path import join
+
     import numpy as np
     from mpi4py import MPI
-    from os.path import join
 
     from ..utils.communication import gather_full
 
@@ -84,9 +86,7 @@ def do_fermisurf(data_controller):
             )
 
             for i, ib in enumerate(eigband):
-                np.savez(
-                    join(attr['opath'], 'Fermi_surf_band_%d_%d' % (ind_plot[i], ispin)), nameband=ib
-                )
+                np.savez(join(attr['opath'], 'Fermi_surf_band_%d_%d' % (i + 1, ispin)), nameband=ib)
 
     comm.Barrier()
     E_kf = E_ks = None

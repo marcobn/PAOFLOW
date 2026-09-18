@@ -19,6 +19,8 @@ The Fortran builds the rotation matrix from slicing → BZ frame using
 
 via the explicit form
 
+.. code-block:: none
+
          | p²u + c    −p q u    q s |
     R =  | −p q u     q²u + c   p s |
          | −q s       −p s      c   |
@@ -59,6 +61,10 @@ import numpy as np
 
 from PAOFLOW.pyskeaf.geometry import k_axis_lengths
 from PAOFLOW.pyskeaf.io_bxsf import BXSFData
+
+# Sample points evaluated per interpolation block; caps the (M, 4) index and
+# weight scratch at a few MB regardless of ``numint``.
+_SLICE_BLOCK_POINTS = 1 << 16
 
 
 @dataclass
@@ -125,7 +131,9 @@ def make_slice_geometry(bxsf: BXSFData, numint: int, theta: float, phi: float) -
 
     R = rotation_matrix(theta, phi)
     h_vec = R[:, 2].copy()  # (qs, ps, c)
-    plr_inv = np.linalg.inv(bxsf.recip_ang)  # (BZ Cartesian) → fractional
+    # Reciprocal vectors are stored as rows: p_cart = recip_ang.T @ f_frac.
+    # Therefore Cartesian -> fractional is inv(recip_ang.T) @ p_cart.
+    plr_inv = np.linalg.inv(bxsf.recip_ang.T)
 
     return SliceGeometry(
         theta=float(theta),
@@ -184,10 +192,10 @@ def _bxsf_indices_from_slice(
 
     # Periodic wrap into [0, n-1).  Equivalent to Fortran's
     #   subtractor = floor(f / (n-1)) * (n-1);  d = f - subtractor + 1   (1-based)
-    # in 0-based form:
-    ux = fx - np.floor(fx / (nx - 1)) * (nx - 1)
-    uy = fy - np.floor(fy / (ny - 1)) * (ny - 1)
-    uz = fz - np.floor(fz / (nz - 1)) * (nz - 1)
+    # in 0-based form.
+    ux = np.mod(fx, nx - 1)
+    uy = np.mod(fy, ny - 1)
+    uz = np.mod(fz, nz - 1)
     return ux, uy, uz
 
 
@@ -199,18 +207,24 @@ def build_slice(
     """Build the 2D energy slice at index ``slice_index`` (1-based, in [1, numx]).
 
     Each of the ``numx · numy`` sample points is independently rotated into the
-    BZ frame and Lagrange-interpolated.  Memory usage: O(numx²) scratch for
-    fractional indices.
+    BZ frame and Lagrange-interpolated.  Points are processed in row blocks of
+    at most ``_SLICE_BLOCK_POINTS`` so scratch memory stays bounded instead of
+    scaling as O(numx²); results are identical to the unblocked evaluation
+    because every point is independent.
     """
     if not (1 <= slice_index <= geom.numx):
         raise ValueError(f'slice_index {slice_index} outside [1, {geom.numx}]')
 
     nx, ny, nz = bxsf.energies.shape
-    ti = np.arange(1, geom.numx + 1, dtype=float)
-    tj = np.arange(1, geom.numx + 1, dtype=float)
-    ux, uy, uz = _bxsf_indices_from_slice(geom, ti, tj, slice_index, nx, ny, nz)
-
-    energies = _interpolate_per_point(bxsf.energies, ux, uy, uz)
+    numx = geom.numx
+    tj = np.arange(1, numx + 1, dtype=float)
+    energies = np.empty((numx, numx), dtype=np.float64)
+    rows_per_block = max(1, _SLICE_BLOCK_POINTS // numx)
+    for start in range(0, numx, rows_per_block):
+        stop = min(start + rows_per_block, numx)
+        ti = np.arange(start + 1, stop + 1, dtype=float)
+        ux, uy, uz = _bxsf_indices_from_slice(geom, ti, tj, slice_index, nx, ny, nz)
+        energies[start:stop] = _interpolate_per_point(bxsf.energies, ux, uy, uz)
 
     z_prime = ((slice_index - 1) / (geom.numint - 1) - 1.0) * geom.maxlreciplat
     return Slice2D(
@@ -233,8 +247,8 @@ def _interpolate_per_point(
     shape.  Each point uses its own 4×4×4 stencil with the same periodic-wrap
     convention as :mod:`PAOFLOW.pyskeaf.interp`.
     """
-    from PAOFLOW.pyskeaf.interp import _lagrange4_axis_weights
     from PAOFLOW.pyskeaf._numba_kernels import lagrange4_eval
+    from PAOFLOW.pyskeaf.interp import _lagrange4_axis_weights
 
     nx, ny, nz = energies.shape
     shape = ux.shape

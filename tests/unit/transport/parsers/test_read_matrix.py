@@ -44,10 +44,10 @@ def test_read_matrix_populates_h_and_s():
     block.table_par = np.ones((1, 1), dtype=complex)
 
     read_matrix(
-        yaml_data=DummyConductorData(),
+        conductor_data=DummyConductorData(),
         data_controller=controller,
         ispin=0,
-        transport_direction=3,
+        transport_direction='z',
         opr=block,
     )
 
@@ -70,9 +70,9 @@ def test_read_matrix_requires_spin_for_polarized():
 
     with pytest.raises(ValueError):
         read_matrix(
-            yaml_data=DummyConductorData(),
+            conductor_data=DummyConductorData(),
             data_controller=controller,
             ispin=-1,
-            transport_direction=3,
+            transport_direction='z',
             opr=block,
         )

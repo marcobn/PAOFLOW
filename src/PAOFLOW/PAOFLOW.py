@@ -33,6 +33,8 @@ class PAOFLOW:
         Path to the working directory.
     outputdir : str, default ``'output'``
         Name of the output sub-directory created under ``workpath``.
+        When this directory already contains BXSF files and no readable DFT
+        data are available, PAOFLOW initializes for a PySKEAF-only calculation.
     inputfile : str, optional
         Path to an XML input file that configures the run.
     savedir : str, optional
@@ -56,6 +58,8 @@ class PAOFLOW:
         Resume from a previously saved ``.json`` dump (see :meth:`restart_dump`).
     dft : str, default ``'QE'``
         DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
+    header_style : str, default ``'color'``
+        header style ``'color'`` (large banner) or ``'minimal'`` (small title)
 
     Key attributes
     --------------
@@ -63,11 +67,12 @@ class PAOFLOW:
         Central data store; all arrays (``HRs``, ``Hks``, ``E_k``, …) and
         scalar attributes live in its ``data_arrays`` and ``data_attributes``
         dictionaries.
+
     comm, rank, size : MPI communicator and process identifiers.
 
     Methods — PAO Hamiltonian
     -------------------------
-    projections(\**kw)
+    projections(\\**kw)
         Compute PAO projections from pseudopotential or all-electron basis sets,
         replacing ``projwfc.x``.
     read_atomic_proj_QE()
@@ -115,6 +120,8 @@ class PAOFLOW:
         Real-space electron density on a uniform grid.
     fermi_surface(fermi_up, fermi_dw)
         Extract the Fermi surface within an energy window.
+    pyskeaf(fermi_energy, num_interpolation, b_field, azimuthal, polar, ...)
+        Calculate quantum-oscillation frequencies from SKEAF-compatible BXSF bands.
     spin_texture(fermi_up, fermi_dw)
         Map the spin expectation value ⟨S⟩ across the Fermi surface.
     wave_function_projection(dimension)
@@ -224,6 +231,7 @@ class PAOFLOW:
         verbose=False,
         restart=False,
         dft='QE',
+        header_style='color',
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -262,7 +270,7 @@ class PAOFLOW:
         # Initialize Time
         # --------------
         if self.rank == 0:
-            header()
+            header(style=header_style)
             self.start_time = self.reset_time = time()
 
         # Initialize Data Controller
@@ -276,8 +284,6 @@ class PAOFLOW:
             smearing,
             save_overlaps,
             acbn0,
-            False,
-            1.0e-6,
             verbose,
             restart,
             dft,
@@ -296,7 +302,9 @@ class PAOFLOW:
             if restart:
                 print('Run starting from Restart data.')
             else:
-                if self.size == 1:
+                if attr.get('bxsf_only', False):
+                    print('PySKEAF-only execution using BXSF files in %s' % attr['opath'])
+                elif self.size == 1:
                     print('Serial execution')
                 else:
                     print(
@@ -306,7 +314,7 @@ class PAOFLOW:
                     )
 
         # Do memory checks
-        if model is None and not restart and self.rank == 0:
+        if model is None and not restart and self.rank == 0 and not attr.get('bxsf_only', False):
             gbyte = self.memory_check()
             print('Estimated maximum array size: %.2f GBytes\n' % (gbyte))
 
@@ -431,17 +439,21 @@ class PAOFLOW:
         verbose = self.data_controller.data_attributes['verbose']
 
         if verbose:
-            # Add up memory usage from each core
+            # Add up memory usage from each core.  ru_maxrss is in kilobytes on
+            # Linux but in bytes on macOS/BSD.
+            import sys
+
+            to_gb = 1024.0**3 if sys.platform == 'darwin' else 1024.0**2
             mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             mem = np.array([mem], dtype=float)
             mem0 = np.zeros(1, dtype=float) if self.rank == 0 else None
             self.comm.Reduce(mem, mem0, op=MPI.SUM, root=0)
 
             if self.rank == 0:
-                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / 1024.0**2))
-                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / 1024.0**2))
+                print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
+                print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
-    def projections(self, internal=False, basispath=None, configuration=None):
+    def projections(self, configuration=None, basispath=None, internal=None):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
         on the all-electron internal basis sets.
@@ -449,38 +461,30 @@ class PAOFLOW:
 
         Parameters
         ----------
-        internal : bool, optional
-            If ``True``, use the all-electron internal basis (loaded from
-            ``basispath``) instead of the pseudopotential basis.  Always
-            forced ``True`` for VASP calculations.
         basispath : str, optional
             Directory containing the per-element ``BASIS/<elem>/*.dat``
-            files.  Required when ``internal`` is ``True`` or when
-            ``configuration`` is a preset string.
+            files.  Required when configuration is 'standard', 'extended' or when
+            configuration is a preset string.
         configuration : dict, str, or None, optional
             How to build the projection basis:
 
-            * ``"minimal"`` — use the pseudo-atomic wavefunctions
+            * ``'minimal'`` — use the pseudo-atomic wavefunctions
               shipped in each species' UPF file (smooth, matches the
-              default QE projwfc behaviour).  ``internal`` is ignored.
+              default QE projwfc behaviour). This is internal = False
               Spans the valence bands well; conduction states need
-              ``"standard"``, ``"extended"`` or an explicit
+              "standard", "extended" or an explicit
               configuration dict.
-            * ``"standard"`` — AE basis built from ``basispath``: the
+            * ``'standard'`` — AE basis built from ``basispath``: the
               minimal valence set augmented with (a) the next missing
               angular-momentum channel at ``nmax`` (e.g. ``3D`` for
               Si) and (b) ``(n+1)L`` for each occupied shell — see
               :func:`PAOFLOW.inputs.basis_presets.standard_augmentation`.
               Provides a moderate set of conduction states without the
-              full ``"extended"`` polarization.  ``internal`` is
-              ignored.
-            * ``"extended"`` — AE basis built from ``basispath``: the
+              full "extended" polarization.
+            * ``'extended'`` — AE basis built from ``basispath``: the
               UPF valence shells plus a generous rule-based set of
               polarization shells (see
               :func:`PAOFLOW.inputs.basis_presets.extended_augmentation`).
-              ``internal`` is ignored.  Equivalent to the
-              ``internal=True`` legacy path with an auto-generated
-              configuration dict.
             * ``dict`` — explicit per-element mapping
               ``{element: spec}``.  Each ``spec`` may be a list of shell
               labels (``['3S', '3P', '4S']`` — used verbatim) or a preset
@@ -488,10 +492,11 @@ class PAOFLOW:
               that element.  This lets you ask for a curated preset on
               some species while hand-picking orbitals on others, e.g.
               ``{'Ga': 'standard', 'As': ['4S', '4P', '3D']}``.  Consumed
-              by the AE-only builder (pass ``internal=True``).
+              by the AE-only builder.
               Backwards-compatible with previous releases.
             * ``None`` — keep whatever is already stored in
               ``arry['configuration']`` (legacy behaviour).
+        internal: for backward compatibility only, not used
         """
 
         from .inputs.basis_presets import (
@@ -501,9 +506,10 @@ class PAOFLOW:
         from .projection.do_atwfc_proj import (
             build_aewfc_basis,
             build_pswfc_basis_all,
+            calc_proj_and_ovlp_k,
             calc_proj_k,
         )
-        from .utils.communication import gather_array, load_balancing
+        from .utils.communication import gather_full, scatter_full
 
         arry, attr = self.data_controller.data_dicts()
 
@@ -513,6 +519,10 @@ class PAOFLOW:
         preset = None
         if configuration is not None:
             if isinstance(configuration, str):
+                if attr['dft'] == 'VASP':
+                    raise TypeError(
+                        'configuration must be a user-defined dict when input is from VASP'
+                    )
                 preset = configuration.lower()
                 arry['configuration'] = resolve_configuration(self.data_controller, configuration)
                 if attr.get('verbose') and self.rank == 0:
@@ -527,6 +537,7 @@ class PAOFLOW:
                 arry['configuration'] = resolve_configuration_dict(
                     self.data_controller, configuration
                 )
+                preset = 'dict'
                 if attr.get('verbose') and self.rank == 0:
                     print('Resolved configuration dict:')
                     for elem, shells in arry['configuration'].items():
@@ -544,17 +555,10 @@ class PAOFLOW:
         #                 polarization shells; ~2× minimal).
         #   'extended' -> AE basis from BASIS/ (valence + generous
         #                 rule-based polarization shells).
-        # Presets override the ``internal`` flag because they imply a
-        # specific scheme.
-        if preset == 'minimal':
+        if preset == None or preset == 'minimal':
             basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
-        elif preset in ('standard', 'extended'):
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
-        elif internal or attr['dft'] == 'VASP':
-            # Legacy AE-only path (explicit dict configuration).
-            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
         else:
-            basis, arry['shells'] = build_pswfc_basis_all(self.data_controller)
+            basis, arry['shells'] = build_aewfc_basis(self.data_controller)
 
         # Expose the per-orbital atomic-basis records (r, wfc, l, m, atom,
         # tau, label) so that downstream modules can reconstruct the
@@ -576,22 +580,59 @@ class PAOFLOW:
                 for m in range(attr['nawf']):
                     arry['Dnm'][n, m, i] = basis[n]['tau'][i] - basis[m]['tau'][i]
 
-        ini_ik, end_ik = load_balancing(self.size, self.rank, nkpnts)
-        Unewaux = np.zeros((end_ik - ini_ik, nbnds, natwfc, nspin), dtype=complex)
-        for ispin in range(nspin):
-            for ik in range(ini_ik, end_ik):
-                Unewaux[ik - ini_ik, :, :, ispin] = calc_proj_k(
-                    self.data_controller, basis, ik, ispin
-                )
+        # When the ACBN0 flag is active we need to collect the true non-orthogonal
+        # atomic-orbital overlap S(k) in addition to the projections so that:
+        #   1. do_non_ortho can produce the correct H = S^{1/2} H_orth S^{1/2}, and
+        #   2. kovp.npy contains the genuine S(k) for the ACBN0 density-matrix and
+        #      generalised eigenproblem in ACBN0.Dk / ACBN0._eigh_all_k.
+        # For non-ACBN0 runs the overhead of computing the overlap is unnecessary, so
+        # we keep the old single-return code path.
+        acbn0_active = bool(arry.get('acbn0', False) or attr.get('acbn0', False))
 
-        Unew = np.zeros((nkpnts, nbnds, natwfc, nspin), dtype=complex) if self.rank == 0 else None
-        gather_array(Unew, Unewaux)
-        if self.rank == 0:
-            Unew = np.moveaxis(Unew, 0, 2)
-        Unew = self.comm.bcast(Unew, root=0)
+        # Scatter the k-points with scatter_full, not load_balancing: the two
+        # agree only for npool == 1, and this partition has to match the one
+        # build_Hks and DataController.full_projections use.
+        k_local = scatter_full(np.arange(nkpnts, dtype=int), attr['npool'])
+        nk_local = k_local.size
+        Unewaux = np.zeros((nk_local, nbnds, natwfc, nspin), dtype=complex)
 
-        arry['U'] = Unew
+        if acbn0_active:
+            # Accumulate the per-k overlap; for nspin>1 both spin channels share
+            # the same atomic-orbital geometry so a single overlap per k suffices.
+            Skaux = np.zeros((nk_local, natwfc, natwfc), dtype=complex)
+            for ispin in range(nspin):
+                for ikl in range(nk_local):
+                    ik = int(k_local[ikl])
+                    proj_k, Sk = calc_proj_and_ovlp_k(self.data_controller, basis, ik, ispin)
+                    Unewaux[ikl, :, :, ispin] = proj_k
+                    if ispin == 0:  # overlap is spin-independent
+                        Skaux[ikl] = Sk
+        else:
+            for ispin in range(nspin):
+                for ikl in range(nk_local):
+                    Unewaux[ikl, :, :, ispin] = calc_proj_k(
+                        self.data_controller, basis, int(k_local[ikl]), ispin
+                    )
+
+        # Keep U scattered over k-points: replicating it on every rank is the
+        # dominant memory cost for large systems.  Use
+        # DataController.full_projections() to assemble it on demand.
+        arry['U_local'] = Unewaux
         arry['basis'] = basis
+
+        if acbn0_active:
+            # Gather the distributed per-k overlaps on rank 0 and store as
+            # arry['Sks'] with shape (natwfc, natwfc, nkpnts) so that
+            # do_build_pao_hamiltonian's do_non_ortho call (and write_Hk_acbn0)
+            # pick it up transparently.  The ACBN0 loader in ACBN0.read_ham_data
+            # expects kovp.npy ravelled in C order from (natwfc, natwfc, nkpnts).
+            Snew = gather_full(Skaux, attr['npool'])
+            del Skaux
+            if self.rank == 0:
+                # Reorder to (natwfc, natwfc, nkpnts) expected by do_non_ortho
+                arry['Sks'] = np.ascontiguousarray(np.moveaxis(Snew, 0, 2))
+            del Snew
+            self.data_controller.broadcast_single_array('Sks')
 
         self.report_module_time('Projections')
 
@@ -621,6 +662,7 @@ class PAOFLOW:
         else:
             raise Exception('atomic_proj.xml was not found.\n')
 
+        # arry['lchia'] = {}  # no longer needed remove soon arry['shells'] is enough
         arry['jchia'] = {}
         arry['shells'] = {}
         for at, pseudo in arry['species']:
@@ -629,6 +671,7 @@ class PAOFLOW:
                 upf = UPF(fname)
                 arry['shells'][at] = upf.shells
                 arry['jchia'][at] = upf.jchia
+                # arry['lchia'][at] = upf.lchia  # no longer needed remove soon
             else:
                 raise Exception('Pseudopotential not found: %s' % fname)
 
@@ -731,7 +774,8 @@ class PAOFLOW:
 
         try:
             do_build_pao_hamiltonian(self.data_controller)
-            self.data_controller.broadcast_single_array('Hks')
+            # Hks stays on rank 0: every consumer either guards on rank 0 or goes
+            # through DataController.full_hamiltonian_k().
 
         except Exception as e:
             self.report_exception('pao_hamiltonian')
@@ -740,7 +784,9 @@ class PAOFLOW:
         self.report_module_time('Building Hks')
 
         # Done with U and Sks
-        del arrays['U']
+        for key in ('U', 'U_local'):
+            if key in arrays:
+                del arrays[key]
 
         try:
             do_Hks_to_HRs(self.data_controller)
@@ -824,12 +870,109 @@ class PAOFLOW:
                 raise e
         self.report_module_time('write_Hamiltonian')
 
+    def save_sparse_hamiltonian(
+        self,
+        fname='sparse_hamiltonian.npz',
+        bond_order=3,
+        r_cut=None,
+        magnitude_tol=1.0e-8,
+    ):
+        """
+        Truncate the real-space Hamiltonian 'HRs' to a neighbour-shell cutoff and save it.
+
+        The archive holds the surviving matrix elements as a labelled bond list
+        (atoms, species and orbital names per element) together with the geometry
+        and run metadata needed by 'load_sparse_hamiltonian'.
+
+        Arguments:
+            fname (str): File name for the sparse Hamiltonian archive (written to outputdir)
+            bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
+            r_cut (float): Explicit bond-length cutoff in Bohr, overriding bond_order
+            magnitude_tol (float): Discard matrix elements smaller than this in every spin channel
+
+        Returns:
+            None
+
+        """
+        from .hamiltonian.sparse_hamiltonian import (
+            sparsify_real_space_hamiltonian,
+            write_sparse_hamiltonian,
+        )
+
+        try:
+            if self.rank == 0:
+                attr = self.data_controller.data_attributes
+                bundle = sparsify_real_space_hamiltonian(
+                    self.data_controller,
+                    bond_order=bond_order,
+                    r_cut=r_cut,
+                    magnitude_tol=magnitude_tol,
+                    verbose=attr['verbose'],
+                )
+                write_sparse_hamiltonian(self.data_controller, bundle, fname)
+        except Exception as e:
+            self.report_exception('save_sparse_hamiltonian')
+            if self.data_controller.data_attributes['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+        self.report_module_time('save_sparse_hamiltonian')
+
+    def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+        """
+        Restore a run from an archive written by 'save_sparse_hamiltonian'.
+
+        Rebuilds the dense 'HRs' from the stored bonds and repopulates the geometry,
+        orbital map and FFT grids, so that subsequent steps (bands, dos, transport)
+        proceed exactly as after 'pao_hamiltonian'.
+
+        Works on an instance created with restart=True, which needs neither a '.save'
+        directory nor a model.
+
+        Arguments:
+            fname (str): File name of the sparse Hamiltonian archive
+
+        Returns:
+            None
+
+        """
+        from .hamiltonian.sparse_hamiltonian import (
+            read_sparse_hamiltonian,
+            restore_data_controller,
+        )
+
+        try:
+            from os.path import exists, isabs, join
+
+            #  A restart instance leaves both data dictionaries set to None.
+            if self.data_controller.data_attributes is None:
+                self.data_controller.data_arrays = {}
+                self.data_controller.data_attributes = {'abort_on_exception': True}
+                self.data_controller.add_default_arrays()
+
+            attr = self.data_controller.data_attributes
+            attr.setdefault('scipyfft', True)
+            attr.setdefault('abort_on_exception', True)
+
+            path = fname
+            if not isabs(fname) and not exists(fname) and 'opath' in attr:
+                path = join(attr['opath'], fname)
+            bundle = read_sparse_hamiltonian(path)
+            restore_data_controller(self.data_controller, bundle)
+        except Exception as e:
+            self.report_exception('load_sparse_hamiltonian')
+            if (self.data_controller.data_attributes or {}).get('abort_on_exception', True):
+                raise e
+
+        self.comm.Barrier()
+        self.report_module_time('load_sparse_hamiltonian')
+
     def bands(
         self,
         ibrav=None,
         band_path=None,
         high_sym_points=None,
-        spin_orbit=False,
+        adhoc_SO=False,
         fname='bands',
         nk=500,
     ):
@@ -840,7 +983,7 @@ class PAOFLOW:
             ibrav (int): Crystal structure (following the specifications of QE)
             band_path (str): A string representing the band path to follow
             high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
-            spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
             fname (str): File name for the band output
             nk (int): Number of k-points to include in the path (High Symmetry points are currently included twice, increasing nk)
 
@@ -865,8 +1008,8 @@ class PAOFLOW:
             attr['nk'] = nk
         if band_path is not None:
             attr['band_path'] = band_path
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if 'adhoc_SO' not in attr:
+            attr['adhoc_SO'] = adhoc_SO
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
 
@@ -911,6 +1054,7 @@ class PAOFLOW:
             lambda_p (list of floats) :  p orbitals SOC strengh for each atom
             lambda_d (list of float)  :  d orbitals SOC strengh for each atom
             soc_shell_weights (dict, optional):
+
                 Per-shell SOC weights for the ``'generic'`` builder
                 (extended bases).  Keyed by species symbol, value is a
                 list of bool or float of the same length as
@@ -923,12 +1067,11 @@ class PAOFLOW:
             None
 
         """
-        import scipy.linalg as la
 
         from .hamiltonian.do_spin_orbit import do_spin_orbit_H
 
         arry, attr = self.data_controller.data_dicts()
-        attr['do_spin_orbit'] = attr['adhoc_SO'] = True
+        attr['adhoc_SO'] = True
 
         if 'phi' not in attr:
             attr['phi'] = phi
@@ -956,6 +1099,7 @@ class PAOFLOW:
 
         # Check if the pseudo potential or internal basis configuraton is implemented
         if len(arry['orb_pseudo']) == attr['natoms']:
+            nawf = attr['nawf']
             # add SOC
             do_spin_orbit_H(self.data_controller)
             # Rezising
@@ -967,11 +1111,12 @@ class PAOFLOW:
             if 'Dnm' in arry:
                 Dnm_double = np.empty((attr['nawf'], attr['nawf'], 3))
             for i in range(3):
-                Dnm = arry['Dnm'][:, :, i]
-                Dnm_double[:, :, i] = la.block_diag(*[Dnm, Dnm])
+                Dnm_double[0:nawf, 0:nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[nawf : 2 * nawf, nawf : 2 * nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[0:nawf, nawf : 2 * nawf, i] = arry['Dnm'][:, :, i]
+                Dnm_double[nawf : 2 * nawf, 0:nawf, i] = arry['Dnm'][:, :, i]
             arry['Dnm'] = Dnm_double
             Dnm_double = None
-            Dnm = None
 
             # for write Hamiltonian
             if 'Hks' in arry:
@@ -986,6 +1131,130 @@ class PAOFLOW:
             )
 
         self.report_module_time('adhoc_spin_orbit')
+
+    def j_to_lm_hamiltonian(self, shells=None, check_unitary=True):
+        """
+        Rotate the fully-relativistic Hamiltonian from the J basis to the lm basis.
+
+        Fully-relativistic QE calculations (dftSO=True) build the Hamiltonian in
+        the coupled total-angular-momentum basis |j, m_j>. This rotates the
+        real-space Hamiltonian 'HRs' into the QE real-spherical-harmonic (lm)
+        basis, in the same [spin-up block][spin-down block] ordering produced by
+        'adhoc_spin_orbit', so the orbital character (s/p/d, m) becomes well
+        defined and the orbital-resolved band routines can be used.
+
+        'HRs' and 'Hks' are transformed in place and the per-orbital 'basis' is
+        rebuilt for the lm basis. Call after 'pao_hamiltonian' and before
+        'bands'. Only s, p, d shells are implemented.
+
+        Arguments:
+            shells (list of int): Flat shell list (0=s, 1=p, 2=d) in the
+                Hamiltonian's atom/shell order. None (default) builds it from
+                'atoms' and 'shells'. Pass explicitly if the dimension check
+                fails (e.g. a different atom/shell order or extra channels).
+            check_unitary (bool): Verify the transformation matrix is unitary.
+
+        Returns:
+            None
+        """
+        from .hamiltonian.do_j_to_lm import j_to_lm_hamiltonian as _j_to_lm
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print(
+                    'j_to_lm_hamiltonian requires the real-space Hamiltonian '
+                    "'HRs'; run 'pao_hamiltonian' first."
+                )
+            return
+
+        if self.rank == 0 and not attr.get('dftSO', False):
+            print(
+                'WARNING: j_to_lm_hamiltonian is intended for fully-relativistic '
+                '(dftSO) Hamiltonians written in the J basis.'
+            )
+
+        try:
+            _j_to_lm(self.data_controller, shells=shells, check_unitary=check_unitary)
+        except Exception as e:
+            self.report_exception('j_to_lm_hamiltonian')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('j_to_lm_hamiltonian')
+
+    def mirror_chern_number(
+        self,
+        nbnd_occ='auto',
+        z2pack=True,
+        is_lm=False,
+        symprec=1e-2,
+        surface_kwargs=None,
+        gap_check=True,
+        auto_tighten=True,
+        z2_fallback=True,
+        verbose=True,
+    ):
+        """
+        Mirror Chern number C_M of a 2D material (horizontal mirror sigma_h),
+        using Z2Pack for the sector Chern numbers.
+
+        In the lm basis the horizontal mirror is the constant operator
+        M_z = P_site (x) diag(eta_z) (x) diag(-i_up, +i_down); this rotates the
+        Hamiltonian to the lm basis, auto-detects the sigma_h atom permutation from
+        the relaxed coordinates, verifies [H(k), M_z] = 0, splits H into the +-i
+        eigen-sectors and computes each sector's Chern number, giving
+        C_M = (C_{+i} - C_{-i})/2 and nu = C_M mod 2.  A centrosymmetric layer with
+        no sigma_h falls back to the Z2 index over half the BZ.  Call after
+        'pao_hamiltonian' (fully-relativistic run); run serially.  Requires the
+        optional 'z2pack' and 'tbmodels' packages.
+
+        Arguments:
+            nbnd_occ (int|'auto'): number of occupied bands ('auto' = nelec).
+            z2pack (bool): run the Z2Pack Chern step (else only write sectors).
+            is_lm (bool): True if 'HRs' is already in the lm basis.
+            symprec (float): sigma_h detection tolerance (fractional).
+            surface_kwargs (dict): overrides for z2pack.surface.run (always win).
+            gap_check (bool): report the min direct / indirect gap.
+            auto_tighten (bool): tighten the Z2Pack sampling for a small direct
+                gap (< 0.20 eV), e.g. lower min_neighbour_dist / move_tol and
+                densify the loops; only for keys not set in surface_kwargs.
+            z2_fallback (bool): compute Z2 when no sigma_h is found.
+            verbose (bool): print progress.
+
+        Returns:
+            dict: sigma_h, glide, perm, z0, tau, residual, nawf, nocc, gap,
+                  C_plus, C_minus, C_M, nu, nu_z2 (None where not computed).
+        """
+        from .topology.do_mirror_chern import do_mirror_chern
+
+        arry, attr = self.data_controller.data_dicts()
+        result = None
+        if 'HRs' not in arry:
+            if self.rank == 0:
+                print("mirror_chern_number requires 'HRs'; run 'pao_hamiltonian' first.")
+            return None
+        try:
+            result = do_mirror_chern(
+                self.data_controller,
+                nbnd_occ=nbnd_occ,
+                z2pack=z2pack,
+                is_lm=is_lm,
+                symprec=symprec,
+                surface_kwargs=surface_kwargs,
+                gap_check=gap_check,
+                auto_tighten=auto_tighten,
+                z2_fallback=z2_fallback,
+                verbose=verbose,
+            )
+        except Exception as e:
+            self.report_exception('mirror_chern_number')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('mirror_chern_number')
+        return result
 
     def wave_function_projection(self, dimension=3):
         """
@@ -1164,14 +1433,14 @@ class PAOFLOW:
 
         self.report_module_time('cutting_Hamiltonian')
 
-    def spin_operator(self, spin_orbit=False, sh_l=None, sh_j=None):
+    def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """
         Calculate the Spin Operator for calculations involving spin
           Requires: None
           Yeilds: 'Sj'
 
         Arguments:
-            spin_orbit (bool): If True the calculation includes relativistic spin orbit coupling
+            adhoc_SO (bool): If True the calculation includes relativistic spin orbit coupling
             fnscf (string): Filename for the QE nscf inputfile, from which to read shell data
             sh (list of ints): The Shell levels
             nl (list of ints): The Shell level occupations
@@ -1181,10 +1450,8 @@ class PAOFLOW:
         """
         arrays, attr = self.data_controller.data_dicts()
 
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
-        adhoc_SO = 'adhoc_SO' in attr and attr['adhoc_SO']
-
+        if adhoc_SO:
+            attr['adhoc_SO'] = adhoc_SO
         if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
             if sh_l is None and sh_j is None:
                 sh = arrays['shells']
@@ -1213,7 +1480,7 @@ class PAOFLOW:
                     [[1.0, 0.0], [0.0, -1.0]],
                 ]
             )
-            if spin_orbit:
+            if attr['adhoc_SO']:
                 # Spin operator matrix  in the basis of |l,m,s,s_z> (TB SO)
                 # for spol in range(3):
                 #     if spol == 2:  # Sz
@@ -1260,12 +1527,56 @@ class PAOFLOW:
             if attr['abort_on_exception']:
                 raise e
 
+    def orbital_operator(self, adhoc_SO=False):
+        from .topology.j_matrix import build_L_from_orb, build_orb_list_and_indices, j_matrix
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        if adhoc_SO:
+            attr['adhoc_SO'] = adhoc_SO
+
+        try:
+            if attr['adhoc_SO'] == True:
+                orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+                arrays['Lj'] = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+
+                for spol in range(3):
+                    L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+                    arrays['Lj'][spol, 0 : len(orb_list), 0 : len(orb_list)] = L
+                    arrays['Lj'][
+                        spol, len(orb_list) : 2 * len(orb_list), len(orb_list) : 2 * len(orb_list)
+                    ] = L
+
+            elif attr['adhoc_SO'] == False:
+                if 'Sj' not in arrays:
+                    self.spin_operator(adhoc_SO=False)
+                # Compute Total Angular Momentum operators
+                Jj = np.zeros((3, attr['nawf'], attr['nawf']), dtype=complex)
+                for spol in range(3):
+                    Jj[spol, :, :] = j_matrix(self.data_controller, spol)
+                # Compute Orbital Angular Momentum operators L = J - S
+                arrays['Lj'] = Jj - arrays['Sj']
+
+            # elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
+            #    self.data_controller.build_arrays_adhoc_soc()
+            #    # Compute Orbital Angular Momentum operators L in the basis of |l,m> (NO SOC)
+            #    orb_list, atom_indices = build_orb_list_and_indices(arrays['orb_atom'])
+            #    arrays['Lj'] = np.zeros((3,attr['nawf'],attr['nawf']), dtype=complex)
+            #
+            #    for spol in range(3):
+            #        L, _ = build_L_from_orb(arrays['orb_atom'], spol)
+            #        arrays['Lj'][spol, 0:len(orb_list), 0:len(orb_list)] = L
+        except:
+            self.report_exception('angular_momentum_operator')
+            if attr['abort_on_exception']:
+                self.comm.Abort()
+
     def topology(
         self,
         eff_mass=False,
         Berry=False,
         spin_Hall=False,
-        spin_orbit=False,
+        adhoc_SO=False,
         spol=None,
         ipol=None,
         jpol=None,
@@ -1277,7 +1588,7 @@ class PAOFLOW:
             eff_mass (bool): If True calculate the Effective Mass Tensor
             Berry (bool): If True calculate the Berry Curvature
             spin_Hall (bool): If True calculate Spin Hall Conductivity
-            spin_orbit (bool): If True the calculation includes spin_orbit effects for topology.
+            adhoc_SO (bool): If True the calculation includes spin_orbit effects for topology.
             spol (int): Spin polarization
             ipol (int): In plane dimension 1
             jpol (int): In plane dimension 2
@@ -1297,8 +1608,8 @@ class PAOFLOW:
             attr['eff_mass'] = eff_mass
         if 'spin_Hall' not in attr:
             attr['spin_Hall'] = spin_Hall
-        if 'do_spin_orbit' not in attr:
-            attr['do_spin_orbit'] = spin_orbit
+        if 'adhoc_SO' not in attr:
+            attr['adhoc_SO'] = adhoc_SO
 
         attr['spol'] = spol
         attr['ipol'] = ipol
@@ -1310,7 +1621,7 @@ class PAOFLOW:
             quit()
 
         if spin_Hall and 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
             do_topology(self.data_controller)
@@ -1326,7 +1637,7 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
-    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False):
+    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
         """
         Calculate the interpolated Hamiltonian with the method of zero padding
         Populates DataController with 'Hksp'.
@@ -1335,6 +1646,10 @@ class PAOFLOW:
             nfft1 (int): Desired size of the interpolated Hamiltonian's first dimension
             nfft2 (int): Desired size of the interpolated Hamiltonian's second dimension
             nfft3 (int): Desired size of the interpolated Hamiltonian's third dimension
+            free_HRs (bool): Release 'HRs' once it has been interpolated. It is replicated
+                on every rank, so keeping it roughly doubles the peak footprint of this
+                step. Set False only when calling 'topology' or 'berry_phase' afterwards
+                without an intervening 'pao_eigh' (which frees it regardless).
 
         Returns:
             None
@@ -1366,9 +1681,7 @@ class PAOFLOW:
             # Adjust 'npool' if arrays exceed MPI maximum
             int_max = 2147483647
             temp_pool = int(
-                np.ceil(
-                    (float(nawf**2 * nfft1 * nfft2 * nfft3 * 3 * attr['nspin']) / float(int_max))
-                )
+                np.ceil(float(nawf**2 * nfft1 * nfft2 * nfft3 * 3 * attr['nspin']) / float(int_max))
             )
             if temp_pool > attr['npool']:
                 if self.rank == 0:
@@ -1377,6 +1690,10 @@ class PAOFLOW:
 
             # Fourier interpolation on extended grid (zero padding)
             do_double_grid(self.data_controller)
+            # do_double_grid has taken its scattered copy; the replicated original is
+            # dead weight through the gather_scatter peak below.
+            if free_HRs and 'HRs' in arrays:
+                del arrays['HRs']
             snawf, _, _, _, nspin = arrays['Hksp'].shape
             arrays['Hksp'] = np.reshape(arrays['Hksp'], (snawf, attr['nkpnts'], nspin))
             arrays['Hksp'] = gather_scatter(arrays['Hksp'], 1, attr['npool'])
@@ -1484,21 +1801,23 @@ class PAOFLOW:
         Arguments:
           band_curvature (bool): also compute the band curvature.
           nonlocal_velocity (bool or None): enable the non-local
-            pseudopotential velocity correction.  When ``None`` (default)
-            the value falls back to ``attr['nonlocal_velocity']`` (False if
-            unset), preserving the legacy DataController-driven behaviour.
-            Pass ``True`` here to enable the correction directly from the
-            call without touching the DataController.
+          pseudopotential velocity correction.  When ``None`` (default)
+          the value falls back to ``attr['nonlocal_velocity']`` (False if
+          unset), preserving the legacy DataController-driven behaviour.
+          Pass ``True`` here to enable the correction directly from the
+          call without touching the DataController.
+
           nonlocal_velocity_inject (bool or None): fold the correction into
-            ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
-            it falls back to ``attr['nonlocal_velocity_inject']`` if set,
-            otherwise defaults to the resolved ``nonlocal_velocity`` value
-            (i.e. enabling the correction injects it by default; building
-            without injecting is diagnostic-only).
+          ``dHksp`` so downstream momenta/optics pick it up.  When ``None``
+          it falls back to ``attr['nonlocal_velocity_inject']`` if set,
+          otherwise defaults to the resolved ``nonlocal_velocity`` value
+          (i.e. enabling the correction injects it by default; building
+          without injecting is diagnostic-only).
+
           nonlocal_velocity_sign (int or None): injection sign convention.
-            When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
-            if set, otherwise the calibrated per-path default is used
-            (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
+          When ``None`` it falls back to ``attr['nonlocal_velocity_sign']``
+          if set, otherwise the calibrated per-path default is used
+          (+1 scalar / ad-hoc-SO, -1 fully-relativistic jm-kspace).
 
         Returns:
           None
@@ -1939,6 +2258,7 @@ class PAOFLOW:
     def density(self, nr1=48, nr2=48, nr3=48):
         """
         Calculate the Electron Density in real space
+
         Arguments:
             nr1,nr2,nr3: real space grid
 
@@ -1977,10 +2297,13 @@ class PAOFLOW:
 
         attr = self.data_controller.data_attributes
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             do_fermisurf(self.data_controller)
@@ -1990,6 +2313,342 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Fermi Surface')
+
+    def pyskeaf(
+        self,
+        fermi_energy=0.0,
+        num_interpolation=100,
+        b_field='non_principal',
+        azimuthal=0.0,
+        polar=0.0,
+        num_angles=1,
+        minimum_frequency=0.0,
+        frequency_tolerance=0.01,
+        orbit_tolerance=0.05,
+        allow_wall_orbits=True,
+        bands='all',
+        verbose=False,
+        n_jobs=1,
+        angle_timeout=None,
+        **unknown_options,
+    ):
+        """Calculate quantum-oscillation frequencies with pyskeaf.
+
+        Use single-band, SKEAF-compatible BXSF files created by
+        :meth:`fermi_surface`, or initialize PAOFLOW with only ``outputdir``
+        when existing BXSF files are already present there. Custom files may
+        be selected by their extensionless names.
+
+        Parameters
+        ----------
+        fermi_energy : float, tuple of float, or list of float, default 0.0
+            Fermi energy in eV. A scalar runs one energy. A Python tuple or
+            list supplies the explicit energies to scan. Values are converted
+            to Rydberg internally.
+        num_interpolation : int, default 100
+            Number of interpolated points per reciprocal-cell side.
+        b_field : {'b1', 'b2', 'b3', 'non_principal', 'rotation'}
+            Magnetic-field direction. Two-element ``azimuthal`` and ``polar``
+            values automatically select ``'rotation'``.
+        azimuthal, polar : float or pair of float
+            Azimuthal (theta) and polar (phi) angles in degrees. Scalars
+            select one orientation; pairs define the endpoints of a rotation.
+        num_angles : int, default 1
+            Number of equally spaced orientations in a rotation. Scalar
+            angles always imply one orientation.
+        minimum_frequency : float, default 0.0
+            Minimum reported extremal frequency in kT.
+        frequency_tolerance : float, default 0.01
+            Maximum fractional frequency difference used when averaging.
+        orbit_tolerance : float, default 0.05
+            Maximum fractional reciprocal-cell distance used when averaging.
+        allow_wall_orbits : bool, default True
+            Include extrema close to supercell walls.
+        bands : 'all', int, str, or sequence, default 'all'
+            ``'all'`` selects every ``Fermi_surf_band_*.bxsf`` file. Integers
+            select standard PAOFLOW band suffixes. Strings select custom BXSF
+            stems, with the ``.bxsf`` extension optional.
+        verbose : bool, default False
+            Also write short, long, and orbit-outline diagnostic files. The
+            physical ``qo_EF_<energy>_freqvsangle_*.out`` files are always
+            written.
+        n_jobs : int, default 1
+            Number of parallel worker processes used for the angle sweep.
+            Ignored under MPI, which distributes angles across ranks instead.
+        angle_timeout : float or None, default None
+            Seconds allowed for any single angle when ``n_jobs`` exceeds 1.
+            ``None`` waits indefinitely. Set it above the expected per-angle
+            runtime to turn a stalled worker into a ``TimeoutError`` instead of
+            an unbounded hang.
+
+        Returns
+        -------
+        list of PAOFLOW.pyskeaf.runner.BXSFRun
+            Per-energy, per-band calculation or skip results, ordered first by
+            Fermi energy and then by the selected bands.
+        """
+        import math
+        from numbers import Integral, Real
+        from pathlib import Path
+
+        from .pyskeaf.config import RYDBERG_IN_EV, SkeafConfig
+        from .pyskeaf.results import fermi_energy_filename_token
+        from .pyskeaf.runner import run_paoflow_bxsf_files
+
+        attr = self.data_controller.data_attributes
+
+        usage = (
+            'Correct PAOFLOW.pyskeaf() format:\n'
+            '  paoflow.pyskeaf(\n'
+            '      fermi_energy=0.0,  # eV; or explicit values as '
+            '(-0.01, 0.0, 0.2, 1.0) or [-0.01, 0.0, 0.2, 1.0]\n'
+            '      num_interpolation=100,  # integer >= 2\n'
+            "      b_field='non_principal',  # 'b1', 'b2', 'b3', "
+            "'non_principal', or 'rotation'\n"
+            '      azimuthal=0.0,  # degrees; scalar or two-value pair\n'
+            '      polar=0.0,  # degrees; scalar or two-value pair\n'
+            '      num_angles=1,  # integer; >= 2 for a rotation\n'
+            '      minimum_frequency=0.0,  # kT; nonnegative\n'
+            '      frequency_tolerance=0.01,  # positive\n'
+            '      orbit_tolerance=0.05,  # positive\n'
+            '      allow_wall_orbits=True,  # bool\n'
+            "      bands='all',  # or 1, 'custom_name', or "
+            "(1, 8, 'custom_name')\n"
+            '      verbose=False,  # bool\n'
+            '      n_jobs=1,  # parallel workers for the angle sweep\n'
+            '      angle_timeout=None,  # seconds per angle, or None\n'
+            '  )\n'
+            'For rotation, provide two values for both azimuthal and polar; '
+            "b_field is then set to 'rotation' automatically. BXSF filename "
+            'extensions are optional in bands.'
+        )
+
+        def _input_error(exception_type, message):
+            return exception_type(f'{message}\n\n{usage}')
+
+        if unknown_options:
+            names = ', '.join(sorted(unknown_options))
+            raise _input_error(
+                TypeError,
+                f'Unknown pyskeaf option(s): {names}.',
+            )
+
+        def _real(value, name):
+            if not isinstance(value, Real) or isinstance(value, (bool, np.bool_)):
+                raise _input_error(TypeError, f'{name} must be a real number.')
+            result = float(value)
+            if not math.isfinite(result):
+                raise _input_error(ValueError, f'{name} must be finite.')
+            return result
+
+        def _fermi_energy_values(value):
+            if isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
+                values = (_real(value, 'fermi_energy'),)
+            elif isinstance(value, (tuple, list)):
+                values = tuple(
+                    _real(item, f'fermi_energy[{index}]') for index, item in enumerate(value)
+                )
+            else:
+                raise _input_error(
+                    TypeError,
+                    'fermi_energy must be a real number or an explicit Python '
+                    'tuple/list of real numbers.',
+                )
+            if not values:
+                raise _input_error(
+                    ValueError,
+                    'fermi_energy must contain at least one value.',
+                )
+            tokens = [fermi_energy_filename_token(item) for item in values]
+            if len(tokens) != len(set(tokens)):
+                raise _input_error(
+                    ValueError,
+                    'fermi_energy values must produce distinct output filename values.',
+                )
+            return values
+
+        def _real_values(value, name):
+            if isinstance(value, Real) and not isinstance(value, (bool, np.bool_)):
+                return (_real(value, name),)
+            try:
+                values = tuple(value)
+            except TypeError as error:
+                raise _input_error(
+                    TypeError,
+                    f'{name} must be a real number or a pair of real numbers.',
+                ) from error
+            if len(values) != 2 or any(
+                not isinstance(item, Real) or isinstance(item, (bool, np.bool_)) for item in values
+            ):
+                raise _input_error(
+                    TypeError,
+                    f'{name} must be a real number or a pair of real numbers.',
+                )
+            return tuple(_real(item, name) for item in values)
+
+        azimuthal_values = _real_values(azimuthal, 'azimuthal')
+        polar_values = _real_values(polar, 'polar')
+        if len(azimuthal_values) != len(polar_values):
+            raise _input_error(
+                ValueError,
+                'azimuthal and polar must both be scalars or both be two-element pairs.',
+            )
+
+        if not isinstance(num_interpolation, Integral) or isinstance(
+            num_interpolation, (bool, np.bool_)
+        ):
+            raise _input_error(TypeError, 'num_interpolation must be an integer.')
+        if num_interpolation < 2:
+            raise _input_error(ValueError, 'num_interpolation must be at least 2.')
+        if not isinstance(num_angles, Integral) or isinstance(num_angles, (bool, np.bool_)):
+            raise _input_error(TypeError, 'num_angles must be an integer.')
+        if not isinstance(allow_wall_orbits, (bool, np.bool_)):
+            raise _input_error(TypeError, 'allow_wall_orbits must be True or False.')
+        if not isinstance(verbose, (bool, np.bool_)):
+            raise _input_error(TypeError, 'verbose must be True or False.')
+        if angle_timeout is not None:
+            angle_timeout = _real(angle_timeout, 'angle_timeout')
+            if angle_timeout <= 0.0:
+                raise _input_error(ValueError, 'angle_timeout must be positive or None.')
+
+        fermi_energies = _fermi_energy_values(fermi_energy)
+        minimum_frequency = _real(minimum_frequency, 'minimum_frequency')
+        frequency_tolerance = _real(frequency_tolerance, 'frequency_tolerance')
+        orbit_tolerance = _real(orbit_tolerance, 'orbit_tolerance')
+        if minimum_frequency < 0.0:
+            raise _input_error(ValueError, 'minimum_frequency cannot be negative.')
+        if frequency_tolerance <= 0.0:
+            raise _input_error(ValueError, 'frequency_tolerance must be positive.')
+        if orbit_tolerance <= 0.0:
+            raise _input_error(ValueError, 'orbit_tolerance must be positive.')
+
+        field_map = {
+            'b1': 'a',
+            'b2': 'b',
+            'b3': 'c',
+            'non_principal': 'n',
+            'rotation': 'r',
+        }
+        field_name = str(b_field).lower()
+        if field_name not in field_map:
+            raise _input_error(
+                ValueError,
+                f'b_field must be one of {tuple(field_map)}, got {b_field!r}.',
+            )
+
+        rotating = len(azimuthal_values) == 2
+        if rotating:
+            field_name = 'rotation'
+            if num_angles < 2:
+                raise _input_error(
+                    ValueError,
+                    'num_angles must be at least 2 for a rotation calculation.',
+                )
+        else:
+            if field_name == 'rotation':
+                raise _input_error(
+                    ValueError,
+                    "b_field='rotation' requires two-element azimuthal and polar values.",
+                )
+            num_angles = 1
+
+        config_options = dict(
+            numint=int(num_interpolation),
+            theta=math.radians(azimuthal_values[0]),
+            phi=math.radians(polar_values[0]),
+            hvd=field_map[field_name],
+            min_extfreq=minimum_frequency,
+            freq_same_frac=frequency_tolerance,
+            avg_same_frac=orbit_tolerance,
+            allow_ext_near_walls=allow_wall_orbits,
+            theta_start=math.radians(azimuthal_values[0]),
+            theta_end=math.radians(azimuthal_values[-1]),
+            phi_start=math.radians(polar_values[0]),
+            phi_end=math.radians(polar_values[-1]),
+            num_rots=int(num_angles),
+            n_jobs=n_jobs,
+            angle_timeout=angle_timeout,
+        )
+
+        output_path = Path(attr['opath'])
+
+        def _standard_band_number(path):
+            stem = path.stem
+            prefix = 'Fermi_surf_band_'
+            suffix = stem[len(prefix) :] if stem.startswith(prefix) else ''
+            return (0, int(suffix)) if suffix.isdigit() else (1, stem)
+
+        if isinstance(bands, str) and bands.lower() == 'all':
+            paths = sorted(output_path.glob('Fermi_surf_band_*.bxsf'), key=_standard_band_number)
+            filenames = [path.name for path in paths]
+        else:
+            selections = bands if isinstance(bands, (list, tuple, set)) else (bands,)
+            filenames = []
+            for selection in selections:
+                if isinstance(selection, Integral) and not isinstance(selection, (bool, np.bool_)):
+                    if selection < 1:
+                        raise _input_error(
+                            ValueError,
+                            'PAOFLOW band numbers must be positive integers.',
+                        )
+                    filename = f'Fermi_surf_band_{int(selection)}.bxsf'
+                elif isinstance(selection, (str, Path)):
+                    selected_path = Path(selection)
+                    filename = (
+                        selected_path.name
+                        if selected_path.suffix.lower() == '.bxsf'
+                        else f'{selected_path.name}.bxsf'
+                    )
+                else:
+                    raise _input_error(
+                        TypeError,
+                        'Each bands entry must be an integer or a BXSF filename stem.',
+                    )
+                filenames.append(filename)
+
+        if not filenames:
+            raise FileNotFoundError(
+                'No Fermi_surf_band_*.bxsf files found in PAOFLOW output directory '
+                f'{output_path}. '
+                'Run paoflow.fermi_surface() first or select custom BXSF files.'
+            )
+        if len(filenames) != len(set(filenames)):
+            raise _input_error(ValueError, 'bands contains duplicate BXSF selections.')
+
+        def report_progress(item, fermi_energy_ev):
+            if self.rank != 0:
+                return
+            message = 'calculated' if item.calculated else f'skipped - {item.skipped_reason}'
+            print(
+                f'{item.path.name} at Fermi energy {fermi_energy_ev:.6f} eV: {message}',
+                flush=True,
+            )
+
+        results = []
+        try:
+            for fermi_energy_ev in fermi_energies:
+                config = SkeafConfig(
+                    fermi_energy=fermi_energy_ev / RYDBERG_IN_EV,
+                    **config_options,
+                )
+                energy_results = run_paoflow_bxsf_files(
+                    config,
+                    input_dir=output_path,
+                    filenames=filenames,
+                    output_dir=output_path,
+                    write_auxiliary_files=verbose,
+                    progress_callback=lambda item, energy=fermi_energy_ev: report_progress(
+                        item, energy
+                    ),
+                )
+                results.extend(energy_results)
+        except Exception as error:
+            self.report_exception('pyskeaf')
+            if attr['abort_on_exception']:
+                raise error
+
+        self.report_module_time('Quantum Oscillations')
+        return results
 
     def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0):
         """
@@ -2006,10 +2665,13 @@ class PAOFLOW:
 
         arry, attr = self.data_controller.data_dicts()
 
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             if attr['nspin'] == 1:
@@ -2026,6 +2688,66 @@ class PAOFLOW:
                 raise e
 
         self.comm.Barrier()
+
+    def berry_curvature(self, spin_Hall=False, orbital_Hall=False, spol=None, ipol=None, jpol=None):
+        """
+        Calculate the Berry Curvature along the k-path 'kq'
+
+        Arguments:
+            curvature (string) : A string with the Hall effect to be calculated. Charge, spin or orbital.
+            spol (int): Spin polarization
+            ipol (int): In plane dimension 1
+            jpol (int): In plane dimension 2
+
+        Returns:
+            None
+        """
+
+        from .topology.do_berry_curvature import do_berry_curvature
+        # velocity, momentum and charge, spin or orbital Berry curvature and
+        # curvature operators along the path in the IBZ from do_topology_calc
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        attr['spol'] = spol
+        attr['ipol'] = ipol
+        attr['jpol'] = jpol
+
+        if attr['spol'] is None or attr['ipol'] is None or attr['jpol'] is None:
+            if self.rank == 0:
+                print("Must specify 'spol', 'ipol', and 'jpol'")
+            quit()
+
+        if spin_Hall == True:
+            attr['curvature'] = 'Spin'
+            if 'Sj' not in arrays:
+                self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+            arrays['Oj'] = arrays['Sj']
+            try:
+                do_berry_curvature(self.data_controller)
+            except Exception as e:
+                self.report_exception(attr['curvature'] + ' Berry curvature')
+                if attr['abort_on_exception']:
+                    raise e
+
+        if orbital_Hall == True:
+            attr['curvature'] = 'Orbital'
+            if 'Lj' not in arrays:
+                self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+            arrays['Oj'] = arrays['Lj']
+            try:
+                do_berry_curvature(self.data_controller)
+            except Exception as e:
+                self.report_exception(attr['curvature'] + ' Berry curvature')
+                if attr['abort_on_exception']:
+                    raise e
+
+        self.report_module_time(attr['curvature'] + ' Berry Curvature')
+
+        del arrays['R']
+        del arrays['idx']
+        del arrays['Rfft']
+        del arrays['R_wght']
 
     def spin_Hall(
         self,
@@ -2073,23 +2795,27 @@ class PAOFLOW:
 
         if s_tensor is not None:
             arrays['s_tensor'] = np.array(s_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         if shc_proj is not None:
             arrays['shc_proj'] = np.array(shc_proj)
 
         if 'Sj' not in arrays:
-            self.spin_operator(spin_orbit=attr['do_spin_orbit'])
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
 
         try:
             if shc_proj == None:
                 P = np.eye(attr['nawf'])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
             else:
-                arrays['naw'] = orbital_array(self.data_controller)
+                if 'naw' not in arrays:
+                    arrays['naw'] = orbital_array(self.data_controller)
                 P = do_projection_operator(self.data_controller, arrays['shc_proj'])
                 do_spin_Hall(self.data_controller, twoD, do_ac, P)
 
@@ -2100,44 +2826,308 @@ class PAOFLOW:
 
         self.report_module_time('Spin Hall Conductivity')
 
+    def orbital_texture(self, fermi_up=1.0, fermi_dw=-1.0):
+        """
+        Calculate the Orbital Texture
+
+        Arguments:
+            fermi_up (float): The upper limit of the occupied energy range
+            fermi_dw (float): The lower limit of the occupied energy range
+
+        Returns:
+            None
+        """
+        from .topology.do_orbital_texture import do_orbital_texture
+
+        arry, attr = self.data_controller.data_dicts()
+
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
+
+        try:
+            if attr['nspin'] == 1:
+                if 'Lj' not in arry:
+                    self.orbital_operator()
+                do_orbital_texture(self.data_controller)
+                self.report_module_time('Orbital Texture')
+            else:
+                if self.rank == 0:
+                    print('Cannot compute orbital texture with nspin=2')
+        except Exception as e:
+            self.report_exception('orbital_texture')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+
+    def orbital_Hall(
+        self,
+        twoD=False,
+        do_ac=False,
+        emin=-1.0,
+        emax=1.0,
+        ne=501,
+        delta=0.05,
+        fermi_up=1.0,
+        fermi_dw=-1.0,
+        o_tensor=None,
+        ohc_proj=None,
+    ):
+        """
+        Calculate the Orbital Hall Conductivity
+
+
+        Arguments:
+            twoD (bool): True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
+            do_ac (bool): True to calculate the Orbital Circular Dichroism
+            emin (float): The minimum energy in the range
+            emax (float): The maximum energy in the range
+            ne (float): The number of energy increments
+            delta (float) : small imaginary part added to the eigenvalue difference
+            fermi_up (float): The upper limit of the occupied energy range
+            fermi_dw (float): The lower limit of the occupied energy range
+            o_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
+
+        Returns:
+            None
+        """
+
+        from .projection.projection_operator import (
+            do_projection_operator,
+            orbital_array,
+        )
+        from .response.do_Hall import do_orbital_Hall
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        attr['eminH'], attr['emaxH'] = emin, emax
+        attr['deltaH'] = delta
+        attr['esizeH'] = ne
+
+        if o_tensor is not None:
+            arrays['o_tensor'] = np.array(o_tensor)
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
+
+        if ohc_proj is not None:
+            arrays['ohc_proj'] = np.array(ohc_proj)
+
+        if 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+        try:
+            if ohc_proj == None:
+                P = np.eye(attr['nawf'])
+                do_orbital_Hall(self.data_controller, twoD, do_ac, P)
+            else:
+                if 'naw' not in arrays:
+                    arrays['naw'] = orbital_array(self.data_controller)
+                P = do_projection_operator(self.data_controller, arrays['ohc_proj'])
+                do_orbital_Hall(self.data_controller, twoD, do_ac, P)
+
+        except Exception as e:
+            self.report_exception('orbital_Hall')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Orbital Hall Conductivity')
+
+    def conductivity(self, delta=0.01, emin=-10.0, emax=2.0, ne=1000, cond_tensor=None):
+        from .response.do_conductivity import do_conductivity
+
+        arrays, attr = self.data_controller.data_dicts()
+
+        if cond_tensor is not None:
+            arrays['cond_tensor'] = np.array(cond_tensor)
+
+        for i in range(arrays['cond_tensor'].shape[0]):
+            ipol = arrays['cond_tensor'][i, 0]
+            jpol = arrays['cond_tensor'][i, 1]
+
+            do_conductivity(self.data_controller, emin, emax, ne, delta, ipol, jpol)
+
+        self.report_module_time('Conductivity')
+
     def rashba_edelstein(
         self,
         emin=-2,
         emax=2,
         ne=500,
+        delta=0.05,
         temps=0.0,
         reg=1e-30,
         twoD=False,
         lt=1.0,
         st=1.0,
         write_to_file=True,
-        delta=0.05,
+        intra_band=False,
+        spin=True,
+        orbital=False,
+        ree_tensor=None,
+        ree_proj=None,
     ):
         """
         Calculate the Rashba-Edelstein tensor
+
         Arguments:
             emin (float): The minimum energy in the range
             emax (float): The maximum energy in the range
             ne (float): The number of energy increments in [emin,emax]
+            delta (float) : small imaginary part added to the eigenvalue difference
             temps (float): Smearing temperature in eV
             reg (float): The regularization number that is applicable only for materials with band gap (in the order of 1e-30)
             twoD (bool): set True for two dimnesional materials
             lt (float): The lattice height of the twoD structure (in cm)
             st (float): The structure 'effectivce' thickness of the twoD structure (in cm)
             write_to_file (bool): Set True to write tensors to file
+            intra_band (bool): Set True to calculate intra-band contributions
+            spin (bool): Set True to include spin in the calculation. If True, 'Sj' will be calculated if not already present in the DataController
+            orbital (bool): Set True to include orbital contributions in the calculation. If True, 'L' will be calculated if not already present in the DataController
+            ree_tensor (list): List of tensor elements to calculate (e.g. To calculate xxx and zxy use [[0,0,0],[0,1,2]])
 
         Returns:
             None
         """
-        from .response.do_rashba_edelstein import do_rashba_edelstein
+        from .projection.projection_operator import (
+            do_projection_operator,
+            orbital_array,
+        )
+        from .response.do_rashba_edelstein import do_rashba_edelstein, do_rashba_edelstein_intra
 
         arrays, attr = self.data_controller.data_dicts()
-        attr['deltaH'] = delta
-        attr['esizeH'] = ne
+
+        # expose the unit-defining factors to do_rashba_edelstein_intra so its
+        # output uses the SAME chi = -hbar*kai/(jc*e*a0) normalization (and 2D
+        # rescale) as do_rashba_edelstein.
+        attr['ree_reg'] = reg
+        attr['ree_twoD'] = twoD
+        attr['ree_lt'] = lt
+        attr['ree_st'] = st
 
         ene = np.linspace(emin, emax, ne)
+
+        if spin == True and 'Sj' not in arrays:
+            self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+        if orbital == True and 'Lj' not in arrays:
+            self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+        P = np.eye(attr['nawf'])
+
         try:
-            do_rashba_edelstein(self.data_controller, ene, temps, reg, twoD, lt, st, write_to_file)
+            if intra_band == True:
+                if ree_tensor is not None:
+                    arrays['ree_tensor'] = np.array(ree_tensor)
+
+                if spin is True:
+                    if 'Sj' not in arrays:
+                        self.spin_operator(adhoc_SO=attr['adhoc_SO'])
+
+                    for i in range(arrays['ree_tensor'].shape[0]):
+                        ipol = arrays['ree_tensor'][i, 0]
+                        spol = arrays['ree_tensor'][i, 1]
+
+                        if ree_proj == None:
+                            P = np.eye(attr['nawf'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'spin',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Sj'],
+                                P,
+                            )
+                        else:
+                            arrays['ree_proj'] = np.array(ree_proj)
+                            if 'naw' not in arrays:
+                                arrays['naw'] = orbital_array(self.data_controller)
+                            P = do_projection_operator(self.data_controller, arrays['ree_proj'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'spin',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Sj'],
+                                P,
+                            )
+                if orbital is True:
+                    if 'Lj' not in arrays:
+                        self.orbital_operator(adhoc_SO=attr['adhoc_SO'])
+
+                    for i in range(arrays['ree_tensor'].shape[0]):
+                        ipol = arrays['ree_tensor'][i, 0]
+                        spol = arrays['ree_tensor'][i, 1]
+
+                        if ree_proj == None:
+                            P = np.eye(attr['nawf'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'orbital',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Lj'],
+                                P,
+                            )
+                        else:
+                            arrays['ree_proj'] = np.array(ree_proj)
+                            if 'naw' not in arrays:
+                                arrays['naw'] = orbital_array(self.data_controller)
+                            P = do_projection_operator(self.data_controller, arrays['ree_proj'])
+                            do_rashba_edelstein_intra(
+                                self.data_controller,
+                                'orbital',
+                                ene,
+                                delta,
+                                ipol,
+                                spol,
+                                arrays['Lj'],
+                                P,
+                            )
+
+            else:
+                if spin == True:
+                    self.spin_texture(fermi_up=emax, fermi_dw=emin)
+                    do_rashba_edelstein(
+                        self.data_controller,
+                        ene,
+                        temps,
+                        reg,
+                        twoD,
+                        lt,
+                        st,
+                        write_to_file,
+                        arrays['sktxt'],
+                        '',
+                    )
+                if orbital == True:
+                    self.orbital_texture(fermi_up=emax, fermi_dw=emin)
+                    do_rashba_edelstein(
+                        self.data_controller,
+                        ene,
+                        temps,
+                        reg,
+                        twoD,
+                        lt,
+                        st,
+                        write_to_file,
+                        arrays['oktxt'],
+                        'orbital_',
+                    )
 
         except Exception as e:
             self.report_exception('rashba_edelstein')
@@ -2184,10 +3174,13 @@ class PAOFLOW:
 
         if a_tensor is not None:
             arrays['a_tensor'] = np.array(a_tensor)
-        if 'fermi_up' not in attr:
-            attr['fermi_up'] = fermi_up
-        if 'fermi_dw' not in attr:
-            attr['fermi_dw'] = fermi_dw
+        # Use THIS routine's own energy window. (Previously guarded by
+        # `if 'fermi_up' not in attr`, which meant the first module called in a
+        # session locked fermi_up/fermi_dw in the shared attr dict and every later
+        # module silently inherited it -- e.g. orbital_texture before orbital_Hall
+        # changed the Hall bxsf window. Set unconditionally so each call is honoured.)
+        attr['fermi_up'] = fermi_up
+        attr['fermi_dw'] = fermi_dw
 
         try:
             do_anomalous_Hall(self.data_controller, do_ac)
@@ -2274,7 +3267,7 @@ class PAOFLOW:
         if attr['smearing'] == None:
             do_dos(self.data_controller, emin, emax, ne, delta)
         else:
-            do_dos_adaptive(self.data_controller, emin, emax, ne, delta)
+            do_dos_adaptive(self.data_controller, emin, emax, ne)
         do_doping(self.data_controller, temps, ene, fname)
 
         self.report_module_time('Doping')
@@ -2361,6 +3354,10 @@ class PAOFLOW:
         ne=501,
         d_tensor=None,
         degauss=0.1,
+        emissivity=False,
+        emis_angles=(0.0, 30.0, 60.0),
+        emis_ntheta=90,
+        emis_temperature=300.0,
     ):
         r"""Compute the frequency-dependent dielectric tensor.
 
@@ -2398,6 +3395,21 @@ class PAOFLOW:
         * ``refl_<a><a>.dat`` — normal-incidence reflectivity
           :math:`R = ((n-1)^2+\kappa^2)/((n+1)^2+\kappa^2)`. **Diagonal pairs only**.
 
+        **Emissivity** (written only when ``emissivity=True``, diagonal pairs):
+
+        * ``refl_th<deg>_<a><a>.dat`` — Fresnel directional reflectivity
+          :math:`R(\theta, \omega)`, polarization-averaged over s and p
+          waves, at each incidence angle in ``emis_angles``.
+        * ``emis_th<deg>_<a><a>.dat`` — directional emissivity
+          :math:`\varepsilon(\theta, \omega) = 1 - R(\theta, \omega)`
+          (Kirchhoff's law, opaque medium).
+        * ``emish_<a><a>.dat`` — spectral hemispherical emissivity
+          :math:`\varepsilon(\omega) = 2\int_0^{\pi/2}\varepsilon(\theta,\omega)
+          \cos\theta\sin\theta\,d\theta`.
+        * ``emist_<a><a>.dat`` — total hemispherical emissivity
+          :math:`\varepsilon(T)`, the Planck-weighted spectral average, as a
+          two-column (temperature, emissivity) file.
+
         On rank 0 the f-sum-rule plasmon frequency
         :math:`\omega_p = \sqrt{(2/\pi)\int_0^{\omega_{\max}}\omega\varepsilon_2 d\omega}`
         is printed per diagonal component and can be compared against the
@@ -2424,6 +3436,32 @@ class PAOFLOW:
             and (for metals) the Drude :math:`-\partial f/\partial E`
             delta-function approximation. Should match the QE SCF/NSCF
             smearing for direct benchmarks.
+        emissivity : bool, optional
+            If ``True``, additionally compute the Fresnel directional
+            reflectivity, spectral hemispherical emissivity, and total
+            hemispherical emissivity from the diagonal complex refractive
+            index (see Outputs). Default ``False``.
+        emis_angles : sequence of float, optional
+            Incidence angles (degrees, relative to the surface normal) at
+            which the directional reflectivity/emissivity are tabulated.
+            Only used when ``emissivity=True``. Default ``(0, 30, 60)``.
+        emis_ntheta : int, optional
+            Number of polar-angle samples in :math:`[0, \pi/2]` for the
+            hemispherical integral. Only used when ``emissivity=True``.
+            Default 90.
+        emis_temperature : float or sequence of float, optional
+            Temperature(s) in kelvin at which the Planck-weighted total
+            hemispherical emissivity is evaluated. Only used when
+            ``emissivity=True``. Default 300 K.
+
+            .. note::
+
+               The total emissivity integral is taken over the supplied
+               ``[emin, emax]`` grid only. The Planck weight peaks near
+               :math:`k_B T`, so for a meaningful :math:`\varepsilon(T)` the
+               window should start near zero and resolve the thermally
+               relevant low-energy range; otherwise the truncated integral
+               underestimates :math:`\varepsilon(T)`.
 
         Returns
         -------
@@ -2465,6 +3503,10 @@ class PAOFLOW:
         if 'delta' not in attr:
             attr['delta'] = delta
         attr['intrasmear'] = intrasmear
+        attr['emissivity'] = emissivity
+        attr['emis_angles'] = np.atleast_1d(np.array(emis_angles, dtype=float))
+        attr['emis_ntheta'] = int(emis_ntheta)
+        attr['emis_temperature'] = np.atleast_1d(np.array(emis_temperature, dtype=float))
         if d_tensor == 'all':
             pass
         elif d_tensor == 'diag':
@@ -2536,16 +3578,16 @@ class PAOFLOW:
         r"""
         Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
 
-                     \sum_n |v_nk|^4
-        IPR_nk = -----------------------
-                  ( \sum_n |v_nk|^2 )^2
+        .. math::
+
+            \text{IPR}_{nk} = \frac{\sum_n |v_{nk}|^4}{(\sum_n |v_{nk}|^2)^2}
 
         where n is the band index and k the k-point
 
         The final shape is (nspin,nkpts,nbands,3),
         where the last axis gives: 0 as the k-point coordinate,
-                                   1 the band energy, and
-                                   2 the inverse partition ratio
+        1 the band energy, and
+        2 the inverse partition ratio
 
         The result in saved to a ipr.npy file.
         To open the file one should use:
@@ -2596,16 +3638,18 @@ class PAOFLOW:
 
         Arguments:
             kspace_method (str): method used to sample the BZ:
-                                 *'path': 1D path along the BZ;
-                                 *'track': 1D path along x direction for several points in the y direction;
-                                 *'circle': circular path around a k-point, given center and radius;
-                                 *'square': retangular region with nk1 points along x and nk2 points along y. Region defined given x and y start and end points or full BZ.
+                                 \\*'path': 1D path along the BZ;
+                                 \\*'track': 1D path along x direction for several points in the y direction;
+                                 \\*'circle': circular path around a k-point, given center and radius;
+                                 \\*'square': retangular region with nk1 points along x and nk2 points along y. Region defined given x and y start and end points or full BZ.
+
             berry_path (str): A string representing the band path to follow. The first and last k-point must not be the same.
             berry_high_sym_points (dictionary): A dictionary with symbols of high symmetry points as keys and length 3 numpy arrays containg the location of the symmetry points as values.
             nk (int): Number of k-points to include in the path
             closed (bool, optional): whether or not to include the connection of the last and first points in the loop
             method (str, {'berry','zak'}): 'berry' returns the usual berry phase. 'zak' includes the Zak phase for 1D systems which takes into account the Bloch factor exp(-iG.r)
-                                            accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+            accumulated over a Brillouin zone. See J. Zak, Phys. Rev. Lett. 62, 2747 (1989)
+
             sub (None or list of int, optional): index of selected bands to calculate the Berry phase
             occupied (bool, optional): calculate the Berry phase over all occupied bands (if set to True, sub is set to None)
             kxlim (tuple, float): start and end points in x direction for sampling the BZ, used when kspace_method='square' .
@@ -2674,3 +3718,1514 @@ class PAOFLOW:
                 raise e
 
         self.report_module_time('Berry phase')
+
+    def phonon_setup(
+        self,
+        supercell_matrix,
+        primitive_matrix=None,
+        displacement_distance=0.01,
+        q_mesh=None,
+        q_path=None,
+    ):
+        """Initialise the phonopy interface (Stage 0: structure bridge).
+
+        Converts the PAOFLOW structure into a ``phonopy`` unit cell, stores the
+        phonon configuration on the ``DataController`` and creates the
+        :class:`phonopy.Phonopy` object reused by subsequent phonon stages.
+
+        Arguments:
+            supercell_matrix: Supercell used for the finite-displacement
+                force constants.  Accepts a scalar (isotropic diagonal),
+                a length-3 sequence (anisotropic diagonal) or a 3x3 matrix.
+            primitive_matrix (optional): Primitive-cell transformation passed
+                to phonopy.  May be ``None``, ``'auto'`` or a 3x3 matrix.
+            displacement_distance (float): Atomic displacement amplitude in
+                Angstrom used to generate displaced supercells.
+            q_mesh (optional): Default q-point mesh for DOS / thermal
+                properties (used in later stages).
+            q_path (optional): Default q-point path for the phonon dispersion
+                (used in later stages).
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import init_phonopy
+
+        arry, attr = self.data_controller.data_dicts()
+
+        attr['phonon_supercell_matrix'] = supercell_matrix
+        attr['phonon_primitive_matrix'] = primitive_matrix
+        attr['phonon_displacement_distance'] = displacement_distance
+        attr['phonon_q_mesh'] = q_mesh
+        arry['phonon_q_path'] = q_path
+
+        try:
+            init_phonopy(self.data_controller)
+        except Exception as e:
+            self.report_exception('phonon_setup')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Phonon Setup')
+
+    def phonons(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        displacement_distance=None,
+        forces=None,
+        phonon_dir='phonon',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        ibrav=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        nac=False,
+        born_file=None,
+        born=None,
+        dielectric=None,
+        q_path=None,
+        q_labels=None,
+        q_npoints=101,
+        mesh=None,
+        do_bands=True,
+        do_dos=True,
+        do_thermal=False,
+        t_min=0.0,
+        t_max=1000.0,
+        t_step=10.0,
+        units='THz',
+        fname='phonon',
+    ):
+        """Harmonic phonons via phonopy finite displacements (Stage 1).
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the phonopy object, create the
+           displaced supercells and write a complete, ready-to-run Quantum
+           ESPRESSO ``pw.x`` SCF input for each one
+           (``<outputdir>/<phonon_dir>/supercell-NNN.in``).  Run ``pw.x`` on
+           every input, then call this method again with ``forces=...``.
+
+        2. **Analyse** (``forces`` provided): assemble the second-order force
+           constants and compute the requested harmonic properties.
+
+        Arguments:
+            supercell_matrix: Supercell for the finite displacements (scalar,
+                length-3 or 3x3).  Required on the first call; reused
+                afterwards.
+            primitive_matrix (optional): phonopy primitive transformation
+                (``None`` -> identity, ``'auto'`` or a 3x3 matrix).
+            displacement_distance (float, optional): Displacement amplitude in
+                Bohr (default 0.01).
+            forces: Force source for the analysis phase.  ``None`` -> only
+                write the displaced-supercell inputs; ``'qe'`` -> harvest forces
+                from ``supercell-NNN.out`` in ``phonon_dir``; a path string ->
+                ingest an external ``FORCE_SETS``; an array
+                ``(ndisp, natoms, 3)`` (Ry/au) -> use directly.
+            phonon_dir (str): Sub-directory (under ``outputdir``) for the
+                displaced supercells and ``FORCE_SETS``.
+            pp_dir (str, optional): Pseudopotential directory written into the
+                QE inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): QE ``prefix`` for the supercell runs.
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercell
+                (default: unit-cell grid scaled by the supercell multiplicity).
+            ibrav (int, optional): Quantum ESPRESSO Bravais lattice index used
+                to derive the default high-symmetry dispersion path when
+                ``q_path`` is ``None`` (the QE ``.save`` does not record it).
+            hubbard_file (str, optional): Path to a ``pw.x`` input whose
+                new-style ``HUBBARD`` card is read and appended to every
+                displaced-supercell input so the forces reflect the DFT+U
+                electronic structure.  Only on-site ``U`` (manifold) parameters
+                are kept; intersite ``V`` lines (cell-specific atom indices) are
+                dropped.
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            nac (bool): Apply the non-analytical term correction (LO-TO
+                splitting near Gamma).  Requires ``born_file`` or both ``born``
+                and ``dielectric``.
+            born_file (str, optional): Path to a phonopy ``BORN`` file with the
+                dielectric tensor and Born effective charges; takes precedence
+                over ``born``/``dielectric`` when given.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor.
+            q_path (optional): Dispersion path as a sequence of segments in
+                fractional reciprocal coordinates; ``None`` -> path derived from
+                ``ibrav`` (or automatic seekpath path if ``ibrav`` is unset).
+            q_labels (optional): Tick labels matching ``q_path``.
+            q_npoints (int): q-points per path segment.
+            mesh (optional): q-mesh for DOS / thermal properties (default
+                ``[20, 20, 20]``).
+            do_bands, do_dos, do_thermal (bool): Properties to compute.
+            t_min, t_max, t_step (float): Temperature grid (K) for thermal
+                properties.
+            units (str): Frequency units for outputs, ``'THz'`` or ``'cm-1'``.
+            fname (str): Output filename prefix.
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import (
+            attach_nac,
+            compute_phonon_bands,
+            compute_phonon_dos,
+            compute_thermal_properties,
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import (
+            harvest_qe_forces,
+            ingest_force_sets,
+            read_hubbard_card,
+            write_displaced_supercells,
+            write_force_sets,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+        if displacement_distance is not None:
+            attr['phonon_displacement_distance'] = displacement_distance
+        if mesh is not None:
+            attr['phonon_q_mesh'] = mesh
+        if ibrav is not None:
+            attr['ibrav'] = ibrav
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            # Deterministic rebuild: same structure + distance + supercell yield
+            # the same displacement ordering, so a later analysis call lines up
+            # with the inputs written in the generation phase.
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if forces is None:
+                paths = write_displaced_supercells(
+                    self.data_controller,
+                    phonon_dir=phonon_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote %d displaced-supercell QE inputs. Run pw.x on each, '
+                        "then re-call phonons(forces='qe')." % len(paths)
+                    )
+                self.report_module_time('Phonons (write inputs)')
+                return
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            write_force_sets(self.data_controller, phonon_dir=phonon_dir)
+
+            if nac:
+                attach_nac(
+                    self.data_controller,
+                    born=born,
+                    dielectric=dielectric,
+                    born_file=born_file,
+                )
+
+            if do_bands:
+                compute_phonon_bands(
+                    self.data_controller,
+                    q_path=q_path,
+                    q_labels=q_labels,
+                    npoints=q_npoints,
+                    units=units,
+                    fname=fname,
+                )
+            if do_dos:
+                compute_phonon_dos(self.data_controller, mesh=mesh, units=units, fname=fname)
+            if do_thermal:
+                compute_thermal_properties(
+                    self.data_controller,
+                    mesh=mesh,
+                    t_min=t_min,
+                    t_max=t_max,
+                    t_step=t_step,
+                    fname=fname,
+                )
+
+        except Exception as e:
+            self.report_exception('phonons')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Phonons')
+
+    def born_charges(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        method='dfpt',
+        forces=None,
+        phonon_dir='phonon',
+        pp_dir=None,
+        prefix=None,
+        outdir=None,
+        kgrid=None,
+        field_strength=0.001,
+        nberrycyc=3,
+        hubbard_file=None,
+        hubbard_card=None,
+        enforce_sum_rule=True,
+        symmetrize=True,
+    ):
+        """Born effective charges and epsilon_inf (Stage 2b).
+
+        Computes the macroscopic Born effective charge tensors and the
+        high-frequency (clamped-ion) dielectric tensor, and writes a phonopy
+        ``BORN`` file usable by :meth:`phonons` (``nac=True``, ``born_file=...``)
+        for the LO-TO splitting.  Two back-ends are available:
+
+        * ``method='dfpt'`` (default): a single Gamma-point ``ph.x`` run
+          (``epsil=.true., trans=.false.``) gives both tensors directly.  Fast
+          and accurate, but unavailable for DFT+U / hybrid functionals.
+        * ``method='field'``: finite electric-field (``lelfield``) runs on the
+          primitive cell (central differences of forces and polarization).
+          Slower, but works whenever ``ph.x`` cannot be used.
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the phonopy object and write
+           the QE input(s).  For ``method='dfpt'`` this is a single
+           ``ph_epsil.in``; for ``method='field'`` it is seven primitive-cell
+           ``field-*.in`` SCF inputs.  Run QE on the input(s), then re-call with
+           ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): parse the results, impose the acoustic
+           sum rule, symmetrize, and write the ``BORN`` file.
+
+        Arguments:
+            supercell_matrix: Supercell used to build the phonopy object (only
+                the primitive cell is used here); reused from a previous phonon
+                call when omitted.
+            primitive_matrix (optional): phonopy primitive transformation.
+            method (str): ``'dfpt'`` (``ph.x``) or ``'field'`` (``lelfield``).
+            forces: ``None`` -> write the QE input(s) only; ``'qe'`` -> harvest
+                the QE output(s) and write ``BORN``.
+            phonon_dir (str): Sub-directory (under ``outputdir``) for the QE
+                runs and the ``BORN`` file.
+            pp_dir (str, optional): Pseudopotential directory (``method='field'``
+                QE inputs).
+            prefix (str, optional): QE ``prefix``.  For ``method='dfpt'`` this
+                defaults to the DFT ``.save`` prefix so ``ph.x`` reuses the
+                existing self-consistent save.
+            outdir (str, optional): QE ``outdir`` for ``method='dfpt'`` (default:
+                the directory containing the DFT ``.save``).
+            kgrid (optional): Monkhorst-Pack grid for the primitive cell
+                (``method='field'``; default: the unit-cell grid).
+            field_strength (float): ``efield_cart`` magnitude in QE atomic units
+                (``method='field'``; 1 a.u. = 36.3609e10 V/m).
+            nberrycyc (int): Berry-phase cycles per SCF step (``method='field'``).
+            hubbard_file (str, optional): Path to a ``pw.x`` input whose
+                new-style ``HUBBARD`` card is appended to the ``method='field'``
+                QE inputs (on-site ``U`` only; intersite ``V`` dropped).  The
+                ``method='dfpt'`` route instead reuses the Hubbard setup stored
+                in the existing ``.save``.
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            enforce_sum_rule (bool): Impose ``sum_k Z*_k = 0``.
+            symmetrize (bool): Symmetrize the Born and dielectric tensors.
+
+        Returns:
+            None
+        """
+        from .phonon.do_born_charges import compute_born_and_epsilon
+        from .phonon.do_phonopy import generate_displacements, init_phonopy
+        from .phonon.io import read_hubbard_card, write_field_inputs, write_ph_epsil_input
+
+        arry, attr = self.data_controller.data_dicts()
+
+        method = str(method).lower()
+        if method not in ('dfpt', 'field'):
+            raise ValueError("born_charges method must be 'dfpt' or 'field'.")
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if forces is None:
+                if method == 'dfpt':
+                    path = write_ph_epsil_input(
+                        self.data_controller,
+                        phonon_dir=phonon_dir,
+                        prefix=prefix,
+                        outdir=outdir,
+                    )
+                    if self.rank == 0:
+                        print(
+                            'Wrote ph.x input %s. Run ph.x on it, then re-call '
+                            "born_charges(method='dfpt', forces='qe')." % path
+                        )
+                else:
+                    paths = write_field_inputs(
+                        self.data_controller,
+                        field_strength=field_strength,
+                        phonon_dir=phonon_dir,
+                        pp_dir=pp_dir,
+                        prefix=prefix,
+                        kgrid=kgrid,
+                        nberrycyc=nberrycyc,
+                        hubbard_card=hubbard_card,
+                    )
+                    if self.rank == 0:
+                        print(
+                            'Wrote %d lelfield QE inputs. Run pw.x on each, then '
+                            "re-call born_charges(method='field', forces='qe')." % len(paths)
+                        )
+                self.report_module_time('Born Charges (write inputs)')
+                return
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                compute_born_and_epsilon(
+                    self.data_controller,
+                    method=method,
+                    phonon_dir=phonon_dir,
+                    enforce_sum_rule=enforce_sum_rule,
+                    symmetrize=symmetrize,
+                    write_born=True,
+                )
+            else:
+                raise ValueError(
+                    "born_charges forces must be None (write inputs) or 'qe' "
+                    '(harvest the QE output).'
+                )
+
+        except Exception as e:
+            self.report_exception('born_charges')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Born Charges')
+
+    def ir_spectrum(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        born_file=None,
+        born=None,
+        dielectric=None,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        gamma=4.0,
+        units='cm-1',
+        fname='phonon',
+    ):
+        """Infrared spectrum from Born charges and zone-centre eigenvectors (Stage 3).
+
+        For each zone-centre mode the *mode effective charge vector*
+        ``Zbar_v,a = sum_k,b Z*_k,a,b e_v,k,b / sqrt(M_k)`` is formed from the
+        Born effective charges, the (mass-weighted) Gamma-point eigenvectors and
+        the atomic masses; the IR intensity is ``I_v = sum_a |Zbar_v,a|^2``.  A
+        Lorentzian broadening of each mode yields the continuous spectrum.  The
+        transverse-optical eigenvectors at exactly Gamma are used, so the
+        non-analytical (LO-TO) correction is not required.
+
+        The harmonic force constants are rebuilt deterministically from the
+        displaced-supercell forces (as in :meth:`phonons`), and the Born charges
+        are taken from ``born``/``born_file`` or from a preceding
+        :meth:`born_charges` call.
+
+        Arguments:
+            supercell_matrix: Supercell used to build the phonopy object;
+                reused from a previous phonon call when omitted.
+            primitive_matrix (optional): phonopy primitive transformation.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (``'qe'`` -> harvest ``supercell-NNN.out``; a
+                path -> ingest ``FORCE_SETS``; an array -> use directly).
+            phonon_dir (str): Sub-directory (under ``outputdir``) with the
+                displaced supercells / ``FORCE_SETS`` and the ``BORN`` file.
+            born_file (str, optional): Path to a phonopy ``BORN`` file with the
+                Born effective charges; takes precedence over ``born``.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor (read alongside ``born_file``; unused by the
+                oscillator strengths).
+            freq_min, freq_max (float, optional): Frequency-axis limits of the
+                broadened spectrum (in ``units``).
+            npoints (int): Number of points on the broadened-spectrum grid.
+            gamma (float): Lorentzian full width at half maximum (in ``units``).
+            units (str): Frequency units for outputs, ``'cm-1'`` or ``'THz'``.
+            fname (str): Output filename prefix; writes ``<fname>_ir_modes.dat``
+                and ``<fname>_ir_spectrum.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_ir_raman import compute_ir_spectrum
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import harvest_qe_forces, ingest_force_sets
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            compute_ir_spectrum(
+                self.data_controller,
+                born=born,
+                dielectric=dielectric,
+                born_file=born_file,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                gamma=gamma,
+                units=units,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('ir_spectrum')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('IR Spectrum')
+
+    def _raman_cell_epsilon(
+        self,
+        savedir,
+        workpath,
+        basispath,
+        configuration='extended',
+        pthr=0.95,
+        nonlocal_velocity=True,
+        nfft=None,
+        e_static=0.05,
+        eps_outdir='eps',
+        energies=None,
+        lifetime=0.1,
+        e_window=None,
+        e_ne=None,
+        return_static=False,
+    ):
+        """Dielectric tensor of one displaced cell via the PAO pipeline.
+
+        Mirrors the standard PAOFLOW optical workflow (internal projections ->
+        PAO Hamiltonian -> non-local velocity -> dielectric tensor) on the
+        displaced-cell SCF save.
+
+        When ``energies`` is ``None`` the static ``(3, 3)`` dielectric tensor
+        (``epsilon_1`` at ``omega -> 0``) is returned (non-resonant Raman).
+        Otherwise the **complex** dielectric tensor is evaluated on a frequency
+        grid spanning ``energies`` (with a finite ``lifetime`` broadening) and
+        the interpolated value at each requested photon energy (eV) is returned,
+        stacked as ``(len(energies), 3, 3)`` (resonance Raman).  When
+        ``return_static`` is ``True`` (only meaningful with ``energies``), the
+        static tensor is harvested from the same grid (its ``omega -> 0`` row)
+        and the method returns the tuple ``(stack, static)`` -- letting the
+        ``method='all'`` workflow obtain both spectra from a single SCF/optics
+        run per cell.
+        """
+        from .phonon.io import read_epsilon_at, read_static_epsilon
+
+        _, attr = self.data_controller.data_dicts()
+        pf = type(self)(
+            workpath=workpath,
+            outputdir=eps_outdir,
+            savedir=savedir,
+            smearing=attr.get('smearing', 'gauss'),
+            npool=attr.get('npool', 1),
+            verbose=False,
+        )
+        pf.projections(basispath=basispath, configuration=configuration)
+        pf.projectability(pthr=pthr)
+        pf.pao_hamiltonian()
+        if nfft is not None:
+            pf.interpolated_hamiltonian(nfft1=nfft[0], nfft2=nfft[1], nfft3=nfft[2])
+        pf.pao_eigh()
+        pf.gradient_and_momenta(nonlocal_velocity=nonlocal_velocity)
+        pf.adaptive_smearing()
+
+        d_tensor = [[0, 0], [1, 1], [2, 2], [0, 1], [0, 2], [1, 2]]
+        if energies is None:
+            pf.dielectric_tensor(emin=0.0, emax=e_static, ne=2, d_tensor=d_tensor)
+            _, pat = pf.data_controller.data_dicts()
+            return read_static_epsilon(pat['opath'], nspin=int(pat.get('nspin', 1)))
+
+        energies = np.atleast_1d(np.asarray(energies, dtype=float))
+        grid_max = float(e_window) if e_window else float(np.max(energies)) * 1.25 + 5.0 * lifetime
+        grid_ne = (
+            int(e_ne)
+            if e_ne
+            else max(201, int(np.ceil(grid_max / max(lifetime / 4.0, 1.0e-3))) + 1)
+        )
+        pf.dielectric_tensor(delta=lifetime, emin=0.0, emax=grid_max, ne=grid_ne, d_tensor=d_tensor)
+        _, pat = pf.data_controller.data_dicts()
+        nspin = int(pat.get('nspin', 1))
+        stack = np.stack([read_epsilon_at(pat['opath'], energy=e, nspin=nspin) for e in energies])
+        if return_static:
+            return stack, read_static_epsilon(pat['opath'], nspin=nspin)
+        return stack
+
+    def raman_spectrum(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        raman_dir='raman',
+        delta=0.05,
+        nbnd=None,
+        basispath=None,
+        configuration='extended',
+        pthr=0.95,
+        nonlocal_velocity=True,
+        nfft=None,
+        e_static=0.05,
+        method='static',
+        lifetime=0.1,
+        e_window=None,
+        e_ne=None,
+        dielectric_callback=None,
+        laser_nm=None,
+        temperature=300.0,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        gamma=4.0,
+        units='cm-1',
+        fname='phonon',
+        generate=None,
+    ):
+        """Raman spectrum by finite differences of the dielectric tensor (Stage 4).
+
+        Two flavours, selected with ``method``:
+
+        * ``'static'`` (default) -- **non-resonant (Placzek)** Raman from the
+          finite-difference derivative of the *static* dielectric tensor
+          (``omega -> 0``).  The Raman tensor is real.
+        * ``'resonance'`` -- **resonance Raman** from the derivative of the
+          *complex* dielectric tensor evaluated at the laser frequency
+          ``omega_L`` (set by ``laser_nm``).  In the independent-particle limit
+          this is the Albrecht A+B sum (Franck-Condon and Herzberg-Teller
+          captured together, since the finite difference differentiates the
+          transition energies *and* the transition dipoles), with resonance
+          enhancement as ``omega_L`` approaches the interband transitions.  The
+          Raman tensor is complex and intensities use ``45|a|^2 + 7 gamma^2``.
+
+        Two-phase workflow (identical for both flavours):
+
+        * **generate** -- displace the primitive cell by ``+/-delta`` along each
+          optical zone-centre eigenvector and write a ready-to-run ``pw.x`` SCF
+          input per displacement under
+          ``<raman_dir>/mode-NNN-{plus,minus}/<prefix>.scf.in``.  Run these SCF
+          calculations (any tool); no NSCF/projwfc are needed.
+        * **analyse** -- for every displaced cell run the PAOFLOW optical
+          pipeline (internal projections -> dielectric tensor) to obtain the
+          dielectric tensor (static, or at ``omega_L`` for resonance), build the
+          Raman tensor ``R^v = (eps(+delta) - eps(-delta)) / (2 delta)`` per
+          mode, and form the orientationally-averaged (powder) Stokes
+          intensities.
+
+        The phase is chosen automatically (``generate=None``): *analyse* when
+        every displaced-cell SCF save is present, otherwise *generate*.  Pass
+        ``generate=True``/``False`` to force a phase.
+
+        Arguments:
+            supercell_matrix, primitive_matrix: As in :meth:`phonons`; reused
+                from a previous call when omitted.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (used to obtain the zone-centre eigenvectors).
+            phonon_dir (str): Sub-directory with the displaced supercells /
+                ``FORCE_SETS``.
+            raman_dir (str): Sub-directory for the displaced primitive cells and
+                their dielectric outputs.
+            delta (float): Mass-weighted normal-coordinate displacement
+                amplitude (Bohr*sqrt(amu) convention; the same value is used to
+                finite-difference).
+            nbnd (int, optional): Bands for the displaced SCF inputs (empty
+                states are needed for the optical response).
+            basispath (str, optional): Pseudo-atomic basis directory for the
+                internal PAO projections in the analyse phase.
+            configuration (str): PAO basis configuration (default ``'extended'``).
+            pthr (float): Projectability threshold for the analyse phase.
+            nonlocal_velocity (bool): Use the non-local velocity correction in
+                the dielectric tensor (recommended).
+            nfft (tuple, optional): Double-grid interpolation ``(n1, n2, n3)``.
+            e_static (float): Upper energy (eV) of the 2-point grid used to read
+                the static dielectric tensor (``epsilon_1`` at ``omega -> 0``;
+                ``method='static'`` only).
+            method (str): ``'static'`` (non-resonant), ``'resonance'`` (at the
+                laser frequency), or ``'all'`` (both, harvested from a single
+                optics run per displaced cell; the static spectrum is written to
+                ``<fname>_static_raman_*.dat`` and each laser to
+                ``<fname>_<nm>nm_raman_*.dat``).
+            lifetime (float): Lorentzian lifetime broadening (eV) of the complex
+                dielectric tensor in the resonance case (the ``delta`` of
+                :meth:`dielectric_tensor`); keeps the response finite on
+                resonance.
+            e_window (float, optional): Upper energy (eV) of the per-cell
+                dielectric grid in the resonance case (default: just above the
+                largest laser energy).
+            e_ne (int, optional): Number of grid points for the per-cell
+                dielectric grid in the resonance case (default: chosen so the
+                spacing resolves ``lifetime``).
+            dielectric_callback (callable, optional): ``f(savedir, workpath) ->
+                ndarray`` returning the dielectric tensor of a displaced cell --
+                ``(3, 3)`` for ``method='static'`` or
+                ``(len(laser_nm), 3, 3)`` (complex) for ``method='resonance'``.
+                Overrides the built-in PAO pipeline.
+            laser_nm (float or sequence, optional): Excitation wavelength(s) in
+                nm.  Required for ``method='resonance'`` (sets ``omega_L`` and
+                enables the ``(omega_L - omega_v)^4`` prefactor).  A sequence
+                produces one spectrum per wavelength (a Raman *excitation
+                profile*), each written to ``<fname>_<nm>nm_raman_*.dat``.
+            temperature (float): Temperature (K) for the Bose ``(n+1)`` factor.
+            freq_min, freq_max, npoints, gamma, units, fname: Spectrum grid and
+                output options, as in :meth:`ir_spectrum`.  Writes
+                ``<fname>_raman_modes.dat`` and ``<fname>_raman_spectrum.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_ir_raman import compute_raman_spectrum
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.io import (
+            harvest_qe_forces,
+            ingest_force_sets,
+            raman_cell_dirs,
+            write_raman_displaced_inputs,
+        )
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            # Decide phase: analyse when every displaced-cell save is present.
+            run_analyse = generate is False
+            if generate is None:
+                from os.path import isdir
+
+                try:
+                    _, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+                    run_analyse = bool(entries) and all(isdir(save) for _, _, _, save in entries)
+                except FileNotFoundError:
+                    run_analyse = False
+            elif generate is True:
+                run_analyse = False
+            else:
+                run_analyse = True
+
+            if not run_analyse:
+                write_raman_displaced_inputs(
+                    self.data_controller,
+                    delta,
+                    raman_dir=raman_dir,
+                    nbnd=nbnd,
+                )
+                if self.rank == 0 and attr.get('verbose', False):
+                    print(
+                        'Raman: displaced-cell SCF inputs written; run them, then re-run to analyse.'
+                    )
+                self.report_module_time('Raman Spectrum')
+                return
+
+            # --- analyse phase -------------------------------------------------
+            phonon = arry['phonopy']
+            nmodes = 3 * len(phonon.primitive)
+            optical, entries = raman_cell_dirs(self.data_controller, raman_dir=raman_dir)
+
+            # Laser wavelength(s) / photon energies for the resonance harvest.
+            method_l = str(method).lower()
+            if method_l not in ('static', 'resonance', 'all'):
+                raise ValueError(
+                    "raman_spectrum: method must be 'static', 'resonance' or 'all' "
+                    '(got %r).' % method
+                )
+            want_static = method_l in ('static', 'all')
+            want_resonance = method_l in ('resonance', 'all')
+
+            if want_resonance:
+                if laser_nm is None:
+                    raise ValueError(
+                        'raman_spectrum(method=%r) requires laser_nm=... '
+                        '(the excitation wavelength(s) in nm).' % method_l
+                    )
+                laser_list = [float(x) for x in np.atleast_1d(laser_nm)]
+                # E(eV) = h c / lambda, with h c = 1239.841984 eV*nm.
+                res_energies = [1239.841984 / nm for nm in laser_list]
+            else:
+                laser_list = []
+                res_energies = []
+
+            if dielectric_callback is not None and method_l == 'all':
+                raise ValueError(
+                    'raman_spectrum: dielectric_callback is not supported with '
+                    "method='all'; call method='static' and method='resonance' "
+                    'separately with your callback instead.'
+                )
+
+            # One output channel per spectrum to produce.  Each carries its own
+            # +/- dielectric arrays, the laser used for the Stokes prefactor and
+            # the output basename.
+            channels = []
+            static_channel = None
+            if want_static:
+                # Bare Placzek for 'all'; pass the (scalar) laser through for a
+                # plain static run to preserve the historical behaviour.
+                static_laser = laser_nm if method_l == 'static' else None
+                static_channel = {
+                    'fname': fname + '_static' if method_l == 'all' else fname,
+                    'laser': static_laser,
+                    'plus': np.zeros((nmodes, 3, 3), dtype=float),
+                    'minus': np.zeros((nmodes, 3, 3), dtype=float),
+                }
+                channels.append(static_channel)
+
+            res_channels = []
+            multi = method_l == 'all' or len(laser_list) > 1
+            for i, nm in enumerate(laser_list):
+                ch = {
+                    'fname': '%s_%dnm' % (fname, int(round(nm))) if multi else fname,
+                    'laser': nm,
+                    'plus': np.zeros((nmodes, 3, 3), dtype=complex),
+                    'minus': np.zeros((nmodes, 3, 3), dtype=complex),
+                    'index': i,
+                }
+                channels.append(ch)
+                res_channels.append(ch)
+
+            computed = np.zeros(nmodes, dtype=bool)
+            for v, sign, cell_dir, save in entries:
+                res_stack = None
+                stat = None
+                if dielectric_callback is not None:
+                    out = np.asarray(dielectric_callback(save, cell_dir))
+                    if want_resonance:
+                        res_stack = out[None, ...] if out.ndim == 2 else out
+                    else:
+                        stat = np.real(out)
+                elif want_resonance:
+                    if basispath is None:
+                        raise ValueError(
+                            'raman_spectrum analyse phase needs basispath=... '
+                            '(or a dielectric_callback) for the internal PAO projections.'
+                        )
+                    out = self._raman_cell_epsilon(
+                        save,
+                        cell_dir,
+                        basispath,
+                        configuration=configuration,
+                        pthr=pthr,
+                        nonlocal_velocity=nonlocal_velocity,
+                        nfft=nfft,
+                        energies=res_energies,
+                        lifetime=lifetime,
+                        e_window=e_window,
+                        e_ne=e_ne,
+                        return_static=want_static,
+                    )
+                    if want_static:
+                        res_stack, stat = out
+                    else:
+                        res_stack = out
+                else:
+                    if basispath is None:
+                        raise ValueError(
+                            'raman_spectrum analyse phase needs basispath=... '
+                            '(or a dielectric_callback) for the internal PAO projections.'
+                        )
+                    stat = self._raman_cell_epsilon(
+                        save,
+                        cell_dir,
+                        basispath,
+                        configuration=configuration,
+                        pthr=pthr,
+                        nonlocal_velocity=nonlocal_velocity,
+                        nfft=nfft,
+                        e_static=e_static,
+                    )
+
+                key = 'plus' if sign == '+' else 'minus'
+                if static_channel is not None and stat is not None:
+                    static_channel[key][v] = np.real(stat)
+                if res_stack is not None:
+                    res_stack = np.asarray(res_stack)
+                    for ch in res_channels:
+                        ch[key][v] = res_stack[ch['index']]
+                computed[v] = True
+
+            for ch in channels:
+                compute_raman_spectrum(
+                    self.data_controller,
+                    ch['plus'],
+                    ch['minus'],
+                    delta,
+                    computed=computed,
+                    laser_nm=ch['laser'],
+                    temperature=temperature,
+                    freq_min=freq_min,
+                    freq_max=freq_max,
+                    npoints=npoints,
+                    gamma=gamma,
+                    units=units,
+                    fname=ch['fname'],
+                )
+
+        except Exception as e:
+            self.report_exception('raman_spectrum')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Raman Spectrum')
+
+    def vibrational_dielectric(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        forces='qe',
+        phonon_dir='phonon',
+        born_file=None,
+        born=None,
+        dielectric=None,
+        gamma=4.0,
+        freq_min=None,
+        freq_max=None,
+        npoints=2000,
+        units='cm-1',
+        emit_ev=True,
+        emissivity=False,
+        emis_angles=(0.0,),
+        emis_ntheta=64,
+        emis_temperature=(300.0,),
+        outdir='vibdielectric',
+        fname='phonon',
+    ):
+        """Vibrational (ionic) dielectric function eps(omega) (Stage 5).
+
+        The polar zone-centre phonons add a lattice resonance to the electronic
+        high-frequency dielectric tensor ``eps_inf``::
+
+            eps_ab(w) = eps_inf_ab
+                + (e^2 / (eps0 m_u V)) * sum_v Zbar_v,a Zbar_v,b
+                                              / (w_v^2 - w^2 - i w gamma_v),
+
+        where ``Zbar_v,a = sum_k,b Z*_k,a,b e_v,k,b / sqrt(M_k)`` is the mode
+        effective charge vector (as in :meth:`ir_spectrum`) and
+        ``S_v,ab = Zbar_v,a Zbar_v,b`` the mode-oscillator-strength tensor.  The
+        static limit ``eps(0) = eps_inf + sum_v S_v / w_v^2`` (generalized
+        Lyddane-Sachs-Teller) and, for a polar crystal, a reststrahlen band
+        (``Re eps < 0`` between ``w_TO`` and ``w_LO``) follow directly.  Acoustic
+        modes carry no dipole and do not contribute.
+
+        The harmonic force constants are rebuilt from the displaced-supercell
+        forces (as in :meth:`phonons`); the Born charges and ``eps_inf`` are
+        taken from ``born``/``dielectric``/``born_file`` or from a preceding
+        :meth:`born_charges` call.
+
+        Arguments:
+            supercell_matrix, primitive_matrix: As in :meth:`phonons`; reused
+                from a previous call when omitted.
+            forces: Force source for the harmonic force constants, as in
+                :meth:`phonons` (``'qe'`` -> harvest ``supercell-NNN.out``; a
+                path -> ingest ``FORCE_SETS``; an array -> use directly).
+            phonon_dir (str): Sub-directory (under ``outputdir``) with the
+                displaced supercells / ``FORCE_SETS`` and the ``BORN`` file.
+            born_file (str, optional): Path to a phonopy ``BORN`` file providing
+                the Born charges and ``eps_inf``.
+            born (array_like, optional): Born effective charges
+                ``(natom_prim, 3, 3)`` in units of the elementary charge.
+            dielectric (array_like, optional): ``(3, 3)`` high-frequency
+                dielectric tensor ``eps_inf``.
+            gamma (float or array_like): Phonon linewidth(s) used as the
+                Lorentzian damping (in ``units``); a scalar broadens every mode
+                equally, an array gives a per-mode width.
+            freq_min, freq_max (float, optional): Frequency-axis limits (in
+                ``units``); defaults span 0 to just above the highest LO mode so
+                the reststrahlen band is captured.
+            npoints (int): Number of points on the frequency grid.
+            units (str): Frequency units for inputs/outputs, ``'cm-1'`` or
+                ``'THz'``.
+            emit_ev (bool): Write the per-component ``eps{r,i}_<ab>.dat`` files
+                with the frequency axis in eV (so they plot directly with
+                :meth:`GPAO.plot_optical`); otherwise in ``units``.
+            emissivity (bool): Also derive the reststrahlen (phonon) emissivity
+                from ``eps(omega)`` via the Fresnel/Kirchhoff helpers in
+                :mod:`PAOFLOW.response.do_epsilon` and write it under ``outdir``
+                (directional ``refl_th*``/``emis_th*``, spectral hemispherical
+                ``emish_*`` and Planck-weighted total ``emist_*``).
+            emis_angles (array_like): Incidence angles (degrees) for the
+                directional reflectivity/emissivity.
+            emis_ntheta (int): Polar-angle samples for the hemispherical
+                integral.
+            emis_temperature (float or array_like): Temperature(s) (K) for the
+                total hemispherical emissivity.
+            outdir (str): Sub-directory (under ``outputdir``) for the
+                per-component dielectric files.
+            fname (str): Output basename; writes
+                ``<fname>_vibdielectric_static.dat`` and the per-component
+                ``eps{r,i}/eels/refl_<ab>.dat`` files under ``outdir``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_phonopy import (
+            generate_displacements,
+            init_phonopy,
+            produce_force_constants,
+        )
+        from .phonon.do_vibrational_dielectric import compute_vibrational_dielectric
+        from .phonon.io import harvest_qe_forces, ingest_force_sets
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+
+        try:
+            init_phonopy(self.data_controller)
+            generate_displacements(self.data_controller)
+
+            if isinstance(forces, str) and forces.lower() == 'qe':
+                harvest_qe_forces(self.data_controller, phonon_dir=phonon_dir)
+                produce_force_constants(self.data_controller)
+            elif isinstance(forces, str):
+                ingest_force_sets(self.data_controller, forces)
+                produce_force_constants(self.data_controller)
+            else:
+                produce_force_constants(self.data_controller, forces=forces)
+
+            compute_vibrational_dielectric(
+                self.data_controller,
+                born=born,
+                dielectric=dielectric,
+                born_file=born_file,
+                gamma=gamma,
+                freq_min=freq_min,
+                freq_max=freq_max,
+                npoints=npoints,
+                units=units,
+                emit_ev=emit_ev,
+                emissivity=emissivity,
+                emis_angles=emis_angles,
+                emis_ntheta=emis_ntheta,
+                emis_temperature=emis_temperature,
+                outdir=outdir,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('vibrational_dielectric')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Vibrational Dielectric')
+
+    def quasi_harmonic(
+        self,
+        supercell_matrix=None,
+        primitive_matrix=None,
+        displacement_distance=None,
+        nvolumes=5,
+        strain=0.02,
+        forces=None,
+        qha_dir='qha',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        hubbard_card=None,
+        hubbard_file=None,
+        mesh=None,
+        t_min=0.0,
+        t_max=1000.0,
+        t_step=10.0,
+        eos='vinet',
+        pressure=0.0,
+        ibrav=None,
+        q_path=None,
+        q_labels=None,
+        q_npoints=101,
+        gruneisen_band=True,
+        gruneisen_cutoff=None,
+        units='THz',
+        fname='qha',
+    ):
+        """Quasi-harmonic approximation over an isotropic volume scan (Stage 4).
+
+        Combines the static DFT energy ``E(V)`` with the harmonic vibrational
+        free energy ``F_vib(T, V)`` sampled at ``nvolumes`` isotropically
+        strained cells to obtain the temperature-dependent equilibrium volume,
+        thermal expansion, bulk modulus, Gibbs free energy, constant-pressure
+        heat capacity and thermodynamic Gruneisen parameter.
+
+        The routine operates in two phases:
+
+        1. **Generate** (``forces=None``): build the strained cells and write,
+           under ``<outputdir>/<qha_dir>/vol-NN/``, a static unit-cell SCF input
+           (``scf.in``, for ``E(V)``) and the phonopy displaced supercells
+           (``supercell-NNN.in``, for the phonons).  Run ``pw.x`` on every
+           input, then re-call with ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): harvest the energies and forces, build
+           the force constants and thermal properties at each volume, and run
+           the QHA.
+
+        Arguments:
+            supercell_matrix: Supercell for the finite displacements (scalar,
+                length-3 or 3x3).  Required on the first call; reused afterwards.
+            primitive_matrix (optional): phonopy primitive transformation.
+            displacement_distance (float, optional): Displacement amplitude in
+                Bohr (default 0.01).
+            nvolumes (int): Number of sampled volumes, ``5`` (default) or ``3``.
+                ``5`` uses the full equation-of-state QHA
+                (:class:`phonopy.PhonopyQHA`); ``3`` uses a parabolic
+                ``F(V; T)`` fit (a four-parameter EOS needs at least four
+                points).
+            strain (float): Maximum linear strain of the scan; the volumes span
+                ``omega * (1 +/- strain)**3`` (default ``0.02``).
+            forces: ``None`` -> write the QE inputs only; ``'qe'`` -> harvest the
+                ``scf.out`` / ``supercell-NNN.out`` files and run the QHA.
+            qha_dir (str): Sub-directory (under ``outputdir``) holding the
+                per-volume ``vol-NN`` directories.
+            pp_dir (str, optional): Pseudopotential directory written into the
+                QE inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): QE ``prefix`` for the supercell runs.
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercells
+                (default: the unit-cell grid scaled by the supercell size).
+            hubbard_file (str, optional): ``pw.x`` input whose new-style
+                ``HUBBARD`` card is appended to every QE input (on-site ``U``
+                only; intersite ``V`` dropped).
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            mesh (optional): q-mesh for the per-volume thermal properties
+                (default ``[20, 20, 20]``).
+            t_min, t_max, t_step (float): Temperature grid (K).
+            eos (str): Equation of state for the ``nvolumes=5`` route,
+                ``'vinet'`` (default), ``'birch_murnaghan'`` or ``'murnaghan'``.
+            pressure (float): External pressure (GPa) added as a ``pV`` term.
+            ibrav (int, optional): Quantum ESPRESSO Bravais lattice index used to
+                derive the default q-path for the mode-Grueneisen dispersion.
+            q_path (optional): Explicit dispersion path (segments in fractional
+                reciprocal coordinates) for the mode-Grueneisen band; ``None``
+                derives it from ``ibrav``.
+            q_labels (optional): Tick labels matching ``q_path``.
+            q_npoints (int): q-points per path segment for the Grueneisen band.
+            gruneisen_band (bool): Also compute the mode-Grueneisen parameters
+                along the q-path (dispersion), written to
+                ``<fname>_gruneisen_band.dat``.
+            gruneisen_cutoff (float, optional): Frequency cutoff (in ``units``)
+                below which the acoustic ``1/omega**2`` divergence of the mode
+                Grueneisen parameter is masked near Gamma; ``None`` uses 1% of
+                the maximum frequency, ``0`` disables the masking.
+            units (str): Frequency units for the Grueneisen-band frequencies,
+                ``'THz'`` (default) or ``'cm-1'``.
+            fname (str): Output filename prefix; writes ``<fname>_ev.dat``,
+                ``<fname>_volume.dat``, ``<fname>_thermal_expansion.dat``,
+                ``<fname>_bulk_modulus.dat``, ``<fname>_gibbs.dat``,
+                ``<fname>_heat_capacity.dat``, ``<fname>_gruneisen.dat`` and
+                (when enabled) ``<fname>_gruneisen_band.dat``.
+
+        Returns:
+            None
+        """
+        from .phonon.do_qha import generate_qha_inputs, run_qha
+        from .phonon.io import read_hubbard_card
+
+        arry, attr = self.data_controller.data_dicts()
+
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+        if primitive_matrix is not None:
+            attr['phonon_primitive_matrix'] = primitive_matrix
+        if displacement_distance is not None:
+            attr['phonon_displacement_distance'] = displacement_distance
+        if mesh is not None:
+            attr['phonon_q_mesh'] = mesh
+        if ibrav is not None:
+            attr['ibrav'] = ibrav
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            if forces is None:
+                dirs = generate_qha_inputs(
+                    self.data_controller,
+                    nvolumes=nvolumes,
+                    strain=strain,
+                    qha_dir=qha_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote QHA inputs for %d volumes under %s. Run pw.x on '
+                        'every scf.in and supercell-NNN.in, then re-call '
+                        "quasi_harmonic(forces='qe')." % (len(dirs), qha_dir)
+                    )
+                self.report_module_time('Quasi-Harmonic (write inputs)')
+                return
+
+            if not (isinstance(forces, str) and forces.lower() == 'qe'):
+                raise ValueError(
+                    "quasi_harmonic forces must be None (write inputs) or 'qe' "
+                    '(harvest the QE outputs).'
+                )
+
+            run_qha(
+                self.data_controller,
+                nvolumes=nvolumes,
+                strain=strain,
+                qha_dir=qha_dir,
+                mesh=mesh,
+                t_min=t_min,
+                t_max=t_max,
+                t_step=t_step,
+                eos=eos,
+                pressure=pressure,
+                ibrav=ibrav,
+                q_path=q_path,
+                q_labels=q_labels,
+                q_npoints=q_npoints,
+                gruneisen_band=gruneisen_band,
+                gruneisen_cutoff=gruneisen_cutoff,
+                units=units,
+                fname=fname,
+            )
+
+        except Exception as e:
+            self.report_exception('quasi_harmonic')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Quasi-Harmonic')
+
+    def electron_phonon(
+        self,
+        supercell_matrix=None,
+        displacement_distance=0.06,
+        forces=None,
+        elphon_dir='elphon',
+        pp_dir=None,
+        prefix=None,
+        kgrid=None,
+        hubbard_file=None,
+        hubbard_card=None,
+        configuration='standard',
+        basispath=None,
+        nbnd=None,
+        is_plusminus='auto',
+        displacement_mode='symmetry',
+        pthr=0.95,
+        shift_type=1,
+        project_good_subspace=True,
+    ):
+        """Electron-phonon coupling via finite differences of the PAO H (Stage S7).
+
+        Builds the electron-phonon matrix elements by finite-differencing the
+        PAO Hamiltonian with respect to atomic displacements (frozen phonon in a
+        supercell), reusing the projection / ``pao_hamiltonian`` pipeline and the
+        phonon module's supercell machinery.
+
+        The routine is two-phase:
+
+        1. **Generate** (``forces=None``): initialise the phonon supercell,
+           displace every atom of the reference primitive cell by
+           ``+/- displacement_distance`` along x, y and z, and write one static
+           ``pw.x`` SCF input per displaced supercell under
+           ``<outputdir>/<elphon_dir>/`` (plus the reference ``supercell.in`` and
+           a ``displacements.json`` manifest).  The displacement set is reduced
+           by the crystal symmetry (via phonopy), so only the inequivalent
+           displacements are computed (a single one for fcc metals).  Each
+           displaced run gets a unique ``prefix`` so its ``.save`` survives, and
+           ``nbnd`` is sized to the PAO projection basis of ``configuration``.
+           Run ``pw.x`` on each, then re-call with ``forces='qe'``.
+
+        2. **Analyse** (``forces='qe'``): rebuild the PAO Hamiltonian of every
+           displaced supercell and central-difference to ``dV = dH/du`` (stored
+           on the controller as ``elphon_dV``).  The ``g_mn^v(k, q)`` assembly
+           and the derived properties land in the next stage.
+
+        Arguments:
+            supercell_matrix: Supercell for the displacements (scalar, length-3
+                or 3x3). Required on the first call; reused afterwards.
+            displacement_distance (float): Displacement amplitude in Bohr
+                (default ``0.06``).
+            forces: ``None`` -> write the displaced-supercell inputs; ``'qe'`` ->
+                harvest and build ``dV``.
+            elphon_dir (str): Sub-directory (under ``outputdir``) for the
+                displaced supercells and the manifest.
+            pp_dir (str, optional): Pseudopotential directory written into the QE
+                inputs (default: the DFT ``.save`` path).
+            prefix (str, optional): Base QE ``prefix`` for the supercell runs
+                (each displacement appends ``_dispNNN``).
+            kgrid (optional): Explicit Monkhorst-Pack grid for the supercells
+                (default: the unit-cell grid scaled by the supercell size).
+            hubbard_file (str, optional): ``pw.x`` input whose new-style
+                ``HUBBARD`` card is appended to every input (on-site ``U`` only).
+            hubbard_card (str, optional): Explicit ``HUBBARD`` card text
+                (overrides ``hubbard_file``).
+            configuration (str): PAO basis configuration (``'minimal'``,
+                ``'standard'`` or ``'extended'``) that sizes ``nbnd`` and drives
+                the analyse-phase projections.
+            basispath (str, optional): Local PAO basis directory used by the
+                analyse-phase projections.
+            nbnd (int, optional): Explicit band count for the displaced-supercell
+                SCF inputs (default: the PAO basis size for ``configuration``).
+            is_plusminus ({'auto', True, False}): Passed to phonopy's
+                displacement generation.  ``'auto'`` (default) keeps the
+                symmetry-minimal set and takes forward differences against the
+                reference supercell; ``True`` adds the explicit ``-`` for central
+                differences.
+            displacement_mode ({'symmetry', 'cartesian'}): ``'symmetry'``
+                (default) uses phonopy's symmetry-reduced displacements (the full
+                Cartesian tensor is reconstructed by the symmetry expansion);
+                ``'cartesian'`` displaces every reference-cell atom explicitly
+                along x, y and z (full Cartesian derivative directly, more runs).
+            pthr (float): Projectability threshold for the analyse phase.
+            shift_type (int): Hamiltonian shift scheme for the analyse phase.
+
+        Returns:
+            None
+        """
+        from .elphon.do_elphon import generate_eph_inputs, run_eph
+        from .phonon.io import read_hubbard_card
+
+        arry, attr = self.data_controller.data_dicts()
+
+        # Record the supercell so the analyse-phase helpers (assemble_eph_tensor,
+        # eliashberg) can initialise phonopy without re-running the generate phase.
+        if supercell_matrix is not None:
+            attr['phonon_supercell_matrix'] = supercell_matrix
+
+        if hubbard_card is None and hubbard_file is not None:
+            hubbard_card = read_hubbard_card(hubbard_file, include_v=False)
+
+        try:
+            if forces is None:
+                paths = generate_eph_inputs(
+                    self.data_controller,
+                    supercell_matrix=supercell_matrix,
+                    displacement_distance=displacement_distance,
+                    elphon_dir=elphon_dir,
+                    pp_dir=pp_dir,
+                    prefix=prefix,
+                    kgrid=kgrid,
+                    hubbard_card=hubbard_card,
+                    configuration=configuration,
+                    nbnd=nbnd,
+                    is_plusminus=is_plusminus,
+                    displacement_mode=displacement_mode,
+                )
+                if self.rank == 0:
+                    print(
+                        'Wrote %d displaced-supercell QE inputs for electron-phonon '
+                        'under %s. Run pw.x on each, then re-call '
+                        "electron_phonon(forces='qe')." % (len(paths), elphon_dir)
+                    )
+                self.report_module_time('Electron-Phonon (write inputs)')
+                return
+
+            run_eph(
+                self.data_controller,
+                elphon_dir=elphon_dir,
+                configuration=configuration,
+                basispath=basispath,
+                pthr=pthr,
+                shift_type=shift_type,
+                project_good_subspace=project_good_subspace,
+            )
+
+        except Exception as e:
+            self.report_exception('electron_phonon')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.report_module_time('Electron-Phonon')
+
+    def linear_response(
+        self,
+        response='shc',
+        gamma=0.01,
+        twoD=False,
+        t_odd=False,
+        full_chi2=False,
+        intraband=False,
+        interband=False,
+        s_tensor=None,
+        a_tensor=None,
+        eminH=-1.0,
+        emaxH=1.0,
+        esize=200,
+    ):
+        """
+        Calculate various linear response tensors:
+            1. Spin Hall conductivity tensors
+            2. Rashba-Edelstein effect tensors
+            3. Charge conductivity tensors
+            4. Anomolous Hall effect tensors
+        All of above tensors can be computed for both magnetic(broken time-reversible symmetry) and nonmagnetic systems.
+
+        Arguments:
+            response (string) :
+                response to be calculated; Acceptable strings: 'shc', 'ahc', 'ree', 'cond'
+            gamma (float):
+                spectral broadening to be used
+            t_odd (boolean):
+                If True, tensor components that is odd under time-reversible symmetry will be calculated
+            full_chi2 (boolean):
+                If True, Gamma dependent Eqn. (2) will be used to compute the tensor. Refer tutorial03 for equation reference.
+            intraband (boolean) :
+                If True, only intraband contribution <nk|oper|nk> will be calculated
+            interband (boolean) :
+                If True, only interband contribution <nk|oper|mk> (for n not equal to m) will be calculated
+            s_tensor (nested list):
+                List of tensor elements to calculate for SHE
+                                  Ex: To calculate xxx and zxy use [[0,0,0],[2,0,1]])
+                                  first index = spin polarization
+                                  second index = spin current
+                                  third index = applied electric field
+            a_tensor (nested list):
+                List of tensor elements to calculate for REE/AHE/Conductivity
+                                  Ex: [[1,2],[0,1]]
+                                  firs index: direction of the response
+                                  second index: direction of of applied electric field
+            twoD (bool):
+                True to output in 2D units of Ohm^-1, neglecting the sample height in the z direction
+            eminH (float):
+                The minimum energy in the range
+            emaxH (float):
+                The maximum energy in the range
+            esize (int):
+                The number of energy increments
+
+        Returns:
+            None
+        """
+        arry, attr = self.data_controller.data_dicts()
+        attr['response'] = response
+        attr['gamma'] = gamma
+        attr['twoD'] = twoD
+        attr['eminH'] = eminH
+        attr['emaxH'] = np.amin(np.array([attr['shift'], emaxH]))
+        attr['esize'] = esize
+        attr['intraband'] = intraband
+        attr['interband'] = interband
+        attr['t_odd'] = t_odd
+        attr['full_chi2'] = full_chi2
+
+        if s_tensor is not None:
+            arry['ree_tensor'] = a_tensor
+        else:
+            arry['ree_tensor'] = arry['a_tensor']
+
+        if s_tensor is not None:
+            arry['shc_tensor'] = s_tensor
+        else:
+            arry['shc_tensor'] = arry['s_tensor']
+
+        if response == 'shc' or response == 'ree':
+            if 'Sj' not in arry:
+                self.spin_operator()
+        if 'deltakp' not in arry:
+            if 'pksp' not in arry:
+                self.gradient_and_momenta()
+            self.adaptive_smearing()
+
+        if response == 'shc':
+            if t_odd:
+                module = (
+                    'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+                )
+            else:
+                module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
+        elif response == 'ree':
+            if t_odd:
+                module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
+            else:
+                module = (
+                    'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+                )
+        elif response == 'cond':
+            module = 'linear_response_eqn245' if intraband or interband else 'linear_response_eqn1'
+
+        elif response == 'ahc':
+            module = 'linear_response_eqn245' if full_chi2 else 'linear_response_eqn3'
+        else:
+            raise ValueError(f'Unknown response type: {response}')
+
+        if module == 'linear_response_eqn245':
+            from .response.linear_response_eqn245 import calc_chi
+        elif module == 'linear_response_eqn1':
+            from .response.linear_response_eqn1 import calc_chi
+        else:
+            from .response.linear_response_eqn3 import calc_chi
+
+        calc_chi(self.data_controller)
+        self.report_module_time('Linear response completed')
+        self.comm.Barrier()

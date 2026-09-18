@@ -39,7 +39,7 @@ def test_initialize_hamiltonian_blocks_bulk_symmetrizes(monkeypatch):
         wr_par=wr_par,
         table_par=table_par,
         ispin=0,
-        transport_direction=3,
+        transport_direction='z',
         calculation_type='bulk',
         data_controller=object(),
         conductor_data=DummyConductorData(),
@@ -55,11 +55,17 @@ def test_initialize_hamiltonian_blocks_bulk_symmetrizes(monkeypatch):
 
 
 @pytest.mark.unit
-def test_check_leads_are_identical_uses_files_and_arrays():
-    """Lead identity check should compare filenames and index arrays."""
+def test_check_leads_are_identical_uses_sgm_files_and_arrays():
+    """Lead identity check should compare self-energy filenames and index arrays."""
     ham = HamiltonianSystem(dimL=1, dimC=1, dimR=1, nkpts_par=1)
     ham.allocate(np.zeros((2, 1), dtype=int), {})
 
-    assert check_leads_are_identical(ham, datafile_L='L', datafile_R='R') is False
+    # Freshly allocated leads share identical (zero) index arrays.
+    assert check_leads_are_identical(ham) is True
 
-    assert check_leads_are_identical(ham, datafile_L='L', datafile_R='L') is True
+    # Differing self-energy datafiles make the leads non-identical.
+    assert check_leads_are_identical(ham, datafile_L_sgm='L', datafile_R_sgm='R') is False
+
+    # Differing index arrays make the leads non-identical.
+    ham.blc_00R.irows = ham.blc_00R.irows + 1
+    assert check_leads_are_identical(ham) is False

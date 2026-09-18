@@ -1,0 +1,32 @@
+:root {
+    --pf-team-photo-size: 150px;
+}
+
+.pf-team-member {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0;
+}
+.pf-team-photo {
+  width: var(--pf-team-photo-size);
+  height: var(--pf-team-photo-size);
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto 0.5rem;
+}
+.pf-team-name {
+  font-weight: bold;
+  white-space: nowrap;
+}
+.pf-team-roles {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+.pf-team-role {
+    margin: 0;
+}

@@ -47,8 +47,7 @@ Special functions
 
 Combinatorial utilities
 -----------------------
-:func:`fact`, :func:`fact_ratio`, :func:`binomial`,
-:func:`binomial_prefactor`
+:func:`fact`, :func:`fact_ratio`, :func:`binomial`, :func:`binomial_prefactor`
     Factorial, double-factorial ratio, and binomial-coefficient helpers
     used in the Cartesian angular-momentum reduction (Augspurger & Dykstra).
 
