@@ -98,7 +98,10 @@ def do_spin_texture(data_controller):
             )
 
     sktxtaux = np.take(np.diagonal(sktxtaux, axis1=2, axis2=3), ind_plot, axis=2)
-    sktxt = gather_full(np.ascontiguousarray(sktxtaux), attributes['npool'])
+    # keep the rank-local k slice for downstream k-summed routines (REE);
+    # the gathered full-grid array is only used for writing files on rank 0
+    sktxt_local = np.ascontiguousarray(sktxtaux)
+    sktxt = gather_full(sktxt_local, attributes['npool'])
     sktxtaux = None
 
     if rank == 0:
@@ -125,6 +128,6 @@ def do_spin_texture(data_controller):
                     spinband=sktxt[:, :, :, :, ib],
                 )
 
-    arrays['sktxt'] = sktxt
+    arrays['sktxt'] = sktxt_local
     sktxt = None
     E_k_full = None
