@@ -160,10 +160,10 @@ def do_rashba_edelstein(
         )
 
         if write_to_file:
-            fkai = open(join(attr['opath'], filename + '_kai.dat'), 'w')
-            fcurrent = open(join(attr['opath'], filename + '_current.dat'), 'w')
+            fkai = open(join(attr['opath'], filename + 'kai.dat'), 'w')
+            fcurrent = open(join(attr['opath'], filename + 'current.dat'), 'w')
 
-            ofE = lambda si, sj: open(join(attr['opath'], filename + f'_Ekai_{si}{sj}.dat'), 'w')
+            ofE = lambda si, sj: open(join(attr['opath'], filename + f'Ekai_{si}{sj}.dat'), 'w')
             fEkai = [[ofE(sEkai[i], sEkai[j]) for j in range(3)] for i in range(3)]
 
             for ie in range(esize):

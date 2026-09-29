@@ -3485,7 +3485,7 @@ class PAOFLOW:
                         st,
                         write_to_file,
                         arrays['sktxt'],
-                        'spin',
+                        'spin_',
                     )
                 if orbital == True:
                     self.orbital_texture(fermi_up=emax, fermi_dw=emin)
@@ -3499,7 +3499,7 @@ class PAOFLOW:
                         st,
                         write_to_file,
                         arrays['oktxt'],
-                        'orbital',
+                        'orbital_',
                     )
 
         except Exception as e:
