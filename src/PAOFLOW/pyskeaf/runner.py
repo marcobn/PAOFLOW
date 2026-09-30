@@ -50,6 +50,7 @@ from PAOFLOW.pyskeaf.slice_ops import (
     build_slice,
     make_slice_geometry,
 )
+from PAOFLOW.utils.parallel_resources import resolve_n_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -442,6 +443,9 @@ def run_skeaf(
     jobs = list(enumerate(zip(thetas, phis)))
     jobs = [(i, float(t), float(p)) for i, (t, p) in jobs]
 
+    # Worker count within this process' core budget (only used outside MPI).
+    n_workers = resolve_n_jobs(n_jobs, n_angles) if comm is None else 1
+
     if comm is not None:
         if mpi_rank == 0:
             logger.info('Dispatching %d angle(s) across %d MPI ranks', n_angles, mpi_size)
@@ -451,16 +455,18 @@ def run_skeaf(
                     n_jobs,
                 )
         results = _run_mpi_angle_jobs(jobs, _one, comm)
-    elif n_jobs == 1 or n_angles == 1:
+    elif n_workers == 1:
         results = [_one(j) for j in jobs]
     else:
         # Lazy import — joblib is already a hard dep but we keep the import
         # local so this module is cheap to import in single-thread mode.
         from joblib import Parallel, delayed
 
-        logger.info('Dispatching %d angle(s) to %d joblib workers (loky backend)', n_angles, n_jobs)
+        logger.info(
+            'Dispatching %d angle(s) to %d joblib workers (loky backend)', n_angles, n_workers
+        )
         results = Parallel(
-            n_jobs=n_jobs,
+            n_jobs=n_workers,
             backend='loky',
             batch_size=1,
             timeout=getattr(config, 'angle_timeout', None),

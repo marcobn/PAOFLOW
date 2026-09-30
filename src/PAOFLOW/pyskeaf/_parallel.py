@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import warnings
 from typing import Any
 
-
-_RANK_ENV_VARS = (
-    'OMPI_COMM_WORLD_RANK',
-    'PMI_RANK',
-    'PMIX_RANK',
-    'SLURM_PROCID',
-    'MV2_COMM_WORLD_RANK',
-    'I_MPI_RANK',
-)
+from PAOFLOW.utils.parallel_resources import _RANK_ENV_VARS, mpi_rank  # noqa: F401
 
 
 def active_mpi_comm() -> Any | None:
@@ -39,19 +30,6 @@ def active_mpi_comm() -> Any | None:
         return None
     comm = MPI.COMM_WORLD
     return comm if comm.Get_size() > 1 else None
-
-
-def mpi_rank() -> int | None:
-    """Return this process' MPI rank from common launcher env vars."""
-    for name in _RANK_ENV_VARS:
-        value = os.environ.get(name)
-        if value is None:
-            continue
-        try:
-            return int(value)
-        except ValueError:
-            continue
-    return None
 
 
 def is_primary_process() -> bool:

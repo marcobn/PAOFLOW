@@ -2203,6 +2203,7 @@ class PAOFLOW:
         n_jobs : int, default 1
             Number of parallel worker processes used for the angle sweep.
             Ignored under MPI, which distributes angles across ranks instead.
+            Capped at the available cores otherwise.
         angle_timeout : float or None, default None
             Seconds allowed for any single angle when ``n_jobs`` exceeds 1.
             ``None`` waits indefinitely. Set it above the expected per-angle
