@@ -79,6 +79,26 @@ Use `conda install -c conda-forge mpi4py` or load the correct MPI module and
 install mpi4py from source to ensure ABI compatibility.
 :::
 
+### MPI and joblib workers
+
+A few modules (Slater–Koster fitting, sparse band structures, band unfolding, and
+pyskeaf angle sweeps) can also spread work over joblib/loky worker processes via
+`n_jobs` / `n_workers`. When a script is launched with `mpirun -np N`, PAOFLOW
+automatically limits each rank's joblib pool to that rank's share of the node, so
+the MPI and joblib layers never oversubscribe the cores:
+
+- `n_jobs=-1` resolves to the rank's share (cores on the node divided by ranks on
+  the node, bounded by any CPU binding set by the launcher). This also applies to
+  `joblib.Parallel` calls in your own scripts, as long as `PAOFLOW` is imported first.
+- Explicit requests larger than the share are reduced, with a single warning.
+- If the launcher binds each rank to one core (the default for many `mpirun`
+  setups), joblib runs serially inside each rank. To mix MPI and joblib, give
+  every rank several cores, e.g. `mpirun -np 4 --map-by slot:pe=8` or
+  `mpirun -np 4 --bind-to none` on a 32-core node.
+- To set the per-rank budget yourself, export `LOKY_MAX_CPU_COUNT` before launching.
+
+Serial runs (no `mpirun`) are unaffected.
+
 ---
 
 ## Verifying the installation

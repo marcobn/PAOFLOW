@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.linalg import det, eigh, inv
 
+from PAOFLOW.utils.parallel_resources import resolve_n_jobs
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Data containers
 # ═══════════════════════════════════════════════════════════════════════
@@ -759,6 +761,9 @@ def unfold_bands_sparse(
                     -1 = all cores).  Uses processes (``backend``), since
                     ARPACK's shift-invert solve is GIL-bound and does not
                     parallelize under threads.
+                    Capped at this process' core budget (its share of the
+                    node under ``mpirun``; see
+                    :mod:`PAOFLOW.utils.parallel_resources`).
     backend       : joblib backend for the k-point loop (default 'loky').
     verbose       : print progress.
     **eigsh_kwargs : extra arguments forwarded to ``eigsh`` (e.g. ``tol``).
@@ -853,6 +858,8 @@ def unfold_bands_sparse(
         w = _compute_spectral_weights(evecs, orb_idx, uphi, n_eigs, n_at_pc, N)
         return e_pc, evals, w
 
+    # Keep workers within this process' share of the node (MPI-aware).
+    n_workers = resolve_n_jobs(n_workers, nk)
     _use_parallel = n_workers != 1
     try:
         from joblib import Parallel, delayed
