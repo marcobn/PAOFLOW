@@ -240,7 +240,50 @@ def test_vertex_pao_R_vectorized_matches_loop():
     for k in range(nk):
         i1, i2, i3 = kidx[k]
         gk[:, :, :, i1, i2, i3] = np.einsum(
-            'mi,mnc,nj->ijc', A[:, :, ikq[k]].conj(), d[k], A[:, :, k]
+            'mi,mnc,nj->ijc', A[:, :, ikq[k]], d[k], A[:, :, k].conj()
         )
     gR_ref = np.fft.fftn(gk, axes=(3, 4, 5)) / (ng[0] * ng[1] * ng[2])
     np.testing.assert_allclose(gR, gR_ref, rtol=1e-12, atol=1e-12)
+
+
+def test_vertex_pao_R_recovers_pao_operator_independent_of_band_phases():
+    """``A_{ni} = <phi_i|psi_n>``: the vertex must return the PAO operator, for any band gauge.
+
+    Bands are a complete orthonormal set in the PAO space (``nbnd == nawf``),
+    so ``d = <psi_{k+q}| G |psi_k>`` built from a known PAO operator ``G(k)``
+    must rotate back to exactly ``G(k)``, whatever phases the bands carry.
+    """
+    from PAOFLOW.elphon.elph_bloch import vertex_pao_R
+
+    rng = np.random.default_rng(7)
+    ng = (2, 2, 1)
+    nk = 4
+    nawf = nbnd = 3
+    ncart = 2
+    ax = [np.arange(n) / n for n in ng]
+    kcry = np.stack(np.meshgrid(*ax, indexing='ij'), axis=-1).reshape(-1, 3)
+    kidx = np.round(kcry * np.array(ng)).astype(int) % np.array(ng)
+    ikq = np.array([1, 0, 3, 2])  # q = (1/2, 0, 0) on the 2x2x1 grid
+
+    # Columns of V_k are the PAO coefficients <phi_i|psi_nk>, so A[:, :, k] = V_k^T.
+    V = np.stack([_random_unitary(nawf, seed=10 + k) for k in range(nk)], axis=-1)
+    G = rng.standard_normal((nk, nawf, nawf, ncart)) + 1j * rng.standard_normal(
+        (nk, nawf, nawf, ncart)
+    )
+    G_grid = np.zeros((nawf, nawf, ncart) + ng, dtype=complex)
+    for k in range(nk):
+        G_grid[:, :, :, kidx[k, 0], kidx[k, 1], kidx[k, 2]] = G[k]
+    G_R = np.fft.fftn(G_grid, axes=(3, 4, 5)) / nk
+
+    for gauge_seed in (0, 1):
+        phases = np.exp(2j * np.pi * np.random.default_rng(gauge_seed).random((nbnd, nk)))
+        Vg = V * phases[None, :, :]  # same states, different band phases
+        A = np.transpose(Vg, (1, 0, 2))  # (nbnd, nawf, nk)
+        d = np.stack(
+            [
+                np.einsum('im,ijc,jn->mnc', Vg[:, :, ikq[k]].conj(), G[k], Vg[:, :, k])
+                for k in range(nk)
+            ]
+        )  # d_{mn,c}(k) = <psi_{m,k+q}| G_c(k) |psi_{nk}>
+        gR = vertex_pao_R(d, A, ikq, kidx, ng)
+        np.testing.assert_allclose(gR, G_R, rtol=1e-12, atol=1e-12)
