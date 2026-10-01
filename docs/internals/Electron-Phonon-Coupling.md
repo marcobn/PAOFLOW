@@ -74,12 +74,22 @@ $\mu^*$.
 **The PAO-gauge vertex.** Starting from QE's Bloch-basis Cartesian deformation
 potential $d_{mn,\kappa\alpha}(k,q) = \langle m,k{+}q|\partial_{u_{\kappa\alpha}}V|n,k\rangle$
 (read directly from the coupling dump — never recomputed), the vertex is
-rotated into the PAO gauge with the same projection matrices $A_k$ used to
-build `HRs`,
+rotated into the PAO gauge with the same projection matrices
+$A_{ni}(k) = \langle\phi_i|\psi_{nk}\rangle$ used to build `HRs`
+($H = A\,\varepsilon\,A^\dagger$),
 
 $$
-g^{\rm PAO}_{ij,\kappa\alpha}(k,q) = \big[A_{k+q}^\dagger\, d_{\kappa\alpha}(k)\, A_k\big]_{ij},
+g^{\rm PAO}_{ij,\kappa\alpha}(k,q)
+= \sum_{mn}\langle\phi_i|\psi_{m,k+q}\rangle\, d_{mn,\kappa\alpha}(k)\, \langle\psi_{nk}|\phi_j\rangle
+= \big[A_{k+q}^{T}\, d_{\kappa\alpha}(k)\, A_k^{*}\big]_{ij},
 $$
+
+i.e. $\langle\phi_i|P_{k+q}\,\partial_{u_{\kappa\alpha}}V\,P_k|\phi_j\rangle$. Each band
+index appears once as a bra and once as a ket, so the vertex does not depend on
+the band phases, **provided $d$ and $A$ come from the same Kohn–Sham states**.
+(Before October 2026 the code used $A_{k+q}^\dagger d A_k$, which assumes the
+conjugate convention $\langle\psi|\phi\rangle$ and is not independent of the
+band phases; results obtained with it should be re-checked.)
 
 and Fourier-transformed $k\to R_e$ to a real-space vertex $g(R_e)$ per coarse
 $q$ (`vertex_pao_R`). This is the "half-transformed" object at the heart of
