@@ -18,6 +18,11 @@ Core contract (see each module's docstring for details):
   and deleted.
 - Per-k dense workspaces are limited to one ``(nawf, nev)`` eigenvector
   block, discarded before the next k-point.
+
+The real-space cutoff can be given as a radius or as a neighbour-shell
+count (:mod:`~PAOFLOW.sparse.shells`).  The base-cell bond list can be
+saved, reloaded in place of the DFT input stages, and read back as a
+labelled dataset of hopping integrals (:mod:`~PAOFLOW.sparse.io`).
 """
 
 from .hamiltonian import SparseHamiltonian
