@@ -201,30 +201,30 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
 
     # Hall Magnetization Calculation with Gaussian Smearing
 
-    nawf = attributes['nawf']
+    # Loop-invariant: does not depend on ik/ispin, so compute it once instead
+    # of nktot*nspin times.
+    Op1_eff = 0.5 * (P @ Op1[spol, :, :] + Op1[spol, :, :] @ P)
 
-    v_kaux = np.zeros_like(arrays['v_k'])
-
-    O1 = np.zeros_like(arrays['pksp'])
-    O2 = np.zeros_like(arrays['pksp'])
+    # Only the spol/ipol slice of pksp's "3" (xyz) axis is ever used, so drop
+    # that axis instead of allocating (and zero-filling) 3x the memory.
+    O1 = np.zeros_like(arrays['pksp'][:, 0, :, :, :])
+    O2 = np.zeros_like(arrays['pksp'][:, 0, :, :, :])
 
     for ik in range(nktot):
         for ispin in range(nspin):
-            O1[ik, spol, :, :, ispin], O2[ik, ipol, :, :, ispin] = perturb_split(
-                0.5 * (P @ Op1[spol, :, :] + Op1[spol, :, :] @ P),
+            O1[ik, :, :, ispin], O2[ik, :, :, ispin] = perturb_split(
+                Op1_eff,
                 arrays['dHksp'][ik, ipol, :, :, ispin],
                 arrays['v_k'][ik, :, :, ispin],
                 arrays['degen'][ispin][ik],
             )
 
-            # O1[ik,spol,:,:,ispin],O2[ik,ipol,:,:,ispin]= perturb_split(
+            # O1[ik,:,:,ispin],O2[ik,:,:,ispin]= perturb_split(
             #    arrays['dHksp'][ik,ipol,:,:,ispin],
             #    arrays['dHksp'][ik,spol,:,:,ispin],
             #    arrays['v_k'][ik,:,:,ispin],
             #    arrays['degen'][ispin][ik]
             # )
-
-    j_kaux = np.zeros_like(arrays['v_k'])
 
     for ispin in range(attributes['nspin']):
         E_k = np.real(arrays['E_k'][:, :, ispin])
@@ -232,9 +232,14 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
         accaux = np.zeros((ne), dtype=float)   # kai numerator:  Sum <S_spol><v_ipol>
         jcaux = np.zeros((ne), dtype=float)     # current (field dir.): Sum <v_ipol><v_ipol>
 
-        for ik in range(nktot):
-            v_kaux[ik, :, :, ispin] = O1[ik, spol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
-            j_kaux[ik, :, :, ispin] = O2[ik, ipol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
+        # Only the diagonal of the (elementwise) O1*O2 and O2*O2 products is
+        # ever used below, and diag(A*B) == diag(A)*diag(B) for an elementwise
+        # product, so work with the (nktot, nawf) diagonals directly instead
+        # of materializing full (nktot, nawf, nawf) arrays.
+        d1 = np.diagonal(O1[:, :, :, ispin], axis1=1, axis2=2)
+        d2 = np.diagonal(O2[:, :, :, ispin], axis1=1, axis2=2)
+        v_kdiag = np.real(d1 * d2)
+        j_kdiag = np.real(d2 * d2)
 
         if attributes['smearing'] != None:
             taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
@@ -249,12 +254,8 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
             elif attributes['smearing'] == None:
                 taux = np.exp(-(((ene[n] - E_k[:, :]) / delta) ** 2)) / np.sqrt(np.pi)
 
-            accaux[n] += np.sum(
-                np.real(taux * np.diagonal(v_kaux[:, :, :, ispin], axis1=1, axis2=2))
-            )
-            jcaux[n] += np.sum(
-                np.real(taux * np.diagonal(j_kaux[:, :, :, ispin], axis1=1, axis2=2))
-            )
+            accaux[n] += np.sum(taux * v_kdiag)
+            jcaux[n] += np.sum(taux * j_kdiag)
 
         acc = np.zeros((ne), dtype=float) if rank == 0 else None
         jc = np.zeros((ne), dtype=float) if rank == 0 else None
@@ -272,5 +273,6 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
             if twoD:
                 chi *= lt / st
 
-        facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[ipol]), str(LL[spol]))
+        # Match do_rashba_edelstein's Ekai_{S}{v} naming: S (spol) first, v (ipol) second.
+        facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[spol]), str(LL[ipol]))
         data_controller.write_file_row_col(facc, ene, chi)
