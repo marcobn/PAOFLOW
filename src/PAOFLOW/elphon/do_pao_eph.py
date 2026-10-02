@@ -73,7 +73,7 @@ def vertex_from_qe_elphmat(elphmat_path, A, kpts_cryst, bg, ng):
     elphmat_path : str
         Path to ``elphmat.<iq>.dat`` (patched-QE dump).
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projection matrices ``A_{ni}(k)`` (``arry['U'][..., ispin]``), grabbed
+        PAO projection matrices ``A_{ni}(k) = <phi_i|psi_nk>`` (``arry['U'][..., ispin]``), grabbed
         after ``projectability`` and before ``pao_hamiltonian``.
     kpts_cryst : ndarray ``(nk, 3)``
         PAOFLOW coarse-grid k-points (crystal coordinates).
@@ -117,7 +117,7 @@ def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
     iq : int
         1-based q index (matches ``<prefix>.dyn<iq>``).
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projections.
+        PAO projections ``A_{ni}(k) = <phi_i|psi_nk>``.
     kpts_cryst : ndarray ``(nk, 3)``
         Coarse-grid k-points (crystal), nscf order.
     q_cryst : ndarray ``(3,)``
@@ -172,7 +172,8 @@ def eliashberg_from_qe_coupling(
     Parameters
     ----------
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projections (grab ``arry['U'][..., ispin]`` before ``pao_hamiltonian``).
+        PAO projections ``A_{ni}(k) = <phi_i|psi_nk>`` (grab ``arry['U'][..., ispin]``
+        before ``pao_hamiltonian``).
     HRs : ndarray ``(nawf, nawf, m1, m2, m3, nspin)``
         PAO Hamiltonian (``E_F`` at 0), from ``pao_hamiltonian``.
     kpts_cryst : ndarray ``(nk, 3)``
