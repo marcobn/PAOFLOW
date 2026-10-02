@@ -8,8 +8,8 @@ the dense-grid Eliashberg properties:
   ``data-file-schema.xml``;
 * :func:`kq_index_map` -- ``k -> (index of k+q on the grid, umklapp G0)``;
 * :func:`vertex_pao_R` -- rotate the band-basis Cartesian coupling into the PAO
-  gauge ``A_{k+q}^T d A_k^*`` (``A_{ni} = <phi_i|psi_n>``) and Fourier-transform
-  it to the electron real-space cells ``g(R_e)``;
+  gauge ``A_{k+q}^dagger d A_k`` and Fourier-transform it to the electron
+  real-space cells ``g(R_e)``;
 * :func:`lambda_q_dense_ws` -- Wigner-Seitz interpolate the electrons (``HRs``)
   and the vertex to a dense grid and evaluate the Fermi-surface double delta ->
   ``lambda_{q nu}``.
@@ -152,7 +152,7 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     """PAO-gauge vertex in real space ``g(R_e)`` for one q (EPW electron transform).
 
     Rotates the band-basis deformation potentials to the PAO gauge,
-    ``g^{PAO}_{ij,c}(k) = (A_{k+q}^T d_c(k) A_k^*)_{ij}``, places them on the
+    ``g^{PAO}_{ij,c}(k) = (A_{k+q}^\\dagger d_c(k) A_k)_{ij}``, places them on the
     coarse k-grid and Fourier-transforms to the electron cells ``R_e``.  The
     transform matches PAOFLOW's ``HRs`` convention so the result can be
     interpolated with :func:`PAOFLOW.elphon.eph_kq.estates_on_grid`.
@@ -160,12 +160,10 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     Parameters
     ----------
     d : ndarray ``(nk, nbnd, nbnd, ncart)``
-        Band-basis Cartesian deformation potentials
-        ``d_{mn,c}(k) = <psi_{m,k+q}|dV/du_c|psi_{n,k}>`` (QE's ``el_ph_mat`` /
-        ``ahc_gkk`` on the coarse k-grid).
+        Band-basis Cartesian deformation potentials ``d_{mn,c}(k)`` (QE's
+        ``el_ph_mat`` / ``ahc_gkk`` on the coarse k-grid).
     A : ndarray ``(nbnd, nawf, nk)``
-        PAO projections ``A_{n i}(k) = <phi_i|psi_{nk}>`` (``arry['U'][..., ispin]``),
-        the convention of both the internal projector and QE's ``projwfc.x``.
+        PAO projections ``A_{n i}(k) = <psi_{nk}|phi_i>`` (``arry['U'][..., ispin]``).
     ikq : ndarray ``(nk,)``
         Index of ``k+q`` on the coarse grid.
     kgrid_idx : ndarray ``(nk, 3)`` int
@@ -177,32 +175,14 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
     -------
     ndarray ``(nawf, nawf, ncart, n1, n2, n3)`` complex
         The PAO-gauge vertex in the electron real-space cells.
-
-    Notes
-    -----
-    With ``A_{ni}(k) = \\langle\\phi_i|\\psi_{nk}\\rangle`` the PAO vertex is the
-    band-projected operator
-
-    .. math::
-
-        g^{PAO}_{ij,c}(k) = \\sum_{mn} \\langle\\phi_i|\\psi_{m,k+q}\\rangle\\,
-            d_{mn,c}(k)\\, \\langle\\psi_{nk}|\\phi_j\\rangle
-            = \\left(A_{k+q}^{T}\\, d_c(k)\\, A_k^{*}\\right)_{ij},
-
-    i.e. :math:`\\langle\\phi_i|P_{k+q}\\, \\partial V/\\partial u_c\\, P_k|\\phi_j\\rangle`.
-    Each band index enters once as a bra and once as a ket, so the result does
-    not depend on the band phases, provided ``d`` and ``A`` are built from the
-    same Kohn-Sham states.  It is the operator that the band-basis contraction
-    ``V_{k+q}^\\dagger g V_k`` (PAO eigenvectors of ``H = A E A^\\dagger``) maps
-    back to ``d``.
     """
     nk, nbnd, _, ncart = d.shape
     nawf = A.shape[1]
-    # Batched PAO rotation g^{PAO}(k) = A_{k+q}^T d(k) A_k^* over all k at once
+    # Batched PAO rotation g^{PAO}(k) = A_{k+q}^dagger d(k) A_k over all k at once
     # (BLAS-backed einsum) instead of a Python loop over k-points.
     Ak = np.transpose(A, (2, 0, 1))  # (nk, nbnd, nawf)
     Akq = np.transpose(A[:, :, ikq], (2, 0, 1))  # (nk, nbnd, nawf)
-    gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq, d, Ak.conj(), optimize=True)  # (nk,nawf,nawf,ncart)
+    gk_b = np.einsum('kmi,kmnc,knj->kijc', Akq.conj(), d, Ak, optimize=True)  # (nk,nawf,nawf,ncart)
     gk = np.zeros((nawf, nawf, ncart, ng[0], ng[1], ng[2]), dtype=complex)
     i1, i2, i3 = kgrid_idx[:, 0], kgrid_idx[:, 1], kgrid_idx[:, 2]
     # each k maps to a unique coarse-grid cell, so this scatter is unambiguous
