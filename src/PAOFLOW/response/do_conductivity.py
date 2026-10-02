@@ -44,14 +44,14 @@ def do_conductivity(data_controller, emin, emax, ne, delta, ipol, jpol):
 
     nawf = attributes['nawf']
 
-    Op1 = np.zeros_like(arrays['pksp'])
-    Op2 = np.zeros_like(arrays['pksp'])
-
-    v_kaux = np.zeros_like(arrays['v_k'])
+    # Only the ipol/jpol slice of dHksp/pksp's "3" (xyz) axis is ever used, so
+    # drop that axis instead of allocating (and zero-filling) 3x the memory.
+    Op1 = np.zeros_like(arrays['pksp'][:, 0, :, :, :])
+    Op2 = np.zeros_like(arrays['pksp'][:, 0, :, :, :])
 
     for ik in range(nktot):
         for ispin in range(nspin):
-            Op1[ik, ipol, :, :, ispin], Op2[ik, jpol, :, :, ispin] = perturb_split(
+            Op1[ik, :, :, ispin], Op2[ik, :, :, ispin] = perturb_split(
                 arrays['dHksp'][ik, ipol, :, :, ispin],
                 arrays['dHksp'][ik, jpol, :, :, ispin],
                 arrays['v_k'][ik, :, :, ispin],
@@ -62,8 +62,13 @@ def do_conductivity(data_controller, emin, emax, ne, delta, ipol, jpol):
         E_k = np.real(arrays['E_k'][:, :, ispin])
         condaux = np.zeros((ne), dtype=float)
 
-        for ik in range(nktot):
-            v_kaux[ik, :, :, ispin] = Op1[ik, ipol, :, :, ispin] * Op2[ik, jpol, :, :, ispin]
+        # Only the diagonal of the (elementwise) Op1*Op2 product is ever used
+        # below, and diag(A*B) == diag(A)*diag(B) for an elementwise product,
+        # so work with the (nktot, nawf) diagonal directly instead of
+        # materializing a full (nktot, nawf, nawf) array.
+        d1 = np.diagonal(Op1[:, :, :, ispin], axis1=1, axis2=2)
+        d2 = np.diagonal(Op2[:, :, :, ispin], axis1=1, axis2=2)
+        v_kdiag = np.real(d1 * d2)
 
         if attributes['smearing'] != None:
             taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
@@ -78,9 +83,7 @@ def do_conductivity(data_controller, emin, emax, ne, delta, ipol, jpol):
             elif attributes['smearing'] == None:
                 taux = np.exp(-(((ene[n] - E_k[:, :]) / delta) ** 2)) / np.sqrt(np.pi)
 
-            condaux[n] += np.sum(
-                np.real(taux * np.diagonal(v_kaux[:, :, :, ispin], axis1=1, axis2=2))
-            )
+            condaux[n] += np.sum(taux * v_kdiag)
 
         cond = np.zeros((ne), dtype=float) if rank == 0 else None
 
