@@ -391,7 +391,12 @@ class SparseHamiltonian:
 
     @classmethod
     def from_data_controller(
-        cls, data_controller: DataController, threshold: float, rcut: float | None = None
+        cls,
+        data_controller: DataController,
+        threshold: float,
+        rcut: float | None = None,
+        bond_order: int | None = None,
+        distance_tol: float = 1.0e-3,
     ) -> SparseHamiltonian:
         """Threshold the dense ``HRs`` in a DataController into a bond list.
 
@@ -399,17 +404,30 @@ class SparseHamiltonian:
         ----------
         data_controller : DataController
             Run state holding the dense ``arrays['HRs']`` produced by
-            ``pao_hamiltonian``, plus ``a_vectors``, ``alat`` and, when
-            present, ``Dnm``.
+            ``pao_hamiltonian``, plus ``a_vectors``, ``alat``, ``tau`` and,
+            when present, ``Dnm``.
         threshold : float
             Magnitude in eV below which a hopping is dropped.
         rcut : float or None, optional
             Additional bond-length cutoff in Bohr.
+        bond_order : int or None, optional
+            Neighbour-shell form of the same cutoff: keep bonds up to and
+            including this shell (``1`` is nearest neighbours).  Resolved to
+            a radius by :func:`PAOFLOW.sparse.shells.shell_cutoff`.  Mutually
+            exclusive with ``rcut``.
+        distance_tol : float, optional
+            Shell-merging tolerance for ``bond_order`` (Bohr).
 
         Returns
         -------
         SparseHamiltonian
             The thresholded bond list for the base cell.
+
+        Raises
+        ------
+        ValueError
+            If both ``rcut`` and ``bond_order`` are given, or ``bond_order``
+            exceeds the shells the grid can represent.
 
         Notes
         -----
@@ -450,10 +468,27 @@ class SparseHamiltonian:
         container.  Note also that ``rcut`` is a physically *different*
         truncation axis from ``threshold`` (bond length vs matrix-element
         magnitude) and the two interact; the default is ``None``.
+
+        A cutoff longer than the aliasing-safe radius of the grid
+        (:func:`~PAOFLOW.sparse.shells.aliasing_safe_radius`) is applied to
+        the folded representative of each bond, which need not be its
+        shortest periodic image.  That is allowed, but it is recorded as
+        ``drop_report['aliased']`` so the driver can say so.  ``bond_order``
+        can never get there: shells are only counted inside the safe radius.
         """
+        from .shells import aliasing_safe_radius, shell_cutoff
+
         arry, attr = data_controller.data_dicts()
         HRs = arry['HRs']
         nawf, _, nk1, nk2, nk3, nspin = HRs.shape
+
+        if bond_order is not None:
+            if rcut is not None:
+                raise ValueError('Give either rcut (Bohr) or bond_order (shells), not both.')
+            rcut, _, _ = shell_cutoff(data_controller, bond_order, distance_tol)
+        safe_radius = aliasing_safe_radius(
+            np.asarray(arry['a_vectors'], dtype=float) * attr['alat'], (nk1, nk2, nk3)
+        )
 
         flat = HRs.reshape(nawf, nawf, nk1 * nk2 * nk3, nspin)
         mag = np.abs(flat).max(axis=3)
@@ -461,7 +496,7 @@ class SparseHamiltonian:
         if rcut is not None:
             R_int = folded_R_triples(nk1, nk2, nk3)
             Rcart = (R_int.astype(float) @ arry['a_vectors']) * attr['alat']
-            Dnm = arry['Dnm'] if 'Dnm' in arry else np.zeros((nawf, nawf, 3))
+            Dnm = arry['Dnm'] if 'Dnm' in arry else _orbital_offsets(data_controller)
             dist = np.linalg.norm(Dnm[:, :, None, :] + Rcart[None, None, :, :], axis=3)
             minus = _minus_R_index(R_int, (nk1, nk2, nk3))
             dist = np.minimum(dist, dist.transpose(1, 0, 2)[:, :, minus])
@@ -473,6 +508,11 @@ class SparseHamiltonian:
         drop_report = {
             'threshold': float(threshold),
             'rcut': None if rcut is None else float(rcut),
+            'bond_order': None if bond_order is None else int(bond_order),
+            'aliasing_safe_radius': safe_radius,
+            # shells are only counted inside the safe radius, so a shell
+            # cutoff is never aliased even though it carries distance_tol
+            'aliased': bond_order is None and rcut is not None and float(rcut) > safe_radius,
             'nnz': len(rows),
             'density': len(rows) / max(mag.size, 1),
             'mbytes': (len(rows) * (4 + 4 + 4 + 16 * nspin + 24)) / 1024**2,
@@ -967,6 +1007,35 @@ class SparseHamiltonian:
         )
         return float(err.max())
 
+    def to_dense_HRs(self) -> np.ndarray:
+        """Scatter the bond list back onto the dense FFT real-space grid.
+
+        Returns
+        -------
+        np.ndarray, shape (nawf, nawf, nk1, nk2, nk3, nspin), complex128
+            The truncated ``H(R)``; elements outside the stored bonds are
+            exactly zero.
+
+        Raises
+        ------
+        RuntimeError
+            If the bond arrays have been released by :meth:`compact`.
+
+        Notes
+        -----
+        A validation tool for the base cell, where the dense array is small:
+        it is what the threshold/cutoff convergence check compares against
+        the untruncated ``HRs``.  It allocates the full ``O(nawf^2 * nR)``
+        tensor the sparse pipeline otherwise never forms, so never call it
+        on a doubled cell.  Folded triples map back to FFT indices with a
+        plain modulo.
+        """
+        self._require_bonds('to_dense_HRs')
+        HRs = np.zeros((self.nawf, self.nawf) + self.nk_grid + (self.nspin,), dtype=np.complex128)
+        cell = np.mod(self.R_int[self.ridx], self.nk_grid)
+        HRs[self.rows, self.cols, cell[:, 0], cell[:, 1], cell[:, 2], :] = self.vals
+        return HRs
+
     def bytes_per_bond(self) -> tuple[int, int, int]:
         """Bytes per bond for the three states a bond list passes through.
 
@@ -1118,3 +1187,30 @@ def _minus_R_index(R_int: np.ndarray, nk_grid: Sequence[int]) -> np.ndarray:
     lut = np.full(box, -1, dtype=np.int64)
     lut[encode_R(R, nk_grid)] = np.arange(len(R), dtype=np.int64)
     return lut[encode_R(m, nk_grid)]
+
+
+def _orbital_offsets(data_controller: DataController) -> np.ndarray:
+    """``tau_i - tau_j`` per orbital pair, from the orbital-to-atom map.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Must carry ``tau`` and an orbital description that
+        :func:`PAOFLOW.sparse.io.build_orbital_basis_table` can expand.
+
+    Returns
+    -------
+    np.ndarray, shape (nawf, nawf, 3)
+        The geometric ``Dnm`` in Bohr.
+
+    Notes
+    -----
+    Fallback for the bond-length cutoff when the controller carries no
+    ``Dnm``.  It is used for geometry only: the per-bond ``dnm`` that feeds
+    the gradient keeps its own convention (zero when ``Dnm`` is absent).
+    """
+    from .io import build_orbital_basis_table
+
+    tau = np.asarray(data_controller.data_arrays['tau'], dtype=float)
+    centres = tau[build_orbital_basis_table(data_controller)['orbital_atom']]
+    return centres[:, None, :] - centres[None, :, :]

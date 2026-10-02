@@ -64,6 +64,7 @@ class SparsePAOFLOW:
         verbose=False,
         threshold=1.0e-3,
         rcut=None,
+        bond_order=None,
         hk_solver='auto',
         restart=False,
         dft='QE',
@@ -83,6 +84,15 @@ class SparsePAOFLOW:
             magnitude) and the two interact, so results are not directly
             comparable with an ``rcut=None`` run; the ``eig_bound``
             printed at conversion covers both.  Default ``None``.
+
+            bond_order (int or None): the same real-space cutoff given as a
+            neighbour-shell count instead of a radius: keep every bond up
+            to and including the n-th distinct interatomic distance (1 =
+            nearest neighbours).  Symmetry-equivalent bonds share a shell,
+            so this keeps or drops each star as a whole.  Resolved to a
+            radius by :func:`PAOFLOW.sparse.shells.shell_cutoff`, and only
+            shells inside the aliasing-safe radius of the k-grid count.
+            Mutually exclusive with ``rcut``.  Default ``None``.
 
             hk_solver ('auto' | 'sparse' | 'dense'): kernel used to
             diagonalize ``H(k)`` at a single k-point.  It names the
@@ -110,8 +120,15 @@ class SparsePAOFLOW:
         self.data_controller = self._pao.data_controller
         self.comm = self._pao.comm
         self.rank = self._pao.rank
+        if restart:
+            self._init_restart_session(workpath, outputdir, npool, smearing, verbose)
+        if rcut is not None and bond_order is not None:
+            raise ValueError(
+                'SparsePAOFLOW: give either rcut (Bohr) or bond_order (shells), not both.'
+            )
         self.threshold = float(threshold)
         self.rcut = None if rcut is None else float(rcut)
+        self.bond_order = None if bond_order is None else int(bond_order)
         self.hk_solver = hk_solver
         self._interior = None  # (elo, ehi) when an interior window is active
         self._skipped = []  # properties skipped because the window cannot support them
@@ -128,6 +145,7 @@ class SparsePAOFLOW:
                 ('k-point pools', npool),
                 ('threshold (eV)', '%.3e' % self.threshold),
                 ('rcut (Bohr)', 'none' if self.rcut is None else '%.3f' % self.rcut),
+                ('bond_order', 'none' if self.bond_order is None else self.bond_order),
                 ('H(k) solver', self.hk_solver),
                 ('smearing', smearing),
                 ('verbose', verbose),
@@ -146,6 +164,39 @@ class SparsePAOFLOW:
                 'use the dense PAOFLOW driver for other features.' % name
             )
         raise AttributeError(name)
+
+    def _init_restart_session(self, workpath, outputdir, npool, smearing, verbose):
+        """Give a ``restart=True`` controller the session state a fresh run has.
+
+        The dense ``DataController`` leaves both data dictionaries ``None``
+        on restart, expecting a JSON dump to fill them.  A sparse restart
+        fills them from a bond-list archive instead
+        (:meth:`load_sparse_hamiltonian`), but the log and the output
+        directory are needed before that, so the session part is set here.
+        """
+        from os import makedirs
+        from os.path import join
+
+        dc = self.data_controller
+        if dc.data_attributes is None:
+            dc.data_arrays = {}
+            dc.data_attributes = {}
+            dc.add_default_arrays()
+        attr = dc.data_attributes
+        attr.update(
+            workpath=workpath,
+            outputdir=outputdir,
+            opath=join(workpath, outputdir),
+            npool=npool,
+            smearing=smearing,
+            verbose=verbose,
+            mpisize=self.comm.Get_size(),
+        )
+        attr.setdefault('abort_on_exception', True)
+        attr.setdefault('scipyfft', True)
+        if self.rank == 0:
+            makedirs(attr['opath'], exist_ok=True)
+        self.comm.Barrier()
 
     def _guard(self, tag, func):
         """Mirror the dense try/except + abort_on_exception convention."""
@@ -170,6 +221,9 @@ class SparsePAOFLOW:
 
     def read_atomic_proj_QE(self):
         self._pao.read_atomic_proj_QE()
+
+    def projections(self, configuration=None, basispath=None, internal=None):
+        self._pao.projections(configuration=configuration, basispath=basispath, internal=internal)
 
     def projectability(self, pthr=0.95, shift='auto'):
         self._pao.projectability(pthr=pthr, shift=shift)
@@ -200,28 +254,107 @@ class SparsePAOFLOW:
         def _convert():
             arrays, _ = self.data_controller.data_dicts()
             self.H = SparseHamiltonian.from_data_controller(
-                self.data_controller, self.threshold, rcut=self.rcut
+                self.data_controller, self.threshold, rcut=self.rcut, bond_order=self.bond_order
             )
             # the dense source must not outlive the conversion
             del arrays['HRs']
             arrays.pop('Hks', None)
             arrays.pop('Dnm', None)  # carried per bond by the container
             self.log.section('Base-cell conversion (dense H(R) -> sparse bond list)')
-            if self.rcut is not None:
-                self.log.write(
-                    'Real-space cutoff rcut = %.3f Bohr applied at the base cell, together\n'
-                    'with threshold = %.1e eV. Both truncations are folded into the\n'
-                    'eigenvalue bound below.' % (self.rcut, self.threshold)
-                )
-            else:
-                self.log.write(
-                    'Element threshold = %.1e eV applied at the base cell; no real-space '
-                    'cutoff.' % self.threshold
-                )
-            self.log.write(self.H.stats_line())
+            self._log_truncation()
 
         self._guard('sparse_conversion', _convert)
         self._pao.report_module_time('Sparse conversion')
+
+    def _log_truncation(self):
+        """Describe the truncation carried by ``self.H`` and its error bound."""
+        report = self.H.drop_report
+        rcut = report.get('rcut')
+        if rcut is not None:
+            how = (
+                'neighbour shell %d -> rcut = %.3f Bohr' % (report['bond_order'], rcut)
+                if report.get('bond_order') is not None
+                else 'rcut = %.3f Bohr' % rcut
+            )
+            self.log.write(
+                'Real-space cutoff (%s) applied at the base cell, together\n'
+                'with threshold = %.1e eV. Both truncations are folded into the\n'
+                'eigenvalue bound below.' % (how, report['threshold'])
+            )
+        else:
+            self.log.write(
+                'Element threshold = %.1e eV applied at the base cell; no real-space '
+                'cutoff.' % report.get('threshold', self.H.threshold)
+            )
+        if report.get('aliased'):
+            message = (
+                'WARNING: rcut = %.3f Bohr exceeds the aliasing-safe radius %.3f Bohr of the\n'
+                '         %dx%dx%d grid. Beyond it the cutoff measures the folded image of a\n'
+                '         bond, which need not be its shortest one.'
+                % ((rcut, report['aliasing_safe_radius']) + self.H.nk_grid)
+            )
+            if self.rank == 0:
+                print(message, flush=True)
+            self.log.write(message)
+        self.log.write(self.H.stats_line())
+
+    # ------------------------------------------------------------------
+    # Persistence of the base-cell bond list
+    # ------------------------------------------------------------------
+
+    def save_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+        """Write the base-cell bond list and run metadata to ``fname``.
+
+        Must be called after ``pao_hamiltonian()`` (or
+        ``load_sparse_hamiltonian()``) and before ``doubling_Hamiltonian()``:
+        only the base cell has a well-defined bond geometry and orbital
+        map.  Relative names resolve inside the output directory.  The
+        archive also serves as a labelled dataset; see
+        :func:`PAOFLOW.sparse.io.bond_table`.
+        """
+        from .sparse.io import write_sparse_hamiltonian
+
+        self._require_H('save_sparse_hamiltonian')
+
+        def _save():
+            if self.rank == 0:
+                path = write_sparse_hamiltonian(self.data_controller, self.H, fname)
+                self.log.section('Saved sparse Hamiltonian')
+                self.log.field('file', path)
+                self.log.field('bonds', self.H.nnz)
+
+        self._guard('save_sparse_hamiltonian', _save)
+        self.comm.Barrier()
+        self._pao.report_module_time('save_sparse_hamiltonian')
+
+    def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+        """Restart from an archive written by :meth:`save_sparse_hamiltonian`.
+
+        Replaces the input stages (``read_atomic_proj_QE`` / ``projections``,
+        ``projectability``, ``pao_hamiltonian``): the bond list is read
+        directly, no dense ``HRs`` is rebuilt, and the run continues with
+        ``doubling_Hamiltonian`` or any property.  Use on an instance
+        created with ``restart=True``.  The truncation is the one recorded
+        in the file; the constructor's ``threshold`` / ``rcut`` /
+        ``bond_order`` do not apply.  Every rank reads the file.
+        """
+        from os.path import exists, isabs, join
+
+        from .sparse.io import read_sparse_hamiltonian, restore_data_controller
+
+        attr = self.data_controller.data_attributes
+
+        def _load():
+            path = fname
+            if not isabs(fname) and not exists(fname):
+                path = join(attr['opath'], fname)
+            self.H, bundle = read_sparse_hamiltonian(path)
+            restore_data_controller(self.data_controller, bundle)
+            self.log.section('Loaded sparse Hamiltonian (%s)' % path)
+            self._log_truncation()
+
+        self._guard('load_sparse_hamiltonian', _load)
+        self._pao.report_module_time('load_sparse_hamiltonian')
 
     # ------------------------------------------------------------------
     # Doubling (purely sparse)
