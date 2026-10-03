@@ -19,12 +19,17 @@ dense interpolation + Fermi-surface double delta) and
 :func:`~PAOFLOW.elphon.eph_kq.eliashberg_from_modes` (alpha^2F / lambda / Tc).
 """
 
+from __future__ import annotations
+
+import glob
 import os
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .elph_bloch import (
     AMU_RY,
+    RY_TO_THZ,
     kq_index_map,
     lambda_q_dense_ws_fast,
     precompute_dense_electrons,
@@ -33,6 +38,8 @@ from .elph_bloch import (
 from .eph_kq import eliashberg_from_modes
 from .qe_elph_io import (
     el_ph_mat_to_cartesian,
+    read_epw_epb,
+    read_epw_ukk,
     read_qe_ahc_gkk,
     read_qe_dyn,
     read_qe_el_ph_mat,
@@ -138,6 +145,156 @@ def vertex_from_qe_ahc(ahc_dir, iq, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
     return vertex_pao_R(d, A, ikq, kidx, ng)
 
 
+def vertex_from_epw(
+    epmatq_q: NDArray[np.complex128],
+    A: NDArray[np.complex128],
+    kpts_cryst: NDArray[np.float64],
+    q_cryst: NDArray[np.float64],
+    ng: tuple[int, int, int],
+    ibndkept: NDArray[np.integer],
+) -> NDArray[np.complex128]:
+    """PAO-gauge real-space vertex ``g(R_e)`` for one q from EPW's coarse coupling.
+
+    Parameters
+    ----------
+    epmatq_q : NDArray[np.complex128], shape ``(nbndep, nbndep, nk, 3 nat)``
+        One q slice of :func:`~PAOFLOW.elphon.qe_elph_io.read_epw_epb`
+        ``['epmatq']``: ``<psi_{m,k+q}| dV/du_c |psi_{n,k}>`` over the bands
+        kept by EPW, Cartesian displacement basis, nscf k order.
+    A : NDArray[np.complex128], shape ``(nbnd, nawf, nk)``
+        PAO projections ``A_{ni}(k) = <phi_i|psi_nk>`` on the **same** nscf save
+        that EPW read (all ``nbnd`` bands).
+    kpts_cryst : NDArray[np.float64], shape ``(nk, 3)``
+        Coarse k-points (crystal coordinates), nscf order.
+    q_cryst : NDArray[np.float64], shape ``(3,)``
+        The q-point of the slice (crystal coordinates).
+    ng : tuple of int
+        Coarse k-grid dimensions.
+    ibndkept : NDArray[np.integer], shape ``(nbndep,)``
+        0-based nscf index of each band kept by EPW
+        (:func:`~PAOFLOW.elphon.qe_elph_io.read_epw_ukk` ``['ibndkept']``).
+
+    Returns
+    -------
+    NDArray[np.complex128], shape ``(nawf, nawf, 3 nat, n1, n2, n3)``
+        The PAO-gauge vertex in the electron real-space cells.
+
+    Raises
+    ------
+    ValueError
+        If ``k + q`` does not fall on the coarse k-grid.
+
+    Notes
+    -----
+    EPW evaluates both ``psi_{k+q}`` (the stored grid point ``k + q - G``) and
+    ``psi_k`` from the nscf wavefunctions, so the band phases match those of
+    ``A`` and the rotation :func:`~PAOFLOW.elphon.elph_bloch.vertex_pao_R` is
+    consistent for every q.  The vertex is restricted to the kept bands,
+    ``g = A_{k+q}[kept]^T d A_k[kept]^*``.
+    """
+    q_cryst = np.asarray(q_cryst, dtype=float)
+    ng_arr = np.asarray(ng)
+    if not np.allclose(q_cryst * ng_arr, np.round(q_cryst * ng_arr), atol=1.0e-6):
+        raise ValueError('q = %s is not commensurate with the %s k-grid' % (q_cryst, tuple(ng)))
+    d = np.transpose(epmatq_q, (2, 0, 1, 3))  # (k, m, n, c)
+    ikq, _ = kq_index_map(kpts_cryst, q_cryst, ng)
+    kidx = np.round(kpts_cryst * ng_arr).astype(int) % ng_arr
+    return vertex_pao_R(d, A[np.asarray(ibndkept)], ikq, kidx, ng)
+
+
+def load_epw_coupling(
+    epw_dir: str,
+    nbnd: int,
+    nk: int,
+    nat: int,
+    bg: NDArray[np.float64],
+    prefix: str | None = None,
+    ukk_path: str | None = None,
+) -> dict[str, NDArray]:
+    """Load EPW's coarse Bloch coupling (``epbwrite``) with its band bookkeeping.
+
+    Parameters
+    ----------
+    epw_dir : str
+        EPW ``outdir`` holding ``prefix.epb1 ... prefix.epbN``.
+    nbnd : int
+        Number of bands of the nscf run (rows of the PAO projections ``A``).
+    nk : int
+        Number of coarse k-points.
+    nat : int
+        Number of atoms.
+    bg : NDArray[np.float64], shape ``(3, 3)``
+        Reciprocal-lattice vectors (rows, ``2 pi / alat``).
+    prefix : str, optional
+        Calculation prefix; inferred from the single ``*.epb1`` file if omitted.
+    ukk_path : str, optional
+        Path to ``prefix.ukk`` (default: ``epw_dir/prefix.ukk``).
+
+    Returns
+    -------
+    dict
+        ``epmatq`` ``(nbndep, nbndep, nk, 3 nat, nq)``, ``q_cryst`` ``(nq, 3)``,
+        ``dynq`` ``(3 nat, 3 nat, nq)``, ``ibndkept`` ``(nbndep,)`` and ``nq``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the prefix cannot be inferred or the files are missing.
+    NotImplementedError
+        If EPW packed the bands by a disentanglement window (some ``lwin`` false).
+    """
+    if prefix is None:
+        found = [
+            os.path.basename(p)[: -len('.epb1')] for p in glob.glob(os.path.join(epw_dir, '*.epb1'))
+        ]
+        if len(found) != 1:
+            raise FileNotFoundError(
+                'cannot infer the EPW prefix in %s (found %s)' % (epw_dir, found)
+            )
+        prefix = found[0]
+    ukk = read_epw_ukk(ukk_path or os.path.join(epw_dir, prefix + '.ukk'), nk)
+    if not ukk['lwin'].all():
+        raise NotImplementedError(
+            'EPW packed the bands by an outer disentanglement window (lwin has False entries); '
+            'rerun EPW without dis_win_min/dis_win_max (all bands in the window).'
+        )
+    epb = read_epw_epb(epw_dir, prefix, nbnd, nk, nat, ukk['nbndep'])
+    q_cryst = np.linalg.solve(np.asarray(bg).T, epb['xq_cart'].T).T
+    return {
+        'epmatq': epb['epmatq'],
+        'q_cryst': q_cryst,
+        'dynq': epb['dynq'],
+        'ibndkept': ukk['ibndkept'],
+        'nq': q_cryst.shape[0],
+    }
+
+
+def phonon_modes_from_force_constants(
+    force_constants: NDArray[np.complex128], masses_ry: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+    """Phonon frequencies and mass-weighted eigenvectors at one q.
+
+    Parameters
+    ----------
+    force_constants : NDArray[np.complex128], shape ``(3 nat, 3 nat)``
+        Force-constant matrix ``C(q)`` (Ry/bohr^2, not divided by the masses).
+    masses_ry : NDArray[np.float64], shape ``(3 nat,)``
+        Mass of the atom of each Cartesian component (QE Rydberg units).
+
+    Returns
+    -------
+    freq_thz : NDArray[np.float64], shape ``(3 nat,)``
+        Signed frequencies (THz; negative for imaginary modes).
+    z : NDArray[np.complex128], shape ``(3 nat, 3 nat)``
+        Orthonormal eigenvectors of ``D = C / sqrt(M_a M_b)``, one per row (the
+        convention of :func:`~PAOFLOW.elphon.qe_elph_io.read_qe_dyn`).
+    """
+    inv_sqrt_m = 1.0 / np.sqrt(np.asarray(masses_ry, dtype=float))
+    D = force_constants * np.outer(inv_sqrt_m, inv_sqrt_m)
+    w2, ev = np.linalg.eigh(0.5 * (D + D.conj().T))
+    return np.sign(w2) * np.sqrt(np.abs(w2)) * RY_TO_THZ, ev.T
+
+
 def eliashberg_from_qe_coupling(
     A,
     HRs,
@@ -182,20 +339,27 @@ def eliashberg_from_qe_coupling(
         Reciprocal- and real-lattice vectors (rows).
     coupling_dir : str
         Directory holding the coupling files (``elphmat.<iq>.dat`` for
-        ``source='elphmat'``, or ``ahc_gkk_iq<iq>.bin`` for ``source='ahc'``).
-    q_weights : array_like ``(nq,)``
+        ``source='elphmat'``, ``ahc_gkk_iq<iq>.bin`` for ``source='ahc'``, or
+        EPW's ``prefix.epb*`` and ``prefix.ukk`` for ``source='epw'``).
+    q_weights : array_like ``(nq,)`` or None
         Star sizes of the irreducible q-points (need not be normalised).  For a
         full un-reduced q-grid (e.g. the 27-point AHC output) use all ones.
+        For ``source='epw'``, ``None`` selects unit weights over EPW's full grid.
     ng : tuple(int, int, int)
         Coarse coupling k-grid (== SCF grid).
-    dyn_paths : sequence of str
+    dyn_paths : sequence of str or None
         One QE ``*.dyn`` file per q (for frequencies/eigenvectors; also supplies
-        the q-point for ``source='ahc'``).
+        the q-point for ``source='ahc'``).  Unused for ``source='epw'``, whose
+        q-points and force constants come from the ``.epb`` files.
     elphmat_fmt : str, optional
         Filename template for the patched dumps (``%d`` is the 1-based q index).
-    source : {'elphmat', 'ahc'}, optional
-        Coupling input: the patched ``el_ph_mat`` dump (any pseudo) or the
-        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only).
+    source : {'elphmat', 'ahc', 'epw'}, optional
+        Coupling input: the patched ``el_ph_mat`` dump (any pseudo), the
+        unpatched QE AHC ``ahc_gkk`` binaries (norm-conserving only), or EPW's
+        coarse Bloch coupling (``epbwrite``; any pseudo).  Only ``'epw'``
+        evaluates ``psi_{k+q}`` from the same nscf save as ``A``; the ph.x
+        sources recompute it with arbitrary band phases, which breaks the
+        k-interpolation for q != 0.
     masses_amu : array_like ``(natom,)``, optional
         Atomic masses (amu); required to mass-weight the phonon eigenvectors.
     nk_dense : int, optional
@@ -230,15 +394,23 @@ def eliashberg_from_qe_coupling(
         extra keys ``'lambda_qv'``, ``'omega_qv_thz'`` (both ``(nq, nmode)``) and
         ``'dos_ef'`` (``(nq,)``, states/spin/Ry per q).
     """
-    q_weights = np.asarray(q_weights, dtype=float)
     sigmas_ry = np.atleast_1d(np.asarray(sigmas_ry, dtype=float))
-    nq = q_weights.size
     if masses_amu is None:
         raise ValueError('masses_amu is required to mass-weight the phonon eigenvectors')
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY  # (3*natom,)
     nbnd, nk = int(A.shape[0]), int(A.shape[2])
     nmodes = int(mass_flat_ry.size)
+    epw = None
+    if source == 'epw':
+        # EPW already unfolded the irreducible q to the full coarse grid.
+        epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        if q_weights is None:
+            q_weights = np.ones(epw['nq'])
+    q_weights = np.asarray(q_weights, dtype=float)
+    nq = q_weights.size
+    if epw is not None and nq != epw['nq']:
+        raise ValueError('q_weights has %d entries, EPW provides %d q-points' % (nq, epw['nq']))
 
     # Diagonalise the dense electron spectrum ONCE; every q reuses it (E(k+q) /
     # V(k+q) are index shifts), so the per-q cost is only the vertex interpolation.
@@ -263,23 +435,31 @@ def eliashberg_from_qe_coupling(
     om_qv = np.zeros((nq, nmodes), dtype=float)
     dos_ef = np.zeros(nq, dtype=float)
     for iq in range(qstart, qstop):
-        dyn = read_qe_dyn(dyn_paths[iq])
-        if source == 'ahc':
-            q_cryst = np.linalg.solve(bg.T, np.asarray(dyn['q'], dtype=float))
-            gR = vertex_from_qe_ahc(
-                coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+        if source == 'epw':
+            q_cryst = epw['q_cryst'][iq]
+            gR = vertex_from_epw(
+                epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']
             )
+            freq_thz, z = phonon_modes_from_force_constants(epw['dynq'][:, :, iq], mass_flat_ry)
         else:
-            path = os.path.join(coupling_dir, elphmat_fmt % (iq + 1))
-            gR, q_cryst = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
-        z = dyn['eigenvectors'].reshape(dyn['freq_thz'].size, -1)  # (nmode, 3*natom)
+            dyn = read_qe_dyn(dyn_paths[iq])
+            freq_thz = dyn['freq_thz']
+            z = dyn['eigenvectors'].reshape(freq_thz.size, -1)  # (nmode, 3*natom)
+            if source == 'ahc':
+                q_cryst = np.linalg.solve(bg.T, np.asarray(dyn['q'], dtype=float))
+                gR = vertex_from_qe_ahc(
+                    coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
+                )
+            else:
+                path = os.path.join(coupling_dir, elphmat_fmt % (iq + 1))
+                gR, q_cryst = vertex_from_qe_elphmat(path, A, kpts_cryst, bg, ng)
         zmass = z / np.sqrt(mass_flat_ry)[None, :]
-        res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, dyn['freq_thz'])
+        res = lambda_q_dense_ws_fast(gR, electrons, q_cryst, zmass, freq_thz)
         lam = res['lambda_qnu'][isig].copy()
         if np.linalg.norm(q_cryst - np.round(q_cryst)) < 1.0e-6:
             lam[:] = 0.0  # zero the Gamma acoustic blow-up (QE convention)
         lam_qv[iq] = lam
-        om_qv[iq] = np.abs(dyn['freq_thz'])
+        om_qv[iq] = np.abs(freq_thz)
         dos_ef[iq] = res['dos_ef'][isig]
 
     if size > 1:
