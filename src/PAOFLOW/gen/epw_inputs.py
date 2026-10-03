@@ -127,6 +127,7 @@ def write_placeholder_ukk(
     exclude_bands: list[int] | None = None,
     nelec: float | None = None,
     noncolin: bool = False,
+    wannier90_stubs: bool = True,
 ) -> None:
     """Write a ``prefix.ukk`` that lets EPW run without a Wannierization.
 
@@ -152,6 +153,12 @@ def write_placeholder_ukk(
         the occupied excluded bands (EPW's ``nbndskip``).
     noncolin : bool, optional
         Noncollinear calculation (one electron per band in ``nbndskip``).
+    wannier90_stubs : bool, optional
+        Also write empty wannier90 overlap files ``prefix.bvec`` (no b-vectors)
+        and ``prefix.mmn`` next to ``path`` (default ``True``).  EPW's Wannier
+        stage reads them unconditionally (``vmebloch2wan``); with zero
+        b-vectors it completes, with zero position matrix elements, instead of
+        stopping after the ``.epb`` files are written.
 
     Returns
     -------
@@ -159,7 +166,8 @@ def write_placeholder_ukk(
         Writes ``path`` in the list-directed format of EPW's ``write_filukk``:
         kept-band list, identity rotations, every kept band inside the outer
         window (so EPW does not pack bands in the ``.epb`` files), the
-        excluded-band flags and zero centres.
+        excluded-band flags and zero centres; plus the two stub files when
+        ``wannier90_stubs`` is true.
 
     Raises
     ------
@@ -201,6 +209,12 @@ def write_placeholder_ukk(
     lines += ['%22.12E%22.12E%22.12E' % (0.0, 0.0, 0.0)] * nbndsub
     with open(path, 'w') as fh:
         fh.write('\n'.join(lines) + '\n')
+    if wannier90_stubs:
+        stem = path[: -len('.ukk')] if path.endswith('.ukk') else path
+        with open(stem + '.bvec', 'w') as fh:
+            fh.write('placeholder_written_by_PAOFLOW\n%d %d\n' % (nk_total, 0))
+        with open(stem + '.mmn', 'w') as fh:
+            fh.write('')
 
 
 def epw_input(

@@ -22,7 +22,7 @@ matrix elements, and PAOFLOW does all the interpolation.
 | `phonon/ph.in` | `ph.x` DFPT on the 6³ q-grid (irreducible q, `fildvscf`) |
 | `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 16`) |
 | `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, `exclude_bands = 1:5` |
-| `epw/write_ukk.py` | writes `pb.ukk`, the band bookkeeping EPW reads when `wannierize = .false.` |
+| `epw/write_ukk.py` | writes `pb.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `pb.bvec`/`pb.mmn` stubs |
 | `epw/epw_wannier.in` | the tutorial's Wannierized EPW input (alternative; same `.epb` content) |
 | `main.py` | PAOFLOW analysis: PAO electronic structure + Eliashberg on EPW's coupling |
 
@@ -48,8 +48,12 @@ mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool (-np
 ```
 
 `epw.x` writes `pb.epb1 … pb.epbN` (the coarse Bloch coupling, one file per
-pool), which together with `pb.ukk` is all PAOFLOW reads. EPW then continues
-into its Wannier stage with identity rotations; that output is not used.
+pool), which together with `pb.ukk` is all PAOFLOW reads. After printing "The
+.epb files have been correctly written", EPW enters its Wannier stage, which
+reads wannier90's `pb.bvec`/`pb.mmn`. `write_ukk.py` writes empty stubs of both
+(zero b-vectors) so that stage runs on empty data and `epw.x` finishes cleanly.
+Without them EPW stops there with a non-zero exit, which does not affect the
+`.epb` files.
 `../phonon/save/pb.phsave/patterns.1.xml` must exist (created by `pp.py`),
 otherwise `epw.x` stops with "cannot open file for reading or writing".
 Tested with QE/EPW 7.5 (EPW 6.0). The coarse-coupling cost scales with the
