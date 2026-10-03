@@ -557,7 +557,7 @@ class SparsePAOFLOW:
                     doubling_attr_arry(self.data_controller)
             self.H = self.H.hermitize()
             # the bond list is final here: release the raw arrays the
-            # assembly plan duplicates (about half the steady-state bytes)
+            # assembly plan duplicates (most of the steady-state bytes)
             self.H.compact()
             self.log.section('Doubling (%d,%d,%d)' % (nx, ny, nz))
             self.log.write(self.H.stats_line())

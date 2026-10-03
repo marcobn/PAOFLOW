@@ -15,9 +15,10 @@ FFT mesh convention (``scipy.fftpack.fftn`` in
 ``hamiltonian.do_double_grid`` / ``do_gradient``).
 
 The CSR sparsity pattern (the union of bond index pairs over all R) is
-built once and only the numerical values are refilled per k-point, so
-per-k assembly is a vectorized phase multiply plus one
-``np.add.reduceat`` — the structure is never re-sorted.
+built once and only the numerical values are refilled per k-point: the
+bond values are held as a sparse (matrix entry x lattice vector) matrix,
+so per-k assembly is one phase per lattice vector and one sparse
+matrix-vector product — the structure is never re-sorted.
 
 For even R grids the folded Nyquist plane (``m = -nk/2``) has no
 ``+nk/2`` partner, which would make the Fourier sum slightly
@@ -605,53 +606,64 @@ class SparseHamiltonian:
         return rows, cols, triples, vals, dnm
 
     def _build_plan(self) -> None:
-        """Sort bonds into CSR order once; per-k assembly only refills data.
+        """Turn the bond list into k-independent matrices, once.
 
         Notes
         -----
         The plan is everything about ``H(k)`` that does not depend on k.
-        Bonds are Nyquist-split, grouped by the matrix entry they land in,
-        and sorted into compressed-row order; the boundaries between groups
-        are recorded so that summing a group is one segmented reduction.
-        The distinct lattice vectors are collected separately, so a k-point
-        evaluates one phase per lattice vector rather than one per bond.
+        Bonds are Nyquist-split and grouped by the matrix entry ``(i, j)``
+        they land in; the occupied entries, in compressed-row order, are
+        the CSR pattern of every ``H(k)``.  The distinct lattice vectors are
+        collected separately, so a k-point evaluates one phase per lattice
+        vector rather than one per bond.
 
-        The gradient coefficients ``alat * Rcart + dnm`` are precomputed on
-        the same ordering, since they too are k-independent: the derivative
-        of the phase factor with respect to k brings down exactly this bond
-        displacement.
-
-        The sort is stable, so bonds landing in the same matrix entry are
-        summed in a fixed order and the assembly is reproducible to the last
-        bit across runs.
+        Per spin, the bond values are stored as a sparse matrix ``V`` of
+        shape ``(n_entries, nR)``, ``V[e, R] = H_e(R)``.  The Fourier sum
+        over bonds is then one sparse product with the phase vector, and
+        the gradient needs no per-bond work of its own.  Its coefficient
+        ``alat * Rcart + dnm`` splits into a part that depends only on
+        ``R``, folded into extra right-hand sides ``alat * Rcart_l * phase``
+        of the same product, and ``dnm``, which is a property of the entry
+        (one value per orbital pair, see :meth:`hermitize`) and is applied
+        after the sum.  So ``H(k)`` and its three derivatives come from a
+        single pass over ``V``.
         """
         rows, cols, triples, vals, dnm = self._nyquist_split()
 
         R_uniq, ridx = np.unique(triples, axis=0, return_inverse=True)
+        ridx = ridx.reshape(-1)
 
         pair = rows.astype(np.int64) * self.nawf + cols
         order = np.argsort(pair, kind='stable')
         pair = pair[order]
 
-        seg_starts = np.flatnonzero(np.r_[True, pair[1:] != pair[:-1]])
+        new_entry = np.r_[True, pair[1:] != pair[:-1]]
+        seg_starts = np.flatnonzero(new_entry)
+        entry = np.cumsum(new_entry) - 1
         upair = pair[seg_starts]
         indices = (upair % self.nawf).astype(np.int32)
         counts = np.bincount((upair // self.nawf).astype(np.intp), minlength=self.nawf)
         indptr = np.concatenate(([0], np.cumsum(counts))).astype(np.int32)
 
-        Rcart = R_uniq.astype(float) @ self.a_vectors
+        dnm = dnm[order]
+        entry_dnm = dnm[seg_starts]
+        if not np.array_equal(dnm, entry_dnm[entry]):
+            raise ValueError(
+                'SparseHamiltonian: dnm differs between bonds of the same orbital pair; '
+                'it is the intra-cell offset of the pair and must be one value per (i, j).'
+            )
+
+        shape = (len(seg_starts), len(R_uniq))
         ridx = ridx[order]
-        rcoef = self.alat * Rcart[ridx] + dnm[order]
+        V = [csr_matrix((vals[order, s], (entry, ridx)), shape=shape) for s in range(self.nspin)]
 
         self._plan = {
-            'seg_starts': seg_starts,
             'indices': indices,
             'indptr': indptr,
             'R_uniq': R_uniq,
-            'Rcart': Rcart,
-            'ridx': ridx,
-            'vals': vals[order],
-            'rcoef': rcoef,
+            'Rcart': R_uniq.astype(float) @ self.a_vectors,
+            'V': V,
+            'dnm': entry_dnm,
         }
 
     @property
@@ -660,12 +672,11 @@ class SparseHamiltonian:
 
         Notes
         -----
-        Keys are ``seg_starts`` (segment boundaries of the reduction),
-        ``indices`` and ``indptr`` (the CSR pattern), ``R_uniq`` and
-        ``Rcart`` (distinct lattice vectors, fractional and Cartesian in
-        units of ``alat``), ``ridx`` (lattice vector of each ordered bond),
-        ``vals`` (bond values in plan order) and ``rcoef`` (gradient
-        coefficients in Bohr).
+        Keys are ``indices`` and ``indptr`` (the CSR pattern of ``H(k)``),
+        ``R_uniq`` and ``Rcart`` (distinct lattice vectors, fractional and
+        Cartesian in units of ``alat``), ``V`` (per spin, the bond values as
+        a sparse ``(n_entries, nR)`` matrix, entries in pattern order) and
+        ``dnm`` (intra-cell offset of each entry, Bohr).
         """
         if self._plan is None:
             self._build_plan()
@@ -697,10 +708,10 @@ class SparseHamiltonian:
 
         Notes
         -----
-        The plan already carries everything per-k assembly needs (ordered
-        values, CSR indices, gradient coefficients), so after it is built
-        ``rows``/``cols``/``dnm``/``vals`` are dead weight — roughly half
-        the steady-state bond memory.  Call this once the bond list is
+        The plan already carries everything per-k assembly needs (value
+        matrices, CSR indices, per-entry offsets), so after it is built
+        ``rows``/``cols``/``dnm``/``vals`` are dead weight — about two
+        thirds of the steady-state bond memory (see :meth:`bytes_per_bond`).  Call this once the bond list is
         final, i.e. after the last ``double_axis`` and ``hermitize``.
 
         Irreversible: anything that mutates or inspects the bond list
@@ -789,16 +800,14 @@ class SparseHamiltonian:
         Notes
         -----
         Each lattice vector contributes a phase :math:`e^{s 2\\pi i
-        \\mathbf{k} \\cdot \\mathbf{R}}`; every bond is multiplied by the
-        phase of its own lattice vector, and bonds sharing a matrix entry are
-        summed with one segmented reduction over the precomputed group
-        boundaries.  The CSR index arrays come straight from the plan, so no
-        sorting or index construction happens per k-point.
+        \\mathbf{k} \\cdot \\mathbf{R}}`, and the sum over bonds is one
+        sparse product of the plan's value matrix with the phase vector.
+        The CSR index arrays come straight from the plan, so no sorting or
+        index construction happens per k-point.
         """
         p = self.plan
         phase = np.exp((sign * 2.0j * np.pi) * self._phase_arg(kvec, cart))
-        vp = p['vals'][:, ispin] * phase[p['ridx']]
-        data = np.add.reduceat(vp, p['seg_starts'])
+        data = p['V'][ispin] @ phase
         return csr_matrix((data, p['indices'], p['indptr']), shape=(self.nawf, self.nawf))
 
     def assemble_hk_dhk(
@@ -828,25 +837,34 @@ class SparseHamiltonian:
         -----
         Differentiating the Fourier sum with respect to k brings down a
         factor of the bond displacement, so the gradient shares the phase
-        factors and the sparsity pattern of :math:`H(k)` and costs only three
-        more segmented reductions.  Per bond the coefficient is
-        ``1j * (alat * Rcart_l + Dnm_l)``, replicating
+        factors and the sparsity pattern of :math:`H(k)`.  Per bond the
+        coefficient is ``1j * (alat * Rcart_l + Dnm_l)``, replicating
         ``hamiltonian.do_gradient``: the ``Rcart`` term is the displacement
         between cells, and the ``Dnm`` term is the tight-binding correction
-        for the offset between the two orbitals inside the cell.  Both are
-        precomputed in the plan as ``rcoef``.
+        for the offset between the two orbitals inside the cell.  The
+        ``Rcart`` term depends only on the lattice vector, so it rides along
+        as three extra right-hand sides of the product that gives
+        :math:`H(k)`; ``Dnm`` is one value per matrix entry and multiplies
+        :math:`H(k)` entrywise afterwards.  One pass over the bonds yields
+        all four matrices.
         """
         p = self.plan
         phase = np.exp((sign * 2.0j * np.pi) * self._phase_arg(kvec, cart))
-        vp = p['vals'][:, ispin] * phase[p['ridx']]
-        hk = csr_matrix(
-            (np.add.reduceat(vp, p['seg_starts']), p['indices'], p['indptr']),
-            shape=(self.nawf, self.nawf),
-        )
-        dhk = []
-        for l in range(3):
-            data = np.add.reduceat(1j * p['rcoef'][:, l] * vp, p['seg_starts'])
-            dhk.append(csr_matrix((data, p['indices'], p['indptr']), shape=(self.nawf, self.nawf)))
+        rhs = np.empty((len(phase), 4), dtype=np.complex128)
+        rhs[:, 0] = phase
+        np.multiply(self.alat * p['Rcart'], phase[:, None], out=rhs[:, 1:])
+        sums = p['V'][ispin] @ rhs
+
+        shape = (self.nawf, self.nawf)
+        h = sums[:, 0]
+        hk = csr_matrix((h, p['indices'], p['indptr']), shape=shape)
+        dhk = [
+            csr_matrix(
+                (1j * (sums[:, 1 + l] + p['dnm'][:, l] * h), p['indices'], p['indptr']),
+                shape=shape,
+            )
+            for l in range(3)
+        ]
         return hk, dhk
 
     # ------------------------------------------------------------------
@@ -1051,10 +1069,10 @@ class SparseHamiltonian:
 
         - ``container``: ``rows`` + ``cols`` + ``ridx`` (int32) + ``vals``
           (complex128 per spin) + ``dnm`` (3 float64).
-        - ``plan``: what survives :meth:`compact` — ``ridx`` (int64),
-          ``vals`` (complex128 per spin), ``rcoef`` (3 float64), plus the
-          CSR pattern (``seg_starts`` int64 + ``indices`` int32, at most
-          one per bond).
+        - ``plan``: what survives :meth:`compact` — per spin, the value
+          matrix ``V`` (complex128 data + int32 column index), plus the CSR
+          pattern of ``H(k)`` (``indices`` int32, at most one per bond).
+          The per-entry ``dnm`` and the per-``R`` arrays are not per bond.
         - ``hermitize_peak``: everything :meth:`hermitize` holds at once,
           counted per *input* bond — it works on ``2*nnz`` rows, so this is
           the high-water mark of the whole doubling stage and the number
@@ -1066,7 +1084,7 @@ class SparseHamiltonian:
           input container that stays alive throughout.
         """
         container = 4 + 4 + 4 + 16 * self.nspin + 24
-        plan = 8 + 16 * self.nspin + 24 + 8 + 4
+        plan = (16 + 4) * self.nspin + 4
         hermitize_peak = 24 + 24 + 16 + 48 + 32 * self.nspin + 48 + 16 + 32 + 48 + 112 + container
         return container, plan, hermitize_peak
 
