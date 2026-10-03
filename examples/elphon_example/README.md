@@ -9,6 +9,15 @@ phonon q-grid — onto dense meshes. The driver is `main.elphon.py`.
 This run uses the **AHC** coupling source (`SOURCE='ahc'`, norm-conserving
 pseudopotential), a 9³ SCF/coupling k-grid, and a 6³ DFPT q-grid.
 
+> **Use [`../elphon_epw_example`](../elphon_epw_example) for production results.**
+> `ph.x` re-diagonalises ψ_{k+q} with arbitrary band phases, so the AHC vertices
+> are gauge-inconsistent with PAOFLOW's projections for every q ≠ Γ, and the
+> k/q interpolation of this example is not reliable. In addition, the 6³ q-grid
+> does not divide the 9³ k-grid (only 27 of the 216 q have k+q on the grid).
+> The EPW route has neither problem and reproduces EPW's own λ for Pb within 6%.
+> The reference values quoted below predate these findings and the October 2026
+> projection and Fourier fixes.
+
 ---
 
 ## Directory contents
