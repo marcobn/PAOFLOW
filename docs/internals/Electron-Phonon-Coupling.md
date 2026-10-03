@@ -178,14 +178,23 @@ tutorial 04, Pb):
    grids). Use `nbnd` > number of PAO orbitals. `PAOFLOW.gen.epw_inputs.kpoints_card`
    writes the list in the order PAOFLOW expects.
 4. **`epw.x`** with `elph = .true.`, `epbwrite = .true.`, coarse
-   `nk1..3` / `nq1..3`. Either:
-   - with a Wannierization (as in the EPW tutorials); `exclude_bands` is
-     supported, but the outer disentanglement window must contain every band
-     (no `dis_win_min/max`), otherwise `load_epw_coupling` raises; or
-   - with `wannierize = .false.` and a placeholder `prefix.ukk`
-     (`write_placeholder_ukk`, not yet validated end to end).
+   `nk1..3` / `nq1..3`, and **no Wannier functions**: `wannierize = .false.`
+   plus a placeholder `prefix.ukk` in the run directory
+   (`write_placeholder_ukk`; `epw_input` writes the matching `epw.in`).
+   - With `wannierize = .false.`, EPW reads the band bookkeeping only from
+     `.ukk`: kept bands, the number of occupied excluded bands, and the window
+     flags. Band exclusion (e.g. semicore states) therefore goes into the
+     placeholder (`exclude_bands=...`, with `nelec`). `bands_skipped` in
+     `epw.in` is only used to write wannier90's `.win`.
+   - EPW writes the `.epb` files before its Wannier stage. With the identity
+     rotations of the placeholder that stage is a trivial basis change whose
+     output PAOFLOW ignores; its cost grows with `nbndsub`.
+   - A Wannierized EPW run (as in the EPW tutorials) also works and gives the
+     same `.epb` content, as long as the outer disentanglement window contains
+     every band (no `dis_win_min/max`); otherwise `load_epw_coupling` raises.
 
-   EPW runs one process per pool (`mpirun -np N epw.x -nk N`).
+   EPW runs one process per pool (`mpirun -np N epw.x -nk N`); the cost of the
+   coarse coupling scales with the number of pools and with the kept bands.
 5. **PAOFLOW** on the EPW nscf save: `projections` + `projectability` +
    `pao_hamiltonian(expand_wedge=False)`. The explicit list already covers the
    full BZ even though the save keeps the crystal symmetries.
@@ -357,6 +366,12 @@ data serves as the reference.
 Electron smearing is 0.05 eV in both. The remaining 6% in $\lambda$ follows the
 7% higher $N(E_F)$ of the 18-orbital PAO bands compared with EPW's 4-function
 Wannier bands. At 24³ k / 24³ q, PAOFLOW gives $\lambda = 1.066$.
+
+**Without Wannier functions.** A completely fresh run (new `ph.x` and nscf,
+then `epw.x` with `wannierize = .false.`, the placeholder `.ukk` and
+`exclude_bands = 1:5`) gives the same PAOFLOW results to all printed digits:
+$\lambda = 1.0662$ (24³/24³) and $1.2206$, $\omega_{\log} = 4.500$ meV, $T_c$
+4.77 / 5.21 K (48³/24³).
 
 Component checks on the same data:
 - **Gauge:** the ±q relation $d^{(-q)}(k+q)=d^{(q)}(k)^\dagger$ holds in the

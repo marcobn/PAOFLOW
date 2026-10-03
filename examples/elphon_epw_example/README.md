@@ -6,9 +6,11 @@ This example computes the isotropic Eliashberg properties of fcc lead (α²F, λ
 its matrix elements share the band gauge of PAOFLOW's projections on that save,
 which the interpolation needs (see `docs/internals/Electron-Phonon-Coupling.md`).
 
-The QE and EPW steps are those of the EPW tutorial 04 (Pb superconductivity,
+The QE steps are those of the EPW tutorial 04 (Pb superconductivity,
 <https://docs.epw-code.org/tutorials/tutorial_04/index.html>): 6³ coarse k and
-q grids, with ph.x on the 16 irreducible q only.
+q grids, with ph.x on the 16 irreducible q only. EPW is run **without Wannier
+functions** (`wannierize = .false.`): it serves only to compute the coarse
+matrix elements, and PAOFLOW does all the interpolation.
 
 ---
 
@@ -19,7 +21,9 @@ q grids, with ph.x on the 16 irreducible q only.
 | `phonon/scf.in` | `pw.x` scf (8³ k, with symmetry) |
 | `phonon/ph.in` | `ph.x` DFPT on the 6³ q-grid (irreducible q, `fildvscf`) |
 | `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 16`) |
-| `epw/epw.in` | `epw.x` with `epbwrite = .true.` (Wannierization as in the tutorial) |
+| `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, `exclude_bands = 1:5` |
+| `epw/write_ukk.py` | writes `pb.ukk`, the band bookkeeping EPW reads when `wannierize = .false.` |
+| `epw/epw_wannier.in` | the tutorial's Wannierized EPW input (alternative; same `.epb` content) |
 | `main.py` | PAOFLOW analysis: PAO electronic structure + Eliashberg on EPW's coupling |
 
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
@@ -39,12 +43,17 @@ python3 /path/to/q-e/EPW/bin/pp.py          # prefix 'pb' -> collects dvscf, pat
 
 cd ../epw
 mpirun -np 8 pw.x -in nscf.in > nscf.out
-mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool
+python3 write_ukk.py                             # pb.ukk for wannierize = .false.
+mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool (-np = -nk)
 ```
 
 `epw.x` writes `pb.epb1 … pb.epbN` (the coarse Bloch coupling, one file per
-pool) and `pb.ukk` (band bookkeeping), which is all PAOFLOW reads. The
-remaining EPW output is not used. Tested with QE/EPW 7.5 (EPW 6.0).
+pool), which together with `pb.ukk` is all PAOFLOW reads. EPW then continues
+into its Wannier stage with identity rotations; that output is not used.
+`../phonon/save/pb.phsave/patterns.1.xml` must exist (created by `pp.py`),
+otherwise `epw.x` stops with "cannot open file for reading or writing".
+Tested with QE/EPW 7.5 (EPW 6.0). The coarse-coupling cost scales with the
+number of pools and with the kept bands, so use as many pools as k-points allow.
 
 ### 2. PAOFLOW basis
 
@@ -71,9 +80,10 @@ result arrays).
 
 | | λ | ω_log | Tc McMillan | Tc Allen–Dynes |
 |---|---|---|---|---|
-| PAOFLOW, k 48³ / q 24³ | 1.221 | 4.50 meV | 4.77 K | 5.21 K |
-| PAOFLOW, k 24³ / q 24³ | 1.066 | 5.19 meV | 4.61 K | 4.94 K |
-| EPW, k 48³ / q 24³ (this data) | 1.151 | 4.44 meV | 4.38 K | 4.76 K |
+| PAOFLOW, k 48³ / q 24³ (this example: EPW `wannierize = .false.`) | 1.221 | 4.50 meV | 4.77 K | 5.21 K |
+| PAOFLOW, k 24³ / q 24³ (this example) | 1.066 | 5.19 meV | 4.61 K | 4.94 K |
+| PAOFLOW, k 48³ / q 24³, on the Wannierized EPW run (`epw_wannier.in`) | 1.221 | 4.50 meV | 4.77 K | 5.21 K |
+| EPW itself, k 48³ / q 24³ (Wannierized run) | 1.151 | 4.44 meV | 4.38 K | 4.76 K |
 | EPW tutorial 04 | 1.158 | 4.40 meV | 4.37 K | 4.75 K |
 
 The remaining difference from EPW follows the density of states at E_F of the
@@ -91,8 +101,10 @@ q and is shown only as the cheaper workflow.
   [0, 1). `PAOFLOW.gen.epw_inputs.kpoints_card((6, 6, 6))` writes exactly the
   list in `epw/nscf.in`. PAOFLOW recovers the grid from the list and must be run
   with `pao_hamiltonian(expand_wedge=False)`, as in `main.py`.
-- **Band window:** `exclude_bands` is supported; an EPW outer disentanglement
-  window that excludes bands (`dis_win_min/max`) is not.
-- **Without a Wannierization:** `PAOFLOW.gen.epw_inputs.write_placeholder_ukk`
-  and `epw_input` set up an `epw.x` run with `wannierize = .false.`. That route
-  has not been validated end to end yet.
+- **Band exclusion without Wannier functions:** with `wannierize = .false.`
+  EPW takes the excluded bands from `pb.ukk` (`write_placeholder_ukk(...,
+  exclude_bands=..., nelec=...)`); `bands_skipped` in `epw.in` only documents
+  the choice. `PAOFLOW.gen.epw_inputs.epw_input` writes the matching `epw.in`,
+  and `paoflow-gen` (electron-phonon workflow) generates both.
+- **Wannierized EPW runs** work too (`epw/epw_wannier.in`), as long as the
+  outer disentanglement window contains every band (no `dis_win_min/max`).
