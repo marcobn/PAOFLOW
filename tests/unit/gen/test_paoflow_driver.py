@@ -356,3 +356,119 @@ def test_build_elphon_script_elphmat_source():
     assert "SOURCE = 'elphmat'" in text
     assert "COUPLING_DIR = os.path.join(HERE, 'elph_dir')" in text
     assert 'Q_WEIGHTS = [1.0, 8.0, 6.0, 12.0]' in text
+
+
+def _epw_cfg(**kw):
+    cfg = dict(_COMMON)
+    cfg.update(
+        {
+            'prefix': 'pb',
+            'savedir': 'epw/pb.save',
+            'source': 'epw',
+            'epw_dir': 'epw',
+            'coupling_dir': 'epw',
+            'kgrid': [6, 6, 6],
+            'qgrid': [6, 6, 6],
+            'nbnd': 16,
+            'masses_amu': [207.2],
+            'nelec': 14,
+            'dense_q': True,
+            'nk_dense': 48,
+            'nq_dense': 24,
+            'sigma_ev': 0.05,
+            'mu_star': 0.10,
+            'pthr': 0.95,
+        }
+    )
+    cfg.update(kw)
+    return cfg
+
+
+def test_build_elphon_script_epw_is_default_and_wired():
+    text = d.build_elphon_script(_epw_cfg())
+    compile(text, 'main.elphon.py', 'exec')
+    assert "EPW_DIR = os.path.join(HERE, 'epw')" in text
+    assert "SAVEDIR = os.path.join(HERE, 'epw/pb.save')" in text
+    assert 'KGRID = (6, 6, 6)' in text and 'QGRID = (6, 6, 6)' in text
+    assert 'NK_DENSE = 48' in text and 'NQ_DENSE = 24' in text and 'DENSE_Q = True' in text
+    assert 'SIGMA_EV = 0.05' in text
+    assert "source='epw'" in text
+    assert 'pf.pao_hamiltonian(expand_wedge=False)' in text
+    assert 'eliashberg_dense_q(' in text and 'eliashberg_from_qe_coupling(' in text
+    assert '__' + 'PREFIX' + '__' not in text
+    for tok in ('__EPW_DIR__', '__KGRID__', '__NQ_DENSE__', '__PROJECTION_CALL__'):
+        assert tok not in text
+    # a config without an explicit source also gets the EPW route
+    cfg = _epw_cfg()
+    del cfg['source']
+    assert "source='epw'" in d.build_elphon_script(cfg)
+
+
+def test_generated_epw_inputs_phase_writes_valid_files(tmp_path):
+    import runpy
+
+    from PAOFLOW.elphon.qe_elph_io import read_epw_ukk
+
+    script = tmp_path / 'main.elphon.py'
+    script.write_text(d.build_elphon_script(_epw_cfg(kgrid=[4, 4, 4], qgrid=[2, 2, 2], nbnd=6)))
+    module = runpy.run_path(str(script), run_name='generated')
+    module['inputs']()
+
+    assert (tmp_path / 'pb.ph.in').read_text().count('nq1=2, nq2=2, nq3=2') == 1
+    card = (tmp_path / 'nscf.kpoints').read_text().splitlines()
+    assert card[:2] == ['K_POINTS crystal', '64']
+    epw_in = (tmp_path / 'epw.in').read_text()
+    assert 'epbwrite    = .true.' in epw_in and 'nbndsub     = 6' in epw_in
+    ukk = read_epw_ukk(str(tmp_path / 'pb.ukk'), 64)
+    assert ukk['nbndep'] == 6 and ukk['lwin'].all()
+
+
+def test_build_elphon_plot_script_overlays_epw_a2f():
+    text = d.build_elphon_plot_script(_epw_cfg())
+    compile(text, 'plot.elphon.py', 'exec')
+    assert "EPW_A2F = os.path.join(HERE, 'epw', 'pb.a2f')" in text
+    assert 'read_epw_a2f(EPW_A2F)' in text
+    legacy = d.build_elphon_plot_script(_elphon_cfg())
+    assert 'EPW_A2F = None' in legacy
+
+
+def test_read_epw_a2f_helper_parses_epw_format(tmp_path):
+    a2f = tmp_path / 'pb.a2f'
+    a2f.write_text(
+        ' w[meV] a2f and integrated 2*a2f/w for   10 smearing values\n'
+        '   0.5000000   0.1000000   0.0100000\n'
+        '   1.0000000   0.2000000   0.0500000\n'
+        ' Integrated el-ph coupling\n  #            1.1514582\n'
+    )
+    namespace = {'__file__': str(tmp_path / 'plot.elphon.py')}
+    exec(d.build_elphon_plot_script(_epw_cfg()).split('def main():')[0], namespace)
+    w, a2f_values, lam = namespace['read_epw_a2f'](str(a2f))
+    assert list(w) == [0.5, 1.0] and list(a2f_values) == [0.1, 0.2] and lam[-1] == 0.05
+
+
+def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch):
+    answers = iter(
+        [
+            'epw',  # coupling source
+            '',  # EPW outdir (default from savedir)
+            '9',  # coarse k-grid
+            '6',  # q-grid not dividing 9 -> re-prompt
+            '3',  # valid q-grid
+            '20',  # nbnd
+            '207.2',  # masses
+            '14',  # nelec
+            'y',  # dense q
+            '12',  # NQ_DENSE
+            '30',  # NK_DENSE not a multiple of 12 -> re-prompt
+            '36',  # valid NK_DENSE
+            '',  # sigma (eV)
+            '',  # mu*
+            '',  # pthr
+        ]
+    )
+    monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
+    cfg = d.collect_elphon(dict(_COMMON, savedir='epw/pb.save'))
+    assert cfg['source'] == 'epw' and cfg['epw_dir'] == 'epw'
+    assert cfg['kgrid'] == [9, 9, 9] and cfg['qgrid'] == [3, 3, 3]
+    assert (cfg['nq_dense'], cfg['nk_dense']) == (12, 36)
+    assert cfg['sigma_ev'] == 0.05 and cfg['pthr'] == 0.95
