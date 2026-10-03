@@ -23,8 +23,11 @@ The real-space cutoff can be given as a radius or as a neighbour-shell
 count (:mod:`~PAOFLOW.sparse.shells`).  The base-cell bond list can be
 saved, reloaded in place of the DFT input stages, and read back as a
 labelled dataset of hopping integrals (:mod:`~PAOFLOW.sparse.io`).
+The archive is shared with the dense driver: :mod:`~PAOFLOW.sparse.bridge`
+is the single dense <-> sparse conversion point.
 """
 
+from .bridge import archive_Dnm, densify, init_restart_session, sparsify
 from .hamiltonian import SparseHamiltonian
 
-__all__ = ['SparseHamiltonian']
+__all__ = ['SparseHamiltonian', 'archive_Dnm', 'densify', 'init_restart_session', 'sparsify']

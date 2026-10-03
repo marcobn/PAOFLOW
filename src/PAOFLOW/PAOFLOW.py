@@ -290,6 +290,11 @@ class PAOFLOW:
         )
 
         self.report_exception = self.data_controller.report_exception
+        # what a restart needs to rebuild the session without a JSON dump
+        # (see load_sparse_hamiltonian)
+        self._session = dict(
+            workpath=workpath, outputdir=outputdir, npool=npool, smearing=smearing, verbose=verbose
+        )
 
         if not restart:
             # Data Attributes
@@ -869,6 +874,115 @@ class PAOFLOW:
             if self.data_controller.data_attributes['abort_on_exception']:
                 raise e
         self.report_module_time('write_Hamiltonian')
+
+    def save_sparse_hamiltonian(
+        self, fname='sparse_hamiltonian.npz', threshold=1.0e-3, bond_order=None, rcut=None
+    ):
+        """
+        Truncate 'HRs' to a bond list and save it as a sparse Hamiltonian archive.
+
+        The archive (PAOFLOW.sparse.io) holds the surviving matrix elements as a
+        labelled bond list together with the geometry and run metadata needed to
+        restart from it, with either this driver or SparsePAOFLOW. 'HRs' itself is
+        left untouched, so the run continues unchanged.
+
+        Must be called after 'pao_hamiltonian' and before 'interpolated_hamiltonian',
+        'pao_eigh' or any doubling: only the base-cell 'HRs' can be saved.
+
+        Arguments:
+            fname (str): File name of the archive (relative names go to outputdir)
+            threshold (float): Drop matrix elements below this magnitude (eV) in every spin channel
+            bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
+            rcut (float): Bond-length cutoff in Bohr; mutually exclusive with bond_order
+
+        Returns:
+            None
+
+        """
+        from .sparse.bridge import sparsify
+        from .sparse.io import write_sparse_hamiltonian
+
+        attr = self.data_controller.data_attributes
+        if rcut is not None and bond_order is not None:
+            raise ValueError(
+                'save_sparse_hamiltonian: give either rcut (Bohr) or bond_order (shells), not both.'
+            )
+
+        try:
+            if self.rank == 0:
+                H = sparsify(self.data_controller, threshold, rcut=rcut, bond_order=bond_order)
+                path = write_sparse_hamiltonian(self.data_controller, H, fname)
+                if attr['verbose']:
+                    print('Sparse Hamiltonian written to %s' % path)
+                    print(H.stats_line())
+        except Exception as e:
+            self.report_exception('save_sparse_hamiltonian')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+        self.report_module_time('save_sparse_hamiltonian')
+
+    def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+        """
+        Restart the dense pipeline from a sparse Hamiltonian archive.
+
+        Reads an archive written by 'save_sparse_hamiltonian' of either driver,
+        restores the geometry, orbital map and run attributes, and scatters the
+        bond list into a dense 'HRs' (PAOFLOW.sparse.bridge.densify). Replaces
+        the input stages ('projections', 'projectability', 'pao_hamiltonian');
+        every dense property can follow. The model is the truncated one stored in
+        the file, and its truncation is printed.
+
+        Use on an instance created with restart=True. Every rank reads the file.
+
+        Arguments:
+            fname (str): Archive path; relative names that do not exist are looked up in outputdir
+
+        Returns:
+            None
+
+        """
+        from os.path import exists, isabs, join
+
+        from .sparse.bridge import archive_Dnm, densify, init_restart_session
+        from .sparse.io import read_sparse_hamiltonian, restore_data_controller
+
+        if self.data_controller.data_attributes is None:
+            init_restart_session(self.data_controller, self.comm, **self._session)
+        attr = self.data_controller.data_attributes
+
+        try:
+            path = fname
+            if not isabs(fname) and not exists(fname):
+                path = join(attr['opath'], fname)
+            H, bundle = read_sparse_hamiltonian(path)
+            restore_data_controller(self.data_controller, bundle)
+            densify(self.data_controller, H, archive_Dnm(bundle))
+
+            if self.rank == 0:
+                report = H.drop_report
+                if bundle['bond_order'] is not None:
+                    cut = 'bond_order = %d (r_c = %.3f Bohr)' % (
+                        bundle['bond_order'],
+                        bundle['cutoff_radius'],
+                    )
+                elif bundle['cutoff_radius'] is not None:
+                    cut = 'r_c = %.3f Bohr' % bundle['cutoff_radius']
+                else:
+                    cut = 'no real-space cutoff'
+                print('Loaded truncated Hamiltonian from %s' % path)
+                print(
+                    '  %d bonds, threshold = %.1e eV, %s, eig_bound = %.3e eV'
+                    % (H.nnz, bundle['threshold'], cut, report.get('eig_bound', float('nan')))
+                )
+        except Exception as e:
+            self.report_exception('load_sparse_hamiltonian')
+            if attr['abort_on_exception']:
+                raise e
+
+        self.comm.Barrier()
+        self.report_module_time('load_sparse_hamiltonian')
 
     def bands(
         self,
