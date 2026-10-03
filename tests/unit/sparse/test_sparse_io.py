@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from scipy import fftpack as FFT
 
+from PAOFLOW.sparse.bridge import archive_Dnm, densify
 from PAOFLOW.sparse.doubling import double_axis
 from PAOFLOW.sparse.hamiltonian import SparseHamiltonian
 from PAOFLOW.sparse.io import (
@@ -134,6 +135,82 @@ def test_restore_leaves_the_post_pao_hamiltonian_state(dc, tmp_path):
     # the sparse pipeline never holds these after pao_hamiltonian
     for key in ('HRs', 'Hks', 'Dnm'):
         assert key not in arrays
+
+
+# ---------------------------------------------------------------------------
+# Dense <-> sparse bridge
+# ---------------------------------------------------------------------------
+
+
+def test_densify_leaves_the_dense_post_pao_hamiltonian_state(dc):
+    H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)
+    Dnm = dc.data_arrays['Dnm'].copy()
+    fresh = _DC({}, {})
+    densify(fresh, H, Dnm=Dnm)
+    arrays = fresh.data_arrays
+
+    np.testing.assert_array_equal(arrays['HRs'], H.to_dense_HRs())
+    np.testing.assert_array_equal(arrays['Dnm'], Dnm)
+    np.testing.assert_allclose(arrays['Hks'], np.fft.fftn(arrays['HRs'], axes=(2, 3, 4)))
+    # dense pao_hamiltonian builds no real-space grid; do_gradient makes its
+    # own at the current mesh, and do_berry_curvature would reuse a stale one
+    for key in ('R', 'Rfft', 'idx', 'R_wght'):
+        assert key not in arrays
+
+
+def test_densify_refuses_a_doubled_list(dc):
+    H = SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=1)
+    with pytest.raises(RuntimeError, match='doubling_Hamiltonian'):
+        densify(_DC({}, {}), double_axis(H, 0))
+    with pytest.raises(RuntimeError, match='compact'):
+        densify(_DC({}, {}), H.compact())
+
+
+def _restart_driver(tmp_path, name):
+    from PAOFLOW.PAOFLOW import PAOFLOW
+
+    return PAOFLOW(workpath=str(tmp_path), outputdir=name, restart=True, smearing='gauss')
+
+
+def test_dense_save_then_dense_restart(dc, tmp_path):
+    """Dense driver -> archive -> dense driver, with the saving run unchanged."""
+    saver = _restart_driver(tmp_path, 'save')
+    saver.data_controller.data_arrays = dc.data_arrays
+    saver.data_controller.data_attributes = dc.data_attributes
+    original = dc.data_arrays['HRs'].copy()
+    saver.save_sparse_hamiltonian('s.npz', threshold=1e-3, bond_order=2)
+    np.testing.assert_array_equal(dc.data_arrays['HRs'], original)
+
+    loader = _restart_driver(tmp_path, 'load')
+    loader.load_sparse_hamiltonian(str(tmp_path / 's.npz'))
+    arrays, attributes = loader.data_controller.data_dicts()
+
+    H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)
+    np.testing.assert_array_equal(arrays['HRs'], H.to_dense_HRs())
+    np.testing.assert_array_equal(arrays['Dnm'], dc.data_arrays['Dnm'])
+    assert attributes['opath'] == str(tmp_path / 'load')
+
+
+def test_sparse_written_archive_restarts_densely_with_Dnm(dc, tmp_path):
+    """SparsePAOFLOW pops Dnm at conversion; the archive must still carry it,
+    or the dense gradient fails after a dense restart."""
+    Dnm = dc.data_arrays.pop('Dnm')
+    H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)
+    _, bundle = read_sparse_hamiltonian(write_sparse_hamiltonian(dc, H, 'a.npz', Dnm=Dnm))
+    np.testing.assert_array_equal(bundle['Dnm'], Dnm)
+
+    # an archive written without it gets the geometric offsets back exactly
+    _, bundle = read_sparse_hamiltonian(write_sparse_hamiltonian(dc, H, 'b.npz'))
+    assert 'Dnm' not in bundle
+    np.testing.assert_allclose(archive_Dnm(bundle), Dnm, atol=1e-12)
+
+
+def test_dense_save_refuses_both_cutoffs(dc, tmp_path):
+    saver = _restart_driver(tmp_path, 'save')
+    saver.data_controller.data_arrays = dc.data_arrays
+    saver.data_controller.data_attributes = dc.data_attributes
+    with pytest.raises(ValueError, match='not both'):
+        saver.save_sparse_hamiltonian('s.npz', bond_order=1, rcut=3.0)
 
 
 # ---------------------------------------------------------------------------

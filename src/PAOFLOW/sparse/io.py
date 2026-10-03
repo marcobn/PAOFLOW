@@ -287,6 +287,7 @@ def write_sparse_hamiltonian(
     H: SparseHamiltonian,
     fname: str,
     distance_tol: float = 1.0e-3,
+    Dnm: np.ndarray | None = None,
 ) -> str:
     """Write a base-cell bond list and its run metadata to a ``.npz`` archive.
 
@@ -301,6 +302,11 @@ def write_sparse_hamiltonian(
         directory.
     distance_tol : float, optional
         Shell-merging tolerance used for the per-bond shell labels (Bohr).
+    Dnm : np.ndarray or None, optional
+        Orbital-centre offsets to store, for a caller whose controller no
+        longer holds them (``SparsePAOFLOW`` pops ``Dnm`` at conversion).
+        Defaults to ``arrays['Dnm']`` when present.  The dense gradient
+        needs it after a dense restart.
 
     Returns
     -------
@@ -347,8 +353,10 @@ def write_sparse_hamiltonian(
         'tau': tau,
     }
     payload.update(table)
-    if 'Dnm' in arrays:
-        payload['Dnm'] = np.asarray(arrays['Dnm'], dtype=float)
+    if Dnm is None:
+        Dnm = arrays.get('Dnm')
+    if Dnm is not None:
+        payload['Dnm'] = np.asarray(Dnm, dtype=float)
 
     # remaining run arrays: plain numeric/string ndarrays go in as they are,
     # anything else only if it survives JSON
