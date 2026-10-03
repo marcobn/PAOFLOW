@@ -455,6 +455,8 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch):
             '6',  # q-grid not dividing 9 -> re-prompt
             '3',  # valid q-grid
             '20',  # nbnd
+            '1-2, 9:x',  # invalid band list -> re-prompt
+            '1:5',  # excluded bands
             '207.2',  # masses
             '14',  # nelec
             'y',  # dense q
@@ -472,3 +474,20 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch):
     assert cfg['kgrid'] == [9, 9, 9] and cfg['qgrid'] == [3, 3, 3]
     assert (cfg['nq_dense'], cfg['nk_dense']) == (12, 36)
     assert cfg['sigma_ev'] == 0.05 and cfg['pthr'] == 0.95
+    assert cfg['exclude_bands'] == [1, 2, 3, 4, 5]
+
+
+def test_generated_epw_inputs_phase_excludes_bands(tmp_path):
+    import runpy
+
+    from PAOFLOW.elphon.qe_elph_io import read_epw_ukk
+
+    script = tmp_path / 'main.elphon.py'
+    cfg = _epw_cfg(kgrid=[2, 2, 2], qgrid=[2, 2, 2], nbnd=16, exclude_bands=[1, 2, 3, 4, 5])
+    script.write_text(d.build_elphon_script(cfg))
+    runpy.run_path(str(script), run_name='generated')['inputs']()
+
+    epw_in = (tmp_path / 'epw.in').read_text()
+    assert "bands_skipped = 'exclude_bands = 1:5'" in epw_in and 'nbndsub     = 11' in epw_in
+    ukk = read_epw_ukk(str(tmp_path / 'pb.ukk'), 8)
+    assert (ukk['nbndep'], ukk['nbndskip']) == (11, 5)

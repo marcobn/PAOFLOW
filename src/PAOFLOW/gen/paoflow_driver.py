@@ -1808,11 +1808,13 @@ Between them run, in order (EPW tutorial 04 is a complete worked example):
     4. pw.x nscf with the K_POINTS card of nscf.kpoints   (full grid, explicit list)
     5. mpirun -np N epw.x -nk N -in epw.in   (writes <prefix>.epb*, one file per pool)
 
-``epw.in`` written here runs EPW without a Wannierization, using a placeholder
-<prefix>.ukk; that variant has not been validated end to end yet.  An EPW input
-with a real Wannierization (as in the EPW tutorials) works equally well, as long
-as it sets ``epbwrite = .true.`` and its outer disentanglement window contains
-every band (``exclude_bands`` is fine).
+``epw.in`` written here runs EPW without any Wannier functions
+(``wannierize = .false.``): EPW reads the band bookkeeping from the placeholder
+<prefix>.ukk (EXCLUDE_BANDS, identity rotations) and writes the coarse coupling
+before its Wannier stage, which PAOFLOW does not use.  Validated on Pb (EPW
+tutorial 04): identical PAOFLOW results to a Wannierized EPW run.  An EPW input
+with a Wannierization also works, as long as it sets ``epbwrite = .true.`` and
+its outer disentanglement window contains every band.
 """
 
 import argparse
@@ -1842,6 +1844,7 @@ BASISDIR = os.path.join(HERE, __BASISDIR__)
 KGRID = __KGRID__          # coarse k-grid (nscf, EPW nk1..3)
 QGRID = __QGRID__          # coarse q-grid (ph.x, EPW nq1..3); must divide KGRID
 NBND = __NBND__            # bands in the nscf run (> number of PAO orbitals)
+EXCLUDE_BANDS = __EXCLUDE_BANDS__  # 1-based bands left out of the coupling (e.g. semicore)
 MASSES_AMU = __MASSES__    # atomic mass of each species (amu)
 NELEC = __NELEC__          # valence electrons (dense E_F recompute)
 DENSE_Q = __DENSE_Q__      # interpolate q as well as k (recommended)
@@ -1875,15 +1878,17 @@ def inputs():
     files = {
         PREFIX + '.ph.in': _phonon_input(),
         'nscf.kpoints': kpoints_card(KGRID),
-        'epw.in': epw_input(PREFIX, MASSES_AMU, KGRID, QGRID, NBND),
+        'epw.in': epw_input(PREFIX, MASSES_AMU, KGRID, QGRID, NBND - len(EXCLUDE_BANDS),
+                            exclude_bands=EXCLUDE_BANDS),
     }
     for name, text in files.items():
         with open(os.path.join(HERE, name), 'w') as fh:
             fh.write(text)
         print('Wrote %s' % name)
     ukk = os.path.join(HERE, PREFIX + '.ukk')
-    write_placeholder_ukk(ukk, NBND, KGRID[0] * KGRID[1] * KGRID[2])
-    print('Wrote %s  (placeholder for wannierize=.false.; EPW reads it from its run directory)'
+    write_placeholder_ukk(ukk, NBND, KGRID[0] * KGRID[1] * KGRID[2],
+                          exclude_bands=EXCLUDE_BANDS, nelec=NELEC)
+    print('Wrote %s  (band bookkeeping for wannierize=.false.; keep it in the epw.x run directory)'
           % os.path.basename(ukk))
     print('Append nscf.kpoints to the pw.x nscf input (nbnd = %d), then run ph.x, pp.py, nscf, epw.x.'
           % NBND)
@@ -1975,6 +1980,7 @@ def build_elphon_epw_script(cfg):
         '__KGRID__': repr(tuple(cfg['kgrid'])),
         '__QGRID__': repr(tuple(cfg['qgrid'])),
         '__NBND__': str(int(cfg['nbnd'])),
+        '__EXCLUDE_BANDS__': repr([int(b) for b in cfg.get('exclude_bands', [])]),
         '__MASSES__': repr([float(m) for m in cfg['masses_amu']]),
         '__NELEC__': str(int(cfg['nelec'])),
         '__DENSE_Q__': str(bool(cfg['dense_q'])),
@@ -3845,6 +3851,19 @@ def _collect_elphon_epw(cfg):
     cfg['kgrid'] = [kg, kg, kg]
     cfg['qgrid'] = [qg, qg, qg]
     cfg['nbnd'] = ask_int('Bands in the nscf run (nbnd, > number of PAO orbitals)', 0)
+    from PAOFLOW.gen.epw_inputs import parse_exclude_bands
+
+    while True:
+        try:
+            cfg['exclude_bands'] = parse_exclude_bands(
+                ask(
+                    'Bands to exclude from the coupling (EPW exclude_bands, e.g. 1:5; blank = none)',
+                    '',
+                )
+            )
+            break
+        except ValueError as err:
+            print(f'  {err}')
     masses = ask('Atomic mass of each species (amu), comma-separated', '')
     cfg['masses_amu'] = [float(x) for x in masses.replace(',', ' ').split() if x.strip()]
     cfg['nelec'] = ask_int('Valence electrons (nelec)', 0)

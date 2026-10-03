@@ -62,7 +62,72 @@ def kpoints_card(nk: tuple[int, int, int]) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def write_placeholder_ukk(path: str, nbnd: int, nk_total: int, nbndsub: int | None = None) -> None:
+def parse_exclude_bands(spec: str) -> list[int]:
+    """Parse an EPW/wannier90 band list such as ``'1:5, 8'`` (or ``'1-5 8'``).
+
+    Parameters
+    ----------
+    spec : str
+        Comma- or space-separated 1-based band indices and ``first:last`` (or
+        ``first-last``) ranges; an optional ``exclude_bands =`` prefix is ignored.
+
+    Returns
+    -------
+    list of int
+        Sorted, unique 1-based band indices (empty for a blank string).
+
+    Raises
+    ------
+    ValueError
+        If an entry is not an integer or a valid range.
+    """
+    body = spec.split('=', 1)[-1] if '=' in spec else spec
+    bands = set()
+    for token in body.replace(',', ' ').split():
+        bounds = token.replace('-', ':').split(':')
+        if len(bounds) == 1:
+            bands.add(int(bounds[0]))
+        elif len(bounds) == 2 and int(bounds[0]) <= int(bounds[1]):
+            bands.update(range(int(bounds[0]), int(bounds[1]) + 1))
+        else:
+            raise ValueError('invalid band range %r' % token)
+    return sorted(bands)
+
+
+def exclude_bands_string(exclude_bands: list[int]) -> str:
+    """EPW ``bands_skipped`` value for a list of 1-based band indices.
+
+    Parameters
+    ----------
+    exclude_bands : list of int
+        1-based band indices to exclude.
+
+    Returns
+    -------
+    str
+        e.g. ``'exclude_bands = 1:5, 8'``, with consecutive bands joined into
+        ``first:last`` ranges as in the EPW and wannier90 documentation.
+    """
+    bands = sorted(set(int(b) for b in exclude_bands))
+    ranges, first = [], None
+    for i, band in enumerate(bands):
+        if first is None:
+            first = band
+        if i + 1 == len(bands) or bands[i + 1] != band + 1:
+            ranges.append(str(first) if first == band else '%d:%d' % (first, band))
+            first = None
+    return 'exclude_bands = ' + ', '.join(ranges)
+
+
+def write_placeholder_ukk(
+    path: str,
+    nbnd: int,
+    nk_total: int,
+    nbndsub: int | None = None,
+    exclude_bands: list[int] | None = None,
+    nelec: float | None = None,
+    noncolin: bool = False,
+) -> None:
     """Write a ``prefix.ukk`` that lets EPW run without a Wannierization.
 
     Parameters
@@ -70,44 +135,69 @@ def write_placeholder_ukk(path: str, nbnd: int, nk_total: int, nbndsub: int | No
     path : str
         Output file, ``prefix.ukk`` in the directory where ``epw.x`` is run.
     nbnd : int
-        Number of nscf bands; all of them are kept (no ``exclude_bands``).
+        Number of nscf bands.
     nk_total : int
         Number of k-points of the nscf grid.
     nbndsub : int, optional
         Number of "Wannier functions" declared to EPW (``nbndsub`` in
-        ``epw.in``).  Defaults to ``nbnd``; must not exceed 200.
+        ``epw.in``).  Defaults to the number of kept bands; must not exceed it
+        nor EPW's limit of 200.
+    exclude_bands : list of int, optional
+        1-based indices of bands excluded from the electron-phonon calculation
+        (e.g. semicore states).  With ``wannierize = .false.`` EPW reads the
+        exclusion from this file only; ``bands_skipped`` in ``epw.in`` is used
+        solely to write wannier90's ``.win``.
+    nelec : float, optional
+        Number of valence electrons; required with ``exclude_bands`` to count
+        the occupied excluded bands (EPW's ``nbndskip``).
+    noncolin : bool, optional
+        Noncollinear calculation (one electron per band in ``nbndskip``).
 
     Returns
     -------
     None
         Writes ``path`` in the list-directed format of EPW's ``write_filukk``:
-        identity rotations, every band inside the outer window (so EPW does not
-        pack bands in the ``.epb`` files), no excluded band, zero centres.
+        kept-band list, identity rotations, every kept band inside the outer
+        window (so EPW does not pack bands in the ``.epb`` files), the
+        excluded-band flags and zero centres.
 
     Raises
     ------
     ValueError
-        If ``nbndsub`` exceeds ``nbnd`` or EPW's limit of 200.
+        If ``nbndsub`` is out of range, a band index is invalid, or ``nelec`` is
+        missing while bands are excluded.
 
     Notes
     -----
-    The rotations only enter EPW's Wannier stage, which runs after the
-    ``.epb`` files are written and whose output PAOFLOW does not use.  The
-    format round-trips through :func:`PAOFLOW.elphon.qe_elph_io.read_epw_ukk`;
-    a complete ``epw.x`` run with this placeholder has not been validated yet.
+    ``nbndskip`` follows EPW's ``setup_nnkp``: the number of excluded bands
+    with index ``<= nelec / 2`` (``<= nelec`` if noncollinear).  The rotations
+    only enter EPW's Wannier stage, which runs after the ``.epb`` files are
+    written and whose output PAOFLOW does not use.
     """
-    nbndsub = nbnd if nbndsub is None else int(nbndsub)
-    if nbndsub > nbnd or nbndsub > _EPW_MAX_NBNDSUB:
+    excluded = sorted(set(int(b) for b in (exclude_bands or [])))
+    if any(b < 1 or b > nbnd for b in excluded):
+        raise ValueError('excluded band indices must be in 1..%d' % nbnd)
+    if excluded and nelec is None:
+        raise ValueError('nelec is required to count the occupied excluded bands')
+    kept = [b for b in range(1, nbnd + 1) if b not in excluded]
+    nbndep = len(kept)
+    nbndskip = 0
+    if excluded:
+        occupied = nelec if noncolin else int(nelec / 2)  # highest occupied band index
+        nbndskip = sum(1 for b in excluded if b <= occupied)
+    nbndsub = nbndep if nbndsub is None else int(nbndsub)
+    if nbndsub < 1 or nbndsub > nbndep or nbndsub > _EPW_MAX_NBNDSUB:
         raise ValueError(
-            'nbndsub=%d must be <= nbnd=%d and <= %d' % (nbndsub, nbnd, _EPW_MAX_NBNDSUB)
+            'nbndsub=%d must be in 1..%d (kept bands) and <= %d'
+            % (nbndsub, nbndep, _EPW_MAX_NBNDSUB)
         )
-    lines = ['%12d%12d' % (nbnd, 0)]
-    lines += ['%12d' % (ibnd + 1) for ibnd in range(nbnd)]
-    rotation = np.eye(nbnd, nbndsub)
+    lines = ['%12d%12d' % (nbndep, nbndskip)]
+    lines += ['%12d' % b for b in kept]
+    rotation = np.eye(nbndep, nbndsub)
     for _ in range(nk_total):
         lines += [' (%.16E,%.16E)' % (value, 0.0) for value in rotation.ravel()]
-    lines += [' T'] * (nk_total * nbnd)
-    lines += [' F'] * nbnd
+    lines += [' T'] * (nk_total * nbndep)
+    lines += [' T' if b in excluded else ' F' for b in range(1, nbnd + 1)]
     lines += ['%22.12E%22.12E%22.12E' % (0.0, 0.0, 0.0)] * nbndsub
     with open(path, 'w') as fh:
         fh.write('\n'.join(lines) + '\n')
@@ -122,6 +212,7 @@ def epw_input(
     dvscf_dir: str = './save',
     outdir: str = './',
     wannierize: bool = False,
+    exclude_bands: list[int] | None = None,
 ) -> str:
     """Minimal ``epw.in`` that writes the coarse Bloch coupling (``epbwrite``).
 
@@ -144,6 +235,12 @@ def epw_input(
     wannierize : bool, optional
         Run wannier90 inside EPW (requires the usual ``proj``/window inputs,
         to be added by hand).  Default ``False`` uses the ``.ukk`` file.
+    exclude_bands : list of int, optional
+        1-based bands to exclude, written as ``bands_skipped``.  With
+        ``wannierize=False`` EPW takes the exclusion from the ``.ukk`` file
+        (:func:`write_placeholder_ukk` with the same list); the line is kept so
+        that the input documents, and with ``wannierize=True`` applies, the
+        same choice.
 
     Returns
     -------
@@ -173,6 +270,10 @@ def epw_input(
         '  epwread     = .false.',
         '  wannierize  = %s' % flag(wannierize),
         '  nbndsub     = %d' % nbndsub,
+    ]
+    if exclude_bands:
+        lines.append("  bands_skipped = '%s'" % exclude_bands_string(exclude_bands))
+    lines += [
         '  nk1 = %d, nk2 = %d, nk3 = %d' % tuple(nk),
         '  nq1 = %d, nq2 = %d, nq3 = %d' % tuple(nq),
         '  nkf1 = 1, nkf2 = 1, nkf3 = 1',
