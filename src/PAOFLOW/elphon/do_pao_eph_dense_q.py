@@ -48,11 +48,20 @@ Deferred / to validate
   dipole/quadrupole subtract-before / add-back-after step for polar materials.
 """
 
+from __future__ import annotations
+
 import re
+from collections.abc import Callable
 
 import numpy as np
+from numpy.typing import NDArray
 
-from .do_pao_eph import vertex_from_qe_ahc, vertex_from_qe_elphmat
+from .do_pao_eph import (
+    load_epw_coupling,
+    vertex_from_epw,
+    vertex_from_qe_ahc,
+    vertex_from_qe_elphmat,
+)
 from .elph_bloch import (
     AMU_RY,
     RY_TO_THZ,
@@ -151,7 +160,10 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at):
     Parameters
     ----------
     dyn_paths : sequence of str
-        One ``*.dyn`` per FULL coarse-grid q (``len == prod(qgrid)``).
+        ``*.dyn`` files whose q-points, including every star member listed in
+        each file, cover the full coarse grid: either one file per q of a
+        full-grid (``nosym``) run, or the irreducible-q files of a symmetric
+        ``ph.x`` run.
     qgrid : tuple(int, int, int)
         Coarse phonon q-grid.
     bg, at : ndarray ``(3, 3)``
@@ -161,14 +173,14 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at):
     -------
     callable
         ``phonon_at_q(q_cryst) -> (freq_thz (nmode,), z (nmode, ncart))``.
+
+    Raises
+    ------
+    ValueError
+        If the files do not cover every q of the grid.
     """
     qgrid = tuple(int(n) for n in qgrid)
     nq = qgrid[0] * qgrid[1] * qgrid[2]
-    if len(dyn_paths) != nq:
-        raise ValueError(
-            'phonon_interp_from_dyn needs one dyn file per FULL-grid q (%d), got %d.'
-            % (nq, len(dyn_paths))
-        )
 
     # Collect the full-precision force-constant matrix C(q) for every star-q in
     # every dyn file (the "Dynamical Matrix in cartesian axes" blocks are the
@@ -190,7 +202,85 @@ def phonon_interp_from_dyn(dyn_paths, qgrid, bg, at):
                 filled[lab] = True
     if not filled.all():
         raise ValueError('dyn files cover only %d/%d q of the grid.' % (filled.sum(), nq))
+    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at)
 
+
+def phonon_interp_from_epw(
+    dynq: NDArray[np.complex128],
+    q_cryst: NDArray[np.float64],
+    masses_amu: NDArray[np.float64],
+    qgrid: tuple[int, int, int],
+    at: NDArray[np.float64],
+) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
+    """Dense-q phonon interpolator from EPW's coarse force constants.
+
+    Parameters
+    ----------
+    dynq : NDArray[np.complex128], shape ``(3 nat, 3 nat, nq)``
+        Force-constant matrices on the full coarse q-grid
+        (:func:`~PAOFLOW.elphon.qe_elph_io.read_epw_epb` ``['dynq']``;
+        Ry/bohr^2, not divided by the masses).
+    q_cryst : NDArray[np.float64], shape ``(nq, 3)``
+        The matching q-points in crystal coordinates (any order).
+    masses_amu : NDArray[np.float64], shape ``(nat,)``
+        Atomic masses (amu).
+    qgrid : tuple of int
+        Coarse phonon q-grid.
+    at : NDArray[np.float64], shape ``(3, 3)``
+        Real-lattice vectors (rows, alat).
+
+    Returns
+    -------
+    callable
+        ``phonon_at_q(q_cryst) -> (freq_thz (nmode,), z (nmode, ncart))``, the
+        same convention as :func:`phonon_interp_from_dyn`.
+
+    Raises
+    ------
+    ValueError
+        If the q-points do not cover the full grid.
+    """
+    qgrid = tuple(int(n) for n in qgrid)
+    nmode = dynq.shape[0]
+    Cgrid = np.zeros(qgrid + (nmode, nmode), dtype=complex)
+    filled = np.zeros(qgrid, dtype=bool)
+    labels = np.round(np.asarray(q_cryst) * np.asarray(qgrid)).astype(int) % np.asarray(qgrid)
+    for iq, lab in enumerate(map(tuple, labels)):
+        Cgrid[lab] = dynq[:, :, iq]
+        filled[lab] = True
+    if not filled.all():
+        raise ValueError(
+            'EPW q-points cover only %d/%d q of the grid.' % (filled.sum(), filled.size)
+        )
+    masses_ry = np.asarray(masses_amu, dtype=float) * AMU_RY
+    return _phonon_interp_from_force_constants(Cgrid, masses_ry, qgrid, at)
+
+
+def _phonon_interp_from_force_constants(
+    Cgrid: NDArray[np.complex128],
+    masses_ry: NDArray[np.float64],
+    qgrid: tuple[int, int, int],
+    at: NDArray[np.float64],
+) -> Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.complex128]]]:
+    """Wigner-Seitz phonon interpolator from force constants on the full coarse grid.
+
+    Parameters
+    ----------
+    Cgrid : NDArray[np.complex128], shape ``(nq1, nq2, nq3, 3 nat, 3 nat)``
+        Force-constant matrices ``C(q)`` (Ry/bohr^2) placed on the grid.
+    masses_ry : NDArray[np.float64], shape ``(nat,)``
+        Atomic masses in QE Rydberg units.
+    qgrid : tuple of int
+        Coarse phonon q-grid.
+    at : NDArray[np.float64], shape ``(3, 3)``
+        Real-lattice vectors (rows, alat).
+
+    Returns
+    -------
+    callable
+        ``phonon_at_q(q_cryst) -> (freq_thz (nmode,), z (nmode, ncart))``.
+    """
+    nq = qgrid[0] * qgrid[1] * qgrid[2]
     # q -> R_p (same 1/N, sign convention as build_g_ReRp); grid axes stay leading.
     Cr = np.fft.fftn(Cgrid, axes=(0, 1, 2)) / nq  # (nq1, nq2, nq3, nmode, nmode)
 
@@ -419,14 +509,22 @@ def eliashberg_dense_q(
 
     Parameters
     ----------
-    q_cryst_coarse : ndarray ``(nq_coarse, 3)``
+    q_cryst_coarse : ndarray ``(nq_coarse, 3)`` or None
         FULL coarse q-grid in crystal coordinates (``TODO: unfold_star`` if only
-        the irreducible set is available).
-    dyn_paths_full : sequence of str
+        the irreducible set is available).  For ``source='epw'``, ``None`` takes
+        EPW's q-points, which already cover the full grid.
+    dyn_paths_full : sequence of str or None
         One ``*.dyn`` per full coarse q (used only for ``source='ahc'`` to supply
         the q-point of each dump).
-    phonon_at_q : callable
-        ``q_cryst -> (freq_thz, z)``; see :func:`_phonon_modes_at_q`.
+    phonon_at_q : callable or None
+        ``q_cryst -> (freq_thz, z)``; see :func:`_phonon_modes_at_q`.  For
+        ``source='epw'``, ``None`` builds it from EPW's force constants
+        (:func:`phonon_interp_from_epw`).
+    source : {'elphmat', 'ahc', 'epw'}, optional
+        Coarse coupling input (see
+        :func:`~PAOFLOW.elphon.do_pao_eph.eliashberg_from_qe_coupling`).  Only
+        ``'epw'`` gives vertices whose band phases match ``A`` for every q,
+        which the ``q -> R_p`` interpolation requires.
     nq_dense : int, optional
         Dense q-grid size (defaults to ``nk_dense`` so k+q stays commensurate).
     min_freq_thz : float, optional
@@ -461,9 +559,20 @@ def eliashberg_dense_q(
     masses_amu = np.asarray(masses_amu, dtype=float)
     mass_flat_ry = np.repeat(masses_amu, 3) * AMU_RY  # (ncart,)
     qgrid_coarse = tuple(int(n) for n in qgrid_coarse)
-    q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
     nbnd, nk = int(A.shape[0]), int(A.shape[2])
     nmodes = int(mass_flat_ry.size)
+    epw = None
+    if source == 'epw':
+        # EPW provides the full coarse q-grid (unfolded from the irreducible ph.x
+        # q) and its force constants; both default from the .epb files.
+        epw = load_epw_coupling(coupling_dir, nbnd, nk, masses_amu.size, bg)
+        if q_cryst_coarse is None:
+            q_cryst_coarse = epw['q_cryst']
+        if phonon_at_q is None:
+            phonon_at_q = phonon_interp_from_epw(
+                epw['dynq'], epw['q_cryst'], masses_amu, qgrid_coarse, at
+            )
+    q_cryst_coarse = np.asarray(q_cryst_coarse, dtype=float)
     if nq_dense is None:
         nq_dense = nk_dense  # keep the dense q-grid commensurate with k for k+q
 
@@ -497,7 +606,11 @@ def eliashberg_dense_q(
     if node_rank == 0:
         g_list = []
         for iq, q_cryst in enumerate(q_cryst_coarse):
-            if source == 'ahc':
+            if source == 'epw':
+                gR = vertex_from_epw(
+                    epw['epmatq'][..., iq], A, kpts_cryst, q_cryst, ng, epw['ibndkept']
+                )
+            elif source == 'ahc':
                 gR = vertex_from_qe_ahc(
                     coupling_dir, iq + 1, A, kpts_cryst, q_cryst, ng, nbnd, nmodes, nk
                 )
@@ -507,6 +620,8 @@ def eliashberg_dense_q(
             g_list.append(gR)
         g_ReRp[...] = build_g_ReRp(np.stack(g_list, axis=0), q_cryst_coarse, qgrid_coarse)
         del g_list
+    if epw is not None:
+        del epw['epmatq']  # only the shared g(R_e, R_p) is needed from here on
     node_comm.Barrier()  # ensure the shared buffer is filled before any rank reads
 
     Nint_p, W_p, Midx_p = _ws_lattice(qgrid_coarse, at)

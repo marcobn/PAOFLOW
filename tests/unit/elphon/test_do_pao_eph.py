@@ -287,3 +287,25 @@ def test_vertex_pao_R_recovers_pao_operator_independent_of_band_phases():
         )  # d_{mn,c}(k) = <psi_{m,k+q}| G_c(k) |psi_{nk}>
         gR = vertex_pao_R(d, A, ikq, kidx, ng)
         np.testing.assert_allclose(gR, G_R, rtol=1e-12, atol=1e-12)
+
+
+def test_dense_electrons_follow_paoflow_fourier_convention():
+    """PAOFLOW builds HRs = ifftn(Hks); the dense cache must return H(k), not H(-k).
+
+    H(k) is random and Hermitian but not time-reversal symmetric, so the
+    eigenvalues at -k differ from those at k and a sign error is detected.
+    """
+    from PAOFLOW.elphon.elph_bloch import RY_TO_EV, precompute_dense_electrons
+
+    rng = np.random.default_rng(41)
+    n, nawf = 3, 2
+    a = rng.standard_normal((n, n, n, nawf, nawf)) + 1j * rng.standard_normal((n, n, n, nawf, nawf))
+    Hk = a + np.conj(np.swapaxes(a, -1, -2))  # Hermitian at every k, no k <-> -k relation
+    Hks = np.moveaxis(Hk, (3, 4), (0, 1))  # (nawf, nawf, n, n, n)
+    HRs = np.fft.ifftn(Hks, axes=(2, 3, 4))[..., None]  # PAOFLOW convention
+
+    el = precompute_dense_electrons(HRs, np.eye(3), n, np.array([0.1]), None, (n, n, n))
+
+    labels = np.round(el['K'] * n).astype(int) % n
+    expected = np.array([np.linalg.eigvalsh(Hk[i, j, l]) for i, j, l in labels]) / RY_TO_EV
+    np.testing.assert_allclose(el['E'], expected, atol=1e-10)

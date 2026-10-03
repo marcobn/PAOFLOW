@@ -153,9 +153,11 @@ def vertex_pao_R(d, A, ikq, kgrid_idx, ng):
 
     Rotates the band-basis deformation potentials to the PAO gauge,
     ``g^{PAO}_{ij,c}(k) = (A_{k+q}^T d_c(k) A_k^*)_{ij}``, places them on the
-    coarse k-grid and Fourier-transforms to the electron cells ``R_e``.  The
-    transform matches PAOFLOW's ``HRs`` convention so the result can be
-    interpolated with :func:`PAOFLOW.elphon.eph_kq.estates_on_grid`.
+    coarse k-grid and Fourier-transforms to the electron cells ``R_e``
+    (``fftn / N``).  :func:`lambda_q_dense_ws_fast` evaluates it back with
+    ``exp(+2 pi i k.R)``, whereas the electron Hamiltonian follows PAOFLOW's
+    ``Hks = fftn(HRs)`` (``exp(-2 pi i k.R)``), so both are taken at the same
+    physical k.
 
     Parameters
     ----------
@@ -353,7 +355,7 @@ def lambda_q_dense_ws(
         Eall = np.empty((nkd, nawf))
         for s0 in range(0, nkd, kblock):
             Kb = K[s0 : s0 + kblock]
-            phk = np.exp(2j * np.pi * (Kb @ NintH.T))
+            phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
             Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
             Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
             Eall[s0 : s0 + Kb.shape[0]] = np.linalg.eigvalsh(Hk) / RY_TO_EV
@@ -361,8 +363,10 @@ def lambda_q_dense_ws(
             ef_sig[isig] = _fermi_level(Eall, sig, nelec)
     for s0 in range(0, nkd, kblock):
         Kb = K[s0 : s0 + kblock]
-        phkH = np.exp(2j * np.pi * (Kb @ NintH.T))  # (nb, nwsH)
-        phkqH = np.exp(2j * np.pi * ((Kb + q_cryst) @ NintH.T))
+        # Electrons: PAOFLOW builds HRs = ifftn(Hks), so H(k) = sum_R exp(-2 pi i k.R) HRs(R).
+        # The vertex keeps the opposite pair of vertex_pao_R (fftn / N, exp(+2 pi i k.R)).
+        phkH = np.exp(-2j * np.pi * (Kb @ NintH.T))  # (nb, nwsH)
+        phkqH = np.exp(-2j * np.pi * ((Kb + q_cryst) @ NintH.T))
         phkg = np.exp(2j * np.pi * (Kb @ Nintg.T))  # (nb, nwsg)
         nb = Kb.shape[0]
         Hk = (phkH @ Hn_flat).reshape(nb, nawf, nawf)
@@ -451,7 +455,7 @@ def precompute_dense_electrons(
     V = np.empty((nkd, nawf, nawf), dtype=complex)
     for s0 in range(0, nkd, kblock):
         Kb = K[s0 : s0 + kblock]
-        phk = np.exp(2j * np.pi * (Kb @ NintH.T))
+        phk = np.exp(-2j * np.pi * (Kb @ NintH.T))  # PAOFLOW: H(k) = fftn(HRs)
         Hk = (phk @ Hn_flat).reshape(Kb.shape[0], nawf, nawf)
         Hk = 0.5 * (Hk + np.conjugate(np.transpose(Hk, (0, 2, 1))))
         e, v = np.linalg.eigh(Hk)
