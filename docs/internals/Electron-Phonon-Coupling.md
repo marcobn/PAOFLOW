@@ -186,9 +186,13 @@ tutorial 04, Pb):
      flags. Band exclusion (e.g. semicore states) therefore goes into the
      placeholder (`exclude_bands=...`, with `nelec`). `bands_skipped` in
      `epw.in` is only used to write wannier90's `.win`.
-   - EPW writes the `.epb` files before its Wannier stage. With the identity
-     rotations of the placeholder that stage is a trivial basis change whose
-     output PAOFLOW ignores; its cost grows with `nbndsub`.
+   - EPW writes the `.epb` files before its Wannier stage. In EPW 6.0 that
+     stage always reads wannier90's `<prefix>.bvec` and `<prefix>.mmn`
+     (`vmebloch2wan`, regardless of `vme`), which do not exist without a
+     Wannierization. `write_placeholder_ukk` therefore also writes empty stubs
+     (zero b-vectors), so the stage completes on empty data. Without them
+     `epw.x` exits with an error right after "The .epb files have been correctly
+     written", which is harmless for PAOFLOW.
    - A Wannierized EPW run (as in the EPW tutorials) also works and gives the
      same `.epb` content, as long as the outer disentanglement window contains
      every band (no `dis_win_min/max`); otherwise `load_epw_coupling` raises.

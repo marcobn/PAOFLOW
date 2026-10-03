@@ -1888,7 +1888,7 @@ def inputs():
     ukk = os.path.join(HERE, PREFIX + '.ukk')
     write_placeholder_ukk(ukk, NBND, KGRID[0] * KGRID[1] * KGRID[2],
                           exclude_bands=EXCLUDE_BANDS, nelec=NELEC)
-    print('Wrote %s  (band bookkeeping for wannierize=.false.; keep it in the epw.x run directory)'
+    print('Wrote %s (+ empty .bvec/.mmn stubs) for wannierize=.false.; keep them in the epw.x run directory'
           % os.path.basename(ukk))
     print('Append nscf.kpoints to the pw.x nscf input (nbnd = %d), then run ph.x, pp.py, nscf, epw.x.'
           % NBND)

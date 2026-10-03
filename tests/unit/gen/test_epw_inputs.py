@@ -90,3 +90,14 @@ def test_parse_exclude_bands():
     assert parse_exclude_bands('exclude_bands = 1-3, 8 10:11') == [1, 2, 3, 8, 10, 11]
     with pytest.raises(ValueError):
         parse_exclude_bands('5:1')
+
+
+def test_placeholder_ukk_writes_wannier90_stubs(tmp_path):
+    path = tmp_path / 'pb.ukk'
+    write_placeholder_ukk(str(path), nbnd=4, nk_total=27)
+    assert (tmp_path / 'pb.bvec').read_text().splitlines()[1].split() == ['27', '0']
+    assert (tmp_path / 'pb.mmn').read_text() == ''
+    other = tmp_path / 'sub'
+    other.mkdir()
+    write_placeholder_ukk(str(other / 'pb.ukk'), nbnd=4, nk_total=27, wannier90_stubs=False)
+    assert not (other / 'pb.bvec').exists()
