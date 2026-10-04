@@ -1,0 +1,16 @@
+Lead
+&INPUTPH
+  prefix    = 'pb',
+  outdir    = './'
+  trans     = .true.,
+  reduce_io = .true.
+  fildyn    = 'pb.dyn',
+  fildvscf  = 'dvscf'
+  ldisp     = .true.,
+  nq1 = 6,
+  nq2 = 6,
+  nq3 = 6,
+  tr2_ph    = 1.0d-14,
+  alpha_mix(1)  = 0.1
+  alpha_mix(10) = 0.3
+/
