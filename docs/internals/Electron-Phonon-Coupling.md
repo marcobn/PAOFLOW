@@ -166,12 +166,8 @@ Paths relative to `src/PAOFLOW/`.
 
 ### EPW source (recommended)
 
-The example in `examples/elphon_epw_example` follows this sequence (Pb, setup
-of EPW tutorial 04). It is laid out as `paoflow-gen` produces it: one folder and
-one QE outdir, with steps 1–4 run in that order (the nscf overwrites
-`<prefix>.save` after the phonon step). With separate `phonon/` and `epw/`
-folders, copy the scf charge density into `epw/<prefix>.save` before the nscf
-and point `dvscf_dir` to `../phonon/save`.
+The example in `examples/elphon_epw_example` follows this sequence (EPW
+tutorial 04, Pb):
 
 1. **`pw.x` scf**, with symmetry.
 2. **`ph.x` DFPT** on the coarse q-grid, **irreducible q only** (symmetry on),
@@ -348,8 +344,8 @@ python plot.elphon.py                      # overlays EPW's <prefix>.a2f (dashed
 ```
 
 The generator re-prompts until the q-grid divides the k-grid and
-`NK_DENSE % NQ_DENSE == 0`. `examples/elphon_epw_example/main.elphon.py` and
-`plot.elphon.py` are such generated scripts. Choosing `ahc` or `elphmat` produces the
+`NK_DENSE % NQ_DENSE == 0`. The analysis phase is the same as in
+`examples/elphon_epw_example/main.py`. Choosing `ahc` or `elphmat` produces the
 previous two-phase ph.x scripts (`inputs`, then `analyse`), with a warning about
 their gauge limitation.
 

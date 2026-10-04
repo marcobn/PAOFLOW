@@ -2,7 +2,7 @@
   calculation     = 'nscf'
   prefix          = 'pb',
   restart_mode    = 'from_scratch'
-  pseudo_dir      = './',
+  pseudo_dir      = '../',
   outdir          = './'
   verbosity       = 'high'
 /
