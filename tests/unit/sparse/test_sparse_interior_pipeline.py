@@ -31,16 +31,16 @@ MESH = 4  # 4^3 = 64 k-points: enough for a DoS, cheap enough for a test
 
 
 def _driver(outdir):
-    from PAOFLOW.SparsePAOFLOW import SparsePAOFLOW
+    from PAOFLOW.PAOFLOW import PAOFLOW
+    from PAOFLOW.sparse import SparseConfig
 
-    p = SparsePAOFLOW(
+    p = PAOFLOW(
         savedir='silicon.save',
         outputdir=outdir,
         smearing='gauss',
         npool=1,
         verbose=False,
-        threshold=1.0e-4,
-        hk_solver='auto',
+        sparse=SparseConfig(threshold=1.0e-4, hk_solver='auto'),
     )
     p.read_atomic_proj_QE()
     p.projectability()
@@ -75,7 +75,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
     nawf = 18
 
     ref = _driver(str(in_example / 'full'))
-    ref.energy_window(emin=-12.0, emax=5.0, margin=0.0, nev=nawf)  # every band
+    ref.sparse.energy_window(emin=-12.0, emax=5.0, margin=0.0, nev=nawf)  # every band
     ref.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     ref.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_full = np.array(ref.data_controller.data_arrays['dosdk'])
@@ -90,7 +90,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
     )
 
     itr = _driver(str(in_example / 'interior'))
-    itr.interior_window(elo, ehi)
+    itr.sparse.interior_window(elo, ehi)
     itr.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     itr.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_int = np.array(itr.data_controller.data_arrays['dosdk'])
@@ -108,7 +108,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
 
 def test_mesh_pads_to_a_rectangular_block_and_sets_bnd(in_example):
     p = _driver(str(in_example / 'pad'))
-    p.interior_window(-3.0, 3.0)
+    p.sparse.interior_window(-3.0, 3.0)
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
 
@@ -127,7 +127,7 @@ def test_mesh_pads_to_a_rectangular_block_and_sets_bnd(in_example):
 
 def test_dos_outside_the_window_is_clamped_not_silently_zero(in_example, capsys):
     p = _driver(str(in_example / 'clamp'))
-    p.interior_window(-2.0, 2.0)
+    p.sparse.interior_window(-2.0, 2.0)
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-12.0, emax=2.2, ne=50, do_pdos=False)  # far outside on both sides
     assert 'clamped' in capsys.readouterr().out
@@ -135,13 +135,13 @@ def test_dos_outside_the_window_is_clamped_not_silently_zero(in_example, capsys)
 
 def test_disjoint_range_skips_the_property_and_the_run_continues(in_example, capsys):
     p = _driver(str(in_example / 'skip'))
-    p.interior_window(-2.0, 2.0)
+    p.sparse.interior_window(-2.0, 2.0)
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=5.0, emax=9.0, ne=50, do_pdos=False)  # no overlap at all
 
     out = capsys.readouterr().out
     assert 'SKIPPED' in out
-    assert [prop for prop, _ in p._skipped] == ['dos']
+    assert [prop for prop, _ in p.sparse._skipped] == ['dos']
     # the run continues: a supportable range still works afterwards
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
     assert 'dosdk' in p.data_controller.data_arrays
@@ -149,17 +149,17 @@ def test_disjoint_range_skips_the_property_and_the_run_continues(in_example, cap
 
 def test_skips_are_restated_at_the_end(in_example, capsys):
     p = _driver(str(in_example / 'report'))
-    p.interior_window(-2.0, 2.0)
-    p._skip('made-up property', 'for the test')
+    p.sparse.interior_window(-2.0, 2.0)
+    p.sparse._skip('made-up property', 'for the test')
     capsys.readouterr()
-    p._report_skips()
+    p.sparse._report_skips()
     out = capsys.readouterr().out
     assert 'made-up property' in out and 'SKIPPED' in out
 
 
 def test_bands_are_nan_padded_under_an_interior_window(in_example):
     p = _driver(str(in_example / 'bands'))
-    p.interior_window(-3.0, 3.0)
+    p.sparse.interior_window(-3.0, 3.0)
     p.bands(ibrav=2, nk=20)
     E_k = p.data_controller.data_arrays['E_k']
     finite = np.isfinite(E_k)
@@ -169,20 +169,20 @@ def test_bands_are_nan_padded_under_an_interior_window(in_example):
 
 def test_the_two_window_modes_are_mutually_exclusive(in_example):
     p = _driver(str(in_example / 'excl'))
-    p.interior_window(-1.0, 1.0)
+    p.sparse.interior_window(-1.0, 1.0)
     with pytest.raises(RuntimeError, match='mutually exclusive'):
-        p.energy_window(emin=-12.0, emax=2.2, nev=10)
+        p.sparse.energy_window(emin=-12.0, emax=2.2, nev=10)
 
     q = _driver(str(in_example / 'excl2'))
-    q.energy_window(emin=-12.0, emax=2.2, nev=10)
+    q.sparse.energy_window(emin=-12.0, emax=2.2, nev=10)
     with pytest.raises(RuntimeError, match='mutually exclusive'):
-        q.interior_window(-1.0, 1.0)
+        q.sparse.interior_window(-1.0, 1.0)
 
 
 def test_interior_window_rejects_an_inverted_range(in_example):
     p = _driver(str(in_example / 'bad'))
     with pytest.raises(ValueError, match='need ehi > elo'):
-        p.interior_window(1.0, -1.0)
+        p.sparse.interior_window(1.0, -1.0)
 
 
 def test_edge_contamination_is_warned_about(in_example, capsys):
@@ -194,7 +194,7 @@ def test_edge_contamination_is_warned_about(in_example, capsys):
     catches the case where the measured widths turn out wider than assumed.
     """
     p = _driver(str(in_example / 'edge'))
-    p.interior_window(-3.0, 3.0, smear_margin_eV=0.05)  # deliberately too small
+    p.sparse.interior_window(-3.0, 3.0, smear_margin_eV=0.05)  # deliberately too small
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     capsys.readouterr()
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)

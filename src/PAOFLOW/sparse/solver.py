@@ -172,7 +172,7 @@ def select_hk_solver(
             f'iterative regime (> {100.0 * dense_ratio:.1f}%), but n exceeds dense_n_max = '
             f'{dense_n_max}, where the per-k (n,n) scratch matrix would be '
             f'{16.0 * n * n / 1024**3:.2f} GB.\n'
-            'Two exits: (a) reduce nev with SparsePAOFLOW.energy_window() so the solve '
+            'Two exits: (a) reduce nev with pao.sparse.energy_window() so the solve '
             "returns to the hk_solver='sparse' regime, or (b) move to a distributed "
             'eigensolver (ELPA/SLEPc) with a distributed bond list. There is no silent '
             'dense fallback.'
@@ -237,7 +237,7 @@ def describe_hk_solver(n: int, nev: int, guard: int = 4, hk_solver: str = 'auto'
         line += (
             f'\n  WARNING: nev/n = {nev / n:.2f}. The eigenvector block is O(n^2/2) and this '
             'run is past the size where an iterative solve helps. Size nev from an energy '
-            'window (SparsePAOFLOW.energy_window) before growing the cell further.'
+            'window (pao.sparse.energy_window) before growing the cell further.'
         )
     return line
 

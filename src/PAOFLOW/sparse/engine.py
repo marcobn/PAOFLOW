@@ -1,17 +1,25 @@
-"""Sparse driver mirroring the dense :class:`PAOFLOW.PAOFLOW` API.
+"""Sparse engine behind ``PAOFLOW(..., sparse=SparseConfig(...))``.
 
-``SparsePAOFLOW`` wraps a dense ``PAOFLOW`` instance for the input stages
-(QE parsing, projectability, base-cell Hamiltonian construction — the one
-sanctioned dense stage, at the small pre-doubling ``nawf``) and switches
-to the purely sparse backend (:mod:`PAOFLOW.sparse`) from the moment the
-bond list exists.  Method names and signatures mirror the dense driver so
-an example script differs only in the import and constructor.
+:class:`SparseEngine` is not a driver.  :class:`PAOFLOW.PAOFLOW` stays the
+only user-facing class and routes the methods marked ``@sparse_override``
+here (see :mod:`PAOFLOW.sparse.dispatch`); the methods have the same names
+and accept the same arguments as their dense counterparts.  Features that
+exist only in sparse mode (the energy windows, ``plan_pdos``, the bond
+list ``H``) are reached as ``pao.sparse.<name>``.
 
-Dense methods without a sparse counterpart raise ``NotImplementedError``
-loudly — there is no silent fallback to dense arrays.  For those, hand the
-base-cell model to the dense driver explicitly with :meth:`SparsePAOFLOW.to_dense`,
-or restart the dense driver from the same archive with
-``PAOFLOW.load_sparse_hamiltonian``.
+The DFT input stages (QE parsing, projectability, base-cell Hamiltonian
+construction — the one sanctioned dense stage, at the small pre-doubling
+``nawf``) run on the dense code; the engine takes over from the moment the
+bond list exists.  Dense methods without a sparse counterpart raise
+``NotImplementedError`` loudly — there is no silent fallback to dense
+arrays.  For those, hand the base-cell model to the dense pipeline with
+``pao.to_dense()``, or restart a dense run from the same archive with
+``load_sparse_hamiltonian``.
+
+The mesh stages ``pao_eigh``, ``gradient_and_momenta`` and
+``adaptive_smearing`` are fused into one streaming pass that the first
+``dos`` or ``transport`` runs on demand, so they are optional here; calling
+them only records their parameters.
 
 Memory contract (see :mod:`PAOFLOW.sparse`): after ``pao_hamiltonian``
 returns, no array of size O(nawf^2 * nk) exists; per-k dense workspace is
@@ -21,9 +29,10 @@ limited to one ``(nawf, nev)`` eigenvector block.
 import numpy as np
 from mpi4py import MPI
 
-from .PAOFLOW import PAOFLOW
-from .sparse.bridge import sparsify
-from .sparse.log import get_sparse_log
+from .bridge import init_restart_session, sparsify
+from .config import SparseConfig
+from .dispatch import call_dense
+from .log import get_sparse_log
 
 
 def _available_memory_bytes():
@@ -55,107 +64,52 @@ def _node_local_ranks(comm):
         return comm.Get_size()
 
 
-class SparsePAOFLOW:
-    def __init__(
-        self,
-        workpath='./',
-        outputdir='output_sparse',
-        inputfile=None,
-        savedir=None,
-        npool=1,
-        smearing='gauss',
-        verbose=False,
-        threshold=1.0e-3,
-        rcut=None,
-        bond_order=None,
-        hk_solver='auto',
-        restart=False,
-        dft='QE',
-    ):
+class SparseEngine:
+    def __init__(self, host, config):
         """
-        Arguments mirror :class:`PAOFLOW.PAOFLOW`; additionally:
-            threshold (float): magnitude (eV) below which H(R) matrix
-            elements are dropped when the dense base-cell Hamiltonian is
-            converted to the sparse bond list.  The conversion prints a
-            rigorous bound on the eigenvalue error this truncation can
-            cause at any k-point.
+        Arguments:
+            host (PAOFLOW): the driver that owns this engine.  The engine
+            uses its ``data_controller``, ``comm``, ``rank``, timing and
+            exception reporting, and the dense bodies of the stages it
+            extends (:func:`~PAOFLOW.sparse.dispatch.call_dense`).
 
-            rcut (float or None): optional real-space cutoff in Bohr on
-            the physical bond length, applied together with ``threshold``
-            at the base cell.  This is a second, physically different
-            truncation axis (bond length rather than matrix-element
-            magnitude) and the two interact, so results are not directly
-            comparable with an ``rcut=None`` run; the ``eig_bound``
-            printed at conversion covers both.  Default ``None``.
-
-            bond_order (int or None): the same real-space cutoff given as a
-            neighbour-shell count instead of a radius: keep every bond up
-            to and including the n-th distinct interatomic distance (1 =
-            nearest neighbours).  Symmetry-equivalent bonds share a shell,
-            so this keeps or drops each star as a whole.  Resolved to a
-            radius by :func:`PAOFLOW.sparse.shells.shell_cutoff`, and only
-            shells inside the aliasing-safe radius of the k-grid count.
-            Mutually exclusive with ``rcut``.  Default ``None``.
-
-            hk_solver ('auto' | 'sparse' | 'dense'): kernel used to
-            diagonalize ``H(k)`` at a single k-point.  It names the
-            eigensolver only: ``'dense'`` does **not** put the run back on
-            the dense PAOFLOW pipeline — ``H(R)`` stays a bond list either
-            way, and no ``O(nk * nawf^2)`` tensor is ever formed.  To run
-            the dense pipeline on the truncated model, use :meth:`to_dense`
-            (base cell) or ``PAOFLOW.load_sparse_hamiltonian``.
-            ``'sparse'`` is ARPACK shift-invert and never densifies
-            ``H(k)``; ``'dense'`` is LAPACK ``zheevr`` on one ``(n, n)``
-            scratch matrix that is freed before the next k-point.
-            ``'auto'`` dispatches on ``(nawf, nev)`` — see
-            :func:`PAOFLOW.sparse.solver.select_hk_solver`.  The explicit
-            values force one kernel for A/B validation.  Default ``'auto'``.
+            config (SparseConfig or dict or True): truncation, solver and
+            resource settings; see :class:`~PAOFLOW.sparse.config.SparseConfig`.
         """
-        self._pao = PAOFLOW(
-            workpath=workpath,
-            outputdir=outputdir,
-            inputfile=inputfile,
-            savedir=savedir,
-            npool=npool,
-            smearing=smearing,
-            verbose=verbose,
-            restart=restart,
-            dft=dft,
-        )
-        self.data_controller = self._pao.data_controller
-        self.comm = self._pao.comm
-        self.rank = self._pao.rank
-        if restart:
-            self._init_restart_session(workpath, outputdir, npool, smearing, verbose)
-        if rcut is not None and bond_order is not None:
-            raise ValueError(
-                'SparsePAOFLOW: give either rcut (Bohr) or bond_order (shells), not both.'
-            )
-        self.threshold = float(threshold)
-        self.rcut = None if rcut is None else float(rcut)
-        self.bond_order = None if bond_order is None else int(bond_order)
-        self.hk_solver = hk_solver
+        self.host = host
+        self.config = SparseConfig.coerce(config)
+        self.data_controller = host.data_controller
+        self.comm = host.comm
+        self.rank = host.rank
+        if self.data_controller.data_attributes is None:
+            # restart=True: the log needs the session before the archive is read
+            init_restart_session(self.data_controller, self.comm, **host._session)
+        attr = self.data_controller.data_attributes
+        if attr.get('smearing') is None:
+            # the mesh pass always produces adaptive widths
+            attr['smearing'] = 'gauss'
+
         self._interior = None  # (elo, ehi) when an interior window is active
         self._skipped = []  # properties skipped because the window cannot support them
         self.H = None  # SparseHamiltonian, set by pao_hamiltonian
-        self._Dnm = None  # base-cell Dnm, kept only for to_dense()
-        self._dense_handoff = False  # set once to_dense() gave the model away
+        self._Dnm = None  # base-cell Dnm, kept only for release_to_dense()
         self._mesh_plan = {}  # parameters recorded for the fused mesh pass
         self._window = None  # (emin, emax, margin, ehi) once energy_window ran
 
+        cfg = self.config
         self.log = get_sparse_log(self.data_controller)
         self.log.header(
             'Sparse run configuration',
             (
-                ('output directory', self.data_controller.data_attributes['opath']),
+                ('output directory', attr['opath']),
                 ('MPI ranks', self.comm.Get_size()),
-                ('k-point pools', npool),
-                ('threshold (eV)', '%.3e' % self.threshold),
-                ('rcut (Bohr)', 'none' if self.rcut is None else '%.3f' % self.rcut),
-                ('bond_order', 'none' if self.bond_order is None else self.bond_order),
-                ('H(k) solver', self.hk_solver),
-                ('smearing', smearing),
-                ('verbose', verbose),
+                ('k-point pools', attr['npool']),
+                ('threshold (eV)', '%.3e' % cfg.threshold),
+                ('rcut (Bohr)', 'none' if cfg.rcut is None else '%.3f' % cfg.rcut),
+                ('bond_order', 'none' if cfg.bond_order is None else cfg.bond_order),
+                ('H(k) solver', cfg.hk_solver),
+                ('smearing', attr['smearing']),
+                ('verbose', attr['verbose']),
             ),
         )
 
@@ -163,98 +117,54 @@ class SparsePAOFLOW:
     # Plumbing
     # ------------------------------------------------------------------
 
-    def __getattr__(self, name):
-        if hasattr(PAOFLOW, name):
-            raise NotImplementedError(
-                "SparsePAOFLOW does not implement '%s'. Only bands, DOS/PDOS and "
-                'Boltzmann transport have a sparse backend so far. For dense-only '
-                'features, call to_dense() after pao_hamiltonian() (base cell), or '
-                'restart the dense driver with PAOFLOW.load_sparse_hamiltonian().' % name
-            )
-        raise AttributeError(name)
-
-    def _init_restart_session(self, workpath, outputdir, npool, smearing, verbose):
-        """See :func:`PAOFLOW.sparse.bridge.init_restart_session`."""
-        from .sparse.bridge import init_restart_session
-
-        init_restart_session(
-            self.data_controller, self.comm, workpath, outputdir, npool, smearing, verbose
-        )
-
     def _guard(self, tag, func):
         """Mirror the dense try/except + abort_on_exception convention."""
         attr = self.data_controller.data_attributes
         try:
             return func()
         except Exception as e:
-            self._pao.report_exception(tag)
+            self.host.report_exception(tag)
             if attr.get('abort_on_exception', True):
                 raise e
 
     def _require_H(self, caller):
-        if self.H is None and self._dense_handoff:
-            raise RuntimeError(
-                'SparsePAOFLOW.%s: the model was handed to the dense driver by to_dense(); '
-                'continue on the PAOFLOW instance it returned.' % caller
-            )
         if self.H is None:
             raise RuntimeError(
-                'SparsePAOFLOW.%s requires the sparse Hamiltonian; call '
-                'pao_hamiltonian() first.' % caller
+                'sparse %s requires the sparse Hamiltonian; call pao_hamiltonian() or '
+                'load_sparse_hamiltonian() first.' % caller
             )
 
+    def _time(self, mname):
+        self.host.report_module_time(mname)
+
     # ------------------------------------------------------------------
-    # Input stages (delegated to the dense driver, base cell only)
+    # Base-cell Hamiltonian (dense input stage, then the bond list)
     # ------------------------------------------------------------------
 
-    def read_atomic_proj_QE(self):
-        self._pao.read_atomic_proj_QE()
-
-    def projections(self, configuration=None, basispath=None, internal=None):
-        self._pao.projections(configuration=configuration, basispath=basispath, internal=internal)
-
-    def projectability(self, pthr=0.95, shift='auto'):
-        self._pao.projectability(pthr=pthr, shift=shift)
-
-    def pao_hamiltonian(
-        self,
-        shift_type=1,
-        insulator=False,
-        write_binary=False,
-        expand_wedge=True,
-        symmetrize=False,
-        thresh=1.0e-6,
-        max_iter=16,
-    ):
-        """Build the base-cell PAO Hamiltonian (dense, sanctioned input
-        stage) and immediately convert it to the sparse bond list; the
-        dense ``HRs``/``Hks`` are deleted before returning."""
-        self._pao.pao_hamiltonian(
-            shift_type=shift_type,
-            insulator=insulator,
-            write_binary=write_binary,
-            expand_wedge=expand_wedge,
-            symmetrize=symmetrize,
-            thresh=thresh,
-            max_iter=max_iter,
-        )
+    def pao_hamiltonian(self, *args, **kwargs):
+        """Build the base-cell PAO Hamiltonian with the dense
+        ``pao_hamiltonian`` (sanctioned input stage, same arguments) and
+        immediately convert it to the sparse bond list; the dense
+        ``HRs``/``Hks`` are deleted before returning."""
+        call_dense(self.host, 'pao_hamiltonian', *args, **kwargs)
+        cfg = self.config
 
         def _convert():
             arrays, _ = self.data_controller.data_dicts()
             self.H = sparsify(
-                self.data_controller, self.threshold, rcut=self.rcut, bond_order=self.bond_order
+                self.data_controller, cfg.threshold, rcut=cfg.rcut, bond_order=cfg.bond_order
             )
             # the dense source must not outlive the conversion
             del arrays['HRs']
             arrays.pop('Hks', None)
             # carried per bond by the container; the (nawf, nawf, 3) base-cell
-            # copy is kept aside only so to_dense() can hand it back
+            # copy is kept aside only so release_to_dense() can hand it back
             self._Dnm = arrays.pop('Dnm', None)
             self.log.section('Base-cell conversion (dense H(R) -> sparse bond list)')
             self._log_truncation()
 
         self._guard('sparse_conversion', _convert)
-        self._pao.report_module_time('Sparse conversion')
+        self._time('Sparse conversion')
 
     def _log_truncation(self):
         """Describe the truncation carried by ``self.H`` and its error bound."""
@@ -292,7 +202,9 @@ class SparsePAOFLOW:
     # Persistence of the base-cell bond list
     # ------------------------------------------------------------------
 
-    def save_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
+    def save_sparse_hamiltonian(
+        self, fname='sparse_hamiltonian.npz', threshold=None, bond_order=None, rcut=None
+    ):
         """Write the base-cell bond list and run metadata to ``fname``.
 
         Must be called after ``pao_hamiltonian()`` (or
@@ -301,9 +213,17 @@ class SparsePAOFLOW:
         map.  Relative names resolve inside the output directory.  The
         archive also serves as a labelled dataset; see
         :func:`PAOFLOW.sparse.io.bond_table`.
-        """
-        from .sparse.io import write_sparse_hamiltonian
 
+        The truncation arguments of the dense method are refused: the bond
+        list already carries the truncation set in ``SparseConfig``.
+        """
+        from .io import write_sparse_hamiltonian
+
+        if (threshold, bond_order, rcut) != (None, None, None):
+            raise ValueError(
+                'save_sparse_hamiltonian: in a sparse run the bond list is already truncated '
+                'by SparseConfig (threshold/rcut/bond_order); do not pass them here.'
+            )
         self._require_H('save_sparse_hamiltonian')
 
         def _save():
@@ -315,23 +235,23 @@ class SparsePAOFLOW:
 
         self._guard('save_sparse_hamiltonian', _save)
         self.comm.Barrier()
-        self._pao.report_module_time('save_sparse_hamiltonian')
+        self._time('save_sparse_hamiltonian')
 
     def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
-        """Restart from an archive written by :meth:`save_sparse_hamiltonian`.
+        """Restart from an archive written by ``save_sparse_hamiltonian``.
 
         Replaces the input stages (``read_atomic_proj_QE`` / ``projections``,
         ``projectability``, ``pao_hamiltonian``): the bond list is read
         directly, no dense ``HRs`` is rebuilt, and the run continues with
-        ``doubling_Hamiltonian`` or any property.  Use on an instance
+        ``doubling_Hamiltonian`` or any property.  Use on a driver
         created with ``restart=True``.  The truncation is the one recorded
-        in the file; the constructor's ``threshold`` / ``rcut`` /
-        ``bond_order`` do not apply.  Every rank reads the file.
+        in the file; the ``SparseConfig`` truncation fields do not apply.
+        Every rank reads the file.
         """
         from os.path import exists, isabs, join
 
-        from .sparse.bridge import archive_Dnm
-        from .sparse.io import read_sparse_hamiltonian, restore_data_controller
+        from .bridge import archive_Dnm
+        from .io import read_sparse_hamiltonian, restore_data_controller
 
         attr = self.data_controller.data_attributes
 
@@ -346,31 +266,22 @@ class SparsePAOFLOW:
             self._log_truncation()
 
         self._guard('load_sparse_hamiltonian', _load)
-        self._pao.report_module_time('load_sparse_hamiltonian')
+        self._time('load_sparse_hamiltonian')
 
-    def to_dense(self):
-        """Hand the base-cell model to the dense driver and return it.
+    def release_to_dense(self):
+        """Scatter the base-cell bond list into the dense arrays and give it up.
 
-        Scatters the bond list into a dense ``HRs`` (plus ``Hks`` and
-        ``Dnm``) on the shared ``DataController``, leaving it as dense
-        ``pao_hamiltonian()`` would with the truncated model, and returns
-        the wrapped :class:`PAOFLOW.PAOFLOW`.  From there every dense
-        property is available, on the fast FFT + LAPACK path.
-
-        Call after ``pao_hamiltonian()`` or ``load_sparse_hamiltonian()``
-        and before ``doubling_Hamiltonian()``: a doubled cell is exactly
-        what the dense arrays cannot hold.  Use the dense
-        ``doubling_Hamiltonian`` on the returned driver instead.  This
-        instance gives up its bond list, so later sparse calls fail.
+        Called by ``PAOFLOW.to_dense()``, which then drops this engine.
+        Leaves the shared ``DataController`` as dense ``pao_hamiltonian()``
+        would with the truncated model (``HRs``, ``Hks``, ``Dnm``).
         """
-        from .sparse.bridge import densify
+        from .bridge import densify
 
         self._require_H('to_dense')
         if self.H._doubled:
             raise RuntimeError(
-                'SparsePAOFLOW.to_dense: doubling_Hamiltonian() already ran. Hand the base '
-                'cell over before doubling and call doubling_Hamiltonian() on the dense '
-                'driver.'
+                'to_dense: doubling_Hamiltonian() already ran. Hand the base cell over before '
+                'doubling and call doubling_Hamiltonian() on the dense pipeline.'
             )
         attr = self.data_controller.data_attributes
         grid = (attr['nk1'], attr['nk2'], attr['nk3'])
@@ -378,34 +289,28 @@ class SparsePAOFLOW:
             # sparse interpolation and the windows only rewrite attributes the
             # dense pipeline would then read against a base-grid HRs
             raise RuntimeError(
-                'SparsePAOFLOW.to_dense: call it before interpolated_hamiltonian(), '
-                'energy_window() or interior_window(); the mesh is now %dx%dx%d but the bond '
-                'list is on the %dx%dx%d base grid. Interpolate on the dense driver instead.'
+                'to_dense: call it before interpolated_hamiltonian(), energy_window() or '
+                'interior_window(); the mesh is now %dx%dx%d but the bond list is on the '
+                '%dx%dx%d base grid. Interpolate on the dense pipeline instead.'
                 % (grid + self.H.nk_grid)
             )
 
-        def _handoff():
-            nnz = self.H.nnz
-            densify(self.data_controller, self.H, Dnm=self._Dnm)
-            self.H, self._Dnm = None, None
-            self._dense_handoff = True
-            self.log.section('Handoff to the dense driver')
-            self.log.write(
-                'The %d-bond list was scattered into a dense HRs (%d x %d x %d x %d x %d x %d);\n'
-                'the run continues on the dense PAOFLOW driver. This SparsePAOFLOW instance\n'
-                'no longer holds a Hamiltonian.'
-                % ((nnz,) + self.data_controller.data_arrays['HRs'].shape)
-            )
-
-        self._guard('to_dense', _handoff)
-        self._pao.report_module_time('Handoff to dense')
-        return self._pao
+        nnz = self.H.nnz
+        densify(self.data_controller, self.H, Dnm=self._Dnm)
+        self.H, self._Dnm = None, None
+        self.log.section('Handoff to the dense pipeline')
+        self.log.write(
+            'The %d-bond list was scattered into a dense HRs (%d x %d x %d x %d x %d x %d);\n'
+            'the run continues on the dense pipeline of the same PAOFLOW object.'
+            % ((nnz,) + self.data_controller.data_arrays['HRs'].shape)
+        )
+        self._time('Handoff to dense')
 
     # ------------------------------------------------------------------
     # Doubling (purely sparse)
     # ------------------------------------------------------------------
 
-    def _preflight_doubling(self, nx, ny, nz, mem_budget_gb=None, force=False):
+    def _preflight_doubling(self, nx, ny, nz):
         """Project the cost of doubling before allocating anything.
 
         ``nx, ny, nz`` are doubling *exponents*: the cell multiplier is
@@ -416,19 +321,22 @@ class SparsePAOFLOW:
 
         The bond list is replicated on every rank (doubling is deterministic
         and needs no communication), so the budget is per rank and *more
-        ranks on a node makes the fit worse, not better*.
+        ranks on a node makes the fit worse, not better*.  The budget and
+        the override come from ``SparseConfig.mem_budget_gb`` and
+        ``SparseConfig.force_doubling``.
         """
-        from .sparse.solver import DENSE_RATIO, select_hk_solver
+        from .solver import DENSE_RATIO, select_hk_solver
 
+        cfg = self.config
         attr = self.data_controller.data_attributes
         proj = self.H.project_doubling(nx, ny, nz)
         gb = 1024.0**3
 
         local_ranks = _node_local_ranks(self.comm)
         avail = _available_memory_bytes()
-        if mem_budget_gb is not None:
-            budget = float(mem_budget_gb) * gb
-            budget_src = 'mem_budget_gb=%.1f (caller)' % mem_budget_gb
+        if cfg.mem_budget_gb is not None:
+            budget = cfg.mem_budget_gb * gb
+            budget_src = 'SparseConfig.mem_budget_gb=%.1f' % cfg.mem_budget_gb
         elif avail is not None:
             budget = 0.8 * avail / local_ranks
             budget_src = '80%% of MemAvailable (%.1f GB) over %d rank(s) on this node' % (
@@ -444,7 +352,7 @@ class SparsePAOFLOW:
         bnd_final = int(attr['bnd']) * proj['N']
         try:
             solver_note = 'dispatch: %s' % (
-                select_hk_solver(proj['nawf'], bnd_final, hk_solver=self.hk_solver)[0].upper()
+                select_hk_solver(proj['nawf'], bnd_final, hk_solver=cfg.hk_solver)[0].upper()
             )
         except NotImplementedError:
             solver_note = (
@@ -488,11 +396,11 @@ class SparsePAOFLOW:
         self.log.section('Doubling pre-flight projection')
         self.log.write(report)
 
-        if proj['peak_bytes'] > budget and not force:
+        if proj['peak_bytes'] > budget and not cfg.force_doubling:
             exits = []
-            if self.rcut is None:
+            if cfg.rcut is None and cfg.bond_order is None:
                 exits.append(
-                    'set rcut (Bohr) in the constructor: the bond list is currently '
+                    'set rcut (Bohr) or bond_order in SparseConfig: the bond list is currently '
                     'untruncated in real space, which is usually the largest single factor'
                 )
             if proj['d'] > 1:
@@ -506,9 +414,9 @@ class SparsePAOFLOW:
                     'here each need the full %.2f GB' % (local_ranks, proj['peak_bytes'] / gb)
                 )
             exits.append(
-                'raise the budget explicitly with '
-                'doubling_Hamiltonian(..., mem_budget_gb=...) or bypass with force=True '
-                'if this projection is wrong for your machine'
+                'raise the budget explicitly with SparseConfig(mem_budget_gb=...) or bypass '
+                'with SparseConfig(force_doubling=True) if this projection is wrong for your '
+                'machine'
             )
             raise RuntimeError(
                 '%s\n\nProjected peak exceeds the budget by %.1fx. Refusing to start; '
@@ -518,7 +426,7 @@ class SparsePAOFLOW:
 
         return proj
 
-    def doubling_Hamiltonian(self, nx, ny, nz, mem_budget_gb=None, force=False):
+    def doubling_Hamiltonian(self, nx, ny, nz):
         """Double the cell ``nx``/``ny``/``nz`` times along each lattice
         vector by index arithmetic on the bond list (never dense), then
         Hermitize once — the bond-level equivalent of the per-k
@@ -527,20 +435,20 @@ class SparsePAOFLOW:
         ``nx``/``ny``/``nz`` are doubling counts, so the cell multiplier is
         ``2**(nx+ny+nz)``.  A pre-flight projection refuses sizes that
         cannot fit rather than letting them OOM part-way; see
-        :meth:`_preflight_doubling` for ``mem_budget_gb`` and ``force``.
+        :meth:`_preflight_doubling`.
         """
-        from .hamiltonian.do_doubling import doubling_attr_arry
-        from .sparse.doubling import double_axis
+        from ..hamiltonian.do_doubling import doubling_attr_arry
+        from .doubling import double_axis
 
         self._require_H('doubling_Hamiltonian')
         arrays, attr = self.data_controller.data_dicts()
         if self._window is not None:
             raise RuntimeError(
-                'SparsePAOFLOW: energy_window() ran before doubling_Hamiltonian(). '
+                'sparse: energy_window() ran before doubling_Hamiltonian(). '
                 "doubling_attr_arry doubles attr['bnd'] on every call, which would scale the "
                 'window-sized nev by the cell multiplier. Call energy_window() after doubling.'
             )
-        self._preflight_doubling(nx, ny, nz, mem_budget_gb=mem_budget_gb, force=force)
+        self._preflight_doubling(nx, ny, nz)
         attr['nx'], attr['ny'], attr['nz'] = nx, ny, nz
 
         def _double():
@@ -563,7 +471,7 @@ class SparsePAOFLOW:
             self.log.write(self.H.stats_line())
 
         self._guard('doubling_Hamiltonian', _double)
-        self._pao.report_module_time('doubling_Hamiltonian')
+        self._time('doubling_Hamiltonian')
 
     # ------------------------------------------------------------------
     # Energy window: size nev from the property range instead of bnd
@@ -606,12 +514,12 @@ class SparsePAOFLOW:
         """
         import itertools
 
-        from .sparse.solver import count_below
+        from .solver import count_below
 
         self._require_H('energy_window')
         if self._interior is not None:
             raise RuntimeError(
-                'SparsePAOFLOW: interior_window() is already active. The two window modes '
+                'sparse: interior_window() is already active. The two window modes '
                 'are mutually exclusive -- one sizes nev from the bottom of the spectrum, '
                 'the other solves inside a window and never computes the states below it.'
             )
@@ -623,7 +531,7 @@ class SparsePAOFLOW:
             if nev is not None:
                 chosen, probed = int(nev), None
             else:
-                from .utils.get_K_grid_fft import get_K_grid_fft_crystal
+                from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
 
                 kprobe = np.array(list(itertools.product((0.0, 0.5), repeat=3)))  # Gamma + corners
                 extra = nprobe - len(kprobe)
@@ -659,7 +567,7 @@ class SparsePAOFLOW:
             )
 
         self._guard('energy_window', _window)
-        self._pao.report_module_time('Energy window')
+        self._time('Energy window')
 
     def interior_window(self, elo, ehi, kT_margin_eV=0.26, smear_margin_eV=0.5):
         """Solve *inside* ``[elo, ehi]`` instead of from the bottom of the spectrum.
@@ -702,7 +610,7 @@ class SparsePAOFLOW:
         self._require_H('interior_window')
         if self._window is not None:
             raise RuntimeError(
-                'SparsePAOFLOW: energy_window() is already active. The two window modes '
+                'sparse: energy_window() is already active. The two window modes '
                 'are mutually exclusive.'
             )
         elo, ehi = float(elo), float(ehi)
@@ -722,7 +630,7 @@ class SparsePAOFLOW:
             'scan is clamped to [elo+margin, ehi-margin], and properties that need the\n'
             'full occupied manifold (carrier density, Hall) are skipped with a warning.'
         )
-        self._pao.report_module_time('Interior window')
+        self._time('Interior window')
 
     def _skip(self, prop, reason):
         """Warn loudly, record, and let the caller move to the next property."""
@@ -792,14 +700,25 @@ class SparsePAOFLOW:
     # ------------------------------------------------------------------
 
     def bands(
-        self, ibrav=None, band_path=None, high_sym_points=None, fname='bands', nk=500, nsel=None
+        self,
+        ibrav=None,
+        band_path=None,
+        high_sym_points=None,
+        adhoc_SO=False,
+        fname='bands',
+        nk=500,
     ):
-        """Band structure along a path; computes only the lowest ``nsel``
-        bands (default ``attr['bnd']``) iteratively.  Output format matches
-        the dense ``bands_{ispin}.dat`` with ``nsel`` value columns."""
-        from .sparse.bands import do_bands_sparse
-        from .utils.communication import gather_full
+        """Band structure along a path; computes only the lowest
+        ``attr['bnd']`` bands (set it with :meth:`energy_window`).  Output
+        format matches the dense ``bands_{ispin}.dat``."""
+        from ..utils.communication import gather_full
+        from .bands import do_bands_sparse
 
+        if adhoc_SO:
+            raise NotImplementedError(
+                'sparse bands: adhoc_SO has no sparse implementation; call to_dense() on the '
+                'base cell first.'
+            )
         self._require_H('bands')
         arrays, attr = self.data_controller.data_dicts()
 
@@ -815,16 +734,14 @@ class SparsePAOFLOW:
             attr['band_path'] = band_path
         if high_sym_points is not None:
             arrays['high_sym_points'] = high_sym_points
-        if nsel is None:
-            nsel = attr['bnd']
 
         def _bands():
             do_bands_sparse(
                 self.data_controller,
                 self.H,
-                nsel,
+                attr['bnd'],
                 verbose=attr['verbose'],
-                hk_solver=self.hk_solver,
+                hk_solver=self.config.hk_solver,
                 ehi=None if self._window is None else self._window[3],
                 interior=self._interior,
             )
@@ -832,19 +749,25 @@ class SparsePAOFLOW:
             self.data_controller.write_bands(fname, E_kp)
 
         self._guard('bands', _bands)
-        self._pao.report_module_time('Bands')
+        self._time('Bands')
 
     # ------------------------------------------------------------------
     # Fourier interpolation to a finer k-mesh (pure metadata)
     # ------------------------------------------------------------------
 
-    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0):
+    def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
         """Interpolate onto a finer k-mesh.  Zero-padding H(R) adds only
         zero hoppings, and the bond-list assembly already uses the
         Hermiticity-preserving Nyquist-split convention of
         ``utils.zero_pad`` — so sparse interpolation is exact and free:
         only the mesh dimensions change, no new data is created.
-        Arguments of 0 default to twice the current grid (as dense)."""
+        Arguments of 0 default to twice the current grid (as dense).
+        ``free_HRs`` has no meaning here (there is no ``HRs``)."""
+        if reshift_Ef:
+            raise NotImplementedError(
+                'sparse interpolated_hamiltonian: reshift_Ef needs the Fermi level of the whole '
+                'mesh before any eigensolve, which the fused sparse pass does not provide.'
+            )
         self._require_H('interpolated_hamiltonian')
         arrays, attr = self.data_controller.data_dicts()
         nfft = [
@@ -859,28 +782,51 @@ class SparsePAOFLOW:
             'Property mesh set to %d x %d x %d (no new data — the bond list is simply\n'
             'evaluated on the finer grid; zero-padding H(R) is exact here).' % tuple(nfft)
         )
-        self._pao.report_module_time('R -> k with Zero Padding')
+        self._time('R -> k with Zero Padding')
 
     # ------------------------------------------------------------------
     # Fused mesh pass (eigenvalues + velocities + smearing widths + PDOS)
     # ------------------------------------------------------------------
 
     def pao_eigh(self, bval=0):
-        """Recorded for API compatibility: the mesh eigensolve is fused
-        with velocities/PDOS into one pass, executed by the first property
-        call that needs it (``dos`` or ``transport``)."""
+        """Optional: the mesh eigensolve is fused with velocities/PDOS into
+        one pass, executed by the first property call that needs it
+        (``dos`` or ``transport``).  Only ``bval`` is recorded."""
+        self.data_controller.data_attributes.setdefault('bval', bval)
         self._mesh_plan['eigh'] = True
+        self.log.write('pao_eigh(): fused into the mesh pass run by the first dos()/transport().')
 
-    def gradient_and_momenta(self, **kwargs):
-        """Recorded for API compatibility: band-diagonal velocities are
-        computed inside the fused mesh pass; the full momentum tensor
-        ``pksp`` is never formed."""
+    def gradient_and_momenta(
+        self,
+        band_curvature=False,
+        nonlocal_velocity=None,
+        nonlocal_velocity_inject=None,
+        nonlocal_velocity_sign=None,
+    ):
+        """Optional: band-diagonal velocities are computed inside the fused
+        mesh pass; the full momentum tensor ``pksp`` is never formed."""
+        if band_curvature or nonlocal_velocity:
+            raise NotImplementedError(
+                'sparse gradient_and_momenta: band_curvature and nonlocal_velocity need the full '
+                'dH/dk tensor, which the sparse mesh pass never forms; call to_dense() on the '
+                'base cell first.'
+            )
         self._mesh_plan['velocities'] = True
+        self.log.write(
+            'gradient_and_momenta(): fused into the mesh pass (band-diagonal velocities only).'
+        )
 
     def adaptive_smearing(self, smearing='gauss', afac=None):
-        """Record the adaptive-smearing prefactor for the fused mesh pass
-        (Yates widths, as ``do_adaptive_smearing``; the interband
-        ``deltakp2`` is not needed by the sparse pipeline)."""
+        """Record the adaptive-smearing type and prefactor for the fused mesh
+        pass (Yates widths, as ``do_adaptive_smearing``; the interband
+        ``deltakp2`` is not needed by the sparse pipeline).  Optional: the
+        mesh defaults to the run's smearing type."""
+        if smearing not in ('gauss', 'm-p'):
+            raise ValueError(
+                "Smearing type %s not supported.\nSmearing types are 'gauss' and 'm-p'"
+                % str(smearing)
+            )
+        self.data_controller.data_attributes['smearing'] = smearing
         self._mesh_plan['smearing'] = smearing
         self._mesh_plan['afac'] = afac
 
@@ -898,8 +844,8 @@ class SparsePAOFLOW:
         """Run the fused mesh pass if its results are not yet available
         (or if PDOS accumulation is requested but was not part of the
         earlier pass, in which case the mesh is recomputed)."""
-        from .sparse.mesh import run_mesh
-        from .sparse.pdos import PdosConsumer
+        from .mesh import run_mesh
+        from .pdos import PdosConsumer
 
         arrays, attr = self.data_controller.data_dicts()
         if pdos_spec is None:
@@ -913,7 +859,7 @@ class SparsePAOFLOW:
             message = (
                 'WARNING: Sparse mesh is being re-run from scratch to accumulate PDOS, '
                 'because the first property call did not request it. This costs a second '
-                'full pass over the k-mesh. Call plan_pdos(emin, emax, ne) before the '
+                'full pass over the k-mesh. Call sparse.plan_pdos(emin, emax, ne) before the '
                 'first property (or dos() before transport()) to fold PDOS into the '
                 'original pass.'
             )
@@ -933,9 +879,9 @@ class SparsePAOFLOW:
                 nev,
                 consumers=consumers,
                 afac=self._mesh_plan.get('afac'),
-                smearing=self._mesh_plan.get('smearing', attr.get('smearing', 'gauss')),
+                smearing=self._mesh_plan.get('smearing', attr['smearing']),
                 verbose=attr['verbose'],
-                hk_solver=self.hk_solver,
+                hk_solver=self.config.hk_solver,
                 ehi=None if self._window is None else self._window[3],
                 interior=self._interior,
             )
@@ -944,7 +890,7 @@ class SparsePAOFLOW:
         self._mesh_plan['executed'] = True
         if pdos_spec is not None:
             self._mesh_plan['pdos_done'] = True
-        self._pao.report_module_time('Sparse mesh (eigh + velocities)')
+        self._time('Sparse mesh (eigh + velocities)')
 
     # ------------------------------------------------------------------
     # Properties (dense band-diagonal kernels reused verbatim)
@@ -952,8 +898,9 @@ class SparsePAOFLOW:
 
     def dos(self, do_dos=True, do_pdos=True, delta=0.01, emin=-10.0, emax=2.0, ne=1000):
         """DOS via the dense ``do_dos_adaptive`` (consumes only band-diagonal
-        arrays); PDOS accumulated streaming inside the mesh pass."""
-        from .spectrum.do_dos import do_dos_adaptive
+        arrays); PDOS accumulated streaming inside the mesh pass.  ``delta``
+        is unused: the sparse mesh always produces adaptive widths."""
+        from ..spectrum.do_dos import do_dos_adaptive
 
         self._require_H('dos')
         if self._interior is not None:
@@ -970,7 +917,7 @@ class SparsePAOFLOW:
                 do_dos_adaptive(self.data_controller, emin, emax, ne)
 
         self._guard('dos', _dos)
-        self._pao.report_module_time('DoS')
+        self._time('DoS')
 
     def transport(
         self,
@@ -1018,7 +965,9 @@ class SparsePAOFLOW:
                 'the energy range.' % (emax, top, attr['bnd'])
             )
 
-        self._pao.transport(
+        call_dense(
+            self.host,
+            'transport',
             tmin=tmin,
             tmax=tmax,
             nt=nt,
@@ -1055,4 +1004,4 @@ class SparsePAOFLOW:
 
     def finish_execution(self):
         self._report_skips()
-        self._pao.finish_execution()
+        call_dense(self.host, 'finish_execution')
