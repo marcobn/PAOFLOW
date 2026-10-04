@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 def sparsify(
     data_controller: DataController,
-    threshold: float,
+    threshold: float | None = None,
     rcut: float | None = None,
     bond_order: int | None = None,
 ) -> SparseHamiltonian:
@@ -44,8 +44,9 @@ def sparsify(
     ----------
     data_controller : DataController
         Run state after ``pao_hamiltonian``; ``HRs`` is read, not modified.
-    threshold : float
-        Magnitude in eV below which a hopping is dropped.
+    threshold : float or None, optional
+        Magnitude in eV below which a hopping is dropped; ``None`` picks the
+        default for the truncation mode.  Exclusive with a real-space cutoff.
     rcut : float or None, optional
         Bond-length cutoff in Bohr.
     bond_order : int or None, optional

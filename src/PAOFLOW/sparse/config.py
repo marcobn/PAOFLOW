@@ -13,6 +13,58 @@ from dataclasses import dataclass
 
 HK_SOLVERS = ('auto', 'sparse', 'dense')
 
+# element threshold (eV) used when neither a threshold nor a real-space cutoff is given
+DEFAULT_THRESHOLD = 1.0e-3
+
+
+def resolve_threshold(
+    threshold: float | None, rcut: float | None = None, bond_order: int | None = None
+) -> float:
+    """The element threshold (eV) a truncation actually applies.
+
+    Parameters
+    ----------
+    threshold : float or None
+        Requested element threshold; ``None`` picks the default for the
+        truncation mode.
+    rcut, bond_order : optional
+        Real-space cutoff, as a radius (Bohr) or a neighbour-shell count.
+
+    Returns
+    -------
+    float
+        ``0.0`` (keep every element inside the cutoff) when a real-space
+        cutoff is given, otherwise ``threshold`` or :data:`DEFAULT_THRESHOLD`.
+
+    Raises
+    ------
+    ValueError
+        If a positive ``threshold`` is combined with ``rcut`` or
+        ``bond_order``.
+
+    Notes
+    -----
+    A real-space cutoff keeps or drops whole atom-pair blocks by bond
+    length, a quantity every space-group operation preserves.  An element
+    threshold does not: symmetry operations rotate the orbitals of a bond
+    into each other, so two equivalent bonds carry differently sized
+    elements and a fixed magnitude cut keeps different parts of each,
+    which splits symmetry-protected degeneracies (measured on Si:
+    ``bond_order=36`` alone keeps every degeneracy, adding a 1e-3 eV
+    threshold splits them by 22 meV).  The two are therefore exclusive.
+    """
+    geometric = rcut is not None or bond_order is not None
+    if threshold is None:
+        return 0.0 if geometric else DEFAULT_THRESHOLD
+    threshold = float(threshold)
+    if geometric and threshold > 0.0:
+        raise ValueError(
+            'threshold cannot be combined with rcut or bond_order: an element threshold '
+            'breaks the point-group symmetry a real-space cutoff preserves. Give either a '
+            'threshold (eV) or a real-space cutoff, not both.'
+        )
+    return threshold
+
 
 @dataclass(frozen=True)
 class SparseConfig:
@@ -20,16 +72,23 @@ class SparseConfig:
 
     Attributes
     ----------
-    threshold : float
+    threshold : float or None
         Magnitude (eV) below which H(R) matrix elements are dropped when the
         dense base-cell Hamiltonian is converted to the sparse bond list.
-        The conversion prints a rigorous bound on the eigenvalue error this
-        truncation can cause at any k-point.
+        ``None`` means 1e-3 eV without a real-space cutoff and no element
+        cut with one.  The conversion prints a rigorous bound on the
+        eigenvalue error this truncation can cause at any k-point.  It is
+        the most compact truncation, but it does **not** preserve
+        symmetry: equivalent bonds lose different elements, so
+        symmetry-protected degeneracies split (see
+        :func:`resolve_threshold`).  A positive value is mutually
+        exclusive with ``rcut`` and ``bond_order``.
     rcut : float or None
-        Real-space cutoff in Bohr on the physical bond length, applied
-        together with ``threshold`` at the base cell.  A second, physically
-        different truncation axis; the ``eig_bound`` printed at conversion
-        covers both.  Mutually exclusive with ``bond_order``.
+        Real-space cutoff in Bohr on the physical bond length, applied at
+        the base cell in place of the element threshold.  It keeps or drops
+        whole atom-pair blocks by bond length, so it respects the
+        space-group symmetry of the crystal.  Mutually exclusive with
+        ``bond_order``.
     bond_order : int or None
         The same cutoff as a neighbour-shell count: keep every bond up to
         and including the n-th distinct interatomic distance (1 = nearest
@@ -50,7 +109,7 @@ class SparseConfig:
         budget.
     """
 
-    threshold: float = 1.0e-3
+    threshold: float | None = None
     rcut: float | None = None
     bond_order: int | None = None
     hk_solver: str = 'auto'
@@ -66,8 +125,12 @@ class SparseConfig:
             raise ValueError(
                 'SparseConfig: hk_solver must be one of %s, got %r.' % (HK_SOLVERS, self.hk_solver)
             )
+        # validates the threshold/cutoff combination; the field keeps the
+        # user's value (None stays None) so the log shows what was asked for
+        resolve_threshold(self.threshold, self.rcut, self.bond_order)
         # frozen: normalize types through object.__setattr__
-        object.__setattr__(self, 'threshold', float(self.threshold))
+        if self.threshold is not None:
+            object.__setattr__(self, 'threshold', float(self.threshold))
         if self.rcut is not None:
             object.__setattr__(self, 'rcut', float(self.rcut))
         if self.bond_order is not None:

@@ -14,6 +14,7 @@ import pytest
 
 from PAOFLOW.PAOFLOW import PAOFLOW
 from PAOFLOW.sparse import SparseConfig
+from PAOFLOW.sparse.config import resolve_threshold
 from PAOFLOW.sparse.engine import SparseEngine
 
 
@@ -47,6 +48,20 @@ def sparse(tmp_path):
 def test_config_rejects_two_cutoffs():
     with pytest.raises(ValueError, match='not both'):
         SparseConfig(rcut=5.0, bond_order=2)
+
+
+@pytest.mark.parametrize('cutoff', [{'rcut': 5.0}, {'bond_order': 2}])
+def test_config_rejects_threshold_with_a_cutoff(cutoff):
+    with pytest.raises(ValueError, match='threshold cannot be combined'):
+        SparseConfig(threshold=1e-3, **cutoff)
+
+
+def test_config_threshold_defaults_by_truncation_mode():
+    assert SparseConfig().threshold is None
+    assert resolve_threshold(None) == 1.0e-3
+    assert resolve_threshold(None, bond_order=2) == 0.0
+    assert resolve_threshold(None, rcut=5.0) == 0.0
+    assert resolve_threshold(0.0, bond_order=2) == 0.0
 
 
 def test_config_rejects_unknown_solver():

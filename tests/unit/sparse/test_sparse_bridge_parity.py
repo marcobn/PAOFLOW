@@ -31,7 +31,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 NFFT = 24  # example01 is on 12^3, so this exercises zero-padding vs bond assembly
-THRESHOLD = 1e-3
 BOND_ORDER = 3
 
 
@@ -51,9 +50,7 @@ def runs(tmp_path_factory):
         saver.read_atomic_proj_QE()
         saver.projectability()
         saver.pao_hamiltonian()
-        saver.save_sparse_hamiltonian(
-            'sparse_hamiltonian.npz', threshold=THRESHOLD, bond_order=BOND_ORDER
-        )
+        saver.save_sparse_hamiltonian('sparse_hamiltonian.npz', bond_order=BOND_ORDER)
 
         dense = PAOFLOW(workpath=out, outputdir='dense', restart=True, smearing='gauss')
         dense.load_sparse_hamiltonian(archive)
@@ -87,7 +84,7 @@ def runs(tmp_path_factory):
             savedir='silicon.save',
             outputdir=os.path.join(out, 'swrite'),
             smearing='gauss',
-            sparse=SparseConfig(threshold=THRESHOLD, bond_order=BOND_ORDER),
+            sparse=SparseConfig(bond_order=BOND_ORDER),
         )
         writer.read_atomic_proj_QE()
         writer.projectability()
