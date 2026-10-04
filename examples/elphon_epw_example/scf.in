@@ -2,7 +2,7 @@
   calculation     = 'scf'
   prefix          = 'pb',
   restart_mode    = 'from_scratch'
-  pseudo_dir      = '../',
+  pseudo_dir      = './',
   outdir          = './'
   tprnfor         = .true.
   tstress         = .true.
