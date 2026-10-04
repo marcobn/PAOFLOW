@@ -30,7 +30,7 @@ import numpy as np
 from mpi4py import MPI
 
 from .bridge import init_restart_session, sparsify
-from .config import SparseConfig
+from .config import SparseConfig, resolve_threshold
 from .dispatch import call_dense
 from .log import get_sparse_log
 
@@ -104,7 +104,7 @@ class SparseEngine:
                 ('output directory', attr['opath']),
                 ('MPI ranks', self.comm.Get_size()),
                 ('k-point pools', attr['npool']),
-                ('threshold (eV)', '%.3e' % cfg.threshold),
+                ('threshold (eV)', _threshold_label(cfg)),
                 ('rcut (Bohr)', 'none' if cfg.rcut is None else '%.3f' % cfg.rcut),
                 ('bond_order', 'none' if cfg.bond_order is None else cfg.bond_order),
                 ('H(k) solver', cfg.hk_solver),
@@ -176,15 +176,18 @@ class SparseEngine:
                 if report.get('bond_order') is not None
                 else 'rcut = %.3f Bohr' % rcut
             )
+            if report.get('threshold', 0.0) > 0.0:
+                how += ', threshold = %.1e eV' % report['threshold']
             self.log.write(
-                'Real-space cutoff (%s) applied at the base cell, together\n'
-                'with threshold = %.1e eV. Both truncations are folded into the\n'
-                'eigenvalue bound below.' % (how, report['threshold'])
+                'Real-space cutoff (%s) applied at the base cell. It is folded\n'
+                'into the eigenvalue bound below.' % how
             )
         else:
             self.log.write(
                 'Element threshold = %.1e eV applied at the base cell; no real-space '
-                'cutoff.' % report.get('threshold', self.H.threshold)
+                'cutoff. An element threshold does not preserve symmetry: degenerate\n'
+                'bands can split by up to the eigenvalue bound below.'
+                % report.get('threshold', self.H.threshold)
             )
         if report.get('aliased'):
             message = (
@@ -1005,3 +1008,11 @@ class SparseEngine:
     def finish_execution(self):
         self._report_skips()
         call_dense(self.host, 'finish_execution')
+
+
+def _threshold_label(cfg):
+    """Header entry for the element threshold a config actually applies."""
+    threshold = resolve_threshold(cfg.threshold, cfg.rcut, cfg.bond_order)
+    if threshold == 0.0 and (cfg.rcut is not None or cfg.bond_order is not None):
+        return 'none (real-space cutoff)'
+    return '%.3e' % threshold

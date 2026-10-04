@@ -346,18 +346,24 @@ Ask, in order:
   large step; don't take it implicitly.
 - **Threshold semantics**: applied once, at the base cell, in eV, on
   `|H_ij(R)|`; doubling commutes with it (pure rearrangement — tested).
+  It does **not** preserve symmetry (Si 12³, 1e-3 alone: 55 meV
+  degeneracy splitting); say so wherever it is offered.
   Example01 sweep: 1e-3 → ~160 meV band error, 1e-4 → ~10 meV (at the
   Hermitization-convention floor), 1e-5 → ~9 meV. At the small base cell
   the bond list can exceed the dense array in bytes (44 B/bond); the win
   is that it grows ×2 per doubling while dense grows ×4 — don't panic at
   base-cell stats.
-- **`rcut` semantics** (optional, **default `None`**): a *second and
-  physically different* truncation axis — bond length
+- **`rcut` / `bond_order` semantics** (optional, **default `None`**): a
+  *different* truncation axis — bond length
   `|alat·R_cart + tau_i - tau_j|` in Bohr, not matrix-element magnitude.
-  The two interact, so a run with `rcut` set is **not** comparable with
-  one without, and the threshold sweep above no longer characterises the
-  truncation on its own. Both are folded into the same `keep` mask, so
-  the printed `eig_bound` covers both. Like `threshold` it must be
+  **Exclusive with a positive `threshold`** (`config.resolve_threshold`):
+  the geometric cut keeps whole atom-pair blocks by a length every
+  space-group op preserves, while an element threshold keeps different
+  elements of equivalent bonds and splits symmetry-protected degeneracies
+  (Si 12³, `bond_order=36`: 0 → 22 meV split with 1e-3 on top, for −38%
+  nnz). `threshold=None` therefore resolves to `0.0` with a geometric cut
+  and to `1e-3` without one. The cut is folded into the same `keep` mask,
+  so the printed `eig_bound` covers it. Like `threshold` it must be
   applied at the base cell: `double_axis` zeroes `dnm` on cross-replica
   blocks (deliberately — it replicates `block_diag(Dnm, Dnm)`), after
   which the true bond vector is unrecoverable. The container carries a

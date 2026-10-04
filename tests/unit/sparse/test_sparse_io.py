@@ -143,7 +143,7 @@ def test_restore_leaves_the_post_pao_hamiltonian_state(dc, tmp_path):
 
 
 def test_densify_leaves_the_dense_post_pao_hamiltonian_state(dc):
-    H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)
+    H = SparseHamiltonian.from_data_controller(dc, bond_order=2)
     Dnm = dc.data_arrays['Dnm'].copy()
     fresh = _DC({}, {})
     densify(fresh, H, Dnm=Dnm)
@@ -178,14 +178,14 @@ def test_dense_save_then_dense_restart(dc, tmp_path):
     saver.data_controller.data_arrays = dc.data_arrays
     saver.data_controller.data_attributes = dc.data_attributes
     original = dc.data_arrays['HRs'].copy()
-    saver.save_sparse_hamiltonian('s.npz', threshold=1e-3, bond_order=2)
+    saver.save_sparse_hamiltonian('s.npz', bond_order=2)
     np.testing.assert_array_equal(dc.data_arrays['HRs'], original)
 
     loader = _restart_driver(tmp_path, 'load')
     loader.load_sparse_hamiltonian(str(tmp_path / 's.npz'))
     arrays, attributes = loader.data_controller.data_dicts()
 
-    H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)
+    H = SparseHamiltonian.from_data_controller(dc, bond_order=2)
     np.testing.assert_array_equal(arrays['HRs'], H.to_dense_HRs())
     np.testing.assert_array_equal(arrays['Dnm'], dc.data_arrays['Dnm'])
     assert attributes['opath'] == str(tmp_path / 'load')
@@ -195,7 +195,7 @@ def test_sparse_written_archive_restarts_densely_with_Dnm(dc, tmp_path):
     """A sparse run pops Dnm at conversion; the archive must still carry it,
     or the dense gradient fails after a dense restart."""
     Dnm = dc.data_arrays.pop('Dnm')
-    H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)
+    H = SparseHamiltonian.from_data_controller(dc, bond_order=2)
     _, bundle = read_sparse_hamiltonian(write_sparse_hamiltonian(dc, H, 'a.npz', Dnm=Dnm))
     np.testing.assert_array_equal(bundle['Dnm'], Dnm)
 
@@ -260,7 +260,7 @@ def test_bond_vector_sign_follows_the_fftn_convention(tmp_path):
         },
         {'alat': ALAT, 'nawf': 2, 'nspin': 1, 'nk1': 4, 'nk2': 4, 'nk3': 4, 'opath': str(tmp_path)},
     )
-    H = SparseHamiltonian.from_data_controller(dc, 1e-12, bond_order=1)
+    H = SparseHamiltonian.from_data_controller(dc, bond_order=1)
     _, bundle = read_sparse_hamiltonian(write_sparse_hamiltonian(dc, H, 's.npz'))
     table = bond_table(bundle)
 

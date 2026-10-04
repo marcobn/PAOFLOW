@@ -139,11 +139,24 @@ def test_higher_bond_order_is_a_superset_of_lower(dc):
     assert keys(first) <= keys(second)
 
 
-def test_threshold_still_applies_on_top_of_the_shell_cutoff(dc):
-    all_kept = SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=3)
-    some_kept = SparseHamiltonian.from_data_controller(dc, 0.5, bond_order=3)
-    assert some_kept.nnz < all_kept.nnz
-    assert np.all(np.abs(some_kept.vals).max(axis=1) > 0.5)
+def test_threshold_is_exclusive_with_the_shell_cutoff(dc):
+    """An element threshold would split degeneracies the shell cut keeps."""
+    with pytest.raises(ValueError, match='threshold cannot be combined'):
+        SparseHamiltonian.from_data_controller(dc, 0.5, bond_order=3)
+    with pytest.raises(ValueError, match='threshold cannot be combined'):
+        SparseHamiltonian.from_data_controller(dc, 0.5, rcut=2.0 * ALAT)
+
+
+def test_shell_cutoff_defaults_to_no_element_threshold(dc):
+    default = SparseHamiltonian.from_data_controller(dc, bond_order=3)
+    explicit = SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=3)
+    assert default.threshold == 0.0
+    np.testing.assert_array_equal(default.rows, explicit.rows)
+    np.testing.assert_array_equal(default.ridx, explicit.ridx)
+
+
+def test_threshold_alone_defaults_to_1e_3(dc):
+    assert SparseHamiltonian.from_data_controller(dc).threshold == 1.0e-3
 
 
 def test_geometry_falls_back_to_the_orbital_map_without_Dnm():

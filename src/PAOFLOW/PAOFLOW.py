@@ -963,7 +963,8 @@ class PAOFLOW:
 
         Arguments:
             fname (str): File name of the archive (relative names go to outputdir)
-            threshold (float): Drop matrix elements below this magnitude (eV) in every spin channel (default 1e-3)
+            threshold (float): Drop elements below this magnitude (eV) in every spin channel (default 1e-3)
+                Breaks symmetry, so it is mutually exclusive with bond_order and rcut
             bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
             rcut (float): Bond-length cutoff in Bohr; mutually exclusive with bond_order
 
@@ -972,6 +973,7 @@ class PAOFLOW:
 
         """
         from .sparse.bridge import sparsify
+        from .sparse.config import resolve_threshold
         from .sparse.io import write_sparse_hamiltonian
 
         attr = self.data_controller.data_attributes
@@ -979,8 +981,8 @@ class PAOFLOW:
             raise ValueError(
                 'save_sparse_hamiltonian: give either rcut (Bohr) or bond_order (shells), not both.'
             )
-        if threshold is None:
-            threshold = 1.0e-3
+        # fail on every rank before the rank-0 conversion
+        threshold = resolve_threshold(threshold, rcut, bond_order)
 
         try:
             if self.rank == 0:

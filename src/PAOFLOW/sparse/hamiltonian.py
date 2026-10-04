@@ -394,7 +394,7 @@ class SparseHamiltonian:
     def from_data_controller(
         cls,
         data_controller: DataController,
-        threshold: float,
+        threshold: float | None = None,
         rcut: float | None = None,
         bond_order: int | None = None,
         distance_tol: float = 1.0e-3,
@@ -407,10 +407,13 @@ class SparseHamiltonian:
             Run state holding the dense ``arrays['HRs']`` produced by
             ``pao_hamiltonian``, plus ``a_vectors``, ``alat``, ``tau`` and,
             when present, ``Dnm``.
-        threshold : float
-            Magnitude in eV below which a hopping is dropped.
+        threshold : float or None, optional
+            Magnitude in eV below which a hopping is dropped.  ``None``
+            means 1e-3 eV without a real-space cutoff and no element cut
+            with one; a positive value is exclusive with ``rcut`` and
+            ``bond_order`` (see :func:`PAOFLOW.sparse.config.resolve_threshold`).
         rcut : float or None, optional
-            Additional bond-length cutoff in Bohr.
+            Bond-length cutoff in Bohr.
         bond_order : int or None, optional
             Neighbour-shell form of the same cutoff: keep bonds up to and
             including this shell (``1`` is nearest neighbours).  Resolved to
@@ -427,8 +430,9 @@ class SparseHamiltonian:
         Raises
         ------
         ValueError
-            If both ``rcut`` and ``bond_order`` are given, or ``bond_order``
-            exceeds the shells the grid can represent.
+            If both ``rcut`` and ``bond_order`` are given, a positive
+            ``threshold`` is combined with either, or ``bond_order`` exceeds
+            the shells the grid can represent.
 
         Notes
         -----
@@ -450,9 +454,16 @@ class SparseHamiltonian:
         dropped magnitudes per row therefore gives ``eig_bound``, a rigorous
         upper bound on the error introduced, valid at every k-point.
 
+        The element threshold does not preserve symmetry: orbitals on
+        equivalent bonds are rotated into each other, so the same cut keeps
+        different elements of each and symmetry-protected degeneracies split.
+        A real-space cutoff keeps or drops whole atom-pair blocks by bond
+        length, which every space-group operation preserves, so the two are
+        not combined.
+
         ``rcut`` drops bonds whose physical length ``|alat*R + tau_i -
         tau_j|`` exceeds it.  It is applied as part of the keep mask, not as
-        a post-filter, so the reported ``eig_bound`` covers both truncations.
+        a post-filter, so the reported ``eig_bound`` covers it too.
         The kept set has to be closed under the Hermitian pairing ``(i,j,R)
         -> (j,i,-R)`` or the bond list stops being Hermitian.  Off the
         Nyquist plane that is automatic, since ``-R`` is a distinct grid
@@ -466,9 +477,7 @@ class SparseHamiltonian:
         ``doubling.double_axis`` zeroes ``dnm`` on cross-replica blocks
         (replicating the dense ``block_diag(Dnm, Dnm)`` semantics), after
         which the true bond vector is no longer recoverable from the
-        container.  Note also that ``rcut`` is a physically *different*
-        truncation axis from ``threshold`` (bond length vs matrix-element
-        magnitude) and the two interact; the default is ``None``.
+        container.  The default is ``None``.
 
         A cutoff longer than the aliasing-safe radius of the grid
         (:func:`~PAOFLOW.sparse.shells.aliasing_safe_radius`) is applied to
@@ -477,15 +486,17 @@ class SparseHamiltonian:
         ``drop_report['aliased']`` so the driver can say so.  ``bond_order``
         can never get there: shells are only counted inside the safe radius.
         """
+        from .config import resolve_threshold
         from .shells import aliasing_safe_radius, shell_cutoff
 
         arry, attr = data_controller.data_dicts()
         HRs = arry['HRs']
         nawf, _, nk1, nk2, nk3, nspin = HRs.shape
 
+        if bond_order is not None and rcut is not None:
+            raise ValueError('Give either rcut (Bohr) or bond_order (shells), not both.')
+        threshold = resolve_threshold(threshold, rcut, bond_order)
         if bond_order is not None:
-            if rcut is not None:
-                raise ValueError('Give either rcut (Bohr) or bond_order (shells), not both.')
             rcut, _, _ = shell_cutoff(data_controller, bond_order, distance_tol)
         safe_radius = aliasing_safe_radius(
             np.asarray(arry['a_vectors'], dtype=float) * attr['alat'], (nk1, nk2, nk3)
