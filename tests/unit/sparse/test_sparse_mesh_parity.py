@@ -46,7 +46,7 @@ def dense_and_sparse(request, tmp_path_factory):
     the 'sparse' path would no longer be covered here at all.
     """
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.SparsePAOFLOW import SparsePAOFLOW
+    from PAOFLOW.sparse import SparseConfig
 
     hk_solver = request.param
     out = str(tmp_path_factory.mktemp('mesh_parity_' + hk_solver))
@@ -69,14 +69,13 @@ def dense_and_sparse(request, tmp_path_factory):
         p.adaptive_smearing()
         d_arrays, d_attr = p.data_controller.data_dicts()
 
-        q = SparsePAOFLOW(
+        q = PAOFLOW(
             savedir='silicon.save',
             outputdir=os.path.join(out, 'sparse'),
             smearing='gauss',
             npool=1,
             verbose=False,
-            threshold=0.0,
-            hk_solver=hk_solver,
+            sparse=SparseConfig(threshold=0.0, hk_solver=hk_solver),
         )
         q.read_atomic_proj_QE()
         q.projectability()
@@ -85,7 +84,7 @@ def dense_and_sparse(request, tmp_path_factory):
         q.pao_eigh()
         q.gradient_and_momenta()
         q.adaptive_smearing()
-        q._ensure_mesh()
+        q.sparse._ensure_mesh()
         s_arrays, s_attr = q.data_controller.data_dicts()
     finally:
         os.chdir(cwd)

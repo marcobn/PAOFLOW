@@ -304,7 +304,7 @@ def write_sparse_hamiltonian(
         Shell-merging tolerance used for the per-bond shell labels (Bohr).
     Dnm : np.ndarray or None, optional
         Orbital-centre offsets to store, for a caller whose controller no
-        longer holds them (``SparsePAOFLOW`` pops ``Dnm`` at conversion).
+        longer holds them (the sparse engine pops ``Dnm`` at conversion).
         Defaults to ``arrays['Dnm']`` when present.  The dense gradient
         needs it after a dense restart.
 
@@ -468,7 +468,7 @@ def restore_data_controller(data_controller: DataController, bundle: dict[str, A
 
     Notes
     -----
-    Leaves the controller in the state ``SparsePAOFLOW.pao_hamiltonian``
+    Leaves the controller in the state the sparse ``pao_hamiltonian``
     leaves it in: geometry, orbital map, run attributes and the k grid are
     populated, and neither ``HRs``, ``Hks`` nor ``Dnm`` exist (the bond
     list carries ``dnm`` per bond).  Session attributes (paths, pool count,

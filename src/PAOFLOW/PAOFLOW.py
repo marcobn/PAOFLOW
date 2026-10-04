@@ -1,6 +1,9 @@
 import numpy as np
 
+from .sparse.dispatch import sparse_aware, sparse_override, sparse_shared
 
+
+@sparse_aware
 class PAOFLOW:
     """Post-processing engine for Pseudo-Atomic Orbital (PAO) electronic structure calculations.
 
@@ -60,6 +63,16 @@ class PAOFLOW:
         DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
     header_style : str, default ``'color'``
         header style ``'color'`` (large banner) or ``'minimal'`` (small title)
+    sparse : SparseConfig, dict, bool or None, default ``None``
+        Run on the sparse engine (:mod:`PAOFLOW.sparse`): from ``pao_hamiltonian``
+        on, H(R) is a thresholded bond list and no O(nawf² · nk) array is formed.
+        Truncation, solver and resource settings are the fields of
+        :class:`~PAOFLOW.sparse.config.SparseConfig`; ``True`` takes its defaults.
+        Methods with a sparse implementation keep their names and arguments;
+        ``pao_eigh``, ``gradient_and_momenta`` and ``adaptive_smearing`` become
+        optional (they are fused into the first ``dos``/``transport``); dense-only
+        methods raise until :meth:`to_dense`.  Sparse-only features live under
+        :attr:`sparse` (``pao.sparse.energy_window(...)``).
 
     Key attributes
     --------------
@@ -175,6 +188,8 @@ class PAOFLOW:
         Print wall-clock time elapsed since the last timer reset.
     finish_execution()
         Print total run time and (if verbose) aggregate memory usage across ranks.
+    to_dense()
+        Continue a ``sparse=`` run on the dense pipeline, on the same object.
 
     Notes
     -----
@@ -202,6 +217,10 @@ class PAOFLOW:
     # Function container for ErrorHandler's method
     report_exception = None
 
+    # SparseEngine when built with sparse=..., else None (see PAOFLOW.sparse.dispatch)
+    _engine = None
+
+    @sparse_shared
     def print_data_keys(self):
         """
         Print's out the keys do the data_controller dictionaries, "arrays" and "attributes".
@@ -232,6 +251,7 @@ class PAOFLOW:
         restart=False,
         dft='QE',
         header_style='color',
+        sparse=None,
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -248,6 +268,7 @@ class PAOFLOW:
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
+            sparse (SparseConfig, dict, bool or None): Run on the sparse engine (see PAOFLOW.sparse.config)
         Returns:
             None
         """
@@ -256,7 +277,10 @@ class PAOFLOW:
         from mpi4py import MPI
 
         from .DataController import DataController
+        from .sparse.config import SparseConfig
         from .utils.header import header
+
+        sparse = SparseConfig.coerce(sparse)
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -319,12 +343,54 @@ class PAOFLOW:
                     )
 
         # Do memory checks
-        if model is None and not restart and self.rank == 0 and not attr.get('bxsf_only', False):
+        if (
+            sparse is None
+            and model is None
+            and not restart
+            and self.rank == 0
+            and not attr.get('bxsf_only', False)
+        ):
             gbyte = self.memory_check()
             print('Estimated maximum array size: %.2f GBytes\n' % (gbyte))
 
+        if sparse is not None:
+            from .sparse.engine import SparseEngine
+
+            self._engine = SparseEngine(self, sparse)
+
         self.report_module_time('Initialization')
 
+    @property
+    def sparse(self):
+        """The sparse engine, for features that exist only in sparse mode
+        (energy_window, interior_window, plan_pdos, the bond list H)."""
+        if self._engine is None:
+            raise RuntimeError(
+                'This run is dense: build it with PAOFLOW(..., sparse=SparseConfig(...)) to use '
+                'the sparse engine.'
+            )
+        return self._engine
+
+    @sparse_shared
+    def to_dense(self):
+        """
+        Continue a sparse run on the dense pipeline.
+
+        Scatters the base-cell bond list into a dense 'HRs' (plus 'Hks' and 'Dnm'),
+        leaving the DataController as dense 'pao_hamiltonian' would with the truncated
+        model, and drops the sparse engine: every later call on this object runs the
+        dense code, so every dense property becomes available.
+
+        Call after 'pao_hamiltonian' or 'load_sparse_hamiltonian' and before
+        'doubling_Hamiltonian', 'interpolated_hamiltonian' or a sparse energy window.
+
+        Returns:
+            None
+        """
+        self.sparse.release_to_dense()
+        self._engine = None
+
+    @sparse_shared
     def report_module_time(self, mname):
         from time import time
 
@@ -422,6 +488,7 @@ class PAOFLOW:
             * B_to_GB
         )
 
+    @sparse_override
     def finish_execution(self):
         """
         Finish the PAOFLOW execution. Print out run time and maximum memory usage
@@ -458,6 +525,7 @@ class PAOFLOW:
                 print('Memory usage on rank 0:  %6.4f GB' % (mem[0] / to_gb))
                 print('Maximum concurrent memory usage:  %6.4f GB' % (mem0[0] / to_gb))
 
+    @sparse_shared
     def projections(self, configuration=None, basispath=None, internal=None):
         """
         Calculate the projections on the atomic basis provided by the pseudopotential or
@@ -641,6 +709,7 @@ class PAOFLOW:
 
         self.report_module_time('Projections')
 
+    @sparse_shared
     def read_atomic_proj_QE(self):
         """
         Read the wavefunctions and overlaps from atomic-proj.xml, written by Quantum Espresso
@@ -697,6 +766,7 @@ class PAOFLOW:
 
         arry['basis'] = basis
 
+    @sparse_shared
     def projectability(self, pthr=0.95, shift='auto'):
         """
         Calculate the Projectability Matrix to determine how many states need to be shifted
@@ -726,6 +796,7 @@ class PAOFLOW:
 
         self.report_module_time('Projectability')
 
+    @sparse_override
     def pao_hamiltonian(
         self,
         shift_type=1,
@@ -875,23 +946,24 @@ class PAOFLOW:
                 raise e
         self.report_module_time('write_Hamiltonian')
 
+    @sparse_override
     def save_sparse_hamiltonian(
-        self, fname='sparse_hamiltonian.npz', threshold=1.0e-3, bond_order=None, rcut=None
+        self, fname='sparse_hamiltonian.npz', threshold=None, bond_order=None, rcut=None
     ):
         """
         Truncate 'HRs' to a bond list and save it as a sparse Hamiltonian archive.
 
         The archive (PAOFLOW.sparse.io) holds the surviving matrix elements as a
         labelled bond list together with the geometry and run metadata needed to
-        restart from it, with either this driver or SparsePAOFLOW. 'HRs' itself is
-        left untouched, so the run continues unchanged.
+        restart from it, densely or with sparse=. 'HRs' itself is left untouched, so
+        the run continues unchanged.
 
         Must be called after 'pao_hamiltonian' and before 'interpolated_hamiltonian',
         'pao_eigh' or any doubling: only the base-cell 'HRs' can be saved.
 
         Arguments:
             fname (str): File name of the archive (relative names go to outputdir)
-            threshold (float): Drop matrix elements below this magnitude (eV) in every spin channel
+            threshold (float): Drop matrix elements below this magnitude (eV) in every spin channel (default 1e-3)
             bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
             rcut (float): Bond-length cutoff in Bohr; mutually exclusive with bond_order
 
@@ -907,6 +979,8 @@ class PAOFLOW:
             raise ValueError(
                 'save_sparse_hamiltonian: give either rcut (Bohr) or bond_order (shells), not both.'
             )
+        if threshold is None:
+            threshold = 1.0e-3
 
         try:
             if self.rank == 0:
@@ -923,11 +997,12 @@ class PAOFLOW:
         self.comm.Barrier()
         self.report_module_time('save_sparse_hamiltonian')
 
+    @sparse_override
     def load_sparse_hamiltonian(self, fname='sparse_hamiltonian.npz'):
         """
         Restart the dense pipeline from a sparse Hamiltonian archive.
 
-        Reads an archive written by 'save_sparse_hamiltonian' of either driver,
+        Reads an archive written by 'save_sparse_hamiltonian' (dense or sparse run),
         restores the geometry, orbital map and run attributes, and scatters the
         bond list into a dense 'HRs' (PAOFLOW.sparse.bridge.densify). Replaces
         the input stages ('projections', 'projectability', 'pao_hamiltonian');
@@ -984,6 +1059,7 @@ class PAOFLOW:
         self.comm.Barrier()
         self.report_module_time('load_sparse_hamiltonian')
 
+    @sparse_override
     def bands(
         self,
         ibrav=None,
@@ -1328,6 +1404,7 @@ class PAOFLOW:
 
         self.report_module_time('site_projeted_bands')
 
+    @sparse_override
     def doubling_Hamiltonian(self, nx, ny, nz):
         """
         Marcio, can you write something here please?
@@ -1654,6 +1731,7 @@ class PAOFLOW:
         arrays.pop('Rfft', None)
         arrays.pop('R_wght', None)
 
+    @sparse_override
     def interpolated_hamiltonian(self, nfft1=0, nfft2=0, nfft3=0, reshift_Ef=False, free_HRs=True):
         """
         Calculate the interpolated Hamiltonian with the method of zero padding
@@ -1747,6 +1825,7 @@ class PAOFLOW:
 
         self.report_module_time('R -> k with Zero Padding')
 
+    @sparse_override
     def pao_eigh(self, bval=0):
         """
         Calculate the Eigen values and vectors of k-space Hamiltonian 'Hksp'
@@ -1805,6 +1884,7 @@ class PAOFLOW:
 
         self.report_module_time('Eigenvalues')
 
+    @sparse_override
     def gradient_and_momenta(
         self,
         band_curvature=False,
@@ -2182,6 +2262,7 @@ class PAOFLOW:
 
         self.report_module_time('NL velocity correction')
 
+    @sparse_override
     def adaptive_smearing(self, smearing='gauss', afac=None):
         """
         Calculate the Adaptive Smearing parameters
@@ -2212,6 +2293,7 @@ class PAOFLOW:
                 raise e
         self.report_module_time('Adaptive Smearing')
 
+    @sparse_override
     def dos(self, do_dos=True, do_pdos=True, delta=0.01, emin=-10.0, emax=2.0, ne=1000):
         """
         Calculate the Density of States and Projected Density of States
@@ -3289,6 +3371,7 @@ class PAOFLOW:
 
         self.report_module_time('Doping')
 
+    @sparse_override
     def transport(
         self,
         tmin=300.0,

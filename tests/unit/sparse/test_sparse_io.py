@@ -192,7 +192,7 @@ def test_dense_save_then_dense_restart(dc, tmp_path):
 
 
 def test_sparse_written_archive_restarts_densely_with_Dnm(dc, tmp_path):
-    """SparsePAOFLOW pops Dnm at conversion; the archive must still carry it,
+    """A sparse run pops Dnm at conversion; the archive must still carry it,
     or the dense gradient fails after a dense restart."""
     Dnm = dc.data_arrays.pop('Dnm')
     H = SparseHamiltonian.from_data_controller(dc, 1e-3, bond_order=2)

@@ -2,14 +2,14 @@
 
 A dense run truncates its ``HRs`` with ``save_sparse_hamiltonian``; the
 archive is then restarted twice, once on the dense driver (FFT + LAPACK on
-the densified ``HRs``) and once on ``SparsePAOFLOW`` (per-k assembly from
-the bonds).  Both see the *same* truncated model, so their eigenvalues
+the densified ``HRs``) and once with ``sparse=`` (per-k assembly from the
+bonds).  Both see the *same* truncated model, so their eigenvalues
 must agree to solver precision: this separates the engine from the
 truncation, which ``test_sparse_mesh_parity`` cannot (it runs at
 threshold 0).
 
-Also covers ``SparsePAOFLOW.to_dense()``: the handed-off driver must be
-the dense one and must reproduce the dense restart.
+Also covers ``PAOFLOW.to_dense()``: the same object must continue on the
+dense pipeline and reproduce the dense restart.
 
 Requires the example01 QE data; skipped when absent.
 """
@@ -38,7 +38,7 @@ BOND_ORDER = 3
 @pytest.fixture(scope='module')
 def runs(tmp_path_factory):
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.SparsePAOFLOW import SparsePAOFLOW
+    from PAOFLOW.sparse import SparseConfig
 
     out = str(tmp_path_factory.mktemp('bridge_parity'))
     archive = os.path.join(out, 'save', 'sparse_hamiltonian.npz')
@@ -62,28 +62,32 @@ def runs(tmp_path_factory):
         dense.pao_eigh()
         d_arrays, d_attr = dense.data_controller.data_dicts()
 
-        sparse = SparsePAOFLOW(
-            workpath=out, outputdir='sparse', restart=True, smearing='gauss', hk_solver='dense'
+        sp = PAOFLOW(
+            workpath=out,
+            outputdir='sparse',
+            restart=True,
+            smearing='gauss',
+            sparse=SparseConfig(hk_solver='dense'),
         )
-        sparse.load_sparse_hamiltonian(archive)
-        H = sparse.H
-        sparse.interpolated_hamiltonian(NFFT, NFFT, NFFT)
-        sparse.pao_eigh()
-        sparse._ensure_mesh()
-        s_arrays = sparse.data_controller.data_dicts()[0]
+        sp.load_sparse_hamiltonian(archive)
+        H = sp.sparse.H
+        sp.interpolated_hamiltonian(NFFT, NFFT, NFFT)
+        sp.sparse._ensure_mesh()
+        s_arrays = sp.data_controller.data_dicts()[0]
 
-        handoff = SparsePAOFLOW(workpath=out, outputdir='handoff', restart=True, smearing='gauss')
-        handoff.load_sparse_hamiltonian(archive)
-        handed = handoff.to_dense()
+        handed = PAOFLOW(
+            workpath=out, outputdir='handoff', restart=True, smearing='gauss', sparse=True
+        )
+        handed.load_sparse_hamiltonian(archive)
+        handed.to_dense()
 
-        # the path the notebook takes: a SparsePAOFLOW-written archive (whose
-        # controller popped Dnm) restarted densely, through the gradient
-        writer = SparsePAOFLOW(
+        # the path the notebook takes: a sparse-run archive (whose controller
+        # popped Dnm) restarted densely, through the gradient
+        writer = PAOFLOW(
             savedir='silicon.save',
             outputdir=os.path.join(out, 'swrite'),
             smearing='gauss',
-            threshold=THRESHOLD,
-            bond_order=BOND_ORDER,
+            sparse=SparseConfig(threshold=THRESHOLD, bond_order=BOND_ORDER),
         )
         writer.read_atomic_proj_QE()
         writer.projectability()
@@ -96,7 +100,7 @@ def runs(tmp_path_factory):
         from_sparse.gradient_and_momenta()
         f_arrays = from_sparse.data_controller.data_dicts()[0]
 
-        late = SparsePAOFLOW(workpath=out, outputdir='late', restart=True, smearing='gauss')
+        late = PAOFLOW(workpath=out, outputdir='late', restart=True, smearing='gauss', sparse=True)
         late.load_sparse_hamiltonian(archive)
         late.interpolated_hamiltonian(2 * NFFT, 2 * NFFT, 2 * NFFT)
         handed.interpolated_hamiltonian(NFFT, NFFT, NFFT)
@@ -110,7 +114,6 @@ def runs(tmp_path_factory):
         d_arrays=d_arrays,
         d_attr=d_attr,
         s_arrays=s_arrays,
-        handoff=handoff,
         late=late,
         f_arrays=f_arrays,
         handed=handed,
@@ -137,17 +140,16 @@ def test_engines_agree_on_one_archive(runs):
     assert np.abs(dE - sE).max() < 1e-10
 
 
-def test_to_dense_hands_over_the_dense_driver(runs):
-    from PAOFLOW.PAOFLOW import PAOFLOW
-
-    assert type(runs['handed']) is PAOFLOW
-    assert runs['handed'].data_controller is runs['handoff'].data_controller
+def test_to_dense_continues_on_the_dense_pipeline(runs):
+    handed = runs['handed']
+    assert handed._engine is None
+    assert 'v_k' in runs['h_arrays'], 'pao_eigh after to_dense() must run the dense engine'
     bnd = runs['d_attr']['bnd']
     np.testing.assert_array_equal(
         runs['h_arrays']['E_k'][:, :bnd], runs['d_arrays']['E_k'][:, :bnd]
     )
-    with pytest.raises(RuntimeError, match='to_dense'):
-        runs['handoff'].bands(ibrav=2)
+    with pytest.raises(RuntimeError, match='This run is dense'):
+        handed.sparse
 
 
 def test_to_dense_refuses_after_sparse_interpolation(runs):

@@ -3,9 +3,10 @@
 A base-cell :class:`~PAOFLOW.sparse.hamiltonian.SparseHamiltonian` and the
 dense ``HRs`` of :class:`PAOFLOW.PAOFLOW` describe the same truncated
 model.  The bond-list archive (:mod:`PAOFLOW.sparse.io`) is the
-interchange format between the two drivers: either can write it, either
-can read it, and the engine that runs afterwards is chosen by the driver
-class that holds the controller, never by a flag.
+interchange format between the two pipelines: either can write it, either
+can read it, and the engine that runs afterwards is chosen by the
+``sparse=`` argument of the ``PAOFLOW`` that reads it.  A live sparse run
+switches to the dense pipeline with ``PAOFLOW.to_dense()``.
 
 This module is the only place that converts between the two forms:
 
@@ -139,7 +140,7 @@ def archive_Dnm(bundle: dict) -> np.ndarray:
 
     Notes
     -----
-    Archives written by ``SparsePAOFLOW`` before ``Dnm`` was passed to the
+    Archives written by a sparse run before ``Dnm`` was passed to the
     writer explicitly lack it.  For a QE projection, the only source an
     archive accepts, the projection's ``Dnm`` is exactly this geometric
     offset (checked to 0.0 on example01), so the rebuild is lossless.
@@ -156,7 +157,7 @@ def init_restart_session(data_controller, comm, workpath, outputdir, npool, smea
     The dense ``DataController`` leaves both data dictionaries ``None``
     on restart, expecting a JSON dump to fill them.  A bond-list restart
     fills them from an archive instead (``load_sparse_hamiltonian`` of
-    either driver), but the log and the output directory are needed
+    either pipeline), but the log and the output directory are needed
     before that, so the session part is set here.
     """
     from os import makedirs
