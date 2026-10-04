@@ -5,10 +5,13 @@ import pytest
 
 from PAOFLOW.elphon.qe_elph_io import read_epw_ukk
 from PAOFLOW.gen.epw_inputs import (
+    edit_pw_input,
     epw_input,
     exclude_bands_string,
     parse_exclude_bands,
     kpoints_card,
+    nscf_input,
+    species_masses,
     uniform_kpoint_list,
     write_placeholder_ukk,
 )
@@ -101,3 +104,41 @@ def test_placeholder_ukk_writes_wannier90_stubs(tmp_path):
     other.mkdir()
     write_placeholder_ukk(str(other / 'pb.ukk'), nbnd=4, nk_total=27, wannier90_stubs=False)
     assert not (other / 'pb.bvec').exists()
+
+
+_PW = """&control
+  calculation='relax', nosym=.true., prefix='a' ! keep this comment
+  outdir = './tmp',
+/
+&system
+  nat = 1, ntyp = 1
+/
+ATOMIC_SPECIES
+  Si 28.0855d0 Si.upf
+  O  15.999    O.upf
+K_POINTS automatic
+  4 4 4 0 0 0
+ATOMIC_POSITIONS crystal
+  Si 0 0 0
+"""
+
+
+def test_edit_pw_input_sets_removes_and_replaces_kpoints():
+    out = edit_pw_input(
+        _PW,
+        {'control': {'prefix': "'b'", 'verbosity': "'high'"}, 'system': {'nbnd': '8'}},
+        remove=('nosym',),
+        kpoints='K_POINTS gamma\n',
+    )
+    assert "prefix='b' ! keep this comment" in out and 'nosym' not in out
+    assert "outdir = './tmp'," in out  # untouched lines are kept verbatim
+    assert "verbosity       = 'high'" in out and 'nbnd            = 8' in out
+    assert 'K_POINTS gamma\nATOMIC_POSITIONS crystal' in out and '4 4 4' not in out
+    assert edit_pw_input(_PW) == _PW
+
+
+def test_species_masses_and_nscf_from_template():
+    assert species_masses(_PW) == [28.0855, 15.999]
+    nscf = nscf_input(_PW, 'si', (2, 2, 2), 12, pseudo_dir='../')
+    assert "calculation='nscf'" in nscf and "outdir = './'," in nscf
+    assert "pseudo_dir      = '../'" in nscf and 'K_POINTS crystal\n8\n' in nscf

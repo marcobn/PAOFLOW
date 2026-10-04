@@ -389,7 +389,7 @@ def test_build_elphon_script_epw_is_default_and_wired():
     compile(text, 'main.elphon.py', 'exec')
     assert "EPW_DIR = os.path.join(HERE, 'epw')" in text
     assert "SAVEDIR = os.path.join(HERE, 'epw/pb.save')" in text
-    assert 'KGRID = (6, 6, 6)' in text and 'QGRID = (6, 6, 6)' in text
+    assert 'COARSE_GRID = (6, 6, 6)' in text and 'QGRID = (6, 6, 6)' in text
     assert 'NK_DENSE = 48' in text and 'NQ_DENSE = 24' in text and 'DENSE_Q = True' in text
     assert 'SIGMA_EV = 0.05' in text
     assert "source='epw'" in text
@@ -404,23 +404,74 @@ def test_build_elphon_script_epw_is_default_and_wired():
     assert "source='epw'" in d.build_elphon_script(cfg)
 
 
-def test_generated_epw_inputs_phase_writes_valid_files(tmp_path):
+_PB_SCF = """&CONTROL
+  calculation     = 'scf'
+  prefix          = 'lead',
+  pseudo_dir      = './',
+  outdir          = './tmp'
+  tprnfor         = .true.
+/
+&SYSTEM
+  ibrav           = 2,
+  celldm(1)       = 9.5,
+  nat             = 1,
+  ntyp            = 1,
+  ecutwfc         = 60.0
+  nosym           = .true.
+/
+&ELECTRONS
+  conv_thr        = 1.0d-10
+/
+ATOMIC_SPECIES
+  Pb 207.2 Pb.upf
+ATOMIC_POSITIONS {crystal}
+  Pb 0.00 0.00 0.00
+K_POINTS {automatic}
+  8 8 8  0 0 0
+"""
+
+
+def test_epw_inputs_follow_the_example_layout(tmp_path):
+    files = d.build_elphon_epw_inputs(
+        _epw_cfg(
+            kgrid=[4, 4, 4], qgrid=[2, 2, 2], nbnd=16, exclude_bands=[1, 2, 3, 4, 5],
+            pw_template_text=_PB_SCF, pseudo_dir='../',
+        )
+    )
+    assert sorted(files) == [
+        'epw/epw.in', 'epw/nscf.in', 'epw/write_ukk.py', 'phonon/ph.in', 'phonon/scf.in'
+    ]
+    scf = files['phonon/scf.in']
+    assert "prefix          = 'pb'," in scf and "outdir          = './'" in scf
+    assert "pseudo_dir      = '../'," in scf and 'nosym' not in scf
+    assert '8 8 8  0 0 0' in scf
+    nscf = files['epw/nscf.in']
+    assert "calculation     = 'nscf'" in nscf and "verbosity" in nscf and 'nbnd' in nscf
+    assert 'tprnfor' not in nscf and 'K_POINTS crystal\n64\n' in nscf and '8 8 8' not in nscf
+    assert 'nq1 = 2,' in files['phonon/ph.in'] and "fildvscf  = 'dvscf'" in files['phonon/ph.in']
+    epw_in = files['epw/epw.in']
+    assert "dvscf_dir   = '../phonon/save'" in epw_in and "outdir      = './'" in epw_in
+    assert "bands_skipped = 'exclude_bands = 1:5'" in epw_in and 'nbndsub     = 11' in epw_in
+    compile(files['epw/write_ukk.py'], 'write_ukk.py', 'exec')
+
+
+def test_generated_write_ukk_script_writes_the_bookkeeping(tmp_path, monkeypatch):
     import runpy
 
     from PAOFLOW.elphon.qe_elph_io import read_epw_ukk
 
-    script = tmp_path / 'main.elphon.py'
-    script.write_text(d.build_elphon_script(_epw_cfg(kgrid=[4, 4, 4], qgrid=[2, 2, 2], nbnd=6)))
-    module = runpy.run_path(str(script), run_name='generated')
-    module['inputs']()
-
-    assert (tmp_path / 'pb.ph.in').read_text().count('nq1=2, nq2=2, nq3=2') == 1
-    card = (tmp_path / 'nscf.kpoints').read_text().splitlines()
-    assert card[:2] == ['K_POINTS crystal', '64']
-    epw_in = (tmp_path / 'epw.in').read_text()
-    assert 'epbwrite    = .true.' in epw_in and 'nbndsub     = 6' in epw_in
-    ukk = read_epw_ukk(str(tmp_path / 'pb.ukk'), 64)
-    assert ukk['nbndep'] == 6 and ukk['lwin'].all()
+    cfg = _epw_cfg(kgrid=[2, 2, 2], qgrid=[2, 2, 2], nbnd=16, exclude_bands=[1, 2, 3, 4, 5])
+    files = d.build_elphon_epw_inputs(cfg)
+    # Without a pw.x template only the k list of the nscf is written.
+    assert 'phonon/scf.in' not in files and 'epw/nscf.in' not in files
+    assert files['epw/nscf.kpoints'].splitlines()[:2] == ['K_POINTS crystal', '8']
+    script = tmp_path / 'write_ukk.py'
+    script.write_text(files['epw/write_ukk.py'])
+    monkeypatch.chdir(tmp_path)
+    runpy.run_path(str(script), run_name='__main__')
+    ukk = read_epw_ukk(str(tmp_path / 'pb.ukk'), 8)
+    assert (ukk['nbndep'], ukk['nbndskip']) == (11, 5) and ukk['lwin'].all()
+    assert (tmp_path / 'pb.bvec').exists() and (tmp_path / 'pb.mmn').exists()
 
 
 def test_build_elphon_plot_script_overlays_epw_a2f():
@@ -446,18 +497,20 @@ def test_read_epw_a2f_helper_parses_epw_format(tmp_path):
     assert list(w) == [0.5, 1.0] and list(a2f_values) == [0.1, 0.2] and lam[-1] == 0.05
 
 
-def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch):
+def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch, tmp_path):
+    (tmp_path / 'scf.in').write_text(_PB_SCF)
     answers = iter(
         [
             'epw',  # coupling source
-            '',  # EPW outdir (default from savedir)
+            '',  # pw.x template (detected scf.in)
+            '',  # pseudo_dir (from the template)
             '9',  # coarse k-grid
             '6',  # q-grid not dividing 9 -> re-prompt
             '3',  # valid q-grid
             '20',  # nbnd
             '1-2, 9:x',  # invalid band list -> re-prompt
             '1:5',  # excluded bands
-            '207.2',  # masses
+            '',  # masses (from ATOMIC_SPECIES)
             '14',  # nelec
             'y',  # dense q
             '12',  # NQ_DENSE
@@ -469,25 +522,12 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch):
         ]
     )
     monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
-    cfg = d.collect_elphon(dict(_COMMON, savedir='epw/pb.save'))
+    cfg = d.collect_elphon(dict(_COMMON, prefix='pb', workdir=str(tmp_path)))
     assert cfg['source'] == 'epw' and cfg['epw_dir'] == 'epw'
+    assert cfg['savedir'] == 'epw/pb.save'
+    assert cfg['pw_template'] == 'scf.in' and cfg['pw_template_text'] == _PB_SCF
+    assert cfg['pseudo_dir'] == '../' and cfg['masses_amu'] == [207.2]
     assert cfg['kgrid'] == [9, 9, 9] and cfg['qgrid'] == [3, 3, 3]
     assert (cfg['nq_dense'], cfg['nk_dense']) == (12, 36)
     assert cfg['sigma_ev'] == 0.05 and cfg['pthr'] == 0.95
     assert cfg['exclude_bands'] == [1, 2, 3, 4, 5]
-
-
-def test_generated_epw_inputs_phase_excludes_bands(tmp_path):
-    import runpy
-
-    from PAOFLOW.elphon.qe_elph_io import read_epw_ukk
-
-    script = tmp_path / 'main.elphon.py'
-    cfg = _epw_cfg(kgrid=[2, 2, 2], qgrid=[2, 2, 2], nbnd=16, exclude_bands=[1, 2, 3, 4, 5])
-    script.write_text(d.build_elphon_script(cfg))
-    runpy.run_path(str(script), run_name='generated')['inputs']()
-
-    epw_in = (tmp_path / 'epw.in').read_text()
-    assert "bands_skipped = 'exclude_bands = 1:5'" in epw_in and 'nbndsub     = 11' in epw_in
-    ukk = read_epw_ukk(str(tmp_path / 'pb.ukk'), 8)
-    assert (ukk['nbndep'], ukk['nbndskip']) == (11, 5)

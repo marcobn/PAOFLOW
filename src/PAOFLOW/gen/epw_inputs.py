@@ -9,10 +9,15 @@ save.  This module writes what such a run needs beyond the usual QE inputs:
   uniform grid with crystal coordinates in ``[0, 1)``);
 * a placeholder ``prefix.ukk``, so that EPW can run with ``wannierize = .false.``
   when no Wannier functions are wanted (only the ``.epb`` files are used);
-* a minimal ``epw.in``.
+* a minimal ``epw.in``;
+* the ``pw.x`` scf / nscf and ``ph.x`` inputs of the two run directories
+  (``phonon/`` and ``epw/``, as in ``examples/elphon_epw_example``), derived
+  from a ``pw.x`` input of the system.
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 from numpy.typing import NDArray
@@ -294,4 +299,205 @@ def epw_input(
         '  nqf1 = 1, nqf2 = 1, nqf3 = 1',
         '/',
     ]
+    return '\n'.join(lines) + '\n'
+
+
+# pw.x input cards (any other upper-case line outside a namelist is card data).
+_PW_CARDS = (
+    'ATOMIC_SPECIES', 'ATOMIC_POSITIONS', 'K_POINTS', 'ADDITIONAL_K_POINTS',
+    'CELL_PARAMETERS', 'CONSTRAINTS', 'OCCUPATIONS', 'ATOMIC_VELOCITIES',
+    'ATOMIC_FORCES', 'SOLVENTS', 'HUBBARD',
+)
+_ASSIGNMENT = re.compile(r"([A-Za-z_]\w*(?:\([\d,\s]*\))?)\s*=\s*('[^']*'|\"[^\"]*\"|[^,\s]+)\s*,?")
+
+
+def edit_pw_input(
+    text: str,
+    values: dict[str, dict[str, str]] | None = None,
+    remove: tuple[str, ...] = (),
+    kpoints: str | None = None,
+) -> str:
+    """Set, add or remove namelist variables of a ``pw.x`` input.
+
+    Parameters
+    ----------
+    text : str
+        The ``pw.x`` input.
+    values : dict, optional
+        ``{namelist: {variable: value}}`` with values already in Fortran
+        syntax (e.g. ``"'nscf'"``, ``'16'``).  An existing assignment is
+        replaced in place; a missing one is appended to its namelist.
+    remove : tuple of str, optional
+        Variables to delete from every namelist.
+    kpoints : str, optional
+        Replacement ``K_POINTS`` card (header and data).
+
+    Returns
+    -------
+    str
+        The edited input.
+    """
+    values = {nl.lower(): {k.lower(): v for k, v in kv.items()} for nl, kv in (values or {}).items()}
+    remove = {r.lower() for r in remove}
+    out, namelist, pending, in_kpoints = [], None, {}, False
+    for line in text.splitlines():
+        stripped = line.strip()
+        head = stripped.split()[0].upper() if stripped else ''
+        if namelist is None and stripped.startswith('&'):
+            namelist = stripped[1:].split()[0].lower()
+            pending = dict(values.get(namelist, {}))
+            out.append(line)
+            continue
+        if namelist is not None:
+            if stripped == '/':
+                out += ['  %-15s = %s' % (k, v) for k, v in pending.items()]
+                out.append(line)
+                namelist = None
+                continue
+            body = line.split('!', 1)[0]
+            matches = list(_ASSIGNMENT.finditer(body))
+            if not matches:
+                out.append(line)
+                continue
+            # Splice from the right so earlier spans stay valid.
+            for match in reversed(matches):
+                name = match.group(1).lower().replace(' ', '')
+                if name in remove:
+                    line = line[: match.start()] + line[match.end():]
+                elif name in pending:
+                    line = line[: match.start(2)] + pending.pop(name) + line[match.end(2):]
+            if line.strip():
+                out.append(line.rstrip())
+            continue
+        if head.split('{')[0].split('(')[0] in _PW_CARDS:
+            in_kpoints = head.startswith('K_POINTS') and kpoints is not None
+            if in_kpoints:
+                out += kpoints.rstrip('\n').splitlines()
+                continue
+        elif in_kpoints:
+            continue
+        out.append(line)
+    return '\n'.join(out) + '\n'
+
+
+def species_masses(text: str) -> list[float]:
+    """Atomic masses (amu) of the ``ATOMIC_SPECIES`` card of a ``pw.x`` input.
+
+    Parameters
+    ----------
+    text : str
+        The ``pw.x`` input.
+
+    Returns
+    -------
+    list of float
+        One mass per species, in card order (empty if the card is missing).
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().upper().startswith('ATOMIC_SPECIES'):
+            masses = []
+            for row in lines[i + 1:]:
+                fields = row.split()
+                if not fields:
+                    continue
+                if fields[0].upper().split('{')[0] in _PW_CARDS:
+                    break
+                try:
+                    masses.append(float(fields[1].replace('d', 'e').replace('D', 'e')))
+                except (IndexError, ValueError):
+                    break
+            return masses
+    return []
+
+
+def scf_input(template: str, prefix: str, pseudo_dir: str | None = None) -> str:
+    """``pw.x`` scf of the ``phonon/`` run directory, from a ``pw.x`` input.
+
+    Parameters
+    ----------
+    template : str
+        A ``pw.x`` input of the system (structure, cutoffs, smearing, k-grid).
+    prefix : str
+        Calculation prefix.
+    pseudo_dir : str, optional
+        ``pseudo_dir`` for the run directory (unchanged if ``None``).
+
+    Returns
+    -------
+    str
+        The input with ``calculation = 'scf'``, ``outdir = './'`` and the
+        symmetry switches removed (ph.x works on the irreducible q only).
+    """
+    control = {'calculation': "'scf'", 'prefix': "'%s'" % prefix, 'outdir': "'./'"}
+    if pseudo_dir is not None:
+        control['pseudo_dir'] = "'%s'" % pseudo_dir
+    return edit_pw_input(template, {'control': control}, remove=('nosym', 'noinv', 'nosym_evc'))
+
+
+def nscf_input(template: str, prefix: str, nk: tuple[int, int, int], nbnd: int,
+               pseudo_dir: str | None = None) -> str:
+    """``pw.x`` nscf of the ``epw/`` run directory: the full grid as an explicit list.
+
+    Parameters
+    ----------
+    template : str
+        A ``pw.x`` input of the system (usually the scf one).
+    prefix : str
+        Calculation prefix.
+    nk : tuple of int
+        Coarse k-grid (EPW ``nk1..3``), written by :func:`kpoints_card`.
+    nbnd : int
+        Number of bands.
+    pseudo_dir : str, optional
+        ``pseudo_dir`` for the run directory (unchanged if ``None``).
+
+    Returns
+    -------
+    str
+        The nscf input (``verbosity = 'high'``, no forces or stress).
+    """
+    control = {
+        'calculation': "'nscf'", 'prefix': "'%s'" % prefix, 'outdir': "'./'", 'verbosity': "'high'",
+    }
+    if pseudo_dir is not None:
+        control['pseudo_dir'] = "'%s'" % pseudo_dir
+    return edit_pw_input(
+        template,
+        {'control': control, 'system': {'nbnd': str(int(nbnd))}},
+        remove=('tprnfor', 'tstress', 'nosym', 'noinv', 'nosym_evc'),
+        kpoints=kpoints_card(nk),
+    )
+
+
+def ph_input(prefix: str, nq: tuple[int, int, int], title: str | None = None) -> str:
+    """``ph.x`` DFPT input on the coarse q-grid (irreducible q, ``fildvscf`` for EPW).
+
+    Parameters
+    ----------
+    prefix : str
+        Calculation prefix.
+    nq : tuple of int
+        Coarse q-grid (EPW ``nq1..3``).
+    title : str, optional
+        Title line (defaults to ``prefix``).
+
+    Returns
+    -------
+    str
+        The ``&INPUTPH`` input, run in the scf directory.
+    """
+    lines = [
+        title or prefix,
+        '&INPUTPH',
+        "  prefix    = '%s'," % prefix,
+        "  outdir    = './'",
+        '  trans     = .true.,',
+        '  reduce_io = .true.',
+        "  fildyn    = '%s.dyn'," % prefix,
+        "  fildvscf  = 'dvscf'",
+        '  ldisp     = .true.,',
+    ]
+    lines += ['  nq%d = %d,' % (i + 1, n) for i, n in enumerate(nq)]
+    lines += ['  tr2_ph    = 1.0d-14,', '  alpha_mix(1)  = 0.1', '  alpha_mix(10) = 0.3', '/']
     return '\n'.join(lines) + '\n'

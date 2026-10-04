@@ -334,18 +334,33 @@ $\lambda$ under dense-q interpolation, from Fourier overshoot near $\Gamma$.
 ## The `paoflow-gen elphon` CLI workflow
 
 `paoflow-gen` (see [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI))
-writes `main.elphon.py` and `plot.elphon.py`. The default coupling source is EPW:
+writes `main.elphon.py` and `plot.elphon.py`. With the default EPW source it also
+writes the QE/EPW inputs in the layout of `examples/elphon_epw_example`, deriving
+the scf and nscf from a `pw.x` input of the system:
 
-```bash
-python main.elphon.py inputs               # <prefix>.ph.in, nscf.kpoints, epw.in, placeholder <prefix>.ukk
-# pw.x scf -> ph.x -> EPW pp.py -> pw.x nscf (full k list) -> epw.x (epbwrite)
-mpirun -np N python main.elphon.py         # PAO interpolation of EPW's coupling -> alpha^2F, lambda, Tc
-python plot.elphon.py                      # overlays EPW's <prefix>.a2f (dashed) when present
+```
+phonon/scf.in  phonon/ph.in                       # pw.x scf + ph.x (irreducible q, fildvscf)
+epw/nscf.in    epw/epw.in    epw/write_ukk.py     # nscf on the explicit full k list + epw.x
 ```
 
+```bash
+cd phonon && pw.x -in scf.in && ph.x -in ph.in && python3 <q-e>/EPW/bin/pp.py
+cd ../epw && mkdir -p <prefix>.save
+cp ../phonon/<prefix>.save/{charge-density.dat,data-file-schema.xml} <prefix>.save/
+pw.x -in nscf.in && python3 write_ukk.py && mpirun -np N epw.x -nk N -in epw.in
+cd .. && mpirun -np N python main.elphon.py   # PAO interpolation of EPW's coupling -> alpha^2F, lambda, Tc
+python plot.elphon.py                          # overlays EPW's epw/<prefix>.a2f (dashed) when present
+```
+
+The scf and the nscf run in separate directories, so the nscf does not
+overwrite the save that ph.x used. Without a `pw.x` input the generator writes
+`epw/nscf.kpoints` (the explicit k list) in place of `phonon/scf.in` and
+`epw/nscf.in`.
+
 The generator re-prompts until the q-grid divides the k-grid and
-`NK_DENSE % NQ_DENSE == 0`. The analysis phase is the same as in
-`examples/elphon_epw_example/main.py`. Choosing `ahc` or `elphmat` produces the
+`NK_DENSE % NQ_DENSE == 0`. `main.elphon.py` is the same analysis as
+`examples/elphon_epw_example/main.py` (options `--coarse-q`, `--nk`, `--nq`,
+`--sigma-ev`). Choosing `ahc` or `elphmat` produces the
 previous two-phase ph.x scripts (`inputs`, then `analyse`), with a warning about
 their gauge limitation.
 
