@@ -57,7 +57,6 @@ def do_density(data_controller, nr1, nr2, nr3):
     arry, attr = data_controller.data_dicts()
 
     # Calculation of the electron density
-
     if rank == 0 and attr['verbose']:
         print('Writing density files')
 
@@ -65,35 +64,74 @@ def do_density(data_controller, nr1, nr2, nr3):
 
     ini_ik, end_ik = load_balancing(comm.Get_size(), rank, attr['nkpnts'])
 
-    basis = arry['basis']
-    eps = 1.0e-5
     for ispin in range(attr['nspin']):
         for ik in range(ini_ik, end_ik):
-            gkspace = calc_gkspace(data_controller, ik, gamma_only=False)
-            atwfcgk = calc_atwfc_k(basis, gkspace)
-            oatwfcgk = ortho_atwfc_k(atwfcgk)
-            atwfcr = fft_allwfc_G2R(oatwfcgk, gkspace, nr1, nr2, nr3, attr['omega'])
-            for nb in range(attr['bnd']):
-                if arry['E_k'][ik - ini_ik, nb, ispin] <= 0.0 + eps:
-                    tmp = np.tensordot(
-                        arry['v_k'][ik - ini_ik, :, nb, ispin], atwfcr[:, :, :, :], axes=(0, 0)
-                    )
-                    rhoaux[:, :, :, ispin] += (
-                        2 * np.conj(tmp) * tmp / attr['nkpnts'] * attr['omega'] / (nr1 * nr2 * nr3)
-                    )
+            accumulate_density_k(
+                rhoaux[:, :, :, ispin],
+                data_controller,
+                ik,
+                arry['E_k'][ik - ini_ik, :, ispin],
+                arry['v_k'][ik - ini_ik, :, :, ispin],
+                nr1,
+                nr2,
+                nr3,
+            )
 
-        rho = (
-            np.zeros((nr1, nr2, nr3, attr['nspin']), dtype=complex, order='C')
-            if rank == 0
-            else None
-        )
+    write_density(data_controller, rhoaux)
 
-        comm.Reduce(rhoaux, rho, op=MPI.SUM)
-        rhoaux = None
 
-        if rank == 0:
+def accumulate_density_k(rho, data_controller, ik, E, v_k, nr1, nr2, nr3) -> None:
+    """Add the occupied states of DFT k-point ``ik`` to the density ``rho``, in place.
+
+    Parameters
+    ----------
+    rho : np.ndarray, shape ``(nr1, nr2, nr3)``, complex
+        Accumulator (one spin channel).
+    data_controller : DataController
+        Supplies ``basis`` (internal projections), the plane-wave basis of the
+        DFT k-points, ``nkpnts``, ``bnd`` and ``omega``.
+    ik : int
+        Index of the k-point in the DFT run: the PAO mesh must be the DFT
+        grid, uninterpolated, as the dense pipeline has always assumed.
+    E : np.ndarray, shape ``(nbands,)``
+        Eigenvalues at this k-point; states with ``E <= 0`` are occupied.
+    v_k : np.ndarray, shape ``(nawf, nbands)``
+        Eigenvectors (columns), at least the lowest ``bnd``.
+    """
+    arry, attr = data_controller.data_dicts()
+    basis = arry['basis']
+    eps = 1.0e-5
+    gkspace = calc_gkspace(data_controller, ik, gamma_only=False)
+    atwfcgk = calc_atwfc_k(basis, gkspace)
+    oatwfcgk = ortho_atwfc_k(atwfcgk)
+    atwfcr = fft_allwfc_G2R(oatwfcgk, gkspace, nr1, nr2, nr3, attr['omega'])
+    for nb in range(attr['bnd']):
+        if E[nb] <= 0.0 + eps:
+            tmp = np.tensordot(v_k[:, nb], atwfcr[:, :, :, :], axes=(0, 0))
+            rho += 2 * np.conj(tmp) * tmp / attr['nkpnts'] * attr['omega'] / (nr1 * nr2 * nr3)
+
+
+def write_density(data_controller, rhoaux) -> None:
+    """Reduce the per-rank densities and write one XSF file per spin channel.
+
+    Parameters
+    ----------
+    rhoaux : np.ndarray, shape ``(nr1, nr2, nr3, nspin)``, complex
+        This rank's :func:`accumulate_density_k` sums.
+
+    Notes
+    -----
+    All spin channels are reduced at once (the reduction used to free the
+    accumulator after the first channel, so ``nspin = 2`` failed).
+    """
+    arry, attr = data_controller.data_dicts()
+    rho = np.zeros(rhoaux.shape, dtype=complex, order='C') if rank == 0 else None
+    comm.Reduce(rhoaux, rho, op=MPI.SUM)
+    rhoaux = None
+
+    if rank == 0:
+        for ispin in range(attr['nspin']):
             fdensity = attr['outputdir'] + '/density_%s.xsf' % str(ispin)
             write2xsf(data_controller, filename=fdensity, data=np.real(rho[:, :, :, ispin]))
-    if rank == 0:
         if attr['verbose']:
             print('Total charge = ', np.real(np.sum(rho)).round(3))
