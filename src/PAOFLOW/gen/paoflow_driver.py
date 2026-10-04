@@ -1800,20 +1800,13 @@ Two phases:
     python main.elphon.py inputs     # ph.x input, nscf K_POINTS list, epw.in (+ placeholder .ukk)
     mpirun -np N python main.elphon.py analyse   # PAO interpolation -> alpha^2F, lambda, Tc
 
-Between them run, all in this directory (one QE outdir) and in this order:
+Between them run, in order (EPW tutorial 04 is a complete worked example):
 
     1. pw.x scf                         (with symmetry)
     2. ph.x  < <prefix>.ph.in           (irreducible q only)
     3. python <q-e>/EPW/bin/pp.py       (collects dvscf/patterns/dyn into save/)
     4. pw.x nscf with the K_POINTS card of nscf.kpoints   (full grid, explicit list)
     5. mpirun -np N epw.x -nk N -in epw.in   (writes <prefix>.epb*, one file per pool)
-
-The nscf (4) overwrites <prefix>.save with the full-grid wavefunctions, so it
-must come after ph.x and pp.py; save/ (dvscf, patterns, dyn) is not touched.
-EPW and PAOFLOW then both read that nscf save.  Separate phonon/ and epw/
-folders (as in the EPW tutorials) also work, but then the scf charge density
-must be copied into epw/<prefix>.save before the nscf and dvscf_dir in epw.in
-must point to ../phonon/save.
 
 ``epw.in`` written here runs EPW without any Wannier functions
 (``wannierize = .false.``): EPW reads the band bookkeeping from the placeholder
@@ -4093,10 +4086,7 @@ def main(argv=None):
                 f'  1) python {script} inputs   # ph.x input, nscf K_POINTS list, epw.in, placeholder .ukk'
             )
             print(
-                '  2) in this directory: pw.x scf -> ph.x -> EPW pp.py -> pw.x nscf (full k list)'
-            )
-            print(
-                '     -> epw.x (epbwrite); the nscf comes after ph.x/pp.py (it overwrites the save)'
+                '  2) pw.x scf -> ph.x -> EPW pp.py -> pw.x nscf (full k list) -> epw.x (epbwrite)'
             )
             print(
                 f'  3) mpirun -np N python {script}   # PAO interpolation -> alpha^2F, lambda, Tc'
