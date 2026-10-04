@@ -3705,7 +3705,8 @@ class PAOFLOW:
 
         try:
             arry['ipr'] = inverse_participation_ratio(self.data_controller)
-            np.save(join(attr['opath'], fname + '.npy'), arry['ipr'])
+            if self.rank == 0:
+                np.save(join(attr['opath'], fname + '.npy'), arry['ipr'])
 
         except Exception as e:
             self.report_exception('ipr')

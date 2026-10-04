@@ -16,13 +16,15 @@ def inverse_participation_ratio(data_controller):
 
     Returns
     -------
-    np.ndarray, shape ``(nspin, nkpnts, nbands, 3)``
+    np.ndarray or None, shape ``(nspin, nkpnts, nbands, 3)``
         Array of object dtype.  For each spin, k-point, and band the three
         elements along the last axis are:
 
         - index 0 : np.ndarray, shape ``(3,)`` — crystal k-point coordinates.
         - index 1 : float — band eigenvalue :math:`E_{nk}` in eV.
         - index 2 : float — inverse participation ratio value.
+
+        On rank 0; ``None`` on the other ranks (the values are gathered).
 
     Notes
     -----
@@ -40,6 +42,8 @@ def inverse_participation_ratio(data_controller):
     The function works for both k-path (bands) and full k-grid computations,
     selecting ``kpnts`` or the transpose of ``kq`` accordingly.
     """
+    from ..utils.communication import gather_full
+
     arry, attr = data_controller.data_dicts()
 
     nbands = attr['bnd']
@@ -49,22 +53,59 @@ def inverse_participation_ratio(data_controller):
     else:
         kpts = arry['kq'].T
 
-    nkpts = kpts.shape[0]
-
     nspin = attr['nspin']
+    nk_local = arry['v_k'].shape[0]
 
+    # per-state values on this rank's k-points, gathered below (indexing the
+    # global k list with the local eigenvectors only worked on one rank)
+    values = np.zeros((nk_local, nbands, nspin), dtype=float)
+    for ispin in range(nspin):
+        for ikpt in range(nk_local):
+            values[ikpt, :, ispin] = ipr_k(arry['v_k'][ikpt, :, :nbands, ispin])
+
+    values = gather_full(values, attr['npool'])
+    energies = gather_full(np.ascontiguousarray(arry['E_k'][:, :nbands, :]), attr['npool'])
+    if values is None:
+        return None
+    return ipr_table(kpts, energies, values)
+
+
+def ipr_k(v_k: np.ndarray) -> np.ndarray:
+    """Inverse participation ratio of each state at one k-point.
+
+    Parameters
+    ----------
+    v_k : np.ndarray, shape ``(nawf, nbands)``
+        Eigenvectors (columns).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbands,)``
+        :math:`\\sum_m |v_m|^4 / (\\sum_m |v_m|^2)^2` per column.
+    """
+    out = np.empty(v_k.shape[1], dtype=float)
+    for iband in range(v_k.shape[1]):
+        vk_abs = np.abs(v_k[:, iband])
+        out[iband] = np.sum(vk_abs**4) / (np.sum(vk_abs**2) ** 2)
+    return out
+
+
+def ipr_table(kpts: np.ndarray, energies: np.ndarray, values: np.ndarray) -> np.ndarray:
+    """Assemble the ``(nspin, nkpts, nbands, 3)`` object array of :func:`inverse_participation_ratio`.
+
+    Parameters
+    ----------
+    kpts : np.ndarray, shape ``(nkpts, 3)``
+        Coordinates stored in field 0.
+    energies, values : np.ndarray, shape ``(nkpts, nbands, nspin)``
+        Band energies (field 1) and IPR values (field 2).
+    """
+    nkpts, nbands, nspin = values.shape
     ipr = np.zeros((nspin, nkpts, nbands, 3), dtype=object)
-
     for ispin in range(nspin):
         for ikpt in range(nkpts):
             for iband in range(nbands):
-                vk = arry['v_k'][ikpt, :, iband, ispin]
-                ek = arry['E_k'][ikpt, iband, ispin]
-
-                vk_abs = np.abs(vk)
-
                 ipr[ispin, ikpt, iband, 0] = kpts[ikpt]
-                ipr[ispin, ikpt, iband, 1] = ek
-                ipr[ispin, ikpt, iband, 2] = np.sum(vk_abs**4) / (np.sum(vk_abs**2) ** 2)
-
+                ipr[ispin, ikpt, iband, 1] = energies[ikpt, iband, ispin]
+                ipr[ispin, ikpt, iband, 2] = values[ikpt, iband, ispin]
     return ipr

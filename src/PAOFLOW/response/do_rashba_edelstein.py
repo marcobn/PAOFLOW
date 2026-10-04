@@ -68,6 +68,95 @@ def do_rashba_edelstein(
     the finite-temperature derivative of the Fermi-Dirac function
     :math:`-\\partial f / \\partial E`.
     """
+    import numpy as np
+
+    arrays, attr = data_controller.data_dicts()
+
+    snktot = arrays['v_k'].shape[0]
+    ind_plot = arrays['ind_plot']
+    nstates = len(ind_plot)
+
+    pksp = np.take(
+        np.diagonal(np.real(arrays['pksp'][:, :, :, :, 0]), axis1=2, axis2=3), ind_plot, axis=2
+    )
+
+    deltakp = np.take(arrays['deltakp'], ind_plot, axis=1)[:, :, 0]
+    E_k = np.take(arrays['E_k'], ind_plot, axis=1)[:, :, 0]
+    St = _local_texture(data_controller, Op_text, snktot, nstates)
+    ree_tensor(
+        data_controller,
+        ene,
+        St,
+        pksp,
+        deltakp,
+        E_k,
+        temperature,
+        regularization,
+        twoD_structure,
+        lattice_height,
+        structure_thickness,
+        write_to_file,
+        filename,
+    )
+
+
+def _local_texture(data_controller, Op_text, snktot: int, nstates: int):
+    """This rank's k-slice of a texture that ``do_spin_texture`` gathered on rank 0.
+
+    Notes
+    -----
+    In a serial run the gathered array is the local one; under MPI it is
+    scattered back to the k-distribution of ``pksp`` (previously the
+    gathered array was reshaped to the local k count, which only works on
+    one rank).
+    """
+    import numpy as np
+
+    from ..utils.communication import scatter_full
+
+    if data_controller.comm.Get_size() == 1:
+        return np.real(Op_text).reshape(snktot, 3, nstates)
+    full = None
+    if data_controller.rank == 0:
+        full = np.ascontiguousarray(np.real(Op_text).reshape(-1, 3, nstates))
+    return scatter_full(full, data_controller.data_attributes['npool'])
+
+
+def ree_tensor(
+    data_controller,
+    ene,
+    St,
+    pksp,
+    deltakp,
+    E_k,
+    temperature,
+    regularization,
+    twoD_structure,
+    lattice_height,
+    structure_thickness,
+    write_to_file,
+    filename,
+):
+    """Rashba-Edelstein sums over this rank's k-points, reduced and written.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Supplies ``smearing`` and ``opath``; performs the reduction.
+    ene : np.ndarray, shape ``(ne,)``
+    St, pksp : np.ndarray, shape ``(nk_local, 3, nstates)``
+        Band-diagonal texture and velocities of the selected bands.
+    deltakp, E_k : np.ndarray, shape ``(nk_local, nstates)``
+        Their adaptive widths and energies.
+    temperature, regularization, twoD_structure, lattice_height,
+    structure_thickness, write_to_file, filename
+        As :func:`do_rashba_edelstein`.
+
+    Returns
+    -------
+    None
+        Rank 0 writes the files when ``write_to_file``.
+    """
     from os.path import join
 
     import numpy as np
@@ -78,19 +167,10 @@ def do_rashba_edelstein(
     comm, rank = data_controller.comm, data_controller.rank
     arrays, attr = data_controller.data_dicts()
 
-    snktot = arrays['v_k'].shape[0]
-    ind_plot = arrays['ind_plot']
-    nstates = len(ind_plot)
+    snktot = E_k.shape[0]
+    nstates = E_k.shape[1]
     tau_const = 1.0
     esize = ene.size
-
-    pksp = np.take(
-        np.diagonal(np.real(arrays['pksp'][:, :, :, :, 0]), axis1=2, axis2=3), ind_plot, axis=2
-    )
-
-    deltakp = np.take(arrays['deltakp'], ind_plot, axis=1)[:, :, 0]
-    E_k = np.take(arrays['E_k'], ind_plot, axis=1)[:, :, 0]
-    St = np.real(Op_text).reshape(snktot, 3, nstates)
 
     kai_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
     j_aux = np.zeros((snktot, 3, 3, nstates), dtype=float)
