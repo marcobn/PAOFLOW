@@ -1,6 +1,6 @@
 import numpy as np
 
-from .sparse.dispatch import sparse_aware, sparse_override, sparse_shared
+from .sparse.dispatch import sparse_aware, sparse_base_cell, sparse_override, sparse_shared
 
 
 @sparse_aware
@@ -70,9 +70,10 @@ class PAOFLOW:
         :class:`~PAOFLOW.sparse.config.SparseConfig`; ``True`` takes its defaults.
         Methods with a sparse implementation keep their names and arguments;
         ``pao_eigh``, ``gradient_and_momenta`` and ``adaptive_smearing`` become
-        optional (they are fused into the first ``dos``/``transport``); dense-only
-        methods raise until :meth:`to_dense`.  Sparse-only features live under
-        :attr:`sparse` (``pao.sparse.energy_window(...)``).
+        optional (they are fused into the mesh pass the first property runs);
+        dense-only methods raise, with the reason, until :meth:`to_dense`.
+        Sparse-only features live under :attr:`sparse` (``pao.sparse.energy_window(...)``,
+        ``with pao.sparse.fused():`` to compute several properties in one pass).
 
     Key attributes
     --------------
@@ -363,7 +364,7 @@ class PAOFLOW:
     @property
     def sparse(self):
         """The sparse engine, for features that exist only in sparse mode
-        (energy_window, interior_window, plan_pdos, the bond list H)."""
+        (energy_window, interior_window, fused, the bond list H)."""
         if self._engine is None:
             raise RuntimeError(
                 'This run is dense: build it with PAOFLOW(..., sparse=SparseConfig(...)) to use '
@@ -888,6 +889,7 @@ class PAOFLOW:
             do_Hks_to_HRs(self.data_controller)
             self.data_controller.broadcast_single_array('HRs')
 
+    @sparse_base_cell
     def add_external_fields(self, Efield=[0.0], Bfield=[0.0], HubbardU=[0.0]):
         """
         Add External Fields and Corrections to the Hamiltonian 'HRs'
@@ -927,6 +929,7 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    @sparse_base_cell(modifies=False)
     def write_Hamiltonian(self, fname='hamiltonian.dat'):
         """
         Write 'HRs' to file for use with Z2 Pack
@@ -1127,6 +1130,7 @@ class PAOFLOW:
 
         self.report_module_time('Bands')
 
+    @sparse_base_cell
     def adhoc_spin_orbit(
         self,
         naw=[1],
@@ -1227,6 +1231,7 @@ class PAOFLOW:
 
         self.report_module_time('adhoc_spin_orbit')
 
+    @sparse_base_cell
     def j_to_lm_hamiltonian(self, shells=None, check_unitary=True):
         """
         Rotate the fully-relativistic Hamiltonian from the J basis to the lm basis.
@@ -1351,6 +1356,7 @@ class PAOFLOW:
         self.report_module_time('mirror_chern_number')
         return result
 
+    @sparse_override
     def wave_function_projection(self, dimension=3):
         """
         Marcio, can you write something here please?
@@ -1375,6 +1381,7 @@ class PAOFLOW:
 
         self.report_module_time('wave_function_projection')
 
+    @sparse_override
     def site_projected_bands(self, site_proj=[0]):
         """
         This routine calculates the wavefunction square wheights to produce a site projected band
@@ -1495,6 +1502,7 @@ class PAOFLOW:
 
         self.report_module_time('doubling_Hamiltonian')
 
+    @sparse_base_cell
     def cutting_Hamiltonian(self, x=False, y=False, z=False):
         """
         Marcio, can you write something here please?
@@ -1529,6 +1537,7 @@ class PAOFLOW:
 
         self.report_module_time('cutting_Hamiltonian')
 
+    @sparse_shared
     def spin_operator(self, adhoc_SO=False, sh_l=None, sh_j=None):
         """
         Calculate the Spin Operator for calculations involving spin
@@ -1543,9 +1552,15 @@ class PAOFLOW:
 
         Returns:
             None
+
+        In a sparse run it must be called at the base cell (before
+        'doubling_Hamiltonian', which then doubles 'Sj'), and 'Sj' is stored as
+        three CSR matrices.
         """
         arrays, attr = self.data_controller.data_dicts()
 
+        if self._engine is not None:
+            self._engine.require_base_cell('spin_operator')
         if adhoc_SO:
             attr['adhoc_SO'] = adhoc_SO
         if ('sh_l' not in arrays and 'sh_j' not in arrays) and not adhoc_SO:
@@ -1618,16 +1633,31 @@ class PAOFLOW:
                     Sj[spol, :, :] = clebsch_gordan(nawf, arrays['sh_l'], arrays['sh_j'], spol)
 
             arrays['Sj'] = Sj
+            if self._engine is not None:
+                from .sparse.operators import to_sparse_operator
+
+                arrays['Sj'] = to_sparse_operator(Sj)
         except Exception as e:
             self.report_exception('spin_operator')
             if attr['abort_on_exception']:
                 raise e
 
+    @sparse_shared
     def orbital_operator(self, adhoc_SO=False):
+        """
+        Calculate the Orbital Angular Momentum Operator 'Lj' (L = J - S with spin-orbit from
+        the DFT run, or the l-blocks of the ad-hoc spin-orbit basis).
+
+        In a sparse run it must be called at the base cell (before
+        'doubling_Hamiltonian', which then doubles 'Lj'), and 'Lj' is stored as
+        three CSR matrices.
+        """
         from .topology.j_matrix import build_L_from_orb, build_orb_list_and_indices, j_matrix
 
         arrays, attr = self.data_controller.data_dicts()
 
+        if self._engine is not None:
+            self._engine.require_base_cell('orbital_operator')
         if adhoc_SO:
             attr['adhoc_SO'] = adhoc_SO
 
@@ -1651,7 +1681,17 @@ class PAOFLOW:
                 for spol in range(3):
                     Jj[spol, :, :] = j_matrix(self.data_controller, spol)
                 # Compute Orbital Angular Momentum operators L = J - S
-                arrays['Lj'] = Jj - arrays['Sj']
+                if self._engine is None:
+                    arrays['Lj'] = Jj - arrays['Sj']
+                else:
+                    from .sparse.operators import to_dense_operator
+
+                    arrays['Lj'] = Jj - to_dense_operator(arrays['Sj'])
+
+            if self._engine is not None:
+                from .sparse.operators import to_sparse_operator
+
+                arrays['Lj'] = to_sparse_operator(arrays['Lj'])
 
             # elif attr['dftSO'] == False and attr['adhoc_SO'] == False:
             #    self.data_controller.build_arrays_adhoc_soc()
@@ -1667,6 +1707,7 @@ class PAOFLOW:
             if attr['abort_on_exception']:
                 self.comm.Abort()
 
+    @sparse_override
     def topology(
         self,
         eff_mass=False,
@@ -2356,6 +2397,7 @@ class PAOFLOW:
         )
         self.report_module_time(mname)
 
+    @sparse_override
     def density(self, nr1=48, nr2=48, nr3=48):
         """
         Calculate the Electron Density in real space
@@ -2383,6 +2425,7 @@ class PAOFLOW:
             arrays['deltakp'] = arrays['deltakp'][:, :bnd]
             arrays['deltakp2'] = arrays['deltakp2'][:, :bnd]
 
+    @sparse_override
     def fermi_surface(self, fermi_up=1.0, fermi_dw=-1.0):
         """
         Calculate the Fermi Surface
@@ -2415,6 +2458,7 @@ class PAOFLOW:
 
         self.report_module_time('Fermi Surface')
 
+    @sparse_shared
     def pyskeaf(
         self,
         fermi_energy=0.0,
@@ -2751,6 +2795,7 @@ class PAOFLOW:
         self.report_module_time('Quantum Oscillations')
         return results
 
+    @sparse_override
     def spin_texture(self, fermi_up=1.0, fermi_dw=-1.0):
         """
         Calculate the Spin Texture
@@ -2790,6 +2835,7 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    @sparse_override
     def berry_curvature(self, spin_Hall=False, orbital_Hall=False, spol=None, ipol=None, jpol=None):
         """
         Calculate the Berry Curvature along the k-path 'kq'
@@ -2850,6 +2896,7 @@ class PAOFLOW:
         del arrays['Rfft']
         del arrays['R_wght']
 
+    @sparse_override
     def spin_Hall(
         self,
         twoD=False,
@@ -2927,6 +2974,7 @@ class PAOFLOW:
 
         self.report_module_time('Spin Hall Conductivity')
 
+    @sparse_override
     def orbital_texture(self, fermi_up=1.0, fermi_dw=-1.0):
         """
         Calculate the Orbital Texture
@@ -2966,6 +3014,7 @@ class PAOFLOW:
 
         self.comm.Barrier()
 
+    @sparse_override
     def orbital_Hall(
         self,
         twoD=False,
@@ -3043,6 +3092,7 @@ class PAOFLOW:
 
         self.report_module_time('Orbital Hall Conductivity')
 
+    @sparse_override
     def conductivity(self, delta=0.01, emin=-10.0, emax=2.0, ne=1000, cond_tensor=None):
         from .response.do_conductivity import do_conductivity
 
@@ -3059,6 +3109,7 @@ class PAOFLOW:
 
         self.report_module_time('Conductivity')
 
+    @sparse_override
     def rashba_edelstein(
         self,
         emin=-2,
@@ -3237,6 +3288,7 @@ class PAOFLOW:
 
         self.report_module_time('Rashba_Edelstein')
 
+    @sparse_override
     def anomalous_Hall(
         self,
         do_ac=False,
@@ -3292,6 +3344,7 @@ class PAOFLOW:
 
         self.report_module_time('Anomalous Hall Conductivity')
 
+    @sparse_override
     def effective_mass(self, emin=-1.0, emax=1.0, ne=1000):
         """
         Calculate effective mass components for kx,ky and kz
@@ -3321,6 +3374,7 @@ class PAOFLOW:
 
         self.report_module_time('Effective mass')
 
+    @sparse_override
     def doping(
         self,
         tmin=300,
@@ -3447,6 +3501,7 @@ class PAOFLOW:
 
         self.report_module_time('Transport')
 
+    @sparse_override
     def dielectric_tensor(
         self,
         delta=0.1,
@@ -3631,6 +3686,7 @@ class PAOFLOW:
 
         self.report_module_time('Dielectric Tensor')
 
+    @sparse_shared
     def jdos(self, delta=0.1, emin=0.0, emax=10.0, ne=501, jdos_smeartype='gauss'):
         """
         Calculate the Dielectric Tensor
@@ -3676,6 +3732,7 @@ class PAOFLOW:
 
         self.report_module_time('Weyl Search')
 
+    @sparse_override
     def ipr(self, fname='ipr'):
         r"""
         Compute the inverse partiticipation ratio (IPR) from PAO eigenstates
@@ -3715,6 +3772,7 @@ class PAOFLOW:
 
         self.report_module_time('Inverse Participation Ratio (IPR)')
 
+    @sparse_override
     def berry_phase(
         self,
         kspace_method='path',
@@ -3767,50 +3825,30 @@ class PAOFLOW:
             Berry/Zak phase
 
         """
-        from .topology.do_berry_phase import do_berry_phase
+        from .topology.do_berry_phase import berry_phase_settings, do_berry_phase
 
-        arry, attr = self.data_controller.data_dicts()
+        attr = self.data_controller.data_attributes
 
-        kspace_method = kspace_method.lower()
-        attr['berry_kspace_method'] = kspace_method
-
-        attr['berry_path'] = berry_path
-        arry['berry_high_sym_points'] = high_sym_points
-
-        attr['berry_nk'] = nk1
-        attr['berry_nk1'] = nk1
-        attr['berry_nk2'] = nk2
-
-        attr['berry_kpath_funct'] = kpath_funct
-
-        arry['berry_kxlim'] = kxlim
-        arry['berry_kylim'] = kylim
-
-        if kspace_method != 'square':
-            attr['berry_eigvals'] = eigvals
-        else:
-            attr['berry_eigvals'] = False
-
-        attr['berry_kradius'] = kradius
-        arry['berry_kcenter'] = np.array(kcenter)
-        attr['berry_eigvals'] = eigvals
-
-        method = method.lower()
-        if method in ['berry', 'zak']:
-            attr['berry_method'] = method
-        else:
-            print("method should be either berry or zak. Falling back to method = 'berry'")
-            attr['berry_method'] = 'berry'
-
-        arry['berry_sub'] = sub
-        if sub != None or (sub == None and not occupied):
-            attr['berry_occupied'] = False
-        else:
-            attr['berry_occupied'] = occupied
-
-        attr['berry_closed'] = closed
-        attr['berry_contin'] = contin
-        attr['berry_fname'] = fname
+        berry_phase_settings(
+            self.data_controller,
+            kspace_method=kspace_method,
+            berry_path=berry_path,
+            high_sym_points=high_sym_points,
+            kpath_funct=kpath_funct,
+            nk1=nk1,
+            nk2=nk2,
+            closed=closed,
+            method=method,
+            sub=sub,
+            occupied=occupied,
+            kradius=kradius,
+            kcenter=kcenter,
+            kxlim=kxlim,
+            kylim=kylim,
+            eigvals=eigvals,
+            fname=fname,
+            contin=contin,
+        )
 
         try:
             do_berry_phase(self)
@@ -5211,6 +5249,7 @@ class PAOFLOW:
 
         self.report_module_time('Electron-Phonon')
 
+    @sparse_override
     def linear_response(
         self,
         response='shc',

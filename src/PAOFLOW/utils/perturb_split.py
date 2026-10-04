@@ -1,15 +1,41 @@
+def _apply(operator, vectors):
+    """``operator @ vectors`` for a dense or a ``scipy.sparse`` operator.
+
+    Parameters
+    ----------
+    operator : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
+    vectors : np.ndarray, shape ``(nawf, m)``
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf, m)``
+
+    Notes
+    -----
+    ``np.dot`` is kept for ndarrays so the dense pipeline's results stay
+    bit-identical; it does not accept a sparse matrix, which goes through
+    ``@`` (the sparse backend's operators are CSR).
+    """
+    import numpy as np
+    from scipy.sparse import issparse
+
+    if issparse(operator):
+        return np.asarray(operator @ vectors)
+    return np.dot(operator, vectors)
+
+
 def perturb_split(rot_op1, rot_op2, v_k, degen, return_v_k=False):
     """Project two operators onto the Bloch eigenstate basis with degenerate-subspace diagonalisation.
 
     Parameters
     ----------
-    rot_op1 : np.ndarray, shape ``(nawf, nawf)``
+    rot_op1 : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
         First operator matrix in the original PAO basis.  The degenerate
         subspaces are diagonalised with respect to this operator.
-    rot_op2 : np.ndarray, shape ``(nawf, nawf)``
+    rot_op2 : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
         Second operator matrix in the original PAO basis.  Projected using
         the eigenvectors obtained by diagonalising ``rot_op1``.
-    v_k : np.ndarray, shape ``(nawf, bnd)``
+    v_k : np.ndarray, shape ``(nawf, m)``
         Bloch eigenvector matrix at a single k-point (columns are eigenstates).
     degen : list of array_like
         List of degenerate subspace index sets at this k-point.  Each element
@@ -21,11 +47,11 @@ def perturb_split(rot_op1, rot_op2, v_k, degen, return_v_k=False):
 
     Returns
     -------
-    op1 : np.ndarray, shape ``(nawf, nawf)``
+    op1 : np.ndarray, shape ``(m, m)``
         ``rot_op1`` projected onto the (modified) Bloch eigenstate basis.
-    op2 : np.ndarray, shape ``(nawf, nawf)``
+    op2 : np.ndarray, shape ``(m, m)``
         ``rot_op2`` projected onto the (modified) Bloch eigenstate basis.
-    v_k_temp : np.ndarray, shape ``(nawf, bnd)``
+    v_k_temp : np.ndarray, shape ``(nawf, m)``
         Modified eigenvector matrix (returned only when ``return_v_k=True``).
 
     Notes
@@ -51,13 +77,16 @@ def perturb_split(rot_op1, rot_op2, v_k, degen, return_v_k=False):
     to lift the degeneracy.  Both operators are then projected using the
     updated eigenvectors.  This approach is used throughout PAOFLOW to obtain
     well-defined momentum and curvature matrix elements at degenerate k-points.
+
+    The operators may be ``scipy.sparse`` matrices (the sparse backend's
+    per-k ``dH/dk``); only their products with ``v_k`` are formed.
     """
     import numpy as np
     from scipy import linalg as LAN
 
-    op1 = np.dot(np.conj(v_k.T), np.dot(rot_op1, v_k))
+    op1 = np.dot(np.conj(v_k.T), _apply(rot_op1, v_k))
     if len(degen) == 0:
-        op2 = np.dot(np.conj(v_k.T), np.dot(rot_op2, v_k))
+        op2 = np.dot(np.conj(v_k.T), _apply(rot_op2, v_k))
         if return_v_k:
             return op1, op2, np.array([[]])
         else:
@@ -77,8 +106,8 @@ def perturb_split(rot_op1, rot_op2, v_k, degen, return_v_k=False):
         v_k_temp[:, ll:ul] = np.dot(v_k_temp[:, ll:ul], weight)
 
     # return new operator in non degenerate basis
-    op1 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op1, v_k_temp))
-    op2 = np.dot(np.conj(v_k_temp.T), np.dot(rot_op2, v_k_temp))
+    op1 = np.dot(np.conj(v_k_temp.T), _apply(rot_op1, v_k_temp))
+    op2 = np.dot(np.conj(v_k_temp.T), _apply(rot_op2, v_k_temp))
 
     if return_v_k:
         return (op1, op2, v_k_temp)

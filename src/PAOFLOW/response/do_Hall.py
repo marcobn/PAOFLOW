@@ -36,7 +36,6 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
           Fermi energy.
         - When ``do_ac``: ``ac_shcr_{...}.dat`` and ``ac_shci_{...}.dat``.
     """
-    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
@@ -56,13 +55,11 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
         print('Writing bxsf files for Spin Berry Curvature')
 
     snktot, _, nawf, _, nspin = arry['dHksp'].shape
-
     for n in range(s_tensor.shape[0]):
         ipol = s_tensor[n][0]
         jpol = s_tensor[n][1]
         spol = s_tensor[n][2]
         Sj = arry['Sj'][spol]
-
         # ----------------------------------------------
         # Compute the spin current operator j^l_n,m(k)
         # ----------------------------------------------
@@ -70,13 +67,12 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
         # full (snktot,nawf,nawf,nspin) temporary alongside the two outputs.
         jksp_is = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
         pksp_j = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
-
         for ik in range(snktot):
             for ispin in range(nspin):
                 dHk = arry['dHksp'][ik, ipol, :, :, ispin]
-                jdHk = 0.5 * (Sj @ dHk + dHk @ Sj)
+                jdHk = current_operator(Sj, dHk)
                 jksp_is[ik, :, :, ispin], pksp_j[ik, :, :, ispin] = perturb_split(
-                    0.5 * (P @ jdHk + jdHk @ P),
+                    project_current(P, jdHk),
                     arry['dHksp'][ik, jpol, :, :, ispin],
                     arry['v_k'][ik, :, :, ispin],
                     arry['degen'][ispin][ik],
@@ -87,42 +83,21 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
         # Compute spin Berry curvature...
         # ---------------------------------
         ene, shc, Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
-
         jksp_is = pksp_j = None
 
-        if rank == 0:
-            if twoD:
-                av0, av1 = arry['a_vectors'][0, :], arry['a_vectors'][1, :]
-                cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-            else:
-                cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
-            shc *= cgs_conv
-
-        cart_indices = (str(LL[spol]), str(LL[ipol]), str(LL[jpol]))
-
-        fBerry = 'Spin_Berry_%s_%s%s.bxsf' % cart_indices
-        nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
-        Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
-        if rank == 0:
-            Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
-        data_controller.write_bxsf(fBerry, Om_kps, 2)
-
-        Om_k = Om_kps = None
-
-        fshc = 'shcEf_%s_%s%s.dat' % cart_indices
-        data_controller.write_file_row_col(fshc, ene, shc)
-
-        ene = shc = None
+        cgs_conv = hall_conversion(data_controller, twoD)
+        names = hall_file_names('spin', ipol, jpol, spol)
+        write_berry_outputs(data_controller, names, ene, shc, Om_k, cgs_conv)
+        ene = shc = Om_k = None
 
         if do_ac:
             jksp_js = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
             pksp_i = np.empty((snktot, nawf, nawf, nspin), dtype=complex)
-
             for ik in range(snktot):
                 for ispin in range(nspin):
                     dHk = arry['dHksp'][ik, ipol, :, :, ispin]
                     jksp_js[ik, :, :, ispin], pksp_i[ik, :, :, ispin] = perturb_split(
-                        0.5 * (Sj @ dHk + dHk @ Sj),
+                        current_operator(Sj, dHk),
                         arry['dHksp'][ik, jpol, :, :, ispin],
                         arry['v_k'][ik, :, :, ispin],
                         arry['degen'][ispin][ik],
@@ -130,21 +105,8 @@ def do_spin_Hall(data_controller, twoD, do_ac, P):
             dHk = None
 
             ene, sigxy = do_ac_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
-
             jksp_js = pksp_i = None
-
-            if rank == 0:
-                sigxy *= cgs_conv
-
-            sigxyi = np.imag(ene * sigxy / 105.4571) if rank == 0 else None
-            sigxyr = np.real(sigxy) if rank == 0 else None
-            sigxy = None
-
-            fsigI = 'SCDi_%s_%s%s.dat' % cart_indices
-            data_controller.write_file_row_col(fsigI, ene, sigxyi)
-
-            fsigR = 'SCDr_%s_%s%s.dat' % cart_indices
-            data_controller.write_file_row_col(fsigR, ene, sigxyr)
+            write_ac_outputs(data_controller, names, ene, sigxy, cgs_conv)
 
 
 def do_orbital_Hall(data_controller, twoD, do_ac, P):
@@ -178,7 +140,6 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
           Fermi energy.
         - When ``do_ac``: ``ac_ohcr_{...}.dat`` and ``ac_ohci_{...}.dat``.
     """
-    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
@@ -205,14 +166,12 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
         # Compute the orbital current operator j^l_n,m(k)
         # ----------------------------------------------
         jdHksp = do_orbital_current(data_controller, spol, ipol)
-
         jksp_is = np.empty_like(jdHksp)
         pksp_j = np.empty_like(jdHksp)
-
         for ik in range(jdHksp.shape[0]):
             for ispin in range(jdHksp.shape[3]):
                 jksp_is[ik, :, :, ispin], pksp_j[ik, :, :, ispin] = perturb_split(
-                    0.5 * (P @ jdHksp[ik, :, :, ispin] + jdHksp[ik, :, :, ispin] @ P),
+                    project_current(P, jdHksp[ik, :, :, ispin]),
                     arry['dHksp'][ik, jpol, :, :, ispin],
                     arry['v_k'][ik, :, :, ispin],
                     arry['degen'][ispin][ik],
@@ -224,36 +183,15 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
         # ---------------------------------
         ene, ohc, Om_k = do_Berry_curvature(data_controller, jksp_is, pksp_j)
 
-        if rank == 0:
-            if twoD:
-                av0, av1 = arry['a_vectors'][0, :], arry['a_vectors'][1, :]
-                cgs_conv = 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
-            else:
-                cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
-            ohc *= cgs_conv
-
-        cart_indices = (str(LL[spol]), str(LL[ipol]), str(LL[jpol]))
-
-        fBerry = 'Orbital_Berry_%s_%s%s.bxsf' % cart_indices
-        nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
-        Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
-        if rank == 0:
-            Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
-        data_controller.write_bxsf(fBerry, Om_kps, 2)
-
-        Om_k = Om_kps = None
-
-        fshc = 'ohcEf_%s_%s%s.dat' % cart_indices
-        data_controller.write_file_row_col(fshc, ene, ohc)
-
-        ene = ohc = None
+        cgs_conv = hall_conversion(data_controller, twoD)
+        names = hall_file_names('orbital', ipol, jpol, spol)
+        write_berry_outputs(data_controller, names, ene, ohc, Om_k, cgs_conv)
+        ene = ohc = Om_k = None
 
         if do_ac:
             jdHksp = do_orbital_current(data_controller, spol, ipol)
-
             jksp_js = np.empty_like(jdHksp)
             pksp_i = np.empty_like(jdHksp)
-
             for ik in range(jdHksp.shape[0]):
                 for ispin in range(jdHksp.shape[3]):
                     jksp_js[ik, :, :, ispin], pksp_i[ik, :, :, ispin] = perturb_split(
@@ -265,18 +203,7 @@ def do_orbital_Hall(data_controller, twoD, do_ac, P):
             jdHksp = None
 
             ene, sigxy = do_ac_conductivity(data_controller, jksp_js, pksp_i, ipol, jpol)
-            if rank == 0:
-                sigxy *= cgs_conv
-
-            sigxyi = np.imag(ene * sigxy / 105.4571) if rank == 0 else None
-            sigxyr = np.real(sigxy) if rank == 0 else None
-            sigxy = None
-
-            fsigI = 'OCDi_%s_%s%s.dat' % cart_indices
-            data_controller.write_file_row_col(fsigI, ene, sigxyi)
-
-            fsigR = 'OCDr_%s_%s%s.dat' % cart_indices
-            data_controller.write_file_row_col(fsigR, ene, sigxyr)
+            write_ac_outputs(data_controller, names, ene, sigxy, cgs_conv)
 
 
 def do_anomalous_Hall(data_controller, do_ac):
@@ -305,7 +232,6 @@ def do_anomalous_Hall(data_controller, do_ac):
           Fermi energy.
         - When ``do_ac``: ``MCDr_{...}.dat`` and ``MCDi_{...}.dat``.
     """
-    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI, LL
     from ..utils.perturb_split import perturb_split
 
     arry, attr = data_controller.data_dicts()
@@ -329,7 +255,6 @@ def do_anomalous_Hall(data_controller, do_ac):
         jpol = a_tensor[n][1]
 
         dks = arry['dHksp'].shape
-
         pksp_i = np.zeros((dks[0], dks[2], dks[3], dks[4]), order='C', dtype=complex)
         pksp_j = np.zeros_like(pksp_i)
 
@@ -344,43 +269,107 @@ def do_anomalous_Hall(data_controller, do_ac):
 
         ene, ahc, Om_k = do_Berry_curvature(data_controller, pksp_i, pksp_j)
 
-        if rank == 0:
-            cgs_conv = 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
-
-        cart_indices = (str(LL[ipol]), str(LL[jpol]))
-
-        fBerry = 'Berry_%s%s.bxsf' % cart_indices
-        nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
-        Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
-        if rank == 0:
-            Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
-        data_controller.write_bxsf(fBerry, Om_kps, 2)
-
-        Om_k = Om_kps = None
-
-        if rank == 0:
-            ahc *= cgs_conv
-        fahc = 'ahcEf_%s%s.dat' % cart_indices
-        data_controller.write_file_row_col(fahc, ene, ahc)
-
-        ene = ahc = None
+        cgs_conv = hall_conversion(data_controller, False)
+        names = hall_file_names('anomalous', ipol, jpol)
+        write_berry_outputs(data_controller, names, ene, ahc, Om_k, cgs_conv)
+        ene = ahc = Om_k = None
 
         if do_ac:
             ene, sigxy = do_ac_conductivity(data_controller, pksp_i, pksp_j, ipol, jpol)
-            if rank == 0:
-                sigxy *= cgs_conv
-
-            sigxyi = np.imag(ene * sigxy / 105.4571) if rank == 0 else None
-            sigxyr = np.real(sigxy) if rank == 0 else None
-            sigxy = None
-
-            fsigI = 'MCDi_%s%s.dat' % cart_indices
-            data_controller.write_file_row_col(fsigI, ene, sigxyi)
-
-            fsigR = 'MCDr_%s%s.dat' % cart_indices
-            data_controller.write_file_row_col(fsigR, ene, sigxyr)
+            write_ac_outputs(data_controller, names, ene, sigxy, cgs_conv)
 
         pksp_i = pksp_j = None
+
+
+def current_operator(O, dH):
+    """Symmetrized current :math:`\\tfrac12\\{O, \\partial_i H\\}` of an operator ``O``.
+
+    Notes
+    -----
+    Written with ``@`` so it serves ndarrays (``do_spin_Hall``) and the
+    sparse backend's CSR matrices alike.
+    """
+    return 0.5 * (O @ dH + dH @ O)
+
+
+def project_current(P, J):
+    """Site projection :math:`\\tfrac12 (P J + J P)` of a current operator."""
+    return 0.5 * (P @ J + J @ P)
+
+
+_HALL_FILES = {
+    # Berry curvature bxsf, Fermi-energy scan, AC imaginary / real parts
+    'anomalous': ('Berry_%s%s.bxsf', 'ahcEf_%s%s.dat', 'MCDi_%s%s.dat', 'MCDr_%s%s.dat'),
+    'spin': (
+        'Spin_Berry_%s_%s%s.bxsf',
+        'shcEf_%s_%s%s.dat',
+        'SCDi_%s_%s%s.dat',
+        'SCDr_%s_%s%s.dat',
+    ),
+    'orbital': (
+        'Orbital_Berry_%s_%s%s.bxsf',
+        'ohcEf_%s_%s%s.dat',
+        'OCDi_%s_%s%s.dat',
+        'OCDr_%s_%s%s.dat',
+    ),
+}
+
+
+def hall_file_names(kind: str, ipol: int, jpol: int, spol: int | None = None) -> tuple[str, ...]:
+    """Output names of one Hall tensor component: bxsf, Fermi scan, AC imaginary, AC real."""
+    from ..utils.constants import LL
+
+    if spol is None:
+        cart_indices = (str(LL[ipol]), str(LL[jpol]))
+    else:
+        cart_indices = (str(LL[spol]), str(LL[ipol]), str(LL[jpol]))
+    return tuple(name % cart_indices for name in _HALL_FILES[kind])
+
+
+def hall_conversion(data_controller, twoD: bool):
+    """Conversion of the Berry-curvature integral to conductivity units (rank 0, else None).
+
+    ``twoD`` uses the in-plane cell area (Ohm^-1) instead of the volume.
+    """
+    from ..utils.constants import ANGSTROM_AU, ELECTRONVOLT_SI, H_OVER_TPI
+
+    arry, attr = data_controller.data_dicts()
+    if rank != 0:
+        return None
+    if twoD:
+        av0, av1 = arry['a_vectors'][0, :], arry['a_vectors'][1, :]
+        return 1.0 / (np.linalg.norm(np.cross(av0, av1)) * attr['alat'] ** 2)
+    return 1.0e8 * ANGSTROM_AU * ELECTRONVOLT_SI**2 / (H_OVER_TPI * attr['omega'])
+
+
+def write_berry_outputs(data_controller, names, ene, value, Om_k, cgs_conv) -> None:
+    """Write the Berry-curvature bxsf and the conductivity scan of one component.
+
+    ``value`` is scaled by ``cgs_conv`` in place on rank 0 (collective call).
+    """
+    attr = data_controller.data_attributes
+    nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
+    Om_kps = np.empty((nk1, nk2, nk3, 2), dtype=float) if rank == 0 else None
+    if rank == 0:
+        Om_kps[:, :, :, 0] = Om_kps[:, :, :, 1] = Om_k[:, :, :]
+    data_controller.write_bxsf(names[0], Om_kps, 2)
+    Om_kps = None
+
+    if rank == 0:
+        value *= cgs_conv
+    data_controller.write_file_row_col(names[1], ene, value)
+
+
+def write_ac_outputs(data_controller, names, ene, sigxy, cgs_conv) -> None:
+    """Write the imaginary and real AC conductivity of one component (collective call)."""
+    if rank == 0:
+        sigxy *= cgs_conv
+    sigxyi = np.imag(ene * sigxy / 105.4571) if rank == 0 else None
+    sigxyr = np.real(sigxy) if rank == 0 else None
+    sigxy = None
+
+    data_controller.write_file_row_col(names[2], ene, sigxyi)
+    data_controller.write_file_row_col(names[3], ene, sigxyr)
 
 
 def do_Berry_curvature(data_controller, jksp, pksp):
@@ -424,59 +413,128 @@ def do_Berry_curvature(data_controller, jksp, pksp):
     summed over occupied bands with occupation determined by the
     selected smearing scheme.
     """
-    # ----------------------
-    # Compute spin Berry curvature
-    # ----------------------
-    from ..utils.communication import gather_full
-    from ..utils.smearing import intgaussian, intmetpax
-
     arrays, attributes = data_controller.data_dicts()
 
     snktot, nawf, _, nspin = pksp.shape
-    fermi_up, fermi_dw = attributes['fermi_up'], attributes['fermi_dw']
-    nk1, nk2, nk3 = attributes['nk1'], attributes['nk2'], attributes['nk3']
 
     # Compute only Omega_z(k)
     Om_znkaux = np.zeros((snktot, nawf), dtype=float)
 
     deltap = attributes['deltaH']
-
     for ik in range(snktot):
-        E_nm = (arrays['E_k'][ik, :, 0] - arrays['E_k'][ik, :, 0][:, None]) ** 2 + deltap**2
-        E_nm[np.where(E_nm < 1.0e-4)] = np.inf
-        Om_znkaux[ik] = -2.0 * np.sum(
-            np.imag(jksp[ik, :, :, 0] * pksp[ik, :, :, 0].T) / E_nm, axis=1
+        Om_znkaux[ik] = berry_curvature_k(
+            arrays['E_k'][ik, :, 0], jksp[ik, :, :, 0], pksp[ik, :, :, 0], deltap
         )
-    E_nm = None
 
+    ene = berry_energy_grid(attributes)
+    Om_zkaux = berry_occupation_sum(
+        arrays['E_k'][:, :, 0], arrays['deltakp'][:, :, 0], Om_znkaux, ene, attributes['smearing']
+    )
+    return berry_reduce(data_controller, Om_zkaux, ene)
+
+
+def berry_curvature_k(E: np.ndarray, jk: np.ndarray, pk: np.ndarray, deltap: float) -> np.ndarray:
+    """Band-resolved Berry curvature :math:`\\Omega_n` at one k-point.
+
+    Parameters
+    ----------
+    E : np.ndarray, shape ``(nawf,)``
+        Every eigenvalue at this k-point (eV); the sum over ``m`` runs over
+        all of them.
+    jk, pk : np.ndarray, shape ``(nawf, nawf)``, complex
+        Left (current) and right (momentum) matrix elements in the band basis.
+    deltap : float
+        Broadening :math:`\\delta` of the energy denominator (eV).
+
+    Returns
+    -------
+    np.ndarray, shape ``(nawf,)``
+        :math:`-2 \\sum_m \\mathrm{Im}[j_{nm} p_{mn}] / ((E_n - E_m)^2 + \\delta^2)`,
+        with near-zero denominators (below 1e-4) excluded.
+    """
+    E_nm = (E - E[:, None]) ** 2 + deltap**2
+    E_nm[np.where(E_nm < 1.0e-4)] = np.inf
+    return -2.0 * np.sum(np.imag(jk * pk.T) / E_nm, axis=1)
+
+
+def berry_energy_grid(attributes: dict) -> np.ndarray:
+    """Fermi-energy grid of the Berry-curvature integral.
+
+    Notes
+    -----
+    Clips ``attributes['emaxH']`` to the PAO ``shift`` in place, as
+    :func:`do_Berry_curvature` always has.
+    """
     if attributes['shift'] != 0.0:
         attributes['emaxH'] = np.amin(np.array([attributes['shift'], attributes['emaxH']]))
+
     ### Hardcoded 'de'
     esize = attributes['esizeH']
-    ene = np.linspace(attributes['eminH'], attributes['emaxH'], esize)
+    return np.linspace(attributes['eminH'], attributes['emaxH'], esize)
 
-    Om_zkaux = np.zeros((snktot, esize), dtype=float)
 
+def berry_occupation_sum(
+    E_k: np.ndarray,
+    deltakp: np.ndarray,
+    Om_znkaux: np.ndarray,
+    ene: np.ndarray,
+    smearing: str | None,
+) -> np.ndarray:
+    """Occupation-weighted band sum of the Berry curvature, per k-point and Fermi energy.
+
+    Parameters
+    ----------
+    E_k, deltakp : np.ndarray, shape ``(nk, nbands)``
+        Eigenvalues and adaptive widths of a block of k-points.
+    Om_znkaux : np.ndarray, shape ``(nk, nbands)``
+        :func:`berry_curvature_k` of the same k-points.
+    ene : np.ndarray, shape ``(esize,)``
+        Fermi energies.
+    smearing : {'gauss', 'm-p', None}
+        Occupation function.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nk, esize)``
+        Each row depends only on its own k-point, so a one-point block gives
+        the row of a whole-slice call bit for bit.
+    """
+    from ..utils.smearing import intgaussian, intmetpax
+
+    esize = ene.size
+    Om_zkaux = np.zeros((E_k.shape[0], esize), dtype=float)
     for i in range(esize):
-        if attributes['smearing'] == 'gauss':
-            Om_zkaux[:, i] = np.sum(
-                (
-                    Om_znkaux[:, :]
-                    * intgaussian(arrays['E_k'][:, :, 0], ene[i], arrays['deltakp'][:, :, 0])
-                ),
-                axis=1,
-            )
-        elif attributes['smearing'] == 'm-p':
-            Om_zkaux[:, i] = np.sum(
-                Om_znkaux[:, :]
-                * intmetpax(arrays['E_k'][:, :, 0], ene[i], arrays['deltakp'][:, :, 0]),
-                axis=1,
-            )
+        if smearing == 'gauss':
+            Om_zkaux[:, i] = np.sum((Om_znkaux[:, :] * intgaussian(E_k, ene[i], deltakp)), axis=1)
+        elif smearing == 'm-p':
+            Om_zkaux[:, i] = np.sum(Om_znkaux[:, :] * intmetpax(E_k, ene[i], deltakp), axis=1)
         else:
-            Om_zkaux[:, i] = np.sum(
-                Om_znkaux[:, :] * (0.5 * (-np.sign(arrays['E_k'][:, :, 0] - ene[i]) + 1)),
-                axis=1,
-            )
+            Om_zkaux[:, i] = np.sum(Om_znkaux[:, :] * (0.5 * (-np.sign(E_k - ene[i]) + 1)), axis=1)
+    return Om_zkaux
+
+
+def berry_reduce(data_controller, Om_zkaux: np.ndarray, ene: np.ndarray):
+    """Gather the per-k Berry sums and integrate over the BZ.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Supplies ``npool``, ``nkpnts``, the mesh and ``fermi_up``/``fermi_dw``.
+    Om_zkaux : np.ndarray, shape ``(nk_local, esize)``
+        :func:`berry_occupation_sum` of this rank's k-points.
+    ene : np.ndarray, shape ``(esize,)``
+
+    Returns
+    -------
+    (ene, shc, Om_zk) : tuple
+        As :func:`do_Berry_curvature` (``shc`` and ``Om_zk`` on rank 0 only).
+    """
+    from ..utils.communication import gather_full
+
+    arrays, attributes = data_controller.data_dicts()
+    fermi_up, fermi_dw = attributes['fermi_up'], attributes['fermi_dw']
+    nk1, nk2, nk3 = attributes['nk1'], attributes['nk2'], attributes['nk3']
+    esize = ene.size
 
     Om_zk = gather_full(Om_zkaux, attributes['npool'])
     Om_zkaux = None
@@ -539,6 +597,25 @@ def do_ac_conductivity(data_controller, jksp, pksp, ipol, jpol):
     ene = np.linspace(emin, emax, esize)
 
     sigxy_aux = smear_sigma_loop(data_controller, ene, jksp, pksp, ispin, ipol, jpol)
+    return ac_conductivity_reduce(data_controller, sigxy_aux, ene)
+
+
+def ac_frequency_grid(attributes: dict) -> np.ndarray:
+    """Frequency grid of :func:`do_ac_conductivity`, ``[0, shift]``."""
+    ### Hardcode 'de'
+    return np.linspace(0.0, attributes['shift'], attributes['esizeH'])
+
+
+def ac_conductivity_reduce(data_controller, sigxy_aux: np.ndarray, ene: np.ndarray):
+    """Sum the per-rank optical conductivity and normalize by the k count.
+
+    Returns
+    -------
+    (ene, sigxy) : tuple
+        As :func:`do_ac_conductivity`; ``(None, None)`` off rank 0.
+    """
+    arry, attr = data_controller.data_dicts()
+    esize = ene.size
 
     sigxy = np.zeros((esize), dtype=complex) if rank == 0 else None
     sigxyR = np.zeros((esize), dtype=float) if rank == 0 else None
@@ -587,52 +664,92 @@ def smear_sigma_loop(data_controller, ene, pksp_i, pksp_j, ispin, ipol, jpol):
         Per-rank partial sum of the conductivity; call ``MPI.Reduce`` to
         accumulate the global result.
     """
-    from ..utils.smearing import intgaussian, intmetpax
-
     arry, attr = data_controller.data_dicts()
 
-    esize = ene.size
-    sigxy = np.zeros((esize), dtype=complex)
+    fn = occupations(arry['E_k'][:, :, ispin], arry['deltakp'][:, :, ispin], attr)
+    nawf = pksp_j.shape[1]
+    if attr['smearing'] != None:
+        broadening = arry['deltakp2'][:, :nawf, :nawf, ispin]
+    else:
+        broadening = arry['delta']
+    return smear_sigma_block(
+        arry['E_k'][:, :, ispin],
+        fn,
+        pksp_i[:, :, :, ispin],
+        pksp_j[:, :, :, ispin],
+        ene,
+        broadening,
+    )
 
-    snktot, nawf, _, nspin = pksp_j.shape
-    f_nm = np.zeros((snktot, nawf, nawf), dtype=float)
-    E_diff_nm = np.zeros((snktot, nawf, nawf), dtype=float)
+
+def occupations(E_k: np.ndarray, deltakp: np.ndarray, attr: dict) -> np.ndarray:
+    """Occupations at :math:`E_F = 0` of :func:`smear_sigma_loop`.
+
+    Parameters
+    ----------
+    E_k, deltakp : np.ndarray, shape ``(nk, nbands)``
+        Eigenvalues and adaptive widths of a block of k-points.
+    attr : dict
+        Supplies ``smearing`` and, without smearing, ``temp``.
+    """
+    from ..utils.smearing import intgaussian, intmetpax
 
     Ef = 0.0
-    eps = 1.0e-16
-
     if attr['smearing'] == None:
-        fn = 1.0 / (np.exp(arry['E_k'][:, :, ispin] / attr['temp']) + 1)
+        fn = 1.0 / (np.exp(E_k / attr['temp']) + 1)
     elif attr['smearing'] == 'gauss':
-        fn = intgaussian(arry['E_k'][:, :, ispin], Ef, arry['deltakp'][:, :, ispin])
+        fn = intgaussian(E_k, Ef, deltakp)
     elif attr['smearing'] == 'm-p':
-        fn = intmetpax(arry['E_k'][:, :, ispin], Ef, arry['deltakp'][:, :, ispin])
+        fn = intmetpax(E_k, Ef, deltakp)
+    return fn
+
+
+def smear_sigma_block(
+    E_k: np.ndarray,
+    fn: np.ndarray,
+    pksp_i: np.ndarray,
+    pksp_j: np.ndarray,
+    ene: np.ndarray,
+    broadening,
+) -> np.ndarray:
+    """Smeared off-diagonal conductivity sum over a block of k-points.
+
+    Parameters
+    ----------
+    E_k, fn : np.ndarray, shape ``(nk, nawf)``
+        Eigenvalues and occupations; every state of each k-point.
+    pksp_i, pksp_j : np.ndarray, shape ``(nk, nawf, nawf)``, complex
+        Left and right matrix elements in the band basis.
+    ene : np.ndarray, shape ``(esize,)``
+        Frequency grid (eV).
+    broadening : np.ndarray, shape ``(nk, nawf, nawf)``, or float
+        Interband adaptive widths ``deltakp2``, or a fixed width.
+
+    Returns
+    -------
+    np.ndarray, shape ``(esize,)``, complex
+        The block's partial sum; the dense kernel passes its whole k-slice,
+        the sparse backend one k-point at a time.
+    """
+    esize = ene.size
+    sigxy = np.zeros((esize), dtype=complex)
+    snktot, nawf, _ = pksp_j.shape
+    f_nm = np.zeros((snktot, nawf, nawf), dtype=float)
+    E_diff_nm = np.zeros((snktot, nawf, nawf), dtype=float)
+    eps = 1.0e-16
 
     # Collapsing the sum over k points
     for n in range(nawf):
         for m in range(nawf):
             if m != n:
-                E_diff_nm[:, n, m] = (arry['E_k'][:, n, ispin] - arry['E_k'][:, m, ispin]) ** 2
-                f_nm[:, n, m] = (fn[:, n] - fn[:, m]) * np.imag(
-                    pksp_j[:, n, m, ispin] * pksp_i[:, m, n, ispin]
-                )
-
+                E_diff_nm[:, n, m] = (E_k[:, n] - E_k[:, m]) ** 2
+                f_nm[:, n, m] = (fn[:, n] - fn[:, m]) * np.imag(pksp_j[:, n, m] * pksp_i[:, m, n])
     fn = None
 
     for e in range(esize):
-        if attr['smearing'] != None:
-            sigxy[e] = np.sum(
-                f_nm[:, :, :]
-                / (
-                    E_diff_nm[:, :, :]
-                    - (ene[e] + 1.0j * arry['deltakp2'][:, :nawf, :nawf, ispin]) ** 2
-                    + eps
-                )
-            )
-        else:
-            sigxy[e] = np.sum(
-                f_nm[:, :, :] / (E_diff_nm[:, :, :] - (ene[e] + 1.0j * arry['delta']) ** 2 + eps)
-            )
+        sigxy[e] = np.sum(
+            f_nm[:, :, :] / (E_diff_nm[:, :, :] - (ene[e] + 1.0j * broadening) ** 2 + eps)
+        )
 
     E_diff_nm = None
 

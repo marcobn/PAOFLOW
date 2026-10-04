@@ -133,27 +133,66 @@ def calc_chi1(data_controller=None, tensor=None):
     prop_aux = np.zeros((nene, nspin), dtype=float)
     for ispin in range(nspin):
         for ik in range(nk):
-            E_k = arry['E_k'][ik, :, ispin]
-            # Lorentzian weights W[e,n]
-            W = gamma / (
-                (ene[:, None] - E_k[None, :]) ** 2 + gamma**2
-            )  ##shape of W = (len(ene), nbnd)
-            # ----------------------------------------------------
-            # Numerator matrix: A[n,m]
-            A = np.real(
-                oper_matrix1[ik, :, :, ispin] * oper_matrix2[ik, :, :, ispin].T
-            )  ##shape of A = (nbnd, nbnd)
-            # ----------------------------------------------------
-            # Calculate: response[e] = sum_nm W[e,n] A[n,m] W[e,m]
-            # First: Y = W @ A gives: Y[e,m] = sum_n W[e,n] A[n,m]; use dot product to sum over n
-            # Then: sum_m Y[e,m] W[e,m] gives the desired quadratic form. elementwise multiplication
-            # ----------------------------------------------------
-            Y = W @ A  ##shape of Y = (len(ene), nbnd)
-            my_response = np.real(np.sum(Y * W, axis=1))
-            # ----------------------------------------------------
             # Accumulate this local k-point
-            # ----------------------------------------------------
-            prop_aux[:, ispin] += my_response
+            prop_aux[:, ispin] += eqn1_response_k(
+                oper_matrix1[ik, :, :, ispin],
+                oper_matrix2[ik, :, :, ispin],
+                arry['E_k'][ik, :, ispin],
+                ene,
+                gamma,
+            )
+
+    oper_matrix1 = None
+    oper_matrix2 = None
+    eqn1_finish(data_controller, prop_aux, ene, tensor)
+
+
+def eqn1_response_k(op1, op2, E_k, ene, gamma):
+    """Equation (1) contribution of one k-point and spin, on the energy grid.
+
+    Parameters
+    ----------
+    op1, op2 : np.ndarray, shape ``(nbnd, nbnd)``, complex
+        The two operators in the band basis (``perturb_split``).
+    E_k : np.ndarray, shape ``(nbnd,)``
+        Every eigenvalue at this k-point.
+    ene : np.ndarray, shape ``(ne,)``
+    gamma : float
+        Lorentzian broadening.
+
+    Returns
+    -------
+    np.ndarray, shape ``(ne,)``
+        :math:`\\sum_{nm} W_{en} \\mathrm{Re}[O_{1,nm} O_{2,mn}] W_{em}`.
+    """
+    # Lorentzian weights W[e,n]
+    W = gamma / ((ene[:, None] - E_k[None, :]) ** 2 + gamma**2)  ##shape of W = (len(ene), nbnd)
+    # ----------------------------------------------------
+    # Numerator matrix: A[n,m]
+    A = np.real(op1 * op2.T)  ##shape of A = (nbnd, nbnd)
+    # ----------------------------------------------------
+    # Calculate: response[e] = sum_nm W[e,n] A[n,m] W[e,m]
+    # First: Y = W @ A gives: Y[e,m] = sum_n W[e,n] A[n,m]; use dot product to sum over n
+    # Then: sum_m Y[e,m] W[e,m] gives the desired quadratic form. elementwise multiplication
+    # ----------------------------------------------------
+    Y = W @ A  ##shape of Y = (len(ene), nbnd)
+    return np.real(np.sum(Y * W, axis=1))
+
+
+def eqn1_finish(data_controller, prop_aux, ene, tensor):
+    """Reduce, normalize and write the equation (1) response of one tensor component.
+
+    Parameters
+    ----------
+    prop_aux : np.ndarray, shape ``(ne, nspin)``
+        This rank's sum of :func:`eqn1_response_k` over its k-points.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr['response'] == 'shc':
+        spol, jpol, ipol = tensor
+    else:
+        cpol, ipol = tensor
+        spol = cpol
 
     # ============================================================
     # MPI REDUCTION
@@ -199,8 +238,6 @@ def calc_chi1(data_controller=None, tensor=None):
     # ============================================================
     # Free memory
     # ============================================================
-    oper_matrix1 = None
-    oper_matrix2 = None
     prop_aux_full = None
 
 

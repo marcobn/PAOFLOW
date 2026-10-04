@@ -4,7 +4,76 @@ import scipy.linalg as la
 from ..utils.constants import ANGSTROM_AU
 
 
-def do_berry_phase(self):
+def berry_phase_settings(
+    data_controller,
+    kspace_method,
+    berry_path,
+    high_sym_points,
+    kpath_funct,
+    nk1,
+    nk2,
+    closed,
+    method,
+    sub,
+    occupied,
+    kradius,
+    kcenter,
+    kxlim,
+    kylim,
+    eigvals,
+    fname,
+    contin,
+) -> None:
+    """Store the arguments of ``PAOFLOW.berry_phase`` as the ``berry_*`` run data.
+
+    Shared by the dense method and the sparse backend, which then run
+    :func:`do_berry_phase` with their own contour solve.
+    """
+    arry, attr = data_controller.data_dicts()
+
+    kspace_method = kspace_method.lower()
+    attr['berry_kspace_method'] = kspace_method
+
+    attr['berry_path'] = berry_path
+    arry['berry_high_sym_points'] = high_sym_points
+
+    attr['berry_nk'] = nk1
+    attr['berry_nk1'] = nk1
+    attr['berry_nk2'] = nk2
+
+    attr['berry_kpath_funct'] = kpath_funct
+
+    arry['berry_kxlim'] = kxlim
+    arry['berry_kylim'] = kylim
+
+    if kspace_method != 'square':
+        attr['berry_eigvals'] = eigvals
+    else:
+        attr['berry_eigvals'] = False
+
+    attr['berry_kradius'] = kradius
+    arry['berry_kcenter'] = np.array(kcenter)
+    attr['berry_eigvals'] = eigvals
+
+    method = method.lower()
+    if method in ['berry', 'zak']:
+        attr['berry_method'] = method
+    else:
+        print("method should be either berry or zak. Falling back to method = 'berry'")
+        attr['berry_method'] = 'berry'
+
+    arry['berry_sub'] = sub
+    if sub != None or (sub == None and not occupied):
+        attr['berry_occupied'] = False
+    else:
+        attr['berry_occupied'] = occupied
+
+    attr['berry_closed'] = closed
+    attr['berry_contin'] = contin
+    attr['berry_fname'] = fname
+
+
+def do_berry_phase(self, contour_phase=None):
     """Compute the Berry or Zak phase for a set of occupied (or selected) bands.
 
     Dispatches to one of four k-space sampling strategies based on
@@ -65,13 +134,16 @@ def do_berry_phase(self):
     elif sub != None:
         ovr_ndim = len(sub)
     else:
-        ovr_ndim = arry['HRs'].shape[0]
+        ovr_ndim = attr['nawf']
+
+    if contour_phase is None:
+        # dense: every eigenvector of the contour, then the Wilson loop
+        def contour_phase(data_controller):
+            do_berry_bands(data_controller)
+            return do_phase(data_controller)
 
     if attr['berry_kspace_method'] == 'path':
-        # Calculate the bands
-        do_berry_bands(self.data_controller)
-        # Calculate the Berry/Zak phase
-        phase = do_phase(self.data_controller)
+        phase = contour_phase(self.data_controller)
 
         if not attr['berry_eigvals']:
             attr['berry_phase'] = phase
@@ -98,8 +170,7 @@ def do_berry_phase(self):
         for ik, k in enumerate(kpts):
             attr['berry_path'], arry['berry_high_sym_points'] = kpath_funct(k)
 
-            do_berry_bands(self.data_controller)
-            phase[ik] = do_phase(self.data_controller)
+            phase[ik] = contour_phase(self.data_controller)
 
         if not attr['berry_eigvals']:
             if contin:
@@ -141,8 +212,7 @@ def do_berry_phase(self):
         arry['berry_kq'] = np.array(path).T
         arry['berry_contour'] = np.copy(arry['berry_kq'])
 
-        do_berry_bands(self.data_controller)
-        phase = do_phase(self.data_controller)
+        phase = contour_phase(self.data_controller)
 
         attr['berry_phase'] = phase
 
@@ -182,8 +252,7 @@ def do_berry_phase(self):
                 arry['berry_contour'] = np.copy(arry['berry_kq'])
                 kgrid_centers[ik, jk] = np.array([k00, k10, k11, k01, k00]).mean(axis=0)
 
-                do_berry_bands(self.data_controller)
-                phases[ik, jk] = do_phase(self.data_controller)
+                phases[ik, jk] = contour_phase(self.data_controller)
 
         arry['berry_kgrid'] = kpts
         arry['berry_kgrid_centers'] = kgrid_centers
@@ -258,22 +327,41 @@ def do_phase(data_controller):
     arry, attr = data_controller.data_dicts()
 
     v_kp = arry['berry_v_k']
-
     nkpts = v_kp.shape[0]
+    settings = wilson_settings(data_controller)
+
+    prd = np.eye(settings['dim'], dtype=complex)
+    for ik in range(nkpts - 1):
+        jk = ik + 1
+        prd = wilson_step(prd, v_kp[ik, :, :, 0], v_kp[jk, :, :, 0], settings)
+
+    if settings['closed']:
+        prd = wilson_close(prd, v_kp[nkpts - 1, :, :, 0], v_kp[0, :, :, 0], settings)
+
+    return wilson_phase(prd, settings)
+
+
+def wilson_settings(data_controller) -> dict:
+    """Run-wide parameters of the discretized Berry phase of one contour.
+
+    Notes
+    -----
+    Reads ``berry_eigvals``, ``berry_closed``, ``berry_method``, ``berry_sub``,
+    ``berry_occupied``, ``nelec``, ``nawf``, the cell (``alat``,
+    ``b_vectors``, ``tau``, ``naw``) and the unrotated ``berry_contour``.  A
+    contour whose first and last points coincide is treated as open (the
+    closing link is already in it); the Zak phase always closes.
+    """
+
+    arry, attr = data_controller.data_dicts()
 
     berry_eigvals = attr['berry_eigvals']
-
     closed = attr['berry_closed']
     method = attr['berry_method']
     sub = arry['berry_sub']
     occupied = attr['berry_occupied']
-
     alat = attr['alat'] / ANGSTROM_AU
     b_vectors = arry['b_vectors'] * (1 / alat)
-
-    tau = arry['tau']
-    naw = arry['naw']
-
     contour = arry['berry_contour']
 
     if np.allclose(contour[:, 0], contour[:, -1]):
@@ -286,107 +374,93 @@ def do_phase(data_controller):
         closed = True
 
     # assumes that occupancy does not change throughout the choosen path
-
     if occupied:
-        sub = None
         occ_idx = np.arange(0, attr['nelec'], 1, dtype=int)
-        num_occupied = len(occ_idx)
-        dim = num_occupied
+        dim = len(occ_idx)
     elif sub is not None:
         occ_idx = np.copy(sub)
-        num_occupied = len(sub)
         dim = len(sub)
     else:
-        occ_idx = np.arange(0, arry['HRs'].shape[0], 1, dtype=int)
-        num_occupied = len(occ_idx)
-        dim = num_occupied
+        occ_idx = None
+        dim = attr['nawf']
 
-    prd = np.eye(dim, dtype=complex)
-    ovr = np.zeros([dim, dim], dtype=complex)
+    return {
+        'berry_eigvals': berry_eigvals,
+        'closed': closed,
+        'method': method,
+        'occ_idx': occ_idx,
+        'dim': dim,
+        'b_vectors': b_vectors,
+        'tau': arry['tau'],
+        'naw': arry['naw'],
+        'contour': contour,
+    }
 
-    for ik in range(nkpts - 1):
-        jk = ik + 1
 
-        left_states = v_kp[ik, :, :, 0]
-        right_states = v_kp[jk, :, :, 0]
+def _occupied_states(states, occ_idx):
+    """The columns ``occ_idx`` of ``states`` (all of them for ``None``)."""
+    if occ_idx is None:
+        return states
+    occ = np.zeros((states.shape[0], len(occ_idx)), dtype=complex)
+    for idx, o in enumerate(occ_idx):
+        occ[:, idx] = states[:, o]
+    return occ
 
-        if occupied or sub is not None:
-            left_states_idx = occ_idx
-            right_states_idx = occ_idx
 
-            left_occ = np.zeros((left_states.shape[0], len(left_states_idx)), dtype=complex)
-            right_occ = np.zeros((right_states.shape[0], len(right_states_idx)), dtype=complex)
+def _link(prd, left_states, right_states, occ_idx):
+    """Multiply ``prd`` by the unitary part of the overlap of two state sets."""
+    left_states = _occupied_states(left_states, occ_idx)
+    right_states = _occupied_states(right_states, occ_idx)
+    ovr = np.dot(left_states.conj().T, right_states)
+    Z_ovr, sig_ovr, W_dag_ovr = la.svd(ovr)
+    ovr = np.matmul(Z_ovr, W_dag_ovr)
+    return np.dot(prd, ovr)
 
-            for idx, occ in enumerate(left_states_idx):
-                left_occ[:, idx] = left_states[:, occ]
-            for idx, occ in enumerate(right_states_idx):
-                right_occ[:, idx] = right_states[:, occ]
-            left_states = left_occ
-            right_states = right_occ
 
-        else:
-            pass
+def wilson_step(prd, left_states, right_states, settings):
+    """One link of the Wilson loop between consecutive contour points.
 
-        ovr = np.dot(left_states.conj().T, right_states)
-        Z_ovr, sig_ovr, W_dag_ovr = la.svd(ovr)
-        ovr = np.matmul(Z_ovr, W_dag_ovr)
+    Parameters
+    ----------
+    prd : np.ndarray, shape ``(dim, dim)``
+        Product of the links so far.
+    left_states, right_states : np.ndarray, shape ``(nawf, m)``
+        Eigenvectors at the two points (at least the selected columns).
+    settings : dict
+        From :func:`wilson_settings`.
+    """
+    return _link(prd, left_states, right_states, settings['occ_idx'])
 
-        prd = np.dot(prd, ovr)
 
-    if closed:
-        ik = nkpts - 1
-        jk = 0
+def wilson_close(prd, last_states, first_states, settings):
+    """The closing link from the last contour point back to the first.
 
-        left_states = v_kp[ik, :, :, 0]
-        right_states = v_kp[jk, :, :, 0]
+    For the Zak phase the first point's states are multiplied by the Bloch
+    factor :math:`e^{-i G \\cdot r}` of the orbital sites.
+    """
+    left_states = last_states
+    right_states = first_states
+    if settings['method'] == 'zak':
+        contour = settings['contour']
+        axis = contour[:, 1] - contour[:, 0]
+        axis /= np.dot(axis.T, axis) ** 0.5
+        G = np.dot(axis, settings['b_vectors']) * 2 * np.pi
+        orb_sites = np.repeat(settings['tau'], settings['naw'], axis=0)
+        phase = np.dot(orb_sites, G).reshape(-1, 1)
+        left_states = right_states * np.exp(-1j * phase)
+    return _link(prd, left_states, right_states, settings['occ_idx'])
 
-        if method == 'zak':
-            axis = contour[:, 1] - contour[:, 0]
-            axis /= np.dot(axis.T, axis) ** 0.5
 
-            G = np.dot(axis, b_vectors) * 2 * np.pi
-
-            orb_sites = np.repeat(tau, naw, axis=0)
-
-            phase = np.dot(orb_sites, G).reshape(-1, 1)
-
-            left_states = right_states * np.exp(-1j * phase)
-
-        if occupied or sub is not None:
-            left_states_idx = occ_idx
-            right_states_idx = occ_idx
-
-            left_occ = np.zeros((left_states.shape[0], len(left_states_idx)), dtype=complex)
-            right_occ = np.zeros((right_states.shape[0], len(right_states_idx)), dtype=complex)
-
-            for idx, occ in enumerate(left_states_idx):
-                left_occ[:, idx] = left_states[:, occ]
-            for idx, occ in enumerate(right_states_idx):
-                right_occ[:, idx] = right_states[:, occ]
-            left_states = left_occ
-            right_states = right_occ
-
-        else:
-            pass
-
-        ovr = np.dot(left_states.conj().T, right_states)
-
-        Z_ovr, _, W_dag_ovr = la.svd(ovr)
-        ovr = np.matmul(Z_ovr, W_dag_ovr)
-
-        prd = np.dot(prd, ovr)
-
-    if not berry_eigvals:
+def wilson_phase(prd, settings):
+    """Berry phase of the loop product: :math:`-\\arg\\det` or the sorted eigenphases."""
+    if not settings['berry_eigvals']:
         det = la.det(prd)
         ret = -1.0 * np.angle(det)
-
         return ret
-
     else:
         evals, _ = la.eig(prd)
         ret = -1.0 * np.angle(evals)
         ret = np.sort(ret)
-
         return ret
 
 
@@ -517,7 +591,6 @@ def do_berry_bands(data_controller):
     ``arry['R_wght']``, and (path/track) ``arry['berry_kq']``,
     ``arry['berry_contour']``.
     """
-    from ..utils.constants import ANGSTROM_AU
     from ..utils.get_R_grid_fft import get_R_grid_fft
 
     arry, attr = data_controller.data_dicts()
@@ -534,6 +607,24 @@ def do_berry_bands(data_controller):
     # Define real space lattice vectors
     get_R_grid_fft(data_controller, nk1, nk2, nk3)
 
+    # Define the contour (k-point mesh for bands interpolation), Cartesian
+    prepare_contour(data_controller)
+
+    # Compute the bands along the path in the IBZ
+    arry['berry_E_k'], arry['berry_v_k'] = bands_calc(data_controller)
+
+    # Angstrom to Bohr
+    attr['alat'] *= ANGSTROM_AU
+
+
+def prepare_contour(data_controller) -> None:
+    """Build the contour (``path``/``track``) and rotate ``berry_kq`` to Cartesian.
+
+    Called with ``alat`` in Angstrom, as inside :func:`do_berry_bands`;
+    ``berry_contour`` keeps the unrotated points.
+    """
+    arry, attr = data_controller.data_dicts()
+
     # Define k-point mesh for bands interpolation
     if attr['berry_kspace_method'] == 'path' or attr['berry_kspace_method'] == 'track':
         berry_kpnts_interpolation_mesh(data_controller)
@@ -541,12 +632,6 @@ def do_berry_bands(data_controller):
     nkpi = arry['berry_kq'].shape[1]
     for n in range(nkpi):
         arry['berry_kq'][:, n] = np.dot(arry['berry_kq'][:, n], arry['b_vectors'])
-
-    # Compute the bands along the path in the IBZ
-    arry['berry_E_k'], arry['berry_v_k'] = bands_calc(data_controller)
-
-    # Angstrom to Bohr
-    attr['alat'] *= ANGSTROM_AU
 
 
 def berry_kpnts_interpolation_mesh(data_controller):
