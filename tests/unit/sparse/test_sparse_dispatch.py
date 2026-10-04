@@ -94,7 +94,20 @@ def test_config_coerce_rejects_other_types():
 
 
 def test_every_public_method_has_a_role():
-    assert all(_role(n) in ('override', 'shared', 'dense') for n in _public_methods())
+    assert all(_role(n) in ('override', 'shared', 'base_cell', 'dense') for n in _public_methods())
+
+
+def test_every_dense_only_method_says_why():
+    from PAOFLOW.sparse.dispatch import DENSE_ONLY_REASONS
+
+    dense_only = {n for n in _public_methods() if _role(n) == 'dense'}
+    assert dense_only == set(DENSE_ONLY_REASONS), (
+        'dense-only methods without a reason: %s; reasons for routed methods: %s'
+        % (
+            sorted(dense_only - set(DENSE_ONLY_REASONS)),
+            sorted(set(DENSE_ONLY_REASONS) - dense_only),
+        )
+    )
 
 
 def test_decorators_keep_the_dense_signature():
@@ -103,16 +116,41 @@ def test_decorators_keep_the_dense_signature():
         assert inspect.signature(method) == inspect.signature(inspect.unwrap(method)), name
 
 
+def _engine_callable(name):
+    """What a routed call reaches: an engine method, or the ``__init__`` of the
+    registered property class (bound past ``self, engine``)."""
+    from PAOFLOW.sparse.properties import _load
+
+    if name in vars(SparseEngine):
+        return getattr(SparseEngine, name), 1
+    registry = _load()
+    assert name in registry, (
+        '%s is @sparse_override but neither an engine method nor a property' % (name)
+    )
+    return registry[name].__init__, 2
+
+
 @pytest.mark.parametrize('name', _overrides())
 def test_engine_accepts_the_dense_arguments(name):
     """A routed call passes the dense arguments through unchanged, so the
-    engine method must accept every one of them by name."""
-    engine_params = inspect.signature(getattr(SparseEngine, name)).parameters
+    engine method or property class must accept every one of them by name,
+    in the dense order."""
+    target, skip = _engine_callable(name)
+    engine_params = inspect.signature(target).parameters
     if any(p.kind is p.VAR_KEYWORD for p in engine_params.values()):
         return
-    dense_params = inspect.signature(vars(PAOFLOW)[name]).parameters
-    missing = set(dense_params) - set(engine_params)
-    assert not missing, '%s: engine lacks %s' % (name, sorted(missing))
+    dense_params = list(inspect.signature(vars(PAOFLOW)[name]).parameters)[1:]
+    assert list(engine_params)[skip:] == dense_params, name
+
+
+def test_every_registered_property_is_routed():
+    """A property class nobody routes to is dead code; one that is routed
+    must implement exactly the dense method of its name."""
+    from PAOFLOW.sparse.properties import _load
+
+    for name, cls in _load().items():
+        assert cls.method == name
+        assert _role(name) == 'override', '%s is registered but not @sparse_override' % name
 
 
 # ----------------------------------------------------------------------
@@ -136,8 +174,20 @@ def test_sparse_run_holds_the_engine(sparse):
 
 
 def test_dense_only_method_refuses_in_a_sparse_run(sparse):
-    with pytest.raises(NotImplementedError, match='(?s)berry_curvature.*to_dense'):
-        sparse.berry_curvature()
+    with pytest.raises(NotImplementedError, match='(?s)find_weyl_points is dense-only.*to_dense'):
+        sparse.find_weyl_points()
+    with pytest.raises(NotImplementedError, match='save_sparse_hamiltonian'):
+        sparse.restart_dump()
+
+
+def test_base_cell_transform_refuses_after_doubling(sparse):
+    class _Doubled:
+        _doubled = True
+        nk_grid = (1, 1, 1)
+
+    sparse.sparse.H = _Doubled()
+    with pytest.raises(RuntimeError, match='before doubling_Hamiltonian'):
+        sparse.cutting_Hamiltonian(z=True)
 
 
 def test_routed_method_reaches_the_engine(sparse):
@@ -152,9 +202,19 @@ def test_mesh_stages_are_optional_and_accepted(sparse):
     assert sparse.sparse._mesh_plan['afac'] == 1.5
 
 
+def test_band_curvature_is_recorded_for_the_mesh(sparse):
+    sparse.gradient_and_momenta(band_curvature=True)
+    assert sparse.sparse._mesh_plan['products'] == {'d2Ed2k'}
+
+
+def test_unknown_engine_attribute_is_an_attribute_error(sparse):
+    with pytest.raises(AttributeError, match='no sparse property'):
+        sparse.sparse.not_a_property
+
+
 def test_dense_only_options_of_routed_methods_refuse(sparse):
-    with pytest.raises(NotImplementedError, match='band_curvature'):
-        sparse.gradient_and_momenta(band_curvature=True)
+    with pytest.raises(NotImplementedError, match='nonlocal_velocity'):
+        sparse.gradient_and_momenta(nonlocal_velocity=True)
     with pytest.raises(NotImplementedError, match='adhoc_SO'):
         sparse.bands(adhoc_SO=True)
     with pytest.raises(NotImplementedError, match='reshift_Ef'):

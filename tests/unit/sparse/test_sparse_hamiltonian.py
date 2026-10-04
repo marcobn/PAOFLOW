@@ -155,6 +155,80 @@ def test_gradient_matches_hermitized_do_gradient_at_grid_k():
             assert np.allclose(dhk[l].toarray(), ref, atol=1e-11)
 
 
+def test_second_derivatives_match_dense_d2Hd2k_on_interpolated_mesh():
+    """``assemble_derivatives(order=2)`` against the dense FFT kernel
+    ``do_d2Hd2k_ij`` on an interpolated mesh, the dense pipeline's own route
+    (zero_pad -> ``Rfft`` of the fine grid): -(alat R_i + D_i)(alat R_j + D_j)
+    H(R) per bond, at every point of the fine grid tested, on and off the
+    base grid.
+
+    Not on the base grid itself: a bond with two or three Nyquist components
+    has 4 or 8 images in the split plan but 2 in the dense grid, and a
+    quantity quadratic in R averages differently over them (first
+    derivatives, linear in R, do not care).  zero_pad moves the base Nyquist
+    plane inside the fine grid, so after interpolation, which every
+    production mesh has, the two conventions coincide.  The first-order
+    matrices must be those of ``assemble_hk_dhk``."""
+    from PAOFLOW.hamiltonian.do_d2Hd2k import IJ_PAIRS, do_d2Hd2k_ij
+    from PAOFLOW.utils.get_R_grid_fft import get_R_grid_fft
+    from PAOFLOW.utils.zero_pad import zero_pad
+
+    rng = np.random.default_rng(29)
+    dc, _ = _make_dc(rng)
+    arrays, _ = dc.data_dicts()
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
+    nk1, nk2, nk3 = NK
+    nf1, nf2, nf3 = 2 * nk1, 2 * nk2, 2 * nk3
+    HR = np.empty((NAWF, NAWF, nf1, nf2, nf3), dtype=complex)
+    for i in range(NAWF):
+        for j in range(NAWF):
+            HR[i, j] = zero_pad(
+                arrays['HRs'][i, j, :, :, :, 0], nk1, nk2, nk3, nf1 - nk1, nf2 - nk2, nf3 - nk3
+            )
+    get_R_grid_fft(dc, nf1, nf2, nf3)
+    HR = HR.reshape(NAWF * NAWF, nf1, nf2, nf3, 1) * 1j * ALAT
+    Dnm = arrays['Dnm'].reshape(NAWF * NAWF, 3)
+    dense = [do_d2Hd2k_ij(HR, Dnm, arrays['Rfft'], ALAT, 1, i, j) for i, j in IJ_PAIRS]
+
+    for i, j, k in [(0, 0, 0), (4, 2, 6), (1, 0, 0), (3, 5, 7), (7, 2, 1)]:
+        kfrac = np.array([i / nf1, j / nf2, k / nf3])
+        n = k + j * nf3 + i * nf2 * nf3
+        hk, dhk, d2hk = sph.assemble_derivatives(kfrac, sign=-1, order=2)
+        hk1, dhk1 = sph.assemble_hk_dhk(kfrac, sign=-1)
+        assert (hk != hk1).nnz == 0
+        assert all((a != b).nnz == 0 for a, b in zip(dhk, dhk1))
+        assert len(d2hk) == 6
+        for ij in range(6):
+            ref = dense[ij][:, :, n, 0]
+            assert np.allclose(d2hk[ij].toarray(), ref, atol=1e-10 * np.abs(ref).max())
+
+
+def test_second_derivative_is_the_derivative_of_the_gradient():
+    """Without the intra-cell offsets, d2H/dk_i dk_j is the k-derivative of
+    dH/dk_j (central difference off the grid).  With them it is not, in
+    either code: ``Dnm`` enters the gradient as a gauge correction, not
+    through the k-dependence of H(k), so this identity pins the R part
+    only, and the dense parity above pins the ``Dnm`` terms."""
+    from PAOFLOW.hamiltonian.do_d2Hd2k import IJ_PAIRS
+
+    rng = np.random.default_rng(31)
+    dc, _ = _make_dc(rng, with_dnm=False)
+    sph = SparseHamiltonian.from_data_controller(dc, threshold=0.0)
+    k0 = np.array([0.13, -0.27, 0.41])
+    # Cartesian k in units of 2 pi / alat; the coefficients are per Bohr
+    h = 1e-6
+    to_bohr = 2.0 * np.pi / ALAT
+    _, _, d2hk = sph.assemble_derivatives(k0, sign=+1, cart=True, order=2)
+    for ij, (i, j) in enumerate(IJ_PAIRS):
+        step = np.zeros(3)
+        step[i] = h
+        _, plus = sph.assemble_hk_dhk(k0 + step, sign=+1, cart=True)
+        _, minus = sph.assemble_hk_dhk(k0 - step, sign=+1, cart=True)
+        fd = (plus[j] - minus[j]).toarray() / (2.0 * h * to_bohr)
+        ana = d2hk[ij].toarray()
+        assert np.allclose(fd, ana, rtol=1e-6, atol=1e-6 * np.abs(ana).max())
+
+
 def test_threshold_drop_report_bounds_eigenvalue_shift():
     rng = np.random.default_rng(23)
     dc, _ = _make_dc(rng)

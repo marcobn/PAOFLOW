@@ -156,3 +156,175 @@ def test_no_dense_tensors_in_sparse_run(dense_and_sparse):
     _, _, s_arrays, s_attr = dense_and_sparse
     for name in ('HRs', 'Hksp', 'dHksp', 'pksp', 'v_k', 'deltakp2'):
         assert name not in s_arrays, '%s must never exist in the sparse pipeline' % name
+
+
+# ----------------------------------------------------------------------
+# Band curvature and the Hall tensor (full-spectrum pass)
+# ----------------------------------------------------------------------
+
+HALL_ARGS = dict(emin=-5.0, emax=1.0, ne=101, do_hall=True)
+
+
+def _run_example01(outdir, nfft, sparse=None, band_curvature=True, hall=True):
+    from PAOFLOW.PAOFLOW import PAOFLOW
+
+    p = PAOFLOW(
+        savedir='silicon.save',
+        outputdir=outdir,
+        smearing='gauss',
+        npool=1,
+        verbose=False,
+        sparse=sparse,
+    )
+    p.read_atomic_proj_QE()
+    p.projectability()
+    p.pao_hamiltonian()
+    p.interpolated_hamiltonian(nfft1=nfft, nfft2=nfft, nfft3=nfft)
+    p.pao_eigh()
+    p.gradient_and_momenta(band_curvature=band_curvature)
+    p.adaptive_smearing()
+    if hall:
+        p.transport(**HALL_ARGS)
+        p.effective_mass()
+        p.conductivity(cond_tensor=[[0, 0], [0, 1]], emin=-5.0, emax=1.0, ne=101)
+        p.fermi_surface()
+        p.doping(emin=-5.0, emax=1.0)
+    return p
+
+
+@pytest.fixture(scope='module')
+def curvature_runs(tmp_path_factory):
+    """Dense and sparse example01 on an interpolated 16^3 mesh, both with
+    ``band_curvature=True`` and ``transport(do_hall=True)``.
+
+    Interpolated rather than 12^3 (the DFT grid): on the base grid a bond
+    with several Nyquist components averages a quadratic-in-R quantity over
+    different images in the two codes (see
+    ``test_second_derivatives_match_dense_d2Hd2k_on_interpolated_mesh``).
+    Not parametrized over ``hk_solver``: the curvature's interband sum needs
+    every state, so the pass always uses the dense kernel."""
+    from PAOFLOW.sparse import SparseConfig
+
+    out = str(tmp_path_factory.mktemp('curvature'))
+    cwd = os.getcwd()
+    os.chdir(EXAMPLE)
+    try:
+        d = _run_example01(os.path.join(out, 'dense'), 16)
+        s = _run_example01(os.path.join(out, 'sparse'), 16, sparse=SparseConfig(threshold=0.0))
+    finally:
+        os.chdir(cwd)
+    return d, s
+
+
+def test_curvature_index_wise(curvature_runs):
+    """``d2Ed2k`` is eigenvalue-like (second derivative of a band energy),
+    so away from degeneracies it is gauge-invariant and must agree k-point
+    by k-point (measured: 6e-12 relative on 4032 of 4096 points).
+
+    The rest are k-points with a degenerate pair straddling the window edge
+    ``bnd``.  ``get_degeneracies(E, bnd)`` leaves such a pair unrotated, so
+    its velocity diagonal is whatever gauge the eigensolver returned
+    (zheevd dense, zheevr here); and that diagonal decides, through
+    ``get_degeneracies`` on the rotated velocities, whether bands far below
+    with velocity zero by symmetry are treated as one velocity-degenerate
+    block.  Their curvature then moves by O(10%) between any two LAPACK
+    gauges, in the dense code as much as here, so those points are only
+    required to be finite."""
+    d, s = curvature_runs
+    d_arrays, d_attr = d.data_controller.data_dicts()
+    s_arrays, _ = s.data_controller.data_dicts()
+    bnd = d_attr['bnd']
+    dc = d_arrays['d2Ed2k'][:, :, :bnd, 0]
+    sc = s_arrays['d2Ed2k'][:, :, :bnd, 0]
+    assert dc.shape == sc.shape
+    strict = _nondegenerate(d_arrays, bnd)
+    assert strict.sum() > 0.9 * len(strict), 'test needs a meaningful strict set'
+    scale = np.abs(dc).max()
+    err_k = np.abs(dc - sc).max(axis=(0, 2))
+    assert err_k[strict].max() < 1e-9 * scale, (
+        'strict curvature parity failed: %.3e (scale %.3e)' % (err_k[strict].max(), scale)
+    )
+    assert np.isfinite(sc).all()
+
+
+def _read(path):
+    return np.loadtxt(path)
+
+
+@pytest.mark.parametrize('stem', ['hall_trace_gauss_0', 'hall_gauss_0', 'nernst_gauss_0'])
+def test_hall_and_nernst_files(curvature_runs, stem):
+    """The Hall/Nernst files are BZ sums of d2Ed2k * v * v over the window
+    bands.  The gauge-sensitive points of ``test_curvature_index_wise`` (64
+    of 4096 here) enter with weight 1/nk, which leaves a relative difference
+    of a few 1e-4 (measured: 2.6e-4 on the Nernst tensor), in the dense
+    result as much as in this one."""
+    d, s = curvature_runs
+    dpath = os.path.join(d.data_controller.data_attributes['opath'], stem + '.dat')
+    spath = os.path.join(s.data_controller.data_attributes['opath'], stem + '.dat')
+    dd, ss = _read(dpath), _read(spath)
+    assert dd.shape == ss.shape
+    # one scale for the whole tensor: components that vanish by symmetry are
+    # round-off in both codes and have no relative error of their own
+    np.testing.assert_array_equal(dd[:, :2], ss[:, :2])
+    scale = np.abs(dd[:, 2:]).max()
+    rel = np.abs(dd[:, 2:] - ss[:, 2:]).max() / scale
+    assert rel < 1e-3, '%s: relative error %.3e' % (stem, rel)
+
+
+def test_curvature_pass_keeps_the_window(curvature_runs):
+    """The pass solves every state but stores only the window."""
+    d, s = curvature_runs
+    s_arrays, s_attr = s.data_controller.data_dicts()
+    bnd = s_attr['bnd']
+    assert s_arrays['E_k'].shape[1] == bnd
+    assert s_arrays['d2Ed2k'].shape == (6, s_arrays['E_k'].shape[0], bnd, 1)
+    for name in ('Hksp', 'dHksp', 'pksp', 'v_k', 'deltakp2', 'd2Hksp'):
+        assert name not in s_arrays
+
+
+@pytest.mark.parametrize(
+    'name', ['cond_xx_0.dat', 'cond_xy_0.dat', 'doping_p0.0.dat', 'dosdk_0.dat']
+)
+def test_band_diagonal_files(curvature_runs, name):
+    """Conductivity, doping (and the DOS it writes) are BZ sums of
+    band-diagonal quantities over the same window bands in both codes."""
+    d, s = curvature_runs
+    a = _read(os.path.join(d.data_controller.data_attributes['opath'], name))
+    b = _read(os.path.join(s.data_controller.data_attributes['opath'], name))
+    assert a.shape == b.shape
+    assert np.abs(a - b).max() < 1e-9 * np.abs(a).max(), name
+
+
+def test_fermi_surface_bands(curvature_runs):
+    d, s = curvature_runs
+    dpath = d.data_controller.data_attributes['opath']
+    spath = s.data_controller.data_attributes['opath']
+    names = sorted(
+        f for f in os.listdir(dpath) if f.startswith('Fermi_surf_band_') and f.endswith('.npz')
+    )
+    assert names
+    assert names == sorted(
+        f for f in os.listdir(spath) if f.startswith('Fermi_surf_band_') and f.endswith('.npz')
+    )
+    for name in names:
+        a = np.load(os.path.join(dpath, name))['nameband']
+        b = np.load(os.path.join(spath, name))['nameband']
+        assert np.abs(a - b).max() < 1e-10, name
+
+
+def test_effective_masses_away_from_degeneracies(curvature_runs):
+    """Masses invert the curvature, so only the strict k-points of
+    ``test_curvature_index_wise`` are compared, to the file's 4 decimals
+    scaled by the mass (a nearly flat band amplifies round-off)."""
+    d, s = curvature_runs
+    d_arrays, d_attr = d.data_controller.data_dicts()
+    bnd = d_attr['bnd']
+    name = 'effective_masses_0.dat'
+    a = np.loadtxt(os.path.join(d_attr['opath'], name), skiprows=2)
+    b = np.loadtxt(os.path.join(s.data_controller.data_attributes['opath'], name), skiprows=2)
+    assert a.shape == b.shape
+    np.testing.assert_array_equal(a[:, :3], b[:, :3])
+    strict = np.repeat(_nondegenerate(d_arrays, bnd), bnd)
+    rel = np.abs(a[strict, 4:] - b[strict, 4:]) / np.maximum(1.0, np.abs(a[strict, 4:]))
+    assert rel.max() < 1e-2
+    assert np.median(rel) < 1e-4

@@ -846,37 +846,120 @@ class SparseHamiltonian:
 
         Notes
         -----
-        Differentiating the Fourier sum with respect to k brings down a
-        factor of the bond displacement, so the gradient shares the phase
-        factors and the sparsity pattern of :math:`H(k)`.  Per bond the
-        coefficient is ``1j * (alat * Rcart_l + Dnm_l)``, replicating
-        ``hamiltonian.do_gradient``: the ``Rcart`` term is the displacement
-        between cells, and the ``Dnm`` term is the tight-binding correction
-        for the offset between the two orbitals inside the cell.  The
-        ``Rcart`` term depends only on the lattice vector, so it rides along
-        as three extra right-hand sides of the product that gives
-        :math:`H(k)`; ``Dnm`` is one value per matrix entry and multiplies
-        :math:`H(k)` entrywise afterwards.  One pass over the bonds yields
-        all four matrices.
+        ``assemble_derivatives(..., order=1)``; see there.
         """
+        return self.assemble_derivatives(kvec, ispin=ispin, sign=sign, cart=cart, order=1)
+
+    def assemble_derivatives(
+        self,
+        kvec: np.ndarray,
+        ispin: int = 0,
+        sign: int = -1,
+        cart: bool = False,
+        order: int = 1,
+        with_dnm: bool = True,
+    ) -> tuple[csr_matrix, ...]:
+        """Assemble ``H(k)`` and its k-derivatives up to second order.
+
+        Parameters
+        ----------
+        kvec : np.ndarray, shape (3,)
+            The k-point, in the frame selected by ``cart``.
+        ispin : int, optional
+            Spin channel.
+        sign : {-1, +1}, optional
+            Sign of the Fourier phase; see :meth:`assemble_hk`.
+        cart : bool, optional
+            Whether ``kvec`` is Cartesian; see :meth:`_phase_arg`.
+        order : {1, 2}, optional
+            Highest derivative returned.
+        with_dnm : bool, optional
+            Include the intra-cell ``Dnm`` terms.  ``False`` gives the pure
+            lattice-sum derivatives that the dense path kernels
+            (``do_berry_curvature``, the second derivative of
+            ``do_topology``) build from ``Rfft`` alone.
+
+        Returns
+        -------
+        (hk, dhk) or (hk, dhk, d2hk) : tuple
+            The Bloch Hamiltonian; the list of its three Cartesian
+            derivatives ``[dH/dk_0, dH/dk_1, dH/dk_2]``; and, for
+            ``order=2``, the six second derivatives
+            :math:`d^2H/dk_i dk_j` in the order ``xx, yy, zz, xy, xz, yz``
+            (``hamiltonian.do_d2Hd2k.IJ_PAIRS``).  All CSR matrices of shape
+            ``(nawf, nawf)``.
+
+        Raises
+        ------
+        ValueError
+            If ``order`` is not 1 or 2.
+
+        Notes
+        -----
+        Differentiating the Fourier sum with respect to k brings down a
+        factor of the bond displacement, so the derivatives share the phase
+        factors and the sparsity pattern of :math:`H(k)`.  Per bond the
+        first-derivative coefficient is ``1j * (alat * Rcart_l + Dnm_l)``,
+        replicating ``hamiltonian.do_gradient``: the ``Rcart`` term is the
+        displacement between cells, and the ``Dnm`` term is the tight-binding
+        correction for the offset between the two orbitals inside the cell.
+        The second derivative is the product of two such factors,
+        ``-(alat * Rcart_i + Dnm_i) * (alat * Rcart_j + Dnm_j)``, which is
+        the four-term FFT of ``hamiltonian.do_d2Hd2k.do_d2Hd2k_ij``.
+
+        The ``Rcart`` factors depend only on the lattice vector, so they
+        ride along as extra right-hand sides of the product that gives
+        :math:`H(k)`: three columns ``alat * Rcart_l * phase`` and, for
+        ``order=2``, six more ``alat^2 * Rcart_i * Rcart_j * phase``.
+        ``Dnm`` is one value per matrix entry and is combined entrywise
+        afterwards.  One pass over the bonds yields all the matrices.
+        """
+        from ..hamiltonian.do_d2Hd2k import IJ_PAIRS
+
+        if order not in (1, 2):
+            raise ValueError(f'assemble_derivatives: order must be 1 or 2, got {order!r}')
         p = self.plan
         phase = np.exp((sign * 2.0j * np.pi) * self._phase_arg(kvec, cart))
-        rhs = np.empty((len(phase), 4), dtype=np.complex128)
+        ncol = 4 if order == 1 else 10
+        rhs = np.empty((len(phase), ncol), dtype=np.complex128)
         rhs[:, 0] = phase
-        np.multiply(self.alat * p['Rcart'], phase[:, None], out=rhs[:, 1:])
+        R = self.alat * p['Rcart']
+        np.multiply(R, phase[:, None], out=rhs[:, 1:4])
+        if order == 2:
+            for ij, (i, j) in enumerate(IJ_PAIRS):
+                rhs[:, 4 + ij] = R[:, i] * R[:, j] * phase
         sums = p['V'][ispin] @ rhs
 
         shape = (self.nawf, self.nawf)
         h = sums[:, 0]
+        dnm = p['dnm'] if with_dnm else np.zeros_like(p['dnm'])
         hk = csr_matrix((h, p['indices'], p['indptr']), shape=shape)
         dhk = [
             csr_matrix(
-                (1j * (sums[:, 1 + l] + p['dnm'][:, l] * h), p['indices'], p['indptr']),
+                (1j * (sums[:, 1 + l] + dnm[:, l] * h), p['indices'], p['indptr']),
                 shape=shape,
             )
             for l in range(3)
         ]
-        return hk, dhk
+        if order == 1:
+            return hk, dhk
+        d2hk = [
+            csr_matrix(
+                (
+                    -(
+                        sums[:, 4 + ij]
+                        + dnm[:, i] * sums[:, 1 + j]
+                        + dnm[:, j] * sums[:, 1 + i]
+                        + dnm[:, i] * dnm[:, j] * h
+                    ),
+                    p['indices'],
+                    p['indptr'],
+                ),
+                shape=shape,
+            )
+            for ij, (i, j) in enumerate(IJ_PAIRS)
+        ]
+        return hk, dhk, d2hk
 
     # ------------------------------------------------------------------
     # Hermitization

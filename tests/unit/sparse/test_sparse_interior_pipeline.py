@@ -201,3 +201,26 @@ def test_edge_contamination_is_warned_about(in_example, capsys):
     out = capsys.readouterr().out
     assert 'contaminated' in out
     assert 'smear_margin_eV' in out
+
+
+def test_interband_properties_are_skipped_under_an_interior_window(in_example):
+    """Full-spectrum properties cannot run inside an interior window: they are
+    skipped with the reason, the Hall term of transport alone is dropped,
+    and a band curvature recorded before the window was set does not reach
+    the interior pass."""
+    p = _driver(str(in_example / 'interband'))
+    p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    p.gradient_and_momenta(band_curvature=True)
+    p.sparse.interior_window(-3.0, 3.0)
+    p.anomalous_Hall(a_tensor=[[0, 1]], ne=11)
+    p.linear_response(response='cond', s_tensor=[[2, 0, 1]], a_tensor=[[0, 1]], esize=11)
+    p.transport(emin=-1.0, emax=1.0, ne=11, do_hall=True)
+    skipped = [name for name, _ in p.sparse._skipped]
+    assert 'anomalous_Hall' in skipped and 'linear_response' in skipped
+    assert 'transport Hall term' in skipped
+    assert 'gradient_and_momenta band_curvature' in skipped
+    assert all('every state' in reason or 'outside' in reason for _, reason in p.sparse._skipped)
+    opath = p.data_controller.data_attributes['opath']
+    assert os.path.exists(os.path.join(opath, 'sigmagauss_0.dat'))
+    assert not os.path.exists(os.path.join(opath, 'hall_gauss_0.dat'))
+    assert 'd2Ed2k' not in p.data_controller.data_arrays

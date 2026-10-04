@@ -107,29 +107,13 @@ def do_bands_sparse(
     rather than as a band at some plausible-looking energy.  The columns
     are then no longer band indices.
     """
-    from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
-    from ..utils.communication import scatter_full
-    from ..utils.constants import ANGSTROM_AU
     from .log import get_sparse_log
     from .mesh import check_window_coverage
     from .solver import describe_hk_solver, solve_interior, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
 
-    attr['alat'] /= ANGSTROM_AU
-
-    if 'ibrav' in attr:
-        kpnts_interpolation_mesh(data_controller)
-    if 'kq' not in arrays:
-        raise RuntimeError('sparse bands: need external kq for bands')
-
-    nkpi = arrays['kq'].shape[1]
-    for n in range(nkpi):
-        arrays['kq'][:, n] = np.dot(arrays['kq'][:, n], arrays['b_vectors'])
-
-    attr['alat'] *= ANGSTROM_AU
-
-    kq_aux = scatter_full(arrays['kq'].T.copy(), attr['npool'])
+    kq_aux, nkpi = prepare_path(data_controller)
     nk_local = kq_aux.shape[0]
     nspin = sparse_h.nspin
 
@@ -181,3 +165,139 @@ def do_bands_sparse(
     arrays['E_k'] = E_k
     if interior is None:
         check_window_coverage(deficit, nsel, ehi, 'bands')
+
+
+def prepare_path(data_controller: DataController) -> tuple[np.ndarray, int]:
+    """This rank's share of the band path, Cartesian in units of ``2 pi / alat``.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Supplies ``ibrav`` (the path is rebuilt from it) or an external
+        ``kq`` (crystal coordinates, as given), and ``b_vectors``.
+
+    Returns
+    -------
+    (kq_aux, nkpi) : tuple
+        Local path points ``(nkpi_local, 3)`` and the total path length.
+
+    Notes
+    -----
+    Inherited from the dense ``do_bands``: ``alat`` is converted to
+    Angstrom around the path generator, and the points are rotated into
+    Cartesian coordinates in place in ``arrays['kq']``.  The rotation is
+    recorded (``attr['sparse_kq_cartesian']``), so an external path is
+    rotated once however many path passes follow; a path built from
+    ``ibrav`` is rebuilt and rotated afresh each time, as in the dense code.
+    """
+    from ..spectrum.kpnts_interpolation_mesh import kpnts_interpolation_mesh
+    from ..utils.communication import scatter_full
+    from ..utils.constants import ANGSTROM_AU
+
+    arrays, attr = data_controller.data_dicts()
+
+    attr['alat'] /= ANGSTROM_AU
+    if 'ibrav' in attr:
+        kpnts_interpolation_mesh(data_controller)
+        attr['sparse_kq_cartesian'] = False
+    attr['alat'] *= ANGSTROM_AU
+    if 'kq' not in arrays:
+        raise RuntimeError('sparse bands: need external kq for bands')
+
+    nkpi = arrays['kq'].shape[1]
+    if not attr.get('sparse_kq_cartesian', False):
+        for n in range(nkpi):
+            arrays['kq'][:, n] = np.dot(arrays['kq'][:, n], arrays['b_vectors'])
+        attr['sparse_kq_cartesian'] = True
+
+    return scatter_full(arrays['kq'].T.copy(), attr['npool']), nkpi
+
+
+def run_path(
+    data_controller: DataController,
+    sparse_h: SparseHamiltonian,
+    consumers: list,
+    nsolve: int,
+    with_dnm: bool = True,
+    hk_solver: str = 'auto',
+    verbose: bool = False,
+) -> None:
+    """Stream the band path to path properties, one :class:`KPoint` at a time.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Run state; supplies the path (see :func:`prepare_path`).
+    sparse_h : SparseHamiltonian
+    consumers : list of MeshProperty
+        Path properties; each receives every local path point in ``on_k``.
+        They are finalized by the engine.
+    nsolve : int
+        States solved per point: ``attr['bnd']``, or ``nawf`` when a
+        consumer needs the full spectrum.
+    with_dnm : bool, optional
+        Whether ``dH/dk`` carries the intra-cell ``Dnm`` terms; the dense
+        path kernels differ in this (see
+        ``SparseHamiltonian.assemble_derivatives``).
+    hk_solver : {'auto', 'sparse', 'dense'}, optional
+    verbose : bool, optional
+
+    Notes
+    -----
+    The path convention of :func:`do_bands_sparse`: ``sign=+1`` and
+    Cartesian k (``cart=True``).  There is no adaptive smearing on a path,
+    so ``KPoint.vel`` and ``KPoint.delta`` are ``None``; ``KPoint.kglobal``
+    is the index along the path.
+    """
+    from ..utils.communication import scatter_full
+    from .kpoint import KPoint
+    from .log import get_sparse_log
+    from .solver import describe_hk_solver, solve_lowest
+
+    attr = data_controller.data_attributes
+    kq_aux, nkpi = prepare_path(data_controller)
+    kglobal = scatter_full(np.arange(nkpi), attr['npool'])
+    nawf = sparse_h.nawf
+    solver = 'dense' if nsolve >= nawf else hk_solver
+
+    log = get_sparse_log(data_controller)
+    log.section('Path pass (%s)' % ', '.join(sorted({c.method for c in consumers})))
+    log.field('k-points on path', nkpi)
+    log.field('states per k', '%d of nawf = %d' % (nsolve, nawf))
+    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver))
+
+    bnd = min(int(attr['bnd']), nsolve)
+    step = max(1, min(100, kq_aux.shape[0] // 10))
+    for ispin in range(sparse_h.nspin):
+        v0 = None
+        for ik in range(kq_aux.shape[0]):
+            hk, dhk = sparse_h.assemble_derivatives(
+                kq_aux[ik], ispin=ispin, sign=+1, cart=True, order=1, with_dnm=with_dnm
+            )
+            E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver)
+            v0 = np.ascontiguousarray(V[:, 0])
+            kp = KPoint(
+                sparse_h,
+                ik,
+                ispin,
+                kq_aux[ik],
+                E,
+                V,
+                hk,
+                dhk,
+                None,
+                None,
+                bnd,
+                None,
+                None,
+                sign=+1,
+                cart=True,
+                kglobal=int(kglobal[ik]),
+                with_dnm=with_dnm,
+            )
+            for c in consumers:
+                c.activate()
+                c.on_k(kp)
+            kp = None
+            if verbose and (ik + 1) % step == 0:
+                log.write(f'  progress: {ik + 1}/{kq_aux.shape[0]} local path points')

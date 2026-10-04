@@ -9,13 +9,16 @@ band-diagonal property kernels need, without ever storing eigenvectors:
   the ascending eigenvalues of the group block (replicating
   ``utils.perturb_split`` as used by ``do_momentum``),
 - ``deltakp``   (nk_local, nev, nspin)  — Yates adaptive smearing widths
-  ``afac * dk * |v_n|`` (replicating ``do_adaptive_smearing``),
+  ``afac * dk * |v_n|`` (``do_adaptive_smearing.adaptive_widths``),
+- ``d2Ed2k``    (6, nk_local, nev, nspin) — band curvature, only when the
+  ``'d2Ed2k'`` product is requested (``do_band_curvature.band_curvature_k_ij``),
 
-stored k-scattered in the dense conventions so ``do_dos_adaptive`` and the
-Boltzmann transport stack consume them unchanged.  Registered consumers
-receive ``(ik, ispin, E, V, vel, delta)`` per k-point and must not retain
-``V`` — the ``(nawf, nev)`` eigenvector block is the only dense workspace
-and is discarded before the next k-point.
+stored k-scattered in the dense conventions so ``do_dos_adaptive``, the
+Boltzmann transport stack and ``do_effective_mass`` consume them unchanged.
+Consumers (:class:`~PAOFLOW.sparse.properties.MeshProperty`) receive one
+:class:`~PAOFLOW.sparse.kpoint.KPoint` per k-point and must not retain it:
+the eigenvector block is the only dense workspace and is discarded before
+the next k-point.
 
 The mesh phase convention is ``sign=-1`` (the dense ``fftn`` convention),
 and the k ordering matches the dense pipeline's FFT-grid linearization
@@ -30,7 +33,7 @@ smearing width used to pad an interior-window solve to a rectangular block;
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from mpi4py import MPI
@@ -40,43 +43,13 @@ if TYPE_CHECKING:
 
     from .hamiltonian import SparseHamiltonian
     from .log import SparseLog, _NullLog
+    from .properties import MeshProperty
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 PAD_ENERGY_OFFSET = 1.0e3
 PAD_DELTA = 1.0
-
-
-class MeshConsumer(Protocol):
-    """Interface a fused-mesh consumer must implement.
-
-    Notes
-    -----
-    A consumer is a property accumulator that needs the eigenvectors, which
-    the mesh pass refuses to store.  Instead of returning them, the mesh
-    hands each consumer one k-point's results while they are still live and
-    then frees the block, so a consumer must extract whatever scalar
-    quantity it needs inside :meth:`on_k` and must not keep a reference to
-    ``V``.  :class:`~PAOFLOW.sparse.pdos.PdosConsumer` is the canonical
-    implementation.
-    """
-
-    def on_k(
-        self,
-        ik: int,
-        ispin: int,
-        E: np.ndarray,
-        V: np.ndarray,
-        vel: np.ndarray,
-        delta: np.ndarray,
-    ) -> None:
-        """Accumulate one k-point's contribution."""
-        ...
-
-    def finalize(self, data_controller: DataController) -> None:
-        """Reduce across ranks and write results, after the loop ends."""
-        ...
 
 
 def _band_diagonal_velocities(E: np.ndarray, V: np.ndarray, dhk: Sequence[Any]) -> np.ndarray:
@@ -146,7 +119,8 @@ def run_mesh(
     data_controller: DataController,
     sparse_h: SparseHamiltonian,
     nev: int,
-    consumers: Sequence[MeshConsumer] = (),
+    consumers: Sequence[MeshProperty] = (),
+    products: Sequence[str] = (),
     afac: float | None = None,
     smearing: str = 'gauss',
     verbose: bool = False,
@@ -160,17 +134,22 @@ def run_mesh(
     ----------
     data_controller : DataController
         Run state.  Supplies the mesh dimensions and cell volume, and
-        receives ``arrays['E_k']``, ``arrays['velkp']`` and
-        ``arrays['deltakp']`` — this rank's k-slice, in the dense layout.
+        receives ``arrays['E_k']``, ``arrays['velkp']``, ``arrays['deltakp']``
+        and each requested product — this rank's k-slice, in the dense
+        layout.
     sparse_h : SparseHamiltonian
-        Bond list the Bloch Hamiltonian and its gradient are assembled
+        Bond list the Bloch Hamiltonian and its derivatives are assembled
         from at each k-point.
     nev : int
-        Number of lowest bands per k-point.  Ignored when ``interior`` is
-        given.
-    consumers : sequence of MeshConsumer, optional
-        Property accumulators fed one k-point at a time and finalized
-        after the loop.
+        Number of lowest bands per k-point kept in the stored arrays (the
+        window).  Ignored when ``interior`` is given.
+    consumers : sequence of MeshProperty, optional
+        Streaming properties fed one :class:`~PAOFLOW.sparse.kpoint.KPoint`
+        at a time.  They are *not* finalized here; the engine does that, in
+        call order, after the pass.
+    products : sequence of str, optional
+        Extra band-diagonal arrays to store.  ``'d2Ed2k'`` is the only one:
+        the band curvature ``(6, nk_local, nev, nspin)``.
     afac : float or None, optional
         Prefactor of the adaptive smearing width.  Defaults to the value
         the dense pipeline uses for the chosen ``smearing``.
@@ -182,9 +161,10 @@ def run_mesh(
         Per-k-point kernel, selected once for the whole loop (see
         :func:`~PAOFLOW.sparse.solver.select_hk_solver`).  It depends only
         on ``(nawf, nev)``, so it cannot change from k-point to k-point.
+        A full-spectrum pass always uses ``'dense'``.
     ehi : float or None, optional
         Top of the energy window ``nev`` was sized for (eV).  Every k-point
-        whose highest computed band falls below it is counted, and a
+        whose highest window band falls below it is counted, and a
         non-zero global count raises after the loop with the ``nev`` needed
         to re-run — no silent truncation, and no whole-mesh redo triggered
         from inside the loop.
@@ -197,6 +177,15 @@ def run_mesh(
     None
         Results are written into ``data_controller`` arrays and pushed to
         the consumers.
+
+    Raises
+    ------
+    NotImplementedError
+        If the full spectrum is needed (a ``'full_spectrum'`` consumer, or
+        the ``'d2Ed2k'`` product) and ``nawf`` exceeds ``DENSE_N_MAX``.
+    ValueError
+        If the full spectrum is needed together with ``interior``, or an
+        unknown product is requested.
 
     Notes
     -----
@@ -218,6 +207,17 @@ def run_mesh(
     spacing between one mesh point and the next, so a band that disperses
     steeply must be smeared more widely than a flat one to make a discrete
     mesh sum approximate a continuous integral.
+
+    Interband quantities — the band curvature, Berry curvatures, optical
+    matrix elements — sum over pairs of states that include every band, not
+    only the window.  A consumer that needs them declares
+    ``'full_spectrum'``, and the pass then solves all ``nawf`` states per
+    k-point with the dense kernel, exactly as the dense pipeline's ``eigh``
+    does; the stored arrays still keep only the window ``E[:nev]``.  This is
+    the per-k ``(nawf, nawf)`` scratch the memory contract admits up to
+    ``DENSE_N_MAX``; above it there is no exact alternative here (a
+    Sternheimer solve for the interband sums is the intended follow-up), so
+    the pass refuses rather than truncating the sum.
 
     Consecutive mesh points are close in k, so each solve is seeded from
     its predecessor: the from-the-bottom branch reuses the previous ground
@@ -252,17 +252,54 @@ def run_mesh(
     coarse supercell mesh (216 k-points over four ranks is 54 each), which
     is exactly the run slow enough to want progress from.
     """
+    from ..hamiltonian.do_d2Hd2k import IJ_PAIRS
+    from ..spectrum.do_adaptive_smearing import adaptive_widths
+    from ..spectrum.do_band_curvature import band_curvature_k_ij
     from ..utils.communication import scatter_full
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
+    from .kpoint import KPoint
     from .log import get_sparse_log
-    from .solver import describe_hk_solver, solve_interior, solve_lowest
+    from .solver import DENSE_N_MAX, describe_hk_solver, solve_interior, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
     nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
     attr['nkpnts'] = nkpnts = nk1 * nk2 * nk3
 
+    products = set(products)
+    unknown = products - {'d2Ed2k'}
+    if unknown:
+        raise ValueError(f'run_mesh: unknown products {sorted(unknown)}')
+    curvature = 'd2Ed2k' in products
+    needs = set().union(*(c.needs for c in consumers))
+    nawf = sparse_h.nawf
+    full = curvature or 'full_spectrum' in needs
+    if full:
+        wanting = sorted(
+            {c.method for c in consumers if 'full_spectrum' in c.needs}
+            | ({'band curvature (d2Ed2k)'} if curvature else set())
+        )
+        if interior is not None:
+            raise ValueError(
+                'run_mesh: %s need the full spectrum, which an interior window never '
+                'computes.' % ', '.join(wanting)
+            )
+        if nawf > DENSE_N_MAX:
+            raise NotImplementedError(
+                f'sparse mesh: {", ".join(wanting)} sum over interband pairs that include every '
+                f'state, which needs the full spectrum per k-point (nawf = {nawf}). That is a '
+                f'dense (nawf, nawf) solve, admitted only up to DENSE_N_MAX = {DENSE_N_MAX}, '
+                f'where it would take {16.0 * nawf * nawf / 1024**3:.2f} GB per k-point. '
+                'The exact route past it is a Sternheimer (linear-response) solve for the '
+                'interband sums, which is not implemented yet; there is no truncated-sum '
+                'fallback. Run the property on a smaller cell, or on the dense pipeline.'
+            )
+        nsolve, solver = nawf, 'dense'
+    else:
+        nsolve, solver = nev, hk_solver
+
     kfrac_all = get_K_grid_fft_crystal(nk1, nk2, nk3)
     kloc = scatter_full(kfrac_all, attr['npool'])
+    kglobal = scatter_full(np.arange(nkpnts), attr['npool'])
     nk_local = kloc.shape[0]
     nspin = sparse_h.nspin
 
@@ -270,8 +307,9 @@ def run_mesh(
     if afac is None:
         afac = 1.0 if smearing == 'm-p' else 0.7
 
+    extras = sorted({c.method for c in consumers}) + (['band curvature'] if curvature else [])
     log = get_sparse_log(data_controller)
-    log.section(f'Mesh pass (eigenvalues + velocities{" + PDOS" if consumers else ""})')
+    log.section('Mesh pass (eigenvalues + velocities%s)' % ''.join(' + ' + name for name in extras))
     log.field('mesh', f'{nk1} x {nk2} x {nk3}  ({nkpnts} k-points)')
     if interior is None:
         log.field('bands per k (nev)', nev)
@@ -280,12 +318,19 @@ def run_mesh(
         log.field('bands per k', 'k-dependent (interior solve); padded after the loop')
     log.field('smearing', f'{smearing}, afac = {afac:.3f}')
     log.field('window top ehi (eV)', 'none' if ehi is None else f'{ehi:.3f}')
-    log.write(describe_hk_solver(sparse_h.nawf, nev, hk_solver=hk_solver))
+    if full:
+        log.field(
+            'full spectrum',
+            f'all {nawf} states per k-point for {", ".join(wanting)}; window keeps {nev}',
+        )
+    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver))
 
     if interior is None:
         E_k = np.zeros((nk_local, nev, nspin), dtype=float)
         velkp = np.zeros((nk_local, 3, nev, nspin), dtype=float)
         deltakp = np.zeros((nk_local, nev, nspin), dtype=float)
+        if curvature:
+            d2Ed2k = np.zeros((6, nk_local, nev, nspin), dtype=float)
     else:
         acc = {}
     deficit = 0
@@ -295,28 +340,58 @@ def run_mesh(
         v0 = None
         k0 = None
         for ik in range(nk_local):
-            hk, dhk = sparse_h.assemble_hk_dhk(kloc[ik], ispin=ispin, sign=-1)
+            assembled = sparse_h.assemble_derivatives(
+                kloc[ik], ispin=ispin, sign=-1, order=2 if curvature else 1
+            )
+            hk, dhk = assembled[0], assembled[1]
             if interior is None:
-                E, V = solve_lowest(hk, nev, v0=v0, hk_solver=hk_solver)
+                E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver)
                 v0 = np.ascontiguousarray(V[:, 0])
+                bnd = nev
             else:
                 E, V = solve_interior(hk, interior[0], interior[1], k0=k0, hk_solver=hk_solver)
                 k0 = max(8, 2 * len(E))
+                bnd = len(E)
 
-            vel = _band_diagonal_velocities(E, V, dhk)
-            delta = afac * dk * np.linalg.norm(vel, axis=0)
+            vel = _band_diagonal_velocities(E[:bnd], V[:, :bnd], dhk)
+            delta = adaptive_widths(vel, afac, dk)
+            kp = KPoint(
+                sparse_h,
+                ik,
+                ispin,
+                kloc[ik],
+                E,
+                V,
+                hk,
+                dhk,
+                vel,
+                delta,
+                bnd,
+                afac,
+                dk,
+                sign=-1,
+                kglobal=int(kglobal[ik]),
+            )
+            if curvature:
+                d2hk = kp.__dict__['d2hk'] = assembled[2]
+                for ij, (i, j) in enumerate(IJ_PAIRS):
+                    d2Ed2k[ij, ik, :, ispin] = band_curvature_k_ij(
+                        E, dhk[i], dhk[j], d2hk[ij], V, kp.degen, bnd
+                    )
 
             if interior is None:
-                if ehi is not None and E[-1] < ehi:
+                if ehi is not None and E[bnd - 1] < ehi:
                     deficit += 1
-                E_k[ik, :, ispin] = E
+                E_k[ik, :, ispin] = E[:bnd]
                 velkp[ik, :, :, ispin] = vel
                 deltakp[ik, :, ispin] = delta
             else:
                 acc[(ispin, ik)] = (E, vel, delta)
 
             for c in consumers:
-                c.on_k(ik, ispin, E, V, vel, delta)
+                c.activate()
+                c.on_k(kp)
+            kp = None
 
             if verbose and (ik + 1) % step == 0:
                 log.write(f'  progress: {ik + 1}/{nk_local} local k-points')
@@ -330,12 +405,11 @@ def run_mesh(
     arrays['E_k'] = E_k
     arrays['velkp'] = velkp
     arrays['deltakp'] = deltakp
+    if curvature:
+        arrays['d2Ed2k'] = d2Ed2k
 
     if interior is None:
         check_window_coverage(deficit, nev, ehi, 'mesh')
-
-    for c in consumers:
-        c.finalize(data_controller)
 
 
 def _pad_interior(

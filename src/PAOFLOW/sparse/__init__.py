@@ -1,23 +1,36 @@
 """Sparse backend for PAOFLOW.
 
-This package provides a purely sparse implementation of the PAOFLOW
-property pipeline (bands, DOS, PDOS, Boltzmann transport), designed for
-systems where ``doubling_Hamiltonian`` makes the dense arrays
-(``HRs``, ``Hksp``, ``dHksp``, ``pksp``) too large to hold in memory.
+This package provides a sparse implementation of the PAOFLOW property
+pipeline, designed for systems where ``doubling_Hamiltonian`` makes the
+dense arrays (``HRs``, ``Hksp``, ``dHksp``, ``pksp``) too large to hold in
+memory.  Bands, the mesh properties (DOS/PDOS, Boltzmann transport with the
+Hall term, effective masses, doping, Fermi surfaces, conductivity, spin and
+orbital textures, the anomalous/spin/orbital Hall family, the dielectric
+tensor, Rashba--Edelstein, linear response, IPR, density) and the band-path
+properties (Berry curvature, topology, site projections, Berry phase) run
+on it; the base-cell ``H(R)`` transforms run through their dense bodies;
+the rest says why it is dense-only (:mod:`~PAOFLOW.sparse.dispatch`).
 
 Core contract (see each module's docstring for details):
 
 - The real-space Hamiltonian is stored as a thresholded bond list
   (:class:`~PAOFLOW.sparse.hamiltonian.SparseHamiltonian`); global dense
-  tensors of shape ``(nawf, nawf, ...)`` are never materialized.
-- Eigenproblems are solved with sparse iterative methods only
-  (:func:`~PAOFLOW.sparse.solver.solve_lowest`); there is no
-  ``.toarray()``/dense ``eigh`` fallback at any size.
+  tensors of shape ``(nawf, nawf, ...)`` indexed by k are never
+  materialized.
+- Each k-point is solved by :func:`~PAOFLOW.sparse.solver.solve_lowest`
+  (shift-invert ARPACK, or a per-k dense ``zheevr`` scratch while
+  ``nawf <= DENSE_N_MAX``).
 - The only sanctioned dense stage is the base-cell (pre-doubling) QE
   projection input, which is thresholded into the bond list immediately
-  and deleted.
-- Per-k dense workspaces are limited to one ``(nawf, nev)`` eigenvector
-  block, discarded before the next k-point.
+  and deleted (and, on request, base-cell ``H(R)`` transforms).
+- Per-k dense workspace lives for one k-point: the eigenvector block
+  ``(nawf, nev)``, or ``(nawf, nawf)`` with the matrices built from it when
+  a property needs interband sums over the full spectrum.
+- Properties are one protocol (:mod:`~PAOFLOW.sparse.properties`): a
+  per-k ``on_k`` on a :class:`~PAOFLOW.sparse.kpoint.KPoint` that calls the
+  per-k body extracted from the dense kernel, and a ``finalize`` that calls
+  the dense reduce/write.  ``with pao.sparse.fused():`` runs several of
+  them in one pass.
 
 The real-space cutoff can be given as a radius or as a neighbour-shell
 count (:mod:`~PAOFLOW.sparse.shells`).  The base-cell bond list can be
