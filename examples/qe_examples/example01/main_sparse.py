@@ -20,10 +20,12 @@ def main():
 
     paoflow.bands(ibrav=2, nk=2000)
     paoflow.interpolated_hamiltonian(nfft1=12, nfft2=12, nfft3=12)
-    # eigenvalues, velocities and smearing widths are one fused mesh pass,
-    # run by the first property that needs it
-    paoflow.dos(emin=-12.0, emax=2.2, ne=1000)
-    paoflow.transport(emin=-12.0, emax=2.2)
+    # eigenvalues, velocities, smearing widths, PDOS and the band curvature
+    # of the Hall term are one mesh pass for the whole block; the curvature's
+    # interband sum makes it solve every state per k-point
+    with paoflow.sparse.fused():
+        paoflow.dos(emin=-12.0, emax=2.2, ne=1000)
+        paoflow.transport(emin=-12.0, emax=2.2, do_hall=True)
 
     paoflow.finish_execution()
 

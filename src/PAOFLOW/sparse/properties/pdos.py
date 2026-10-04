@@ -1,4 +1,4 @@
-"""Streaming projected-DOS accumulator for the fused mesh pass.
+"""Streaming projected-DOS accumulator for the fused mesh pass (part of ``dos``).
 
 Replicates ``spectrum.do_pdos.do_pdos_adaptive`` output exactly — same
 energy grid (``emax`` clipped to ``min(shift, emax)``), same per-orbital
@@ -18,12 +18,14 @@ from mpi4py import MPI
 if TYPE_CHECKING:
     from PAOFLOW.DataController import DataController
 
+    from ..kpoint import KPoint
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 
-class PdosConsumer:
-    """Mesh consumer accumulating the projected density of states.
+class PdosAccumulator:
+    """Mesh-pass accumulator of the projected density of states.
 
     Parameters
     ----------
@@ -80,32 +82,15 @@ class PdosConsumer:
         self.nspin = attr['nspin']
         self.partial = np.zeros((self.nspin, self.nawf, ne), dtype=float)
 
-    def on_k(
-        self,
-        ik: int,
-        ispin: int,
-        E: np.ndarray,
-        V: np.ndarray,
-        vel: np.ndarray,
-        delta: np.ndarray,
-    ) -> None:
+    def on_k(self, kp: KPoint) -> None:
         """Add one k-point's orbital weights to the accumulator.
 
         Parameters
         ----------
-        ik : int
-            Local k-point index; unused, the contribution is a plain sum.
-        ispin : int
-            Spin channel.
-        E : np.ndarray, shape (nev,)
-            Eigenvalues at this k-point (eV), ascending.
-        V : np.ndarray, shape (nawf, nev)
-            Eigenvector block.  Read here and not retained, per the mesh
-            consumer contract.
-        vel : np.ndarray, shape (3, nev)
-            Band velocities; unused, they enter only through ``delta``.
-        delta : np.ndarray, shape (nev,)
-            Adaptive smearing width of each band at this k-point (eV).
+        kp : KPoint
+            The live k-point.  Reads the window states ``E[:bnd]``, their
+            eigenvectors and adaptive widths ``delta``; ``V`` is not
+            retained, per the mesh consumer contract.
 
         Notes
         -----
@@ -116,11 +101,12 @@ class PdosConsumer:
         depend on ``ene`` and ``eig`` only through their difference, so the
         broadcast is symmetric in the two arguments.
         """
-        from ..utils.smearing import gaussian, metpax
+        from ...utils.smearing import gaussian, metpax
 
+        nev = kp.bnd
         func = gaussian if self.smearing == 'gauss' else metpax
-        G = func(self.ene[:, None], E[None, :], delta[None, :])
-        self.partial[ispin] += np.abs(V) ** 2 @ G.T
+        G = func(self.ene[:, None], kp.E[None, :nev], kp.delta[None, :])
+        self.partial[kp.ispin] += np.abs(kp.V[:, :nev]) ** 2 @ G.T
 
     def finalize(self, data_controller: DataController) -> None:
         """Reduce across ranks, normalize, and write the PDOS files.
@@ -139,7 +125,7 @@ class PdosConsumer:
         every file because that call is collective; only rank 0 passes data,
         the others pass ``None``.
         """
-        from ..spectrum.do_pdos import _build_orbital_prefixes
+        from ...spectrum.do_pdos import _build_orbital_prefixes
 
         arrays, attr = data_controller.data_dicts()
         prefixes = _build_orbital_prefixes(arrays, self.nawf)
