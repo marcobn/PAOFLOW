@@ -22,9 +22,10 @@ Two further workflows generate multi-phase driver scripts:
 4. **Electron-phonon** (``main.elphon.py`` + ``plot.elphon.py``) -- the
    pseudo-atomic-orbital (Agapito & Bernardi) interpolation of the DFPT coupling
    into ``alpha^2F`` / ``lambda`` / ``Tc``.  The default coupling source is EPW
-   (``epbwrite``): ``inputs`` writes the ph.x input, the explicit nscf k list and
-   a minimal ``epw.in``; ``analyse`` interpolates EPW's coarse coupling in k and
-   (by default) q, MPI-parallel over the dense q-grid.  The legacy ph.x sources
+   (``epbwrite``): the QE/EPW inputs are written in ``phonon/`` (scf, ph.x) and
+   ``epw/`` (nscf on the explicit full k list, ``epw.in``, ``write_ukk.py``), as in
+   ``examples/elphon_epw_example``; ``main.elphon.py`` interpolates EPW's coarse
+   coupling in k and (by default) q, MPI-parallel over the dense q-grid.  The legacy ph.x sources
    (``ahc``, ``elphmat``) remain selectable.
 
 The generated script is static and heavily commented so it is easy to tweak
@@ -171,6 +172,26 @@ def detect_prefix(workdir, savedir):
             if prefix:
                 return prefix
     return 'pwscf'
+
+
+def detect_pw_input(workdir):
+    """A pw.x input in ``workdir`` to derive the electron-phonon scf/nscf from."""
+    candidates = ['scf.in'] + sorted(
+        os.path.basename(p) for p in glob.glob(os.path.join(workdir, '*.scf.in'))
+    )
+    candidates += ['pw.in', 'nscf.in']
+    for name in candidates:
+        if os.path.isfile(os.path.join(workdir, name)):
+            return name
+    return None
+
+
+def _read_namelist_value(text, name):
+    """Value of a namelist variable in a QE input (quotes stripped), or None."""
+    match = re.search(
+        r"(?im)^[^!]*\b%s\s*=\s*('[^']*'|\"[^\"]*\"|[^,\s]+)" % re.escape(name), text
+    )
+    return match.group(1).strip('\'"') if match else None
 
 
 def _read_prefix_from_input(path):
@@ -1795,26 +1816,33 @@ EPW evaluates both psi_k and psi_{k+q} from the nscf save, so the coupling share
 the band gauge of PAOFLOW's projections on that save, which the PAO
 interpolation requires (docs/internals/Electron-Phonon-Coupling.md).
 
-Two phases:
+paoflow-gen wrote the QE/EPW inputs in two run directories, laid out as
+examples/elphon_epw_example:
 
-    python main.elphon.py inputs     # ph.x input, nscf K_POINTS list, epw.in (+ placeholder .ukk)
-    mpirun -np N python main.elphon.py analyse   # PAO interpolation -> alpha^2F, lambda, Tc
+    phonon/scf.in, phonon/ph.in               pw.x scf + ph.x DFPT (irreducible q)
+    epw/nscf.in, epw/epw.in, epw/write_ukk.py   pw.x nscf (full k list) + epw.x
 
-Between them run, in order (EPW tutorial 04 is a complete worked example):
+Run them in this order (EPW tutorial 04 is a complete worked example):
 
-    1. pw.x scf                         (with symmetry)
-    2. ph.x  < <prefix>.ph.in           (irreducible q only)
-    3. python <q-e>/EPW/bin/pp.py       (collects dvscf/patterns/dyn into save/)
-    4. pw.x nscf with the K_POINTS card of nscf.kpoints   (full grid, explicit list)
-    5. mpirun -np N epw.x -nk N -in epw.in   (writes <prefix>.epb*, one file per pool)
+    cd phonon
+    mpirun -np N pw.x -in scf.in > scf.out
+    mpirun -np N ph.x -in ph.in  > ph.out
+    python3 /path/to/q-e/EPW/bin/pp.py      # collects dvscf/patterns/dyn into save/
+    cd ../epw
+    mkdir -p __PREFIX_NAME__.save          # the nscf starts from the scf charge density
+    cp ../phonon/__PREFIX_NAME__.save/{charge-density.dat,data-file-schema.xml} __PREFIX_NAME__.save/
+    mpirun -np N pw.x -in nscf.in > nscf.out
+    python3 write_ukk.py                    # __PREFIX_NAME__.ukk (+ empty .bvec/.mmn stubs)
+    mpirun -np N epw.x -nk N -in epw.in > epw.out   # writes __PREFIX_NAME__.epb*, one file per pool
+    cd ..
+    mpirun -np N python main.elphon.py      # PAO interpolation -> alpha^2F, lambda, Tc
 
-``epw.in`` written here runs EPW without any Wannier functions
-(``wannierize = .false.``): EPW reads the band bookkeeping from the placeholder
-<prefix>.ukk (EXCLUDE_BANDS, identity rotations) and writes the coarse coupling
-before its Wannier stage, which PAOFLOW does not use.  Validated on Pb (EPW
-tutorial 04): identical PAOFLOW results to a Wannierized EPW run.  An EPW input
-with a Wannierization also works, as long as it sets ``epbwrite = .true.`` and
-its outer disentanglement window contains every band.
+``epw/epw.in`` runs EPW without any Wannier functions (``wannierize = .false.``):
+EPW reads the band bookkeeping from the placeholder <prefix>.ukk (EXCLUDE_BANDS,
+identity rotations) and writes the coarse coupling before its Wannier stage,
+which PAOFLOW does not use.  An EPW input with a Wannierization also works, as
+long as it sets ``epbwrite = .true.`` and its outer disentanglement window
+contains every band.
 """
 
 import argparse
@@ -1828,76 +1856,36 @@ from PAOFLOW import PAOFLOW
 from PAOFLOW.elphon.do_pao_eph import eliashberg_from_qe_coupling
 from PAOFLOW.elphon.do_pao_eph_dense_q import eliashberg_dense_q
 from PAOFLOW.elphon.elph_bloch import RY_TO_EV, read_nscf
-from PAOFLOW.gen.epw_inputs import epw_input, kpoints_card, write_placeholder_ukk
-
 
 # ----------------------------------------------------------------------- #
-# Configuration  (edit freely -- masses / NELEC / NBND are system-specific) #
+# Configuration  (edit freely -- masses / NELEC are system-specific)      #
 # ----------------------------------------------------------------------- #
 HERE = os.path.dirname(os.path.abspath(__file__))
 PREFIX = __PREFIX__
-EPW_DIR = os.path.join(HERE, __EPW_DIR__)    # EPW outdir: <prefix>.epb*, <prefix>.ukk
-SAVEDIR = os.path.join(HERE, __SAVEDIR__)    # the nscf save EPW read
-OUTPUTDIR = __OUTPUTDIR__
-BASISDIR = os.path.join(HERE, __BASISDIR__)
+EPW_DIR = os.path.join(HERE, __EPW_DIR__)  # EPW outdir: <prefix>.epb*, <prefix>.ukk, <prefix>.save
+SAVEDIR = os.path.join(HERE, __SAVEDIR__)  # the nscf save EPW read
+BASISDIR = os.path.join(HERE, __BASISDIR__)  # paoflow-genbasis-ps --pseudo <upf> --out <BASISDIR>
+OUTPUTDIR = os.path.join(HERE, __OUTPUTDIR__)
 
-KGRID = __KGRID__          # coarse k-grid (nscf, EPW nk1..3)
-QGRID = __QGRID__          # coarse q-grid (ph.x, EPW nq1..3); must divide KGRID
-NBND = __NBND__            # bands in the nscf run (> number of PAO orbitals)
-EXCLUDE_BANDS = __EXCLUDE_BANDS__  # 1-based bands left out of the coupling (e.g. semicore)
-MASSES_AMU = __MASSES__    # atomic mass of each species (amu)
-NELEC = __NELEC__          # valence electrons (dense E_F recompute)
-DENSE_Q = __DENSE_Q__      # interpolate q as well as k (recommended)
-NK_DENSE = __NK_DENSE__    # dense electron grid
-NQ_DENSE = __NQ_DENSE__    # dense phonon grid (NK_DENSE % NQ_DENSE == 0)
-SIGMA_EV = __SIGMA_EV__    # Fermi-surface smearing (eV), as EPW degaussw
-MU_STAR = __MU_STAR__      # Coulomb pseudopotential for Tc
-PTHR = __PTHR__            # projectability threshold
+COARSE_GRID = __KGRID__  # nscf k-grid (EPW nk1..3)
+QGRID = __QGRID__  # ph.x / EPW q-grid (nq1..3); must divide COARSE_GRID
+MASSES_AMU = __MASSES__  # atomic mass of each species (amu)
+NELEC = __NELEC__  # valence electrons (dense E_F recompute)
+PTHR = __PTHR__  # projectability threshold
+DENSE_Q = __DENSE_Q__  # interpolate q as well as k (recommended); --coarse-q overrides
+NK_DENSE = __NK_DENSE__  # dense electron grid
+NQ_DENSE = __NQ_DENSE__  # dense phonon grid; NK_DENSE % NQ_DENSE == 0
+SIGMA_EV = __SIGMA_EV__  # Fermi-surface smearing (EPW: degaussw)
+MU_STAR = __MU_STAR__  # Coulomb pseudopotential for Tc
 
 KB_EV = 8.617333262e-5
 
 
-def _phonon_input():
-    return '\n'.join([
-        '&inputph',
-        "  prefix='%s'," % PREFIX,
-        "  outdir='./',",
-        "  fildyn='%s.dyn'," % PREFIX,
-        "  fildvscf='dvscf',",
-        '  tr2_ph=1.0d-14,',
-        '  ldisp=.true., nq1=%d, nq2=%d, nq3=%d,' % tuple(QGRID),
-        '/',
-        '',
-    ])
-
-
-def inputs():
-    """Phase 1: ph.x input, nscf K_POINTS list, minimal epw.in and placeholder .ukk."""
-    if any(k % q for k, q in zip(KGRID, QGRID)):
-        sys.exit('QGRID %s must divide KGRID %s.' % (QGRID, KGRID))
-    files = {
-        PREFIX + '.ph.in': _phonon_input(),
-        'nscf.kpoints': kpoints_card(KGRID),
-        'epw.in': epw_input(PREFIX, MASSES_AMU, KGRID, QGRID, NBND - len(EXCLUDE_BANDS),
-                            exclude_bands=EXCLUDE_BANDS),
-    }
-    for name, text in files.items():
-        with open(os.path.join(HERE, name), 'w') as fh:
-            fh.write(text)
-        print('Wrote %s' % name)
-    ukk = os.path.join(HERE, PREFIX + '.ukk')
-    write_placeholder_ukk(ukk, NBND, KGRID[0] * KGRID[1] * KGRID[2],
-                          exclude_bands=EXCLUDE_BANDS, nelec=NELEC)
-    print('Wrote %s (+ empty .bvec/.mmn stubs) for wannierize=.false.; keep them in the epw.x run directory'
-          % os.path.basename(ukk))
-    print('Append nscf.kpoints to the pw.x nscf input (nbnd = %d), then run ph.x, pp.py, nscf, epw.x.'
-          % NBND)
-
-
 def pao_electronic_structure():
     """PAO projections and Hamiltonian on the EPW nscf save."""
-    pf = PAOFLOW.PAOFLOW(workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR,
-                         save_overlaps=__SAVE_OVERLAPS__, verbose=False)
+    pf = PAOFLOW.PAOFLOW(
+        workpath=HERE, outputdir=OUTPUTDIR, savedir=SAVEDIR, save_overlaps=__SAVE_OVERLAPS__, verbose=False
+    )
 __PROJECTION_CALL__
     pf.projectability(pthr=PTHR)
     # The projections A_k = <phi|psi_k> rotate EPW's matrix elements to the PAO
@@ -1908,60 +1896,69 @@ __PROJECTION_CALL__
     return projections, pf.data_controller.data_arrays['HRs'], read_nscf(SAVEDIR)
 
 
-def analyse():
-    """Phase 2: PAO interpolation of EPW's coupling -> alpha^2F, lambda, Tc."""
-    if not os.path.isdir(SAVEDIR):
-        sys.exit('%s not found. Run the pw.x nscf first.' % SAVEDIR)
-    if not any(f.startswith(PREFIX + '.epb') for f in os.listdir(EPW_DIR)):
-        sys.exit('No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR))
-
-    projections, HRs, nscf = pao_electronic_structure()
+def eliashberg(projections, HRs, nscf, nk_dense, nq_dense, sigma_ev, coarse_q):
+    """Isotropic Eliashberg properties from EPW's coarse coupling."""
+    common = dict(
+        source='epw',
+        masses_amu=MASSES_AMU,
+        nk_dense=nk_dense,
+        sigmas_ry=[sigma_ev / RY_TO_EV],
+        nelec=NELEC,
+        mu_star=MU_STAR,
+    )
     lattice = (nscf['kpts_cryst'], nscf['bg'], nscf['at'])
-    common = dict(source='epw', masses_amu=MASSES_AMU, nk_dense=NK_DENSE,
-                  sigmas_ry=[SIGMA_EV / RY_TO_EV], nelec=NELEC, mu_star=MU_STAR)
-    if DENSE_Q:
-        # Coarse q-points and phonons come from the .epb files; the dense q-grid
-        # is folded to its irreducible wedge.
-        out = eliashberg_dense_q(
-            projections, HRs, *lattice, EPW_DIR, tuple(QGRID), None, None, tuple(KGRID), None,
-            nq_dense=NQ_DENSE, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
-            species=nscf['atom_names'], **common,
+    if coarse_q:
+        # q stays on EPW's coarse grid; q-points and phonons come from the .epb files.
+        return eliashberg_from_qe_coupling(
+            projections, HRs, *lattice, EPW_DIR, None, COARSE_GRID, None, **common
         )
-    else:
-        out = eliashberg_from_qe_coupling(
-            projections, HRs, *lattice, EPW_DIR, None, tuple(KGRID), None, **common
-        )
+    # Both k and q interpolated; the dense q-grid is folded to its irreducible wedge.
+    return eliashberg_dense_q(
+        projections, HRs, *lattice, EPW_DIR, QGRID, None, None, COARSE_GRID, None,
+        nq_dense=nq_dense, sym_rots=nscf['s_cryst'], tau_cryst=nscf['tau_cryst'],
+        species=nscf['atom_names'], **common,
+    )
 
-    # The result is identical on every rank; only rank 0 reports and writes files.
-    if MPI.COMM_WORLD.Get_rank() != 0:
-        return
-    grids = 'k %d^3, q %s' % (NK_DENSE, ('%d^3' % NQ_DENSE) if DENSE_Q else 'coarse')
-    print('PAOFLOW on EPW coupling (%s, %s, sigma %.3f eV):' % (PREFIX, grids, SIGMA_EV))
+
+def report(out, label):
+    """Print the Eliashberg summary and write alpha2F.dat / eliashberg.npz."""
+    print('PAOFLOW on EPW coupling (%s):' % label)
     print('  lambda   = %.4f' % out['lambda'])
     print('  w_log    = %.3f meV' % (out['omega_log'] * 1.0e3))
     print('  Tc (McM) = %.2f K   Tc (AD) = %.2f K   (mu* = %.2f)'
           % (out['Tc_mcmillan'], out['Tc_allen_dynes'], MU_STAR))
-    outdir = os.path.join(HERE, OUTPUTDIR)
-    os.makedirs(outdir, exist_ok=True)
-    np.savetxt(os.path.join(outdir, 'alpha2F.dat'),
-               np.column_stack([out['omega'] * 1.0e3, out['a2F']]),
-               header='omega(meV)  alpha^2F  (lambda=%.4f, w_log=%.2fK, Tc_McM=%.3fK, Tc_AD=%.3fK, mu*=%.2f)'
-               % (out['lambda'], out['omega_log'] / KB_EV, out['Tc_mcmillan'],
-                  out['Tc_allen_dynes'], MU_STAR))
-    np.savez(os.path.join(outdir, 'eliashberg.npz'), **out)
-    print('  wrote %s/alpha2F.dat and eliashberg.npz' % OUTPUTDIR)
+    os.makedirs(OUTPUTDIR, exist_ok=True)
+    np.savetxt(
+        os.path.join(OUTPUTDIR, 'alpha2F.dat'),
+        np.column_stack([out['omega'] * 1.0e3, out['a2F']]),
+        header='omega(meV)  alpha^2F  (lambda=%.4f, w_log=%.2fK, Tc_McM=%.3fK, Tc_AD=%.3fK, mu*=%.2f)'
+        % (out['lambda'], out['omega_log'] / KB_EV, out['Tc_mcmillan'], out['Tc_allen_dynes'], MU_STAR),
+    )
+    np.savez(os.path.join(OUTPUTDIR, 'eliashberg.npz'), **out)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='PAOFLOW electron-phonon on EPW coupling.')
-    parser.add_argument('phase', nargs='?', choices=['inputs', 'analyse'], default='analyse',
-                        help='inputs: write the QE/EPW inputs; analyse: PAOFLOW (default).')
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--coarse-q', action='store_true', default=not DENSE_Q,
+                        help='keep q on the coarse EPW grid')
+    parser.add_argument('--nk', type=int, default=NK_DENSE, help='dense k-grid (default %(default)s)')
+    parser.add_argument('--nq', type=int, default=NQ_DENSE, help='dense q-grid (default %(default)s)')
+    parser.add_argument('--sigma-ev', type=float, default=SIGMA_EV, help='smearing in eV')
     args = parser.parse_args()
-    if args.phase == 'inputs':
-        if MPI.COMM_WORLD.Get_rank() == 0:
-            inputs()
-    else:
-        analyse()
+
+    if not os.path.isdir(SAVEDIR):
+        sys.exit('%s not found. Run the pw.x nscf in epw/ first.' % SAVEDIR)
+    if not any(f.startswith(PREFIX + '.epb') for f in os.listdir(EPW_DIR)):
+        sys.exit('No %s.epb* files in %s. Run epw.x with epbwrite = .true. first.' % (PREFIX, EPW_DIR))
+
+    projections, HRs, nscf = pao_electronic_structure()
+    out = eliashberg(projections, HRs, nscf, args.nk, args.nq, args.sigma_ev, args.coarse_q)
+
+    # The result is identical on every rank; only rank 0 reports and writes files.
+    if MPI.COMM_WORLD.Get_rank() == 0:
+        coarse = '%dx%dx%d' % QGRID
+        grids = 'k %d^3, q %s' % (args.nk, ('coarse ' + coarse) if args.coarse_q else '%d^3' % args.nq)
+        report(out, '%s, sigma %.3f eV' % (grids, args.sigma_ev))
 
 
 if __name__ == '__main__':
@@ -1969,18 +1966,33 @@ if __name__ == '__main__':
 '''
 
 
+WRITE_UKK_TEMPLATE = r'''#!/usr/bin/env python3
+"""Write __UKK__ for epw.x with wannierize = .false. (run in this directory before epw.x).
+
+EPW reads the band bookkeeping from this file only: the __NBND__ nscf bands, __EXCLUSION__
+No Wannier functions are built; the identity rotations only feed
+EPW's Wannier stage, which PAOFLOW does not use.  The empty __STEM__.bvec /
+__STEM__.mmn written alongside let that stage finish.
+"""
+
+from PAOFLOW.gen.epw_inputs import write_placeholder_ukk
+
+write_placeholder_ukk('__UKK__', nbnd=__NBND__, nk_total=__NK_TOTAL__, exclude_bands=__EXCLUDE_BANDS__, nelec=__NELEC__)
+print('Wrote __UKK__ (and the empty wannier90 stubs __STEM__.bvec, __STEM__.mmn)')
+'''
+
+
 def build_elphon_epw_script(cfg):
     """Assemble a main.elphon.py for the EPW coupling source from the config."""
     subs = {
         '__PREFIX__': repr(cfg['prefix']),
+        '__PREFIX_NAME__': cfg['prefix'],
         '__EPW_DIR__': repr(cfg['epw_dir']),
         '__SAVEDIR__': repr(cfg['savedir']),
         '__OUTPUTDIR__': repr(cfg['outputdir']),
         '__BASISDIR__': repr(cfg['basisdir']),
         '__KGRID__': repr(tuple(cfg['kgrid'])),
         '__QGRID__': repr(tuple(cfg['qgrid'])),
-        '__NBND__': str(int(cfg['nbnd'])),
-        '__EXCLUDE_BANDS__': repr([int(b) for b in cfg.get('exclude_bands', [])]),
         '__MASSES__': repr([float(m) for m in cfg['masses_amu']]),
         '__NELEC__': str(int(cfg['nelec'])),
         '__DENSE_Q__': str(bool(cfg['dense_q'])),
@@ -1998,6 +2010,64 @@ def build_elphon_epw_script(cfg):
     for token, value in subs.items():
         content = content.replace(token, value)
     return content
+
+
+def _write_ukk_script(cfg):
+    """Text of epw/write_ukk.py (placeholder <prefix>.ukk for wannierize = .false.)."""
+    from PAOFLOW.gen.epw_inputs import exclude_bands_string
+
+    excluded = [int(b) for b in cfg.get('exclude_bands', [])]
+    nbnd = int(cfg['nbnd'])
+    if excluded:
+        exclusion = 'of which\nbands %s are excluded from the electron-phonon calculation, matching\n' \
+            '``bands_skipped`` in epw.in.' % exclude_bands_string(excluded).split('= ')[1]
+    else:
+        exclusion = 'all of them kept in the\nelectron-phonon calculation.'
+    subs = {
+        '__UKK__': cfg['prefix'] + '.ukk',
+        '__STEM__': cfg['prefix'],
+        '__NBND__': str(nbnd),
+        '__EXCLUSION__': exclusion,
+        '__NK_TOTAL__': ' * '.join(str(int(n)) for n in cfg['kgrid']),
+        '__EXCLUDE_BANDS__': repr(excluded),
+        '__NELEC__': str(int(cfg['nelec'])),
+    }
+    content = WRITE_UKK_TEMPLATE
+    for token, value in subs.items():
+        content = content.replace(token, value)
+    return content
+
+
+def build_elphon_epw_inputs(cfg):
+    """QE/EPW inputs of the EPW route, laid out as examples/elphon_epw_example.
+
+    Returns ``{relative path: text}`` for ``phonon/scf.in``, ``phonon/ph.in``,
+    ``epw/nscf.in``, ``epw/epw.in`` and ``epw/write_ukk.py``.  The scf and nscf
+    are derived from the pw.x input ``cfg['pw_template']``; without one only
+    ``epw/nscf.kpoints`` (the explicit k list for a hand-written nscf) is written.
+    """
+    from PAOFLOW.gen.epw_inputs import epw_input, kpoints_card, nscf_input, ph_input, scf_input
+
+    prefix = cfg['prefix']
+    kgrid, qgrid = tuple(cfg['kgrid']), tuple(cfg['qgrid'])
+    nbnd = int(cfg['nbnd'])
+    excluded = [int(b) for b in cfg.get('exclude_bands', [])]
+    files = {}
+    template = cfg.get('pw_template_text')
+    pseudo_dir = cfg.get('pseudo_dir') or None
+    if template:
+        files['phonon/scf.in'] = scf_input(template, prefix, pseudo_dir)
+    files['phonon/ph.in'] = ph_input(prefix, qgrid)
+    if template:
+        files['epw/nscf.in'] = nscf_input(template, prefix, kgrid, nbnd, pseudo_dir)
+    else:
+        files['epw/nscf.kpoints'] = kpoints_card(kgrid)
+    files['epw/epw.in'] = epw_input(
+        prefix, cfg['masses_amu'], kgrid, qgrid, nbnd - len(excluded),
+        dvscf_dir='../phonon/save', exclude_bands=excluded,
+    )
+    files['epw/write_ukk.py'] = _write_ukk_script(cfg)
+    return files
 
 
 # --------------------------------------------------------------------------- #
@@ -3836,10 +3906,45 @@ def _ask_divisible(prompt, default, divisor, what):
 
 
 def _collect_elphon_epw(cfg):
-    """Prompt for the EPW-source electron-phonon configuration (default route)."""
-    default_epw = os.path.dirname(cfg['savedir'].rstrip('/')) or '.'
-    cfg['epw_dir'] = ask('EPW outdir (holds <prefix>.epb* and <prefix>.ukk)', default_epw)
+    """Prompt for the EPW-source electron-phonon configuration (default route).
+
+    The QE/EPW runs use the two directories of examples/elphon_epw_example:
+    ``phonon/`` (scf + ph.x) and ``epw/`` (nscf + epw.x, EPW outdir).
+    """
+    from PAOFLOW.gen.epw_inputs import parse_exclude_bands, species_masses
+
+    workdir = cfg.get('workdir', '.')
+    cfg['epw_dir'] = 'epw'
     cfg['coupling_dir'] = cfg['epw_dir']
+    cfg['savedir'] = os.path.join(cfg['epw_dir'], cfg['prefix'] + '.save')
+    template = ask(
+        'pw.x input of the system (gives phonon/scf.in and epw/nscf.in; blank = none)',
+        detect_pw_input(workdir) or '',
+    )
+    cfg['pw_template'] = template
+    cfg['pw_template_text'] = None
+    template_pseudo_dir = None
+    if template:
+        path = os.path.join(workdir, os.path.expanduser(template))
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as handle:
+                cfg['pw_template_text'] = handle.read()
+        except OSError:
+            print(f'  ({path} not readable; phonon/scf.in and epw/nscf.in are not written)')
+        else:
+            template_pseudo_dir = _read_namelist_value(cfg['pw_template_text'], 'pseudo_dir')
+            if template_pseudo_dir is not None:
+                # Relative pseudo_dirs are taken from the template's directory.
+                template_pseudo_dir = os.path.normpath(
+                    os.path.join(os.path.dirname(os.path.abspath(path)), template_pseudo_dir)
+                )
+    if template_pseudo_dir is None:
+        template_pseudo_dir = workdir
+    # phonon/ and epw/ are siblings, so one relative path serves both.
+    default_pseudo = os.path.relpath(template_pseudo_dir, os.path.join(workdir, 'phonon'))
+    cfg['pseudo_dir'] = ask(
+        'pseudo_dir for the phonon/ and epw/ runs', default_pseudo.rstrip('/') + '/'
+    )
     kg = ask_int('Coarse k-grid per axis (nscf, EPW nk1 = nk2 = nk3)', 6)
     while True:
         qg = ask_int(
@@ -3851,8 +3956,6 @@ def _collect_elphon_epw(cfg):
     cfg['kgrid'] = [kg, kg, kg]
     cfg['qgrid'] = [qg, qg, qg]
     cfg['nbnd'] = ask_int('Bands in the nscf run (nbnd, > number of PAO orbitals)', 0)
-    from PAOFLOW.gen.epw_inputs import parse_exclude_bands
-
     while True:
         try:
             cfg['exclude_bands'] = parse_exclude_bands(
@@ -3864,7 +3967,11 @@ def _collect_elphon_epw(cfg):
             break
         except ValueError as err:
             print(f'  {err}')
-    masses = ask('Atomic mass of each species (amu), comma-separated', '')
+    default_masses = species_masses(cfg['pw_template_text'] or '')
+    masses = ask(
+        'Atomic mass of each species (amu), comma-separated',
+        ', '.join('%g' % m for m in default_masses),
+    )
     cfg['masses_amu'] = [float(x) for x in masses.replace(',', ' ').split() if x.strip()]
     cfg['nelec'] = ask_int('Valence electrons (nelec)', 0)
     cfg['dense_q'] = ask_yes_no('Interpolate the phonon q-grid too (dense-q, recommended)?', True)
@@ -3880,7 +3987,7 @@ def _collect_elphon_epw(cfg):
     if cfg['nbnd'] <= 0 or not cfg['masses_amu'] or cfg['nelec'] <= 0:
         print(
             '\nNote: NBND, MASSES_AMU and NELEC are system-specific; edit the '
-            'generated main.elphon.py before running it.'
+            'generated main.elphon.py and epw/write_ukk.py before running them.'
         )
     return cfg
 
@@ -4080,19 +4187,40 @@ def main(argv=None):
             print(f'Wrote {os.path.abspath(plot_path)}')
         # Remind the user of the two-phase workflow (and the MPI dense-q option).
         script = os.path.basename(out_path)
-        print('\nNext steps:')
         if cfg.get('source', 'epw') == 'epw':
+            # QE/EPW inputs in phonon/ and epw/, next to the driver (as in
+            # examples/elphon_epw_example).
+            base = os.path.dirname(os.path.abspath(out_path))
+            for rel, text in build_elphon_epw_inputs(cfg).items():
+                path = os.path.join(base, rel)
+                if os.path.exists(path) and not args.force:
+                    sys.stderr.write(f'Refusing to overwrite {path} (use --force).\n')
+                    continue
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'w', encoding='utf-8') as handle:
+                    handle.write(text)
+                print(f'Wrote {path}')
+            prefix = cfg['prefix']
+            print('\nNext steps:')
+            if not cfg.get('pw_template_text'):
+                print(
+                    '  0) write phonon/scf.in and epw/nscf.in (nscf: K_POINTS card of '
+                    f"epw/nscf.kpoints, nbnd = {cfg['nbnd']})"
+                )
+            print('  1) cd phonon:  pw.x -in scf.in;  ph.x -in ph.in;  python3 <q-e>/EPW/bin/pp.py')
+            print(f'  2) cd ../epw:  mkdir -p {prefix}.save')
             print(
-                f'  1) python {script} inputs   # ph.x input, nscf K_POINTS list, epw.in, placeholder .ukk'
+                f'     cp ../phonon/{prefix}.save/{{charge-density.dat,data-file-schema.xml}} '
+                f'{prefix}.save/'
             )
+            print('     pw.x -in nscf.in;  python3 write_ukk.py;  mpirun -np N epw.x -nk N -in epw.in')
             print(
-                '  2) pw.x scf -> ph.x -> EPW pp.py -> pw.x nscf (full k list) -> epw.x (epbwrite)'
+                f'  3) cd ..:  mpirun -np N python {script}   # PAO interpolation -> alpha^2F, lambda, Tc'
             )
-            print(
-                f'  3) mpirun -np N python {script}   # PAO interpolation -> alpha^2F, lambda, Tc'
-            )
-            print('  4) python plot.elphon.py   # overlays EPW <prefix>.a2f when present')
-        elif cfg.get('dense_q'):
+            print(f'  4) python plot.elphon.py   # overlays EPW epw/{prefix}.a2f when present')
+            return 0
+        print('\nNext steps:')
+        if cfg.get('dense_q'):
             print(f'  1) python {script} inputs      # write the ph.x (+AHC) input templates')
             print('  2) run QE (ph.x phonon + AHC) in the same outdir')
             print(f'  3) mpirun -np N python {script} analyse   # dense-q g(R_e,R_p) -> Tc')

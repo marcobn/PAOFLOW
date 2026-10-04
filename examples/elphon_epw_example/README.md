@@ -29,6 +29,11 @@ matrix elements, and PAOFLOW does all the interpolation.
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
 this directory. Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
 
+`paoflow-gen` (electron-phonon workflow, EPW source) produces this same layout
+from a `pw.x` input of the system: `phonon/scf.in`, `phonon/ph.in`,
+`epw/nscf.in`, `epw/epw.in`, `epw/write_ukk.py`, plus `main.elphon.py` (the
+equivalent of `main.py`) and `plot.elphon.py`.
+
 ---
 
 ## Procedure
@@ -42,10 +47,17 @@ mpirun -np 8 ph.x -in ph.in  > ph.out
 python3 /path/to/q-e/EPW/bin/pp.py          # prefix 'pb' -> collects dvscf, patterns, dyn into save/
 
 cd ../epw
+mkdir -p pb.save                                 # the nscf starts from the scf charge density
+cp ../phonon/pb.save/{charge-density.dat,data-file-schema.xml} pb.save/
 mpirun -np 8 pw.x -in nscf.in > nscf.out
 python3 write_ukk.py                             # pb.ukk for wannierize = .false.
 mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool (-np = -nk)
 ```
+
+The scf and the nscf run in separate directories, so the phonon calculation
+keeps its own `phonon/pb.save` and the nscf overwrites nothing that ph.x or
+`pp.py` produced. The nscf reads the scf charge density, hence the copy into
+`epw/pb.save`.
 
 `epw.x` writes `pb.epb1 … pb.epbN` (the coarse Bloch coupling, one file per
 pool), which together with `pb.ukk` is all PAOFLOW reads. After printing "The
