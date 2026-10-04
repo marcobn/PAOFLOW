@@ -1,3 +1,62 @@
+from __future__ import annotations
+
+import numpy as np
+
+
+def adaptive_widths(
+    vel: np.ndarray, afac: float, dk: float, pairs: bool = False, axis: int = 0
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """Yates adaptive smearing widths from band-diagonal velocities.
+
+    Parameters
+    ----------
+    vel : np.ndarray
+        Band-diagonal velocities (real, or complex with zero imaginary part as
+        the diagonal of a Hermitized ``pksp``).  The Cartesian direction is
+        ``axis`` and the band index is the axis right after it, e.g.
+        ``(3, m)`` at one k-point (``axis=0``) or the dense
+        ``(npks, 3, nawf, nspin)`` layout (``axis=1``).
+    afac : float
+        Adaptive smearing prefactor :math:`\\alpha`.
+    dk : float
+        Mean k-point spacing :math:`\\delta k`.
+    pairs : bool, optional
+        Also return the interband widths.
+    axis : int, optional
+        Position of the Cartesian axis in ``vel``.
+
+    Returns
+    -------
+    delta : np.ndarray
+        ``vel`` with the Cartesian axis removed:
+        :math:`\\alpha\\,\\delta k\\,|v_n|`.
+    delta2 : np.ndarray
+        Only when ``pairs``: the band axis repeated,
+        :math:`\\alpha\\,\\delta k\\,|v_n - v_m|`.
+
+    Notes
+    -----
+    Shared by :func:`do_adaptive_smearing` (whole k-slice) and the sparse
+    mesh pass (one k-point).  ``delta`` is the norm of the real part and
+    ``delta2`` the norm of the complex difference, as the dense kernel
+    always computed them.
+    """
+    from numpy.linalg import norm
+
+    delta = np.ascontiguousarray(norm(np.real(vel), axis=axis))
+    delta *= afac * dk
+    if not pairs:
+        return delta
+    band_axis = axis + 1
+    nband = vel.shape[band_axis]
+    delta2 = np.zeros(delta.shape[:axis] + (nband,) + delta.shape[axis:], dtype=float)
+    for n in range(nband):
+        vel_n = np.take(vel, [n], axis=band_axis)
+        delta2[(slice(None),) * axis + (n,)] = norm(vel_n - vel, axis=axis)
+    delta2 *= afac * dk
+    return delta, delta2
+
+
 def do_adaptive_smearing(data_controller, smearing, afac):
     """Compute adaptive smearing widths for each k-point and band.
 
@@ -42,9 +101,6 @@ def do_adaptive_smearing(data_controller, smearing, afac):
     Reference: J. R. Yates, X. Wang, D. Vanderbilt, I. Souza,
     Phys. Rev. B **75**, 195121 (2007).
     """
-    from numpy.linalg import norm
-    import numpy as np
-
     arrays, attributes = data_controller.data_dicts()
 
     # ----------------------
@@ -52,9 +108,7 @@ def do_adaptive_smearing(data_controller, smearing, afac):
     # ----------------------
 
     nawf = attributes['nawf']
-    nspin = attributes['nspin']
     nkpnts = attributes['nkpnts']
-    npks = arrays['pksp'].shape[0]
 
     diag = np.diag_indices(nawf)
 
@@ -78,16 +132,8 @@ def do_adaptive_smearing(data_controller, smearing, afac):
     else:
         pksaux = np.ascontiguousarray(arrays['pksp'][:, :, diag[0], diag[1]])
 
-    deltakp = np.zeros((npks, nawf, nspin), dtype=float)
-    deltakp2 = np.zeros((npks, nawf, nawf, nspin), dtype=float)
-    for n in range(nawf):
-        deltakp[:, n] = norm(np.real(pksaux[:, :, n]), axis=1)
-        for m in range(nawf):
-            deltakp2[:, n, m, :] = norm(pksaux[:, :, n, :] - pksaux[:, :, m, :], axis=1)
-
+    deltakp, deltakp2 = adaptive_widths(pksaux, afac, dk, pairs=True, axis=1)
     pksaux = None
-    deltakp *= afac * dk
-    deltakp2 *= afac * dk
 
     arrays['deltakp'] = deltakp
     arrays['deltakp2'] = deltakp2

@@ -44,87 +44,25 @@ def do_orbital_texture(data_controller):
     are retained.  The computation is valid only for non-collinear or orbital–orbit
     coupled calculations (``norbital = 1``).
     """
-    import os
-
     import numpy as np
-    from mpi4py import MPI
 
     from ..utils.communication import gather_full
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
+    from .texture import fermi_window_bands, texture_k, write_texture
 
     arrays = data_controller.data_arrays
     attributes = data_controller.data_attributes
 
-    fermi_up, fermi_dw = attributes['fermi_up'], attributes['fermi_dw']
-    nawf, nk1, nk2, nk3 = (
-        attributes['nawf'],
-        attributes['nk1'],
-        attributes['nk2'],
-        attributes['nk3'],
-    )
     E_k_full = gather_full(arrays['E_k'], attributes['npool'])
-
-    ind_plot = []
-    icount = None
-    if rank == 0:
-        icount = 0
-        for ib in range(nawf):
-            E_k_min = np.amin(E_k_full[:, ib, 0])
-            E_k_max = np.amax(E_k_full[:, ib, 0])
-            btwUp = E_k_min < fermi_up and E_k_max > fermi_up
-            btwDwn = E_k_min < fermi_dw and E_k_max > fermi_dw
-            btwUaD = E_k_min > fermi_dw and E_k_max < fermi_up
-            if btwUp or btwDwn or btwUaD:
-                ind_plot.append(ib)
-                icount += 1
-
-    icount = comm.bcast(icount)
-    ind_plot = comm.bcast(ind_plot)
-    arrays['ind_plot'] = ind_plot
+    ind_plot = fermi_window_bands(data_controller, E_k_full)
 
     Lj = arrays['Lj']
     snktot = arrays['v_k'].shape[0]
-    oktxtaux = np.zeros((snktot, 3, nawf, nawf), dtype=complex)
+    txtaux = np.zeros((snktot, 3, arrays['v_k'].shape[2]), dtype=complex)
 
     # Compute matrix elements of the orbital operator
     for ik in range(snktot):
-        for l in range(3):
-            oktxtaux[ik, l, :, :] = (
-                np.conj(arrays['v_k'][ik, :, :, 0].T)
-                .dot(Lj[l, :, :])
-                .dot(arrays['v_k'][ik, :, :, 0])
-            )
+        txtaux[ik] = texture_k(arrays['v_k'][ik, :, :, 0], Lj)
 
-    oktxtaux = np.take(np.diagonal(oktxtaux, axis1=2, axis2=3), ind_plot, axis=2)
-    oktxt = gather_full(np.ascontiguousarray(oktxtaux), attributes['npool'])
-    oktxtaux = None
-
-    if rank == 0:
-        if 'kq' in arrays and E_k_full.shape[0] == arrays['kq'].shape[1]:
-            f = open(os.path.join(attributes['opath'], 'orbital-texture-bands' + '.dat'), 'w')
-            for ik in range(E_k_full.shape[0]):
-                for ib in range(icount):
-                    idx = ind_plot[ib]
-                    f.write(
-                        '\t'.join(
-                            ['%d' % ik]
-                            + ['% 5.8f' % E_k_full[ik, idx, 0]]
-                            + ['% 5.8f' % j for j in oktxt[ik, :, ib].real]
-                        )
-                        + '\n'
-                    )
-                f.write('\n')
-            f.close()
-        else:
-            oktxt = np.reshape(oktxt, (nk1, nk2, nk3, 3, icount), order='C')
-            for ib in range(icount):
-                np.savez(
-                    os.path.join(attributes['opath'], 'orbital_text_band_' + str(ib)),
-                    orbitalband=oktxt[:, :, :, :, ib],
-                )
-
-    arrays['oktxt'] = oktxt
-    oktxt = None
+    txtaux = np.take(txtaux, ind_plot, axis=2)
+    arrays['oktxt'] = write_texture(data_controller, 'orbital', E_k_full, txtaux, ind_plot)
     E_k_full = None

@@ -262,11 +262,90 @@ def ree_tensor(
                     fEkai[i][j].close()
 
 
+def ree_intra_products_k(operator, dH_i, v_k, degen):
+    """Band-diagonal :math:`\\langle O\\rangle\\langle v_i\\rangle` and :math:`\\langle v_i\\rangle^2` at one k-point.
+
+    Parameters
+    ----------
+    operator : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
+        The (site-projected) spin or orbital component.
+    dH_i : np.ndarray or scipy.sparse matrix, shape ``(nawf, nawf)``
+        ``dH/dk`` along the field direction.
+    v_k : np.ndarray, shape ``(nawf, m)``
+    degen : list of np.ndarray
+
+    Returns
+    -------
+    (spin_velocity, velocity_squared) : tuple of np.ndarray, shape ``(m,)``
+        Diagonals of ``O1 * O2`` and ``O2 * O2``, both projected in the basis
+        that diagonalizes ``operator`` inside each degenerate group.
+    """
+    import numpy as np
+
+    from ..utils.perturb_split import perturb_split
+
+    O1, O2 = perturb_split(operator, dH_i, v_k, degen)
+    return np.diagonal(O1 * O2), np.diagonal(O2 * O2)
+
+
 def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, spol, Op1, P):
+    """Intra-band Rashba-Edelstein response :math:`\\chi_{ij}` of one component.
+
+    Notes
+    -----
+    Per k-point the work is :func:`ree_intra_products_k`; the smearing,
+    reduction and write are :func:`ree_intra_from_products`, which the
+    sparse backend calls with products streamed from its mesh pass.
+    """
+    import numpy as np
+
+    arrays, attributes = data_controller.data_dicts()
+
+    nspin = attributes['nspin']
+    nktot = arrays['pksp'].shape[0]
+    nawf = attributes['nawf']
+
+    spin_velocity = np.zeros((nktot, nawf, nspin), dtype=complex)
+    velocity_squared = np.zeros((nktot, nawf, nspin), dtype=complex)
+    for ik in range(nktot):
+        for ispin in range(nspin):
+            spin_velocity[ik, :, ispin], velocity_squared[ik, :, ispin] = ree_intra_products_k(
+                0.5 * (P @ Op1[spol, :, :] + Op1[spol, :, :] @ P),
+                arrays['dHksp'][ik, ipol, :, :, ispin],
+                arrays['v_k'][ik, :, :, ispin],
+                arrays['degen'][ispin][ik],
+            )
+
+    for ispin in range(nspin):
+        ree_intra_from_products(
+            data_controller,
+            prefix_file,
+            ene,
+            delta,
+            ipol,
+            spol,
+            spin_velocity[:, :, ispin],
+            velocity_squared[:, :, ispin],
+            ispin,
+        )
+
+
+def ree_intra_from_products(
+    data_controller, prefix_file, ene, delta, ipol, spol, spin_velocity, velocity_squared, ispin
+):
+    """Smear, reduce and write the intra-band Rashba-Edelstein response of one spin.
+
+    Parameters
+    ----------
+    data_controller : DataController
+        Supplies ``E_k``/``deltakp`` (bands of the products) and the
+        ``ree_*`` unit factors; performs the write.
+    spin_velocity, velocity_squared : np.ndarray, shape ``(nk_local, nbands)``
+        :func:`ree_intra_products_k` of every local k-point.
+    """
     import numpy as np
 
     from ..utils.constants import BOHR_RADIUS_CM, ELECTRONVOLT_SI, HBAR, LL
-    from ..utils.perturb_split import perturb_split
     from ..utils.smearing import gaussian, metpax
 
     arrays, attributes = data_controller.data_dicts()
@@ -279,83 +358,43 @@ def do_rashba_edelstein_intra(data_controller, prefix_file, ene, delta, ipol, sp
     lt = attributes.get('ree_lt', 1.0)
     st = attributes.get('ree_st', 1.0)
 
-    nawf = attributes['nawf']
-    nspin = attributes['nspin']
-    nktot = arrays['pksp'].shape[0]
     ne = ene.size
+    nbands = spin_velocity.shape[1]
 
-    # Hall Magnetization Calculation with Gaussian Smearing
+    E_k = np.real(arrays['E_k'][:, :nbands, ispin])
+    deltakp = arrays['deltakp'][:, :nbands, ispin]
 
-    nawf = attributes['nawf']
+    accaux = np.zeros((ne), dtype=float)  # kai numerator:  Sum <S_spol><v_ipol>
+    jcaux = np.zeros((ne), dtype=float)  # current (field dir.): Sum <v_ipol><v_ipol>
 
-    v_kaux = np.zeros_like(arrays['v_k'])
+    for n in range(ne):
+        # Adaptive Gaussian Smearing
+        if attributes['smearing'] == 'gauss':
+            taux = gaussian(ene[n], E_k, deltakp)
+        # Adaptive M-P smearing
+        elif attributes['smearing'] == 'm-p':
+            taux = metpax(ene[n], E_k, deltakp)
+        elif attributes['smearing'] == None:
+            taux = np.exp(-(((ene[n] - E_k[:, :]) / delta) ** 2)) / np.sqrt(np.pi)
 
-    O1 = np.zeros_like(arrays['pksp'])
-    O2 = np.zeros_like(arrays['pksp'])
+        accaux[n] += np.sum(np.real(taux * spin_velocity))
+        jcaux[n] += np.sum(np.real(taux * velocity_squared))
 
-    for ik in range(nktot):
-        for ispin in range(nspin):
-            O1[ik, spol, :, :, ispin], O2[ik, ipol, :, :, ispin] = perturb_split(
-                0.5 * (P @ Op1[spol, :, :] + Op1[spol, :, :] @ P),
-                arrays['dHksp'][ik, ipol, :, :, ispin],
-                arrays['v_k'][ik, :, :, ispin],
-                arrays['degen'][ispin][ik],
-            )
+    acc = np.zeros((ne), dtype=float) if rank == 0 else None
+    jc = np.zeros((ne), dtype=float) if rank == 0 else None
 
-            # O1[ik,spol,:,:,ispin],O2[ik,ipol,:,:,ispin]= perturb_split(
-            #    arrays['dHksp'][ik,ipol,:,:,ispin],
-            #    arrays['dHksp'][ik,spol,:,:,ispin],
-            #    arrays['v_k'][ik,:,:,ispin],
-            #    arrays['degen'][ispin][ik]
-            # )
+    comm.Reduce(accaux, acc, op=MPI.SUM)
+    comm.Reduce(jcaux, jc, op=MPI.SUM)
+    accaux = jcaux = None
 
-    j_kaux = np.zeros_like(arrays['v_k'])
+    # chi_{ij} = -hbar * kai / (jc * e * a0), as in do_rashba_edelstein.
+    # tau and E_x cancel in the kai/jc ratio, and so do the (1/nkpnts) and
+    # smearing normalizations (both numerator and denominator carry them).
+    chi = None
+    if rank == 0:
+        chi = -HBAR * acc / (jc * ELECTRONVOLT_SI * BOHR_RADIUS_CM + reg)
+        if twoD:
+            chi *= lt / st
 
-    for ispin in range(attributes['nspin']):
-        E_k = np.real(arrays['E_k'][:, :, ispin])
-
-        accaux = np.zeros((ne), dtype=float)  # kai numerator:  Sum <S_spol><v_ipol>
-        jcaux = np.zeros((ne), dtype=float)  # current (field dir.): Sum <v_ipol><v_ipol>
-
-        for ik in range(nktot):
-            v_kaux[ik, :, :, ispin] = O1[ik, spol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
-            j_kaux[ik, :, :, ispin] = O2[ik, ipol, :, :, ispin] * O2[ik, ipol, :, :, ispin]
-
-        if attributes['smearing'] != None:
-            taux = np.zeros((arrays['deltakp'].shape[0], nawf), dtype=float)
-
-        for n in range(ne):
-            # Adaptive Gaussian Smearing
-            if attributes['smearing'] == 'gauss':
-                taux = gaussian(ene[n], E_k, arrays['deltakp'][:, :, ispin])
-            # Adaptive M-P smearing
-            elif attributes['smearing'] == 'm-p':
-                taux = metpax(ene[n], E_k, arrays['deltakp'][:, :, ispin])
-            elif attributes['smearing'] == None:
-                taux = np.exp(-(((ene[n] - E_k[:, :]) / delta) ** 2)) / np.sqrt(np.pi)
-
-            accaux[n] += np.sum(
-                np.real(taux * np.diagonal(v_kaux[:, :, :, ispin], axis1=1, axis2=2))
-            )
-            jcaux[n] += np.sum(
-                np.real(taux * np.diagonal(j_kaux[:, :, :, ispin], axis1=1, axis2=2))
-            )
-
-        acc = np.zeros((ne), dtype=float) if rank == 0 else None
-        jc = np.zeros((ne), dtype=float) if rank == 0 else None
-
-        comm.Reduce(accaux, acc, op=MPI.SUM)
-        comm.Reduce(jcaux, jc, op=MPI.SUM)
-        accaux = jcaux = None
-
-        # chi_{ij} = -hbar * kai / (jc * e * a0), as in do_rashba_edelstein.
-        # tau and E_x cancel in the kai/jc ratio, and so do the (1/nkpnts) and
-        # smearing normalizations (both numerator and denominator carry them).
-        chi = None
-        if rank == 0:
-            chi = -HBAR * acc / (jc * ELECTRONVOLT_SI * BOHR_RADIUS_CM + reg)
-            if twoD:
-                chi *= lt / st
-
-        facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[ipol]), str(LL[spol]))
-        data_controller.write_file_row_col(facc, ene, chi)
+    facc = '%s_reeEf_%s%s.dat' % (prefix_file, str(LL[ipol]), str(LL[spol]))
+    data_controller.write_file_row_col(facc, ene, chi)

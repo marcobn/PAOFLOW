@@ -45,8 +45,6 @@ def do_dielectric_tensor(data_controller, ene):
         ``sigmar``/``sigmai`` are the real (absorptive) and imaginary
         (dispersive) parts of the optical conductivity in SI units (S/m).
     """
-    from ..utils.constants import LL
-
     arrays, attributes = data_controller.data_dicts()
     d_tensor = arrays['d_tensor']
     nspin = attributes['nspin']
@@ -62,6 +60,17 @@ def do_dielectric_tensor(data_controller, ene):
     #                 arrays, attributes, ik, ispin, arrays['b_vectors']
     #             )
 
+    report_dielectric_smearing(attributes)
+
+    for n in range(d_tensor.shape[0]):
+        ipol = d_tensor[n][0]
+        jpol = d_tensor[n][1]
+        per_spin = [do_epsilon(data_controller, ene, ispin, ipol, jpol) for ispin in range(nspin)]
+        write_dielectric(data_controller, ene, ipol, jpol, per_spin)
+
+
+def report_dielectric_smearing(attributes: dict) -> None:
+    """Print the occupation scheme of the dielectric tensor (rank 0)."""
     smearing = attributes['smearing']
     if smearing == None:
         if rank == 0:
@@ -69,119 +78,72 @@ def do_dielectric_tensor(data_controller, ene):
     else:
         if rank == 0:
             print('Using fixed smearing = %.3f eV' % attributes['degauss'])
-
     # if 'deltakp2' in arrays and rank == 0:
     #     print('Adaptive (Yates) interband broadening enabled for the dielectric tensor')
 
-    if nspin == 1:
-        for n in range(d_tensor.shape[0]):
-            ipol = d_tensor[n][0]
-            jpol = d_tensor[n][1]
 
-            epsi, epsr, eels, ieps = do_epsilon(data_controller, ene, 0, ipol, jpol)
-            sigmar, sigmai = optical_conductivity(ene, epsi, epsr, ipol, jpol)
-            # Write files. EELS = -Im(1/eps) is only physically meaningful for
-            # diagonal tensor components, so we skip it for off-diagonal pairs.
-            # The same applies to the refractive index n + iκ and the derived
-            # absorption coefficient and reflectivity (Option A: per principal
-            # axis; off-diagonal complex permittivity requires tensor
-            # diagonalisation, out of scope here).
-            indices = (LL[ipol], LL[jpol])
-            spectra = [
-                (epsi, 'epsi'),
-                (epsr, 'epsr'),
-                (ieps, 'ieps'),
-                (sigmar, 'sigmar'),
-                (sigmai, 'sigmai'),
-            ]
-            if ipol == jpol:
-                nref, kref, alpha, refl = refractive_index(ene, epsi, epsr)
-                spectra.extend(
-                    [
-                        (eels, 'eels'),
-                        (nref, 'nref'),
-                        (kref, 'kref'),
-                        (alpha, 'alpha'),
-                        (refl, 'refl'),
-                    ]
-                )
-            for ep, es in spectra:
-                fn = '%s_%s%s.dat' % ((es,) + indices)
-                data_controller.write_file_row_col(fn, ene, ep)
+def write_dielectric(data_controller, ene, ipol, jpol, per_spin) -> None:
+    """Write every spectrum of one tensor component and report its plasmon frequency.
 
-            if ipol == jpol and attributes.get('emissivity', False):
-                write_emissivity(data_controller, ene, epsr, epsi, LL[ipol] + LL[jpol], '')
+    Parameters
+    ----------
+    data_controller : DataController
+        Performs the (collective) writes.
+    ene : np.ndarray, shape ``(ne,)``
+    ipol, jpol : int
+        Tensor component.
+    per_spin : list of tuple
+        ``(epsi, epsr, eels, ieps)`` of :func:`do_epsilon` per spin channel;
+        with two channels the files gain ``_0`` / ``_1`` suffixes and the
+        plasmon frequency uses their sum.
+    """
+    from ..utils.constants import LL
 
-            if rank == 0 and ipol == jpol:
-                renorm = np.sqrt((2.0 / np.pi) * np.trapezoid(epsi * ene, x=ene))
-                component = LL[ipol] + LL[jpol]
-                print('Component', component, ', plasmon frequency = ', renorm, 'eV')
+    attributes = data_controller.data_attributes
+    spin_polarized = len(per_spin) > 1
+    for ispin, (epsi, epsr, eels, ieps) in enumerate(per_spin):
+        sigmar, sigmai = optical_conductivity(ene, epsi, epsr, ipol, jpol)
 
-    else:
-        for n in range(d_tensor.shape[0]):
-            ipol = d_tensor[n][0]
-            jpol = d_tensor[n][1]
+        # Write files. EELS = -Im(1/eps) is only physically meaningful for
+        # diagonal tensor components, so we skip it for off-diagonal pairs.
+        # The same applies to the refractive index n + iκ and the derived
+        # absorption coefficient and reflectivity (Option A: per principal
+        # axis; off-diagonal complex permittivity requires tensor
+        # diagonalisation, out of scope here).
+        spectra = [
+            (epsi, 'epsi'),
+            (epsr, 'epsr'),
+            (ieps, 'ieps'),
+            (sigmar, 'sigmar'),
+            (sigmai, 'sigmai'),
+        ]
+        if ipol == jpol:
+            nref, kref, alpha, refl = refractive_index(ene, epsi, epsr)
+            spectra.extend(
+                [
+                    (eels, 'eels'),
+                    (nref, 'nref'),
+                    (kref, 'kref'),
+                    (alpha, 'alpha'),
+                    (refl, 'refl'),
+                ]
+            )
+        for ep, es in spectra:
+            if spin_polarized:
+                fn = '%s_%s%s_%d.dat' % (es, LL[ipol], LL[jpol], ispin)
+            else:
+                fn = '%s_%s%s.dat' % (es, LL[ipol], LL[jpol])
+            data_controller.write_file_row_col(fn, ene, ep)
 
-            epsi_0, epsr_0, eels_0, ieps_0 = do_epsilon(data_controller, ene, 0, ipol, jpol)
-            epsi_1, epsr_1, eels_1, ieps_1 = do_epsilon(data_controller, ene, 1, ipol, jpol)
-            sigmar_0, sigmai_0 = optical_conductivity(ene, epsi_0, epsr_0, ipol, jpol)
-            sigmar_1, sigmai_1 = optical_conductivity(ene, epsi_1, epsr_1, ipol, jpol)
-            # Write files. EELS = -Im(1/eps) is only physically meaningful for
-            # diagonal tensor components, so we skip it for off-diagonal pairs.
-            indices = (LL[ipol], LL[jpol], 0)
-            spectra0 = [
-                (epsi_0, 'epsi'),
-                (epsr_0, 'epsr'),
-                (ieps_0, 'ieps'),
-                (sigmar_0, 'sigmar'),
-                (sigmai_0, 'sigmai'),
-            ]
-            if ipol == jpol:
-                nref_0, kref_0, alpha_0, refl_0 = refractive_index(ene, epsi_0, epsr_0)
-                spectra0.extend(
-                    [
-                        (eels_0, 'eels'),
-                        (nref_0, 'nref'),
-                        (kref_0, 'kref'),
-                        (alpha_0, 'alpha'),
-                        (refl_0, 'refl'),
-                    ]
-                )
-            for ep, es in spectra0:
-                fn = '%s_%s%s_%d.dat' % ((es,) + indices)
-                data_controller.write_file_row_col(fn, ene, ep)
-            if ipol == jpol and attributes.get('emissivity', False):
-                write_emissivity(data_controller, ene, epsr_0, epsi_0, LL[ipol] + LL[jpol], '_0')
-            indices = (LL[ipol], LL[jpol], 1)
-            spectra1 = [
-                (epsi_1, 'epsi'),
-                (epsr_1, 'epsr'),
-                (ieps_1, 'ieps'),
-                (sigmar_1, 'sigmar'),
-                (sigmai_1, 'sigmai'),
-            ]
-            if ipol == jpol:
-                nref_1, kref_1, alpha_1, refl_1 = refractive_index(ene, epsi_1, epsr_1)
-                spectra1.extend(
-                    [
-                        (eels_1, 'eels'),
-                        (nref_1, 'nref'),
-                        (kref_1, 'kref'),
-                        (alpha_1, 'alpha'),
-                        (refl_1, 'refl'),
-                    ]
-                )
-            for ep, es in spectra1:
-                fn = '%s_%s%s_%d.dat' % ((es,) + indices)
-                data_controller.write_file_row_col(fn, ene, ep)
-            if ipol == jpol and attributes.get('emissivity', False):
-                write_emissivity(data_controller, ene, epsr_1, epsi_1, LL[ipol] + LL[jpol], '_1')
+        if ipol == jpol and attributes.get('emissivity', False):
+            spin_tag = '_%d' % ispin if spin_polarized else ''
+            write_emissivity(data_controller, ene, epsr, epsi, LL[ipol] + LL[jpol], spin_tag)
 
-            if rank == 0 and ipol == jpol:
-                epsi = epsi_0 + epsi_1
-                renorm = np.sqrt((2.0 / np.pi) * np.trapezoid(epsi * ene, x=ene))
-                component = LL[ipol] + LL[jpol]
-                print('Component', component, ', plasmon frequency = ', renorm, 'eV')
+    if rank == 0 and ipol == jpol:
+        epsi = per_spin[0][0] if not spin_polarized else per_spin[0][0] + per_spin[1][0]
+        renorm = np.sqrt((2.0 / np.pi) * np.trapezoid(epsi * ene, x=ene))
+        component = LL[ipol] + LL[jpol]
+        print('Component', component, ', plasmon frequency = ', renorm, 'eV')
 
 
 def do_jdos(data_controller, ene, jdos_smeartype):
@@ -304,15 +266,22 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
     ieps : ndarray, shape (ne,)
         Kramers\u2013Kronig-derived real part.
     """
-    from ..utils.constants import BOHR_RADIUS_ANGS, ELECTRONVOLT_SI
-
     # Compute the dielectric tensor
 
-    _, attributes = data_controller.data_dicts()
-
-    esize = ene.size
     if ene[0] == 0.0:
         ene[0] = 0.00001
+
+    # =======================
+    # EPS
+    # =======================
+
+    epsi_aux, epsr_aux = eps_loop(data_controller, ene, ispin, ipol, jpol)
+    return epsilon_from_partials(data_controller, ene, epsi_aux, epsr_aux, ipol, jpol)
+
+
+def epsilon_factor(attributes: dict) -> float:
+    """Normalization of the Kubo--Greenwood partial sums (SI, per k-point and cell volume)."""
+    from ..utils.constants import BOHR_RADIUS_ANGS, ELECTRONVOLT_SI
 
     # if from_wfc:
     #     factor = (
@@ -324,7 +293,7 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
     #     )
     # else:
     # 8.8541878188e-12 = \epsilon_0
-    factor = (
+    return (
         2
         * ELECTRONVOLT_SI
         * (1e10)
@@ -334,11 +303,19 @@ def do_epsilon(data_controller, ene, ispin, ipol, jpol):
         / (attributes['omega'] * BOHR_RADIUS_ANGS**3)
     )
 
-    # =======================
-    # EPS
-    # =======================
 
-    epsi_aux, epsr_aux = eps_loop(data_controller, ene, ispin, ipol, jpol)
+def epsilon_from_partials(data_controller, ene, epsi_aux, epsr_aux, ipol, jpol):
+    """Reduce the per-rank partial sums of :func:`eps_loop` into the spectra.
+
+    Returns
+    -------
+    (epsi, epsr, eels, ieps) : tuple of np.ndarray
+        As :func:`do_epsilon`, on every rank.
+    """
+    _, attributes = data_controller.data_dicts()
+    esize = ene.size
+    factor = epsilon_factor(attributes)
+
     epsi = np.zeros(esize, dtype=float)
     comm.Allreduce(epsi_aux, epsi, op=MPI.SUM)
     epsi_aux = None
@@ -773,16 +750,12 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
 
     arrays, attributes = data_controller.data_dicts()
 
-    esize = ene.size
     # if from_wfc:
     #     bndmax = attributes['nbnds']
     #     Ek = np.swapaxes(arrays['my_eigsmat'][:, :, ispin], 0, 1)
     # else:
     bndmax = attributes['bnd']
     Ek = arrays['E_k'][:, :bndmax, ispin]
-
-    intersmear = attributes['delta']
-    smearing = attributes['smearing']
 
     # Optional adaptive (Yates et al., PRB 75, 195121 (2007)) interband
     # broadening. When ``pf.adaptive_smearing()`` has been run it stores the
@@ -797,43 +770,71 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     # Set attr['adaptive_smearing_floor'] to override (e.g. to the fixed
     # ``delta`` for a smoother, purely additive broadening).
     adaptive = 'deltakp2' in arrays
+    deltakp2 = arrays['deltakp2'][:, :bndmax, :bndmax, ispin] if adaptive else None
+    settings = eps_settings(attributes, ene, adaptive)
+
+    fn, fnF = eps_occupations(Ek, settings)
+    epsi, epsr, drude_weight = eps_accumulate(
+        Ek,
+        fn,
+        fnF,
+        arrays['pksp'][:, ipol, :bndmax, :bndmax, ispin],
+        arrays['pksp'][:, jpol, :bndmax, :bndmax, ispin],
+        deltakp2,
+        ene,
+        settings,
+    )
+    epsi, epsr = eps_finish(epsi, epsr, drude_weight, ene, settings)
+
+    np.seterr(over=orig_over_err)
+
+    return (epsi, epsr)
+
+
+def eps_settings(attributes: dict, ene: np.ndarray, adaptive: bool) -> dict:
+    """Run-wide parameters of the Kubo--Greenwood sum of :func:`eps_loop`.
+
+    Parameters
+    ----------
+    attributes : dict
+        Supplies ``delta``, ``smearing``, ``nspin``, ``dftSO``, ``degauss``,
+        ``insulator``, ``intrasmear`` and optionally ``adaptive_smearing_floor``.
+    ene : np.ndarray, shape ``(ne,)``
+        Photon-energy grid (eV).
+    adaptive : bool
+        Whether interband adaptive widths ``deltakp2`` are used.
+
+    Returns
+    -------
+    dict
+        The thresholds, spin factor, smearing and widths shared by every
+        k-point; raises for a metal without a smearing width, as before.
+    """
+    smearing = attributes['smearing']
+    intersmear = attributes['delta']
+    spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
+    settings = {
+        'adaptive': adaptive,
+        'intersmear': intersmear,
+        'smearing': smearing,
+        'spin_factor': spin_factor,
+        'Ef': 1.0e-9,
+        # ``degauss`` is needed both for the integrated occupations (insulators)
+        # and for the Drude term (metals); pull it unconditionally so the metal
+        # fallback below cannot NameError when ``smearing is None``.
+        'degauss': attributes.get('degauss', None),
+        'insulator': attributes['insulator'],
+        'th0': 1.0e-3 * spin_factor,
+        'th1': 0.5e-4 * spin_factor,
+        'eta_floor': 0.0,
+    }
     if adaptive:
         grid_spacing = (ene[1] - ene[0]) if ene.size > 1 else intersmear
-        eta_floor = attributes.get('adaptive_smearing_floor', grid_spacing)
-        deltakp2 = arrays['deltakp2'][:, :bndmax, :bndmax, ispin]
-        # if rank == 0:
-        #     print('Using adaptive (Yates) interband smearing for the dielectric tensor')
-
-    spin_factor = 2 if (attributes['nspin'] == 1 and not attributes['dftSO']) else 1
-    Ef = 1.0e-9
-
-    epsi = np.zeros(esize, dtype=float)
-    epsr = np.zeros(esize, dtype=float)
-
-    # ``degauss`` is needed both for the integrated occupations (insulators)
-    # and for the Drude term (metals); pull it unconditionally so the metal
-    # fallback below cannot NameError when ``smearing is None``.
-    degauss = attributes.get('degauss', None)
-
-    if smearing == None or attributes['insulator']:
-        fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
-    elif smearing == 'gauss':
-        fn = spin_factor * intgaussian(Ek, Ef, degauss)
-    else:  # smearing == 'm-p':
-        fn = spin_factor * intmetpax(Ek, Ef, degauss)
-
-    th0 = 1.0e-3 * spin_factor
-    th1 = 0.5e-4 * spin_factor
-
+        settings['eta_floor'] = attributes.get('adaptive_smearing_floor', grid_spacing)
     if not attributes['insulator']:
-        intrasmear = attributes['intrasmear']
-
-        if smearing == 'gauss':
-            fnF = spin_factor * gaussian(Ek, Ef, degauss)
-        elif smearing == 'm-p':
-            fnF = spin_factor * metpax(Ek, Ef, degauss)
-        else:
-            if degauss is None:
+        settings['intrasmear'] = attributes['intrasmear']
+        if smearing not in ('gauss', 'm-p'):
+            if settings['degauss'] is None:
                 raise ValueError(
                     'Metal dielectric requires a smearing width: pass'
                     " `smearing='gauss'` (or 'm-p') and a `degauss` value."
@@ -841,9 +842,77 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
             if rank == 0:
                 print(
                     'Smearing is None for a metal, switching to gaussian'
-                    ' smearing with degauss = %.4f eV' % degauss
+                    ' smearing with degauss = %.4f eV' % settings['degauss']
                 )
+    return settings
+
+
+def eps_occupations(Ek: np.ndarray, settings: dict) -> tuple[np.ndarray, np.ndarray | None]:
+    """Occupations ``fn`` and Fermi-surface weights ``fnF`` (metals only) of a block of k-points."""
+    spin_factor, Ef, degauss = settings['spin_factor'], settings['Ef'], settings['degauss']
+    smearing = settings['smearing']
+    if smearing == None or settings['insulator']:
+        fn = spin_factor * (Ek <= Ef)  # fixed occupation for insulator, no smearing
+    elif smearing == 'gauss':
+        fn = spin_factor * intgaussian(Ek, Ef, degauss)
+    else:  # smearing == 'm-p':
+        fn = spin_factor * intmetpax(Ek, Ef, degauss)
+
+    fnF = None
+    if not settings['insulator']:
+        if smearing == 'gauss':
             fnF = spin_factor * gaussian(Ek, Ef, degauss)
+        elif smearing == 'm-p':
+            fnF = spin_factor * metpax(Ek, Ef, degauss)
+        else:
+            fnF = spin_factor * gaussian(Ek, Ef, degauss)
+    return fn, fnF
+
+
+def eps_accumulate(
+    Ek: np.ndarray,
+    fn: np.ndarray,
+    fnF: np.ndarray | None,
+    P_all: np.ndarray,
+    Q_all: np.ndarray,
+    deltakp2: np.ndarray | None,
+    ene: np.ndarray,
+    settings: dict,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Interband partial sums and Drude weight over a block of k-points.
+
+    Parameters
+    ----------
+    Ek, fn : np.ndarray, shape ``(nk, bnd)``
+        Window eigenvalues and occupations.
+    fnF : np.ndarray or None, shape ``(nk, bnd)``
+        Fermi-surface weights (metals), else ``None``.
+    P_all, Q_all : np.ndarray, shape ``(nk, bnd, bnd)``, complex
+        Momentum matrices along ``ipol`` and ``jpol`` (window block of ``pksp``).
+    deltakp2 : np.ndarray or None, shape ``(nk, bnd, bnd)``
+        Interband adaptive widths, when ``settings['adaptive']``.
+    ene : np.ndarray, shape ``(ne,)``
+    settings : dict
+        From :func:`eps_settings`.
+
+    Returns
+    -------
+    (epsi, epsr, drude_weight)
+        Additive over k-points: the dense kernel passes its whole slice, the
+        sparse backend one k-point at a time.  Uses the compiled backend when
+        it is available, the vectorised NumPy loop otherwise.
+    """
+    esize = ene.size
+    bndmax = Ek.shape[1]
+    adaptive = settings['adaptive']
+    intersmear = settings['intersmear']
+    spin_factor = settings['spin_factor']
+    th0, th1 = settings['th0'], settings['th1']
+    insulator = settings['insulator']
+    eta_floor = settings['eta_floor']
+
+    epsi = np.zeros(esize, dtype=float)
+    epsr = np.zeros(esize, dtype=float)
 
     # Vectorised Kubo--Greenwood accumulation. The interband term is built per
     # k-point by broadcasting over (band-pair, energy); the metal (Drude) term
@@ -855,7 +924,7 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
     offdiag = ~np.eye(bndmax, dtype=bool)
     drude_weight = 0.0
 
-    fnF_arg = fnF if not attributes['insulator'] else None
+    fnF_arg = fnF if not insulator else None
     eta_floor_arg = eta_floor if adaptive else 0.0
     deltakp2_arg = deltakp2 if adaptive else None
 
@@ -864,8 +933,6 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
 
     if _eps_native_available():
         # pksp2[ik, b2, b1] = Re(P.T * Q) = Re(pksp[ik, ipol].T * pksp[ik, jpol]).
-        P_all = arrays['pksp'][:, ipol, :bndmax, :bndmax, ispin]
-        Q_all = arrays['pksp'][:, jpol, :bndmax, :bndmax, ispin]
         pksp2_all = np.real(np.transpose(P_all, (0, 2, 1)) * Q_all)
         epsi, epsr, drude_weight = _eps_native(
             Ek,
@@ -884,15 +951,13 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
         for ik in range(fn.shape[0]):
             Ek_k = Ek[ik]
             fn_k = fn[ik]
-            P = arrays['pksp'][ik, ipol, :bndmax, :bndmax, ispin]
-            Q = arrays['pksp'][ik, jpol, :bndmax, :bndmax, ispin]
-
+            P = P_all[ik]
+            Q = Q_all[ik]
             # Matrices indexed [iband2, iband1] to match the original loop order.
             E_diff = Ek_k[:, None] - Ek_k[None, :]
             f_nm = fn_k[:, None] - fn_k[None, :]
             # pksp2[b2, b1] = Re(pksp[ipol, b1, b2] * pksp[jpol, b2, b1]) = Re(P.T * Q)
             pksp2 = np.real(P.T * Q)
-
             mask = (
                 offdiag
                 & (np.abs(f_nm) > th0)
@@ -908,26 +973,32 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
                     eta = np.maximum(deltakp2[ik, b1_idx, b2_idx], eta_floor)[:, None]
                 else:
                     eta = intersmear
-
                 Dm = D[:, None] ** 2 - ene2[None, :]
                 denom = (Dm**2 + eta**2 * ene2[None, :]) * D[:, None]
                 common = (pk * fb1)[:, None] / denom
                 epsi += np.sum(common * eta * ene[None, :], axis=0)
                 epsr += np.sum(common * Dm, axis=0)
-
-            if not attributes['insulator']:
+            if not insulator:
                 d = np.arange(bndmax)
                 pksp2_diag = np.real(P[d, d] * Q[d, d])
                 drude_weight += np.dot(pksp2_diag, fnF[ik])
 
-    if not attributes['insulator']:
+    return epsi, epsr, drude_weight
+
+
+def eps_finish(
+    epsi: np.ndarray, epsr: np.ndarray, drude_weight: float, ene: np.ndarray, settings: dict
+) -> tuple[np.ndarray, np.ndarray]:
+    """Add the separable Drude term (metals) to the accumulated interband sums."""
+    if not settings['insulator']:
+        intrasmear = settings['intrasmear']
+        ene2 = ene**2
         # Separable Drude profile: epsi_metal = S * intrasmear * ene / denom,
         # epsr_metal = -S * ene^2 / denom, with S the accumulated weight and
         # denom = ene^4 + intrasmear^2 ene^2.
         drude_denom = ene2**2 + intrasmear**2 * ene2
         epsi_metal = drude_weight * intrasmear * ene / drude_denom
         epsr_metal = -drude_weight * ene2 / drude_denom
-
         # The intraband (Drude) contribution carries a 4\u03c0 prefactor in QE
         # eq. (8) line 1, while the interband contribution carries 8\u03c0
         # (eq. 8 line 2). Both branches are multiplied by the common
@@ -936,9 +1007,7 @@ def eps_loop(data_controller, ene, ispin, ipol, jpol):
         # absolute normalisation.
         epsi += 0.5 * epsi_metal
         epsr += 0.5 * epsr_metal
-
-    np.seterr(over=orig_over_err)
-    return (epsi, epsr)
+    return epsi, epsr
 
 
 def jdos_loop(data_controller, ene, ispin, jdos_smeartype):

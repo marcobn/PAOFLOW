@@ -128,16 +128,12 @@ def calc_chi2(data_controller=None, tensor=None):
     Om_znkaux = np.zeros((nk, nbnd, nspin), dtype=float)
     for ispin in range(nspin):
         for ik in range(nk):
-            E = arry['E_k'][ik, :, ispin]
-            # ----------------------------------------------------
-            # E_nm = (E_n - E_m)^2 + deltap^2
-            # ----------------------------------------------------
-            E_nm = (E - E[:, None]) ** 2 + deltap**2
-            E_nm[E_nm < 1.0e-4] = np.inf
-            numerator = np.imag(oper_matrix1[ik, :, :, ispin] * oper_matrix2[ik, :, :, ispin].T)
-            Om_znkaux[ik, :, ispin] = -2.0 * np.sum(numerator / E_nm, axis=1)
-            numerator = None
-            E_nm = None
+            Om_znkaux[ik, :, ispin] = eqn3_berry_k(
+                oper_matrix1[ik, :, :, ispin],
+                oper_matrix2[ik, :, :, ispin],
+                arry['E_k'][ik, :, ispin],
+                deltap,
+            )
     oper_matrix1 = None
     oper_matrix2 = None
 
@@ -153,27 +149,89 @@ def calc_chi2(data_controller=None, tensor=None):
     # ============================================================
 
     local_response = np.zeros((esize, nspin), dtype=float)
+    for ispin in range(nspin):
+        local_response[:, ispin] = eqn3_occupied_sum(
+            arry['E_k'][:, :, ispin],
+            arry['deltakp'][:, :, ispin],
+            Om_znkaux[:, :, ispin],
+            ene,
+            attr['smearing'],
+        )
+    Om_znkaux = None
+    eqn3_finish(data_controller, local_response, ene, tensor)
+
+
+def eqn3_berry_k(op1, op2, E, deltap):
+    """Band-resolved Berry-like curvature of equation (3) at one k-point and spin.
+
+    Returns
+    -------
+    np.ndarray, shape ``(nbnd,)``
+        :math:`-2 \\sum_m \\mathrm{Im}[O_{1,nm} O_{2,mn}] / ((E_n - E_m)^2 + \\delta^2)`.
+    """
+    # ----------------------------------------------------
+    # E_nm = (E_n - E_m)^2 + deltap^2
+    # ----------------------------------------------------
+    E_nm = (E - E[:, None]) ** 2 + deltap**2
+    E_nm[E_nm < 1.0e-4] = np.inf
+    numerator = np.imag(op1 * op2.T)
+    return -2.0 * np.sum(numerator / E_nm, axis=1)
+
+
+def eqn3_occupied_sum(E_k, deltakp, Om_znkaux, ene, smearing):
+    """Occupation-weighted sum over a block of k-points and bands, per energy.
+
+    Parameters
+    ----------
+    E_k, deltakp, Om_znkaux : np.ndarray, shape ``(nk, nbnd)``
+        One spin channel of a block of k-points; the dense kernel passes its
+        whole slice, the sparse backend one k-point at a time.
+    ene : np.ndarray, shape ``(esize,)``
+    smearing : {'gauss', 'm-p', None}
+
+    Returns
+    -------
+    np.ndarray, shape ``(esize,)``
+    """
+    esize = ene.size
+    local_response = np.zeros(esize, dtype=float)
     # ------------------------------------------------------------
     # Calculate energy-dependent response.
     # ------------------------------------------------------------
-    for ispin in range(nspin):
-        for i in range(esize):
-            # ----------------------------------------------------
-            # Calculate smearing function.
-            # ----------------------------------------------------
-            if attr['smearing'] == 'gauss':
-                smear = intgaussian(arry['E_k'][:, :, ispin], ene[i], arry['deltakp'][:, :, ispin])
-            elif attr['smearing'] == 'm-p':
-                smear = intmetpax(arry['E_k'][:, :, ispin], ene[i], arry['deltakp'][:, :, ispin])
-            else:
-                smear = 0.5 * (-np.sign(arry['E_k'][:, :, ispin] - ene[i]) + 1)
-            # ----------------------------------------------------
-            # perform BOTH sums immediately: sum_k sum_n Omega_nk * smear_kn
-            # ----------------------------------------------------
-            local_response[i, ispin] = np.sum(Om_znkaux[:, :, ispin] * smear)
-            smear = None
-    Om_znkaux = None
+    for i in range(esize):
+        # ----------------------------------------------------
+        # Calculate smearing function.
+        # ----------------------------------------------------
+        if smearing == 'gauss':
+            smear = intgaussian(E_k, ene[i], deltakp)
+        elif smearing == 'm-p':
+            smear = intmetpax(E_k, ene[i], deltakp)
+        else:
+            smear = 0.5 * (-np.sign(E_k - ene[i]) + 1)
+        # ----------------------------------------------------
+        # perform BOTH sums immediately: sum_k sum_n Omega_nk * smear_kn
+        # ----------------------------------------------------
+        local_response[i] = np.sum(Om_znkaux * smear)
+        smear = None
+    return local_response
+
+
+def eqn3_finish(data_controller, local_response, ene, tensor):
+    """Reduce, normalize and write the equation (3) response of one tensor component.
+
+    Parameters
+    ----------
+    local_response : np.ndarray, shape ``(esize, nspin)``
+        This rank's :func:`eqn3_occupied_sum` per spin channel.
+    """
+    arry, attr = data_controller.data_dicts()
+    if attr['response'] == 'shc':
+        spol, jpol, ipol = tensor
+    else:
+        cpol, ipol = tensor
+        spol = cpol
     local_response = np.sum(local_response, axis=1)
+
     # ============================================================
     # MPI REDUCTION
     # local_response has shape: (esize, nspin)
