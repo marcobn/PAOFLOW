@@ -87,7 +87,10 @@ class SparseConfig:
         Real-space cutoff in Bohr on the physical bond length, applied at
         the base cell in place of the element threshold.  It keeps or drops
         whole atom-pair blocks by bond length, so it respects the
-        space-group symmetry of the crystal.  Mutually exclusive with
+        space-group symmetry of the crystal.  The radius is moved into the
+        gap above the outermost neighbour shell it reaches (a shell within
+        1e-3 Bohr of it counts as reached), so a value typed on a shell
+        distance cannot keep part of that shell.  Mutually exclusive with
         ``bond_order``.
     bond_order : int or None
         The same cutoff as a neighbour-shell count: keep every bond up to

@@ -6,9 +6,11 @@ including the n-th distinct interatomic distance.  The shell form is the
 natural one for a crystal.  Symmetry-equivalent bonds have the same length,
 so a cutoff placed between two shells keeps or drops each star as a whole
 and the truncated ``H(R)`` retains the point group of the lattice.  This
-module turns a shell count into a radius;
+module turns a shell count into a radius (:func:`shell_cutoff`) and moves
+an explicit radius into the gap above the shell it reaches
+(:func:`snap_cutoff`), so neither form can cut through a shell;
 :meth:`~PAOFLOW.sparse.hamiltonian.SparseHamiltonian.from_data_controller`
-then applies it exactly like ``rcut``.
+then applies the radius.
 
 The bond carrying ``H_ij(R)`` has length ``|alat*R + tau_i - tau_j|``, the
 same quantity ``from_data_controller`` cuts on (``Dnm_ij = tau_i - tau_j``
@@ -94,14 +96,80 @@ def compute_star_shells(
     pair = tau[None, :, :] - tau[:, None, :]  # tau_j - tau_i
     dist = np.linalg.norm(pair[:, :, None, :] + Rcart[None, None, :, :], axis=3).ravel()
     dist = np.unique(np.round(dist[(dist > distance_tol) & (dist <= max_radius)], 6))
-    if dist.size == 0:
-        return np.empty(0, dtype=float)
+    return _shell_starts(dist, distance_tol)
 
-    shells = [dist[0]]
-    for d in dist[1:]:
-        if d - shells[-1] > distance_tol:
-            shells.append(d)
-    return np.array(shells, dtype=float)
+
+def _shell_starts(dist: np.ndarray, distance_tol: float) -> np.ndarray:
+    """Group sorted distances into shells and return the first of each.
+
+    Parameters
+    ----------
+    dist : np.ndarray, 1-D
+        Sorted, distinct distances (Bohr).
+    distance_tol : float
+        A distance within this of a shell's first member joins that shell.
+
+    Returns
+    -------
+    np.ndarray, 1-D, float
+        The smallest distance of every shell, in increasing order.
+
+    Notes
+    -----
+    Every shell spans at most ``distance_tol``, and the next shell starts
+    strictly more than ``distance_tol`` past the previous start, so
+    ``start + distance_tol`` always lies in the gap above a shell.  The
+    loop runs once per shell, not once per distance.
+    """
+    starts = []
+    i = 0
+    while i < dist.size:
+        starts.append(dist[i])
+        i = int(np.searchsorted(dist, dist[i] + distance_tol, side='right'))
+    return np.array(starts, dtype=float)
+
+
+def snap_cutoff(distances: np.ndarray, rcut: float, distance_tol: float = 1.0e-3) -> float:
+    """Move a radius into the gap above the outermost shell it reaches.
+
+    Parameters
+    ----------
+    distances : np.ndarray
+        Bond lengths the cutoff is compared against (Bohr), any shape.
+    rcut : float
+        Requested cutoff radius (Bohr).
+    distance_tol : float, optional
+        Shell-merging tolerance (Bohr).  A shell starting within this of
+        ``rcut`` counts as reached.
+
+    Returns
+    -------
+    float
+        ``start + distance_tol`` of the outermost shell starting at or below
+        ``rcut + distance_tol``, or ``rcut`` itself if no bond is that short.
+
+    Notes
+    -----
+    Symmetry-equivalent bonds have the same length only up to rounding
+    (about 1e-12 Bohr, or the precision of the input positions).  A radius
+    placed on a shell distance therefore keeps an arbitrary part of that
+    shell and breaks the symmetry of the truncated ``H(R)``.  The snapped
+    radius keeps or drops every shell whole, as ``bond_order`` does via
+    :func:`shell_cutoff`.  A radius already inside a gap keeps the same
+    bonds as before.
+
+    The shells are built from ``distances`` themselves, the exact lengths
+    the mask cuts on, so the snap holds beyond the aliasing-safe radius too
+    (where :func:`compute_star_shells` stops counting).
+    """
+    rcut = float(rcut)
+    dist = np.unique(np.ravel(distances))
+    # shells starting past this are dropped whole, and the starts below
+    # it do not depend on the distances above it
+    dist = dist[dist <= rcut + distance_tol]
+    if dist.size == 0:
+        return rcut
+    return float(_shell_starts(dist, distance_tol)[-1]) + distance_tol
 
 
 def assign_shell_order(

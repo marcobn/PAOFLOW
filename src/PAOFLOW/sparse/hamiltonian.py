@@ -413,14 +413,18 @@ class SparseHamiltonian:
             with one; a positive value is exclusive with ``rcut`` and
             ``bond_order`` (see :func:`PAOFLOW.sparse.config.resolve_threshold`).
         rcut : float or None, optional
-            Bond-length cutoff in Bohr.
+            Bond-length cutoff in Bohr.  Snapped into the gap above the
+            outermost shell it reaches (:func:`PAOFLOW.sparse.shells.snap_cutoff`);
+            ``drop_report`` keeps both the applied ``rcut`` and
+            ``rcut_requested``.
         bond_order : int or None, optional
             Neighbour-shell form of the same cutoff: keep bonds up to and
             including this shell (``1`` is nearest neighbours).  Resolved to
             a radius by :func:`PAOFLOW.sparse.shells.shell_cutoff`.  Mutually
             exclusive with ``rcut``.
         distance_tol : float, optional
-            Shell-merging tolerance for ``bond_order`` (Bohr).
+            Shell-merging tolerance for ``bond_order`` and for the snap of
+            ``rcut`` (Bohr).
 
         Returns
         -------
@@ -464,6 +468,13 @@ class SparseHamiltonian:
         ``rcut`` drops bonds whose physical length ``|alat*R + tau_i -
         tau_j|`` exceeds it.  It is applied as part of the keep mask, not as
         a post-filter, so the reported ``eig_bound`` covers it too.
+        Symmetry-equivalent bonds are equally long only up to rounding, so
+        a radius placed on a shell distance would keep part of that shell.
+        An explicit ``rcut`` is therefore snapped to ``start + distance_tol``
+        of the outermost shell starting within ``distance_tol`` of it, with
+        shells grouped from the very lengths the mask compares; a radius
+        already inside a gap keeps the same bonds.  ``bond_order`` lands
+        there by construction.
         The kept set has to be closed under the Hermitian pairing ``(i,j,R)
         -> (j,i,-R)`` or the bond list stops being Hermitian.  Off the
         Nyquist plane that is automatic, since ``-R`` is a distinct grid
@@ -487,7 +498,7 @@ class SparseHamiltonian:
         can never get there: shells are only counted inside the safe radius.
         """
         from .config import resolve_threshold
-        from .shells import aliasing_safe_radius, shell_cutoff
+        from .shells import aliasing_safe_radius, shell_cutoff, snap_cutoff
 
         arry, attr = data_controller.data_dicts()
         HRs = arry['HRs']
@@ -496,6 +507,7 @@ class SparseHamiltonian:
         if bond_order is not None and rcut is not None:
             raise ValueError('Give either rcut (Bohr) or bond_order (shells), not both.')
         threshold = resolve_threshold(threshold, rcut, bond_order)
+        rcut_requested = None if rcut is None else float(rcut)
         if bond_order is not None:
             rcut, _, _ = shell_cutoff(data_controller, bond_order, distance_tol)
         safe_radius = aliasing_safe_radius(
@@ -512,6 +524,8 @@ class SparseHamiltonian:
             dist = np.linalg.norm(Dnm[:, :, None, :] + Rcart[None, None, :, :], axis=3)
             minus = _minus_R_index(R_int, (nk1, nk2, nk3))
             dist = np.minimum(dist, dist.transpose(1, 0, 2)[:, :, minus])
+            if bond_order is None:
+                rcut = snap_cutoff(dist, rcut, distance_tol)
             keep &= dist <= float(rcut)
         rows, cols, ridx = np.nonzero(keep)
 
@@ -520,6 +534,7 @@ class SparseHamiltonian:
         drop_report = {
             'threshold': float(threshold),
             'rcut': None if rcut is None else float(rcut),
+            'rcut_requested': rcut_requested,
             'bond_order': None if bond_order is None else int(bond_order),
             'aliasing_safe_radius': safe_radius,
             # shells are only counted inside the safe radius, so a shell

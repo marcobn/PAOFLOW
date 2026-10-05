@@ -415,6 +415,15 @@ an array of per-k `(nawf, nawf)` matrices is not.
   maps onto `R` itself and the two partners have *different* lengths
   (tens of Bohr apart), so an unsymmetrized mask silently breaks
   Hermiticity. `test_sparse_cutoff.py` pins this.
+  **An explicit `rcut` is snapped** (`shells.snap_cutoff`) to
+  `start + distance_tol` of the outermost shell starting at or below
+  `rcut + distance_tol`, so it always sits in a shell gap, as `bond_order`
+  does. Without it, a radius on a shell distance keeps an arbitrary,
+  rounding-decided part of that shell and breaks symmetry. Shells are
+  grouped from the symmetrized `dist` array itself, not from `tau`, so the
+  snap also holds past the aliasing-safe radius and in tests whose `Dnm` is
+  unrelated to `tau`. `drop_report` carries both `rcut` (applied) and
+  `rcut_requested`.
   No default value is blessed: the 20 Bohr figure that has been floated
   comes from slot-count geometry, not an accuracy sweep. Calibrate
   against `output/` at `nx=1` before adopting one.

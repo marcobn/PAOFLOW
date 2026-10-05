@@ -216,7 +216,8 @@ class SparseEngine:
             how = (
                 'neighbour shell %d -> rcut = %.3f Bohr' % (report['bond_order'], rcut)
                 if report.get('bond_order') is not None
-                else 'rcut = %.3f Bohr' % rcut
+                else 'rcut = %.3f Bohr, snapped to the shell gap at %.4f Bohr'
+                % (report.get('rcut_requested', rcut), rcut)
             )
             if report.get('threshold', 0.0) > 0.0:
                 how += ', threshold = %.1e eV' % report['threshold']
