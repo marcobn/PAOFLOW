@@ -13,7 +13,12 @@ import pytest
 from scipy.fftpack import ifftn
 
 from PAOFLOW.sparse.hamiltonian import SparseHamiltonian, _minus_R_index, folded_R_triples
-from PAOFLOW.sparse.shells import aliasing_safe_radius, compute_star_shells, shell_cutoff
+from PAOFLOW.sparse.shells import (
+    aliasing_safe_radius,
+    compute_star_shells,
+    shell_cutoff,
+    snap_cutoff,
+)
 
 ALAT = 6.0
 GRID = (4, 4, 4)
@@ -167,6 +172,58 @@ def test_geometry_falls_back_to_the_orbital_map_without_Dnm():
     )
     np.testing.assert_array_equal(with_dnm.rows, without.rows)
     np.testing.assert_array_equal(with_dnm.ridx, without.ridx)
+
+
+def test_snap_cutoff_lands_in_the_gap_above_the_reached_shell():
+    d = np.array([0.0, 1.0, 1.0 + 5.0e-4, 2.0])
+    assert snap_cutoff(d, 1.0) == pytest.approx(1.001)
+    assert snap_cutoff(d, 1.0 - 5.0e-4) == pytest.approx(1.001)  # within tol: reached
+    assert snap_cutoff(d, 0.998) == pytest.approx(0.001)
+    assert snap_cutoff(d, 1.5) == pytest.approx(1.001)
+    assert snap_cutoff(d, 2.0) == pytest.approx(2.001)
+    assert snap_cutoff(d[1:], 0.5) == 0.5  # no bond that short: unchanged
+
+
+def _rounded_simple_cubic(noise):
+    """``_simple_cubic`` with orbital centres jittered by ``noise`` Bohr, so
+    equivalent bonds differ in length the way rounded positions make them."""
+    dc = _simple_cubic()
+    arry = dc.data_arrays
+    centres = arry['tau'][np.array([0, 1, 1, 1, 1])]
+    centres = centres + np.random.default_rng(11).uniform(-noise, noise, centres.shape)
+    arry['Dnm'] = centres[:, None, :] - centres[None, :, :]
+    return dc
+
+
+def _bond_keys(H):
+    t = H.R_int[H.ridx]
+    return {(int(r), int(c), *map(int, tt)) for r, c, tt in zip(H.rows, H.cols, t)}
+
+
+@pytest.mark.parametrize('offset', [0.0, 1.0e-9, -1.0e-9, 5.0e-4, -5.0e-4])
+def test_rcut_on_a_shell_distance_keeps_the_whole_shell(offset):
+    """A radius typed on a shell distance must not cut through the shell."""
+    dc = _rounded_simple_cubic(1.0e-8)
+    _, shells, _ = shell_cutoff(dc, 2)
+    by_shell = SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=2)
+    by_radius = SparseHamiltonian.from_data_controller(dc, 0.0, rcut=shells[1] + offset)
+    assert _bond_keys(by_radius) == _bond_keys(by_shell)
+    assert by_radius.drop_report['rcut_requested'] == shells[1] + offset
+
+    # counterfactual: the raw mask at the shell distance keeps part of it
+    length = _lengths(dc, SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=3))
+    in_shell = np.abs(length - shells[1]) < 1.0e-6
+    assert 0 < (length[in_shell] <= shells[1]).sum() < in_shell.sum()
+
+
+def test_rcut_inside_a_gap_keeps_the_same_bonds(dc):
+    _, shells, _ = shell_cutoff(dc, 3)
+    rcut = 0.5 * (shells[1] + shells[2])
+    H = SparseHamiltonian.from_data_controller(dc, 0.0, rcut=rcut)
+    shell = SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=2)
+    assert _bond_keys(H) == _bond_keys(shell)
+    assert H.drop_report['rcut'] == pytest.approx(shells[1] + 1.0e-3)
+    assert H.drop_report['rcut_requested'] == rcut
 
 
 def test_explicit_rcut_beyond_the_safe_radius_is_flagged(dc):

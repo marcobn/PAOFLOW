@@ -174,7 +174,8 @@ def test_rcut_eig_bound_is_a_bound():
     trunc = SparseHamiltonian.from_data_controller(dc, threshold=0.0, rcut=15.0)
     bound = trunc.drop_report['eig_bound']
     assert bound > 0.0
-    assert trunc.drop_report['rcut'] == 15.0
+    assert trunc.drop_report['rcut_requested'] == 15.0
+    assert trunc.drop_report['rcut'] <= 15.0 + 1.0e-3
     rng = np.random.default_rng(24)
     for _ in range(4):
         kfrac = rng.standard_normal(3)
