@@ -91,7 +91,7 @@ def fe(tmp_path_factory):
         d.adaptive_smearing()
         _properties(d)
 
-        s = _driver(os.path.join(out, 'sparse'), sparse={'threshold': 0.0})
+        s = _driver(os.path.join(out, 'sparse'), sparse={'hopping_threshold': 0.0})
         s.adaptive_smearing()
         with s.sparse.fused():
             _properties(s)
@@ -304,7 +304,7 @@ def fe_path(request, tmp_path_factory):
         _pad_HRs(d)
         d.bands(ibrav=3, nk=100)
         getattr(d, name)(**kwargs)
-        s = _driver(os.path.join(out, 'sparse'), sparse={'threshold': 0.0})
+        s = _driver(os.path.join(out, 'sparse'), sparse={'hopping_threshold': 0.0})
         s.bands(ibrav=3, nk=100)
         getattr(s, name)(**kwargs)
     finally:

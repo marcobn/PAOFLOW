@@ -10,7 +10,7 @@ def main():
         verbose=True,
         sparse=True,
         sparse_config={
-            'threshold': 1.0e-4,
+            'hopping_threshold': 1.0e-4,
             # solve only the bands up to the property range (plus a 1 eV margin);
             # applied before the first solve, after any doubling
             'energy_window': {'emin': -12.0, 'emax': 2.2},

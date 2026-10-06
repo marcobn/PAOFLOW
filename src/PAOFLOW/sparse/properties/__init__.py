@@ -26,7 +26,7 @@ is solved afresh for every call; there are no stored arrays on a path.
 every state (interband sums run over all of them; admitted only while
 ``nawf <= DENSE_N_MAX``).  ``products`` names extra band-diagonal arrays the
 pass must store (``'d2Ed2k'``).  ``interior`` is ``True`` if the property is
-meaningful under ``interior_window``, or a string giving the reason it is
+meaningful under an interior window, or a string giving the reason it is
 not; a ``full_spectrum`` need implies the latter.  The engine skips such
 properties under an interior window with that reason.
 

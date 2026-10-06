@@ -362,14 +362,17 @@ an array of per-k `(nawf, nawf)` matrices is not.
 ## Known limits and the intended next steps
 
 - **`nev = bnd = nawf/2` is a milestone choice, not the destiny.**
-  `SparsePAOFLOW.energy_window(emin, emax, margin)` now sizes `nev` from
+  The `'energy_window'` option of `sparse_config` (`EnergyWindow` in
+  `sparse/config.py`, applied by `SparseEngine._ensure_window()` right
+  before the first solve) now sizes `nev` from
   the property range instead: it probes `count_below(ehi)` (zheevr
   `subset_by_value`, eigenvalues only) at 16 deterministic k-points, pads
   by `max(8, 2%)`, and sets `attr['bnd'] = nev`. Coverage is guarded per
   k-point and reduced once after the loop, so a short window raises with
   the exact `nev` to re-run at rather than truncating silently.
-  **It must be called after `doubling_Hamiltonian()`** — `doubling_attr_arry`
-  doubles `attr['bnd']` on every call — and the driver raises if the order
+  **It must apply after `doubling_Hamiltonian()`** — `doubling_attr_arry`
+  doubles `attr['bnd']` on every call. Lazy application guarantees that
+  unless a solve precedes the doubling, and the driver raises if the order
   is wrong.
   Two honest caveats. `attr['bnd']` **changes meaning** (from "projectable
   bands × cell multiplier" to "bands inside the window"), so `bands_*.dat`
@@ -398,7 +401,9 @@ an array of per-k `(nawf, nawf)` matrices is not.
 - **`rcut` / `bond_order` semantics** (optional, **default `None`**): a
   *different* truncation axis — bond length
   `|alat·R_cart + tau_i - tau_j|` in Bohr, not matrix-element magnitude.
-  **Exclusive with a positive `threshold`** (`config.resolve_threshold`):
+  **Exclusive with a positive `hopping_threshold`** (the `sparse_config` key;
+  `SparseHamiltonian` and the archive still call it `threshold`;
+  `config.resolve_threshold`):
   the geometric cut keeps whole atom-pair blocks by a length every
   space-group op preserves, while an element threshold keeps different
   elements of equivalent bonds and splits symmetry-protected degeneracies

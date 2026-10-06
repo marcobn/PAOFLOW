@@ -5,8 +5,8 @@ window must agree, *inside the window*, with the same DoS computed the normal
 from-the-bottom way.  That is the whole claim of the feature -- the states
 below ``elo`` were never computed, and the assertion is that they were not
 needed for what was plotted.  It only holds with a margin of several smearing
-widths between ``elo`` and the plotted range, which is exactly why
-``interior_window`` clamps rather than trusting the caller.
+widths between ``elo`` and the plotted range, which is exactly why the
+``'interior_window'`` option clamps rather than trusting the caller.
 
 Requires the example01 QE data; skipped when absent.
 """
@@ -30,12 +30,14 @@ pytestmark = pytest.mark.skipif(
 MESH = 4  # 4^3 = 64 k-points: enough for a DoS, cheap enough for a test
 
 
-def _driver(outdir, energy_window=None):
+def _driver(outdir, energy_window=None, interior_window=None):
     from PAOFLOW.PAOFLOW import PAOFLOW
 
-    config = {'threshold': 1.0e-4, 'hk_solver': 'auto'}
+    config = {'hopping_threshold': 1.0e-4, 'hk_solver': 'auto'}
     if energy_window is not None:
         config['energy_window'] = energy_window
+    if interior_window is not None:
+        config['interior_window'] = interior_window
 
     p = PAOFLOW(
         savedir='silicon.save',
@@ -72,7 +74,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
     rather than assuming it: Yates widths scale as nkpnts^(-1/3) and on a
     coarse mesh they reach several eV, wide enough that no useful window
     exists at all.  That is a real property of the method, which is why
-    interior_window carries smear_margin_eV and warns when it is too small.
+    the interior window carries smear_margin_eV and warns when it is too small.
     """
     plot_lo, plot_hi = -1.0, 1.0
     fine = 12  # the native QE grid; coarser meshes smear too wide to test on
@@ -95,8 +97,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
         '%.2f) or this proves nothing' % (elo, float(ref_E.min()))
     )
 
-    itr = _driver(str(in_example / 'interior'))
-    itr.sparse.interior_window(elo, ehi)
+    itr = _driver(str(in_example / 'interior'), interior_window={'elo': elo, 'ehi': ehi})
     itr.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     itr.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_int = np.array(itr.data_controller.data_arrays['dosdk'])
@@ -113,8 +114,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
 
 
 def test_mesh_pads_to_a_rectangular_block_and_sets_bnd(in_example):
-    p = _driver(str(in_example / 'pad'))
-    p.sparse.interior_window(-3.0, 3.0)
+    p = _driver(str(in_example / 'pad'), interior_window={'elo': -3.0, 'ehi': 3.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
 
@@ -132,16 +132,14 @@ def test_mesh_pads_to_a_rectangular_block_and_sets_bnd(in_example):
 
 
 def test_dos_outside_the_window_is_clamped_not_silently_zero(in_example, capsys):
-    p = _driver(str(in_example / 'clamp'))
-    p.sparse.interior_window(-2.0, 2.0)
+    p = _driver(str(in_example / 'clamp'), interior_window={'elo': -2.0, 'ehi': 2.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=-12.0, emax=2.2, ne=50, do_pdos=False)  # far outside on both sides
     assert 'clamped' in capsys.readouterr().out
 
 
 def test_disjoint_range_skips_the_property_and_the_run_continues(in_example, capsys):
-    p = _driver(str(in_example / 'skip'))
-    p.sparse.interior_window(-2.0, 2.0)
+    p = _driver(str(in_example / 'skip'), interior_window={'elo': -2.0, 'ehi': 2.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.dos(emin=5.0, emax=9.0, ne=50, do_pdos=False)  # no overlap at all
 
@@ -154,8 +152,8 @@ def test_disjoint_range_skips_the_property_and_the_run_continues(in_example, cap
 
 
 def test_skips_are_restated_at_the_end(in_example, capsys):
-    p = _driver(str(in_example / 'report'))
-    p.sparse.interior_window(-2.0, 2.0)
+    p = _driver(str(in_example / 'report'), interior_window={'elo': -2.0, 'ehi': 2.0})
+    p.sparse._ensure_window()  # normally applied by the first solve
     p.sparse._skip('made-up property', 'for the test')
     capsys.readouterr()
     p.sparse._report_skips()
@@ -164,25 +162,12 @@ def test_skips_are_restated_at_the_end(in_example, capsys):
 
 
 def test_bands_are_nan_padded_under_an_interior_window(in_example):
-    p = _driver(str(in_example / 'bands'))
-    p.sparse.interior_window(-3.0, 3.0)
+    p = _driver(str(in_example / 'bands'), interior_window={'elo': -3.0, 'ehi': 3.0})
     p.bands(ibrav=2, nk=20)
     E_k = p.data_controller.data_arrays['E_k']
     finite = np.isfinite(E_k)
     assert finite.any(), 'no states found in the window on the band path'
     assert np.all(E_k[finite] >= -3.0 - 1e-9) and np.all(E_k[finite] <= 3.0 + 1e-9)
-
-
-def test_the_two_window_modes_are_mutually_exclusive(in_example):
-    q = _driver(str(in_example / 'excl'), {'emin': -12.0, 'emax': 2.2, 'nev': 10})
-    with pytest.raises(RuntimeError, match='mutually exclusive'):
-        q.sparse.interior_window(-1.0, 1.0)
-
-
-def test_interior_window_rejects_an_inverted_range(in_example):
-    p = _driver(str(in_example / 'bad'))
-    with pytest.raises(ValueError, match='need ehi > elo'):
-        p.sparse.interior_window(1.0, -1.0)
 
 
 def test_edge_contamination_is_warned_about(in_example, capsys):
@@ -193,8 +178,11 @@ def test_edge_contamination_is_warned_about(in_example, capsys):
     on a coarse mesh.  The margin clamp handles the common case; this warning
     catches the case where the measured widths turn out wider than assumed.
     """
-    p = _driver(str(in_example / 'edge'))
-    p.sparse.interior_window(-3.0, 3.0, smear_margin_eV=0.05)  # deliberately too small
+    # smear_margin_eV deliberately too small
+    p = _driver(
+        str(in_example / 'edge'),
+        interior_window={'elo': -3.0, 'ehi': 3.0, 'smear_margin_eV': 0.05},
+    )
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     capsys.readouterr()
     p.dos(emin=-1.0, emax=1.0, ne=50, do_pdos=False)
@@ -206,12 +194,11 @@ def test_edge_contamination_is_warned_about(in_example, capsys):
 def test_interband_properties_are_skipped_under_an_interior_window(in_example):
     """Full-spectrum properties cannot run inside an interior window: they are
     skipped with the reason, the Hall term of transport alone is dropped,
-    and a band curvature recorded before the window was set does not reach
-    the interior pass."""
-    p = _driver(str(in_example / 'interband'))
+    and a band curvature recorded before the window was applied does not
+    reach the interior pass."""
+    p = _driver(str(in_example / 'interband'), interior_window={'elo': -3.0, 'ehi': 3.0})
     p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
     p.gradient_and_momenta(band_curvature=True)
-    p.sparse.interior_window(-3.0, 3.0)
     p.anomalous_Hall(a_tensor=[[0, 1]], ne=11)
     p.linear_response(response='cond', s_tensor=[[2, 0, 1]], a_tensor=[[0, 1]], esize=11)
     p.transport(emin=-1.0, emax=1.0, ne=11, do_hall=True)

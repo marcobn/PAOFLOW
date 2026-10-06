@@ -72,7 +72,7 @@ class PAOFLOW:
         ``sparse_config={'bond_order': 24}``.  ``None`` or ``{}`` takes every
         default.  Unknown keys raise.  The options:
 
-        - ``'threshold'`` (float, eV): drop H(R) elements smaller than this;
+        - ``'hopping_threshold'`` (float, eV): drop H(R) elements smaller than this;
           1e-3 when no real-space cutoff is given.  Splits symmetry-protected
           degeneracies, so it is exclusive with ``'rcut'`` and ``'bond_order'``.
         - ``'rcut'`` (float, Bohr): keep whole atom-pair blocks up to this bond
@@ -85,14 +85,19 @@ class PAOFLOW:
           range, ``{'emin': -12.0, 'emax': 2.2}`` (eV), with optional
           ``'margin'`` (eV above ``emax``, default 1.0), ``'nprobe'`` and
           ``'nev'``.  Applied before the first solve, after any doubling.
+        - ``'interior_window'`` (dict): solve only the states inside
+          ``{'elo': -3.0, 'ehi': 3.0}`` (eV), with optional ``'kT_margin_eV'``
+          (default 0.26) and ``'smear_margin_eV'`` (default 0.5).  Properties
+          that need the states below ``elo`` are skipped with a warning.
+          Applied like ``'energy_window'``, and exclusive with it.
 
         Full semantics: :class:`~PAOFLOW.sparse.config.SparseConfig`.
         Methods with a sparse implementation keep their names and arguments;
         ``pao_eigh``, ``gradient_and_momenta`` and ``adaptive_smearing`` become
         optional (they are fused into the mesh pass the first property runs);
         dense-only methods raise, with the reason, until :meth:`to_dense`.
-        Sparse-only features live under :attr:`sparse` (``pao.sparse.interior_window(...)``,
-        ``with pao.sparse.fused():`` to compute several properties in one pass).
+        Sparse-only features live under :attr:`sparse`: ``with pao.sparse.fused():``
+        computes several properties in one pass, and ``pao.sparse.H`` is the bond list.
 
     Key attributes
     --------------
@@ -290,7 +295,7 @@ class PAOFLOW:
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
             sparse (bool): True runs on the sparse engine, False (default) on the dense pipeline
-            sparse_config (dict or None): Options of the sparse engine (only with sparse=True), e.g. {'threshold': 1e-4, 'energy_window': {'emin': -12.0, 'emax': 2.2}}; None takes the defaults
+            sparse_config (dict or None): Options of the sparse engine (only with sparse=True), e.g. {'hopping_threshold': 1e-4, 'energy_window': {'emin': -12.0, 'emax': 2.2}}; None takes the defaults
         Returns:
             None
         """
@@ -399,7 +404,7 @@ class PAOFLOW:
     @property
     def sparse(self):
         """The sparse engine, for features that exist only in sparse mode
-        (interior_window, fused, the bond list H)."""
+        (fused, the bond list H)."""
         if self._engine is None:
             raise RuntimeError(
                 'This run is dense: build it with PAOFLOW(..., sparse=True) (options in '
@@ -986,7 +991,7 @@ class PAOFLOW:
 
     @sparse_override
     def save_sparse_hamiltonian(
-        self, fname='sparse_hamiltonian.npz', threshold=None, bond_order=None, rcut=None
+        self, fname='sparse_hamiltonian.npz', hopping_threshold=None, bond_order=None, rcut=None
     ):
         """
         Truncate 'HRs' to a bond list and save it as a sparse Hamiltonian archive.
@@ -1001,7 +1006,7 @@ class PAOFLOW:
 
         Arguments:
             fname (str): File name of the archive (relative names go to outputdir)
-            threshold (float): Drop elements below this magnitude (eV) in every spin channel (default 1e-3)
+            hopping_threshold (float): Drop elements below this magnitude (eV) in every spin channel (default 1e-3)
                 Breaks symmetry, so it is mutually exclusive with bond_order and rcut
             bond_order (int): Keep bonds up to this neighbour shell (1 = nearest neighbours)
             rcut (float): Bond-length cutoff in Bohr; mutually exclusive with bond_order
@@ -1020,7 +1025,7 @@ class PAOFLOW:
                 'save_sparse_hamiltonian: give either rcut (Bohr) or bond_order (shells), not both.'
             )
         # fail on every rank before the rank-0 conversion
-        threshold = resolve_threshold(threshold, rcut, bond_order)
+        threshold = resolve_threshold(hopping_threshold, rcut, bond_order, 'hopping_threshold')
 
         try:
             if self.rank == 0:
