@@ -1,148 +1,126 @@
-# Pb electron–phonon (Eliashberg) — PAO dense-q route
+# Pb electron–phonon (Eliashberg) — PAOFLOW on EPW's coarse coupling
 
-This directory computes the isotropic Eliashberg properties of fcc lead
-(α²F, λ, ω_log, Tc) with PAOFLOW's **PAO dense-q** method: Quantum ESPRESSO's
-coarse-grid DFPT electron–phonon coupling is rotated into the pseudo-atomic-orbital
-(PAO) gauge and Wigner–Seitz interpolated — **both** the electron k-grid and the
-phonon q-grid — onto dense meshes. The driver is `main.elphon.py`.
+This example computes the isotropic Eliashberg properties of fcc lead (α²F, λ,
+ω_log, Tc) with PAOFLOW's PAO interpolation. The coarse coupling comes from
+**EPW** (`epbwrite`). EPW evaluates both ψ_k and ψ_{k+q} from the nscf save, so
+its matrix elements share the band gauge of PAOFLOW's projections on that save,
+which the interpolation needs (see `docs/internals/Electron-Phonon-Coupling.md`).
 
-This run uses the **AHC** coupling source (`SOURCE='ahc'`, norm-conserving
-pseudopotential), a 9³ SCF/coupling k-grid, and a 6³ DFPT q-grid.
-
-> **Use [`../elphon_epw_example`](../elphon_epw_example) for production results.**
-> `ph.x` re-diagonalises ψ_{k+q} with arbitrary band phases, so the AHC vertices
-> are gauge-inconsistent with PAOFLOW's projections for every q ≠ Γ, and the
-> k/q interpolation of this example is not reliable. In addition, the 6³ q-grid
-> does not divide the 9³ k-grid (only 27 of the 216 q have k+q on the grid).
-> The EPW route has neither problem and reproduces EPW's own λ for Pb within 6%.
-> The reference values quoted below predate these findings and the October 2026
-> projection and Fourier fixes.
+The QE steps are those of the EPW tutorial 04 (Pb superconductivity,
+<https://docs.epw-code.org/tutorials/tutorial_04/index.html>): 6³ coarse k and
+q grids, with ph.x on the 16 irreducible q only. EPW is run **without Wannier
+functions** (`wannierize = .false.`): it serves only to compute the coarse
+matrix elements, and PAOFLOW does all the interpolation.
 
 ---
 
 ## Directory contents
 
-### Quantum ESPRESSO inputs (you provide / run first)
 | file | purpose |
 |------|---------|
-| `pb.scf.in`  | `pw.x` self-consistent ground state |
-| `pb.nscf.in` | `pw.x` non-self-consistent run on the **full** k-grid (`nosym=.true.`, `noinv=.true.`, `nbnd > nawf`) |
-| `pb.ph.in`   | `ph.x` DFPT phonons on the 6³ q-grid (writes `lead.dyn*`, `dvscf`) |
-| `pb.elph.in` | `ph.x` with `electron_phonon='ahc'` → AHC coupling dumps in `ahc_dir/` |
-| `pb_s.UPF`   | norm-conserving pseudopotential |
-| `submit_qe.sbatch` | example batch script for the QE steps |
+| `phonon/scf.in` | `pw.x` scf (8³ k, with symmetry) |
+| `phonon/ph.in` | `ph.x` DFPT on the 6³ q-grid (irreducible q, `fildvscf`) |
+| `epw/nscf.in` | `pw.x` nscf on the full 6³ grid as an explicit `K_POINTS crystal` list (`nbnd = 16`) |
+| `epw/epw.in` | `epw.x` with `epbwrite = .true.`, `wannierize = .false.`, `exclude_bands = 1:5` |
+| `epw/write_ukk.py` | writes `pb.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `pb.bvec`/`pb.mmn` stubs |
+| `epw/epw_wannier.in` | the tutorial's Wannierized EPW input (alternative; same `.epb` content) |
+| `main.py` | PAOFLOW analysis: PAO electronic structure + Eliashberg on EPW's coupling |
 
-`lead.ph.in` / `lead.ahc.in` are equivalent templates auto-written by
-`main.elphon.py inputs` (see below).
+**Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
+this directory. Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
 
-### PAOFLOW inputs
-| file / dir | purpose |
-|------------|---------|
-| `main.elphon.py` | the PAO dense-q driver (edit the CONFIG block at the top) |
-| `plot.elphon.py` | plots α²F(ω) and cumulative λ(ω) from the output |
-| `BASIS_PS/`      | PAOFLOW pseudo-atomic-orbital basis for Pb |
-
-### Produced by the run (do not edit)
-| file / dir | produced by |
-|------------|-------------|
-| `lead.save/` | `pw.x` nscf (contains `data-file-schema.xml`, wavefunctions, **symmetries**) |
-| `lead.dyn0 … lead.dyn216` | `ph.x` DFPT (dynamical matrices, full 6³ = 216 q) |
-| `ahc_dir/` | `ph.x` AHC (`ahc_gkk_iq*.bin` coupling) |
-| `output/` | PAOFLOW results: `alpha2F.dat`, `eliashberg.npz` |
+`paoflow-gen` (electron-phonon workflow, EPW source) produces this same layout
+from a `pw.x` input of the system: `phonon/scf.in`, `phonon/ph.in`,
+`epw/nscf.in`, `epw/epw.in`, `epw/write_ukk.py`, plus `main.elphon.py` (the
+equivalent of `main.py`) and `plot.elphon.py`.
 
 ---
 
-## Key parameters (`main.elphon.py` CONFIG)
+## Procedure
 
-```
-SOURCE   = 'ahc'         # norm-conserving AHC coupling
-KGRID    = (9, 9, 9)     # nscf / coupling k-grid  (== pw.x K_POINTS)
-QGRID    = (6, 6, 6)     # DFPT phonon q-grid      (== ph.x nq1/nq2/nq3)
-NBND     = 22            # bands in nscf / ahc_nbnd (> nawf)
-MASSES_AMU = [207.2]     # atomic masses (amu)
-NELEC    = 14            # valence electrons
-NK_DENSE = 42            # dense electron k-grid
-NQ_DENSE = 42            # dense phonon q-grid
-SIGMA_RY = 0.02          # Fermi-surface smearing (Ry)
-MU_STAR  = 0.10          # Coulomb pseudopotential (Tc)
-PTHR     = 0.95          # projectability threshold
+### 1. Quantum ESPRESSO and EPW
+
+```bash
+cd phonon
+mpirun -np 8 pw.x -in scf.in > scf.out
+mpirun -np 8 ph.x -in ph.in  > ph.out
+python3 /path/to/q-e/EPW/bin/pp.py          # prefix 'pb' -> collects dvscf, patterns, dyn into save/
+
+cd ../epw
+mkdir -p pb.save                                 # the nscf starts from the scf charge density
+cp ../phonon/pb.save/{charge-density.dat,data-file-schema.xml} pb.save/
+mpirun -np 8 pw.x -in nscf.in > nscf.out
+python3 write_ukk.py                             # pb.ukk for wannierize = .false.
+mpirun -np 8 epw.x -nk 8 -in epw.in > epw.out   # EPW: one process per pool (-np = -nk)
 ```
 
-**Grid consistency (must hold):**
-- nscf must be the **full** Γ-centred k-grid with `nosym=.true., noinv=.true.` and
-  `nbnd > nawf` — the PAO vertex needs every `k+q` to exist in the k-list.
-- The `ph.x` q-grid, the `lead.dyn*` files, and `QGRID` must all be the **same**
-  coarse grid (here 6³ → 216 q-points, one `lead.dyn<iq>` per q).
-- **`NK_DENSE` must be an integer multiple of `NQ_DENSE`** (the k+q index shift on
-  the dense grid). Equal values (42 = 42) satisfy this.
-- Crystal symmetry is read automatically from `lead.save` and used to fold the
-  dense q-grid to its irreducible wedge (no action needed).
+The scf and the nscf run in separate directories, so the phonon calculation
+keeps its own `phonon/pb.save` and the nscf overwrites nothing that ph.x or
+`pp.py` produced. The nscf reads the scf charge density, hence the copy into
+`epw/pb.save`.
+
+`epw.x` writes `pb.epb1 … pb.epbN` (the coarse Bloch coupling, one file per
+pool), which together with `pb.ukk` is all PAOFLOW reads. After printing "The
+.epb files have been correctly written", EPW enters its Wannier stage, which
+reads wannier90's `pb.bvec`/`pb.mmn`. `write_ukk.py` writes empty stubs of both
+(zero b-vectors) so that stage runs on empty data and `epw.x` finishes cleanly.
+Without them EPW stops there with a non-zero exit, which does not affect the
+`.epb` files.
+`../phonon/save/pb.phsave/patterns.1.xml` must exist (created by `pp.py`),
+otherwise `epw.x` stops with "cannot open file for reading or writing".
+Tested with QE/EPW 7.5 (EPW 6.0). The coarse-coupling cost scales with the
+number of pools and with the kept bands, so use as many pools as k-points allow.
+
+### 2. PAOFLOW basis
+
+```bash
+paoflow-genbasis-ps --pseudo Pb.upf --out BASIS_PS
+```
+
+`main.py` uses the `standard` configuration: 5d 6s 6p plus 6d 7s 7p, 18 orbitals.
+
+### 3. PAOFLOW analysis
+
+```bash
+mpirun -np 8 python main.py               # dense k 48^3, dense q 24^3 (about 2 min on 8 cores)
+mpirun -np 8 python main.py --nk 24 --nq 24
+mpirun -np 8 python main.py --coarse-q    # q kept on the coarse 6^3 grid
+```
+
+Output in `output/`: `alpha2F.dat` (ω in meV, α²F) and `eliashberg.npz` (all
+result arrays).
 
 ---
 
-## Step-by-step procedure
+## Reference results (Pb, μ* = 0.1, σ = 0.05 eV)
 
-### 1. Quantum ESPRESSO (coarse grids)
-Run in this directory (or via `submit_qe.sbatch`), in order:
+| | λ | ω_log | Tc McMillan | Tc Allen–Dynes |
+|---|---|---|---|---|
+| PAOFLOW, k 48³ / q 24³ (this example: EPW `wannierize = .false.`) | 1.221 | 4.50 meV | 4.77 K | 5.21 K |
+| PAOFLOW, k 24³ / q 24³ (this example) | 1.066 | 5.19 meV | 4.61 K | 4.94 K |
+| PAOFLOW, k 48³ / q 24³, on the Wannierized EPW run (`epw_wannier.in`) | 1.221 | 4.50 meV | 4.77 K | 5.21 K |
+| EPW itself, k 48³ / q 24³ (Wannierized run) | 1.151 | 4.44 meV | 4.38 K | 4.76 K |
+| EPW tutorial 04 | 1.158 | 4.40 meV | 4.37 K | 4.75 K |
 
-```bash
-pw.x  < pb.scf.in   > pb.scf.out      # 1. SCF ground state
-pw.x  < pb.nscf.in  > pb.nscf.out     # 2. NSCF, full k-grid (nosym, noinv, nbnd>nawf) -> lead.save/
-ph.x  < pb.ph.in    > pb.ph.out       # 3. DFPT phonons on 6^3 q-grid -> lead.dyn*, dvscf
-ph.x  < pb.elph.in  > pb.elph.out     # 4. AHC coupling (electron_phonon='ahc') -> ahc_dir/
-```
-
-Steps 3 and 4 must use the **same** `outdir`, `fildyn`, and `fildvscf`.
-
-> Tip: `python main.elphon.py inputs` writes ready-to-run `lead.ph.in` and
-> `lead.ahc.in` templates for steps 3–4 if you prefer to regenerate them.
-
-### 2. PAOFLOW analysis (dense interpolation)
-Once `lead.save/`, `ahc_dir/`, and all `lead.dyn*` are present:
-
-```bash
-# edit the CONFIG block in main.elphon.py if needed, then:
-python main.elphon.py analyse
-```
-
-On an HPC node, parallelise over the (symmetry-reduced) q-points with MPI +
-BLAS threads, e.g. on a 128-core node:
-
-```bash
-export OMP_NUM_THREADS=2
-export MKL_NUM_THREADS=$OMP_NUM_THREADS   # or OPENBLAS_NUM_THREADS
-ibrun -np 64 python main.elphon.py analyse
-```
-
-Near the top of the output you should see a line such as
-`dense-q symmetry: N irreducible / M full q` confirming the symmetry reduction is
-active. Keep `-np` ≤ the number of irreducible q-points.
-
-### 3. Plot
-```bash
-python plot.elphon.py        # reads output/eliashberg.npz
-```
+The remaining difference from EPW follows the density of states at E_F of the
+two band interpolations: 0.251 /eV/spin for the 18-orbital PAO bands against
+0.235 for EPW's 4 Wannier functions. `--coarse-q` (λ ≈ 1.6) is not converged in
+q and is shown only as the cheaper workflow.
 
 ---
 
-## Output
+## Notes
 
-- `output/alpha2F.dat` — two columns `ω(meV)  α²F(ω)`; the header lists
-  λ, ω_log, Tc (McMillan and Allen–Dynes) and μ*.
-- `output/eliashberg.npz` — full result arrays (α²F, λ, per-mode λ_qν, ω_qν, …).
-
-**Reference values for Pb** (converged dense grids): λ ≈ 1.2–1.5, ω_log ≈ 60 K,
-Tc ≈ 6–7 K (μ* = 0.1).
-
----
-
-## Notes & troubleshooting
-
-- **Coarse-grid convergence:** a 3³ DFPT q-grid is too coarse and inflates λ near Γ;
-  use 6³ or finer. λ should converge from above as `NQ_DENSE` increases.
-- **`dyn files cover only X/Y`:** `QGRID` in `main.elphon.py` does not match the
-  actual `lead.dyn*` grid — set it to the DFPT `nq1/nq2/nq3`.
-- **Memory:** the large real-space vertex `g(R_e,R_p)` is held in one shared copy
-  per node, so `-np` can be raised without multiplying its footprint.
-- **Pseudopotentials:** `SOURCE='ahc'` requires norm-conserving pseudopotentials.
-  For ultrasoft/PAW, use the patched-QE `el_ph_mat` dump (`SOURCE='elphmat'`).
+- **Commensurate grids:** the coarse q-grid must divide the coarse k-grid (here
+  6³ / 6³), and `NK_DENSE` must be a multiple of `NQ_DENSE`.
+- **Explicit k list:** EPW requires the full grid as `K_POINTS crystal` in
+  [0, 1). `PAOFLOW.gen.epw_inputs.kpoints_card((6, 6, 6))` writes exactly the
+  list in `epw/nscf.in`. PAOFLOW recovers the grid from the list and must be run
+  with `pao_hamiltonian(expand_wedge=False)`, as in `main.py`.
+- **Band exclusion without Wannier functions:** with `wannierize = .false.`
+  EPW takes the excluded bands from `pb.ukk` (`write_placeholder_ukk(...,
+  exclude_bands=..., nelec=...)`); `bands_skipped` in `epw.in` only documents
+  the choice. `PAOFLOW.gen.epw_inputs.epw_input` writes the matching `epw.in`,
+  and `paoflow-gen` (electron-phonon workflow) generates both.
+- **Wannierized EPW runs** work too (`epw/epw_wannier.in`), as long as the
+  outer disentanglement window contains every band (no `dis_win_min/max`).
