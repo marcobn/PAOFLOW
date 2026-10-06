@@ -39,17 +39,15 @@ labelled dataset of hopping integrals (:mod:`~PAOFLOW.sparse.io`).
 The archive is shared with the dense pipeline: :mod:`~PAOFLOW.sparse.bridge`
 is the single dense <-> sparse conversion point.
 
-There is no separate driver: ``PAOFLOW(..., sparse=SparseConfig(...))``
-(:mod:`~PAOFLOW.sparse.config`) runs on :class:`~PAOFLOW.sparse.engine.SparseEngine`,
+There is no separate driver: ``PAOFLOW(..., sparse={...})``, a dict of
+options (:mod:`~PAOFLOW.sparse.config`), runs on :class:`~PAOFLOW.sparse.engine.SparseEngine`,
 to which :mod:`~PAOFLOW.sparse.dispatch` routes the methods it implements.
 """
 
 from .bridge import archive_Dnm, densify, init_restart_session, sparsify
-from .config import SparseConfig
 from .hamiltonian import SparseHamiltonian
 
 __all__ = [
-    'SparseConfig',
     'SparseHamiltonian',
     'archive_Dnm',
     'densify',

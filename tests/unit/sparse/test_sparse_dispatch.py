@@ -13,8 +13,7 @@ import inspect
 import pytest
 
 from PAOFLOW.PAOFLOW import PAOFLOW
-from PAOFLOW.sparse import SparseConfig
-from PAOFLOW.sparse.config import resolve_threshold
+from PAOFLOW.sparse.config import SparseConfig, resolve_threshold
 from PAOFLOW.sparse.engine import SparseEngine
 
 
@@ -37,11 +36,11 @@ def dense(tmp_path):
 
 @pytest.fixture
 def sparse(tmp_path):
-    return PAOFLOW(workpath=str(tmp_path), outputdir='sparse', restart=True, sparse=True)
+    return PAOFLOW(workpath=str(tmp_path), outputdir='sparse', restart=True, sparse={})
 
 
 # ----------------------------------------------------------------------
-# SparseConfig
+# sparse= options
 # ----------------------------------------------------------------------
 
 
@@ -73,19 +72,36 @@ def test_config_rejects_unknown_solver():
     'value, expected',
     [
         (None, None),
-        (False, None),
-        (True, SparseConfig()),
+        ({}, SparseConfig()),
         ({'threshold': 1e-4}, SparseConfig(threshold=1e-4)),
-        (SparseConfig(bond_order=3), SparseConfig(bond_order=3)),
+        ({'bond_order': 3, 'hk_solver': 'dense'}, SparseConfig(bond_order=3, hk_solver='dense')),
     ],
 )
-def test_config_coerce(value, expected):
-    assert SparseConfig.coerce(value) == expected
+def test_config_parse(value, expected):
+    assert SparseConfig.parse(value) == expected
 
 
-def test_config_coerce_rejects_other_types():
-    with pytest.raises(TypeError, match='sparse='):
-        SparseConfig.coerce(1e-3)
+@pytest.mark.parametrize('value', [True, False, 1e-3, SparseConfig()])
+def test_config_parse_takes_only_a_dict(value):
+    with pytest.raises(TypeError, match='sparse= takes a dict'):
+        SparseConfig.parse(value)
+
+
+def test_config_parse_points_true_to_the_empty_dict():
+    with pytest.raises(TypeError, match=r'sparse=\{\}'):
+        SparseConfig.parse(True)
+
+
+def test_config_parse_names_unknown_options():
+    with pytest.raises(ValueError, match="'thresold' \\(did you mean 'threshold'\\?\\)"):
+        SparseConfig.parse({'thresold': 1e-4})
+    with pytest.raises(ValueError, match='Valid options: threshold, rcut, bond_order'):
+        SparseConfig.parse({'npool': 2})
+
+
+def test_constructor_rejects_unknown_options(tmp_path):
+    with pytest.raises(ValueError, match='unknown option'):
+        PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse={'rcutt': 5.0})
 
 
 # ----------------------------------------------------------------------
@@ -219,5 +235,5 @@ def test_dense_only_options_of_routed_methods_refuse(sparse):
         sparse.bands(adhoc_SO=True)
     with pytest.raises(NotImplementedError, match='reshift_Ef'):
         sparse.interpolated_hamiltonian(reshift_Ef=True)
-    with pytest.raises(ValueError, match='SparseConfig'):
+    with pytest.raises(ValueError, match='sparse= options'):
         sparse.save_sparse_hamiltonian(threshold=1e-4)

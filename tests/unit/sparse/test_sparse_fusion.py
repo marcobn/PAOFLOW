@@ -32,7 +32,6 @@ TRANSPORT = dict(emin=-5.0, emax=1.0, ne=101, do_hall=True)
 
 def _driver(outdir):
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.sparse import SparseConfig
 
     p = PAOFLOW(
         savedir='silicon.save',
@@ -40,7 +39,7 @@ def _driver(outdir):
         smearing='gauss',
         npool=1,
         verbose=False,
-        sparse=SparseConfig(threshold=0.0),
+        sparse={'threshold': 0.0},
     )
     p.read_atomic_proj_QE()
     p.projectability()
@@ -122,7 +121,7 @@ def test_stale_arrays_are_not_restored(tmp_path):
 def test_raising_block_runs_nothing(tmp_path):
     from PAOFLOW.PAOFLOW import PAOFLOW
 
-    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse=True)
+    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse={})
     p.sparse.H = object()  # past _require_H; nothing may touch it
 
     class Abort(Exception):
@@ -140,7 +139,7 @@ def test_raising_block_runs_nothing(tmp_path):
 def test_fused_blocks_do_not_nest(tmp_path):
     from PAOFLOW.PAOFLOW import PAOFLOW
 
-    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse=True)
+    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse={})
     with pytest.raises(RuntimeError, match='nested'):
         with p.sparse.fused():
             with p.sparse.fused():

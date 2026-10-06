@@ -46,7 +46,6 @@ def dense_and_sparse(request, tmp_path_factory):
     the 'sparse' path would no longer be covered here at all.
     """
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.sparse import SparseConfig
 
     hk_solver = request.param
     out = str(tmp_path_factory.mktemp('mesh_parity_' + hk_solver))
@@ -75,7 +74,7 @@ def dense_and_sparse(request, tmp_path_factory):
             smearing='gauss',
             npool=1,
             verbose=False,
-            sparse=SparseConfig(threshold=0.0, hk_solver=hk_solver),
+            sparse={'threshold': 0.0, 'hk_solver': hk_solver},
         )
         q.read_atomic_proj_QE()
         q.projectability()
@@ -203,14 +202,13 @@ def curvature_runs(tmp_path_factory):
     ``test_second_derivatives_match_dense_d2Hd2k_on_interpolated_mesh``).
     Not parametrized over ``hk_solver``: the curvature's interband sum needs
     every state, so the pass always uses the dense kernel."""
-    from PAOFLOW.sparse import SparseConfig
 
     out = str(tmp_path_factory.mktemp('curvature'))
     cwd = os.getcwd()
     os.chdir(EXAMPLE)
     try:
         d = _run_example01(os.path.join(out, 'dense'), 16)
-        s = _run_example01(os.path.join(out, 'sparse'), 16, sparse=SparseConfig(threshold=0.0))
+        s = _run_example01(os.path.join(out, 'sparse'), 16, sparse={'threshold': 0.0})
     finally:
         os.chdir(cwd)
     return d, s

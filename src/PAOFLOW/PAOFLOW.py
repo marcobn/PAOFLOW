@@ -63,11 +63,28 @@ class PAOFLOW:
         DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
     header_style : str, default ``'color'``
         header style ``'color'`` (large banner) or ``'minimal'`` (small title)
-    sparse : SparseConfig, dict, bool or None, default ``None``
+    sparse : dict or None, default ``None``
         Run on the sparse engine (:mod:`PAOFLOW.sparse`): from ``pao_hamiltonian``
         on, H(R) is a thresholded bond list and no O(nawf² · nk) array is formed.
-        Truncation, solver and resource settings are the fields of
-        :class:`~PAOFLOW.sparse.config.SparseConfig`; ``True`` takes its defaults.
+        ``None`` keeps the dense pipeline; a dict selects the sparse engine and
+        sets its options, e.g. ``sparse={'bond_order': 24}`` (``{}`` takes every
+        default).  Unknown keys raise.  The options:
+
+        - ``'threshold'`` (float, eV): drop H(R) elements smaller than this;
+          1e-3 when no real-space cutoff is given.  Splits symmetry-protected
+          degeneracies, so it is exclusive with ``'rcut'`` and ``'bond_order'``.
+        - ``'rcut'`` (float, Bohr): keep whole atom-pair blocks up to this bond
+          length instead; preserves the crystal symmetry.
+        - ``'bond_order'`` (int): the same cutoff as a count of neighbour shells
+          (1 = nearest neighbours); exclusive with ``'rcut'``.
+        - ``'hk_solver'`` (``'auto'``, ``'sparse'`` or ``'dense'``, default
+          ``'auto'``): eigensolver used at each k-point.
+        - ``'mem_budget_gb'`` (float): per-rank memory budget checked before
+          doubling; default 80% of the available memory over the node's ranks.
+        - ``'force_doubling'`` (bool, default ``False``): double even when the
+          projected memory exceeds that budget.
+
+        Full semantics: :class:`~PAOFLOW.sparse.config.SparseConfig`.
         Methods with a sparse implementation keep their names and arguments;
         ``pao_eigh``, ``gradient_and_momenta`` and ``adaptive_smearing`` become
         optional (they are fused into the mesh pass the first property runs);
@@ -269,7 +286,7 @@ class PAOFLOW:
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
-            sparse (SparseConfig, dict, bool or None): Run on the sparse engine (see PAOFLOW.sparse.config)
+            sparse (dict or None): Options of the sparse engine, e.g. {'threshold': 1e-4}; {} takes the defaults, None runs dense
         Returns:
             None
         """
@@ -281,7 +298,7 @@ class PAOFLOW:
         from .sparse.config import SparseConfig
         from .utils.header import header
 
-        sparse = SparseConfig.coerce(sparse)
+        sparse = SparseConfig.parse(sparse)
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -367,8 +384,8 @@ class PAOFLOW:
         (energy_window, interior_window, fused, the bond list H)."""
         if self._engine is None:
             raise RuntimeError(
-                'This run is dense: build it with PAOFLOW(..., sparse=SparseConfig(...)) to use '
-                'the sparse engine.'
+                'This run is dense: build it with PAOFLOW(..., sparse={...}) (a dict of options, '
+                '{} for the defaults) to use the sparse engine.'
             )
         return self._engine
 

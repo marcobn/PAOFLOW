@@ -28,7 +28,6 @@ pytestmark = pytest.mark.skipif(
 
 def _base_cell(outdir, sparse):
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.sparse import SparseConfig
 
     cwd = os.getcwd()
     os.chdir(EXAMPLE)
@@ -38,7 +37,7 @@ def _base_cell(outdir, sparse):
             outputdir=outdir,
             smearing='gauss',
             verbose=False,
-            sparse=SparseConfig(threshold=0.0) if sparse else None,
+            sparse={'threshold': 0.0} if sparse else None,
         )
         p.read_atomic_proj_QE()
         p.projectability()

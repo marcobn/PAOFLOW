@@ -1,15 +1,19 @@
 """Run configuration of the sparse engine.
 
-A :class:`SparseConfig` passed as ``PAOFLOW(..., sparse=...)`` selects the
-sparse engine for the whole run; ``sparse=None`` (the default) keeps the
-dense pipeline.  Every knob of the sparse backend is a field here, so a
-new one never widens the :class:`PAOFLOW.PAOFLOW` constructor or the
-signature of a method shared with the dense pipeline.
+Users select the sparse engine with a plain dict, ``PAOFLOW(..., sparse={...})``
+(``{}`` takes every default); ``sparse=None`` (the default) keeps the dense
+pipeline.  :meth:`SparseConfig.parse` turns that dict into a validated,
+immutable :class:`SparseConfig`, which is what the engine holds; the class
+itself is internal and never constructed by users.  Every knob of the sparse
+backend is a field here, so a new one never widens the
+:class:`PAOFLOW.PAOFLOW` constructor or the signature of a method shared
+with the dense pipeline.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from difflib import get_close_matches
 
 HK_SOLVERS = ('auto', 'sparse', 'dense')
 
@@ -70,6 +74,9 @@ def resolve_threshold(
 class SparseConfig:
     """Truncation, solver and resource settings of a sparse run.
 
+    Built by :meth:`parse` from the ``sparse=`` dict of
+    :class:`PAOFLOW.PAOFLOW`; each attribute below is a key of that dict.
+
     Attributes
     ----------
     threshold : float or None
@@ -123,12 +130,10 @@ class SparseConfig:
 
     def __post_init__(self):
         if self.rcut is not None and self.bond_order is not None:
-            raise ValueError(
-                'SparseConfig: give either rcut (Bohr) or bond_order (shells), not both.'
-            )
+            raise ValueError('sparse=: give either rcut (Bohr) or bond_order (shells), not both.')
         if self.hk_solver not in HK_SOLVERS:
             raise ValueError(
-                'SparseConfig: hk_solver must be one of %s, got %r.' % (HK_SOLVERS, self.hk_solver)
+                'sparse=: hk_solver must be one of %s, got %r.' % (HK_SOLVERS, self.hk_solver)
             )
         # validates the threshold/cutoff combination; the field keeps the
         # user's value (None stays None) so the log shows what was asked for
@@ -144,21 +149,39 @@ class SparseConfig:
             object.__setattr__(self, 'mem_budget_gb', float(self.mem_budget_gb))
 
     @classmethod
-    def coerce(cls, value) -> SparseConfig | None:
+    def parse(cls, value) -> SparseConfig | None:
         """The ``sparse=`` constructor argument as a config, or ``None`` for dense.
 
-        Accepts ``None``/``False`` (dense), ``True`` (all defaults), a
-        ``dict`` of fields, or a ``SparseConfig``.
+        Parameters
+        ----------
+        value : dict or None
+            ``None`` runs dense; a dict runs sparse, with its keys setting
+            the attributes of this class (``{}`` takes every default).
+
+        Raises
+        ------
+        TypeError
+            If ``value`` is neither ``None`` nor a dict.
+        ValueError
+            If a key is not an option, or the options are inconsistent.
         """
-        if value is None or value is False:
+        if value is None:
             return None
-        if value is True:
-            return cls()
-        if isinstance(value, cls):
-            return value
-        if isinstance(value, dict):
-            return cls(**value)
-        raise TypeError(
-            'sparse= takes None, True, a dict of SparseConfig fields or a SparseConfig; got %r.'
-            % type(value).__name__
-        )
+        if not isinstance(value, dict):
+            hint = ' Use sparse={} for the sparse defaults.' if value is True else ''
+            raise TypeError(
+                'sparse= takes a dict of options or None (dense); got %r.%s'
+                % (type(value).__name__, hint)
+            )
+        names = [f.name for f in fields(cls)]
+        unknown = [k for k in value if k not in names]
+        if unknown:
+            lines = []
+            for key in unknown:
+                close = get_close_matches(str(key), names, n=1)
+                lines.append('%r%s' % (key, " (did you mean '%s'?)" % close[0] if close else ''))
+            raise ValueError(
+                'sparse=: unknown option%s %s. Valid options: %s.'
+                % ('s' if len(unknown) > 1 else '', ', '.join(lines), ', '.join(names))
+            )
+        return cls(**value)

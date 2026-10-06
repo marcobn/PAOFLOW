@@ -74,7 +74,6 @@ def _driver(outdir, sparse=None):
 def fe(tmp_path_factory):
     """Dense and sparse Fe at the DFT mesh; the sparse properties share one
     fused pass (full spectrum for the Hall and linear-response kernels)."""
-    from PAOFLOW.sparse import SparseConfig
 
     out = str(tmp_path_factory.mktemp('fe'))
     cwd = os.getcwd()
@@ -86,7 +85,7 @@ def fe(tmp_path_factory):
         d.adaptive_smearing()
         _properties(d)
 
-        s = _driver(os.path.join(out, 'sparse'), sparse=SparseConfig(threshold=0.0))
+        s = _driver(os.path.join(out, 'sparse'), sparse={'threshold': 0.0})
         s.adaptive_smearing()
         with s.sparse.fused():
             _properties(s)
@@ -290,8 +289,6 @@ PATH = [
 
 @pytest.fixture(scope='module', params=PATH, ids=[p[0] for p in PATH])
 def fe_path(request, tmp_path_factory):
-    from PAOFLOW.sparse import SparseConfig
-
     name, kwargs = request.param
     out = str(tmp_path_factory.mktemp('fe_path_' + name))
     cwd = os.getcwd()
@@ -301,7 +298,7 @@ def fe_path(request, tmp_path_factory):
         _pad_HRs(d)
         d.bands(ibrav=3, nk=100)
         getattr(d, name)(**kwargs)
-        s = _driver(os.path.join(out, 'sparse'), sparse=SparseConfig(threshold=0.0))
+        s = _driver(os.path.join(out, 'sparse'), sparse={'threshold': 0.0})
         s.bands(ibrav=3, nk=100)
         getattr(s, name)(**kwargs)
     finally:

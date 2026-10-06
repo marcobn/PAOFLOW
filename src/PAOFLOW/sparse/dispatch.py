@@ -15,7 +15,7 @@ four roles, declared where the method is defined:
 - ``@sparse_base_cell``: a transformation of the base-cell ``H(R)``.  In a
   sparse run the bond list is scattered into a dense ``HRs``, the dense
   body runs, and the result is converted back with the same
-  ``SparseConfig`` truncation; only before doubling and interpolation.
+  ``sparse=`` truncation; only before doubling and interpolation.
 - anything unmarked is dense-only: :func:`sparse_aware` wraps it in a
   guard that raises in a sparse run, with the reason from
   :data:`DENSE_ONLY_REASONS`, instead of failing later on a missing dense
