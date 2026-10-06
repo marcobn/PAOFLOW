@@ -1,5 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 from matplotlib import pyplot as plt
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from typing import Any
 
 
 def plot_dos(es, dos, title, x_lim, y_lim, vertical, col, x_label=None, y_label=None):
@@ -877,4 +885,178 @@ def plot_raman_spectrum(
     if filename is not None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
 
+    plt.show()
+
+
+# Ordinal blue ramp (light -> dark with increasing temperature) and the three
+# categorical slots used for the gap estimates.
+_ME_T_RAMP = ['#86b6ef', '#3987e5', '#1c5cab', '#0d366b']
+_ME_SERIES = ['#2a78d6', '#eb6834', '#1baf7a']
+
+
+def plot_migdal_eliashberg(
+    data: Mapping[str, Any],
+    temps: Sequence[float] | None = None,
+    title: str | None = None,
+    filename: str | None = None,
+    real_axis_max_mev: float = 60.0,
+) -> None:
+    """Plot the isotropic Migdal-Eliashberg results versus temperature.
+
+    Parameters
+    ----------
+    data : mapping
+        Contents of ``migdal_eliashberg.npz`` written by
+        :func:`PAOFLOW.elphon.migdal_eliashberg.write_me_outputs`.
+    temps : sequence of float, optional
+        Temperatures (K) drawn in the frequency-resolved panels; defaults to up
+        to four temperatures with a non-zero gap.
+    title : str, optional
+        Overall figure title.
+    filename : str, optional
+        If given, the figure is also saved to this path.
+    real_axis_max_mev : float, optional
+        Upper frequency (meV) of the real-axis ``Delta(w)`` panels (default 60),
+        capped at the end of the real-axis grid (``wscut``).
+
+    Returns
+    -------
+    None
+        Shows the figure (and writes ``filename``).
+
+    Notes
+    -----
+    Panels: ``Delta(i w_n)`` and ``Z(i w_n)``; ``Re`` / ``Im Delta(w)`` on the
+    real axis (analytic continuation solid, Pade dashed); the quasiparticle
+    DOS; ``Delta(T)`` from the lowest Matsubara frequency and the two real-axis
+    gap edges; and the largest eigenvalue of the linearised kernel with
+    ``Tc``.  Temperatures use one blue ramp (light to dark with increasing T);
+    the three gap estimates use distinct colours and markers.
+    """
+    from matplotlib.lines import Line2D
+
+    from ..elphon.migdal_eliashberg import temperature_tag
+
+    temperatures = np.asarray(data['temps'])
+    gap0_mev = np.asarray(data['gap0_imag']) * 1e3
+    if temps is None:
+        gapped = temperatures[gap0_mev > 0.0]
+        picks = np.linspace(0, gapped.size - 1, min(4, gapped.size)).round().astype(int)
+        temps = gapped[np.unique(picks)] if gapped.size else []
+    temps = [t for t in temps if 'imag_' + temperature_tag(t) in data]
+    ramp_last = len(_ME_T_RAMP) - 1
+    colours = [
+        _ME_T_RAMP[int(round(i * ramp_last / max(len(temps) - 1, 1)))] for i in range(len(temps))
+    ]
+    w_mev = np.asarray(data['w_real']) * 1e3
+    edges_mev = np.concatenate([np.asarray(data['gap_acon']), np.asarray(data['gap_pade'])]) * 1e3
+    if np.any(np.isfinite(edges_mev) & (edges_mev > 0)):
+        edge_mev = np.nanmax(edges_mev)
+    else:
+        edge_mev = gap0_mev.max()
+    w_max = min(w_mev[-1], real_axis_max_mev)
+
+    fig, axes = plt.subplots(2, 4, figsize=(17, 7.5))
+    fig.suptitle('Isotropic Migdal-Eliashberg' if title is None else title)
+    ax_gap_n, ax_z_n, ax_re, ax_im, ax_qdos, ax_gap_t, ax_rho, ax_legend = axes.ravel()
+
+    for t, colour in zip(temps, colours):
+        tag = temperature_tag(t)
+        wn, Zn, deltan = np.asarray(data['imag_' + tag]).T
+        ax_gap_n.plot(wn * 1e3, deltan * 1e3, color=colour, lw=1.5)
+        ax_z_n.plot(wn * 1e3, Zn, color=colour, lw=1.5)
+        for key, style in (('acon', '-'), ('pade', '--')):
+            if key + '_' + tag in data:
+                re_delta, im_delta = np.asarray(data[key + '_' + tag])[:, 2:4].T * 1e3
+                ax_re.plot(w_mev, re_delta, color=colour, ls=style, lw=1.5)
+                ax_im.plot(w_mev, im_delta, color=colour, ls=style, lw=1.5)
+        if 'qdos_' + tag in data:
+            ax_qdos.plot(w_mev, data['qdos_' + tag], color=colour, lw=1.5)
+    ax_gap_n.set(
+        xlabel=r'$\omega_n$ (meV)', ylabel=r'$\Delta(i\omega_n)$ (meV)', title='Imaginary axis: gap'
+    )
+    ax_z_n.set(
+        xlabel=r'$\omega_n$ (meV)',
+        ylabel=r'$Z(i\omega_n)$',
+        title='Imaginary axis: renormalisation',
+    )
+    for ax, label in ((ax_re, r'Re $\Delta(\omega)$ (meV)'), (ax_im, r'Im $\Delta(\omega)$ (meV)')):
+        ax.set(
+            xlabel=r'$\omega$ (meV)',
+            ylabel=label,
+            xlim=(0.0, w_max),
+            title='Real axis: ' + label.split(' (')[0],
+        )
+        visible = [line.get_ydata()[w_mev <= w_max] for line in ax.get_lines()]
+        if visible:  # scale y to the visible frequency window
+            low = min(0.0, min(y.min() for y in visible))
+            high = max(y.max() for y in visible)
+            ax.set_ylim(low - 0.05 * (high - low), high + 0.05 * (high - low))
+        ax.axhline(0.0, color='0.6', lw=0.8)
+    ax_qdos.set(
+        xlabel=r'$\omega$ (meV)',
+        ylabel=r'$N_S(\omega)/N_F$',
+        xlim=(0.0, 4.0 * edge_mev if edge_mev > 0 else w_max),
+        title='Quasiparticle DOS',
+    )
+    ax_qdos.set_ylim(0.0, min(ax_qdos.get_ylim()[1], 8.0))
+
+    estimates = (
+        ('gap0_imag', r'$\Delta(i\omega_0)$', 'o'),
+        ('gap_pade', 'gap edge, Pade', 's'),
+        ('gap_acon', 'gap edge, analytic cont.', '^'),
+    )
+    for (key, label, marker), colour in zip(estimates, _ME_SERIES):
+        gap_mev = np.asarray(data[key]) * 1e3
+        finite = np.isfinite(gap_mev)
+        ax_gap_t.plot(
+            temperatures[finite], gap_mev[finite], color=colour, marker=marker, ms=5, lw=1.2,
+            label=label,
+        )  # fmt: skip
+    tc_gap = float(data['Tc_gap']) if 'Tc_gap' in data else float('nan')
+    gap_title = r'Gap vs $T$'
+    if np.isfinite(tc_gap):
+        gap_title += r'  ($T_c \approx %.2f$ K)' % tc_gap
+    ax_gap_t.set(xlabel='Temperature (K)', ylabel=r'$\Delta$ (meV)', title=gap_title)
+    ax_gap_t.set_ylim(bottom=0.0)
+    ax_gap_t.legend(frameon=False, fontsize=9)
+
+    if 'max_eigenvalue' in data:
+        linear_temps = np.asarray(data['lin_temps'])
+        rho = np.asarray(data['max_eigenvalue'])
+        ax_rho.plot(linear_temps, rho, color=_ME_SERIES[0], marker='o', ms=5, lw=1.2)
+        ax_rho.axhline(1.0, color='0.5', ls='--', lw=1.0)
+        tc_linear = float(data['Tc_linear'])
+        if np.isfinite(tc_linear):
+            ax_rho.axvline(tc_linear, color='0.5', ls=':', lw=1.0)
+            ax_rho.annotate(
+                r'$T_c = %.2f$ K' % tc_linear,
+                (tc_linear, 1.0),
+                xytext=(6, 8),
+                textcoords='offset points',
+            )
+        ax_rho.set(
+            xlabel='Temperature (K)',
+            ylabel=r'max eigenvalue $\rho$',
+            title='Linearised Migdal-Eliashberg kernel',
+        )
+    else:
+        ax_rho.set_visible(False)
+
+    for ax in axes.ravel()[:-1]:
+        ax.grid(alpha=0.3)
+    ax_legend.axis('off')
+    handles = [Line2D([], [], color=colour, lw=2) for colour in colours]
+    handles += [Line2D([], [], color='0.3', ls='-'), Line2D([], [], color='0.3', ls='--')]
+    ax_legend.legend(
+        handles,
+        ['T = %g K' % t for t in temps] + ['analytic continuation', 'Pade'],
+        loc='center',
+        frameon=False,
+        title='Frequency panels',
+    )
+
+    plt.tight_layout()
+    if filename is not None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.show()

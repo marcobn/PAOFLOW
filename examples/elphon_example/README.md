@@ -1,7 +1,9 @@
 # Pb electron–phonon (Eliashberg) — PAOFLOW on EPW's coarse coupling
 
 This example computes the isotropic Eliashberg properties of fcc lead (α²F, λ,
-ω_log, Tc) with PAOFLOW's PAO interpolation. The coarse coupling comes from
+ω_log, Tc) with PAOFLOW's PAO interpolation. It then computes the
+temperature-dependent superconducting gap from the isotropic Migdal–Eliashberg
+equations, as in the second half of the EPW tutorial. The coarse coupling comes from
 **EPW** (`epbwrite`). EPW evaluates both ψ_k and ψ_{k+q} from the nscf save, so
 its matrix elements share the band gauge of PAOFLOW's projections on that save,
 which the interpolation needs (see `docs/internals/Electron-Phonon-Coupling.md`).
@@ -25,6 +27,8 @@ matrix elements, and PAOFLOW does all the interpolation.
 | `epw/write_ukk.py` | writes `pb.ukk` (band bookkeeping EPW reads when `wannierize = .false.`) and empty `pb.bvec`/`pb.mmn` stubs |
 | `epw/epw_wannier.in` | the tutorial's Wannierized EPW input (alternative; same `.epb` content) |
 | `main.py` | PAOFLOW analysis: PAO electronic structure + Eliashberg on EPW's coupling |
+| `me.py` | isotropic Migdal–Eliashberg on the α²F of `main.py`: gap vs T, real axis, linearised-kernel Tc |
+| `plot_me.py` | plots the `me.py` results |
 
 **Pseudopotential:** copy `Pb.upf` (ONCVPSP, from the EPW tutorial material) into
 this directory. Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
@@ -32,7 +36,8 @@ this directory. Both `phonon/` and `epw/` use `pseudo_dir = '../'`.
 `paoflow-gen` (electron-phonon workflow, EPW source) produces this same layout
 from a `pw.x` input of the system: `phonon/scf.in`, `phonon/ph.in`,
 `epw/nscf.in`, `epw/epw.in`, `epw/write_ukk.py`, plus `main.elphon.py` (the
-equivalent of `main.py`) and `plot.elphon.py`.
+equivalent of `main.py`), `me.elphon.py` (the equivalent of `me.py`) and
+`plot.elphon.py`.
 
 ---
 
@@ -90,6 +95,27 @@ mpirun -np 8 python main.py --coarse-q    # q kept on the coarse 6^3 grid
 Output in `output/`: `alpha2F.dat` (ω in meV, α²F) and `eliashberg.npz` (all
 result arrays).
 
+### 4. Superconducting gap (Migdal–Eliashberg)
+
+```bash
+python me.py                    # serial, a few seconds
+python plot_me.py               # figure -> output/me/migdal_eliashberg.png
+python me.py --a2f epw/pb.a2f   # optional: the same solver on EPW's own alpha^2F
+```
+
+`me.py` uses the parameters of the tutorial's Eliashberg steps:
+- `muc = 0.1`, `wscut = 0.1` eV, `npade = 90`
+- the 23 temperatures 0.3–6.0 K
+- `degaussq = 0.15` meV (0.5 meV and 25 temperatures 0.25–6.25 K for the
+  linearised kernel)
+
+It writes `output/me/` in EPW's formats:
+- `pb.imag_iso_<T>`: gap and Z on the imaginary axis
+- `pb.pade_iso_<T>` and `pb.acon_iso_<T>`: real axis, from Padé and from the analytic continuation
+- `pb.qdos_iso_<T>`: quasiparticle DOS
+- `gap_vs_T.dat`: Δ(T) from the lowest Matsubara frequency and the two real-axis gap edges
+- `max_eigenvalue.dat`: largest eigenvalue of the linearised kernel, which is 1 at Tc
+
 ---
 
 ## Reference results (Pb, μ* = 0.1, σ = 0.05 eV)
@@ -101,6 +127,18 @@ result arrays).
 | PAOFLOW, k 48³ / q 24³, on the Wannierized EPW run (`epw_wannier.in`) | 1.221 | 4.50 meV | 4.77 K | 5.21 K |
 | EPW itself, k 48³ / q 24³ (Wannierized run) | 1.151 | 4.44 meV | 4.38 K | 4.76 K |
 | EPW tutorial 04 | 1.158 | 4.40 meV | 4.37 K | 4.75 K |
+
+Migdal–Eliashberg (`me.py`) on the k 48³ / q 24³ α²F, against the tutorial
+(EPW's α²F, λ = 1.158):
+
+| | Δ(iω₀), 0.3 K | Z(iω₀), 0.3 K | gap edge (Padé / acon), 0.3 K | Tc, linearised kernel | Tc, Δ²(T) → 0 |
+|---|---|---|---|---|---|
+| PAOFLOW, k 48³ / q 24³ | 1.016 meV | 2.110 | 1.037 / 1.037 meV | 5.69 K | 5.71 K |
+| PAOFLOW, k 24³ / q 24³ | 0.937 meV | 1.997 | 0.952 / 0.952 meV | 5.42 K | 5.44 K |
+| EPW tutorial 04 | 0.923 meV | 2.071 | | ≈ 5.25 K | |
+
+The larger gap and Tc follow the larger λ and ω_log of the PAO α²F:
+(Z₀ − 1)/λ = 0.925 in both PAOFLOW and EPW.
 
 The remaining difference from EPW follows the density of states at E_F of the
 two band interpolations: 0.251 /eV/spin for the 18-orbital PAO bands against

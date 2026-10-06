@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
+import numpy as np
 import pytest
 
 from PAOFLOW.gen import paoflow_driver as d
@@ -483,6 +487,60 @@ def test_build_elphon_plot_script_overlays_epw_a2f():
     assert 'EPW_A2F = None' in legacy
 
 
+def test_build_elphon_plot_script_draws_the_me_figure() -> None:
+    text = d.build_elphon_plot_script(_epw_cfg())
+    assert "ME_NPZ = os.path.join(HERE, OUTPUTDIR, 'me', 'migdal_eliashberg.npz')" in text
+    assert 'GPAO.GPAO().plot_migdal_eliashberg(' in text
+    assert 'from PAOFLOW.elphon.qe_elph_io import read_epw_a2f' in text
+
+
+def test_parse_me_temperatures() -> None:
+    assert d.parse_me_temperatures('auto') is None and d.parse_me_temperatures('') is None
+    assert d.parse_me_temperatures('0.25, 6.25, 25') == [0.25, 6.25, 25]
+    for bad in ('1, 2', '3, 1, 10', '1, 2, 1'):
+        with pytest.raises(ValueError):
+            d.parse_me_temperatures(bad)
+
+
+def test_build_elphon_me_script_compiles_and_substitutes() -> None:
+    text = d.build_elphon_me_script(_epw_cfg())
+    compile(text, 'me.elphon.py', 'exec')
+    assert "PREFIX = 'pb'" in text and 'MU_STAR = 0.1' in text and 'TEMPS = None' in text
+    assert "os.path.join(HERE, 'output', 'eliashberg.npz')" in text
+    assert not re.search(
+        r'__[A-Z_]+__',
+        text.replace('__name__', '')
+        .replace('__main__', '')
+        .replace('__doc__', '')
+        .replace('__file__', ''),
+    )
+    text = d.build_elphon_me_script(_epw_cfg(me_temps=[0.3, 6.0, 23]))
+    assert 'TEMPS = (0.3, 6.0, 23)' in text
+
+
+def test_generated_me_script_runs_on_an_eliashberg_npz(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import runpy
+    import sys
+
+    from PAOFLOW.elphon.eph_kq import THZ_TO_EV, eliashberg_from_modes
+
+    out = tmp_path / 'output'
+    out.mkdir()
+    lam_qv, om = np.array([[1.0]]), np.array([[0.008 / THZ_TO_EV]])
+    np.savez(out / 'eliashberg.npz', **eliashberg_from_modes(lam_qv, om), omega_qv_thz=om)
+    script = tmp_path / 'me.elphon.py'
+    script.write_text(d.build_elphon_me_script(_epw_cfg()))
+    monkeypatch.setattr(sys, 'argv', ['me.elphon.py', '--temps', '1', '9', '3'])
+    runpy.run_path(str(script), run_name='__main__')
+    me_dir = out / 'me'
+    assert (me_dir / 'pb.imag_iso_001.00').exists() and (me_dir / 'pb.acon_iso_001.00').exists()
+    gap = np.loadtxt(me_dir / 'gap_vs_T.dat')
+    assert gap.shape == (3, 5) and gap[0, 1] > 0.0 and gap[-1, 1] == 0.0
+    assert np.load(me_dir / 'migdal_eliashberg.npz')['Tc_linear'] > 1.0
+
+
 def test_read_epw_a2f_helper_parses_epw_format(tmp_path):
     a2f = tmp_path / 'pb.a2f'
     a2f.write_text(
@@ -519,6 +577,8 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch, tmp_path):
             '',  # sigma (eV)
             '',  # mu*
             '',  # pthr
+            '1, 8',  # invalid ME temperatures -> re-prompt
+            '1, 8, 15',  # ME temperatures
         ]
     )
     monkeypatch.setattr('builtins.input', lambda prompt='': next(answers))
@@ -531,3 +591,4 @@ def test_collect_elphon_epw_reprompts_incommensurate_q(monkeypatch, tmp_path):
     assert (cfg['nq_dense'], cfg['nk_dense']) == (12, 36)
     assert cfg['sigma_ev'] == 0.05 and cfg['pthr'] == 0.95
     assert cfg['exclude_bands'] == [1, 2, 3, 4, 5]
+    assert cfg['me_temps'] == [1.0, 8.0, 15]

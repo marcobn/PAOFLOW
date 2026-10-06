@@ -1068,3 +1068,47 @@ class GPAO:
             units=units,
             filename=filename,
         )
+
+    def plot_migdal_eliashberg(
+        self,
+        npz_file: str,
+        temps: list[float] | None = None,
+        title: str | None = None,
+        filename: str | None = None,
+        real_axis_max_mev: float = 60.0,
+    ) -> None:
+        """Plot the isotropic Migdal-Eliashberg results (gap, Z, real axis, Delta(T), Tc).
+
+        Parameters
+        ----------
+        npz_file : str
+            ``migdal_eliashberg.npz`` written by
+            :func:`PAOFLOW.elphon.migdal_eliashberg.write_me_outputs`.
+        temps : list of float, optional
+            Temperatures (K) shown in the frequency-resolved panels; defaults to
+            up to four temperatures with a non-zero gap.
+        title : str, optional
+            A title for the figure.
+        filename : str, optional
+            If given, the figure is also saved to this path.
+        real_axis_max_mev : float, optional
+            Upper frequency (meV) of the real-axis panels (default 60), capped
+            at ``wscut``.
+
+        Returns
+        -------
+        None
+            Shows the figure (:func:`PAOFLOW.graphics.plot_functions.plot_migdal_eliashberg`).
+        """
+        import numpy as np
+
+        from .graphics.plot_functions import plot_migdal_eliashberg
+
+        with np.load(npz_file) as data:
+            plot_migdal_eliashberg(
+                dict(data),
+                temps=temps,
+                title=title,
+                filename=filename,
+                real_axis_max_mev=real_axis_max_mev,
+            )
