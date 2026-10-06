@@ -2,7 +2,7 @@
 
 A dense run truncates its ``HRs`` with ``save_sparse_hamiltonian``; the
 archive is then restarted twice, once on the dense driver (FFT + LAPACK on
-the densified ``HRs``) and once with ``sparse=`` (per-k assembly from the
+the densified ``HRs``) and once with ``sparse=True`` (per-k assembly from the
 bonds).  Both see the *same* truncated model, so their eigenvalues
 must agree to solver precision: this separates the engine from the
 truncation, which ``test_sparse_mesh_parity`` cannot (it runs at
@@ -63,7 +63,8 @@ def runs(tmp_path_factory):
             outputdir='sparse',
             restart=True,
             smearing='gauss',
-            sparse={'hk_solver': 'dense'},
+            sparse=True,
+            sparse_config={'hk_solver': 'dense'},
         )
         sp.load_sparse_hamiltonian(archive)
         H = sp.sparse.H
@@ -72,7 +73,7 @@ def runs(tmp_path_factory):
         s_arrays = sp.data_controller.data_dicts()[0]
 
         handed = PAOFLOW(
-            workpath=out, outputdir='handoff', restart=True, smearing='gauss', sparse={}
+            workpath=out, outputdir='handoff', restart=True, smearing='gauss', sparse=True
         )
         handed.load_sparse_hamiltonian(archive)
         handed.to_dense()
@@ -83,7 +84,8 @@ def runs(tmp_path_factory):
             savedir='silicon.save',
             outputdir=os.path.join(out, 'swrite'),
             smearing='gauss',
-            sparse={'bond_order': BOND_ORDER},
+            sparse=True,
+            sparse_config={'bond_order': BOND_ORDER},
         )
         writer.read_atomic_proj_QE()
         writer.projectability()
@@ -96,7 +98,7 @@ def runs(tmp_path_factory):
         from_sparse.gradient_and_momenta()
         f_arrays = from_sparse.data_controller.data_dicts()[0]
 
-        late = PAOFLOW(workpath=out, outputdir='late', restart=True, smearing='gauss', sparse={})
+        late = PAOFLOW(workpath=out, outputdir='late', restart=True, smearing='gauss', sparse=True)
         late.load_sparse_hamiltonian(archive)
         late.interpolated_hamiltonian(2 * NFFT, 2 * NFFT, 2 * NFFT)
         handed.interpolated_hamiltonian(NFFT, NFFT, NFFT)

@@ -37,7 +37,8 @@ def _base_cell(outdir, sparse):
             outputdir=outdir,
             smearing='gauss',
             verbose=False,
-            sparse={'threshold': 0.0} if sparse else None,
+            sparse=sparse,
+            sparse_config={'threshold': 0.0} if sparse else None,
         )
         p.read_atomic_proj_QE()
         p.projectability()

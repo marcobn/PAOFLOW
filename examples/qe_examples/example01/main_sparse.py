@@ -8,14 +8,19 @@ def main():
         smearing='gauss',
         npool=1,
         verbose=True,
-        sparse={'threshold': 1.0e-4},
+        sparse=True,
+        sparse_config={
+            'threshold': 1.0e-4,
+            # solve only the bands up to the property range (plus a 1 eV margin);
+            # applied before the first solve, after any doubling
+            'energy_window': {'emin': -12.0, 'emax': 2.2},
+        },
     )
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
     paoflow.pao_hamiltonian()
 
     paoflow.doubling_Hamiltonian(nx=1, ny=1, nz=1)
-    paoflow.sparse.energy_window(emin=-12.0, emax=2.2)
 
     paoflow.bands(ibrav=2, nk=2000)
     paoflow.interpolated_hamiltonian(nfft1=12, nfft2=12, nfft3=12)

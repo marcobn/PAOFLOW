@@ -165,7 +165,7 @@ class DielectricTensor(MeshProperty):
                 'WARNING: sparse dielectric_tensor: transitions up to emax=%.3f eV reach past '
                 'the lowest top band of the %d-band window (%.3f eV above E_F); the spectrum '
                 'misses transitions into the bands above it, as the dense kernel does at bnd. '
-                'Widen the window with pao.sparse.energy_window() if they matter.'
+                "Widen the 'energy_window' of sparse_config if they matter."
                 % (self.emax, arrays['E_k'].shape[1], top)
             )
             if engine.rank == 0:

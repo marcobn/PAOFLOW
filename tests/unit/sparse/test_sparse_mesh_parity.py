@@ -74,7 +74,8 @@ def dense_and_sparse(request, tmp_path_factory):
             smearing='gauss',
             npool=1,
             verbose=False,
-            sparse={'threshold': 0.0, 'hk_solver': hk_solver},
+            sparse=True,
+            sparse_config={'threshold': 0.0, 'hk_solver': hk_solver},
         )
         q.read_atomic_proj_QE()
         q.projectability()
@@ -173,7 +174,8 @@ def _run_example01(outdir, nfft, sparse=None, band_curvature=True, hall=True):
         smearing='gauss',
         npool=1,
         verbose=False,
-        sparse=sparse,
+        sparse=sparse is not None,
+        sparse_config=sparse,
     )
     p.read_atomic_proj_QE()
     p.projectability()

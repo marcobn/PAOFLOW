@@ -61,7 +61,13 @@ def _driver(outdir, sparse=None):
     from PAOFLOW.PAOFLOW import PAOFLOW
 
     p = PAOFLOW(
-        savedir='fe.save', outputdir=outdir, smearing='gauss', npool=1, verbose=False, sparse=sparse
+        savedir='fe.save',
+        outputdir=outdir,
+        smearing='gauss',
+        npool=1,
+        verbose=False,
+        sparse=sparse is not None,
+        sparse_config=sparse,
     )
     p.read_atomic_proj_QE()
     p.projectability(pthr=0.95)

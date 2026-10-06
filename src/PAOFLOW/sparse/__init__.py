@@ -39,8 +39,8 @@ labelled dataset of hopping integrals (:mod:`~PAOFLOW.sparse.io`).
 The archive is shared with the dense pipeline: :mod:`~PAOFLOW.sparse.bridge`
 is the single dense <-> sparse conversion point.
 
-There is no separate driver: ``PAOFLOW(..., sparse={...})``, a dict of
-options (:mod:`~PAOFLOW.sparse.config`), runs on :class:`~PAOFLOW.sparse.engine.SparseEngine`,
+There is no separate driver: ``PAOFLOW(..., sparse=True)``, with a dict of
+options in ``sparse_config={...}`` (:mod:`~PAOFLOW.sparse.config`), runs on :class:`~PAOFLOW.sparse.engine.SparseEngine`,
 to which :mod:`~PAOFLOW.sparse.dispatch` routes the methods it implements.
 """
 

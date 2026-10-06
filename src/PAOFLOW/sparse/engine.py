@@ -1,4 +1,4 @@
-"""Sparse engine behind ``PAOFLOW(..., sparse={...})``.
+"""Sparse engine behind ``PAOFLOW(..., sparse=True)``.
 
 :class:`SparseEngine` is not a driver.  :class:`PAOFLOW.PAOFLOW` stays the
 only user-facing class and routes the methods marked ``@sparse_override``
@@ -7,8 +7,9 @@ and accept the same arguments as their dense counterparts.  The pipeline
 stages (Hamiltonian, doubling, interpolation, bands) are methods of the
 engine; the properties are :class:`~PAOFLOW.sparse.properties.MeshProperty`
 classes, which the engine finds by name in the registry.  Features that
-exist only in sparse mode (the energy windows, ``fused``, the bond list
-``H``) are reached as ``pao.sparse.<name>``.
+exist only in sparse mode (``interior_window``, ``fused``, the bond list
+``H``) are reached as ``pao.sparse.<name>``; the energy window is the
+``'energy_window'`` option of ``sparse_config``.
 
 The DFT input stages (QE parsing, projectability, base-cell Hamiltonian
 construction — the one sanctioned dense stage, at the small pre-doubling
@@ -85,7 +86,7 @@ class SparseEngine:
             extends (:func:`~PAOFLOW.sparse.dispatch.call_dense`).
 
             config (SparseConfig): truncation, solver and resource settings,
-            parsed from the ``sparse=`` dict by
+            parsed from the ``sparse_config=`` dict by
             :meth:`~PAOFLOW.sparse.config.SparseConfig.parse`.
         """
         self.host = host
@@ -109,7 +110,7 @@ class SparseEngine:
         self._mesh_passes = 0  # mesh passes run so far
         self._mesh_products = set()  # products ('d2Ed2k') stored by those passes
         self._fusing = None  # properties queued inside fused(), else None
-        self._window = None  # (emin, emax, margin, ehi) once energy_window ran
+        self._window = None  # (emin, emax, margin, ehi) once the energy window is applied
 
         cfg = self.config
         self.log = get_sparse_log(self.data_controller)
@@ -252,14 +253,14 @@ class SparseEngine:
         :func:`PAOFLOW.sparse.io.bond_table`.
 
         The truncation arguments of the dense method are refused: the bond
-        list already carries the truncation set by the ``sparse=`` options.
+        list already carries the truncation set by the ``sparse_config`` options.
         """
         from .io import write_sparse_hamiltonian
 
         if (threshold, bond_order, rcut) != (None, None, None):
             raise ValueError(
                 'save_sparse_hamiltonian: in a sparse run the bond list is already truncated '
-                'by the sparse= options (threshold/rcut/bond_order); do not pass them here.'
+                'by the sparse_config options (threshold/rcut/bond_order); do not pass them here.'
             )
         self._require_H('save_sparse_hamiltonian')
 
@@ -282,7 +283,7 @@ class SparseEngine:
         directly, no dense ``HRs`` is rebuilt, and the run continues with
         ``doubling_Hamiltonian`` or any property.  Use on a driver
         created with ``restart=True``.  The truncation is the one recorded
-        in the file; the ``sparse=`` truncation options do not apply.
+        in the file; the ``sparse_config`` truncation options do not apply.
         Every rank reads the file.
         """
         from os.path import exists, isabs, join
@@ -335,7 +336,7 @@ class SparseEngine:
         ``Hks`` and ``Dnm``) by :func:`~PAOFLOW.sparse.bridge.densify`, the
         dense body runs unchanged, and the result is converted back by
         :func:`~PAOFLOW.sparse.bridge.sparsify` with the same
-        ``sparse=`` truncation, which is applied again to the
+        ``sparse_config`` truncation, which is applied again to the
         transformed ``H(R)`` (logged).  The dense arrays are deleted
         afterwards.  The operators ``Sj``/``Lj`` are handed to the body as
         ndarrays and converted back; if the body changed ``nawf`` (ad-hoc
@@ -426,7 +427,7 @@ class SparseEngine:
             # sparse interpolation and the windows only rewrite attributes the
             # dense pipeline would then read against a base-grid HRs
             raise RuntimeError(
-                'to_dense: call it before interpolated_hamiltonian(), energy_window() or '
+                'to_dense: call it before interpolated_hamiltonian(), the first solve or '
                 'interior_window(); the mesh is now %dx%dx%d but the bond list is on the '
                 '%dx%dx%d base grid. Interpolate on the dense pipeline instead.'
                 % (grid + self.H.nk_grid)
@@ -488,7 +489,7 @@ class SparseEngine:
             budget = None
             budget_note = '[available memory unknown: MemAvailable unreadable]'
 
-        # nev if energy_window() is never called: doubling_attr_arry doubles
+        # nev without an 'energy_window' option: doubling_attr_arry doubles
         # attr['bnd'] once per doubling.
         bnd_final = int(attr['bnd']) * proj['N']
         try:
@@ -498,8 +499,8 @@ class SparseEngine:
         except NotImplementedError:
             solver_note = (
                 'solve REFUSED at nev=bnd=%d (%.0f%% of n, past the %.0f%% iterative '
-                'regime, and n > dense_n_max) — energy_window() would have to bring '
-                'nev under %d for this to run'
+                'regime, and n > dense_n_max) — an energy_window in sparse_config would '
+                'have to bring nev under %d for this to run'
                 % (
                     bnd_final,
                     100.0 * bnd_final / proj['nawf'],
@@ -540,7 +541,7 @@ class SparseEngine:
             remedies = []
             if cfg.rcut is None and cfg.bond_order is None:
                 remedies.append(
-                    "set 'rcut' (Bohr) or 'bond_order' in sparse=: the bond list is currently "
+                    "set 'rcut' (Bohr) or 'bond_order' in sparse_config: the bond list is currently "
                     'untruncated in real space, which is usually the largest single factor'
                 )
             if proj['d'] > 1:
@@ -587,9 +588,10 @@ class SparseEngine:
         arrays, attr = self.data_controller.data_dicts()
         if self._window is not None:
             raise RuntimeError(
-                'sparse: energy_window() ran before doubling_Hamiltonian(). '
-                "doubling_attr_arry doubles attr['bnd'] on every call, which would scale the "
-                'window-sized nev by the cell multiplier. Call energy_window() after doubling.'
+                "sparse: the 'energy_window' of sparse_config was already applied by an earlier "
+                "solve. doubling_attr_arry doubles attr['bnd'] on every call, which would scale "
+                'the window-sized nev by the cell multiplier. Call doubling_Hamiltonian() before '
+                'bands() and the properties.'
             )
         self._preflight_doubling(nx, ny, nz)
         attr['nx'], attr['ny'], attr['nz'] = nx, ny, nz
@@ -620,64 +622,35 @@ class SparseEngine:
     # Energy window: size nev from the property range instead of bnd
     # ------------------------------------------------------------------
 
-    def energy_window(self, emin, emax, margin=1.0, nprobe=16, nev=None):
-        """Size the per-k solve from the property energy range.
+    def _ensure_window(self):
+        """Apply the ``'energy_window'`` option of ``sparse_config`` once,
+        right before the first solve (``bands`` or the first property).
 
-        MUST be called after ``doubling_Hamiltonian()`` and before
-        ``bands()`` / ``dos()`` / ``transport()``.  Sets ``attr['bnd']``,
-        which every downstream band-diagonal consumer reads, so the band
-        path and the mesh both pick the new width up automatically.
-
-        The window top is ``ehi = emax + margin``.  ``margin`` (eV) has to
-        cover the adaptive smearing tail (Yates widths here are
-        <~ 0.22 eV, so 4 sigma is <~ 0.9 eV) and the transport occupation
-        derivative at 300 K (~0.1 eV); 1.0 eV covers both.
-
-        ``nev`` is probed by counting eigenvalues below ``ehi`` at
-        ``nprobe`` deterministic k-points (Gamma, the supercell-BZ
-        corners, then strided mesh points) and padding by
-        ``max(8, 2%)``.  Pass ``nev`` explicitly to skip the probe.
-
-        Caveat, stated because it is easy to misread: this narrows the
-        solve but does not make the workload iterative again.  The
-        fraction of the spectrum below a fixed ``emax`` is scale
-        invariant under folding, so ``nev/nawf`` stays put as the cell
-        grows.  For a DOS-from-``emin`` run the dense branch is
-        permanent; only an *interior* window (shift-invert near E_F,
-        transport only) would change that, and that is a different
-        solver.
-
-        Note also that ``attr['bnd']`` changes meaning here, from "bands
-        with projectability > pthr, times the cell multiplier" to "bands
-        inside the property window".  The downstream normalizations are
-        unaffected (``do_dos_adaptive``'s two ``bnd`` factors cancel;
-        transport slices are ``bnd``-independent), but ``bands_*.dat``
-        gains or loses columns, so band files are not column-comparable
-        across runs with and without a window.
+        Running it lazily puts it after ``doubling_Hamiltonian`` and
+        ``interpolated_hamiltonian`` whatever the call order of the script,
+        and before anything reads ``attr['bnd']`` as the solve width.  A
+        no-op without the option or once applied.  See
+        :class:`~PAOFLOW.sparse.config.EnergyWindow` for the semantics.
         """
+        window = self.config.energy_window
+        if window is None or self._window is not None:
+            return
         import itertools
 
         from .solver import count_below
 
-        self._require_H('energy_window')
-        if self._interior is not None:
-            raise RuntimeError(
-                'sparse: interior_window() is already active. The two window modes '
-                'are mutually exclusive -- one sizes nev from the bottom of the spectrum, '
-                'the other solves inside a window and never computes the states below it.'
-            )
         arrays, attr = self.data_controller.data_dicts()
-        ehi = float(emax) + float(margin)
+        ehi = window.ehi
         nawf = self.H.nawf
 
         def _window():
-            if nev is not None:
-                chosen, probed = int(nev), None
+            if window.nev is not None:
+                chosen, probed = window.nev, None
             else:
                 from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
 
                 kprobe = np.array(list(itertools.product((0.0, 0.5), repeat=3)))  # Gamma + corners
-                extra = nprobe - len(kprobe)
+                extra = window.nprobe - len(kprobe)
                 if extra > 0:
                     kgrid = get_K_grid_fft_crystal(attr['nk1'], attr['nk2'], attr['nk3'])
                     stride = max(1, len(kgrid) // extra)
@@ -692,9 +665,12 @@ class SparseEngine:
 
             old = attr.get('bnd', nawf)
             attr['bnd'] = chosen
-            self._window = (float(emin), float(emax), float(margin), ehi)
+            self._window = (window.emin, window.emax, window.margin, ehi)
             self.log.section('Energy window')
-            self.log.field('window (eV)', '[%.3f, %.3f] + %.3f margin' % (emin, emax, margin))
+            self.log.field(
+                'window (eV)',
+                '[%.3f, %.3f] + %.3f margin' % (window.emin, window.emax, window.margin),
+            )
             self.log.field('ehi (eV)', '%.3f' % ehi)
             self.log.field('nev', '%d of nawf = %d (was bnd = %d)' % (chosen, nawf, old))
             self.log.field(
@@ -716,7 +692,8 @@ class SparseEngine:
         """Solve *inside* ``[elo, ehi]`` instead of from the bottom of the spectrum.
 
         MUST be called after ``doubling_Hamiltonian()`` and before any
-        property.  Mutually exclusive with :meth:`energy_window`.
+        property.  Mutually exclusive with the ``'energy_window'`` option of
+        ``sparse_config``.
 
         This is the mode that makes the iterative kernel pay: the count in a
         narrow interior window is a small fraction of the spectrum, whereas a
@@ -751,9 +728,9 @@ class SparseEngine:
         small.
         """
         self._require_H('interior_window')
-        if self._window is not None:
+        if self.config.energy_window is not None:
             raise RuntimeError(
-                'sparse: energy_window() is already active. The two window modes '
+                "sparse: sparse_config sets an 'energy_window'. The two window modes "
                 'are mutually exclusive.'
             )
         elo, ehi = float(elo), float(ehi)
@@ -814,10 +791,10 @@ class SparseEngine:
 
     def _check_window_covers(self, prop, emax):
         """Raise if ``emax`` lies above the lowest top band of an
-        ``energy_window``: some k-point would be missing states inside the
+        energy window: some k-point would be missing states inside the
         requested range.  Collective.
 
-        A no-op without ``energy_window``, where the solve keeps the dense
+        A no-op without an energy window, where the solve keeps the dense
         ``bnd`` bands and every dense kernel reused here sums over the same
         ones, and under an interior window, whose solve is complete inside
         it by construction."""
@@ -828,8 +805,8 @@ class SparseEngine:
         if float(emax) > top:
             raise RuntimeError(
                 'sparse %s: requested emax=%.3f eV exceeds the lowest computed top band '
-                '(%.3f eV); the %d-band window does not cover the energy range. Widen it with '
-                'pao.sparse.energy_window(emin, emax).' % (prop, emax, top, attr['bnd'])
+                '(%.3f eV); the %d-band window does not cover the energy range. Raise emax or '
+                "margin in the 'energy_window' of sparse_config." % (prop, emax, top, attr['bnd'])
             )
 
     def _clamp_to_window(self, prop, emin, emax, margin=0.0):
@@ -872,7 +849,7 @@ class SparseEngine:
         nk=500,
     ):
         """Band structure along a path; computes only the lowest
-        ``attr['bnd']`` bands (set it with :meth:`energy_window`).  Output
+        ``attr['bnd']`` bands (set by the ``'energy_window'`` option).  Output
         format matches the dense ``bands_{ispin}.dat``."""
         from ..utils.communication import gather_full
         from .bands import do_bands_sparse
@@ -883,6 +860,7 @@ class SparseEngine:
                 'base cell first.'
             )
         self._require_H('bands')
+        self._ensure_window()
         arrays, attr = self.data_controller.data_dicts()
 
         if ibrav is not None:
@@ -1057,6 +1035,7 @@ class SparseEngine:
         """Build a registered property with the dense arguments and run it,
         or queue it inside :meth:`fused`."""
         self._require_H(cls.method)
+        self._ensure_window()
         arrays, attr = self.data_controller.data_dicts()
         before = (dict(attr), dict(arrays))
         prop = cls(self, *args, **kwargs)

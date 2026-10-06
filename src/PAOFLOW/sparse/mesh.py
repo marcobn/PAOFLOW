@@ -528,6 +528,6 @@ def check_window_coverage(deficit: int, nev: int, ehi: float | None, tag: str) -
         raise RuntimeError(
             f'sparse {tag}: {total} k-point(s) had their highest computed band below the '
             f'requested window top ehi = {ehi:.3f} eV, so the {nev}-band solve does not cover '
-            f'it. Re-run with a larger nev (energy_window(..., nev={suggested}) or a wider '
-            'margin). No results were truncated silently.'
+            f"it. Re-run with a larger nev ('nev': {suggested} or a wider 'margin' in the "
+            "'energy_window' of sparse_config). No results were truncated silently."
         )

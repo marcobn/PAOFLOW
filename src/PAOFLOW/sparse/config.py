@@ -1,7 +1,8 @@
 """Run configuration of the sparse engine.
 
-Users select the sparse engine with a plain dict, ``PAOFLOW(..., sparse={...})``
-(``{}`` takes every default); ``sparse=None`` (the default) keeps the dense
+Users select the sparse engine with ``PAOFLOW(..., sparse=True)`` and set
+its options with a plain dict, ``sparse_config={...}`` (``None`` or ``{}``
+takes every default); ``sparse=False`` (the default) keeps the dense
 pipeline.  :meth:`SparseConfig.parse` turns that dict into a validated,
 immutable :class:`SparseConfig`, which is what the engine holds; the class
 itself is internal and never constructed by users.  Every knob of the sparse
@@ -70,11 +71,143 @@ def resolve_threshold(
     return threshold
 
 
+def _reject_unknown_keys(value: dict, names: list, what: str) -> None:
+    """Raise ``ValueError`` naming every key of ``value`` not in ``names``."""
+    unknown = [k for k in value if k not in names]
+    if not unknown:
+        return
+    lines = []
+    for key in unknown:
+        close = get_close_matches(str(key), names, n=1)
+        lines.append('%r%s' % (key, " (did you mean '%s'?)" % close[0] if close else ''))
+    raise ValueError(
+        '%s: unknown option%s %s. Valid options: %s.'
+        % (what, 's' if len(unknown) > 1 else '', ', '.join(lines), ', '.join(names))
+    )
+
+
+@dataclass(frozen=True)
+class EnergyWindow:
+    """The ``'energy_window'`` option: size the per-k solve from the
+    property energy range instead of from ``attr['bnd']``.
+
+    Given as a dict, ``sparse_config={'energy_window': {'emin': -12.0,
+    'emax': 2.2}}``; each attribute below is a key of that dict.  The
+    engine applies it once, right before the first solve (``bands`` or the
+    first property), so it always acts after ``doubling_Hamiltonian``.  It
+    sets ``attr['bnd']``, which every downstream band-diagonal consumer
+    reads, so the band path and the mesh both pick the new width up.
+
+    Attributes
+    ----------
+    emin, emax : float
+        Energy range (eV) the properties will ask for.  The window top is
+        ``ehi = emax + margin``; ``emin`` is recorded for the log and for
+        the range checks of the properties.
+    margin : float, default 1.0
+        Extra range (eV) above ``emax``.  It has to cover the adaptive
+        smearing tail (Yates widths here are <~ 0.22 eV, so 4 sigma is
+        <~ 0.9 eV) and the transport occupation derivative at 300 K
+        (~0.1 eV); 1.0 eV covers both.
+    nprobe : int, default 16
+        Number of k-points at which the eigenvalues below ``ehi`` are
+        counted to size ``nev``: Gamma, the supercell-BZ corners, then
+        strided mesh points.  The count is padded by ``max(8, 2%)``.
+    nev : int or None
+        Give the number of bands to solve explicitly and skip the probe.
+
+    Notes
+    -----
+    This narrows the solve but does not make the workload iterative
+    again: the fraction of the spectrum below a fixed ``emax`` is scale
+    invariant under folding, so ``nev/nawf`` stays put as the cell grows.
+    Only an *interior* window (``pao.sparse.interior_window``, transport
+    only) changes that, and the two are mutually exclusive.
+
+    ``attr['bnd']`` changes meaning under a window, from "bands with
+    projectability > pthr, times the cell multiplier" to "bands inside the
+    property window".  The downstream normalizations are unaffected, but
+    ``bands_*.dat`` gains or loses columns, so band files are not
+    column-comparable across runs with and without a window.
+    """
+
+    emin: float
+    emax: float
+    margin: float = 1.0
+    nprobe: int = 16
+    nev: int | None = None
+
+    def __post_init__(self):
+        # frozen: normalize types through object.__setattr__
+        object.__setattr__(self, 'emin', float(self.emin))
+        object.__setattr__(self, 'emax', float(self.emax))
+        object.__setattr__(self, 'margin', float(self.margin))
+        object.__setattr__(self, 'nprobe', int(self.nprobe))
+        if not self.emax > self.emin:
+            raise ValueError(
+                "sparse_config=: 'energy_window' needs emax > emin, got [%g, %g]."
+                % (self.emin, self.emax)
+            )
+        if self.margin < 0.0:
+            raise ValueError(
+                "sparse_config=: 'energy_window' margin must be >= 0 eV, got %g." % self.margin
+            )
+        if self.nprobe < 1:
+            raise ValueError(
+                "sparse_config=: 'energy_window' nprobe must be >= 1, got %d." % self.nprobe
+            )
+        if self.nev is not None:
+            object.__setattr__(self, 'nev', int(self.nev))
+            if self.nev < 1:
+                raise ValueError(
+                    "sparse_config=: 'energy_window' nev must be >= 1, got %d." % self.nev
+                )
+
+    @property
+    def ehi(self) -> float:
+        """The window top, ``emax + margin`` (eV)."""
+        return self.emax + self.margin
+
+    @classmethod
+    def parse(cls, value) -> EnergyWindow:
+        """The ``'energy_window'`` value as an :class:`EnergyWindow`.
+
+        Parameters
+        ----------
+        value : dict or EnergyWindow
+            A dict with ``'emin'`` and ``'emax'`` (eV) and optionally
+            ``'margin'``, ``'nprobe'`` and ``'nev'``.
+
+        Raises
+        ------
+        TypeError
+            If ``value`` is not a dict.
+        ValueError
+            If a key is not an option, ``emin``/``emax`` are missing, or
+            the values are inconsistent.
+        """
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, dict):
+            raise TypeError(
+                "sparse_config=: 'energy_window' takes a dict {'emin': ..., 'emax': ...}; got %r."
+                % type(value).__name__
+            )
+        _reject_unknown_keys(value, [f.name for f in fields(cls)], "sparse_config= 'energy_window'")
+        missing = [k for k in ('emin', 'emax') if k not in value]
+        if missing:
+            raise ValueError(
+                "sparse_config=: 'energy_window' needs %s (eV)."
+                % ' and '.join("'%s'" % k for k in missing)
+            )
+        return cls(**value)
+
+
 @dataclass(frozen=True)
 class SparseConfig:
     """Truncation, solver and resource settings of a sparse run.
 
-    Built by :meth:`parse` from the ``sparse=`` dict of
+    Built by :meth:`parse` from the ``sparse_config=`` dict of
     :class:`PAOFLOW.PAOFLOW`; each attribute below is a key of that dict.
 
     Attributes
@@ -112,19 +245,29 @@ class SparseConfig:
         matrix, and H(R) stays a bond list either way.  ``'auto'``
         dispatches on ``(nawf, nev)``; see
         :func:`PAOFLOW.sparse.solver.select_hk_solver`.
+    energy_window : EnergyWindow or None
+        Size the per-k solve from the property energy range, given as a
+        dict ``{'emin': ..., 'emax': ..., 'margin': 1.0, 'nprobe': 16,
+        'nev': None}``; see :class:`EnergyWindow`.  Applied by the engine
+        right before the first solve, after any doubling.  ``None`` solves
+        the ``attr['bnd']`` projectable bands (times the cell multiplier).
     """
 
     threshold: float | None = None
     rcut: float | None = None
     bond_order: int | None = None
     hk_solver: str = 'auto'
+    energy_window: EnergyWindow | None = None
 
     def __post_init__(self):
         if self.rcut is not None and self.bond_order is not None:
-            raise ValueError('sparse=: give either rcut (Bohr) or bond_order (shells), not both.')
+            raise ValueError(
+                'sparse_config=: give either rcut (Bohr) or bond_order (shells), not both.'
+            )
         if self.hk_solver not in HK_SOLVERS:
             raise ValueError(
-                'sparse=: hk_solver must be one of %s, got %r.' % (HK_SOLVERS, self.hk_solver)
+                'sparse_config=: hk_solver must be one of %s, got %r.'
+                % (HK_SOLVERS, self.hk_solver)
             )
         # validates the threshold/cutoff combination; the field keeps the
         # user's value (None stays None) so the log shows what was asked for
@@ -136,16 +279,17 @@ class SparseConfig:
             object.__setattr__(self, 'rcut', float(self.rcut))
         if self.bond_order is not None:
             object.__setattr__(self, 'bond_order', int(self.bond_order))
+        if self.energy_window is not None:
+            object.__setattr__(self, 'energy_window', EnergyWindow.parse(self.energy_window))
 
     @classmethod
-    def parse(cls, value) -> SparseConfig | None:
-        """The ``sparse=`` constructor argument as a config, or ``None`` for dense.
+    def parse(cls, value) -> SparseConfig:
+        """The ``sparse_config=`` constructor argument as a config.
 
         Parameters
         ----------
         value : dict or None
-            ``None`` runs dense; a dict runs sparse, with its keys setting
-            the attributes of this class (``{}`` takes every default).
+            The options; ``None`` or ``{}`` takes every default.
 
         Raises
         ------
@@ -155,22 +299,11 @@ class SparseConfig:
             If a key is not an option, or the options are inconsistent.
         """
         if value is None:
-            return None
+            return cls()
         if not isinstance(value, dict):
-            hint = ' Use sparse={} for the sparse defaults.' if value is True else ''
             raise TypeError(
-                'sparse= takes a dict of options or None (dense); got %r.%s'
-                % (type(value).__name__, hint)
+                'sparse_config= takes a dict of options (None for the defaults); got %r.'
+                % type(value).__name__
             )
-        names = [f.name for f in fields(cls)]
-        unknown = [k for k in value if k not in names]
-        if unknown:
-            lines = []
-            for key in unknown:
-                close = get_close_matches(str(key), names, n=1)
-                lines.append('%r%s' % (key, " (did you mean '%s'?)" % close[0] if close else ''))
-            raise ValueError(
-                'sparse=: unknown option%s %s. Valid options: %s.'
-                % ('s' if len(unknown) > 1 else '', ', '.join(lines), ', '.join(names))
-            )
+        _reject_unknown_keys(value, [f.name for f in fields(cls)], 'sparse_config=')
         return cls(**value)

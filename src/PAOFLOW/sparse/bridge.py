@@ -5,7 +5,7 @@ dense ``HRs`` of :class:`PAOFLOW.PAOFLOW` describe the same truncated
 model.  The bond-list archive (:mod:`PAOFLOW.sparse.io`) is the
 interchange format between the two pipelines: either can write it, either
 can read it, and the engine that runs afterwards is chosen by the
-``sparse=`` argument of the ``PAOFLOW`` that reads it.  A live sparse run
+``sparse=`` flag of the ``PAOFLOW`` that reads it.  A live sparse run
 switches to the dense pipeline with ``PAOFLOW.to_dense()``.
 
 This module is the only place that converts between the two forms:
