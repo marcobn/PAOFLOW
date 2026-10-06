@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from difflib import get_close_matches
 
+from .solver import DENSE_N_MAX, DENSE_RATIO
+
 HK_SOLVERS = ('auto', 'sparse', 'dense')
 
 # element threshold (eV) used when neither a threshold nor a real-space cutoff is given
@@ -353,6 +355,17 @@ class SparseConfig:
         'ehi': ..., 'kT_margin_eV': 0.26, 'smear_margin_eV': 0.5}``; see
         :class:`InteriorWindow`.  Applied like ``energy_window``, and
         mutually exclusive with it.
+    dense_n_max : int, default :data:`~PAOFLOW.sparse.solver.DENSE_N_MAX`
+        Largest ``nawf`` for which a per-k ``(n, n)`` dense scratch matrix
+        is admitted: the dense ``hk_solver`` branch, the full-spectrum
+        properties and the ``energy_window`` probe.  Above it those refuse
+        with ``NotImplementedError`` rather than allocate.  The default is
+        a policy value, not a LAPACK limit; raise it to run the dense
+        per-k kernel where the memory allows.
+    dense_ratio : float, default :data:`~PAOFLOW.sparse.solver.DENSE_RATIO`
+        Fraction of the spectrum (``(nev + guard) / n``) above which
+        ``hk_solver='auto'`` stops using ARPACK and takes the dense
+        kernel.  Must lie in ``(0, 1]``.
     """
 
     hopping_threshold: float | None = None
@@ -361,6 +374,8 @@ class SparseConfig:
     hk_solver: str = 'auto'
     energy_window: EnergyWindow | None = None
     interior_window: InteriorWindow | None = None
+    dense_n_max: int = DENSE_N_MAX
+    dense_ratio: float = DENSE_RATIO
 
     def __post_init__(self):
         if self.rcut is not None and self.bond_order is not None:
@@ -371,6 +386,14 @@ class SparseConfig:
             raise ValueError(
                 'sparse_config=: hk_solver must be one of %s, got %r.'
                 % (HK_SOLVERS, self.hk_solver)
+            )
+        object.__setattr__(self, 'dense_n_max', int(self.dense_n_max))
+        object.__setattr__(self, 'dense_ratio', float(self.dense_ratio))
+        if self.dense_n_max < 1:
+            raise ValueError('sparse_config=: dense_n_max must be >= 1, got %d.' % self.dense_n_max)
+        if not 0.0 < self.dense_ratio <= 1.0:
+            raise ValueError(
+                'sparse_config=: dense_ratio must lie in (0, 1], got %g.' % self.dense_ratio
             )
         # validates the threshold/cutoff combination; the field keeps the
         # user's value (None stays None) so the log shows what was asked for
@@ -393,6 +416,11 @@ class SparseConfig:
                 'bottom of the spectrum, the other solves inside a window and never computes '
                 'the states below it.'
             )
+
+    @property
+    def limits(self) -> dict:
+        """The dispatch limits as keyword arguments of the solver functions."""
+        return {'dense_ratio': self.dense_ratio, 'dense_n_max': self.dense_n_max}
 
     @classmethod
     def parse(cls, value) -> SparseConfig:

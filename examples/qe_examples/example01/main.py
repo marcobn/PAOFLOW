@@ -22,10 +22,10 @@ def main():
     # Calculate eigenvalues on the entire BZ grid
     paoflow.pao_eigh()
 
-    paoflow.gradient_and_momenta()
+    paoflow.gradient_and_momenta(band_curvature=True)
     paoflow.adaptive_smearing()
     paoflow.dos(emin=-12.0, emax=2.2, ne=1000)
-    paoflow.transport(emin=-12.0, emax=2.2)
+    paoflow.transport(emin=-12.0, emax=2.2, do_hall=True)
     paoflow.finish_execution()
 
 

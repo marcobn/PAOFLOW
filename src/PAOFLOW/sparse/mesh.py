@@ -38,6 +38,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from mpi4py import MPI
 
+from .solver import DENSE_N_MAX, DENSE_RATIO
+
 if TYPE_CHECKING:
     from PAOFLOW.DataController import DataController
 
@@ -127,6 +129,8 @@ def run_mesh(
     hk_solver: str = 'auto',
     ehi: float | None = None,
     interior: tuple[float, float] | None = None,
+    dense_ratio: float = DENSE_RATIO,
+    dense_n_max: int = DENSE_N_MAX,
 ) -> None:
     """Walk the local share of the BZ mesh, producing all band-diagonal data.
 
@@ -171,6 +175,11 @@ def run_mesh(
     interior : (float, float) or None, optional
         Energy window ``(elo, ehi)`` in eV.  Switches to the interior
         solver: every state inside the window, none below it.
+    dense_ratio, dense_n_max : optional
+        Dispatch limits of the per-k kernel, forwarded to
+        :func:`~PAOFLOW.sparse.solver.select_hk_solver`; ``dense_n_max`` also
+        caps the full-spectrum solve.  The engine passes the values of
+        ``sparse_config``.
 
     Returns
     -------
@@ -182,7 +191,7 @@ def run_mesh(
     ------
     NotImplementedError
         If the full spectrum is needed (a ``'full_spectrum'`` consumer, or
-        the ``'d2Ed2k'`` product) and ``nawf`` exceeds ``DENSE_N_MAX``.
+        the ``'d2Ed2k'`` product) and ``nawf`` exceeds ``dense_n_max``.
     ValueError
         If the full spectrum is needed together with ``interior``, or an
         unknown product is requested.
@@ -215,7 +224,7 @@ def run_mesh(
     k-point with the dense kernel, exactly as the dense pipeline's ``eigh``
     does; the stored arrays still keep only the window ``E[:nev]``.  This is
     the per-k ``(nawf, nawf)`` scratch the memory contract admits up to
-    ``DENSE_N_MAX``; above it there is no exact alternative here (a
+    ``dense_n_max``; above it there is no exact alternative here (a
     Sternheimer solve for the interband sums is the intended follow-up), so
     the pass refuses rather than truncating the sum.
 
@@ -259,7 +268,7 @@ def run_mesh(
     from ..utils.get_K_grid_fft import get_K_grid_fft_crystal
     from .kpoint import KPoint
     from .log import get_sparse_log
-    from .solver import DENSE_N_MAX, describe_hk_solver, solve_interior, solve_lowest
+    from .solver import describe_hk_solver, solve_interior, solve_lowest
 
     arrays, attr = data_controller.data_dicts()
     nk1, nk2, nk3 = attr['nk1'], attr['nk2'], attr['nk3']
@@ -283,11 +292,11 @@ def run_mesh(
                 'run_mesh: %s need the full spectrum, which an interior window never '
                 'computes.' % ', '.join(wanting)
             )
-        if nawf > DENSE_N_MAX:
+        if nawf > dense_n_max:
             raise NotImplementedError(
                 f'sparse mesh: {", ".join(wanting)} sum over interband pairs that include every '
                 f'state, which needs the full spectrum per k-point (nawf = {nawf}). That is a '
-                f'dense (nawf, nawf) solve, admitted only up to DENSE_N_MAX = {DENSE_N_MAX}, '
+                f'dense (nawf, nawf) solve, admitted only up to dense_n_max = {dense_n_max}, '
                 f'where it would take {16.0 * nawf * nawf / 1024**3:.2f} GB per k-point. '
                 'The exact route past it is a Sternheimer (linear-response) solve for the '
                 'interband sums, which is not implemented yet; there is no truncated-sum '
@@ -323,7 +332,8 @@ def run_mesh(
             'full spectrum',
             f'all {nawf} states per k-point for {", ".join(wanting)}; window keeps {nev}',
         )
-    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver))
+    limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
+    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver, **limits))
 
     if interior is None:
         E_k = np.zeros((nk_local, nev, nspin), dtype=float)
@@ -345,11 +355,18 @@ def run_mesh(
             )
             hk, dhk = assembled[0], assembled[1]
             if interior is None:
-                E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver)
+                E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver, **limits)
                 v0 = np.ascontiguousarray(V[:, 0])
                 bnd = nev
             else:
-                E, V = solve_interior(hk, interior[0], interior[1], k0=k0, hk_solver=hk_solver)
+                E, V = solve_interior(
+                    hk,
+                    interior[0],
+                    interior[1],
+                    k0=k0,
+                    hk_solver=hk_solver,
+                    dense_n_max=dense_n_max,
+                )
                 k0 = max(8, 2 * len(E))
                 bnd = len(E)
 

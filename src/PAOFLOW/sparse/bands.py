@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from mpi4py import MPI
 
+from .solver import DENSE_N_MAX, DENSE_RATIO
+
 if TYPE_CHECKING:
     from PAOFLOW.DataController import DataController
 
@@ -39,6 +41,8 @@ def do_bands_sparse(
     hk_solver: str = 'auto',
     ehi: float | None = None,
     interior: tuple[float, float] | None = None,
+    dense_ratio: float = DENSE_RATIO,
+    dense_n_max: int = DENSE_N_MAX,
 ) -> None:
     """Compute the band structure along the interpolation path.
 
@@ -66,6 +70,9 @@ def do_bands_sparse(
     interior : (float, float) or None, optional
         Energy window ``(elo, ehi)`` in eV.  Solves *inside* the window
         instead of from the bottom of the spectrum.
+    dense_ratio, dense_n_max : optional
+        Dispatch limits of the per-k kernel, forwarded to
+        :func:`~PAOFLOW.sparse.solver.select_hk_solver`.
 
     Returns
     -------
@@ -126,7 +133,8 @@ def do_bands_sparse(
         log.field('interior window (eV)', f'[{interior[0]:.3f}, {interior[1]:.3f}]')
         log.field('bands requested', 'k-dependent (interior solve); NaN-padded')
     log.field('window top ehi (eV)', 'none' if ehi is None else f'{ehi:.3f}')
-    log.write(describe_hk_solver(sparse_h.nawf, nsel, hk_solver=hk_solver))
+    limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
+    log.write(describe_hk_solver(sparse_h.nawf, nsel, hk_solver=hk_solver, **limits))
 
     if interior is None:
         E_k = np.zeros((nk_local, nsel, nspin), dtype=float)
@@ -140,13 +148,20 @@ def do_bands_sparse(
         for ik in range(nk_local):
             hk = sparse_h.assemble_hk(kq_aux[ik], ispin=ispin, sign=+1, cart=True)
             if interior is None:
-                E, V = solve_lowest(hk, nsel, v0=v0, hk_solver=hk_solver)
+                E, V = solve_lowest(hk, nsel, v0=v0, hk_solver=hk_solver, **limits)
                 E_k[ik, :, ispin] = E
                 v0 = np.ascontiguousarray(V[:, 0])
                 if ehi is not None and E[-1] < ehi:
                     deficit += 1
             else:
-                E, _ = solve_interior(hk, interior[0], interior[1], k0=k0, hk_solver=hk_solver)
+                E, _ = solve_interior(
+                    hk,
+                    interior[0],
+                    interior[1],
+                    k0=k0,
+                    hk_solver=hk_solver,
+                    dense_n_max=dense_n_max,
+                )
                 acc[(ispin, ik)] = E
                 k0 = max(8, 2 * len(E))
             if verbose and (ik + 1) % step == 0:
@@ -221,6 +236,8 @@ def run_path(
     with_dnm: bool = True,
     hk_solver: str = 'auto',
     verbose: bool = False,
+    dense_ratio: float = DENSE_RATIO,
+    dense_n_max: int = DENSE_N_MAX,
 ) -> None:
     """Stream the band path to path properties, one :class:`KPoint` at a time.
 
@@ -241,6 +258,9 @@ def run_path(
         ``SparseHamiltonian.assemble_derivatives``).
     hk_solver : {'auto', 'sparse', 'dense'}, optional
     verbose : bool, optional
+    dense_ratio, dense_n_max : optional
+        Dispatch limits of the per-k kernel, forwarded to
+        :func:`~PAOFLOW.sparse.solver.select_hk_solver`.
 
     Notes
     -----
@@ -264,7 +284,8 @@ def run_path(
     log.section('Path pass (%s)' % ', '.join(sorted({c.method for c in consumers})))
     log.field('k-points on path', nkpi)
     log.field('states per k', '%d of nawf = %d' % (nsolve, nawf))
-    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver))
+    limits = {'dense_ratio': dense_ratio, 'dense_n_max': dense_n_max}
+    log.write(describe_hk_solver(nawf, nsolve, hk_solver=solver, **limits))
 
     bnd = min(int(attr['bnd']), nsolve)
     step = max(1, min(100, kq_aux.shape[0] // 10))
@@ -274,7 +295,7 @@ def run_path(
             hk, dhk = sparse_h.assemble_derivatives(
                 kq_aux[ik], ispin=ispin, sign=+1, cart=True, order=1, with_dnm=with_dnm
             )
-            E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver)
+            E, V = solve_lowest(hk, nsolve, v0=v0, hk_solver=solver, **limits)
             v0 = np.ascontiguousarray(V[:, 0])
             kp = KPoint(
                 sparse_h,

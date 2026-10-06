@@ -492,7 +492,9 @@ class BerryPhase(MeshProperty):
         first = previous = None
         for ik in range(kq.shape[1]):
             hk = H.assemble_hk(kq[:, ik], ispin=0, sign=+1, cart=True)
-            _, V = solve_lowest(hk, nsolve, hk_solver=self.engine.config.hk_solver)
+            _, V = solve_lowest(
+                hk, nsolve, hk_solver=self.engine.config.hk_solver, **self.engine.config.limits
+            )
             if previous is None:
                 first = V
             else:
