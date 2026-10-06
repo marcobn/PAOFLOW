@@ -25,8 +25,9 @@ Two further workflows generate multi-phase driver scripts:
    (``epbwrite``): the QE/EPW inputs are written in ``phonon/`` (scf, ph.x) and
    ``epw/`` (nscf on the explicit full k list, ``epw.in``, ``write_ukk.py``), as in
    ``examples/elphon_epw_example``; ``main.elphon.py`` interpolates EPW's coarse
-   coupling in k and (by default) q, MPI-parallel over the dense q-grid.  The legacy ph.x sources
-   (``ahc``, ``elphmat``) remain selectable.
+   coupling in k and (by default) q, MPI-parallel over the dense q-grid.  The legacy ph.x
+   source ``ahc`` remains selectable for q = Gamma only (``elphmat`` is disabled in
+   the menu).
 
 The generated script is static and heavily commented so it is easy to tweak
 afterwards.
@@ -3835,18 +3836,23 @@ def collect_phonon(common):
 def collect_elphon(common):
     """Prompt for the electron-phonon (PAO route) configuration."""
     cfg = dict(common)
-    cfg['source'] = ask_choice(
+    # The elphmat source (patched QE ph.x) is disabled in the menu: like ahc it
+    # is gauge-inconsistent for q != Gamma.  Restore it by adding
+    # 'elphmat' back to the choices (the code paths below still handle it).
+    source = ask_choice(
         'Coupling source (epw = EPW epbwrite, any pseudopotential, recommended; '
-        'ahc = unpatched QE ph.x; elphmat = patched QE ph.x)',
-        ['epw', 'ahc', 'elphmat'],
+        'ahc = unpatched QE ph.x, q = Gamma only)',
+        ['epw', 'ahc (Gamma only)'],  # , 'elphmat'
         'epw',
     )
+    cfg['source'] = source.split()[0]
     if cfg['source'] == 'epw':
         return _collect_elphon_epw(cfg)
     print(
         '\nNote: ph.x re-diagonalises psi_{k+q} with arbitrary band phases, so the '
-        'ahc/elphmat\n  vertices are gauge-inconsistent with the PAO projections for '
-        'q != Gamma and the\n  interpolation is not reliable; prefer the epw source.'
+        'ahc\n  vertices are gauge-inconsistent with the PAO projections for '
+        'q != Gamma and the\n  interpolation is reliable only at Gamma; prefer the '
+        'epw source.'
     )
     cfg['coupling_dir'] = 'ahc_dir' if cfg['source'] == 'ahc' else 'elph_dir'
     kg = ask_int('SCF / coupling k-grid per axis (NK1 = NK2 = NK3)', 9)
