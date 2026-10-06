@@ -1,5 +1,7 @@
 """Unit tests for the EPW coarse-coupling readers (``epbwrite`` files, ``.ukk``)."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -257,3 +259,44 @@ def test_phonon_interp_from_epw_requires_full_grid():
         phonon_interp_from_epw(
             np.zeros((3, 3, 1), complex), np.zeros((1, 3)), [1.0], (2, 2, 2), np.eye(3)
         )
+
+
+def test_read_epw_a2f_three_columns(tmp_path: Path) -> None:
+    from PAOFLOW.elphon.qe_elph_io import read_epw_a2f
+
+    path = tmp_path / 'pb.a2f'
+    path.write_text(
+        ' w[meV] a2f and integrated 2*a2f/w\n'
+        '   0.1   0.01   0.0002\n'
+        '   0.2   0.04   0.0010\n'
+        '   0.3   0.09   0.0020\n'
+        ' Integrated el-ph coupling\n'
+        '  #     1.158\n'
+    )
+    omega, a2f, lam = read_epw_a2f(str(path))
+    np.testing.assert_allclose(omega, [0.1, 0.2, 0.3])
+    np.testing.assert_allclose(a2f, [0.01, 0.04, 0.09])
+    np.testing.assert_allclose(lam, [0.0002, 0.0010, 0.0020])
+
+
+def test_read_epw_a2f_smearing_columns(tmp_path: Path) -> None:
+    from PAOFLOW.elphon.qe_elph_io import read_epw_a2f
+
+    omega = np.linspace(0.1, 10.0, 100)
+    a2f = np.exp(-((omega - 5.0) ** 2))
+    cols = np.column_stack([omega] + [a2f * (1 + 0.01 * i) for i in range(10)])
+    footer = (
+        ' Integrated el-ph coupling\n  # ' + ' '.join(['1.1'] * 10) + '\n'
+        ' Phonon smearing (meV)\n  # ' + ' '.join(['0.1'] * 10) + '\n'
+    )
+    path = tmp_path / 'pb.a2f'
+    with open(path, 'w') as fh:
+        fh.write(' w[meV] a2f and integrated 2*a2f/w for 10 smearing values\n')
+        np.savetxt(fh, cols)
+        fh.write(footer)
+    w, a, lam = read_epw_a2f(str(path))
+    np.testing.assert_allclose(w, omega)
+    np.testing.assert_allclose(a, a2f)
+    integrand = 2.0 * a2f / omega
+    assert lam[0] == 0.0
+    np.testing.assert_allclose(lam[-1], np.trapezoid(integrand, omega), rtol=1e-12)

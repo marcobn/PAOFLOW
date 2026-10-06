@@ -3,7 +3,8 @@
 This page documents the **PAO-interpolation route** of `PAOFLOW.elphon`: the
 production path for computing electron–phonon (el‑ph) coupling and isotropic
 Eliashberg superconducting properties ($\alpha^2F$, $\lambda$, $\omega_{\log}$,
-$T_c$). The route reads the coarse-grid DFPT coupling computed by Quantum
+$T_c$), and from these the temperature-dependent superconducting gap of the
+isotropic Migdal–Eliashberg equations. The route reads the coarse-grid DFPT coupling computed by Quantum
 ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 (PAO) gauge.
 
@@ -25,6 +26,7 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 - [Workflow 1 — coarse-q](#workflow-1--coarse-q)
 - [Workflow 2 — dense-q (k *and* q interpolation)](#workflow-2--dense-q-k-and-q-interpolation)
 - [Symmetry reduction of the dense q-grid](#symmetry-reduction-of-the-dense-q-grid)
+- [Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$](#isotropic-migdaleliashberg-gap-padé-analytic-continuation-linearised-t_c)
 - [Parallelisation and memory](#parallelisation-and-memory)
 - [Grid consistency rules](#grid-consistency-rules)
 - [The `paoflow-gen elphon` CLI workflow](#the-paoflow-gen-elphon-cli-workflow)
@@ -155,6 +157,7 @@ Paths relative to `src/PAOFLOW/`.
 | `elphon/do_pao_eph.py` | **Workflow 1** driver `eliashberg_from_qe_coupling`; per-source vertex builders `vertex_from_epw`, `vertex_from_qe_ahc`, `vertex_from_qe_elphmat`; `load_epw_coupling` (`.ukk` + `.epb` + q in crystal coordinates); `phonon_modes_from_force_constants`. |
 | `elphon/do_pao_eph_dense_q.py` | **Workflow 2** driver `eliashberg_dense_q`; `build_g_ReRp` / `g_Re_at_q` (double real-space vertex); `phonon_interp_from_epw` and `phonon_interp_from_dyn` (dense-q phonons with acoustic sum rule); `irreducible_qmesh` / `_crystal_point_group`. |
 | `elphon/eph_kq.py` | Property engine: `eliashberg_from_modes` ($\alpha^2F$, $\lambda$, $\omega_{\log}$, $T_c$), `mcmillan_allen_dynes_tc`, `phonon_moments`; shared by every route. |
+| `elphon/migdal_eliashberg.py` | Isotropic Migdal–Eliashberg solver on $\alpha^2F$: `solve_imag_iso`, `pade_continuation`, `analytic_continuation_iso`, `gap_edge`, `quasiparticle_dos`, `linearized_max_eigenvalue`; drivers `migdal_eliashberg_iso` / `linearized_eigenvalues`; I/O `a2f_from_npz`, `a2f_from_epw`, `write_me_outputs`. |
 | `elphon/qe_matdyn.py` | WS interpolation of QE force-constant files, used by the property-only route. |
 | `gen/epw_inputs.py` | EPW input helpers: `kpoints_card` / `uniform_kpoint_list` (explicit full nscf grid), `write_placeholder_ukk` (EPW without Wannierization), `epw_input`. |
 | `inputs/read_QE_xml.py` | `uniform_grid_from_kpoints`: recovers the grid of an explicit `K_POINTS crystal` nscf list, which has no `monkhorst_pack` element. |
@@ -304,6 +307,88 @@ q are separate WS interpolations).
 
 ---
 
+## Isotropic Migdal–Eliashberg: gap, Padé, analytic continuation, linearised $T_c$
+
+`elphon/migdal_eliashberg.py` turns the Eliashberg function into
+temperature-dependent superconducting properties, following EPW's `liso` /
+`limag` / `lpade` / `lacon` / `tc_linear` (EPW tutorial 04). In the isotropic,
+Fermi-surface-restricted limit everything depends only on $\alpha^2F(\omega)$,
+$\mu^*$, the Matsubara cutoff $\omega_c$ and $T$. The solver therefore runs as a
+post-processing step on `eliashberg.npz` (or on EPW's own `<prefix>.a2f`): it is
+serial and takes seconds, and needs no new electron–phonon interpolation.
+
+**Imaginary axis** (`solve_imag_iso`). On the fermionic frequencies
+$\omega_n = (2n+1)\pi k_BT \le \omega_c$, with
+$\lambda(n) = \int 2\omega\,\alpha^2F(\omega)/(\omega^2 + (2\pi n k_BT)^2)\,d\omega$
+and the sums restricted to $n' \ge 0$,
+
+$$
+Z_n = 1 + \frac{\pi T}{\omega_n}\sum_{n'}\big[\lambda(n-n') - \lambda(n+n'+1)\big]\frac{\omega_{n'}}{R_{n'}},
+\qquad
+Z_n\Delta_n = \pi T\sum_{n'}\big[\lambda(n-n') + \lambda(n+n'+1) - 2\mu^*\big]\frac{\Delta_{n'}}{R_{n'}},
+$$
+
+with $R = \sqrt{\omega^2+\Delta^2}$ and $\mu^*$ applied without rescaling, as in
+EPW. The fixed point uses Anderson mixing, EPW's convergence criterion
+$\sum|\Delta_{\rm new}-\Delta|/\sum|\Delta_{\rm new}|$, and a warm start from the
+previous temperature. A temperature at which the linearised kernel has no
+eigenvalue above 1 is in the normal state ($\Delta = 0$).
+
+**Real axis.**
+
+- `pade_continuation`: an N-point Vidberg–Serene Padé approximant through
+  `npade`% of the Matsubara points.
+- `analytic_continuation_iso`: the iterative Marsiglio–Schossmann–Carbotte
+  equations (PRB 37, 4965 (1988)). They are a Matsubara sum with
+  $\lambda(\omega - i\omega_m)$ (FFT convolutions) plus a real-axis convolution
+  with $\alpha^2F(\nu)[N(\nu) + f(\nu\mp\omega)]$. They start from the Padé
+  result.
+- The square root $\sqrt{\tilde\omega^2-\phi^2}$ is taken on the retarded
+  branch, with $\mathrm{Re} \ge 0$ and $\mathrm{Im} \ge 0$ for $\omega > 0$.
+  Negating instead of conjugating a root with $\mathrm{Im}<0$ makes the
+  iteration diverge at low $T$.
+- `gap_edge` returns the first solution of $\omega = \mathrm{Re}\,\Delta(\omega)$.
+- `quasiparticle_dos` gives
+  $N_S/N_F = \mathrm{Re}[\omega/\sqrt{\omega^2-\Delta^2(\omega)}]$.
+
+**Linearised kernel** (`linearized_max_eigenvalue`). With the normal-state
+$Z_n$, the largest eigenvalue $\rho$ of the symmetrised kernel
+$D^{1/2}[\lambda(n-n') + \lambda(n+n'+1) - 2\mu^*]D^{1/2}$, with
+$D_n = \pi T/(Z_n\omega_n)$, exceeds 1 below $T_c$ and crosses 1 at $T_c$
+(`tc_from_eigenvalues`).
+
+**α²F input** (`a2f_from_npz`). $\alpha^2F$ is rebuilt from the stored
+`lambda_qv`, `omega_qv_thz` and `q_weights` with an EPW-like phonon smearing.
+`degaussq` defaults to 0.15 meV for the ME equations and 0.5 meV for the
+linearised kernel, as in the tutorial. The `a2F` stored in `eliashberg.npz` uses
+5% of $\omega_{\max}$. The grid is EPW's: $\omega_j = j\,\omega_{\max}^{\rm ph}\cdot1.1/n_{\rm qstep}$.
+
+| EPW input | PAOFLOW (`me.py` / `me.elphon.py`) | default |
+|---|---|---|
+| `muc` | `MU_STAR`, `--mu-star` | 0.1 |
+| `wscut` | `WSCUT`, `--wscut` (eV) | 0.1 |
+| `degaussq` | `DEGAUSSQ`, `--degaussq` (meV) / `DEGAUSSQ_LINEAR` | 0.15 / 0.5 |
+| `npade` | `NPADE`, `--npade` (% of Matsubara points) | 90 |
+| `nsiter`, `conv_thr_iaxis`, `conv_thr_racon` | `migdal_eliashberg_iso(nsiter=, conv_thr_iaxis=, conv_thr_racon=)` | 500, 1e-4, 1e-4 |
+| `temps`, `nstemp` | `TEMPS`, `--temps` | tutorial list (example); `auto` (generator) |
+| `lpade`, `lacon`, `tc_linear` | `--no-pade`, `--no-acon`, `--no-linear` | all on |
+
+**Output** (`write_me_outputs`, in `output/me/`, EPW formats and names, energies
+in eV):
+
+- `<prefix>.imag_iso_<T>`: $\omega_n$, $Z$, $\Delta$
+- `<prefix>.pade_iso_<T>`, `<prefix>.acon_iso_<T>`: $\omega$, Re Z, Im Z, Re Δ, Im Δ
+- `<prefix>.qdos_iso_<T>`: $\omega$, $N_S/N_F$
+- `gap_vs_T.dat`: $T$, $\Delta(i\omega_0)$, Padé and acon gap edges (meV), $Z(i\omega_0)$
+- `max_eigenvalue.dat`: $T$, $\rho$
+- `migdal_eliashberg.npz`: all of the above
+
+`GPAO.plot_migdal_eliashberg` (used by `plot_me.py` and `plot.elphon.py`) draws
+$\Delta(i\omega_n)$, $Z(i\omega_n)$, Re/Im $\Delta(\omega)$, the
+quasiparticle DOS, $\Delta(T)$ and $\rho(T)$.
+
+---
+
 ## Parallelisation and memory
 
 - **MPI over the q loop** (both workflows), with `load_balancing` and
@@ -334,7 +419,7 @@ $\lambda$ under dense-q interpolation, from Fourier overshoot near $\Gamma$.
 ## The `paoflow-gen elphon` CLI workflow
 
 `paoflow-gen` (see [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI))
-writes `main.elphon.py` and `plot.elphon.py`. With the default EPW source it also
+writes `main.elphon.py`, `me.elphon.py` and `plot.elphon.py`. With the default EPW source it also
 writes the QE/EPW inputs in the layout of `examples/elphon_epw_example`, deriving
 the scf and nscf from a `pw.x` input of the system:
 
@@ -349,6 +434,7 @@ cd ../epw && mkdir -p <prefix>.save
 cp ../phonon/<prefix>.save/{charge-density.dat,data-file-schema.xml} <prefix>.save/
 pw.x -in nscf.in && python3 write_ukk.py && mpirun -np N epw.x -nk N -in epw.in
 cd .. && mpirun -np N python main.elphon.py   # PAO interpolation of EPW's coupling -> alpha^2F, lambda, Tc
+python me.elphon.py                            # Migdal-Eliashberg gap vs T, linearised-kernel Tc
 python plot.elphon.py                          # overlays EPW's epw/<prefix>.a2f (dashed) when present
 ```
 
@@ -403,6 +489,29 @@ Component checks on the same data:
   $\sqrt{p_mp_n}$.
 - **Phonons:** `phonon_interp_from_epw` reproduces $\mathrm{eig}(C/M)$ at the
   coarse q to $5\times10^{-8}$ THz, and $C/M$ reproduces the ph.x frequencies.
+
+### Migdal–Eliashberg (October 2026)
+
+The PAOFLOW $\alpha^2F$ of Pb, rebuilt with `degaussq` = 0.15 meV (0.5 meV for
+the linearised kernel), with $\mu^* = 0.1$, $\omega_c$ = 0.1 eV and the tutorial
+temperatures, compared with EPW tutorial 04 on its own $\alpha^2F$:
+
+| | PAOFLOW 48³ k / 24³ q | PAOFLOW 24³ k / 24³ q | EPW tutorial 04 |
+|---|---|---|---|
+| $\lambda$ of the rebuilt $\alpha^2F$ | 1.200 | 1.059 | 1.158 |
+| Matsubara points / iterations at 0.3 K | 616 / 8 | 616 / 8 | 616 / 8 |
+| $\Delta(i\omega_0)$, 0.3 K | 1.016 meV | 0.937 meV | 0.923 meV |
+| $Z(i\omega_0)$, 0.3 K | 2.110 | 1.997 | 2.071 |
+| gap edge, Padé / acon, 0.3 K | 1.037 / 1.037 meV | 0.952 / 0.952 meV | |
+| $T_c$, linearised kernel | 5.69 K | 5.42 K | ≈ 5.25 K |
+| $T_c$, $\Delta^2(T) \to 0$ | 5.71 K | 5.44 K | |
+
+$(Z_0-1)/\lambda = 0.925$ in both PAOFLOW (48³) and EPW. The larger gap and
+$T_c$ therefore follow the larger $\lambda$ and $\omega_{\log}$ of the PAO
+$\alpha^2F$, not the solver. For each $\alpha^2F$, the two $T_c$ estimates
+agree to 0.5%. The low-$T$ Padé and acon gap edges agree to $10^{-5}$ meV, and
+near $T_c$ to about 3%. A full sweep (23 temperatures with both continuations,
+plus 25 linearised-kernel temperatures) takes about 3 s.
 
 ### AHC source (historical, before October 2026)
 
@@ -474,6 +583,23 @@ out = eliashberg_dense_q(
 `out` is a dict with `omega`, `a2F`, `lambda`, `lambda_qv`, `omega_qv_thz`,
 `omega_log`, `Tc_mcmillan`, `Tc_allen_dynes`, ... (see `eliashberg_from_modes`).
 
+The Migdal–Eliashberg post-processing works on the saved result (rank 0 or a
+separate serial run):
+
+```python
+import numpy as np
+from PAOFLOW.elphon.migdal_eliashberg import (
+    a2f_from_npz, linearized_eigenvalues, migdal_eliashberg_iso, write_me_outputs,
+)
+
+omega, a2F = a2f_from_npz('output/eliashberg.npz', degaussq_ev=1.5e-4)
+res = migdal_eliashberg_iso(omega, a2F, [0.3, 2.1, 4.0, 5.0, 5.5], mu_star=0.1, wscut=0.1)
+lin = linearized_eigenvalues(*a2f_from_npz('output/eliashberg.npz', 5.0e-4),
+                             np.linspace(0.25, 6.25, 25), mu_star=0.1)
+write_me_outputs(res, 'output/me', 'pb', lin)   # EPW-format files + migdal_eliashberg.npz
+print(res['gap0_imag'], res['gap_pade'], res['gap_acon'], lin['Tc_linear'])
+```
+
 ---
 
 ## References
@@ -488,5 +614,9 @@ out = eliashberg_dense_q(
 - J.-M. Lihm and C.-H. Park, Phys. Rev. B **101**, 121102(R) (2020) (QE AHC).
 - P. B. Allen and R. C. Dynes, Phys. Rev. B **12**, 905 (1975); W. L.
   McMillan, Phys. Rev. **167**, 331 (1968).
+- F. Marsiglio, M. Schossmann and J. P. Carbotte, Phys. Rev. B **37**, 4965
+  (1988) (analytic continuation); H. J. Vidberg and J. W. Serene, J. Low Temp.
+  Phys. **29**, 179 (1977) (Padé); E. R. Margine and F. Giustino, Phys. Rev. B
+  **87**, 024505 (2013) (EPW Migdal–Eliashberg).
 - See also [Phonon Module](Phonon-Module) and
   [Input and Script Generators (CLI)](Input-and-Script-Generators-CLI).

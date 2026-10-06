@@ -25,7 +25,8 @@ All frequencies are returned in THz for direct use by
 :func:`PAOFLOW.elphon.eph_kq.eliashberg_from_modes`.
 
 The EPW readers (:func:`read_epw_ukk`, :func:`read_epw_epb`) load the coarse
-Bloch-basis coupling that ``epw.x`` writes with ``epbwrite = .true.``.
+Bloch-basis coupling that ``epw.x`` writes with ``epbwrite = .true.``;
+:func:`read_epw_a2f` reads EPW's own Eliashberg function for comparison.
 """
 
 from __future__ import annotations
@@ -577,6 +578,43 @@ def _read_fortran_record(path: str) -> NDArray[np.uint8]:
             if head[0] >= 0:
                 break
     return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+
+
+def read_epw_a2f(path: str) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Read an EPW ``<prefix>.a2f`` file (first phonon smearing).
+
+    The data block has ``omega (meV)`` followed by one ``a2F`` column per
+    smearing, or (isotropic Eliashberg runs) ``omega, a2F, lambda(omega)``.
+    Header and footer lines (integrated couplings, smearing list) are skipped:
+    only numeric rows with the most frequent column count are kept.
+
+    Returns
+    -------
+    omega_mev, a2f, lam_cum : ndarray
+        Frequencies (meV), ``a2F`` and the cumulative ``lambda(omega) = 2 int_0^omega
+        a2F/w dw`` (read from the file when it has three columns).
+    """
+    rows = []
+    with open(path) as fh:
+        for line in fh:
+            try:
+                rows.append([float(x) for x in line.split()])
+            except ValueError:
+                continue
+    counts = [len(r) for r in rows if len(r) >= 2]
+    if not counts:
+        raise ValueError('%s: no alpha^2F data' % path)
+    ncol = max(set(counts), key=counts.count)
+    data = np.array([r for r in rows if len(r) == ncol])
+    omega, a2f = data[:, 0], data[:, 1]
+    if ncol == 3:
+        return omega, a2f, data[:, 2]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        integrand = np.where(omega > 0, 2.0 * a2f / omega, 0.0)
+    lam = np.concatenate(
+        [[0.0], np.cumsum(0.5 * (integrand[1:] + integrand[:-1]) * np.diff(omega))]
+    )
+    return omega, a2f, lam
 
 
 def read_epw_ukk(path: str, nk: int) -> dict[str, object]:
