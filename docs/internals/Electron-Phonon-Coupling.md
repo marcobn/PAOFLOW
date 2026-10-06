@@ -10,8 +10,8 @@ ESPRESSO (QE) or EPW and interpolates it in the PAOFLOW pseudo-atomic-orbital
 > **Recommended coupling source: EPW (`source='epw'`).** It is the only source
 > whose matrix elements share the band gauge of PAOFLOW's projections for every
 > q, which the interpolation requires. The ph.x sources (`'ahc'`, `'elphmat'`)
-> remain available, but their vertices are gauge-inconsistent for
-> $q\neq\Gamma$; see [Coupling sources and gauge consistency](#coupling-sources-and-gauge-consistency).
+> remain available in the library, but their vertices are gauge-inconsistent for
+> $q\neq\Gamma$ (the `paoflow-gen` menu offers only `ahc`, labelled "Gamma only"); see [Coupling sources and gauge consistency](#coupling-sources-and-gauge-consistency).
 
 ---
 
@@ -360,9 +360,9 @@ overwrite the save that ph.x used. Without a `pw.x` input the generator writes
 The generator re-prompts until the q-grid divides the k-grid and
 `NK_DENSE % NQ_DENSE == 0`. `main.elphon.py` is the same analysis as
 `examples/elphon_epw_example/main.py` (options `--coarse-q`, `--nk`, `--nq`,
-`--sigma-ev`). Choosing `ahc` or `elphmat` produces the
-previous two-phase ph.x scripts (`inputs`, then `analyse`), with a warning about
-their gauge limitation.
+`--sigma-ev`). Choosing `ahc (Gamma only)` produces the
+previous two-phase ph.x script (`inputs`, then `analyse`), with a warning about
+its gauge limitation. The `elphmat` choice is disabled in the menu.
 
 ---
 
