@@ -31,7 +31,7 @@ Memory contract (see :mod:`PAOFLOW.sparse`): after ``pao_hamiltonian``
 returns, no array of size O(nawf^2 * nk) exists; per-k dense workspace is
 one eigenvector block, ``(nawf, nev)``, or ``(nawf, nawf)`` with the
 per-k matrices built from it when a property needs the full spectrum
-(only while ``nawf <= DENSE_N_MAX``).
+(only while ``nawf <= dense_n_max`` of ``sparse_config``).
 """
 
 import functools
@@ -42,7 +42,6 @@ from mpi4py import MPI
 
 from .bridge import init_restart_session, sparsify
 from .config import resolve_threshold
-from .solver import DENSE_N_MAX
 from .dispatch import call_dense
 from .log import get_sparse_log
 
@@ -124,6 +123,8 @@ class SparseEngine:
                 ('rcut (Bohr)', 'none' if cfg.rcut is None else '%.3f' % cfg.rcut),
                 ('bond_order', 'none' if cfg.bond_order is None else cfg.bond_order),
                 ('H(k) solver', cfg.hk_solver),
+                ('dense_n_max', cfg.dense_n_max),
+                ('dense_ratio', cfg.dense_ratio),
                 ('energy window', _window_label(cfg)),
                 ('smearing', attr['smearing']),
                 ('verbose', attr['verbose']),
@@ -484,7 +485,7 @@ class SparseEngine:
         and needs no communication), so the memory is per rank and *more
         ranks on a node makes the fit worse, not better*.
         """
-        from .solver import DENSE_RATIO, select_hk_solver
+        from .solver import select_hk_solver
 
         cfg = self.config
         attr = self.data_controller.data_attributes
@@ -509,7 +510,9 @@ class SparseEngine:
         bnd_final = int(attr['bnd']) * proj['N']
         try:
             solver_note = 'dispatch: %s' % (
-                select_hk_solver(proj['nawf'], bnd_final, hk_solver=cfg.hk_solver)[0].upper()
+                select_hk_solver(proj['nawf'], bnd_final, hk_solver=cfg.hk_solver, **cfg.limits)[
+                    0
+                ].upper()
             )
         except NotImplementedError:
             solver_note = (
@@ -519,8 +522,8 @@ class SparseEngine:
                 % (
                     bnd_final,
                     100.0 * bnd_final / proj['nawf'],
-                    100.0 * DENSE_RATIO,
-                    int(DENSE_RATIO * proj['nawf']),
+                    100.0 * cfg.dense_ratio,
+                    int(cfg.dense_ratio * proj['nawf']),
                 )
             )
 
@@ -684,7 +687,9 @@ class SparseEngine:
                 for ispin in range(self.H.nspin):
                     for kf in kprobe:
                         hk = self.H.assemble_hk(kf, ispin=ispin, sign=-1)
-                        probed = max(probed, count_below(hk, ehi))
+                        probed = max(
+                            probed, count_below(hk, ehi, dense_n_max=self.config.dense_n_max)
+                        )
                 chosen = min(nawf, probed + max(8, int(np.ceil(0.02 * probed))))
 
             old = attr.get('bnd', nawf)
@@ -863,6 +868,7 @@ class SparseEngine:
                 hk_solver=self.config.hk_solver,
                 ehi=None if self._window is None else self._window.ehi,
                 interior=self._interior,
+                **self.config.limits,
             )
             E_kp = gather_full(arrays['E_k'], attr['npool'])
             self.data_controller.write_bands(fname, E_kp)
@@ -1064,12 +1070,13 @@ class SparseEngine:
 
         attr = self.data_controller.data_attributes
         full = any('full_spectrum' in c.needs for c in consumers)
-        if full and self.H.nawf > DENSE_N_MAX:
+        dense_n_max = self.config.dense_n_max
+        if full and self.H.nawf > dense_n_max:
             raise NotImplementedError(
                 'sparse %s: the interband sums run over every state, which needs the full '
-                'spectrum at each path point (nawf = %d > DENSE_N_MAX = %d). A Sternheimer '
+                'spectrum at each path point (nawf = %d > dense_n_max = %d). A Sternheimer '
                 'solve for them is not implemented yet.'
-                % (', '.join(sorted({c.method for c in consumers})), self.H.nawf, DENSE_N_MAX)
+                % (', '.join(sorted({c.method for c in consumers})), self.H.nawf, dense_n_max)
             )
         nsolve = self.H.nawf if full else int(attr['bnd'])
 
@@ -1082,6 +1089,7 @@ class SparseEngine:
                 with_dnm=with_dnm,
                 hk_solver=self.config.hk_solver,
                 verbose=attr['verbose'],
+                **self.config.limits,
             )
 
         self._guard('sparse_path', _path)
@@ -1142,6 +1150,7 @@ class SparseEngine:
                 hk_solver=self.config.hk_solver,
                 ehi=None if self._window is None else self._window.ehi,
                 interior=self._interior,
+                **self.config.limits,
             )
 
         self._guard('sparse_mesh', _mesh)

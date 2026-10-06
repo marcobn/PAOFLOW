@@ -98,11 +98,15 @@ measured 1.11–1.31 s vs 0.53 s at n=1152).
 |---|---|
 | `method='dense'` / `'arpack'` | honoured verbatim (A/B validation) |
 | `nev + guard >= n - 1` | dense (no Krylov room) |
-| `nev + guard > n/8`, `n <= 4096` | dense |
-| `nev + guard > n/8`, `n > 4096` | loud `NotImplementedError` naming both exits |
+| `nev + guard > dense_ratio*n`, `n <= dense_n_max` | dense |
+| `nev + guard > dense_ratio*n`, `n > dense_n_max` | loud `NotImplementedError` naming both exits |
 | otherwise | arpack, unchanged |
 
-**What this costs**: the backend is capped at `nawf ≈ 4096`. Past it the
+`dense_ratio` (default 1/8) and `dense_n_max` (default 4096) are `sparse_config`
+keys; the defaults are policy values still to be calibrated by
+`benchmarks/sparse_scaling`.
+
+**What this costs**: by default the backend is capped at `nawf ≈ 4096`. Past it the
 per-k `(n, n)` scratch stops being cheap and `select_method` raises **by
 design** — `nx=3` (`nawf=9216`, 1.36 GB/rank, ~270 s/k) needs the
 distributed bond list flagged below plus a distributed eigensolver

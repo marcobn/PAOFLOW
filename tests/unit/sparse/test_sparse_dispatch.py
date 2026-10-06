@@ -132,6 +132,28 @@ def test_config_rejects_a_bad_interior_window(window, error, match):
         SparseConfig.parse({'interior_window': window})
 
 
+def test_config_solver_limits_default_to_the_solver_constants():
+    from PAOFLOW.sparse.solver import DENSE_N_MAX, DENSE_RATIO
+
+    cfg = SparseConfig()
+    assert cfg.limits == {'dense_ratio': DENSE_RATIO, 'dense_n_max': DENSE_N_MAX}
+    cfg = SparseConfig.parse({'dense_n_max': 10**9, 'dense_ratio': 0.3})
+    assert cfg.limits == {'dense_ratio': 0.3, 'dense_n_max': 10**9}
+
+
+@pytest.mark.parametrize(
+    'value, match',
+    [
+        ({'dense_n_max': 0}, 'dense_n_max'),
+        ({'dense_ratio': 0.0}, 'dense_ratio'),
+        ({'dense_ratio': 1.5}, 'dense_ratio'),
+    ],
+)
+def test_config_rejects_bad_solver_limits(value, match):
+    with pytest.raises(ValueError, match=match):
+        SparseConfig.parse(value)
+
+
 def test_config_rejects_both_window_modes():
     with pytest.raises(ValueError, match='mutually exclusive'):
         SparseConfig.parse(
