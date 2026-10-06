@@ -110,7 +110,7 @@ class SparseEngine:
         self._mesh_passes = 0  # mesh passes run so far
         self._mesh_products = set()  # products ('d2Ed2k') stored by those passes
         self._fusing = None  # properties queued inside fused(), else None
-        self._window = None  # (emin, emax, margin, ehi) once the energy window is applied
+        self._window = None  # the EnergyWindow once applied
 
         cfg = self.config
         self.log = get_sparse_log(self.data_controller)
@@ -689,11 +689,11 @@ class SparseEngine:
 
             old = attr.get('bnd', nawf)
             attr['bnd'] = chosen
-            self._window = (window.emin, window.emax, window.margin, ehi)
+            self._window = window
             self.log.section('Energy window')
             self.log.field(
                 'window (eV)',
-                '[%.3f, %.3f] + %.3f margin' % (window.emin, window.emax, window.margin),
+                'bottom of the spectrum to %.3f + %.3f margin' % (window.emax, window.margin),
             )
             self.log.field('ehi (eV)', '%.3f' % ehi)
             self.log.field('nev', '%d of nawf = %d (was bnd = %d)' % (chosen, nawf, old))
@@ -861,7 +861,7 @@ class SparseEngine:
                 attr['bnd'],
                 verbose=attr['verbose'],
                 hk_solver=self.config.hk_solver,
-                ehi=None if self._window is None else self._window[3],
+                ehi=None if self._window is None else self._window.ehi,
                 interior=self._interior,
             )
             E_kp = gather_full(arrays['E_k'], attr['npool'])
@@ -1140,7 +1140,7 @@ class SparseEngine:
                 smearing=self._mesh_plan.get('smearing', attr['smearing']),
                 verbose=attr['verbose'],
                 hk_solver=self.config.hk_solver,
-                ehi=None if self._window is None else self._window[3],
+                ehi=None if self._window is None else self._window.ehi,
                 interior=self._interior,
             )
 

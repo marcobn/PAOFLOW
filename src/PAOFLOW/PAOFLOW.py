@@ -81,10 +81,10 @@ class PAOFLOW:
           (1 = nearest neighbours); exclusive with ``'rcut'``.
         - ``'hk_solver'`` (``'auto'``, ``'sparse'`` or ``'dense'``, default
           ``'auto'``): eigensolver used at each k-point.
-        - ``'energy_window'`` (dict): solve only the bands up to the property
-          range, ``{'emin': -12.0, 'emax': 2.2}`` (eV), with optional
-          ``'margin'`` (eV above ``emax``, default 1.0), ``'nprobe'`` and
-          ``'nev'``.  Applied before the first solve, after any doubling.
+        - ``'energy_window'`` (dict): solve only the bands from the bottom of
+          the spectrum up to the top of the property range, ``{'emax': 2.2}``
+          (eV), with optional ``'margin'`` (eV above ``emax``, default 1.0),
+          ``'nprobe'`` and ``'nev'``.  Applied before the first solve, after any doubling.
         - ``'interior_window'`` (dict): solve only the states inside
           ``{'elo': -3.0, 'ehi': 3.0}`` (eV), with optional ``'kT_margin_eV'``
           (default 0.26) and ``'smear_margin_eV'`` (default 0.5).  Properties
@@ -295,7 +295,7 @@ class PAOFLOW:
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
             sparse (bool): True runs on the sparse engine, False (default) on the dense pipeline
-            sparse_config (dict or None): Options of the sparse engine (only with sparse=True), e.g. {'hopping_threshold': 1e-4, 'energy_window': {'emin': -12.0, 'emax': 2.2}}; None takes the defaults
+            sparse_config (dict or None): Options of the sparse engine (only with sparse=True), e.g. {'hopping_threshold': 1e-4, 'energy_window': {'emax': 2.2}}; None takes the defaults
         Returns:
             None
         """
