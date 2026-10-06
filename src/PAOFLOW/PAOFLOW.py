@@ -63,12 +63,14 @@ class PAOFLOW:
         DFT back-end: ``'QE'`` (Quantum ESPRESSO) or ``'VASP'``.
     header_style : str, default ``'color'``
         header style ``'color'`` (large banner) or ``'minimal'`` (small title)
-    sparse : dict or None, default ``None``
+    sparse : bool, default ``False``
         Run on the sparse engine (:mod:`PAOFLOW.sparse`): from ``pao_hamiltonian``
         on, H(R) is a thresholded bond list and no O(nawf² · nk) array is formed.
-        ``None`` keeps the dense pipeline; a dict selects the sparse engine and
-        sets its options, e.g. ``sparse={'bond_order': 24}`` (``{}`` takes every
-        default).  Unknown keys raise.  The options:
+        ``False`` keeps the dense pipeline.
+    sparse_config : dict or None, default ``None``
+        Options of the sparse engine, only accepted with ``sparse=True``, e.g.
+        ``sparse_config={'bond_order': 24}``.  ``None`` or ``{}`` takes every
+        default.  Unknown keys raise.  The options:
 
         - ``'threshold'`` (float, eV): drop H(R) elements smaller than this;
           1e-3 when no real-space cutoff is given.  Splits symmetry-protected
@@ -79,13 +81,17 @@ class PAOFLOW:
           (1 = nearest neighbours); exclusive with ``'rcut'``.
         - ``'hk_solver'`` (``'auto'``, ``'sparse'`` or ``'dense'``, default
           ``'auto'``): eigensolver used at each k-point.
+        - ``'energy_window'`` (dict): solve only the bands up to the property
+          range, ``{'emin': -12.0, 'emax': 2.2}`` (eV), with optional
+          ``'margin'`` (eV above ``emax``, default 1.0), ``'nprobe'`` and
+          ``'nev'``.  Applied before the first solve, after any doubling.
 
         Full semantics: :class:`~PAOFLOW.sparse.config.SparseConfig`.
         Methods with a sparse implementation keep their names and arguments;
         ``pao_eigh``, ``gradient_and_momenta`` and ``adaptive_smearing`` become
         optional (they are fused into the mesh pass the first property runs);
         dense-only methods raise, with the reason, until :meth:`to_dense`.
-        Sparse-only features live under :attr:`sparse` (``pao.sparse.energy_window(...)``,
+        Sparse-only features live under :attr:`sparse` (``pao.sparse.interior_window(...)``,
         ``with pao.sparse.fused():`` to compute several properties in one pass).
 
     Key attributes
@@ -203,7 +209,7 @@ class PAOFLOW:
     finish_execution()
         Print total run time and (if verbose) aggregate memory usage across ranks.
     to_dense()
-        Continue a ``sparse=`` run on the dense pipeline, on the same object.
+        Continue a ``sparse=True`` run on the dense pipeline, on the same object.
 
     Notes
     -----
@@ -231,7 +237,7 @@ class PAOFLOW:
     # Function container for ErrorHandler's method
     report_exception = None
 
-    # SparseEngine when built with sparse=..., else None (see PAOFLOW.sparse.dispatch)
+    # SparseEngine when built with sparse=True, else None (see PAOFLOW.sparse.dispatch)
     _engine = None
 
     @sparse_shared
@@ -265,7 +271,8 @@ class PAOFLOW:
         restart=False,
         dft='QE',
         header_style='color',
-        sparse=None,
+        sparse=False,
+        sparse_config=None,
     ):
         """
         Initialize the PAOFLOW class, either with a save directory with required QE output or with an xml inputfile
@@ -282,7 +289,8 @@ class PAOFLOW:
             verbose (bool): False supresses debugging output
             restart (bool): True if the run is being restarted from a .json data dump.
             dft (str): 'QE' or 'VASP'
-            sparse (dict or None): Options of the sparse engine, e.g. {'threshold': 1e-4}; {} takes the defaults, None runs dense
+            sparse (bool): True runs on the sparse engine, False (default) on the dense pipeline
+            sparse_config (dict or None): Options of the sparse engine (only with sparse=True), e.g. {'threshold': 1e-4, 'energy_window': {'emin': -12.0, 'emax': 2.2}}; None takes the defaults
         Returns:
             None
         """
@@ -294,7 +302,21 @@ class PAOFLOW:
         from .sparse.config import SparseConfig
         from .utils.header import header
 
-        sparse = SparseConfig.parse(sparse)
+        if not isinstance(sparse, bool):
+            hint = (
+                ' Pass sparse=True and the options as sparse_config=%r.' % (sparse,)
+                if isinstance(sparse, dict)
+                else ''
+            )
+            raise TypeError(
+                'sparse= takes True or False; got %r.%s' % (type(sparse).__name__, hint)
+            )
+        if not sparse and sparse_config is not None:
+            raise ValueError(
+                'sparse_config= was given but sparse=False: set sparse=True to run on the '
+                'sparse engine, or drop sparse_config.'
+            )
+        sparse = SparseConfig.parse(sparse_config) if sparse else None
 
         # -------------------------------
         # Initialize Parallel Execution
@@ -377,11 +399,11 @@ class PAOFLOW:
     @property
     def sparse(self):
         """The sparse engine, for features that exist only in sparse mode
-        (energy_window, interior_window, fused, the bond list H)."""
+        (interior_window, fused, the bond list H)."""
         if self._engine is None:
             raise RuntimeError(
-                'This run is dense: build it with PAOFLOW(..., sparse={...}) (a dict of options, '
-                '{} for the defaults) to use the sparse engine.'
+                'This run is dense: build it with PAOFLOW(..., sparse=True) (options in '
+                'sparse_config={...}) to use the sparse engine.'
             )
         return self._engine
 
@@ -396,7 +418,7 @@ class PAOFLOW:
         dense code, so every dense property becomes available.
 
         Call after 'pao_hamiltonian' or 'load_sparse_hamiltonian' and before
-        'doubling_Hamiltonian', 'interpolated_hamiltonian' or a sparse energy window.
+        'doubling_Hamiltonian', 'interpolated_hamiltonian' or the first solve.
 
         Returns:
             None
@@ -971,7 +993,7 @@ class PAOFLOW:
 
         The archive (PAOFLOW.sparse.io) holds the surviving matrix elements as a
         labelled bond list together with the geometry and run metadata needed to
-        restart from it, densely or with sparse=. 'HRs' itself is left untouched, so
+        restart from it, densely or with sparse=True. 'HRs' itself is left untouched, so
         the run continues unchanged.
 
         Must be called after 'pao_hamiltonian' and before 'interpolated_hamiltonian',

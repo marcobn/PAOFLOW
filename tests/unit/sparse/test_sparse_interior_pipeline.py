@@ -30,8 +30,12 @@ pytestmark = pytest.mark.skipif(
 MESH = 4  # 4^3 = 64 k-points: enough for a DoS, cheap enough for a test
 
 
-def _driver(outdir):
+def _driver(outdir, energy_window=None):
     from PAOFLOW.PAOFLOW import PAOFLOW
+
+    config = {'threshold': 1.0e-4, 'hk_solver': 'auto'}
+    if energy_window is not None:
+        config['energy_window'] = energy_window
 
     p = PAOFLOW(
         savedir='silicon.save',
@@ -39,7 +43,8 @@ def _driver(outdir):
         smearing='gauss',
         npool=1,
         verbose=False,
-        sparse={'threshold': 1.0e-4, 'hk_solver': 'auto'},
+        sparse=True,
+        sparse_config=config,
     )
     p.read_atomic_proj_QE()
     p.projectability()
@@ -73,8 +78,10 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
     fine = 12  # the native QE grid; coarser meshes smear too wide to test on
     nawf = 18
 
-    ref = _driver(str(in_example / 'full'))
-    ref.sparse.energy_window(emin=-12.0, emax=5.0, margin=0.0, nev=nawf)  # every band
+    # every band
+    ref = _driver(
+        str(in_example / 'full'), {'emin': -12.0, 'emax': 5.0, 'margin': 0.0, 'nev': nawf}
+    )
     ref.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     ref.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_full = np.array(ref.data_controller.data_arrays['dosdk'])
@@ -167,13 +174,7 @@ def test_bands_are_nan_padded_under_an_interior_window(in_example):
 
 
 def test_the_two_window_modes_are_mutually_exclusive(in_example):
-    p = _driver(str(in_example / 'excl'))
-    p.sparse.interior_window(-1.0, 1.0)
-    with pytest.raises(RuntimeError, match='mutually exclusive'):
-        p.sparse.energy_window(emin=-12.0, emax=2.2, nev=10)
-
-    q = _driver(str(in_example / 'excl2'))
-    q.sparse.energy_window(emin=-12.0, emax=2.2, nev=10)
+    q = _driver(str(in_example / 'excl'), {'emin': -12.0, 'emax': 2.2, 'nev': 10})
     with pytest.raises(RuntimeError, match='mutually exclusive'):
         q.sparse.interior_window(-1.0, 1.0)
 

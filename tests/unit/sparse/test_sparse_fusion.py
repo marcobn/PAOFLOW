@@ -39,7 +39,8 @@ def _driver(outdir):
         smearing='gauss',
         npool=1,
         verbose=False,
-        sparse={'threshold': 0.0},
+        sparse=True,
+        sparse_config={'threshold': 0.0},
     )
     p.read_atomic_proj_QE()
     p.projectability()
@@ -121,7 +122,7 @@ def test_stale_arrays_are_not_restored(tmp_path):
 def test_raising_block_runs_nothing(tmp_path):
     from PAOFLOW.PAOFLOW import PAOFLOW
 
-    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse={})
+    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse=True)
     p.sparse.H = object()  # past _require_H; nothing may touch it
 
     class Abort(Exception):
@@ -139,7 +140,7 @@ def test_raising_block_runs_nothing(tmp_path):
 def test_fused_blocks_do_not_nest(tmp_path):
     from PAOFLOW.PAOFLOW import PAOFLOW
 
-    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse={})
+    p = PAOFLOW(workpath=str(tmp_path), outputdir='s', restart=True, sparse=True)
     with pytest.raises(RuntimeError, match='nested'):
         with p.sparse.fused():
             with p.sparse.fused():

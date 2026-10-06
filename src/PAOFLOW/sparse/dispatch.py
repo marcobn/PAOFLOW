@@ -1,6 +1,6 @@
 """Route :class:`PAOFLOW.PAOFLOW` methods to the active engine.
 
-``PAOFLOW`` is the only driver.  A run built with ``sparse=...`` holds a
+``PAOFLOW`` is the only driver.  A run built with ``sparse=True`` holds a
 :class:`~PAOFLOW.sparse.engine.SparseEngine` in ``self._engine``; a dense
 run holds ``None``.  Every public method of the class has exactly one of
 four roles, declared where the method is defined:
@@ -15,7 +15,7 @@ four roles, declared where the method is defined:
 - ``@sparse_base_cell``: a transformation of the base-cell ``H(R)``.  In a
   sparse run the bond list is scattered into a dense ``HRs``, the dense
   body runs, and the result is converted back with the same
-  ``sparse=`` truncation; only before doubling and interpolation.
+  ``sparse_config`` truncation; only before doubling and interpolation.
 - anything unmarked is dense-only: :func:`sparse_aware` wraps it in a
   guard that raises in a sparse run, with the reason from
   :data:`DENSE_ONLY_REASONS`, instead of failing later on a missing dense
@@ -84,7 +84,7 @@ def sparse_base_cell(method=None, *, modifies=True):
 
 _TO_DENSE = (
     'call to_dense() after pao_hamiltonian() or load_sparse_hamiltonian() (base cell, before '
-    'doubling or interpolation), or restart a dense run (no sparse=) with '
+    'doubling or interpolation), or restart a dense run (sparse=False) with '
     'load_sparse_hamiltonian().'
 )
 
@@ -144,7 +144,8 @@ def _dense_only(method):
             if reason is None:
                 reason = 'it has no sparse implementation yet; ' + _TO_DENSE
             raise NotImplementedError(
-                'PAOFLOW.%s is dense-only, and this run was built with sparse=: %s' % (name, reason)
+                'PAOFLOW.%s is dense-only, and this run was built with sparse=True: %s'
+                % (name, reason)
             )
         return method(self, *args, **kwargs)
 
