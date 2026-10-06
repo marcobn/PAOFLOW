@@ -112,21 +112,12 @@ class SparseConfig:
         matrix, and H(R) stays a bond list either way.  ``'auto'``
         dispatches on ``(nawf, nev)``; see
         :func:`PAOFLOW.sparse.solver.select_hk_solver`.
-    mem_budget_gb : float or None
-        Per-rank memory budget the doubling pre-flight checks against.
-        ``None`` uses 80% of ``MemAvailable`` shared over the ranks of the
-        node.
-    force_doubling : bool
-        Start doubling even when the pre-flight projection exceeds the
-        budget.
     """
 
     threshold: float | None = None
     rcut: float | None = None
     bond_order: int | None = None
     hk_solver: str = 'auto'
-    mem_budget_gb: float | None = None
-    force_doubling: bool = False
 
     def __post_init__(self):
         if self.rcut is not None and self.bond_order is not None:
@@ -145,8 +136,6 @@ class SparseConfig:
             object.__setattr__(self, 'rcut', float(self.rcut))
         if self.bond_order is not None:
             object.__setattr__(self, 'bond_order', int(self.bond_order))
-        if self.mem_budget_gb is not None:
-            object.__setattr__(self, 'mem_budget_gb', float(self.mem_budget_gb))
 
     @classmethod
     def parse(cls, value) -> SparseConfig | None:

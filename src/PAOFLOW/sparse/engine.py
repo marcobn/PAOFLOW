@@ -458,15 +458,15 @@ class SparseEngine:
 
         ``nx, ny, nz`` are doubling *exponents*: the cell multiplier is
         ``N = 2**(nx+ny+nz)``, so 4,4,4 is 64x the size of 2,2,2, not 2x.
-        That is easy to misjudge, and the failure mode without a gate is an
-        OOM kill minutes into an HPC job with no diagnostic. This raises in
-        under a second instead, with the projected numbers and the exits.
+        That is easy to misjudge, and without a projection the first sign
+        of it is an OOM kill minutes into an HPC job.  The projection is
+        always logged; when the peak exceeds 80% of ``MemAvailable`` shared
+        over the ranks of the node, a warning with the ways to shrink it is
+        printed and doubling goes ahead.
 
         The bond list is replicated on every rank (doubling is deterministic
-        and needs no communication), so the budget is per rank and *more
-        ranks on a node makes the fit worse, not better*.  The budget and
-        the override come from the ``sparse=`` options ``'mem_budget_gb'``
-        and ``'force_doubling'``.
+        and needs no communication), so the memory is per rank and *more
+        ranks on a node makes the fit worse, not better*.
         """
         from .solver import DENSE_RATIO, select_hk_solver
 
@@ -477,18 +477,16 @@ class SparseEngine:
 
         local_ranks = _node_local_ranks(self.comm)
         avail = _available_memory_bytes()
-        if cfg.mem_budget_gb is not None:
-            budget = cfg.mem_budget_gb * gb
-            budget_src = "sparse={'mem_budget_gb': %.1f}" % cfg.mem_budget_gb
-        elif avail is not None:
+        if avail is not None:
             budget = 0.8 * avail / local_ranks
-            budget_src = '80%% of MemAvailable (%.1f GB) over %d rank(s) on this node' % (
+            budget_note = '[%.2f GB available: 80%% of MemAvailable (%.1f GB) over %d rank(s)]' % (
+                budget / gb,
                 avail / gb,
                 local_ranks,
             )
         else:
-            budget = 8.0 * gb
-            budget_src = 'default 8.0 GB (MemAvailable unreadable)'
+            budget = None
+            budget_note = '[available memory unknown: MemAvailable unreadable]'
 
         # nev if energy_window() is never called: doubling_attr_arry doubles
         # attr['bnd'] once per doubling.
@@ -514,7 +512,7 @@ class SparseEngine:
             'Doubling projection for nx,ny,nz = %d,%d,%d  (N = 2^%d = %d cells)\n'
             '  nawf        %d -> %d\n'
             '  bonds       %.3gM -> %.3gM  (doubling replicates each bond exactly 2x per step)\n'
-            '  peak/rank   %.2f GB during hermitize   [budget %.2f GB: %s]\n'
+            '  peak/rank   %.2f GB during hermitize   %s\n'
             '  steady/rank %.2f GB after compact()\n'
             '  dense H(k)  %.2f GB per k-point;  %s'
             % (
@@ -528,8 +526,7 @@ class SparseEngine:
                 self.H.nnz / 1e6,
                 proj['nnz'] / 1e6,
                 proj['peak_bytes'] / gb,
-                budget / gb,
-                budget_src,
+                budget_note,
                 proj['steady_bytes'] / gb,
                 proj['dense_hk_bytes'] / gb,
                 solver_note,
@@ -539,33 +536,36 @@ class SparseEngine:
         self.log.section('Doubling pre-flight projection')
         self.log.write(report)
 
-        if proj['peak_bytes'] > budget and not cfg.force_doubling:
-            exits = []
+        if budget is not None and proj['peak_bytes'] > budget:
+            remedies = []
             if cfg.rcut is None and cfg.bond_order is None:
-                exits.append(
+                remedies.append(
                     "set 'rcut' (Bohr) or 'bond_order' in sparse=: the bond list is currently "
                     'untruncated in real space, which is usually the largest single factor'
                 )
             if proj['d'] > 1:
-                exits.append(
+                remedies.append(
                     'reduce the doubling count — d = nx+ny+nz is an exponent, so d-1 '
                     'halves every number above (%.2f GB peak)' % (proj['peak_bytes'] / 2 / gb)
                 )
             if local_ranks > 1:
-                exits.append(
+                remedies.append(
                     'run fewer ranks per node: the bond list is replicated, so %d ranks '
                     'here each need the full %.2f GB' % (local_ranks, proj['peak_bytes'] / gb)
                 )
-            exits.append(
-                "raise the budget explicitly with sparse={'mem_budget_gb': ...} or bypass "
-                "with sparse={'force_doubling': True} if this projection is wrong for your "
-                'machine'
+            message = (
+                'WARNING: doubling_Hamiltonian may run out of memory: the projected peak of '
+                '%.2f GB per rank is %.1fx the memory available to each rank. Doubling '
+                'continues; to reduce the memory:%s'
+                % (
+                    proj['peak_bytes'] / gb,
+                    proj['peak_bytes'] / budget,
+                    ''.join('\n  - ' + r for r in remedies),
+                )
             )
-            raise RuntimeError(
-                '%s\n\nProjected peak exceeds the budget by %.1fx. Refusing to start; '
-                'nothing has been allocated.\nExits:\n  - %s'
-                % (report, proj['peak_bytes'] / budget, '\n  - '.join(exits))
-            )
+            if self.rank == 0:
+                print(report + '\n' + message, flush=True)
+            self.log.write('\n' + message)
 
         return proj
 
@@ -576,9 +576,9 @@ class SparseEngine:
         Hermitizations the dense pipeline applies downstream.
 
         ``nx``/``ny``/``nz`` are doubling counts, so the cell multiplier is
-        ``2**(nx+ny+nz)``.  A pre-flight projection refuses sizes that
-        cannot fit rather than letting them OOM part-way; see
-        :meth:`_preflight_doubling`.
+        ``2**(nx+ny+nz)``.  A pre-flight projection of the memory is
+        logged first, and printed with a warning when it exceeds what the
+        node has available; see :meth:`_preflight_doubling`.
         """
         from ..hamiltonian.do_doubling import doubling_attr_arry
         from .doubling import double_axis
