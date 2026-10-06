@@ -75,7 +75,7 @@ def dense_and_sparse(request, tmp_path_factory):
             npool=1,
             verbose=False,
             sparse=True,
-            sparse_config={'threshold': 0.0, 'hk_solver': hk_solver},
+            sparse_config={'hopping_threshold': 0.0, 'hk_solver': hk_solver},
         )
         q.read_atomic_proj_QE()
         q.projectability()
@@ -210,7 +210,7 @@ def curvature_runs(tmp_path_factory):
     os.chdir(EXAMPLE)
     try:
         d = _run_example01(os.path.join(out, 'dense'), 16)
-        s = _run_example01(os.path.join(out, 'sparse'), 16, sparse={'threshold': 0.0})
+        s = _run_example01(os.path.join(out, 'sparse'), 16, sparse={'hopping_threshold': 0.0})
     finally:
         os.chdir(cwd)
     return d, s

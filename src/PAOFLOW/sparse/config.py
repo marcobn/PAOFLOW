@@ -23,7 +23,10 @@ DEFAULT_THRESHOLD = 1.0e-3
 
 
 def resolve_threshold(
-    threshold: float | None, rcut: float | None = None, bond_order: int | None = None
+    threshold: float | None,
+    rcut: float | None = None,
+    bond_order: int | None = None,
+    name: str = 'threshold',
 ) -> float:
     """The element threshold (eV) a truncation actually applies.
 
@@ -34,6 +37,9 @@ def resolve_threshold(
         truncation mode.
     rcut, bond_order : optional
         Real-space cutoff, as a radius (Bohr) or a neighbour-shell count.
+    name : str, default ``'threshold'``
+        What the caller calls the threshold, for the error message
+        (``'hopping_threshold'`` in ``sparse_config``).
 
     Returns
     -------
@@ -64,9 +70,9 @@ def resolve_threshold(
     threshold = float(threshold)
     if geometric and threshold > 0.0:
         raise ValueError(
-            'threshold cannot be combined with rcut or bond_order: an element threshold '
+            '%s cannot be combined with rcut or bond_order: an element threshold '
             'breaks the point-group symmetry a real-space cutoff preserves. Give either a '
-            'threshold (eV) or a real-space cutoff, not both.'
+            '%s (eV) or a real-space cutoff, not both.' % (name, name)
         )
     return threshold
 
@@ -121,8 +127,8 @@ class EnergyWindow:
     This narrows the solve but does not make the workload iterative
     again: the fraction of the spectrum below a fixed ``emax`` is scale
     invariant under folding, so ``nev/nawf`` stays put as the cell grows.
-    Only an *interior* window (``pao.sparse.interior_window``, transport
-    only) changes that, and the two are mutually exclusive.
+    Only an *interior* window (:class:`InteriorWindow`) changes that, and
+    the two are mutually exclusive.
 
     ``attr['bnd']`` changes meaning under a window, from "bands with
     projectability > pthr, times the cell multiplier" to "bands inside the
@@ -186,21 +192,114 @@ class EnergyWindow:
             If a key is not an option, ``emin``/``emax`` are missing, or
             the values are inconsistent.
         """
-        if isinstance(value, cls):
-            return value
-        if not isinstance(value, dict):
-            raise TypeError(
-                "sparse_config=: 'energy_window' takes a dict {'emin': ..., 'emax': ...}; got %r."
-                % type(value).__name__
-            )
-        _reject_unknown_keys(value, [f.name for f in fields(cls)], "sparse_config= 'energy_window'")
-        missing = [k for k in ('emin', 'emax') if k not in value]
-        if missing:
+        return _parse_window(cls, value, 'energy_window', ('emin', 'emax'))
+
+
+@dataclass(frozen=True)
+class InteriorWindow:
+    """The ``'interior_window'`` option: solve only the states *inside*
+    ``[elo, ehi]`` instead of from the bottom of the spectrum.
+
+    Given as a dict, ``sparse_config={'interior_window': {'elo': -3.0,
+    'ehi': 3.0}}``; each attribute below is a key of that dict.  The
+    engine applies it once, right before the first solve (``bands`` or the
+    first property), so it always acts after ``doubling_Hamiltonian``.
+    Mutually exclusive with ``'energy_window'``.
+
+    This is the mode that makes the iterative kernel pay: the count in a
+    narrow interior window is a small fraction of the spectrum, whereas a
+    from-the-bottom window must reach E_F and so is 20-50% of it for any
+    real material.  The cost is that the states below ``elo`` are never
+    computed, which permanently removes three things:
+
+    - the total electron count, so anything fixed by charge neutrality
+      (carrier density, the Hall coefficient) cannot be evaluated;
+    - DoS/PDoS outside the window, which is *absent*, not zero;
+    - band indices, since the number of states in the window varies from
+      k-point to k-point.
+
+    Properties that need any of those are **skipped with a warning** and
+    the run continues to the next one; they are listed again at
+    ``finish_execution``.  This is a deliberate exception to the backend's
+    fail-loud rule, made because an interior run is normally a batch of
+    properties of which only some are supportable.
+
+    Attributes
+    ----------
+    elo, ehi : float
+        The window (eV).
+    kT_margin_eV : float, default 0.26
+        Margin the transport occupation derivative needs on each side of
+        the chemical-potential scan; 0.26 eV is 10 kT at 300 K.  Raise it
+        for higher temperatures.
+    smear_margin_eV : float, default 0.5
+        The analogous margin for DoS/PDoS.  Adaptive smearing gives every
+        state a finite width, so a state just below ``elo`` (one this mode
+        never computes) would still contribute inside the window.  Plotted
+        ranges are therefore clamped this far inside each edge.  0.5 eV
+        covers the <~0.22 eV Yates widths of a converged mesh at 4 sigma;
+        coarse meshes smear wider, so after the mesh runs the *measured*
+        maximum width is checked against this value and a warning is
+        issued if it was too small.
+    """
+
+    elo: float
+    ehi: float
+    kT_margin_eV: float = 0.26
+    smear_margin_eV: float = 0.5
+
+    def __post_init__(self):
+        for name in ('elo', 'ehi', 'kT_margin_eV', 'smear_margin_eV'):
+            object.__setattr__(self, name, float(getattr(self, name)))
+        if not self.ehi > self.elo:
             raise ValueError(
-                "sparse_config=: 'energy_window' needs %s (eV)."
-                % ' and '.join("'%s'" % k for k in missing)
+                "sparse_config=: 'interior_window' needs ehi > elo, got [%g, %g]."
+                % (self.elo, self.ehi)
             )
-        return cls(**value)
+        for name in ('kT_margin_eV', 'smear_margin_eV'):
+            if getattr(self, name) < 0.0:
+                raise ValueError(
+                    "sparse_config=: 'interior_window' %s must be >= 0 eV, got %g."
+                    % (name, getattr(self, name))
+                )
+
+    @classmethod
+    def parse(cls, value) -> InteriorWindow:
+        """The ``'interior_window'`` value as an :class:`InteriorWindow`.
+
+        Parameters
+        ----------
+        value : dict or InteriorWindow
+            A dict with ``'elo'`` and ``'ehi'`` (eV) and optionally
+            ``'kT_margin_eV'`` and ``'smear_margin_eV'``.
+
+        Raises
+        ------
+        TypeError
+            If ``value`` is not a dict.
+        ValueError
+            If a key is not an option, ``elo``/``ehi`` are missing, or the
+            values are inconsistent.
+        """
+        return _parse_window(cls, value, 'interior_window', ('elo', 'ehi'))
+
+
+def _parse_window(cls, value, key: str, required: tuple):
+    """Shared parser of the window options (a dict of the fields of ``cls``)."""
+    if isinstance(value, cls):
+        return value
+    if not isinstance(value, dict):
+        raise TypeError(
+            "sparse_config=: '%s' takes a dict {%s}; got %r."
+            % (key, ', '.join("'%s': ..." % k for k in required), type(value).__name__)
+        )
+    _reject_unknown_keys(value, [f.name for f in fields(cls)], "sparse_config= '%s'" % key)
+    missing = [k for k in required if k not in value]
+    if missing:
+        raise ValueError(
+            "sparse_config=: '%s' needs %s (eV)." % (key, ' and '.join("'%s'" % k for k in missing))
+        )
+    return cls(**value)
 
 
 @dataclass(frozen=True)
@@ -212,7 +311,7 @@ class SparseConfig:
 
     Attributes
     ----------
-    threshold : float or None
+    hopping_threshold : float or None
         Magnitude (eV) below which H(R) matrix elements are dropped when the
         dense base-cell Hamiltonian is converted to the sparse bond list.
         ``None`` means 1e-3 eV without a real-space cutoff and no element
@@ -251,13 +350,19 @@ class SparseConfig:
         'nev': None}``; see :class:`EnergyWindow`.  Applied by the engine
         right before the first solve, after any doubling.  ``None`` solves
         the ``attr['bnd']`` projectable bands (times the cell multiplier).
+    interior_window : InteriorWindow or None
+        Solve only inside an energy window, given as a dict ``{'elo': ...,
+        'ehi': ..., 'kT_margin_eV': 0.26, 'smear_margin_eV': 0.5}``; see
+        :class:`InteriorWindow`.  Applied like ``energy_window``, and
+        mutually exclusive with it.
     """
 
-    threshold: float | None = None
+    hopping_threshold: float | None = None
     rcut: float | None = None
     bond_order: int | None = None
     hk_solver: str = 'auto'
     energy_window: EnergyWindow | None = None
+    interior_window: InteriorWindow | None = None
 
     def __post_init__(self):
         if self.rcut is not None and self.bond_order is not None:
@@ -271,16 +376,25 @@ class SparseConfig:
             )
         # validates the threshold/cutoff combination; the field keeps the
         # user's value (None stays None) so the log shows what was asked for
-        resolve_threshold(self.threshold, self.rcut, self.bond_order)
+        resolve_threshold(self.hopping_threshold, self.rcut, self.bond_order, 'hopping_threshold')
         # frozen: normalize types through object.__setattr__
-        if self.threshold is not None:
-            object.__setattr__(self, 'threshold', float(self.threshold))
+        if self.hopping_threshold is not None:
+            object.__setattr__(self, 'hopping_threshold', float(self.hopping_threshold))
         if self.rcut is not None:
             object.__setattr__(self, 'rcut', float(self.rcut))
         if self.bond_order is not None:
             object.__setattr__(self, 'bond_order', int(self.bond_order))
         if self.energy_window is not None:
             object.__setattr__(self, 'energy_window', EnergyWindow.parse(self.energy_window))
+        if self.interior_window is not None:
+            object.__setattr__(self, 'interior_window', InteriorWindow.parse(self.interior_window))
+        if self.energy_window is not None and self.interior_window is not None:
+            raise ValueError(
+                "sparse_config=: give either 'energy_window' or 'interior_window', not both. "
+                'The two window modes are mutually exclusive: one sizes the solve from the '
+                'bottom of the spectrum, the other solves inside a window and never computes '
+                'the states below it.'
+            )
 
     @classmethod
     def parse(cls, value) -> SparseConfig:

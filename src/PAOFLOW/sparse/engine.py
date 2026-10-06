@@ -7,9 +7,9 @@ and accept the same arguments as their dense counterparts.  The pipeline
 stages (Hamiltonian, doubling, interpolation, bands) are methods of the
 engine; the properties are :class:`~PAOFLOW.sparse.properties.MeshProperty`
 classes, which the engine finds by name in the registry.  Features that
-exist only in sparse mode (``interior_window``, ``fused``, the bond list
-``H``) are reached as ``pao.sparse.<name>``; the energy window is the
-``'energy_window'`` option of ``sparse_config``.
+exist only in sparse mode (``fused``, the bond list ``H``) are reached as
+``pao.sparse.<name>``; the energy windows are the ``'energy_window'`` and
+``'interior_window'`` options of ``sparse_config``.
 
 The DFT input stages (QE parsing, projectability, base-cell Hamiltonian
 construction — the one sanctioned dense stage, at the small pre-doubling
@@ -120,10 +120,11 @@ class SparseEngine:
                 ('output directory', attr['opath']),
                 ('MPI ranks', self.comm.Get_size()),
                 ('k-point pools', attr['npool']),
-                ('threshold (eV)', _threshold_label(cfg)),
+                ('hopping_threshold (eV)', _threshold_label(cfg)),
                 ('rcut (Bohr)', 'none' if cfg.rcut is None else '%.3f' % cfg.rcut),
                 ('bond_order', 'none' if cfg.bond_order is None else cfg.bond_order),
                 ('H(k) solver', cfg.hk_solver),
+                ('energy window', _window_label(cfg)),
                 ('smearing', attr['smearing']),
                 ('verbose', attr['verbose']),
             ),
@@ -196,7 +197,10 @@ class SparseEngine:
         def _convert():
             arrays, _ = self.data_controller.data_dicts()
             self.H = sparsify(
-                self.data_controller, cfg.threshold, rcut=cfg.rcut, bond_order=cfg.bond_order
+                self.data_controller,
+                cfg.hopping_threshold,
+                rcut=cfg.rcut,
+                bond_order=cfg.bond_order,
             )
             # the dense source must not outlive the conversion
             del arrays['HRs']
@@ -241,7 +245,7 @@ class SparseEngine:
     # ------------------------------------------------------------------
 
     def save_sparse_hamiltonian(
-        self, fname='sparse_hamiltonian.npz', threshold=None, bond_order=None, rcut=None
+        self, fname='sparse_hamiltonian.npz', hopping_threshold=None, bond_order=None, rcut=None
     ):
         """Write the base-cell bond list and run metadata to ``fname``.
 
@@ -257,10 +261,11 @@ class SparseEngine:
         """
         from .io import write_sparse_hamiltonian
 
-        if (threshold, bond_order, rcut) != (None, None, None):
+        if (hopping_threshold, bond_order, rcut) != (None, None, None):
             raise ValueError(
                 'save_sparse_hamiltonian: in a sparse run the bond list is already truncated '
-                'by the sparse_config options (threshold/rcut/bond_order); do not pass them here.'
+                'by the sparse_config options (hopping_threshold/rcut/bond_order); do not pass '
+                'them here.'
             )
         self._require_H('save_sparse_hamiltonian')
 
@@ -376,7 +381,7 @@ class SparseEngine:
                 if modifies:
                     self.H = sparsify(
                         self.data_controller,
-                        cfg.threshold,
+                        cfg.hopping_threshold,
                         rcut=cfg.rcut,
                         bond_order=cfg.bond_order,
                     )
@@ -427,12 +432,22 @@ class SparseEngine:
             # sparse interpolation and the windows only rewrite attributes the
             # dense pipeline would then read against a base-grid HRs
             raise RuntimeError(
-                'to_dense: call it before interpolated_hamiltonian(), the first solve or '
-                'interior_window(); the mesh is now %dx%dx%d but the bond list is on the '
+                'to_dense: call it before interpolated_hamiltonian() and the first solve; '
+                'the mesh is now %dx%dx%d but the bond list is on the '
                 '%dx%dx%d base grid. Interpolate on the dense pipeline instead.'
                 % (grid + self.H.nk_grid)
             )
 
+        cfg = self.config
+        if cfg.energy_window is not None or cfg.interior_window is not None:
+            message = (
+                'WARNING: to_dense: the %s of sparse_config does not apply to the dense '
+                'pipeline; the run continues without it.'
+                % ('energy_window' if cfg.energy_window is not None else 'interior_window')
+            )
+            if self.rank == 0:
+                print(message, flush=True)
+            self.log.write(message)
         nnz = self.H.nnz
         densify(self.data_controller, self.H, Dnm=self._Dnm)
         from .operators import OPERATOR_KEYS, to_dense_operator
@@ -619,22 +634,31 @@ class SparseEngine:
         self._time('doubling_Hamiltonian')
 
     # ------------------------------------------------------------------
-    # Energy window: size nev from the property range instead of bnd
+    # Energy windows (sparse_config options), applied before the first solve
     # ------------------------------------------------------------------
 
     def _ensure_window(self):
-        """Apply the ``'energy_window'`` option of ``sparse_config`` once,
-        right before the first solve (``bands`` or the first property).
+        """Apply the ``'energy_window'`` or ``'interior_window'`` option of
+        ``sparse_config`` once, right before the first solve (``bands`` or
+        the first property).
 
         Running it lazily puts it after ``doubling_Hamiltonian`` and
         ``interpolated_hamiltonian`` whatever the call order of the script,
-        and before anything reads ``attr['bnd']`` as the solve width.  A
-        no-op without the option or once applied.  See
-        :class:`~PAOFLOW.sparse.config.EnergyWindow` for the semantics.
+        and before anything reads ``attr['bnd']`` or the interior state.  A
+        no-op without either option or once applied.  See
+        :class:`~PAOFLOW.sparse.config.EnergyWindow` and
+        :class:`~PAOFLOW.sparse.config.InteriorWindow` for the semantics.
         """
-        window = self.config.energy_window
-        if window is None or self._window is not None:
+        if self._window is not None or self._interior is not None:
             return
+        if self.config.energy_window is not None:
+            self._apply_energy_window(self.config.energy_window)
+        elif self.config.interior_window is not None:
+            self._apply_interior_window(self.config.interior_window)
+
+    def _apply_energy_window(self, window):
+        """Size ``nev`` (``attr['bnd']``) from the bottom of the spectrum up
+        to ``window.ehi``, probing ``count_below`` unless ``window.nev`` is set."""
         import itertools
 
         from .solver import count_below
@@ -688,60 +712,14 @@ class SparseEngine:
         self._guard('energy_window', _window)
         self._time('Energy window')
 
-    def interior_window(self, elo, ehi, kT_margin_eV=0.26, smear_margin_eV=0.5):
-        """Solve *inside* ``[elo, ehi]`` instead of from the bottom of the spectrum.
-
-        MUST be called after ``doubling_Hamiltonian()`` and before any
-        property.  Mutually exclusive with the ``'energy_window'`` option of
-        ``sparse_config``.
-
-        This is the mode that makes the iterative kernel pay: the count in a
-        narrow interior window is a small fraction of the spectrum, whereas a
-        from-the-bottom window must reach E_F and so is 20-50% of it for any
-        real material.  The cost is that the states below ``elo`` are never
-        computed, which permanently removes three things:
-
-        - the total electron count, so anything fixed by charge neutrality
-          (carrier density, the Hall coefficient) cannot be evaluated;
-        - DoS/PDoS outside the window, which is *absent*, not zero;
-        - band indices, since the number of states in the window varies from
-          k-point to k-point.
-
-        Properties that need any of those are **skipped with a warning** and
-        the run continues to the next one; they are listed again at
-        ``finish_execution``.  Note this is a deliberate exception to the
-        backend's fail-loud rule, made because an interior run is normally a
-        batch of properties of which only some are supportable.
-
-        ``kT_margin_eV`` is the margin the transport occupation derivative
-        needs on each side of the chemical-potential scan; 0.26 eV is 10 kT at
-        300 K.  Raise it for higher temperatures.
-
-        ``smear_margin_eV`` is the analogous margin for DoS/PDoS.  Adaptive
-        smearing gives every state a finite width, so a state just below
-        ``elo`` -- one this mode never computes -- would still contribute
-        inside the window.  Plotted ranges are therefore clamped this far
-        inside each edge.  The default 0.5 eV covers the <~0.22 eV Yates
-        widths of a converged mesh at 4 sigma; coarse meshes have wider
-        smearing, so after the mesh runs the *measured* maximum width is
-        checked against this value and a warning is issued if it was too
-        small.
-        """
-        self._require_H('interior_window')
-        if self.config.energy_window is not None:
-            raise RuntimeError(
-                "sparse: sparse_config sets an 'energy_window'. The two window modes "
-                'are mutually exclusive.'
-            )
-        elo, ehi = float(elo), float(ehi)
-        if not ehi > elo:
-            raise ValueError('interior_window: need ehi > elo, got [%g, %g]' % (elo, ehi))
-
-        self._interior = (elo, ehi)
-        self._kT_margin = float(kT_margin_eV)
-        self._smear_margin = float(smear_margin_eV)
+    def _apply_interior_window(self, window):
+        """Solve inside ``[window.elo, window.ehi]`` from here on; properties
+        that need states below the window are skipped with a warning."""
+        self._interior = (window.elo, window.ehi)
+        self._kT_margin = window.kT_margin_eV
+        self._smear_margin = window.smear_margin_eV
         self.log.section('Interior energy window')
-        self.log.field('window (eV)', '[%.3f, %.3f]' % (elo, ehi))
+        self.log.field('window (eV)', '[%.3f, %.3f]' % self._interior)
         self.log.field('transport margin (eV)', '%.3f each side' % self._kT_margin)
         self.log.field('DoS smearing margin (eV)', '%.3f each side' % self._smear_margin)
         self.log.write(
@@ -756,7 +734,7 @@ class SparseEngine:
         """Warn loudly, record, and let the caller move to the next property."""
         self._skipped.append((prop, reason))
         message = (
-            'WARNING: sparse %s SKIPPED under interior_window(%.3f, %.3f) -- %s\n'
+            'WARNING: sparse %s SKIPPED under the interior window [%.3f, %.3f] -- %s\n'
             '         No output was written for it; the run continues.'
             % (prop, self._interior[0], self._interior[1], reason)
         )
@@ -827,7 +805,7 @@ class SparseEngine:
         if (lo, hi) != (float(emin), float(emax)):
             message = (
                 'WARNING: sparse %s range clamped from [%.3f, %.3f] to [%.3f, %.3f] by '
-                'interior_window; states outside the window were never computed.'
+                'the interior window; states outside it were never computed.'
                 % (prop, emin, emax, lo, hi)
             )
             if self.rank == 0:
@@ -1126,7 +1104,7 @@ class SparseEngine:
         wanted = set(products) | self._mesh_plan.get('products', set())
         if self._interior is not None and 'd2Ed2k' in self._mesh_plan.get('products', set()):
             # recorded by gradient_and_momenta(band_curvature=True) before
-            # interior_window() was called
+            # the interior window was applied
             self._mesh_plan['products'].discard('d2Ed2k')
             wanted.discard('d2Ed2k')
             self._skip(
@@ -1196,9 +1174,23 @@ class SparseEngine:
         call_dense(self.host, 'finish_execution')
 
 
+def _window_label(cfg):
+    """Header entry for the window option of a config."""
+    if cfg.energy_window is not None:
+        w = cfg.energy_window
+        return 'from the bottom up to %.3f + %.3f eV%s' % (
+            w.emax,
+            w.margin,
+            '' if w.nev is None else ' (nev = %d)' % w.nev,
+        )
+    if cfg.interior_window is not None:
+        return 'interior [%.3f, %.3f] eV' % (cfg.interior_window.elo, cfg.interior_window.ehi)
+    return 'none'
+
+
 def _threshold_label(cfg):
     """Header entry for the element threshold a config actually applies."""
-    threshold = resolve_threshold(cfg.threshold, cfg.rcut, cfg.bond_order)
+    threshold = resolve_threshold(cfg.hopping_threshold, cfg.rcut, cfg.bond_order)
     if threshold == 0.0 and (cfg.rcut is not None or cfg.bond_order is not None):
         return 'none (real-space cutoff)'
     return '%.3e' % threshold

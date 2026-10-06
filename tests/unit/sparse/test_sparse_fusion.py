@@ -40,7 +40,7 @@ def _driver(outdir):
         npool=1,
         verbose=False,
         sparse=True,
-        sparse_config={'threshold': 0.0},
+        sparse_config={'hopping_threshold': 0.0},
     )
     p.read_atomic_proj_QE()
     p.projectability()
