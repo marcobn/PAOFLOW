@@ -21,17 +21,14 @@ class Dos(MeshProperty):
     ----------
     engine : SparseEngine
     do_dos, do_pdos, delta, emin, emax, ne
-        As ``PAOFLOW.dos``.  ``delta`` is unused: the sparse mesh always
-        produces adaptive widths.
+    As ``PAOFLOW.dos``.  ``delta`` is unused: the sparse mesh always
+    produces adaptive widths.
 
     Notes
     -----
-    The total DOS is the dense ``do_dos_adaptive`` reading the stored
-    ``E_k``/``deltakp``.  The PDOS needs the eigenvector weights, so it is
-    accumulated per k-point by :class:`~PAOFLOW.sparse.properties.pdos.PdosAccumulator`
+    The total DOS is the dense ``do_dos_adaptive`` reading the stored ``E_k``/``deltakp``.  The PDOS needs the eigenvector weights, so it is accumulated per k-point by :class:`~PAOFLOW.sparse.properties.pdos.PdosAccumulator`
     and makes the property streaming; with ``do_pdos=False`` none is needed.
-    Under an interior window the range is clamped to the window minus
-    ``smear_margin_eV`` and checked against the measured widths afterwards.
+    Under an energy window, ``emax`` above the lowest computed top band raises; under an interior window the range is clamped to the window minus ``smear_margin_eV`` and checked against the measured widths afterwards.
     """
 
     method = 'dos'
@@ -42,7 +39,6 @@ class Dos(MeshProperty):
         engine: SparseEngine,
         do_dos: bool = True,
         do_pdos: bool = True,
-        delta: float = 0.01,
         emin: float = -10.0,
         emax: float = 2.0,
         ne: int = 1000,
@@ -75,6 +71,7 @@ class Dos(MeshProperty):
     def finalize(self, data_controller: DataController) -> None:
         from ...spectrum.do_dos import do_dos_adaptive
 
+        self.engine._check_window_covers('dos', self.emax)
         if self.engine._interior is not None:
             self.engine._check_smearing_margin('dos', self.emin, self.emax)
         if self._pdos is not None:
