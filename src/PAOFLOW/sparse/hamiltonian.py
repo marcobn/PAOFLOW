@@ -435,8 +435,10 @@ class SparseHamiltonian:
         ------
         ValueError
             If both ``rcut`` and ``bond_order`` are given, a positive
-            ``threshold`` is combined with either, or ``bond_order`` exceeds
-            the shells the grid can represent.
+            ``threshold`` is combined with either, ``bond_order`` exceeds
+            the shells the grid can represent, ``rcut`` exceeds the
+            aliasing-safe radius, or either cutoff reaches a bond the grid
+            stores at a longer image than its shortest one.
 
         Notes
         -----
@@ -490,15 +492,23 @@ class SparseHamiltonian:
         which the true bond vector is no longer recoverable from the
         container.  The default is ``None``.
 
-        A cutoff longer than the aliasing-safe radius of the grid
-        (:func:`~PAOFLOW.sparse.shells.aliasing_safe_radius`) is applied to
-        the folded representative of each bond, which need not be its
-        shortest periodic image.  That is allowed, but it is recorded as
-        ``drop_report['aliased']`` so the driver can say so.  ``bond_order``
-        can never get there: shells are only counted inside the safe radius.
+        A cutoff must stay where every bond is measured at its shortest
+        periodic image, or it keeps part of a neighbour shell.  Past the
+        aliasing-safe radius of the grid
+        (:func:`~PAOFLOW.sparse.shells.aliasing_safe_radius`) a grid value
+        mixes several bonds, so an explicit ``rcut`` there is refused;
+        ``bond_order`` cannot get there, since shells are only counted
+        inside it.  Just inside that radius a bond can still be stored at a
+        longer image (:func:`~PAOFLOW.sparse.shells.misplaced_bond_length`),
+        and a cutoff of either form that reaches it is refused too.
         """
         from .config import resolve_threshold
-        from .shells import aliasing_safe_radius, shell_cutoff, snap_cutoff
+        from .shells import (
+            aliasing_safe_radius,
+            misplaced_bond_length,
+            shell_cutoff,
+            snap_cutoff,
+        )
 
         arry, attr = data_controller.data_dicts()
         HRs = arry['HRs']
@@ -509,10 +519,10 @@ class SparseHamiltonian:
         threshold = resolve_threshold(threshold, rcut, bond_order)
         rcut_requested = None if rcut is None else float(rcut)
         if bond_order is not None:
-            rcut, _, _ = shell_cutoff(data_controller, bond_order, distance_tol)
-        safe_radius = aliasing_safe_radius(
-            np.asarray(arry['a_vectors'], dtype=float) * attr['alat'], (nk1, nk2, nk3)
-        )
+            rcut, shells, _ = shell_cutoff(data_controller, bond_order, distance_tol)
+        lattice = np.asarray(arry['a_vectors'], dtype=float) * attr['alat']
+        safe_radius = aliasing_safe_radius(lattice, (nk1, nk2, nk3))
+        grid_name = f'{nk1}x{nk2}x{nk3}'
 
         flat = HRs.reshape(nawf, nawf, nk1 * nk2 * nk3, nspin)
         mag = np.abs(flat).max(axis=3)
@@ -525,7 +535,33 @@ class SparseHamiltonian:
             minus = _minus_R_index(R_int, (nk1, nk2, nk3))
             dist = np.minimum(dist, dist.transpose(1, 0, 2)[:, :, minus])
             if bond_order is None:
+                # shells are only counted inside the safe radius, so only
+                # an explicit radius can get past it
+                if rcut_requested > safe_radius:
+                    raise ValueError(
+                        f'rcut = {rcut_requested:.3f} Bohr exceeds the aliasing-safe radius '
+                        f'{safe_radius:.3f} Bohr of the {grid_name} grid. Beyond it one grid '
+                        'value of H(R) mixes bonds of different lengths, so no length cut is '
+                        'defined there. Use a smaller rcut or a denser k-grid.'
+                    )
                 rcut = snap_cutoff(dist, rcut, distance_tol)
+            limit = misplaced_bond_length(Dnm, lattice, (nk1, nk2, nk3), distance_tol)
+            if rcut >= limit:
+                what = (
+                    f'rcut = {rcut_requested:.3f} Bohr'
+                    if bond_order is None
+                    else f'bond_order = {bond_order} (cutoff {rcut:.3f} Bohr)'
+                )
+                fix = 'a smaller rcut'
+                if bond_order is not None:
+                    fix = f'bond_order <= {int(np.sum(shells + distance_tol < limit))}'
+                raise ValueError(
+                    f'{what} reaches bonds of length {limit:.3f} Bohr that the {grid_name} '
+                    'grid stores at a longer periodic image than their shortest one. The cut '
+                    'would keep only part of their neighbour shell and break the crystal '
+                    f'symmetry. Keep the cutoff below {limit:.3f} Bohr ({fix}) or use a '
+                    'denser k-grid.'
+                )
             keep &= dist <= float(rcut)
         rows, cols, ridx = np.nonzero(keep)
 
@@ -537,9 +573,6 @@ class SparseHamiltonian:
             'rcut_requested': rcut_requested,
             'bond_order': None if bond_order is None else int(bond_order),
             'aliasing_safe_radius': safe_radius,
-            # shells are only counted inside the safe radius, so a shell
-            # cutoff is never aliased even though it carries distance_tol
-            'aliased': bond_order is None and rcut is not None and float(rcut) > safe_radius,
             'nnz': len(rows),
             'density': len(rows) / max(mag.size, 1),
             'mbytes': (len(rows) * (4 + 4 + 4 + 16 * nspin + 24)) / 1024**2,

@@ -232,16 +232,6 @@ class SparseEngine:
                 'bands can split by up to the eigenvalue bound below.'
                 % report.get('threshold', self.H.threshold)
             )
-        if report.get('aliased'):
-            message = (
-                'WARNING: rcut = %.3f Bohr exceeds the aliasing-safe radius %.3f Bohr of the\n'
-                '         %dx%dx%d grid. Beyond it the cutoff measures the folded image of a\n'
-                '         bond, which need not be its shortest one.'
-                % ((rcut, report['aliasing_safe_radius']) + self.H.nk_grid)
-            )
-            if self.rank == 0:
-                print(message, flush=True)
-            self.log.write(message)
         self.log.write(self.H.stats_line())
 
     # ------------------------------------------------------------------

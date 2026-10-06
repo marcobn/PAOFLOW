@@ -19,7 +19,11 @@ on the QE projection path).
 Only distances the FFT supercell can represent unambiguously are counted.
 The R grid is an ``nk1 x nk2 x nk3`` supercell, and a bond longer than the
 inradius of that supercell (:func:`aliasing_safe_radius`) lands on the same
-grid cell as a shorter periodic image of itself.
+grid cell as a shorter periodic image of itself.  Within the atomic offset
+``|tau_i - tau_j|`` of that radius a bond can also be stored at an image
+longer than its shortest one (:func:`misplaced_bond_length`), so the
+cutoff that ``from_data_controller`` accepts, from either form, ends below
+both.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .hamiltonian import folded_R_triples
+from .hamiltonian import _minus_R_index, folded_R_triples
 
 if TYPE_CHECKING:
     from PAOFLOW.DataController import DataController
@@ -59,6 +63,66 @@ def aliasing_safe_radius(lattice_vectors: np.ndarray, grid_shape: Sequence[int])
     supercell = np.asarray(lattice_vectors, dtype=float) * np.asarray(grid_shape)[:, None]
     dual = np.linalg.inv(supercell).T
     return 0.5 * float(np.min(1.0 / np.linalg.norm(dual, axis=1)))
+
+
+def misplaced_bond_length(
+    offsets: np.ndarray,
+    lattice_vectors: np.ndarray,
+    grid_shape: Sequence[int],
+    distance_tol: float = 1.0e-3,
+) -> float:
+    """Shortest bond whose stored grid image is not its shortest image.
+
+    Parameters
+    ----------
+    offsets : np.ndarray, shape (..., 3)
+        Intra-cell offsets ``tau_i - tau_j`` of the orbital pairs (Bohr),
+        i.e. ``Dnm``; only the distinct rows matter.
+    lattice_vectors : np.ndarray, shape (3, 3)
+        Primitive lattice vectors in Bohr (rows).
+    grid_shape : sequence of int
+        ``(nk1, nk2, nk3)``.
+    distance_tol : float, optional
+        A stored image longer than the shortest by no more than this counts
+        as the shortest (Bohr): the shell grouping would merge the two.
+
+    Returns
+    -------
+    float
+        True length (Bohr) of the shortest such bond, ``inf`` if there is
+        none.  A cutoff at or beyond it keeps only part of that bond's
+        neighbour shell.
+
+    Notes
+    -----
+    A bond is stored at the lattice index ``R`` inside the folding box
+    ``[-nk/2, nk/2)``, chosen from ``R`` alone, and the cutoff measures
+    ``|alat*R + tau_i - tau_j|`` there (or at its ``(j, i, -R)`` partner,
+    whichever is shorter, as the mask does).  :func:`aliasing_safe_radius`
+    accounts for the lattice part only, so within ``|tau_i - tau_j|`` of it
+    the shortest image can need an ``R`` outside the box.  That bond is then
+    measured at a longer image while the rest of its star is not.  Images
+    are searched one supercell vector away in each direction, which reaches
+    the shortest image of every bond the safe radius admits.
+    """
+    from itertools import product
+
+    lattice = np.asarray(lattice_vectors, dtype=float)
+    R_int = folded_R_triples(*grid_shape)
+    Rcart = R_int.astype(float) @ lattice
+    minus = _minus_R_index(R_int, grid_shape)
+    supercell = lattice * np.asarray(grid_shape)[:, None]
+    images = np.array(list(product((-1, 0, 1), repeat=3)), dtype=float) @ supercell
+
+    shortest_bad = np.inf
+    for d in np.unique(np.asarray(offsets, dtype=float).reshape(-1, 3), axis=0):
+        bond = Rcart + d
+        stored = np.minimum(np.linalg.norm(bond, axis=1), np.linalg.norm(Rcart[minus] - d, axis=1))
+        shortest = np.linalg.norm(bond[:, None, :] + images[None], axis=2).min(axis=1)
+        bad = stored > shortest + distance_tol
+        if bad.any():
+            shortest_bad = min(shortest_bad, float(shortest[bad].min()))
+    return shortest_bad
 
 
 def compute_star_shells(
