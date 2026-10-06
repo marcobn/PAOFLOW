@@ -32,7 +32,6 @@ MESH = 4  # 4^3 = 64 k-points: enough for a DoS, cheap enough for a test
 
 def _driver(outdir):
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.sparse import SparseConfig
 
     p = PAOFLOW(
         savedir='silicon.save',
@@ -40,7 +39,7 @@ def _driver(outdir):
         smearing='gauss',
         npool=1,
         verbose=False,
-        sparse=SparseConfig(threshold=1.0e-4, hk_solver='auto'),
+        sparse={'threshold': 1.0e-4, 'hk_solver': 'auto'},
     )
     p.read_atomic_proj_QE()
     p.projectability()

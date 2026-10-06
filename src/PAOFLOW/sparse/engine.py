@@ -1,4 +1,4 @@
-"""Sparse engine behind ``PAOFLOW(..., sparse=SparseConfig(...))``.
+"""Sparse engine behind ``PAOFLOW(..., sparse={...})``.
 
 :class:`SparseEngine` is not a driver.  :class:`PAOFLOW.PAOFLOW` stays the
 only user-facing class and routes the methods marked ``@sparse_override``
@@ -40,7 +40,7 @@ import numpy as np
 from mpi4py import MPI
 
 from .bridge import init_restart_session, sparsify
-from .config import SparseConfig, resolve_threshold
+from .config import resolve_threshold
 from .solver import DENSE_N_MAX
 from .dispatch import call_dense
 from .log import get_sparse_log
@@ -84,11 +84,12 @@ class SparseEngine:
             exception reporting, and the dense bodies of the stages it
             extends (:func:`~PAOFLOW.sparse.dispatch.call_dense`).
 
-            config (SparseConfig or dict or True): truncation, solver and
-            resource settings; see :class:`~PAOFLOW.sparse.config.SparseConfig`.
+            config (SparseConfig): truncation, solver and resource settings,
+            parsed from the ``sparse=`` dict by
+            :meth:`~PAOFLOW.sparse.config.SparseConfig.parse`.
         """
         self.host = host
-        self.config = SparseConfig.coerce(config)
+        self.config = config
         self.data_controller = host.data_controller
         self.comm = host.comm
         self.rank = host.rank
@@ -251,14 +252,14 @@ class SparseEngine:
         :func:`PAOFLOW.sparse.io.bond_table`.
 
         The truncation arguments of the dense method are refused: the bond
-        list already carries the truncation set in ``SparseConfig``.
+        list already carries the truncation set by the ``sparse=`` options.
         """
         from .io import write_sparse_hamiltonian
 
         if (threshold, bond_order, rcut) != (None, None, None):
             raise ValueError(
                 'save_sparse_hamiltonian: in a sparse run the bond list is already truncated '
-                'by SparseConfig (threshold/rcut/bond_order); do not pass them here.'
+                'by the sparse= options (threshold/rcut/bond_order); do not pass them here.'
             )
         self._require_H('save_sparse_hamiltonian')
 
@@ -281,7 +282,7 @@ class SparseEngine:
         directly, no dense ``HRs`` is rebuilt, and the run continues with
         ``doubling_Hamiltonian`` or any property.  Use on a driver
         created with ``restart=True``.  The truncation is the one recorded
-        in the file; the ``SparseConfig`` truncation fields do not apply.
+        in the file; the ``sparse=`` truncation options do not apply.
         Every rank reads the file.
         """
         from os.path import exists, isabs, join
@@ -334,7 +335,7 @@ class SparseEngine:
         ``Hks`` and ``Dnm``) by :func:`~PAOFLOW.sparse.bridge.densify`, the
         dense body runs unchanged, and the result is converted back by
         :func:`~PAOFLOW.sparse.bridge.sparsify` with the same
-        ``SparseConfig`` truncation, which is applied again to the
+        ``sparse=`` truncation, which is applied again to the
         transformed ``H(R)`` (logged).  The dense arrays are deleted
         afterwards.  The operators ``Sj``/``Lj`` are handed to the body as
         ndarrays and converted back; if the body changed ``nawf`` (ad-hoc
@@ -464,8 +465,8 @@ class SparseEngine:
         The bond list is replicated on every rank (doubling is deterministic
         and needs no communication), so the budget is per rank and *more
         ranks on a node makes the fit worse, not better*.  The budget and
-        the override come from ``SparseConfig.mem_budget_gb`` and
-        ``SparseConfig.force_doubling``.
+        the override come from the ``sparse=`` options ``'mem_budget_gb'``
+        and ``'force_doubling'``.
         """
         from .solver import DENSE_RATIO, select_hk_solver
 
@@ -478,7 +479,7 @@ class SparseEngine:
         avail = _available_memory_bytes()
         if cfg.mem_budget_gb is not None:
             budget = cfg.mem_budget_gb * gb
-            budget_src = 'SparseConfig.mem_budget_gb=%.1f' % cfg.mem_budget_gb
+            budget_src = "sparse={'mem_budget_gb': %.1f}" % cfg.mem_budget_gb
         elif avail is not None:
             budget = 0.8 * avail / local_ranks
             budget_src = '80%% of MemAvailable (%.1f GB) over %d rank(s) on this node' % (
@@ -542,7 +543,7 @@ class SparseEngine:
             exits = []
             if cfg.rcut is None and cfg.bond_order is None:
                 exits.append(
-                    'set rcut (Bohr) or bond_order in SparseConfig: the bond list is currently '
+                    "set 'rcut' (Bohr) or 'bond_order' in sparse=: the bond list is currently "
                     'untruncated in real space, which is usually the largest single factor'
                 )
             if proj['d'] > 1:
@@ -556,8 +557,8 @@ class SparseEngine:
                     'here each need the full %.2f GB' % (local_ranks, proj['peak_bytes'] / gb)
                 )
             exits.append(
-                'raise the budget explicitly with SparseConfig(mem_budget_gb=...) or bypass '
-                'with SparseConfig(force_doubling=True) if this projection is wrong for your '
+                "raise the budget explicitly with sparse={'mem_budget_gb': ...} or bypass "
+                "with sparse={'force_doubling': True} if this projection is wrong for your "
                 'machine'
             )
             raise RuntimeError(

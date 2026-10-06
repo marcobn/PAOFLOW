@@ -37,7 +37,6 @@ BOND_ORDER = 3
 @pytest.fixture(scope='module')
 def runs(tmp_path_factory):
     from PAOFLOW.PAOFLOW import PAOFLOW
-    from PAOFLOW.sparse import SparseConfig
 
     out = str(tmp_path_factory.mktemp('bridge_parity'))
     archive = os.path.join(out, 'save', 'sparse_hamiltonian.npz')
@@ -64,7 +63,7 @@ def runs(tmp_path_factory):
             outputdir='sparse',
             restart=True,
             smearing='gauss',
-            sparse=SparseConfig(hk_solver='dense'),
+            sparse={'hk_solver': 'dense'},
         )
         sp.load_sparse_hamiltonian(archive)
         H = sp.sparse.H
@@ -73,7 +72,7 @@ def runs(tmp_path_factory):
         s_arrays = sp.data_controller.data_dicts()[0]
 
         handed = PAOFLOW(
-            workpath=out, outputdir='handoff', restart=True, smearing='gauss', sparse=True
+            workpath=out, outputdir='handoff', restart=True, smearing='gauss', sparse={}
         )
         handed.load_sparse_hamiltonian(archive)
         handed.to_dense()
@@ -84,7 +83,7 @@ def runs(tmp_path_factory):
             savedir='silicon.save',
             outputdir=os.path.join(out, 'swrite'),
             smearing='gauss',
-            sparse=SparseConfig(bond_order=BOND_ORDER),
+            sparse={'bond_order': BOND_ORDER},
         )
         writer.read_atomic_proj_QE()
         writer.projectability()
@@ -97,7 +96,7 @@ def runs(tmp_path_factory):
         from_sparse.gradient_and_momenta()
         f_arrays = from_sparse.data_controller.data_dicts()[0]
 
-        late = PAOFLOW(workpath=out, outputdir='late', restart=True, smearing='gauss', sparse=True)
+        late = PAOFLOW(workpath=out, outputdir='late', restart=True, smearing='gauss', sparse={})
         late.load_sparse_hamiltonian(archive)
         late.interpolated_hamiltonian(2 * NFFT, 2 * NFFT, 2 * NFFT)
         handed.interpolated_hamiltonian(NFFT, NFFT, NFFT)

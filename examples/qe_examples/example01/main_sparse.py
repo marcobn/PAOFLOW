@@ -1,5 +1,4 @@
 from PAOFLOW.PAOFLOW import PAOFLOW
-from PAOFLOW.sparse import SparseConfig
 
 
 def main():
@@ -9,7 +8,7 @@ def main():
         smearing='gauss',
         npool=1,
         verbose=True,
-        sparse=SparseConfig(threshold=1.0e-4),
+        sparse={'threshold': 1.0e-4},
     )
     paoflow.read_atomic_proj_QE()
     paoflow.projectability()
