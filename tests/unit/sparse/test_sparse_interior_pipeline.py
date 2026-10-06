@@ -81,9 +81,7 @@ def test_interior_dos_matches_the_full_solve_inside_the_window(in_example):
     nawf = 18
 
     # every band
-    ref = _driver(
-        str(in_example / 'full'), {'emin': -12.0, 'emax': 5.0, 'margin': 0.0, 'nev': nawf}
-    )
+    ref = _driver(str(in_example / 'full'), {'emax': 5.0, 'margin': 0.0, 'nev': nawf})
     ref.interpolated_hamiltonian(nfft1=fine, nfft2=fine, nfft3=fine)
     ref.dos(emin=plot_lo, emax=plot_hi, ne=200, do_pdos=False)
     dos_full = np.array(ref.data_controller.data_arrays['dosdk'])

@@ -88,8 +88,8 @@ def test_config_parse_takes_only_a_dict(value):
 
 
 def test_config_parses_the_energy_window():
-    cfg = SparseConfig.parse({'energy_window': {'emin': -12, 'emax': 2.2}})
-    assert cfg.energy_window == EnergyWindow(emin=-12.0, emax=2.2)
+    cfg = SparseConfig.parse({'energy_window': {'emax': 2.2}})
+    assert cfg.energy_window == EnergyWindow(emax=2.2)
     assert cfg.energy_window.margin == 1.0 and cfg.energy_window.nev is None
     assert cfg.energy_window.ehi == pytest.approx(3.2)
 
@@ -97,11 +97,11 @@ def test_config_parses_the_energy_window():
 @pytest.mark.parametrize(
     'window, error, match',
     [
-        ({'emin': -12.0}, ValueError, "needs 'emax'"),
-        ({'emin': 1.0, 'emax': 0.0}, ValueError, 'emax > emin'),
-        ({'emin': 0.0, 'emax': 1.0, 'margin': -0.1}, ValueError, 'margin'),
-        ({'emin': 0.0, 'emax': 1.0, 'nev': 0}, ValueError, 'nev'),
-        ({'emin': 0.0, 'emax': 1.0, 'nevv': 3}, ValueError, "did you mean 'nev'"),
+        ({'margin': 1.0}, ValueError, "needs 'emax'"),
+        ({'emin': -12.0, 'emax': 2.2}, ValueError, "takes no 'emin'"),
+        ({'emax': 1.0, 'margin': -0.1}, ValueError, 'margin'),
+        ({'emax': 1.0, 'nev': 0}, ValueError, 'nev'),
+        ({'emax': 1.0, 'nevv': 3}, ValueError, "did you mean 'nev'"),
         ((-12.0, 2.2), TypeError, 'takes a dict'),
     ],
 )
@@ -136,7 +136,7 @@ def test_config_rejects_both_window_modes():
     with pytest.raises(ValueError, match='mutually exclusive'):
         SparseConfig.parse(
             {
-                'energy_window': {'emin': -12.0, 'emax': 2.2},
+                'energy_window': {'emax': 2.2},
                 'interior_window': {'elo': -1.0, 'ehi': 1.0},
             }
         )
@@ -166,11 +166,9 @@ def test_constructor_passes_the_config_to_the_engine(tmp_path):
         outputdir='s',
         restart=True,
         sparse=True,
-        sparse_config={'bond_order': 3, 'energy_window': {'emin': -1.0, 'emax': 1.0}},
+        sparse_config={'bond_order': 3, 'energy_window': {'emax': 1.0}},
     )
-    assert p.sparse.config == SparseConfig(
-        bond_order=3, energy_window=EnergyWindow(emin=-1.0, emax=1.0)
-    )
+    assert p.sparse.config == SparseConfig(bond_order=3, energy_window=EnergyWindow(emax=1.0))
 
 
 def test_config_parse_names_unknown_options():
@@ -386,7 +384,7 @@ def windowed(tmp_path):
         outputdir='w',
         restart=True,
         sparse=True,
-        sparse_config={'energy_window': {'emin': -12.0, 'emax': 2.2, 'nev': 10}},
+        sparse_config={'energy_window': {'emax': 2.2, 'nev': 10}},
     )
     p.sparse.H = _WindowH()
     p.data_controller.data_attributes['bnd'] = 8
@@ -403,7 +401,8 @@ def test_window_is_applied_once(windowed):
     engine._ensure_window()
     attr = windowed.data_controller.data_attributes
     assert attr['bnd'] == 10
-    assert engine._window == (-12.0, 2.2, 1.0, pytest.approx(3.2))
+    assert engine._window == EnergyWindow(emax=2.2, nev=10)
+    assert engine._window.ehi == pytest.approx(3.2)
     attr['bnd'] = 7  # a second call must not re-size the solve
     engine._ensure_window()
     assert attr['bnd'] == 7

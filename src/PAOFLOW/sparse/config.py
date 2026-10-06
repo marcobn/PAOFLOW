@@ -97,8 +97,8 @@ class EnergyWindow:
     """The ``'energy_window'`` option: size the per-k solve from the
     property energy range instead of from ``attr['bnd']``.
 
-    Given as a dict, ``sparse_config={'energy_window': {'emin': -12.0,
-    'emax': 2.2}}``; each attribute below is a key of that dict.  The
+    Given as a dict, ``sparse_config={'energy_window': {'emax': 2.2}}``;
+    each attribute below is a key of that dict.  The
     engine applies it once, right before the first solve (``bands`` or the
     first property), so it always acts after ``doubling_Hamiltonian``.  It
     sets ``attr['bnd']``, which every downstream band-diagonal consumer
@@ -106,10 +106,11 @@ class EnergyWindow:
 
     Attributes
     ----------
-    emin, emax : float
-        Energy range (eV) the properties will ask for.  The window top is
-        ``ehi = emax + margin``; ``emin`` is recorded for the log and for
-        the range checks of the properties.
+    emax : float
+        Highest energy (eV) the properties will ask for.  The window top is
+        ``ehi = emax + margin``.  There is no lower bound: the solve always
+        starts at the bottom of the spectrum, so every state below ``ehi``
+        is computed.
     margin : float, default 1.0
         Extra range (eV) above ``emax``.  It has to cover the adaptive
         smearing tail (Yates widths here are <~ 0.22 eV, so 4 sigma is
@@ -137,7 +138,6 @@ class EnergyWindow:
     column-comparable across runs with and without a window.
     """
 
-    emin: float
     emax: float
     margin: float = 1.0
     nprobe: int = 16
@@ -145,15 +145,9 @@ class EnergyWindow:
 
     def __post_init__(self):
         # frozen: normalize types through object.__setattr__
-        object.__setattr__(self, 'emin', float(self.emin))
         object.__setattr__(self, 'emax', float(self.emax))
         object.__setattr__(self, 'margin', float(self.margin))
         object.__setattr__(self, 'nprobe', int(self.nprobe))
-        if not self.emax > self.emin:
-            raise ValueError(
-                "sparse_config=: 'energy_window' needs emax > emin, got [%g, %g]."
-                % (self.emin, self.emax)
-            )
         if self.margin < 0.0:
             raise ValueError(
                 "sparse_config=: 'energy_window' margin must be >= 0 eV, got %g." % self.margin
@@ -181,18 +175,23 @@ class EnergyWindow:
         Parameters
         ----------
         value : dict or EnergyWindow
-            A dict with ``'emin'`` and ``'emax'`` (eV) and optionally
-            ``'margin'``, ``'nprobe'`` and ``'nev'``.
+            A dict with ``'emax'`` (eV) and optionally ``'margin'``,
+            ``'nprobe'`` and ``'nev'``.
 
         Raises
         ------
         TypeError
             If ``value`` is not a dict.
         ValueError
-            If a key is not an option, ``emin``/``emax`` are missing, or
-            the values are inconsistent.
+            If a key is not an option (``'emin'`` included), ``emax`` is
+            missing, or the values are inconsistent.
         """
-        return _parse_window(cls, value, 'energy_window', ('emin', 'emax'))
+        if isinstance(value, dict) and 'emin' in value:
+            raise ValueError(
+                "sparse_config=: 'energy_window' takes no 'emin'. The solve always starts at "
+                "the bottom of the spectrum, so only the top matters: give {'emax': ...}."
+            )
+        return _parse_window(cls, value, 'energy_window', ('emax',))
 
 
 @dataclass(frozen=True)
@@ -346,8 +345,7 @@ class SparseConfig:
         :func:`PAOFLOW.sparse.solver.select_hk_solver`.
     energy_window : EnergyWindow or None
         Size the per-k solve from the property energy range, given as a
-        dict ``{'emin': ..., 'emax': ..., 'margin': 1.0, 'nprobe': 16,
-        'nev': None}``; see :class:`EnergyWindow`.  Applied by the engine
+        dict ``{'emax': ..., 'margin': 1.0, 'nprobe': 16, 'nev': None}``; see :class:`EnergyWindow`.  Applied by the engine
         right before the first solve, after any doubling.  ``None`` solves
         the ``attr['bnd']`` projectable bands (times the cell multiplier).
     interior_window : InteriorWindow or None
