@@ -209,3 +209,15 @@ def test_interband_properties_are_skipped_under_an_interior_window(in_example):
     assert os.path.exists(os.path.join(opath, 'sigmagauss_0.dat'))
     assert not os.path.exists(os.path.join(opath, 'hall_gauss_0.dat'))
     assert 'd2Ed2k' not in p.data_controller.data_arrays
+
+
+def test_dos_above_the_energy_window_raises(in_example):
+    """A DoS past the top computed band would silently undercount states,
+    so it raises like transport does instead of writing a truncated curve."""
+    p = _driver(str(in_example / 'ewin'), energy_window={'emax': 0.0})
+    p.interpolated_hamiltonian(nfft1=MESH, nfft2=MESH, nfft3=MESH)
+    p.dos(emin=-12.0, emax=0.0, ne=50, do_pdos=False)  # inside: fine
+
+    top = float(np.min(p.data_controller.data_arrays['E_k'][:, -1, :]))
+    with pytest.raises(RuntimeError, match='sparse dos: requested emax'):
+        p.dos(emin=-12.0, emax=top + 1.0, ne=50, do_pdos=False)
