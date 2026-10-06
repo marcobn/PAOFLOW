@@ -16,6 +16,7 @@ from PAOFLOW.sparse.hamiltonian import SparseHamiltonian, _minus_R_index, folded
 from PAOFLOW.sparse.shells import (
     aliasing_safe_radius,
     compute_star_shells,
+    misplaced_bond_length,
     shell_cutoff,
     snap_cutoff,
 )
@@ -226,10 +227,57 @@ def test_rcut_inside_a_gap_keeps_the_same_bonds(dc):
     assert H.drop_report['rcut_requested'] == rcut
 
 
-def test_explicit_rcut_beyond_the_safe_radius_is_flagged(dc):
+def test_explicit_rcut_beyond_the_safe_radius_is_rejected(dc):
     safe = aliasing_safe_radius(np.eye(3) * ALAT, GRID)
-    assert SparseHamiltonian.from_data_controller(dc, 0.0, rcut=1.5 * safe).drop_report['aliased']
-    assert not SparseHamiltonian.from_data_controller(dc, 0.0, bond_order=1).drop_report['aliased']
+    with pytest.raises(ValueError, match='aliasing-safe radius'):
+        SparseHamiltonian.from_data_controller(dc, 0.0, rcut=1.5 * safe)
+
+
+SI_ALAT = 10.26
+FCC = 0.5 * np.array([[-1.0, 0.0, 1.0], [0.0, 1.0, 1.0], [-1.0, 1.0, 0.0]])
+SI_TAU = np.array([[0.0, 0.0, 0.0], [0.25, 0.25, 0.25]]) * SI_ALAT
+
+
+def _silicon(grid):
+    """Diamond Si with one orbital per atom on an fcc ``grid``."""
+    attributes = {'alat': SI_ALAT, 'nawf': 2, 'nspin': 1, 'natoms': 2}
+    attributes.update(nk1=grid[0], nk2=grid[1], nk3=grid[2])
+    Dnm = SI_TAU[:, None, :] - SI_TAU[None, :, :]
+    Rcart = folded_R_triples(*grid).astype(float) @ FCC * SI_ALAT
+    dist = np.linalg.norm(Dnm[:, :, None, :] + Rcart[None, None], axis=3)
+    HRs = np.exp(-dist / SI_ALAT).reshape(2, 2, *grid)[..., None].astype(complex)
+    arrays = {'HRs': HRs, 'a_vectors': FCC.copy(), 'tau': SI_TAU, 'Dnm': Dnm}
+    return _DC(arrays, attributes)
+
+
+def test_silicon_4x4x4_stores_part_of_its_outermost_shell_at_a_longer_image():
+    """4 of the 24 bonds at 11.18 Bohr sit at an R outside the folding box
+    for their shortest image, inside the 11.85 Bohr safe radius."""
+    lattice = FCC * SI_ALAT
+    limit = misplaced_bond_length(SI_TAU[:, None] - SI_TAU[None], lattice, (4, 4, 4))
+    assert limit == pytest.approx(11.181, abs=1e-3)
+    assert limit < aliasing_safe_radius(lattice, (4, 4, 4))
+    # on 12x12x12 the first one lies past the safe radius: no shell is lost
+    limit = misplaced_bond_length(SI_TAU[:, None] - SI_TAU[None], lattice, (12, 12, 12))
+    assert limit > aliasing_safe_radius(lattice, (12, 12, 12))
+
+
+def test_bond_order_reaching_a_misplaced_bond_is_rejected():
+    dc = _silicon((4, 4, 4))
+    _, shells, _ = shell_cutoff(dc, 1)
+    with pytest.raises(ValueError, match=r'bond_order <= 4\)'):
+        SparseHamiltonian.from_data_controller(dc, bond_order=len(shells))
+    SparseHamiltonian.from_data_controller(dc, bond_order=len(shells) - 1)
+
+
+def test_rcut_reaching_a_misplaced_bond_is_rejected():
+    dc = _silicon((4, 4, 4))
+    with pytest.raises(ValueError, match='longer periodic image'):
+        SparseHamiltonian.from_data_controller(dc, rcut=11.5)
+    # snapped onto the shell, so a value just short of it is refused too
+    with pytest.raises(ValueError, match='longer periodic image'):
+        SparseHamiltonian.from_data_controller(dc, rcut=11.181 - 5.0e-4)
+    SparseHamiltonian.from_data_controller(dc, rcut=11.0)
 
 
 def test_outermost_shell_stays_hermitian_on_an_even_grid():

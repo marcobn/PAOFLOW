@@ -421,9 +421,20 @@ an array of per-k `(nawf, nawf)` matrices is not.
   does. Without it, a radius on a shell distance keeps an arbitrary,
   rounding-decided part of that shell and breaks symmetry. Shells are
   grouped from the symmetrized `dist` array itself, not from `tau`, so the
-  snap also holds past the aliasing-safe radius and in tests whose `Dnm` is
-  unrelated to `tau`. `drop_report` carries both `rcut` (applied) and
-  `rcut_requested`.
+  snap also holds in tests whose `Dnm` is unrelated to `tau`. `drop_report`
+  carries both `rcut` (applied) and `rcut_requested`.
+  **Representable range, enforced by raising** (no warning-only mode): an
+  explicit `rcut` past `aliasing_safe_radius` raises (one grid value mixes
+  several bonds there; `bond_order` can't get there since shells are only
+  counted inside it). Separately, within `|tau_i - tau_j|` of that radius a
+  bond can be stored at a longer image than its shortest, because the
+  folding box picks `R` alone; `shells.misplaced_bond_length` finds the
+  shortest such bond (27-image search, per distinct `Dnm` row) and a cutoff
+  of *either* form reaching it raises, naming the max `bond_order`. Si fcc:
+  hits the outer 1–3 shells on 3,4,5,7,9³; nothing inside the safe radius on
+  even grids ≥ 6³ (12³: first one at 37.3 > 35.5 Bohr). The mask's
+  `(j,i,-R)` partner min is exactly the shortest-image rule for the Nyquist
+  plane, which is why Nyquist bonds are not counted as misplaced.
   No default value is blessed: the 20 Bohr figure that has been floated
   comes from slot-count geometry, not an accuracy sweep. Calibrate
   against `output/` at `nx=1` before adopting one.

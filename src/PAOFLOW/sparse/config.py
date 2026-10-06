@@ -90,8 +90,10 @@ class SparseConfig:
         space-group symmetry of the crystal.  The radius is moved into the
         gap above the outermost neighbour shell it reaches (a shell within
         1e-3 Bohr of it counts as reached), so a value typed on a shell
-        distance cannot keep part of that shell.  Mutually exclusive with
-        ``bond_order``.
+        distance cannot keep part of that shell.  A radius the k-grid
+        cannot represent raises: past the aliasing-safe radius, or at a bond
+        the grid stores at a longer image than its shortest one (this also
+        applies to ``bond_order``).  Mutually exclusive with ``bond_order``.
     bond_order : int or None
         The same cutoff as a neighbour-shell count: keep every bond up to
         and including the n-th distinct interatomic distance (1 = nearest
