@@ -237,3 +237,38 @@ def test_dense_only_options_of_routed_methods_refuse(sparse):
         sparse.interpolated_hamiltonian(reshift_Ef=True)
     with pytest.raises(ValueError, match='sparse= options'):
         sparse.save_sparse_hamiltonian(threshold=1e-4)
+
+
+class _ProjectedH:
+    """Stands in for the bond list: only what the doubling pre-flight reads."""
+
+    nawf, nnz = 16, 1000
+
+    def project_doubling(self, nx, ny, nz):
+        gb = 1024.0**3
+        d = nx + ny + nz
+        return {
+            'd': d,
+            'N': 2**d,
+            'nawf': self.nawf * 2**d,
+            'nnz': self.nnz * 2**d,
+            'peak_bytes': 4.0 * gb,
+            'steady_bytes': 2.0 * gb,
+            'dense_hk_bytes': 0.1 * gb,
+        }
+
+
+@pytest.mark.parametrize('avail_gb, warns', [(1.0, True), (100.0, False)])
+def test_doubling_preflight_warns_and_continues(sparse, monkeypatch, capsys, avail_gb, warns):
+    from PAOFLOW.sparse import engine
+
+    monkeypatch.setattr(engine, '_available_memory_bytes', lambda: avail_gb * 1024.0**3)
+    monkeypatch.setattr(engine, '_node_local_ranks', lambda comm: 1)
+    sparse.sparse.H = _ProjectedH()
+    sparse.data_controller.data_attributes['bnd'] = 8
+    proj = sparse.sparse._preflight_doubling(1, 1, 0)
+    assert proj['N'] == 4
+    out = capsys.readouterr().out
+    assert ('may run out of memory' in out) is warns
+    if warns:
+        assert 'reduce the doubling count' in out

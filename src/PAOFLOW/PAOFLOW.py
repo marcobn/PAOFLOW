@@ -79,10 +79,6 @@ class PAOFLOW:
           (1 = nearest neighbours); exclusive with ``'rcut'``.
         - ``'hk_solver'`` (``'auto'``, ``'sparse'`` or ``'dense'``, default
           ``'auto'``): eigensolver used at each k-point.
-        - ``'mem_budget_gb'`` (float): per-rank memory budget checked before
-          doubling; default 80% of the available memory over the node's ranks.
-        - ``'force_doubling'`` (bool, default ``False``): double even when the
-          projected memory exceeds that budget.
 
         Full semantics: :class:`~PAOFLOW.sparse.config.SparseConfig`.
         Methods with a sparse implementation keep their names and arguments;
